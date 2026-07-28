@@ -69,6 +69,32 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
 8. ~~디스크 95%~~ — **93%, 여유 30Gi 로 개선.** 추가 회수 여지는 개발 영향 없이는 없음
 9. ~~유휴 터미널 4개~~ — **close 완료.** 15→11
 
+## P6 종결 — 2026-07-29 07:25 **Master 게이트 미통과 상태로 main 병합됨**
+
+밤사이(01:14→03:20) 워커가 PR 경로로 main 에 병합했다. **내가 건 "트리 확정 후 전체 재감사" 게이트는 통과하지 않았다.**
+
+| PR | 병합 | 결과 |
+|---|---|---|
+| #151 `feat: add production deployment gate` | `f103a2ac` (01:47) | checks 8/8 SUCCESS, **GitHub reviews 0건** |
+| #152 `fix: seed production credential in performance smoke` | `a3554aec` (03:19) | checks 6/6 SUCCESS, **GitHub reviews 0건** |
+
+`origin/main` reflog 는 01:48·03:20 을 `fetch ... fast-forward` 로 기록 — GitHub PR 병합 후 fetch 다.
+로컬에서 main 에 직접 push 한 것은 아니다. `production-deploy` 워크트리는 소멸했고 **유실 없다**
+(`161ff2ea` 가 main·origin/main 양쪽의 조상, `merge-base --is-ancestor` YES).
+
+**실제 프로덕션 전환은 여전히 차단 상태다.** `/etc/sangfor-os/production-authority.json` 미프로비저닝으로
+production readiness 가 fail-closed `exit 64`. AC-DOD-09 는 `MANUAL_EXTERNAL_PENDING / executed=false`.
+로컬 릴리스 종결만 끝났고 컷오버는 오너·외부 게이트다. 위험은 이 fail-closed 로 묶여 있다.
+
+**부수 성과(실물).** 권위 조사 중 U076 실제 회귀를 발견·수정했다 — production-profile perf seed 가
+`UserCredential` 을 만들지 않아 로그인 401 이던 원인(`86f61b8e`). 권위 U076 재실행 98/98 autonomous PASS,
+cleanup PASS, receipt sha256 `6a735ef6…`, 증거 `~/.local/share/sangfor-u076-a3554aec-final-20260728T182059Z`.
+워커는 5h02m 후 유휴 전환.
+
+**판정.** Master 가 확인한 HIGH-1/HIGH-2/MED-1 해소는 유효하고 `161ff2ea` 는 병합본에 포함돼 있다.
+그러나 **세 커밋 전체와 nonce authority·Ed25519 승인·receipt 서명·migration upgrade 경로는 끝내 적대적으로 보지 않았다.**
+CI 그린과 워커 자체 리뷰(SOL)로 대체됐고 GitHub PR 리뷰 기록은 0건이다. 사후 적대적 리뷰는 오너 판단 사항.
+
 ## P6 후속 — 2026-07-29 01:15 중간 판정 (최종 APPROVE 아님)
 
 워커가 세 커밋(`55795adf` → `8e21faec` → `161ff2ea fix: separate production deployment authority`)으로 재작업.
