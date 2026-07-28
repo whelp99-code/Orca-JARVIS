@@ -70,6 +70,16 @@ subdir 를 그대로 이어 붙인다. 다른 데이터 호출부는 예외 없�
 - 격리 clone 검증: 659 passed + 2 skipped, lint/build, observer E2E(storage 0, mutation delta 0, PID/page invariant true), MCP 85-tool smoke 전부 exit 0. Grok staged diff review APPROVE (C/H/M 0)
 - Master 독립 확인: branch 미변경, worktree clean, upstream tracking 없음 → push 흔적 없음
 
+**실환경 검증 (테스트 그린 ≠ 실환경 그린).** 로그인된 전용 loopback CDP(127.0.0.1:9333)에서 실제 MCP
+`getToolHandler` 경로로 `attach_observation_session` → `manage_learning_capture` start/stop 을 실행.
+산출물이 수동 이동 없이 `data/captures/` 에 직접 생성됨(`storageRootCorrect=true`), SHA-256 = bundleDigest 일치,
+Keychain 키로 decrypt round-trip 성공(networkCount 8, storageMutationCount 0, elementCount 2552).
+Master 확인: `.enc` 번들 4개 전부 mode 0600 + git-ignored, 마지막 mtime 22:33 이 커밋 이후라 수정 코드가 직접 쓴 것,
+옛 경로 `captures/`·`learning-strategies/` 소멸. 번들 내용은 열지 않고 권한·위치·무시 상태만 확인.
+
+잔여물 1건(조치 불요): 리포 루트 `capture-staging/` 빈 디렉터리. 파일 0개·0B 이고 git 이 빈 디렉터리를
+추적하지 않아 porcelain 에도 안 잡힌다. 옛 코드가 만든 잔해일 뿐 위험 없음.
+
 ## 해소됨 — 오너 사후 승인 (2026-07-28)
 
 오너가 "GJC는 그냥 작업하게 두어라, 내가 승인한 내용이다"로 직접 확인했다.
