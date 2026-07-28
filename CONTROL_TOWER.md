@@ -16,14 +16,50 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
 추측으로 상태를 만들지 말고 실제 Orca 상태를 읽어라. 미해결 항목부터 보고해.
 ```
 
-**현재 미해결 (2026-07-28 22:40 기준)**
+**현재 미해결 (2026-07-28 22:50 실측 갱신)**
 
-- 회수 대기 중인 dispatch 없음. 모든 채널 종결·검증 완료
-- `term_d4bb2736` (sangfor-os-w0-w6) 자율 진행 중 — 운영 전환 차단 결함 조사, 결론 보고 대기
-- `term_48b73d39` (wiki-spike GJC) 오너 사후 승인 후 구현 재개 — 감시 불필요
-- 디스크 Data 볼륨 98% (여유 22Gi). 회수 가능한 캐시는 이미 정리함. 추가 정리는 `~/Library` 계열이라 오너 판단 필요
-- `Playground/sangfor-os` 미처리 428건 — `.agents/results/2026-07-28-worktree-preservation-audit.md` 에 목록화만 됨
-- Orca 워크트리 23개가 전부 `in-progress` 상태로 방치 — 카드 상태 정리 안 됨
+회수 대기 중인 dispatch 없음. 열린 orchestration task 0건(21 completed / 1 failed-종결). 열린 gate 0건.
+
+1. **wiki-spike `main` 이 origin/main 과 분기** — local 6 ahead / 24 behind (`@{u}...HEAD` 실측, fetch ref 22:08 기준).
+   `term_05365350` (qwen3.8-max, YOLO mode) 패널에 **`push it` 지시가 대기 중**이다. 지금 push 하면
+   non-fast-forward 로 거부되고, force 면 원격의 PR 머지 24 커밋을 파괴한다. **오너 승인 없이 실행 금지.**
+   로컬 미푸시 3건은 `ce6e8b1` / `c084d79` / `5203a63`, 나머지 3건(`edbb920`·`d7fafa6`·`16eee5d`)은
+   원격에 PR 머지본으로 이미 존재하는 같은 작업의 직접 커밋 사본이다.
+2. **sangfor-os `origin/main` 직접 푸시 3건이 채널 밖에서 발생** — 아래 "미기록 활동" 절 참조. 오너 확인 필요.
+3. `term_d4bb2736` (sangfor-os-w0-w6, gpt-5.6-sol) 자율 진행 1시간 1분째, 결론 미보고. 커밋 없음
+   (HEAD `c1061c36` 은 07-25 것, upstream 과 0/0 동기, dirty 는 `?? tmp/` 하나뿐)
+4. `term_48b73d39` (wiki-spike GJC) 생존 — `Awaiting hardening agents` 로 하위 에이전트 대기 중
+5. **IAG pilot 은 아직 BLOCKED** (`term_e539cb05` 최종 보고, 종전 미기록). 잔여 조건 2개:
+   IAG 13.0.120 공식 문서 page verification, verified firmware truth 생성. 증거 부재로 draft research·promotion 은 정상 거부 상태
+6. `Playground/sangfor-os` 미처리 428건 — `.agents/results/2026-07-28-worktree-preservation-audit.md` 에 목록화만 됨 (porcelain 31)
+7. Orca 워크트리 **22개 전부** `workspaceStatus: in-progress` 방치 — 카드 상태 정리 안 됨 (23→22 는 u076-hardening 소멸분)
+8. 디스크 Data 볼륨 95% (여유 24Gi). 98%/22Gi 에서 소폭 개선. 추가 정리는 `~/Library` 계열이라 오너 판단 필요
+9. 유휴·고아 터미널 4개 정리 후보: `term_43ae63c7` (스크롤백 cursor 0, 완전 공백),
+   `term_54f67939` (빈 프롬프트), `term_eb37fb82`·`term_ba47991d` (에이전트 없는 셸,
+   후자의 cwd `u076-hardening` 은 이미 소멸)
+
+## 미기록 활동 — sangfor-os `main` 푸시 3건 (2026-07-28 21:57 / 22:07 / 22:19)
+
+Master 채널 밖에서 `origin/main` 이 세 번 갱신됐다. `git reflog show origin/main` 이 세 건 모두
+`update by push` 로 기록한다. author 는 전부 `whelp99-code <whelp99@gmail.com>`.
+
+| 시각 | 커밋 | 내용 |
+|---|---|---|
+| 21:57 | `394ead14` | `merge fix/u076-real-use-hardening` (ort strategy) → push |
+| 22:07 | `b4e95fa0` | `fix(docker): preserve pnpm workspace links` (3 files +8) |
+| 22:19 | `24e31420` | `fix(ci): serialize Prisma coverage generation` (package.json 1줄) |
+
+부수 효과로 `u076-hardening` 워크트리와 `fix/u076-real-use-hardening` 브랜치가 소멸했다
+(디렉터리 부재, `git worktree list` 미등재, 브랜치 unknown revision).
+
+**유실 없음 — Master 직접 확인.** P3 의 `7a239d14 fix(qa): harden U076 real-use isolation` (9 files +899/−170)은
+`main` 과 `origin/main` 양쪽에서 도달 가능하다(`merge-base --is-ancestor` YES). `term_469c937c` (Grok 4.5)가
+21:45경 "커밋하지 않았습니다"로 보고한 5개 파일(`run-real-use-100.mjs`, `seed-real-use-mail.ts`,
+`seed-real-use-mail.mjs`, `run-real-use-100.test.mjs`, `seed-real-use-mail.test.mjs`)은 전부 `7a239d14` 의
+파일 목록에 들어 있다. 즉 워크트리 삭제 전에 커밋·머지·푸시가 끝나 있었다.
+
+**남은 질문은 권한뿐이다.** 공통 금지 사항은 `git push` 를 명시적으로 막고 있는데 이 세 건에는 Master 승인 기록이
+없다. 오너가 직접 했다면 정상이고, 워커가 오너 자격증명으로 했다면 규칙 위반이다. 커밋 author 만으로는 구분할 수 없다.
 
 ## 구조 원칙
 
