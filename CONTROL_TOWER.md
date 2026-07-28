@@ -69,6 +69,36 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
 8. ~~디스크 95%~~ — **93%, 여유 30Gi 로 개선.** 추가 회수 여지는 개발 영향 없이는 없음
 9. ~~유휴 터미널 4개~~ — **close 완료.** 15→11
 
+## P6 사후 적대적 리뷰 — 2026-07-29 08:00 (병합본 `a3554aec`, 범위 `24e31420..a3554aec` 49 files +1743/−154)
+
+오너 지시로 병합 후 리뷰 수행. Master 메인 루프에서 직접, 편집 없이 읽기만. **CRITICAL/HIGH 0.**
+컷오버가 `exit 64` 로 차단돼 있는 한 긴급 조치 없음. 다만 1·2번은 컷오버 전에 고치는 것이 맞다.
+
+**내가 REJECT 했던 항목은 전부 해소됐고, 두 건은 요구를 넘어섰다.**
+- MED-2 해소 — `validateComposeModel` 이 이제 compose 모델에서 직접 검사한다:
+  `backend.internal===true`, api/web `DATABASE_URL` 의 `sangfor_runtime_login`, `app.tenant_id` RLS 스코프 핀,
+  런타임 bind mount 금지, role-init 의 `NOBYPASSRLS`, `AUTH_BYPASS_ENABLED==="0"`,
+  `API_KEY_BYPASS_ENABLED==="0"`, `AUTH_PROFILE!=="local_mock"`.
+- MED-4 해소, **방향이 뒤집혔다** — `verify-production-deploy.mjs:45` 가 `AUTH_DEMO_PASSWORD` 를
+  production 에서 **금지**한다. production 프로필은 per-user scrypt credential 을 쓴다. 내 원 지적보다 나은 결과.
+- 회전 경쟁: `createPersistedSession` 이 트랜잭션 안에서 `SELECT credential_version ... FOR UPDATE` 로 확인.
+- 실패 카운터: 원자적 raw `UPDATE` + `LEAST` 캡 + 5회째 잠금. 동시성 안전.
+- receipt: Ed25519 detached, 도메인 분리 프리픽스, canonical JSON 키 정렬, 서명 64바이트 검사,
+  base64url 정규식, compose/source archive SHA-256 바인딩, `basename(x)===x` 로 traversal 차단, 0600 기록.
+- **nonce 소비 전에 서명키 쌍 preflight** — 순서가 맞다.
+- 멤버십: `projectMember` + `userCompanyRole` 둘 다 active / `revokedAt` null / `validFrom`·`expiresAt` 창 검사.
+
+**새로 발견한 것**
+
+| 등급 | 항목 |
+|---|---|
+| MED-1 | **nonce authority 의 "원격" 보장이 실질적으로 없다.** `production-authority.mjs` 가 `["localhost","127.0.0.1","::1"].includes(hostname)` 세 문자열만 막는다. `127.0.0.2` / `127.1` / `0.0.0.0` / `[::ffff:127.0.0.1]` / `2130706433` / `localhost.`(후행 점) / 루프백으로 해석되는 DNS 이름 / `169.254.169.254`(클라우드 메타데이터)가 전부 통과한다. 이 URL 은 외부 승인 nonce 를 소비해 재사용을 막는 **유일한 독립 권위**인데 로컬을 가리키면 자기 승인이 된다. 파일이 root 소유 0600 이라 공격이 아니라 **오설정 방어** 영역. → 해석 후 루프백·사설·링크로컬 대역 거부 필요 |
+| MED-2 | **compose 검증기가 `SANGFOR_PROCESS_PROFILE` 을 확인하지 않는다.** `login/route.ts` 는 `resolveProcessProfile()==="production"` 으로 인증 모드를 가른다. 이 값이 빠지면 데모 분기로 떨어지고, `AUTH_DEMO_PASSWORD` 가 금지라 결과는 **503 전면 로그인 불능**. 보안 우회는 아니지만(fail-closed), 12개 넘는 항목을 검사하면서 인증 모드를 결정하는 단 하나의 변수를 안 본다 — 전면 장애가 배포 검증을 통과한다 |
+| LOW-MED | **사용자 열거 타이밍이 남아 있다.** scrypt 비용은 `DUMMY_DIGEST` 로 균질화됐지만 **DB 쓰기는 아니다.** 미존재 사용자 → `UPDATE` 없음 / 존재+오답 → `UPDATE` 1회 / 잠긴 계정 → `UPDATE` 없음. 응답 시간으로 세 상태가 구분된다. 워커의 "unknown-user timing 균질화" 주장은 scrypt 구간 한정이다 |
+| LOW | `loadProductionAuthority` 의 approvalKeys 가드가 **빈 객체를 통과시킨다** — `Object.values({}).every(...)` 는 true. 하위에서 키 조회 실패로 fail-closed 되지만 "approval keys missing" 가드는 제 역할을 못한다 |
+| LOW | `assertOwnerOnly` 에 `lstat`→`stat`→`read` TOCTOU 창. root 권한이 필요한 경로라 실질 위험 낮음 |
+| 확인 필요 | **로그인이 기본 프로젝트 단일 스코프에 묶인다.** `resolveDefaultProjectScope()` 의 projectId 로만 멤버십을 확인하므로, 그 프로젝트 멤버가 아닌 유효 사용자는 로그인 자체가 불가능하다. 멀티 프로젝트 운영 의도면 제약, v1 단일 배포 전제면 정상 — **오너 확인 사항** |
+
 ## P6 종결 — 2026-07-29 07:25 **Master 게이트 미통과 상태로 main 병합됨**
 
 밤사이(01:14→03:20) 워커가 PR 경로로 main 에 병합했다. **내가 건 "트리 확정 후 전체 재감사" 게이트는 통과하지 않았다.**
