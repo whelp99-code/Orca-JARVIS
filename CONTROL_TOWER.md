@@ -183,7 +183,7 @@ Master 채널 밖에서 `origin/main` 이 세 번 갱신됐다. `git reflog show
 | 채널 | 프로젝트 / 체크아웃 | 메인 에이전트 | task / dispatch | 담당 |
 |---|---|---|---|---|
 | P1 | sangfor-engineer-mcp<br>`Playground/whelp99-code-sangfor-engineer-mcp` | `term_92dea65a` (grok) | `task_4a7fd29b5001` / `ctx_63c3af94cb6c` | **완료** — 아래 참조 |
-| P2 | sangfor-os-w0-w6<br>`Playground/sangfor-os-w0-w6` | `term_d4bb2736` (자율 진행) | dispatch 없음 (status 통보만) | 운영 전환 차단 결함 조사 계속 |
+| P2 | sangfor-os-w0-w6<br>`Playground/sangfor-os-w0-w6` | `term_d4bb2736` (gpt-5.6-sol) | dispatch 없음 (status 통보만) | **종결** (2026-07-29 07:40, `msg_e8f5b4029023`) — main `a3554aec` 병합, 워커 유휴. **Master 게이트 미통과분 존재**, 위 P6 종결 절 참조 |
 | P3 | u076-hardening<br>`orca/workspaces/sangfor-os/u076-hardening` | `term_ec10446c` (codex) | `task_b48b89c0282a` / `ctx_d7b5757d017e` | **완료** — 아래 참조 |
 | P4 | wiki-spike<br>`orca/Wiki-spike/wiki-spike` | `term_9847a992` (claude) | `task_ae43f74d373e` / `ctx_b4f5d1765d67` | **완료** — 아래 참조 |
 | P4b | wiki-spike (후속 보존) | `term_9847a992` (claude) | `task_f72e2b3da55d` / `ctx_3ee836605c6e` | **완료** — `ce6e8b1`(red-team 58건 정합), `c084d79`(리포트 영속화 + `.DS_Store` ignore) |
