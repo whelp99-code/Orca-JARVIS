@@ -69,6 +69,35 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
 8. ~~디스크 95%~~ — **93%, 여유 30Gi 로 개선.** 추가 회수 여지는 개발 영향 없이는 없음
 9. ~~유휴 터미널 4개~~ — **close 완료.** 15→11
 
+## P6 후속 — 2026-07-29 01:15 중간 판정 (최종 APPROVE 아님)
+
+워커가 세 커밋(`55795adf` → `8e21faec` → `161ff2ea fix: separate production deployment authority`)으로 재작업.
+Master 가 보고를 믿지 않고 커밋된 파일에서 직접 확인한 결과, **내가 올린 HIGH-1 / HIGH-2 / MED-1 은 모두 해소**됐다.
+
+- **HIGH-1 해소, 요구 이상.** (a) 경로를 택했다. `docker-compose.production.yml:6` 의 `DATABASE_URL` 이
+  `sangfor_runtime_login` 을 가리키고 `app-role-init`(147-156)이 그 롤을 `NOBYPASSRLS` / `INHERIT TRUE` /
+  `GRANT sangfor_app ... SET FALSE` 로 만든다. 연결 문자열에 `app.tenant_id/company_id/project_id` 를
+  options 로 핀해 unscoped Prisma 경로도 경계를 못 넘는다. `packages/db/src/index.ts` 무변경 — 호출부 계약 보존.
+- **HIGH-2 해소.** `scripts/rollback-production.sh` — 서명 receipt 검증, 이미지 **ID**(태그 아님) 고정,
+  불변 소스 아카이브 복원, `--no-build --no-deps` 재기동. 마이그레이션 전 `predeploy-<id>.dump` 백업.
+- **MED-1 해소.** `verify-production-deploy.mjs:135` 가 `compose.stderr || "no stderr"` 로 stdout 유출 차단.
+
+**최종 APPROVE 보류 사유 2가지.** (1) `161ff2ea` 위에 미커밋 8개 — 판정 대상이 확정되지 않고 MED-3 미해소.
+(2) 세 커밋 전체와 nonce authority·receipt 서명·migration upgrade 경로는 아직 적대적으로 보지 않았다.
+회신 `msg_1b6c687289c8`.
+
+**Master 실수 정정.** 워커가 최종 verdict 를 요청한 `term_54f67939` 는 **내가 유휴 정리 중 close 한 리뷰어 터미널**이다.
+빈 프롬프트 + 보존 스크롤백 없음을 고아로 오판했다. 파일 유실은 없다(산출물 없음, 리뷰는 메시지로 전달됨).
+워커에 관제탑 handle 로 재요청하도록 통보했다. **교훈: 터미널 제목이 역할을 말하고 있으면 스크롤백이 비어도
+고아로 판정하지 않는다 — 담당 워커에게 먼저 확인한다.**
+
+**미확인 1건.** `origin/fix/production-deploy-path` 에 00:09 / 00:40 / 01:02 푸시 3회(reflog `update by push`).
+리뷰 회신의 푸시 금지와 상충. 오너 직접 지시 여부 질의 중. 피처 브랜치라 되돌릴 수 있음.
+
+**IAG 채널 진전.** `term_e539cb05` 의 IAG 진단 교정에 대해 Grok(`term_92dea65a`)이 독립 적대 리뷰 4건
+(`task_e6827a7dc201`, `task_1f5a1f5c7a04`, `task_7a1f30d7b068` 등)을 돌려 **완전 승인** — H1/H2 해결,
+M1/L1 잔여 해결, CRITICAL/HIGH/MEDIUM 0. 남은 작업은 로컬 변경 커밋뿐이며 아직 커밋·푸시 안 됨.
+
 ## P6 / sangfor-os production-deploy — 적대적 리뷰 **REJECT** (2026-07-28 23:05)
 
 `term_d4bb2736` 가 HIGH 우선순위로 요청(`msg_06bcd89a2fe7`), Master 메인 루프에서 직접 수행.
