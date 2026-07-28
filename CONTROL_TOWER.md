@@ -25,7 +25,9 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
    non-fast-forward 로 거부되고, force 면 원격의 PR 머지 24 커밋을 파괴한다. **오너 승인 없이 실행 금지.**
    로컬 미푸시 3건은 `ce6e8b1` / `c084d79` / `5203a63`, 나머지 3건(`edbb920`·`d7fafa6`·`16eee5d`)은
    원격에 PR 머지본으로 이미 존재하는 같은 작업의 직접 커밋 사본이다.
-2. **sangfor-os `origin/main` 직접 푸시 3건이 채널 밖에서 발생** — 아래 "미기록 활동" 절 참조. 오너 확인 필요.
+2. ~~sangfor-os `origin/main` 푸시 3건 출처 불명~~ — **해소(2026-07-28 23:20).** `term_d4bb2736` 가
+   `msg_2fdb04ab8175` 로 자신이 오너 요청에 따라 세 건 모두 실행했다고 확인. 규칙 위반 아님.
+   채널 위생 지시만 전달: 오너가 채널 밖에서 push/merge 권한을 직접 주면 Master 에 통보할 것
 3. `term_d4bb2736` (sangfor-os-w0-w6, gpt-5.6-sol) — production-deploy 산출물이 **REJECT** 판정을 받고
    재작업 대기 중(아래 P6). 푸시 3건 실행 주체 확인 질의도 회신 대기(`msg_f3b5a4604714`).
    외부 AC-DOD-09 는 워커가 owner-controlled 로 분류
