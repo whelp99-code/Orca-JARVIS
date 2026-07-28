@@ -16,9 +16,9 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
 추측으로 상태를 만들지 말고 실제 Orca 상태를 읽어라. 미해결 항목부터 보고해.
 ```
 
-**현재 미해결 (2026-07-28 22:30 기준)**
+**현재 미해결 (2026-07-28 22:40 기준)**
 
-- `term_e539cb05` (sangfor-engineer-mcp) 가 `resolveRepoData` 접두사 결함 수정 중 — 커밋 해시와 테스트 증거 회수 대기. 상세는 아래 "진행 중" 절
+- 회수 대기 중인 dispatch 없음. 모든 채널 종결·검증 완료
 - `term_d4bb2736` (sangfor-os-w0-w6) 자율 진행 중 — 운영 전환 차단 결함 조사, 결론 보고 대기
 - `term_48b73d39` (wiki-spike GJC) 오너 사후 승인 후 구현 재개 — 감시 불필요
 - 디스크 Data 볼륨 98% (여유 22Gi). 회수 가능한 캐시는 이미 정리함. 추가 정리는 `~/Library` 계열이라 오너 판단 필요
@@ -60,6 +60,15 @@ subdir 를 그대로 이어 붙인다. 다른 데이터 호출부는 예외 없�
 
 승인 조건: helper 시그니처·해석 규칙 불변(20곳 넘는 호출부가 현 계약에 의존) / 리터럴 확정은 계획 정본 인용 근거 필요 /
 기존 env override 동작 보존 / 해석 경로를 pin 하는 회귀 테스트 추가 / 테스트 실행 증거 제출 / push·브랜치 변경 금지.
+
+**완료 — 2026-07-28 22:40 (verified).** 커밋 `5257534 fix(learning): anchor observer data paths`, 4 files +45/−3.
+`data/runtime/learning-strategies`(서비스+CLI), `data/captures`, `data/runtime/learning-captures` 로 정정.
+
+- `packages/shared` 가 커밋에 없어 helper 무변경 확인 — 20곳 넘는 호출부 계약 보존
+- CLI `--root` > `SANGFOR_LEARNING_STRATEGY_ROOT` > default 우선순위 유지
+- 신규 `tests/learning-path-contracts.test.ts` 가 새 형태 존재와 옛 형태 부재를 **양방향으로 pin** (요구 이상)
+- 격리 clone 검증: 659 passed + 2 skipped, lint/build, observer E2E(storage 0, mutation delta 0, PID/page invariant true), MCP 85-tool smoke 전부 exit 0. Grok staged diff review APPROVE (C/H/M 0)
+- Master 독립 확인: branch 미변경, worktree clean, upstream tracking 없음 → push 흔적 없음
 
 ## 해소됨 — 오너 사후 승인 (2026-07-28)
 
