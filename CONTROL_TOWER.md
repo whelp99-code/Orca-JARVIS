@@ -69,6 +69,26 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
 8. ~~디스크 95%~~ — **93%, 여유 30Gi 로 개선.** 추가 회수 여지는 개발 영향 없이는 없음
 9. ~~유휴 터미널 4개~~ — **close 완료.** 15→11
 
+## P7 / production verifier 하드닝 — PR #153 (2026-07-29)
+
+사후 리뷰 MED-1/MED-2 를 닫는 작업. **커밋 전 · PR 후 · 병합 전 세 지점 모두 Master 판정을 거쳤다** —
+지난 라운드(CI 그린 + 자체 리뷰로 병합까지 진행)와 대비되는 정상 경로다.
+
+- 커밋 전 판정 `msg_fa4a004ebcbc` APPROVE — 워크트리 실제 diff 를 읽고 판정. 4파일 정확히 허용 범위.
+- PR 후 판정 `msg_0cdadc728f57` 내용 APPROVE + 병합 보류 — diff stat 이 승인본과 일치(+110/−1), 끼어든 커밋 없음.
+- 병합 허가 `msg_d8dc8cc05b73` — 오너 승인 후. 체크 6/6 SUCCESS, `mergeable=MERGEABLE`, head 가 승인 커밋 `7adf4bb2` 그대로임을 확인.
+
+**수정 내용.** `isDeniedNonceHost` 가 대괄호를 벗겨 주소를 분류한다 — IPv4 `0/8`·`10/8`·`127/8`·`169.254/16`·
+`172.16/12`·`192.168/16`, IPv6 `::`/`::1`·`fe80::/10`·`fc00::/7`·`::ffff:0:0/96` 로 매핑된 위 IPv4,
+호스트명 `localhost`·후행점·`*.localhost`. `validateComposeModel` 에 api/web
+`SANGFOR_PROCESS_PROFILE === "production"` 검사 추가.
+
+**Master 가 직접 확인한 회귀 위험(워커 미보고).** `docker-compose.production.yml:5` 의 `x-runtime-environment` 가
+해당 값을 설정하고 api(180)·web(205)이 앵커를 상속한다 → 새 검사가 실제 배포 검증을 깨지 않는다.
+
+**비차단 잔여(이번 PR 범위 밖으로 유지).** `::127.0.0.1`(→`[::7f00:1]`, RFC 4291 폐기 형식이라 실제 도달성 없음) /
+`64:ff9b::/96` NAT64 프리픽스 / `100.64.0.0/10` CGNAT·`198.18.0.0/15` / 루프백으로 해석되는 공개 DNS 이름.
+
 ## P6 사후 적대적 리뷰 — 2026-07-29 08:00 (병합본 `a3554aec`, 범위 `24e31420..a3554aec` 49 files +1743/−154)
 
 오너 지시로 병합 후 리뷰 수행. Master 메인 루프에서 직접, 편집 없이 읽기만. **CRITICAL/HIGH 0.**
@@ -214,7 +234,7 @@ Master 채널 밖에서 `origin/main` 이 세 번 갱신됐다. `git reflog show
 |---|---|---|---|---|
 | P1 | sangfor-engineer-mcp<br>`Playground/whelp99-code-sangfor-engineer-mcp` | `term_92dea65a` (grok) | `task_4a7fd29b5001` / `ctx_63c3af94cb6c` | **완료** — 아래 참조 |
 | P2 | sangfor-os-w0-w6<br>`Playground/sangfor-os-w0-w6` | `term_d4bb2736` (gpt-5.6-sol) | dispatch 없음 (status 통보만) | 종결 (`msg_e8f5b4029023`) — main `a3554aec` 병합, **Master 게이트 미통과분 존재** |
-| P7 | sangfor-os main 검증 하드닝 | `term_d4bb2736` (gpt-5.6-sol) | `task_d2982ce6b91b` / `ctx_f77e4275378f` | **진행 중** — 사후 리뷰 MED-1/MED-2 수정. **병합 전 관제탑 판정 필수**(지난 라운드 게이트 우회 재발 방지) |
+| P7 | sangfor-os main 검증 하드닝 | `term_d4bb2736` (gpt-5.6-sol) | `task_d2982ce6b91b` / `ctx_f77e4275378f` | **병합 허가됨** (2026-07-29, `msg_d8dc8cc05b73`) — PR #153 `7adf4bb2`, 체크 6/6 SUCCESS, 오너 승인. 아래 P7 절 참조 |
 | P3 | u076-hardening<br>`orca/workspaces/sangfor-os/u076-hardening` | `term_ec10446c` (codex) | `task_b48b89c0282a` / `ctx_d7b5757d017e` | **완료** — 아래 참조 |
 | P4 | wiki-spike<br>`orca/Wiki-spike/wiki-spike` | `term_9847a992` (claude) | `task_ae43f74d373e` / `ctx_b4f5d1765d67` | **완료** — 아래 참조 |
 | P4b | wiki-spike (후속 보존) | `term_9847a992` (claude) | `task_f72e2b3da55d` / `ctx_3ee836605c6e` | **완료** — `ce6e8b1`(red-team 58건 정합), `c084d79`(리포트 영속화 + `.DS_Store` ignore) |
