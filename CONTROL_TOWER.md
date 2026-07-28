@@ -26,8 +26,9 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
    로컬 미푸시 3건은 `ce6e8b1` / `c084d79` / `5203a63`, 나머지 3건(`edbb920`·`d7fafa6`·`16eee5d`)은
    원격에 PR 머지본으로 이미 존재하는 같은 작업의 직접 커밋 사본이다.
 2. **sangfor-os `origin/main` 직접 푸시 3건이 채널 밖에서 발생** — 아래 "미기록 활동" 절 참조. 오너 확인 필요.
-3. `term_d4bb2736` (sangfor-os-w0-w6, gpt-5.6-sol) 자율 진행 1시간 1분째, 결론 미보고. 커밋 없음
-   (HEAD `c1061c36` 은 07-25 것, upstream 과 0/0 동기, dirty 는 `?? tmp/` 하나뿐)
+3. `term_d4bb2736` (sangfor-os-w0-w6, gpt-5.6-sol) — production-deploy 산출물이 **REJECT** 판정을 받고
+   재작업 대기 중(아래 P6). 푸시 3건 실행 주체 확인 질의도 회신 대기(`msg_f3b5a4604714`).
+   외부 AC-DOD-09 는 워커가 owner-controlled 로 분류
 4. `term_48b73d39` (wiki-spike GJC) 생존 — `Awaiting hardening agents` 로 하위 에이전트 대기 중
 5. **IAG pilot 은 아직 BLOCKED** (`term_e539cb05` 최종 보고, 종전 미기록). 잔여 조건 2개:
    IAG 13.0.120 공식 문서 page verification, verified firmware truth 생성. 증거 부재로 draft research·promotion 은 정상 거부 상태
@@ -37,6 +38,31 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
 9. 유휴·고아 터미널 4개 정리 후보: `term_43ae63c7` (스크롤백 cursor 0, 완전 공백),
    `term_54f67939` (빈 프롬프트), `term_eb37fb82`·`term_ba47991d` (에이전트 없는 셸,
    후자의 cwd `u076-hardening` 은 이미 소멸)
+
+## P6 / sangfor-os production-deploy — 적대적 리뷰 **REJECT** (2026-07-28 23:05)
+
+`term_d4bb2736` 가 HIGH 우선순위로 요청(`msg_06bcd89a2fe7`), Master 메인 루프에서 직접 수행.
+대상 `orca/workspaces/sangfor-os/production-deploy` (branch `fix/production-deploy-path`, HEAD `24e31420` = main).
+회신 `msg_7b238c7f9235`. **편집 없음 — staged diff 와 소스만 읽음.**
+
+범위 정정: 워커는 7개 파일로 보고했으나 실제 staged 는 **16개**. 미보고분에 `release-gate.manifest.json`,
+CI 워크플로 2개, `.gitignore`, `package.json`, docs 2개, `apps/web/Dockerfile.production` 삭제(−65)가 포함.
+
+| 등급 | 항목 |
+|---|---|
+| HIGH-1 | 런타임이 least-privilege DB 롤을 쓰지 않는다. `packages/db/src/index.ts:3` 이 `new PrismaClient()` 무인자 + schema.prisma datasource 가 `env("DATABASE_URL")` → 소유자 롤 `sangfor` 로 접속. `SANGFOR_APP_DATABASE_URL` 참조는 전부 테스트·QA 하네스뿐. scoped 테이블의 `FORCE ROW LEVEL SECURITY` 로 행 스코핑은 살지만, `audit_logs` 의 `REVOKE ALL FROM sangfor_app_login` 계열 롤 기반 통제는 무력. **RLS 그린 증거가 프로덕션 접속 주체를 대표하지 않음 = false-green** |
+| HIGH-2 | 롤백 경로 부재. migrate 선행 후 헬스체크 실패 시 스키마만 전진하고 되돌림 수단 없음 |
+| MED-1 | `verify-production-deploy.mjs` 의 `compose.stderr \|\| compose.stdout` — 실패 시 시크릿 보간된 전체 compose 설정이 예외 메시지로 유출 |
+| MED-2 | 검증기 갭. bypass 플래그·`internal:true` 를 env 파일에서만 보고 compose 모델에서는 안 봄 |
+| MED-3 | 변경이 index 에만 있어 `deploy-production.sh` 의 dirty-worktree 거부에 자기가 걸린다 — 현 상태로 실증 불가 |
+| MED-4 | `AUTH_DEMO_PASSWORD` 를 프로덕션 필수값으로 강제 — IdP 전환 전까지 오너 결정 사항 |
+| LOW | `IMAGE_TAG` 기본값 `local` + compose 에 `build:` 잔존(프로버넌스), CSP 부재, `parseEnvFile` 이 compose 문법보다 엄격 |
+
+**오탐으로 확인하고 제외한 4건** (검증 없이 올렸으면 전부 잘못된 지적이었다):
+`AUTH_PROFILE:""` 는 엄격 모드가 맞다(`runtime-profile.ts:8` 이 `z.literal("local_mock")`) /
+`app-role-init` 의 `ALTER ROLE` 은 롤 부재로 실패하지 않는다(`20260715160000_rls_pilot/migration.sql:17-18` 이 생성) /
+공개 프록시된 `/api/metrics` 는 `PROTECTED_ROUTE_MATRIX` 에 있어 인증 유지 /
+데이터 서비스는 호스트 포트 미개방 + `backend: internal: true`.
 
 ## 미기록 활동 — sangfor-os `main` 푸시 3건 (2026-07-28 21:57 / 22:07 / 22:19)
 
