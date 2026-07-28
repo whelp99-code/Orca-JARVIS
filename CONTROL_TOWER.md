@@ -92,7 +92,7 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
 
 | 등급 | 항목 |
 |---|---|
-| MED-1 | **nonce authority 의 "원격" 보장이 실질적으로 없다.** `production-authority.mjs` 가 `["localhost","127.0.0.1","::1"].includes(hostname)` 세 문자열만 막는다. `127.0.0.2` / `127.1` / `0.0.0.0` / `[::ffff:127.0.0.1]` / `2130706433` / `localhost.`(후행 점) / 루프백으로 해석되는 DNS 이름 / `169.254.169.254`(클라우드 메타데이터)가 전부 통과한다. 이 URL 은 외부 승인 nonce 를 소비해 재사용을 막는 **유일한 독립 권위**인데 로컬을 가리키면 자기 승인이 된다. 파일이 root 소유 0600 이라 공격이 아니라 **오설정 방어** 영역. → 해석 후 루프백·사설·링크로컬 대역 거부 필요 |
+| MED-1 | **nonce authority 의 "원격" 보장이 작동하지 않는다 — `node` 로 실측 확인.** `production-authority.mjs` 가 `["localhost","127.0.0.1","::1"].includes(hostname)` 로 검사하는데 **`"::1"` 항목은 죽은 코드**다. `new URL("https://[::1]/").hostname` 이 대괄호를 포함한 `"[::1]"` 을 반환해 이 비교는 영원히 false — 막으려던 IPv6 루프백이 그대로 통과한다. 통과 확인: `[::1]`, `[::ffff:127.0.0.1]`(→`[::ffff:7f00:1]`), `0.0.0.0`, `127.0.0.2`(127/8 의 .1 이외 전부), `localhost.`, `a.localhost`, `169.254.169.254`, `10.0.0.5`, `192.168.1.1`. **정정**: `127.1`·`2130706433`·`0x7f.1` 은 WHATWG URL 이 `127.0.0.1` 로 정규화해 이미 차단된다(최초 기재 오류). 이 URL 은 외부 승인 nonce 재사용을 막는 **유일한 독립 권위**라 로컬을 가리키면 자기 승인이 성립. 파일이 root 소유 0600 이라 공격보다 **오설정 방어** 영역 |
 | MED-2 | **compose 검증기가 `SANGFOR_PROCESS_PROFILE` 을 확인하지 않는다.** `login/route.ts` 는 `resolveProcessProfile()==="production"` 으로 인증 모드를 가른다. 이 값이 빠지면 데모 분기로 떨어지고, `AUTH_DEMO_PASSWORD` 가 금지라 결과는 **503 전면 로그인 불능**. 보안 우회는 아니지만(fail-closed), 12개 넘는 항목을 검사하면서 인증 모드를 결정하는 단 하나의 변수를 안 본다 — 전면 장애가 배포 검증을 통과한다 |
 | LOW-MED | **사용자 열거 타이밍이 남아 있다.** scrypt 비용은 `DUMMY_DIGEST` 로 균질화됐지만 **DB 쓰기는 아니다.** 미존재 사용자 → `UPDATE` 없음 / 존재+오답 → `UPDATE` 1회 / 잠긴 계정 → `UPDATE` 없음. 응답 시간으로 세 상태가 구분된다. 워커의 "unknown-user timing 균질화" 주장은 scrypt 구간 한정이다 |
 | LOW | `loadProductionAuthority` 의 approvalKeys 가드가 **빈 객체를 통과시킨다** — `Object.values({}).every(...)` 는 true. 하위에서 키 조회 실패로 fail-closed 되지만 "approval keys missing" 가드는 제 역할을 못한다 |
@@ -213,7 +213,8 @@ Master 채널 밖에서 `origin/main` 이 세 번 갱신됐다. `git reflog show
 | 채널 | 프로젝트 / 체크아웃 | 메인 에이전트 | task / dispatch | 담당 |
 |---|---|---|---|---|
 | P1 | sangfor-engineer-mcp<br>`Playground/whelp99-code-sangfor-engineer-mcp` | `term_92dea65a` (grok) | `task_4a7fd29b5001` / `ctx_63c3af94cb6c` | **완료** — 아래 참조 |
-| P2 | sangfor-os-w0-w6<br>`Playground/sangfor-os-w0-w6` | `term_d4bb2736` (gpt-5.6-sol) | dispatch 없음 (status 통보만) | **종결** (2026-07-29 07:40, `msg_e8f5b4029023`) — main `a3554aec` 병합, 워커 유휴. **Master 게이트 미통과분 존재**, 위 P6 종결 절 참조 |
+| P2 | sangfor-os-w0-w6<br>`Playground/sangfor-os-w0-w6` | `term_d4bb2736` (gpt-5.6-sol) | dispatch 없음 (status 통보만) | 종결 (`msg_e8f5b4029023`) — main `a3554aec` 병합, **Master 게이트 미통과분 존재** |
+| P7 | sangfor-os main 검증 하드닝 | `term_d4bb2736` (gpt-5.6-sol) | `task_d2982ce6b91b` / `ctx_f77e4275378f` | **진행 중** — 사후 리뷰 MED-1/MED-2 수정. **병합 전 관제탑 판정 필수**(지난 라운드 게이트 우회 재발 방지) |
 | P3 | u076-hardening<br>`orca/workspaces/sangfor-os/u076-hardening` | `term_ec10446c` (codex) | `task_b48b89c0282a` / `ctx_d7b5757d017e` | **완료** — 아래 참조 |
 | P4 | wiki-spike<br>`orca/Wiki-spike/wiki-spike` | `term_9847a992` (claude) | `task_ae43f74d373e` / `ctx_b4f5d1765d67` | **완료** — 아래 참조 |
 | P4b | wiki-spike (후속 보존) | `term_9847a992` (claude) | `task_f72e2b3da55d` / `ctx_3ee836605c6e` | **완료** — `ce6e8b1`(red-team 58건 정합), `c084d79`(리포트 영속화 + `.DS_Store` ignore) |
