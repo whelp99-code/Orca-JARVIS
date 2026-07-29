@@ -69,6 +69,26 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
 8. ~~디스크 95%~~ — **93%, 여유 30Gi 로 개선.** 추가 회수 여지는 개발 영향 없이는 없음
 9. ~~유휴 터미널 4개~~ — **close 완료.** 15→11
 
+## HIGH-1 실환경 종결 검증 — 2026-07-29 (Master 직접 실측)
+
+리허설 스택이 기동된 상태에서 Master 가 `docker exec` 로 직접 확인했다. **이틀 전 HIGH-1 로 올린
+"RLS 그린 증거가 프로덕션 접속 주체를 대표하지 않는다(false-green)" 가 실환경에서 종결됐다.**
+
+- 활성 연결 주체: `sangfor_runtime_login` **3 conns**(API·Web 런타임), `sangfor_app_login` 1(스코프 바운드),
+  `sangfor` 1(= Master 의 psql 세션 본인). **런타임이 소유자 롤로 붙지 않는다.**
+- 롤 속성: `sangfor_runtime_login` super=false **bypassrls=false** inherit=true /
+  `sangfor_app`·`sangfor_app_login` bypassrls=false noinherit / `sangfor`(소유자) super=true bypassrls=true.
+- DDL 거부 실측: `SET ROLE sangfor_runtime_login; CREATE TABLE ...` → `ERROR: permission denied for schema public`.
+- TRUNCATE 거부 실측: `TRUNCATE audit_logs` → `ERROR: permission denied for table audit_logs`.
+  **감사로그 보호가 롤 수준에서 실제로 작동한다** — HIGH-1 에서 무력하다고 지적했던 바로 그 통제다.
+
+리허설 Layer 1 통과 증거(워커 보고, Master 가 컨테이너 상태로 교차 확인): 스택 5개 컨테이너 healthy,
+Caddy 내부 CA 경유 HTTPS `LOGIN_HTTP=200 CURL_EXIT=0`, authMode=jwt, 3-segment JWT, 인증 홈 200,
+DB 세션 행 생성(tenant/company/project = rehearsal-*), 쿠키 mode 0600. DB 는 `sangfor_rehearsal` 로 분리됐다.
+
+리허설 중 발견된 실제 결함 1건: **키링 시각(timestamp) 정규화가 필요했다** — 정규화 전 API·Web 이 healthy 로
+올라오지 않았다. 실제 컷오버에서 동일하게 재현될 항목이므로 최종 리포트에 남길 것을 워커에 요구한다.
+
 ## 실운영 전환 — 오너 결정 (2026-07-29)
 
 오너 지시 "오늘 sangfor-os 실운영이 가능하도록 처리". Master 조사 결과 **하드 게이트 3개가 전부 코드 밖 외부 의존성**이었다.
