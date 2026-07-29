@@ -3,7 +3,12 @@
 이 리포지터리는 코드를 담지 않는다. JARVIS Master(사람 ↔ 프로젝트별 메인 에이전트)의 **소통 창구**다.
 운영 규율은 [ORCA_MASTER_CHARTER.md](ORCA_MASTER_CHARTER.md)를 따른다.
 
-- 관제탑 터미널(coordinator handle): `term_771c9810-de0c-4323-a90d-de30f6cef334` (`/Users/jmpark/Orca-JARVIS`)
+- 관제탑 터미널(coordinator handle): `term_681e162b-c9df-4955-b70d-f0ab110baf7e` (`/Users/jmpark/Orca-JARVIS`)
+  - **2026-07-29 갱신.** Orca 재시작으로 전 핸들이 재발급됐다. 구 핸들 `term_771c9810-de0c-4323-a90d-de30f6cef334` 은 죽었다.
+  - **교훈(실사고): Orca 재시작 후에는 관제탑이 가장 먼저 자기 핸들을 재확인해야 한다.** 핸들이 죽은 사이
+    워커의 blocking 질문이 닿지 않아 pre-commit 게이트가 600초 타임아웃됐고, 워커의 `worker_done` 도
+    pane 불일치로 Orca 에 거부됐다. 워커는 게이트를 우회하지 않고 재발행하며 대기해 피해가 없었다.
+    `orca terminal read` 가 `terminal_handle_stale` 을 반환하면 즉시 전체 핸들을 재조사한다.
 - 모든 워커는 `worker_done` / `escalation` / `ask` 를 위 handle 로 보낸다.
 - 개설: 2026-07-28
 
@@ -279,7 +284,7 @@ Master 채널 밖에서 `origin/main` 이 세 번 갱신됐다. `git reflog show
 | P1 | sangfor-engineer-mcp<br>`Playground/whelp99-code-sangfor-engineer-mcp` | `term_92dea65a` (grok) | `task_4a7fd29b5001` / `ctx_63c3af94cb6c` | **완료** — 아래 참조 |
 | P2 | sangfor-os-w0-w6<br>`Playground/sangfor-os-w0-w6` | `term_d4bb2736` (gpt-5.6-sol) | dispatch 없음 (status 통보만) | 종결 (`msg_e8f5b4029023`) — main `a3554aec` 병합, **Master 게이트 미통과분 존재** |
 | P7 | sangfor-os main 검증 하드닝 | `term_d4bb2736` (gpt-5.6-sol) | `task_d2982ce6b91b` / `ctx_f77e4275378f` | **완료·종결** — PR #153 병합(`7be58a16`), `7adf4bb2` 가 origin/main 조상 확인. 체크 6/6 SUCCESS |
-| P8 | sangfor-os 실운영 전환 | `term_d4bb2736` (gpt-5.6-sol) | `task_b189994e77af` / `ctx_3cb502d0add2`, `task_6bc86df1e3c4`(대기) | **진행 중** — U076 권위 재실행 → 로컬 리허설. 컷오버는 외부 게이트 대기 |
+| P8 | sangfor-os 실운영 전환 | `term_a8102741` (gpt-5.6-sol, 구 `term_d4bb2736`) | `task_b189994e77af` / `ctx_3cb502d0add2`, `task_6bc86df1e3c4`(대기) | **진행 중** — U076 권위 재실행 → 로컬 리허설. 컷오버는 외부 게이트 대기 |
 | P3 | u076-hardening<br>`orca/workspaces/sangfor-os/u076-hardening` | `term_ec10446c` (codex) | `task_b48b89c0282a` / `ctx_d7b5757d017e` | **완료** — 아래 참조 |
 | P4 | wiki-spike<br>`orca/Wiki-spike/wiki-spike` | `term_9847a992` (claude) | `task_ae43f74d373e` / `ctx_b4f5d1765d67` | **완료** — 아래 참조 |
 | P4b | wiki-spike (후속 보존) | `term_9847a992` (claude) | `task_f72e2b3da55d` / `ctx_3ee836605c6e` | **완료** — `ce6e8b1`(red-team 58건 정합), `c084d79`(리포트 영속화 + `.DS_Store` ignore) |
