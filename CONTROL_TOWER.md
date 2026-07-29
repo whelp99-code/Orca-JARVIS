@@ -69,6 +69,30 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
 8. ~~디스크 95%~~ — **93%, 여유 30Gi 로 개선.** 추가 회수 여지는 개발 영향 없이는 없음
 9. ~~유휴 터미널 4개~~ — **close 완료.** 15→11
 
+## 실운영 전환 — 오너 결정 (2026-07-29)
+
+오너 지시 "오늘 sangfor-os 실운영이 가능하도록 처리". Master 조사 결과 **하드 게이트 3개가 전부 코드 밖 외부 의존성**이었다.
+
+| 차단 요소 | 실측 근거 |
+|---|---|
+| 원격 HTTPS nonce authority 부재 | 리포 전체에 소비 코드만 존재(`verify-production-readiness.mjs`, `lib/production-authority.mjs`, 그 테스트). **서비스 구현 없음** |
+| AC-DOD-09 외부 승인 미실행 | `connector-external-smoke-protocol.md` 가 "**future** credentialed external smoke verification" 스텁. 외부 승인자의 Ed25519 키 + 스테이징 자격증명 + 명시적 인간 승인 필요 |
+| 운영 인프라 미정 | 호스트·도메인·DNS·시드된 운영 계층이 어떤 문서에도 없음. `DEFAULT_TENANT_ID/COMPANY_ID/PROJECT_ID` 가 가리킬 실체 부재 |
+
+**오너 결정 2건.**
+1. 경로: **오늘은 리허설까지, 실제 컷오버는 인프라 준비 후.** 통제 완화 우회는 선택하지 않았다.
+2. 운영 호스트: **이 맥북에서 로컬로 운영.** 별도 서버·공인 도메인 없음 → ACME 불가, Caddy 내부 CA 경로.
+
+**걸어 둔 작업(순차 — 동시 실행 시 포트·컨테이너·디스크 충돌).**
+- `task_b189994e77af` / `ctx_3cb502d0add2` **진행 중** — main 이 `7be58a16` 로 이동해 기존 `a3554aec` 기준
+  acceptance 가 후보에 바인딩되지 않는다. 새 SHA 권위 U076 재실행. 어느 경로를 택하든 필요한 무조건 작업.
+- `task_6bc86df1e3c4` **대기** — 이 호스트 운영 배포 경로 전체 리허설. U076 완료 후 디스패치.
+
+**리허설의 성격.** 목적은 통과가 아니라 **결함 노출**이다. 외부 승인 게이트는 설계상 로컬에서 충족 불가다 —
+PR #153 이 사설·루프백 nonce authority 를 막았기 때문이다. 리허설은 그 지점까지 도달해 실패를 증거로 남기고
+끝난다. **그 실패를 없애려 게이트를 완화하는 것은 금지**로 명시했다. sudo 도 워커가 실행하지 않고
+오너가 붙여 넣을 명령 목록으로 넘긴다.
+
 ## P7 / production verifier 하드닝 — PR #153 (2026-07-29)
 
 사후 리뷰 MED-1/MED-2 를 닫는 작업. **커밋 전 · PR 후 · 병합 전 세 지점 모두 Master 판정을 거쳤다** —
@@ -234,7 +258,8 @@ Master 채널 밖에서 `origin/main` 이 세 번 갱신됐다. `git reflog show
 |---|---|---|---|---|
 | P1 | sangfor-engineer-mcp<br>`Playground/whelp99-code-sangfor-engineer-mcp` | `term_92dea65a` (grok) | `task_4a7fd29b5001` / `ctx_63c3af94cb6c` | **완료** — 아래 참조 |
 | P2 | sangfor-os-w0-w6<br>`Playground/sangfor-os-w0-w6` | `term_d4bb2736` (gpt-5.6-sol) | dispatch 없음 (status 통보만) | 종결 (`msg_e8f5b4029023`) — main `a3554aec` 병합, **Master 게이트 미통과분 존재** |
-| P7 | sangfor-os main 검증 하드닝 | `term_d4bb2736` (gpt-5.6-sol) | `task_d2982ce6b91b` / `ctx_f77e4275378f` | **병합 허가됨** (2026-07-29, `msg_d8dc8cc05b73`) — PR #153 `7adf4bb2`, 체크 6/6 SUCCESS, 오너 승인. 아래 P7 절 참조 |
+| P7 | sangfor-os main 검증 하드닝 | `term_d4bb2736` (gpt-5.6-sol) | `task_d2982ce6b91b` / `ctx_f77e4275378f` | **완료·종결** — PR #153 병합(`7be58a16`), `7adf4bb2` 가 origin/main 조상 확인. 체크 6/6 SUCCESS |
+| P8 | sangfor-os 실운영 전환 | `term_d4bb2736` (gpt-5.6-sol) | `task_b189994e77af` / `ctx_3cb502d0add2`, `task_6bc86df1e3c4`(대기) | **진행 중** — U076 권위 재실행 → 로컬 리허설. 컷오버는 외부 게이트 대기 |
 | P3 | u076-hardening<br>`orca/workspaces/sangfor-os/u076-hardening` | `term_ec10446c` (codex) | `task_b48b89c0282a` / `ctx_d7b5757d017e` | **완료** — 아래 참조 |
 | P4 | wiki-spike<br>`orca/Wiki-spike/wiki-spike` | `term_9847a992` (claude) | `task_ae43f74d373e` / `ctx_b4f5d1765d67` | **완료** — 아래 참조 |
 | P4b | wiki-spike (후속 보존) | `term_9847a992` (claude) | `task_f72e2b3da55d` / `ctx_3ee836605c6e` | **완료** — `ce6e8b1`(red-team 58건 정합), `c084d79`(리포트 영속화 + `.DS_Store` ignore) |
