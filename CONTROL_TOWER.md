@@ -3,18 +3,20 @@
 이 리포지터리는 코드를 담지 않는다. JARVIS Master(사람 ↔ 프로젝트별 메인 에이전트)의 **소통 창구**다.
 운영 규율은 [ORCA_MASTER_CHARTER.md](ORCA_MASTER_CHARTER.md)를 따른다.
 
-- 관제탑 터미널(coordinator handle): `term_681e162b-c9df-4955-b70d-f0ab110baf7e` (`/Users/jmpark/Orca-JARVIS`)
-  - **2026-07-29 갱신.** Orca 재시작으로 전 핸들이 재발급됐다. 구 핸들 `term_771c9810-de0c-4323-a90d-de30f6cef334` 은 죽었다.
+- 관제탑 터미널(coordinator handle): `term_8ea40ebd-9369-4ff2-b24a-e6f63b9a8648` (`GJC: Orca-JARVIS`,
+  `/Volumes/DevSpace/Orca-JARVIS`) — **2026-08-06 실측 확인**(connected/writable).
+- 모든 워커는 `worker_done` / `escalation` / `ask` 를 `term_8ea40ebd-9369-4ff2-b24a-e6f63b9a8648` 로 보낸다.
+- 핸들 이력(전부 사망):
+  - `term_681e162b-c9df-4955-b70d-f0ab110baf7e` — 2026-07-29~08-06 사용. `orca terminal show` 가
+    `terminal_handle_stale` 반환(2026-08-06 실측).
+  - `term_771c9810-de0c-4323-a90d-de30f6cef334` — 2026-07-28 사용. Orca 재시작으로 실효.
+  - 채널 맵의 워커 핸들(`term_92dea65a`·`term_d4bb2736`·`term_9847a992`·`term_ec10446c`·`term_3b560a10`·
+    `term_a8102741`·`term_e539cb05`·`term_48b73d39`)도 2026-08-06 터미널 목록에 일치 항목이 하나도 없어
+    전부 실효. 새 채널 맵은 아래 "채널 맵 — 2026-08-06" 절.
   - **교훈(실사고): Orca 재시작 후에는 관제탑이 가장 먼저 자기 핸들을 재확인해야 한다.** 핸들이 죽은 사이
     워커의 blocking 질문이 닿지 않아 pre-commit 게이트가 600초 타임아웃됐고, 워커의 `worker_done` 도
     pane 불일치로 Orca 에 거부됐다. 워커는 게이트를 우회하지 않고 재발행하며 대기해 피해가 없었다.
     `orca terminal read` 가 `terminal_handle_stale` 을 반환하면 즉시 전체 핸들을 재조사한다.
-- **2026-08-06 갱신.** `term_681e162b` 는 `orca terminal show` 실측 결과 `terminal_handle_stale` — 사망 확인.
-  새 관제탑 핸들은 `term_8ea40ebd-9369-4ff2-b24a-e6f63b9a8648` (`GJC: Orca-JARVIS`, connected/writable 실측).
-  채널 맵의 다른 구 핸들(`term_92dea65a`·`term_d4bb2736`·`term_9847a992`·`term_ec10446c`·`term_3b560a10`·
-  `term_a8102741`·`term_e539cb05`·`term_48b73d39`)도 현재 터미널 목록(43개)에 일치하는 핸들이 하나도 없어
-  전부 실효로 판정. 아래 "2026-08-06 실측 갱신" 절 참조.
-- 모든 워커는 `worker_done` / `escalation` / `ask` 를 위 handle 로 보낸다.
 - 개설: 2026-07-28
 
 ## 세션 재개 (새 세션은 이 절만 읽으면 된다)
@@ -63,20 +65,21 @@ Orca 실측으로 재조사한 결과다. 과거 절은 보존하며, 이 절이
 
 **옛 미해결 목록의 현 상태.**
 
-1. wiki-spike `main` 분기(6 ahead / 24 behind) — 수치 재실측 필요. 기록 시점 이후 워크트리·브랜치가
-   움직였고(`docs-root-cleanup`, `second-brain-operational-authority-adapter` 워크트리 실존), 정합·force
-   push 금지 지시는 그대로 유효.
+1. wiki-spike `main` 분기(6 ahead / 24 behind) — **아래 "현재 미해결 — 2026-08-06" 절에서 0/0 으로 해소 확인.**
+   기록 시점 이후 워크트리·브랜치가 움직였고(`docs-root-cleanup`, `second-brain-operational-authority-adapter`
+   워크트리 실존), 정합·force push 금지 지시는 그대로 유효.
 2. P6/P8 계열(`term_d4bb2736`/`term_a8102741`) — 핸들 전부 실효. sangfor-os 는 main-fork `20dbc00`
    (#165, 07-31)로 이동했고 Playground/sangfor-os 는 별도 브랜치 작업 중. U076·리허설 라인의 완결 여부는
    리포 실측으로 재확인 필요.
 3. `term_48b73d39` (wiki-spike GJC) — 핸들 실효. wiki-spike 작업은 다른 체크아웃에서 지속 중.
 4. IAG pilot BLOCKED — 해당 채널(`term_e539cb05`) 실효. 잔여 조건 2개(13.0.120 문서 검증, firmware
    truth)는 오너 재지시 전까지 상태 변화 없음으로 기록.
-5. 옛 채널 맵의 터미널·task·dispatch 좌표는 전부 구 핸들이라 실효. 새 채널 맵은 터미널 위생 분류와
-   Run 조사 완료 후 다시 그린다.
+5. 옛 채널 맵의 터미널·task·dispatch 좌표는 전부 구 핸들이라 실효. **새 채널 맵은 아래
+   "채널 맵 — 2026-08-06 (정본)" 절에 작성 완료** — 터미널 위생 분류(35개) 기준.
 
-**변경 없음(실측).** 이 리포(Orca-JARVIS)는 `main` 브랜치, tracked clean, 원격 없음. 미추적 잔여
-(`.DS_Store`, `.gjc/`, `.serena/`, `PROJECT_INVENTORY.md`)만 존재.
+**이 리포(실측).** Orca-JARVIS 는 `main` 브랜치, 원격 없음. 조사 시점의 미추적 잔여
+(`.DS_Store`, `.gjc/`, `.serena/`, `PROJECT_INVENTORY.md`)는 아래 "현재 미해결 — 2026-08-06" 7번에서
+`.gitignore` 추가 + 인벤토리 커밋으로 처리 완료.
 
 ## 터미널 위생 분류 — 2026-08-06 23:51 (43 → 35)
 
@@ -104,15 +107,15 @@ close 후 재실측: **35개** (43 − 8 = 35 정확히 일치. 8개 전부 목�
 
 **활성 — 7개 (에이전트 실행 중, 보존):**
 
-| 핸들 | 제목 | 근거 (preview 실측) |
-|------|------|---------------------|
-| `term_8ea40ebd` | GJC: Orca-JARVIS | 관제탑 자신 — Working |
-| `term_deef777e` | GJC: whelp99-code-sangfor-engineer-mcp | Working |
-| `term_f0228f8d` | GJC: ProofGraph-Graph-Native-v7.0.0 | Awaiting terminal critic |
-| `term_3c8996d3` | GJC: JM-AI Master Worker | Working |
-| `term_3cb5cd37` | GJC: daggertooth | Reading opencode client config |
-| `term_7ea47317` | GJC: wiki-spike | Measuring time and evidence digests |
-| `term_e24ff067` | WinRM 및 로그 전송 보안 검토 | 실행 중(3m38s·↑14k tokens) |
+| 핸들 | 제목 | 경로 | 근거 (preview 실측) |
+|------|------|------|---------------------|
+| `term_8ea40ebd` | GJC: Orca-JARVIS | Orca-JARVIS | 관제탑 자신 — Working |
+| `term_deef777e` | GJC: whelp99-code-sangfor-engineer-mcp | engineer-mcp | Working |
+| `term_f0228f8d` | GJC: ProofGraph-Graph-Native-v7.0.0 | ProofGraph | Awaiting terminal critic |
+| `term_3c8996d3` | GJC: JM-AI Master Worker | JM-AI Master Worker | Working |
+| `term_3cb5cd37` | GJC: daggertooth | sangfor-os/daggertooth | Reading opencode client config |
+| `term_7ea47317` | GJC: wiki-spike | wiki-spike | Measuring time and evidence digests |
+| `term_e24ff067` | WinRM 및 로그 전송 보안 검토 | ITAC-security-essentials | 실행 중(3m38s·↑14k tokens) |
 
 **고아·보존 — 4개 (JM-AI Master Worker):** `term_6b919fdc`·`term_98d042ef`·`term_d335a24c`·
 `term_af98ddcc`. `orphaned=true` 지만 스크롤백 81–85행 보유라 규칙상 close 불가 — 내용 보존 필요.
@@ -495,7 +498,29 @@ Master 채널 밖에서 `origin/main` 이 세 번 갱신됐다. `git reflog show
 현재 모든 프로젝트의 핵심 작업이 미커밋 상태로 기존 체크아웃에 있어서, 새 체크아웃에는 그 작업이 딸려오지 않는다.
 한 체크아웃에 워커가 둘 이상일 때는 파일 범위를 서로 겹치지 않게 금지 조항으로 분리한다.
 
-## 채널 맵 (2026-07-28)
+## 채널 맵 — 2026-08-06 (정본)
+
+2026-08-06 터미널 위생 분류(35개) 기준으로 다시 그렸다. 옛 07-28 맵의 핸들·task·dispatch 좌표는 전부
+실효라 아래 절에 원문만 보존한다. "활성 에이전트"는 preview 에서 실행 중이 확인된 핸들이다.
+
+| 채널 | 프로젝트 / 체크아웃 | 터미널 | 활성 에이전트 | 상태 |
+|---|---|---|---|---|
+| C1 | sangfor-engineer-mcp<br>`Playground/whelp99-code-sangfor-engineer-mcp` | 4 | `term_deef777e` (GJC) | 활성. 오늘 PR #11 머지, `feat/plan-closeout`=origin/main, dirty 5 |
+| C2 | ProofGraph-Graph-Native-v7.0.0<br>`Playground/ProofGraph-Graph-Native-v7.0.0` | 4 | `term_f0228f8d` (GJC) | 활성. PiDelegatedAdapter per-call 옵션 작업 |
+| C3 | JM-AI Master Worker<br>`Playground/JM AI-OS Pack/JM-AI Master Worker` | 14 | `term_3c8996d3` (GJC) | 활성. 최대 스트림. 고아 4개(스크롤백 보유) 폐기 판단 대기 |
+| C4 | JM-AI Action Hub<br>`Playground/JM AI-OS Pack/JM-AI Action Hub` | 0 (빈 셸 4개 close) | — | Run 3개 조사 완료. iOS-XCTEST·LIVE-ACCEPTANCE 오너 결정 대기 |
+| C5 | sangfor-os daggertooth<br>`orca/workspaces/sangfor-os/daggertooth` | 2 | `term_3cb5cd37` (GJC) | 활성. tip `a95cc66` = #194 Codex Spark |
+| C6 | Playground/sangfor-os | 2 | — | 유휴. `feat/codex-spark-llm` 미푸시 10커밋 |
+| C7 | wiki-spike<br>`orca/Wiki-spike/wiki-spike` | 2 | `term_7ea47317` (GJC) | 활성. `docs-root-cleanup` 미푸시 2커밋 |
+| C8 | ITAC-security-essentials<br>`Projects/ITAC-security-essentials` | 4 | `term_e24ff067` | 활성. WinRM·로그 전송 보안 검토 |
+| C9 | EvoHarvest<br>`Playground/JM AI-OS Pack/EvoHarvest` | 2 | — | 유휴. 통신 테스트 이력만 |
+| C10 | Orca-JARVIS (관제탑) | 1 | `term_8ea40ebd` | 이 세션 |
+| — | sangfor-os main-fork<br>`orca/workspaces/sangfor-os/main-fork` | 0 | — | 터미널 없음. origin/main 대비 28 behind, dirty 58 — 동기화 판단 대기 |
+| — | wiki-spike-collector<br>`orca/Wiki-spike/wiki-spike-collector` | 0 | — | 터미널 없음. dirty 12, tip `c2be765`(08-01) |
+
+터미널 합계 4+4+14+0+2+2+2+4+2+1 = **35** — 위 위생 분류 수치와 일치.
+
+## 채널 맵 (2026-07-28) — **실효: 핸들·task·dispatch 좌표 전부 무효. 위 "채널 맵 — 2026-08-06" 이 정본. 아래는 원문 보존.**
 
 | 채널 | 프로젝트 / 체크아웃 | 메인 에이전트 | task / dispatch | 담당 |
 |---|---|---|---|---|
