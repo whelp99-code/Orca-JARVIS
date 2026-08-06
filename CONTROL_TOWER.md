@@ -149,6 +149,96 @@ close 후 재실측: **35개** (43 − 8 = 35 정확히 일치. 8개 전부 목�
 
 검산: 활성 7 + 고아 4 + 유휴 24 = 35 = close 후 실측 수.
 
+## JM-AI Action Hub Run 3개 상태 — 2026-08-06 실측 (읽기 전용 조사)
+
+2026-08-02 생성된 Phase 1–3 Run 을 `run-show`·`task-list --run`·`gate-list --run`·`dispatch-show` 로
+조회했다(바인딩 변경 없음). 결정 게이트는 3개 Run 전부 **0건** — PENDING 항목들은 게이트가 아니라
+Run 목적문·분류 텍스트다. 리포 체크아웃(`jm-ai-action-hub-focus-suite-v0.9.0-ios-v0.2.1`, 브랜치
+`hardening/local-complete-20260804`, porcelain clean)의 `evidence/` 로 교차 확인했다.
+
+| Run | 단계 | 좌표 터미널 | 태스크 현황 |
+|-----|------|------------|-------------|
+| `run_21bd633062ba` | Phase 1 | 해제됨(null) | 7/7 completed |
+| `run_4efa4f962b2c` | Phase 2 | 해제됨(null) | completed 6 / blocked 2 / failed 1 (아래 참조) |
+| `run_b7a9c71893ad` | Phase 3 | `term_666865d2` — **사망**(`terminal_handle_stale` 실측) | completed 2 / failed 3 (아래 참조) |
+
+**Phase 1 — 종결.** CARD-01-01~04 전부 completed. 추가 조치 없음.
+
+**Phase 2 — 실질 종결, 원장에 잔여 상태 3건.**
+- `CARD-02-03`(blocked)·`CARD-02-03-R1`(blocked)은 **원장 잔여**다. 당시 워커가 범위 밖 전제조건
+  (root LICENSE·NOTICE 부재, `.env.example` 에 `ACTION_HUB_MOBILE_RECOMMENDED_IOS_APP_VERSION` 부재)으로
+  에스컬레이션 후 응답을 못 받아 막혔으나(`msg_1ee9ae52ed43`), 후속 `CARD-02-03-R2` 가 fail-closed
+  정정으로 **completed** — 앞선 blocked 2건은 대체된 상태다.
+- `CARD-02-04 remainder`(failed)는 소유 범위 밖 Ruff 11건에 막혔으나 `CARD-02-04-R1` 이 **completed** 로 닫음.
+- Wave 02 LunaMax revision R2 completed.
+
+**Phase 3 — 로컬 완료, 원장과 디스크 증거가 불일치한다.**
+- `CARD-03-01` completed(backup/restore 하드닝·리허설). `CARD-03-R1` 첫 시도 failed 후 재디스패치 completed.
+- `CARD-03-02`(failed) 보고는 `verify.sh`=4 였다 — conftest import 시 `StarletteDeprecationWarning` 승격.
+  **이건 이후 해소됐다**: 디스크의 R2 독립 검증(`evidence/lunamax-wave03-final-r2-review.md`)이 `verify.sh`=0
+  (174 passed, 83.17%, `VERIFY_OK`), `make verify`=0, acceptance-local 기준 1–5 PASS
+  (`LOCAL_PASS_EXTERNAL_PENDING`)를 실측으로 기록했다.
+- `CARD-03-R2`(failed, `last_failure="stopped"`)는 디스패치가 1분47초 만에 멈췄지만 **실제 작업은 수행됐다** —
+  워커(`/root/wave03_r2_terra`, gpt-5.6-terra)가 R2 를 끝냈고 `evidence/wave-03-final.json`(21:51)이
+  `DONE_LOCAL_PASS`, 초기 HIGH 2·MEDIUM 2 전부 CLOSED 를 기록. **원장의 failed 는 디스패치 정지 사고고,
+  디스크 증거는 PASS.** 좌표 터미널 사망으로 원장 정정이 안 된 채 남아 있다.
+
+**남아 있는 실제 게이트 2개 (코드 문제가 아님).**
+
+1. **iOS-XCTEST PENDING** — `ios/scripts/verify_release.sh`=1, 유일한 실패가 `no such module XCTest`.
+   Xcodeproj/OpenAPI/static 검사는 전부 PASS. 이 호스트에 전체 Xcode 가 없어 XCTest 빌드가 불가한
+   **환경 부재**다. 오너 결정: 전체 Xcode 설치 후 재실행, 또는 pending 수용 명시.
+2. **LIVE-ACCEPTANCE PENDING / CARD-03-03 금지** — `evidence/production-acceptance-20260802T203926Z.json`
+   의 유일한 blocker 가 `LIVE_ACCEPTANCE_PENDING (사용자 인프라 필요)`. 기준 1–5는 전부 PASS(각 SHA-256
+   바인딩). CARD-03-03 은 Run 목적문에서 에이전트 실행이 금지돼 있다 — 오너의 라이브 인프라·인간 승인
+   일정만 남았다. 경로: `docs/operations/ACTION_HUB_PRODUCTION_ACCEPTANCE.md`.
+
+**오너 결정 필요.**
+- Run 3개 종결 처리: Phase 1·2 는 좌표 해제 상태로 사실상 종결. Phase 3 은 좌표 터미널 사망 + 원장
+  불일치(디스크 PASS vs 원장 failed)라, 새 좌표를 바인딩해 원장을 증거에 맞게 정정하거나 종결 선언 후
+  아카이브하는 판단이 필요하다. 본 조사는 읽기 전용이라 Run·태스크 상태를 건드리지 않았다.
+- iOS 전체 Xcode 설치 여부.
+- 라이브 인수(CARD-03-03) 일정.
+
+**참고(실측).** 리포 브랜치는 08-04 이후 추가 커밋(improvement plan v2, B-01 master-worker completion
+pull channel 등)으로 이동 중이며 JM-AI Master Worker 터미널 14개가 이 계열 작업이다. Wave 03 당시
+`UNCOMMITTED_WORKTREE` 였던 산출물은 현 브랜치에 커밋돼 있고 워크트리는 clean 이다.
+
+## 현재 미해결 — 2026-08-06 (07-28 목록 대체)
+
+아래 표는 전부 `git fetch` 후 실측한 값이다. 07-28 "현재 미해결" 목록은 아래 절에서 원문 보존하되
+이 절로 대체됐다(표시 추가). merge·rebase·push 없이 조사만 했다.
+
+**리포 스냅샷 (vs origin/main):**
+
+| 리포 / 체크아웃 | 브랜치 | ahead/behind | dirty | 비고 |
+|-----------------|--------|--------------|-------|------|
+| wiki-spike 메인 체크아웃 | `docs-root-cleanup` | 2/0 | 미추적 4 | **`main` 은 origin/main 과 0/0 — 옛 "6 ahead / 24 behind" 분기 해소됨.** 미푸시 2: `1264a1b`(DB-05 shadow window), `71ae623`(status reports 이동) |
+| wiki-spike-collector 워크트리 | `second-brain-operational-authority-adapter` | 미대조 | 12 | tip `c2be765`(08-01) |
+| sangfor-os main-fork | `local-recovery/main-fork` | 0/**28** | 58 (M30/D18/??10) | 원격 최신 28커밋 미반영. dirty 최대: `services/production-nonce-authority` 13, `apps/web` 6, `.claude/skills` 4 |
+| Playground/sangfor-os | `feat/codex-spark-llm` | **10**/0 | 미추적 1 | 미푸시 10: ADR-008 RLS 스코프 계약, replay 리포트, finance 챗봇 OPENAI_BASE_URL, 토큰 상한, U073 unscoped 면제 등 |
+| sangfor-os daggertooth 워크트리 | `whelp99-code/daggertooth` | 미대조 | 1 | tip `a95cc66` = #194 Codex Spark 배선(08-05) |
+| sangfor-engineer-mcp | `feat/plan-closeout`(=origin/main) | 0/0 | M3 + 미추적 2 | 오늘 PR #11(officecli-documents) 머지. dirty: AGENTS.md·PPTX·tsconfig |
+| Action Hub 체크아웃 | `hardening/local-complete-20260804` | — | 0 | Run 상태 절 참조 |
+| Orca-JARVIS | `main` | 원격 없음 | 미추적 4 | 이 리포. `pelican` 은 별개 워크트리(`/orca/workspaces/Orca-JARVIS/pelican`, dirty 1) |
+
+**미해결 항목.**
+
+1. **sangfor-os main-fork 동기화 판단 필요.** 28커밋 뒤처졌고 dirty 58 중 삭제 18·수정 30이
+   nonce-authority·web 에 집중돼 있다. 섣부른 pull/checkout 은 금지(공통 금지 사항). dirty 분류 후
+   fast-forward 가능 여부·충돌 범위를 오너가 판단한다.
+2. **Playground/sangfor-os 미푸시 10커밋.** push 금지 규칙으로 보존 중. 단, codex-spark 작업 일부가
+   daggertooth 경유 #194 로 upstream 에 이미 머지돼 있어 브랜치와 upstream 간 중복 범위 대조가 필요하다.
+3. **wiki-spike `docs-root-cleanup` 미푸시 2커밋.** push 판단 대기. 옛 미해결 1번(main 분기)은 해소로 종결.
+4. **JM-AI Action Hub** — iOS-XCTEST(전체 Xcode 부재)·LIVE-ACCEPTANCE(오너 인프라)·Run 3개 종결 처리.
+   위 "JM-AI Action Hub Run 3개 상태" 절 참조.
+5. **IAG pilot** — 채널 실효, 상태 변화 없음. 오너 재지시 대기.
+6. **sangfor-os 실운영 컷오버** — 원격 nonce authority·AC-DOD-09·운영 인프라 외부 게이트 3개는 07-29
+   판단 그대로 유효. 그 사이 리포가 #165 까지 이동했지만 게이트 성격은 불변. 컷오버 재개 시점에
+   U076 기준 SHA 재바인딩이 필요하다는 점만 추가된다.
+7. **이 리포 미추적 잔여 처리(결정 완료).** `.gjc/`·`.serena/`·`.DS_Store` 는 런타임·도구 잔여라
+   `.gitignore` 추가. `PROJECT_INVENTORY.md`(2026-07-31 인덱스)는 실체 문서라 커밋.
+
 ## 오너 일괄 승인 처리 — 2026-07-28 23:35 (전부 완료)
 
 오너 지시 "모두 진행해, 개발에 영향이 없어야 한다". 제약을 만족하는 경로만 택했다.
@@ -180,7 +270,7 @@ close 후 재실측: **35개** (43 − 8 = 35 정확히 일치. 8개 전부 목�
 `Library/pnpm` 7.5G, `Caches/ms-playwright` 1.0G)는 전부 개발·세션 상태라 대상 아님.
 **빌드 캐시 외에 개발 영향 없이 회수할 수 있는 대형 공간은 남아 있지 않다.**
 
-**현재 미해결 (2026-07-28 22:50 실측 갱신)**
+**현재 미해결 (2026-07-28 22:50 실측 갱신)** — **대체됨: 위 "현재 미해결 — 2026-08-06" 절이 정본. 아래는 원문 보존.**
 
 회수 대기 중인 dispatch 없음. 열린 orchestration task 0건(21 completed / 1 failed-종결). 열린 gate 0건.
 
