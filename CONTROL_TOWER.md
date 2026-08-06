@@ -78,6 +78,77 @@ Orca 실측으로 재조사한 결과다. 과거 절은 보존하며, 이 절이
 **변경 없음(실측).** 이 리포(Orca-JARVIS)는 `main` 브랜치, tracked clean, 원격 없음. 미추적 잔여
 (`.DS_Store`, `.gjc/`, `.serena/`, `PROJECT_INVENTORY.md`)만 존재.
 
+## 터미널 위생 분류 — 2026-08-06 23:51 (43 → 35)
+
+라이브 터미널 43개 전수를 `terminal list` 메타데이터(제목·orphaned·preview)와 `terminal read`
+스크롤백 실측으로 분류했다. 판정 규칙(2026-07-28): 스크롤백 0 + 역할 제목 없음 + 유휴만 close.
+
+**측정 실수 정정.** 첫 스크롤백 측정이 응답 필드를 잘못 읽어(`lines` 대신 `tail`·`returnedLineCount`가
+정답) 후보 12개 전부 0으로 잘못 보고됐다. 재실측에서 고아 4개가 81–85행(약 4천 자) 스크롤백 보유로
+드러나 close 대상에서 제외했다. 잘못된 측정 기반 close 는 실행 전 차단됨.
+
+**close 실행 — 8개.** 전부 스크롤백 0행 0자 + 제목 없음 실측 확인 후 실행:
+
+| 핸들 | 경로 | 결과 |
+|------|------|------|
+| `term_975d1adc` | jarvis-ai | `tab_not_found` (목록에서 제거 확인) |
+| `term_09538a61` | jarvis-ai | Closed, PTY killed |
+| `term_b203719d` | jarvis-ai | Closed, PTY killed |
+| `term_cb33ff4d` | JM-AI Action Hub | Closed, PTY killed |
+| `term_0d320713` | JM-AI Action Hub | Closed, PTY killed |
+| `term_26985e38` | JM-AI Action Hub | `tab_not_found` (목록에서 제거 확인) |
+| `term_0fdaa32f` | JM-AI Action Hub | Closed, PTY killed |
+| `term_9f5d6281` | JM-AI Auto Work OS | Closed, PTY killed |
+
+close 후 재실측: **35개** (43 − 8 = 35 정확히 일치. 8개 전부 목록 소멸 확인).
+
+**활성 — 7개 (에이전트 실행 중, 보존):**
+
+| 핸들 | 제목 | 근거 (preview 실측) |
+|------|------|---------------------|
+| `term_8ea40ebd` | GJC: Orca-JARVIS | 관제탑 자신 — Working |
+| `term_deef777e` | GJC: whelp99-code-sangfor-engineer-mcp | Working |
+| `term_f0228f8d` | GJC: ProofGraph-Graph-Native-v7.0.0 | Awaiting terminal critic |
+| `term_3c8996d3` | GJC: JM-AI Master Worker | Working |
+| `term_3cb5cd37` | GJC: daggertooth | Reading opencode client config |
+| `term_7ea47317` | GJC: wiki-spike | Measuring time and evidence digests |
+| `term_e24ff067` | WinRM 및 로그 전송 보안 검토 | 실행 중(3m38s·↑14k tokens) |
+
+**고아·보존 — 4개 (JM-AI Master Worker):** `term_6b919fdc`·`term_98d042ef`·`term_d335a24c`·
+`term_af98ddcc`. `orphaned=true` 지만 스크롤백 81–85행 보유라 규칙상 close 불가 — 내용 보존 필요.
+워커 산출물 여부 확인 후 오너가 폐기 결정.
+
+**유휴·보존 — 24개 (제목 또는 스크롤백 있음):**
+
+| 핸들 | 제목 | 경로 |
+|------|------|------|
+| `term_46a70d8e` | ..-engineer-mcp | engineer-mcp |
+| `term_b01ef450` | ✳ DB 데이터 저장 방식 및 에이전트 지원 분석 | engineer-mcp |
+| `term_a1567c30` | Pi | engineer-mcp |
+| `term_f0c76126` | ✳ 현재 프로젝트 상황 파악 | ProofGraph |
+| `term_d140f743` | OMP ready | ProofGraph |
+| `term_b05edcac` | PiDelegatedAdapter per-call 옵션 구현 | ProofGraph |
+| `term_59cc4d8a` | Pi | Playground/sangfor-os |
+| `term_a5f3f8e3` | ..nd/sangfor-os | Playground/sangfor-os |
+| `term_bd52fc29` | OMP ready | JM-AI Master Worker |
+| `term_3f3dc40c` | Pi | JM-AI Master Worker |
+| `term_c0970dd9` | ✳ 마스터 이전 내용 파악 및 작업 진행 | JM-AI Master Worker |
+| `term_e82a350d` | 인증 점검 핑 테스트 | JM-AI Master Worker |
+| `term_11297c57` | Auth Check Ping READY-GROK Test - grok | JM-AI Master Worker |
+| `term_28e4563c` | agy | JM-AI Master Worker |
+| `term_58238a0c` | ..Master Worker | JM-AI Master Worker |
+| `term_80dc1dfc` | ..Master Worker | JM-AI Master Worker |
+| `term_9aedd9a0` | ✳ Explore | JM-AI Master Worker |
+| `term_430e16f5` | ✳ 마스터 오퍼레이터 통신 테스트 | EvoHarvest |
+| `term_1d2481f3` | ✳ 마스터 오퍼레이터 통신 테스트 | EvoHarvest |
+| `term_a037116f` | Pi ready | wiki-spike |
+| `term_93681fc7` | ✳ ITAC 보안 필수사항 점검 계획 수립 | ITAC-security-essentials |
+| `term_d8d11467` | Qwen - ITAC-security-essentials | ITAC-security-essentials |
+| `term_e6b32cd3` | ..ty-essentials | ITAC-security-essentials |
+| `term_3dbc58db` | ..s/daggertooth | sangfor-os/daggertooth |
+
+검산: 활성 7 + 고아 4 + 유휴 24 = 35 = close 후 실측 수.
+
 ## 오너 일괄 승인 처리 — 2026-07-28 23:35 (전부 완료)
 
 오너 지시 "모두 진행해, 개발에 영향이 없어야 한다". 제약을 만족하는 경로만 택했다.
