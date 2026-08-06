@@ -500,8 +500,10 @@ Master 채널 밖에서 `origin/main` 이 세 번 갱신됐다. `git reflog show
 
 ## 채널 맵 — 2026-08-06 (정본)
 
-2026-08-06 터미널 위생 분류(35개) 기준으로 다시 그렸다. 옛 07-28 맵의 핸들·task·dispatch 좌표는 전부
-실효라 아래 절에 원문만 보존한다. "활성 에이전트"는 preview 에서 실행 중이 확인된 핸들이다.
+2026-08-06 터미널 위생 분류(35개) 기준으로 다시 그리고, 00:5x 재실측(37개)까지 반영했다. 옛 07-28 맵의
+핸들·task·dispatch 좌표는 전부 실효라 아래 절에 원문만 보존한다. "활성 에이전트"는 preview 에서 실행
+중이 확인된 핸들이다. **포함 규칙: 라이브 터미널이 있거나, 터미널이 없어도 미해결 작업이 남은 체크아웃.**
+close 로 0이 된 뒤 잔여 작업도 없는 체크아웃(jarvis-ai 3개, JM-AI Auto Work OS 1개 close)은 등재하지 않는다.
 
 | 채널 | 프로젝트 / 체크아웃 | 터미널 | 활성 에이전트 | 상태 |
 |---|---|---|---|---|
@@ -515,10 +517,12 @@ Master 채널 밖에서 `origin/main` 이 세 번 갱신됐다. `git reflog show
 | C8 | ITAC-security-essentials<br>`Projects/ITAC-security-essentials` | 4 | `term_e24ff067` | 활성. WinRM·로그 전송 보안 검토 |
 | C9 | EvoHarvest<br>`Playground/JM AI-OS Pack/EvoHarvest` | 2 | — | 유휴. 통신 테스트 이력만 |
 | C10 | Orca-JARVIS (관제탑) | 1 | `term_8ea40ebd` | 이 세션 |
+| C11 | wiki-spike qwen-works<br>`orca/workspaces/wiki-spike/qwen-works` | 2 | — | 유휴(빈 셸 2개, 위생 분류 이후 신규). 옛 P4 채널의 재활성 |
 | — | sangfor-os main-fork<br>`orca/workspaces/sangfor-os/main-fork` | 0 | — | 터미널 없음. origin/main 대비 28 behind, dirty 58 — 동기화 판단 대기 |
 | — | wiki-spike-collector<br>`orca/Wiki-spike/wiki-spike-collector` | 0 | — | 터미널 없음. dirty 12, tip `c2be765`(08-01) |
 
-터미널 합계 4+4+14+0+2+2+2+4+2+1 = **35** — 위 위생 분류 수치와 일치.
+터미널 합계 4+4+14+0+2+2+2+4+2+1+2 = **37** (23:51 위생 분류 시점 35 + 이후 신규 qwen-works 2).
+위생 분류 절의 35는 그 시점 스냅샷이고, 이 맵은 00:5x 재실측 기준이다 — 라이브 환경이라 수치는 계속 움직인다.
 
 ## 채널 맵 (2026-07-28) — **실효: 핸들·task·dispatch 좌표 전부 무효. 위 "채널 맵 — 2026-08-06" 이 정본. 아래는 원문 보존.**
 
