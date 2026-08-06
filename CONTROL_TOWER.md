@@ -9,6 +9,11 @@
     워커의 blocking 질문이 닿지 않아 pre-commit 게이트가 600초 타임아웃됐고, 워커의 `worker_done` 도
     pane 불일치로 Orca 에 거부됐다. 워커는 게이트를 우회하지 않고 재발행하며 대기해 피해가 없었다.
     `orca terminal read` 가 `terminal_handle_stale` 을 반환하면 즉시 전체 핸들을 재조사한다.
+- **2026-08-06 갱신.** `term_681e162b` 는 `orca terminal show` 실측 결과 `terminal_handle_stale` — 사망 확인.
+  새 관제탑 핸들은 `term_8ea40ebd-9369-4ff2-b24a-e6f63b9a8648` (`GJC: Orca-JARVIS`, connected/writable 실측).
+  채널 맵의 다른 구 핸들(`term_92dea65a`·`term_d4bb2736`·`term_9847a992`·`term_ec10446c`·`term_3b560a10`·
+  `term_a8102741`·`term_e539cb05`·`term_48b73d39`)도 현재 터미널 목록(43개)에 일치하는 핸들이 하나도 없어
+  전부 실효로 판정. 아래 "2026-08-06 실측 갱신" 절 참조.
 - 모든 워커는 `worker_done` / `escalation` / `ask` 를 위 handle 로 보낸다.
 - 개설: 2026-07-28
 
@@ -20,6 +25,58 @@
 ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어받아라.
 추측으로 상태를 만들지 말고 실제 Orca 상태를 읽어라. 미해결 항목부터 보고해.
 ```
+
+## 2026-08-06 실측 갱신 (문서 공백 8일 — 상태 재조사)
+
+문서 최종 커밋 `53883af`(2026-07-29 10:43) 이후 관제탑 기록이 멈춰 있었다. 2026-08-06 23:16 KST 기준
+Orca 실측으로 재조사한 결과다. 과거 절은 보존하며, 이 절이 현 상태의 정본이다.
+
+**관제탑 핸들.** `term_681e162b` 사망 확인(`terminal_handle_stale`). 현 핸들
+`term_8ea40ebd-9369-4ff2-b24a-e6f63b9a8648`. 2026-07-29 교훈 절차 그대로 — 재시작 후 핸들 재확인.
+
+**터미널.** 라이브 **43개** (마지막 정리 시점 11개). 경로별 분포 실측(23:24 스냅샷 — 라이브 환경이라
+수치는 계속 움직임. 23:16 측정 40개 → 23:24 측정 43개):
+
+| 수 | 경로 | 비고 |
+|---|------|------|
+| 14 | `Playground/JM AI-OS Pack/JM-AI Master Worker` | 문서 미기록 워크스트림 |
+| 4 | `Playground/whelp99-code-sangfor-engineer-mcp` | 오늘 PR #11 머지(19:30) |
+| 4 | `Playground/ProofGraph-Graph-Native-v7.0.0` | 문서 미기록 |
+| 4 | `Playground/JM AI-OS Pack/JM-AI Action Hub` | 아래 Run 3개 참조 |
+| 3 | `~/Downloads/01.Pilot_Coding/jarvis-ai` | 문서 미기록 |
+| 2 | `Playground/sangfor-os` | 오늘 `feat/codex-spark-llm` ADR-008 커밋 |
+| 2 | `Playground/JM AI-OS Pack/EvoHarvest` | 문서 미기록 |
+| 2 | `orca/Wiki-spike/wiki-spike` | 오늘 `docs-root-cleanup` DB-05 커밋 |
+| 2 | `orca/workspaces/sangfor-os/daggertooth` | 문서 미기록 워크트리 |
+| 4 | `Projects/ITAC-security-essentials` | 문서 미기록 |
+| 1 | `Orca-JARVIS` | 관제탑 자신 |
+| 1 | `Playground/JM AI-OS Pack/JM-AI Auto Work OS` | 문서 미기록 |
+
+**오케스트레이션 Run.** `run-list` 실측 — JM-AI Action Hub Phase 1·2·3 Run 3개가 2026-08-02 생성돼 있다
+(`run_21bd633062ba`, `run_4efa4f962b2c`, `run_b7a9c71893ad`). 설명에 `LIVE-ACCEPTANCE PENDING`,
+`iOS-XCTEST PENDING`, `CARD-03-03 prohibited`, 커밋·푸시·서명 금지가 명시. 상세 조사는 진행 중(아래 Run
+상태 절에 기록 예정). legacy Run 2개(`run_legacy_local`, `run_05827a48b020`)는 조회 전용.
+
+**자동화.** `JARVIS Morning Brief` enabled — 주중 09:00, next run 2026-08-07 09:00 KST 실측. 정상.
+
+**디스크.** `/Volumes/DevSpace` 여유 **139Gi, 31% 사용** 실측. 문서의 "93%·여유 30Gi" 서술은 구 정보다.
+
+**옛 미해결 목록의 현 상태.**
+
+1. wiki-spike `main` 분기(6 ahead / 24 behind) — 수치 재실측 필요. 기록 시점 이후 워크트리·브랜치가
+   움직였고(`docs-root-cleanup`, `second-brain-operational-authority-adapter` 워크트리 실존), 정합·force
+   push 금지 지시는 그대로 유효.
+2. P6/P8 계열(`term_d4bb2736`/`term_a8102741`) — 핸들 전부 실효. sangfor-os 는 main-fork `20dbc00`
+   (#165, 07-31)로 이동했고 Playground/sangfor-os 는 별도 브랜치 작업 중. U076·리허설 라인의 완결 여부는
+   리포 실측으로 재확인 필요.
+3. `term_48b73d39` (wiki-spike GJC) — 핸들 실효. wiki-spike 작업은 다른 체크아웃에서 지속 중.
+4. IAG pilot BLOCKED — 해당 채널(`term_e539cb05`) 실효. 잔여 조건 2개(13.0.120 문서 검증, firmware
+   truth)는 오너 재지시 전까지 상태 변화 없음으로 기록.
+5. 옛 채널 맵의 터미널·task·dispatch 좌표는 전부 구 핸들이라 실효. 새 채널 맵은 터미널 위생 분류와
+   Run 조사 완료 후 다시 그린다.
+
+**변경 없음(실측).** 이 리포(Orca-JARVIS)는 `main` 브랜치, tracked clean, 원격 없음. 미추적 잔여
+(`.DS_Store`, `.gjc/`, `.serena/`, `PROJECT_INVENTORY.md`)만 존재.
 
 ## 오너 일괄 승인 처리 — 2026-07-28 23:35 (전부 완료)
 
