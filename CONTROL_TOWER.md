@@ -111,6 +111,15 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
 - **4** blro-preview `sites-preview` 원격 인증
 
 
+
+### 4. blro-preview `sites-preview` (2026-08-10 처리 결과)
+
+- **GitHub canonical:** `origin`/`github` → `whelp99-code/blro-homepage-sites-preview`, tip `0503a03`, 0/0.
+- **sites-preview 직접 푸시:** 불가 확인. Keychain 없음; Codex OAuth access/id/refresh 로 `git.chatgpt-team.site` 인증 실패(`Authentication required`). Sites는 ChatGPT 세션 **단기 자격증명** 경로.
+- **문서:** 로컬 `docs/SITES_PREVIEW_REMOTE.md` — ChatGPT Sites UI에서 save version / deploy.
+- **서버 이전 영향:** 소스 유실 없음. 호스팅 프리뷰 URL만 구버전일 수 있음 → 오너가 Sites UI에서 배포.
+
+
 ## 2026-08-06 실측 갱신 (문서 공백 8일 — 상태 재조사)
 
 문서 최종 커밋 `53883af`(2026-07-29 10:43) 이후 관제탑 기록이 멈춰 있었다. 2026-08-06 23:16 KST 기준
