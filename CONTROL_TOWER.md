@@ -76,6 +76,41 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
 - `node dist/src/cli.js service run --interval-ms 10000` + LaunchAgent `com.jmpark.orca-jarvis` 가동 확인.
 - `live_supervisor_worktrees` 5경로 등록(engineer-mcp, Orca-JARVIS, loop-engineering-labs, wiki-spike, JM-Loop-Miner). 터미널 개수는 Orca 라이브 목록과 1:1 고정이 아님.
 
+
+
+## 2026-08-10 MUST 후속 — PR 머지 + hardening main + worktree 청소
+
+### 1. PR 머지 (완료)
+
+| PR | 결과 |
+|----|------|
+| engineer-mcp **#12** | MERGED → main `5b85c50` (CI verify/validate green) |
+| wiki-spike **#61** | MERGED → main `92670af` (G3/G4/preflight green) |
+
+### 2. hardening → main (완료)
+
+| 저장소 | PR | main tip |
+|--------|-----|----------|
+| EvoHarvest | **#2** MERGED | `e13910b` |
+| JM-AI Auto Work OS | **#2** MERGED | `da97a26` |
+
+### 5. Phase D worktree 청소 (완료)
+
+제거 (remote 브랜치 보존 또는 main 흡수 후):
+
+- sangfor-os: daggertooth, u076 attempt, main-fork(force·로컬 dirty 폐기), u076-main-8d83d2b9(force), loop-graph-pr001(force)
+- engineer-mcp: ooo/orch ratfish, ratfish worktree(force) + merged 로컬 브랜치 8개 삭제
+- Action Hub: real-device-qa, weever + weever 로컬 브랜치 삭제
+- wiki-spike: trevally, ooo/orch, qwen-works(force)
+
+**유지:** `wiki-spike-collector` @ `second-brain-operational-authority-adapter` (main 미머지 작업 브랜치, clean)
+
+### 아직 미실행 (설명만)
+
+- **3** sangfor-os 재푸시 15 브랜치 PR/보관 정책
+- **4** blro-preview `sites-preview` 원격 인증
+
+
 ## 2026-08-06 실측 갱신 (문서 공백 8일 — 상태 재조사)
 
 문서 최종 커밋 `53883af`(2026-07-29 10:43) 이후 관제탑 기록이 멈춰 있었다. 2026-08-06 23:16 KST 기준
