@@ -31,13 +31,39 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
 ## 2026-08-10 실측 갱신 및 오너 지시 반영
 
 1. **JM-AI Action Hub 완전 동기화 및 해소**:
-   - 2026-08-09 PR #2~#8 완결 (모바일 Focus 워크플로우 `5e435a0`, 음성 입력 크래시 수정, KeyChain 스탈 크레덴셜 해소, 249개 테스트 통과).
+   - 2026-08-09 PR #2~#8 완결 (모바일 Focus 워크플로우 `5e435a0`, 음성 입력 크래시 수정, KeyChain 스탈 크레덴셜 해소, 249개 테스트 통과 — 2026-08-09 기록, 2026-08-10 세션에서는 재실행하지 않음).
    - 2026-08-10 로컬 리포지토리 `git pull` 완료 (05034e7 -> 5e435a0 fast-forward). Action Hub의 이전 미해결/PENDING 항목 해소 확인.
+   - 2026-08-10 12:54 KST 재실측: `main` @ `5e435a0`, `origin/main` 0/0, porcelain clean.
 2. **`pelican` 워크트리 및 브랜치 제거**:
    - 오너 방침 ("서브 브랜치/D-1 불필요, `main` 단일 브랜치만 사용")에 따라 `pelican` 워크트리 및 브랜치를 완전히 제거함.
-   - `Orca-JARVIS`는 단일 `main` 브랜치로 구동됨.
+   - `Orca-JARVIS`는 단일 `main` 브랜치로 구동됨 (remote 없음 — 로컬 관제 장부).
 3. **`sangfor-os` canonical 메인 저장소 동기화 완결 확인**:
-   - 2026-08-10 실시간 실측 결과, 미사용 레거시 워크트리(`main-fork`)의 구 기록과 달리 실제 메인 저장소(`/Volumes/DevSpace/Playground/sangfor-os`)는 `main` 브랜치 최신 커밋(`72fe1f1`, PR #197)까지 `origin/main`과 100% 동기화 및 clean 상태임을 실측 확인. 추가 코드 수정/동기화 불필요.
+   - 커밋 그래프: `main` @ `72fe1f1` (PR #197), `origin/main` 0/0 — 동기화 맞음.
+   - **정정(2026-08-10 12:54 KST):** 오전 장부의 "100% clean"은 과대 선언이었다. 미추적 `artifacts/disappointment-test-20260805/`가 남아 있었음. 로컬 QA 덤프로 확인 후 삭제하여 porcelain clean 복구.
+
+## 2026-08-10 12:54 KST — 브리핑 교차검증 후 정돈 실행
+
+오너 승인으로 오전 브리핑 교차검증 결과의 잔여 작업을 실행했다.
+
+### 완료
+
+1. **sangfor-engineer-mcp** (`/Volumes/DevSpace/Playground/whelp99-code-sangfor-engineer-mcp`)
+   - 브랜치: `feat/plan-closeout` @ `d0f17d8` (로컬; `origin/main` 대비 4 commits ahead, 브랜치 remote 미푸시).
+   - 커밋 `d0f17d8`: OCR-first CAPTCHA handshake (`scripts/captcha-handshake.ts` + test 3건 PASS), `device-collect.ts` 연동, 런북 자격증명 plaintext 제거(env 주입), 기능 HTML 문서 추가, `.gjc/`·`omp-session-*.html`·`data/evidence/session_*/` gitignore.
+   - 제외(커밋하지 않음): 개인 경로 `AGENTS.md` 로컬 주입분(원복), 바이너리 PPTX 노이즈(원복), 세션/증거 덤프.
+2. **sangfor-os**: 미추적 disappointment-test 아티팩트 삭제 → `main...origin/main` clean.
+3. **브리핑 오류 기록**: "engineer 미추적 스크립트 2개만"은 과소평가였다(수정 파일·테스트·문서·ignore·미푸시 커밋 포함). wiki-spike "docs-root-cleanup 미푸시"는 구식 — tip은 `origin/docs-root-cleanup`과 0/0.
+
+### 미결 (오너 결정 대기)
+
+1. **sangfor-engineer-mcp 푸시/PR**: `feat/plan-closeout` 로컬 4커밋을 원격에 올릴지, main으로 PR할지.
+2. **wiki-spike** (`/Volumes/DevSpace/orca/Wiki-spike/wiki-spike`): `docs-root-cleanup` @ `340ac67`, origin 0/0, **main 대비 4 commits ahead / 0 behind**. porcelain untracked **21** (artifacts/product-release·conformance, docs/reports HTML, docs/planning, test-results, uv.lock). main 병합 여부 + 아티팩트 커밋/ignore 정책 미결정 — 자동 병합하지 않음.
+3. **Action Hub 249 tests**: 2026-08-09 기록만 존재. 재실행 필요 시 별도 지시.
+
+### 데몬
+
+- `node dist/src/cli.js service run --interval-ms 10000` + LaunchAgent `com.jmpark.orca-jarvis` 가동 확인.
+- `live_supervisor_worktrees` 5경로 등록(engineer-mcp, Orca-JARVIS, loop-engineering-labs, wiki-spike, JM-Loop-Miner). 터미널 개수는 Orca 라이브 목록과 1:1 고정이 아님.
 
 ## 2026-08-06 실측 갱신 (문서 공백 8일 — 상태 재조사)
 
