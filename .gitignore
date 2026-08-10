@@ -2,3 +2,13 @@
 .gjc/
 .serena/
 artifacts/
+node_modules/
+dist/
+*.sqlite
+*.sqlite-wal
+*.sqlite-shm
+*.signing-key.pem
+*.policy-key.pem
+.jarvis-runtime/
+.ouroboros/
+.converge-loop/

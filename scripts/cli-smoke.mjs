@@ -1,0 +1,13 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { spawnSync } from "node:child_process";
+import { generateKeyPairSync } from "node:crypto";
+
+const directory = mkdtempSync(join(tmpdir(), "jarvis-cli-smoke-")); const db = join(directory, "authority.sqlite"); const decision = generateKeyPairSync("ed25519"); const verifier = generateKeyPairSync("ed25519"); const decisionPublic = join(directory, "decision.pub.pem"); const verifierPublic = join(directory, "verifier.pub.pem"); writeFileSync(decisionPublic, decision.publicKey.export({ type: "spki", format: "pem" })); writeFileSync(verifierPublic, verifier.publicKey.export({ type: "spki", format: "pem" }));
+function run(args, expected) { const result = spawnSync(process.execPath, ["dist/src/cli.js", "--db", db, ...args], { encoding: "utf8" }); if (result.status !== expected) throw new Error(`CLI ${args.join(" ")} exit ${result.status}: ${result.stderr}`); const output = JSON.parse(result.stdout || result.stderr); if (output.version !== 1) throw new Error("CLI output was not versioned"); return output; }
+if (!run(["--decision_public", decisionPublic, "--decision_key_id", "decision-smoke", "--decision_principal", "smoke-operator", "--verifier_public", verifierPublic, "--verifier_key_id", "verifier-smoke", "--verifier_principal", "independent-verifier", "init"], 0).ok || !run(["status", "--json"], 0).ok) throw new Error("CLI happy path failed");
+const capabilities = run(["capabilities", "--json"], 0); if (capabilities.gjc !== false || capabilities.live_seed !== false || capabilities.live_dispatch !== false || capabilities.arbitrary_verify_execution !== false || capabilities.self_modify !== false || capabilities.shadow_only !== true) throw new Error("capabilities mismatch");
+for (const args of [["terminal", "send"], ["seed", "issue"], ["self", "modify"], ["work", "verify-execute"]]) { const failure = run(args, 2); if (failure.error?.code !== "UNKNOWN_COMMAND") throw new Error(`unexpected prohibited result ${args.join(" ")}`); }
+const gjc = join(directory, "gjc.json"); writeFileSync(gjc, JSON.stringify({ version: 1, project_id: "gjc-project", target_kind: "gjc", baseline: "b", policy_hash: "p", observed_at: new Date().toISOString(), work: [] })); const gjcFailure = run(["census", "ingest", gjc], 2); if (gjcFailure.error?.code !== "UNSUPPORTED_TARGET") throw new Error("GJC did not fail closed");
+const status = run(["status", "--json"], 0); if (status.pending_outbox !== 0 || (status.states ?? []).length !== 0) throw new Error("prohibited surfaces mutated authority");

@@ -1,0 +1,26 @@
+{
+  "name": "orca-jarvis-shadow",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "engines": { "node": ">=24" },
+  "bin": { "jarvis": "dist/src/cli.js" },
+  "scripts": {
+    "build": "tsc && node scripts/copy-migrations.mjs",
+    "lint": "eslint src tests --max-warnings=0",
+    "pretest": "npm run build",
+    "test": "vitest run --no-file-parallelism",
+    "acceptance:pre-gjc": "node scripts/pre-gjc-acceptance.mjs",
+    "verify": "npm run lint && tsc --noEmit && npm test && npm run acceptance:pre-gjc -- --fixture test/fixtures/pre-gjc-e2e.json --clock 2026-08-09T00:00:00.000Z && npm run build && node scripts/cli-smoke.mjs"
+  },
+  "dependencies": { "better-sqlite3": "^12.2.0" },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.13",
+    "@types/node": "^24.3.0",
+    "@eslint/js": "^9.33.0",
+    "eslint": "^9.33.0",
+    "typescript": "^5.9.2",
+    "typescript-eslint": "^8.39.0",
+    "vitest": "^3.2.4"
+  }
+}

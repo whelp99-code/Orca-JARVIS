@@ -1,0 +1,7 @@
+ALTER TABLE pre_gjc_authority_requests ADD COLUMN authority_kind TEXT NOT NULL DEFAULT 'legacy' CHECK(authority_kind IN ('legacy','approval_required','needs_input'));
+CREATE TRIGGER pre_gjc_authority_requests_runtime_immutable BEFORE UPDATE OF pty_id,worktree_id,prompt_digest,authority_kind ON pre_gjc_authority_requests BEGIN SELECT RAISE(ABORT,'immutable authority runtime binding'); END;
+CREATE TRIGGER pre_gjc_resume_intents_runtime_immutable BEFORE UPDATE OF pty_id,worktree_id,prompt_digest ON pre_gjc_resume_intents BEGIN SELECT RAISE(ABORT,'immutable resume runtime binding'); END;
+CREATE TRIGGER pre_gjc_live_resume_attempts_runtime_immutable BEFORE UPDATE OF pty_id,worktree_id ON pre_gjc_live_resume_attempts BEGIN SELECT RAISE(ABORT,'immutable resume attempt runtime binding'); END;
+CREATE TABLE live_supervisor_live_resume_config_audit (revision INTEGER PRIMARY KEY AUTOINCREMENT, project_id TEXT NOT NULL, enabled INTEGER NOT NULL CHECK(enabled IN (0,1)), config_digest TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TRIGGER live_supervisor_config_audit_immutable_update BEFORE UPDATE ON live_supervisor_live_resume_config_audit BEGIN SELECT RAISE(ABORT,'immutable live resume config audit'); END;
+CREATE TRIGGER live_supervisor_config_audit_immutable_delete BEFORE DELETE ON live_supervisor_live_resume_config_audit BEGIN SELECT RAISE(ABORT,'immutable live resume config audit'); END;

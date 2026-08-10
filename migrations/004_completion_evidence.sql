@@ -1,0 +1,14 @@
+ALTER TABLE continuation_acceptances ADD COLUMN baseline_digest TEXT NOT NULL DEFAULT '';
+ALTER TABLE continuation_acceptances ADD COLUMN policy_hash_bound TEXT NOT NULL DEFAULT '';
+ALTER TABLE continuation_acceptances ADD COLUMN action_digest_bound TEXT NOT NULL DEFAULT '';
+ALTER TABLE continuation_acceptances ADD COLUMN scope_digest_bound TEXT NOT NULL DEFAULT '';
+ALTER TABLE continuation_acceptances ADD COLUMN budget_digest_bound TEXT NOT NULL DEFAULT '';
+ALTER TABLE continuation_acceptances ADD COLUMN authority_expires_at TEXT NOT NULL DEFAULT '';
+ALTER TABLE continuation_acceptances ADD COLUMN idempotency_key TEXT NOT NULL DEFAULT '';
+ALTER TABLE continuation_acceptances ADD COLUMN status TEXT NOT NULL DEFAULT 'accepted';
+CREATE TABLE IF NOT EXISTS verification_evidence (evidence_id TEXT PRIMARY KEY, work_id TEXT NOT NULL UNIQUE REFERENCES work_items(id), payload_json TEXT NOT NULL, signer_key_id TEXT NOT NULL REFERENCES trusted_authority_keys(key_id), signature TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS resolution_census (work_id TEXT PRIMARY KEY REFERENCES work_items(id), followup_digest TEXT NOT NULL, observed_at TEXT NOT NULL, payload_json TEXT NOT NULL, created_at TEXT NOT NULL);
+CREATE TRIGGER immutable_verification_evidence_update BEFORE UPDATE ON verification_evidence BEGIN SELECT RAISE(ABORT, 'immutable verification_evidence'); END;
+CREATE TRIGGER immutable_verification_evidence_delete BEFORE DELETE ON verification_evidence BEGIN SELECT RAISE(ABORT, 'immutable verification_evidence'); END;
+CREATE TRIGGER immutable_resolution_census_update BEFORE UPDATE ON resolution_census BEGIN SELECT RAISE(ABORT, 'immutable resolution_census'); END;
+CREATE TRIGGER immutable_resolution_census_delete BEFORE DELETE ON resolution_census BEGIN SELECT RAISE(ABORT, 'immutable resolution_census'); END;

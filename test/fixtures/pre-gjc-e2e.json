@@ -1,0 +1,493 @@
+{
+  "version": 1,
+  "targets": [
+    {
+      "provider": "codex",
+      "terminal_id": "codex-terminal",
+      "session_id": "codex-session",
+      "incarnation_id": "codex-incarnation",
+      "cursor": "42",
+      "connected": true,
+      "capture_complete": true,
+      "observed_at": "2026-08-09T00:00:00.000Z",
+      "signals": [
+        {
+          "progress_signal": {
+            "schema_version": 1,
+            "source": "provider_bridge",
+            "provider": "codex",
+            "terminal_id": "codex-terminal",
+            "incarnation_id": "codex-incarnation",
+            "cursor": "42",
+            "sequence": "8",
+            "state": "stopped",
+            "reason_code": "jarvis_canonical_final_stopped",
+            "active": true,
+            "observed_at": "2026-08-08T23:59:30.000Z",
+            "event_id": "sha256:c93fd7e4f8f2be6e7b6eab7c66cc1c92e1bb2b137c9284e9cc796f0fc42dd229",
+            "key_id": "codex-progress-signal-key",
+            "algorithm": "Ed25519",
+            "signature": "R1wCFvEnRHFIjUBDIRkW3AvzXu1bevEfshEk8kr6oiDm1r6PCstoj7M42H0oCSl-GMX2dvjNqr8xf0jIK6sGAw"
+          }
+        }
+      ],
+      "trusted_keys": [
+        {
+          "key_id": "codex-progress-signal-key",
+          "purpose": "progress-signal",
+          "provider": "codex",
+          "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAtgQuSJAB3FsR9k/5uu1hfSXoC5eJbfdImXZPLyMQqYc=\n-----END PUBLIC KEY-----\n",
+          "active": true,
+          "not_before": "2026-08-08T23:00:00.000Z",
+          "expires_at": "2026-08-09T01:00:00.000Z"
+        },
+        {
+          "key_id": "codex-verification-key",
+          "purpose": "verification",
+          "provider": "codex",
+          "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEABqTdpQbtxa5uMhNj9XLsxq/zr0P3OmaTWmx1PgERLuE=\n-----END PUBLIC KEY-----\n",
+          "active": true,
+          "not_before": "2026-08-08T23:00:00.000Z",
+          "expires_at": "2026-08-09T01:00:00.000Z"
+        },
+        {
+          "key_id": "codex-census-key",
+          "purpose": "census",
+          "provider": "codex",
+          "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAJ9Ll11DGTjWIm88pRh5J9RxxFLH/Pg64z3UUNk/6DDo=\n-----END PUBLIC KEY-----\n",
+          "active": true,
+          "not_before": "2026-08-08T23:00:00.000Z",
+          "expires_at": "2026-08-09T01:00:00.000Z"
+        },
+        {
+          "key_id": "codex-authority-key",
+          "purpose": "authority-receipt",
+          "provider": "codex",
+          "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAxHwEUKRWhMm6i+dRwqZgMu+thApmZwCRMADK1RkcAR0=\n-----END PUBLIC KEY-----\n",
+          "active": true,
+          "not_before": "2026-08-08T23:00:00.000Z",
+          "expires_at": "2026-08-09T01:00:00.000Z"
+        }
+      ],
+      "evidence": [
+        {
+          "evidence_id": "codex-evidence-1",
+          "project": "codex:codex-terminal:codex-incarnation",
+          "provider": "codex",
+          "terminal_id": "codex-terminal",
+          "session_id": "codex-session",
+          "incarnation_id": "codex-incarnation",
+          "attempt_id": "codex-attempt-1",
+          "lease_id": "codex-lease-1",
+          "fence": 1,
+          "kind": "focused",
+          "argv": [
+            "npm",
+            "run",
+            "focused"
+          ],
+          "cwd": "/workspace",
+          "expected_exit": 0,
+          "actual_exit": 0,
+          "key_id": "codex-verification-key",
+          "issued_at": "2026-08-08T23:59:30.000Z",
+          "signature": "AlXvHz6AGyCMlYWTioWdfWto8VxH_sr2TYcaXNgxef2WaKbjKvPu8SSla0mq67iR6eoVvNysfCp4C84gVlLJCg"
+        },
+        {
+          "evidence_id": "codex-evidence-2",
+          "project": "codex:codex-terminal:codex-incarnation",
+          "provider": "codex",
+          "terminal_id": "codex-terminal",
+          "session_id": "codex-session",
+          "incarnation_id": "codex-incarnation",
+          "attempt_id": "codex-attempt-1",
+          "lease_id": "codex-lease-1",
+          "fence": 1,
+          "kind": "integration",
+          "argv": [
+            "npm",
+            "run",
+            "integration"
+          ],
+          "cwd": "/workspace",
+          "expected_exit": 0,
+          "actual_exit": 0,
+          "key_id": "codex-verification-key",
+          "issued_at": "2026-08-08T23:59:30.000Z",
+          "signature": "R7qS0FJ9RXUMwwU-GVIAAyxtV3Q6LcTMi9WIFRkoVCcR0SZcRaY4qB3yX1QRemcffNeWIz2Sf50K1hSQsFkRDg"
+        },
+        {
+          "evidence_id": "codex-evidence-3",
+          "project": "codex:codex-terminal:codex-incarnation",
+          "provider": "codex",
+          "terminal_id": "codex-terminal",
+          "session_id": "codex-session",
+          "incarnation_id": "codex-incarnation",
+          "attempt_id": "codex-attempt-1",
+          "lease_id": "codex-lease-1",
+          "fence": 1,
+          "kind": "crash_replay",
+          "argv": [
+            "npm",
+            "run",
+            "crash_replay"
+          ],
+          "cwd": "/workspace",
+          "expected_exit": 0,
+          "actual_exit": 0,
+          "key_id": "codex-verification-key",
+          "issued_at": "2026-08-08T23:59:30.000Z",
+          "signature": "OxmUKyY6JSP_V7z3sMN4k8rUIqcgrQM7O1SebyJ46wa9qLsPuIUcyrdeQTklRUVDqJY2T7pLmtMyAtOjS_coAw"
+        },
+        {
+          "evidence_id": "codex-evidence-4",
+          "project": "codex:codex-terminal:codex-incarnation",
+          "provider": "codex",
+          "terminal_id": "codex-terminal",
+          "session_id": "codex-session",
+          "incarnation_id": "codex-incarnation",
+          "attempt_id": "codex-attempt-1",
+          "lease_id": "codex-lease-1",
+          "fence": 1,
+          "kind": "cli",
+          "argv": [
+            "npm",
+            "run",
+            "cli"
+          ],
+          "cwd": "/workspace",
+          "expected_exit": 0,
+          "actual_exit": 0,
+          "key_id": "codex-verification-key",
+          "issued_at": "2026-08-08T23:59:30.000Z",
+          "signature": "91jh1V7N0D8oObbP4AqO1y29OQzn9yKtag7Th-gkI-JwmCHii0OYXB6GyYiQffyg3pvy25hOvxFWJG8M2dfkCQ"
+        },
+        {
+          "evidence_id": "codex-evidence-5",
+          "project": "codex:codex-terminal:codex-incarnation",
+          "provider": "codex",
+          "terminal_id": "codex-terminal",
+          "session_id": "codex-session",
+          "incarnation_id": "codex-incarnation",
+          "attempt_id": "codex-attempt-1",
+          "lease_id": "codex-lease-1",
+          "fence": 1,
+          "kind": "full",
+          "argv": [
+            "npm",
+            "run",
+            "full"
+          ],
+          "cwd": "/workspace",
+          "expected_exit": 0,
+          "actual_exit": 0,
+          "key_id": "codex-verification-key",
+          "issued_at": "2026-08-08T23:59:30.000Z",
+          "signature": "-NEwXlN7Zg503gnhJeSE5VAzutKKWbcyyPfMXEnXEfV4zHILN8yhgxzCuLVhgKIEb5D2kIBxJ4OAFIbkPJToCA"
+        },
+        {
+          "evidence_id": "codex-evidence-6",
+          "project": "codex:codex-terminal:codex-incarnation",
+          "provider": "codex",
+          "terminal_id": "codex-terminal",
+          "session_id": "codex-session",
+          "incarnation_id": "codex-incarnation",
+          "attempt_id": "codex-attempt-1",
+          "lease_id": "codex-lease-1",
+          "fence": 1,
+          "kind": "node24",
+          "argv": [
+            "npm",
+            "run",
+            "node24"
+          ],
+          "cwd": "/workspace",
+          "expected_exit": 0,
+          "actual_exit": 0,
+          "key_id": "codex-verification-key",
+          "issued_at": "2026-08-08T23:59:30.000Z",
+          "signature": "FSrZJRP77Tvq5LK4QwbKbfrdXzVdEmOLD7fAvmwH84jJi6cVlkDDLC5jUbzleOLJHnaHq0MvD-O1dP_8tVa3AA"
+        }
+      ],
+      "census": {
+        "census_id": "codex-census-1",
+        "project": "codex:codex-terminal:codex-incarnation",
+        "provider": "codex",
+        "terminal_id": "codex-terminal",
+        "session_id": "codex-session",
+        "incarnation_id": "codex-incarnation",
+        "census_run_id": "codex-census-run-1",
+        "unresolved": [],
+        "resolved": [
+          "codex-work-1"
+        ],
+        "key_id": "codex-census-key",
+        "issued_at": "2026-08-08T23:59:30.000Z",
+        "signature": "XbmbCqvF_J6mMnqjmKhuTpsPJIlKSOXzrGwVsZHmuCQ7N6rSGLX1JvmJ2wVpxD-Zl6s1iSfpc1rcJ5OeYwB7Dw"
+      },
+      "authority_receipt": {
+        "project_id": "codex:codex-terminal:codex-incarnation",
+        "provider": "codex",
+        "terminal_id": "codex-terminal",
+        "session_id": "codex-session",
+        "incarnation_id": "codex-incarnation",
+        "signal_event_id": "sha256:c93fd7e4f8f2be6e7b6eab7c66cc1c92e1bb2b137c9284e9cc796f0fc42dd229",
+        "attempt_id": "codex-attempt-1",
+        "lease_id": "codex-lease-1",
+        "fence": 1,
+        "expires_at": "2026-08-09T00:00:30.000Z",
+        "receipt_id": "fixture-authority-receipt-codex",
+        "request_id": "request_76772b79a4e1f6590a759a382b7c9e0b7f4049978f58e6e7cb004341c5f59597",
+        "decision": "approve",
+        "key_id": "codex-authority-key",
+        "issued_at": "2026-08-09T00:00:00.000Z",
+        "signature": "XUFPIOLNJRv7Hv2bKNJMJeWdSgf84ZgGOPbiGc0GOfZSYYPx3usaAVrDmmvJsHajvcO_wR3tWxzD-pknyDiHCQ"
+      }
+    },
+    {
+      "provider": "claude",
+      "terminal_id": "claude-terminal",
+      "session_id": "claude-session",
+      "incarnation_id": "claude-incarnation",
+      "cursor": "42",
+      "connected": true,
+      "capture_complete": true,
+      "observed_at": "2026-08-09T00:00:00.000Z",
+      "signals": [
+        {
+          "progress_signal": {
+            "schema_version": 1,
+            "source": "provider_bridge",
+            "provider": "claude",
+            "terminal_id": "claude-terminal",
+            "incarnation_id": "claude-incarnation",
+            "cursor": "42",
+            "sequence": "8",
+            "state": "stopped",
+            "reason_code": "jarvis_canonical_final_stopped",
+            "active": true,
+            "observed_at": "2026-08-08T23:59:30.000Z",
+            "event_id": "sha256:2d88a8072ea349a8e34ae0b49411d9fdcde619806879c7b3ec0c6e0c372b04a3",
+            "key_id": "claude-progress-signal-key",
+            "algorithm": "Ed25519",
+            "signature": "01_7mKoKW9ueoSceFfODTBiRxf4M19qsrAnyrVljkEP-TW7Tx3Hsf0qwd9lbQ-B7huzTDy9fbqh2iwx5GiFtBQ"
+          }
+        }
+      ],
+      "trusted_keys": [
+        {
+          "key_id": "claude-progress-signal-key",
+          "purpose": "progress-signal",
+          "provider": "claude",
+          "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEA4R9P9MLDIu4hYoeAgeAQk7Z93TXNsVuh7Xzn28lbH+c=\n-----END PUBLIC KEY-----\n",
+          "active": true,
+          "not_before": "2026-08-08T23:00:00.000Z",
+          "expires_at": "2026-08-09T01:00:00.000Z"
+        },
+        {
+          "key_id": "claude-verification-key",
+          "purpose": "verification",
+          "provider": "claude",
+          "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAuQA+qJ/jNeBBclMz7oMwZ+8I6iQy0FQ32aWXfcd00h4=\n-----END PUBLIC KEY-----\n",
+          "active": true,
+          "not_before": "2026-08-08T23:00:00.000Z",
+          "expires_at": "2026-08-09T01:00:00.000Z"
+        },
+        {
+          "key_id": "claude-census-key",
+          "purpose": "census",
+          "provider": "claude",
+          "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAb9K+NP142OBfVJ60xsLTvgpe78+k0vY3yeSNFFcgWHY=\n-----END PUBLIC KEY-----\n",
+          "active": true,
+          "not_before": "2026-08-08T23:00:00.000Z",
+          "expires_at": "2026-08-09T01:00:00.000Z"
+        },
+        {
+          "key_id": "claude-authority-key",
+          "purpose": "authority-receipt",
+          "provider": "claude",
+          "public_key_pem": "-----BEGIN PUBLIC KEY-----\nMCowBQYDK2VwAyEAsXzphJzed78JRYUU6jMqqjvrLQ4prxHV17PWZOqaDl8=\n-----END PUBLIC KEY-----\n",
+          "active": true,
+          "not_before": "2026-08-08T23:00:00.000Z",
+          "expires_at": "2026-08-09T01:00:00.000Z"
+        }
+      ],
+      "evidence": [
+        {
+          "evidence_id": "claude-evidence-1",
+          "project": "claude:claude-terminal:claude-incarnation",
+          "provider": "claude",
+          "terminal_id": "claude-terminal",
+          "session_id": "claude-session",
+          "incarnation_id": "claude-incarnation",
+          "attempt_id": "claude-attempt-1",
+          "lease_id": "claude-lease-1",
+          "fence": 1,
+          "kind": "focused",
+          "argv": [
+            "npm",
+            "run",
+            "focused"
+          ],
+          "cwd": "/workspace",
+          "expected_exit": 0,
+          "actual_exit": 0,
+          "key_id": "claude-verification-key",
+          "issued_at": "2026-08-08T23:59:30.000Z",
+          "signature": "gcXko91N5LCMGLpOPJKHf3NwKoOVN7twPxTEGRJDIZsrF5B_3h3tGbwqC3Jjje68M82LwB7-Y6XLK7bvNS9yAQ"
+        },
+        {
+          "evidence_id": "claude-evidence-2",
+          "project": "claude:claude-terminal:claude-incarnation",
+          "provider": "claude",
+          "terminal_id": "claude-terminal",
+          "session_id": "claude-session",
+          "incarnation_id": "claude-incarnation",
+          "attempt_id": "claude-attempt-1",
+          "lease_id": "claude-lease-1",
+          "fence": 1,
+          "kind": "integration",
+          "argv": [
+            "npm",
+            "run",
+            "integration"
+          ],
+          "cwd": "/workspace",
+          "expected_exit": 0,
+          "actual_exit": 0,
+          "key_id": "claude-verification-key",
+          "issued_at": "2026-08-08T23:59:30.000Z",
+          "signature": "IEhhWNoJgL_VFmK_IsrnjKz9wbzShonWbMcpoTOHiTqahWgpm0uKITdt9Zh3_K5tAjIpYpZYIB6kKVuTLB0YDQ"
+        },
+        {
+          "evidence_id": "claude-evidence-3",
+          "project": "claude:claude-terminal:claude-incarnation",
+          "provider": "claude",
+          "terminal_id": "claude-terminal",
+          "session_id": "claude-session",
+          "incarnation_id": "claude-incarnation",
+          "attempt_id": "claude-attempt-1",
+          "lease_id": "claude-lease-1",
+          "fence": 1,
+          "kind": "crash_replay",
+          "argv": [
+            "npm",
+            "run",
+            "crash_replay"
+          ],
+          "cwd": "/workspace",
+          "expected_exit": 0,
+          "actual_exit": 0,
+          "key_id": "claude-verification-key",
+          "issued_at": "2026-08-08T23:59:30.000Z",
+          "signature": "HO-Z1NmsA5lgMZOQUp1ukW3tdPnjK3HSkLYcgB_eYtXlHSsF4WtgQV0uSKSbsnSi4BuK4HHJp4AZlKC4vaPNDA"
+        },
+        {
+          "evidence_id": "claude-evidence-4",
+          "project": "claude:claude-terminal:claude-incarnation",
+          "provider": "claude",
+          "terminal_id": "claude-terminal",
+          "session_id": "claude-session",
+          "incarnation_id": "claude-incarnation",
+          "attempt_id": "claude-attempt-1",
+          "lease_id": "claude-lease-1",
+          "fence": 1,
+          "kind": "cli",
+          "argv": [
+            "npm",
+            "run",
+            "cli"
+          ],
+          "cwd": "/workspace",
+          "expected_exit": 0,
+          "actual_exit": 0,
+          "key_id": "claude-verification-key",
+          "issued_at": "2026-08-08T23:59:30.000Z",
+          "signature": "QwqaW70osyPxDe7V8el9HS17b5FZ6-xWDSaay8grKU6Sfh4tg6_O5uycKvILQs6S8xs-uEcMqfikfaWY8EbaBg"
+        },
+        {
+          "evidence_id": "claude-evidence-5",
+          "project": "claude:claude-terminal:claude-incarnation",
+          "provider": "claude",
+          "terminal_id": "claude-terminal",
+          "session_id": "claude-session",
+          "incarnation_id": "claude-incarnation",
+          "attempt_id": "claude-attempt-1",
+          "lease_id": "claude-lease-1",
+          "fence": 1,
+          "kind": "full",
+          "argv": [
+            "npm",
+            "run",
+            "full"
+          ],
+          "cwd": "/workspace",
+          "expected_exit": 0,
+          "actual_exit": 0,
+          "key_id": "claude-verification-key",
+          "issued_at": "2026-08-08T23:59:30.000Z",
+          "signature": "pQWhtUgvdsUGX4xUFOVNsGxnpGcVBwUVbIVErpL3DBFMS_hEAyLpcUleKfuiSGXhbCjF5Iv6TqeUbluw9gIeBw"
+        },
+        {
+          "evidence_id": "claude-evidence-6",
+          "project": "claude:claude-terminal:claude-incarnation",
+          "provider": "claude",
+          "terminal_id": "claude-terminal",
+          "session_id": "claude-session",
+          "incarnation_id": "claude-incarnation",
+          "attempt_id": "claude-attempt-1",
+          "lease_id": "claude-lease-1",
+          "fence": 1,
+          "kind": "node24",
+          "argv": [
+            "npm",
+            "run",
+            "node24"
+          ],
+          "cwd": "/workspace",
+          "expected_exit": 0,
+          "actual_exit": 0,
+          "key_id": "claude-verification-key",
+          "issued_at": "2026-08-08T23:59:30.000Z",
+          "signature": "lUXzedg3TN1JnJScU-D0OdIh_ai2kGhLZZ-9hOae8TscMqZa3jjKnLunaC7GGYCkbtF7AJdadQoOB4g38vyYAg"
+        }
+      ],
+      "census": {
+        "census_id": "claude-census-1",
+        "project": "claude:claude-terminal:claude-incarnation",
+        "provider": "claude",
+        "terminal_id": "claude-terminal",
+        "session_id": "claude-session",
+        "incarnation_id": "claude-incarnation",
+        "census_run_id": "claude-census-run-1",
+        "unresolved": [],
+        "resolved": [
+          "claude-work-1"
+        ],
+        "key_id": "claude-census-key",
+        "issued_at": "2026-08-08T23:59:30.000Z",
+        "signature": "1V3W650gqWhYdK8NDvdmuy8cMHetRyJI9cvgDUeiaibIp0lK95G4yy85u5gE5-3rM3J3DLY0iJvaXXjWbevcBQ"
+      },
+      "authority_receipt": {
+        "project_id": "claude:claude-terminal:claude-incarnation",
+        "provider": "claude",
+        "terminal_id": "claude-terminal",
+        "session_id": "claude-session",
+        "incarnation_id": "claude-incarnation",
+        "signal_event_id": "sha256:2d88a8072ea349a8e34ae0b49411d9fdcde619806879c7b3ec0c6e0c372b04a3",
+        "attempt_id": "claude-attempt-1",
+        "lease_id": "claude-lease-1",
+        "fence": 1,
+        "expires_at": "2026-08-09T00:00:30.000Z",
+        "receipt_id": "fixture-authority-receipt-claude",
+        "request_id": "request_a2c1002773e3bb2bb51d1eb05a453fbd3187bd81e141bd01ee6f11edaea7a378",
+        "decision": "needs_input",
+        "answer": "fixture-required-input",
+        "key_id": "claude-authority-key",
+        "issued_at": "2026-08-09T00:00:00.000Z",
+        "signature": "s_tgUKJ9pG2ItaCnC0wzTx8asLrm_jPD1gaYXHv9pbtrGb_Dd-vcii8J2CEZS-CZn0UQISwb5Ws1NeLGWN1iBw"
+      }
+    }
+  ],
+  "revocations": []
+}

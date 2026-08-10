@@ -1,0 +1,9 @@
+{
+  "compilerOptions": {
+    "target": "ES2024", "module": "NodeNext", "moduleResolution": "NodeNext",
+    "rootDir": ".", "outDir": "dist", "strict": true, "esModuleInterop": true,
+    "forceConsistentCasingInFileNames": true, "skipLibCheck": true,
+    "noUncheckedIndexedAccess": true, "verbatimModuleSyntax": true
+  },
+  "include": ["src/**/*.ts", "tests/**/*.ts"]
+}

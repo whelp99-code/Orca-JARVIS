@@ -1,0 +1,15 @@
+# GJC runtime
+
+`jarvis gjc connect <config.json> --db <database>` performs an injected, bounded stdio MCP handshake and stores one append-audited configuration revision. The JSON file supplies the canonical cwd, session ID, `jarvis` profile, and `Orca-JARVIS` repository namespace. The child command is exactly `gjc mcp-serve coordinator`; it receives no shell and the fixed coordinator environment. Do not place live GJC session or turn IDs in this document.
+
+`jarvis gjc dispatch <authorized-task.json> --db <database>` and `jarvis gjc answer <answer.json> --db <database>` accept one schema-bound JSON file each. The documents carry their durable authority bindings and idempotency keys; there are no permissive mutation flags or arbitrary prompt inputs. `gjc sync` creates a bound turn-reconciliation intent. A runtime worker claims an intent using a fencing token, saves accepted/completed receipts before reporting success, reconciles only structured coordinator turn state, and leaves uncertain results unreplayed.
+
+The service commands are `jarvis service status --db <database>`, `jarvis service once --db <database>`, and `jarvis service run --interval-ms <milliseconds> --db <database>`. They run the supervisor cycle and GJC reconciliation under a restart-safe fenced lease. The runtime code does not install or invoke `launchctl`.
+
+The current installed LaunchAgent is `com.jmpark.orca-jarvis`. It uses the system Node executable `/Users/jmpark/.local/bin/node` and the database `.jarvis-runtime/jarvis.sqlite`; restart recovery has been verified. This is deployment state, not an instruction for this runtime to install or modify a LaunchAgent.
+
+`capabilities --json` reports `gjc: false` and `live_dispatch: false` until a valid connected configuration exists. Once the exact connected configuration is operational, the flags truthfully report the enabled GJC/live-dispatch state rather than a compile-time capability.
+
+The configuration is operational only for the exact MCP server name `gjc-coordinator-mcp` and a compatible `0.11.x` semantic version; both values are retained in runtime status.
+
+For read-only project bootstrap, `discoverOrcaBindings` reads only `orca worktree ps --json` agent metadata and lazily reads `orca terminal list --json` only until it has five valid bindings. An agent is eligible only when its structured `agentType` is `codex` or `claude`. Its agent-record `paneKey` must exactly match the terminal-derived `${tabId}:${leafId}` pane key; the persisted binding and later terminal reads use the public terminal `handle`. General observation list parsing remains compatible with handle-only terminal records. Working unmatched panes and every ambiguous pane fail closed; unmatched non-working records are skipped as stale structured metadata. Bindings are selected deterministically with working candidates first, then structured activity time. If no structured session ID exists, the terminal `incarnationId` is used as the logical session ID and remains bound independently.

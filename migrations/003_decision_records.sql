@@ -1,0 +1,3 @@
+CREATE TABLE IF NOT EXISTS decision_records (record_id TEXT PRIMARY KEY, work_id TEXT NOT NULL REFERENCES work_items(id), proposal_hash TEXT NOT NULL, decision TEXT NOT NULL CHECK(decision='reject'), payload_json TEXT NOT NULL, key_id TEXT NOT NULL REFERENCES trusted_authority_keys(key_id), signature TEXT NOT NULL, created_at TEXT NOT NULL, UNIQUE(work_id));
+CREATE TRIGGER immutable_decision_records_update BEFORE UPDATE ON decision_records BEGIN SELECT RAISE(ABORT, 'immutable decision_records'); END;
+CREATE TRIGGER immutable_decision_records_delete BEFORE DELETE ON decision_records BEGIN SELECT RAISE(ABORT, 'immutable decision_records'); END;
