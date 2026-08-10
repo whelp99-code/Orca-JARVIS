@@ -1,5 +1,8 @@
 # 서버 이전 전 Git 정리 인벤토리
 
+> **MUST 처리 상태 (2026-08-10 실행):** 1–10 항목 커밋/푸시/미러 완료. 상세는 CONTROL_TOWER.md.
+
+
 - **실측 시각:** 2026-08-10 (KST)
 - **스캔 범위:** DevSpace 주요 루트 96개 git checkout (Playground / orca / Documents_Playground / Orca-JARVIS / Projects / dify / me-wiki / blro-preview 등)
 - **액션 대상:** 52개 (dirty / unpushed / local-only / unmerged / core)

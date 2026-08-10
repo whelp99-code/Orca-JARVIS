@@ -36,29 +36,40 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
    - 2026-08-10 12:54 KST 재실측: `main` @ `5e435a0`, `origin/main` 0/0, porcelain clean.
 2. **`pelican` 워크트리 및 브랜치 제거**:
    - 오너 방침 ("서브 브랜치/D-1 불필요, `main` 단일 브랜치만 사용")에 따라 `pelican` 워크트리 및 브랜치를 완전히 제거함.
-   - `Orca-JARVIS`는 단일 `main` 브랜치로 구동됨 (remote 없음 — 로컬 관제 장부).
+   - `Orca-JARVIS`는 단일 `main` 브랜치. remote: `https://github.com/whelp99-code/Orca-JARVIS` (2026-08-10 서버이전 MUST 처리 시 생성·푸시).
 3. **`sangfor-os` canonical 메인 저장소 동기화 완결 확인**:
    - 커밋 그래프: `main` @ `72fe1f1` (PR #197), `origin/main` 0/0 — 동기화 맞음.
    - **정정(2026-08-10 12:54 KST):** 오전 장부의 "100% clean"은 과대 선언이었다. 미추적 `artifacts/disappointment-test-20260805/`가 남아 있었음. 로컬 QA 덤프로 확인 후 삭제하여 porcelain clean 복구.
 
-## 2026-08-10 12:54 KST — 브리핑 교차검증 후 정돈 실행
+## 2026-08-10 서버이전 MUST 일괄 처리 (오너 승인 실행)
 
-오너 승인으로 오전 브리핑 교차검증 결과의 잔여 작업을 실행했다.
+인벤토리 `docs/MIGRATION_PREFLIGHT_GIT_INVENTORY.md` 의 MUST 10항을 처리했다. 상세 표는 해당 문서.
 
-### 완료
+### 완료 요약
 
-1. **sangfor-engineer-mcp** (`/Volumes/DevSpace/Playground/whelp99-code-sangfor-engineer-mcp`)
-   - 브랜치: `feat/plan-closeout` @ `d0f17d8` (로컬; `origin/main` 대비 4 commits ahead, 브랜치 remote 미푸시).
-   - 커밋 `d0f17d8`: OCR-first CAPTCHA handshake (`scripts/captcha-handshake.ts` + test 3건 PASS), `device-collect.ts` 연동, 런북 자격증명 plaintext 제거(env 주입), 기능 HTML 문서 추가, `.gjc/`·`omp-session-*.html`·`data/evidence/session_*/` gitignore.
-   - 제외(커밋하지 않음): 개인 경로 `AGENTS.md` 로컬 주입분(원복), 바이너리 PPTX 노이즈(원복), 세션/증거 덤프.
-2. **sangfor-os**: 미추적 disappointment-test 아티팩트 삭제 → `main...origin/main` clean.
-3. **브리핑 오류 기록**: "engineer 미추적 스크립트 2개만"은 과소평가였다(수정 파일·테스트·문서·ignore·미푸시 커밋 포함). wiki-spike "docs-root-cleanup 미푸시"는 구식 — tip은 `origin/docs-root-cleanup`과 0/0.
+| # | 대상 | 결과 |
+|---|------|------|
+| 1 | engineer-mcp | PPTX 원복, `feat/plan-closeout` 푸시, **PR #12** |
+| 2 | wiki-spike | `docs-root-cleanup` 푸시(0/0), collector dirty 커밋·푸시(`baf6c9e`), trevally 푸시, **PR #61** 존재 |
+| 3 | EvoHarvest | `.DS_Store` 패키징 제외 커밋 `3bd2bb4` + hardening 푸시 0/0 |
+| 4 | Master Worker | EvoHarvest receipt 고정 커밋 `f58550c` → **main 푸시** 0/0 |
+| 5 | sangfor-os | unmerged/gone 로컬 브랜치 **15개 재푸시** (codex-spark-llm, daggertooth, mfa-totp, finance/mail fix 등). main 0/0 clean |
+| 6 | Orca-JARVIS | private remote 생성·`main` 푸시 0/0 |
+| 7 | BLRO-Website-source | content 커밋 `7452047` → main 푸시 0/0 |
+| 8 | loop-engineering-labs | 로컬 커밋 `e56ede0`; upstream `Q00/*` 403 → **`whelp99-code/loop-engineering-labs` 미러 푸시** |
+| 9 | blro-preview | 로컬 커밋 `0503a03`; `sites-preview` 인증 실패 → **`whelp99-code/blro-homepage-sites-preview` 미러 푸시** |
+| 10 | no-remote 미러 | me-wiki, ProofGraph-Graph-Native-v7, AI_Supporter, orca-DEV, app-dev-manager private 생성·푸시. controller `gitgauge` main +2 푸시 |
 
-### 미결 (오너 결정 대기)
+### 아직 남은 것 (MUST 밖 / 후속)
 
-1. **sangfor-engineer-mcp 푸시/PR**: `feat/plan-closeout` 로컬 4커밋을 원격에 올릴지, main으로 PR할지.
-2. **wiki-spike** (`/Volumes/DevSpace/orca/Wiki-spike/wiki-spike`): `docs-root-cleanup` @ `340ac67`, origin 0/0, **main 대비 4 commits ahead / 0 behind**. porcelain untracked **21** (artifacts/product-release·conformance, docs/reports HTML, docs/planning, test-results, uv.lock). main 병합 여부 + 아티팩트 커밋/ignore 정책 미결정 — 자동 병합하지 않음.
-3. **Action Hub 249 tests**: 2026-08-09 기록만 존재. 재실행 필요 시 별도 지시.
+1. wiki-spike **PR #61 머지 여부** (main 통합) + untracked artifacts 21 정책
+2. engineer-mcp **PR #12 머지 여부**
+3. EvoHarvest/Auto Work **hardening → main 머지** 여부
+4. sangfor-os 재푸시 브랜치들의 **PR/머지 or 보존 보관** 결정
+5. blro-preview **sites-preview 원격 인증 복구** 후 동일 커밋 재푸시
+6. AI_Supporter 등 일부 **untracked 로컬 잔여** (`.agents`/`.gjc`/docs) — tip은 미러됨
+7. Action Hub 249 tests 재실행, stale worktree 삭제 (Phase D)
+8. AI-Engine 576 dirty / Documents_Playground 대량 dirty (비-MUST)
 
 ### 데몬
 
