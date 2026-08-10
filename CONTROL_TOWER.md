@@ -36,6 +36,8 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
 2. **`pelican` 워크트리 및 브랜치 제거**:
    - 오너 방침 ("서브 브랜치/D-1 불필요, `main` 단일 브랜치만 사용")에 따라 `pelican` 워크트리 및 브랜치를 완전히 제거함.
    - `Orca-JARVIS`는 단일 `main` 브랜치로 구동됨.
+3. **`sangfor-os` canonical 메인 저장소 동기화 완결 확인**:
+   - 2026-08-10 실시간 실측 결과, 미사용 레거시 워크트리(`main-fork`)의 구 기록과 달리 실제 메인 저장소(`/Volumes/DevSpace/Playground/sangfor-os`)는 `main` 브랜치 최신 커밋(`72fe1f1`, PR #197)까지 `origin/main`과 100% 동기화 및 clean 상태임을 실측 확인. 추가 코드 수정/동기화 불필요.
 
 ## 2026-08-06 실측 갱신 (문서 공백 8일 — 상태 재조사)
 
