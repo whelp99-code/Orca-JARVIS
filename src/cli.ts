@@ -9,7 +9,7 @@ import { defaultRunner, discoverOrcaBindings, OrcaReadonlyAdapter, observeOrca, 
 import { createOrcaRunner, decodeEnvWorktree, parseOrcaEnvironments } from "./orca-env.js";
 import { PreGjcShadow, type AuthorityReceipt, type AuthorityRequest, type ShadowKey } from "./pre-gjc-shadow.js";
 import { ingestClaudeHookEvent, ingestCodexAppServerEvent } from "./adapters.js";
-import { LiveSupervisor, type LiveBinding, type LiveObservation } from "./live-supervisor.js";
+import { LiveSupervisor, type LiveBinding, type LiveObservation, type LiveSupervisorCycle } from "./live-supervisor.js";
 import { OrcaTerminalResumeAdapter, type OrcaCommand } from "./orca-resume.js";
 import { GjcCoordinatorClient, type GjcRunner } from "./gjc.js";
 import { GjcRuntimeService } from "./service.js";
@@ -31,7 +31,7 @@ async function observeBound(binding: LiveBinding, runner?: OrcaRunner): Promise<
   const read = await adapter.read(binding.terminal_id, binding.cursor, 1);
   return [{ provider: binding.provider, terminal_id: binding.terminal_id, session_id: binding.session_id, incarnation_id: binding.incarnation_id, cursor: read.nextCursor, state: "unknown" }];
 }
-export async function execute(args: string[], dependencies: { orcaRunner?: OrcaRunner; liveOrcaCommand?: OrcaCommand; gjcRunner?: GjcRunner; clock?: () => Date } = {}): Promise<Record<string, unknown>> {
+export async function execute(args: string[], dependencies: { orcaRunner?: OrcaRunner; liveOrcaCommand?: OrcaCommand; gjcRunner?: GjcRunner; clock?: () => Date; liveReportOutput?: (value: object) => void } = {}): Promise<Record<string, unknown>> {
   const { values, positionals } = parseArgs({ args, options: { db: { type: "string" }, decision_public: { type: "string" }, decision_key_id: { type: "string" }, decision_principal: { type: "string" }, verifier_public: { type: "string" }, verifier_key_id: { type: "string" }, verifier_principal: { type: "string" }, json: { type: "boolean" }, once: { type: "boolean" }, crash: { type: "string" }, worktree: { type: "string" }, bindings: { type: "string" }, limit: { type: "string" }, max_pages: { type: "string" }, interval_ms: { type: "string" }, "interval-ms": { type: "string" }, environments: { type: "string" }, live_resume: { type: "boolean" }, session_id: { type: "string" }, input: { type: "string" }, idempotency_key: { type: "string" }, allow_mutation: { type: "boolean" } }, allowPositionals: true, strict: false });
   const db = new AuthorityDb(typeof values.db === "string" ? values.db : undefined); const policyKeyPath = `${db.filename}.policy-key.pem`;
   try {
@@ -45,7 +45,10 @@ export async function execute(args: string[], dependencies: { orcaRunner?: OrcaR
     const shadow = new PreGjcShadow(db);
     const supervisor = new LiveSupervisor(db);
     const gjc = new GjcCoordinatorClient(dependencies.gjcRunner, true);
-    const gjcService = new GjcRuntimeService(db, gjc, "gjc-runtime", async () => { try { await supervisor.cycleWithShadow(shadow, binding => observeBound(binding, dependencies.orcaRunner), (dependencies.clock?.() ?? new Date()).toISOString()); } catch (error) { if (!(error instanceof JarvisError) || error.code !== "LIVE_WORKTREE_UNREGISTERED") throw error; } });
+    let serviceRunInterval: number | undefined;
+    const liveReportOutput = dependencies.liveReportOutput ?? outputSync;
+    const deliverLiveReport = (commandName: string, result: LiveSupervisorCycle, interval?: number) => { const report = result.recovered_report ?? result.report; if (!report) return; liveReportOutput({ ok: true, command: commandName, ...(interval === undefined ? {} : { interval_ms: interval }), ...result }); supervisor.acknowledgeReport(report.report_id); };
+    const gjcService = new GjcRuntimeService(db, gjc, "gjc-runtime", async () => { try { deliverLiveReport(command === "service" ? `service.${subcommand}` : "gjc.run", await supervisor.cycleWithShadow(shadow, binding => observeBound(binding, dependencies.orcaRunner), (dependencies.clock?.() ?? new Date()).toISOString()), serviceRunInterval); } catch (error) { if (!(error instanceof JarvisError) || error.code !== "LIVE_WORKTREE_UNREGISTERED") throw error; } });
     const preGjc = command === "pre-gjc" ? subcommand : command;
     const preSubcommand = command === "pre-gjc" ? argument : subcommand;
     const preArgument = command === "pre-gjc" ? fourth : argument;
@@ -69,8 +72,7 @@ export async function execute(args: string[], dependencies: { orcaRunner?: OrcaR
     if (command === "supervisor" && subcommand === "watch") {
       const interval = values.interval_ms === undefined ? 10_000 : typeof values.interval_ms === "string" ? integer(values.interval_ms) : (() => { throw new JarvisError("PRE_GJC_CLI_INPUT_INVALID"); })(); if (interval < 1 || interval > 60_000) throw new JarvisError("PRE_GJC_CLI_INPUT_INVALID");
       const cycle = async () => {
-        const result = await runSupervisor(); const report = result.recovered_report ?? result.report;
-        if (report) { outputSync({ ok: true, command: "supervisor.watch", interval_ms: interval, ...result }); supervisor.acknowledgeReport(report.report_id); }
+        const result = await runSupervisor(); deliverLiveReport("supervisor.watch", result, interval);
         return result;
       };
       const first = await cycle();
@@ -91,7 +93,7 @@ export async function execute(args: string[], dependencies: { orcaRunner?: OrcaR
     if (command === "gjc" && subcommand === "run" && values.once) return { ok: true, command: "gjc.run", ...(await gjcService.once((dependencies.clock?.() ?? new Date()).toISOString())) };
     if (command === "service" && subcommand === "status") return { ok: true, command: "service.status", ...gjcService.status() };
     if (command === "service" && subcommand === "once") return { ok: true, command: "service.once", ...(await gjcService.once((dependencies.clock?.() ?? new Date()).toISOString())) };
-    if (command === "service" && subcommand === "run") { const raw = values["interval-ms"] ?? values.interval_ms; const interval = raw === undefined ? 10_000 : integer(String(raw)); if (interval < 1 || interval > 60_000) throw new JarvisError("GJC_INTERVAL_INVALID"); if (values.once) return { ok: true, command: "service.run", interval_ms: interval, ...(await gjcService.once((dependencies.clock?.() ?? new Date()).toISOString())) }; await gjcService.run(interval); return { ok: true, command: "service.run", interval_ms: interval }; }
+    if (command === "service" && subcommand === "run") { const raw = values["interval-ms"] ?? values.interval_ms; const interval = raw === undefined ? 10_000 : integer(String(raw)); if (interval < 1 || interval > 60_000) throw new JarvisError("GJC_INTERVAL_INVALID"); serviceRunInterval = interval; if (values.once) return { ok: true, command: "service.run", interval_ms: interval, ...(await gjcService.once((dependencies.clock?.() ?? new Date()).toISOString())) }; await gjcService.run(interval); return { ok: true, command: "service.run", interval_ms: interval }; }
     if (command === "approval" && subcommand === "ingest" && argument) return { ok: true, command: "approval.ingest", intent_id: shadow.recordAuthorityReceipt(object(await jsonFile(argument)) as unknown as AuthorityReceipt) ?? null, dispatched: false };
     if (preGjc === "keys" && preSubcommand === "register" && preArgument) { shadow.registerKey(object(await jsonFile(preArgument)) as unknown as ShadowKey); return { ok: true, command: "pre-gjc.keys.register" }; }
     if (preGjc === "keys" && preSubcommand === "revoke" && preArgument) { const input = object(await jsonFile(preArgument)); shadow.revokeKey(String(input.key_id ?? ""), input.provider as "codex" | "claude", input.purpose as "progress-signal" | "authority-receipt" | "verification" | "census", String(input.reason ?? "")); return { ok: true, command: "pre-gjc.keys.revoke" }; }
