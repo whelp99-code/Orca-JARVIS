@@ -5,7 +5,8 @@ import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { AuthorityDb, JarvisError } from "./db.js";
-import { discoverOrcaBindings, OrcaReadonlyAdapter, observeOrca, parseOrcaBindings, type OrcaRunner } from "./orca.js";
+import { defaultRunner, discoverOrcaBindings, OrcaReadonlyAdapter, observeOrca, parseOrcaBindings, type OrcaRunner } from "./orca.js";
+import { createOrcaRunner, decodeEnvWorktree, parseOrcaEnvironments } from "./orca-env.js";
 import { PreGjcShadow, type AuthorityReceipt, type AuthorityRequest, type ShadowKey } from "./pre-gjc-shadow.js";
 import { ingestClaudeHookEvent, ingestCodexAppServerEvent } from "./adapters.js";
 import { LiveSupervisor, type LiveBinding, type LiveObservation } from "./live-supervisor.js";
@@ -22,14 +23,16 @@ function integer(value: string | undefined): number { const parsed = Number(valu
 async function observeBound(binding: LiveBinding, runner?: OrcaRunner): Promise<readonly LiveObservation[]> {
   // Read-only Orca evidence does not contain a signed provider ProgressSignal.
   // Its only safe classification is unknown; terminal prose is intentionally ignored.
-  const adapter = new OrcaReadonlyAdapter(runner);
-  const terminal = (await adapter.list(binding.canonical_path)).find(item => item.handle === binding.terminal_id && item.incarnationId === binding.incarnation_id && item.ptyId === binding.pty_id && item.worktreeId === binding.worktree_id);
+  const decoded = decodeEnvWorktree(binding.canonical_path);
+  const envRunner = createOrcaRunner(decoded.environment, runner ?? defaultRunner);
+  const adapter = new OrcaReadonlyAdapter(envRunner);
+  const terminal = (await adapter.list(decoded.listSelector)).find(item => item.handle === binding.terminal_id && item.incarnationId === binding.incarnation_id && item.ptyId === binding.pty_id && item.worktreeId === binding.worktree_id);
   if (!terminal || !terminal.connected) return [{ provider: binding.provider, terminal_id: binding.terminal_id, session_id: binding.session_id, incarnation_id: binding.incarnation_id, cursor: binding.cursor, state: "unknown" }];
   const read = await adapter.read(binding.terminal_id, binding.cursor, 1);
   return [{ provider: binding.provider, terminal_id: binding.terminal_id, session_id: binding.session_id, incarnation_id: binding.incarnation_id, cursor: read.nextCursor, state: "unknown" }];
 }
 export async function execute(args: string[], dependencies: { orcaRunner?: OrcaRunner; liveOrcaCommand?: OrcaCommand; gjcRunner?: GjcRunner; clock?: () => Date } = {}): Promise<Record<string, unknown>> {
-  const { values, positionals } = parseArgs({ args, options: { db: { type: "string" }, decision_public: { type: "string" }, decision_key_id: { type: "string" }, decision_principal: { type: "string" }, verifier_public: { type: "string" }, verifier_key_id: { type: "string" }, verifier_principal: { type: "string" }, json: { type: "boolean" }, once: { type: "boolean" }, crash: { type: "string" }, worktree: { type: "string" }, bindings: { type: "string" }, limit: { type: "string" }, max_pages: { type: "string" }, interval_ms: { type: "string" }, "interval-ms": { type: "string" }, live_resume: { type: "boolean" }, session_id: { type: "string" }, input: { type: "string" }, idempotency_key: { type: "string" }, allow_mutation: { type: "boolean" } }, allowPositionals: true, strict: false });
+  const { values, positionals } = parseArgs({ args, options: { db: { type: "string" }, decision_public: { type: "string" }, decision_key_id: { type: "string" }, decision_principal: { type: "string" }, verifier_public: { type: "string" }, verifier_key_id: { type: "string" }, verifier_principal: { type: "string" }, json: { type: "boolean" }, once: { type: "boolean" }, crash: { type: "string" }, worktree: { type: "string" }, bindings: { type: "string" }, limit: { type: "string" }, max_pages: { type: "string" }, interval_ms: { type: "string" }, "interval-ms": { type: "string" }, environments: { type: "string" }, live_resume: { type: "boolean" }, session_id: { type: "string" }, input: { type: "string" }, idempotency_key: { type: "string" }, allow_mutation: { type: "boolean" } }, allowPositionals: true, strict: false });
   const db = new AuthorityDb(typeof values.db === "string" ? values.db : undefined); const policyKeyPath = `${db.filename}.policy-key.pem`;
   try {
     const [command, subcommand, argument, fourth, fifth, sixth] = positionals;
@@ -49,7 +52,16 @@ export async function execute(args: string[], dependencies: { orcaRunner?: OrcaR
     const preFourth = command === "pre-gjc" ? fifth : fourth;
     const preFifth = command === "pre-gjc" ? sixth : fifth;
     if (command === "project" && subcommand === "register" && argument) { const input = object(await jsonFile(argument)); const binding = supervisor.register({ worktree: String(input.worktree ?? ""), provider: input.provider as "codex" | "claude", terminal_id: String(input.terminal_id ?? ""), session_id: String(input.session_id ?? ""), incarnation_id: String(input.incarnation_id ?? ""), pty_id: typeof input.pty_id === "string" ? input.pty_id : undefined, worktree_id: typeof input.worktree_id === "string" ? input.worktree_id : undefined, project_id: typeof input.project_id === "string" ? input.project_id : undefined }); return { ok: true, command: "project.register", project: binding }; }
-    if (command === "project" && subcommand === "discover") { const discovered = await discoverOrcaBindings(dependencies.orcaRunner); const projects = discovered.map(binding => supervisor.register(binding)); return { ok: true, command: "project.discover", projects }; }
+    if (command === "project" && subcommand === "discover") {
+      const environments = parseOrcaEnvironments(typeof values.environments === "string" ? values.environments : undefined);
+      const discovered = await discoverOrcaBindings({
+        runner: dependencies.orcaRunner,
+        environments,
+        tolerateRemoteFailure: true,
+      });
+      const projects = discovered.map(binding => supervisor.register(binding));
+      return { ok: true, command: "project.discover", environments, projects };
+    }
     if (command === "project" && subcommand === "list") return { ok: true, command: "project.list", projects: supervisor.list() };
     if (command === "project" && subcommand === "live-resume" && argument && fourth) { supervisor.configureLiveResume(argument, fourth === "enable", dependencies.clock?.() ?? new Date()); return { ok: true, command: "project.live-resume", project_id: argument, enabled: fourth === "enable" }; }
     const runSupervisor = async () => { const now = dependencies.clock?.() ?? new Date(); const result = await supervisor.cycleWithShadow(shadow, binding => observeBound(binding, dependencies.orcaRunner), now.toISOString()); if (supervisor.liveResumeConfigured()) { const adapter = new OrcaTerminalResumeAdapter(db, true, dependencies.liveOrcaCommand, dependencies.clock); for (const intentId of supervisor.pendingLiveResumeIntents()) shadow.deliverResume(intentId, adapter, now); for (const intentId of shadow.pendingPolicyResumeIntents()) shadow.deliverPolicyResume(intentId, adapter, now); } return result; };

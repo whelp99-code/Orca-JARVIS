@@ -19,9 +19,12 @@ Master는 직접 코딩하지 않는다. 핵심 사명 프로세스:
 
 - `node dist/src/cli.js report status --db .jarvis-runtime/jarvis.sqlite` (백그라운드 10초 DB 조회)
 - 관리 대상 주요 프로젝트 저장소 `git log` / `git status` 직접 조회 (`JM-AI Action Hub`, `sangfor-os` 등)
-- `orca status --json`, `orca terminal list --json` (Orca 라이브 터미널 상태)
-- `orca orchestration task-list --json`, `orca orchestration inbox`
+- **이중 Orca 호스트 실측** (상세: [docs/dual-environment-monitoring.md](docs/dual-environment-monitoring.md))
+  - **LOCAL:** `orca status --json`, `orca terminal list --json`, `orca worktree ps --json`
+  - **JM-SERVER (acloud):** `orca status --environment jm-server --json`, `orca terminal list --environment jm-server --json`, `orca worktree ps --environment jm-server --json`
+- `orca orchestration task-list --json`, `orca orchestration inbox` (호스트별 가능 시 env 지정)
 - 실시간 조회 결과와 문서(`CONTROL_TOWER.md`) 간 차이 존재 시 실시간 결과로 정정 후 브리핑.
+- 기본 환경 목록: `ORCA_JARVIS_ENVIRONMENTS=local,jm-server` (live supervisor discover/service 동일)
 
 브리핑 형식:
 
@@ -29,10 +32,14 @@ Master는 직접 코딩하지 않는다. 핵심 사명 프로세스:
 Welcome home, Sir.
 
 NOW
+  LOCAL: ...
+  JM-SERVER: ...
 BLOCKED
 DECISIONS
 NEXT 3
 WORKERS
+  LOCAL: ...
+  JM-SERVER: ...
 RISKS
 ```
 

@@ -78,6 +78,14 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
 
 
 
+## 2026-08-11 — 이중 Orca 환경 관제 (local + jm-server)
+
+- **문서:** [docs/dual-environment-monitoring.md](docs/dual-environment-monitoring.md)
+- **환경 등록명:** acloud Orca = `jm-server` (`ws://100.87.81.57:6769/` Tailscale)
+- **브리핑:** LOCAL / JM-SERVER 섹션을 분리해 실측. 로컬 결과로 원격을 추정하지 않음.
+- **데몬:** `ORCA_JARVIS_ENVIRONMENTS=local,jm-server` (기본). `project discover` 가 양 호스트 바인딩 등록. 원격 경로 인코딩 `/orca-env/jm-server/...`. worktree 상한 10.
+- **원격 실패 정책:** multi-env discover 시 jm-server 불가여도 local 은 계속.
+
 ## 2026-08-10 MUST 후속 — PR 머지 + hardening main + worktree 청소
 
 ### 1. PR 머지 (완료)

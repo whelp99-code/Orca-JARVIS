@@ -11,11 +11,18 @@ function worktree() { return mkdtempSync(join(tmpdir(), "live-supervisor-")); }
 const binding = (worktree: string) => ({ worktree, provider: "codex" as const, terminal_id: "terminal", session_id: "session", incarnation_id: "incarnation" });
 
 describe("live supervisor", () => {
-  it("registers only canonical absolute paths, caps at five, and rejects active rebinds", async () => {
+  it("registers only canonical absolute paths, caps at ten, and rejects active rebinds", async () => {
     const { db, supervisor } = await opened(); const root = worktree(); const alias = join(root, "alias"); mkdirSync(alias); expect(supervisor.register(binding(alias)).canonical_path).toBe(realpathSync(alias));
     expect(() => supervisor.register({ ...binding(alias), session_id: "other" })).toThrow("LIVE_BINDING_REBIND_REJECTED");
-    for (let n = 0; n < 4; n++) { const path = join(root, String(n)); mkdirSync(path); supervisor.register(binding(path)); }
-    const sixth = join(root, "sixth"); mkdirSync(sixth); expect(() => supervisor.register(binding(sixth))).toThrow(); db.close(); rmSync(root, { recursive: true });
+    // alias is already 1; add 9 more for the dual-env cap of 10.
+    for (let n = 0; n < 9; n++) { const path = join(root, String(n)); mkdirSync(path); supervisor.register(binding(path)); }
+    const overflow = join(root, "overflow"); mkdirSync(overflow); expect(() => supervisor.register(binding(overflow))).toThrow(); db.close(); rmSync(root, { recursive: true });
+  });
+  it("accepts remote encoded worktrees without a local mount", async () => {
+    const { db, supervisor } = await opened();
+    const remote = "/orca-env/jm-server/home/jm/orca/projects/jm-loop-miner";
+    expect(supervisor.register({ ...binding(remote), terminal_id: "term_remote" }).canonical_path).toBe(remote);
+    db.close();
   });
   it("recovers before observation and atomically records change-only reports and cursors", async () => {
     const { db, supervisor } = await opened(); const root = worktree(); const second = join(root, "second"); mkdirSync(second); supervisor.register(binding(root)); supervisor.register({ ...binding(second), terminal_id: "terminal-two" }); const observation = { ...binding(root), cursor: "1", state: "approval_required" as const };

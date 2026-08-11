@@ -1,5 +1,6 @@
 export { AuthorityDb, JarvisError } from "./db.js";
-export { OrcaReadonlyAdapter, classifyOrcaTerminal, discoverOrcaBindings, observeOrca, parseOrcaBindings, type DiscoveredOrcaBinding, type OrcaObserveOptions, type OrcaRunner } from "./orca.js";
+export { OrcaReadonlyAdapter, classifyOrcaTerminal, defaultRunner, discoverOrcaBindings, observeOrca, parseOrcaBindings, type DiscoveredOrcaBinding, type DiscoverOrcaOptions, type OrcaObserveOptions, type OrcaRunner } from "./orca.js";
+export { createOrcaRunner, decodeEnvWorktree, encodeEnvWorktree, LOCAL_ORCA_ENVIRONMENT, ORCA_ENV_PATH_PREFIX, parseOrcaEnvironments, withOrcaEnvironment } from "./orca-env.js";
 export { canonicalize } from "./canonical.js";
 export { parseProgressBatch, serializeProgressReport } from "./progress.js";
 export { classifyProgressEvidence, parseProgressSignal, progressSignalPayload, verifyProgressSignal } from "./progress-signal.js";

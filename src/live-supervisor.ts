@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { canonicalize } from "./canonical.js";
 import { AuthorityDb, JarvisError } from "./db.js";
+import { decodeEnvWorktree, ORCA_ENV_PATH_PREFIX } from "./orca-env.js";
 import { PreGjcShadow } from "./pre-gjc-shadow.js";
 import type { OrcaProvider, ProgressState } from "./types.js";
 
@@ -21,7 +22,13 @@ export interface LiveSupervisorCycle { report: { report_id: string; payload_json
 export class LiveSupervisor {
   constructor(private readonly authority: AuthorityDb) {}
   private tx<T>(fn: () => T): T { this.authority.db.exec("BEGIN IMMEDIATE"); try { const value = fn(); this.authority.db.exec("COMMIT"); return value; } catch (error) { this.authority.db.exec("ROLLBACK"); throw error; } }
-  private path(value: string): string { try { const canonical = realpathSync(value); if (!canonical.startsWith("/")) throw new Error(); return canonical; } catch { throw new JarvisError("LIVE_WORKTREE_INVALID"); } }
+  private path(value: string): string {
+    if (value.startsWith(ORCA_ENV_PATH_PREFIX)) {
+      // Remote Orca hosts are not mounted locally; validate encoding only.
+      try { decodeEnvWorktree(value); return value; } catch { throw new JarvisError("LIVE_WORKTREE_INVALID"); }
+    }
+    try { const canonical = realpathSync(value); if (!canonical.startsWith("/")) throw new Error(); return canonical; } catch { throw new JarvisError("LIVE_WORKTREE_INVALID"); }
+  }
   private binding(input: Omit<LiveBinding, "canonical_path" | "cursor"> & { worktree: string }): LiveBinding {
     const canonical_path = this.path(input.worktree);
     if (!(["codex", "claude"] as string[]).includes(input.provider) || !nonempty(input.terminal_id) || !nonempty(input.session_id) || !nonempty(input.incarnation_id)) throw new JarvisError("LIVE_BINDING_INVALID");

@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { execFile as execFileCallback } from "node:child_process";
 import { promisify } from "node:util";
-import { realpathSync } from "node:fs";
 import { AuthorityDb, JarvisError } from "./db.js";
+import { createOrcaRunner, encodeEnvWorktree, LOCAL_ORCA_ENVIRONMENT, parseOrcaEnvironments } from "./orca-env.js";
 import type { OrcaObservationDelta, OrcaProvider } from "./types.js";
 
 const execFile = promisify(execFileCallback);
@@ -25,7 +25,7 @@ const number = (value: unknown): number => typeof value === "number" && Number.i
 function invalidSchema(): never { throw new JarvisError("ORCA_CLI_SCHEMA_INVALID"); }
 function identity(worktree: string, terminalHandle: string, incarnationId: string, cursorBefore: string | null): string { return `orca_${createHash("sha256").update(JSON.stringify([worktree, terminalHandle, incarnationId, cursorBefore])).digest("hex")}`; }
 
-const defaultRunner: OrcaRunner = async args => {
+export const defaultRunner: OrcaRunner = async args => {
   try { return (await execFile("orca", [...args], { encoding: "utf8", maxBuffer: 1_000_000, windowsHide: true })).stdout; }
   catch { throw new JarvisError("ORCA_CLI_FAILED"); }
 };
@@ -68,33 +68,113 @@ export class OrcaReadonlyAdapter {
   }
 }
 
+export interface DiscoverOrcaOptions {
+  runner?: OrcaRunner;
+  /** Single Orca environment name (`local` or a saved remote such as `jm-server`). */
+  environment?: string;
+  /** Discover across multiple environments (default: ORCA_JARVIS_ENVIRONMENTS). */
+  environments?: string[];
+  maxBindings?: number;
+  /** When true, a remote environment failure is skipped instead of aborting discovery. */
+  tolerateRemoteFailure?: boolean;
+}
+
 /**
  * Finds bindings only from structured worktree/agent metadata and structured
  * terminal fields.  paneKey is a protocol identity, never a title or preview.
+ * Remote Orca hosts use encoded worktree paths (`/orca-env/<env>/...`).
  */
-export async function discoverOrcaBindings(runner?: OrcaRunner): Promise<DiscoveredOrcaBinding[]> {
+export async function discoverOrcaBindings(runnerOrOptions?: OrcaRunner | DiscoverOrcaOptions, maybeOptions?: DiscoverOrcaOptions): Promise<DiscoveredOrcaBinding[]> {
+  const options: DiscoverOrcaOptions = typeof runnerOrOptions === "function"
+    ? { ...(maybeOptions ?? {}), runner: runnerOrOptions }
+    : (runnerOrOptions ?? {});
+  const environments = options.environments ?? (options.environment ? [options.environment] : options.runner ? [LOCAL_ORCA_ENVIRONMENT] : parseOrcaEnvironments());
+  const maxBindings = options.maxBindings ?? Math.min(10, Math.max(5, environments.length * 5));
+  const tolerateRemoteFailure = options.tolerateRemoteFailure ?? true;
+  const collected: DiscoveredOrcaBinding[] = [];
+  for (const environment of environments) {
+    if (collected.length >= maxBindings) break;
+    const runner = options.runner && environments.length === 1
+      ? options.runner
+      : createOrcaRunner(environment, options.runner ?? defaultRunner);
+    try {
+      const found = await discoverOrcaBindingsInEnvironment(runner, environment, maxBindings - collected.length);
+      collected.push(...found);
+    } catch (error) {
+      if (environment === LOCAL_ORCA_ENVIRONMENT || !tolerateRemoteFailure) throw error;
+      // Remote hosts may be offline; local discovery must still succeed.
+    }
+  }
+  const identities = new Set<string>();
+  for (const binding of collected) {
+    const key = `${binding.worktree}\0${binding.terminal_id}`;
+    if (identities.has(key)) throw new JarvisError("ORCA_PANE_BINDING_AMBIGUOUS");
+    identities.add(key);
+  }
+  return collected;
+}
+
+async function discoverOrcaBindingsInEnvironment(runner: OrcaRunner, environment: string, maxBindings: number): Promise<DiscoveredOrcaBinding[]> {
   const adapter = new OrcaReadonlyAdapter(runner); const result = await adapter.worktreePs();
   const containers = Array.isArray(result.worktrees) ? result.worktrees : Array.isArray(result.items) ? result.items : invalidSchema();
-  const candidates: Array<{ raw: Record<string, unknown>; worktree: string; working: boolean; last_activity_at: number }> = [];
+  const candidates: Array<{ raw: Record<string, unknown>; worktree: string; listSelector: string; working: boolean; last_activity_at: number }> = [];
   for (const value of containers) {
     if (!isRecord(value)) return invalidSchema(); const cwdValue = value.cwd ?? value.worktreePath ?? value.path;
-    if (typeof cwdValue !== "string" || !cwdValue) return invalidSchema(); let worktree: string; try { worktree = realpathSync(cwdValue); } catch { throw new JarvisError("ORCA_WORKTREE_INVALID"); }
+    if (typeof cwdValue !== "string" || !cwdValue || !cwdValue.startsWith("/")) return invalidSchema();
+    const worktree = encodeEnvWorktree(environment, cwdValue);
+    const listSelector = environment === LOCAL_ORCA_ENVIRONMENT ? worktree : `path:${cwdValue.replace(/\/+$/u, "") || "/"}`;
     const agents = value.agents; if (!Array.isArray(agents)) return invalidSchema();
-    for (const agent of agents) { if (!isRecord(agent)) return invalidSchema(); const agentType = agent.agentType; if (agentType !== "codex" && agentType !== "claude") continue; const paneKey = string(agent.paneKey); const hasTab = agent.tabId !== undefined; const hasLeaf = agent.leafId !== undefined; if (hasTab !== hasLeaf) throw new JarvisError("ORCA_PANE_BINDING_INVALID"); if (hasTab && paneKey !== `${string(agent.tabId)}:${string(agent.leafId)}`) throw new JarvisError("ORCA_PANE_BINDING_INVALID"); const last = agent.updatedAt ?? agent.stateStartedAt; if (typeof last !== "number" || !Number.isFinite(last) || !Number.isInteger(last) || last < 0) return invalidSchema(); candidates.push({ raw: agent, worktree, working: agent.state === "working", last_activity_at: last }); }
+    for (const agent of agents) { if (!isRecord(agent)) return invalidSchema(); const agentType = agent.agentType; if (agentType !== "codex" && agentType !== "claude") continue; const paneKey = string(agent.paneKey); const hasTab = agent.tabId !== undefined; const hasLeaf = agent.leafId !== undefined; if (hasTab !== hasLeaf) throw new JarvisError("ORCA_PANE_BINDING_INVALID"); if (hasTab && paneKey !== `${string(agent.tabId)}:${string(agent.leafId)}`) throw new JarvisError("ORCA_PANE_BINDING_INVALID"); const last = agent.updatedAt ?? agent.stateStartedAt; if (typeof last !== "number" || !Number.isFinite(last) || !Number.isInteger(last) || last < 0) return invalidSchema(); candidates.push({ raw: agent, worktree, listSelector, working: agent.state === "working", last_activity_at: last }); }
   }
   candidates.sort((a, b) => Number(b.working) - Number(a.working) || b.last_activity_at - a.last_activity_at || a.worktree.localeCompare(b.worktree) || string(a.raw.paneKey).localeCompare(string(b.raw.paneKey)));
   const byWorktree = new Map<string, OrcaTerminal[]>(); const failedWorktrees = new Set<string>();
   const bindings: DiscoveredOrcaBinding[] = [];
   for (const item of candidates) {
-    const agentType = item.raw.agentType as OrcaProvider; const paneKey = string(item.raw.paneKey); if (!byWorktree.has(item.worktree) && !failedWorktrees.has(item.worktree)) { try { byWorktree.set(item.worktree, await adapter.list(item.worktree)); } catch (error) { failedWorktrees.add(item.worktree); if (item.working) throw error; continue; } } if (failedWorktrees.has(item.worktree)) { if (item.working) throw new JarvisError("ORCA_PANE_BINDING_UNMATCHED"); continue; } const terminals = byWorktree.get(item.worktree) ?? []; if (terminals.some(terminal => (terminal.tabId === undefined) !== (terminal.leafId === undefined))) throw new JarvisError("ORCA_PANE_BINDING_INVALID"); const matches = terminals.filter(terminal => terminal.tabId !== undefined && terminal.leafId !== undefined && `${terminal.tabId}:${terminal.leafId}` === paneKey);
+    const agentType = item.raw.agentType as OrcaProvider; const paneKey = string(item.raw.paneKey); if (!byWorktree.has(item.worktree) && !failedWorktrees.has(item.worktree)) { try { byWorktree.set(item.worktree, await adapter.list(item.listSelector)); } catch (error) { failedWorktrees.add(item.worktree); if (item.working) throw error; continue; } } if (failedWorktrees.has(item.worktree)) { if (item.working) throw new JarvisError("ORCA_PANE_BINDING_UNMATCHED"); continue; } const terminals = byWorktree.get(item.worktree) ?? []; if (terminals.some(terminal => (terminal.tabId === undefined) !== (terminal.leafId === undefined))) throw new JarvisError("ORCA_PANE_BINDING_INVALID"); const matches = terminals.filter(terminal => terminal.tabId !== undefined && terminal.leafId !== undefined && `${terminal.tabId}:${terminal.leafId}` === paneKey);
     if (matches.length > 1) throw new JarvisError("ORCA_PANE_BINDING_AMBIGUOUS"); if (matches.length === 0) { if (item.working) throw new JarvisError("ORCA_PANE_BINDING_UNMATCHED"); continue; } const terminal = matches[0]!;
     if (!terminal.worktreeId || !terminal.ptyId) throw new JarvisError("ORCA_PANE_BINDING_INVALID"); const session = item.raw.sessionId ?? item.raw.session_id;
     if (session !== undefined && (typeof session !== "string" || !session)) return invalidSchema();
     // Some Orca payloads expose no structured session id; incarnationId is the
     // sole logical session identity in that case and remains separately bound.
-    bindings.push({ worktree: item.worktree, provider: agentType, terminal_id: terminal.handle, session_id: typeof session === "string" ? session : terminal.incarnationId, incarnation_id: terminal.incarnationId, pty_id: terminal.ptyId, worktree_id: terminal.worktreeId, project_id: typeof item.raw.projectId === "string" ? item.raw.projectId : undefined, working: item.working, last_activity_at: item.last_activity_at }); if (bindings.length === 5) break;
+    bindings.push({ worktree: item.worktree, provider: agentType, terminal_id: terminal.handle, session_id: typeof session === "string" ? session : terminal.incarnationId, incarnation_id: terminal.incarnationId, pty_id: terminal.ptyId, worktree_id: terminal.worktreeId, project_id: typeof item.raw.projectId === "string" ? item.raw.projectId : undefined, working: item.working, last_activity_at: item.last_activity_at }); if (bindings.length >= maxBindings) break;
   }
-  const identities = new Set<string>(); for (const binding of bindings) { const key = `${binding.worktree}\0${binding.terminal_id}`; if (identities.has(key)) throw new JarvisError("ORCA_PANE_BINDING_AMBIGUOUS"); identities.add(key); }
+  // Remote hosts may expose connected terminals without structured agent panes.
+  // Fall back to terminal list so dual-host supervision still observes acloud PTYs.
+  if (environment !== LOCAL_ORCA_ENVIRONMENT && bindings.length < maxBindings) {
+    const bound = new Set(bindings.map(item => item.terminal_id));
+    const seenWorktrees = new Set(candidates.map(item => item.listSelector));
+    if (seenWorktrees.size === 0) {
+      for (const value of containers) {
+        if (!isRecord(value)) continue;
+        const cwdValue = value.cwd ?? value.worktreePath ?? value.path;
+        if (typeof cwdValue === "string" && cwdValue.startsWith("/")) seenWorktrees.add(`path:${cwdValue.replace(/\/+$/u, "") || "/"}`);
+      }
+    }
+    for (const listSelector of [...seenWorktrees].sort()) {
+      if (bindings.length >= maxBindings) break;
+      let terminals: OrcaTerminal[];
+      try { terminals = await adapter.list(listSelector); } catch { continue; }
+      for (const terminal of terminals) {
+        if (bindings.length >= maxBindings) break;
+        if (bound.has(terminal.handle) || !terminal.connected || !terminal.worktreeId || !terminal.ptyId) continue;
+        const provider = classifyOrcaTerminal(terminal) ?? "claude";
+        const remotePath = listSelector.startsWith("path:") ? listSelector.slice("path:".length) : listSelector;
+        const worktree = encodeEnvWorktree(environment, remotePath);
+        bindings.push({
+          worktree,
+          provider,
+          terminal_id: terminal.handle,
+          session_id: terminal.incarnationId,
+          incarnation_id: terminal.incarnationId,
+          pty_id: terminal.ptyId,
+          worktree_id: terminal.worktreeId,
+          working: true,
+          last_activity_at: terminal.lastOutputAt ?? 0,
+        });
+        bound.add(terminal.handle);
+      }
+    }
+  }
   return bindings;
 }
 
