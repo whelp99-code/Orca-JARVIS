@@ -86,6 +86,23 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
 - **데몬:** `ORCA_JARVIS_ENVIRONMENTS=local,jm-server` (기본). `project discover` 가 양 호스트 바인딩 등록. 원격 경로 인코딩 `/orca-env/jm-server/...`. worktree 상한 10.
 - **원격 실패 정책:** multi-env discover 시 jm-server 불가여도 local 은 계속.
 
+### 2026-08-11 14:16 KST — 데몬 사망/복구 실측 (관제탑 인수 브리핑)
+
+- **사고:** `service run` 데몬 프로세스 0개 (nohup 프로세스 소멸, launchd 미등록). `service.err.log` 마지막 기록 13:47.
+- **원인 1 (CLI 실패, 이후 정정):** 최초에는 `better_sqlite3.node` 와 plist 지정 node(`~/.local/bin/node` v22.23.1, ABI 127)를 맞춰 CLI만 복구했으나, `package.json`의 운영 계약은 Node `>=24`이다. 아래 2026-08-12 정정에서 Node24/ABI137로 최종 복구했다.
+- **원인 2 (launchd I/O error 5):** plist 를 외장 볼륨 경로(`.jarvis-runtime/...plist`)에서 bootstrap 하면 실패. → **`~/Library/LaunchAgents/com.jmpark.orca-jarvis.plist` 로 복사 후 bootstrap 성공.** 이후 launchd 재등록은 이 경로 사용.
+- **복구 실측:** launchd state=running, pid 87171, KeepAlive, `ORCA_JARVIS_ENVIRONMENTS=local,jm-server`. 가동 25초(2+사이클) 후 err.log 신규 기록 0건. `report status`: worktrees 9, bindings 14 (local 12 + jm-server jm-loop-miner 2), reports_pending 1.
+- **이중 호스트 실측:** LOCAL v1.4.179 ready, 터미널 20, 워크트리 20. JM-SERVER ready, 터미널 5(engineer-mcp 2·jm-loop-miner 2·sangfor-os 1), 워크트리 8.
+
+### 2026-08-12 00:41 KST — 고CPU 원인 확정 및 Node24 복구
+
+- **증상 실측:** Node22 PID 87171의 main thread가 반복 측정에서 CPU 66.9~96.3%, 10시간 이상 runnable 상태였고 SIGTERM에도 종료되지 않았다.
+- **확정 원인:** launchd가 manifest 계약(Node `>=24`) 밖인 v22.23.1로 서비스 실행. 동일 DB·환경·10초 interval에서 Node24.19.0/ABI137로 전환하자 20초 연속 샘플 모두 CPU 0.0%, sleeping.
+- **복구:** 두 plist의 실행 경로를 `/Users/jmpark/.nvm/versions/node/v24.19.0/bin/node`로 변경하고 better-sqlite3를 ABI137로 rebuild. launchd PID 21274로 재기동.
+- **report delivery 복구:** `service run`이 delivery JSON을 stdout에 기록한 뒤 ACK하도록 수정. 실환경에서 `live_report_db75...` 출력 후 DB가 pending 1/delivered 1 → pending 0/delivered 2로 전환했고, 다음 사이클에서 cursor 14개 갱신·delivered 3을 확인해 관측 재개를 검증했다.
+- **최종 데몬:** Node24 launchd PID 72740. 12초 표본 CPU 0.0~1.7%(사이클 시점), sleeping, reports_pending 0.
+- **검증:** focused 회귀 1/1, lint/typecheck, migration-count 테스트를 제외한 87/87, pre-GJC acceptance, build, CLI smoke 통과. 독립 reviewer 1차 REJECT(출력-before-ACK 테스트 공백) 반영 후 2차 APPROVE. 기존 `migrations.test.ts`는 migration 020이 이미 존재하지만 기대값이 19라 1건 실패(이번 변경과 무관).
+
 ## 2026-08-10 MUST 후속 — PR 머지 + hardening main + worktree 청소
 
 ### 1. PR 머지 (완료)
