@@ -28,6 +28,16 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
 추측으로 상태를 만들지 말고 실제 Orca 상태를 읽어라. 미해결 항목부터 보고해.
 ```
 
+## 2026-08-12 — Control Plane hardening 병합 완료
+
+- **호스트 실측:** `MacBook-Pro.local`에서 LOCAL Orca runtime `ready`·reachable, 19 worktrees / 29 terminals. JM-SERVER runtime `ready`·reachable, 5 worktrees / 5 terminals.
+- **운영 DB:** `.jarvis-runtime/jarvis.sqlite` 상태 조회는 `MIGRATIONS_PENDING` (`027_control_execution_hardening.sql`)으로 종료됐다. 운영 DB migration·daemon 재시작은 수행하지 않았다.
+- **기능 커밋:** `61d5daa` (`feat: harden JARVIS control plane runtime`)
+- **문서 커밋:** `e2dcaca` (`docs: define JARVIS task timeline boundary`)
+- **검증:** Node 24.19.0 / ABI 137, lint, typecheck, 31 test files / 146 tests, pre-GJC acceptance, build, CLI smoke 모두 exit 0. GitHub Actions `verify`도 1m6s, exit 0.
+- **병합:** GitHub PR [#1](https://github.com/whelp99-code/Orca-JARVIS/pull/1) `MERGED`, merge commit `f866e62d273f699833868b49829e48e97e6149ef`.
+- **동기화:** 병합 직후 로컬 `main`과 `origin/main`은 `f866e62`, ahead/behind `0/0`, porcelain clean.
+
 ## 2026-08-12 — Buzz 컨셉 교정: Collaboration Platform → Task Timeline
 
 - **제품 경계 정정:** JARVIS 내부의 별도 Room·Identity·Membership·Message Store·Buzz Bridge 구현을 폐기했다. Buzz에서는 기존 작업·Agent·승인·검증 기록을 한 화면에 보여주는 Timeline UX만 참고한다.
