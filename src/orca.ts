@@ -89,16 +89,17 @@ export async function discoverOrcaBindings(runnerOrOptions?: OrcaRunner | Discov
     ? { ...(maybeOptions ?? {}), runner: runnerOrOptions }
     : (runnerOrOptions ?? {});
   const environments = options.environments ?? (options.environment ? [options.environment] : options.runner ? [LOCAL_ORCA_ENVIRONMENT] : parseOrcaEnvironments());
-  const maxBindings = options.maxBindings ?? Math.min(10, Math.max(5, environments.length * 5));
+  const globalMaxBindings = options.maxBindings ?? 10;
+  const perEnvironmentMaxBindings = options.maxBindings === undefined ? 5 : options.maxBindings;
   const tolerateRemoteFailure = options.tolerateRemoteFailure ?? true;
   const collected: DiscoveredOrcaBinding[] = [];
   for (const environment of environments) {
-    if (collected.length >= maxBindings) break;
+    if (collected.length >= globalMaxBindings) break;
     const runner = options.runner && environments.length === 1
       ? options.runner
       : createOrcaRunner(environment, options.runner ?? defaultRunner);
     try {
-      const found = await discoverOrcaBindingsInEnvironment(runner, environment, maxBindings - collected.length);
+      const found = await discoverOrcaBindingsInEnvironment(runner, environment, Math.min(perEnvironmentMaxBindings, globalMaxBindings - collected.length));
       collected.push(...found);
     } catch (error) {
       if (environment === LOCAL_ORCA_ENVIRONMENT || !tolerateRemoteFailure) throw error;
@@ -131,49 +132,12 @@ async function discoverOrcaBindingsInEnvironment(runner: OrcaRunner, environment
   const bindings: DiscoveredOrcaBinding[] = [];
   for (const item of candidates) {
     const agentType = item.raw.agentType as OrcaProvider; const paneKey = string(item.raw.paneKey); if (!byWorktree.has(item.worktree) && !failedWorktrees.has(item.worktree)) { try { byWorktree.set(item.worktree, await adapter.list(item.listSelector)); } catch (error) { failedWorktrees.add(item.worktree); if (item.working) throw error; continue; } } if (failedWorktrees.has(item.worktree)) { if (item.working) throw new JarvisError("ORCA_PANE_BINDING_UNMATCHED"); continue; } const terminals = byWorktree.get(item.worktree) ?? []; if (terminals.some(terminal => (terminal.tabId === undefined) !== (terminal.leafId === undefined))) throw new JarvisError("ORCA_PANE_BINDING_INVALID"); const matches = terminals.filter(terminal => terminal.tabId !== undefined && terminal.leafId !== undefined && `${terminal.tabId}:${terminal.leafId}` === paneKey);
-    if (matches.length > 1) throw new JarvisError("ORCA_PANE_BINDING_AMBIGUOUS"); if (matches.length === 0) { if (item.working) throw new JarvisError("ORCA_PANE_BINDING_UNMATCHED"); continue; } const terminal = matches[0]!;
+    if (matches.length > 1) throw new JarvisError("ORCA_PANE_BINDING_AMBIGUOUS"); if (matches.length === 0) { if (item.working && environment === LOCAL_ORCA_ENVIRONMENT) throw new JarvisError("ORCA_PANE_BINDING_UNMATCHED"); continue; } const terminal = matches[0]!;
     if (!terminal.worktreeId || !terminal.ptyId) throw new JarvisError("ORCA_PANE_BINDING_INVALID"); const session = item.raw.sessionId ?? item.raw.session_id;
     if (session !== undefined && (typeof session !== "string" || !session)) return invalidSchema();
     // Some Orca payloads expose no structured session id; incarnationId is the
     // sole logical session identity in that case and remains separately bound.
     bindings.push({ worktree: item.worktree, provider: agentType, terminal_id: terminal.handle, session_id: typeof session === "string" ? session : terminal.incarnationId, incarnation_id: terminal.incarnationId, pty_id: terminal.ptyId, worktree_id: terminal.worktreeId, project_id: typeof item.raw.projectId === "string" ? item.raw.projectId : undefined, working: item.working, last_activity_at: item.last_activity_at }); if (bindings.length >= maxBindings) break;
-  }
-  // Remote hosts may expose connected terminals without structured agent panes.
-  // Fall back to terminal list so dual-host supervision still observes acloud PTYs.
-  if (environment !== LOCAL_ORCA_ENVIRONMENT && bindings.length < maxBindings) {
-    const bound = new Set(bindings.map(item => item.terminal_id));
-    const seenWorktrees = new Set(candidates.map(item => item.listSelector));
-    if (seenWorktrees.size === 0) {
-      for (const value of containers) {
-        if (!isRecord(value)) continue;
-        const cwdValue = value.cwd ?? value.worktreePath ?? value.path;
-        if (typeof cwdValue === "string" && cwdValue.startsWith("/")) seenWorktrees.add(`path:${cwdValue.replace(/\/+$/u, "") || "/"}`);
-      }
-    }
-    for (const listSelector of [...seenWorktrees].sort()) {
-      if (bindings.length >= maxBindings) break;
-      let terminals: OrcaTerminal[];
-      try { terminals = await adapter.list(listSelector); } catch { continue; }
-      for (const terminal of terminals) {
-        if (bindings.length >= maxBindings) break;
-        if (bound.has(terminal.handle) || !terminal.connected || !terminal.worktreeId || !terminal.ptyId) continue;
-        const provider = classifyOrcaTerminal(terminal) ?? "claude";
-        const remotePath = listSelector.startsWith("path:") ? listSelector.slice("path:".length) : listSelector;
-        const worktree = encodeEnvWorktree(environment, remotePath);
-        bindings.push({
-          worktree,
-          provider,
-          terminal_id: terminal.handle,
-          session_id: terminal.incarnationId,
-          incarnation_id: terminal.incarnationId,
-          pty_id: terminal.ptyId,
-          worktree_id: terminal.worktreeId,
-          working: true,
-          last_activity_at: terminal.lastOutputAt ?? 0,
-        });
-        bound.add(terminal.handle);
-      }
-    }
   }
   return bindings;
 }

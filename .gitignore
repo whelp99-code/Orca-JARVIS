@@ -10,5 +10,10 @@ dist/
 *.signing-key.pem
 *.policy-key.pem
 .jarvis-runtime/
+.jarvis-backups/
+state/CURRENT_STATE.json
+state/CURRENT_STATE.md
+state/.current-state/
 .ouroboros/
 .converge-loop/
+.chatgpt2codex/
