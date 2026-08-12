@@ -53,6 +53,15 @@ RISKS
 
 각 task에 포함: 대상 repo/worktree, 목적, 산출물, 허용 범위, 금지, 권한, 테스트, 완료 조건, dependency, 추천 Worker 역할.
 
+## Task Timeline
+
+- JARVIS는 협업 메신저가 아니라 AgentOps 관제·승인·검증 시스템이다.
+- Buzz에서 참고하는 것은 사람 요청, Agent 진행, 승인, 실행, 검증을 한 작업 화면에서 시간순으로 보는 UX뿐이다.
+- Timeline은 기존 work, Control Plane, Workflow, GJC, Progress, Verification 정본을 읽기 전용으로 합성한다. 별도 room, identity, membership, message store를 만들지 않는다.
+- Timeline의 Agent 주장·Workflow 출력은 실행 권한이 아니다.
+- **모든 변경·실행은 별도 Control Plane command request와 사람의 단일 사용 승인 영수증을 거친다.**
+- 상세 계약: [docs/TASK_TIMELINE_KO.md](docs/TASK_TIMELINE_KO.md)
+
 ## Worker 역할 및 모델 라우팅
 
 | 역할 | 목적 | 기본 권한 |

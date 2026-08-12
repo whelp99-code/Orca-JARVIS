@@ -1,6 +1,6 @@
 # JARVIS 관제탑 — 채널 레지스트리
 
-이 리포지터리는 코드를 담지 않는다. JARVIS Master(사람 ↔ 프로젝트별 메인 에이전트)의 **소통 창구**다.
+이 리포지터리는 JARVIS AgentOps runtime 코드와 관제 문서를 함께 담는다. JARVIS Master(사람 ↔ 프로젝트별 메인 에이전트)의 **통제·승인·검증 창구**다.
 운영 규율은 [ORCA_MASTER_CHARTER.md](ORCA_MASTER_CHARTER.md)를 따른다.
 
 - 관제탑 터미널(coordinator handle): `term_8ea40ebd-9369-4ff2-b24a-e6f63b9a8648` (`GJC: Orca-JARVIS`,
@@ -27,6 +27,17 @@
 ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어받아라.
 추측으로 상태를 만들지 말고 실제 Orca 상태를 읽어라. 미해결 항목부터 보고해.
 ```
+
+## 2026-08-12 — Buzz 컨셉 교정: Collaboration Platform → Task Timeline
+
+- **제품 경계 정정:** JARVIS 내부의 별도 Room·Identity·Membership·Message Store·Buzz Bridge 구현을 폐기했다. Buzz에서는 기존 작업·Agent·승인·검증 기록을 한 화면에 보여주는 Timeline UX만 참고한다.
+- **정본:** `work_items`, Control Plane, Workflow, GJC, Progress, Verification 데이터를 `TaskTimeline`이 읽기 전용으로 합성한다. Timeline 조회 전후 `total_changes()` 불변 테스트를 추가했다.
+- **승인:** Timeline·Agent 주장·Workflow 출력은 실행 권한이 아니다. 모든 변경·실행은 기존 Control Command + 사람의 단일 사용 Ed25519 승인 영수증 + Approved Executor 경로를 유지한다.
+- **DB:** 운영 이력인 migration 025는 수정하지 않았다. migration `026_task_timeline.sql`을 적용해 Collaboration 신규 쓰기 trigger 8개를 fail-closed 하고, 기존 행은 보존한다. 운영 DB `quick_check=ok`, 적용 migration 26개, Collaboration 데이터 0행.
+- **운영 백업:** `.jarvis-runtime/backups/pre-026-task-timeline-20260812T1042KST.sqlite` (1,032,192 bytes), `quick_check=ok`, migration 25개 상태에서 생성.
+- **검증:** Node 24.19.0/ABI137, lint, typecheck, 28 test files / 105 tests, pre-GJC acceptance, build, CLI smoke 모두 exit 0. Timeline/폐기 focused 검증 3 files / 4 tests도 통과.
+- **현재 daemon:** launchd `running`, PID 60502, GJC operational, `last_error_code=null`, worktrees 9, bindings 14, reports pending 0. 제어면의 별도 재시작 승인이 요구되어 프로세스 교체는 수행하지 않았지만, migration 026이 DB에서 구 Collaboration 쓰기를 즉시 차단한다.
+- **정본 문서:** [docs/TASK_TIMELINE_KO.md](docs/TASK_TIMELINE_KO.md)
 
 ## 2026-08-10 실측 갱신 및 오너 지시 반영
 
