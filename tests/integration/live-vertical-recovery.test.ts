@@ -37,7 +37,7 @@ function signedReceipt(key: KeyObject, request: Record<string, unknown>, decisio
 }
 
 describe("live signed vertical and recovery", () => {
-  it("consolidates signed candidate reports, replays safely, and sends one exact human and policy resume", async () => {
+  it("consolidates signed reports and sends each human or policy resume exactly once", async () => {
     const root = mkdtempSync(join(tmpdir(), "jarvis-live-vertical-"));
     const codexWorktree = join(root, "codex-worktree"); const claudeWorktree = join(root, "claude-worktree"); const rogueWorktree = join(root, "rogue-worktree"); mkdirSync(codexWorktree); mkdirSync(claudeWorktree); mkdirSync(rogueWorktree);
     const db = join(root, "authority.sqlite"); const frozen = new Date(Date.now() + 86_400_000); const clock = () => new Date(frozen.getTime());
@@ -128,7 +128,36 @@ describe("live signed vertical and recovery", () => {
         ["terminal", "send", "--terminal", "claude-terminal", "--text", "Resume only the already-authorized bounded work. Do not widen scope or perform external actions.", "--enter", "--json"]
       ]);
       await run(["supervisor", "once", "--db", db]); expect(calls).toHaveLength(4);
-      const final = new AuthorityDb(db); expect(Number((final.db.prepare("SELECT COUNT(*) AS count FROM pre_gjc_policy_resume_intents WHERE state='delivered'").get() as { count: number }).count)).toBe(1); final.close();
+      const final = new AuthorityDb(db); expect(Number((final.db.prepare("SELECT COUNT(*) AS count FROM pre_gjc_policy_resume_intents WHERE state='pending'").get() as { count: number }).count)).toBe(0); expect(Number((final.db.prepare("SELECT COUNT(*) AS count FROM pre_gjc_policy_resume_intents WHERE state='delivered'").get() as { count: number }).count)).toBe(1); final.close();
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  }, 20_000);
+
+  it("auto-delivers one policy resume and does not resend it after replay", async () => {
+    const root = mkdtempSync(join(tmpdir(), "jarvis-policy-auto-red-")); const worktree = join(root, "worktree"); mkdirSync(worktree); const db = join(root, "authority.sqlite"); const frozen = new Date(Date.now() + 86_400_000); const clock = () => new Date(frozen.getTime());
+    const decision = generateKeyPairSync("ed25519"); const verifier = generateKeyPairSync("ed25519"); const progress = generateKeyPairSync("ed25519"); const decisionPublic = join(root, "decision.pub.pem"); const verifierPublic = join(root, "verifier.pub.pem"); writeFileSync(decisionPublic, publicPem(decision.publicKey)); writeFileSync(verifierPublic, publicPem(verifier.publicKey));
+    const writeJson = (name: string, value: unknown) => { const file = join(root, name); writeFileSync(file, JSON.stringify(value)); return file; };
+    const runner = async (args: readonly string[]) => args[1] === "list"
+      ? JSON.stringify({ ok: true, result: { terminals: [{ handle: "policy-terminal", ptyId: "policy-pty", incarnationId: "policy-incarnation", worktreeId: "policy-worktree-id", worktreePath: null, title: "Codex", connected: true, writable: true, lastOutputAt: null, preview: null }] } })
+      : JSON.stringify({ ok: true, result: { terminal: { handle: "policy-terminal", status: "ok", tail: [], truncated: false, limited: false, oldestCursor: null, nextCursor: "policy-read", latestCursor: "policy-read", returnedLineCount: 0 } } });
+    const calls: string[][] = []; const liveCommand = (args: readonly string[]) => { calls.push([...args]); return args[1] === "show" ? JSON.stringify({ ok: true, result: { terminal: { handle: "policy-terminal", incarnationId: "policy-incarnation", ptyId: "policy-pty", worktreeId: "policy-worktree-id", connected: true, writable: true } } }) : JSON.stringify({ ok: true, result: { accepted: true } }); };
+    const run = (args: string[]) => execute(args, { orcaRunner: runner, liveOrcaCommand: liveCommand, clock });
+    const ack = async (result: Record<string, unknown>) => { const report = (result.recovered_report ?? result.report) as { report_id: string } | null; expect(report, JSON.stringify(result)).not.toBeNull(); await run(["report", "ack", report!.report_id, "--db", db]); };
+    try {
+      await run(["init", "--db", db, "--decision_public", decisionPublic, "--decision_key_id", "decision-anchor", "--decision_principal", "operator", "--verifier_public", verifierPublic, "--verifier_key_id", "verifier-anchor", "--verifier_principal", "independent"]);
+      await run(["pre-gjc", "projects", "configure", writeJson("project.json", { project_id: "policy-project", provider: "codex", token_budget: 20, cache_budget: 20 }), "--db", db]);
+      await run(["project", "register", writeJson("binding.json", { worktree, provider: "codex", terminal_id: "policy-terminal", session_id: "policy-session", incarnation_id: "policy-incarnation", pty_id: "policy-pty", worktree_id: "policy-worktree-id", project_id: "policy-project" }), "--db", db]);
+      await run(["project", "live-resume", "policy-project", "enable", "--db", db]);
+      await run(["pre-gjc", "keys", "register", writeJson("progress-key.json", { key_id: "policy-progress", provider: "codex", purpose: "progress-signal", public_key_pem: publicPem(progress.publicKey), active: true, not_before: iso(frozen.getTime() - 172_800_000), expires_at: iso(frozen.getTime() + 3_600_000) }), "--db", db]);
+      await ack(await run(["supervisor", "once", "--db", db]));
+      const stopped = signedSignal(progress.privateKey, "codex", "policy-terminal", "policy-incarnation", "1", "stopped", iso(frozen.getTime() - 300), "policy-progress"); const envelopeFile = writeJson("stopped.json", { progress_signal: stopped });
+      await run(["pre-gjc", "candidates", "ingest", worktree, envelopeFile, "--db", db]); await ack(await run(["supervisor", "once", "--db", db]));
+      expect(calls).toEqual([
+        ["terminal", "show", "--terminal", "policy-terminal", "--json"],
+        ["terminal", "send", "--terminal", "policy-terminal", "--text", "Resume only the already-authorized bounded work. Do not widen scope or perform external actions.", "--enter", "--json"],
+      ]);
+      await run(["pre-gjc", "candidates", "ingest", worktree, envelopeFile, "--db", db]); await run(["supervisor", "once", "--db", db]);
+      expect(calls).toHaveLength(2);
+      const reopened = new AuthorityDb(db); expect(reopened.db.prepare("SELECT state,attempts FROM pre_gjc_policy_resume_intents").get()).toMatchObject({ state: "delivered", attempts: 1 }); reopened.close();
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 20_000);
 });

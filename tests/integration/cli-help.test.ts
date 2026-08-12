@@ -1,0 +1,18 @@
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, rmSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+
+const cli = join(process.cwd(), "dist/src/cli.js");
+const dbArtifacts = (db: string, root: string) => [db, `${db}-wal`, `${db}-shm`, join(root, "jarvis-authority.sqlite"), join(root, "jarvis-authority.sqlite-wal"), join(root, "jarvis-authority.sqlite-shm")];
+
+describe("CLI help", () => {
+  it.each(["--help", "-h", "help"])("%s exits before opening the authority database", arg => {
+    const root = mkdtempSync(join(tmpdir(), "jarvis-cli-help-")); const db = join(root, "authority.sqlite");
+    try {
+      const result = spawnSync(process.execPath, [cli, arg], { cwd: root, env: { ...process.env, JARVIS_DB: db }, encoding: "utf8", timeout: 5000 });
+      expect({ status: result.status, signal: result.signal, spawnError: result.error?.message, dbArtifacts: dbArtifacts(db, root).filter(existsSync), stderr: result.stderr.trim() }).toMatchObject({ status: 0, signal: null, spawnError: undefined, dbArtifacts: [] });
+    } finally { rmSync(root, { recursive: true, force: true }); }
+  });
+});

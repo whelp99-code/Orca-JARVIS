@@ -86,4 +86,26 @@ describe("orca multi-environment helpers", () => {
     expect(calls[0]).toEqual(["worktree", "ps", "--environment", "jm-server", "--json"]);
     expect(calls[1]).toEqual(["terminal", "list", "--environment", "jm-server", "--worktree", `path:${remoteRoot}`, "--json"]);
   });
+
+  it("caps discovery at five bindings per environment and ten overall", async () => {
+    const localRoot = mkdtempSync(`${tmpdir()}/orca-env-cap-local-`); const remoteRoot = "/home/jm/orca/projects/capped";
+    const agents = (environment: string) => Array.from({ length: 6 }, (_, index) => ({ agentType: index % 2 === 0 ? "codex" : "claude", paneKey: `${environment}-${index}:leaf`, state: "working", updatedAt: 100 - index }));
+    const terminals = (environment: string, root: string) => Array.from({ length: 6 }, (_, index) => ({ handle: `${environment}-terminal-${index}`, tabId: `${environment}-${index}`, leafId: "leaf", ptyId: `${environment}-pty-${index}`, incarnationId: `${environment}-inc-${index}`, worktreeId: `${environment}-wt-${index}`, worktreePath: root, title: index % 2 === 0 ? "Codex" : "Claude", connected: true, writable: true, lastOutputAt: 100 - index, preview: null }));
+    const runner: OrcaRunner = async args => {
+      const remote = args.includes("jm-server"); const environment = remote ? "remote" : "local"; const root = remote ? remoteRoot : localRoot;
+      return args[0] === "worktree" ? envelope({ worktrees: [{ cwd: root, agents: agents(environment) }] }) : envelope({ terminals: terminals(environment, root) });
+    };
+    const found = await discoverOrcaBindings({ runner, environments: ["local", "jm-server"], tolerateRemoteFailure: false });
+    expect(found).toHaveLength(10);
+    expect(found.filter(binding => !binding.worktree.startsWith("/orca-env/"))).toHaveLength(5);
+    expect(found.filter(binding => binding.worktree.startsWith("/orca-env/jm-server/"))).toHaveLength(5);
+  });
+
+  it("excludes remote terminals that have no structured agent pane binding", async () => {
+    const remoteRoot = "/home/jm/orca/projects/unstructured";
+    const runner: OrcaRunner = async args => args[0] === "worktree"
+      ? envelope({ worktrees: [{ cwd: remoteRoot, agents: [] }] })
+      : envelope({ terminals: [{ handle: "remote-unstructured", ptyId: "pty", incarnationId: "inc", worktreeId: "wt", worktreePath: remoteRoot, title: "Claude", connected: true, writable: true, lastOutputAt: 1, preview: null }] });
+    await expect(discoverOrcaBindings({ runner, environment: "jm-server", tolerateRemoteFailure: false })).resolves.toEqual([]);
+  });
 });

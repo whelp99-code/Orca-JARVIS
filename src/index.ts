@@ -12,5 +12,13 @@ export { LiveSupervisor, type LiveBinding, type LiveObservation, type LiveObserv
 export { GjcCoordinatorClient, spawnGjc, GJC_ENV, GJC_PROTOCOL_VERSION, type GjcCall, type GjcRun, type GjcRunResult, type GjcRunner } from "./gjc.js";
 export { GjcRuntimeService } from "./service.js";
 export { verifyDecisionReceipt, verifyPolicyAuthorization, verifyVerificationEvidence, receiptPayload, policyPayload, verificationPayload, signReceipt, signPolicy, signVerificationEvidence, RECEIPT_DOMAIN, POLICY_DOMAIN, VERIFICATION_DOMAIN } from "./receipt.js";
+export { TaskTimeline, type TaskTimelineContext, type TaskTimelineEvent, type TaskTimelineKind, type TaskTimelineSource, type TaskTimelineSummary } from "./task-timeline.js";
 export type { CensusSnapshot, CensusWork, ContinuationInput, DecisionReceipt, GuardBindings, PolicyAuthorization, VerificationEvidence, ProgressAssessment, ProgressBatch, ProgressState, ProgressTransition, ProgressTransitionEvidence, StoredProgressReport, ProgressSignal, ProgressSignalKey, ProgressEvidenceInput, ProgressClassification, ProgressReasonCode } from "./types.js";
 export type { PreGjcEvidence, PreGjcFixture, PreGjcKeyRevocation, PreGjcTarget } from "./pre-gjc.js";
+export { runDoctor, type DoctorCheck, type DoctorReport } from "./doctor.js";
+export { ControlPlane, controlCommandDigest, signCommandApproval, verifyCommandApproval, COMMAND_APPROVAL_DOMAIN, type ActionLevel, type ControlCommandRequestInput, type StoredControlCommand, type CommandApprovalReceipt, type ClaimedControlCommand, type ControlEventInput } from "./control-plane.js";
+export { buildCurrentState, type CurrentStateProjection } from "./state-projection.js";
+export { ApprovedCommandExecutor, type ApprovedExecutionResult } from "./approved-executor.js";
+export { DEFAULT_AGENTOPS_LOOP, type LoopNodeKind, type LoopNode, type LoopSpec, type WorkflowRunInput, type WorkflowAdvanceInput, type StoredWorkflowRun } from "./loopgraph.js";
+export { BUILTIN_RUNBOOKS, type RunbookSpec, type RunbookResult, type HostOperations } from "./runbook.js";
+export { type MicroLoopName, type MicroLoopHandler, type MicroLoopOutcome } from "./microloops.js";
