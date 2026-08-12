@@ -38,6 +38,15 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
 - **병합:** GitHub PR [#1](https://github.com/whelp99-code/Orca-JARVIS/pull/1) `MERGED`, merge commit `f866e62d273f699833868b49829e48e97e6149ef`.
 - **동기화:** 병합 직후 로컬 `main`과 `origin/main`은 `f866e62`, ahead/behind `0/0`, porcelain clean.
 
+## 2026-08-13 — Control Plane hardening 운영 반영
+
+- **안전 백업:** daemon을 내리고 SQLite WAL checkpoint 후 `.backup`으로 `.jarvis-runtime/backups/pre-027-control-hardening-20260812T235511KST.sqlite`를 생성했다. 원본·백업은 각각 1,069,056 bytes, migration 26개, `quick_check=ok`였다. 백업 SHA-256은 `7ebc75c27e143eae654ffdfc2c7147cbd7e137bf71faae0353913781db2f7b2c`다.
+- **Migration 027:** 운영 DB에 `027_control_execution_hardening.sql`을 적용했다. 장부 checksum은 `a5004fed13610811c1d7b47cf15bc3d5a02388b80f18f0cd7a2e3d0a6a1c0172`, 적용 후 27/27과 `quick_check=ok`를 확인했다.
+- **Daemon:** `~/Library/LaunchAgents/com.jmpark.orca-jarvis.plist`를 bootstrap했다. Node 24.19.0 / ABI 137로 동작한다.
+- **재시작 관측:** bootstrap 후 외부 Orca CLI가 일시적으로 `ORCA_CLI_FAILED`를 반환해 launchd `runs=46`, `last exit code=2`가 기록됐다. 현재 PID `80450`은 2026-08-13 00:05:28 KST부터 생존했고 error log mtime은 그보다 앞선 00:05:18 KST에서 멈췄다.
+- **운영 검증:** `doctor ok=true`, heartbeat 9,183ms, last error `null`, reports pending 0 / delivered 3, worktrees 9, bindings 14.
+- **Git:** 운영 반영 직전 로컬 `main`과 `origin/main`은 `5bd28eb`, ahead/behind `0/0`, porcelain clean.
+
 ## 2026-08-12 — Buzz 컨셉 교정: Collaboration Platform → Task Timeline
 
 - **제품 경계 정정:** JARVIS 내부의 별도 Room·Identity·Membership·Message Store·Buzz Bridge 구현을 폐기했다. Buzz에서는 기존 작업·Agent·승인·검증 기록을 한 화면에 보여주는 Timeline UX만 참고한다.
