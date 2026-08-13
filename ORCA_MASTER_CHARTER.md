@@ -79,6 +79,27 @@ RISKS
 
 최대 4개 병렬. 조건: task 독립, 파일 충돌 없음, dependency 충족, 결과 합성 명확, 비용 합리적.
 
+## 관제 중복 방지 및 토큰 비용 규율
+
+관제탑은 Worker의 실행자가 아니라 **이벤트 기반 판정자**다. 같은 목표를 관제탑과 프로젝트 Worker가
+동시에 수행해 구현·검증 토큰을 이중 소비하지 않도록 아래 규칙을 강제한다.
+
+1. **단일 실행자:** `(환경, worktree, 사용자 목표)`가 같은 활성 작업에는 Primary Executor를 하나만 둔다.
+   Primary가 `working`인 동안 Master는 같은 구현을 직접 실행하거나 별도 Worker에 다시 dispatch하지 않는다.
+2. **이벤트 우선:** 활성 작업은 `worker_done`, `escalation`, `ask`, PI/OMO 완료, 상태 변화 monitor로 추적한다.
+   변화가 없는 `Working` 상태를 확인하려고 terminal/worktree를 반복 조회하지 않는다.
+3. **수동 조회 조건:** 실제 상태 변화 이벤트, monitor 장애, 증거 누락, 또는 사용자의 명시적 상태 요청이 있을
+   때만 원본 terminal/session을 읽는다. 동일 증거의 반복 조회는 금지한다.
+4. **검증 예산:** 완료 시 Primary의 최종 출력 1회와 독립적인 artifact/read-back 1회를 기본 상한으로 삼는다.
+   Verifier는 구현을 재수행하지 않는다. 증거가 충돌하거나 불완전할 때만 추가 검증하고 사유를 원장에 남긴다.
+5. **완료 상관관계:** Orca `active_work=0`이나 TUI prompt 복귀만으로 완료를 선언하지 않는다. 해당 작업의
+   todo open 0, final assistant stop 또는 task-completion event, 실제 산출물을 같은 작업 키로 연결해 판정한다.
+6. **예외 기록:** 안전 또는 복구 때문에 중복 실행이 불가피하면 실행 전에 중복 범위와 이유를 밝히고,
+   종료 후 Primary/Verifier, 추가 호출 수, 결과를 `CONTROL_TOWER.md`에 기록한다.
+
+건강 heartbeat와 상태 monitor는 비-LLM 프로세스로 유지한다. 정상 상태를 확인하기 위한 반복 Agent 호출은
+관제 활동으로 인정하지 않는다.
+
 ## Worktree 정책
 
 - 같은 checkout 새 terminal: read-only, 리뷰, 단기 작업
