@@ -14,24 +14,39 @@
   },
   "scripts": {
     "build": "tsc && node scripts/copy-migrations.mjs",
-    "lint": "eslint src tests --max-warnings=0",
+    "lint": "eslint src tests dashboard --max-warnings=0",
     "pretest": "npm run build",
     "test": "vitest run --no-file-parallelism",
     "acceptance:pre-gjc": "node scripts/pre-gjc-acceptance.mjs",
     "verify": "npm run runtime:check && npm run lint && tsc --noEmit && npm test && npm run acceptance:pre-gjc -- --fixture test/fixtures/pre-gjc-e2e.json --clock 2026-08-09T00:00:00.000Z && npm run build && node scripts/cli-smoke.mjs",
     "runtime:check": "node scripts/assert-runtime.mjs",
-    "prebuild": "npm run runtime:check"
+    "prebuild": "npm run runtime:check",
+    "build:backend": "tsc && node scripts/copy-migrations.mjs",
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.dashboard.json --noEmit"
   },
   "dependencies": {
-    "better-sqlite3": "^12.2.0"
+    "better-sqlite3": "^12.2.0",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "react-router-dom": "7.18.2"
   },
   "devDependencies": {
+    "@axe-core/playwright": "4.13.0",
+    "@eslint/js": "^9.33.0",
+    "@playwright/test": "1.62.1",
+    "@testing-library/jest-dom": "7.0.1",
+    "@testing-library/react": "16.3.2",
+    "@testing-library/user-event": "14.6.5",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^24.3.0",
-    "@eslint/js": "^9.33.0",
+    "@types/react": "19.2.18",
+    "@types/react-dom": "19.2.4",
+    "@vitejs/plugin-react": "5.1.4",
     "eslint": "^9.33.0",
+    "jsdom": "30.0.1",
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.39.0",
+    "vite": "7.3.6",
     "vitest": "^3.2.4"
   },
   "packageManager": "npm@11.17.0"
