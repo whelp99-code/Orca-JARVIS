@@ -184,12 +184,20 @@ describe("ControlCenterRoot live routing", () => {
     const nav = screen.getByRole("navigation");
     expect(within(nav).getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/");
     expect(within(nav).getByRole("link", { name: "Tasks" })).toHaveAttribute("href", "/tasks");
+    expect(within(nav).getByRole("link", { name: "New proposal" })).toHaveAttribute("href", "/proposals");
     expect(within(nav).getByRole("link", { name: "Agents" })).toHaveAttribute("href", "/agents");
     expect(within(nav).getByRole("link", { name: "Approvals" })).toHaveAttribute("href", "/approvals");
     expect(texts("Tasks")).toEqual([
       expect.stringContaining("zeta-task"),
       expect.stringContaining("alpha-task"),
     ]);
+  });
+
+  it("renders the proposal interview on /proposals", async () => {
+    await liveRoot("/proposals");
+    expect(screen.getByRole("heading", { level: 1, name: "New proposal" })).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Objective" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Preview" })).toBeEnabled();
   });
 
   it("loads a task once and renders summary, timeline, and graph", async () => {

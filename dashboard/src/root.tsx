@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useSyncExternalStore } from "react";
+import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { BrowserRouter, MemoryRouter, NavLink, Route, Routes, useParams } from "react-router-dom";
 import type {
   AgentListResponse,
@@ -7,11 +7,13 @@ import type {
 } from "../../src/dashboard/read-model.js";
 import type { TerminalLogResponse } from "../../src/dashboard/terminal-reader.js";
 import type { DashboardClient } from "./api.js";
+import { createProposalMutationClient } from "./api-mutations.js";
 import App from "./app.js";
 import { TerminalLog } from "./components/terminal-log.js";
 import { AgentsPage } from "./pages/agents-page.js";
 import { TaskDetailPage } from "./pages/task-detail-page.js";
 import { TaskListPage } from "./pages/task-list-page.js";
+import { ProposalPage } from "./proposal-page.js";
 import type { createDashboardStore, DashboardState, ResourceState } from "./store.js";
 import { useDetailResource } from "./use-detail-resource.js";
 
@@ -30,6 +32,7 @@ const LOG_LIMIT = 500;
 const NAV_ITEMS = [
   { label: "Overview", to: "/" },
   { label: "Tasks", to: "/tasks" },
+  { label: "New proposal", to: "/proposals" },
   { label: "Agents", to: "/agents" },
   { label: "Approvals", to: "/approvals" },
 ] as const;
@@ -49,6 +52,7 @@ export function ControlCenterRoot({ store, client, initialPath }: ControlCenterR
 
 function ControlCenter({ store, client }: Readonly<{ store: DashboardStore; client: RootClient }>) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  const proposalClient = useMemo(() => createProposalMutationClient(client.session), [client]);
 
   useEffect(() => {
     store.start();
@@ -70,6 +74,7 @@ function ControlCenter({ store, client }: Readonly<{ store: DashboardStore; clie
         <Route path="/" element={<OverviewRoute state={state} store={store} />} />
         <Route path="/tasks" element={<TaskListPage state={state.tasks} />} />
         <Route path="/tasks/:taskId" element={<TaskDetailRoute client={client} />} />
+        <Route path="/proposals" element={<ProposalPage client={proposalClient} />} />
         <Route path="/agents" element={<AgentsPage state={state.agents} />} />
         <Route path="/agents/:agentId" element={<AgentDetailRoute agents={state.agents} client={client} />} />
         <Route path="/approvals" element={<ApprovalsRoute state={state.approvals} />} />

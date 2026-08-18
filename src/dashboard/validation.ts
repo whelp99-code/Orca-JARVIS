@@ -151,6 +151,10 @@ function parseProposal(value: unknown, fail: Fail): TeamProposalRequestV1 {
   return parsed;
 }
 
+export function parseTeamProposalRequest(value: unknown): TeamProposalRequestV1 {
+  return parseProposal(value, failWith("TEAM_PROPOSAL_INPUT_INVALID"));
+}
+
 function parseBudget(value: unknown, fail: Fail): TaskBudget {
   const input = record(value, fail);
   exactKeys(input, BUDGET_KEYS, fail);

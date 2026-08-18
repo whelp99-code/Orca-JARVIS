@@ -43,6 +43,11 @@ export function parseCsrfToken(value: unknown): string | undefined {
   return value;
 }
 
+export function sessionMatchesCsrf(session: DashboardSessionStore, candidate: unknown): boolean {
+  const token = parseCsrfToken(candidate);
+  return token !== undefined && session.matches(token);
+}
+
 export function parseDashboardSession(value: unknown): DashboardSession | undefined {
   if (typeof value !== "object" || value === null) return undefined;
   if (Reflect.get(value, "schema_version") !== DASHBOARD_SCHEMA_VERSION) return undefined;
