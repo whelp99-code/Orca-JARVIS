@@ -156,6 +156,18 @@ function retiredCollaborationRoomCreate(input: RuntimeControlActionInput): void 
   requireRecord(input.args, "room", "CONTROL_ARGS_MISMATCH");
 }
 
+function evidenceNegativeRecord(input: RuntimeControlActionInput): void {
+  validateOptionalLocalTarget(input.target, ["environment", "task_id"]);
+  requireOnlyArgs(input.args, ["schema_version", "task_id", "attempt_id", "reason_code", "scope", "summary", "evidence_digest"]);
+  const taskId = requireString(input.args, "task_id", "CONTROL_ARGS_MISMATCH");
+  requireString(input.args, "attempt_id", "CONTROL_ARGS_MISMATCH");
+  requireString(input.args, "reason_code", "CONTROL_ARGS_MISMATCH");
+  requireString(input.args, "summary", "CONTROL_ARGS_MISMATCH");
+  requireString(input.args, "evidence_digest", "CONTROL_ARGS_MISMATCH");
+  if (input.args.schema_version !== 1 || !Array.isArray(input.args.scope)) throw new JarvisError("CONTROL_ARGS_MISMATCH");
+  bindTaskTarget(input.target, [taskId]);
+}
+
 const descriptors: Record<string, Descriptor> = {
   "database.backup": { action: "database.backup", minimum_level: 2, executable: true, validate: databaseBackup },
   "database.restore_drill": { action: "database.restore_drill", minimum_level: 1, executable: true, validate: databaseRestoreDrill },
@@ -167,6 +179,7 @@ const descriptors: Record<string, Descriptor> = {
   "runbook.execute": { action: "runbook.execute", minimum_level: 1, executable: true, validate: runbookExecute },
   "git.push": { action: "git.push", minimum_level: 4, executable: false, validate: gitPush },
   "collaboration.room.create": { action: "collaboration.room.create", minimum_level: 3, executable: false, validate: retiredCollaborationRoomCreate },
+  "evidence.negative.record": { action: "evidence.negative.record", minimum_level: 2, executable: true, validate: evidenceNegativeRecord },
 };
 
 export const KNOWN_CONTROL_ACTIONS = Object.freeze(Object.keys(descriptors).sort());

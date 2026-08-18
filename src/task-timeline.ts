@@ -323,6 +323,18 @@ export class TaskTimeline {
       }
     }
   }
+  private addNegativeEvidenceEvents(taskId: string, graph: TimelineGraph, add: (event: MutableEvent) => void): void {
+    const requestIds = values(graph.controlIds);
+    const predicates = ["task_id=?"];
+    const params: unknown[] = [taskId];
+    if (requestIds.length > 0) {
+      predicates.push(`request_id IN (${requestIds.map(() => "?").join(",")})`);
+      params.push(...requestIds);
+    }
+    for (const row of this.rows(`SELECT evidence_id,task_id,attempt_id,reason_code,evidence_digest,created_at FROM negative_evidence WHERE ${predicates.join(" OR ")} ORDER BY created_at,evidence_id`, ...params)) {
+      add({ event_id: string(row.evidence_id), task_id: taskId, source: "control", kind: "evidence", actor: "approved-executor", title: "evidence.negative.recorded", status: string(row.reason_code), payload: { reason_code: row.reason_code, evidence_digest: row.evidence_digest, attempt_id: row.attempt_id }, evidence_refs: evidence(row.evidence_id, row.evidence_digest), created_at: string(row.created_at) });
+    }
+  }
   private addPreGjcEvents(taskId: string, graph: TimelineGraph, add: (event: MutableEvent) => void): void {
     const projects = values(graph.projectIds);
     if (projects.length === 0) return;
@@ -346,6 +358,7 @@ export class TaskTimeline {
 
     this.addWorkEvents(taskId, graph, add);
     this.addControlEvents(taskId, graph, add);
+    this.addNegativeEvidenceEvents(taskId, graph, add);
     this.addWorkflowEvents(taskId, graph, add);
     this.addGjcEvents(taskId, graph, add);
     this.addProgressEvents(taskId, graph, add);

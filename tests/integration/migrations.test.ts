@@ -25,6 +25,7 @@ describe("migrations", () => {
       ["024_microloop_runtime.sql", "cfb32b72fe81ee92825cbb9518e2b52985674584a2a0fb6e9e1df9f50b632cba"],
       ["025_collaboration_workspace.sql", "edcf8f85b95cf20004bf355a1e8c7f65966292f841903340bbec7d66771f3305"],
       ["026_task_timeline.sql", "cb1e19353670d180a5b27ba077e27e506d66bc532d3ead1dd7e33059ba641770"],
+      ["027_control_execution_hardening.sql", "a5004fed13610811c1d7b47cf15bc3d5a02388b80f18f0cd7a2e3d0a6a1c0172"],
     ]);
 
     for (const [name, checksum] of expected) {
@@ -47,4 +48,48 @@ describe("migrations", () => {
     db.close();
   });
   it("rejects every retired collaboration write on a fresh migrated database", async () => { const root = mkdtempSync(join(tmpdir(), "jarvis-collaboration-retired-")); const db = new AuthorityDb(join(root, "authority.sqlite")); try { await db.migrate(); for (const sql of collaborationWriteAttempts) expect(() => db.db.prepare(sql).run()).toThrow("COLLABORATION_DEPRECATED_USE_TASK_TIMELINE"); } finally { db.close(); rmSync(root, { recursive: true, force: true }); } });
+  it("publishes the immutable negative-evidence ledger bound to control authority", async () => {
+    const db = new AuthorityDb(tempDb());
+    await db.migrate();
+    await db.migrate();
+    const tables = (db.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>).map(row => row.name);
+    expect(tables).toContain("negative_evidence");
+    const columns = db.db.prepare("PRAGMA table_info(negative_evidence)").all() as Array<{ name: string; type: string; notnull: number; pk: number }>;
+    expect(columns.map(column => column.name)).toEqual(["evidence_id", "task_id", "attempt_id", "reason_code", "scope_json", "summary", "evidence_digest", "request_id", "receipt_id", "created_at"]);
+    expect(columns.every(column => column.type === "TEXT" && column.notnull === 1)).toBe(true);
+    expect(columns.find(column => column.name === "evidence_id")?.pk).toBe(1);
+    const foreignKeys = db.db.prepare("PRAGMA foreign_key_list(negative_evidence)").all() as Array<{ table: string; from: string; to: string }>;
+    expect(foreignKeys).toEqual(expect.arrayContaining([
+      expect.objectContaining({ table: "control_command_requests", from: "request_id", to: "request_id" }),
+      expect.objectContaining({ table: "control_command_receipts", from: "receipt_id", to: "receipt_id" }),
+    ]));
+    const indexSql = (db.db.prepare("SELECT sql FROM sqlite_master WHERE type='index' AND tbl_name='negative_evidence' AND sql IS NOT NULL").all() as Array<{ sql: string }>).map(row => row.sql);
+    expect(indexSql.some(sql => sql.includes("(task_id,created_at,evidence_id)"))).toBe(true);
+    expect(indexSql.some(sql => sql.includes("(reason_code,created_at,evidence_id)"))).toBe(true);
+    const tableSql = String((db.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name='negative_evidence'").get() as { sql: string }).sql);
+    expect(tableSql).toContain("invalid_assumption");
+    expect(tableSql).toContain("failed_approach");
+    expect(tableSql).toContain("blocked_dependency");
+    expect(tableSql).toContain("verification_failure");
+    expect(tableSql).toContain("external_uncertain");
+    expect(tableSql).toMatch(/request_id TEXT NOT NULL UNIQUE REFERENCES control_command_requests\(request_id\)/);
+    expect(tableSql).toMatch(/receipt_id TEXT NOT NULL UNIQUE REFERENCES control_command_receipts\(receipt_id\)/);
+    const triggers = (db.db.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='negative_evidence'").all() as Array<{ name: string }>).map(row => row.name).sort();
+    expect(triggers).toEqual(expect.arrayContaining(["negative_evidence_authority_guard", "negative_evidence_known_task_guard", "negative_evidence_immutable_delete", "negative_evidence_immutable_update"]));
+    const insertRequest = db.db.prepare("INSERT INTO control_command_requests(request_id,action,action_level,target_json,args_json,command_digest,reversible,requested_by,requested_at,expires_at,nonce,state,lease_owner,lease_fence,lease_expires_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)");
+    insertRequest.run("task:neg", "state.project", 1, "{}", "{}", "sha256:task-source", 1, "operator", "2026-08-18T00:00:00.000Z", "2026-08-18T01:00:00.000Z", "nonce-task-source", "completed", null, 0, null, "2026-08-18T00:00:00.000Z");
+    const digest = `sha256:${"b".repeat(64)}`;
+    const argsJson = JSON.stringify({ attempt_id: "attempt:neg", evidence_digest: digest, reason_code: "failed_approach", schema_version: 1, scope: ["scope"], summary: "bounded failure", task_id: "task:neg" });
+    insertRequest.run("request:neg-schema", "evidence.negative.record", 2, "{\"environment\":\"local\",\"task_id\":\"task:neg\"}", argsJson, "sha256:neg-schema", 1, "operator", "2026-08-18T00:00:00.000Z", "2026-08-18T01:00:00.000Z", "nonce-neg-schema", "claimed", "worker", 1, "2026-08-18T01:00:00.000Z", "2026-08-18T00:00:00.000Z");
+    db.db.prepare("INSERT INTO control_command_receipts(receipt_id,request_id,decision,command_digest,signer_principal_id,authenticated_session_id,key_id,payload_json,signature,issued_at,expires_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").run("receipt:neg-schema", "request:neg-schema", "approve", "sha256:neg-schema", "operator", "session", "key", "{}", "sig", "2026-08-18T00:00:00.000Z", "2026-08-18T01:00:00.000Z", "2026-08-18T00:00:00.000Z");
+    db.db.prepare("INSERT INTO control_command_redemptions(receipt_id,request_id,lease_fence,redeemed_at) VALUES(?,?,?,?)").run("receipt:neg-schema", "request:neg-schema", 1, "2026-08-18T00:00:00.000Z");
+    const evidenceId = `sha256:${"a".repeat(64)}`;
+    db.db.prepare("INSERT INTO negative_evidence(evidence_id,task_id,attempt_id,reason_code,scope_json,summary,evidence_digest,request_id,receipt_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)").run(evidenceId, "task:neg", "attempt:neg", "failed_approach", "[\"scope\"]", "bounded failure", digest, "request:neg-schema", "receipt:neg-schema", "2026-08-18T00:00:01.000Z");
+    expect(() => db.db.prepare("UPDATE negative_evidence SET summary=? WHERE evidence_id=?").run("mutated", evidenceId)).toThrow(/immutable negative evidence/);
+    expect(() => db.db.prepare("DELETE FROM negative_evidence WHERE evidence_id=?").run(evidenceId)).toThrow(/immutable negative evidence/);
+    expect(() => db.db.prepare("INSERT INTO negative_evidence(evidence_id,task_id,attempt_id,reason_code,scope_json,summary,evidence_digest,request_id,receipt_id,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)").run(`sha256:${"c".repeat(64)}`, "task:neg", "attempt:neg", "not_a_reason", "[\"scope\"]", "bounded failure", digest, "request:neg-missing", "receipt:neg-schema", "2026-08-18T00:00:02.000Z")).toThrow(/CHECK constraint failed|negative evidence authority required/);
+    expect((db.db.prepare("SELECT COUNT(*) AS n FROM negative_evidence").get() as { n: number }).n).toBe(1);
+    expect((db.db.prepare("SELECT COUNT(*) AS n FROM schema_migrations WHERE id='028_negative_evidence.sql'").get() as { n: number }).n).toBe(1);
+    db.close();
+  });
 });

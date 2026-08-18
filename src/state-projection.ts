@@ -3,7 +3,8 @@ import { mkdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { canonicalize } from "./canonical.js";
 import { AuthorityDb } from "./db.js";
-import { runDoctor } from "./doctor.js";
+import { passiveCapabilityProbe, runDoctor } from "./doctor.js";
+import type { CapabilityProbe } from "./capabilities.js";
 import { TaskTimeline } from "./task-timeline.js";
 import { assertRootIdentity, secureRoot, syncDirectory, syncFile } from "./secure-filesystem.js";
 
@@ -22,14 +23,17 @@ const table = (db: AuthorityDb, name: string): boolean => Boolean(db.db.prepare(
 
 export interface CurrentStateOptions {
   exclude_control_request_id?: string;
+  capabilityProbe?: CapabilityProbe;
 }
 
 export async function buildCurrentState(db: AuthorityDb, now = new Date(), options: CurrentStateOptions = {}): Promise<CurrentStateProjection> {
-  const doctor = await runDoctor(db, now);
+  const doctor = await runDoctor(db, now, options.capabilityProbe ?? passiveCapabilityProbe());
   const stateCounts = table(db, "work_projection") ? db.db.prepare("SELECT state,COUNT(*) AS count FROM work_projection GROUP BY state ORDER BY state").all() : [];
   const pendingReports = table(db, "live_supervisor_reports") && table(db, "live_supervisor_report_receipts") ? Number((db.db.prepare("SELECT COUNT(*) AS count FROM live_supervisor_reports r LEFT JOIN live_supervisor_report_receipts a ON a.report_id=r.report_id WHERE a.report_id IS NULL").get() as { count: number }).count) : 0;
   const bindings = table(db, "live_supervisor_bindings") ? db.db.prepare("SELECT canonical_path,provider,terminal_id,session_id,incarnation_id,project_id FROM live_supervisor_bindings ORDER BY canonical_path,provider,terminal_id").all() : [];
-  const blocked = table(db, "work_items") ? db.db.prepare("SELECT id,state,action,deadline FROM work_items WHERE state IN ('blocked','rejected') ORDER BY created_at,id").all() : [];
+  const blockedWork = table(db, "work_items") ? db.db.prepare("SELECT id,state,action,deadline FROM work_items WHERE state IN ('blocked','rejected') ORDER BY created_at,id").all() : [];
+  const blockedEvidence = table(db, "negative_evidence") ? db.db.prepare("SELECT evidence_id,task_id,attempt_id,reason_code,evidence_digest,created_at FROM negative_evidence ORDER BY created_at DESC,evidence_id DESC LIMIT 3").all() : [];
+  const blocked = [...blockedWork, ...blockedEvidence];
   const workDecisions = table(db, "work_items") ? db.db.prepare("SELECT id,action,deadline FROM work_items WHERE state='awaiting_decision' ORDER BY created_at,id").all() : [];
   const commandDecisions = table(db, "control_command_requests") ? db.db.prepare("SELECT request_id,action,action_level,expires_at FROM control_command_requests WHERE state='pending' ORDER BY requested_at,request_id").all() : [];
   const commandQueue = table(db, "control_command_requests") ? db.db.prepare("SELECT request_id,action,state,expires_at FROM control_command_requests WHERE state IN ('approved','claimed') AND (? IS NULL OR request_id<>?) ORDER BY requested_at,request_id LIMIT 3").all(options.exclude_control_request_id ?? null, options.exclude_control_request_id ?? null) : [];

@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { createPrivateKey } from "node:crypto";
-import { realpathSync, writeSync } from "node:fs";
-import { readFile } from "node:fs/promises";
+import { constants, realpathSync, writeSync } from "node:fs";
+import { lstat, open, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { AuthorityDb, JarvisError } from "./db.js";
@@ -13,7 +13,9 @@ import { LiveSupervisor, type LiveBinding, type LiveObservation, type LiveSuperv
 import { OrcaTerminalResumeAdapter, type OrcaCommand } from "./orca-resume.js";
 import { GjcCoordinatorClient, type GjcRunner } from "./gjc.js";
 import { GjcRuntimeService } from "./service.js";
-import { runDoctor } from "./doctor.js";
+import { buildCapabilityMatrix, type CapabilityProbe } from "./capabilities.js";
+import { planTeamProposal, type TeamProposalRequestV1 } from "./team-proposal.js";
+import { runtimeCapabilityProbe, runDoctor } from "./doctor.js";
 import { ControlPlane, type CommandApprovalReceipt, type ControlCancelInput, type ControlCommandRequestInput } from "./control-plane.js";
 import { ApprovedCommandExecutor } from "./approved-executor.js";
 import { AgentOpsMicroLoops, DurableMicroLoopRuntime, type MicroLoopName } from "./microloops.js";
@@ -23,6 +25,22 @@ function output(value: object): void { process.stdout.write(`${JSON.stringify({ 
 function outputSync(value: object): void { writeSync(process.stdout.fd, `${JSON.stringify({ version: 1, ...value })}\n`); }
 async function keyFor(db: AuthorityDb, path: string): Promise<ReturnType<typeof createPrivateKey>> { try { return createPrivateKey(await readFile(path, "utf8")); } catch { throw new JarvisError("SIGNING_KEY_MISSING", path); } }
 async function jsonFile(path: string): Promise<unknown> { try { return JSON.parse(await readFile(path, "utf8")); } catch { throw new JarvisError("PRE_GJC_CLI_INPUT_INVALID"); } }
+const TEAM_PROPOSAL_MAX_BYTES = 16 * 1024;
+async function teamProposalFile(path: string): Promise<unknown> {
+  try {
+    const initial = await lstat(path);
+    if (!initial.isFile() || initial.isSymbolicLink()) throw new JarvisError("TEAM_PROPOSAL_INPUT_INVALID");
+    const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    try {
+      const pinned = await file.stat();
+      if (!pinned.isFile() || pinned.dev !== initial.dev || pinned.ino !== initial.ino) throw new JarvisError("TEAM_PROPOSAL_INPUT_INVALID");
+      const buffer = Buffer.alloc(TEAM_PROPOSAL_MAX_BYTES + 1);
+      const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
+      if (bytesRead < 1 || bytesRead > TEAM_PROPOSAL_MAX_BYTES) throw new JarvisError("TEAM_PROPOSAL_INPUT_INVALID");
+      return JSON.parse(buffer.subarray(0, bytesRead).toString("utf8"));
+    } finally { await file.close(); }
+  } catch (error) { if (error instanceof JarvisError) throw error; throw new JarvisError("TEAM_PROPOSAL_INPUT_INVALID"); }
+}
 function object(value: unknown): Record<string, unknown> { if (typeof value !== "object" || value === null || Array.isArray(value)) throw new JarvisError("PRE_GJC_CLI_INPUT_INVALID"); return value as Record<string, unknown>; }
 function integer(value: string | undefined): number { const parsed = Number(value); if (!Number.isSafeInteger(parsed)) throw new JarvisError("PRE_GJC_CLI_INPUT_INVALID"); return parsed; }
 async function observeBound(binding: LiveBinding, runner?: OrcaRunner): Promise<readonly LiveObservation[]> {
@@ -36,19 +54,19 @@ async function observeBound(binding: LiveBinding, runner?: OrcaRunner): Promise<
   const read = await adapter.read(binding.terminal_id, binding.cursor, 1);
   return [{ provider: binding.provider, terminal_id: binding.terminal_id, session_id: binding.session_id, incarnation_id: binding.incarnation_id, cursor: read.nextCursor, state: "unknown" }];
 }
-export async function execute(args: string[], dependencies: { orcaRunner?: OrcaRunner; liveOrcaCommand?: OrcaCommand; gjcRunner?: GjcRunner; clock?: () => Date; liveReportOutput?: (value: object) => void } = {}): Promise<Record<string, unknown>> {
+export async function execute(args: string[], dependencies: { orcaRunner?: OrcaRunner; liveOrcaCommand?: OrcaCommand; gjcRunner?: GjcRunner; clock?: () => Date; liveReportOutput?: (value: object) => void; capabilityProbe?: CapabilityProbe } = {}): Promise<Record<string, unknown>> {
   const earlyArg = args[0]; if (earlyArg === "--help" || earlyArg === "-h" || earlyArg === "help") {
-    console.log(`JARVIS — agent-ops runtime\nCommands: init, db migrate, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, observe, pre-gjc, capabilities, status`);
+    console.log(`JARVIS — agent-ops runtime\nCommands: init, db migrate, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, observe, pre-gjc, capabilities, team, status`);
     return { ok: true, command: "help" };
   }
   if (args.includes("--help") || args.includes("-h") || args.includes("help")) {
-    console.log(`JARVIS — agent-ops runtime\nCommands: init, db migrate, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, observe, pre-gjc, capabilities, status`);
+    console.log(`JARVIS — agent-ops runtime\nCommands: init, db migrate, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, observe, pre-gjc, capabilities, team, status`);
     return { ok: true, command: "help" };
   }
   const { values, positionals } = parseArgs({ args, options: { db: { type: "string" }, decision_public: { type: "string" }, decision_key_id: { type: "string" }, decision_principal: { type: "string" }, verifier_public: { type: "string" }, verifier_key_id: { type: "string" }, verifier_principal: { type: "string" }, json: { type: "boolean" }, once: { type: "boolean" }, crash: { type: "string" }, worktree: { type: "string" }, bindings: { type: "string" }, limit: { type: "string" }, max_pages: { type: "string" }, max_bytes: { type: "string" }, interval_ms: { type: "string" }, "interval-ms": { type: "string" }, environments: { type: "string" }, live_resume: { type: "boolean" }, session_id: { type: "string" }, input: { type: "string" }, idempotency_key: { type: "string" }, allow_mutation: { type: "boolean" }, worker: { type: "string" } }, allowPositionals: true, strict: false });
   const [command, subcommand] = positionals;
   if (subcommand === "--help" || subcommand === "-h" || subcommand === "help") {
-    console.log(`JARVIS — agent-ops runtime\nCommands: init, db migrate, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, observe, pre-gjc, capabilities, status`);
+    console.log(`JARVIS — agent-ops runtime\nCommands: init, db migrate, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, observe, pre-gjc, capabilities, team, status`);
     return { ok: true, command: "help" };
   }
   const db = new AuthorityDb(typeof values.db === "string" ? values.db : undefined); const policyKeyPath = `${db.filename}.policy-key.pem`;
@@ -56,8 +74,13 @@ export async function execute(args: string[], dependencies: { orcaRunner?: OrcaR
     const [, , argument, fourth, fifth, sixth] = positionals;
     if (command === "init") { const decision = typeof values.decision_public === "string" && typeof values.decision_key_id === "string" && typeof values.decision_principal === "string" ? { publicKeyPath: values.decision_public, keyId: values.decision_key_id, principal: values.decision_principal } : undefined; const verifier = typeof values.verifier_public === "string" && typeof values.verifier_key_id === "string" && typeof values.verifier_principal === "string" ? { publicKeyPath: values.verifier_public, keyId: values.verifier_key_id, principal: values.verifier_principal } : undefined; await db.initialize({ decision, verifier }); return { ok: true, command: "init", policy_key_id: "local-policy-key", decision_configured: Boolean(decision), verifier_configured: Boolean(verifier) }; }
     if (command === "db" && subcommand === "migrate") { await db.migrate(); return { ok: true, command: "db.migrate" }; }
-    if (command === "doctor") { const report = await runDoctor(db, dependencies.clock?.() ?? new Date()); return { ok: report.ok, command: "doctor", report }; }
+    if (command === "doctor") { const report = await runDoctor(db, dependencies.clock?.() ?? new Date(), dependencies.capabilityProbe); return { ok: report.ok, command: "doctor", report }; }
     await db.assertMigrationsReady();
+    if (command === "team" && subcommand === "propose" && argument) { if (fourth !== undefined) throw new JarvisError("TEAM_PROPOSAL_INPUT_INVALID");
+      const recognized = Object.fromEntries(Object.entries(values).filter(([key]) => key === "db"));
+      const irrelevant = Object.keys(values).some(key => key !== "db") || Object.keys(recognized).length !== Object.keys(values).length;
+      if (irrelevant) { try { parseArgs({ args, options: { db: { type: "string" } }, allowPositionals: true, strict: true }); } catch { throw new JarvisError("UNKNOWN_COMMAND"); } }
+      const request = await teamProposalFile(argument) as TeamProposalRequestV1; const matrix = await buildCapabilityMatrix(db, dependencies.capabilityProbe ?? runtimeCapabilityProbe(), dependencies.clock?.() ?? new Date()); return { ok: true, command: "team.propose", proposal: planTeamProposal(request, matrix) }; }
     const control = new ControlPlane(db);
     if (command === "control" && subcommand === "request" && argument) return { ok: true, command: "control.request", request: control.stage(object(await jsonFile(argument)) as unknown as ControlCommandRequestInput) };
     if (command === "control" && subcommand === "decide" && argument) { const receipt = object(await jsonFile(argument)) as unknown as CommandApprovalReceipt; control.decide(receipt, dependencies.clock?.() ?? new Date()); return { ok: true, command: "control.decide", request_id: receipt.request_id, decision: receipt.decision }; }
@@ -162,7 +185,7 @@ export async function execute(args: string[], dependencies: { orcaRunner?: OrcaR
     if (command === "approval" && subcommand === "approve" && argument && fourth) { const continuation = db.approveWithReceipt(argument, JSON.parse(await readFile(fourth, "utf8"))); return { ok: true, work_id: argument, ...continuation }; }
     if (command === "approval" && subcommand === "reject" && argument && fourth) { db.rejectWithReceipt(argument, JSON.parse(await readFile(fourth, "utf8"))); return { ok: true, work_id: argument, decision: "rejected" }; }
     if (command === "resume" && subcommand === "deliver" && argument) { if (!supervisor.pendingLiveResumeIntents().includes(argument)) throw new JarvisError("ORCA_RESUME_DISABLED"); shadow.deliverResume(argument, new OrcaTerminalResumeAdapter(db, true, dependencies.liveOrcaCommand, dependencies.clock), dependencies.clock?.() ?? new Date()); return { ok: true, command: "resume.deliver", intent_id: argument, dispatched: true }; }
-    if (command === "capabilities" && values.json) { const liveResume = supervisor.liveResumeConfigured(); const gjcEnabled = db.gjcOperational(); return { ok: true, supported_targets: ["codex", "claude"], providers: ["codex", "claude"], orca_read: true, codex_observe: true, claude_observe: true, pre_gjc_shadow: true, pre_gjc_signed_signals: true, pre_gjc_durable_state: true, pre_gjc_authority_resume: true, authority_resume_intents: true, live_resume: liveResume, pre_gjc_completion_promotion: true, pre_gjc_proposal_only: true, gjc: gjcEnabled, live_seed: false, live_dispatch: gjcEnabled, control_commands_require_human_receipt: true, all_cli_mutations_require_control_receipt: false, task_timeline: true, collaboration_workspace: false, buzz_bridge: false, policy_resume_intents: true, policy_resume_auto_delivery: true, service_run_deployable: true, service_run_delivers_resume: false, runtime_batch_deployable: false, policy_auto_execute: false, arbitrary_verify_execution: false, self_modify: false, shadow_only: !liveResume && !gjcEnabled }; }
+    if (command === "capabilities" && values.json) { const liveResume = supervisor.liveResumeConfigured(); const gjcEnabled = db.gjcOperational(); const matrix = await buildCapabilityMatrix(db, dependencies.capabilityProbe ?? runtimeCapabilityProbe(), dependencies.clock?.() ?? new Date()); return { ok: true, supported_targets: ["codex", "claude"], providers: ["codex", "claude"], orca_read: true, codex_observe: true, claude_observe: true, pre_gjc_shadow: true, pre_gjc_signed_signals: true, pre_gjc_durable_state: true, pre_gjc_authority_resume: true, authority_resume_intents: true, live_resume: liveResume, pre_gjc_completion_promotion: true, pre_gjc_proposal_only: true, gjc: gjcEnabled, live_seed: false, live_dispatch: gjcEnabled, control_commands_require_human_receipt: true, all_cli_mutations_require_control_receipt: false, task_timeline: true, collaboration_workspace: false, buzz_bridge: false, policy_resume_intents: true, policy_resume_auto_delivery: true, service_run_deployable: true, service_run_delivers_resume: false, runtime_batch_deployable: false, policy_auto_execute: false, arbitrary_verify_execution: false, self_modify: false, shadow_only: !liveResume && !gjcEnabled, matrix }; }
     if (command === "worker" && subcommand === "run" && values.once) return { ok: true, ...db.workerOnce(values.crash as "before_commit" | "after_commit" | "ambiguous" | undefined) };
     throw new JarvisError("UNKNOWN_COMMAND");
   } finally { db.close(); }

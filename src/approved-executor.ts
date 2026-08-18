@@ -7,6 +7,7 @@ import { ControlPlane, type ClaimedControlCommand } from "./control-plane.js";
 import { writeCurrentState } from "./state-projection.js";
 import { LoopGraph, type LoopSpec, type WorkflowAdvanceInput, type WorkflowRunInput } from "./loopgraph.js";
 import { RunbookEngine, type HostOperations } from "./runbook.js";
+import { appendSettledNegativeEvidence } from "./negative-evidence.js";
 import { copyPinnedRegularFile, privatePath, publishFile, removeSqliteCopy, secureBasename, secureRoot } from "./secure-filesystem.js";
 
 export interface ApprovedExecutionResult {
@@ -96,6 +97,11 @@ export class ApprovedCommandExecutor {
       if (externalRunbook) {
         externalContext = this.prepareExternalEffect(command, "service.restart", now);
         this.updateExternalEffect(requestId, "invoking", now);
+      }
+      if (command.action === "evidence.negative.record") {
+        if (command.action_level !== 2) throw new JarvisError("APPROVED_ACTION_LEVEL_TOO_LOW");
+        const payload = appendSettledNegativeEvidence(this.authority, this.control, command, now, this.clock());
+        return { request_id: requestId, action: command.action, state: "completed", result: payload };
       }
       const effect = await this.run(command, now, externalContext);
       const completedAt = this.clock();
