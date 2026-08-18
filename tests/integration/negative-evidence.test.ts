@@ -186,7 +186,8 @@ describe("approved negative evidence", () => {
   it("rejects missing, rejected, expired, and consumed receipts without inserting", async () => {
     const db = await initialized();
     const control = new ControlPlane(db);
-    const executor = new ApprovedCommandExecutor(db);
+    const consumedAt = new Date("2026-08-18T14:00:00.000Z");
+    const executor = new ApprovedCommandExecutor(db, undefined, undefined, {}, () => consumedAt);
     try {
       const missing = request("neg-missing", evidenceInput({ attempt_id: "attempt:missing" }));
       control.stage(missing);
@@ -200,7 +201,6 @@ describe("approved negative evidence", () => {
       approve(db, control, expiredInput, now);
       await expect(executor.execute(expiredInput.request_id, "approved-command-executor", new Date(now.getTime() + 60_001))).rejects.toThrow("CONTROL_APPROVAL_REQUIRED");
 
-      const consumedAt = new Date("2026-08-18T14:00:00.000Z");
       const consumed = approve(db, control, request("neg-consumed", evidenceInput({ attempt_id: "attempt:consumed" }), 2, clocked(consumedAt)), consumedAt);
       await expect(executor.execute(consumed, "approved-command-executor", consumedAt)).resolves.toMatchObject({ state: "completed" });
       await expect(executor.execute(consumed, "approved-command-executor", consumedAt)).rejects.toThrow("CONTROL_APPROVAL_REQUIRED");
