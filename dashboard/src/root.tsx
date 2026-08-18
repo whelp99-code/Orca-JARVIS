@@ -1,16 +1,18 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
 import { BrowserRouter, MemoryRouter, NavLink, Route, Routes, useParams } from "react-router-dom";
-import type {
-  AgentListResponse,
-  ControlRequestListResponse,
-  TaskDetailResponse,
-} from "../../src/dashboard/read-model.js";
+import type { TaskDetailResponse, TaskListResponse } from "../../src/dashboard/read-model.js";
 import type { TerminalLogResponse } from "../../src/dashboard/terminal-reader.js";
 import type { DashboardClient } from "./api.js";
 import { createProposalMutationClient } from "./api-mutations.js";
+import {
+  createAuthorityMutationClient,
+  type AuthorityIdFactory,
+  type AuthorityMutationClient,
+} from "./authority-api.js";
 import App from "./app.js";
-import { TerminalLog } from "./components/terminal-log.js";
+import { AgentDetailPage } from "./pages/agent-detail-page.js";
 import { AgentsPage } from "./pages/agents-page.js";
+import { ApprovalsPage } from "./pages/approvals-page.js";
 import { TaskDetailPage } from "./pages/task-detail-page.js";
 import { TaskListPage } from "./pages/task-list-page.js";
 import { ProposalPage } from "./proposal-page.js";
@@ -24,11 +26,10 @@ type RootClient = Omit<DashboardClient, "agentLogs"> & Readonly<{
 type ControlCenterRootProps = Readonly<{
   store: DashboardStore;
   client: RootClient;
+  authorityClient?: AuthorityMutationClient;
+  authorityIdFactory?: AuthorityIdFactory;
   initialPath?: string;
 }>;
-type NotFoundTarget = "agent" | "page";
-
-const LOG_LIMIT = 500;
 const NAV_ITEMS = [
   { label: "Overview", to: "/" },
   { label: "Tasks", to: "/tasks" },
@@ -36,13 +37,21 @@ const NAV_ITEMS = [
   { label: "Agents", to: "/agents" },
   { label: "Approvals", to: "/approvals" },
 ] as const;
-const NOT_FOUND_TITLES = {
-  agent: "Agent not found",
-  page: "Page not found",
-} as const satisfies Record<NotFoundTarget, string>;
-
-export function ControlCenterRoot({ store, client, initialPath }: ControlCenterRootProps) {
-  const content = <ControlCenter store={store} client={client} />;
+export function ControlCenterRoot({
+  store,
+  client,
+  authorityClient,
+  authorityIdFactory,
+  initialPath,
+}: ControlCenterRootProps) {
+  const content = (
+    <ControlCenter
+      store={store}
+      client={client}
+      authorityClient={authorityClient}
+      authorityIdFactory={authorityIdFactory}
+    />
+  );
   return initialPath === undefined ? (
     <BrowserRouter>{content}</BrowserRouter>
   ) : (
@@ -50,9 +59,18 @@ export function ControlCenterRoot({ store, client, initialPath }: ControlCenterR
   );
 }
 
-function ControlCenter({ store, client }: Readonly<{ store: DashboardStore; client: RootClient }>) {
+function ControlCenter({
+  store,
+  client,
+  authorityClient,
+  authorityIdFactory,
+}: Omit<ControlCenterRootProps, "initialPath">) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const proposalClient = useMemo(() => createProposalMutationClient(client.session), [client]);
+  const liveAuthorityClient = useMemo(
+    () => authorityClient ?? createAuthorityMutationClient(client.session),
+    [authorityClient, client],
+  );
 
   useEffect(() => {
     store.start();
@@ -73,12 +91,34 @@ function ControlCenter({ store, client }: Readonly<{ store: DashboardStore; clie
       <Routes>
         <Route path="/" element={<OverviewRoute state={state} store={store} />} />
         <Route path="/tasks" element={<TaskListPage state={state.tasks} />} />
-        <Route path="/tasks/:taskId" element={<TaskDetailRoute client={client} />} />
+        <Route
+          path="/tasks/:taskId"
+          element={(
+            <TaskDetailRoute
+              client={client}
+              tasks={state.tasks}
+              authorityClient={liveAuthorityClient}
+              authorityIdFactory={authorityIdFactory}
+            />
+          )}
+        />
         <Route path="/proposals" element={<ProposalPage client={proposalClient} />} />
         <Route path="/agents" element={<AgentsPage state={state.agents} />} />
-        <Route path="/agents/:agentId" element={<AgentDetailRoute agents={state.agents} client={client} />} />
-        <Route path="/approvals" element={<ApprovalsRoute state={state.approvals} />} />
-        <Route path="*" element={<NotFoundPage target="page" />} />
+        <Route
+          path="/agents/:agentId"
+          element={<AgentDetailPage agents={state.agents} loadLogs={client.agentLogs} />}
+        />
+        <Route
+          path="/approvals"
+          element={(
+            <ApprovalsPage
+              state={state.approvals}
+              client={liveAuthorityClient}
+              idFactory={authorityIdFactory}
+            />
+          )}
+        />
+        <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </div>
   );
@@ -107,105 +147,66 @@ function OverviewRoute({ state, store }: Readonly<{ state: DashboardState; store
   }
 }
 
-function TaskDetailRoute({ client }: Readonly<{ client: RootClient }>) {
+function TaskDetailRoute({
+  client,
+  tasks,
+  authorityClient,
+  authorityIdFactory,
+}: Readonly<{
+  client: RootClient;
+  tasks: ResourceState<TaskListResponse>;
+  authorityClient: AuthorityMutationClient;
+  authorityIdFactory?: AuthorityIdFactory;
+}>) {
   const { taskId } = useParams<"taskId">();
   const loadTask = useCallback((id: string) => client.task(id), [client]);
-  if (taskId === undefined) return <NotFoundPage target="page" />;
-  return <TaskDetailContent key={taskId} taskId={taskId} loadTask={loadTask} />;
+  if (taskId === undefined) return <NotFoundPage />;
+  return (
+    <TaskDetailContent
+      key={taskId}
+      taskId={taskId}
+      loadTask={loadTask}
+      revision={taskRevision(tasks, taskId)}
+      authorityClient={authorityClient}
+      authorityIdFactory={authorityIdFactory}
+    />
+  );
 }
 
-function TaskDetailContent({ taskId, loadTask }: Readonly<{
+function TaskDetailContent({
+  taskId,
+  loadTask,
+  revision,
+  authorityClient,
+  authorityIdFactory,
+}: Readonly<{
   taskId: string;
   loadTask: (id: string) => Promise<TaskDetailResponse>;
+  revision?: string;
+  authorityClient: AuthorityMutationClient;
+  authorityIdFactory?: AuthorityIdFactory;
 }>) {
-  return <TaskDetailPage state={useDetailResource(taskId, loadTask)} />;
+  return (
+    <TaskDetailPage
+      state={useDetailResource(taskId, loadTask, undefined, revision)}
+      client={authorityClient}
+      idFactory={authorityIdFactory}
+    />
+  );
 }
 
-function hasLogLines(response: TerminalLogResponse): boolean {
-  return response.lines.length > 0;
-}
-
-function AgentDetailRoute({ agents, client }: Readonly<{
-  agents: ResourceState<AgentListResponse>;
-  client: RootClient;
-}>) {
-  const { agentId } = useParams<"agentId">();
-  const loadLogs = useCallback((id: string) => client.agentLogs(id, LOG_LIMIT), [client]);
-  if (agentId === undefined) return <NotFoundPage target="agent" />;
-  return <AgentDetailContent key={agentId} agentId={agentId} agents={agents} loadLogs={loadLogs} />;
-}
-
-function AgentDetailContent({ agentId, agents, loadLogs }: Readonly<{
-  agentId: string;
-  agents: ResourceState<AgentListResponse>;
-  loadLogs: (id: string) => Promise<TerminalLogResponse>;
-}>) {
-  const logs = useDetailResource(agentId, loadLogs, hasLogLines);
-  switch (agents.status) {
-    case "idle":
-    case "loading":
-      return <RouteState title="Agent" message="Loading agent identity" busy />;
-    case "retrying":
-      return <RouteState title="Agent" message="Retrying agent identity" busy />;
-    case "error":
-      return <RouteState title="Unable to load agent" message={agents.error.message} />;
+function taskRevision(state: ResourceState<TaskListResponse>, taskId: string): string | undefined {
+  switch (state.status) {
     case "success":
     case "empty": {
-      const agent = agents.data.items.find((item) => item.agent_id === agentId);
-      if (agent === undefined) return <NotFoundPage target="agent" />;
-      return (
-        <main className="page-frame dashboard-main">
-          <header className="detail-header">
-            <h1>{agent.provider}</h1>
-            <dl className="identity-list" aria-label="Agent identity">
-              <div><dt>Terminal</dt><dd>{agent.terminal_id}</dd></div>
-              <div><dt>Incarnation</dt><dd>{agent.incarnation_id}</dd></div>
-              <div><dt>Identity</dt><dd>{agent.agent_id}</dd></div>
-              <div><dt>Path</dt><dd>{agent.canonical_path}</dd></div>
-            </dl>
-          </header>
-          <TerminalLog state={logs} />
-        </main>
-      );
+      const task = state.data.items.find((item) => item.task_id === taskId);
+      return task === undefined ? undefined : JSON.stringify(task);
     }
-    default:
-      return assertNever(agents);
-  }
-}
-
-function ApprovalsRoute({ state }: Readonly<{ state: ResourceState<ControlRequestListResponse> }>) {
-  switch (state.status) {
     case "idle":
     case "loading":
-      return <RouteState title="Approvals" message="Loading approvals" busy />;
     case "retrying":
-      return <RouteState title="Approvals" message="Retrying approvals" busy />;
     case "error":
-      return <RouteState title="Unable to load approvals" message={state.error.message} />;
-    case "success":
-    case "empty":
-      return (
-        <section className="page-frame dashboard-main" aria-label="Approvals">
-          <h1>Approvals</h1>
-          {state.data.items.length === 0 ? (
-            <p className="empty-state" role="status">No pending approvals</p>
-          ) : (
-            <ul className="record-list panel">
-              {state.data.items.map((approval) => (
-                <li className="record" key={approval.request_id}>
-                  <p className="record-title">{approval.action}</p>
-                  <p className="record-summary">{approval.summary}</p>
-                  <div className="record-meta">
-                    <span>Level {approval.action_level}</span>
-                    <span>{approval.requested_by}</span>
-                    <span>{approval.state}</span>
-                  </div>
-                </li>
-              ))}
-            </ul>
-          )}
-        </section>
-      );
+      return undefined;
     default:
       return assertNever(state);
   }
@@ -228,8 +229,8 @@ function RouteState({ title, message, busy = false, onRetry }: Readonly<{
   );
 }
 
-function NotFoundPage({ target }: Readonly<{ target: NotFoundTarget }>) {
-  return <RouteState title={NOT_FOUND_TITLES[target]} message="The requested route is unavailable." />;
+function NotFoundPage() {
+  return <RouteState title="Page not found" message="The requested route is unavailable." />;
 }
 
 function assertNever(value: never): never {

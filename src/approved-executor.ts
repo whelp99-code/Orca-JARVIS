@@ -41,7 +41,7 @@ export class ApprovedCommandExecutor {
     if (changed.changes !== 1) throw new JarvisError("EXTERNAL_EFFECT_ATTEMPT_MISSING");
   }
 
-  private async run(command: ClaimedControlCommand, now: Date, externalContext?: ReturnType<ApprovedCommandExecutor["externalEffectContext"]>): Promise<{ effect_type: string; payload: unknown }> {
+  private async run(command: ClaimedControlCommand, now: Date, externalContext: ReturnType<ApprovedCommandExecutor["externalEffectContext"]> | undefined, worker: string): Promise<{ effect_type: string; payload: unknown }> {
     const action = validateControlAction(command, { enforceMinimumLevel: true, levelErrorCode: "APPROVED_ACTION_LEVEL_TOO_LOW" });
     if (!action.executable) throw new JarvisError("APPROVED_ACTION_UNKNOWN");
     if (command.action === "database.backup") {
@@ -78,7 +78,11 @@ export class ApprovedCommandExecutor {
     }
     const graph = new LoopGraph(this.authority);
     if (command.action === "workflow.register") { const spec = command.args.spec as unknown as LoopSpec; return { effect_type: "workflow.definition", payload: { spec_digest: graph.register(spec, now), loop_id: spec.loop_id } }; }
-    if (command.action === "workflow.start") { const run = graph.start(command.args as unknown as WorkflowRunInput, now); return { effect_type: "workflow.started", payload: run }; }
+    if (command.action === "workflow.start") {
+      if (command.args.loop_id === "agentops-default" && worker === "dashboard-approved-executor") graph.ensureDefaults(now);
+      const run = graph.start(command.args as unknown as WorkflowRunInput, now);
+      return { effect_type: "workflow.started", payload: run };
+    }
     if (command.action === "workflow.advance") { const run = graph.advance({ ...(command.args as unknown as WorkflowAdvanceInput), approval_receipt_id: command.receipt_id }, now); return { effect_type: "workflow.advanced", payload: run }; }
     if (command.action === "workflow.cancel") { const runId = command.args.run_id; const reason = command.args.reason; if (typeof runId !== "string" || typeof reason !== "string") throw new JarvisError("WORKFLOW_CANCEL_INVALID"); return { effect_type: "workflow.cancelled", payload: graph.cancel(runId, reason, now) }; }
     if (command.action === "runbook.execute") { const runbookId = command.args.runbook_id; const args = command.args.args; if (typeof runbookId !== "string" || !args || typeof args !== "object" || Array.isArray(args)) throw new JarvisError("RUNBOOK_INPUT_INVALID"); const engine = new RunbookEngine(this.authority, this.hostOperations); const result = await engine.execute(command.request_id, command.action_level, runbookId, args as Record<string, unknown>, now, externalContext); return { effect_type: "runbook.execution", payload: result }; }
@@ -103,7 +107,7 @@ export class ApprovedCommandExecutor {
         const payload = appendSettledNegativeEvidence(this.authority, this.control, command, now, this.clock());
         return { request_id: requestId, action: command.action, state: "completed", result: payload };
       }
-      const effect = await this.run(command, now, externalContext);
+      const effect = await this.run(command, now, externalContext, worker);
       const completedAt = this.clock();
       if (externalContext) this.updateExternalEffect(requestId, "confirmed", completedAt, effect.payload);
       this.control.settle(requestId, command.fence, { state: "completed", effect_type: effect.effect_type, payload: effect.payload }, completedAt);

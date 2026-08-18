@@ -1,12 +1,18 @@
 import type { TaskDetailResponse } from "../../../src/dashboard/read-model.js";
+import type { AuthorityIdFactory, AuthorityMutationClient } from "../authority-api.js";
 import type { ResourceState } from "../store.js";
+import { TaskControl } from "../task-control.js";
 
-type TaskDetailPageProps =
+type TaskDetailPageProps = (
   | TaskDetailResponse
   | Readonly<{
       state: ResourceState<TaskDetailResponse>;
       onRetry?: () => void;
-    }>;
+    }>
+) & Readonly<{
+  client?: Pick<AuthorityMutationClient, "cancelTask">;
+  idFactory?: AuthorityIdFactory;
+}>;
 
 export function TaskDetailPage(props: TaskDetailPageProps) {
   let response: TaskDetailResponse;
@@ -81,6 +87,10 @@ export function TaskDetailPage(props: TaskDetailPageProps) {
           <div><dt>Approval</dt><dd>{task.pending_approval ? "Pending" : "Not pending"}</dd></div>
         </dl>
       </header>
+
+      {props.client === undefined ? null : (
+        <TaskControl detail={response} client={props.client} idFactory={props.idFactory} />
+      )}
 
       <section className="panel" aria-label="Timeline">
         <header className="panel-header"><h2>Timeline</h2></header>

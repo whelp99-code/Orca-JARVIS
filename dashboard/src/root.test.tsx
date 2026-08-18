@@ -51,12 +51,37 @@ const tasks = {
   schema_version: 1, items: [taskOf("task-zeta", "zeta-task"), taskOf("task-alpha", "alpha-task")],
 } as const satisfies TaskListResponse;
 const agents = { schema_version: 1, items: [agent] } as const satisfies AgentListResponse;
-const approvals = { schema_version: 1, items: [] } as const satisfies ControlRequestListResponse;
+const approvals = {
+  schema_version: 1,
+  items: [{
+    request_id: "request-approval-1", action: "workflow.start", action_level: 2,
+    requested_at: AT, requested_by: "jarvis-control-center", summary: "Start workflow", state: "pending",
+  }],
+} as const satisfies ControlRequestListResponse;
+const REQUEST_ID = "request-task-1";
+const RUN_ID = "run-1";
 const taskDetail = {
   schema_version: 1,
   context: {
-    task: taskOf("task-1", "wire argo cli to jaw", ["node-b", "node-a"]),
-    events: [eventOf(1, "created"), eventOf(2, "started")],
+    // Production correlation: the active workflow task carries both the
+    // control request id and the workflow run id as its sources.
+    task: taskOf("task-1", "wire argo cli to jaw", [REQUEST_ID, RUN_ID]),
+    events: [
+      {
+        event_id: `workflow:${RUN_ID}:state`,
+        task_id: "task-1",
+        source: "workflow",
+        kind: "workflow",
+        actor: "jarvis-loopgraph",
+        title: "created",
+        status: "running",
+        payload: { run_id: RUN_ID, current_node: "run", attempts: 1, failure_code: null },
+        evidence_refs: [],
+        created_at: AT,
+        sequence: 1,
+      },
+      eventOf(2, "started"),
+    ],
   },
 } as const satisfies TaskDetailResponse;
 const logs = {
@@ -211,9 +236,18 @@ describe("ControlCenterRoot live routing", () => {
       expect.stringContaining("started"),
     ]);
     expect(texts("Graph")).toEqual([
-      expect.stringContaining("node-b"),
-      expect.stringContaining("node-a"),
+      expect.stringContaining(REQUEST_ID),
+      expect.stringContaining(RUN_ID),
     ]);
+    expect(screen.getByRole("textbox", { name: "Cancellation reason" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Stage cancellation" })).toBeDisabled();
+  });
+
+  it("renders receipt-bound controls on the live approvals route", async () => {
+    await liveRoot("/approvals");
+    expect(screen.getByText("request-approval-1")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Signed receipt JSON" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Submit signed receipt" })).toBeEnabled();
   });
 
   it("renders agent identity then bounded redacted logs on /agents/:agentId", async () => {

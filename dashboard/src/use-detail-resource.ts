@@ -15,6 +15,7 @@ export function useDetailResource<T>(
   id: string,
   load: (resourceId: string) => Promise<T>,
   hasContent: (value: T) => boolean = alwaysPopulated,
+  refreshKey?: string,
 ): ResourceState<T> {
   const [request, setRequest] = useState<ResourceRequest<T>>({
     id,
@@ -38,7 +39,7 @@ export function useDetailResource<T>(
     return () => {
       active = false;
     };
-  }, [hasContent, id, load]);
+  }, [hasContent, id, load, refreshKey]);
 
   return request.id === id ? request.state : { status: "loading" };
 }

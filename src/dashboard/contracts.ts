@@ -31,6 +31,9 @@ export const PROPOSAL_KEYS = [
 ] as const;
 export const ANSWER_KEYS = ["question_id", "answer"] as const;
 export const RECEIPT_DECISION_KEYS = ["schema_version", "receipt"] as const;
+export const EXECUTE_KEYS = ["schema_version"] as const;
+export const CANCEL_KEYS = ["schema_version", "request_id", "nonce", "run_id", "reason"] as const;
+export const RETRY_KEYS = ["schema_version", "request_id", "nonce"] as const;
 export const RECEIPT_KEYS = [
   "schema_version", "receipt_id", "request_id", "decision", "command_digest",
   "signer_principal_id", "authenticated_session_id", "key_id", "algorithm",
@@ -74,4 +77,22 @@ export type CreateTaskRequest = {
 export type ReceiptDecisionRequest = {
   readonly schema_version: 1;
   readonly receipt: CommandApprovalReceipt;
+};
+
+export type ExecuteRequest = {
+  readonly schema_version: 1;
+};
+
+export type CancelRequest = {
+  readonly schema_version: 1;
+  readonly request_id: string;
+  readonly nonce: string;
+  readonly run_id: string;
+  readonly reason: string;
+};
+
+export type RetryRequest = {
+  readonly schema_version: 1;
+  readonly request_id: string;
+  readonly nonce: string;
 };

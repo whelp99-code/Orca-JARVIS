@@ -8,14 +8,12 @@ import {
   writeDashboardError,
   writeDashboardJson,
 } from "./http.js";
-import { tryHandleProposalPreview } from "./proposal-routes.js";
+import { tryHandleDashboardPost } from "./post-routes.js";
 import type { TeamProposalPlanner } from "./proposal-service.js";
 import type { DashboardReadModel } from "./read-model.js";
 import { tryHandleDashboardRead } from "./read-routes.js";
-import { readJsonPost, writePostBoundaryError } from "./request-boundary.js";
 import { tryHandleDashboardSession, type DashboardSessionStore } from "./session.js";
 import { tryHandleDashboardSse } from "./sse-route.js";
-import { tryHandleTaskCreate } from "./task-routes.js";
 import type { DashboardTerminalReader, TerminalLogResult } from "./terminal-reader.js";
 
 const LOG_LIMIT_MIN = 1;
@@ -50,7 +48,7 @@ type LogsRoute =
   | { readonly kind: "unhandled" };
 
 export async function tryHandleDashboardApi(input: DashboardApiInput): Promise<boolean> {
-  if (input.request.method === "POST") return handleDashboardPost(input);
+  if (input.request.method === "POST") return tryHandleDashboardPost(input);
   if (tryHandleDashboardSession(input)) return true;
   if (tryHandleDashboardSse(input)) return true;
   if (input.path === "/api/v1/health") {
@@ -179,56 +177,6 @@ async function writeHealth(db: AuthorityDb, response: ServerResponse, requestId:
     },
     requestId,
   });
-}
-
-async function handleDashboardPost(input: DashboardApiInput): Promise<boolean> {
-  if (input.path !== "/api" && !input.path.startsWith("/api/")) return false;
-  const parsed = await readJsonPost({
-    request: input.request,
-    session: input.session,
-    origin: input.origin,
-  });
-  switch (parsed.kind) {
-    case "rejected":
-      writePostBoundaryError(input.response, input.requestId, parsed);
-      return true;
-    case "accepted":
-      break;
-    default:
-      return assertNever(parsed);
-  }
-  if (await tryHandleProposalPreview({
-    db: input.db,
-    path: input.path,
-    request: input.request,
-    response: input.response,
-    requestId: input.requestId,
-    body: parsed.value,
-    capabilityProbe: input.capabilityProbe,
-    planner: input.planner,
-  })) {
-    return true;
-  }
-  if (await tryHandleTaskCreate({
-    db: input.db,
-    path: input.path,
-    request: input.request,
-    response: input.response,
-    requestId: input.requestId,
-    body: parsed.value,
-    hub: input.hub,
-    clock: input.clock,
-    capabilityProbe: input.capabilityProbe,
-    planner: input.planner,
-  })) {
-    return true;
-  }
-  writeDashboardError(input.response, {
-    status: 404,
-    code: DASHBOARD_ERROR_CODES.NOT_FOUND,
-    requestId: input.requestId,
-  });
-  return true;
 }
 
 function assertNever(value: never): never {
