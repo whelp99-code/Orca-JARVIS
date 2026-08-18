@@ -11,16 +11,19 @@ declare module "node:net" {
   }
 }
 import { JarvisError, type AuthorityDb } from "../db.js";
-import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
+import type { OrcaRunner } from "../orca.js";
+import { tryHandleDashboardApi } from "./api-routes.js";
+import { createDashboardEvents, type ReconcileHub } from "./events.js";
 import {
   createRequestId,
   DASHBOARD_ERROR_CODES,
   isLoopbackHostHeader,
   writeDashboardError,
   writeDashboardHtml,
-  writeDashboardJson,
 } from "./http.js";
 import { DashboardReadModel } from "./read-model.js";
+import { createDashboardSession, type DashboardSessionStore } from "./session.js";
+import { DashboardTerminalReader } from "./terminal-reader.js";
 
 const LOOPBACK_HOST = "127.0.0.1";
 
@@ -32,6 +35,7 @@ export type DashboardAddress = {
 
 export type DashboardServer = {
   readonly address: DashboardAddress;
+  publish(topics: readonly string[]): void;
   close(): void;
 };
 
@@ -40,6 +44,7 @@ export type DashboardServerOptions = {
   readonly staticRoot: string;
   readonly host: string;
   readonly port: number;
+  readonly orcaRunner?: OrcaRunner;
 };
 
 export function createDashboardServer(options: DashboardServerOptions): DashboardServer & {
@@ -51,36 +56,51 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
   }
   realpathSync(options.staticRoot);
   const model = new DashboardReadModel(options.db);
+  const terminals = new DashboardTerminalReader(model, options.orcaRunner);
+  const events = createDashboardEvents(options.db);
+  const session = createDashboardSession();
   const bound = new BoundSocket({ host: LOOPBACK_HOST, port: options.port });
   const httpServer = createServer((request, response) => {
-    void handleRequest({ db: options.db, model, staticRoot: options.staticRoot, request, response });
+    void handleRequest({
+      db: options.db,
+      model,
+      terminals,
+      staticRoot: options.staticRoot,
+      request,
+      response,
+      hub: events.hub,
+      session,
+    });
   });
   httpServer.listen(bound);
   const boundAddress = httpServer.address();
   if (boundAddress === null || typeof boundAddress === "string") {
+    events.close();
     httpServer.close();
     throw new JarvisError("LOCAL_SESSION_REQUIRED");
   }
   if (boundAddress.family !== "IPv4" || boundAddress.address !== LOOPBACK_HOST) {
+    events.close();
     httpServer.closeAllConnections();
     httpServer.close();
     throw new JarvisError("LOCAL_SESSION_REQUIRED");
   }
   return {
     address: { host: LOOPBACK_HOST, port: boundAddress.port, family: "IPv4" },
-    close(): void {
-      httpServer.closeAllConnections();
-      httpServer.close();
-    },
+    publish(topics: readonly string[]): void { events.hub.publish(topics); },
+    close(): void { events.close(); httpServer.closeAllConnections(); httpServer.close(); },
   };
 }
 
 async function handleRequest(input: {
   readonly db: AuthorityDb;
   readonly model: DashboardReadModel;
+  readonly terminals: DashboardTerminalReader;
   readonly staticRoot: string;
   readonly request: IncomingMessage;
   readonly response: ServerResponse;
+  readonly hub: ReconcileHub;
+  readonly session: DashboardSessionStore;
 }): Promise<void> {
   const requestId = createRequestId(input.request);
   try {
@@ -97,12 +117,18 @@ async function handleRequest(input: {
       writeDashboardError(input.response, { status: 404, code: DASHBOARD_ERROR_CODES.NOT_FOUND, requestId });
       return;
     }
-    if (path === "/api/v1/health") {
-      await writeHealth(input.db, input.response, requestId);
-      return;
-    }
-    if (path === "/api/v1/overview") {
-      writeDashboardJson(input.response, { status: 200, body: await input.model.overview(), requestId });
+    if (await tryHandleDashboardApi({
+      db: input.db,
+      model: input.model,
+      terminals: input.terminals,
+      url: input.request.url,
+      path,
+      request: input.request,
+      response: input.response,
+      requestId,
+      hub: input.hub,
+      session: input.session,
+    })) {
       return;
     }
     if (path === "/api" || path.startsWith("/api/")) {
@@ -132,23 +158,6 @@ async function handleRequest(input: {
     }
     writeDashboardError(input.response, { status: 500, code: DASHBOARD_ERROR_CODES.INTERNAL_ERROR, requestId });
   }
-}
-
-async function writeHealth(db: AuthorityDb, response: ServerResponse, requestId: string): Promise<void> {
-  try {
-    await db.assertMigrationsReady();
-  } catch (error) {
-    if (error instanceof Error) {
-      writeDashboardError(response, { status: 503, code: DASHBOARD_ERROR_CODES.AUTHORITY_NOT_READY, requestId });
-      return;
-    }
-    throw error;
-  }
-  writeDashboardJson(response, {
-    status: 200,
-    body: { schema_version: DASHBOARD_SCHEMA_VERSION, status: "ok", authority: "ready", generated_at: new Date().toISOString() },
-    requestId,
-  });
 }
 
 function requestPath(url: string | undefined): string | undefined {

@@ -39,11 +39,15 @@
   --size-page: 90rem;
   --size-status-min: 13rem;
   --size-agent-min: 20rem;
+  --size-reading: 40rem;
   --size-icon: 0.5rem;
+  --size-nav: 3.5rem;
+  --size-control: 2.75rem;
   --border-width: 1px;
   --focus-width: 2px;
   --focus-offset: 3px;
   --radius: 0.25rem;
+  --layer-nav: 10;
 }
 
 * {
@@ -95,6 +99,46 @@ ul {
 
 .app-shell {
   min-block-size: 100dvb;
+}
+
+.control-nav {
+  position: sticky;
+  z-index: var(--layer-nav);
+  inset-block-start: 0;
+  border-block-end: var(--border-width) solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.control-nav-inner {
+  display: flex;
+  align-items: stretch;
+  gap: var(--space-1);
+  min-block-size: var(--size-nav);
+}
+
+.control-nav a {
+  display: inline-flex;
+  align-items: center;
+  min-block-size: var(--size-control);
+  padding-inline: var(--space-3);
+  color: var(--color-text-muted);
+  font-size: var(--type-sm);
+  font-weight: var(--weight-medium);
+  text-decoration: none;
+  white-space: nowrap;
+}
+
+.control-nav a:hover {
+  color: var(--color-text);
+  background: var(--color-surface-raised);
+}
+
+.control-nav a[aria-current="page"] {
+  color: var(--color-text);
+  background: var(--color-selection);
+  text-decoration: underline;
+  text-decoration-color: var(--color-info);
+  text-underline-offset: var(--space-1);
 }
 
 .page-frame {
@@ -250,7 +294,7 @@ h1 {
   padding: var(--space-3) var(--space-4);
 }
 
-.panel-header h3 {
+.panel-header :is(h2, h3) {
   font-size: var(--type-panel);
   font-weight: var(--weight-medium);
   line-height: var(--line-tight);
@@ -358,6 +402,66 @@ h1 {
   overflow-wrap: anywhere;
 }
 
+.detail-header {
+  display: grid;
+  gap: var(--space-5);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+  padding: var(--space-6);
+  background: var(--color-surface);
+}
+
+.panel pre {
+  margin: 0;
+  padding: var(--space-4);
+  background: var(--color-surface-raised);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--type-xs);
+  line-height: var(--line-body);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+button {
+  min-block-size: var(--size-control);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  padding-inline: var(--space-4);
+  background: var(--color-surface-raised);
+  color: var(--color-text-muted);
+  font: inherit;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--color-focus);
+  color: var(--color-text);
+}
+
+.route-state {
+  display: grid;
+  place-items: center;
+  min-block-size: calc(100dvb - var(--size-nav));
+  padding-block: var(--space-8);
+  text-align: center;
+}
+
+.route-state section {
+  display: grid;
+  gap: var(--space-4);
+  max-inline-size: var(--size-reading);
+}
+
+.route-state p {
+  color: var(--color-text-muted);
+}
+
+.route-state button {
+  justify-self: center;
+}
+
 .load-state {
   display: grid;
   place-items: center;
@@ -403,6 +507,15 @@ h1 {
 }
 
 @media (max-width: 40rem) {
+  .control-nav-inner {
+    gap: 0;
+    padding-inline: var(--space-2);
+  }
+
+  .control-nav a {
+    padding-inline: var(--space-2);
+  }
+
   .header-content {
     align-items: flex-start;
     flex-direction: column;

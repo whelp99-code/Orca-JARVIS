@@ -4,11 +4,12 @@ import { ControlPlane, type ActionLevel, type StoredControlCommand } from "../co
 import { JarvisError, type AuthorityDb } from "../db.js";
 import { LiveSupervisor, type LiveBinding } from "../live-supervisor.js";
 import { buildCurrentState } from "../state-projection.js";
-import { TaskTimeline, type TaskTimelineSummary } from "../task-timeline.js";
+import { TaskTimeline, type TaskTimelineEvent, type TaskTimelineSummary } from "../task-timeline.js";
 import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
 import { redactDashboardValue } from "./redaction.js";
 
 const RECENT_TASK_LIMIT = 20;
+const TASK_EVENT_LIMIT = 500;
 const SETTLED_STATES = new Set(["completed", "failed", "cancelled", "rejected"]);
 
 export type OverviewCard = {
@@ -63,6 +64,22 @@ export type OverviewResponse = {
   readonly agents: readonly OverviewAgent[];
 };
 
+export type TaskListResponse = { readonly schema_version: 1; readonly items: readonly OverviewTask[] };
+export type TaskDetailEvent = Omit<TaskTimelineEvent, "evidence_refs"> & { readonly evidence_refs: readonly string[] };
+export type TaskDetailResponse = {
+  readonly schema_version: 1;
+  readonly context: { readonly task: OverviewTask; readonly events: readonly TaskDetailEvent[] };
+};
+export type AgentListResponse = { readonly schema_version: 1; readonly items: readonly OverviewAgent[] };
+export type AgentDetailResponse = { readonly schema_version: 1; readonly agent: OverviewAgent };
+export type ControlRequestListResponse = {
+  readonly schema_version: 1;
+  readonly items: readonly OverviewApproval[];
+};
+export type DashboardLookup<T> =
+  | { readonly kind: "found"; readonly value: T }
+  | { readonly kind: "not_found" };
+
 export class DashboardReadModel {
   constructor(private readonly db: AuthorityDb) {}
 
@@ -92,6 +109,77 @@ export class DashboardReadModel {
       agents,
     });
   }
+
+  listTasks(limit: number): TaskListResponse {
+    return readSnapshot(this.db, () => redactDashboardValue({
+      schema_version: DASHBOARD_SCHEMA_VERSION,
+      items: new TaskTimeline(this.db).list(limit).map(toOverviewTask),
+    }));
+  }
+
+  taskDetail(taskId: string): DashboardLookup<TaskDetailResponse> {
+    return readSnapshot(this.db, () => {
+      try {
+        const context = new TaskTimeline(this.db).context(taskId, TASK_EVENT_LIMIT);
+        return {
+          kind: "found" as const,
+          value: redactDashboardValue({
+            schema_version: DASHBOARD_SCHEMA_VERSION,
+            context: {
+              task: toOverviewTask(context.task),
+              events: context.events.slice(-TASK_EVENT_LIMIT),
+            },
+          }),
+        };
+      } catch (error) {
+        if (error instanceof JarvisError && error.code === "TASK_TIMELINE_NOT_FOUND") return { kind: "not_found" };
+        throw error;
+      }
+    });
+  }
+
+  listAgents(): AgentListResponse {
+    return readSnapshot(this.db, () => redactDashboardValue({
+      schema_version: DASHBOARD_SCHEMA_VERSION,
+      items: listedAgents(this.db),
+    }));
+  }
+
+  agentDetail(agentId: string): DashboardLookup<AgentDetailResponse> {
+    return readSnapshot(this.db, () => {
+      const agent = listedAgents(this.db).find((item) => item.agent_id === agentId);
+      if (agent === undefined) return { kind: "not_found" };
+      return { kind: "found", value: redactDashboardValue({ schema_version: DASHBOARD_SCHEMA_VERSION, agent }) };
+    });
+  }
+
+  listControlRequests(): ControlRequestListResponse {
+    return readSnapshot(this.db, () => redactDashboardValue({
+      schema_version: DASHBOARD_SCHEMA_VERSION,
+      items: new ControlPlane(this.db).list()
+        .slice()
+        .sort((left, right) => left.requested_at.localeCompare(right.requested_at) || left.request_id.localeCompare(right.request_id))
+        .map(toOverviewApproval),
+    }));
+  }
+}
+
+function readSnapshot<T>(db: AuthorityDb, fn: () => T): T {
+  const before = changeCount(db);
+  const result = fn();
+  if (changeCount(db) !== before) throw new JarvisError("DASHBOARD_READ_MUTATED");
+  return result;
+}
+
+function listedAgents(db: AuthorityDb): readonly OverviewAgent[] {
+  return new LiveSupervisor(db).list()
+    .slice()
+    .sort((left, right) =>
+      left.canonical_path.localeCompare(right.canonical_path)
+      || left.provider.localeCompare(right.provider)
+      || left.terminal_id.localeCompare(right.terminal_id)
+      || left.incarnation_id.localeCompare(right.incarnation_id))
+    .map(toOverviewAgent);
 }
 
 function changeCount(db: AuthorityDb): number {
