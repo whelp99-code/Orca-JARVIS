@@ -5,7 +5,7 @@ import { lstat, open, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { AuthorityDb, JarvisError } from "./db.js";
-import { defaultRunner, discoverOrcaBindings, OrcaReadonlyAdapter, observeOrca, parseOrcaBindings, type OrcaRunner } from "./orca.js";
+import { defaultRunner, discoverOrcaBindings, OrcaReadonlyAdapter, observeOrca, parseOrcaBindings, type OrcaRunner, type OrcaTerminal } from "./orca.js";
 import { createOrcaRunner, decodeEnvWorktree, parseOrcaEnvironments } from "./orca-env.js";
 import { PreGjcShadow, type AuthorityReceipt, type AuthorityRequest, type ShadowKey } from "./pre-gjc-shadow.js";
 import { ingestClaudeHookEvent, ingestCodexAppServerEvent } from "./adapters.js";
@@ -49,7 +49,18 @@ async function observeBound(binding: LiveBinding, runner?: OrcaRunner): Promise<
   const decoded = decodeEnvWorktree(binding.canonical_path);
   const envRunner = createOrcaRunner(decoded.environment, runner ?? defaultRunner);
   const adapter = new OrcaReadonlyAdapter(envRunner);
-  const terminal = (await adapter.list(decoded.listSelector)).find(item => item.handle === binding.terminal_id && item.incarnationId === binding.incarnation_id && item.ptyId === binding.pty_id && item.worktreeId === binding.worktree_id);
+  let terminals: OrcaTerminal[];
+  try {
+    terminals = await adapter.list(decoded.listSelector);
+  } catch (error) {
+    // A persisted binding can outlive its Orca selector (worktree removed or
+    // the environment offline), so a failed terminal list only means the
+    // binding cannot currently be observed. Project it as unknown instead of
+    // killing the whole daemon. Schema and binding failures stay fail-closed.
+    if (error instanceof JarvisError && error.code === "ORCA_CLI_FAILED") return [{ provider: binding.provider, terminal_id: binding.terminal_id, session_id: binding.session_id, incarnation_id: binding.incarnation_id, cursor: binding.cursor, state: "unknown" }];
+    throw error;
+  }
+  const terminal = terminals.find(item => item.handle === binding.terminal_id && item.incarnationId === binding.incarnation_id && item.ptyId === binding.pty_id && item.worktreeId === binding.worktree_id);
   if (!terminal || !terminal.connected) return [{ provider: binding.provider, terminal_id: binding.terminal_id, session_id: binding.session_id, incarnation_id: binding.incarnation_id, cursor: binding.cursor, state: "unknown" }];
   const read = await adapter.read(binding.terminal_id, binding.cursor, 1);
   return [{ provider: binding.provider, terminal_id: binding.terminal_id, session_id: binding.session_id, incarnation_id: binding.incarnation_id, cursor: read.nextCursor, state: "unknown" }];
