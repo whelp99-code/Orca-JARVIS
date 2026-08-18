@@ -16,6 +16,8 @@ export { TaskTimeline, type TaskTimelineContext, type TaskTimelineEvent, type Ta
 export type { CensusSnapshot, CensusWork, ContinuationInput, DecisionReceipt, GuardBindings, PolicyAuthorization, VerificationEvidence, ProgressAssessment, ProgressBatch, ProgressState, ProgressTransition, ProgressTransitionEvidence, StoredProgressReport, ProgressSignal, ProgressSignalKey, ProgressEvidenceInput, ProgressClassification, ProgressReasonCode } from "./types.js";
 export type { PreGjcEvidence, PreGjcFixture, PreGjcKeyRevocation, PreGjcTarget } from "./pre-gjc.js";
 export { runDoctor, type DoctorCheck, type DoctorReport } from "./doctor.js";
+export { buildCapabilityMatrix, type CapabilityStage, type CapabilityStageResult, type CapabilityFact, type CapabilityMatrixV1, type CapabilityProbe } from "./capabilities.js";
+export { planTeamProposal, type TeamArchetype, type TeamWorkType, type TeamProposalRequestV1, type TeamProposalResultV1, type TeamMemberProposal } from "./team-proposal.js";
 export { ControlPlane, controlCommandDigest, signCommandApproval, verifyCommandApproval, COMMAND_APPROVAL_DOMAIN, type ActionLevel, type ControlCommandRequestInput, type StoredControlCommand, type CommandApprovalReceipt, type ClaimedControlCommand, type ControlEventInput } from "./control-plane.js";
 export { buildCurrentState, type CurrentStateProjection } from "./state-projection.js";
 export { ApprovedCommandExecutor, type ApprovedExecutionResult } from "./approved-executor.js";

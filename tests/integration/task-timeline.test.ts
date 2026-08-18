@@ -2,6 +2,7 @@ import { dirname } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ApprovedCommandExecutor, ControlPlane, LiveSupervisor, PreGjcShadow, TaskTimeline, buildCurrentState, signCommandApproval, type CommandApprovalReceipt, type ControlCommandRequestInput } from "../../src/index.js";
 import { execute } from "../../src/cli.js";
+import { runtimeCapabilityProbe } from "../../src/doctor.js";
 import { LoopGraph } from "../../src/loopgraph.js";
 import { evidenceFor, future, initialized, localKey, policyKey, snapshot, tempDb } from "../helpers.js";
 
@@ -42,7 +43,51 @@ describe("Buzz-inspired read-only task timeline", () => {
     await expect(execute(["timeline", "list", "--db", filename])).resolves.toMatchObject({ command: "timeline.list" });
     await expect(execute(["timeline", "show", "task:timeline", "--db", filename])).resolves.toMatchObject({ command: "timeline.show", task_id: "task:timeline" });
     await expect(execute(["timeline", "context", "task:timeline", "--db", filename])).resolves.toMatchObject({ command: "timeline.context", task_id: "task:timeline" });
-    await expect(execute(["capabilities", "--json", "--db", filename])).resolves.toMatchObject({ task_timeline: true, collaboration_workspace: false, buzz_bridge: false });
+    const capabilities = await execute(["capabilities", "--json", "--db", filename], { capabilityProbe: runtimeCapabilityProbe(async () => ({ stdout: "", exitCode: 127 })) });
+    const expectedFlat = {
+      ok: true,
+      supported_targets: ["codex", "claude"],
+      providers: ["codex", "claude"],
+      orca_read: true,
+      codex_observe: true,
+      claude_observe: true,
+      pre_gjc_shadow: true,
+      pre_gjc_signed_signals: true,
+      pre_gjc_durable_state: true,
+      pre_gjc_authority_resume: true,
+      authority_resume_intents: true,
+      live_resume: false,
+      pre_gjc_completion_promotion: true,
+      pre_gjc_proposal_only: true,
+      gjc: false,
+      live_seed: false,
+      live_dispatch: false,
+      control_commands_require_human_receipt: true,
+      all_cli_mutations_require_control_receipt: false,
+      task_timeline: true,
+      collaboration_workspace: false,
+      buzz_bridge: false,
+      policy_resume_intents: true,
+      policy_resume_auto_delivery: true,
+      service_run_deployable: true,
+      service_run_delivers_resume: false,
+      runtime_batch_deployable: false,
+      policy_auto_execute: false,
+      arbitrary_verify_execution: false,
+      self_modify: false,
+      shadow_only: true,
+    };
+    expect(capabilities).toMatchObject(expectedFlat);
+    for (const [key, value] of Object.entries(expectedFlat)) expect(capabilities[key]).toEqual(value);
+    expect(JSON.stringify(capabilities)).not.toContain("probe_not_injected");
+    const matrix = capabilities.matrix as { schema_version: number; capabilities: Array<{ id: string; stages: Record<string, { ok: boolean }> }> };
+    expect(matrix.schema_version).toBe(1);
+    expect(matrix.capabilities.map(item => item.id)).toEqual(["codex", "claude", "orca_read", "gjc", "live_resume"]);
+    const gjc = matrix.capabilities.find(item => item.id === "gjc");
+    const liveResume = matrix.capabilities.find(item => item.id === "live_resume");
+    expect(gjc?.stages.operational?.ok).toBe(capabilities.gjc);
+    expect(liveResume?.stages.configured?.ok).toBe(capabilities.live_resume);
+    expect(liveResume?.stages.operational?.ok).toBe(capabilities.live_resume);
   });
 
   it("resolves an exact task even when it is older than 500 recent GJC items", async () => {
