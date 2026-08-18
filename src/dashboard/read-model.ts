@@ -1,0 +1,180 @@
+import { createHash } from "node:crypto";
+import { canonicalize } from "../canonical.js";
+import { ControlPlane, type ActionLevel, type StoredControlCommand } from "../control-plane.js";
+import { JarvisError, type AuthorityDb } from "../db.js";
+import { LiveSupervisor, type LiveBinding } from "../live-supervisor.js";
+import { buildCurrentState } from "../state-projection.js";
+import { TaskTimeline, type TaskTimelineSummary } from "../task-timeline.js";
+import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
+import { redactDashboardValue } from "./redaction.js";
+
+const RECENT_TASK_LIMIT = 20;
+const SETTLED_STATES = new Set(["completed", "failed", "cancelled", "rejected"]);
+
+export type OverviewCard = {
+  readonly id: string;
+  readonly label: string;
+  readonly value: number;
+  readonly detail: string;
+};
+
+export type OverviewTask = {
+  readonly task_id: string;
+  readonly title: string;
+  readonly kind: TaskTimelineSummary["kind"];
+  readonly state: string;
+  readonly updated_at: string;
+  readonly pending_approval: boolean;
+  readonly source_ids: readonly string[];
+};
+
+export type OverviewApproval = {
+  readonly request_id: string;
+  readonly action: string;
+  readonly action_level: ActionLevel;
+  readonly requested_at: string;
+  readonly requested_by: string;
+  readonly summary: string;
+  readonly state: string;
+};
+
+export type OverviewRisk = {
+  readonly id: string;
+  readonly severity: string;
+  readonly message: string;
+};
+
+export type OverviewAgent = {
+  readonly agent_id: string;
+  readonly provider: string;
+  readonly terminal_id: string;
+  readonly incarnation_id: string;
+  readonly canonical_path: string;
+  readonly status: string;
+};
+
+export type OverviewResponse = {
+  readonly schema_version: 1;
+  readonly generated_at: string;
+  readonly cards: readonly OverviewCard[];
+  readonly recent_tasks: readonly OverviewTask[];
+  readonly pending_approvals: readonly OverviewApproval[];
+  readonly risks: readonly OverviewRisk[];
+  readonly agents: readonly OverviewAgent[];
+};
+
+export class DashboardReadModel {
+  constructor(private readonly db: AuthorityDb) {}
+
+  async overview(now = new Date()): Promise<OverviewResponse> {
+    const before = changeCount(this.db);
+    const projection = await buildCurrentState(this.db, now);
+    const tasks = new TaskTimeline(this.db).list(RECENT_TASK_LIMIT);
+    const commands = new ControlPlane(this.db).list();
+    const bindings = new LiveSupervisor(this.db).list();
+    if (changeCount(this.db) !== before) throw new JarvisError("DASHBOARD_READ_MUTATED");
+    const recent_tasks = tasks.map(toOverviewTask);
+    const pending_approvals = commands.filter(isPending).map(toOverviewApproval);
+    const risks = projection.risks.flatMap(toOverviewRisk);
+    const agents = bindings.map(toOverviewAgent);
+    return redactDashboardValue({
+      schema_version: DASHBOARD_SCHEMA_VERSION,
+      generated_at: projection.generated_at,
+      cards: overviewCards({
+        activeWork: recent_tasks.filter((task) => !SETTLED_STATES.has(task.state)).length,
+        agents: agents.length,
+        pending: pending_approvals.length,
+        risks: risks.length,
+      }),
+      recent_tasks,
+      pending_approvals,
+      risks,
+      agents,
+    });
+  }
+}
+
+function changeCount(db: AuthorityDb): number {
+  const row = db.db.prepare("SELECT total_changes() AS count").get();
+  if (typeof row !== "object" || row === null || !("count" in row) || typeof row.count !== "number") {
+    throw new JarvisError("DASHBOARD_READ_MUTATED");
+  }
+  return row.count;
+}
+
+function toOverviewTask(task: TaskTimelineSummary): OverviewTask {
+  return {
+    task_id: task.task_id,
+    title: task.title,
+    kind: task.kind,
+    state: task.state,
+    updated_at: task.updated_at,
+    pending_approval: task.pending_approval,
+    source_ids: [...task.source_ids],
+  };
+}
+
+function isPending(command: StoredControlCommand): boolean {
+  return command.state === "pending";
+}
+
+function toOverviewApproval(command: StoredControlCommand): OverviewApproval {
+  return {
+    request_id: command.request_id,
+    action: command.action,
+    action_level: command.action_level,
+    requested_at: command.requested_at,
+    requested_by: command.requested_by,
+    summary: command.action,
+    state: command.state,
+  };
+}
+
+function toOverviewRisk(value: unknown): readonly OverviewRisk[] {
+  if (typeof value !== "object" || value === null) return [];
+  const name = "name" in value && typeof value.name === "string" ? value.name : undefined;
+  if (name === undefined) return [];
+  const code = "code" in value && typeof value.code === "string" ? value.code : name;
+  return [{ id: code, severity: "high", message: name }];
+}
+
+function toOverviewAgent(binding: LiveBinding): OverviewAgent {
+  return {
+    agent_id: agentIdentity(binding),
+    provider: binding.provider,
+    terminal_id: binding.terminal_id,
+    incarnation_id: binding.incarnation_id,
+    canonical_path: binding.canonical_path,
+    status: "live",
+  };
+}
+
+function agentIdentity(binding: LiveBinding): string {
+  return `sha256:${createHash("sha256").update(canonicalize({
+    canonical_path: binding.canonical_path,
+    provider: binding.provider,
+    terminal_id: binding.terminal_id,
+    incarnation_id: binding.incarnation_id,
+  })).digest("hex")}`;
+}
+
+function overviewCards(counts: {
+  readonly activeWork: number;
+  readonly agents: number;
+  readonly pending: number;
+  readonly risks: number;
+}): readonly OverviewCard[] {
+  if (counts.activeWork === 0 && counts.pending === 0 && counts.risks === 0) return [];
+  return [
+    { id: "active-work", label: "Active work", value: counts.activeWork, detail: counted(counts.activeWork, "task", "in progress") },
+    { id: "agents", label: "Agents", value: counts.agents, detail: counted(counts.agents, "live binding") },
+    { id: "pending-approvals", label: "Pending approvals", value: counts.pending, detail: counted(counts.pending, "request", "awaiting receipt") },
+    { id: "risks", label: "Risks", value: counts.risks, detail: counted(counts.risks, "open risk") },
+  ];
+}
+
+function counted(count: number, noun: string, suffix?: string): string {
+  const word = count === 1 ? noun : `${noun}s`;
+  const head = `${String(count)} ${word}`;
+  return suffix === undefined ? head : `${head} ${suffix}`;
+}

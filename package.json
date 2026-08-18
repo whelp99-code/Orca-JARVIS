@@ -13,16 +13,17 @@
     "jarvis": "dist/src/cli.js"
   },
   "scripts": {
-    "build": "tsc && node scripts/copy-migrations.mjs",
+    "build": "npm run build:backend && npm run build:dashboard",
     "lint": "eslint src tests dashboard --max-warnings=0",
     "pretest": "npm run build",
     "test": "vitest run --no-file-parallelism",
     "acceptance:pre-gjc": "node scripts/pre-gjc-acceptance.mjs",
-    "verify": "npm run runtime:check && npm run lint && tsc --noEmit && npm test && npm run acceptance:pre-gjc -- --fixture test/fixtures/pre-gjc-e2e.json --clock 2026-08-09T00:00:00.000Z && npm run build && node scripts/cli-smoke.mjs",
+    "verify": "npm run runtime:check && npm run lint && npm run typecheck && npm test && npm run acceptance:pre-gjc -- --fixture test/fixtures/pre-gjc-e2e.json --clock 2026-08-09T00:00:00.000Z && npm run build && node scripts/cli-smoke.mjs",
     "runtime:check": "node scripts/assert-runtime.mjs",
     "prebuild": "npm run runtime:check",
     "build:backend": "tsc && node scripts/copy-migrations.mjs",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.dashboard.json --noEmit"
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.dashboard.json --noEmit",
+    "build:dashboard": "vite build --config dashboard/vite.config.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.2.0",
@@ -46,6 +47,7 @@
     "jsdom": "30.0.1",
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.39.0",
+    "undici": "8.10.0",
     "vite": "7.3.6",
     "vitest": "^3.2.4"
   },
