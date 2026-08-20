@@ -31,9 +31,10 @@ describe("portfolio projection ownership and replay", () => {
     db.close();
   });
 
-  it("rejects reports more than five minutes ahead of trusted receipt time", async () => {
+  it("rejects reports and collector errors more than five minutes ahead of trusted receipt time", async () => {
     const { db, store } = await projection();
     expect(() => ingestJson(store, "local", localReport({ reported_at: "9999-12-31T23:59:59.999Z" }))).toThrow(expect.objectContaining({ code: "PORTFOLIO_CLOCK_SKEW" }));
+    expect(() => ingestJson(store, "local", collectorError("local", { reported_at: "9999-12-31T23:59:59.999Z" }))).toThrow(expect.objectContaining({ code: "PORTFOLIO_CLOCK_SKEW" }));
     expect((db.db.prepare("SELECT COUNT(*) AS n FROM dashboard_portfolio_projection").get() as { n: number }).n).toBe(0);
     db.close();
   });

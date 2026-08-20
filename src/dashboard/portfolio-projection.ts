@@ -45,10 +45,8 @@ export class PortfolioProjection {
     const parsed = parsePortfolioIngest(input);
     const envelope = parsed.kind === "report" ? parsed.report : parsed.error;
     if (envelope.source !== source) throw new JarvisError("PORTFOLIO_SOURCE_MISMATCH");
-    if (parsed.kind === "report") {
-      const skew = Date.parse(parsed.report.reported_at) - receivedAt.getTime();
-      if (skew > PORTFOLIO_CLOCK_SKEW_MS) throw new JarvisError("PORTFOLIO_CLOCK_SKEW");
-    }
+    const skew = Date.parse(envelope.reported_at) - receivedAt.getTime();
+    if (skew > PORTFOLIO_CLOCK_SKEW_MS) throw new JarvisError("PORTFOLIO_CLOCK_SKEW");
     const digest = digestPortfolioValue(envelope);
     const transaction = this.authority.db.transaction(() => {
       const existing = this.row(source);
