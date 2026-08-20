@@ -7,7 +7,7 @@
   <key>ProgramArguments</key>
   <array>
     <string>/Users/jmpark/.nvm/versions/node/v24.19.0/bin/node</string>
-    <string>/Volumes/DevSpace/Orca-JARVIS/.jarvis-runtime/control-center/current/dist/src/dashboard/server.js</string>
+    <string>/Volumes/DevSpace/Orca-JARVIS/.jarvis-runtime/control-center/current/dist/src/dashboard/main.js</string>
     <string>--host</string>
     <string>127.0.0.1</string>
     <string>--port</string>

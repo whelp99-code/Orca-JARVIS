@@ -6,7 +6,7 @@ import { describe, expect, it } from "vitest";
 const PLIST = join(process.cwd(), "deploy/com.jmpark.orca-jarvis-dashboard.plist");
 const LABEL = "com.jmpark.orca-jarvis-dashboard";
 const NODE = "/Users/jmpark/.nvm/versions/node/v24.19.0/bin/node";
-const SERVER = "/Volumes/DevSpace/Orca-JARVIS/.jarvis-runtime/control-center/current/dist/src/dashboard/server.js";
+const SERVER = "/Volumes/DevSpace/Orca-JARVIS/.jarvis-runtime/control-center/current/dist/src/dashboard/main.js";
 const WORKING_DIRECTORY = "/Volumes/DevSpace/Orca-JARVIS/.jarvis-runtime/control-center/current";
 const DB = "/Volumes/DevSpace/Orca-JARVIS/.jarvis-runtime/jarvis.sqlite";
 const STATIC_ROOT = "/Volumes/DevSpace/Orca-JARVIS/.jarvis-runtime/control-center/current/dist/dashboard";

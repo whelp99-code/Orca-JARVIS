@@ -19,7 +19,7 @@ import { afterEach, describe, expect, it } from "vitest";
 const SCRIPT = join(process.cwd(), "scripts/publish-control-center-release.mjs");
 const SHA_A = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
 const SHA_B = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-const REQUIRED = ["package.json", "package-lock.json", "dist/src/dashboard/server.js", "dist/dashboard/index.html"] as const;
+const REQUIRED = ["package.json", "package-lock.json", "dist/src/dashboard/server.js", "dist/src/dashboard/main.js", "dist/dashboard/index.html"] as const;
 
 const workspaces: string[] = [];
 
@@ -39,6 +39,7 @@ function writeRelease(root: string, marker: string): string {
   writeFileSync(join(root, "package.json"), '{"name":"orca-jarvis-shadow"}\n');
   writeFileSync(join(root, "package-lock.json"), '{"lockfileVersion":3}\n');
   writeFileSync(join(root, "dist/src/dashboard/server.js"), `export const marker = ${JSON.stringify(marker)};\n`);
+  writeFileSync(join(root, "dist/src/dashboard/main.js"), "export {};\n");
   writeFileSync(join(root, "dist/dashboard/index.html"), `<!doctype html><title>${marker}</title>\n`);
   return root;
 }
