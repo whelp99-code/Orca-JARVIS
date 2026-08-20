@@ -1,8 +1,8 @@
 import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import { request } from "undici";
 import { afterAll, describe, expect, it } from "vitest";
 import { AuthorityDb } from "../../src/index.js";
@@ -54,8 +54,10 @@ describe("dashboard CLI", () => {
   it("binds loopback, prints the origin, and serves health", async () => {
     const dbPath = await migratedDb();
     const port = await freePort();
+    const alias = join(dirname(dbPath), "current-main.js");
+    symlinkSync(MAIN, alias);
     const child = spawn(process.execPath, [
-      MAIN,
+      alias,
       "--host", "127.0.0.1",
       "--port", String(port),
       "--db", dbPath,

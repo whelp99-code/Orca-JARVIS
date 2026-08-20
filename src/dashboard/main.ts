@@ -1,5 +1,6 @@
 import { parseArgs } from "node:util";
-import { pathToFileURL } from "node:url";
+import { realpathSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { AuthorityDb, JarvisError } from "../db.js";
 import { runtimeCapabilityProbe } from "../doctor.js";
@@ -58,7 +59,12 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
 
 function isDirectRun(): boolean {
   const entry = process.argv[1];
-  return entry !== undefined && pathToFileURL(resolve(entry)).href === import.meta.url;
+  if (entry === undefined) return false;
+  try {
+    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
 }
 
 if (isDirectRun()) {
