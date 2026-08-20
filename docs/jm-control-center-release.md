@@ -57,6 +57,7 @@ MERGE_SHA="${MERGE_SHA:?set MERGE_SHA to the verified merged commit}"
 ssh jm@100.87.81.57 "
   set -euo pipefail
   RELEASE='$RUNTIME/control-center/releases/$MERGE_SHA'
+  export PATH=/home/jm/.nvm/versions/node/v24.19.0/bin:/usr/bin:/bin
   NODE=/home/jm/.nvm/versions/node/v24.19.0/bin/node
   NPM=/home/jm/.nvm/versions/node/v24.19.0/bin/npm
   cd \"\$RELEASE\"
