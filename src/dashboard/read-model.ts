@@ -6,6 +6,8 @@ import { LiveSupervisor, type LiveBinding } from "../live-supervisor.js";
 import { buildCurrentState } from "../state-projection.js";
 import { TaskTimeline, type TaskTimelineEvent, type TaskTimelineSummary } from "../task-timeline.js";
 import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
+import type { PortfolioOverview } from "./portfolio-contracts.js";
+import { PortfolioProjection } from "./portfolio-projection.js";
 import { redactDashboardValue } from "./redaction.js";
 
 const RECENT_TASK_LIMIT = 20;
@@ -62,6 +64,7 @@ export type OverviewResponse = {
   readonly pending_approvals: readonly OverviewApproval[];
   readonly risks: readonly OverviewRisk[];
   readonly agents: readonly OverviewAgent[];
+  readonly portfolio: PortfolioOverview;
 };
 
 export type TaskListResponse = { readonly schema_version: 1; readonly items: readonly OverviewTask[] };
@@ -89,12 +92,13 @@ export class DashboardReadModel {
     const tasks = new TaskTimeline(this.db).list(RECENT_TASK_LIMIT);
     const commands = new ControlPlane(this.db).list();
     const bindings = new LiveSupervisor(this.db).list();
+    const portfolio = new PortfolioProjection(this.db).overview(now);
     if (changeCount(this.db) !== before) throw new JarvisError("DASHBOARD_READ_MUTATED");
     const recent_tasks = tasks.map(toOverviewTask);
     const pending_approvals = commands.filter(isPending).map(toOverviewApproval);
     const risks = projection.risks.flatMap(toOverviewRisk);
     const agents = bindings.map(toOverviewAgent);
-    return redactDashboardValue({
+    const overview = redactDashboardValue({
       schema_version: DASHBOARD_SCHEMA_VERSION,
       generated_at: projection.generated_at,
       cards: overviewCards({
@@ -108,6 +112,7 @@ export class DashboardReadModel {
       risks,
       agents,
     });
+    return { ...overview, portfolio: redactDashboardValue(portfolio) };
   }
 
   listTasks(limit: number): TaskListResponse {

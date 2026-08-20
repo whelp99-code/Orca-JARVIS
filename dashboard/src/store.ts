@@ -1,28 +1,10 @@
-import type {
-  AgentListResponse,
-  ControlRequestListResponse,
-  OverviewResponse, TaskListResponse,
-} from "../../src/dashboard/read-model.js";
-import { classifyDashboardError, type ApiError, type ApiErrorKind, type DashboardClient } from "./api.js";
+import type { OverviewResponse } from "../../src/dashboard/read-model.js";
+import { classifyDashboardError } from "./api.js";
+import { PortfolioFreshnessTimer } from "./portfolio-freshness.js";
+import type { PortfolioOverview } from "../../src/dashboard/portfolio-contracts.js";
+import type { ConnectionState, DashboardState, DashboardStoreOptions, EventSourceLike, ResourceState } from "./store-types.js";
 
-export type ConnectionState = "live" | "reconnecting" | "offline";
-export type ResourceState<T> =
-  | { readonly status: "idle" | "loading" | "retrying"; readonly kind?: never }
-  | { readonly status: "success"; readonly data: T; readonly kind?: never }
-  | { readonly status: "empty"; readonly data: T; readonly kind?: never }
-  | { readonly status: "error"; readonly kind: ApiErrorKind; readonly error: ApiError };
-export type DashboardState = {
-  readonly connectionState: ConnectionState; readonly overview: ResourceState<OverviewResponse>;
-  readonly tasks: ResourceState<TaskListResponse>; readonly agents: ResourceState<AgentListResponse>;
-  readonly approvals: ResourceState<ControlRequestListResponse>;
-};
-export type EventSourceLike = {
-  addEventListener(type: string, listener: (event: Event) => void): void; close(): void;
-  onerror: ((event: Event) => void) | null;
-};
-export type DashboardStoreOptions = {
-  readonly client: DashboardClient; readonly eventSourceFactory: (url: string) => EventSourceLike;
-};
+export type { ConnectionState, DashboardState, DashboardStoreOptions, EventSourceLike, ResourceState };
 
 const EVENTS_PATH = "/api/v1/events";
 const SNAPSHOT_TOPICS = ["overview", "tasks", "agents", "approvals"] as const;
@@ -39,6 +21,7 @@ export function createDashboardStore(options: DashboardStoreOptions) {
   let generation = 0;
   let running = false;
   let source: EventSourceLike | undefined;
+  const freshnessTimer = new PortfolioFreshnessTimer();
   const listeners = new Set<() => void>();
 
   function getSnapshot(): DashboardState {
@@ -58,6 +41,7 @@ export function createDashboardStore(options: DashboardStoreOptions) {
   function stop(): void {
     generation += 1;
     running = false;
+    freshnessTimer.clear();
     source?.close(); source = undefined;
   }
 
@@ -85,10 +69,16 @@ export function createDashboardStore(options: DashboardStoreOptions) {
       return;
     }
     if (token !== generation) return;
+    await refetch(token, SNAPSHOT_TOPICS);
+    if (token !== generation) return;
     const next = options.eventSourceFactory(EVENTS_PATH);
     source = next;
     next.addEventListener("snapshot", (event) => { void onFrame(token, "snapshot", event); });
     next.addEventListener("reconcile", (event) => { void onFrame(token, "reconcile", event); });
+    next.onopen = () => {
+      if (token !== generation) return;
+      assign({ connectionState: "live" });
+    };
     next.onerror = () => {
       if (token !== generation) return;
       assign({ connectionState: "reconnecting" });
@@ -132,6 +122,7 @@ export function createDashboardStore(options: DashboardStoreOptions) {
       const data = await options.client.overview();
       if (token !== generation) return;
       assign({ overview: collectionState(data, isOverviewEmpty) });
+      scheduleFreshnessRefresh(token, data.portfolio);
     } catch (error: unknown) { failResource(token, "overview", error); }
   }
   async function loadTasks(token: number): Promise<void> {
@@ -196,6 +187,18 @@ export function createDashboardStore(options: DashboardStoreOptions) {
   function assign(partial: Partial<DashboardState>): void {
     state = { ...state, ...partial };
     for (const listener of listeners) listener();
+  }
+
+  // After every successful overview load, schedule exactly one timer for the earliest next host
+  // transition (live → stale at updated_at + 90s, stale → offline at updated_at + 300s). Offline
+  // and unseen hosts schedule nothing. A new overview clears and replaces the previous timer, and
+  // stop() clears it entirely; generation guards the callback so a stale timer can never fire a
+  // refresh for a stopped or restarted store.
+  function scheduleFreshnessRefresh(token: number, portfolio: PortfolioOverview): void {
+    freshnessTimer.schedule(portfolio, () => {
+      if (token !== generation) return;
+      void refreshOverview();
+    });
   }
 
   return { getSnapshot, subscribe, start, stop, refreshOverview, refreshTasks, refreshAgents, refreshApprovals };

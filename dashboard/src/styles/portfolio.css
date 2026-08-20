@@ -1,0 +1,170 @@
+
+.portfolio-panel {
+  display: grid;
+  gap: var(--space-5);
+  padding: var(--space-6);
+  border: var(--border-width) solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.portfolio-heading,
+.portfolio-host > header,
+.portfolio-list > li {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.portfolio-heading > p,
+.portfolio-updated {
+  color: var(--color-text-muted);
+  font-size: var(--type-sm);
+}
+
+.portfolio-eyebrow {
+  margin-block-end: var(--space-1);
+  color: var(--color-info);
+  font-size: var(--type-xs);
+  font-weight: var(--weight-bold);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.portfolio-hosts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--space-4);
+}
+
+.portfolio-host,
+.portfolio-summary > section,
+.portfolio-summary-empty {
+  padding: var(--space-4);
+  border: var(--border-width) solid var(--color-border);
+  background: var(--color-surface-raised);
+}
+
+.portfolio-host {
+  display: grid;
+  gap: var(--space-4);
+  border-block-start: 0.2rem solid var(--color-border-strong);
+}
+
+.portfolio-host[data-freshness="live"] {
+  border-block-start-color: var(--color-success);
+}
+
+.portfolio-host[data-freshness="stale"] {
+  border-block-start-color: var(--color-warning);
+}
+
+.portfolio-host[data-freshness="offline"] {
+  border-block-start-color: var(--color-danger);
+}
+
+.freshness-badge,
+.milestone-state {
+  padding: var(--space-1) var(--space-2);
+  border: var(--border-width) solid currentColor;
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--type-xs);
+  line-height: var(--line-tight);
+}
+
+.portfolio-host[data-freshness="live"] .freshness-badge,
+.milestone-state[data-state="done"] {
+  color: var(--color-success);
+}
+
+.portfolio-host[data-freshness="stale"] .freshness-badge,
+.milestone-state[data-state="in_progress"] {
+  color: var(--color-warning);
+}
+
+.portfolio-host[data-freshness="offline"] .freshness-badge,
+.milestone-state[data-state="blocked"] {
+  color: var(--color-danger);
+}
+
+.portfolio-metrics,
+.github-metrics {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-3);
+}
+
+.portfolio-metrics > div,
+.github-metrics > div {
+  min-inline-size: 0;
+}
+
+.portfolio-metrics dt,
+.github-metrics dt {
+  color: var(--color-text-dim);
+  font-size: var(--type-xs);
+  letter-spacing: var(--tracking-label);
+  text-transform: uppercase;
+}
+
+.portfolio-metrics dd,
+.github-metrics dd {
+  margin-block-start: var(--space-1);
+  font-family: var(--font-mono);
+  font-size: var(--type-panel);
+  font-weight: var(--weight-bold);
+}
+
+.portfolio-error {
+  color: var(--color-danger);
+  font-size: var(--type-sm);
+}
+
+.portfolio-summary {
+  display: grid;
+  grid-template-columns: 0.75fr 1.25fr 1fr;
+  gap: var(--space-4);
+}
+
+.portfolio-summary h3,
+.portfolio-summary-empty h3 {
+  margin-block-end: var(--space-3);
+}
+
+.github-metrics {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.portfolio-list {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.portfolio-list > li {
+  min-block-size: 2rem;
+  padding-block: var(--space-2);
+  border-block-end: var(--border-width) solid var(--color-border);
+}
+
+.portfolio-blockers > li {
+  justify-content: flex-start;
+  color: var(--color-warning);
+}
+
+@media (max-width: 64rem) {
+  .portfolio-summary {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+@media (max-width: 48rem) {
+  .portfolio-heading {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .portfolio-hosts {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}

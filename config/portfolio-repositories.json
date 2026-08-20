@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "repositories": [
+    "whelp99-code/EvoHarvest",
+    "whelp99-code/JM-AI-Action-Hub",
+    "whelp99-code/JM-AI-Auto-Work-OS",
+    "whelp99-code/JM-AI-Master-Worker",
+    "whelp99-code/Orca-JARVIS",
+    "whelp99-code/ProofGraph-Graph-Native-v7",
+    "whelp99-code/Toss-finance",
+    "whelp99-code/ai-crm-project-manager",
+    "whelp99-code/app-dev-manager",
+    "whelp99-code/dev-plan-tool",
+    "whelp99-code/gitgauge",
+    "whelp99-code/jarvis-ai",
+    "whelp99-code/jm-loop-miner",
+    "whelp99-code/loop-engineering-labs",
+    "whelp99-code/sangfor-os",
+    "whelp99-code/whelp99-code-sangfor-engineer-mcp",
+    "whelp99-code/wiki-spike"
+  ]
+}

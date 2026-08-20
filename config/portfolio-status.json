@@ -1,0 +1,39 @@
+{
+  "schema_version": 1,
+  "milestones": [
+    {
+      "title": "Budgeted evolution shadow engine",
+      "state": "done"
+    },
+    {
+      "title": "Dual-host portfolio dashboard deployment",
+      "state": "done"
+    },
+    {
+      "title": "Event-driven monitoring policy",
+      "state": "in_progress"
+    },
+    {
+      "title": "Provider runtime contract",
+      "state": "in_progress"
+    },
+    {
+      "title": "Wiki signed authority decision",
+      "state": "in_progress"
+    }
+  ],
+  "blockers": [
+    {
+      "title": "Publish budgeted evolution commit",
+      "kind": "approval_required"
+    },
+    {
+      "title": "Merge monitoring policy PR 2",
+      "kind": "approval_required"
+    },
+    {
+      "title": "Fast-forward JM Orca-JARVIS main",
+      "kind": "approval_required"
+    }
+  ]
+}

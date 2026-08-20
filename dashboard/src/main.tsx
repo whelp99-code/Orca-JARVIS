@@ -3,6 +3,10 @@ import { createDashboardClient } from "./api.js";
 import { ControlCenterRoot } from "./root.js";
 import { createDashboardStore } from "./store.js";
 import "./styles.css";
+import "./styles/content.css";
+import "./styles/controls.css";
+import "./styles/responsive.css";
+import "./styles/portfolio.css";
 
 class DashboardInitializationError extends Error {
   readonly name = "DashboardInitializationError";

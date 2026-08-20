@@ -2,6 +2,8 @@
 
 Definitions only. Do not run the commands below until an operator explicitly deploys. This file does not change live production state.
 
+JM-SERVER uses the separate systemd procedure in [`jm-control-center-release.md`](./jm-control-center-release.md).
+
 Production runtime root: `/Volumes/DevSpace/Orca-JARVIS/.jarvis-runtime`.
 Dashboard label: `com.jmpark.orca-jarvis-dashboard`.
 Existing supervisor label `com.jmpark.orca-jarvis` stays untouched.

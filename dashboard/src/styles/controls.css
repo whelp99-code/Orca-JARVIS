@@ -1,0 +1,239 @@
+
+.panel pre {
+  margin: 0;
+  padding: var(--space-4);
+  background: var(--color-surface-raised);
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--type-xs);
+  line-height: var(--line-body);
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+
+button {
+  min-block-size: var(--size-control);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  padding-inline: var(--space-4);
+  background: var(--color-surface-raised);
+  color: var(--color-text-muted);
+  font: inherit;
+  font-weight: var(--weight-medium);
+  cursor: pointer;
+}
+
+button:hover {
+  border-color: var(--color-focus);
+  color: var(--color-text);
+}
+
+.route-state {
+  display: grid;
+  place-items: center;
+  min-block-size: calc(100dvb - var(--size-nav));
+  padding-block: var(--space-8);
+  text-align: center;
+}
+
+.route-state section {
+  display: grid;
+  gap: var(--space-4);
+  max-inline-size: var(--size-reading);
+}
+
+.route-state p {
+  color: var(--color-text-muted);
+}
+
+.route-state button {
+  justify-self: center;
+}
+
+.load-state {
+  display: grid;
+  place-items: center;
+  min-block-size: 100dvb;
+  padding: var(--space-8);
+  text-align: center;
+}
+
+.load-state h1 {
+  margin-block-end: var(--space-4);
+}
+
+.load-state p {
+  color: var(--color-text-muted);
+}
+
+.load-state .load-error {
+  margin-block-end: var(--space-2);
+  color: var(--color-danger);
+  font-weight: var(--weight-medium);
+}
+
+.proposal-heading {
+  display: grid;
+  gap: var(--space-2);
+}
+
+.proposal-heading p {
+  max-inline-size: var(--size-reading);
+  color: var(--color-text-muted);
+}
+
+.proposal-layout {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(var(--size-reading), 100%), 1fr));
+  gap: var(--space-4);
+  align-items: start;
+}
+
+.proposal-form,
+.proposal-result {
+  min-inline-size: 0;
+}
+
+.proposal-form-body,
+.proposal-result-body {
+  display: grid;
+  gap: var(--space-5);
+  padding: var(--space-4);
+}
+
+.form-field {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--color-text-muted);
+  font-weight: var(--weight-medium);
+}
+
+.form-field :is(textarea, select) {
+  inline-size: 100%;
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.form-field textarea {
+  min-block-size: var(--size-textarea);
+  resize: vertical;
+}
+
+.form-field select {
+  min-block-size: var(--size-control);
+}
+
+.capability-fieldset {
+  display: grid;
+  gap: var(--space-2);
+  margin: 0;
+  border: 0;
+  padding: 0;
+}
+
+.capability-fieldset legend {
+  color: var(--color-text-muted);
+  font-weight: var(--weight-medium);
+}
+
+.capability-options {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2) var(--space-4);
+}
+
+.capability-options label {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--space-2);
+  min-block-size: var(--size-control);
+  color: var(--color-text-muted);
+}
+
+.capability-options input {
+  inline-size: var(--space-4);
+  block-size: var(--space-4);
+  accent-color: var(--color-info);
+}
+
+button:disabled {
+  border-color: var(--color-border);
+  color: var(--color-text-dim);
+  cursor: not-allowed;
+}
+
+.proposal-result-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.proposal-status {
+  color: var(--color-success);
+  font-family: var(--font-mono);
+  font-size: var(--type-sm);
+  font-weight: var(--weight-medium);
+}
+
+.proposal-result-body h3,
+.staged-request h3 {
+  font-size: var(--type-panel);
+  font-weight: var(--weight-medium);
+}
+
+.proposal-summary dd {
+  overflow-wrap: anywhere;
+}
+
+.proposal-members {
+  margin-block-start: var(--space-2);
+  border: var(--border-width) solid var(--color-border);
+  border-radius: var(--radius);
+}
+
+.proposal-warnings {
+  display: grid;
+  gap: var(--space-2);
+  color: var(--color-warning);
+}
+
+.proposal-warnings ul {
+  display: grid;
+  gap: var(--space-1);
+}
+
+.proposal-budget {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+}
+
+.proposal-result-body > button {
+  justify-self: start;
+}
+
+.proposal-error {
+  color: var(--color-danger);
+}
+
+.proposal-error[role="alert"] {
+  display: grid;
+  gap: var(--space-4);
+  align-self: start;
+  padding: var(--space-4);
+}
+
+.proposal-error[role="alert"] button {
+  justify-self: start;
+}
+
+.staged-request {
+  display: grid;
+  gap: var(--space-3);
+  border-block-start: var(--border-width) solid var(--color-border);
+  padding-block-start: var(--space-4);
+}
