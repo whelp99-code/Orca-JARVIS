@@ -16,6 +16,7 @@ const REQUIRED = [
   "package.json",
   "package-lock.json",
   "dist/src/dashboard/server.js",
+  "dist/src/dashboard/main.js",
   "dist/dashboard/index.html",
 ];
 const SHA = /^[0-9a-f]{40}$/;
