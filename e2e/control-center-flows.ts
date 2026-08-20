@@ -1,0 +1,171 @@
+import { expect, type Page, type TestInfo } from "@playwright/test";
+import {
+  FIXTURE_SECRET,
+  IDS,
+  KOREAN_OBJECTIVE,
+  REDACTED,
+  emptyOrigin,
+} from "../tests/fixtures/dashboard-fixture-ids.js";
+import {
+  assertAxeClean,
+  assertNoClip,
+  assertNoHorizontalOverflow,
+  capture,
+  waitLive,
+} from "./browser-qa.js";
+import { fingerprintFor, signedReceiptFor } from "./fixture-access.js";
+
+export async function overviewFlow(page: Page, testInfo: TestInfo): Promise<void> {
+  await page.goto("/");
+  await waitLive(page);
+  await expect(page.getByRole("heading", { level: 1, name: "JARVIS Control Center" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Active work" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Pending approvals" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "Risks" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 3, name: "Recent" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 3, name: "Approvals" })).toBeVisible();
+  await expect(page.getByText("service.heartbeat_age_ms")).toBeVisible();
+  await expect(page.getByText("workflow.start").first()).toBeVisible();
+  await capture(page, testInfo, "overview");
+  await assertNoHorizontalOverflow(page);
+}
+
+export async function koreanObjectiveFlow(page: Page, testInfo: TestInfo): Promise<void> {
+  await page.goto("/proposals");
+  await waitLive(page);
+  await page.getByLabel("Objective").fill(KOREAN_OBJECTIVE);
+  await page.getByLabel("Work type").selectOption("research");
+  await page.getByLabel("Completion evidence").fill("visible korean text");
+  await page.getByRole("button", { name: "Preview" }).click();
+  await expect(page.getByRole("status", { name: "Proposal status" })).toHaveText("Ready");
+  await assertNoClip(page, KOREAN_OBJECTIVE);
+  await capture(page, testInfo, "korean-objective");
+  await assertNoHorizontalOverflow(page);
+}
+
+export async function taskGraphFlow(page: Page, testInfo: TestInfo): Promise<void> {
+  await page.goto("/tasks");
+  await waitLive(page);
+  await page.getByRole("link", { name: "agentops-default" }).first().click();
+  await expect(page.getByRole("heading", { level: 2, name: "Timeline" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "Graph" })).toBeVisible();
+  await page.getByRole("button", { name: "List view" }).click();
+  await expect(page.getByRole("button", { name: "List view" })).toHaveAttribute("aria-pressed", "true");
+  await expect(page.getByRole("list", { name: "Task sources" })).toBeVisible();
+  await page.getByRole("button", { name: "Graph view" }).click();
+  await expect(page.getByRole("img", { name: "Task source graph" })).toBeVisible();
+  await capture(page, testInfo, "task-graph");
+  await assertNoHorizontalOverflow(page);
+}
+
+export async function agentLogsFlow(page: Page, testInfo: TestInfo): Promise<void> {
+  await page.goto("/agents");
+  await waitLive(page);
+  await page.getByRole("link", { name: /^sha256:/ }).click();
+  await expect(page.getByRole("heading", { name: "Terminal log" })).toBeVisible();
+  await expect(page.getByRole("log", { name: "Terminal output" })).toContainText(REDACTED);
+  await expect(page.getByRole("log", { name: "Terminal output" })).not.toContainText(FIXTURE_SECRET);
+  await capture(page, testInfo, "agent-logs");
+  await assertNoHorizontalOverflow(page);
+}
+
+export async function emptyDbFlow(page: Page, testInfo: TestInfo): Promise<void> {
+  await page.goto(`${emptyOrigin()}/`);
+  await waitLive(page);
+  await expect(page.getByText("No recent activity")).toBeVisible();
+  await expect(page.getByText("No pending approvals")).toBeVisible();
+  await expect(page.getByText("No open risks")).toBeVisible();
+  await expect(page.getByText("No agents connected")).toBeVisible();
+  await capture(page, testInfo, "empty");
+  await assertNoHorizontalOverflow(page);
+}
+
+export async function proposalStageFlow(page: Page, testInfo: TestInfo, baseURL: string): Promise<void> {
+  await page.goto("/proposals");
+  await waitLive(page);
+  const before = fingerprintFor(baseURL);
+  await page.getByLabel("Objective").fill("Ship a bounded e2e proposal");
+  await page.getByLabel("Work type").selectOption("development");
+  await page.getByLabel("Completion evidence").fill("passing playwright suite");
+  await page.getByRole("button", { name: "Preview" }).click();
+  await expect(page.getByRole("status", { name: "Proposal status" })).toHaveText("Ready");
+  expect(fingerprintFor(baseURL)).toBe(before);
+  await page.getByRole("button", { name: "Stage task" }).click();
+  await expect(page.getByRole("heading", { name: "Pending request" })).toBeVisible();
+  await expect(page.getByText("workflow.start")).toBeVisible();
+  await capture(page, testInfo, "proposal-stage");
+}
+
+export async function invalidReceiptFlow(page: Page, testInfo: TestInfo, baseURL: string): Promise<void> {
+  const before = fingerprintFor(baseURL);
+  const cardFor = async (): Promise<ReturnType<Page["locator"]>> => {
+    await page.goto("/approvals");
+    await waitLive(page);
+    return page.locator("article.authority-controls").filter({ hasText: IDS.pendingInvalid });
+  };
+  const malformed = await cardFor();
+  await malformed.getByLabel("Signed receipt JSON").fill("{");
+  await malformed.getByRole("button", { name: "Submit signed receipt" }).click();
+  await expect(malformed.getByRole("alert")).toHaveText("Signed receipt must be valid JSON");
+  expect(fingerprintFor(baseURL)).toBe(before);
+  const untrusted = await cardFor();
+  await untrusted.getByLabel("Signed receipt JSON").fill(signedReceiptFor(baseURL, IDS.pendingInvalid, "approve", true));
+  await untrusted.getByRole("button", { name: "Submit signed receipt" }).click();
+  await expect(untrusted.getByRole("alert")).toHaveText("Unable to submit signed receipt");
+  expect(fingerprintFor(baseURL)).toBe(before);
+  await capture(page, testInfo, "invalid-receipt");
+}
+
+export async function approveExecuteFlow(page: Page, baseURL: string): Promise<void> {
+  await page.goto("/approvals");
+  await waitLive(page);
+  const card = page.locator("article.authority-controls").filter({ hasText: IDS.pendingApprove });
+  await card.getByLabel("Signed receipt JSON").fill(signedReceiptFor(baseURL, IDS.pendingApprove, "approve"));
+  await card.getByRole("button", { name: "Submit signed receipt" }).click();
+  await expect(card.getByText("approved", { exact: true })).toBeVisible();
+  await card.getByRole("button", { name: "Execute approved request" }).click();
+  await expect(card.getByText("completed", { exact: true })).toBeVisible();
+}
+
+export async function rejectFlow(page: Page, baseURL: string): Promise<void> {
+  await page.goto("/approvals");
+  await waitLive(page);
+  const card = page.locator("article.authority-controls").filter({ hasText: IDS.pendingReject });
+  await card.getByLabel("Signed receipt JSON").fill(signedReceiptFor(baseURL, IDS.pendingReject, "reject"));
+  await card.getByRole("button", { name: "Submit signed receipt" }).click();
+  await expect(card.getByText("rejected", { exact: true })).toBeVisible();
+}
+
+export async function cancelFlow(page: Page): Promise<void> {
+  await page.goto(`/tasks/${encodeURIComponent(IDS.cancelTask)}`);
+  await waitLive(page);
+  const posted = page.waitForResponse((response) => (
+    response.request().method() === "POST"
+    && response.url().includes(`/api/v1/tasks/${encodeURIComponent(IDS.cancelTask)}/cancel`)
+  ));
+  await page.getByLabel("Cancellation reason").fill("operator cancelled pending-only task");
+  await page.getByRole("button", { name: "Stage cancellation" }).click();
+  expect((await posted).status()).toBe(202);
+  await expect(page.getByText("workflow.cancel").first()).toBeVisible();
+  await page.goto("/approvals");
+  await waitLive(page);
+  const card = page.locator("article.authority-controls").filter({ hasText: "workflow.cancel" });
+  await expect(card.getByText("pending", { exact: true })).toBeVisible();
+}
+
+export async function retryFlow(page: Page): Promise<void> {
+  await page.goto("/approvals");
+  await waitLive(page);
+  const card = page.locator("article.authority-controls").filter({ hasText: IDS.failedRetry });
+  await card.getByRole("button", { name: "Retry failed request" }).click();
+  await expect(card.getByRole("heading", { name: "Pending request" })).toBeVisible();
+  await expect(card.locator("[aria-label='Pending request']").getByText("pending", { exact: true })).toBeVisible();
+}
+
+export async function qualityFlow(page: Page, errors: readonly string[]): Promise<void> {
+  await page.goto("/");
+  await waitLive(page);
+  await assertAxeClean(page);
+  await assertNoHorizontalOverflow(page);
+  expect(errors).toEqual([]);
+}

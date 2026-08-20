@@ -14,16 +14,19 @@
   },
   "scripts": {
     "build": "npm run build:backend && npm run build:dashboard",
-    "lint": "eslint src tests dashboard --max-warnings=0",
+    "lint": "eslint src tests dashboard e2e playwright.config.ts --max-warnings=0",
     "pretest": "npm run build",
-    "test": "vitest run --no-file-parallelism --exclude \"dashboard/**\" && vitest run --config dashboard/vite.config.ts --no-file-parallelism",
+    "test": "vitest run --no-file-parallelism --exclude \"dashboard/**\" --exclude \"e2e/**\" && vitest run --config dashboard/vite.config.ts --no-file-parallelism",
     "acceptance:pre-gjc": "node scripts/pre-gjc-acceptance.mjs",
     "verify": "npm run runtime:check && npm run lint && npm run typecheck && npm test && npm run acceptance:pre-gjc -- --fixture test/fixtures/pre-gjc-e2e.json --clock 2026-08-09T00:00:00.000Z && npm run build && node scripts/cli-smoke.mjs",
     "runtime:check": "node scripts/assert-runtime.mjs",
     "prebuild": "npm run runtime:check",
     "build:backend": "tsc && node scripts/copy-migrations.mjs",
-    "typecheck": "tsc --noEmit && tsc -p tsconfig.dashboard.json --noEmit",
-    "build:dashboard": "vite build --config dashboard/vite.config.ts"
+    "typecheck": "tsc --noEmit && tsc -p tsconfig.dashboard.json --noEmit && tsc -p tsconfig.e2e.json --noEmit",
+    "build:dashboard": "vite build --config dashboard/vite.config.ts",
+    "build:fixtures": "npm run build:backend",
+    "test:e2e": "npm run build && playwright test e2e/control-center.spec.ts",
+    "test:e2e:production-smoke": "JARVIS_E2E_NO_FIXTURE=1 playwright test e2e/production-smoke.spec.ts"
   },
   "dependencies": {
     "better-sqlite3": "^12.2.0",
