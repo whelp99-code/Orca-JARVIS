@@ -24,4 +24,16 @@ describe("package root public API", () => {
     expect("persistNegativeEvidence" in negativeEvidence).toBe(false);
     expect(typeof negativeEvidence.appendSettledNegativeEvidence).toBe("function");
   });
+
+  it("keeps shadow evolution internals private while preserving proposal helpers", () => {
+    const shadowInternals = [
+      "BudgetedEvolutionEngine",
+      "EvolutionShadowRuntime",
+      "SqlitePerformanceMemory",
+    ] as const;
+
+    expect(shadowInternals.filter(name => name in publicApi)).toEqual([]);
+    expect(typeof publicApi.buildCapabilityMatrix).toBe("function");
+    expect(typeof publicApi.planTeamProposal).toBe("function");
+  });
 });
