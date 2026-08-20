@@ -3,6 +3,7 @@ import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import App from "./app.js";
 import type { OverviewResponse } from "../../src/dashboard/read-model.js";
+import { unseenPortfolio } from "./portfolio-test-fixture.js";
 
 const liveProps = (overview: OverviewResponse): { overview: OverviewResponse } => ({ overview });
 
@@ -48,6 +49,7 @@ const populatedOverview: OverviewResponse = {
       status: "live",
     },
   ],
+  portfolio: unseenPortfolio,
 };
 
 const emptyOverview: OverviewResponse = {
@@ -58,6 +60,7 @@ const emptyOverview: OverviewResponse = {
   pending_approvals: [],
   risks: [],
   agents: [],
+  portfolio: unseenPortfolio,
 };
 
 describe("JARVIS Control Center overview", () => {

@@ -13,6 +13,7 @@ import type {
   TaskListResponse,
 } from "../../src/dashboard/read-model.js";
 import type { TerminalLogResponse } from "../../src/dashboard/terminal-reader.js";
+import { isPortfolioOverview } from "./portfolio-guard.js";
 
 export type ApiErrorKind = "offline" | "forbidden" | "not_found" | "server";
 export type ApiError = {
@@ -158,7 +159,8 @@ function isOverview(value: unknown): value is OverviewResponse {
     && isArrayOf(value.recent_tasks, isTask)
     && isArrayOf(value.pending_approvals, isApproval)
     && isArrayOf(value.risks, isRisk)
-    && isArrayOf(value.agents, isAgent);
+    && isArrayOf(value.agents, isAgent)
+    && isPortfolioOverview(value.portfolio);
 }
 
 function isTaskList(value: unknown): value is TaskListResponse {

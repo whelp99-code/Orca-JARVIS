@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { OverviewResponse } from "../../src/dashboard/read-model.js";
+import { PortfolioStatus } from "./portfolio-status.js";
 
 type AppProps = Readonly<{
   overview: OverviewResponse;
@@ -69,6 +70,8 @@ export default function App({ overview }: AppProps) {
             </article>
           ))}
         </section>
+
+        <PortfolioStatus portfolio={overview.portfolio} />
 
         <div className="panel-grid">
           <Panel id="recent-title" title="Recent">

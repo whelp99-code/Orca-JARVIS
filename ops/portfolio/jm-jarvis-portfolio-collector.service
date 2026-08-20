@@ -1,0 +1,13 @@
+[Unit]
+Description=Collect and ingest JM-SERVER portfolio status
+
+[Service]
+Type=oneshot
+ExecStart=/bin/bash /home/jm/.local/state/orca-jarvis/control-center/current/ops/portfolio/jm-portfolio-collector.sh
+TimeoutStartSec=50s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/jm/.local/state/orca-jarvis

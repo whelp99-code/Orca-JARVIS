@@ -58,7 +58,7 @@ export async function tryHandleDashboardApi(input: DashboardApiInput): Promise<b
   if (input.path === "/api/v1/overview") {
     writeDashboardJson(input.response, {
       status: 200,
-      body: await input.model.overview(),
+      body: await input.model.overview(input.clock()),
       requestId: input.requestId,
     });
     return true;

@@ -1,0 +1,214 @@
+import "@testing-library/jest-dom/vitest";
+import { act, cleanup, render, screen } from "@testing-library/react";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import type {
+  AgentListResponse,
+  ControlRequestListResponse,
+  OverviewAgent,
+  OverviewResponse,
+  OverviewTask,
+  TaskDetailResponse,
+  TaskListResponse,
+} from "../../src/dashboard/read-model.js";
+import type { TerminalLogResponse } from "../../src/dashboard/terminal-reader.js";
+import type { DashboardClient } from "./api.js";
+import { ControlCenterRoot } from "./root.js";
+import { createDashboardStore } from "./store.js";
+import { unseenPortfolio } from "./portfolio-test-fixture.js";
+
+const AT = "2026-08-18T00:00:00.000Z";
+const AGENT_ID = "sha256:deadbeef";
+const SNAPSHOT_TOPICS = ["overview", "tasks", "agents", "approvals"] as const;
+type SseType = "snapshot" | "reconcile";
+type SsePayload = {
+  readonly schema_version: 1; readonly type: SseType; readonly revision: string;
+  readonly topics: readonly string[]; readonly occurred_at: string;
+};
+type Store = ReturnType<typeof createDashboardStore>;
+type Snapshot = ReturnType<Store["getSnapshot"]>;
+type Listener = (event: Event) => void;
+
+const agent = {
+  agent_id: AGENT_ID, provider: "codex", terminal_id: "terminal-1",
+  incarnation_id: "incarnation-1", canonical_path: "/tmp/worktree", status: "live",
+} as const satisfies OverviewAgent;
+const taskOf = (task_id: string, title: string, source_ids: readonly string[] = ["run-1"]): OverviewTask => ({
+  task_id, title, kind: "work", state: "running", updated_at: AT, pending_approval: false, source_ids,
+});
+const overview = {
+  schema_version: 1, generated_at: AT, cards: [], recent_tasks: [taskOf("task-1", "overview-seed-task")],
+  portfolio: unseenPortfolio, pending_approvals: [], risks: [], agents: [agent],
+} as const satisfies OverviewResponse;
+const tasks = {
+  schema_version: 1, items: [taskOf("task-zeta", "zeta-task"), taskOf("task-alpha", "alpha-task")],
+} as const satisfies TaskListResponse;
+const agents = { schema_version: 1, items: [agent] } as const satisfies AgentListResponse;
+const approvals = {
+  schema_version: 1,
+  items: [{
+    request_id: "request-approval-1", action: "workflow.start", action_level: 2,
+    requested_at: AT, requested_by: "jarvis-control-center", summary: "Start workflow", state: "pending",
+  }],
+} as const satisfies ControlRequestListResponse;
+
+class FakeEventSource {
+  closed = false;
+  onopen: ((event: Event) => void) | null = null;
+  onerror: ((event: Event) => void) | null = null;
+  private readonly listeners = new Map<string, Listener[]>();
+  constructor(readonly url: string) {}
+  addEventListener(type: string, listener: Listener): void {
+    this.listeners.set(type, [...(this.listeners.get(type) ?? []), listener]);
+  }
+  close(): void { this.closed = true; }
+  emit(type: SseType, payload: SsePayload): void {
+    for (const listener of this.listeners.get(type) ?? []) {
+      listener(new MessageEvent(type, { data: JSON.stringify(payload) }));
+    }
+  }
+}
+
+function frame(type: SseType, topics: readonly string[], revision: string): SsePayload {
+  return { schema_version: 1, type, revision, topics, occurred_at: AT };
+}
+
+function onceState(store: Store, match: (snapshot: Snapshot) => boolean): Promise<Snapshot> {
+  return new Promise((resolve) => {
+    const current = store.getSnapshot();
+    if (match(current)) { resolve(current); return; }
+    const unsubscribe = store.subscribe(() => {
+      const next = store.getSnapshot();
+      if (match(next)) { unsubscribe(); resolve(next); }
+    });
+  });
+}
+
+type ResourceFailure = Partial<Record<"tasks" | "agents" | "approvals", Error>>;
+
+function createClient(failures: ResourceFailure = {}) {
+  const counts = { session: 0, overview: 0, tasks: 0, agents: 0, controlRequests: 0, task: 0, agentLogs: 0 };
+  const taskIds: string[] = [];
+  const pending: {
+    resolve: ((value: TerminalLogResponse) => void) | undefined;
+    reject: ((reason?: unknown) => void) | undefined;
+    taskResolve: ((value: TaskDetailResponse) => void) | undefined;
+  } = { resolve: undefined, reject: undefined, taskResolve: undefined };
+  const client = {
+    session: async () => { counts.session += 1; return { schema_version: 1 as const, csrf_token: "csrf-test" }; },
+    overview: async () => { counts.overview += 1; return overview; },
+    tasks: async () => {
+      counts.tasks += 1;
+      if (failures.tasks !== undefined) throw failures.tasks;
+      return tasks;
+    },
+    agents: async () => {
+      counts.agents += 1;
+      if (failures.agents !== undefined) throw failures.agents;
+      return agents;
+    },
+    controlRequests: async () => {
+      counts.controlRequests += 1;
+      if (failures.approvals !== undefined) throw failures.approvals;
+      return approvals;
+    },
+    task: async (taskId: string) => { counts.task += 1; taskIds.push(taskId); return await new Promise<TaskDetailResponse>((resolve) => { pending.taskResolve = resolve; }); },
+    agentLogs: async () => {
+      counts.agentLogs += 1;
+      return await new Promise<TerminalLogResponse>((resolve, reject) => {
+        pending.resolve = resolve;
+        pending.reject = reject;
+      });
+    },
+  } satisfies DashboardClient;
+  return { client, counts, taskIds, pending };
+}
+
+type Harness = {
+  readonly store: Store;
+  readonly counts: ReturnType<typeof createClient>["counts"];
+  readonly taskIds: string[]; readonly pending: ReturnType<typeof createClient>["pending"];
+  readonly opened: Promise<FakeEventSource>;
+  readonly lifecycle: { started: number; stopped: number };
+  readonly view: ReturnType<typeof render>;
+  readonly refreshTasks: ReturnType<typeof vi.fn>;
+  readonly refreshAgents: ReturnType<typeof vi.fn>;
+  readonly refreshApprovals: ReturnType<typeof vi.fn>;
+};
+
+function createHarness(initialPath: string, failures: ResourceFailure = {}): Harness {
+  let resolveSource: (source: FakeEventSource) => void = () => undefined;
+  const opened = new Promise<FakeEventSource>((resolve) => { resolveSource = resolve; });
+  const { client, counts, taskIds, pending } = createClient(failures);
+  const inner = createDashboardStore({
+    client,
+    eventSourceFactory: (url: string) => {
+      const source = new FakeEventSource(url);
+      resolveSource(source);
+      return source;
+    },
+  });
+  const lifecycle = { started: 0, stopped: 0 };
+  const refreshTasks = vi.fn(async () => undefined);
+  const refreshAgents = vi.fn(async () => undefined);
+  const refreshApprovals = vi.fn(async () => undefined);
+  const store = {
+    getSnapshot: inner.getSnapshot, subscribe: inner.subscribe, refreshOverview: inner.refreshOverview,
+    refreshTasks, refreshAgents, refreshApprovals,
+    start() { lifecycle.started += 1; inner.start(); },
+    stop() { lifecycle.stopped += 1; inner.stop(); },
+  };
+  const view = render(<ControlCenterRoot store={store} client={client} initialPath={initialPath} />);
+  return { store, counts, taskIds, pending, opened, lifecycle, view, refreshTasks, refreshAgents, refreshApprovals };
+}
+
+let harness: Harness | undefined;
+afterEach(() => { cleanup(); harness?.store.stop(); harness = undefined; });
+
+async function liveRoot(
+  initialPath: string,
+  failures: ResourceFailure = {},
+): Promise<Harness & { readonly source: FakeEventSource }> {
+  const current = createHarness(initialPath, failures);
+  harness = current;
+  const source = await current.opened;
+  const live = onceState(current.store, (snapshot) => snapshot.connectionState === "live");
+  await act(async () => {
+    source.emit("snapshot", frame("snapshot", SNAPSHOT_TOPICS, "inst:1"));
+    await live;
+  });
+  return { ...current, source };
+}
+
+describe("ControlCenterRoot approvals and lifecycle", () => {
+  it("renders receipt-bound controls on the live approvals route", async () => {
+    await liveRoot("/approvals");
+    expect(screen.getByText("request-approval-1")).toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "Signed receipt JSON" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "Submit signed receipt" })).toBeEnabled();
+  });
+
+  it.each([
+    { path: "/tasks", seam: "refreshTasks", failure: "tasks" },
+    { path: "/agents", seam: "refreshAgents", failure: "agents" },
+    { path: "/approvals", seam: "refreshApprovals", failure: "approvals" },
+  ] as const)("calls store.$seam from the $path Retry control", async ({ path, seam, failure }) => {
+    const user = userEvent.setup();
+    const current = await liveRoot(path, { [failure]: new Error("server") });
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(current[seam]).toHaveBeenCalledTimes(1);
+  });
+
+  it("stops the store and ignores late events after unmount", async () => {
+    const current = await liveRoot("/");
+    const before = { ...current.counts };
+    const retained = current.store.getSnapshot();
+    current.view.unmount();
+    expect(current.lifecycle.stopped).toBe(1);
+    expect(current.source.closed).toBe(true);
+    current.source.emit("snapshot", frame("snapshot", SNAPSHOT_TOPICS, "inst:late"));
+    current.source.emit("reconcile", frame("reconcile", ["tasks"], "inst:later"));
+    expect(current.counts).toEqual(before);
+    expect(current.store.getSnapshot()).toEqual(retained);
+  });
+});

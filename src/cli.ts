@@ -5,6 +5,9 @@ import { lstat, open, readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { parseArgs } from "node:util";
 import { AuthorityDb, JarvisError } from "./db.js";
+import { readPortfolioHmacKey, verifyPortfolioAuthenticatedReport } from "./dashboard/portfolio-auth.js";
+import { PortfolioProjection } from "./dashboard/portfolio-projection.js";
+import { readPortfolioStdin } from "./dashboard/portfolio-stdin.js";
 import { defaultRunner, discoverOrcaBindings, OrcaReadonlyAdapter, observeOrca, parseOrcaBindings, type OrcaRunner, type OrcaTerminal } from "./orca.js";
 import { createOrcaRunner, decodeEnvWorktree, parseOrcaEnvironments } from "./orca-env.js";
 import { PreGjcShadow, type AuthorityReceipt, type AuthorityRequest, type ShadowKey } from "./pre-gjc-shadow.js";
@@ -65,19 +68,19 @@ async function observeBound(binding: LiveBinding, runner?: OrcaRunner): Promise<
   const read = await adapter.read(binding.terminal_id, binding.cursor, 1);
   return [{ provider: binding.provider, terminal_id: binding.terminal_id, session_id: binding.session_id, incarnation_id: binding.incarnation_id, cursor: read.nextCursor, state: "unknown" }];
 }
-export async function execute(args: string[], dependencies: { orcaRunner?: OrcaRunner; liveOrcaCommand?: OrcaCommand; gjcRunner?: GjcRunner; clock?: () => Date; liveReportOutput?: (value: object) => void; capabilityProbe?: CapabilityProbe } = {}): Promise<Record<string, unknown>> {
+export async function execute(args: string[], dependencies: { orcaRunner?: OrcaRunner; liveOrcaCommand?: OrcaCommand; gjcRunner?: GjcRunner; clock?: () => Date; liveReportOutput?: (value: object) => void; capabilityProbe?: CapabilityProbe; readStdin?: () => Promise<Buffer> } = {}): Promise<Record<string, unknown>> {
   const earlyArg = args[0]; if (earlyArg === "--help" || earlyArg === "-h" || earlyArg === "help") {
-    console.log(`JARVIS — agent-ops runtime\nCommands: init, db migrate, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, observe, pre-gjc, capabilities, team, status`);
+    console.log(`JARVIS — agent-ops runtime\nCommands: init, db migrate, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, observe, pre-gjc, capabilities, team, portfolio, status`);
     return { ok: true, command: "help" };
   }
   if (args.includes("--help") || args.includes("-h") || args.includes("help")) {
-    console.log(`JARVIS — agent-ops runtime\nCommands: init, db migrate, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, observe, pre-gjc, capabilities, team, status`);
+    console.log(`JARVIS — agent-ops runtime\nCommands: init, db migrate, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, observe, pre-gjc, capabilities, team, portfolio, status`);
     return { ok: true, command: "help" };
   }
-  const { values, positionals } = parseArgs({ args, options: { db: { type: "string" }, decision_public: { type: "string" }, decision_key_id: { type: "string" }, decision_principal: { type: "string" }, verifier_public: { type: "string" }, verifier_key_id: { type: "string" }, verifier_principal: { type: "string" }, json: { type: "boolean" }, once: { type: "boolean" }, crash: { type: "string" }, worktree: { type: "string" }, bindings: { type: "string" }, limit: { type: "string" }, max_pages: { type: "string" }, max_bytes: { type: "string" }, interval_ms: { type: "string" }, "interval-ms": { type: "string" }, environments: { type: "string" }, live_resume: { type: "boolean" }, session_id: { type: "string" }, input: { type: "string" }, idempotency_key: { type: "string" }, allow_mutation: { type: "boolean" }, worker: { type: "string" } }, allowPositionals: true, strict: false });
+  const { values, positionals } = parseArgs({ args, options: { db: { type: "string" }, decision_public: { type: "string" }, decision_key_id: { type: "string" }, decision_principal: { type: "string" }, verifier_public: { type: "string" }, verifier_key_id: { type: "string" }, verifier_principal: { type: "string" }, json: { type: "boolean" }, once: { type: "boolean" }, crash: { type: "string" }, worktree: { type: "string" }, bindings: { type: "string" }, limit: { type: "string" }, max_pages: { type: "string" }, max_bytes: { type: "string" }, interval_ms: { type: "string" }, "interval-ms": { type: "string" }, environments: { type: "string" }, live_resume: { type: "boolean" }, session_id: { type: "string" }, input: { type: "string" }, idempotency_key: { type: "string" }, allow_mutation: { type: "boolean" }, worker: { type: "string" }, source: { type: "string" }, "key-file": { type: "string" } }, allowPositionals: true, strict: false });
   const [command, subcommand] = positionals;
   if (subcommand === "--help" || subcommand === "-h" || subcommand === "help") {
-    console.log(`JARVIS — agent-ops runtime\nCommands: init, db migrate, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, observe, pre-gjc, capabilities, team, status`);
+    console.log(`JARVIS — agent-ops runtime\nCommands: init, db migrate, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, observe, pre-gjc, capabilities, team, portfolio, status`);
     return { ok: true, command: "help" };
   }
   const db = new AuthorityDb(typeof values.db === "string" ? values.db : undefined); const policyKeyPath = `${db.filename}.policy-key.pem`;
@@ -85,6 +88,22 @@ export async function execute(args: string[], dependencies: { orcaRunner?: OrcaR
     const [, , argument, fourth, fifth, sixth] = positionals;
     if (command === "init") { const decision = typeof values.decision_public === "string" && typeof values.decision_key_id === "string" && typeof values.decision_principal === "string" ? { publicKeyPath: values.decision_public, keyId: values.decision_key_id, principal: values.decision_principal } : undefined; const verifier = typeof values.verifier_public === "string" && typeof values.verifier_key_id === "string" && typeof values.verifier_principal === "string" ? { publicKeyPath: values.verifier_public, keyId: values.verifier_key_id, principal: values.verifier_principal } : undefined; await db.initialize({ decision, verifier }); return { ok: true, command: "init", policy_key_id: "local-policy-key", decision_configured: Boolean(decision), verifier_configured: Boolean(verifier) }; }
     if (command === "db" && subcommand === "migrate") { await db.migrate(); return { ok: true, command: "db.migrate" }; }
+    if (command === "portfolio" && subcommand === "ingest") {
+      await db.assertMigrationsReady();
+      const source = values.source;
+      if (source !== "local" && source !== "jm-server") throw new JarvisError("PORTFOLIO_SOURCE_INVALID");
+      if (typeof values["key-file"] !== "string") throw new JarvisError("PORTFOLIO_AUTH_REQUIRED");
+      const key = await readPortfolioHmacKey(values["key-file"]);
+      const input = await (dependencies.readStdin ?? readPortfolioStdin)();
+      const verified = verifyPortfolioAuthenticatedReport(input, key, source);
+      const payload = verified.kind === "report" ? verified.report : verified.error;
+      const result = new PortfolioProjection(db).ingest(
+        source,
+        Buffer.from(JSON.stringify(payload), "utf8"),
+        dependencies.clock?.() ?? new Date(),
+      );
+      return { ok: true, command: "portfolio.ingest", ...result };
+    }
     if (command === "doctor") { const report = await runDoctor(db, dependencies.clock?.() ?? new Date(), dependencies.capabilityProbe); return { ok: report.ok, command: "doctor", report }; }
     await db.assertMigrationsReady();
     if (command === "team" && subcommand === "propose" && argument) { if (fourth !== undefined) throw new JarvisError("TEAM_PROPOSAL_INPUT_INVALID");

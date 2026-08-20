@@ -17,7 +17,7 @@ const collaborationWriteAttempts = [
 ];
 
 describe("migrations", () => {
-  it("preserves the shipped migration 021 through 026 bytes", () => {
+  it("preserves the shipped migration 021 through 030 bytes", () => {
     const expected = new Map([
       ["021_approval_control_plane.sql", "75ebf5cb20ab0f1a357dd55a52899cf94bf44a788a1a01c07aa3c74135942c43"],
       ["022_loopgraph_runtime.sql", "2c1fdba25a351919ab0bd4ed80e217d80754af232bf85e9f93382bf349a3529b"],
@@ -26,6 +26,7 @@ describe("migrations", () => {
       ["025_collaboration_workspace.sql", "edcf8f85b95cf20004bf355a1e8c7f65966292f841903340bbec7d66771f3305"],
       ["026_task_timeline.sql", "cb1e19353670d180a5b27ba077e27e506d66bc532d3ead1dd7e33059ba641770"],
       ["027_control_execution_hardening.sql", "a5004fed13610811c1d7b47cf15bc3d5a02388b80f18f0cd7a2e3d0a6a1c0172"],
+      ["030_dashboard_portfolio_projection.sql", "ea58ca0a324793af837be8a179dd4a7b700943d5a6a8a0b0d765d065dcc24482"],
     ]);
 
     for (const [name, checksum] of expected) {
