@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.jmpark.orca-jarvis-dashboard</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/Users/jmpark/.nvm/versions/node/v24.19.0/bin/node</string>
+    <string>/Volumes/DevSpace/Orca-JARVIS/.jarvis-runtime/control-center/current/dist/src/dashboard/server.js</string>
+    <string>--host</string>
+    <string>127.0.0.1</string>
+    <string>--port</string>
+    <string>4173</string>
+    <string>--db</string>
+    <string>/Volumes/DevSpace/Orca-JARVIS/.jarvis-runtime/jarvis.sqlite</string>
+    <string>--static-root</string>
+    <string>/Volumes/DevSpace/Orca-JARVIS/.jarvis-runtime/control-center/current/dist/dashboard</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Volumes/DevSpace/Orca-JARVIS/.jarvis-runtime/control-center/current</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>NODE_ENV</key>
+    <string>production</string>
+    <key>PATH</key>
+    <string>/Users/jmpark/.nvm/versions/node/v24.19.0/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
+  </dict>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ThrottleInterval</key>
+  <integer>10</integer>
+  <key>StandardOutPath</key>
+  <string>/Volumes/DevSpace/Orca-JARVIS/.jarvis-runtime/control-center/dashboard.out.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Volumes/DevSpace/Orca-JARVIS/.jarvis-runtime/control-center/dashboard.err.log</string>
+</dict>
+</plist>

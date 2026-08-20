@@ -1,0 +1,91 @@
+import type { IncomingMessage, ServerResponse } from "node:http";
+import type { CapabilityProbe } from "../capabilities.js";
+import type { AuthorityDb } from "../db.js";
+import { tryHandleAuthorityPost } from "./authority-routes.js";
+import type { ReconcileHub } from "./events.js";
+import { DASHBOARD_ERROR_CODES, writeDashboardError } from "./http.js";
+import { tryHandleProposalPreview } from "./proposal-routes.js";
+import type { TeamProposalPlanner } from "./proposal-service.js";
+import { readJsonPost, writePostBoundaryError } from "./request-boundary.js";
+import type { DashboardSessionStore } from "./session.js";
+import { tryHandleTaskCreate } from "./task-routes.js";
+
+export type DashboardPostInput = {
+  readonly db: AuthorityDb;
+  readonly path: string;
+  readonly request: IncomingMessage;
+  readonly response: ServerResponse;
+  readonly requestId: string;
+  readonly hub: ReconcileHub;
+  readonly session: DashboardSessionStore;
+  readonly origin: string;
+  readonly clock: () => Date;
+  readonly capabilityProbe?: CapabilityProbe;
+  readonly planner?: TeamProposalPlanner;
+};
+
+export async function tryHandleDashboardPost(input: DashboardPostInput): Promise<boolean> {
+  if (input.path !== "/api" && !input.path.startsWith("/api/")) return false;
+  const parsed = await readJsonPost({
+    request: input.request,
+    session: input.session,
+    origin: input.origin,
+  });
+  switch (parsed.kind) {
+    case "rejected":
+      writePostBoundaryError(input.response, input.requestId, parsed);
+      return true;
+    case "accepted":
+      break;
+    default:
+      return assertNever(parsed);
+  }
+  if (await tryHandleProposalPreview({
+    db: input.db,
+    path: input.path,
+    request: input.request,
+    response: input.response,
+    requestId: input.requestId,
+    body: parsed.value,
+    capabilityProbe: input.capabilityProbe,
+    planner: input.planner,
+  })) {
+    return true;
+  }
+  if (await tryHandleTaskCreate({
+    db: input.db,
+    path: input.path,
+    request: input.request,
+    response: input.response,
+    requestId: input.requestId,
+    body: parsed.value,
+    hub: input.hub,
+    clock: input.clock,
+    capabilityProbe: input.capabilityProbe,
+    planner: input.planner,
+  })) {
+    return true;
+  }
+  if (await tryHandleAuthorityPost({
+    db: input.db,
+    path: input.path,
+    request: input.request,
+    response: input.response,
+    requestId: input.requestId,
+    body: parsed.value,
+    hub: input.hub,
+    clock: input.clock,
+  })) {
+    return true;
+  }
+  writeDashboardError(input.response, {
+    status: 404,
+    code: DASHBOARD_ERROR_CODES.NOT_FOUND,
+    requestId: input.requestId,
+  });
+  return true;
+}
+
+function assertNever(value: never): never {
+  throw new Error(`unexpected dashboard post: ${JSON.stringify(value)}`);
+}

@@ -257,7 +257,8 @@ describe("approved negative evidence", () => {
     const root = mkdtempSync(join(tmpdir(), "jarvis-neg-proj-"));
     const db = await initialized();
     const control = new ControlPlane(db);
-    const executor = new ApprovedCommandExecutor(db, join(root, "backups"), join(root, "state"));
+    let executionTime = new Date("2026-08-18T15:00:00.000Z");
+    const executor = new ApprovedCommandExecutor(db, join(root, "backups"), join(root, "state"), {}, () => executionTime);
     try {
       const origin = new Date("2026-08-18T15:00:00.000Z");
       const ids: string[] = [];
@@ -265,6 +266,7 @@ describe("approved negative evidence", () => {
         const args = evidenceInput({ attempt_id: `attempt:proj-${index}`, evidence_digest: digest(String(index)) });
         const at = new Date(origin.getTime() + index * 1000);
         const id = approve(db, control, request(`neg-proj-${index}`, args, 2, clocked(at)), at);
+        executionTime = at;
         await expect(executor.execute(id, "approved-command-executor", at)).resolves.toMatchObject({ state: "completed" });
         ids.push(negativeEvidenceId(args));
       }

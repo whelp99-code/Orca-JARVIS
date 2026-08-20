@@ -1,0 +1,26 @@
+.authority-controls,
+.control-form,
+.control-panel-body {
+  display: grid;
+  gap: var(--space-4);
+}
+
+.control-panel-body {
+  padding: var(--space-4);
+}
+
+.authority-controls > button,
+.control-form > button {
+  justify-self: start;
+}
+
+.control-status {
+  color: var(--color-success);
+  font-family: var(--font-mono);
+  font-size: var(--type-sm);
+}
+
+.control-error {
+  color: var(--color-danger);
+  font-size: var(--type-sm);
+}

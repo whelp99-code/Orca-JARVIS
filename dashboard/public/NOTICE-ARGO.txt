@@ -1,0 +1,17 @@
+JARVIS Dashboard - Argo Workflows Design Attribution
+
+This dashboard adapts operational user-interface concepts after surveying Argo Workflows.
+
+Upstream repository: https://github.com/argoproj/argo-workflows
+Surveyed exact revision: de874c1254da8fe170ad7de9c82f11c626349847
+Upstream license: Apache-2.0 (Apache License 2.0)
+License text: https://www.apache.org/licenses/LICENSE-2.0
+
+Adapted concepts:
+- fixed routed shell
+- list/detail
+- graph/timeline/log composition
+- explicit states
+- list+watch invalidation/refetch
+
+No Argo Workflows source code was copied. Kubernetes mutation semantics, including Kubernetes object, YAML, pod, and resource operations, were explicitly rejected and were not adapted. JARVIS retains its own authority model and data contracts.

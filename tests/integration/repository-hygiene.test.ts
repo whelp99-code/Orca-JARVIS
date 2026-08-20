@@ -7,8 +7,12 @@ const generatedPaths = [
   ".jarvis-runtime/jarvis.sqlite",
   ".jarvis-runtime/jarvis.sqlite-wal",
   ".jarvis-runtime/backups/snapshot.sqlite",
+  ".jarvis-runtime/control-center/.stage.tmp/release",
   "state/CURRENT_STATE.json",
   "state/CURRENT_STATE.md",
+  "playwright-report/index.html",
+  "test-results/.last-run.json",
+  ".tmp-e2e/seeded-4174.json",
 ];
 
 describe("repository hygiene", () => {
