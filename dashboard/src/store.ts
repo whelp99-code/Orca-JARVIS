@@ -1,8 +1,7 @@
 import type {
   AgentListResponse,
   ControlRequestListResponse,
-  OverviewResponse,
-  TaskListResponse,
+  OverviewResponse, TaskListResponse,
 } from "../../src/dashboard/read-model.js";
 import { classifyDashboardError, type ApiError, type ApiErrorKind, type DashboardClient } from "./api.js";
 
@@ -13,20 +12,16 @@ export type ResourceState<T> =
   | { readonly status: "empty"; readonly data: T; readonly kind?: never }
   | { readonly status: "error"; readonly kind: ApiErrorKind; readonly error: ApiError };
 export type DashboardState = {
-  readonly connectionState: ConnectionState;
-  readonly overview: ResourceState<OverviewResponse>;
-  readonly tasks: ResourceState<TaskListResponse>;
-  readonly agents: ResourceState<AgentListResponse>;
+  readonly connectionState: ConnectionState; readonly overview: ResourceState<OverviewResponse>;
+  readonly tasks: ResourceState<TaskListResponse>; readonly agents: ResourceState<AgentListResponse>;
   readonly approvals: ResourceState<ControlRequestListResponse>;
 };
 export type EventSourceLike = {
-  addEventListener(type: string, listener: (event: Event) => void): void;
-  close(): void;
+  addEventListener(type: string, listener: (event: Event) => void): void; close(): void;
   onerror: ((event: Event) => void) | null;
 };
 export type DashboardStoreOptions = {
-  readonly client: DashboardClient;
-  readonly eventSourceFactory: (url: string) => EventSourceLike;
+  readonly client: DashboardClient; readonly eventSourceFactory: (url: string) => EventSourceLike;
 };
 
 const EVENTS_PATH = "/api/v1/events";
@@ -51,8 +46,7 @@ export function createDashboardStore(options: DashboardStoreOptions) {
   }
 
   function subscribe(listener: () => void): () => void {
-    listeners.add(listener);
-    return () => { listeners.delete(listener); };
+    listeners.add(listener); return () => { listeners.delete(listener); };
   }
 
   function start(): void {
@@ -64,12 +58,21 @@ export function createDashboardStore(options: DashboardStoreOptions) {
   function stop(): void {
     generation += 1;
     running = false;
-    source?.close();
-    source = undefined;
+    source?.close(); source = undefined;
   }
 
-  async function refreshOverview(): Promise<void> {
-    await refetch(generation, ["overview"]);
+  async function refreshOverview(): Promise<void> { await refetch(generation, ["overview"]); }
+  async function refreshTasks(): Promise<void> {
+    const token = generation; assign({ tasks: { status: "retrying" } });
+    await loadTasks(token);
+  }
+  async function refreshAgents(): Promise<void> {
+    const token = generation; assign({ agents: { status: "retrying" } });
+    await loadAgents(token);
+  }
+  async function refreshApprovals(): Promise<void> {
+    const token = generation; assign({ approvals: { status: "retrying" } });
+    await loadApprovals(token);
   }
 
   async function begin(token: number): Promise<void> {
@@ -78,7 +81,7 @@ export function createDashboardStore(options: DashboardStoreOptions) {
     } catch (error: unknown) {
       if (!(error instanceof Error)) throw error;
       if (token !== generation) return;
-      assign({ connectionState: "reconnecting" });
+      assign({ connectionState: "offline" });
       return;
     }
     if (token !== generation) return;
@@ -195,7 +198,7 @@ export function createDashboardStore(options: DashboardStoreOptions) {
     for (const listener of listeners) listener();
   }
 
-  return { getSnapshot, subscribe, start, stop, refreshOverview };
+  return { getSnapshot, subscribe, start, stop, refreshOverview, refreshTasks, refreshAgents, refreshApprovals };
 }
 
 function toPending<T>(current: ResourceState<T>): ResourceState<T> | undefined {

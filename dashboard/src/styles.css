@@ -49,6 +49,7 @@
   --focus-offset: 3px;
   --radius: 0.25rem;
   --layer-nav: 10;
+  --layer-skip: 20;
 }
 
 * {
@@ -98,8 +99,46 @@ ul {
   list-style: none;
 }
 
-.app-shell {
+.operational-shell {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
   min-block-size: 100dvb;
+}
+
+.operational-shell-main {
+  min-inline-size: 0;
+}
+
+.operational-shell-main a {
+  color: var(--color-text);
+  text-decoration-color: var(--color-info);
+  text-underline-offset: var(--space-1);
+}
+
+.operational-shell-main a:hover {
+  color: var(--color-focus);
+}
+
+.app-shell {
+  min-block-size: 100%;
+}
+
+.skip-link {
+  position: fixed;
+  z-index: var(--layer-skip);
+  inset-block-start: var(--space-2);
+  inset-inline-start: var(--space-2);
+  border: var(--border-width) solid var(--color-focus);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  transform: translateY(calc(-100% - var(--space-4)));
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font-weight: var(--weight-medium);
+}
+
+.skip-link:focus-visible {
+  transform: translateY(0);
 }
 
 .control-nav {
@@ -112,9 +151,16 @@ ul {
 
 .control-nav-inner {
   display: flex;
-  align-items: stretch;
-  gap: var(--space-1);
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-4);
   min-block-size: var(--size-nav);
+}
+
+.primary-nav {
+  display: flex;
+  align-self: stretch;
+  min-inline-size: 0;
 }
 
 .control-nav a {
@@ -140,6 +186,30 @@ ul {
   text-decoration: underline;
   text-decoration-color: var(--color-info);
   text-underline-offset: var(--space-1);
+}
+
+.shell-connection {
+  white-space: nowrap;
+}
+
+.shell-footer {
+  border-block-start: var(--border-width) solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.shell-footer-inner {
+  padding-block: var(--space-3);
+}
+
+.shell-footer a {
+  color: var(--color-text-muted);
+  font-family: var(--font-mono);
+  font-size: var(--type-xs);
+  overflow-wrap: anywhere;
+}
+
+.shell-footer a:hover {
+  color: var(--color-text);
 }
 
 .page-frame {
@@ -303,6 +373,79 @@ h1 {
 
 .panel-body {
   min-inline-size: 0;
+}
+
+.graph-panel-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: var(--space-3);
+}
+
+.view-controls {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-1);
+}
+
+.view-controls button {
+  min-block-size: var(--size-control);
+  padding-inline: var(--space-3);
+  font-size: var(--type-sm);
+}
+
+.view-controls button[aria-pressed="true"] {
+  border-color: var(--color-info);
+  background: var(--color-selection);
+  color: var(--color-text);
+}
+
+.task-graph-visual {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(var(--size-status-min), 100%), 1fr));
+  gap: var(--space-3);
+  padding: var(--space-4);
+}
+
+.task-graph-step,
+.task-source-list .record {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: center;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+.task-graph-edge {
+  color: var(--color-info);
+  font-family: var(--font-mono);
+  font-size: var(--type-xs);
+  font-weight: var(--weight-medium);
+}
+
+.task-graph-node {
+  min-inline-size: 0;
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  padding: var(--space-3);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font-family: var(--font-mono);
+  font-size: var(--type-sm);
+  overflow-wrap: anywhere;
+}
+
+.timeline-event {
+  overflow-wrap: anywhere;
+}
+
+.timeline-evidence {
+  margin-block-start: var(--space-3);
+}
+
+.timeline-evidence dd {
+  display: grid;
+  gap: var(--space-1);
 }
 
 .record-list > li + li {
@@ -675,13 +818,28 @@ button:disabled {
 
 @media (max-width: 40rem) {
   .control-nav-inner {
-    flex-wrap: wrap;
+    align-items: stretch;
+    flex-direction: column;
     gap: 0;
     padding-inline: var(--space-2);
   }
 
+  .primary-nav {
+    flex-wrap: wrap;
+  }
+
   .control-nav a {
     padding-inline: var(--space-2);
+  }
+
+  .shell-connection {
+    align-self: flex-start;
+    margin: var(--space-2);
+  }
+
+  .graph-panel-header {
+    align-items: flex-start;
+    flex-direction: column;
   }
 
   .header-content {

@@ -7,9 +7,10 @@ export type ApprovalsPageProps = Readonly<{
   state: ResourceState<ControlRequestListResponse>;
   client: Pick<AuthorityMutationClient, "decideRequest" | "executeRequest" | "retryRequest">;
   idFactory?: AuthorityIdFactory;
+  onRetry?: () => void;
 }>;
 
-export function ApprovalsPage({ state, client, idFactory }: ApprovalsPageProps) {
+export function ApprovalsPage({ state, client, idFactory, onRetry }: ApprovalsPageProps) {
   switch (state.status) {
     case "idle":
     case "loading":
@@ -17,7 +18,7 @@ export function ApprovalsPage({ state, client, idFactory }: ApprovalsPageProps) 
     case "retrying":
       return <PageState title="Approvals" message="Retrying approvals" busy />;
     case "error":
-      return <PageState title="Unable to load approvals" message={state.error.message} />;
+      return <PageState title="Unable to load approvals" message={state.error.message} onRetry={onRetry} />;
     case "success":
     case "empty":
       return (
@@ -41,18 +42,20 @@ export function ApprovalsPage({ state, client, idFactory }: ApprovalsPageProps) 
   }
 }
 
-function PageState({ title, message, busy = false }: Readonly<{
+function PageState({ title, message, busy = false, onRetry }: Readonly<{
   title: string;
   message: string;
   busy?: boolean;
+  onRetry?: () => void;
 }>) {
   return (
-    <main className="page-frame route-state" aria-busy={busy || undefined}>
+    <div className="page-frame route-state" aria-busy={busy || undefined}>
       <section role={busy ? "status" : "alert"}>
         <h1>{title}</h1>
         <p>{message}</p>
+        {onRetry === undefined ? null : <button type="button" onClick={onRetry}>Retry</button>}
       </section>
-    </main>
+    </div>
   );
 }
 

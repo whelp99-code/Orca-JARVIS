@@ -14,7 +14,7 @@ import {
 } from "../../src/index.js";
 import { SECRET_KEY_PATTERN } from "../../src/dashboard/contracts.js";
 import { createDashboardServer, type DashboardServer } from "../../src/dashboard/server.js";
-import { future, initialized, localKey, tempDb } from "../helpers.js";
+import { initialized, localKey, tempDb } from "../helpers.js";
 
 const temporaryDirectories = new Set<string>();
 
@@ -80,15 +80,20 @@ function assertSanitized(value: unknown, secrets: readonly string[]): void {
 }
 
 function startCommand(taskId: string, requestedAt: string): ControlCommandRequestInput {
+  const requestedAtMs = Date.parse(requestedAt);
   const target = { environment: "local", run_id: `run:${taskId}`, loop_id: "agentops-default", correlation_id: taskId, task_id: taskId };
-  const args = { run_id: target.run_id, loop_id: target.loop_id, correlation_id: taskId, input: { task_id: taskId, objective: `Inspect ${taskId}` }, budget: { max_steps: 8, max_attempts_per_node: 2, deadline: future(30) } };
-  return { schema_version: 1, request_id: `request:${taskId}`, action: "workflow.start", action_level: 2, target, args, reversible: true, requested_by: "test-operator", requested_at: requestedAt, expires_at: future(10), nonce: `nonce:${taskId}` };
+  const args = { run_id: target.run_id, loop_id: target.loop_id, correlation_id: taskId, input: { task_id: taskId, objective: `Inspect ${taskId}` }, budget: { max_steps: 8, max_attempts_per_node: 2, deadline: new Date(requestedAtMs + 30 * 60_000).toISOString() } };
+  return { schema_version: 1, request_id: `request:${taskId}`, action: "workflow.start", action_level: 2, target, args, reversible: true, requested_by: "test-operator", requested_at: requestedAt, expires_at: new Date(requestedAtMs + 10 * 60_000).toISOString(), nonce: `nonce:${taskId}` };
+}
+
+function stageCommand(control: ControlPlane, taskId: string, requestedAt: string) {
+  return control.stage(startCommand(taskId, requestedAt), new Date(requestedAt));
 }
 
 function seedTasks(db: AuthorityDb): void {
   const control = new ControlPlane(db);
-  control.stage(startCommand("task:alpha", "2026-08-18T00:00:00.000Z"));
-  control.stage(startCommand("task:beta", "2026-08-18T00:01:00.000Z"));
+  stageCommand(control, "task:alpha", "2026-08-18T00:00:00.000Z");
+  stageCommand(control, "task:beta", "2026-08-18T00:01:00.000Z");
 }
 
 function seedAgents(db: AuthorityDb): readonly { readonly agent_id: string; readonly terminal_id: string }[] {
@@ -153,8 +158,9 @@ describe("dashboard task, agent, and control reads", () => {
     const db = await initialized();
     track(dirname(db.filename));
     const control = new ControlPlane(db);
-    const staged = control.stage(startCommand("task:alpha", "2026-08-18T00:00:00.000Z"));
-    const issuedAt = new Date().toISOString();
+    const staged = stageCommand(control, "task:alpha", "2026-08-18T00:00:00.000Z");
+    const decisionAt = new Date("2026-08-18T00:00:00.000Z");
+    const issuedAt = decisionAt.toISOString();
     const receipt = signCommandApproval({
       schema_version: 1, receipt_id: "approval:task:alpha", request_id: staged.request_id, decision: "approve",
       command_digest: staged.command_digest, signer_principal_id: "test-operator",
@@ -162,7 +168,7 @@ describe("dashboard task, agent, and control reads", () => {
       issued_at: issuedAt, not_before: issuedAt, expires_at: staged.expires_at, nonce: "receipt:task:alpha",
       max_uses: 1, status: "issued",
     }, localKey(db));
-    control.decide(receipt);
+    control.decide(receipt, decisionAt);
     const server = startServer(db);
     const before = fingerprint(db);
     try {

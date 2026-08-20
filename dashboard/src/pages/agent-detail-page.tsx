@@ -1,4 +1,4 @@
-import { useCallback } from "react";
+import { useCallback, useState } from "react";
 import { useParams } from "react-router-dom";
 import type { AgentListResponse } from "../../../src/dashboard/read-model.js";
 import type { TerminalLogResponse } from "../../../src/dashboard/terminal-reader.js";
@@ -20,11 +20,12 @@ export function AgentDetailPage(props: AgentDetailPageProps) {
 }
 
 function AgentDetailContent({ agentId, agents, loadLogs }: AgentDetailPageProps & Readonly<{ agentId: string }>) {
+  const [logRefreshKey, setLogRefreshKey] = useState(0);
   const loadBoundedLogs = useCallback(
     async (id: string) => await loadLogs(id, LOG_LIMIT),
     [loadLogs],
   );
-  const logs = useDetailResource(agentId, loadBoundedLogs, hasLogLines);
+  const logs = useDetailResource(agentId, loadBoundedLogs, hasLogLines, String(logRefreshKey));
 
   switch (agents.status) {
     case "idle":
@@ -39,7 +40,7 @@ function AgentDetailContent({ agentId, agents, loadLogs }: AgentDetailPageProps 
       const agent = agents.data.items.find((item) => item.agent_id === agentId);
       if (agent === undefined) return <PageState title="Agent not found" />;
       return (
-        <main className="page-frame dashboard-main">
+        <div className="page-frame dashboard-main">
           <header className="detail-header">
             <h1>{agent.provider}</h1>
             <dl className="identity-list" aria-label="Agent identity">
@@ -49,8 +50,8 @@ function AgentDetailContent({ agentId, agents, loadLogs }: AgentDetailPageProps 
               <div><dt>Path</dt><dd>{agent.canonical_path}</dd></div>
             </dl>
           </header>
-          <TerminalLog state={logs} />
-        </main>
+          <TerminalLog state={logs} onRetry={() => { setLogRefreshKey((count) => count + 1); }} />
+        </div>
       );
     }
     default:
@@ -64,12 +65,12 @@ function PageState({ title, message = "The requested route is unavailable.", bus
   busy?: boolean;
 }>) {
   return (
-    <main className="page-frame route-state" aria-busy={busy || undefined}>
+    <div className="page-frame route-state" aria-busy={busy || undefined}>
       <section role={busy ? "status" : "alert"}>
         <h1>{title}</h1>
         <p>{message}</p>
       </section>
-    </main>
+    </div>
   );
 }
 

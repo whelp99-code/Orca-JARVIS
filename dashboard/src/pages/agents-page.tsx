@@ -1,3 +1,4 @@
+import { Link } from "react-router-dom";
 import type { AgentListResponse } from "../../../src/dashboard/read-model.js";
 import type { ResourceState } from "../store.js";
 
@@ -84,12 +85,12 @@ export function AgentsPage(props: AgentsPageProps) {
                       <dt>Identity</dt>
                       <dd>
                         {href !== undefined ? (
-                          <a
-                            href={href}
+                          <Link
+                            to={href}
                             onClick={onAgentSelect === undefined ? undefined : () => onAgentSelect(agent.agent_id)}
                           >
                             {agent.agent_id}
-                          </a>
+                          </Link>
                         ) : onAgentSelect === undefined ? (
                           agent.agent_id
                         ) : (

@@ -120,7 +120,7 @@ export function ProposalPage({
   }
 
   return (
-    <main className="page-frame dashboard-main proposal-page">
+    <div className="page-frame dashboard-main proposal-page">
       <header className="proposal-heading">
         <h1>New proposal</h1>
         <p>Preview a bounded team, then stage its receipt-bound task request.</p>
@@ -193,7 +193,7 @@ export function ProposalPage({
           onStage={(request, result) => { void stageTask(request, result); }}
         />
       </div>
-    </main>
+    </div>
   );
 }
 

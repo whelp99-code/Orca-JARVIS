@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, render, screen, within } from "@testing-library/react";
-import { afterEach, describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { REDACTED } from "../../src/dashboard/contracts.js";
 import type {
   AgentListResponse,
@@ -124,25 +125,43 @@ function texts(name: string): readonly string[] {
   return within(screen.getByRole("region", { name })).getAllByRole("listitem").map((item) => item.textContent ?? "");
 }
 
-function createClient() {
+type ResourceFailure = Partial<Record<"tasks" | "agents" | "approvals", Error>>;
+
+function createClient(failures: ResourceFailure = {}) {
   const counts = { session: 0, overview: 0, tasks: 0, agents: 0, controlRequests: 0, task: 0, agentLogs: 0 };
   const taskIds: string[] = [];
   const logCalls: LogCall[] = [];
   const pending: {
     resolve: ((value: TerminalLogResponse) => void) | undefined;
+    reject: ((reason?: unknown) => void) | undefined;
     taskResolve: ((value: TaskDetailResponse) => void) | undefined;
-  } = { resolve: undefined, taskResolve: undefined };
+  } = { resolve: undefined, reject: undefined, taskResolve: undefined };
   const client = {
     session: async () => { counts.session += 1; return { schema_version: 1 as const, csrf_token: "csrf-test" }; },
     overview: async () => { counts.overview += 1; return overview; },
-    tasks: async () => { counts.tasks += 1; return tasks; },
-    agents: async () => { counts.agents += 1; return agents; },
-    controlRequests: async () => { counts.controlRequests += 1; return approvals; },
+    tasks: async () => {
+      counts.tasks += 1;
+      if (failures.tasks !== undefined) throw failures.tasks;
+      return tasks;
+    },
+    agents: async () => {
+      counts.agents += 1;
+      if (failures.agents !== undefined) throw failures.agents;
+      return agents;
+    },
+    controlRequests: async () => {
+      counts.controlRequests += 1;
+      if (failures.approvals !== undefined) throw failures.approvals;
+      return approvals;
+    },
     task: async (taskId: string) => { counts.task += 1; taskIds.push(taskId); return await new Promise<TaskDetailResponse>((resolve) => { pending.taskResolve = resolve; }); },
     agentLogs: async (agentId: string, limit?: number) => {
       counts.agentLogs += 1;
       logCalls.push({ agentId, limit });
-      return await new Promise<TerminalLogResponse>((resolve) => { pending.resolve = resolve; });
+      return await new Promise<TerminalLogResponse>((resolve, reject) => {
+        pending.resolve = resolve;
+        pending.reject = reject;
+      });
     },
   } satisfies DashboardClient;
   return { client, counts, taskIds, logCalls, pending };
@@ -156,12 +175,15 @@ type Harness = {
   readonly opened: Promise<FakeEventSource>;
   readonly lifecycle: { started: number; stopped: number };
   readonly view: ReturnType<typeof render>;
+  readonly refreshTasks: ReturnType<typeof vi.fn>;
+  readonly refreshAgents: ReturnType<typeof vi.fn>;
+  readonly refreshApprovals: ReturnType<typeof vi.fn>;
 };
 
-function createHarness(initialPath: string): Harness {
+function createHarness(initialPath: string, failures: ResourceFailure = {}): Harness {
   let resolveSource: (source: FakeEventSource) => void = () => undefined;
   const opened = new Promise<FakeEventSource>((resolve) => { resolveSource = resolve; });
-  const { client, counts, taskIds, logCalls, pending } = createClient();
+  const { client, counts, taskIds, logCalls, pending } = createClient(failures);
   const inner = createDashboardStore({
     client,
     eventSourceFactory: (url: string) => {
@@ -171,20 +193,27 @@ function createHarness(initialPath: string): Harness {
     },
   });
   const lifecycle = { started: 0, stopped: 0 };
-  const store: Store = {
+  const refreshTasks = vi.fn(async () => undefined);
+  const refreshAgents = vi.fn(async () => undefined);
+  const refreshApprovals = vi.fn(async () => undefined);
+  const store = {
     getSnapshot: inner.getSnapshot, subscribe: inner.subscribe, refreshOverview: inner.refreshOverview,
+    refreshTasks, refreshAgents, refreshApprovals,
     start() { lifecycle.started += 1; inner.start(); },
     stop() { lifecycle.stopped += 1; inner.stop(); },
   };
   const view = render(<ControlCenterRoot store={store} client={client} initialPath={initialPath} />);
-  return { store, counts, taskIds, logCalls, pending, opened, lifecycle, view };
+  return { store, counts, taskIds, logCalls, pending, opened, lifecycle, view, refreshTasks, refreshAgents, refreshApprovals };
 }
 
 let harness: Harness | undefined;
 afterEach(() => { cleanup(); harness?.store.stop(); harness = undefined; });
 
-async function liveRoot(initialPath: string): Promise<Harness & { readonly source: FakeEventSource }> {
-  const current = createHarness(initialPath);
+async function liveRoot(
+  initialPath: string,
+  failures: ResourceFailure = {},
+): Promise<Harness & { readonly source: FakeEventSource }> {
+  const current = createHarness(initialPath, failures);
   harness = current;
   const source = await current.opened;
   const live = onceState(current.store, (snapshot) => snapshot.connectionState === "live");
@@ -200,7 +229,7 @@ describe("ControlCenterRoot live routing", () => {
     const current = await liveRoot("/");
     expect(current.lifecycle.started).toBe(1);
     expect(screen.getByRole("heading", { level: 1, name: "JARVIS Control Center" })).toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent("Live");
+    expect(screen.getByRole("status", { name: "Live updates" })).toHaveTextContent("Connected");
     expect(screen.getByText("overview-seed-task")).toBeInTheDocument();
   });
 
@@ -231,14 +260,15 @@ describe("ControlCenterRoot live routing", () => {
     expect(current.counts.task).toBe(1);
     await act(async () => { current.pending.taskResolve?.(taskDetail); });
     expect(screen.getByRole("heading", { name: "wire argo cli to jaw" })).toBeInTheDocument();
-    expect(texts("Timeline")).toEqual([
+    expect(texts("Task timeline")).toEqual([
       expect.stringContaining("created"),
       expect.stringContaining("started"),
     ]);
-    expect(texts("Graph")).toEqual([
-      expect.stringContaining(REQUEST_ID),
-      expect.stringContaining(RUN_ID),
-    ]);
+    const graph = within(screen.getByRole("region", { name: "Task graph" }))
+      .getByRole("img", { name: "Task source graph" });
+    const graphText = graph.textContent ?? "";
+    expect(graphText.indexOf(REQUEST_ID)).toBeGreaterThanOrEqual(0);
+    expect(graphText.indexOf(REQUEST_ID)).toBeLessThan(graphText.indexOf(RUN_ID));
     expect(screen.getByRole("textbox", { name: "Cancellation reason" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Stage cancellation" })).toBeDisabled();
   });
@@ -263,6 +293,58 @@ describe("ControlCenterRoot live routing", () => {
     expect(log).toHaveTextContent("safe compile finished in 12.4s");
     expect(log).toHaveTextContent(REDACTED);
     expect(log).not.toHaveTextContent(SECRET);
+  });
+
+  it("retries rejected agent logs from the terminal Retry control", async () => {
+    // Given a live agent-detail route whose first log fetch failed
+    const user = userEvent.setup();
+    const current = await liveRoot(`/agents/${AGENT_ID}`);
+    await act(async () => { current.pending.reject?.(new Error("server")); });
+    expect(screen.getByRole("alert")).toBeInTheDocument();
+    expect(current.logCalls).toEqual([{ agentId: AGENT_ID, limit: LOG_LIMIT }]);
+
+    // When the operator activates Retry
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+
+    // Then logs reload once and a resolved retry renders redacted output
+    expect(current.logCalls).toEqual([
+      { agentId: AGENT_ID, limit: LOG_LIMIT },
+      { agentId: AGENT_ID, limit: LOG_LIMIT },
+    ]);
+    await act(async () => { current.pending.resolve?.(logs); });
+    const log = screen.getByRole("log");
+    expect(log).toHaveTextContent("safe compile finished in 12.4s");
+    expect(log).toHaveTextContent(REDACTED);
+    expect(log).not.toHaveTextContent(SECRET);
+  });
+
+  it("navigates from a task list title to the existing task detail route", async () => {
+    const user = userEvent.setup();
+    const current = await liveRoot("/tasks");
+    const taskLink = screen.getByRole("link", { name: "zeta-task" });
+    expect(taskLink).toHaveAttribute("href", `/tasks/${encodeURIComponent("task-zeta")}`);
+    await user.click(taskLink);
+    expect(current.taskIds).toEqual(["task-zeta"]);
+  });
+
+  it("navigates from an agent identity to the existing agent detail route", async () => {
+    const user = userEvent.setup();
+    const current = await liveRoot("/agents");
+    const agentLink = screen.getByRole("link", { name: AGENT_ID });
+    expect(agentLink).toHaveAttribute("href", `/agents/${encodeURIComponent(AGENT_ID)}`);
+    await user.click(agentLink);
+    expect(current.logCalls).toEqual([{ agentId: AGENT_ID, limit: LOG_LIMIT }]);
+  });
+
+  it.each([
+    { path: "/tasks", seam: "refreshTasks", failure: "tasks" },
+    { path: "/agents", seam: "refreshAgents", failure: "agents" },
+    { path: "/approvals", seam: "refreshApprovals", failure: "approvals" },
+  ] as const)("calls store.$seam from the $path Retry control", async ({ path, seam, failure }) => {
+    const user = userEvent.setup();
+    const current = await liveRoot(path, { [failure]: new Error("server") });
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(current[seam]).toHaveBeenCalledTimes(1);
   });
 
   it("stops the store and ignores late events after unmount", async () => {

@@ -1,6 +1,8 @@
 import "@testing-library/jest-dom/vitest";
 import { fireEvent, render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
+import { describe, expect, it, vi } from "vitest";
 import { REDACTED } from "../../src/dashboard/contracts.js";
 import type { DashboardErrorEnvelope } from "../../src/dashboard/http.js";
 import type {
@@ -88,6 +90,17 @@ const logError = {
   error: { code: "ORCA_UNAVAILABLE", message: "Orca unavailable", request_id: "req-log" },
 } as const satisfies DashboardErrorEnvelope;
 
+const retryableError = {
+  status: "error",
+  kind: "server",
+  error: {
+    kind: "server",
+    code: "ORCA_UNAVAILABLE",
+    message: "Unavailable",
+    request_id: "req-retry",
+  },
+} as const;
+
 function texts(name: string): readonly string[] {
   return within(screen.getByRole("region", { name })).getAllByRole("listitem").map((item) => item.textContent ?? "");
 }
@@ -111,14 +124,15 @@ describe("task, agent, and log read pages", () => {
   it("renders the task timeline and graph-equivalent lists in source order", () => {
     render(<TaskDetailPage {...populatedDetail} />);
     expect(screen.getByRole("heading", { name: "wire argo cli to jaw" })).toBeInTheDocument();
-    expect(texts("Timeline")).toEqual([
+    expect(texts("Task timeline")).toEqual([
       expect.stringContaining("created"),
       expect.stringContaining("started"),
     ]);
-    expect(texts("Graph")).toEqual([
-      expect.stringContaining("node-b"),
-      expect.stringContaining("node-a"),
-    ]);
+    const graph = within(screen.getByRole("region", { name: "Task graph" }))
+      .getByRole("img", { name: "Task source graph" });
+    const graphText = graph.textContent ?? "";
+    expect(graphText.indexOf("node-b")).toBeGreaterThanOrEqual(0);
+    expect(graphText.indexOf("node-b")).toBeLessThan(graphText.indexOf("node-a"));
   });
 
   it("renders a live agent by its identity fields", () => {
@@ -151,5 +165,56 @@ describe("task, agent, and log read pages", () => {
     expect(screen.getByRole("alert")).toBeInTheDocument();
     fireEvent.click(screen.getByRole("button", { name: "Retry" }));
     expect(retries).toBe(1);
+  });
+
+  it("renders populated task titles as encoded detail links", () => {
+    render(
+      <MemoryRouter>
+        <TaskListPage
+          {...populatedTasks}
+          taskHref={(taskId) => `/tasks/${encodeURIComponent(taskId)}`}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("link", { name: "zeta-task" })).toHaveAttribute(
+      "href",
+      `/tasks/${encodeURIComponent("task-zeta")}`,
+    );
+    expect(screen.getByRole("link", { name: "alpha-task" })).toHaveAttribute(
+      "href",
+      `/tasks/${encodeURIComponent("task-alpha")}`,
+    );
+  });
+
+  it("renders populated agent identities as detail links", () => {
+    render(
+      <MemoryRouter>
+        <AgentsPage
+          {...populatedAgents}
+          agentHref={(agentId) => `/agents/${encodeURIComponent(agentId)}`}
+        />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("link", { name: agent.agent_id })).toHaveAttribute(
+      "href",
+      `/agents/${encodeURIComponent(agent.agent_id)}`,
+    );
+  });
+
+  it.each([
+    {
+      name: "Tasks",
+      view: (onRetry: () => void) => <TaskListPage state={retryableError} onRetry={onRetry} />,
+    },
+    {
+      name: "Agents",
+      view: (onRetry: () => void) => <AgentsPage state={retryableError} onRetry={onRetry} />,
+    },
+  ])("invokes $name onRetry once from a keyboard-operable Retry control", async ({ view }) => {
+    const user = userEvent.setup();
+    const onRetry = vi.fn();
+    render(view(onRetry));
+    await user.click(screen.getByRole("button", { name: "Retry" }));
+    expect(onRetry).toHaveBeenCalledTimes(1);
   });
 });

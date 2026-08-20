@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useSyncExternalStore } from "react";
-import { BrowserRouter, MemoryRouter, NavLink, Route, Routes, useParams } from "react-router-dom";
+import { BrowserRouter, MemoryRouter, Route, Routes, useParams } from "react-router-dom";
 import type { TaskDetailResponse, TaskListResponse } from "../../src/dashboard/read-model.js";
 import type { TerminalLogResponse } from "../../src/dashboard/terminal-reader.js";
 import type { DashboardClient } from "./api.js";
@@ -10,6 +10,7 @@ import {
   type AuthorityMutationClient,
 } from "./authority-api.js";
 import App from "./app.js";
+import { OperationalShell } from "./operational-shell.js";
 import { AgentDetailPage } from "./pages/agent-detail-page.js";
 import { AgentsPage } from "./pages/agents-page.js";
 import { ApprovalsPage } from "./pages/approvals-page.js";
@@ -30,13 +31,6 @@ type ControlCenterRootProps = Readonly<{
   authorityIdFactory?: AuthorityIdFactory;
   initialPath?: string;
 }>;
-const NAV_ITEMS = [
-  { label: "Overview", to: "/" },
-  { label: "Tasks", to: "/tasks" },
-  { label: "New proposal", to: "/proposals" },
-  { label: "Agents", to: "/agents" },
-  { label: "Approvals", to: "/approvals" },
-] as const;
 export function ControlCenterRoot({
   store,
   client,
@@ -78,19 +72,19 @@ function ControlCenter({
   }, [store]);
 
   return (
-    <div className="control-center-root">
-      <header className="control-nav">
-        <nav className="page-frame control-nav-inner" aria-label="Primary navigation">
-          {NAV_ITEMS.map((item) => (
-            <NavLink end={item.to === "/"} key={item.to} to={item.to}>
-              {item.label}
-            </NavLink>
-          ))}
-        </nav>
-      </header>
+    <OperationalShell connectionState={state.connectionState}>
       <Routes>
         <Route path="/" element={<OverviewRoute state={state} store={store} />} />
-        <Route path="/tasks" element={<TaskListPage state={state.tasks} />} />
+        <Route
+          path="/tasks"
+          element={(
+            <TaskListPage
+              state={state.tasks}
+              taskHref={(taskId) => `/tasks/${encodeURIComponent(taskId)}`}
+              onRetry={() => { void store.refreshTasks(); }}
+            />
+          )}
+        />
         <Route
           path="/tasks/:taskId"
           element={(
@@ -103,7 +97,16 @@ function ControlCenter({
           )}
         />
         <Route path="/proposals" element={<ProposalPage client={proposalClient} />} />
-        <Route path="/agents" element={<AgentsPage state={state.agents} />} />
+        <Route
+          path="/agents"
+          element={(
+            <AgentsPage
+              state={state.agents}
+              agentHref={(agentId) => `/agents/${encodeURIComponent(agentId)}`}
+              onRetry={() => { void store.refreshAgents(); }}
+            />
+          )}
+        />
         <Route
           path="/agents/:agentId"
           element={<AgentDetailPage agents={state.agents} loadLogs={client.agentLogs} />}
@@ -115,12 +118,13 @@ function ControlCenter({
               state={state.approvals}
               client={liveAuthorityClient}
               idFactory={authorityIdFactory}
+              onRetry={() => { void store.refreshApprovals(); }}
             />
           )}
         />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
-    </div>
+    </OperationalShell>
   );
 }
 
@@ -141,7 +145,7 @@ function OverviewRoute({ state, store }: Readonly<{ state: DashboardState; store
       );
     case "success":
     case "empty":
-      return <App overview={state.overview.data} connectionState={state.connectionState} />;
+      return <App overview={state.overview.data} />;
     default:
       return assertNever(state.overview);
   }
@@ -219,13 +223,13 @@ function RouteState({ title, message, busy = false, onRetry }: Readonly<{
   onRetry?: () => void;
 }>) {
   return (
-    <main className="page-frame route-state" aria-busy={busy || undefined}>
+    <div className="page-frame route-state" aria-busy={busy || undefined}>
       <section role={busy ? "status" : "alert"}>
         <h1>{title}</h1>
         <p>{message}</p>
         {onRetry === undefined ? null : <button type="button" onClick={onRetry}>Retry</button>}
       </section>
-    </main>
+    </div>
   );
 }
 

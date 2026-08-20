@@ -1,11 +1,8 @@
 import type { ReactNode } from "react";
 import type { OverviewResponse } from "../../src/dashboard/read-model.js";
 
-type ConnectionState = "live" | "reconnecting" | "offline";
-
 type AppProps = Readonly<{
   overview: OverviewResponse;
-  connectionState: ConnectionState;
 }>;
 
 type PanelProps = Readonly<{
@@ -14,15 +11,9 @@ type PanelProps = Readonly<{
   children: ReactNode;
 }>;
 
-const CONNECTION_LABELS = {
-  live: "Live",
-  reconnecting: "Reconnecting",
-  offline: "Offline",
-} as const satisfies Record<ConnectionState, string>;
-
 const SETTLED_TASK_STATES: ReadonlySet<string> = new Set(["completed", "failed", "cancelled", "rejected"]);
 
-export default function App({ overview, connectionState }: AppProps) {
+export default function App({ overview }: AppProps) {
   const activeWorkCount = overview.recent_tasks.filter((task) => !SETTLED_TASK_STATES.has(task.state)).length;
   const statusCards = [
     {
@@ -60,14 +51,10 @@ export default function App({ overview, connectionState }: AppProps) {
       <header className="app-header">
         <div className="page-frame header-content">
           <h1>JARVIS Control Center</h1>
-          <div className="connection-state" data-state={connectionState} role="status" aria-live="polite">
-            <span className="connection-icon" aria-hidden="true" />
-            <span>{CONNECTION_LABELS[connectionState]}</span>
-          </div>
         </div>
       </header>
 
-      <main className="page-frame dashboard-main">
+      <div className="page-frame dashboard-main">
         <section className="status-grid" aria-label="Current status">
           {statusCards.map((card) => (
             <article
@@ -172,7 +159,7 @@ export default function App({ overview, connectionState }: AppProps) {
             )}
           </Panel>
         </div>
-      </main>
+      </div>
     </div>
   );
 }

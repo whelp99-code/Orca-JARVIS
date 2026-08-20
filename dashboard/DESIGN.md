@@ -47,7 +47,7 @@ Primary text uses `--font-sans`; identifiers, digests, timestamps, and command v
 
 All spacing derives from the 4px base tokens `--space-1` through `--space-10`. `--size-page` bounds the page frame, `--size-reading` bounds forms and readable supporting content, and `--size-textarea` gives multiline interview controls a stable minimum editing area.
 
-The document owns vertical scrolling. The sticky primary navigation remains visible. Proposal creation uses StyleGallery's supporting-pane pattern for a primary interview beside supplemental preview output, with no nested scroll container: https://github.com/changeroa/StyleGallery/blob/main/patterns/split-sidebar/supporting-pane.md. The panes use an overflow-safe intrinsic grid and reflow to one readable column when narrow. DOM order remains interview first, preview second.
+The document owns vertical scrolling. The operational shell uses StyleGallery's sticky-header pattern with no nested scroll container: https://github.com/changeroa/StyleGallery/blob/main/patterns/viewport-shell/sticky-header.md. Primary navigation remains visible while main content and the attribution footer stay in semantic source order. Proposal creation uses StyleGallery's supporting-pane pattern for a primary interview beside supplemental preview output, with no nested scroll container: https://github.com/changeroa/StyleGallery/blob/main/patterns/split-sidebar/supporting-pane.md. The panes use an overflow-safe intrinsic grid and reflow to one readable column when narrow. DOM order remains interview first, preview second.
 
 ## 5. Components
 
@@ -59,6 +59,14 @@ The document owns vertical scrolling. The sticky primary navigation remains visi
 - **Motion**: none.
 - **Layout**: wrapping cluster inside the page frame; document scroll owner.
 
+### Operational Shell
+- **Structure**: skip link, sticky header with primary navigation and canonical connection state, one main landmark, and attribution footer.
+- **States**: live, reconnecting, offline, current route, keyboard focus.
+- **Spacing**: `--space-1` through `--space-4`; navigation and controls use `--size-nav` and `--size-control`.
+- **Accessibility**: skip link targets the programmatically focusable main landmark; navigation follows route order; state is politely announced; footer links to the shipped notice.
+- **Motion**: none.
+- **Layout**: resilient header/main/footer grid; document scroll owner; navigation stays on one line at 1024px and above.
+
 ### Panel
 - **Structure**: semantic section with optional header and body.
 - **States**: default, empty, loading, error, success.
@@ -66,6 +74,22 @@ The document owns vertical scrolling. The sticky primary navigation remains visi
 - **Accessibility**: named by heading or `aria-label`; live/error state uses the appropriate role.
 - **Motion**: none.
 - **Layout**: stack; no internal scroll owner.
+
+### Task Graph
+- **Structure**: named panel, Graph/List pressed-state controls, source graph image, and equivalent ordered list.
+- **States**: graph, list, empty, keyboard focus.
+- **Spacing**: `--space-1` through `--space-4`.
+- **Accessibility**: canonical source order is unchanged; graph has a concise accessible name and list view exposes the same start/edge sequence semantically.
+- **Motion**: none.
+- **Layout**: overflow-safe intrinsic grid that collapses to block flow without clipping identifiers.
+
+### Timeline
+- **Structure**: named panel with an ordered event list and evidence metadata.
+- **States**: loading, retrying, empty, error, success.
+- **Spacing**: `--space-2` through `--space-4`.
+- **Accessibility**: busy and state announcements use status/alert roles; time uses native `time`; source text and evidence remain verbatim.
+- **Motion**: none.
+- **Layout**: ordered stack; document scroll owner; long and CJK values wrap.
 
 ### Form Control
 - **Structure**: explicit label followed by input, select, or textarea; helper/error copy follows the control.

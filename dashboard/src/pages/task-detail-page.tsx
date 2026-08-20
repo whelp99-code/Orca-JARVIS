@@ -1,5 +1,7 @@
 import type { TaskDetailResponse } from "../../../src/dashboard/read-model.js";
 import type { AuthorityIdFactory, AuthorityMutationClient } from "../authority-api.js";
+import { TaskGraph } from "../components/task-graph.js";
+import { TimelinePanel } from "../components/timeline-panel.js";
 import type { ResourceState } from "../store.js";
 import { TaskControl } from "../task-control.js";
 
@@ -22,22 +24,22 @@ export function TaskDetailPage(props: TaskDetailPageProps) {
       case "idle":
       case "loading":
         return (
-          <main className="page-frame dashboard-main" aria-busy="true">
+          <div className="page-frame dashboard-main" aria-busy="true">
             <h1>Task</h1>
             <p className="empty-state">Loading task</p>
-          </main>
+          </div>
         );
       case "retrying":
         return (
-          <main className="page-frame dashboard-main" aria-busy="true">
+          <div className="page-frame dashboard-main" aria-busy="true">
             <h1>Task</h1>
             <p className="empty-state">Retrying task</p>
-          </main>
+          </div>
         );
       case "error": {
         const notFound = props.state.kind === "not_found";
         return (
-          <main className="page-frame dashboard-main">
+          <div className="page-frame dashboard-main">
             <section role="alert" className="panel">
               <header className="panel-header">
                 <h1>{notFound ? "Task not found" : "Unable to load task"}</h1>
@@ -49,7 +51,7 @@ export function TaskDetailPage(props: TaskDetailPageProps) {
                 ) : null}
               </div>
             </section>
-          </main>
+          </div>
         );
       }
       case "success":
@@ -68,7 +70,7 @@ export function TaskDetailPage(props: TaskDetailPageProps) {
   const { task, events } = response.context;
 
   return (
-    <main className="page-frame dashboard-main">
+    <div className="page-frame dashboard-main">
       <header>
         <h1>{task.title}</h1>
         <dl className="identity-list" aria-label="Task summary">
@@ -92,59 +94,13 @@ export function TaskDetailPage(props: TaskDetailPageProps) {
         <TaskControl detail={response} client={props.client} idFactory={props.idFactory} />
       )}
 
-      <section className="panel" aria-label="Timeline">
-        <header className="panel-header"><h2>Timeline</h2></header>
-        <div className="panel-body">
-          {events.length === 0 ? (
-            <p className="empty-state">No timeline events</p>
-          ) : (
-            <ol className="record-list">
-              {events.map((event) => (
-                <li className="record" key={event.event_id}>
-                  <article>
-                    <h3 className="record-title">{event.title}</h3>
-                    <div className="record-meta">
-                      <span>{event.source}</span>
-                      <span>{event.kind}</span>
-                      <span>{event.actor}</span>
-                      {event.status === null ? null : <span>Status: {event.status}</span>}
-                      <time dateTime={event.created_at}>{event.created_at}</time>
-                    </div>
-                    {event.evidence_refs.length === 0 ? null : (
-                      <dl className="identity-list">
-                        <div>
-                          <dt>Evidence</dt>
-                          <dd>{event.evidence_refs.join(", ")}</dd>
-                        </div>
-                      </dl>
-                    )}
-                  </article>
-                </li>
-              ))}
-            </ol>
-          )}
-        </div>
-      </section>
+      <TimelinePanel
+        state={events.length === 0
+          ? { status: "empty", data: events }
+          : { status: "success", data: events }}
+      />
 
-      <section className="panel" aria-label="Graph">
-        <header className="panel-header"><h2>Graph</h2></header>
-        <div className="panel-body">
-          {task.source_ids.length === 0 ? (
-            <p className="empty-state">No graph nodes</p>
-          ) : (
-            <ol className="record-list">
-              {task.source_ids.map((sourceId, index) => (
-                <li className="record" key={sourceId}>
-                  <p className="record-title">Node {sourceId}</p>
-                  <p className="record-meta">
-                    {index === 0 ? "Graph start" : "Transition from the previous node"}
-                  </p>
-                </li>
-              ))}
-            </ol>
-          )}
-        </div>
-      </section>
-    </main>
+      <TaskGraph sourceIds={task.source_ids} />
+    </div>
   );
 }

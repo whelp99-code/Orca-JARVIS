@@ -4,10 +4,7 @@ import { describe, expect, it } from "vitest";
 import App from "./app.js";
 import type { OverviewResponse } from "../../src/dashboard/read-model.js";
 
-const liveProps = (overview: OverviewResponse): { overview: OverviewResponse; connectionState: "live" } => ({
-  overview,
-  connectionState: "live",
-});
+const liveProps = (overview: OverviewResponse): { overview: OverviewResponse } => ({ overview });
 
 const populatedOverview: OverviewResponse = {
   schema_version: 1,
@@ -64,11 +61,10 @@ const emptyOverview: OverviewResponse = {
 };
 
 describe("JARVIS Control Center overview", () => {
-  it("renders the shipped title and live connection indicator", () => {
+  it("renders the shipped title", () => {
     render(<App {...liveProps(emptyOverview)} />);
 
     expect(screen.getByRole("heading", { level: 1, name: "JARVIS Control Center" })).toBeInTheDocument();
-    expect(screen.getByText("Live")).toBeInTheDocument();
   });
 
   it("renders active work, agents, approvals, and risks cards with their counts", () => {

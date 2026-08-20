@@ -84,19 +84,25 @@ function dataOf<T>(resource: { readonly status: string; readonly data?: T }): T 
 
 type ClientData = {
   overview: OverviewResponse; tasks: TaskListResponse; agents: AgentListResponse;
-  approvals: ControlRequestListResponse; error: Error | undefined; hold: boolean;
+  approvals: ControlRequestListResponse; error: Error | undefined; sessionError: Error | undefined; hold: boolean;
   release: ((value: OverviewResponse) => void) | undefined;
+  failures: { tasks: Error | undefined; agents: Error | undefined; approvals: Error | undefined };
 };
 
 function createClient() {
   const calls = { session: 0, overview: 0, tasks: 0, agents: 0, controlRequests: 0, task: 0, agentLogs: 0 };
   const data: ClientData = {
     overview: populatedOverview, tasks: populatedTasks, agents: populatedAgents,
-    approvals: emptyApprovals, error: undefined, hold: false, release: undefined,
+    approvals: emptyApprovals, error: undefined, sessionError: undefined, hold: false, release: undefined,
+    failures: { tasks: undefined, agents: undefined, approvals: undefined },
   };
   return {
     calls, data,
-    session: async () => { calls.session += 1; return { schema_version: 1 as const, csrf_token: "csrf-test-token" }; },
+    session: async () => {
+      calls.session += 1;
+      if (data.sessionError !== undefined) throw data.sessionError;
+      return { schema_version: 1 as const, csrf_token: "csrf-test-token" };
+    },
     overview: async () => {
       calls.overview += 1;
       if (data.error !== undefined) throw data.error;
@@ -106,9 +112,21 @@ function createClient() {
       }
       return data.overview;
     },
-    tasks: async () => { calls.tasks += 1; return data.tasks; },
-    agents: async () => { calls.agents += 1; return data.agents; },
-    controlRequests: async () => { calls.controlRequests += 1; return data.approvals; },
+    tasks: async () => {
+      calls.tasks += 1;
+      if (data.failures.tasks !== undefined) throw data.failures.tasks;
+      return data.tasks;
+    },
+    agents: async () => {
+      calls.agents += 1;
+      if (data.failures.agents !== undefined) throw data.failures.agents;
+      return data.agents;
+    },
+    controlRequests: async () => {
+      calls.controlRequests += 1;
+      if (data.failures.approvals !== undefined) throw data.failures.approvals;
+      return data.approvals;
+    },
     task: async (taskId: string) => {
       calls.task += 1;
       return { ...taskDetail, context: { ...taskDetail.context, task: { ...taskDetail.context.task, task_id: taskId } } };
@@ -150,6 +168,29 @@ async function liveStore(): Promise<Harness & { readonly source: FakeEventSource
 }
 
 describe("dashboard store SSE refetch", () => {
+  it("settles offline when the initial session request fails", async () => {
+    // Given
+    const current = createHarness();
+    harness = current;
+    current.client.data.sessionError = new TypeError("Failed to fetch");
+    const settled = new Promise<Snapshot>((resolve) => {
+      const unsubscribe = current.store.subscribe(() => {
+        unsubscribe();
+        resolve(current.store.getSnapshot());
+      });
+    });
+
+    // When
+    current.store.start();
+    const snapshot = await settled;
+
+    // Then
+    expect(snapshot.connectionState).toBe("offline");
+    expect(current.client.calls).toMatchObject({
+      session: 1, overview: 0, tasks: 0, agents: 0, controlRequests: 0,
+    });
+  });
+
   it("opens SSE on start and refetches snapshot topics after the snapshot event", async () => {
     const current = createHarness();
     harness = current;
@@ -259,5 +300,37 @@ describe("dashboard store SSE refetch", () => {
     await retrying;
     unsubscribe();
     expect(RESOURCE_STATUSES.every((status) => seen.has(status))).toBe(true);
+  });
+
+  it.each([
+    {
+      resource: "tasks" as const, refresh: "refreshTasks", call: "tasks" as const,
+      failure: "tasks" as const, recovered: "success" as const,
+    },
+    {
+      resource: "agents" as const, refresh: "refreshAgents", call: "agents" as const,
+      failure: "agents" as const, recovered: "success" as const,
+    },
+    {
+      resource: "approvals" as const, refresh: "refreshApprovals", call: "controlRequests" as const,
+      failure: "approvals" as const, recovered: "empty" as const,
+    },
+  ])("recovers an errored $resource resource through public $refresh", async (row) => {
+    const current = await liveStore();
+    current.client.data.failures[row.failure] = new Error("server");
+    const failed = onceState(current.store, (snapshot) => snapshot[row.resource].status === "error");
+    current.source.emit("reconcile", frame("reconcile", [row.resource], "inst:err"));
+    await failed;
+    current.client.data.failures[row.failure] = undefined;
+    const refresh = Reflect.get(current.store, row.refresh);
+    expect(typeof refresh).toBe("function");
+    const before = current.client.calls[row.call];
+    const recovered = onceState(current.store, (snapshot) => snapshot[row.resource].status === row.recovered);
+    if (typeof refresh === "function") {
+      void refresh.call(current.store);
+    }
+    const snapshot = await recovered;
+    expect(current.client.calls[row.call]).toBe(before + 1);
+    expect(snapshot[row.resource].status).toBe(row.recovered);
   });
 });
