@@ -11,7 +11,7 @@
     },
     {
       "title": "Event-driven monitoring policy",
-      "state": "in_progress"
+      "state": "done"
     },
     {
       "title": "Provider runtime contract",
@@ -22,18 +22,5 @@
       "state": "in_progress"
     }
   ],
-  "blockers": [
-    {
-      "title": "Publish budgeted evolution commit",
-      "kind": "approval_required"
-    },
-    {
-      "title": "Merge monitoring policy PR 2",
-      "kind": "approval_required"
-    },
-    {
-      "title": "Fast-forward JM Orca-JARVIS main",
-      "kind": "approval_required"
-    }
-  ]
+  "blockers": []
 }
