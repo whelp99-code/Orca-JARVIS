@@ -67,30 +67,30 @@ describe("JARVIS Control Center overview", () => {
   it("renders the shipped title", () => {
     render(<App {...liveProps(emptyOverview)} />);
 
-    expect(screen.getByRole("heading", { level: 1, name: "JARVIS Control Center" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "JARVIS 현황판" })).toBeInTheDocument();
   });
 
   it("renders active work, agents, approvals, and risks cards with their counts", () => {
     render(<App {...liveProps(populatedOverview)} />);
 
-    expect(screen.getByRole("heading", { level: 2, name: "Active work" })).toBeInTheDocument();
-    expect(within(screen.getByRole("article", { name: "Active work" })).getByText("1")).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "지금 하는 일" })).toBeInTheDocument();
+    expect(within(screen.getByRole("article", { name: "지금 하는 일" })).getByText("1")).toBeInTheDocument();
 
-    expect(screen.getByRole("heading", { level: 2, name: "Agents" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: "Pending approvals" })).toBeInTheDocument();
-    expect(screen.getByRole("heading", { level: 2, name: "Risks" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "에이전트" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "승인 대기" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 2, name: "위험" })).toBeInTheDocument();
   });
 
   it("renders a seeded recent task, approval, and risk", () => {
     render(<App {...liveProps(populatedOverview)} />);
 
-    expect(screen.getByRole("heading", { level: 3, name: "Recent" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3, name: "최근 일" })).toBeInTheDocument();
     expect(screen.getByText("wire argo cli to jaw")).toBeInTheDocument();
 
-    expect(screen.getByRole("heading", { level: 3, name: "Approvals" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3, name: "승인 대기" })).toBeInTheDocument();
     expect(screen.getByText("workflow.start")).toBeInTheDocument();
 
-    expect(screen.getByRole("heading", { level: 3, name: "Risks" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 3, name: "위험" })).toBeInTheDocument();
     expect(screen.getByText("retry may duplicate an external effect")).toBeInTheDocument();
   });
 
@@ -104,10 +104,10 @@ describe("JARVIS Control Center overview", () => {
   it("shows semantic empty-state copy when overview arrays are empty", () => {
     render(<App {...liveProps(emptyOverview)} />);
 
-    expect(screen.getByText("No active work")).toBeInTheDocument();
-    expect(screen.getByText("No agents connected")).toBeInTheDocument();
-    expect(screen.getByText("No pending approvals")).toBeInTheDocument();
-    expect(screen.getByText("No open risks")).toBeInTheDocument();
-    expect(screen.getByText("No recent activity")).toBeInTheDocument();
+    expect(screen.getByText("진행 중인 일 없음")).toBeInTheDocument();
+    expect(screen.getByText("연결된 에이전트가 없습니다")).toBeInTheDocument();
+    expect(screen.getByText("대기 중인 승인이 없습니다")).toBeInTheDocument();
+    expect(screen.getByText("열린 위험이 없습니다")).toBeInTheDocument();
+    expect(screen.getByText("최근 기록이 없습니다")).toBeInTheDocument();
   });
 });

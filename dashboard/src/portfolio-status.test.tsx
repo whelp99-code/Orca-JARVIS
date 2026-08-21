@@ -2,6 +2,7 @@ import "@testing-library/jest-dom/vitest";
 import { render, screen, within } from "@testing-library/react";
 import { describe, expect, it } from "vitest";
 import type { PortfolioOverview } from "../../src/dashboard/portfolio-contracts.js";
+import { copy } from "./copy.js";
 import { PortfolioStatus } from "./portfolio-status.js";
 
 const unseen: PortfolioOverview = {
@@ -79,22 +80,23 @@ const live: PortfolioOverview = {
 describe("Portfolio Status", () => {
   it("renders host counts, updated time, freshness, github, milestones, and blockers", () => {
     render(<PortfolioStatus portfolio={live} />);
-    const section = screen.getByRole("region", { name: "Portfolio Status" });
-    expect(within(section).getByRole("heading", { name: "LOCAL" })).toBeInTheDocument();
-    expect(within(section).getByRole("heading", { name: "JM-SERVER" })).toBeInTheDocument();
-    expect(within(section).getByText("live")).toBeInTheDocument();
-    expect(within(section).getByText("stale")).toBeInTheDocument();
+    const section = screen.getByRole("region", { name: copy.portfolio.title });
+    expect(within(section).getByRole("heading", { name: copy.portfolio.host.local })).toBeInTheDocument();
+    expect(within(section).getByRole("heading", { name: copy.portfolio.host["jm-server"] })).toBeInTheDocument();
+    expect(within(section).getByText(copy.portfolio.freshness.live)).toBeInTheDocument();
+    expect(within(section).getByText(copy.portfolio.freshness.stale)).toBeInTheDocument();
     expect(section.querySelector("time")?.dateTime).toBe("2026-08-20T00:00:00.000Z");
     expect(within(section).getByText("4")).toBeInTheDocument();
     expect(within(section).getByText("11")).toBeInTheDocument();
     expect(within(section).getByText("Control center")).toBeInTheDocument();
-    expect(within(section).getByText("in_progress")).toBeInTheDocument();
+    expect(within(section).getByText(copy.portfolio.milestoneState.in_progress)).toBeInTheDocument();
     expect(within(section).getByText("Approve live resume")).toBeInTheDocument();
   });
 
   it("renders unseen and unavailable states when hosts have no snapshot", () => {
     render(<PortfolioStatus portfolio={unseen} />);
-    expect(screen.getAllByText("unseen")).toHaveLength(2);
-    expect(screen.getAllByText("Unavailable")).toHaveLength(3);
+    expect(screen.getAllByText(copy.portfolio.freshness.unseen)).toHaveLength(2);
+    expect(screen.getAllByText(copy.portfolio.noReport)).toHaveLength(2);
+    expect(screen.getAllByText(copy.portfolio.unavailable)).toHaveLength(3);
   });
 });

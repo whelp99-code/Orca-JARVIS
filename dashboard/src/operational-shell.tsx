@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
+import { copy } from "./copy.js";
 import type { ConnectionState } from "./store.js";
 
 type OperationalShellProps = Readonly<{
@@ -8,17 +9,17 @@ type OperationalShellProps = Readonly<{
 }>;
 
 const NAV_ITEMS = [
-  { label: "Overview", to: "/" },
-  { label: "Tasks", to: "/tasks" },
-  { label: "New proposal", to: "/proposals" },
-  { label: "Agents", to: "/agents" },
-  { label: "Approvals", to: "/approvals" },
+  { label: copy.nav.overview, to: "/" },
+  { label: copy.nav.tasks, to: "/tasks" },
+  { label: copy.nav.proposals, to: "/proposals" },
+  { label: copy.nav.agents, to: "/agents" },
+  { label: copy.nav.approvals, to: "/approvals" },
 ] as const;
 
 const CONNECTION_LABELS = {
-  live: "Connected",
-  reconnecting: "Reconnecting",
-  offline: "Disconnected",
+  live: copy.connected,
+  reconnecting: "다시 연결 중",
+  offline: copy.disconnected,
 } as const satisfies Record<ConnectionState, string>;
 
 const ARGO_REVISION = "de874c1254da8fe170ad7de9c82f11c626349847";
@@ -26,10 +27,10 @@ const ARGO_REVISION = "de874c1254da8fe170ad7de9c82f11c626349847";
 export function OperationalShell({ connectionState, children }: OperationalShellProps) {
   return (
     <div className="operational-shell">
-      <a className="skip-link" href="#main-content">Skip to main content</a>
+      <a className="skip-link" href="#main-content">{copy.skip}</a>
       <header className="control-nav">
         <div className="page-frame control-nav-inner">
-          <nav className="primary-nav" aria-label="Primary navigation">
+          <nav className="primary-nav" aria-label={copy.navLabel}>
             {NAV_ITEMS.map((item) => (
               <NavLink end={item.to === "/"} key={item.to} to={item.to}>
                 {item.label}
@@ -40,7 +41,7 @@ export function OperationalShell({ connectionState, children }: OperationalShell
             className="connection-state shell-connection"
             data-state={connectionState}
             role="status"
-            aria-label="Live updates"
+            aria-label={copy.liveUpdates}
             aria-live="polite"
             aria-atomic="true"
           >

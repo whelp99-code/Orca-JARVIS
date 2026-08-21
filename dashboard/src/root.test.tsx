@@ -187,19 +187,19 @@ describe("ControlCenterRoot live routing", () => {
   it("starts the store and renders live overview after a snapshot", async () => {
     const current = await liveRoot("/");
     expect(current.lifecycle.started).toBe(1);
-    expect(screen.getByRole("heading", { level: 1, name: "JARVIS Control Center" })).toBeInTheDocument();
-    expect(screen.getByRole("status", { name: "Live updates" })).toHaveTextContent("Connected");
+    expect(screen.getByRole("heading", { level: 1, name: "JARVIS 현황판" })).toBeInTheDocument();
+    expect(screen.getByRole("status", { name: "실시간" })).toHaveTextContent("연결됨");
     expect(screen.getByText("overview-seed-task")).toBeInTheDocument();
   });
 
   it("exposes accessible nav and lists tasks in backend order on /tasks", async () => {
     await liveRoot("/tasks");
     const nav = screen.getByRole("navigation");
-    expect(within(nav).getByRole("link", { name: "Overview" })).toHaveAttribute("href", "/");
-    expect(within(nav).getByRole("link", { name: "Tasks" })).toHaveAttribute("href", "/tasks");
-    expect(within(nav).getByRole("link", { name: "New proposal" })).toHaveAttribute("href", "/proposals");
-    expect(within(nav).getByRole("link", { name: "Agents" })).toHaveAttribute("href", "/agents");
-    expect(within(nav).getByRole("link", { name: "Approvals" })).toHaveAttribute("href", "/approvals");
+    expect(within(nav).getByRole("link", { name: "한눈에" })).toHaveAttribute("href", "/");
+    expect(within(nav).getByRole("link", { name: "작업" })).toHaveAttribute("href", "/tasks");
+    expect(within(nav).getByRole("link", { name: "새 제안" })).toHaveAttribute("href", "/proposals");
+    expect(within(nav).getByRole("link", { name: "에이전트" })).toHaveAttribute("href", "/agents");
+    expect(within(nav).getByRole("link", { name: "승인" })).toHaveAttribute("href", "/approvals");
     expect(texts("Tasks")).toEqual([
       expect.stringContaining("zeta-task"),
       expect.stringContaining("alpha-task"),

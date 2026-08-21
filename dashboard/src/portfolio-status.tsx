@@ -3,27 +3,19 @@ import type {
   PortfolioOverview,
   PortfolioSummaryOverview,
 } from "../../src/dashboard/portfolio-contracts.js";
+import { copy, freshnessLabel, hostLabel, milestoneStateLabel } from "./copy.js";
 
 type PortfolioStatusProps = Readonly<{ portfolio: PortfolioOverview }>;
-
-const HOST_METRICS = [
-  ["Worktrees", "worktree_count"],
-  ["Terminals", "terminal_count"],
-  ["Clean", "clean_count"],
-  ["Dirty", "dirty_count"],
-  ["Dirty paths", "dirty_path_count"],
-  ["Active tasks", "active_task_count"],
-] as const satisfies ReadonlyArray<readonly [string, keyof PortfolioHostOverview]>;
 
 export function PortfolioStatus({ portfolio }: PortfolioStatusProps) {
   return (
     <section className="portfolio-panel" aria-labelledby="portfolio-status-title">
       <header className="portfolio-heading">
         <div>
-          <p className="portfolio-eyebrow">Dual-host control plane</p>
-          <h2 id="portfolio-status-title">Portfolio Status</h2>
+          <p className="portfolio-eyebrow">{copy.portfolio.kicker}</p>
+          <h2 id="portfolio-status-title">{copy.portfolio.title}</h2>
         </div>
-        <p>Source-owned snapshots with explicit freshness.</p>
+        <p>{copy.portfolio.lead}</p>
       </header>
 
       <div className="portfolio-hosts">
@@ -33,8 +25,8 @@ export function PortfolioStatus({ portfolio }: PortfolioStatusProps) {
       {portfolio.summary === null
         ? (
           <section className="portfolio-summary-empty" aria-labelledby="portfolio-progress-title">
-            <h3 id="portfolio-progress-title">Portfolio progress</h3>
-            <p className="empty-state">Unavailable</p>
+            <h3 id="portfolio-progress-title">{copy.portfolio.milestones}</h3>
+            <p className="empty-state">{copy.portfolio.unavailable}</p>
           </section>
         )
         : <PortfolioProgress summary={portfolio.summary} />}
@@ -47,20 +39,20 @@ function HostStatus({ host }: Readonly<{ host: PortfolioHostOverview }>) {
   return (
     <article className="portfolio-host" data-freshness={host.freshness}>
       <header>
-        <h3>{host.label}</h3>
-        <span className="freshness-badge">{host.freshness}</span>
+        <h3>{hostLabel(host.environment, host.label)}</h3>
+        <span className="freshness-badge">{freshnessLabel(host.freshness)}</span>
       </header>
       {host.updated_at === null
-        ? <p className="portfolio-updated">No report received</p>
+        ? <p className="portfolio-updated">{copy.portfolio.noReport}</p>
         : (
           <p className="portfolio-updated">
-            Updated <time dateTime={host.updated_at}>{formatTimestamp(host.updated_at)}</time>
+            {copy.portfolio.updated} <time dateTime={host.updated_at}>{formatTimestamp(host.updated_at)}</time>
           </p>
         )}
       {available
         ? (
           <dl className="portfolio-metrics">
-            {HOST_METRICS.map(([label, key]) => (
+            {copy.portfolio.metrics.map(([label, key]) => (
               <div key={key}>
                 <dt>{label}</dt>
                 <dd>{host[key]}</dd>
@@ -68,10 +60,10 @@ function HostStatus({ host }: Readonly<{ host: PortfolioHostOverview }>) {
             ))}
           </dl>
         )
-        : <p className="empty-state">Unavailable</p>}
+        : <p className="empty-state">{copy.portfolio.unavailable}</p>}
       {host.collector_error === null
         ? null
-        : <p className="portfolio-error">Collector: {host.collector_error}</p>}
+        : <p className="portfolio-error">{copy.portfolio.collector}: {host.collector_error}</p>}
     </article>
   );
 }
@@ -80,31 +72,31 @@ function PortfolioProgress({ summary }: Readonly<{ summary: PortfolioSummaryOver
   return (
     <div className="portfolio-summary">
       <section aria-labelledby="github-work-title">
-        <h3 id="github-work-title">GitHub open work</h3>
+        <h3 id="github-work-title">{copy.portfolio.github}</h3>
         <dl className="github-metrics">
-          <div><dt>Issues</dt><dd>{summary.github.issue_count}</dd></div>
-          <div><dt>Pull requests</dt><dd>{summary.github.pull_request_count}</dd></div>
+          <div><dt>{copy.portfolio.issues}</dt><dd>{summary.github.issue_count}</dd></div>
+          <div><dt>{copy.portfolio.pulls}</dt><dd>{summary.github.pull_request_count}</dd></div>
         </dl>
       </section>
       <section aria-labelledby="milestones-title">
-        <h3 id="milestones-title">Development milestones</h3>
+        <h3 id="milestones-title">{copy.portfolio.milestones}</h3>
         {summary.milestones.length === 0
-          ? <p className="empty-state">No milestones</p>
+          ? <p className="empty-state">{copy.portfolio.unavailable}</p>
           : (
             <ul className="portfolio-list">
               {summary.milestones.map(item => (
                 <li key={`${item.title}:${item.state}`}>
                   <span>{item.title}</span>
-                  <span className="milestone-state" data-state={item.state}>{item.state}</span>
+                  <span className="milestone-state" data-state={item.state}>{milestoneStateLabel(item.state)}</span>
                 </li>
               ))}
             </ul>
           )}
       </section>
       <section aria-labelledby="blockers-title">
-        <h3 id="blockers-title">Approval blockers</h3>
+        <h3 id="blockers-title">{copy.portfolio.blockers}</h3>
         {summary.blockers.length === 0
-          ? <p className="empty-state">No approval blockers</p>
+          ? <p className="empty-state">막힌 일이 없습니다</p>
           : (
             <ul className="portfolio-list portfolio-blockers">
               {summary.blockers.map(item => <li key={item.title}>{item.title}</li>)}
@@ -116,7 +108,7 @@ function PortfolioProgress({ summary }: Readonly<{ summary: PortfolioSummaryOver
 }
 
 function formatTimestamp(value: string): string {
-  return new Intl.DateTimeFormat(undefined, {
+  return new Intl.DateTimeFormat("ko-KR", {
     dateStyle: "medium",
     timeStyle: "short",
   }).format(new Date(value));

@@ -132,9 +132,9 @@ function OverviewRoute({ state, store }: Readonly<{ state: DashboardState; store
   switch (state.overview.status) {
     case "idle":
     case "loading":
-      return <RouteState title="JARVIS Control Center" message="Loading overview" busy />;
+      return <RouteState title="JARVIS 현황판" message="현황을 불러오는 중" busy />;
     case "retrying":
-      return <RouteState title="JARVIS Control Center" message="Retrying overview" busy />;
+      return <RouteState title="JARVIS 현황판" message="현황을 다시 불러오는 중" busy />;
     case "error":
       return (
         <RouteState

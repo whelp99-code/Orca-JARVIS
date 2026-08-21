@@ -1,5 +1,6 @@
 import type { ReactNode } from "react";
 import type { OverviewResponse } from "../../src/dashboard/read-model.js";
+import { copy } from "./copy.js";
 import { PortfolioStatus } from "./portfolio-status.js";
 
 type AppProps = Readonly<{
@@ -19,30 +20,30 @@ export default function App({ overview }: AppProps) {
   const statusCards = [
     {
       id: "active-work",
-      label: "Active work",
+      label: copy.cards.work,
       value: activeWorkCount,
-      detail: activeWorkCount === 0 ? "No active work" : "Tasks currently in progress",
+      detail: activeWorkCount === 0 ? copy.cardEmpty.work : "지금 진행 중인 작업 수",
       tone: "info",
     },
     {
       id: "agents",
-      label: "Agents",
+      label: copy.cards.agents,
       value: overview.agents.length,
-      detail: "Bound agent identities",
+      detail: "지금 붙어 있는 에이전트",
       tone: "success",
     },
     {
       id: "pending-approvals",
-      label: "Pending approvals",
+      label: copy.cards.approvals,
       value: overview.pending_approvals.length,
-      detail: "Requests awaiting a receipt",
+      detail: "내가 봐줘야 하는 요청",
       tone: "warning",
     },
     {
       id: "risks",
-      label: "Risks",
+      label: copy.cards.risks,
       value: overview.risks.length,
-      detail: "Open operational risks",
+      detail: "눈여겨볼 문제",
       tone: "danger",
     },
   ] as const;
@@ -51,7 +52,7 @@ export default function App({ overview }: AppProps) {
     <div className="app-shell">
       <header className="app-header">
         <div className="page-frame header-content">
-          <h1>JARVIS Control Center</h1>
+          <h1>{copy.title}</h1>
         </div>
       </header>
 
@@ -74,9 +75,9 @@ export default function App({ overview }: AppProps) {
         <PortfolioStatus portfolio={overview.portfolio} />
 
         <div className="panel-grid">
-          <Panel id="recent-title" title="Recent">
+          <Panel id="recent-title" title={copy.recent}>
             {overview.recent_tasks.length === 0 ? (
-              <EmptyState>No recent activity</EmptyState>
+              <EmptyState>{copy.noRecent}</EmptyState>
             ) : (
               <ul className="record-list">
                 {overview.recent_tasks.map((task) => (
@@ -93,9 +94,9 @@ export default function App({ overview }: AppProps) {
             )}
           </Panel>
 
-          <Panel id="approvals-title" title="Approvals">
+          <Panel id="approvals-title" title={copy.cards.approvals}>
             {overview.pending_approvals.length === 0 ? (
-              <EmptyState>No pending approvals</EmptyState>
+              <EmptyState>{copy.noApprovals}</EmptyState>
             ) : (
               <ul className="record-list">
                 {overview.pending_approvals.map((approval) => (
@@ -112,9 +113,9 @@ export default function App({ overview }: AppProps) {
             )}
           </Panel>
 
-          <Panel id="risks-title" title="Risks">
+          <Panel id="risks-title" title={copy.cards.risks}>
             {overview.risks.length === 0 ? (
-              <EmptyState>No open risks</EmptyState>
+              <EmptyState>{copy.noRisks}</EmptyState>
             ) : (
               <ul className="record-list">
                 {overview.risks.map((risk) => (
@@ -127,9 +128,9 @@ export default function App({ overview }: AppProps) {
             )}
           </Panel>
 
-          <Panel id="agents-title" title="Agent identities">
+          <Panel id="agents-title" title={copy.cards.agents}>
             {overview.agents.length === 0 ? (
-              <EmptyState>No agents connected</EmptyState>
+              <EmptyState>{copy.noAgents}</EmptyState>
             ) : (
               <ul className="agent-list">
                 {overview.agents.map((agent) => (

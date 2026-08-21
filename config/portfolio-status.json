@@ -2,38 +2,25 @@
   "schema_version": 1,
   "milestones": [
     {
-      "title": "Budgeted evolution shadow engine",
+      "title": "예산 잡고 스스로 개선하는 엔진",
       "state": "done"
     },
     {
-      "title": "Dual-host portfolio dashboard deployment",
+      "title": "맥북·JM 현황판",
       "state": "done"
     },
     {
-      "title": "Event-driven monitoring policy",
+      "title": "이벤트 관제 규칙",
+      "state": "done"
+    },
+    {
+      "title": "모델 사용 규칙",
       "state": "in_progress"
     },
     {
-      "title": "Provider runtime contract",
-      "state": "in_progress"
-    },
-    {
-      "title": "Wiki signed authority decision",
+      "title": "위키 권한 결정",
       "state": "in_progress"
     }
   ],
-  "blockers": [
-    {
-      "title": "Publish budgeted evolution commit",
-      "kind": "approval_required"
-    },
-    {
-      "title": "Merge monitoring policy PR 2",
-      "kind": "approval_required"
-    },
-    {
-      "title": "Fast-forward JM Orca-JARVIS main",
-      "kind": "approval_required"
-    }
-  ]
+  "blockers": []
 }
