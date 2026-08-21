@@ -76,7 +76,7 @@ describe("dashboard store resource recovery and refresh", () => {
     const beforeRefresh = current.client.calls.overview;
     await current.store.refreshOverview();
     expect(current.client.calls.overview).toBe(beforeRefresh + 1);
-    await vi.advanceTimersByTimeAsync(59_999);
+    await vi.advanceTimersByTimeAsync(60_000);
     expect(current.client.calls.overview).toBe(beforeRefresh + 1);
     await vi.advanceTimersByTimeAsync(1);
     await Promise.resolve();

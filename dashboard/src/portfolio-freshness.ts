@@ -11,10 +11,11 @@ export class PortfolioFreshnessTimer {
     this.clear();
     const transition = nextTransition(portfolio);
     if (transition === undefined) return;
+    const remaining = transition - Date.now();
     this.timer = setTimeout(() => {
       this.timer = undefined;
       refresh();
-    }, Math.max(0, transition - Date.now()));
+    }, remaining > 0 ? remaining : 1_000);
   }
 
   clear(): void {
@@ -31,9 +32,9 @@ function nextTransition(portfolio: PortfolioOverview): number | undefined {
     const updatedAt = Date.parse(host.updated_at);
     if (!Number.isFinite(updatedAt)) continue;
     const transition = host.freshness === "live"
-      ? updatedAt + PORTFOLIO_LIVE_MS
+      ? updatedAt + PORTFOLIO_LIVE_MS + 1
       : host.freshness === "stale"
-        ? updatedAt + PORTFOLIO_STALE_MS
+        ? updatedAt + PORTFOLIO_STALE_MS + 1
         : undefined;
     if (transition !== undefined && (earliest === undefined || transition < earliest)) {
       earliest = transition;
