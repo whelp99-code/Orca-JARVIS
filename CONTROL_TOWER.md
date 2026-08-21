@@ -28,6 +28,21 @@ ORCA_MASTER_CHARTER.md 와 CONTROL_TOWER.md 를 읽고 JARVIS Master 로 이어�
 추측으로 상태를 만들지 말고 실제 Orca 상태를 읽어라. 미해결 항목부터 보고해.
 ```
 
+## 2026-08-13 — 이벤트 기반 관제·중복 실행 방지 기준
+
+- 계기: JM-SERVER의 push·Mac 설치 오케스트레이터와 LOCAL Claude/Codex MCP 검증 하위 작업을
+  관제탑이 반복 조회해, 구현 중복은 없었지만 변화 없는 `Working` 확인에 추가 토큰이 사용됐다.
+- 정정: [ORCA_MASTER_CHARTER.md](ORCA_MASTER_CHARTER.md)에 `(환경, worktree, 사용자 목표)`별
+  Primary Executor 1개, monitor 이벤트 우선, 반복 terminal/worktree 조회 금지, 완료 시
+  final output 1회 + independent read-back 1회 기본 상한을 운영 규율로 추가했다.
+- 완료 판정은 `active_work=0` 단독 신호가 아니라 todo open 0 + final stop/task-completion event +
+  실제 산출물의 상관관계로 한다.
+- 비-LLM heartbeat·상태 monitor는 유지한다. 정상 상태를 확인하기 위한 반복 Agent 호출은 관제 활동으로
+  인정하지 않는다.
+- 기준 사건 실측: engineer-mcp JM 세션 `019ff69b-077f-7b1d-9c48-f1113c3b57cd`, todo 7/7,
+  HEAD `9fdf098`, ahead 0, LOCAL Claude `MCP_CLAUDE_OK` 6개, Codex `MCP_CODEX_OK 6`,
+  MCP smoke 108개 도구, 실장비 write 권한 비활성.
+
 ## 2026-08-12 — Control Plane hardening 병합 완료
 
 - **호스트 실측:** `MacBook-Pro.local`에서 LOCAL Orca runtime `ready`·reachable, 19 worktrees / 29 terminals. JM-SERVER runtime `ready`·reachable, 5 worktrees / 5 terminals.
