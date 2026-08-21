@@ -6,11 +6,11 @@ import { MemoryRouter } from "react-router-dom";
 import { OperationalShell } from "./operational-shell.js";
 
 const NAV_ITEMS = [
-  { label: "Overview", href: "/" },
-  { label: "Tasks", href: "/tasks" },
-  { label: "New proposal", href: "/proposals" },
-  { label: "Agents", href: "/agents" },
-  { label: "Approvals", href: "/approvals" },
+  { label: "한눈에", href: "/" },
+  { label: "작업", href: "/tasks" },
+  { label: "새 제안", href: "/proposals" },
+  { label: "에이전트", href: "/agents" },
+  { label: "승인", href: "/approvals" },
 ] as const;
 
 afterEach(cleanup);
@@ -28,14 +28,11 @@ function renderShell(connectionState: "live" | "offline", initialPath = "/tasks/
 
 describe("OperationalShell", () => {
   it("provides a visible skip link and focusable main target when content renders", () => {
-    // Given
     renderShell("live");
 
-    // When
-    const skipLink = screen.getByRole("link", { name: "Skip to main content" });
+    const skipLink = screen.getByRole("link", { name: "본문으로 건너뛰기" });
     const main = screen.getByRole("main");
 
-    // Then
     expect(skipLink).toBeVisible();
     expect(skipLink).toHaveAttribute("href", "#main-content");
     expect(main).toHaveAttribute("id", "main-content");
@@ -44,53 +41,42 @@ describe("OperationalShell", () => {
   });
 
   it("exposes exact primary routes and marks the matching route as current", () => {
-    // Given
     renderShell("live");
 
-    // When
-    const navigation = screen.getByRole("navigation", { name: "Primary navigation" });
+    const navigation = screen.getByRole("navigation", { name: "주요 메뉴" });
     const links = within(navigation).getAllByRole("link");
 
-    // Then
     expect(links.map((link) => ({
       label: link.textContent,
       href: link.getAttribute("href"),
     }))).toEqual(NAV_ITEMS);
-    expect(within(navigation).getByRole("link", { name: "Tasks" })).toHaveAttribute("aria-current", "page");
-    expect(within(navigation).getByRole("link", { name: "Overview" })).not.toHaveAttribute("aria-current");
+    expect(within(navigation).getByRole("link", { name: "작업" })).toHaveAttribute("aria-current", "page");
+    expect(within(navigation).getByRole("link", { name: "한눈에" })).not.toHaveAttribute("aria-current");
   });
 
   it("announces the connected live-update state", () => {
-    // Given
     renderShell("live");
 
-    // When
-    const status = screen.getByRole("status", { name: "Live updates" });
+    const status = screen.getByRole("status", { name: "실시간" });
 
-    // Then
     expect(status).toHaveAttribute("aria-live", "polite");
-    expect(status).toHaveTextContent("Connected");
+    expect(status).toHaveTextContent("연결됨");
   });
 
   it("renders an explicit disconnected service state", () => {
-    // Given
     renderShell("offline");
 
-    // When
-    const status = screen.getByRole("status", { name: "Live updates" });
+    const status = screen.getByRole("status", { name: "실시간" });
 
-    // Then
-    expect(status).toHaveTextContent("Disconnected");
+    expect(status).toHaveTextContent("끊김");
   });
 
   it("tabs from the skip link through primary navigation in route order", async () => {
-    // Given
     const user = userEvent.setup();
     renderShell("live");
 
-    // When / Then
     await user.tab();
-    expect(screen.getByRole("link", { name: "Skip to main content" })).toHaveFocus();
+    expect(screen.getByRole("link", { name: "본문으로 건너뛰기" })).toHaveFocus();
     for (const item of NAV_ITEMS) {
       await user.tab();
       expect(screen.getByRole("link", { name: item.label })).toHaveFocus();
