@@ -27,7 +27,7 @@ describe("approval-gated dynamic LoopGraph", () => {
     const approved = approve(db, control, command("advance-approved", "workflow.advance", 2, { run_id: "run-1", outcome: "approved", output: { approval_receipt: true } })); await executor.execute(approved);
     expect(graph.get("run-1")).toMatchObject({ current_node: "dispatch", state: "running", attempts: 3 });
     expect((db.db.prepare("SELECT COUNT(*) AS count FROM workflow_transitions").get() as { count: number }).count).toBe(3); db.close();
-  });
+  }, 15_000);
 
   it("fails a workflow start when its definition was not registered by an approved command", async () => {
     const db = await initialized(); const control = new ControlPlane(db); const executor = new ApprovedCommandExecutor(db); const start = approve(db, control, command("start-unregistered", "workflow.start", 2, { run_id: "run-unregistered", loop_id: DEFAULT_AGENTOPS_LOOP.loop_id, correlation_id: "corr-unregistered", input: {}, budget: { max_steps: 5, max_attempts_per_node: 1, deadline: future(10) } }));

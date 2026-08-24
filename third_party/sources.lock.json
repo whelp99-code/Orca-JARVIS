@@ -1,0 +1,17 @@
+{
+  "schema_version": 1,
+  "sources": {
+    "argo": {
+      "id": "argo",
+      "repository": "beyondworks/argo",
+      "commit": "cbc796a789c8398f04c26ef9153ba1401d2907af",
+      "release": "v0.1.41"
+    },
+    "cli-jaw": {
+      "id": "cli-jaw",
+      "repository": "whelp99-code/cli-jaw",
+      "commit": "f504a9b89c37d1f770b6de93c58c0b7a37914f74",
+      "release": "2.17.3"
+    }
+  }
+}

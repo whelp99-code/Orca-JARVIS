@@ -1,5 +1,5 @@
 import { createPrivateKey, generateKeyPairSync, type KeyObject } from "node:crypto";
-import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuthorityDb, signReceipt, signVerificationEvidence } from "../src/index.js";
@@ -7,11 +7,25 @@ import type { CensusSnapshot, DecisionReceipt, VerificationEvidence } from "../s
 
 export const future = (minutes = 10) => new Date(Date.now() + minutes * 60_000).toISOString();
 export function tempDb(): string { return join(mkdtempSync(join(tmpdir(), "jarvis-test-")), "authority.sqlite"); }
+let migratedTemplate = "";
+export async function migratedDbFile(): Promise<string> {
+  if (!migratedTemplate) {
+    const path = tempDb();
+    const db = new AuthorityDb(path);
+    await db.migrate();
+    db.db.pragma("wal_checkpoint(TRUNCATE)");
+    db.close();
+    migratedTemplate = path;
+  }
+  const dest = tempDb();
+  copyFileSync(migratedTemplate, dest);
+  return dest;
+}
 const externalKeys = new WeakMap<AuthorityDb, { decision: KeyObject; verifier: KeyObject }>();
 const externalByFilename = new Map<string, { decision: KeyObject; verifier: KeyObject }>();
 export function externalAnchors() { const decision = generateKeyPairSync("ed25519"); const verifier = generateKeyPairSync("ed25519"); const directory = mkdtempSync(join(tmpdir(), "jarvis-external-keys-")); const decisionPublic = join(directory, "decision.pub.pem"); const verifierPublic = join(directory, "verifier.pub.pem"); writeFileSync(decisionPublic, decision.publicKey.export({ type: "spki", format: "pem" })); writeFileSync(verifierPublic, verifier.publicKey.export({ type: "spki", format: "pem" })); return { decision: decision.privateKey, verifier: verifier.privateKey, decisionPublic, verifierPublic }; }
 export function bindExternal(db: AuthorityDb, anchors: { decision: KeyObject; verifier: KeyObject }): void { externalKeys.set(db, anchors); externalByFilename.set(db.filename, anchors); }
-export async function initialized(): Promise<AuthorityDb> { const db = new AuthorityDb(tempDb()); const anchors = externalAnchors(); await db.initialize({ decision: { keyId: "decision-test", principal: "test-operator", publicKeyPath: anchors.decisionPublic }, verifier: { keyId: "verifier-test", principal: "independent-verifier", publicKeyPath: anchors.verifierPublic } }); bindExternal(db, anchors); return db; }
+export async function initialized(): Promise<AuthorityDb> { const db = new AuthorityDb(await migratedDbFile()); const anchors = externalAnchors(); await db.initialize({ decision: { keyId: "decision-test", principal: "test-operator", publicKeyPath: anchors.decisionPublic }, verifier: { keyId: "verifier-test", principal: "independent-verifier", publicKeyPath: anchors.verifierPublic } }); bindExternal(db, anchors); return db; }
 export function localKey(db: AuthorityDb): KeyObject { const key = (externalKeys.get(db) ?? externalByFilename.get(db.filename))?.decision; if (!key) throw new Error("external decision key unavailable"); return key; }
 export function policyKey(db: AuthorityDb): KeyObject { return createPrivateKey(readFileSync(`${db.filename}.policy-key.pem`, "utf8")); }
 export function verifierKey(db: AuthorityDb): KeyObject { const key = (externalKeys.get(db) ?? externalByFilename.get(db.filename))?.verifier; if (!key) throw new Error("external verifier key unavailable"); return key; }

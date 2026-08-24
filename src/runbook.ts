@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { AuthorityDb, JarvisError } from "./db.js";
-import { runDoctor } from "./doctor.js";
+import { passiveCapabilityProbe, runDoctor } from "./doctor.js";
 import { LiveSupervisor } from "./live-supervisor.js";
 import { ControlPlane, type ActionLevel } from "./control-plane.js";
 
@@ -62,8 +62,8 @@ export class RunbookEngine {
   async execute(requestId: string, actionLevel: ActionLevel, runbookId: string, args: Record<string, unknown>, now = new Date(), effectContext?: ExternalEffectContext): Promise<RunbookResult> {
     this.ensureBuiltIns(now); const required = this.minimumLevel(runbookId); if (actionLevel < required) throw new JarvisError("RUNBOOK_ACTION_LEVEL_TOO_LOW");
     if (this.authority.db.prepare("SELECT 1 FROM runbook_executions WHERE request_id=?").get(requestId)) throw new JarvisError("RUNBOOK_REPLAY_BLOCKED");
-    if (runbookId === "runtime-diagnose") { const report = await runDoctor(this.authority, now); return this.record(requestId, { runbook_id: runbookId, state: "completed", result: { doctor_ok: report.ok, failed_checks: report.checks.filter(check => !check.ok) } }, now); }
-    if (runbookId === "native-abi-mismatch") { const report = await runDoctor(this.authority, now); const runtime = report.checks.filter(check => check.name.startsWith("runtime.")); return this.record(requestId, { runbook_id: runbookId, state: runtime.every(check => check.ok) ? "completed" : "escalated", result: { runtime, automatic_rebuild: false, required_action: runtime.every(check => check.ok) ? null : "Use the pinned Node 24 toolchain and obtain a new approval before rebuilding native modules." } }, now); }
+    if (runbookId === "runtime-diagnose") { const report = await runDoctor(this.authority, now, passiveCapabilityProbe()); return this.record(requestId, { runbook_id: runbookId, state: "completed", result: { doctor_ok: report.ok, failed_checks: report.checks.filter(check => !check.ok) } }, now); }
+    if (runbookId === "native-abi-mismatch") { const report = await runDoctor(this.authority, now, passiveCapabilityProbe()); const runtime = report.checks.filter(check => check.name.startsWith("runtime.")); return this.record(requestId, { runbook_id: runbookId, state: runtime.every(check => check.ok) ? "completed" : "escalated", result: { runtime, automatic_rebuild: false, required_action: runtime.every(check => check.ok) ? null : "Use the pinned Node 24 toolchain and obtain a new approval before rebuilding native modules." } }, now); }
     if (runbookId === "report-backlog") { const reportId = args.report_id; if (typeof reportId !== "string" || !reportId) throw new JarvisError("RUNBOOK_INPUT_INVALID"); const supervisor = new LiveSupervisor(this.authority); supervisor.acknowledgeReport(reportId); return this.record(requestId, { runbook_id: runbookId, state: "completed", result: { report_id: reportId, acknowledged: true } }, now); }
     if (runbookId === "wal-checkpoint") { const checkpoint = this.authority.db.pragma("wal_checkpoint(PASSIVE)"); return this.record(requestId, { runbook_id: runbookId, state: "completed", result: { mode: "PASSIVE", checkpoint } }, now); }
     if (runbookId === "daemon-dead") {

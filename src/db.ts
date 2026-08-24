@@ -1,11 +1,13 @@
 import Database from "better-sqlite3";
 import { createHash, createPublicKey, generateKeyPairSync, randomUUID, type KeyObject } from "node:crypto";
+import { existsSync } from "node:fs";
 import { chmod, readFile, readdir, writeFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { canonicalize } from "./canonical.js";
 import { isRfc3339Millis, parseProgressBatch, serializeProgressReport } from "./progress.js";
 import { signPolicy, verifyDecisionReceipt, verifyPolicyAuthorization, verifyVerificationEvidence } from "./receipt.js";
+import type { RuntimeLocation } from "./runtime-home.js";
 import type { CensusSnapshot, ContinuationInput, DecisionReceipt, OrcaObservationDelta, OrcaObservationSource, PolicyAuthorization, ProgressBatch, ProgressTransitionEvidence, StoredProgressReport, VerificationEvidence, WorkState } from "./types.js";
 
 type Row = Record<string, unknown>;
@@ -25,7 +27,7 @@ export class AuthorityDb {
   beforeAckHook: (() => void) | undefined;
   private progressFaultPoint: ProgressFaultPoint | undefined;
   private progressTestHook: ((point: ProgressFaultPoint) => void) | undefined;
-  constructor(readonly filename = process.env.JARVIS_DB ?? "jarvis-authority.sqlite", private readonly migrationsPath?: string) {
+  constructor(readonly filename = process.env.JARVIS_DB ?? "jarvis-authority.sqlite", private readonly migrationsPath?: string, readonly location?: RuntimeLocation) {
     this.db = new Database(filename);
     this.db.pragma("busy_timeout = 5000"); this.db.pragma("foreign_keys = ON"); this.db.pragma("synchronous = FULL"); if (String(this.db.pragma("journal_mode", { simple: true })).toLowerCase() !== "wal") this.db.pragma("journal_mode = WAL");
   }
@@ -43,7 +45,14 @@ export class AuthorityDb {
   private ledger(workId: string, event: string, payload: unknown): void { this.db.prepare("INSERT INTO event_ledger(work_id,event_type,payload_json,created_at) VALUES(?,?,?,?)").run(workId, event, json(payload), timestamp()); }
   private audit(fact: string, subject: string, payload: unknown): void { this.db.prepare("INSERT INTO audit_facts(fact_type,subject_id,payload_json,created_at) VALUES(?,?,?,?)").run(fact, subject, json(payload), timestamp()); }
   private project(workId: string, state: WorkState): void { this.db.prepare("INSERT INTO work_projection(work_id,state,updated_at) VALUES(?,?,?) ON CONFLICT(work_id) DO UPDATE SET state=excluded.state,updated_at=excluded.updated_at").run(workId, state, timestamp()); }
-  private migrationDir(): string { return this.migrationsPath ?? join(dirname(fileURLToPath(import.meta.url)), "../migrations"); }
+  private migrationDir(): string {
+    if (this.migrationsPath) return this.migrationsPath;
+    const nextToModule = join(dirname(fileURLToPath(import.meta.url)), "../migrations");
+    if (existsSync(nextToModule)) return nextToModule;
+    const fromCwd = join(process.cwd(), "migrations");
+    if (existsSync(fromCwd)) return fromCwd;
+    return nextToModule;
+  }
   private async migrationFiles(): Promise<string[]> { return (await readdir(this.migrationDir())).filter(file => file.endsWith(".sql")).sort(); }
   async migrate(): Promise<void> {
     this.db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (id TEXT PRIMARY KEY, checksum TEXT NOT NULL, applied_at TEXT NOT NULL)");

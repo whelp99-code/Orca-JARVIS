@@ -9,6 +9,8 @@ import { parseArgs } from "node:util";
 const fail = () => { process.stderr.write("E_SIGNAL_FAIL_CLOSED\n"); process.exitCode = 1; };
 try {
   const distIndex = join(process.cwd(), "dist/src/index.js");
+  const distMigrations = join(process.cwd(), "dist/migrations");
+  if (!existsSync(distMigrations)) execFileSync(process.execPath, ["scripts/copy-migrations.mjs"], { stdio: "ignore" });
   if (!existsSync(distIndex)) execFileSync("npm", ["run", "build"], { stdio: "ignore" });
   if (!existsSync(distIndex)) throw new Error("missing compiled acceptance module");
   const { AuthorityDb, runPreGjcFixture } = await import(pathToFileURL(distIndex).href);

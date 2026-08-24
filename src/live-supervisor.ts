@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { canonicalize } from "./canonical.js";
 import { AuthorityDb, JarvisError } from "./db.js";
+export { RemoteDispatch } from "./remote-dispatch.js";
 import { decodeEnvWorktree, ORCA_ENV_PATH_PREFIX } from "./orca-env.js";
 import { PreGjcShadow } from "./pre-gjc-shadow.js";
 import type { OrcaProvider, ProgressState } from "./types.js";

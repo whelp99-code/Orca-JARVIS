@@ -1,4 +1,6 @@
-import { realpathSync } from "node:fs";
+import { realpathSync, readFileSync } from "node:fs";
+import { homedir } from "node:os";
+import { join } from "node:path";
 import { JarvisError } from "./db.js";
 import type { OrcaRunner } from "./orca.js";
 
@@ -67,4 +69,29 @@ export function withOrcaEnvironment(args: readonly string[], environment: string
 export function createOrcaRunner(environment: string, base: OrcaRunner): OrcaRunner {
   if (!environment || environment === LOCAL_ORCA_ENVIRONMENT) return base;
   return async args => base(withOrcaEnvironment(args, environment));
+}
+
+export const JARVIS_LAUNCH_AGENT_LABEL = "com.jmpark.orca-jarvis";
+
+export function defaultJarvisLaunchAgentPath(home = homedir()): string {
+  return join(home, "Library", "LaunchAgents", `${JARVIS_LAUNCH_AGENT_LABEL}.plist`);
+}
+
+export function readLaunchAgentXml(path: string): string | undefined {
+  try {
+    return readFileSync(path, "utf8");
+  } catch {
+    return undefined;
+  }
+}
+
+export function authorityDbFromLaunchAgentXml(xml: string): string | undefined {
+  const block = /<key>\s*ProgramArguments\s*<\/key>\s*<array>([\s\S]*?)<\/array>/u.exec(xml);
+  const captured = block?.[1];
+  if (captured === undefined) return undefined;
+  const args = [...captured.matchAll(/<string>([\s\S]*?)<\/string>/gu)].map(match => match[1] ?? "");
+  const index = args.indexOf("--db");
+  const filename = args[index + 1];
+  if (index < 0 || filename === undefined || filename.length === 0) return undefined;
+  return filename;
 }

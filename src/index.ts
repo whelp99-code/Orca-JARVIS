@@ -1,6 +1,7 @@
 export { AuthorityDb, JarvisError } from "./db.js";
 export { OrcaReadonlyAdapter, classifyOrcaTerminal, defaultRunner, discoverOrcaBindings, observeOrca, parseOrcaBindings, type DiscoveredOrcaBinding, type DiscoverOrcaOptions, type OrcaObserveOptions, type OrcaRunner } from "./orca.js";
-export { createOrcaRunner, decodeEnvWorktree, encodeEnvWorktree, LOCAL_ORCA_ENVIRONMENT, ORCA_ENV_PATH_PREFIX, parseOrcaEnvironments, withOrcaEnvironment } from "./orca-env.js";
+export { createOrcaRunner, decodeEnvWorktree, encodeEnvWorktree, LOCAL_ORCA_ENVIRONMENT, ORCA_ENV_PATH_PREFIX, parseOrcaEnvironments, withOrcaEnvironment, JARVIS_LAUNCH_AGENT_LABEL, defaultJarvisLaunchAgentPath, readLaunchAgentXml, authorityDbFromLaunchAgentXml } from "./orca-env.js";
+export { resolveRuntimeLocation, RuntimeHomeError, AUTHORITY_DB_BASENAME, RUNTIME_HOME_DIRNAME, RUNTIME_SOURCES, type RuntimeLocation, type RuntimeHomeDiscovery, type RuntimeSource } from "./runtime-home.js";
 export { canonicalize } from "./canonical.js";
 export { parseProgressBatch, serializeProgressReport } from "./progress.js";
 export { classifyProgressEvidence, parseProgressSignal, progressSignalPayload, verifyProgressSignal } from "./progress-signal.js";
@@ -24,3 +25,17 @@ export { ApprovedCommandExecutor, type ApprovedExecutionResult } from "./approve
 export { DEFAULT_AGENTOPS_LOOP, type LoopNodeKind, type LoopNode, type LoopSpec, type WorkflowRunInput, type WorkflowAdvanceInput, type StoredWorkflowRun } from "./loopgraph.js";
 export { BUILTIN_RUNBOOKS, type RunbookSpec, type RunbookResult, type HostOperations } from "./runbook.js";
 export { type MicroLoopName, type MicroLoopHandler, type MicroLoopOutcome } from "./microloops.js";
+export { CONTROL_PROTOCOL_NAME, CONTROL_PROTOCOL_VERSION, CONTROL_METHODS, CONTROL_ERROR_CODES, FORBIDDEN_AUTHORITY_FIELDS, type ControlFrame, type CommandIntent, type ControlMethod, type ControlErrorCode } from "./control-protocol.js";
+export { decodeControlFrame, encodeControlFrame, mapUnknownErrorCode, protocolVersionStatus } from "./control-protocol-codec.js";
+export { JarvisControlServer, commandIntentFromWorktree, worktreeIntentFromCommand, localTestApprover } from "./control-server.js";
+export { LocalAuthenticator, defaultLocalSession, type CanonicalApprovalView, type LocalSession } from "./local-authenticator.js";
+export { RunnerTrustAuthority, RUNNER_RUNTIME_IDS, type RunnerTrustProfile, type TrustTier } from "./runner-trust.js";
+export { CredentialBroker } from "./credential-broker.js";
+export { TimelineStream, type TimelineEnvelope, type TimelineSnapshot } from "./timeline-stream.js";
+export { WorkerLifecycle, type WorkerState, type WorkerSignal } from "./worker-lifecycle.js";
+export { VerificationExecutor, type VerificationSpec } from "./verification-executor.js";
+export { EnvironmentRegistry, type EnvironmentRecord } from "./remote-environment.js";
+export { RemoteDispatch, logicalEffectKey } from "./remote-dispatch.js";
+export { KnowledgeVault } from "./knowledge/vault.js";
+export { KnowledgeRetrieval } from "./knowledge/retrieval.js";
+export { createLocalWorktree, worktreeEffectKey } from "./control-methods/worktree.js";

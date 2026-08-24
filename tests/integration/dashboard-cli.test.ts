@@ -10,7 +10,6 @@ import { parseDashboardCli } from "../../src/dashboard/main.js";
 
 const roots = new Set<string>();
 const MAIN = join(process.cwd(), "dist/src/dashboard/main.js");
-const STATIC = join(process.cwd(), "dist/dashboard");
 
 afterAll(() => {
   for (const root of roots) rmSync(root, { recursive: true, force: true });
@@ -61,7 +60,7 @@ describe("dashboard CLI", () => {
       "--host", "127.0.0.1",
       "--port", String(port),
       "--db", dbPath,
-      "--static-root", STATIC,
+      "--static-root", join(dirname(dbPath), "static"),
     ], { stdio: ["ignore", "pipe", "pipe"] });
     const origin = await new Promise<string>((resolve, reject) => {
       child.once("exit", code => reject(new Error(`cli exited ${String(code)}`)));

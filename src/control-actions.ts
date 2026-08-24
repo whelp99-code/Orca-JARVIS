@@ -141,6 +141,15 @@ function workflowCancel(input: RuntimeControlActionInput): void {
   bindTaskTarget(input.target, workflowTaskCandidates(input.args));
 }
 
+function worktreeCreate(input: RuntimeControlActionInput): void {
+  requireLocalTarget(input.target, ["environment", "repository", "parent_path"]);
+  requireOnlyArgs(input.args, ["branch", "name"]);
+  requireString(input.target, "repository", "CONTROL_TARGET_MISMATCH");
+  requireString(input.target, "parent_path", "CONTROL_TARGET_MISMATCH");
+  requireString(input.args, "branch", "CONTROL_ARGS_MISMATCH");
+  requireString(input.args, "name", "CONTROL_ARGS_MISMATCH");
+}
+
 function gitPush(input: RuntimeControlActionInput): void {
   validateOptionalLocalTarget(input.target, ["task_id", "repository", "branch"]);
   requireOnlyArgs(input.args, ["task_id", "branch"]);
@@ -177,6 +186,7 @@ const descriptors: Record<string, Descriptor> = {
   "workflow.advance": { action: "workflow.advance", minimum_level: 2, executable: true, validate: workflowAdvance },
   "workflow.cancel": { action: "workflow.cancel", minimum_level: 3, executable: true, validate: workflowCancel },
   "runbook.execute": { action: "runbook.execute", minimum_level: 1, executable: true, validate: runbookExecute },
+  "worktree.create": { action: "worktree.create", minimum_level: 2, executable: true, validate: worktreeCreate },
   "git.push": { action: "git.push", minimum_level: 4, executable: false, validate: gitPush },
   "collaboration.room.create": { action: "collaboration.room.create", minimum_level: 3, executable: false, validate: retiredCollaborationRoomCreate },
   "evidence.negative.record": { action: "evidence.negative.record", minimum_level: 2, executable: true, validate: evidenceNegativeRecord },

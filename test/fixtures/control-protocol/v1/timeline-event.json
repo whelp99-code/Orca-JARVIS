@@ -1,0 +1,12 @@
+{
+  "protocol": "jarvis-control",
+  "version": "1.0",
+  "id": "evt-1",
+  "traceId": "trace-1",
+  "generation": "gen-1",
+  "sentAt": "2026-08-23T12:00:01.000Z",
+  "type": "event",
+  "sequence": 1,
+  "method": "timeline.subscribe",
+  "payload": { "taskId": "task-1" }
+}

@@ -1,0 +1,10 @@
+(version 1)
+(deny default)
+(allow file-read* file-write* (subpath "/tmp"))
+(deny file-read* file-write*
+  (regex #"^.*jarvis\.sqlite$")
+  (regex #"^.*\.signing-key\.pem$")
+  (subpath "/Library/Keychains")
+  (subpath "/Users"))
+(deny process-exec (literal "/bin/launchctl") (literal "/usr/bin/launchctl"))
+(deny network-outbound)

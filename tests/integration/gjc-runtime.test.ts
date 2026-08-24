@@ -6,7 +6,7 @@ import { AuthorityDb, GjcRuntimeService, JarvisError } from "../../src/index.js"
 import { GjcCoordinatorClient } from "../../src/gjc.js";
 import { type OrcaRunner } from "../../src/orca.js";
 import { execute } from "../../src/cli.js";
-import { decisionReceiptFor, initialized, policyKey, snapshot, tempDb } from "../helpers.js";
+import { decisionReceiptFor, initialized, migratedDbFile, policyKey, snapshot, tempDb } from "../helpers.js";
 
 describe("GJC runtime", () => {
   it("rejects legacy flat read and answer response fixtures without settling success", async () => {
@@ -36,8 +36,19 @@ describe("GJC runtime", () => {
   });
   it("reconciles only structured terminal coordinator states and never creates a mock acknowledgement", async () => {
     const nonterminal = ["queued", "delivering", "active", "waiting_for_answer", "completing"]; const terminal = ["failed", "cancelled", "superseded"];
-    for (const status of [...nonterminal, ...terminal]) { const db = new AuthorityDb(tempDb()); await db.migrate(); db.configureGjc(process.cwd(), "s", true); const intent = db.createGjcIntent("dispatch", { cwd: process.cwd(), session_id: "s", prompt: status }, `state-${status}`); const reply = (value: unknown) => ({ stdout: `${JSON.stringify({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2024-11-05", serverInfo: { name: "gjc-coordinator-mcp", version: "0.11.8" } } })}\n${JSON.stringify({ jsonrpc: "2.0", id: 2, result: { content: [{ type: "text", text: JSON.stringify(value) }] } })}\n`, exitCode: 0 }); const client = new GjcCoordinatorClient(async () => reply({ ok: true, turn: { status, turn_id: "t", session_id: "s" } }), true); const service = new GjcRuntimeService(db, client, `worker-${status}`, undefined, () => new Date("2026-08-10T00:00:00.000Z")); const outcome = await service.once("2026-08-10T00:00:00.000Z"); expect(outcome.processed).toBe(intent); expect(outcome.state).toBe(terminal.includes(status) ? "failed" : "uncertain"); expect((db.db.prepare("SELECT COUNT(*) AS n FROM outbox").get() as { n: number }).n).toBe(0); }
-  });
+    for (const status of [...nonterminal, ...terminal]) {
+      const db = new AuthorityDb(await migratedDbFile()); db.configureGjc(process.cwd(), "s", true);
+      const intent = db.createGjcIntent("dispatch", { cwd: process.cwd(), session_id: "s", prompt: status }, `state-${status}`);
+      const reply = (value: unknown) => ({ stdout: `${JSON.stringify({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2024-11-05", serverInfo: { name: "gjc-coordinator-mcp", version: "0.11.8" } } })}\n${JSON.stringify({ jsonrpc: "2.0", id: 2, result: { content: [{ type: "text", text: JSON.stringify(value) }] } })}\n`, exitCode: 0 });
+      const client = new GjcCoordinatorClient(async () => reply({ ok: true, turn: { status, turn_id: "t", session_id: "s" } }), true);
+      const service = new GjcRuntimeService(db, client, `worker-${status}`, undefined, () => new Date("2026-08-10T00:00:00.000Z"));
+      const outcome = await service.once("2026-08-10T00:00:00.000Z");
+      expect(outcome.processed).toBe(intent);
+      expect(outcome.state).toBe(terminal.includes(status) ? "failed" : "uncertain");
+      expect((db.db.prepare("SELECT COUNT(*) AS n FROM outbox").get() as { n: number }).n).toBe(0);
+      db.close();
+    }
+  }, 15_000);
   it("exposes CLI service status and once lifecycle without a live Orca binding", async () => { const root = mkdtempSync(`${tmpdir()}/gjc-service-`); const db = join(root, "db.sqlite"); await execute(["db", "migrate", "--db", db]); await expect(execute(["service", "status", "--db", db])).resolves.toMatchObject({ command: "service.status", connected: false }); });
   it("service run consumes one recovered live supervisor report and resumes observation", async () => {
     const root = mkdtempSync(`${tmpdir()}/gjc-live-service-`); const worktree = join(root, "worktree"); mkdirSync(worktree); const db = join(root, "authority.sqlite"); const binding = join(root, "binding.json"); writeFileSync(binding, JSON.stringify({ worktree, provider: "codex", terminal_id: "terminal", session_id: "session", incarnation_id: "incarnation", pty_id: "pty", worktree_id: "worktree", project_id: "project" }));

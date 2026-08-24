@@ -1,0 +1,26 @@
+{
+  "protocol": "jarvis-control",
+  "version": "1.0",
+  "id": "res-capabilities-1",
+  "traceId": "trace-1",
+  "generation": "gen-1",
+  "sentAt": "2026-08-23T12:00:00.100Z",
+  "type": "response",
+  "replyTo": "req-capabilities-1",
+  "ok": true,
+  "payload": {
+    "methods": [
+      "capabilities.get",
+      "command.request",
+      "command.status",
+      "approval.intent",
+      "timeline.list",
+      "timeline.subscribe",
+      "worker.signal",
+      "verification.run",
+      "knowledge.query",
+      "routine.manage",
+      "evolution.propose"
+    ]
+  }
+}

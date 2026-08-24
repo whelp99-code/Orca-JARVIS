@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { buildCapabilityMatrix, type CapabilityFact, type CapabilityMatrixV1, type CapabilityProbe } from "./capabilities.js";
 import type { AuthorityDb } from "./db.js";
+import type { RuntimeLocation } from "./runtime-home.js";
 import { GJC_PROTOCOL_VERSION } from "./gjc.js";
 
 export interface DoctorCheck {
@@ -18,7 +19,7 @@ export interface DoctorReport {
   ok: boolean;
   checked_at: string;
   runtime: { node: string; abi: string; platform: string; arch: string };
-  database: { filename: string; sqlite_version: string | null; wal_bytes: number; applied_migrations: number; expected_migrations: number };
+  database: { filename: string; runtime_home?: string; source?: RuntimeLocation["source"]; sqlite_version: string | null; wal_bytes: number; applied_migrations: number; expected_migrations: number };
   checks: DoctorCheck[];
   capabilities: CapabilityMatrixV1;
 }
@@ -158,7 +159,7 @@ export async function runDoctor(db: AuthorityDb, now = new Date(), probe?: Capab
     ok: checks.every(check => check.ok),
     checked_at: now.toISOString(),
     runtime: { node: process.version, abi: process.versions.modules, platform: process.platform, arch: process.arch },
-    database: { filename: db.filename, sqlite_version: sqliteVersion, wal_bytes: await safeSize(`${db.filename}-wal`), applied_migrations: applied, expected_migrations: expected },
+    database: { filename: db.filename, runtime_home: db.location?.runtimeHome, source: db.location?.source, sqlite_version: sqliteVersion, wal_bytes: await safeSize(`${db.filename}-wal`), applied_migrations: applied, expected_migrations: expected },
     checks,
     capabilities: hasTable(db, "gjc_runtime_config") && hasTable(db, "gjc_runtime_config_audit") && hasTable(db, "live_supervisor_live_resume_config") && hasTable(db, "live_supervisor_live_resume_config_audit") && hasTable(db, "live_supervisor_bindings")
       ? await buildCapabilityMatrix(db, probe ?? runtimeCapabilityProbe(), now)

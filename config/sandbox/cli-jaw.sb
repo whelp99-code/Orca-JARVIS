@@ -1,0 +1,9 @@
+(version 1)
+(deny default)
+(deny file-read* file-write*
+  (regex #"^.*jarvis\.sqlite$")
+  (regex #"^.*\.signing-key\.pem$")
+  (regex #"^.*\.policy-key\.pem$")
+  (subpath "/Library/Keychains"))
+(deny process-exec (literal "/bin/launchctl") (literal "/usr/bin/launchctl"))
+(deny network-outbound)

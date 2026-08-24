@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { copyFileSync, existsSync, rmSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 import { dirname, join } from "node:path";
@@ -17,12 +18,19 @@ const count = (db: AuthorityDb, table: string) => Number((db.db.prepare(`SELECT 
 const deliver = (db: AuthorityDb, report: { report_id: string }, at = "2026-08-09T06:01:00.000Z") => db.markProgressDelivered(report.report_id, at);
 const expectCode = (fn: () => unknown, code: string) => expect(fn).toThrow(expect.objectContaining({ code }));
 const exit = (child: ChildProcessWithoutNullStreams, timeout = 8_000) => new Promise<number | null>((resolve, reject) => { const timer = setTimeout(() => { child.kill("SIGKILL"); reject(new Error("child timeout")); }, timeout); child.once("exit", code => { clearTimeout(timer); resolve(code); }); });
-const line = (child: ChildProcessWithoutNullStreams, expected: string, timeout = 2_000) => new Promise<string>((resolve, reject) => { let output = ""; let errorOutput = ""; child.stderr.on("data", data => { errorOutput += data.toString("utf8"); }); const timer = setTimeout(() => reject(new Error(`missing ${expected}: ${errorOutput}`)), timeout); child.stdout.on("data", data => { output += data.toString("utf8"); if (output.includes(expected)) { clearTimeout(timer); resolve(output); } }); });
-const fixture = (file: string, filename: string, input: ProgressBatch) => spawn(process.execPath, [join(process.cwd(), "tests/fixtures", file), filename, JSON.stringify(input)], { env: { ...process.env, PROGRESS_MODULE_URL: pathToFileURL(join(process.cwd(), "dist/src/index.js")).href }, stdio: ["pipe", "pipe", "pipe"] });
+const line = (child: ChildProcessWithoutNullStreams, expected: string, timeout = 8_000) => new Promise<string>((resolve, reject) => { let output = ""; let errorOutput = ""; child.stderr.on("data", data => { errorOutput += data.toString("utf8"); }); const timer = setTimeout(() => reject(new Error(`missing ${expected}: ${errorOutput}`)), timeout); child.stdout.on("data", data => { output += data.toString("utf8"); if (output.includes(expected)) { clearTimeout(timer); resolve(output); } }); });
+const fixture = (file: string, filename: string, input: ProgressBatch) => spawn(process.execPath, [join(process.cwd(), "tests/fixtures", file), filename, JSON.stringify(input)], { env: { ...process.env, TMPDIR: process.env.TMPDIR ?? "/Volumes/DevSpace/tmp", PROGRESS_MODULE_URL: pathToFileURL(join(process.cwd(), "dist/src/index.js")).href }, stdio: ["pipe", "pipe", "pipe"] });
 const terminate = (child: ChildProcessWithoutNullStreams | undefined) => { if (child?.exitCode === null) child.kill("SIGKILL"); };
 
 describe("progress report persistence", () => {
   beforeAll(async () => {
+    const distIndex = join(process.cwd(), "dist/src/index.js");
+    const distMigrations = join(process.cwd(), "dist/migrations");
+    if (!existsSync(distMigrations)) {
+      const copied = spawnSync(process.execPath, ["scripts/copy-migrations.mjs"], { cwd: process.cwd(), encoding: "utf8" });
+      if (copied.status !== 0) throw new Error(copied.stderr || copied.stdout || "copy-migrations failed");
+    }
+    assert.ok(existsSync(distIndex), `expected build artifact at ${distIndex}; npm pretest must run npm run build`);
     migratedTemplate = tempDb();
     const template = new AuthorityDb(migratedTemplate);
     await template.migrate();

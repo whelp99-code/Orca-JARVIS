@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "artifact_sha256": "0000000000000000000000000000000000000000000000000000000000000000",
+  "issuer": "unverified",
+  "signer": "unverified",
+  "authority_basis": "no_artifact",
+  "delegation_chain": [],
+  "grantee": "JARVIS",
+  "covered": {
+    "repository": "beyondworks/argo",
+    "commit": "cbc796a789c8398f04c26ef9153ba1401d2907af",
+    "path_patterns": ["src/memory.mjs"]
+  },
+  "allowed_actions": [],
+  "attribution": "BeyondWorks",
+  "expires_at": "1970-01-01T00:00:00.000Z",
+  "verifier": "none",
+  "verified_at": "1970-01-01T00:00:00.000Z"
+}

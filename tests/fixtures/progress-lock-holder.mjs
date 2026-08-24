@@ -6,7 +6,7 @@ if (!entry) throw new Error("PROGRESS_MODULE_URL is required");
 const { AuthorityDb } = await import(entry);
 const [filename, encoded] = process.argv.slice(2);
 const db = new AuthorityDb(filename);
-await db.migrate();
+await db.assertMigrationsReady();
 db.progressTestHook = point => {
   if (point !== "after_outbox_insert_before_commit") return;
   process.stdout.write("READY\n");

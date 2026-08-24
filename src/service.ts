@@ -1,4 +1,5 @@
 import { AuthorityDb, JarvisError } from "./db.js";
+export { WorkerLifecycle } from "./worker-lifecycle.js";
 import { GjcCoordinatorClient } from "./gjc.js";
 import { canonicalize } from "./canonical.js";
 
@@ -9,7 +10,7 @@ type Intent = { intent_id: string; kind: "sync" | "dispatch" | "answer"; payload
 /** Small in-process supervisor. It is deliberately not a launchd/launchctl integration. */
 export class GjcRuntimeService {
   constructor(private readonly db: AuthorityDb, private readonly client: GjcCoordinatorClient, private readonly worker = "gjc-runtime", private readonly supervisorCycle?: () => Promise<unknown>, private readonly clock: () => Date = () => new Date()) {}
-  status(): Record<string, unknown> { const config = this.db.gjcConfig(); const rows = this.db.db.prepare("SELECT state,COUNT(*) AS count FROM gjc_intents GROUP BY state ORDER BY state").all() as Array<{ state: string; count: number }>; const runtime = this.db.db.prepare("SELECT pid,last_heartbeat_at,last_error_code FROM gjc_runtime_status WHERE id=1").get() ?? null; return { connected: Boolean(config?.operational), config, runtime, intents: Object.fromEntries(rows.map(row => [row.state, Number(row.count)])) }; }
+  status(): Record<string, unknown> { const config = this.db.gjcConfig(); const rows = this.db.db.prepare("SELECT state,COUNT(*) AS count FROM gjc_intents GROUP BY state ORDER BY state").all() as Array<{ state: string; count: number }>; const runtime = this.db.db.prepare("SELECT pid,last_heartbeat_at,last_error_code FROM gjc_runtime_status WHERE id=1").get() ?? null; return { connected: Boolean(config?.operational), config, runtime, intents: Object.fromEntries(rows.map(row => [row.state, Number(row.count)])), runtime_home: this.db.location?.runtimeHome, authority_db: this.db.location?.authorityDb, runtime_source: this.db.location?.source }; }
   async once(now = new Date().toISOString()): Promise<{ processed: string | null; state: string | null }> {
     const config = this.db.gjcConfig(); if (!config?.operational) throw new JarvisError("GJC_NOT_CONNECTED");
     const runtimeFence = this.db.claimGjcRuntimeLease(this.worker, now); if (runtimeFence === null) return { processed: null, state: "leased" }; this.db.recordGjcRuntimeStatus(null, now);
