@@ -7,10 +7,8 @@ import {
   parseRecommendationV1,
 } from "./personal-validation.js";
 import {
-  isActionState,
   isApprovalRequirement,
   isConfidenceClass,
-  type RecommendationActionTransition,
   type RecommendationPersistenceInput,
   type StoredRecommendation,
 } from "./personal-recommendation-types.js";
@@ -48,9 +46,6 @@ export class PersonalRecommendationStore {
     }
     const recommendation = this.parse(value.recommendation);
     requireAdvisory(recommendation.authority, this.error, "PERSONAL_RECOMMENDATION_INVALID");
-    if (Date.parse(recommendation.expires_at) <= Date.parse(now)) {
-      throw this.error("PERSONAL_RECOMMENDATION_EXPIRED");
-    }
     const canonicalDigest = canonicalPersonalContractHash(recommendation);
     const evidenceDigest = persistenceHash(recommendation.evidence);
     const persistenceDigest = persistenceHash({
@@ -79,8 +74,20 @@ export class PersonalRecommendationStore {
     readonly persistenceDigest: Sha256Digest;
     readonly recommendation: RecommendationV1;
   }): StoredRecommendation {
+    const priorIdentity = this.database.prepare(
+      "SELECT idempotency_key,canonical_digest,evidence_digest,persistence_digest FROM personal_recommendations WHERE recommendation_id=?",
+    ).get(input.recommendation.id);
+    if (priorIdentity !== undefined) return this.replay(input, persistenceRow(priorIdentity));
+    const priorKey = this.database.prepare(
+      "SELECT recommendation_id FROM personal_recommendations WHERE idempotency_key=?",
+    ).get(input.recommendation.idempotency_key);
+    if (priorKey !== undefined) throw this.error("PERSONAL_RECOMMENDATION_IDEMPOTENCY_CONFLICT");
+    if (Date.parse(input.recommendation.expires_at) <= Date.parse(input.now)) {
+      throw this.error("PERSONAL_RECOMMENDATION_EXPIRED");
+    }
     const contextValue = this.database.prepare(
-      "SELECT canonical_digest,expires_at FROM personal_context_snapshots WHERE context_id=?",
+      `SELECT canonical_digest,expires_at,payload_state,freshness_state,fresh_until,evidence_count
+       FROM personal_context_snapshots WHERE context_id=?`,
     ).get(input.recommendation.payload.context_id);
     if (contextValue === undefined) throw this.error("PERSONAL_RECOMMENDATION_INVALID");
     const context = persistenceRow(contextValue);
@@ -93,15 +100,7 @@ export class PersonalRecommendationStore {
     if (Date.parse(input.recommendation.expires_at) > Date.parse(persistenceText(context["expires_at"]))) {
       throw this.error("PERSONAL_RECOMMENDATION_CONTEXT_EXPIRY_CONFLICT");
     }
-    this.requireEvidence(input.recommendation);
-    const priorIdentity = this.database.prepare(
-      "SELECT idempotency_key,canonical_digest,evidence_digest,persistence_digest FROM personal_recommendations WHERE recommendation_id=?",
-    ).get(input.recommendation.id);
-    if (priorIdentity !== undefined) return this.replay(input, persistenceRow(priorIdentity));
-    const priorKey = this.database.prepare(
-      "SELECT recommendation_id FROM personal_recommendations WHERE idempotency_key=?",
-    ).get(input.recommendation.idempotency_key);
-    if (priorKey !== undefined) throw this.error("PERSONAL_RECOMMENDATION_IDEMPOTENCY_CONFLICT");
+    this.requireEvidence(input.recommendation, context, input.now);
     this.insertRecommendation(input);
     return {
       recommendation_id: input.recommendation.id,
@@ -110,19 +109,36 @@ export class PersonalRecommendationStore {
     };
   }
 
-  private requireEvidence(recommendation: RecommendationV1): void {
+  private requireEvidence(
+    recommendation: RecommendationV1,
+    context: PersistenceRow,
+    now: string,
+  ): void {
     const linked = this.database.prepare(
-      "SELECT evidence_id,source_id,evidence_digest FROM personal_context_evidence WHERE context_id=?",
+      `SELECT evidence_id,source_id,evidence_digest,freshness_state,fresh_until
+       FROM personal_context_evidence WHERE context_id=?`,
     ).all(recommendation.payload.context_id).map(persistenceRow);
-    const changed = recommendation.evidence.some(item => !linked.some(row => (
-      row["evidence_id"] === item.evidence_id
-      && row["source_id"] === item.source_id
-      && row["evidence_digest"] === item.digest
-    )));
+    const exactSet = recommendation.evidence.length === linked.length
+      && recommendation.evidence.every(item => linked.some(row => (
+        row["evidence_id"] === item.evidence_id
+        && row["source_id"] === item.source_id
+        && row["evidence_digest"] === item.digest
+      )));
     const foreignCitation = recommendation.payload.citations.some(citation => (
       !recommendation.evidence.some(item => item.evidence_id === citation)
     ));
-    if (changed || foreignCitation) throw this.error("PERSONAL_RECOMMENDATION_EVIDENCE_CONFLICT");
+    if (!exactSet || foreignCitation) throw this.error("PERSONAL_RECOMMENDATION_EVIDENCE_CONFLICT");
+    const current = ["eligible", "presented", "selected"].includes(recommendation.payload.state);
+    if (!current) return;
+    if (recommendation.evidence.length === 0 || recommendation.freshness.state !== "fresh"
+      || Date.parse(recommendation.freshness.fresh_until) <= Date.parse(now)
+      || context["payload_state"] !== "sufficient"
+      || context["freshness_state"] !== "fresh"
+      || Date.parse(persistenceText(context["fresh_until"])) <= Date.parse(now)
+      || linked.some(row => row["freshness_state"] !== "fresh"
+        || Date.parse(persistenceText(row["fresh_until"])) <= Date.parse(now))) {
+      throw this.error("PERSONAL_RECOMMENDATION_STALE");
+    }
   }
 
   private replay(
@@ -200,60 +216,6 @@ export class PersonalRecommendationStore {
       correlation: recommendation.correlation_id,
       causation: recommendation.causation_id,
       occurredAt: input.now,
-    });
-  }
-
-  transition(input: RecommendationActionTransition): void {
-    if (!isPersistenceTime(input.occurred_at)) throw this.error("PERSONAL_TIME_INVALID");
-    if (!Number.isInteger(input.rank) || input.rank < 1 || !isActionState(input.state)) {
-      throw this.error("PERSONAL_ACTION_STATE_CONFLICT");
-    }
-    this.database.transaction(() => this.insertTransition(input))();
-  }
-
-  private insertTransition(input: RecommendationActionTransition): void {
-    const value = this.database.prepare(
-      `SELECT r.evidence_digest,r.expires_at AS recommendation_expires_at,
-              c.expires_at AS context_expires_at,
-              (SELECT state FROM personal_recommendation_action_events e
-               WHERE e.recommendation_id=a.recommendation_id AND e.rank=a.rank
-               ORDER BY event_sequence DESC LIMIT 1) AS state,
-              (SELECT occurred_at FROM personal_recommendation_action_events e
-               WHERE e.recommendation_id=a.recommendation_id AND e.rank=a.rank
-               ORDER BY event_sequence DESC LIMIT 1) AS occurred_at
-       FROM personal_recommendation_actions a
-       JOIN personal_recommendations r ON r.recommendation_id=a.recommendation_id
-       JOIN personal_context_snapshots c ON c.context_id=r.context_id
-       WHERE a.recommendation_id=? AND a.rank=?`,
-    ).get(input.recommendation_id, input.rank);
-    if (value === undefined) throw this.error("PERSONAL_ACTION_STATE_CONFLICT");
-    const action = persistenceRow(value);
-    if (action["evidence_digest"] !== input.evidence_digest) {
-      throw this.error("PERSONAL_RECOMMENDATION_EVIDENCE_CONFLICT");
-    }
-    if (action["state"] !== "pending" || input.occurred_at < persistenceText(action["occurred_at"])) {
-      throw this.error("PERSONAL_ACTION_STATE_CONFLICT");
-    }
-    const deadline = [
-      persistenceText(action["recommendation_expires_at"]),
-      persistenceText(action["context_expires_at"]),
-    ].sort()[0];
-    if (deadline === undefined) throw new TypeError("recommendation deadline required");
-    if (input.state === "expired") {
-      if (input.occurred_at < deadline) throw this.error("PERSONAL_ACTION_STATE_CONFLICT");
-    } else if (input.occurred_at >= deadline) {
-      throw this.error("PERSONAL_RECOMMENDATION_EXPIRED");
-    }
-    this.database.prepare(
-      "INSERT INTO personal_recommendation_action_events(recommendation_id,rank,state,evidence_digest,occurred_at) VALUES(?,?,?,?,?)",
-    ).run(input.recommendation_id, input.rank, input.state, input.evidence_digest, input.occurred_at);
-    recordPersonalAudit(this.database, {
-      event: "action_state_recorded",
-      subject: `${input.recommendation_id}:${input.rank}:${input.state}`,
-      digest: input.evidence_digest,
-      correlation: input.recommendation_id,
-      causation: null,
-      occurredAt: input.occurred_at,
     });
   }
 

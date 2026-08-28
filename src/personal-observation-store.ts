@@ -42,10 +42,6 @@ export class PersonalObservationStore {
     if (!isPersistenceTime(now)) throw this.error("PERSONAL_TIME_INVALID");
     const observation = this.parse(value);
     requireAdvisory(observation.authority, this.error, "PERSONAL_OBSERVATION_INVALID");
-    if (Date.parse(observation.observed_at) > Date.parse(now) || Date.parse(observation.created_at) > Date.parse(now)) {
-      throw this.error("PERSONAL_OBSERVATION_FUTURE");
-    }
-    if (Date.parse(observation.expires_at) <= Date.parse(now)) throw this.error("PERSONAL_OBSERVATION_EXPIRED");
     const canonicalDigest = canonicalPersonalContractHash(observation);
     const envelope = canonicalPersonalContractJson(observation);
     return this.database.transaction(() => this.insert(observation, canonicalDigest, envelope, now))();
@@ -65,12 +61,16 @@ export class PersonalObservationStore {
       "SELECT observation_id FROM personal_observations WHERE idempotency_key=?",
     ).get(observation.idempotency_key);
     if (priorKey !== undefined) throw this.error("PERSONAL_OBSERVATION_IDEMPOTENCY_CONFLICT");
+    if (Date.parse(observation.observed_at) > Date.parse(now) || Date.parse(observation.created_at) > Date.parse(now)) {
+      throw this.error("PERSONAL_OBSERVATION_FUTURE");
+    }
+    if (Date.parse(observation.expires_at) <= Date.parse(now)) throw this.error("PERSONAL_OBSERVATION_EXPIRED");
     const checkpointSequence = this.nextCheckpoint(observation);
     this.database.prepare(
       `INSERT INTO personal_observations(
          observation_id,idempotency_key,source_id,checkpoint,canonical_digest,content_digest,
-         canonical_envelope_json,observed_at,valid_at,expires_at,created_at
-       ) VALUES(?,?,?,?,?,?,?,?,?,?,?)`,
+         canonical_envelope_json,freshness_state,fresh_until,observed_at,valid_at,expires_at,created_at
+       ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).run(
       observation.id,
       observation.idempotency_key,
@@ -79,6 +79,8 @@ export class PersonalObservationStore {
       canonicalDigest,
       observation.payload.content_digest,
       envelope,
+      observation.freshness.state,
+      observation.freshness.fresh_until,
       observation.observed_at,
       observation.valid_at,
       observation.expires_at,

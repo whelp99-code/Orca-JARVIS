@@ -4,7 +4,7 @@ export { createOrcaRunner, decodeEnvWorktree, encodeEnvWorktree, LOCAL_ORCA_ENVI
 export { canonicalize } from "./canonical.js";
 export * from "./personal-contracts.js";
 export { PersonalContractError, canonicalPersonalContractHash, canonicalPersonalContractJson, parseContextSnapshotV1, parseDailyLoopRunV1, parseMemoryCandidateV1, parseMemoryOutboxV1, parseNotificationIntentV1, parseObservationEnvelopeV1, parseRecommendationV1, parseRemoteApprovalReceiptV1, parseRemoteChallengeV1, parseRemotePrincipalV1 } from "./personal-validation.js";
-export type { ReconstructedRecommendation, RecommendationActionTransition, RecommendationPersistenceInput, StoredContext, StoredObservation, StoredRecommendation } from "./personal-context-persistence.js";
+export type { ContextMemoryEvidenceBinding, ContextPersistenceInput, ReconstructedRecommendation, RecommendationActionTransition, RecommendationPersistenceInput, StoredContext, StoredObservation, StoredRecommendation } from "./personal-context-persistence.js";
 export { parseProgressBatch, serializeProgressReport } from "./progress.js";
 export { classifyProgressEvidence, parseProgressSignal, progressSignalPayload, verifyProgressSignal } from "./progress-signal.js";
 export { ingestCodexAppServerEvent, ingestClaudeHookEvent } from "./adapters.js";

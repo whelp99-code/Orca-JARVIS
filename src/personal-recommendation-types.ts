@@ -3,7 +3,7 @@ import type { PersistenceRow } from "./personal-persistence-values.js";
 
 export const APPROVAL_REQUIREMENTS = ["none", "owner"] as const;
 export const CONFIDENCE_CLASSES = ["low", "medium", "high"] as const;
-export const ACTION_STATES = ["accepted", "rejected", "expired", "superseded"] as const;
+export const ACTION_STATES = ["accepted", "rejected", "expired", "superseded", "dismissed", "snoozed"] as const;
 
 type ApprovalRequirement = (typeof APPROVAL_REQUIREMENTS)[number];
 type ConfidenceClass = (typeof CONFIDENCE_CLASSES)[number];

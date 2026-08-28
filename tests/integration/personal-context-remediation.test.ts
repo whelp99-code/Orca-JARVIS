@@ -78,12 +78,17 @@ describe("personal context remediation contracts", () => {
     const pureLines = dbSource.split("\n").filter(line => line.trim() !== "" && !line.trim().startsWith("//")).length;
     expect(pureLines).toBeLessThanOrEqual(250);
     const modules = [
+      "src/db.ts",
       "src/migration-store.ts",
       "src/orca-observation-store.ts",
+      "src/personal-context-evidence.ts",
+      "src/personal-context-input.ts",
       "src/personal-context-persistence.ts",
       "src/personal-context-store.ts",
+      "src/personal-context-types.ts",
       "src/personal-observation-store.ts",
       "src/personal-persistence-values.ts",
+      "src/personal-recommendation-action-store.ts",
       "src/personal-recommendation-reader.ts",
       "src/personal-recommendation-store.ts",
       "src/personal-recommendation-types.ts",

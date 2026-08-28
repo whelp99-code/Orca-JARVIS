@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
-import { PersonalContextStore, type StoredContext } from "./personal-context-store.js";
+import { PersonalContextStore, type ContextMemoryEvidenceBinding, type ContextPersistenceInput, type StoredContext } from "./personal-context-store.js";
 import { PersonalObservationStore, type StoredObservation } from "./personal-observation-store.js";
+import { PersonalRecommendationActionStore } from "./personal-recommendation-action-store.js";
 import { PersonalRecommendationReader } from "./personal-recommendation-reader.js";
 import { PersonalRecommendationStore } from "./personal-recommendation-store.js";
 import type {
@@ -16,6 +17,8 @@ export type {
   ReconstructedRecommendation,
   RecommendationActionTransition,
   RecommendationPersistenceInput,
+  ContextMemoryEvidenceBinding,
+  ContextPersistenceInput,
   StoredContext,
   StoredObservation,
   StoredRecommendation,
@@ -25,12 +28,14 @@ export class PersonalContextPersistence {
   private readonly contexts: PersonalContextStore;
   private readonly observations: PersonalObservationStore;
   private readonly recommendations: PersonalRecommendationStore;
+  private readonly recommendationActions: PersonalRecommendationActionStore;
   private readonly recommendationReader: PersonalRecommendationReader;
 
   constructor(database: Database.Database, error: PersistenceErrorFactory) {
     this.contexts = new PersonalContextStore(database, error);
     this.observations = new PersonalObservationStore(database, error);
     this.recommendations = new PersonalRecommendationStore(database, error);
+    this.recommendationActions = new PersonalRecommendationActionStore(database, error);
     this.recommendationReader = new PersonalRecommendationReader(database);
   }
 
@@ -38,7 +43,7 @@ export class PersonalContextPersistence {
     return this.observations.persist(value, now);
   }
 
-  persistContext(value: unknown, now: string): StoredContext {
+  persistContext(value: ContextPersistenceInput, now: string): StoredContext {
     return this.contexts.persist(value, now);
   }
 
@@ -47,7 +52,7 @@ export class PersonalContextPersistence {
   }
 
   transitionAction(input: RecommendationActionTransition): void {
-    this.recommendations.transition(input);
+    this.recommendationActions.transition(input);
   }
 
   getRecommendation(id: RecommendationId): ReconstructedRecommendation | undefined {
