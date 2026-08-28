@@ -145,6 +145,7 @@ type Harness = {
   readonly refreshTasks: ReturnType<typeof vi.fn>;
   readonly refreshAgents: ReturnType<typeof vi.fn>;
   readonly refreshApprovals: ReturnType<typeof vi.fn>;
+  readonly hydrated: Promise<Snapshot>;
 };
 
 function createHarness(initialPath: string, failures: ResourceFailure = {}): Harness {
@@ -163,6 +164,8 @@ function createHarness(initialPath: string, failures: ResourceFailure = {}): Har
   const refreshTasks = vi.fn(async () => undefined);
   const refreshAgents = vi.fn(async () => undefined);
   const refreshApprovals = vi.fn(async () => undefined);
+  const hydrated = onceState(inner, (snapshot) => [snapshot.overview, snapshot.tasks, snapshot.agents, snapshot.approvals]
+    .every((resource) => resource.status === "success" || resource.status === "empty" || resource.status === "error"));
   const store = {
     getSnapshot: inner.getSnapshot, subscribe: inner.subscribe, refreshOverview: inner.refreshOverview,
     refreshTasks, refreshAgents, refreshApprovals,
@@ -170,7 +173,7 @@ function createHarness(initialPath: string, failures: ResourceFailure = {}): Har
     stop() { lifecycle.stopped += 1; inner.stop(); },
   };
   const view = render(<ControlCenterRoot store={store} client={client} initialPath={initialPath} />);
-  return { store, counts, taskIds, logCalls, pending, opened, lifecycle, view, refreshTasks, refreshAgents, refreshApprovals };
+  return { store, counts, taskIds, logCalls, pending, opened, lifecycle, view, refreshTasks, refreshAgents, refreshApprovals, hydrated };
 }
 
 let harness: Harness | undefined;
@@ -182,10 +185,7 @@ async function liveRoot(
 ): Promise<Harness & { readonly source: FakeEventSource }> {
   const current = createHarness(initialPath, failures);
   harness = current;
-  const hydrated = onceState(current.store, (snapshot) => snapshot.overview.status !== "idle"
-    && snapshot.tasks.status !== "idle" && snapshot.agents.status !== "idle"
-    && snapshot.approvals.status !== "idle");
-  await act(async () => { await hydrated; });
+  await act(async () => { await current.hydrated; });
   const source = await current.opened;
   const live = onceState(current.store, (snapshot) => snapshot.connectionState === "live");
   await act(async () => {
