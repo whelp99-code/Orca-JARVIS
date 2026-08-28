@@ -10,15 +10,15 @@ const TABLES = [
   "daily_loop_runs", "daily_loop_steps", "daily_loop_checkpoints",
   "notification_intents", "notification_deliveries",
   "memory_candidates", "memory_outbox", "memory_outbox_attempts", "memory_reconciliation_events",
-  "memory_deletion_requests", "memory_tombstones", "remote_principals", "webauthn_credentials",
+  "memory_deletion_requests", "memory_tombstones", "personal_authority_redemptions", "remote_principals", "webauthn_credentials",
   "webauthn_challenges", "webauthn_assertions", "retention_jobs", "personal_operation_audit_events",
 ] as const;
 
 const AUTH_COLUMNS = {
-  remote_principals: ["principal_id", "state", "subject_digest", "enrollment_request_id", "enrollment_receipt_id", "enrollment_receipt_digest", "enrollment_expires_at", "activated_at", "revoked_at", "created_at"],
+  remote_principals: ["principal_id", "state", "subject_digest", "credential_public_key_digest", "target_digest", "args_digest", "local_owner_session_id", "enrollment_request_id", "enrollment_receipt_id", "enrollment_receipt_digest", "enrollment_expires_at", "activated_at", "revoked_at", "created_at"],
   webauthn_credentials: ["credential_id", "principal_id", "public_key_cose", "public_key_digest", "sign_count", "state", "rp_id", "origin", "created_at", "revoked_at"],
-  webauthn_challenges: ["challenge_id", "principal_id", "credential_id", "session_id", "command_digest", "target_digest", "args_digest", "challenge_digest", "nonce_digest", "rp_id", "origin", "state", "issued_at", "expires_at", "consumed_at"],
-  webauthn_assertions: ["assertion_id", "challenge_id", "principal_id", "credential_id", "session_id", "command_digest", "assertion_digest", "sign_count", "user_verified", "asserted_at"],
+  webauthn_challenges: ["challenge_id", "command_request_id", "principal_id", "credential_id", "session_id", "command_digest", "target_digest", "args_digest", "challenge_digest", "nonce_digest", "rp_id", "origin", "state", "issued_at", "expires_at", "consumed_at"],
+  webauthn_assertions: ["assertion_id", "challenge_id", "principal_id", "credential_id", "session_id", "command_digest", "target_digest", "args_digest", "nonce_digest", "rp_id", "origin", "assertion_digest", "sign_count", "user_verified", "asserted_at"],
 } as const;
 
 describe("personal operations migration", () => {
