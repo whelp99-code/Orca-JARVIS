@@ -2,3 +2,7 @@ import { cp, mkdir, rm } from "node:fs/promises";
 await rm("dist/migrations", { recursive: true, force: true });
 await mkdir("dist/migrations", { recursive: true });
 await cp("migrations", "dist/migrations", { recursive: true });
+await rm("dist/contracts", { recursive: true, force: true });
+await mkdir("dist/contracts", { recursive: true });
+await cp("contracts/second-brain-mcp-v1.json", "dist/contracts/second-brain-mcp-v1.json");
+await cp("contracts/second-brain-mcp-v1.json.sha256", "dist/contracts/second-brain-mcp-v1.json.sha256");

@@ -1,5 +1,7 @@
 import { execFile } from "node:child_process";
-import { rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import {
   SECOND_BRAIN_CONFIG,
@@ -71,6 +73,12 @@ describe("Second Brain launcher and handshake", () => {
       expect(launches).toBe(2);
       expect(transport.diagnostics().filter(item => item.code === "SECOND_BRAIN_STARTED")).toHaveLength(1);
     }
+  });
+
+  it("loads only the digest-verified shipped contract independent of cwd", async () => {
+    const cwd = process.cwd(); process.chdir(tmpdir()); try { const transport = createSecondBrainTransport(); transports.push(transport); await expect(transport.call("sb_search", { query: "x" })).rejects.toMatchObject({ code: "SECOND_BRAIN_DISCOVERY_FAILED" }); } finally { process.chdir(cwd); }
+    const root = mkdtempSync(join(tmpdir(), "second-brain-contract-tamper-")); const contract = join(root, "contract.json"); copyFileSync("contracts/second-brain-mcp-v1.json", contract); copyFileSync("contracts/second-brain-mcp-v1.json.sha256", `${contract}.sha256`); const bytes = readFileSync(contract); bytes[0] = bytes[0] === 123 ? 91 : 123; writeFileSync(contract, bytes);
+    expect(() => createSecondBrainTransport({ contractPath: contract })).toThrowError("SECOND_BRAIN_CONTRACT_MISMATCH"); copyFileSync("contracts/second-brain-mcp-v1.json", contract); rmSync(`${contract}.sha256`); expect(() => createSecondBrainTransport({ contractPath: contract })).toThrowError("SECOND_BRAIN_CONTRACT_MISMATCH"); rmSync(root, { recursive: true, force: true });
   });
 
   it("buffers partial frames and keeps injection-shaped arguments inert", async () => {

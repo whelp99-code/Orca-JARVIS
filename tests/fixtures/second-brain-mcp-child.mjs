@@ -32,7 +32,7 @@ process.stdin.on("data", chunk => {
       else send(JSON.parse(frame));
     } else if (message.method === "tools/list") {
       if (config.mode === "hang-tools") continue;
-      const listed = config.mode === "malformed-tool" ? [null, ...tools.slice(1)] : config.badTools ? tools.slice(1) : tools;
+      const availableTools = config.tools ?? tools; const listed = config.mode === "malformed-tool" ? [null, ...availableTools.slice(1)] : config.badTools ? availableTools.slice(1) : availableTools;
       send({ jsonrpc: "2.0", id: message.id, result: { tools: listed } });
     } else if (message.method === "tools/call") {
       calls += 1; const { name, arguments: args } = message.params;

@@ -45,7 +45,7 @@ describe("Second Brain correlation and budgets", () => {
     expect(timers.delays).toEqual(expect.arrayContaining([5_000, 10_000, 30_000])); expect(timers.count).toBe(0);
   });
 
-  it("rejects an outbound frame over one MiB before writing stdin", async () => {
+  it("rejects oversized serialized arguments before writing stdin", async () => {
     // Given: a ready executable fixture with an empty call receipt.
     const value = fixture(); const transport = createSecondBrainTransport(options(value)); transports.push(transport);
     await expect(transport.call("sb_search", { query: "ready" })).resolves.toMatchObject({ kind: "data" });
@@ -53,8 +53,13 @@ describe("Second Brain correlation and budgets", () => {
     // When: a serialized request exceeds the frame budget.
     const oversized = transport.call("sb_search", { query: "x".repeat(1_048_576) });
     // Then: the typed rejection occurs without a child receipt.
-    await expect(oversized).rejects.toMatchObject({ code: "SECOND_BRAIN_OVERSIZE_FRAME", disposition: "fatal" });
+    await expect(oversized).rejects.toMatchObject({ code: "SECOND_BRAIN_ARGUMENTS_OVERSIZE", disposition: "fatal" });
     expect(readFileSync(value.receipt, "utf8")).toBe(before);
+  });
+
+  it("accepts the exact argument cap and rejects cap plus one before child stdin", async () => {
+    const value = fixture(); const transport = createSecondBrainTransport(options(value)); transports.push(transport); await expect(transport.call("sb_search", { query: "x".repeat(999_988) })).resolves.toMatchObject({ kind: "data" }); const before = readFileSync(value.receipt, "utf8");
+    await expect(transport.call("sb_search", { query: "x".repeat(999_989) })).rejects.toMatchObject({ code: "SECOND_BRAIN_ARGUMENTS_OVERSIZE", disposition: "fatal" }); expect(readFileSync(value.receipt, "utf8")).toBe(before);
   });
 
   it("accepts two sub-limit response frames coalesced in one stdout chunk", async () => {
@@ -85,6 +90,12 @@ describe("Second Brain correlation and budgets", () => {
     await expect(transport.call("sb_search", { query: "later" })).resolves.toMatchObject({ kind: "data" });
     expect(transport.diagnostics().filter(item => item.code === "SECOND_BRAIN_STARTED")).toHaveLength(1);
   });
+
+  it("recycles before the generation-wide correlation budget can exceed 256", async () => {
+    const value = fixture(); const timers = new ManualTimers(); let dispatched: (() => void) | undefined; const transport = createSecondBrainTransport(options(value, { timers, onDiagnostic: item => { if (item.code === "SECOND_BRAIN_REQUESTED" && item.method === "sb_search") dispatched?.(); } })); transports.push(transport); await expect(transport.call("sb_search", { query: "ready" })).resolves.toMatchObject({ kind: "data" });
+    for (let index = 0; index < 257; index += 1) { const signal = new Promise<void>(resolve => { dispatched = resolve; }); const call = transport.call("sb_search", { query: String(index), hang: true }); await signal; timers.fire(10_000); await expect(call).rejects.toMatchObject({ code: "SECOND_BRAIN_READ_TIMEOUT" }); }
+    await expect(transport.call("sb_search", { query: "healthy" })).resolves.toMatchObject({ kind: "data" }); expect(Math.max(...transport.diagnostics().map(item => item.correlation_count ?? 0))).toBeLessThanOrEqual(256);
+  }, 20_000);
 
   it("bounds newline-free stderr retention while reporting redacted byte metadata", async () => {
     // Given: a diagnostic subscription installed before a large newline-free stderr write.
