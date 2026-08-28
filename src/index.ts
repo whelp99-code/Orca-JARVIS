@@ -2,6 +2,8 @@ export { AuthorityDb, JarvisError } from "./db.js";
 export { OrcaReadonlyAdapter, classifyOrcaTerminal, defaultRunner, discoverOrcaBindings, observeOrca, parseOrcaBindings, type DiscoveredOrcaBinding, type DiscoverOrcaOptions, type OrcaObserveOptions, type OrcaRunner } from "./orca.js";
 export { createOrcaRunner, decodeEnvWorktree, encodeEnvWorktree, LOCAL_ORCA_ENVIRONMENT, ORCA_ENV_PATH_PREFIX, parseOrcaEnvironments, withOrcaEnvironment } from "./orca-env.js";
 export { canonicalize } from "./canonical.js";
+export * from "./personal-contracts.js";
+export { PersonalContractError, canonicalPersonalContractHash, canonicalPersonalContractJson, parseContextSnapshotV1, parseDailyLoopRunV1, parseMemoryCandidateV1, parseMemoryOutboxV1, parseNotificationIntentV1, parseObservationEnvelopeV1, parseRecommendationV1, parseRemoteApprovalReceiptV1, parseRemoteChallengeV1, parseRemotePrincipalV1 } from "./personal-validation.js";
 export { parseProgressBatch, serializeProgressReport } from "./progress.js";
 export { classifyProgressEvidence, parseProgressSignal, progressSignalPayload, verifyProgressSignal } from "./progress-signal.js";
 export { ingestCodexAppServerEvent, ingestClaudeHookEvent } from "./adapters.js";
