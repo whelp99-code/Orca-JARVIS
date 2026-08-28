@@ -39,7 +39,7 @@ Parsers reject unknown versions, fields, enums, authority kinds, prefixes, sourc
 | Notification / `NotificationIntentV1` | `ntf:pos:v1:<uuid>` | redacted preview, urgency, quiet-hours decision, channel, deep link, dedup, delivery state / delivery receipt only | `parseNotificationIntentV1` |
 | Workflow run / `WorkflowRunV1` | `wfr:pos:v1:<uuid>` | recommendation/context/request, loop/state/node, lease/fence, verification requirements / exact control receipt before effect | `parseWorkflowRunV1` |
 | Workflow checkpoint / `WorkflowCheckpointV1` | `wfc:pos:v1:<run-uuid>:<sequence>` | run/node, positive monotonic sequence, state/previous digest, lease/fence/expiry / null | `parseWorkflowCheckpointV1` |
-| Remote principal / `RemotePrincipalV1` | `rpr:pos:v1:<uuid>` | subject, client kinds, public credential metadata, `active|revoked`; no private key/biometric / administrative receipt | `parseRemotePrincipalV1` |
+| Remote principal / `RemotePrincipalV1` | `rpr:pos:v1:<uuid>` | subject, client kinds, public credential metadata, `absent|active|revoked`; no private key/biometric / exact local owner enrollment or revocation receipt | `parseRemotePrincipalV1` |
 | Remote challenge / `RemoteChallengeV1` | `rch:pos:v1:<uuid>` | principal/session, command/target/args digests, nonce, origin/RP, `issued|consumed|expired|rejected` / null | `parseRemoteChallengeV1` |
 | Remote approval / `RemoteApprovalReceiptV1` | `rap:pos:v1:<uuid>` | challenge/principal/session/credential, assertion/command digest, decision, single use / translated into existing `CommandApprovalReceipt`, never parallel authority | `parseRemoteApprovalReceiptV1` |
 | Deletion / `DeletionRequestV1` | `del:pos:v1:<uuid>` | exact selectors/digests, scope/reason/stores, verification plan / exact approval | `parseDeletionRequestV1` |
@@ -106,7 +106,7 @@ States: `proposed`, `classified`, `awaiting_confirmation`, `approved`, `queued`,
 | absent -> `proposed` | verified outcome/user-request producer, advisory | subject+content/target digest+cause | evidence/candidate validity explicit | observation/model cannot skip classification |
 | `proposed` -> `classified` | deterministic memory policy | candidate+policy version | verification evidence current, valid-time explicit | unsupported/sensitive/poisoned -> rejected |
 | `classified` -> `awaiting_confirmation|approved` | deterministic policy; only low-risk rule may approve | candidate+confirmation-policy version | candidate/evidence current | required confirmation cannot be skipped |
-| `awaiting_confirmation` -> `approved` | exact human confirmation/approval | candidate+content digest+receipt | receipt/evidence/candidate current and principal exact | mismatch/expiry/wrong principal -> rejected/pending |
+| `awaiting_confirmation` -> `approved|awaiting_confirmation|rejected` | exact human confirmation/approval | candidate+content digest+receipt or confirmation attempt digest | receipt/evidence/candidate current and principal exact; `confirmation_expires_at` is the bounded confirmation deadline | transient/unavailable confirmation remains `awaiting_confirmation` only before `confirmation_expires_at`; at that deadline -> `rejected`; mismatched, denied, or wrong-principal receipt -> `rejected` |
 | `approved` -> `queued` | Linux outbox coordinator | candidate+operation+payload digest | approval current | uniqueness conflict -> replay conflict; no duplicate send |
 | `queued` -> `delivering` | supervised Linux MCP writer with fence | outbox+attempt fence | provider compatible; lease current | pre-send failure -> safe retry with same semantic key |
 | `delivering` -> `accepted_unsettled` | typed provider response; not settlement | outbox+invocation digest | inside write timeout | crash/interruption -> uncertain; no blind replay |
@@ -129,11 +129,12 @@ States: `created`, `deferred`, `ready`, `delivering`, `delivered`, `suppressed`,
 
 ### Remote approval
 
-Principal states `active|revoked`; challenge `issued|consumed|expired|rejected`; approval `verified|translated|rejected`.
+Principal states `absent|active|revoked`; challenge `issued|consumed|expired|rejected`; approval `verified|translated|rejected`.
 
 | Transition | Authority | Idempotency key | Freshness / expiry | Failure disposition |
 | --- | --- | --- | --- | --- |
-| absent -> challenge `issued` | Linux gateway after active authenticated principal/session + pending command | principal+session+command digest+nonce | short expiry no later than command | wrong/revoked principal or stale command -> rejected |
+| principal `absent` -> `active` | local Linux `ControlPlane` owner enrollment only, with exact key/principal binding receipt; remote self-enrollment has no authority | principal ID+credential public-key digest+owner enrollment receipt digest | local owner session, enrollment request, and receipt are current; bounded `enrollment_expires_at` is no later than request or receipt expiry | key/principal mismatch, denial, expiry, replay, unavailable local enrollment, or any remote self-enrollment -> remains `absent`; no challenge may issue |
+| challenge `absent` -> `issued` | Linux gateway only after an `active` authenticated principal/session and pending command | principal+session+command digest+nonce | short expiry no later than command | absent/revoked/wrong principal or stale command -> `rejected` |
 | `issued` -> `consumed` + approval `verified` | Linux WebAuthn verifier | challenge+assertion digest | verify RP/origin, principal, credential, session, nonce, exact command/target/args, counter, expiry, unused | mismatch/wrong principal/expiry/replay/version -> rejected/expired, no receipt |
 | `verified` -> `translated` | Linux adapter to existing `CommandApprovalReceipt` and `ControlPlane.decide` | challenge+command digest+decision | one consumed challenge; command/result receipt current | control rejection -> rejected; no parallel authority |
 | `issued` -> `expired` | deterministic clock | challenge+expiry policy | deadline reached | assertion permanently refused |
