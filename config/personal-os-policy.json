@@ -1,0 +1,73 @@
+{
+  "schema_version": 1,
+  "policy_id": "personal-os-policy-v1",
+  "owner_principal": "principal:owner",
+  "authority_host": "linux-control-plane",
+  "effective_at": "2026-08-28T00:00:00.000Z",
+  "expires_at": "2027-08-28T00:00:00.000Z",
+  "purposes": [
+    "personal_memory",
+    "live_awareness",
+    "owner_notification",
+    "data_portability",
+    "data_erasure",
+    "vault_migration",
+    "disaster_recovery"
+  ],
+  "sensitivity_tiers": ["public", "personal", "sensitive", "restricted"],
+  "actions": ["memory", "observation", "notification", "export", "delete", "transfer", "restore"],
+  "retention": { "max_days": 3650 },
+  "quiet_hours": {
+    "start": "22:00",
+    "end": "23:59",
+    "timezone": "UTC",
+    "critical_alert_classes": ["authority_expiry", "security_incident"]
+  },
+  "prohibited_fields": ["secret", "raw_body", "raw_screen", "audio", "video"],
+  "notification_allowed_fields": ["title", "summary", "alert_class", "deep_link"],
+  "client_hosts": ["mac-client", "phone-client"],
+  "gates": {
+    "mac_vault_transfer": "SECOND_BRAIN_MAC_VAULT_TRANSFER_APPROVAL",
+    "linux_restore": "SECOND_BRAIN_PRODUCTION_RESTORE_APPROVAL",
+    "export": "PERSONAL_DATA_EXPORT_APPROVAL",
+    "deletion": "PERSONAL_DATA_DELETE_APPROVAL",
+    "sensitive_memory": "PERSONAL_MEMORY_CONFIRMATION"
+  },
+  "data_classes": {
+    "memory": {
+      "purpose": "personal_memory", "retention_days": 3650, "confirmation": "sensitive",
+      "export": "exact_confirmation", "deletion": "exact_confirmation", "host_owner": "linux-second-brain",
+      "no_data": "abstain", "transfer": "exact_gate", "restore": "exact_gate", "client_projection": "redacted"
+    },
+    "observation": {
+      "purpose": "live_awareness", "retention_days": 30, "confirmation": "none",
+      "export": "allowed", "deletion": "exact_confirmation", "host_owner": "linux-control-plane",
+      "no_data": "abstain", "transfer": "prohibited", "restore": "prohibited", "client_projection": "redacted"
+    },
+    "notification": {
+      "purpose": "owner_notification", "retention_days": 7, "confirmation": "none",
+      "export": "allowed", "deletion": "allowed", "host_owner": "linux-control-plane",
+      "no_data": "abstain", "transfer": "prohibited", "restore": "prohibited", "client_projection": "redacted"
+    },
+    "export": {
+      "purpose": "data_portability", "retention_days": 1, "confirmation": "exact",
+      "export": "exact_confirmation", "deletion": "allowed", "host_owner": "linux-control-plane",
+      "no_data": "abstain", "transfer": "prohibited", "restore": "prohibited", "client_projection": "metadata_only"
+    },
+    "delete": {
+      "purpose": "data_erasure", "retention_days": 30, "confirmation": "exact",
+      "export": "prohibited", "deletion": "exact_confirmation", "host_owner": "linux-control-plane",
+      "no_data": "abstain", "transfer": "prohibited", "restore": "prohibited", "client_projection": "metadata_only"
+    },
+    "transfer": {
+      "purpose": "vault_migration", "retention_days": 1, "confirmation": "exact",
+      "export": "prohibited", "deletion": "allowed", "host_owner": "linux-second-brain",
+      "no_data": "abstain", "transfer": "exact_gate", "restore": "prohibited", "client_projection": "prohibited"
+    },
+    "restore": {
+      "purpose": "disaster_recovery", "retention_days": 30, "confirmation": "exact",
+      "export": "prohibited", "deletion": "allowed", "host_owner": "linux-second-brain",
+      "no_data": "abstain", "transfer": "prohibited", "restore": "exact_gate", "client_projection": "prohibited"
+    }
+  }
+}
