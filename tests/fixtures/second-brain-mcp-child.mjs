@@ -13,8 +13,10 @@ const toolResult = (id, value) => ({ jsonrpc: "2.0", id, result: { content: [{ t
 const citedPage = (id, sid, source, fact, overrides = {}) => ({ frontmatter: { id, title: id, updated: "2026-08-28", compiled_by: "sb/0.1.0|prompt-v1|model-v1", status: "active", sources: "", ...overrides }, body: `${fact}[^${sid}]\n\n[^${sid}]: ${source}\n` });
 const conflictPage = (id, sides) => ({ frontmatter: { id: `conflicts/${id}`, title: "conflict", updated: "2026-08-28", compiled_by: "sb/0.1.0|prompt-v1|model-v1", status: "conflict", sources: "" }, body: `${sides.map(sid => `1234567890[^${sid}]`).join("\n")}\n${sides.map(sid => `[^${sid}]: fixture:${sid}`).join("\n")}\n` });
 const adapterResponse = (name, args) => {
+  if (config.emptyResponse?.method === name) return config.emptyResponse.value;
   const scenario = config.adapterScenario;
   if (scenario === "no-data" && name === "sb_search") return { results: [] };
+  if (scenario === "empty-extra" && name === "sb_search") return { results: [], ignored: "한".repeat(200_000) };
   if (name === "sb_search" && scenario === "huge-section") return { results: [{ page_id: "wiki/principle", score: 1, section: "한".repeat(200_000), snippet: "small" }] };
   if (name === "sb_search") return { results: scenario === "happy" ? [{ page_id: "wiki/project", score: 9, section: "Fact", snippet: "project" }, { page_id: "wiki/principle", score: 1, section: "Rule", snippet: "principle" }] : [{ page_id: "wiki/principle", score: 1, section: "Rule", snippet: "principle" }] };
   if (name === "sb_open_conflicts" && scenario === "cross-conflict") return { conflicts: [{ conflict_id: "first", page_id: "wiki/first", summary: "one" }, { conflict_id: "second", page_id: "wiki/second", summary: "two" }] };
@@ -24,7 +26,7 @@ const adapterResponse = (name, args) => {
   if (args.id === "wiki/project") return citedPage("wiki/project", "bbbbbbbb", "fixture:project", "Project fact.");
   if (scenario === "cross-conflict" && args.id === "conflicts/first") return conflictPage("first", ["aaaaaaaa", "bbbbbbbb"]);
   if (scenario === "cross-conflict" && args.id === "conflicts/second") return conflictPage("second", ["cccccccc", "dddddddd"]);
-  if (scenario?.startsWith("conflict-") && args.id?.startsWith("conflicts/")) return conflictPage(scenario.replace("conflict-", ""), ["aaaaaaaa", "bbbbbbbb", "cccccccc"].slice(0, Number(scenario.replace("conflict-", ""))));
+  if (scenario?.startsWith("conflict-") && args.id?.startsWith("conflicts/")) return conflictPage(scenario.replace("conflict-", ""), ["aaaaaaaa", "bbbbbbbb", "cccccccc", "dddddddd"].slice(0, Number(scenario.replace("conflict-", ""))));
   if (args.id?.startsWith("conflicts/")) return conflictPage(args.id.slice("conflicts/".length), ["aaaaaaaa", "bbbbbbbb"]);
   if (scenario === "missing-sid") return { ...citedPage("wiki/principle", "a1b2c3d4", "fixture:principle", "Fact."), body: "Fact without citation.\n" };
   if (scenario === "exact-cjk") return citedPage("wiki/principle", "a1b2c3d4", "fixture:principle", "한한한한");
@@ -65,7 +67,8 @@ process.stdin.on("data", chunk => {
       if (config.receipt) { appendFileSync(config.receipt, `${JSON.stringify({ event: "call", name, calls, id: message.id })}\n`); process.stderr.write("state\n"); }
       const priorCalls = config.receipt ? readFileSync(config.receipt, "utf8").split(`"name":${JSON.stringify(name)}`).length - 1 : calls;
       if (args?.crash || (args?.crashOnce && priorCalls === 1)) process.exit(23); if (args?.hang) continue;
-      const adapterValue = config.adapterScenario ? adapterResponse(name, args) : undefined;
+      if (config.adapterScenario === "deep-wire" && name === "sb_search") { let nested = '{"leaf":"value"}'; for (let depth = 0; depth < 20_000; depth += 1) nested = `{"next":${nested}}`; const text = `{"results":[{"page_id":"wiki/principle","section":"small","snippet":"small","score":1}],"ignored":${nested}}`; send({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text }], isError: false } }); continue; }
+      const adapterValue = config.adapterScenario || config.emptyResponse ? adapterResponse(name, args) : undefined;
       const values = adapterValue === undefined ? { sb_search: args?.empty ? { results: [] } : { results: [{ page_id: "wiki/example", score: 1, section: "Intro", snippet: args.query }] }, sb_read_page: { frontmatter: { id: args.id }, body: "example body" }, sb_recent_changes: args?.empty ? { changes: [] } : { changes: [{ page_id: "wiki/example", change: "added", date: "2026-08-28" }] }, sb_open_conflicts: args?.empty ? { conflicts: [] } : { conflicts: [{ conflict_id: "c", page_id: "wiki/example", summary: "example" }] }, sb_remember: { inbox_path: "inbox/example.md" } } : { [name]: adapterValue };
       if (args?.stderrBytes) process.stderr.write("s".repeat(args.stderrBytes));
       if (args?.hold) held.set(message.id, values[name]);

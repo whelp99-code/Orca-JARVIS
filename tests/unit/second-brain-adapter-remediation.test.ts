@@ -71,14 +71,27 @@ describe("Second Brain complete read boundaries", () => {
   });
 
   it("rejects an ignored 600000-byte search section before reading a page", async () => {
-    const result = await adapter([{ kind: "data", value: { results: [{
-      page_id: "wiki/principle",
-      section: "한".repeat(200_000),
-      snippet: "small",
-      score: 1,
-    }] } }, page()]).search("fact");
+    const transport = new QueuedTransport([
+      { kind: "data", value: { results: [{
+        page_id: "wiki/principle",
+        section: "한".repeat(200_000),
+        snippet: "small",
+        score: 1,
+      }] } },
+      new SecondBrainTransportError("SECOND_BRAIN_DISCOVERY_FAILED", "unavailable", { generation: 1 }),
+    ]);
+    const reader = createSecondBrainReadAdapter({
+      transport,
+      budgets,
+      clock: () => NOW,
+      max_age_ms: 86_400_000,
+      expiry_ms: 172_800_000,
+    });
+
+    const result = await reader.search("fact");
 
     expectAtomicInvalid(result, "SECOND_BRAIN_AGGREGATE_OVERSIZE");
+    expect(transport.calls.map(call => call.method)).toEqual(["sb_search"]);
   });
 
   it("rejects a third cited conflict side instead of truncating the frozen pair", async () => {
@@ -86,6 +99,15 @@ describe("Second Brain complete read boundaries", () => {
       { kind: "data", value: { conflicts: [{ conflict_id: "three", page_id: "wiki/three", summary: "open" }] } },
       conflictPage("three", ["aaaaaaaa", "bbbbbbbb", "cccccccc"]),
     ], { ...budgets, max_total_bytes: 2_048 }).openConflicts();
+
+    expectAtomicInvalid(result, "SECOND_BRAIN_CONFLICT_SHAPE_INVALID");
+  });
+
+  it("rejects a fourth cited conflict side without partial projection", async () => {
+    const result = await adapter([
+      { kind: "data", value: { conflicts: [{ conflict_id: "four", page_id: "wiki/four", summary: "open" }] } },
+      conflictPage("four", ["aaaaaaaa", "bbbbbbbb", "cccccccc", "dddddddd"]),
+    ], { ...budgets, max_total_bytes: 4_096 }).openConflicts();
 
     expectAtomicInvalid(result, "SECOND_BRAIN_CONFLICT_SHAPE_INVALID");
   });
@@ -155,7 +177,7 @@ describe("Second Brain complete read boundaries", () => {
       snippet: "",
       score: 1,
     }] } } as const);
-    const selected = { ...budgets, max_excerpt_bytes: 14, max_total_bytes: 14 };
+    const selected = { ...budgets, max_excerpt_bytes: 48, max_total_bytes: 48 };
 
     const exact = await adapter([search("한".repeat(4)), offline()], selected).search("x");
     const over = await adapter([search(`${"한".repeat(4)}a`), offline()], selected).search("x");

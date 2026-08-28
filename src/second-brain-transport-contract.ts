@@ -1,0 +1,189 @@
+import type { ChildProcess } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { fileURLToPath } from "node:url";
+import { consumeSecondBrainContract } from "./second-brain-contract.js";
+import { inspectFrozenSchemas } from "./second-brain-frozen.js";
+
+export const SECOND_BRAIN_LAUNCHER = "/home/jm/.local/state/second-brain/app/current/bin/second-brain-mcp";
+export const SECOND_BRAIN_CONFIG = "/home/jm/.config/second-brain/config.toml";
+export const SECOND_BRAIN_PROTOCOL_VERSION = "2025-11-25";
+export const SECOND_BRAIN_FRAME_BYTES = 1_048_576;
+export const SECOND_BRAIN_DEADLINES = { startup: 5_000, read: 10_000, write: 30_000 } as const;
+export const SECOND_BRAIN_LIMITS = {
+  argument_bytes: 1_000_000,
+  correlation_ids: 256,
+  diagnostics: 256,
+  pending: 8,
+  read_queue: 64,
+  stderr_bytes: 65_536,
+  write_queue: 32,
+} as const;
+export const SECOND_BRAIN_READ_METHODS = [
+  "sb_search",
+  "sb_read_page",
+  "sb_recent_changes",
+  "sb_open_conflicts",
+] as const;
+export const SECOND_BRAIN_WRITE_METHOD = "sb_remember" as const;
+
+export type SecondBrainReadMethod = (typeof SECOND_BRAIN_READ_METHODS)[number];
+export type SecondBrainMethod = SecondBrainReadMethod | typeof SECOND_BRAIN_WRITE_METHOD;
+export type SecondBrainDisposition = "unavailable" | "cancelled" | "uncertain" | "fatal";
+export type SecondBrainOutcome =
+  | { readonly kind: "data"; readonly value: Readonly<Record<string, unknown>> }
+  | { readonly kind: "no_data"; readonly reason: "empty_result" }
+  | { readonly kind: "error"; readonly code: string };
+export type SecondBrainDiagnostic = {
+  readonly code: string;
+  readonly generation: number;
+  readonly method?: SecondBrainMethod;
+  readonly request_id?: string;
+  readonly duration_ms?: number;
+  readonly pending_count?: number;
+  readonly queued_count?: number;
+  readonly stderr_bytes?: number;
+  readonly stderr_buffer_bytes?: number;
+  readonly buffer_bytes?: number;
+  readonly correlation_count?: number;
+  readonly listener_count?: number;
+  readonly timer_count?: number;
+  readonly protocol_version?: string;
+  readonly server_name?: string;
+  readonly server_version?: string;
+  readonly process_state?: "unconfirmed_live";
+  readonly process_owned?: boolean;
+};
+export type SecondBrainTimerHandle = ReturnType<typeof setTimeout> | number;
+export type SecondBrainTimers = {
+  readonly set: (callback: () => void, delay: number) => SecondBrainTimerHandle;
+  readonly clear: (handle: SecondBrainTimerHandle) => void;
+};
+export type SecondBrainExecFileOptions = {
+  readonly encoding: "buffer";
+  readonly shell: false;
+  readonly env: Readonly<Record<string, string>>;
+  readonly windowsHide: true;
+};
+export type SecondBrainExecFile = (
+  file: string,
+  args: readonly string[],
+  options: SecondBrainExecFileOptions,
+) => ChildProcess;
+export type SecondBrainTransportOptions = {
+  readonly launcherPath?: string;
+  readonly configPath?: string;
+  readonly contractPath?: string;
+  readonly execFile?: SecondBrainExecFile;
+  readonly realpath?: (path: string) => string;
+  readonly timers?: SecondBrainTimers;
+  readonly clock?: () => number;
+  readonly deadlines?: Readonly<typeof SECOND_BRAIN_DEADLINES>;
+  readonly safeReadRetries?: 0 | 1;
+  readonly shutdownGraceMs?: number;
+  readonly onDiagnostic?: (diagnostic: SecondBrainDiagnostic) => void;
+};
+export type SecondBrainCallOptions = { readonly signal?: AbortSignal };
+export interface SecondBrainTransport {
+  call(
+    method: SecondBrainMethod,
+    arguments_: Readonly<Record<string, unknown>>,
+    options?: SecondBrainCallOptions,
+  ): Promise<SecondBrainOutcome>;
+  restart(): Promise<void>;
+  close(): Promise<void>;
+  diagnostics(): readonly SecondBrainDiagnostic[];
+}
+
+type ErrorCorrelation = {
+  readonly generation: number;
+  readonly request_id?: string;
+  readonly method?: SecondBrainMethod;
+};
+export class SecondBrainTransportError extends Error {
+  readonly name = "SecondBrainTransportError";
+  readonly generation: number;
+  readonly request_id?: string;
+  readonly method?: SecondBrainMethod;
+
+  constructor(
+    readonly code: string,
+    readonly disposition: SecondBrainDisposition,
+    correlation: ErrorCorrelation,
+  ) {
+    super(code);
+    this.generation = correlation.generation;
+    this.request_id = correlation.request_id;
+    this.method = correlation.method;
+  }
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function record(value: unknown): Record<string, unknown> {
+  if (!isRecord(value)) {
+    throw new SecondBrainTransportError("SECOND_BRAIN_MALFORMED_FRAME", "fatal", { generation: 0 });
+  }
+  return value;
+}
+
+export function loadSecondBrainContract(path?: string): unknown {
+  const contractPath = path ?? fileURLToPath(new URL("../contracts/second-brain-mcp-v1.json", import.meta.url));
+  try {
+    consumeSecondBrainContract(contractPath);
+    return JSON.parse(readFileSync(contractPath, "utf8"));
+  } catch {
+    throw new SecondBrainTransportError("SECOND_BRAIN_CONTRACT_MISMATCH", "fatal", { generation: 0 });
+  }
+}
+
+export function normalizeSecondBrainToolSchemas(observed: unknown, contract: unknown): boolean {
+  return inspectFrozenSchemas(observed, contract).matches;
+}
+
+export function isSecondBrainReadMethod(method: SecondBrainMethod): method is SecondBrainReadMethod {
+  return method !== SECOND_BRAIN_WRITE_METHOD;
+}
+
+function exactEmptyResult(method: SecondBrainMethod, value: Readonly<Record<string, unknown>>): boolean {
+  let expected: string | undefined;
+  switch (method) {
+    case "sb_search": expected = "results"; break;
+    case "sb_recent_changes": expected = "changes"; break;
+    case "sb_open_conflicts": expected = "conflicts"; break;
+    case "sb_read_page": case "sb_remember": expected = undefined; break;
+    default: { const exhaustive: never = method; return exhaustive; }
+  }
+  if (expected === undefined || Object.getPrototypeOf(value) !== Object.prototype) return false;
+  const keys = Reflect.ownKeys(value);
+  if (keys.length !== 1 || keys[0] !== expected) return false;
+  const descriptor = Object.getOwnPropertyDescriptor(value, expected);
+  if (descriptor === undefined || !("value" in descriptor) || !descriptor.enumerable) return false;
+  const list = descriptor.value;
+  return Array.isArray(list) && Object.getPrototypeOf(list) === Array.prototype
+    && list.length === 0 && Reflect.ownKeys(list).length === 1;
+}
+
+export function normalizeSecondBrainOutcome(
+  method: SecondBrainMethod,
+  value: Record<string, unknown>,
+): SecondBrainOutcome {
+  if (value.isError === true) return { kind: "error", code: "SECOND_BRAIN_TOOL_ERROR" };
+  const content = value.content;
+  if (!Array.isArray(content) || content.length !== 1) {
+    throw new SecondBrainTransportError("SECOND_BRAIN_SCHEMA_MISMATCH", "fatal", { generation: 0 });
+  }
+  const entry = record(content[0]);
+  if (entry.type !== "text" || typeof entry.text !== "string") {
+    throw new SecondBrainTransportError("SECOND_BRAIN_SCHEMA_MISMATCH", "fatal", { generation: 0 });
+  }
+  let parsed: Record<string, unknown>;
+  try {
+    parsed = record(JSON.parse(entry.text));
+  } catch (error) {
+    if (error instanceof SecondBrainTransportError) throw error;
+    throw new SecondBrainTransportError("SECOND_BRAIN_SCHEMA_MISMATCH", "fatal", { generation: 0 });
+  }
+  if (exactEmptyResult(method, parsed)) return { kind: "no_data", reason: "empty_result" };
+  return { kind: "data", value: parsed };
+}
