@@ -93,7 +93,7 @@ describe("deletion and tombstone authority remediation", () => {
       db.db.prepare("UPDATE memory_deletion_requests SET state='applying',lease_owner='delete:new',lease_fence=1,lease_expires_at=?,updated_at=? WHERE deletion_id=?").run(T3, T1, deletionIdentity.deletionId);
       // When the tombstone target digest differs
       // Then exact tombstone authority fails closed
-      expect(() => db.db.prepare("INSERT INTO memory_tombstones(tombstone_id,deletion_id,subject_digest,scope_digest,target_digest,args_digest,approval_request_id,approval_receipt_id,approval_receipt_digest,effective_at,tombstone_digest,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").run("tmb:mismatch", deletionIdentity.deletionId, deletionIdentity.subjectDigest, deletionIdentity.scopeDigest, digest("a"), deletionIdentity.argsDigest, approval.requestId, approval.receiptId, approval.receiptDigest, T2, digest("b"), T2)).toThrow("memory tombstone authority required");
+      expect(() => db.db.prepare("INSERT INTO memory_tombstones(tombstone_id,deletion_id,subject_digest,scope_digest,target_digest,args_digest,approval_request_id,approval_receipt_id,approval_receipt_digest,effect_lease_owner,effect_lease_fence,effective_at,tombstone_digest,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run("tmb:mismatch", deletionIdentity.deletionId, deletionIdentity.subjectDigest, deletionIdentity.scopeDigest, digest("a"), deletionIdentity.argsDigest, approval.requestId, approval.receiptId, approval.receiptDigest, "delete:new", 1, T2, digest("b"), T2)).toThrow("memory tombstone authority required");
     } finally { closePersonalDb(db); }
   });
 

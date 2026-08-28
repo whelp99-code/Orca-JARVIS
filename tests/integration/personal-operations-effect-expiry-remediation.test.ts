@@ -17,10 +17,10 @@ function exactCandidateConfirmation(db: AuthorityDb, candidateId: string, confir
   db.db.prepare("UPDATE memory_candidates SET state='approved',confirmation_principal_id='local-owner',confirmation_request_id=?,confirmation_receipt_id=?,confirmation_receipt_digest=?,confirmation_evidence_digest=?,updated_at=? WHERE candidate_id=?").run(approval.requestId, approval.receiptId, approval.receiptDigest, digest("4"), confirmedAt, candidateId);
 }
 
-function approvedDeletion(db: AuthorityDb): { readonly requestId: string; readonly receiptId: string; readonly receiptDigest: string } {
-  const identity = { deletion_id: "del:expired-effect", subject_digest: digest("5"), scope_digest: digest("6"), target_digest: digest("7") };
-  const approval = insertApproval(db, { suffix: "expired-effect", action: "memory.delete", target: identity, args: { operation: "forget", args_digest: digest("8") } });
-  db.db.prepare("INSERT INTO memory_deletion_requests(deletion_id,correlation_id,idempotency_key,operation,subject_digest,scope_digest,target_digest,args_digest,requested_by,state,lease_fence,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(identity.deletion_id, "corr:expired-effect", "idem:expired-effect", "forget", identity.subject_digest, identity.scope_digest, identity.target_digest, digest("8"), "local-owner", "requested", 0, T5, T0, T0);
+function approvedDeletion(db: AuthorityDb, deletionId = "del:expired-effect", suffix = "expired-effect"): { readonly requestId: string; readonly receiptId: string; readonly receiptDigest: string } {
+  const identity = { deletion_id: deletionId, subject_digest: digest("5"), scope_digest: digest("6"), target_digest: digest("7") };
+  const approval = insertApproval(db, { suffix, action: "memory.delete", target: identity, args: { operation: "forget", args_digest: digest("8") } });
+  db.db.prepare("INSERT INTO memory_deletion_requests(deletion_id,correlation_id,idempotency_key,operation,subject_digest,scope_digest,target_digest,args_digest,requested_by,state,lease_fence,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(identity.deletion_id, `corr:${suffix}`, `idem:${suffix}`, "forget", identity.subject_digest, identity.scope_digest, identity.target_digest, digest("8"), "local-owner", "requested", 0, T5, T0, T0);
   db.db.prepare("UPDATE memory_deletion_requests SET state='approved',confirmation_request_id=?,confirmation_receipt_id=?,confirmation_receipt_digest=?,updated_at=? WHERE deletion_id=?").run(approval.requestId, approval.receiptId, approval.receiptDigest, T1, identity.deletion_id);
   db.db.prepare("UPDATE memory_deletion_requests SET state='queued',updated_at=? WHERE deletion_id=?").run(T1, identity.deletion_id);
   db.db.prepare("UPDATE memory_deletion_requests SET state='applying',lease_owner='delete:expired',lease_fence=1,lease_expires_at=?,updated_at=? WHERE deletion_id=?").run(T2, T1, identity.deletion_id);
@@ -51,6 +51,51 @@ describe("memory confirmation authority epoch 3", () => {
       // Then the candidate is approved and its confirmation receipt is redeemed once
       expect(db.db.prepare("SELECT state,confirmation_principal_id FROM memory_candidates WHERE candidate_id='memcand:confirmed'").get()).toEqual({ state: "approved", confirmation_principal_id: "local-owner" });
       expect(db.db.prepare("SELECT authority_kind FROM personal_authority_redemptions WHERE subject_id='memcand:confirmed'").get()).toEqual({ authority_kind: "memory_confirmation" });
+    } finally { closePersonalDb(db); }
+  });
+
+  it("rejects a self-consistent remote principal as trusted human confirmation", async () => {
+    // Given exact candidate bindings signed and requested by an untrusted remote principal
+    const db = await personalDb();
+    try {
+      insertCandidate(db, "memcand:remote-confirmation", 1, "sensitive", T5, T3);
+      db.db.prepare("UPDATE memory_candidates SET state='awaiting_confirmation',updated_at=? WHERE candidate_id='memcand:remote-confirmation'").run(T1);
+      const approval = insertApproval(db, {
+        suffix: "remote-confirmation",
+        action: "memory.confirm",
+        target: { candidate_id: "memcand:remote-confirmation", subject_digest: digest("1"), content_digest: digest("2") },
+        args: { operation: "remember", evidence_digest: digest("4") },
+        requestedBy: "remote-owner",
+        signer: "remote-owner",
+      });
+      // When the remote identity presents otherwise self-consistent authority
+      let rejection: unknown;
+      try {
+        db.db.prepare("UPDATE memory_candidates SET state='approved',confirmation_principal_id='remote-owner',confirmation_request_id=?,confirmation_receipt_id=?,confirmation_receipt_digest=?,confirmation_evidence_digest=?,updated_at=? WHERE candidate_id='memcand:remote-confirmation'").run(approval.requestId, approval.receiptId, approval.receiptDigest, digest("4"), T2);
+      } catch (error) {
+        if (!(error instanceof Error)) throw error;
+        rejection = error;
+      }
+      // Then persisted state proves approval and redemption did not occur
+      expect(rejection).toBeInstanceOf(Error);
+      expect(db.db.prepare("SELECT state,confirmation_principal_id FROM memory_candidates WHERE candidate_id='memcand:remote-confirmation'").get()).toEqual({ state: "awaiting_confirmation", confirmation_principal_id: null });
+      expect(db.db.prepare("SELECT COUNT(*) AS count FROM personal_authority_redemptions WHERE subject_id='memcand:remote-confirmation'").get()).toEqual({ count: 0 });
+    } finally { closePersonalDb(db); }
+  });
+
+  it("rejects a required confirmation deadline equal to candidate creation", async () => {
+    // Given a required candidate with a non-forward confirmation interval
+    const db = await personalDb();
+    try {
+      // When direct SQL sets confirmation expiry equal to creation
+      let rejection: unknown;
+      try { insertCandidate(db, "memcand:reversed-lower-bound", 1, "sensitive", T5, T0); } catch (error) {
+        if (!(error instanceof Error)) throw error;
+        rejection = error;
+      }
+      // Then no candidate row exists
+      expect(rejection).toBeInstanceOf(Error);
+      expect(db.db.prepare("SELECT COUNT(*) AS count FROM memory_candidates WHERE candidate_id='memcand:reversed-lower-bound'").get()).toEqual({ count: 0 });
     } finally { closePersonalDb(db); }
   });
 
@@ -101,6 +146,40 @@ describe("current lease effects epoch 3", () => {
       // When the stale owner accepts at T3
       // Then effect and reconciliation require reclaim first
       expect(() => db.db.prepare("UPDATE memory_outbox SET state='accepted_unsettled',updated_at=? WHERE outbox_id='memout:expired-effect'").run(T3)).toThrow("memory outbox current lease required");
+    } finally { closePersonalDb(db); }
+  });
+
+  it("rejects an anonymous stale-owner tombstone after reclaim and accepts the current fence once", async () => {
+    // Given owner-old/fence1 expired and owner-new/fence2 reclaimed the deletion
+    const db = await personalDb();
+    try {
+      const approval = approvedDeletion(db, "del:reclaimed-tombstone", "reclaimed-tombstone");
+      db.db.prepare("UPDATE memory_deletion_requests SET lease_owner='delete:new',lease_fence=2,lease_expires_at=?,updated_at=? WHERE deletion_id='del:reclaimed-tombstone'").run(T5, T2);
+      // When an anonymous stale worker writes the effect after reclaim
+      let rejection: unknown;
+      try {
+        db.db.prepare("INSERT INTO memory_tombstones(tombstone_id,deletion_id,subject_digest,scope_digest,target_digest,args_digest,approval_request_id,approval_receipt_id,approval_receipt_digest,effective_at,tombstone_digest,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").run("tmb:stale-reclaimed", "del:reclaimed-tombstone", digest("5"), digest("6"), digest("7"), digest("8"), approval.requestId, approval.receiptId, approval.receiptDigest, T3, digest("d"), T3);
+      } catch (error) {
+        if (!(error instanceof Error)) throw error;
+        rejection = error;
+      }
+      // Then readback proves no stale effect exists
+      expect(rejection).toBeInstanceOf(Error);
+      expect(db.db.prepare("SELECT COUNT(*) AS count FROM memory_tombstones WHERE deletion_id='del:reclaimed-tombstone'").get()).toEqual({ count: 0 });
+      // And an explicit old-owner/fence1 effect also remains absent
+      rejection = undefined;
+      try {
+        db.db.prepare("INSERT INTO memory_tombstones(tombstone_id,deletion_id,subject_digest,scope_digest,target_digest,args_digest,approval_request_id,approval_receipt_id,approval_receipt_digest,effect_lease_owner,effect_lease_fence,effective_at,tombstone_digest,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run("tmb:old-reclaimed", "del:reclaimed-tombstone", digest("5"), digest("6"), digest("7"), digest("8"), approval.requestId, approval.receiptId, approval.receiptDigest, "delete:expired", 1, T3, digest("d"), T3);
+      } catch (error) {
+        if (!(error instanceof Error)) throw error;
+        rejection = error;
+      }
+      expect(rejection).toBeInstanceOf(Error);
+      expect(db.db.prepare("SELECT COUNT(*) AS count FROM memory_tombstones WHERE deletion_id='del:reclaimed-tombstone'").get()).toEqual({ count: 0 });
+      // And the exact current owner/fence can persist one immutable tombstone
+      db.db.prepare("INSERT INTO memory_tombstones(tombstone_id,deletion_id,subject_digest,scope_digest,target_digest,args_digest,approval_request_id,approval_receipt_id,approval_receipt_digest,effect_lease_owner,effect_lease_fence,effective_at,tombstone_digest,created_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run("tmb:current-reclaimed", "del:reclaimed-tombstone", digest("5"), digest("6"), digest("7"), digest("8"), approval.requestId, approval.receiptId, approval.receiptDigest, "delete:new", 2, T3, digest("e"), T3);
+      expect(db.db.prepare("SELECT effect_lease_owner,effect_lease_fence FROM memory_tombstones WHERE deletion_id='del:reclaimed-tombstone'").get()).toEqual({ effect_lease_owner: "delete:new", effect_lease_fence: 2 });
+      expect(() => db.db.prepare("UPDATE memory_tombstones SET effect_lease_fence=3 WHERE tombstone_id='tmb:current-reclaimed'").run()).toThrow("immutable memory tombstone");
     } finally { closePersonalDb(db); }
   });
 
