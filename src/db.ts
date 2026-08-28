@@ -1,10 +1,10 @@
 import Database from "better-sqlite3";
 import { createHash, createPublicKey, generateKeyPairSync, randomUUID, type KeyObject } from "node:crypto";
-import { chmod, readFile, readdir, writeFile } from "node:fs/promises";
-import { fileURLToPath } from "node:url";
-import { dirname, join } from "node:path";
+import { chmod, readFile, writeFile } from "node:fs/promises";
 import { canonicalize } from "./canonical.js";
 import { isRfc3339Millis, parseProgressBatch, serializeProgressReport } from "./progress.js";
+import { MigrationStore } from "./migration-store.js";
+import { OrcaObservationStore } from "./orca-observation-store.js";
 import { PersonalContextPersistence, type ReconstructedRecommendation, type RecommendationActionTransition, type RecommendationPersistenceInput, type StoredContext, type StoredObservation, type StoredRecommendation } from "./personal-context-persistence.js";
 import { signPolicy, verifyDecisionReceipt, verifyPolicyAuthorization, verifyVerificationEvidence } from "./receipt.js";
 import type { CensusSnapshot, ContinuationInput, DecisionReceipt, OrcaObservationDelta, OrcaObservationSource, PolicyAuthorization, ProgressBatch, ProgressTransitionEvidence, StoredProgressReport, VerificationEvidence, WorkState } from "./types.js";
@@ -15,7 +15,6 @@ export class JarvisError extends Error { constructor(readonly code: string, mess
 const timestamp = () => new Date().toISOString();
 const json = (value: unknown) => canonicalize(value);
 const sha = (value: unknown) => `sha256:${createHash("sha256").update(typeof value === "string" ? value : json(value)).digest("hex")}`;
-const bytesHash = (value: Buffer) => createHash("sha256").update(value).digest("hex");
 const same = (left: unknown, right: unknown) => json(left) === json(right);
 const deterministic = (prefix: string, value: string) => `${prefix}_${sha(`${prefix}\0${value}`).slice(7)}`;
 type ProgressFaultPoint = "before_observation_insert" | "after_observation_insert" | "after_projection_upsert" | "after_outbox_insert_before_commit" | "after_stage_commit" | "before_receipt_insert" | "after_receipt_insert_before_commit" | "after_receipt_commit";
@@ -26,10 +25,15 @@ export class AuthorityDb {
   beforeAckHook: (() => void) | undefined;
   private progressFaultPoint: ProgressFaultPoint | undefined;
   private progressTestHook: ((point: ProgressFaultPoint) => void) | undefined;
+  private readonly migrations: MigrationStore;
+  private readonly orcaObservations: OrcaObservationStore;
   private readonly personalContext: PersonalContextPersistence;
-  constructor(readonly filename = process.env.JARVIS_DB ?? "jarvis-authority.sqlite", private readonly migrationsPath?: string) {
+  constructor(readonly filename = process.env.JARVIS_DB ?? "jarvis-authority.sqlite", migrationsPath?: string) {
     this.db = new Database(filename);
-    this.personalContext = new PersonalContextPersistence(this.db, code => new JarvisError(code));
+    const error = (code: string, message?: string): JarvisError => new JarvisError(code, message);
+    this.migrations = new MigrationStore(this.db, migrationsPath, error);
+    this.orcaObservations = new OrcaObservationStore(this.db, error);
+    this.personalContext = new PersonalContextPersistence(this.db, error);
     this.db.pragma("busy_timeout = 5000"); this.db.pragma("foreign_keys = ON"); this.db.pragma("synchronous = FULL"); if (String(this.db.pragma("journal_mode", { simple: true })).toLowerCase() !== "wal") this.db.pragma("journal_mode = WAL");
   }
   close(): void { this.db.close(); }
@@ -46,25 +50,8 @@ export class AuthorityDb {
   private ledger(workId: string, event: string, payload: unknown): void { this.db.prepare("INSERT INTO event_ledger(work_id,event_type,payload_json,created_at) VALUES(?,?,?,?)").run(workId, event, json(payload), timestamp()); }
   private audit(fact: string, subject: string, payload: unknown): void { this.db.prepare("INSERT INTO audit_facts(fact_type,subject_id,payload_json,created_at) VALUES(?,?,?,?)").run(fact, subject, json(payload), timestamp()); }
   private project(workId: string, state: WorkState): void { this.db.prepare("INSERT INTO work_projection(work_id,state,updated_at) VALUES(?,?,?) ON CONFLICT(work_id) DO UPDATE SET state=excluded.state,updated_at=excluded.updated_at").run(workId, state, timestamp()); }
-  private migrationDir(): string { return this.migrationsPath ?? join(dirname(fileURLToPath(import.meta.url)), "../migrations"); }
-  private async migrationFiles(): Promise<string[]> { return (await readdir(this.migrationDir())).filter(file => file.endsWith(".sql")).sort(); }
-  async migrate(): Promise<void> {
-    this.db.exec("CREATE TABLE IF NOT EXISTS schema_migrations (id TEXT PRIMARY KEY, checksum TEXT NOT NULL, applied_at TEXT NOT NULL)");
-    for (const id of await this.migrationFiles()) {
-      const body = await readFile(join(this.migrationDir(), id)); const checksum = bytesHash(body);
-      const prior = this.db.prepare("SELECT checksum FROM schema_migrations WHERE id=?").get(id) as Row | undefined;
-      if (prior && prior.checksum !== checksum) throw new JarvisError("MIGRATION_CHECKSUM_MISMATCH", id);
-      if (!prior) this.atomic(() => { this.db.exec(body.toString("utf8")); this.db.prepare("INSERT INTO schema_migrations(id,checksum,applied_at) VALUES(?,?,?)").run(id, checksum, timestamp()); });
-    }
-  }
-  async assertMigrationsReady(): Promise<void> {
-    const journal = this.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'").get(); if (!journal) throw new JarvisError("MIGRATIONS_PENDING");
-    for (const id of await this.migrationFiles()) {
-      const prior = this.db.prepare("SELECT checksum FROM schema_migrations WHERE id=?").get(id) as Row | undefined;
-      if (!prior) throw new JarvisError("MIGRATIONS_PENDING", id);
-      if (prior.checksum !== bytesHash(await readFile(join(this.migrationDir(), id)))) throw new JarvisError("MIGRATION_CHECKSUM_MISMATCH", id);
-    }
-  }
+  async migrate(): Promise<void> { await this.migrations.migrate(); }
+  async assertMigrationsReady(): Promise<void> { await this.migrations.assertReady(); }
   /** The GJC configuration is usable only when its immutable audit revision still binds it exactly. */
   configureGjc(canonicalCwd: string, sessionId: string, enabled: boolean, registrationReceipt: unknown = {}, now = timestamp(), serverInfo: { name: string; version: string } = { name: "gjc-coordinator-mcp", version: "0.11.8" }): { revision: number; config_digest: string } {
     if (!canonicalCwd || !sessionId) throw new JarvisError("GJC_CONFIG_INVALID");
@@ -111,11 +98,7 @@ export class AuthorityDb {
   persistRecommendation(value: RecommendationPersistenceInput, now = timestamp()): StoredRecommendation { return this.personalContext.persistRecommendation(value, now); }
   transitionRecommendationAction(input: RecommendationActionTransition): void { this.personalContext.transitionAction(input); }
   getPersonalRecommendation(id: RecommendationActionTransition["recommendation_id"]): ReconstructedRecommendation | undefined { return this.personalContext.getRecommendation(id); }
-  getOrcaObservationSource(worktree: string, terminalHandle: string): OrcaObservationSource | undefined {
-    const row = this.db.prepare("SELECT worktree_selector,terminal_handle,provider,incarnation_id,next_cursor FROM orca_observation_sources WHERE worktree_selector=? AND terminal_handle=?").get(worktree, terminalHandle) as Row | undefined;
-    if (!row) return undefined;
-    return { worktree: String(row.worktree_selector), terminal_handle: String(row.terminal_handle), provider: String(row.provider) as OrcaObservationSource["provider"], incarnation_id: String(row.incarnation_id), next_cursor: row.next_cursor === null ? null : String(row.next_cursor) };
-  }
+  getOrcaObservationSource(worktree: string, terminalHandle: string): OrcaObservationSource | undefined { return this.orcaObservations.getSource(worktree, terminalHandle); }
   private progressFault(point: ProgressFaultPoint): void {
     if (!progressFaultPoints.has(point)) throw new JarvisError("PROGRESS_INPUT_INVALID");
     this.progressTestHook?.(point);
@@ -182,21 +165,7 @@ export class AuthorityDb {
       if (inserted) this.progressFault("after_receipt_commit");
     } catch (error) { if (error instanceof JarvisError) throw error; throw new JarvisError("PROGRESS_DELIVERY_MARK_FAILED"); }
   }
-  recordOrcaObservations(source: OrcaObservationSource, deltas: OrcaObservationDelta[]): { inserted: number; replayed: number } {
-    if (!source.worktree || !source.terminal_handle || !source.incarnation_id || !["codex", "claude"].includes(source.provider)) throw new JarvisError("ORCA_OBSERVATION_INVALID");
-    let inserted = 0; let replayed = 0;
-    this.atomic(() => {
-      for (const delta of deltas) {
-        if (delta.worktree !== source.worktree || delta.terminal_handle !== source.terminal_handle || delta.provider !== source.provider || delta.incarnation_id !== source.incarnation_id || !delta.identity || !Array.isArray(delta.tail) || !delta.tail.every(line => typeof line === "string") || !Number.isInteger(delta.returned_line_count) || delta.returned_line_count < 0) throw new JarvisError("ORCA_OBSERVATION_INVALID");
-        const digest = sha({ worktree: delta.worktree, terminal_handle: delta.terminal_handle, provider: delta.provider, incarnation_id: delta.incarnation_id, cursor_before: delta.cursor_before, cursor_after: delta.cursor_after, tail: delta.tail, truncated: delta.truncated, limited: delta.limited, oldest_cursor: delta.oldest_cursor, latest_cursor: delta.latest_cursor, returned_line_count: delta.returned_line_count }); const prior = this.db.prepare("SELECT digest FROM orca_observation_deltas WHERE identity=?").get(delta.identity) as Row | undefined;
-        if (prior) { if (String(prior.digest) !== digest) throw new JarvisError("ORCA_OBSERVATION_REPLAY_CONFLICT", delta.identity); replayed++; continue; }
-        this.db.prepare("INSERT INTO orca_observation_deltas(identity,worktree_selector,terminal_handle,provider,incarnation_id,cursor_before,cursor_after,tail_json,digest,truncated,limited,oldest_cursor,latest_cursor,returned_line_count,observed_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(delta.identity, delta.worktree, delta.terminal_handle, delta.provider, delta.incarnation_id, delta.cursor_before, delta.cursor_after, json(delta.tail), digest, delta.truncated ? 1 : 0, delta.limited ? 1 : 0, delta.oldest_cursor, delta.latest_cursor, delta.returned_line_count, delta.observed_at);
-        inserted++;
-      }
-      this.db.prepare("INSERT INTO orca_observation_sources(worktree_selector,terminal_handle,provider,incarnation_id,next_cursor,updated_at) VALUES(?,?,?,?,?,?) ON CONFLICT(worktree_selector,terminal_handle) DO UPDATE SET provider=excluded.provider,incarnation_id=excluded.incarnation_id,next_cursor=excluded.next_cursor,updated_at=excluded.updated_at").run(source.worktree, source.terminal_handle, source.provider, source.incarnation_id, source.next_cursor, timestamp());
-    });
-    return { inserted, replayed };
-  }
+  recordOrcaObservations(source: OrcaObservationSource, deltas: OrcaObservationDelta[]): { inserted: number; replayed: number } { return this.orcaObservations.record(source, deltas); }
   async initialize(anchors: { decision?: { keyId: string; principal: string; publicKeyPath: string }; verifier?: { keyId: string; principal: string; publicKeyPath: string } } = {}): Promise<void> {
     await this.migrate(); const decision = anchors.decision; const verifier = anchors.verifier; if (!decision || !verifier) throw new JarvisError("ANCHORS_REQUIRED"); const sealed = this.db.prepare("SELECT 1 FROM authority_configuration WHERE id=1").get(); if (sealed) { await this.assertExactAnchor(decision, "decision"); await this.assertExactAnchor(verifier, "verifier"); await this.ensurePolicyKey(); return; } await this.registerPublicAnchor(decision, "decision"); await this.registerPublicAnchor(verifier, "verifier"); await this.ensurePolicyKey(); this.atomic(() => { this.db.prepare("INSERT INTO authority_configuration(id,sealed_at) VALUES(1,?)").run(timestamp()); this.audit("authority_sealed", "authority", { decision_key_id: decision.keyId, verifier_key_id: verifier.keyId }); });
   }

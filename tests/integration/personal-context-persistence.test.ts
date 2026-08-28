@@ -6,7 +6,7 @@ import { tempDb } from "../helpers.js";
 const NOW = "2026-08-28T10:00:00.000Z";
 const LATER = "2026-08-28T10:30:00.000Z";
 const EXPIRES = "2026-08-28T12:00:00.000Z";
-const UUIDS = ["018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7001", "018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7002", "018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7003", "018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7004", "018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7005"] as const;
+const UUIDS = ["018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7001", "018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7002", "018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7003", "018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7004", "018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7005", "018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7006", "018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7007", "018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7008"] as const;
 function digest(character: string): Sha256Digest { const value = `sha256:${character.repeat(64)}`; function valid(candidate: string): candidate is Sha256Digest { return /^sha256:[0-9a-f]{64}$/.test(candidate); } if (!valid(value)) throw new TypeError("digest fixture"); return value; }
 const source = (provider: "orca" | "second-brain" | "jarvis") => ({ source_id: `src:pos:v1:${provider}:primary`, source_kind: provider === "second-brain" ? "second_brain" : provider === "jarvis" ? "authority" : "live_adapter", host_id: provider === "second-brain" ? "host:pos:linux-second-brain" : "host:pos:linux-control-plane", source_version: "v1", evidence_ref: `ref:${provider}:bounded` });
 const base = (id: string, provider: "orca" | "second-brain" | "jarvis", payload: Readonly<Record<string, unknown>>, evidence: readonly Readonly<Record<string, unknown>>[] = [], overrides: Readonly<Record<string, unknown>> = {}) => ({ schema_version: 1, id, created_at: NOW, observed_at: "2026-08-28T09:59:00.000Z", valid_at: "2026-08-28T09:59:00.000Z", source: source(provider), authority: { authority_kind: "none", principal_id: null, request_id: null, receipt_id: null }, freshness: { state: "fresh", checked_at: NOW, fresh_until: "2026-08-28T11:00:00.000Z" }, expires_at: EXPIRES, idempotency_key: `idem:pos:v1:test:${createHash("sha256").update(id).digest("hex")}`, correlation_id: `corr:pos:v1:${UUIDS[3]}`, causation_id: null, payload, policy_decision: { decision: "allow", policy_version: "policy-v1", reason_codes: ["POLICY_SATISFIED"] }, evidence, receipt: null, ...overrides });
@@ -38,7 +38,7 @@ describe("personal context persistence", () => {
       // Then bounded immutable records and append-only state evidence are returned
       expect(storedContext).toMatchObject({ version: 1, observation_count: 2 });
       expect(reconstructed).toMatchObject({ recommendation: { recommendation_id: advised.id, approval_requirement: "owner", confidence_class: "high" }, evidence: [{ evidence_id: snapshot.evidence[0]?.evidence_id }, { evidence_id: snapshot.evidence[1]?.evidence_id }], actions: [{ rank: 1, state: "accepted" }] });
-      expect(reconstructed?.action_events.map(event => event.state)).toEqual(["pending", "accepted"]);
+      expect(reconstructed?.action_events.map((event: Readonly<Record<string, unknown>>) => event["state"])).toEqual(["pending", "accepted"]);
       expect(db.db.pragma("quick_check", { simple: true })).toBe("ok"); expect(db.db.pragma("foreign_key_check")).toEqual([]);
     } finally { db.close(); }
   });
@@ -84,7 +84,7 @@ describe("personal context persistence", () => {
       const stored = db.persistRecommendation({ recommendation: advised, approval_requirement: "owner", confidence_class: "high" }, NOW);
       expect(() => db.transitionRecommendationAction({ recommendation_id: advised.id, rank: 1, state: "accepted", evidence_digest: digest("f"), occurred_at: "2026-08-28T10:05:00.000Z" })).toThrowError(expect.objectContaining({ code: "PERSONAL_RECOMMENDATION_EVIDENCE_CONFLICT" }));
       expect(() => db.transitionRecommendationAction({ recommendation_id: advised.id, rank: 1, state: "accepted", evidence_digest: stored.evidence_digest, occurred_at: LATER })).toThrowError(expect.objectContaining({ code: "PERSONAL_RECOMMENDATION_EXPIRED" }));
-      const fresh = parseRecommendationV1(recommendation(snapshot, { id: `rec:pos:v1:${UUIDS[4]}` })); const active = db.persistRecommendation({ recommendation: fresh, approval_requirement: "owner", confidence_class: "high" }, NOW);
+      const fresh = parseRecommendationV1(recommendation(snapshot, { id: `rec:pos:v1:${UUIDS[4]}`, idempotency_key: `idem:pos:v1:test:${"c".repeat(64)}` })); const active = db.persistRecommendation({ recommendation: fresh, approval_requirement: "owner", confidence_class: "high" }, NOW);
       db.transitionRecommendationAction({ recommendation_id: fresh.id, rank: 1, state: "rejected", evidence_digest: active.evidence_digest, occurred_at: "2026-08-28T10:05:00.000Z" });
       expect(() => db.transitionRecommendationAction({ recommendation_id: fresh.id, rank: 1, state: "accepted", evidence_digest: active.evidence_digest, occurred_at: "2026-08-28T10:06:00.000Z" })).toThrowError(expect.objectContaining({ code: "PERSONAL_ACTION_STATE_CONFLICT" }));
     } finally { db.close(); }
@@ -95,13 +95,126 @@ describe("personal context persistence", () => {
     const db = await database();
     try {
       // When its machine-consumed schema inventory is inspected
-      const tables = ["personal_observations", "personal_source_checkpoints", "personal_context_snapshots", "personal_context_observations", "personal_recommendations", "personal_recommendation_evidence", "personal_recommendation_actions", "personal_recommendation_action_events", "personal_context_audit_events"];
+      const tables = ["personal_observations", "personal_source_checkpoints", "personal_context_snapshots", "personal_context_observations", "personal_context_evidence", "personal_recommendations", "personal_recommendation_evidence", "personal_recommendation_actions", "personal_recommendation_action_events", "personal_context_audit_events"];
       const columns = tables.flatMap(table => db.db.prepare(`PRAGMA table_info(${table})`).all().map(column => databaseRecord(column)["name"]));
       const indexes = db.db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND name LIKE 'personal_%'").all().map(row => databaseRecord(row)["name"]);
       // Then expiry, source/checkpoint, context, lifecycle, evidence, and audit paths exist
-      expect(indexes).toEqual(expect.arrayContaining(["personal_observations_source_checkpoint", "personal_observations_expiry", "personal_source_checkpoints_latest", "personal_context_expiry", "personal_recommendations_lifecycle", "personal_recommendation_evidence_ref", "personal_action_events_history", "personal_context_audit_subject"]));
+      expect(indexes).toEqual(expect.arrayContaining(["personal_observations_source_checkpoint", "personal_observations_expiry", "personal_source_checkpoints_latest", "personal_context_expiry", "personal_context_evidence_ref", "personal_recommendations_lifecycle", "personal_recommendation_evidence_ref", "personal_action_events_history", "personal_context_audit_subject"]));
       expect(columns.filter(column => typeof column === "string" && /secret|token|password|private|raw|body|terminal_output|mcp_page/i.test(column))).toEqual([]);
       expect(() => db.db.prepare("INSERT INTO personal_context_audit_events(event_type,subject_id,subject_digest,correlation_id,causation_id,occurred_at) VALUES(?,?,?,?,?,?)").run("invalid", "subject", digest("a"), "correlation", null, NOW)).toThrow(/constraint/i);
+    } finally { db.close(); }
+  });
+
+  it("persists generic memory context evidence and binds recommendations to the exact set", async () => {
+    const db = await database();
+    const memoryEvidence = evidence(UUIDS[0], "src:pos:v1:second-brain:primary", digest("b"));
+    const snapshot = parseContextSnapshotV1(context([], {
+      evidence: [memoryEvidence],
+      payload: {
+        purpose: "memory_context",
+        query: "Which confirmed principle applies?",
+        included_observation_refs: [],
+        included_memory_refs: ["sid:principle:1"],
+        excluded_refs: [],
+        pending_authority_refs: [],
+        conflicts: [],
+        omissions: [],
+        budgets: { max_items: 8, max_excerpt_bytes: 1024, max_total_bytes: 8192 },
+        state: "sufficient",
+      },
+    }));
+    try {
+      db.persistContextSnapshot(snapshot, NOW);
+      const advised = parseRecommendationV1(recommendation(snapshot));
+      expect(db.persistRecommendation({ recommendation: advised, approval_requirement: "owner", confidence_class: "high" }, NOW)).toMatchObject({ recommendation_id: advised.id });
+      expect(db.getPersonalRecommendation(advised.id)?.context_evidence).toEqual([expect.objectContaining({ evidence_id: memoryEvidence.evidence_id, digest: memoryEvidence.digest })]);
+      const changed = parseRecommendationV1(recommendation(snapshot, { id: `rec:pos:v1:${UUIDS[4]}`, evidence: [{ ...memoryEvidence, digest: digest("c") }] }));
+      expect(() => db.persistRecommendation({ recommendation: changed, approval_requirement: "owner", confidence_class: "high" }, NOW)).toThrowError(expect.objectContaining({ code: "PERSONAL_RECOMMENDATION_EVIDENCE_CONFLICT" }));
+    } finally { db.close(); }
+  });
+
+  it("couples recommendation and action expiry to the governing context", async () => {
+    const db = await database();
+    const snapshot = parseContextSnapshotV1(context([], { expires_at: "2026-08-28T10:15:00.000Z", freshness: { state: "fresh", checked_at: NOW, fresh_until: "2026-08-28T10:10:00.000Z" } }));
+    try {
+      db.persistContextSnapshot(snapshot, NOW);
+      const outliving = parseRecommendationV1(recommendation(snapshot));
+      expect(() => db.persistRecommendation({ recommendation: outliving, approval_requirement: "owner", confidence_class: "high" }, NOW)).toThrowError(expect.objectContaining({ code: "PERSONAL_RECOMMENDATION_CONTEXT_EXPIRY_CONFLICT" }));
+      const bounded = parseRecommendationV1(recommendation(snapshot, { id: `rec:pos:v1:${UUIDS[4]}`, expires_at: snapshot.expires_at, freshness: { state: "fresh", checked_at: NOW, fresh_until: "2026-08-28T10:10:00.000Z" } }));
+      const stored = db.persistRecommendation({ recommendation: bounded, approval_requirement: "owner", confidence_class: "high" }, NOW);
+      expect(() => db.transitionRecommendationAction({ recommendation_id: bounded.id, rank: 1, state: "accepted", evidence_digest: stored.evidence_digest, occurred_at: snapshot.expires_at })).toThrowError(expect.objectContaining({ code: "PERSONAL_RECOMMENDATION_EXPIRED" }));
+    } finally { db.close(); }
+  });
+
+  it("rejects authority-bearing advisory observation, context, and recommendation envelopes", async () => {
+    const db = await database();
+    const authority = { authority_kind: "control_receipt", principal_id: "owner", request_id: "request:forged", receipt_id: "receipt:forged" };
+    try {
+      expect(() => db.persistObservation(observation("orca", UUIDS[0], "checkpoint-1", digest("a"), { authority }), NOW)).toThrowError(expect.objectContaining({ code: "PERSONAL_OBSERVATION_INVALID" }));
+      expect(() => db.persistContextSnapshot(context([], { authority }), NOW)).toThrowError(expect.objectContaining({ code: "PERSONAL_CONTEXT_INVALID" }));
+      const snapshot = parseContextSnapshotV1(context([])); db.persistContextSnapshot(snapshot, NOW);
+      expect(() => db.persistRecommendation({ recommendation: recommendation(snapshot, { authority }), approval_requirement: "owner", confidence_class: "high" }, NOW)).toThrowError(expect.objectContaining({ code: "PERSONAL_RECOMMENDATION_INVALID" }));
+    } finally { db.close(); }
+  });
+
+  it("binds each family idempotency key and complete recommendation wrapper", async () => {
+    const db = await database();
+    const shared = `idem:pos:v1:test:${"f".repeat(64)}`;
+    try {
+      const firstObservation = observation("orca", UUIDS[0], "checkpoint-1", digest("a"), { idempotency_key: shared });
+      expect(db.persistObservation(firstObservation, NOW)).toMatchObject({ inserted: true });
+      expect(() => db.persistObservation(observation("orca", UUIDS[1], "checkpoint-2", digest("b"), { idempotency_key: shared }), NOW)).toThrowError(expect.objectContaining({ code: "PERSONAL_OBSERVATION_IDEMPOTENCY_CONFLICT" }));
+      const firstContext = parseContextSnapshotV1(context([], { idempotency_key: shared }));
+      expect(db.persistContextSnapshot(firstContext, NOW)).toMatchObject({ observation_count: 0 });
+      expect(() => db.persistContextSnapshot(context([], { id: `ctx:pos:v1:${UUIDS[5]}`, idempotency_key: shared }), NOW)).toThrowError(expect.objectContaining({ code: "PERSONAL_CONTEXT_IDEMPOTENCY_CONFLICT" }));
+      const advised = parseRecommendationV1(recommendation(firstContext));
+      const input = { recommendation: advised, approval_requirement: "owner", confidence_class: "high" } as const;
+      expect(db.persistRecommendation(input, NOW)).toEqual(db.persistRecommendation(input, NOW));
+      expect(() => db.persistRecommendation({ ...input, confidence_class: "low" }, NOW)).toThrowError(expect.objectContaining({ code: "PERSONAL_RECOMMENDATION_IDEMPOTENCY_CONFLICT" }));
+    } finally { db.close(); }
+  });
+
+  it("rejects newly persisted observations expiring exactly at the injected clock", async () => {
+    const db = await database();
+    const expired = observation("orca", UUIDS[0], "checkpoint-1", digest("a"), {
+      created_at: "2026-08-28T09:30:00.000Z",
+      observed_at: "2026-08-28T09:29:00.000Z",
+      valid_at: "2026-08-28T09:29:00.000Z",
+      freshness: { state: "fresh", checked_at: "2026-08-28T09:30:00.000Z", fresh_until: "2026-08-28T09:59:00.000Z" },
+      expires_at: NOW,
+    });
+    try { expect(() => db.persistObservation(expired, NOW)).toThrowError(expect.objectContaining({ code: "PERSONAL_OBSERVATION_EXPIRED" })); }
+    finally { db.close(); }
+  });
+
+  it("enforces action chronology and exact governing deadline semantics", async () => {
+    const db = await database();
+    const snapshot = parseContextSnapshotV1(context([], { expires_at: "2026-08-28T10:15:00.000Z", freshness: { state: "fresh", checked_at: NOW, fresh_until: "2026-08-28T10:10:00.000Z" } }));
+    try {
+      db.persistContextSnapshot(snapshot, NOW);
+      const advised = parseRecommendationV1(recommendation(snapshot, { expires_at: snapshot.expires_at, freshness: { state: "fresh", checked_at: NOW, fresh_until: "2026-08-28T10:10:00.000Z" } }));
+      const stored = db.persistRecommendation({ recommendation: advised, approval_requirement: "owner", confidence_class: "high" }, NOW);
+      expect(() => db.transitionRecommendationAction({ recommendation_id: advised.id, rank: 1, state: "accepted", evidence_digest: stored.evidence_digest, occurred_at: "2026-08-28T09:30:00.000Z" })).toThrowError(expect.objectContaining({ code: "PERSONAL_ACTION_STATE_CONFLICT" }));
+      expect(() => db.transitionRecommendationAction({ recommendation_id: advised.id, rank: 1, state: "expired", evidence_digest: stored.evidence_digest, occurred_at: "2026-08-28T10:14:59.999Z" })).toThrowError(expect.objectContaining({ code: "PERSONAL_ACTION_STATE_CONFLICT" }));
+      expect(() => db.transitionRecommendationAction({ recommendation_id: advised.id, rank: 1, state: "expired", evidence_digest: stored.evidence_digest, occurred_at: snapshot.expires_at })).not.toThrow();
+      const second = parseRecommendationV1(recommendation(snapshot, { id: `rec:pos:v1:${UUIDS[4]}`, idempotency_key: `idem:pos:v1:test:${"e".repeat(64)}`, expires_at: snapshot.expires_at, freshness: { state: "fresh", checked_at: NOW, fresh_until: "2026-08-28T10:10:00.000Z" } }));
+      const secondStored = db.persistRecommendation({ recommendation: second, approval_requirement: "owner", confidence_class: "high" }, NOW);
+      expect(() => db.transitionRecommendationAction({ recommendation_id: second.id, rank: 1, state: "accepted", evidence_digest: secondStored.evidence_digest, occurred_at: snapshot.expires_at })).toThrowError(expect.objectContaining({ code: "PERSONAL_RECOMMENDATION_EXPIRED" }));
+    } finally { db.close(); }
+  });
+
+  it("returns linked observation counts on zero and multiple-observation context replay", async () => {
+    const db = await database();
+    const live = parseObservationEnvelopeV1(observation("orca", UUIDS[0], "checkpoint-1"));
+    const memory = parseObservationEnvelopeV1(observation("second-brain", UUIDS[1], "checkpoint-1"));
+    try {
+      const zero = parseContextSnapshotV1(context([], { payload: { purpose: "zero", query: "zero", included_observation_refs: [], included_memory_refs: ["sid:one"], excluded_refs: [], pending_authority_refs: [], conflicts: ["conflict"], omissions: ["omission"], budgets: { max_items: 8, max_excerpt_bytes: 1024, max_total_bytes: 8192 }, state: "sufficient" } }));
+      expect(db.persistContextSnapshot(zero, NOW).observation_count).toBe(0);
+      expect(db.persistContextSnapshot(zero, NOW).observation_count).toBe(0);
+      db.persistObservation(live, NOW); db.persistObservation(memory, NOW);
+      const multiple = parseContextSnapshotV1(context([live, memory], { id: `ctx:pos:v1:${UUIDS[5]}`, idempotency_key: `idem:pos:v1:test:${"d".repeat(64)}` }));
+      expect(db.persistContextSnapshot(multiple, NOW).observation_count).toBe(2);
+      expect(db.persistContextSnapshot(multiple, NOW).observation_count).toBe(2);
     } finally { db.close(); }
   });
 
