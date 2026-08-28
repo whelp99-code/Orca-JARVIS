@@ -11,6 +11,12 @@ const MIGRATION = ["prohibited", "exact_gate"] as const;
 const PROJECTIONS = ["redacted", "metadata_only", "prohibited"] as const;
 const ORIGINS = ["trusted", "retrieved", "model"] as const;
 const CLASS_KEYS = ["purpose", "retention_days", "confirmation", "export", "deletion", "host_owner", "no_data", "transfer", "restore", "client_projection"] as const;
+const EVALUATION_KEYS = ["action", "data_class", "principal_id", "purpose", "sensitivity", "host", "client_host", "observed_at", "fresh_until", "expires_at", "payload_fields", "alert_class", "no_data", "content_origin", "requests_policy_mutation", "requests_authority"] as const;
+const EVALUATION_KEY_SET = new Set<string>(EVALUATION_KEYS);
+const CANONICAL_GATES = {
+  mac_vault_transfer: "SECOND_BRAIN_MAC_VAULT_TRANSFER_APPROVAL", linux_restore: "SECOND_BRAIN_PRODUCTION_RESTORE_APPROVAL",
+  export: "PERSONAL_DATA_EXPORT_APPROVAL", deletion: "PERSONAL_DATA_DELETE_APPROVAL", sensitive_memory: "PERSONAL_MEMORY_CONFIRMATION",
+} as const;
 
 type Purpose = (typeof PURPOSES)[number];
 type Sensitivity = (typeof SENSITIVITIES)[number];
@@ -42,7 +48,7 @@ type PersonalOsPolicy = {
   readonly prohibited_fields: readonly string[];
   readonly notification_allowed_fields: readonly string[];
   readonly client_hosts: readonly ClientHost[];
-  readonly gates: { readonly mac_vault_transfer: string; readonly linux_restore: string; readonly export: string; readonly deletion: string; readonly sensitive_memory: string };
+  readonly gates: { readonly [Key in keyof typeof CANONICAL_GATES]: (typeof CANONICAL_GATES)[Key] };
   readonly data_classes: Readonly<Record<Action, DataClassPolicy>>;
 };
 type EvaluationInput = {
@@ -59,7 +65,6 @@ type EvaluationInput = {
   readonly payload_fields: readonly string[];
   readonly alert_class: string | null;
   readonly no_data: boolean;
-  readonly approval_id: string | null;
   readonly content_origin: ContentOrigin;
   readonly requests_policy_mutation: boolean;
   readonly requests_authority: boolean;
@@ -160,6 +165,11 @@ export function parsePersonalOsPolicy(value: unknown): PersonalOsPolicy {
   const prohibitedSet = new Set<string>(prohibited);
   if (notificationFields.some(field => prohibitedSet.has(field))) invalid();
   const gates = record(input.gates); closed(gates, ["mac_vault_transfer", "linux_restore", "export", "deletion", "sensitive_memory"]);
+  const parsedGates = {
+    mac_vault_transfer: literal(gates.mac_vault_transfer, [CANONICAL_GATES.mac_vault_transfer] as const), linux_restore: literal(gates.linux_restore, [CANONICAL_GATES.linux_restore] as const),
+    export: literal(gates.export, [CANONICAL_GATES.export] as const), deletion: literal(gates.deletion, [CANONICAL_GATES.deletion] as const), sensitive_memory: literal(gates.sensitive_memory, [CANONICAL_GATES.sensitive_memory] as const),
+  };
+  if (new Set(Object.values(parsedGates)).size !== Object.keys(parsedGates).length) invalid();
   const classes = record(input.data_classes); closed(classes, ACTIONS);
   const dataClasses = {
     memory: parseDataClass(classes.memory, "personal_memory", "linux-second-brain", maxDays), observation: parseDataClass(classes.observation, "live_awareness", "linux-control-plane", maxDays),
@@ -172,16 +182,16 @@ export function parsePersonalOsPolicy(value: unknown): PersonalOsPolicy {
   if (Date.parse(effectiveAt) >= Date.parse(expiresAt) || Date.parse(expiresAt) - Date.parse(effectiveAt) > 366 * 86_400_000) invalid();
   return { schema_version: 1, policy_id: text(input.policy_id), owner_principal: text(input.owner_principal), authority_host: literal(input.authority_host, ["linux-control-plane"] as const), effective_at: effectiveAt, expires_at: expiresAt,
     retention: { max_days: maxDays }, quiet_hours: { start, end, critical_alert_classes: stringList(quiet.critical_alert_classes) }, prohibited_fields: prohibited,
-    notification_allowed_fields: notificationFields, client_hosts: exactList(input.client_hosts, CLIENT_HOSTS),
-    gates: { mac_vault_transfer: text(gates.mac_vault_transfer), linux_restore: text(gates.linux_restore), export: text(gates.export), deletion: text(gates.deletion), sensitive_memory: text(gates.sensitive_memory) }, data_classes: dataClasses };
+    notification_allowed_fields: notificationFields, client_hosts: exactList(input.client_hosts, CLIENT_HOSTS), gates: parsedGates, data_classes: dataClasses };
 }
 
 function parseEvaluationInput(value: unknown): EvaluationInput {
   const input = record(value);
-  closed(input, ["action", "data_class", "principal_id", "purpose", "sensitivity", "host", "client_host", "observed_at", "fresh_until", "expires_at", "payload_fields", "alert_class", "no_data", "approval_id", "content_origin", "requests_policy_mutation", "requests_authority"]);
+  const keys = Object.keys(input);
+  if (EVALUATION_KEYS.some(key => !(key in input)) || keys.some(key => key !== "approval_id" && !EVALUATION_KEY_SET.has(key))) invalid();
   return { action: literal(input.action, ACTIONS), data_class: literal(input.data_class, ACTIONS), principal_id: text(input.principal_id), purpose: literal(input.purpose, PURPOSES), sensitivity: literal(input.sensitivity, SENSITIVITIES), host: literal(input.host, HOSTS),
     client_host: nullableLiteral(input.client_host, CLIENT_HOSTS), observed_at: timestamp(input.observed_at), fresh_until: timestamp(input.fresh_until), expires_at: timestamp(input.expires_at), payload_fields: stringList(input.payload_fields),
-    alert_class: nullableText(input.alert_class), no_data: boolean(input.no_data), approval_id: nullableText(input.approval_id), content_origin: literal(input.content_origin, ORIGINS), requests_policy_mutation: boolean(input.requests_policy_mutation), requests_authority: boolean(input.requests_authority) };
+    alert_class: nullableText(input.alert_class), no_data: boolean(input.no_data), content_origin: literal(input.content_origin, ORIGINS), requests_policy_mutation: boolean(input.requests_policy_mutation), requests_authority: boolean(input.requests_authority) };
 }
 
 export function evaluatePersonalOsPolicy(policy: PersonalOsPolicy, value: unknown, now: Date): PersonalPolicyDecision {
@@ -213,7 +223,7 @@ export function evaluatePersonalOsPolicy(policy: PersonalOsPolicy, value: unknow
     case "observation": case "notification": gate = null; break;
     default: { const exhaustive: never = input.action; return exhaustive; }
   }
-  if (gate !== null && input.approval_id !== gate) return { kind: "require_confirmation", gate_id: gate };
+  if (gate !== null) return { kind: "require_confirmation", gate_id: gate };
   if (input.action === "notification") {
     if (input.payload_fields.some(field => !policy.notification_allowed_fields.includes(field))) return { kind: "deny", reason: "NOTIFICATION_FIELD_NOT_ALLOWED" };
     const current = now.getUTCHours() * 60 + now.getUTCMinutes();

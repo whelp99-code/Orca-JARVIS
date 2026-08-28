@@ -75,6 +75,14 @@ describe("personal OS policy parser", () => {
   ])("rejects %s", (_name, mutate) => {
     expect(parseFailure(mutate)).toBe("PERSONAL_POLICY_INVALID");
   });
+
+  it.each(["mac_vault_transfer", "linux_restore", "export", "deletion", "sensitive_memory"])("rejects a noncanonical %s gate", gate => {
+    expect(parseFailure(value => { object(value.gates)[gate] = "SHARED_UNTRUSTED_GATE"; })).toBe("PERSONAL_POLICY_INVALID");
+  });
+
+  it("rejects collapsed transfer and restore gates", () => {
+    expect(parseFailure(value => { object(value.gates).linux_restore = "SECOND_BRAIN_MAC_VAULT_TRANSFER_APPROVAL"; })).toBe("PERSONAL_POLICY_INVALID");
+  });
 });
 
 describe("personal OS policy evaluator", () => {
@@ -109,13 +117,21 @@ describe("personal OS policy evaluator", () => {
     expect(decide({}, new Date("2027-08-28T00:00:00.001Z"))).toEqual({ kind: "deny", reason: "POLICY_EXPIRED" });
   });
 
-  it("keeps transfer, restore, export, and delete behind exact distinct confirmation", () => {
-    expect(decide({ action: "transfer", data_class: "transfer", purpose: "vault_migration", approval_id: "SECOND_BRAIN_PRODUCTION_RESTORE_APPROVAL" })).toEqual({ kind: "require_confirmation", gate_id: "SECOND_BRAIN_MAC_VAULT_TRANSFER_APPROVAL" });
-    expect(decide({ action: "transfer", data_class: "transfer", purpose: "vault_migration", approval_id: "SECOND_BRAIN_MAC_VAULT_TRANSFER_APPROVAL" })).toEqual({ kind: "allow" });
-    expect(decide({ action: "restore", data_class: "restore", purpose: "disaster_recovery", approval_id: "SECOND_BRAIN_MAC_VAULT_TRANSFER_APPROVAL" })).toEqual({ kind: "require_confirmation", gate_id: "SECOND_BRAIN_PRODUCTION_RESTORE_APPROVAL" });
-    expect(decide({ action: "restore", data_class: "restore", purpose: "disaster_recovery", approval_id: "SECOND_BRAIN_PRODUCTION_RESTORE_APPROVAL" })).toEqual({ kind: "allow" });
-    expect(decide({ action: "export", data_class: "export", purpose: "data_portability", host: "linux-control-plane" })).toEqual({ kind: "require_confirmation", gate_id: "PERSONAL_DATA_EXPORT_APPROVAL" });
-    expect(decide({ action: "delete", data_class: "delete", purpose: "data_erasure", host: "linux-control-plane" })).toEqual({ kind: "require_confirmation", gate_id: "PERSONAL_DATA_DELETE_APPROVAL" });
+  it("keeps transfer and restore behind distinct confirmation even when the caller self-asserts approval", () => {
+    expect(decide({ action: "transfer", data_class: "transfer", purpose: "vault_migration", approval_id: "SECOND_BRAIN_MAC_VAULT_TRANSFER_APPROVAL" })).toEqual({ kind: "require_confirmation", gate_id: "SECOND_BRAIN_MAC_VAULT_TRANSFER_APPROVAL" });
+    expect(decide({ action: "restore", data_class: "restore", purpose: "disaster_recovery", approval_id: "SECOND_BRAIN_PRODUCTION_RESTORE_APPROVAL" })).toEqual({ kind: "require_confirmation", gate_id: "SECOND_BRAIN_PRODUCTION_RESTORE_APPROVAL" });
+  });
+
+  it("never treats caller-provided confirmation IDs as verified receipts", () => {
+    expect(decide({ action: "export", data_class: "export", purpose: "data_portability", host: "linux-control-plane", approval_id: "PERSONAL_DATA_EXPORT_APPROVAL" })).toEqual({ kind: "require_confirmation", gate_id: "PERSONAL_DATA_EXPORT_APPROVAL" });
+    expect(decide({ action: "delete", data_class: "delete", purpose: "data_erasure", host: "linux-control-plane", approval_id: "PERSONAL_DATA_DELETE_APPROVAL" })).toEqual({ kind: "require_confirmation", gate_id: "PERSONAL_DATA_DELETE_APPROVAL" });
+    expect(decide({ sensitivity: "sensitive", approval_id: "PERSONAL_MEMORY_CONFIRMATION" })).toEqual({ kind: "require_confirmation", gate_id: "PERSONAL_MEMORY_CONFIRMATION" });
+  });
+
+  it("does not require an approval field in the evaluator input contract", () => {
+    const { approval_id: ignored, ...request } = input();
+    void ignored;
+    expect(evaluatePersonalOsPolicy(parsePersonalOsPolicy(fixture()), request, new Date("2026-08-28T12:00:00.000Z"))).toEqual({ kind: "allow" });
   });
 
   it("abstains on no_data and redacts policy-approved client projections", () => {
