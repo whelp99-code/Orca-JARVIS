@@ -1,4 +1,5 @@
 import { readFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
 import { describe, expect, it } from "vitest";
 import { AuthorityDb } from "../../src/index.js";
 import { tempDb } from "../helpers.js";
@@ -73,29 +74,25 @@ describe("personal context remediation contracts", () => {
     } finally { db.close(); }
   });
 
-  it("keeps AuthorityDb below the size ceiling and Task7 transactions reviewable", () => {
-    const dbSource = readFileSync("src/db.ts", "utf8");
-    const pureLines = dbSource.split("\n").filter(line => line.trim() !== "" && !line.trim().startsWith("//")).length;
-    expect(pureLines).toBeLessThanOrEqual(250);
-    const modules = [
-      "src/db.ts",
-      "src/migration-store.ts",
-      "src/orca-observation-store.ts",
-      "src/personal-context-evidence.ts",
-      "src/personal-context-input.ts",
-      "src/personal-context-persistence.ts",
-      "src/personal-context-store.ts",
-      "src/personal-context-types.ts",
-      "src/personal-observation-store.ts",
-      "src/personal-persistence-values.ts",
-      "src/personal-recommendation-action-store.ts",
-      "src/personal-recommendation-reader.ts",
-      "src/personal-recommendation-store.ts",
-      "src/personal-recommendation-types.ts",
-    ];
-    for (const module of modules) {
-      const maximumLine = Math.max(...readFileSync(module, "utf8").split("\n").map(line => line.length));
-      expect(maximumLine, module).toBeLessThanOrEqual(160);
-    }
+  it("derives every changed Task7 product module and enforces reviewability", () => {
+    const base = "16d990b39dd2cf772c225ae7611fc3f3d8c4b768";
+    const changed = execFileSync("git", ["diff", "--name-only", base, "--", "src"], { encoding: "utf8" });
+    const untracked = execFileSync("git", ["ls-files", "--others", "--exclude-standard", "src"], { encoding: "utf8" });
+    const modules = [...new Set(`${changed}\n${untracked}`.trim().split("\n"))]
+      .filter(path => path.endsWith(".ts"))
+      .sort();
+    const required = ["src/authority-db.ts", "src/db.ts", "src/index.ts"];
+    const omitted = required.filter(path => !modules.includes(path));
+    const offenders = modules.flatMap(path => {
+      const lines = readFileSync(path, "utf8").split("\n");
+      const pureLines = lines.filter(line => line.trim() !== "" && !line.trim().startsWith("//")).length;
+      const maximumLine = Math.max(...lines.map(line => line.length));
+      return pureLines > 250 || maximumLine > 160 ? [{ path, pureLines, maximumLine }] : [];
+    });
+    expect({ modules, omitted, offenders }).toEqual({
+      modules: expect.arrayContaining(required),
+      omitted: [],
+      offenders: [],
+    });
   });
 });

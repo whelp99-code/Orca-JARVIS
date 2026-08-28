@@ -115,15 +115,20 @@ export class PersonalRecommendationStore {
     now: string,
   ): void {
     const linked = this.database.prepare(
-      `SELECT evidence_id,source_id,evidence_digest,freshness_state,fresh_until
-       FROM personal_context_evidence WHERE context_id=?`,
+      `SELECT evidence_id,source_id,evidence_kind,evidence_digest,observed_at,
+              freshness_state,fresh_until
+       FROM personal_context_evidence WHERE context_id=? ORDER BY position`,
     ).all(recommendation.payload.context_id).map(persistenceRow);
     const exactSet = recommendation.evidence.length === linked.length
-      && recommendation.evidence.every(item => linked.some(row => (
-        row["evidence_id"] === item.evidence_id
-        && row["source_id"] === item.source_id
-        && row["evidence_digest"] === item.digest
-      )));
+      && recommendation.evidence.every((item, position) => {
+        const row = linked[position];
+        return row !== undefined
+          && row["evidence_id"] === item.evidence_id
+          && row["source_id"] === item.source_id
+          && row["evidence_kind"] === item.kind
+          && row["evidence_digest"] === item.digest
+          && row["observed_at"] === item.observed_at;
+      });
     const foreignCitation = recommendation.payload.citations.some(citation => (
       !recommendation.evidence.some(item => item.evidence_id === citation)
     ));

@@ -1,4 +1,4 @@
-import type { RecommendationId, Sha256Digest } from "./personal-contracts.js";
+import type { Evidence, RecommendationId, Sha256Digest, UtcTimestamp } from "./personal-contracts.js";
 import type { PersistenceRow } from "./personal-persistence-values.js";
 
 export const APPROVAL_REQUIREMENTS = ["none", "owner"] as const;
@@ -36,10 +36,17 @@ export type StoredRecommendation = {
   readonly canonical_digest: Sha256Digest;
   readonly evidence_digest: Sha256Digest;
 };
+export type ReconstructedContextEvidence = Evidence & {
+  readonly fresh_until: UtcTimestamp;
+};
+export type ReconstructedMemoryEvidenceBinding = ReconstructedContextEvidence & {
+  readonly memory_ref: string;
+};
 export type ReconstructedRecommendation = {
   readonly recommendation: PersistenceRow;
-  readonly context_evidence: readonly PersistenceRow[];
-  readonly evidence: readonly PersistenceRow[];
+  readonly context_evidence: readonly ReconstructedContextEvidence[];
+  readonly memory_evidence: readonly ReconstructedMemoryEvidenceBinding[];
+  readonly evidence: readonly Evidence[];
   readonly actions: readonly PersistenceRow[];
   readonly action_events: readonly PersistenceRow[];
 };

@@ -135,6 +135,89 @@ describe("personal context persistence", () => {
     } finally { db.close(); }
   });
 
+  it("binds every frozen evidence identity field and reconstructs immutable memory references", async () => {
+    const db = await database();
+    const live = parseObservationEnvelopeV1(observation("orca", UUIDS[7], "checkpoint-1"));
+    const observationEvidence = evidence(UUIDS[0], live.source.source_id, canonicalPersonalContractHash(live));
+    const memoryEvidence = evidence(UUIDS[1], "src:pos:v1:second-brain:primary", digest("b"));
+    const snapshot = parseContextSnapshotV1(context([live], {
+      evidence: [observationEvidence, memoryEvidence],
+      payload: {
+        purpose: "complete_identity",
+        query: "Which bounded evidence applies?",
+        included_observation_refs: [live.id],
+        included_memory_refs: ["sid:principle:1"],
+        excluded_refs: [],
+        pending_authority_refs: [],
+        conflicts: [],
+        omissions: [],
+        budgets: { max_items: 8, max_excerpt_bytes: 1024, max_total_bytes: 8192 },
+        state: "sufficient",
+      },
+    }));
+    const binding = {
+      memory_ref: "sid:principle:1",
+      evidence_id: memoryEvidence.evidence_id,
+      source_id: memoryEvidence.source_id,
+      digest: memoryEvidence.digest,
+      observed_at: memoryEvidence.observed_at,
+      fresh_until: snapshot.expires_at,
+    };
+    try {
+      db.persistObservation(live, NOW);
+      persistContext(db, snapshot, NOW, [binding]);
+      const original = parseRecommendationV1(recommendation(snapshot));
+      db.persistRecommendation({ recommendation: original, approval_requirement: "owner", confidence_class: "high" }, NOW);
+      const probes = [
+        ["kind", { ...memoryEvidence, kind: "forged_kind" }],
+        ["observed_at", { ...memoryEvidence, observed_at: "2026-08-28T09:58:00.000Z" }],
+        ["source_id", { ...memoryEvidence, source_id: "src:pos:v1:second-brain:secondary" }],
+        ["digest", { ...memoryEvidence, digest: digest("c") }],
+        ["evidence_id", { ...memoryEvidence, evidence_id: `evi:pos:v1:${UUIDS[6]}` }],
+      ] as const;
+      const variants = [
+        ...probes.map(([name, changed]) => [name, [observationEvidence, changed]] as const),
+        ["order", [memoryEvidence, observationEvidence]] as const,
+        ["unbound", [observationEvidence]] as const,
+        ["evidence_free", []] as const,
+      ];
+      const accepted: string[] = [];
+      for (const [index, [name, changedEvidence]] of variants.entries()) {
+        const raw = recommendation(snapshot);
+        const payload = databaseRecord(raw.payload);
+        const variantUuid = `018f0d4e-7b2a-7cc1-8a2b-${(index + 100).toString(16).padStart(12, "0")}`;
+        const changed = parseRecommendationV1(recommendation(snapshot, {
+          id: `rec:pos:v1:${variantUuid}`,
+          idempotency_key: `idem:pos:v1:test:${String(index + 1).repeat(64)}`,
+          evidence: changedEvidence,
+          payload: { ...payload, citations: changedEvidence.map(item => item.evidence_id) },
+        }));
+        try {
+          db.persistRecommendation({ recommendation: changed, approval_requirement: "owner", confidence_class: "high" }, NOW);
+          accepted.push(name);
+        } catch (caught) {
+          expect(caught).toEqual(expect.objectContaining({ code: "PERSONAL_RECOMMENDATION_EVIDENCE_CONFLICT" }));
+        }
+      }
+      expect(() => parseRecommendationV1(recommendation(snapshot, {
+        evidence: [observationEvidence, observationEvidence],
+      }))).toThrowError(expect.objectContaining({ code: "PERSONAL_CONTRACT_INVALID" }));
+      const reconstructed = db.getPersonalRecommendation(original.id);
+      expect({ accepted, memory_evidence: reconstructed?.memory_evidence }).toEqual({
+        accepted: [],
+        memory_evidence: [{
+          memory_ref: "sid:principle:1",
+          evidence_id: memoryEvidence.evidence_id,
+          source_id: memoryEvidence.source_id,
+          digest: memoryEvidence.digest,
+          kind: memoryEvidence.kind,
+          observed_at: memoryEvidence.observed_at,
+          fresh_until: snapshot.expires_at,
+        }],
+      });
+    } finally { db.close(); }
+  });
+
   it("couples recommendation and action expiry to the governing context", async () => {
     const db = await database();
     const snapshot = parseContextSnapshotV1(context([], { expires_at: "2026-08-28T10:15:00.000Z", freshness: { state: "fresh", checked_at: NOW, fresh_until: "2026-08-28T10:10:00.000Z" } }));
