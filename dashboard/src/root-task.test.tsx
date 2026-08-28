@@ -206,6 +206,10 @@ async function liveRoot(
 ): Promise<Harness & { readonly source: FakeEventSource }> {
   const current = createHarness(initialPath, failures);
   harness = current;
+  const hydrated = onceState(current.store, (snapshot) => snapshot.overview.status !== "idle"
+    && snapshot.tasks.status !== "idle" && snapshot.agents.status !== "idle"
+    && snapshot.approvals.status !== "idle");
+  await act(async () => { await hydrated; });
   const source = await current.opened;
   const live = onceState(current.store, (snapshot) => snapshot.connectionState === "live");
   await act(async () => {
