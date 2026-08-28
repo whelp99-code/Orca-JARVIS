@@ -71,7 +71,16 @@ process.stdin.on("data", chunk => {
       const adapterValue = config.adapterScenario || config.emptyResponse ? adapterResponse(name, args) : undefined;
       const values = adapterValue === undefined ? { sb_search: args?.empty ? { results: [] } : { results: [{ page_id: "wiki/example", score: 1, section: "Intro", snippet: args.query }] }, sb_read_page: { frontmatter: { id: args.id }, body: "example body" }, sb_recent_changes: args?.empty ? { changes: [] } : { changes: [{ page_id: "wiki/example", change: "added", date: "2026-08-28" }] }, sb_open_conflicts: args?.empty ? { conflicts: [] } : { conflicts: [{ conflict_id: "c", page_id: "wiki/example", summary: "example" }] }, sb_remember: { inbox_path: "inbox/example.md" } } : { [name]: adapterValue };
       if (args?.stderrBytes) process.stderr.write("s".repeat(args.stderrBytes));
-      if (args?.hold) held.set(message.id, values[name]);
+      if (config.duplicateResultEnvelope && name === "sb_search") {
+        const result = JSON.stringify({ content: [{ type: "text", text: "{\"results\":[]}" }], isError: false });
+        process.stdout.write(`{"jsonrpc":"2.0","id":${JSON.stringify(message.id)},"result":${result},"result":${result}}\n`);
+      }
+      else if (config.rawToolText?.method === name) send({
+        jsonrpc: "2.0",
+        id: message.id,
+        result: { content: [{ type: "text", text: config.rawToolText.text }], isError: false },
+      });
+      else if (args?.hold) held.set(message.id, values[name]);
       else if (args?.splitUtf8) { const frame = Buffer.from(`${JSON.stringify(toolResult(message.id, { results: [{ snippet: "한" }] }))}\n`); const split = frame.indexOf(Buffer.from("한")) + 1; process.stdout.write(frame.subarray(0, split)); queueMicrotask(() => process.stdout.write(frame.subarray(split))); }
       else if (args?.envelope === "extra") send({ ...toolResult(message.id, values[name]), extra: true });
       else if (args?.envelope === "both") send({ ...toolResult(message.id, values[name]), error: { code: -1, message: "bad" } });

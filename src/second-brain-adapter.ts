@@ -1,4 +1,5 @@
 import { parseSecondBrainPage } from "./second-brain-evidence-parser.js";
+import { normalizeSecondBrainProviderRecord } from "./second-brain-provider-value.js";
 import { secondBrainUtf8Bytes, SecondBrainReadBudget } from "./second-brain-read-budget.js";
 import {
   combineSecondBrainEvidence,
@@ -218,7 +219,12 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
     checkedAt: Date,
   ): Promise<CallResult> {
     try {
-      return { kind: "transport", outcome: await this.options.transport.call(method, arguments_) };
+      const outcome = await this.options.transport.call(method, arguments_);
+      if (outcome.kind !== "data") return { kind: "transport", outcome };
+      const value = normalizeSecondBrainProviderRecord(outcome.value);
+      return value === undefined
+        ? { kind: "adapter", outcome: invalid("SECOND_BRAIN_PROVIDER_VALUE_INVALID", checkedAt) }
+        : { kind: "transport", outcome: { kind: "data", value } };
     } catch (error) {
       if (!(error instanceof SecondBrainTransportError)) throw error;
       const kind = OFFLINE_CODES.some(code => code === error.code) ? "offline" : error.disposition === "fatal" ? "invalid" : "unavailable";

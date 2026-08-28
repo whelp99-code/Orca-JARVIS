@@ -1,4 +1,5 @@
-import { execFile as nodeExecFile, type ChildProcess, } from "node:child_process"; import { realpathSync } from "node:fs"; import { frozenArgumentsMatch,
+import { execFile as nodeExecFile, type ChildProcess, } from "node:child_process"; import { realpathSync } from "node:fs";
+import { parseSecondBrainStrictJson } from "./second-brain-strict-json.js"; import { frozenArgumentsMatch,
 	inspectFrozenSchemas, snapshotArguments, } from "./second-brain-frozen.js"; import { SECOND_BRAIN_CONFIG, SECOND_BRAIN_DEADLINES, SECOND_BRAIN_FRAME_BYTES,
 	SECOND_BRAIN_LAUNCHER, SECOND_BRAIN_LIMITS, SECOND_BRAIN_PROTOCOL_VERSION, SECOND_BRAIN_READ_METHODS as READ_METHODS,
 	SECOND_BRAIN_WRITE_METHOD as WRITE_METHOD, SecondBrainTransportError, isSecondBrainReadMethod as isRead, loadSecondBrainContract, normalizeSecondBrainOutcome,
@@ -54,7 +55,8 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 			this.dispatch(item).finally(() => { this.activeReads -= 1; this.pump(); }); } if (!this.closed && this.activeWrites === 0) {
 			const item = this.writeQueue.shift(); if (item) { this.activeWrites = 1; this.dispatch(item).finally(() => { this.activeWrites = 0; this.pump(); }); } } }
 	private async dispatch(item: QueueItem): Promise<void> { let attempt = 0; for (;;) { try { await this.ensureStarted(); const raw = await this.admit(item);
-				if (!item.settled) { item.settled = true; item.resolve(normalizeSecondBrainOutcome(item.method, raw)); } return; } catch (caught) { const error =
+				const outcome = normalizeSecondBrainOutcome(item.method, raw); if (!item.settled) {
+					item.settled = true; item.resolve(outcome); } return; } catch (caught) { const error =
 					caught instanceof SecondBrainTransportError ? caught : this.error("SECOND_BRAIN_START_FAILED", "unavailable"); if ( isRead(item.method) &&
 					error.code === "SECOND_BRAIN_CHILD_EXIT" && attempt < this.retries ) { attempt += 1; continue; } if (!item.settled) { item.settled = true;
 					item.reject(error); } return; } } } private async admit(item: QueueItem): Promise<Record<string, unknown>> { const previous = this.admissionTail;
@@ -117,10 +119,11 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 			let frame = this.buffer.subarray(0, newline); this.buffer = this.buffer.subarray(newline + 1);
 			if (frame.at(-1) === 13) frame = frame.subarray(0, frame.byteLength - 1); if (frame.byteLength > SECOND_BRAIN_FRAME_BYTES) {
 				this.fail(this.error("SECOND_BRAIN_OVERSIZE_FRAME", "fatal")); return; } this.frame(frame); } if (this.buffer.byteLength >= SECOND_BRAIN_FRAME_BYTES)
-			this.fail(this.error("SECOND_BRAIN_OVERSIZE_FRAME", "fatal")); }; private frame(frame: Buffer): void { let parsed: unknown; try { parsed = JSON.parse(
-				new TextDecoder("utf-8", { fatal: true }).decode(frame), ); } catch (caught) { if (caught instanceof TypeError)
-				this.fail(this.error("SECOND_BRAIN_INVALID_UTF8", "fatal")); else if (caught instanceof SyntaxError)
-				this.fail(this.error("SECOND_BRAIN_MALFORMED_FRAME", "fatal")); else throw caught; return; } if ( !isRecord(parsed) || parsed.jsonrpc !== "2.0" ||
+			this.fail(this.error("SECOND_BRAIN_OVERSIZE_FRAME", "fatal")); }; private frame(frame: Buffer): void { let text: string; try {
+			text = new TextDecoder("utf-8", { fatal: true }).decode(frame); } catch (caught) {
+			if (caught instanceof TypeError) this.fail(this.error("SECOND_BRAIN_INVALID_UTF8", "fatal"));
+			else throw caught; return; }
+		const parsed = parseSecondBrainStrictJson(text); if ( !isRecord(parsed) || parsed.jsonrpc !== "2.0" ||
 			typeof parsed.id !== "string" ) { this.fail(this.error("SECOND_BRAIN_MALFORMED_FRAME", "fatal")); return; } const resultEnvelope =
 			Object.keys(parsed).sort().join("\0") === "id\0jsonrpc\0result"; const errorEnvelope = Object.keys(parsed).sort().join("\0") === "error\0id\0jsonrpc"; if (
 			resultEnvelope === errorEnvelope || (errorEnvelope && !this.validProtocolError(parsed.error)) || (resultEnvelope && !isRecord(parsed.result)) ) {

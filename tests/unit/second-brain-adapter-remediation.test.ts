@@ -28,10 +28,11 @@ function adapter(
   });
 }
 
-function conflictPage(id: string, sides: readonly string[]): ReturnType<typeof page> {
+function conflictPage(id: string, sides: readonly string[], providerPadding = ""): ReturnType<typeof page> {
   const facts = sides.map(sid => `1234567890[^${sid}]`).join("\n");
   const definitions = sides.map(sid => `[^${sid}]: source:${sid}`).join("\n");
-  return page(`${facts}\n${definitions}\n`, { id: `conflicts/${id}`, status: "conflict" });
+  const ignoredDefinition = providerPadding.length === 0 ? "" : `[^eeeeeeee]: ${providerPadding}\n`;
+  return page(`${facts}\n${definitions}\n${ignoredDefinition}`, { id: `conflicts/${id}`, status: "conflict" });
 }
 
 function expectAtomicInvalid(result: SecondBrainReadOutcome, code: string): void {
@@ -41,20 +42,20 @@ function expectAtomicInvalid(result: SecondBrainReadOutcome, code: string): void
 }
 
 describe("Second Brain complete read boundaries", () => {
-  it("rejects one conflict request when cited sides exceed the shared UTF-8 total", async () => {
+  it("rejects conflict provider pages that exceed the request budget only cumulatively", async () => {
     const listed = { kind: "data", value: { conflicts: [
       { conflict_id: "first", page_id: "wiki/first", summary: "one" },
       { conflict_id: "second", page_id: "wiki/second", summary: "two" },
     ] } } as const;
-
+    const providerPadding = "p".repeat(1_000);
     const transport = new QueuedTransport([
       listed,
-      conflictPage("first", ["aaaaaaaa", "bbbbbbbb"]),
-      conflictPage("second", ["cccccccc", "dddddddd"]),
+      conflictPage("first", ["aaaaaaaa", "bbbbbbbb"], providerPadding),
+      conflictPage("second", ["cccccccc", "dddddddd"], providerPadding),
     ]);
     const reader = createSecondBrainReadAdapter({
       transport,
-      budgets: { ...budgets, max_total_bytes: 1_600 },
+      budgets: { ...budgets, max_total_bytes: 2_400, max_page_bytes: 1_500 },
       clock: () => NOW,
       max_age_ms: 86_400_000,
       expiry_ms: 172_800_000,
@@ -177,7 +178,7 @@ describe("Second Brain complete read boundaries", () => {
       snippet: "",
       score: 1,
     }] } } as const);
-    const selected = { ...budgets, max_excerpt_bytes: 48, max_total_bytes: 48 };
+    const selected = { ...budgets, max_excerpt_bytes: 47, max_total_bytes: 47 };
 
     const exact = await adapter([search("한".repeat(4)), offline()], selected).search("x");
     const over = await adapter([search(`${"한".repeat(4)}a`), offline()], selected).search("x");

@@ -3,6 +3,7 @@ import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { consumeSecondBrainContract } from "./second-brain-contract.js";
 import { inspectFrozenSchemas } from "./second-brain-frozen.js";
+import { parseSecondBrainStrictJson } from "./second-brain-strict-json.js";
 
 export const SECOND_BRAIN_LAUNCHER = "/home/jm/.local/state/second-brain/app/current/bin/second-brain-mcp";
 export const SECOND_BRAIN_CONFIG = "/home/jm/.config/second-brain/config.toml";
@@ -177,13 +178,11 @@ export function normalizeSecondBrainOutcome(
   if (entry.type !== "text" || typeof entry.text !== "string") {
     throw new SecondBrainTransportError("SECOND_BRAIN_SCHEMA_MISMATCH", "fatal", { generation: 0 });
   }
-  let parsed: Record<string, unknown>;
-  try {
-    parsed = record(JSON.parse(entry.text));
-  } catch (error) {
-    if (error instanceof SecondBrainTransportError) throw error;
-    throw new SecondBrainTransportError("SECOND_BRAIN_SCHEMA_MISMATCH", "fatal", { generation: 0 });
+  const decoded = parseSecondBrainStrictJson(entry.text);
+  if (decoded === undefined) {
+    throw new SecondBrainTransportError("SECOND_BRAIN_PROVIDER_VALUE_INVALID", "fatal", { generation: 0 });
   }
+  const parsed = record(decoded);
   if (exactEmptyResult(method, parsed)) return { kind: "no_data", reason: "empty_result" };
   return { kind: "data", value: parsed };
 }
