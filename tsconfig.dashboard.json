@@ -18,5 +18,7 @@
     "noUncheckedIndexedAccess": true,
     "types": ["vite/client", "vitest/globals", "@testing-library/jest-dom"]
   },
-  "include": ["dashboard/**/*.ts", "dashboard/**/*.tsx"]
+  "include": [
+    "dashboard/**/*.ts", "dashboard/**/*.mts", "dashboard/**/*.cts", "dashboard/**/*.tsx"
+  ]
 }

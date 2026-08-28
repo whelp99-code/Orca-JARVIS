@@ -6,6 +6,8 @@ import { LiveSupervisor, type LiveBinding } from "../live-supervisor.js";
 import { buildCurrentState } from "../state-projection.js";
 import { TaskTimeline, type TaskTimelineEvent, type TaskTimelineSummary } from "../task-timeline.js";
 import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
+import { invalidClockOverview } from "./invalid-clock-overview.js";
+import { overviewCards } from "./overview-cards.js";
 import type { PortfolioOverview } from "./portfolio-contracts.js";
 import { PortfolioProjection } from "./portfolio-projection.js";
 import { redactDashboardValue } from "./redaction.js";
@@ -55,7 +57,7 @@ export type OverviewAgent = {
 };
 
 export type OverviewResponse = {
-  readonly schema_version: 1; readonly generated_at: string;
+  readonly schema_version: 1; readonly generated_at: string | null;
   readonly cards: readonly OverviewCard[]; readonly recent_tasks: readonly OverviewTask[];
   readonly pending_approvals: readonly OverviewApproval[]; readonly risks: readonly OverviewRisk[];
   readonly agents: readonly OverviewAgent[]; readonly portfolio: PortfolioOverview;
@@ -85,6 +87,9 @@ export class DashboardReadModel {
   ) {}
 
   async overview(now = new Date()): Promise<OverviewResponse> {
+    if (!Number.isFinite(now.getTime())) {
+      return invalidClockOverview(await buildSecondBrainReadiness(this.secondBrainProbe, now));
+    }
     const before = changeCount(this.db);
     const projection = await buildCurrentState(this.db, now);
     const tasks = new TaskTimeline(this.db).list(RECENT_TASK_LIMIT);
@@ -252,25 +257,4 @@ function agentIdentity(binding: LiveBinding): string {
     terminal_id: binding.terminal_id,
     incarnation_id: binding.incarnation_id,
   })).digest("hex")}`;
-}
-
-function overviewCards(counts: {
-  readonly activeWork: number;
-  readonly agents: number;
-  readonly pending: number;
-  readonly risks: number;
-}): readonly OverviewCard[] {
-  if (counts.activeWork === 0 && counts.pending === 0 && counts.risks === 0) return [];
-  return [
-    { id: "active-work", label: "Active work", value: counts.activeWork, detail: counted(counts.activeWork, "task", "in progress") },
-    { id: "agents", label: "Agents", value: counts.agents, detail: counted(counts.agents, "live binding") },
-    { id: "pending-approvals", label: "Pending approvals", value: counts.pending, detail: counted(counts.pending, "request", "awaiting receipt") },
-    { id: "risks", label: "Risks", value: counts.risks, detail: counted(counts.risks, "open risk") },
-  ];
-}
-
-function counted(count: number, noun: string, suffix?: string): string {
-  const word = count === 1 ? noun : `${noun}s`;
-  const head = `${String(count)} ${word}`;
-  return suffix === undefined ? head : `${head} ${suffix}`;
 }

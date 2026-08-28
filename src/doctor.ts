@@ -16,7 +16,7 @@ export interface DoctorCheck {
 }
 export interface DoctorReport {
 	ok: boolean;
-	checked_at: string;
+	checked_at: string | null;
 	runtime: { node: string; abi: string; platform: string; arch: string };
 	database: { filename: string; sqlite_version: string | null; wal_bytes: number; applied_migrations: number; expected_migrations: number };
 	checks: DoctorCheck[];
@@ -46,10 +46,13 @@ function unavailableCapabilities(now: Date): CapabilityMatrixV1 {
 		operational: { ok: false, evidence: "migrations_pending" },
 		authorized: { ok: false, evidence: "migrations_pending" },
 	};
+	const validClock = Number.isFinite(now.getTime());
+	const error: CapabilityMatrixV1["error"] = { code: "CAPABILITY_CLOCK_INVALID" };
 	return {
 		schema_version: 1,
-		checked_at: now.toISOString(),
+		checked_at: validClock ? now.toISOString() : null,
 		capabilities: (["codex", "claude", "orca_read", "gjc", "live_resume"] as const).map((id) => ({ id, stages: { ...stages } })),
+		...(validClock ? {} : { error }),
 	};
 }
 export async function runDoctor(
@@ -59,6 +62,16 @@ export async function runDoctor(
 	secondBrainProbe: SecondBrainReadinessProbe = runtimeSecondBrainReadinessProbe(),
 ): Promise<DoctorReport> {
 	const checks: DoctorCheck[] = [];
+	const validClock = Number.isFinite(now.getTime());
+	if (!validClock) {
+		checks.push({
+			name: "runtime.clock",
+			ok: false,
+			actual: null,
+			expected: "finite",
+			code: "SECOND_BRAIN_CLOCK_INVALID",
+		});
+	}
 	const nodeMajor = Number(process.versions.node.split(".")[0]);
 	checks.push({
 		name: "runtime.node_major",
@@ -165,7 +178,7 @@ export async function runDoctor(
 	const secondBrain = await buildSecondBrainReadiness(secondBrainProbe, now);
 	const report: DoctorReport = {
 		ok: checks.every((check) => check.ok),
-		checked_at: now.toISOString(),
+		checked_at: validClock ? now.toISOString() : null,
 		runtime: { node: process.version, abi: process.versions.modules, platform: process.platform, arch: process.arch },
 		database: {
 			filename: db.filename,

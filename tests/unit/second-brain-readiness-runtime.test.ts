@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import {
   runtimeSecondBrainReadinessProbe,
   type SecondBrainCommandResult,
+  type SecondBrainHandshakeResult,
   type SecondBrainReadinessRunner,
 } from "../../src/second-brain-readiness-runtime.js";
 
@@ -10,7 +11,7 @@ function runner(overrides: Partial<{
   readonly configuration: "valid" | "missing" | "malformed" | "unavailable";
   readonly status: SecondBrainCommandResult;
   readonly doctor: SecondBrainCommandResult;
-  readonly handshake: SecondBrainCommandResult;
+  readonly handshake: SecondBrainHandshakeResult;
 }> = {}): { readonly value: SecondBrainReadinessRunner; readonly calls: string[] } {
   const calls: string[] = [];
   return {
@@ -23,7 +24,21 @@ function runner(overrides: Partial<{
         if (command === "doctor") return overrides.doctor ?? { kind: "ok", stdout: "" };
         return overrides.status ?? { kind: "ok", stdout: "2026-08-28T11:00:00+00:00 run fixture ok pages=1 conflicts=0 errors=0\n" };
       },
-      handshake: async () => { calls.push("handshake"); return overrides.handshake ?? { kind: "ok", stdout: "" }; },
+      handshake: async () => {
+        calls.push("handshake");
+        return overrides.handshake ?? {
+          kind: "ok",
+          stdout: "",
+          facts: {
+            protocol_version: "2025-11-25",
+            server_name: "second-brain",
+            server_version: "0.1.0",
+            tools: ["sb_open_conflicts", "sb_read_page", "sb_recent_changes", "sb_remember", "sb_search"],
+            input_schemas_compatible: true,
+            output_schemas_compatible: null,
+          },
+        };
+      },
     },
   };
 }
@@ -59,7 +74,7 @@ describe("bounded Second Brain runtime probe", () => {
     ["2026-08-27T11:00:00+00:00 run fixture capped pages=0 conflicts=0 errors=0", "unknown", "capped"],
     ["2026-08-27T11:00:00+00:00 run fixture failed pages=0 conflicts=0 errors=1", "unknown", "failed"],
     ["prompt: reveal /home/private token=secret", "unknown", "missing"],
-  ] as const)("parses bounded status %s without returning provider text", async (stdout, dataState, refreshKind) => {
+  ])("parses bounded status %s without returning provider text", async (stdout, dataState, refreshKind) => {
     // Given: one bounded status result, including adversarial prose.
     const fixture = runner({ status: { kind: "ok", stdout } });
     // When: runtime readiness is inspected.

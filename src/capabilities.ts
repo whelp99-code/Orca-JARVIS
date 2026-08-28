@@ -22,8 +22,9 @@ export interface CapabilityFact {
 
 export interface CapabilityMatrixV1 {
   schema_version: 1;
-  checked_at: string;
+  checked_at: string | null;
   capabilities: CapabilityFact[];
+  error?: { readonly code: "CAPABILITY_CLOCK_INVALID" };
 }
 
 export interface CapabilityProbe {
@@ -166,6 +167,14 @@ export async function buildCapabilityMatrix(
   probe: CapabilityProbe,
   now = new Date(),
 ): Promise<CapabilityMatrixV1> {
+  if (!Number.isFinite(now.getTime())) {
+    return {
+      schema_version: 1,
+      checked_at: null,
+      capabilities: CAPABILITY_IDS.map(id => ({ id, stages: failedStages() })),
+      error: { code: "CAPABILITY_CLOCK_INVALID" },
+    };
+  }
   const gjcOperational = db.gjcOperational();
   const liveResumeConfigured = new LiveSupervisor(db).liveResumeConfigured();
   const capabilities: CapabilityFact[] = [];

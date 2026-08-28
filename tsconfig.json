@@ -5,5 +5,8 @@
     "forceConsistentCasingInFileNames": true, "skipLibCheck": true,
     "noUncheckedIndexedAccess": true, "verbatimModuleSyntax": true
   },
-  "include": ["src/**/*.ts", "tests/**/*.ts"]
+  "include": [
+    "src/**/*.ts", "src/**/*.mts", "src/**/*.cts", "src/**/*.tsx",
+    "tests/**/*.ts", "tests/**/*.mts", "tests/**/*.cts", "tests/**/*.tsx"
+  ]
 }

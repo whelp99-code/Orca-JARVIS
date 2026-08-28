@@ -182,7 +182,7 @@ async function writeHealth(
       schema_version: DASHBOARD_SCHEMA_VERSION,
       status: "ok",
       authority: "ready",
-      generated_at: now.toISOString(),
+      generated_at: Number.isFinite(now.getTime()) ? now.toISOString() : null,
       second_brain: await buildSecondBrainReadiness(secondBrainProbe, now),
     },
     requestId,

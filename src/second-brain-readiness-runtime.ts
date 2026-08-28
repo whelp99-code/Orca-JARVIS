@@ -1,38 +1,41 @@
 import { execFile } from "node:child_process";
-import { readFile, stat } from "node:fs/promises";
+import { stat } from "node:fs/promises";
+import { probeSecondBrainConfiguration } from "./second-brain-readiness-config.js";
+import {
+  attestedSecondBrainHandshake,
+  parseSecondBrainHandshakeFacts,
+  type SecondBrainHandshakeFacts,
+} from "./second-brain-readiness-handshake.js";
+import { parseSecondBrainLegacyStatus } from "./second-brain-readiness-facts.js";
+import type {
+  SecondBrainProbeFailure,
+  SecondBrainProbeOutcome,
+  SecondBrainReadinessObservation,
+  SecondBrainReadinessProbe,
+  SecondBrainRefreshObservation,
+} from "./second-brain-readiness.js";
 import {
   SECOND_BRAIN_CONFIG,
   SECOND_BRAIN_LAUNCHER,
   SecondBrainTransportError,
   createSecondBrainTransport,
 } from "./second-brain-transport.js";
-import { combineSecondBrainFacts } from "./second-brain-readiness-combine.js";
-import {
-  parseSecondBrainLegacyStatus,
-  parseSecondBrainPeerFacts,
-  type SecondBrainPeerFacts,
-} from "./second-brain-readiness-facts.js";
-import {
-  type SecondBrainProbeFailure,
-  type SecondBrainProbeOutcome,
-  type SecondBrainReadinessObservation,
-  type SecondBrainReadinessProbe,
-  type SecondBrainRefreshObservation,
-} from "./second-brain-readiness.js";
 
 const SECOND_BRAIN_CLI = "/home/jm/.local/bin/sb";
 const PROBE_TIMEOUT_MS = 5_000;
 const PROBE_MAX_BYTES = 2_048;
-const CONFIG_MAX_BYTES = 65_536;
 
 export type SecondBrainCommandResult =
   | { readonly kind: "ok"; readonly stdout: string }
+  | { readonly kind: SecondBrainProbeFailure };
+export type SecondBrainHandshakeResult =
+  | { readonly kind: "ok"; readonly stdout: string; readonly facts?: SecondBrainHandshakeFacts }
   | { readonly kind: SecondBrainProbeFailure };
 export interface SecondBrainReadinessRunner {
   executable(): Promise<"available" | "missing" | "unavailable">;
   configuration(): Promise<"valid" | "missing" | "malformed" | "unavailable">;
   run(command: "status" | "doctor"): Promise<SecondBrainCommandResult>;
-  handshake(): Promise<SecondBrainCommandResult>;
+  handshake(): Promise<SecondBrainHandshakeResult>;
 }
 
 function commandResult(command: "status" | "doctor"): Promise<SecondBrainCommandResult> {
@@ -49,14 +52,23 @@ function commandResult(command: "status" | "doctor"): Promise<SecondBrainCommand
         resolve({ kind: "ok", stdout });
         return;
       }
-      const failure = error as NodeJS.ErrnoException & { readonly killed?: boolean; readonly signal?: string };
-      if (failure.code === "ENOENT") resolve({ kind: "unavailable" });
-      else if (failure.killed === true || failure.signal === "SIGKILL") resolve({ kind: "timeout" });
-      else if (failure.code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") resolve({ kind: "oversize" });
-      else if (failure.signal !== undefined) resolve({ kind: "crash" });
-      else resolve({ kind: "nonzero" });
+      resolve({ kind: commandFailure(error) });
     });
   });
+}
+
+function commandFailure(error: unknown): SecondBrainProbeFailure {
+  const code = property(error, "code");
+  const killed = property(error, "killed");
+  const signal = property(error, "signal");
+  if (code === "ENOENT") return "unavailable";
+  if (killed === true || signal === "SIGKILL") return "timeout";
+  if (code === "ERR_CHILD_PROCESS_STDIO_MAXBUFFER") return "oversize";
+  return signal === undefined ? "nonzero" : "crash";
+}
+
+function property(value: unknown, key: string): unknown {
+  return typeof value === "object" && value !== null ? Reflect.get(value, key) : undefined;
 }
 
 export function boundedSecondBrainReadinessRunner(): SecondBrainReadinessRunner {
@@ -66,40 +78,39 @@ export function boundedSecondBrainReadinessRunner(): SecondBrainReadinessRunner 
         const metadata = await stat(SECOND_BRAIN_LAUNCHER);
         return metadata.isFile() && (metadata.mode & 0o111) !== 0 ? "available" : "missing";
       } catch (error) {
-        if (error instanceof Error && "code" in error && error.code === "ENOENT") return "missing";
-        return "unavailable";
+        if (!(error instanceof Error)) return "unavailable";
+        return property(error, "code") === "ENOENT" ? "missing" : "unavailable";
       }
     },
-    configuration: async () => {
-      try {
-        const metadata = await stat(SECOND_BRAIN_CONFIG);
-        if (!metadata.isFile() || metadata.size < 1 || metadata.size > CONFIG_MAX_BYTES) return "malformed";
-        const value = await readFile(SECOND_BRAIN_CONFIG, "utf8");
-        return /^vault_root\s*=\s*"[^"\r\n]+"/m.test(value) ? "valid" : "malformed";
-      } catch (error) {
-        if (error instanceof Error && "code" in error && error.code === "ENOENT") return "missing";
-        return "unavailable";
-      }
-    },
+    configuration: () => probeSecondBrainConfiguration(SECOND_BRAIN_CONFIG),
     run: commandResult,
     handshake: async () => {
       const transport = createSecondBrainTransport({ safeReadRetries: 0 });
+      let result: SecondBrainHandshakeResult;
       try {
         await transport.restart();
-        return { kind: "ok", stdout: "" };
+        const facts = attestedSecondBrainHandshake(transport.diagnostics());
+        result = facts === undefined ? { kind: "malformed" } : { kind: "ok", stdout: "", facts };
       } catch (error) {
         if (!(error instanceof SecondBrainTransportError)) throw error;
-        if (error.code === "SECOND_BRAIN_STARTUP_TIMEOUT") return { kind: "timeout" };
-        if (error.code === "SECOND_BRAIN_OVERSIZE_FRAME") return { kind: "oversize" };
-        if (error.code === "SECOND_BRAIN_CHILD_EXIT") return { kind: "crash" };
-        return { kind: "malformed" };
-      } finally {
-        await transport.close().catch(error => {
-          if (!(error instanceof SecondBrainTransportError)) throw error;
-        });
+        result = { kind: transportFailure(error) };
       }
+      try {
+        await transport.close();
+      } catch (error) {
+        if (!(error instanceof SecondBrainTransportError)) throw error;
+        return { kind: "unavailable" };
+      }
+      return result;
     },
   };
+}
+
+function transportFailure(error: SecondBrainTransportError): SecondBrainProbeFailure {
+  if (error.code === "SECOND_BRAIN_STARTUP_TIMEOUT") return "timeout";
+  if (error.code === "SECOND_BRAIN_OVERSIZE_FRAME") return "oversize";
+  if (error.code === "SECOND_BRAIN_CHILD_EXIT") return "crash";
+  return "malformed";
 }
 
 function unavailableBase(
@@ -107,33 +118,54 @@ function unavailableBase(
   configuration: SecondBrainReadinessObservation["configuration"],
 ): SecondBrainReadinessObservation {
   return {
-    executable, configuration, contract_digest: null, protocol_version: null, tools: null,
-    schemas_compatible: false, status: "unavailable", doctor: "unavailable", handshake: "unavailable",
-    read_authorization: "unauthorized", write_authorization: "unauthorized", data_state: "unknown",
+    executable,
+    configuration,
+    contract_digest: null,
+    protocol_version: null,
+    tools: null,
+    schemas_compatible: false,
+    status: "unavailable",
+    doctor: "unavailable",
+    handshake: "unavailable",
+    status_operational: null,
+    doctor_operational: null,
+    read_authorization: "unauthorized",
+    write_authorization: "unauthorized",
+    data_state: "unknown",
     refresh: { kind: "missing" },
   };
 }
 
-type ParsedProbe = {
+type StatusProbe = {
   readonly outcome: SecondBrainProbeOutcome;
-  readonly facts: SecondBrainPeerFacts | undefined;
+  readonly legacy: ReturnType<typeof parseSecondBrainLegacyStatus>;
 };
 
-function parseFacts(result: SecondBrainCommandResult, allowLegacy: boolean): ParsedProbe & {
-  readonly legacy: ReturnType<typeof parseSecondBrainLegacyStatus>;
+function parseStatus(result: SecondBrainCommandResult): StatusProbe {
+  if (result.kind !== "ok") return { outcome: result.kind, legacy: undefined };
+  const legacy = parseSecondBrainLegacyStatus(result.stdout);
+  return legacy === undefined ? { outcome: "malformed", legacy } : { outcome: "ok", legacy };
+}
+
+function parseDoctor(result: SecondBrainCommandResult): SecondBrainProbeOutcome {
+  if (result.kind !== "ok") return result.kind;
+  return result.stdout.trim() === "" ? "ok" : "malformed";
+}
+
+function parseHandshake(result: SecondBrainHandshakeResult): {
+  readonly outcome: SecondBrainProbeOutcome;
+  readonly facts: SecondBrainHandshakeFacts | undefined;
 } {
-  if (result.kind !== "ok") return { outcome: result.kind, facts: undefined, legacy: undefined };
-  const facts = parseSecondBrainPeerFacts(result.stdout);
-  if (facts !== undefined) return { outcome: "ok", facts, legacy: undefined };
-  const legacy = allowLegacy ? parseSecondBrainLegacyStatus(result.stdout) : undefined;
-  if (legacy !== undefined || result.stdout.trim() === "") return { outcome: "ok", facts: undefined, legacy };
-  return { outcome: "malformed", facts: undefined, legacy: undefined };
+  if (result.kind !== "ok") return { outcome: result.kind, facts: undefined };
+  const facts = result.facts ?? parseSecondBrainHandshakeFacts(result.stdout);
+  return facts === undefined ? { outcome: "malformed", facts } : { outcome: "ok", facts };
 }
 
 function refreshObservation(
-  attempt: ReturnType<typeof combineSecondBrainFacts>["latest_refresh_attempt"],
+  legacy: ReturnType<typeof parseSecondBrainLegacyStatus>,
 ): SecondBrainRefreshObservation {
-  if (attempt === null) return { kind: "missing" };
+  const attempt = legacy?.latest_refresh_attempt;
+  if (attempt === null || attempt === undefined) return { kind: "missing" };
   if (attempt.kind === "success") return { kind: "success", completed_at: attempt.at };
   return { kind: attempt.kind, attempted_at: attempt.at };
 }
@@ -147,40 +179,36 @@ export function runtimeSecondBrainReadinessProbe(
       if (executable !== "available") return unavailableBase(executable, "unavailable");
       const configuration = await runner.configuration();
       if (configuration !== "valid") return unavailableBase(executable, configuration);
-      const status = parseFacts(await runner.run("status"), true);
-      const doctor = parseFacts(await runner.run("doctor"), false);
-      const handshake = parseFacts(await runner.handshake(), false);
-      const facts = combineSecondBrainFacts({
-        status: status.facts,
-        doctor: doctor.facts,
-        handshake: handshake.facts,
-        legacy: status.legacy,
-      });
+      const status = parseStatus(await runner.run("status"));
+      const doctor = parseDoctor(await runner.run("doctor"));
+      const handshake = parseHandshake(await runner.handshake());
+      const facts = handshake.facts;
       return {
         executable,
         configuration,
-        contract_digest: handshake.facts === undefined ? null : facts.contract_digest,
-        protocol_version: handshake.facts === undefined ? null : facts.protocol_version,
-        tools: handshake.facts === undefined ? null : facts.tools,
-        schemas_compatible: handshake.facts !== undefined
-          && facts.input_schemas_compatible === true
+        contract_digest: null,
+        protocol_version: facts?.protocol_version ?? null,
+        tools: facts?.tools ?? null,
+        schemas_compatible: facts?.input_schemas_compatible === true
           && facts.output_schemas_compatible === true,
-        input_schemas_compatible: handshake.facts === undefined ? null : facts.input_schemas_compatible,
-        output_schemas_compatible: handshake.facts === undefined ? null : facts.output_schemas_compatible,
+        input_schemas_compatible: facts?.input_schemas_compatible ?? null,
+        output_schemas_compatible: facts?.output_schemas_compatible ?? null,
         status: status.outcome,
-        doctor: doctor.outcome,
+        doctor,
         handshake: handshake.outcome,
-        status_operational: facts.status_operational,
-        doctor_operational: facts.doctor_operational,
-        channels_consistent: facts.channels_consistent && status.outcome === "ok" && doctor.outcome === "ok",
-        read_authorization: facts.authorization.read,
-        write_authorization: facts.authorization.write,
-        authorization_consistent: facts.authorization_consistent && facts.channels_consistent,
-        data_state: status.outcome === "malformed" ? "unknown"
-          : status.outcome === "ok" ? facts.data_state : "unavailable",
-        refresh: refreshObservation(facts.latest_refresh_attempt),
-        last_successful_refresh_at: facts.last_successful_refresh_at,
+        status_operational: null,
+        doctor_operational: null,
+        channels_consistent: status.outcome === "ok" && doctor === "ok" && handshake.outcome === "ok",
+        read_authorization: "unauthorized",
+        write_authorization: "unauthorized",
+        authorization_consistent: true,
+        data_state: status.outcome === "ok" ? status.legacy?.data_state ?? "unknown"
+          : status.outcome === "malformed" ? "unknown" : "unavailable",
+        refresh: refreshObservation(status.legacy),
+        last_successful_refresh_at: status.legacy?.last_successful_refresh_at ?? null,
       };
     },
   };
 }
+
+export { probeSecondBrainConfiguration } from "./second-brain-readiness-config.js";

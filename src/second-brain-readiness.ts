@@ -1,4 +1,15 @@
+import { invalidSecondBrainReadinessReport } from "./second-brain-readiness-invalid-clock.js";
+import type {
+  SecondBrainReadinessReportV1,
+  SecondBrainReadinessValidReportV1,
+  SecondBrainStage,
+} from "./second-brain-readiness-report.js";
 import { parseSecondBrainInstant } from "./second-brain-readiness-time.js";
+export type {
+  SecondBrainReadinessInvalidReportV1,
+  SecondBrainReadinessReportV1,
+  SecondBrainReadinessValidReportV1,
+} from "./second-brain-readiness-report.js";
 import { SECOND_BRAIN_PROTOCOL_VERSION } from "./second-brain-transport.js";
 
 export const SECOND_BRAIN_READINESS_VERSION = 1 as const;
@@ -44,66 +55,15 @@ export interface SecondBrainReadinessProbe {
   inspect(): Promise<SecondBrainReadinessObservation>;
 }
 
-type Stage<State extends string, Reason extends string> = {
-  readonly state: State;
-  readonly reason: Reason;
-  readonly checked_at: string;
-};
-type ConfiguredStage = Stage<
-  "valid" | "missing" | "malformed" | "unknown",
-  "configuration_valid" | "configuration_missing" | "configuration_malformed" | "configuration_unavailable"
->;
-type ProtocolStage = Stage<
-  "compatible" | "incompatible" | "unknown",
-  "compatible" | "digest_mismatch" | "protocol_mismatch" | "tool_mismatch" | "input_schema_mismatch"
-    | "output_schema_mismatch" | "protocol_unknown"
->;
-type OperationalReason = "probes_succeeded" | "protocol_incompatible" | "probe_contradiction" | "probe_facts_missing"
-  | `status_${SecondBrainProbeFailure}` | `doctor_${SecondBrainProbeFailure}` | `handshake_${SecondBrainProbeFailure}`;
-type AuthorizationStage = Stage<
-  "read_write" | "read_only" | "unauthorized",
-  "authorized" | "write_disabled" | "write_unauthorized" | "read_unauthorized" | "authorization_mismatch"
-> & { readonly read: boolean; readonly write: boolean };
-type RefreshStage = Stage<
-  "current_date" | "previous_date" | "missing",
-  "refresh_current_date" | "refresh_previous_date" | "refresh_missing" | "refresh_malformed"
-> & {
-  readonly observed_at: string | null;
-  readonly latest_attempt: "success" | "capped" | "failed" | "missing" | "malformed";
-};
-
-export type SecondBrainReadinessReportV1 = {
-  readonly schema_version: 1;
-  readonly capability: "second_brain";
-  readonly checked_at: string;
-  readonly readiness: "ready" | "degraded" | "unavailable";
-  readonly stages: {
-    readonly installed: Stage<
-      "available" | "missing" | "unknown",
-      "executable_available" | "executable_missing" | "resolver_unavailable"
-    >;
-    readonly configured: ConfiguredStage;
-    readonly protocol_compatible: ProtocolStage;
-    readonly operational: Stage<"operational" | "unavailable" | "blocked", OperationalReason>;
-    readonly authorized: AuthorizationStage;
-    readonly data_state: Stage<SecondBrainDataState, `data_${SecondBrainDataState}`>;
-    readonly last_successful_refresh: RefreshStage;
-    readonly freshness: Stage<
-      "fresh" | "stale" | "unknown",
-      "within_threshold" | "threshold_exceeded" | "successful_refresh_missing"
-    >;
-  };
-};
-
 const checked = <State extends string, Reason extends string>(
   state: State,
   reason: Reason,
   checked_at: string,
-): Stage<State, Reason> => ({ state, reason, checked_at });
+): SecondBrainStage<State, Reason> => ({ state, reason, checked_at });
 const toolsMatch = (tools: readonly string[] | null): boolean => tools !== null
   && [...tools].sort().join("\0") === [...SECOND_BRAIN_REQUIRED_TOOLS].sort().join("\0");
 
-function protocolStage(observation: SecondBrainReadinessObservation, at: string): SecondBrainReadinessReportV1["stages"]["protocol_compatible"] {
+function protocolStage(observation: SecondBrainReadinessObservation, at: string): SecondBrainReadinessValidReportV1["stages"]["protocol_compatible"] {
   if (observation.contract_digest === null
     || observation.protocol_version === null
     || observation.tools === null) return checked("unknown", "protocol_unknown", at);
@@ -121,20 +81,20 @@ function operationalStage(
   observation: SecondBrainReadinessObservation,
   compatible: boolean,
   at: string,
-): SecondBrainReadinessReportV1["stages"]["operational"] {
+): SecondBrainReadinessValidReportV1["stages"]["operational"] {
   if (observation.status !== "ok") return checked("unavailable", `status_${observation.status}`, at);
   if (observation.doctor !== "ok") return checked("unavailable", `doctor_${observation.doctor}`, at);
   if (observation.handshake !== "ok") return checked("unavailable", `handshake_${observation.handshake}`, at);
+  const statusOperational = observation.status_operational ?? null;
+  const doctorOperational = observation.doctor_operational ?? null;
+  if (statusOperational === null || doctorOperational === null) return checked("unavailable", "probe_facts_missing", at);
   if (observation.channels_consistent === false) return checked("unavailable", "probe_contradiction", at);
   if (!compatible) return checked("blocked", "protocol_incompatible", at);
-  const statusOperational = observation.status_operational ?? true;
-  const doctorOperational = observation.doctor_operational ?? true;
-  if (statusOperational === null || doctorOperational === null) return checked("unavailable", "probe_facts_missing", at);
   if (!statusOperational || !doctorOperational) return checked("unavailable", "probe_contradiction", at);
   return checked("operational", "probes_succeeded", at);
 }
 
-function authorizationStage(observation: SecondBrainReadinessObservation, at: string): SecondBrainReadinessReportV1["stages"]["authorized"] {
+function authorizationStage(observation: SecondBrainReadinessObservation, at: string): SecondBrainReadinessValidReportV1["stages"]["authorized"] {
   if (observation.authorization_consistent === false) {
     return { ...checked("unauthorized", "authorization_mismatch", at), read: false, write: false };
   }
@@ -147,7 +107,7 @@ function authorizationStage(observation: SecondBrainReadinessObservation, at: st
 function refreshStages(
   observation: SecondBrainReadinessObservation,
   now: Date,
-): Pick<SecondBrainReadinessReportV1["stages"], "last_successful_refresh" | "freshness"> {
+): Pick<SecondBrainReadinessValidReportV1["stages"], "last_successful_refresh" | "freshness"> {
   const nowMs = now.getTime();
   const at = Number.isFinite(nowMs) ? now.toISOString() : "invalid";
   const unknownFreshness = checked("unknown", "successful_refresh_missing", at);
@@ -190,14 +150,18 @@ function refreshStages(
 function parseLatestAttempt(
   refresh: SecondBrainRefreshObservation,
   nowMs: number,
-): SecondBrainReadinessReportV1["stages"]["last_successful_refresh"]["latest_attempt"] {
+): SecondBrainReadinessValidReportV1["stages"]["last_successful_refresh"]["latest_attempt"] {
   if (refresh.kind === "missing") return "missing";
   const value = refresh.kind === "success" ? refresh.completed_at : refresh.attempted_at;
   const parsed = parseSecondBrainInstant(value);
   return parsed === undefined || !Number.isFinite(nowMs) || parsed.epoch_ms > nowMs ? "malformed" : refresh.kind;
 }
 
-export function evaluateSecondBrainReadiness(observation: SecondBrainReadinessObservation, now: Date): SecondBrainReadinessReportV1 {
+export function evaluateSecondBrainReadiness(
+  observation: SecondBrainReadinessObservation,
+  now: Date,
+): SecondBrainReadinessReportV1 {
+  if (!Number.isFinite(now.getTime())) return invalidSecondBrainReadinessReport();
   const at = now.toISOString();
   const installed = observation.executable === "available" ? checked("available", "executable_available", at)
     : observation.executable === "missing" ? checked("missing", "executable_missing", at) : checked("unknown", "resolver_unavailable", at);

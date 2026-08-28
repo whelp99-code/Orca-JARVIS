@@ -9,7 +9,7 @@ import {
 import { SECOND_BRAIN_PROTOCOL_VERSION } from "../../src/second-brain-transport.js";
 
 const NOW = new Date("2026-08-28T12:00:00.000Z");
-const happy = (): SecondBrainReadinessObservation => ({
+const syntheticPolicyObservation = (): SecondBrainReadinessObservation => ({
   executable: "available",
   configuration: "valid",
   contract_digest: SECOND_BRAIN_FROZEN_DIGEST,
@@ -19,6 +19,8 @@ const happy = (): SecondBrainReadinessObservation => ({
   status: "ok",
   doctor: "ok",
   handshake: "ok",
+  status_operational: true,
+  doctor_operational: true,
   read_authorization: "authorized",
   write_authorization: "authorized",
   data_state: "ready",
@@ -27,8 +29,8 @@ const happy = (): SecondBrainReadinessObservation => ({
 
 describe("Second Brain staged readiness", () => {
   it("reports every independent happy stage with fixed machine values", () => {
-    // Given: exact frozen compatibility and successful bounded probes.
-    const input = happy();
+    // Given: a synthetic policy observation with every otherwise-unavailable fact explicit.
+    const input = syntheticPolicyObservation();
     // When: readiness is evaluated at an injected time.
     const report = evaluateSecondBrainReadiness(input, NOW);
     // Then: the canonical report is ready without provider prose.
@@ -50,7 +52,7 @@ describe("Second Brain staged readiness", () => {
     ["schemas_compatible", false, "input_schema_mismatch"],
   ] as const)("fails closed for %s drift before operational readiness", (key, value, reason) => {
     // Given: one frozen compatibility field has drifted.
-    const input = { ...happy(), [key]: value };
+    const input = { ...syntheticPolicyObservation(), [key]: value };
     // When: readiness is evaluated.
     const report = evaluateSecondBrainReadiness(input, NOW);
     // Then: compatibility names the drift and probes cannot produce green health.
@@ -62,7 +64,7 @@ describe("Second Brain staged readiness", () => {
     "keeps status %s distinct and does not infer health from history",
     failure => {
       // Given: historical success but the current status probe fails.
-      const input = { ...happy(), status: failure };
+      const input = { ...syntheticPolicyObservation(), status: failure };
       // When: readiness is evaluated.
       const report = evaluateSecondBrainReadiness(input, NOW);
       // Then: current operational health is unavailable with a stable reason.
@@ -81,7 +83,7 @@ describe("Second Brain staged readiness", () => {
     ["handshake", "locked", "handshake_locked"],
   ] as const)("keeps %s %s as a distinct operational failure", (probe, failure, reason) => {
     // Given: one current bounded probe fails.
-    const input = { ...happy(), [probe]: failure };
+    const input = { ...syntheticPolicyObservation(), [probe]: failure };
     // When: readiness is evaluated.
     const report = evaluateSecondBrainReadiness(input, NOW);
     // Then: the exact probe and failure remain visible.
@@ -94,7 +96,7 @@ describe("Second Brain staged readiness", () => {
     ["unavailable", "configuration_unavailable"],
   ] as const)("keeps configuration %s distinct", (configuration, reason) => {
     // Given: a non-valid safe configuration result.
-    const input = { ...happy(), configuration };
+    const input = { ...syntheticPolicyObservation(), configuration };
     // When: readiness is evaluated.
     const report = evaluateSecondBrainReadiness(input, NOW);
     // Then: configuration is not collapsed into installation or operation.
@@ -104,7 +106,7 @@ describe("Second Brain staged readiness", () => {
 
   it.each(["vault_absent", "vault_locked", "unavailable", "unknown"] as const)("preserves data state %s", data_state => {
     // Given: one provider data-state outcome.
-    const input = { ...happy(), data_state };
+    const input = { ...syntheticPolicyObservation(), data_state };
     // When: readiness is evaluated.
     const report = evaluateSecondBrainReadiness(input, NOW);
     // Then: data state does not rewrite operational health.
@@ -119,7 +121,7 @@ describe("Second Brain staged readiness", () => {
     [{ kind: "success", completed_at: "2026-08-27T11:00:00.000Z" }, "previous_date", "success"],
   ] as const)("never promotes refresh outcome %s", (refresh, expected, latest) => {
     // Given: an exact provider refresh outcome.
-    const input = { ...happy(), refresh };
+    const input = { ...syntheticPolicyObservation(), refresh };
     // When: readiness is evaluated.
     const report = evaluateSecondBrainReadiness(input, NOW);
     // Then: the latest attempt remains separate from successful refresh.
@@ -129,9 +131,9 @@ describe("Second Brain staged readiness", () => {
 
   it("distinguishes write unauthorized from fully unauthorized", () => {
     // Given: read authorization exists without write authorization.
-    const readOnly = evaluateSecondBrainReadiness({ ...happy(), write_authorization: "unauthorized" }, NOW);
+    const readOnly = evaluateSecondBrainReadiness({ ...syntheticPolicyObservation(), write_authorization: "unauthorized" }, NOW);
     // When: read authorization is also removed.
-    const unauthorized = evaluateSecondBrainReadiness({ ...happy(), read_authorization: "unauthorized" }, NOW);
+    const unauthorized = evaluateSecondBrainReadiness({ ...syntheticPolicyObservation(), read_authorization: "unauthorized" }, NOW);
     // Then: read-only reporting and full denial remain distinct.
     expect(readOnly.stages.authorized).toMatchObject({ state: "read_only", reason: "write_unauthorized", read: true, write: false });
     expect(unauthorized.stages.authorized).toMatchObject({ state: "unauthorized", reason: "read_unauthorized", read: false, write: false });
@@ -140,7 +142,7 @@ describe("Second Brain staged readiness", () => {
   it("preserves no-data, vault, authorization, and refresh outcomes independently", () => {
     // Given: read-only service, no data, and a capped current attempt.
     const input: SecondBrainReadinessObservation = {
-      ...happy(), data_state: "no_data", write_authorization: "disabled",
+      ...syntheticPolicyObservation(), data_state: "no_data", write_authorization: "disabled",
       refresh: { kind: "capped", attempted_at: "2026-08-28T11:30:00.000Z" },
     };
     // When: readiness is evaluated.
@@ -167,8 +169,8 @@ describe("Second Brain staged readiness", () => {
     // Given: an exact successful-refresh age.
     const completed_at = new Date(NOW.getTime() - age).toISOString();
     // When: the same input is replayed.
-    const first = evaluateSecondBrainReadiness({ ...happy(), refresh: { kind: "success", completed_at } }, NOW);
-    const second = evaluateSecondBrainReadiness({ ...happy(), refresh: { kind: "success", completed_at } }, NOW);
+    const first = evaluateSecondBrainReadiness({ ...syntheticPolicyObservation(), refresh: { kind: "success", completed_at } }, NOW);
+    const second = evaluateSecondBrainReadiness({ ...syntheticPolicyObservation(), refresh: { kind: "success", completed_at } }, NOW);
     // Then: equality is byte-deterministic and the threshold is inclusive.
     expect(first.stages.freshness.state).toBe(expected);
     expect(JSON.stringify(second)).toBe(JSON.stringify(first));
@@ -176,7 +178,7 @@ describe("Second Brain staged readiness", () => {
 
   it("never carries injected paths, credentials, diagnostics, or Mac state into the report", () => {
     // Given: the typed boundary contains only fixed machine vocabulary.
-    const input = happy();
+    const input = syntheticPolicyObservation();
     // When: readiness is evaluated.
     const text = JSON.stringify(evaluateSecondBrainReadiness(input, NOW));
     // Then: private boundary values have no public representation.
