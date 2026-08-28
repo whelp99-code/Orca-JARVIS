@@ -36,6 +36,27 @@ describe("migrations", () => {
   });
 
   it("applies every immutable forward migration repeatedly", async () => { const db = new AuthorityDb(tempDb()); await db.migrate(); await db.migrate(); const expected = readdirSync(join(process.cwd(), "migrations")).filter(file => file.endsWith(".sql")).length; expect((db.db.prepare("SELECT COUNT(*) AS n FROM schema_migrations").get() as { n: number }).n).toBe(expected); });
+  it("applies personal context between 031 and 033 on empty and exact prior-031 databases", async () => {
+    // Given isolated full and prior-031 migration directories
+    const source = join(process.cwd(), "migrations");
+    const full = join(mkdtempSync(join(tmpdir(), "jarvis-context-full-")), "migrations");
+    const prior = join(mkdtempSync(join(tmpdir(), "jarvis-context-prior-")), "migrations");
+    cpSync(source, full, { recursive: true }); cpSync(source, prior, { recursive: true });
+    for (const file of readdirSync(prior)) if (file > "031_control_ingress_idempotency.sql") rmSync(join(prior, file));
+    const empty = new AuthorityDb(tempDb(), full); const upgraded = new AuthorityDb(tempDb(), prior);
+    try {
+      await upgraded.migrate();
+      // When the exact 032 and later migrations become available
+      for (const file of readdirSync(full)) if (file >= "032_personal_context.sql") cpSync(join(full, file), join(prior, file));
+      await empty.migrate(); await upgraded.migrate();
+      // Then both journals preserve unique checksummed order through 033
+      for (const db of [empty, upgraded]) {
+        const rows = db.db.prepare("SELECT id,checksum FROM schema_migrations WHERE id>='031_' ORDER BY id").all() as Array<{ id: string; checksum: string }>;
+        expect(rows.map(row => row.id)).toEqual(["031_control_ingress_idempotency.sql", "032_personal_context.sql", "033_personal_operations.sql"]);
+        expect(new Set(rows.map(row => row.checksum)).size).toBe(rows.length);
+      }
+    } finally { empty.close(); upgraded.close(); rmSync(join(full, ".."), { recursive: true, force: true }); rmSync(join(prior, ".."), { recursive: true, force: true }); }
+  });
   it("fails closed when migration is pending or its raw SQL bytes change", async () => { const pending = new AuthorityDb(tempDb()); await expect(pending.assertMigrationsReady()).rejects.toMatchObject({ code: "MIGRATIONS_PENDING" }); const directory = join(mkdtempSync(join(tmpdir(), "jarvis-migrations-")), "migrations"); cpSync(join(process.cwd(), "migrations"), directory, { recursive: true }); const db = new AuthorityDb(tempDb(), directory); await db.migrate(); appendFileSync(join(directory, "002_harden_authority.sql"), "\n-- byte change\n"); await expect(db.assertMigrationsReady()).rejects.toMatchObject({ code: "MIGRATION_CHECKSUM_MISMATCH" }); });
   it("publishes the forward execution-hardening schema", async () => {
     const db = new AuthorityDb(tempDb());

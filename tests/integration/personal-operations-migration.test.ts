@@ -70,22 +70,23 @@ describe("personal operations migration", () => {
     }
   });
 
-  it("remains independent when future migration 032 is inserted into sort order", async () => {
-    // Given isolated migration directories with a harmless future 032
-    const directory = migrationCopy();
-    const future032 = "CREATE TABLE future_personal_context_sentinel (id TEXT PRIMARY KEY);\n";
+  it("remains independent when migration 032 precedes it in sort order", async () => {
+    // Given an exact through-032 database in an isolated migration directory
+    const directory = migrationCopy(false);
     const existing = await personalDb(directory);
     try {
       expect(existing.db.prepare("SELECT COUNT(*) AS n FROM schema_migrations").get()).toEqual({ n: migrationCount(directory) });
-      writeFileSync(join(directory, "032_personal_context.sql"), future032);
-      // When an existing 033 database and a fresh database migrate
+      expect(existing.db.prepare("SELECT COUNT(*) AS n FROM schema_migrations WHERE id='032_personal_context.sql'").get()).toEqual({ n: 1 });
+      copyFileSync(join(process.cwd(), "migrations", "033_personal_operations.sql"), join(directory, "033_personal_operations.sql"));
+      // When the existing database and a fresh database apply 033
       await existing.migrate();
       const fresh = await personalDb(directory);
       try {
-        // Then each applies 032 once and retains the identical 033 checksum
-        expect(existing.db.prepare("SELECT COUNT(*) AS n FROM schema_migrations WHERE id='032_personal_context.sql'").get()).toEqual({ n: 1 });
-        expect(fresh.db.prepare("SELECT COUNT(*) AS n FROM schema_migrations WHERE id='032_personal_context.sql'").get()).toEqual({ n: 1 });
-        expect(existing.db.prepare("SELECT checksum FROM schema_migrations WHERE id='033_personal_operations.sql'").get()).toEqual(fresh.db.prepare("SELECT checksum FROM schema_migrations WHERE id='033_personal_operations.sql'").get());
+        // Then each retains one identical 032 and 033 checksum
+        for (const id of ["032_personal_context.sql", "033_personal_operations.sql"]) {
+          expect(existing.db.prepare("SELECT COUNT(*) AS n FROM schema_migrations WHERE id=?").get(id)).toEqual({ n: 1 });
+          expect(existing.db.prepare("SELECT checksum FROM schema_migrations WHERE id=?").get(id)).toEqual(fresh.db.prepare("SELECT checksum FROM schema_migrations WHERE id=?").get(id));
+        }
       } finally { closePersonalDb(fresh); }
     } finally { closePersonalDb(existing); removeMigrationCopy(directory); }
   });
