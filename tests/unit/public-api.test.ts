@@ -36,5 +36,6 @@ describe("package root public API", () => {
     expect(typeof publicApi.buildCapabilityMatrix).toBe("function");
     expect(typeof publicApi.planTeamProposal).toBe("function");
     expect(typeof publicApi.createSecondBrainTransport).toBe("function");
+    expect(typeof publicApi.createSecondBrainReadAdapter).toBe("function");
   });
 });

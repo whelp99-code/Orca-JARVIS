@@ -1,0 +1,69 @@
+import type { SecondBrainTransport } from "./second-brain-transport.js";
+
+export const SECOND_BRAIN_SOURCE_ID = "src:pos:v1:second-brain:primary" as const;
+export const SECOND_BRAIN_TRUST = "untrusted" as const;
+export const SECOND_BRAIN_SENSITIVITIES = ["public", "personal", "sensitive", "restricted"] as const;
+
+export type SecondBrainSensitivity = (typeof SECOND_BRAIN_SENSITIVITIES)[number];
+export type SecondBrainAdapterBudgets = {
+  readonly max_hits: number;
+  readonly max_excerpt_bytes: number;
+  readonly max_total_bytes: number;
+  readonly max_page_bytes: number;
+};
+export type SecondBrainAdapterOptions = {
+  readonly transport: SecondBrainTransport;
+  readonly budgets: SecondBrainAdapterBudgets;
+  readonly clock: () => Date;
+  readonly max_age_ms: number;
+  readonly expiry_ms: number;
+};
+export type SecondBrainEvidence = {
+  readonly kind: "memory";
+  readonly page_id: string;
+  readonly sid: string;
+  readonly source_ref: string;
+  readonly source_id: typeof SECOND_BRAIN_SOURCE_ID;
+  readonly source_version: string;
+  readonly sensitivity: SecondBrainSensitivity;
+  readonly observed_at: string;
+  readonly valid_at: string;
+  readonly freshness: {
+    readonly state: "fresh" | "stale";
+    readonly checked_at: string;
+    readonly fresh_until: string;
+  };
+  readonly expires_at: string;
+  readonly trust: typeof SECOND_BRAIN_TRUST;
+  readonly authority: "none";
+  readonly excerpt: string | null;
+  readonly content_digest: string;
+  readonly omission: "policy_redacted" | null;
+};
+export type SecondBrainConflict = {
+  readonly conflict_id: string;
+  readonly page_id: string;
+  readonly state: "unresolved";
+  readonly left: SecondBrainEvidence;
+  readonly right: SecondBrainEvidence;
+};
+export type SecondBrainReadOutcome =
+  | { readonly kind: "current"; readonly checked_at: string; readonly evidence: readonly SecondBrainEvidence[] }
+  | { readonly kind: "no_data"; readonly checked_at: string; readonly fresh_until: string }
+  | { readonly kind: "unavailable"; readonly code: string; readonly checked_at: string }
+  | { readonly kind: "offline"; readonly code: string; readonly checked_at: string }
+  | { readonly kind: "invalid"; readonly code: string; readonly checked_at: string }
+  | {
+    readonly kind: "stale";
+    readonly code: "SECOND_BRAIN_EVIDENCE_STALE";
+    readonly checked_at: string;
+    readonly evidence: readonly SecondBrainEvidence[];
+  }
+  | { readonly kind: "conflicts"; readonly checked_at: string; readonly conflicts: readonly SecondBrainConflict[] };
+
+export interface SecondBrainReadAdapter {
+  search(query: string): Promise<SecondBrainReadOutcome>;
+  readPage(pageId: string): Promise<SecondBrainReadOutcome>;
+  recentChanges(days: number): Promise<SecondBrainReadOutcome>;
+  openConflicts(): Promise<SecondBrainReadOutcome>;
+}
