@@ -47,7 +47,7 @@ describe("Second Brain staged readiness", () => {
     ["contract_digest", "wrong", "digest_mismatch"],
     ["protocol_version", "1900-01-01", "protocol_mismatch"],
     ["tools", ["sb_search"], "tool_mismatch"],
-    ["schemas_compatible", false, "schema_mismatch"],
+    ["schemas_compatible", false, "input_schema_mismatch"],
   ] as const)("fails closed for %s drift before operational readiness", (key, value, reason) => {
     // Given: one frozen compatibility field has drifted.
     const input = { ...happy(), [key]: value };
@@ -113,17 +113,17 @@ describe("Second Brain staged readiness", () => {
   });
 
   it.each([
-    [{ kind: "missing" }, "missing"],
-    [{ kind: "failed", attempted_at: "2026-08-28T11:00:00.000Z" }, "failed"],
-    [{ kind: "capped", attempted_at: "2026-08-28T11:00:00.000Z" }, "capped"],
-    [{ kind: "success", completed_at: "2026-08-27T11:00:00.000Z" }, "previous_date"],
-  ] as const)("never promotes refresh outcome %s", (refresh, expected) => {
+    [{ kind: "missing" }, "missing", "missing"],
+    [{ kind: "failed", attempted_at: "2026-08-28T11:00:00.000Z" }, "missing", "failed"],
+    [{ kind: "capped", attempted_at: "2026-08-28T11:00:00.000Z" }, "missing", "capped"],
+    [{ kind: "success", completed_at: "2026-08-27T11:00:00.000Z" }, "previous_date", "success"],
+  ] as const)("never promotes refresh outcome %s", (refresh, expected, latest) => {
     // Given: an exact provider refresh outcome.
     const input = { ...happy(), refresh };
     // When: readiness is evaluated.
     const report = evaluateSecondBrainReadiness(input, NOW);
-    // Then: only success carries a successful observed time.
-    expect(report.stages.last_successful_refresh.state).toBe(expected);
+    // Then: the latest attempt remains separate from successful refresh.
+    expect(report.stages.last_successful_refresh).toMatchObject({ state: expected, latest_attempt: latest });
     expect(report.stages.last_successful_refresh.observed_at === null).toBe(refresh.kind !== "success");
   });
 
@@ -149,7 +149,12 @@ describe("Second Brain staged readiness", () => {
     expect(report.stages.operational.state).toBe("operational");
     expect(report.stages.authorized).toMatchObject({ state: "read_only", reason: "write_disabled", read: true, write: false });
     expect(report.stages.data_state).toMatchObject({ state: "no_data", reason: "data_no_data" });
-    expect(report.stages.last_successful_refresh).toMatchObject({ state: "capped", reason: "refresh_capped", observed_at: null });
+    expect(report.stages.last_successful_refresh).toMatchObject({
+      state: "missing",
+      reason: "refresh_missing",
+      observed_at: null,
+      latest_attempt: "capped",
+    });
     expect(report.stages.freshness.state).toBe("unknown");
     expect(report.readiness).toBe("degraded");
   });

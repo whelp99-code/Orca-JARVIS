@@ -44,7 +44,7 @@ const serverOrigin = (server: DashboardServer): string => {
 const totalChanges = (db: AuthorityDb): number =>
   Number((db.db.prepare("SELECT total_changes() AS count").get() as { count: number }).count);
 
-const parseJson = (text: string): unknown => JSON.parse(text) as unknown;
+const parseJson = (text: string): unknown => JSON.parse(text);
 
 describe("dashboard HTTP overview walking skeleton", () => {
   it("serves health with authority ready and a request id without mutating the database", async () => {

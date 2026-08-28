@@ -3,14 +3,18 @@ import { readFile, stat } from "node:fs/promises";
 import {
   SECOND_BRAIN_CONFIG,
   SECOND_BRAIN_LAUNCHER,
-  SECOND_BRAIN_PROTOCOL_VERSION,
   SecondBrainTransportError,
   createSecondBrainTransport,
 } from "./second-brain-transport.js";
+import { combineSecondBrainFacts } from "./second-brain-readiness-combine.js";
 import {
-  SECOND_BRAIN_FROZEN_DIGEST,
-  SECOND_BRAIN_REQUIRED_TOOLS,
+  parseSecondBrainLegacyStatus,
+  parseSecondBrainPeerFacts,
+  type SecondBrainPeerFacts,
+} from "./second-brain-readiness-facts.js";
+import {
   type SecondBrainProbeFailure,
+  type SecondBrainProbeOutcome,
   type SecondBrainReadinessObservation,
   type SecondBrainReadinessProbe,
   type SecondBrainRefreshObservation,
@@ -20,7 +24,6 @@ const SECOND_BRAIN_CLI = "/home/jm/.local/bin/sb";
 const PROBE_TIMEOUT_MS = 5_000;
 const PROBE_MAX_BYTES = 2_048;
 const CONFIG_MAX_BYTES = 65_536;
-const STATUS_PATTERN = /^(\d{4}-\d\d-\d\dT\S+) run \S+ (ok|capped|failed) pages=(\d+) conflicts=\d+ errors=\d+$/;
 
 export type SecondBrainCommandResult =
   | { readonly kind: "ok"; readonly stdout: string }
@@ -111,27 +114,28 @@ function unavailableBase(
   };
 }
 
-function parseStatus(result: SecondBrainCommandResult): {
-  readonly outcome: SecondBrainReadinessObservation["status"];
-  readonly data: SecondBrainReadinessObservation["data_state"];
-  readonly refresh: SecondBrainRefreshObservation;
+type ParsedProbe = {
+  readonly outcome: SecondBrainProbeOutcome;
+  readonly facts: SecondBrainPeerFacts | undefined;
+};
+
+function parseFacts(result: SecondBrainCommandResult, allowLegacy: boolean): ParsedProbe & {
+  readonly legacy: ReturnType<typeof parseSecondBrainLegacyStatus>;
 } {
-  if (result.kind !== "ok") return { outcome: result.kind, data: "unavailable", refresh: { kind: "missing" } };
-  const text = result.stdout.trim();
-  if (text === "no runs") return { outcome: "ok", data: "no_data", refresh: { kind: "missing" } };
-  const matched = STATUS_PATTERN.exec(text);
-  if (matched === null) return { outcome: "malformed", data: "unknown", refresh: { kind: "missing" } };
-  const observed = matched[1];
-  const status = matched[2];
-  const pages = Number(matched[3]);
-  if (observed === undefined || status === undefined || !Number.isSafeInteger(pages)) {
-    return { outcome: "malformed", data: "unknown", refresh: { kind: "missing" } };
-  }
-  const attempted_at = new Date(observed).toISOString();
-  const refresh: SecondBrainRefreshObservation = status === "ok" ? { kind: "success", completed_at: attempted_at }
-    : status === "capped" ? { kind: "capped", attempted_at } : { kind: "failed", attempted_at };
-  const data = status === "ok" ? (pages === 0 ? "no_data" : "ready") : "unknown";
-  return { outcome: "ok", data, refresh };
+  if (result.kind !== "ok") return { outcome: result.kind, facts: undefined, legacy: undefined };
+  const facts = parseSecondBrainPeerFacts(result.stdout);
+  if (facts !== undefined) return { outcome: "ok", facts, legacy: undefined };
+  const legacy = allowLegacy ? parseSecondBrainLegacyStatus(result.stdout) : undefined;
+  if (legacy !== undefined || result.stdout.trim() === "") return { outcome: "ok", facts: undefined, legacy };
+  return { outcome: "malformed", facts: undefined, legacy: undefined };
+}
+
+function refreshObservation(
+  attempt: ReturnType<typeof combineSecondBrainFacts>["latest_refresh_attempt"],
+): SecondBrainRefreshObservation {
+  if (attempt === null) return { kind: "missing" };
+  if (attempt.kind === "success") return { kind: "success", completed_at: attempt.at };
+  return { kind: attempt.kind, attempted_at: attempt.at };
 }
 
 export function runtimeSecondBrainReadinessProbe(
@@ -143,23 +147,39 @@ export function runtimeSecondBrainReadinessProbe(
       if (executable !== "available") return unavailableBase(executable, "unavailable");
       const configuration = await runner.configuration();
       if (configuration !== "valid") return unavailableBase(executable, configuration);
-      const status = parseStatus(await runner.run("status"));
-      const doctor = await runner.run("doctor");
-      const handshake = await runner.handshake();
-      const compatible = handshake.kind === "ok";
+      const status = parseFacts(await runner.run("status"), true);
+      const doctor = parseFacts(await runner.run("doctor"), false);
+      const handshake = parseFacts(await runner.handshake(), false);
+      const facts = combineSecondBrainFacts({
+        status: status.facts,
+        doctor: doctor.facts,
+        handshake: handshake.facts,
+        legacy: status.legacy,
+      });
       return {
-        executable, configuration,
-        contract_digest: compatible ? SECOND_BRAIN_FROZEN_DIGEST : null,
-        protocol_version: compatible ? SECOND_BRAIN_PROTOCOL_VERSION : null,
-        tools: compatible ? SECOND_BRAIN_REQUIRED_TOOLS : null,
-        schemas_compatible: compatible,
+        executable,
+        configuration,
+        contract_digest: handshake.facts === undefined ? null : facts.contract_digest,
+        protocol_version: handshake.facts === undefined ? null : facts.protocol_version,
+        tools: handshake.facts === undefined ? null : facts.tools,
+        schemas_compatible: handshake.facts !== undefined
+          && facts.input_schemas_compatible === true
+          && facts.output_schemas_compatible === true,
+        input_schemas_compatible: handshake.facts === undefined ? null : facts.input_schemas_compatible,
+        output_schemas_compatible: handshake.facts === undefined ? null : facts.output_schemas_compatible,
         status: status.outcome,
-        doctor: doctor.kind,
-        handshake: handshake.kind,
-        read_authorization: compatible ? "authorized" : "unauthorized",
-        write_authorization: "unauthorized",
-        data_state: status.data,
-        refresh: status.refresh,
+        doctor: doctor.outcome,
+        handshake: handshake.outcome,
+        status_operational: facts.status_operational,
+        doctor_operational: facts.doctor_operational,
+        channels_consistent: facts.channels_consistent && status.outcome === "ok" && doctor.outcome === "ok",
+        read_authorization: facts.authorization.read,
+        write_authorization: facts.authorization.write,
+        authorization_consistent: facts.authorization_consistent && facts.channels_consistent,
+        data_state: status.outcome === "malformed" ? "unknown"
+          : status.outcome === "ok" ? facts.data_state : "unavailable",
+        refresh: refreshObservation(facts.latest_refresh_attempt),
+        last_successful_refresh_at: facts.last_successful_refresh_at,
       };
     },
   };

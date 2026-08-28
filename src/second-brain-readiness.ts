@@ -1,3 +1,4 @@
+import { parseSecondBrainInstant } from "./second-brain-readiness-time.js";
 import { SECOND_BRAIN_PROTOCOL_VERSION } from "./second-brain-transport.js";
 
 export const SECOND_BRAIN_READINESS_VERSION = 1 as const;
@@ -23,13 +24,20 @@ export type SecondBrainReadinessObservation = {
   readonly protocol_version: string | null;
   readonly tools: readonly string[] | null;
   readonly schemas_compatible: boolean;
+  readonly input_schemas_compatible?: boolean | null;
+  readonly output_schemas_compatible?: boolean | null;
   readonly status: SecondBrainProbeOutcome;
   readonly doctor: SecondBrainProbeOutcome;
   readonly handshake: SecondBrainProbeOutcome;
+  readonly status_operational?: boolean | null;
+  readonly doctor_operational?: boolean | null;
+  readonly channels_consistent?: boolean;
   readonly read_authorization: "authorized" | "unauthorized";
   readonly write_authorization: "authorized" | "disabled" | "unauthorized";
+  readonly authorization_consistent?: boolean;
   readonly data_state: SecondBrainDataState;
   readonly refresh: SecondBrainRefreshObservation;
+  readonly last_successful_refresh_at?: string | null;
 };
 
 export interface SecondBrainReadinessProbe {
@@ -47,18 +55,22 @@ type ConfiguredStage = Stage<
 >;
 type ProtocolStage = Stage<
   "compatible" | "incompatible" | "unknown",
-  "compatible" | "digest_mismatch" | "protocol_mismatch" | "tool_mismatch" | "schema_mismatch" | "protocol_unknown"
+  "compatible" | "digest_mismatch" | "protocol_mismatch" | "tool_mismatch" | "input_schema_mismatch"
+    | "output_schema_mismatch" | "protocol_unknown"
 >;
-type OperationalReason = "probes_succeeded" | "protocol_incompatible"
+type OperationalReason = "probes_succeeded" | "protocol_incompatible" | "probe_contradiction" | "probe_facts_missing"
   | `status_${SecondBrainProbeFailure}` | `doctor_${SecondBrainProbeFailure}` | `handshake_${SecondBrainProbeFailure}`;
 type AuthorizationStage = Stage<
   "read_write" | "read_only" | "unauthorized",
-  "authorized" | "write_disabled" | "write_unauthorized" | "read_unauthorized"
+  "authorized" | "write_disabled" | "write_unauthorized" | "read_unauthorized" | "authorization_mismatch"
 > & { readonly read: boolean; readonly write: boolean };
 type RefreshStage = Stage<
-  "current_date" | "previous_date" | "missing" | "capped" | "failed",
-  "refresh_current_date" | "refresh_previous_date" | "refresh_missing" | "refresh_capped" | "refresh_failed"
-> & { readonly observed_at: string | null };
+  "current_date" | "previous_date" | "missing",
+  "refresh_current_date" | "refresh_previous_date" | "refresh_missing" | "refresh_malformed"
+> & {
+  readonly observed_at: string | null;
+  readonly latest_attempt: "success" | "capped" | "failed" | "missing" | "malformed";
+};
 
 export type SecondBrainReadinessReportV1 = {
   readonly schema_version: 1;
@@ -98,7 +110,11 @@ function protocolStage(observation: SecondBrainReadinessObservation, at: string)
   if (observation.contract_digest !== SECOND_BRAIN_FROZEN_DIGEST) return checked("incompatible", "digest_mismatch", at);
   if (observation.protocol_version !== SECOND_BRAIN_PROTOCOL_VERSION) return checked("incompatible", "protocol_mismatch", at);
   if (!toolsMatch(observation.tools)) return checked("incompatible", "tool_mismatch", at);
-  return observation.schemas_compatible ? checked("compatible", "compatible", at) : checked("incompatible", "schema_mismatch", at);
+  const inputSchemas = observation.input_schemas_compatible ?? observation.schemas_compatible;
+  const outputSchemas = observation.output_schemas_compatible ?? observation.schemas_compatible;
+  if (inputSchemas === null || outputSchemas === null) return checked("unknown", "protocol_unknown", at);
+  if (!inputSchemas) return checked("incompatible", "input_schema_mismatch", at);
+  return outputSchemas ? checked("compatible", "compatible", at) : checked("incompatible", "output_schema_mismatch", at);
 }
 
 function operationalStage(
@@ -106,14 +122,22 @@ function operationalStage(
   compatible: boolean,
   at: string,
 ): SecondBrainReadinessReportV1["stages"]["operational"] {
-  if (!compatible) return checked("blocked", "protocol_incompatible", at);
   if (observation.status !== "ok") return checked("unavailable", `status_${observation.status}`, at);
   if (observation.doctor !== "ok") return checked("unavailable", `doctor_${observation.doctor}`, at);
   if (observation.handshake !== "ok") return checked("unavailable", `handshake_${observation.handshake}`, at);
+  if (observation.channels_consistent === false) return checked("unavailable", "probe_contradiction", at);
+  if (!compatible) return checked("blocked", "protocol_incompatible", at);
+  const statusOperational = observation.status_operational ?? true;
+  const doctorOperational = observation.doctor_operational ?? true;
+  if (statusOperational === null || doctorOperational === null) return checked("unavailable", "probe_facts_missing", at);
+  if (!statusOperational || !doctorOperational) return checked("unavailable", "probe_contradiction", at);
   return checked("operational", "probes_succeeded", at);
 }
 
 function authorizationStage(observation: SecondBrainReadinessObservation, at: string): SecondBrainReadinessReportV1["stages"]["authorized"] {
+  if (observation.authorization_consistent === false) {
+    return { ...checked("unauthorized", "authorization_mismatch", at), read: false, write: false };
+  }
   if (observation.read_authorization === "unauthorized") return { ...checked("unauthorized", "read_unauthorized", at), read: false, write: false };
   if (observation.write_authorization === "authorized") return { ...checked("read_write", "authorized", at), read: true, write: true };
   if (observation.write_authorization === "disabled") return { ...checked("read_only", "write_disabled", at), read: true, write: false };
@@ -121,39 +145,56 @@ function authorizationStage(observation: SecondBrainReadinessObservation, at: st
 }
 
 function refreshStages(
-  refresh: SecondBrainRefreshObservation,
+  observation: SecondBrainReadinessObservation,
   now: Date,
 ): Pick<SecondBrainReadinessReportV1["stages"], "last_successful_refresh" | "freshness"> {
-  const at = now.toISOString();
+  const nowMs = now.getTime();
+  const at = Number.isFinite(nowMs) ? now.toISOString() : "invalid";
   const unknownFreshness = checked("unknown", "successful_refresh_missing", at);
-  if (refresh.kind === "missing") return {
-    last_successful_refresh: { ...checked("missing", "refresh_missing", at), observed_at: null },
+  const attempt = parseLatestAttempt(observation.refresh, nowMs);
+  const successValue = observation.last_successful_refresh_at
+    ?? (observation.refresh.kind === "success" ? observation.refresh.completed_at : null);
+  if (successValue === null) return {
+    last_successful_refresh: {
+      ...checked("missing", "refresh_missing", at),
+      observed_at: null,
+      latest_attempt: attempt,
+    },
     freshness: unknownFreshness,
   };
-  if (refresh.kind === "capped") return {
-    last_successful_refresh: { ...checked("capped", "refresh_capped", at), observed_at: null },
+  const success = parseSecondBrainInstant(successValue);
+  if (success === undefined || !Number.isFinite(nowMs) || success.epoch_ms > nowMs) return {
+    last_successful_refresh: {
+      ...checked("missing", "refresh_malformed", at),
+      observed_at: null,
+      latest_attempt: attempt,
+    },
     freshness: unknownFreshness,
   };
-  if (refresh.kind === "failed") return {
-    last_successful_refresh: { ...checked("failed", "refresh_failed", at), observed_at: null },
-    freshness: unknownFreshness,
+  const sameDate = success.canonical.slice(0, 10) === at.slice(0, 10);
+  const fresh = nowMs - success.epoch_ms <= SECOND_BRAIN_FRESHNESS_MS;
+  return {
+    last_successful_refresh: {
+      ...checked(
+        sameDate ? "current_date" : "previous_date",
+        sameDate ? "refresh_current_date" : "refresh_previous_date",
+        at,
+      ),
+      observed_at: success.canonical,
+      latest_attempt: attempt,
+    },
+    freshness: checked(fresh ? "fresh" : "stale", fresh ? "within_threshold" : "threshold_exceeded", at),
   };
-  const completed = Date.parse(refresh.completed_at);
-  if (!Number.isFinite(completed) || completed > now.getTime()) return {
-    last_successful_refresh: { ...checked("missing", "refresh_missing", at), observed_at: null },
-    freshness: unknownFreshness,
-  };
-  const sameDate = refresh.completed_at.slice(0, 10) === at.slice(0, 10);
-  const last = {
-    ...checked(
-      sameDate ? "current_date" : "previous_date",
-      sameDate ? "refresh_current_date" : "refresh_previous_date",
-      at,
-    ),
-    observed_at: new Date(completed).toISOString(),
-  };
-  const fresh = now.getTime() - completed <= SECOND_BRAIN_FRESHNESS_MS;
-  return { last_successful_refresh: last, freshness: checked(fresh ? "fresh" : "stale", fresh ? "within_threshold" : "threshold_exceeded", at) };
+}
+
+function parseLatestAttempt(
+  refresh: SecondBrainRefreshObservation,
+  nowMs: number,
+): SecondBrainReadinessReportV1["stages"]["last_successful_refresh"]["latest_attempt"] {
+  if (refresh.kind === "missing") return "missing";
+  const value = refresh.kind === "success" ? refresh.completed_at : refresh.attempted_at;
+  const parsed = parseSecondBrainInstant(value);
+  return parsed === undefined || !Number.isFinite(nowMs) || parsed.epoch_ms > nowMs ? "malformed" : refresh.kind;
 }
 
 export function evaluateSecondBrainReadiness(observation: SecondBrainReadinessObservation, now: Date): SecondBrainReadinessReportV1 {
@@ -166,7 +207,7 @@ export function evaluateSecondBrainReadiness(observation: SecondBrainReadinessOb
   const protocol_compatible = protocolStage(observation, at);
   const operational = operationalStage(observation, protocol_compatible.state === "compatible", at);
   const authorized = authorizationStage(observation, at);
-  const refresh = refreshStages(observation.refresh, now);
+  const refresh = refreshStages(observation, now);
   const data_state = checked(observation.data_state, `data_${observation.data_state}`, at);
   const core = installed.state === "available"
     && configured.state === "valid"
