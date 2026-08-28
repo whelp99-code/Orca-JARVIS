@@ -8,7 +8,7 @@ import { NOW, QueuedTransport, digest, page } from "../fixtures/second-brain-ada
 const budgets: SecondBrainAdapterBudgets = {
   max_hits: 2,
   max_excerpt_bytes: 64,
-  max_total_bytes: 128,
+  max_total_bytes: 2_048,
   max_page_bytes: 512,
 };
 const adapter = (transport: QueuedTransport, selected = budgets) => createSecondBrainReadAdapter({

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { secondBrainUtf8Bytes, type SecondBrainReadBudget } from "./second-brain-read-budget.js";
 import {
   SECOND_BRAIN_SENSITIVITIES,
   SECOND_BRAIN_SOURCE_ID,
@@ -26,6 +27,7 @@ type PageParseInput = {
   readonly budgets: SecondBrainAdapterBudgets;
   readonly maxAgeMs: number;
   readonly expiryMs: number;
+  readonly requestBudget: SecondBrainReadBudget;
 };
 
 function record(value: unknown): Readonly<Record<string, unknown>> | undefined {
@@ -47,13 +49,14 @@ function sensitivity(value: unknown): SecondBrainSensitivity | undefined {
 function invalid(code: string): ParsedPage { return { kind: "invalid", code }; }
 
 export function parseSecondBrainPage(input: PageParseInput): ParsedPage {
+  const budgetCode = input.requestBudget.consumeProvider(input.value, true);
+  if (budgetCode !== undefined) return invalid(budgetCode);
   if (!exactKeys(input.value, PAGE_KEYS)) return invalid("SECOND_BRAIN_PAGE_MALFORMED");
   const frontmatter = record(input.value["frontmatter"]);
   const body = input.value["body"];
   if (frontmatter === undefined || typeof body !== "string") return invalid("SECOND_BRAIN_PAGE_MALFORMED");
   if (PROHIBITED_FIELDS.some(field => field in frontmatter)) return invalid("SECOND_BRAIN_PROHIBITED_FIELD");
   if (!exactKeys(frontmatter, FRONTMATTER_KEYS)) return invalid("SECOND_BRAIN_PAGE_MALFORMED");
-  if (Buffer.byteLength(body, "utf8") > input.budgets.max_page_bytes) return invalid("SECOND_BRAIN_PAGE_OVERSIZE");
   const pageId = frontmatter["id"];
   const version = frontmatter["compiled_by"];
   const updated = frontmatter["updated"];
@@ -61,13 +64,13 @@ export function parseSecondBrainPage(input: PageParseInput): ParsedPage {
   const sources = frontmatter["sources"];
   const tier = sensitivity(frontmatter["sensitivity"]);
   if (typeof pageId !== "string" || pageId !== input.requestedPageId) return invalid("SECOND_BRAIN_SOURCE_ID_MISSING");
-  if (typeof version !== "string" || version.length === 0 || version.length > 128) {
+  if (typeof version !== "string" || version.length === 0 || secondBrainUtf8Bytes(version) > 128) {
     return invalid("SECOND_BRAIN_SOURCE_VERSION_MISSING");
   }
   if (typeof updated !== "string" || !/^\d{4}-\d\d-\d\d$/.test(updated)) return invalid("SECOND_BRAIN_TIME_INVALID");
   if ((status !== "active" && status !== "conflict") || sources !== ""
     || typeof frontmatter["title"] !== "string" || frontmatter["title"].length === 0
-    || frontmatter["title"].length > 256) {
+    || secondBrainUtf8Bytes(frontmatter["title"]) > 256) {
     return invalid(status === "active" || status === "conflict" ? "SECOND_BRAIN_PAGE_MALFORMED" : "SECOND_BRAIN_STATUS_INVALID");
   }
   if (tier === undefined) return invalid("SECOND_BRAIN_SENSITIVITY_INVALID");
@@ -75,7 +78,7 @@ export function parseSecondBrainPage(input: PageParseInput): ParsedPage {
   const checkedMs = input.checkedAt.getTime();
   if (!Number.isFinite(validAt.getTime()) || validAt.toISOString().slice(0, 10) !== updated
     || validAt.getTime() > checkedMs) return invalid("SECOND_BRAIN_TIME_INVALID");
-  if (checkedMs > validAt.getTime() + input.expiryMs) return invalid("SECOND_BRAIN_EVIDENCE_EXPIRED");
+  if (checkedMs >= validAt.getTime() + input.expiryMs) return invalid("SECOND_BRAIN_EVIDENCE_EXPIRED");
   return parseCitations(input, body, {
     pageId,
     version,
@@ -100,7 +103,6 @@ function parseCitations(input: PageParseInput, body: string, context: CitationCo
     if (match?.[1] !== undefined && match[2] !== undefined) definitions.set(match[1], match[2]);
   }
   const evidence: SecondBrainEvidence[] = [];
-  let aggregate = 0;
   for (const rawLine of body.split("\n")) {
     const excerpt = rawLine.trim();
     if (excerpt.length === 0 || excerpt.startsWith("[^")) continue;
@@ -111,7 +113,7 @@ function parseCitations(input: PageParseInput, body: string, context: CitationCo
       const rawRef = definitions.get(sid);
       if (rawRef === undefined || rawRef.length === 0) return invalid("SECOND_BRAIN_SOURCE_REF_MISSING");
       const [sourceRef = "", suppliedDigest] = rawRef.split(" digest=");
-      if (sourceRef.length === 0 || Buffer.byteLength(sourceRef, "utf8") > 512
+      if (sourceRef.length === 0 || secondBrainUtf8Bytes(sourceRef) > 512
         || sourceRef.startsWith("/") || sourceRef.includes("\0")) {
         return invalid("SECOND_BRAIN_SOURCE_REF_MISSING");
       }
@@ -119,14 +121,12 @@ function parseCitations(input: PageParseInput, body: string, context: CitationCo
       if (suppliedDigest !== undefined && (!DIGEST_PATTERN.test(suppliedDigest) || suppliedDigest !== contentDigest)) {
         return invalid("SECOND_BRAIN_DIGEST_MISMATCH");
       }
-      const bytes = Buffer.byteLength(excerpt, "utf8");
+      const bytes = secondBrainUtf8Bytes(excerpt);
       if (bytes > input.budgets.max_excerpt_bytes) return invalid("SECOND_BRAIN_EXCERPT_OVERSIZE");
-      aggregate += bytes;
-      if (aggregate > input.budgets.max_total_bytes) return invalid("SECOND_BRAIN_AGGREGATE_OVERSIZE");
       evidence.push(buildEvidence(input, context, sid, sourceRef, excerpt, contentDigest));
     }
   }
-  if (evidence.length === 0) return invalid("SECOND_BRAIN_CITATION_MISSING");
+  if (evidence.length === 0 && context.status !== "conflict") return invalid("SECOND_BRAIN_CITATION_MISSING");
   return resolveDuplicates(evidence);
 }
 
@@ -140,7 +140,7 @@ function buildEvidence(
 ): SecondBrainEvidence {
   const freshUntil = new Date(context.validAt.getTime() + input.maxAgeMs);
   const expiresAt = new Date(context.validAt.getTime() + input.expiryMs);
-  const stale = input.checkedAt.getTime() > freshUntil.getTime();
+  const stale = input.checkedAt.getTime() >= freshUntil.getTime();
   const redacted = context.tier === "sensitive" || context.tier === "restricted";
   return {
     kind: "memory",

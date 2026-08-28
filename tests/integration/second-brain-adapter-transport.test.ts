@@ -17,7 +17,7 @@ describe("Second Brain adapter over supervised stdio", () => {
     transports.push(transport);
     const adapter = createSecondBrainReadAdapter({
       transport,
-      budgets: { max_hits: 2, max_excerpt_bytes: 128, max_total_bytes: 256, max_page_bytes: 1_024 },
+      budgets: { max_hits: 2, max_excerpt_bytes: 128, max_total_bytes: 4_096, max_page_bytes: 1_024 },
       clock: () => new Date("2026-08-28T12:00:00.000Z"),
       max_age_ms: 86_400_000,
       expiry_ms: 172_800_000,

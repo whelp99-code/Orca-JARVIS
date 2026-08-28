@@ -9,7 +9,7 @@ import { NOW, QueuedTransport, page } from "../fixtures/second-brain-adapter-fix
 const budgets: SecondBrainAdapterBudgets = {
   max_hits: 2,
   max_excerpt_bytes: 80,
-  max_total_bytes: 120,
+  max_total_bytes: 4_096,
   max_page_bytes: 512,
 };
 const adapter = (transport: QueuedTransport, selected = budgets, now = NOW) => createSecondBrainReadAdapter({

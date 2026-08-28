@@ -1,4 +1,13 @@
 import { parseSecondBrainPage } from "./second-brain-evidence-parser.js";
+import { secondBrainUtf8Bytes, SecondBrainReadBudget } from "./second-brain-read-budget.js";
+import {
+  combineSecondBrainEvidence,
+  hasExactSecondBrainKeys,
+  isSecondBrainPageId,
+  isSecondBrainRecord,
+  parseSecondBrainConflictRows,
+  parseSecondBrainSearchRows,
+} from "./second-brain-read-values.js";
 import {
   type SecondBrainAdapterOptions,
   type SecondBrainConflict,
@@ -34,52 +43,9 @@ type CallResult =
   | { readonly kind: "transport"; readonly outcome: SecondBrainOutcome }
   | { readonly kind: "adapter"; readonly outcome: SecondBrainReadOutcome };
 
-type SearchRow = {
-  readonly page_id: string;
-  readonly section: string;
-  readonly snippet: string;
-  readonly score: number;
-};
-type ConflictRow = { readonly conflict_id: string; readonly page_id: string; readonly summary: string };
-
-function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-function exact(value: Readonly<Record<string, unknown>>, keys: readonly string[]): boolean {
-  const observed = Object.keys(value);
-  return observed.length === keys.length && observed.every(key => keys.includes(key));
-}
 function invalid(code: string, checkedAt: Date): SecondBrainReadOutcome {
   return { kind: "invalid", code, checked_at: checkedAt.toISOString() };
 }
-function validPageId(value: unknown): value is string {
-  return typeof value === "string" && value.length > 0 && value.length <= 256
-    && !value.startsWith("/") && !value.includes("..") && !value.includes("\0");
-}
-function combineEvidence(rows: readonly SecondBrainEvidence[], options: SecondBrainAdapterOptions, checkedAt: Date): SecondBrainReadOutcome {
-  const unique = new Map<string, SecondBrainEvidence>();
-  for (const row of rows) {
-    const key = `${row.page_id}\0${row.sid}`;
-    const prior = unique.get(key);
-    if (prior !== undefined && prior.content_digest !== row.content_digest) {
-      return {
-        kind: "conflicts",
-        checked_at: checkedAt.toISOString(),
-        conflicts: [{ conflict_id: `duplicate:${row.page_id}:${row.sid}`, page_id: row.page_id, state: "unresolved", left: prior, right: row }],
-      };
-    }
-    unique.set(key, row);
-  }
-  const evidence = [...unique.values()].sort((left, right) => left.page_id.localeCompare(right.page_id)
-    || left.sid.localeCompare(right.sid) || left.content_digest.localeCompare(right.content_digest));
-  const bytes = evidence.reduce((total, row) => total + Buffer.byteLength(row.excerpt ?? "", "utf8"), 0);
-  if (bytes > options.budgets.max_total_bytes) return invalid("SECOND_BRAIN_AGGREGATE_OVERSIZE", checkedAt);
-  if (evidence.some(row => row.freshness.state === "stale")) {
-    return { kind: "stale", code: "SECOND_BRAIN_EVIDENCE_STALE", checked_at: checkedAt.toISOString(), evidence };
-  }
-  return { kind: "current", checked_at: checkedAt.toISOString(), evidence };
-}
-
 class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
   constructor(private readonly options: SecondBrainAdapterOptions) {
     const { budgets } = options;
@@ -97,83 +63,120 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
 
   async search(query: string): Promise<SecondBrainReadOutcome> {
     const checkedAt = this.options.clock();
-    if (query.length === 0 || Buffer.byteLength(query, "utf8") > 4_096) return invalid("SECOND_BRAIN_QUERY_INVALID", checkedAt);
+    const requestBudget = new SecondBrainReadBudget(this.options.budgets);
+    if (query.length === 0 || secondBrainUtf8Bytes(query) > 4_096) {
+      return invalid("SECOND_BRAIN_QUERY_INVALID", checkedAt);
+    }
     const called = await this.call("sb_search", { query, limit: this.options.budgets.max_hits }, checkedAt);
     if (called.kind === "adapter") return called.outcome;
     if (called.outcome.kind !== "data") return this.nonData(called.outcome, checkedAt);
     const value = called.outcome.value;
-    if (!exact(value, ["results"]) || !Array.isArray(value["results"])) return invalid("SECOND_BRAIN_SEARCH_MALFORMED", checkedAt);
-    const parsed = this.searchRows(value["results"]);
+    const budgetCode = requestBudget.consumeProvider(value);
+    if (budgetCode !== undefined) return invalid(budgetCode, checkedAt);
+    if (!hasExactSecondBrainKeys(value, ["results"]) || !Array.isArray(value["results"])) {
+      return invalid("SECOND_BRAIN_SEARCH_MALFORMED", checkedAt);
+    }
+    const parsed = parseSecondBrainSearchRows(value["results"], this.options.budgets);
     if (parsed === undefined) return invalid("SECOND_BRAIN_SEARCH_MALFORMED", checkedAt);
     if (parsed.length > this.options.budgets.max_hits) return invalid("SECOND_BRAIN_RESULTS_OVERSIZE", checkedAt);
-    return this.readPages(parsed.map(row => row.page_id), checkedAt);
+    return this.readPages(parsed.map(row => row.page_id), checkedAt, requestBudget);
   }
 
   async readPage(pageId: string): Promise<SecondBrainReadOutcome> {
     const checkedAt = this.options.clock();
-    if (!validPageId(pageId)) return invalid("SECOND_BRAIN_PAGE_ID_INVALID", checkedAt);
-    return this.readPageAt(pageId, checkedAt);
+    const requestBudget = new SecondBrainReadBudget(this.options.budgets);
+    if (!isSecondBrainPageId(pageId)) return invalid("SECOND_BRAIN_PAGE_ID_INVALID", checkedAt);
+    const result = await this.readPageAt(pageId, checkedAt, requestBudget);
+    return this.bounded(result, checkedAt, requestBudget);
   }
 
   async recentChanges(days: number): Promise<SecondBrainReadOutcome> {
     const checkedAt = this.options.clock();
+    const requestBudget = new SecondBrainReadBudget(this.options.budgets);
     if (!Number.isSafeInteger(days) || days < 0 || days > 365) return invalid("SECOND_BRAIN_DAYS_INVALID", checkedAt);
     const called = await this.call("sb_recent_changes", { days }, checkedAt);
     if (called.kind === "adapter") return called.outcome;
     if (called.outcome.kind !== "data") return this.nonData(called.outcome, checkedAt);
     const value = called.outcome.value;
-    if (!exact(value, ["changes"]) || !Array.isArray(value["changes"])) return invalid("SECOND_BRAIN_CHANGES_MALFORMED", checkedAt);
-    if (value["changes"].length > this.options.budgets.max_hits) return invalid("SECOND_BRAIN_RESULTS_OVERSIZE", checkedAt);
+    const budgetCode = requestBudget.consumeProvider(value);
+    if (budgetCode !== undefined) return invalid(budgetCode, checkedAt);
+    if (!hasExactSecondBrainKeys(value, ["changes"]) || !Array.isArray(value["changes"])) {
+      return invalid("SECOND_BRAIN_CHANGES_MALFORMED", checkedAt);
+    }
+    if (value["changes"].length > this.options.budgets.max_hits) {
+      return invalid("SECOND_BRAIN_RESULTS_OVERSIZE", checkedAt);
+    }
     const pageIds: string[] = [];
     for (const candidate of value["changes"]) {
-      if (!isRecord(candidate) || !exact(candidate, ["change", "date", "page_id"]) || !validPageId(candidate["page_id"])
+      if (!isSecondBrainRecord(candidate)
+        || !hasExactSecondBrainKeys(candidate, ["change", "date", "page_id"])
+        || !isSecondBrainPageId(candidate["page_id"])
         || (candidate["change"] !== "added" && candidate["change"] !== "modified")
-        || typeof candidate["date"] !== "string" || !/^\d{4}-\d\d-\d\d$/.test(candidate["date"])) {
+        || typeof candidate["date"] !== "string"
+        || !/^\d{4}-\d\d-\d\d$/.test(candidate["date"])) {
         return invalid("SECOND_BRAIN_CHANGES_MALFORMED", checkedAt);
       }
       const date = new Date(`${candidate["date"]}T00:00:00.000Z`);
-      if (!Number.isFinite(date.getTime()) || date.getTime() > checkedAt.getTime()) return invalid("SECOND_BRAIN_TIME_INVALID", checkedAt);
+      if (!Number.isFinite(date.getTime()) || date.getTime() > checkedAt.getTime()) {
+        return invalid("SECOND_BRAIN_TIME_INVALID", checkedAt);
+      }
       pageIds.push(candidate["page_id"]);
     }
-    return this.readPages(pageIds, checkedAt);
+    return this.readPages(pageIds, checkedAt, requestBudget);
   }
 
   async openConflicts(): Promise<SecondBrainReadOutcome> {
     const checkedAt = this.options.clock();
+    const requestBudget = new SecondBrainReadBudget(this.options.budgets);
     const called = await this.call("sb_open_conflicts", {}, checkedAt);
     if (called.kind === "adapter") return called.outcome;
     if (called.outcome.kind !== "data") return this.nonData(called.outcome, checkedAt);
     const value = called.outcome.value;
-    if (!exact(value, ["conflicts"]) || !Array.isArray(value["conflicts"])) return invalid("SECOND_BRAIN_CONFLICTS_MALFORMED", checkedAt);
-    const rows = this.conflictRows(value["conflicts"]);
+    const budgetCode = requestBudget.consumeProvider(value);
+    if (budgetCode !== undefined) return invalid(budgetCode, checkedAt);
+    if (!hasExactSecondBrainKeys(value, ["conflicts"]) || !Array.isArray(value["conflicts"])) {
+      return invalid("SECOND_BRAIN_CONFLICTS_MALFORMED", checkedAt);
+    }
+    const rows = parseSecondBrainConflictRows(value["conflicts"], this.options.budgets);
     if (rows === undefined) return invalid("SECOND_BRAIN_CONFLICTS_MALFORMED", checkedAt);
     if (rows.length > this.options.budgets.max_hits) return invalid("SECOND_BRAIN_RESULTS_OVERSIZE", checkedAt);
     const conflicts: SecondBrainConflict[] = [];
     for (const row of rows) {
-      const result = await this.readPageAt(`conflicts/${row.conflict_id}`, checkedAt);
+      const result = await this.readPageAt(`conflicts/${row.conflict_id}`, checkedAt, requestBudget);
       if (result.kind === "invalid" || result.kind === "offline" || result.kind === "unavailable") return result;
-      if (result.kind === "no_data") return invalid("SECOND_BRAIN_CONFLICT_MALFORMED", checkedAt);
-      if (result.kind === "conflicts") { conflicts.push(...result.conflicts); continue; }
+      if (result.kind === "no_data" || result.kind === "conflicts" || result.evidence.length !== 2) {
+        return invalid("SECOND_BRAIN_CONFLICT_SHAPE_INVALID", checkedAt);
+      }
       const left = result.evidence[0];
       const right = result.evidence[1];
-      if (left === undefined || right === undefined) return invalid("SECOND_BRAIN_CONFLICT_MALFORMED", checkedAt);
+      if (left === undefined || right === undefined || this.sideIdentity(left) === this.sideIdentity(right)) {
+        return invalid("SECOND_BRAIN_CONFLICT_SHAPE_INVALID", checkedAt);
+      }
       conflicts.push({ conflict_id: row.conflict_id, page_id: row.page_id, state: "unresolved", left, right });
     }
     conflicts.sort((left, right) => left.conflict_id.localeCompare(right.conflict_id));
-    return { kind: "conflicts", checked_at: checkedAt.toISOString(), conflicts };
+    return this.bounded({ kind: "conflicts", checked_at: checkedAt.toISOString(), conflicts }, checkedAt, requestBudget);
   }
 
-  private async readPages(pageIds: readonly string[], checkedAt: Date): Promise<SecondBrainReadOutcome> {
+  private async readPages(
+    pageIds: readonly string[],
+    checkedAt: Date,
+    requestBudget: SecondBrainReadBudget,
+  ): Promise<SecondBrainReadOutcome> {
     const evidence: SecondBrainEvidence[] = [];
     for (const pageId of new Set(pageIds)) {
-      const result = await this.readPageAt(pageId, checkedAt);
+      const result = await this.readPageAt(pageId, checkedAt, requestBudget);
       if (result.kind === "current" || result.kind === "stale") evidence.push(...result.evidence);
       else return result;
     }
-    return combineEvidence(evidence, this.options, checkedAt);
+    return this.bounded(combineSecondBrainEvidence(evidence, checkedAt), checkedAt, requestBudget);
   }
 
-  private async readPageAt(pageId: string, checkedAt: Date): Promise<SecondBrainReadOutcome> {
+  private async readPageAt(
+    pageId: string,
+    checkedAt: Date,
+    requestBudget: SecondBrainReadBudget,
+  ): Promise<SecondBrainReadOutcome> {
     const called = await this.call("sb_read_page", { id: pageId }, checkedAt);
     if (called.kind === "adapter") return called.outcome;
     if (called.outcome.kind !== "data") return this.nonData(called.outcome, checkedAt);
@@ -184,6 +187,7 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
       budgets: this.options.budgets,
       maxAgeMs: this.options.max_age_ms,
       expiryMs: this.options.expiry_ms,
+      requestBudget,
     });
     switch (parsed.kind) {
       case "invalid": return invalid(parsed.code, checkedAt);
@@ -192,6 +196,20 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
       case "stale": return { kind: "stale", code: "SECOND_BRAIN_EVIDENCE_STALE", checked_at: checkedAt.toISOString(), evidence: parsed.evidence };
       default: { const exhaustive: never = parsed; return exhaustive; }
     }
+  }
+
+  private bounded(
+    outcome: SecondBrainReadOutcome,
+    checkedAt: Date,
+    requestBudget: SecondBrainReadBudget,
+  ): SecondBrainReadOutcome {
+    if (outcome.kind !== "current" && outcome.kind !== "stale" && outcome.kind !== "conflicts") return outcome;
+    const budgetCode = requestBudget.consumeReturned(outcome);
+    return budgetCode === undefined ? outcome : invalid(budgetCode, checkedAt);
+  }
+
+  private sideIdentity(evidence: SecondBrainEvidence): string {
+    return `${evidence.sid}\0${evidence.source_ref}\0${evidence.content_digest}`;
   }
 
   private async call(
@@ -218,32 +236,6 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
       case "error": return { kind: "unavailable", code: outcome.code, checked_at: checkedAt.toISOString() };
       default: { const exhaustive: never = outcome; return exhaustive; }
     }
-  }
-
-  private searchRows(value: readonly unknown[]): readonly SearchRow[] | undefined {
-    const rows: SearchRow[] = [];
-    for (const candidate of value) {
-      if (!isRecord(candidate) || !exact(candidate, ["page_id", "score", "section", "snippet"])
-        || !validPageId(candidate["page_id"]) || typeof candidate["section"] !== "string"
-        || typeof candidate["snippet"] !== "string" || typeof candidate["score"] !== "number"
-        || !Number.isFinite(candidate["score"]) || Buffer.byteLength(candidate["snippet"], "utf8") > this.options.budgets.max_excerpt_bytes) {
-        return undefined;
-      }
-      rows.push({ page_id: candidate["page_id"], section: candidate["section"], snippet: candidate["snippet"], score: candidate["score"] });
-    }
-    return rows;
-  }
-
-  private conflictRows(value: readonly unknown[]): readonly ConflictRow[] | undefined {
-    const rows: ConflictRow[] = [];
-    for (const candidate of value) {
-      if (!isRecord(candidate) || !exact(candidate, ["conflict_id", "page_id", "summary"])
-        || !validPageId(candidate["conflict_id"]) || !validPageId(candidate["page_id"])
-        || typeof candidate["summary"] !== "string"
-        || Buffer.byteLength(candidate["summary"], "utf8") > this.options.budgets.max_excerpt_bytes) return undefined;
-      rows.push({ conflict_id: candidate["conflict_id"], page_id: candidate["page_id"], summary: candidate["summary"] });
-    }
-    return rows;
   }
 }
 
