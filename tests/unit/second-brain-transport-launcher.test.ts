@@ -10,10 +10,10 @@ import {
   type SecondBrainExecFile,
   type SecondBrainExecFileOptions,
 } from "../../src/second-brain-transport.js";
-import { ManualTimers, fixture, options } from "../fixtures/second-brain-transport-harness.js";
+import { ManualTimers, cleanupFixtures, fixture, options } from "../fixtures/second-brain-transport-harness.js";
 
 const transports: Array<{ close(): Promise<void> }> = [];
-afterEach(async () => { await Promise.all(transports.splice(0).map(item => item.close())); });
+afterEach(async () => { await Promise.all(transports.splice(0).map(item => item.close())); cleanupFixtures(); });
 
 describe("Second Brain launcher and handshake", () => {
   it("publishes exact production constants and launches a frozen target with argv and minimal env", async () => {
@@ -46,6 +46,31 @@ describe("Second Brain launcher and handshake", () => {
     const value = fixture({ mode: "hang-initialize" }); const timers = new ManualTimers(); const transport = createSecondBrainTransport(options(value, { timers })); transports.push(transport);
     const startup = transport.call("sb_search", { query: "x" }); expect(timers.delays).toContain(5_000); timers.fireLatest();
     await expect(startup).rejects.toMatchObject({ code: "SECOND_BRAIN_STARTUP_TIMEOUT", disposition: "unavailable" }); expect(timers.count).toBe(0);
+  });
+
+  it("invalidates every failed startup generation before a later full handshake", async () => {
+    const cases = [
+      [{ mode: "hang-initialize" }, "SECOND_BRAIN_STARTUP_TIMEOUT", true],
+      [{ mode: "hang-tools" }, "SECOND_BRAIN_STARTUP_TIMEOUT", true],
+      [{ mode: "missing-server" }, "SECOND_BRAIN_MALFORMED_FRAME", false],
+      [{ mode: "invalid-server" }, "SECOND_BRAIN_VERSION_MISMATCH", false],
+      [{ badTools: true }, "SECOND_BRAIN_SCHEMA_MISMATCH", false],
+      [{ mode: "malformed-tool" }, "SECOND_BRAIN_SCHEMA_MISMATCH", false],
+    ] as const;
+    for (const [settings, code, timed] of cases) {
+      // Given: one executable generation with a specific invalid startup boundary.
+      const value = fixture(settings); const timers = new ManualTimers(); let launches = 0;
+      const runner: SecondBrainExecFile = (file, args, childOptions) => { launches += 1; return execFile(file, [...args], childOptions); };
+      const transport = createSecondBrainTransport(options(value, { execFile: runner, timers })); transports.push(transport);
+      // When: startup fails, then the fixture is repaired and called again.
+      const failed = transport.call("sb_search", { query: "first" }); if (timed) timers.fireLatest();
+      await expect(failed).rejects.toMatchObject({ code });
+      writeFileSync(value.config, JSON.stringify({ control: value.control, receipt: value.receipt }));
+      // Then: a fresh child completes initialize and tools/list before serving the call.
+      await expect(transport.call("sb_search", { query: "second" })).resolves.toMatchObject({ kind: "data" });
+      expect(launches).toBe(2);
+      expect(transport.diagnostics().filter(item => item.code === "SECOND_BRAIN_STARTED")).toHaveLength(1);
+    }
   });
 
   it("buffers partial frames and keeps injection-shaped arguments inert", async () => {

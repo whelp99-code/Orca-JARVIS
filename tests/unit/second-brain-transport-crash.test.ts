@@ -1,10 +1,11 @@
+import { execFile, type ChildProcess } from "node:child_process";
 import { writeFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
-import { createSecondBrainTransport } from "../../src/second-brain-transport.js";
-import { fixture, options, receiptSignal } from "../fixtures/second-brain-transport-harness.js";
+import { createSecondBrainTransport, type SecondBrainExecFile } from "../../src/second-brain-transport.js";
+import { ManualTimers, cleanupFixtures, fixture, forceKill, options, receiptSignal } from "../fixtures/second-brain-transport-harness.js";
 
 const transports: Array<{ close(): Promise<void> }> = [];
-afterEach(async () => { await Promise.all(transports.splice(0).map(item => item.close())); });
+afterEach(async () => { await Promise.all(transports.splice(0).map(item => item.close())); cleanupFixtures(); });
 
 describe("Second Brain crash and uncertainty", () => {
   it("restarts in a new generation and retries a known-safe read once", async () => {
@@ -36,6 +37,25 @@ describe("Second Brain crash and uncertainty", () => {
     writeFileSync(value.config, JSON.stringify({ protocolVersion: "wrong", control: value.control, receipt: value.receipt }));
     await expect(failed).rejects.toMatchObject({ code: "SECOND_BRAIN_VERSION_MISMATCH" });
     expect((await receiptSignal(value.receipt, 1)).filter(row => row.name === "sb_search")).toHaveLength(1);
+  });
+
+  it("escalates an ignored SIGTERM within the injected shutdown budget and settles once", async () => {
+    // Given: a handshaken real child that records and ignores SIGTERM.
+    const value = fixture({ ignoreTerm: true }); const timers = new ManualTimers(); const signals: Array<NodeJS.Signals | number | undefined> = [];
+    const runner: SecondBrainExecFile = (file, args, childOptions) => {
+      const child = execFile(file, [...args], childOptions); return new Proxy<ChildProcess>(child, { get: (target, property, receiver) => property === "kill" ? (signal?: NodeJS.Signals | number) => { signals.push(signal); return target.kill(signal); } : Reflect.get(target, property, receiver) });
+    };
+    const transport = createSecondBrainTransport(options(value, { execFile: runner, timers })); transports.push(transport);
+    await expect(transport.call("sb_search", { query: "ready" })).resolves.toMatchObject({ kind: "data" });
+    // When: two callers close concurrently after the signal observer is installed.
+    const first = transport.close(); const second = transport.close();
+    if (!timers.delays.includes(1_000)) forceKill(value.control);
+    expect(signals).toEqual(["SIGTERM"]); expect(timers.delays).toContain(1_000); timers.fire(1_000);
+    // Then: SIGKILL escalation reaches final close and public close settles exactly once.
+    await expect(Promise.all([first, second])).resolves.toEqual([undefined, undefined]);
+    expect(signals).toEqual(["SIGTERM", "SIGKILL"]);
+    expect(transport.diagnostics().filter(item => item.code === "SECOND_BRAIN_SIGKILL")).toHaveLength(1);
+    expect(transport.diagnostics().filter(item => item.code === "SECOND_BRAIN_CLOSED")).toHaveLength(1);
   });
 
   it("shutdown cancels queued and in-flight work and leaves no owned timers", async () => {
