@@ -1,3 +1,5 @@
+import { types as utilTypes } from "node:util";
+
 const DESCRIPTION_BYTES = 8_192;
 const OUTPUT_SCHEMAS = {
   sb_search: { $defs: { SearchHitDict: { properties: { page_id: { type: "string" }, section: { type: "string" }, snippet: { type: "string" }, score: { type: "number" } }, required: ["page_id", "section", "snippet", "score"], type: "object" } }, additionalProperties: { items: { $ref: "#/$defs/SearchHitDict" }, type: "array" }, type: "object" },
@@ -14,7 +16,7 @@ function titlesValid(value: unknown): boolean { if (Array.isArray(value)) return
 function safeArgumentValue(value: unknown): boolean { return value === null || typeof value === "string" || typeof value === "boolean" || (typeof value === "number" && Number.isFinite(value) && Number.isSafeInteger(value)); }
 export function snapshotArguments(value: unknown): Readonly<Record<string, unknown>> | undefined {
   try {
-    if (!isRecord(value) || Object.getPrototypeOf(value) !== Object.prototype) return undefined;
+    if (utilTypes.isProxy(value) || !isRecord(value) || Object.getPrototypeOf(value) !== Object.prototype) return undefined;
     const descriptors = Object.getOwnPropertyDescriptors(value); const snapshot: Record<string, unknown> = {};
     for (const key of Reflect.ownKeys(descriptors)) {
       if (typeof key !== "string" || key === "toJSON") return undefined; const descriptor = descriptors[key];
@@ -22,7 +24,7 @@ export function snapshotArguments(value: unknown): Readonly<Record<string, unkno
       snapshot[key] = descriptor.value;
     }
     return Object.freeze(snapshot);
-  } catch (caught) { if (caught instanceof Error) return undefined; throw caught; }
+  } catch { return undefined; }
 }
 
 function normalizedType(value: Record<string, unknown>): readonly string[] | undefined {

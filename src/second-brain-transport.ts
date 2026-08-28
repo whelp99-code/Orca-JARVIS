@@ -110,7 +110,7 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
     return response;
   }
   private async ensureCorrelationCapacity(): Promise<void> {
-    if (this.pending.size + this.seen.size + this.retired.size < SECOND_BRAIN_LIMITS.correlation_ids) return;
+    if (this.sequence < SECOND_BRAIN_LIMITS.correlation_ids && this.pending.size + this.seen.size + this.retired.size < SECOND_BRAIN_LIMITS.correlation_ids) return;
     if (!this.terminating) { this.state = "failed"; this.settleGeneration(this.error("SECOND_BRAIN_CORRELATION_SATURATED", "unavailable")); const old = this.child; const stopping = this.stop(old).then(() => { if (this.child === old) this.child = undefined; this.state = "idle"; }); this.terminating = stopping; void stopping.then(() => { if (this.terminating === stopping) this.terminating = undefined; }, () => undefined); }
     await this.terminating; await this.ensureStarted();
   }
