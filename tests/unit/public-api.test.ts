@@ -35,5 +35,6 @@ describe("package root public API", () => {
     expect(shadowInternals.filter(name => name in publicApi)).toEqual([]);
     expect(typeof publicApi.buildCapabilityMatrix).toBe("function");
     expect(typeof publicApi.planTeamProposal).toBe("function");
+    expect(typeof publicApi.createSecondBrainTransport).toBe("function");
   });
 });
