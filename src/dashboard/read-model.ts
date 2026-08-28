@@ -162,7 +162,7 @@ export class DashboardReadModel {
     return readSnapshot(this.db, () => redactDashboardValue({
       schema_version: DASHBOARD_SCHEMA_VERSION,
       items: new ControlPlane(this.db).list()
-        .slice()
+        .filter(isActionableControl)
         .sort((left, right) => left.requested_at.localeCompare(right.requested_at) || left.request_id.localeCompare(right.request_id))
         .map(toOverviewApproval),
     }));
@@ -209,6 +209,10 @@ function toOverviewTask(task: TaskTimelineSummary): OverviewTask {
 
 function isPending(command: StoredControlCommand): boolean {
   return command.state === "pending";
+}
+
+function isActionableControl(command: StoredControlCommand): boolean {
+  return command.state === "pending" || command.state === "approved" || command.state === "failed";
 }
 
 function toOverviewApproval(command: StoredControlCommand): OverviewApproval {
