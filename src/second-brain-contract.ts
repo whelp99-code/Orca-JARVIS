@@ -4,6 +4,7 @@ import { pathToFileURL } from "node:url";
 
 const SENTINEL = "SECOND_BRAIN_CONTRACT_MISMATCH";
 const IMPLEMENTATION_COMMIT = "011abade5b29de66af4722dfd9c21398064eeb1e";
+const EXPECTED_DIGEST = "2749af8b2a87b34e8a46191051d03126ff5bceebfb38c3f7a0b1acb0239acbaa";
 const TOOLS = ["sb_open_conflicts", "sb_read_page", "sb_recent_changes", "sb_remember", "sb_search"] as const;
 const ERROR_CODES = ["INVALID_ARGUMENTS", "PAGE_NOT_FOUND", "PATH_ESCAPE", "REMEMBER_REJECTED"] as const;
 
@@ -71,7 +72,7 @@ function validateTool(name: string, value: unknown): void {
   const tool = record(value);
   const keys = name === "sb_remember"
     ? ["arguments", "dynamic_fields", "happy", "no_data", "repeated_call"]
-    : name === "sb_recent_changes"
+    : name === "sb_search" || name === "sb_read_page" || name === "sb_recent_changes"
       ? ["arguments", "dynamic_fields", "happy", "no_data"]
       : ["arguments", "happy", "no_data"];
   exactKeys(tool, keys);
@@ -102,6 +103,7 @@ export function consumeSecondBrainContract(fixturePath: string, sourcePath?: str
   const payload = readFileSync(fixturePath);
   const text = payload.toString("utf8");
   const digest = createHash("sha256").update(payload).digest("hex");
+  if (digest !== EXPECTED_DIGEST) throw new SecondBrainContractError();
   if (!/^[0-9a-f]{64}\n$/.test(readFileSync(`${fixturePath}.sha256`, "ascii"))
     || readFileSync(`${fixturePath}.sha256`, "ascii") !== `${digest}\n`) throw new SecondBrainContractError();
   if (sourcePath !== undefined && (!payload.equals(readFileSync(sourcePath))
@@ -123,12 +125,17 @@ export function consumeSecondBrainContract(fixturePath: string, sourcePath?: str
   if (errors.length !== ERROR_CODES.length) throw new SecondBrainContractError();
   const observedCodes = errors.map(error => {
     const entry = record(error);
-    exactKeys(entry, ["class", "code", "raw_error"]);
     const code = string(entry["code"]);
     const errorClass = string(entry["class"]);
-    string(entry["raw_error"]);
-    if ((code === "INVALID_ARGUMENTS" && errorClass !== "MCPValidationError")
-      || (code !== "INVALID_ARGUMENTS" && errorClass !== "ToolError")) throw new SecondBrainContractError();
+    if (code === "INVALID_ARGUMENTS") {
+      exactKeys(entry, ["class", "code", "raw_error_pattern"]);
+      string(entry["raw_error_pattern"]);
+      if (errorClass !== "pydantic.ValidationError") throw new SecondBrainContractError();
+    } else {
+      exactKeys(entry, ["class", "code", "raw_error"]);
+      string(entry["raw_error"]);
+      if (errorClass !== "ToolError") throw new SecondBrainContractError();
+    }
     return code;
   }).sort();
   if (observedCodes.join("\0") !== [...ERROR_CODES].sort().join("\0")) throw new SecondBrainContractError();

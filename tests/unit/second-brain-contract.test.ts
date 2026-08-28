@@ -1,12 +1,26 @@
 import { createHash } from "node:crypto";
-import { cpSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
-import { describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it } from "vitest";
 
 const fixture = "contracts/second-brain-mcp-v1.json";
 const mismatch = "SECOND_BRAIN_CONTRACT_MISMATCH";
+const temporaryRoots = new Set<string>();
+
+function temporaryRoot(prefix: string): string {
+  const root = mkdtempSync(join(tmpdir(), prefix));
+  temporaryRoots.add(root);
+  return root;
+}
+
+function cleanupTemporaryRoots(): void {
+  for (const root of temporaryRoots) rmSync(root, { recursive: true, force: true });
+  temporaryRoots.clear();
+}
+
+afterEach(cleanupTemporaryRoots);
 
 function run(path = fixture, source?: string) {
   const args = ["--experimental-strip-types", "src/second-brain-contract.ts", "--fixture", path];
@@ -15,7 +29,7 @@ function run(path = fixture, source?: string) {
 }
 
 function mutated(find: string, replacement: string): string {
-  const root = mkdtempSync(join(tmpdir(), "second-brain-contract-"));
+  const root = temporaryRoot("second-brain-contract-");
   const target = join(root, "contract.json");
   const text = readFileSync(fixture, "utf8");
   expect(text.includes(find)).toBe(true);
@@ -55,7 +69,7 @@ describe("Second Brain contract consumer", () => {
   });
 
   it("rejects digest drift", () => {
-    const root = mkdtempSync(join(tmpdir(), "second-brain-digest-"));
+    const root = temporaryRoot("second-brain-digest-");
     const target = join(root, "contract.json");
     cpSync(fixture, target);
     writeFileSync(`${target}.sha256`, `${"0".repeat(64)}\n`);
@@ -71,8 +85,40 @@ describe("Second Brain contract consumer", () => {
     expectMismatch(mutated("non_idempotent_collision_safe_no_overwrite", "idempotent"));
   });
 
+  it("rejects happy raw-response shape drift", () => {
+    expectMismatch(mutated('"snippet":"...xampleAlph..."', '"excerpt":"...xampleAlph..."'));
+  });
+
+  it("rejects happy normalized-value shape drift", () => {
+    expectMismatch(mutated('"result_count":1', '"total":1'));
+  });
+
+  it("rejects no-data raw mapping drift", () => {
+    expectMismatch(mutated('"raw_response":{"results":[]}', '"raw_response":{"items":[]}'));
+  });
+
+  it("rejects raw error wording drift", () => {
+    expectMismatch(mutated("page_id escapes vault: ../example", "page_id rejected: ../example"));
+  });
+
+  it("rejects dynamic-field pattern drift", () => {
+    expectMismatch(mutated("^[0-9]{4}-[0-9]{2}-[0-9]{2}$", "^changed$"));
+  });
+
+  it("rejects extra nested happy-response fields", () => {
+    expectMismatch(mutated('"result_count":1}', '"extra":true,"result_count":1}'));
+  });
+
+  it("does not leak persistent temporary roots", () => {
+    const before = readdirSync(tmpdir()).filter(name => name.startsWith("second-brain-")).length;
+    mutated('"schema_version":1', '"schema_version":2');
+    cleanupTemporaryRoots();
+    const after = readdirSync(tmpdir()).filter(name => name.startsWith("second-brain-")).length;
+    expect(after).toBe(before);
+  });
+
   it("syncs only through the checked script", () => {
-    const root = mkdtempSync(join(tmpdir(), "second-brain-sync-"));
+    const root = temporaryRoot("second-brain-sync-");
     const source = join(root, "second-brain-mcp-v1.json");
     cpSync(fixture, source);
     cpSync(`${fixture}.sha256`, `${source}.sha256`);
