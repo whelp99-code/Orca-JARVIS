@@ -20,7 +20,7 @@ describe("control ingress migration", () => {
     await db.migrate();
 
     // Then
-    expect(names.at(-1)).toBe(MIGRATION);
+    expect(names.indexOf(MIGRATION)).toBeLessThan(names.indexOf("033_personal_operations.sql"));
     expect(names.filter((name) => name.startsWith("031_"))).toEqual([MIGRATION]);
     expect(createHash("sha256").update(readFileSync(source)).digest("hex")).toBe(CHECKSUM);
     expect(readFileSync(join(process.cwd(), "dist", "migrations", MIGRATION))).toEqual(readFileSync(source));
