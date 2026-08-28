@@ -68,11 +68,13 @@ export type ReceiptAuthority = { readonly authority_kind: "control_receipt"; rea
 export type Freshness = { readonly state: (typeof FRESHNESS_STATES)[number]; readonly checked_at: UtcTimestamp; readonly fresh_until: UtcTimestamp };
 export type PolicyDecision = { readonly decision: (typeof POLICY_DECISIONS)[number]; readonly policy_version: string; readonly reason_codes: readonly (typeof POLICY_REASON_CODES)[number][] };
 export type Evidence = { readonly evidence_id: EvidenceId; readonly digest: Sha256Digest; readonly kind: string; readonly source_id: SourceId; readonly observed_at: UtcTimestamp };
-export type ConfirmationReceiptV1 = { readonly receipt_kind: "confirmation"; readonly candidate_digest: Sha256Digest; readonly approval: CommandApprovalReceipt };
-export type DeliveryReceiptV1 = { readonly receipt_kind: "delivery"; readonly candidate_digest: Sha256Digest; readonly attempt: number; readonly fence: number; readonly invocation_digest: Sha256Digest; readonly artifact_digest: Sha256Digest; readonly accepted_at: UtcTimestamp; readonly reconciled_at: UtcTimestamp | null; readonly approval: CommandApprovalReceipt };
-export type OwnerAuthorityReceiptV1 = { readonly receipt_kind: "owner_enrollment" | "owner_revocation"; readonly credential_id: string; readonly public_key_digest: Sha256Digest; readonly approval: CommandApprovalReceipt };
+export type DeepReadonly<Value> = Value extends readonly unknown[] ? { readonly [Key in keyof Value]: DeepReadonly<Value[Key]> } : Value extends object ? { readonly [Key in keyof Value]: DeepReadonly<Value[Key]> } : Value;
+export type SignedApprovalReceiptV1 = DeepReadonly<CommandApprovalReceipt>;
+export type ConfirmationReceiptV1 = { readonly receipt_kind: "confirmation"; readonly candidate_digest: Sha256Digest; readonly approval: SignedApprovalReceiptV1 };
+export type DeliveryReceiptV1 = { readonly receipt_kind: "delivery"; readonly candidate_digest: Sha256Digest; readonly attempt: number; readonly fence: number; readonly invocation_digest: Sha256Digest; readonly artifact_digest: Sha256Digest; readonly accepted_at: UtcTimestamp; readonly reconciled_at: UtcTimestamp | null; readonly approval: SignedApprovalReceiptV1 };
+export type OwnerAuthorityReceiptV1 = { readonly receipt_kind: "owner_enrollment" | "owner_revocation"; readonly credential_id: string; readonly public_key_digest: Sha256Digest; readonly approval: SignedApprovalReceiptV1 };
 export type RemoteVerificationReceiptV1 = { readonly receipt_kind: "remote_verification"; readonly challenge_id: RemoteChallengeId; readonly principal_id: RemotePrincipalId; readonly session_id: string; readonly credential_id: string; readonly assertion_digest: Sha256Digest; readonly command_digest: Sha256Digest; readonly target_digest: Sha256Digest; readonly args_digest: Sha256Digest; readonly decision: (typeof REMOTE_DECISIONS)[number]; readonly expires_at: UtcTimestamp; readonly result: "verified" | "rejected" };
-export type RemoteTranslationReceiptV1 = Omit<RemoteVerificationReceiptV1, "receipt_kind" | "result"> & { readonly receipt_kind: "control_translation"; readonly approval: CommandApprovalReceipt };
+export type RemoteTranslationReceiptV1 = Omit<RemoteVerificationReceiptV1, "receipt_kind" | "result"> & { readonly receipt_kind: "control_translation"; readonly approval: SignedApprovalReceiptV1 };
 export type FamilyReceipt = ConfirmationReceiptV1 | DeliveryReceiptV1 | OwnerAuthorityReceiptV1 | RemoteVerificationReceiptV1 | RemoteTranslationReceiptV1;
 export type PersonalEnvelopeV1<Id, Payload, Receipt = null> = { readonly schema_version: 1; readonly id: Id; readonly created_at: UtcTimestamp; readonly observed_at: UtcTimestamp; readonly valid_at: UtcTimestamp; readonly source: SourceMetadata; readonly authority: AdvisoryAuthority | ReceiptAuthority; readonly freshness: Freshness; readonly expires_at: UtcTimestamp; readonly idempotency_key: IdempotencyKey; readonly correlation_id: CorrelationId; readonly causation_id: CorrelationId | null; readonly payload: Payload; readonly policy_decision: PolicyDecision; readonly evidence: readonly Evidence[]; readonly receipt: Receipt };
 
@@ -91,7 +93,7 @@ export type RemoteApprovalPayloadV1 = { readonly challenge_id: RemoteChallengeId
 export type ObservationEnvelopeV1 = PersonalEnvelopeV1<ObservationId, ObservationPayloadV1>;
 export type ContextSnapshotV1 = PersonalEnvelopeV1<ContextId, ContextPayloadV1>;
 export type RecommendationV1 = PersonalEnvelopeV1<RecommendationId, RecommendationPayloadV1>;
-export type DailyLoopRunV1 = PersonalEnvelopeV1<DailyLoopRunId, DailyLoopPayloadV1, CommandApprovalReceipt | null>;
+export type DailyLoopRunV1 = PersonalEnvelopeV1<DailyLoopRunId, DailyLoopPayloadV1, SignedApprovalReceiptV1 | null>;
 export type NotificationIntentV1 = PersonalEnvelopeV1<NotificationIntentId, NotificationPayloadV1>;
 export type MemoryCandidateV1 = PersonalEnvelopeV1<MemoryCandidateId, MemoryCandidatePayloadV1, ConfirmationReceiptV1 | null>;
 export type MemoryOutboxV1 = PersonalEnvelopeV1<MemoryOutboxId, MemoryOutboxPayloadV1, ConfirmationReceiptV1 | DeliveryReceiptV1 | null>;

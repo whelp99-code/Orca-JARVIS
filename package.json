@@ -51,6 +51,7 @@
     "@types/react-dom": "19.2.4",
     "@vitejs/plugin-react": "5.1.4",
     "eslint": "^9.33.0",
+    "fast-check": "^4.9.0",
     "jsdom": "30.0.1",
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.39.0",

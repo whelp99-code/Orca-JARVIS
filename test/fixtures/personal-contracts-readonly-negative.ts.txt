@@ -1,0 +1,27 @@
+import type {
+  ConfirmationReceiptV1,
+  DailyLoopRunV1,
+  DeliveryReceiptV1,
+  OwnerAuthorityReceiptV1,
+  RemoteTranslationReceiptV1,
+} from "../src/personal-contracts.js";
+
+export function forgeConfirmation(value: ConfirmationReceiptV1): void {
+  value.approval.signature = "forged";
+}
+
+export function forgeDelivery(value: DeliveryReceiptV1): void {
+  value.approval.signature = "forged";
+}
+
+export function forgeOwner(value: OwnerAuthorityReceiptV1): void {
+  value.approval.signature = "forged";
+}
+
+export function forgeTranslation(value: RemoteTranslationReceiptV1): void {
+  value.approval.signature = "forged";
+}
+
+export function forgeDaily(value: DailyLoopRunV1): void {
+  if (value.receipt !== null) value.receipt.signature = "forged";
+}
