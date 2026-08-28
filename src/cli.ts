@@ -23,6 +23,8 @@ import { ControlPlane, type CommandApprovalReceipt, type ControlCancelInput, typ
 import { ApprovedCommandExecutor } from "./approved-executor.js";
 import { AgentOpsMicroLoops, DurableMicroLoopRuntime, type MicroLoopName } from "./microloops.js";
 import { TaskTimeline } from "./task-timeline.js";
+import { buildSecondBrainReadiness, type SecondBrainReadinessProbe } from "./second-brain-readiness.js";
+import { runtimeSecondBrainReadinessProbe } from "./second-brain-readiness-runtime.js";
 
 function output(value: object): void { process.stdout.write(`${JSON.stringify({ version: 1, ...value })}\n`); }
 function outputSync(value: object): void { writeSync(process.stdout.fd, `${JSON.stringify({ version: 1, ...value })}\n`); }
@@ -68,7 +70,7 @@ async function observeBound(binding: LiveBinding, runner?: OrcaRunner): Promise<
   const read = await adapter.read(binding.terminal_id, binding.cursor, 1);
   return [{ provider: binding.provider, terminal_id: binding.terminal_id, session_id: binding.session_id, incarnation_id: binding.incarnation_id, cursor: read.nextCursor, state: "unknown" }];
 }
-export async function execute(args: string[], dependencies: { orcaRunner?: OrcaRunner; liveOrcaCommand?: OrcaCommand; gjcRunner?: GjcRunner; clock?: () => Date; liveReportOutput?: (value: object) => void; capabilityProbe?: CapabilityProbe; readStdin?: () => Promise<Buffer> } = {}): Promise<Record<string, unknown>> {
+export async function execute(args: string[], dependencies: { orcaRunner?: OrcaRunner; liveOrcaCommand?: OrcaCommand; gjcRunner?: GjcRunner; clock?: () => Date; liveReportOutput?: (value: object) => void; capabilityProbe?: CapabilityProbe; secondBrainProbe?: SecondBrainReadinessProbe; readStdin?: () => Promise<Buffer> } = {}): Promise<Record<string, unknown>> {
   const earlyArg = args[0]; if (earlyArg === "--help" || earlyArg === "-h" || earlyArg === "help") {
     console.log(`JARVIS — agent-ops runtime\nCommands: init, db migrate, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, observe, pre-gjc, capabilities, team, portfolio, status`);
     return { ok: true, command: "help" };
@@ -104,7 +106,7 @@ export async function execute(args: string[], dependencies: { orcaRunner?: OrcaR
       );
       return { ok: true, command: "portfolio.ingest", ...result };
     }
-    if (command === "doctor") { const report = await runDoctor(db, dependencies.clock?.() ?? new Date(), dependencies.capabilityProbe); return { ok: report.ok, command: "doctor", report }; }
+    if (command === "doctor") { const report = await runDoctor(db, dependencies.clock?.() ?? new Date(), dependencies.capabilityProbe, dependencies.secondBrainProbe ?? runtimeSecondBrainReadinessProbe()); return { ok: report.ok, command: "doctor", report }; }
     await db.assertMigrationsReady();
     if (command === "team" && subcommand === "propose" && argument) { if (fourth !== undefined) throw new JarvisError("TEAM_PROPOSAL_INPUT_INVALID");
       const recognized = Object.fromEntries(Object.entries(values).filter(([key]) => key === "db"));
@@ -215,7 +217,7 @@ export async function execute(args: string[], dependencies: { orcaRunner?: OrcaR
     if (command === "approval" && subcommand === "approve" && argument && fourth) { const continuation = db.approveWithReceipt(argument, JSON.parse(await readFile(fourth, "utf8"))); return { ok: true, work_id: argument, ...continuation }; }
     if (command === "approval" && subcommand === "reject" && argument && fourth) { db.rejectWithReceipt(argument, JSON.parse(await readFile(fourth, "utf8"))); return { ok: true, work_id: argument, decision: "rejected" }; }
     if (command === "resume" && subcommand === "deliver" && argument) { if (!supervisor.pendingLiveResumeIntents().includes(argument)) throw new JarvisError("ORCA_RESUME_DISABLED"); shadow.deliverResume(argument, new OrcaTerminalResumeAdapter(db, true, dependencies.liveOrcaCommand, dependencies.clock), dependencies.clock?.() ?? new Date()); return { ok: true, command: "resume.deliver", intent_id: argument, dispatched: true }; }
-    if (command === "capabilities" && values.json) { const liveResume = supervisor.liveResumeConfigured(); const gjcEnabled = db.gjcOperational(); const matrix = await buildCapabilityMatrix(db, dependencies.capabilityProbe ?? runtimeCapabilityProbe(), dependencies.clock?.() ?? new Date()); return { ok: true, supported_targets: ["codex", "claude"], providers: ["codex", "claude"], orca_read: true, codex_observe: true, claude_observe: true, pre_gjc_shadow: true, pre_gjc_signed_signals: true, pre_gjc_durable_state: true, pre_gjc_authority_resume: true, authority_resume_intents: true, live_resume: liveResume, pre_gjc_completion_promotion: true, pre_gjc_proposal_only: true, gjc: gjcEnabled, live_seed: false, live_dispatch: gjcEnabled, control_commands_require_human_receipt: true, all_cli_mutations_require_control_receipt: false, task_timeline: true, collaboration_workspace: false, buzz_bridge: false, policy_resume_intents: true, policy_resume_auto_delivery: true, service_run_deployable: true, service_run_delivers_resume: false, runtime_batch_deployable: false, policy_auto_execute: false, arbitrary_verify_execution: false, self_modify: false, shadow_only: !liveResume && !gjcEnabled, matrix }; }
+    if (command === "capabilities" && values.json) { const liveResume = supervisor.liveResumeConfigured(); const gjcEnabled = db.gjcOperational(); const now = dependencies.clock?.() ?? new Date(); const matrix = await buildCapabilityMatrix(db, dependencies.capabilityProbe ?? runtimeCapabilityProbe(), now); const secondBrain = await buildSecondBrainReadiness(dependencies.secondBrainProbe ?? runtimeSecondBrainReadinessProbe(), now); return { ok: true, second_brain: secondBrain, supported_targets: ["codex", "claude"], providers: ["codex", "claude"], orca_read: true, codex_observe: true, claude_observe: true, pre_gjc_shadow: true, pre_gjc_signed_signals: true, pre_gjc_durable_state: true, pre_gjc_authority_resume: true, authority_resume_intents: true, live_resume: liveResume, pre_gjc_completion_promotion: true, pre_gjc_proposal_only: true, gjc: gjcEnabled, live_seed: false, live_dispatch: gjcEnabled, control_commands_require_human_receipt: true, all_cli_mutations_require_control_receipt: false, task_timeline: true, collaboration_workspace: false, buzz_bridge: false, policy_resume_intents: true, policy_resume_auto_delivery: true, service_run_deployable: true, service_run_delivers_resume: false, runtime_batch_deployable: false, policy_auto_execute: false, arbitrary_verify_execution: false, self_modify: false, shadow_only: !liveResume && !gjcEnabled, matrix }; }
     if (command === "worker" && subcommand === "run" && values.once) return { ok: true, ...db.workerOnce(values.crash as "before_commit" | "after_commit" | "ambiguous" | undefined) };
     throw new JarvisError("UNKNOWN_COMMAND");
   } finally { db.close(); }

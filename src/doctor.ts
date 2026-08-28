@@ -5,6 +5,12 @@ import { fileURLToPath } from "node:url";
 import { buildCapabilityMatrix, type CapabilityFact, type CapabilityMatrixV1, type CapabilityProbe } from "./capabilities.js";
 import type { AuthorityDb } from "./db.js";
 import { GJC_PROTOCOL_VERSION } from "./gjc.js";
+import {
+  buildSecondBrainReadiness,
+  type SecondBrainReadinessProbe,
+  type SecondBrainReadinessReportV1,
+} from "./second-brain-readiness.js";
+import { runtimeSecondBrainReadinessProbe } from "./second-brain-readiness-runtime.js";
 
 export interface DoctorCheck {
   name: string;
@@ -21,6 +27,7 @@ export interface DoctorReport {
   database: { filename: string; sqlite_version: string | null; wal_bytes: number; applied_migrations: number; expected_migrations: number };
   checks: DoctorCheck[];
   capabilities: CapabilityMatrixV1;
+  second_brain: SecondBrainReadinessReportV1;
 }
 
 const expectedNodeMajor = 24;
@@ -119,7 +126,12 @@ function unavailableCapabilities(now: Date): CapabilityMatrixV1 {
   return { schema_version: 1, checked_at: now.toISOString(), capabilities: (["codex", "claude", "orca_read", "gjc", "live_resume"] as const).map(id => ({ id, stages: { ...stages } })) };
 }
 
-export async function runDoctor(db: AuthorityDb, now = new Date(), probe?: CapabilityProbe): Promise<DoctorReport> {
+export async function runDoctor(
+  db: AuthorityDb,
+  now = new Date(),
+  probe?: CapabilityProbe,
+  secondBrainProbe: SecondBrainReadinessProbe = runtimeSecondBrainReadinessProbe(),
+): Promise<DoctorReport> {
   const checks: DoctorCheck[] = [];
   const nodeMajor = Number(process.versions.node.split(".")[0]);
   checks.push({ name: "runtime.node_major", ok: nodeMajor === expectedNodeMajor, actual: nodeMajor, expected: expectedNodeMajor, code: nodeMajor === expectedNodeMajor ? undefined : "RUNTIME_NODE_MISMATCH" });
@@ -154,15 +166,23 @@ export async function runDoctor(db: AuthorityDb, now = new Date(), probe?: Capab
     checks.push({ name: "supervisor.pending_reports", ok: pending === 0, actual: pending, expected: 0, code: pending === 0 ? undefined : "REPORT_BACKLOG" });
   }
 
+  const migrationsReady = hasTable(db, "gjc_runtime_config")
+    && hasTable(db, "gjc_runtime_config_audit")
+    && hasTable(db, "live_supervisor_live_resume_config")
+    && hasTable(db, "live_supervisor_live_resume_config_audit")
+    && hasTable(db, "live_supervisor_bindings");
+  const capabilities = migrationsReady
+    ? await buildCapabilityMatrix(db, probe ?? runtimeCapabilityProbe(), now)
+    : unavailableCapabilities(now);
+  const secondBrain = await buildSecondBrainReadiness(secondBrainProbe, now);
   const report: DoctorReport = {
     ok: checks.every(check => check.ok),
     checked_at: now.toISOString(),
     runtime: { node: process.version, abi: process.versions.modules, platform: process.platform, arch: process.arch },
     database: { filename: db.filename, sqlite_version: sqliteVersion, wal_bytes: await safeSize(`${db.filename}-wal`), applied_migrations: applied, expected_migrations: expected },
     checks,
-    capabilities: hasTable(db, "gjc_runtime_config") && hasTable(db, "gjc_runtime_config_audit") && hasTable(db, "live_supervisor_live_resume_config") && hasTable(db, "live_supervisor_live_resume_config_audit") && hasTable(db, "live_supervisor_bindings")
-      ? await buildCapabilityMatrix(db, probe ?? runtimeCapabilityProbe(), now)
-      : unavailableCapabilities(now),
+    capabilities,
+    second_brain: secondBrain,
   };
   return report;
 }

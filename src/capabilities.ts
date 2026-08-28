@@ -51,7 +51,11 @@ const SAFE_EVIDENCE = new Set([
 const REDACTED = "redacted_probe_failure";
 
 const invalid = (): never => { throw new JarvisError("CAPABILITY_INPUT_INVALID"); };
-const object = (value: unknown): Record<string, unknown> => value !== null && typeof value === "object" && !Array.isArray(value) ? value as Record<string, unknown> : invalid();
+const object = (value: unknown): Record<string, unknown> => value !== null
+  && typeof value === "object"
+  && !Array.isArray(value)
+  ? value as Record<string, unknown>
+  : invalid();
 const exactKeys = (value: Record<string, unknown>, keys: readonly string[]): void => {
   const actual = Object.keys(value).sort();
   const expected = [...keys].sort();
@@ -66,7 +70,11 @@ const stageBase = (value: unknown, keys: readonly string[]): { ok: boolean; evid
   const ok: boolean = input.ok === true;
   const evidence = evidenceOf(input.evidence);
   const version = Object.hasOwn(input, "version") ? (input.version === null || typeof input.version === "string" ? input.version : invalid()) : undefined;
-  const protocol_version = Object.hasOwn(input, "protocol_version") ? (input.protocol_version === null || typeof input.protocol_version === "string" ? input.protocol_version : invalid()) : undefined;
+  const protocol_version = Object.hasOwn(input, "protocol_version")
+    ? (input.protocol_version === null || typeof input.protocol_version === "string"
+      ? input.protocol_version
+      : invalid())
+    : undefined;
   return { ok, evidence, version, protocol_version };
 };
 
@@ -83,7 +91,11 @@ function parseObservation(value: unknown): CapabilityProbeObservation {
   return {
     installed: { ok: installed.ok, version: installed.version === null ? null : String(installed.version), evidence: installed.evidence },
     configured: { ok: configured.ok, evidence: configured.evidence },
-    protocol_compatible: { ok: protocol.ok, protocol_version: protocol.protocol_version === null ? null : String(protocol.protocol_version), evidence: protocol.evidence },
+    protocol_compatible: {
+      ok: protocol.ok,
+      protocol_version: protocol.protocol_version === null ? null : String(protocol.protocol_version),
+      evidence: protocol.evidence,
+    },
     operational: { ok: operational.ok, evidence: operational.evidence },
     authorized: { ok: authorized.ok, evidence: authorized.evidence },
   };

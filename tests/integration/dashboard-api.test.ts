@@ -58,7 +58,7 @@ describe("dashboard HTTP overview walking skeleton", () => {
       const response = await request(`${origin}/api/v1/health`);
       expect(response.statusCode).toBe(200);
       const body = parseJson(await response.body.text());
-      expect(body).toEqual({ schema_version: 1, status: "ok", authority: "ready", generated_at: expect.any(String) });
+      expect(body).toMatchObject({ schema_version: 1, status: "ok", authority: "ready", generated_at: expect.any(String) });
       expect(totalChanges(db)).toBe(before);
       expect(response.headers["x-request-id"]).toBeTruthy();
     } finally {

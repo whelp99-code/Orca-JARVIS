@@ -1,6 +1,8 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CapabilityProbe } from "../capabilities.js";
 import type { AuthorityDb } from "../db.js";
+import { buildSecondBrainReadiness, type SecondBrainReadinessProbe } from "../second-brain-readiness.js";
+import { runtimeSecondBrainReadinessProbe } from "../second-brain-readiness-runtime.js";
 import { DASHBOARD_SCHEMA_VERSION, ID_LIMIT } from "./contracts.js";
 import type { ReconcileHub } from "./events.js";
 import {
@@ -39,6 +41,7 @@ export type DashboardApiInput = {
   readonly origin: string;
   readonly clock: () => Date;
   readonly capabilityProbe?: CapabilityProbe;
+  readonly secondBrainProbe?: SecondBrainReadinessProbe;
   readonly planner?: TeamProposalPlanner;
 };
 
@@ -52,7 +55,7 @@ export async function tryHandleDashboardApi(input: DashboardApiInput): Promise<b
   if (tryHandleDashboardSession(input)) return true;
   if (tryHandleDashboardSse(input)) return true;
   if (input.path === "/api/v1/health") {
-    await writeHealth(input.db, input.response, input.requestId);
+    await writeHealth(input.db, input.response, input.requestId, input.clock(), input.secondBrainProbe ?? runtimeSecondBrainReadinessProbe());
     return true;
   }
   if (input.path === "/api/v1/overview") {
@@ -153,7 +156,13 @@ function writeApiError(
   });
 }
 
-async function writeHealth(db: AuthorityDb, response: ServerResponse, requestId: string): Promise<void> {
+async function writeHealth(
+  db: AuthorityDb,
+  response: ServerResponse,
+  requestId: string,
+  now: Date,
+  secondBrainProbe: SecondBrainReadinessProbe,
+): Promise<void> {
   try {
     await db.assertMigrationsReady();
   } catch (error) {
@@ -173,7 +182,8 @@ async function writeHealth(db: AuthorityDb, response: ServerResponse, requestId:
       schema_version: DASHBOARD_SCHEMA_VERSION,
       status: "ok",
       authority: "ready",
-      generated_at: new Date().toISOString(),
+      generated_at: now.toISOString(),
+      second_brain: await buildSecondBrainReadiness(secondBrainProbe, now),
     },
     requestId,
   });

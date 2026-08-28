@@ -92,6 +92,7 @@ export {
 export {
 	createSecondBrainTransport,
 	SecondBrainTransportError,
+	SECOND_BRAIN_PROTOCOL_VERSION,
 	type SecondBrainCallOptions,
 	type SecondBrainDiagnostic,
 	type SecondBrainDisposition,
@@ -144,6 +145,28 @@ export type {
 } from "./types.js";
 export type { PreGjcEvidence, PreGjcFixture, PreGjcKeyRevocation, PreGjcTarget } from "./pre-gjc.js";
 export { runDoctor, type DoctorCheck, type DoctorReport } from "./doctor.js";
+export {
+	boundedSecondBrainReadinessRunner,
+	runtimeSecondBrainReadinessProbe,
+	type SecondBrainCommandResult,
+	type SecondBrainReadinessRunner,
+} from "./second-brain-readiness-runtime.js";
+export {
+	buildSecondBrainReadiness,
+	evaluateSecondBrainReadiness,
+	passiveSecondBrainReadinessProbe,
+	SECOND_BRAIN_FRESHNESS_MS,
+	SECOND_BRAIN_FROZEN_DIGEST,
+	SECOND_BRAIN_READINESS_VERSION,
+	SECOND_BRAIN_REQUIRED_TOOLS,
+	type SecondBrainDataState,
+	type SecondBrainProbeFailure,
+	type SecondBrainProbeOutcome,
+	type SecondBrainReadinessObservation,
+	type SecondBrainReadinessProbe,
+	type SecondBrainReadinessReportV1,
+	type SecondBrainRefreshObservation,
+} from "./second-brain-readiness.js";
 export {
 	buildCapabilityMatrix,
 	type CapabilityStage,

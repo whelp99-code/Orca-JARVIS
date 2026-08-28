@@ -9,16 +9,16 @@ import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
 import type { PortfolioOverview } from "./portfolio-contracts.js";
 import { PortfolioProjection } from "./portfolio-projection.js";
 import { redactDashboardValue } from "./redaction.js";
+import { buildSecondBrainReadiness, type SecondBrainReadinessProbe, type SecondBrainReadinessReportV1 } from "../second-brain-readiness.js";
+import { runtimeSecondBrainReadinessProbe } from "../second-brain-readiness-runtime.js";
 
 const RECENT_TASK_LIMIT = 20;
 const TASK_EVENT_LIMIT = 500;
 const SETTLED_STATES = new Set(["completed", "failed", "cancelled", "rejected"]);
 
 export type OverviewCard = {
-  readonly id: string;
-  readonly label: string;
-  readonly value: number;
-  readonly detail: string;
+  readonly id: string; readonly label: string;
+  readonly value: number; readonly detail: string;
 };
 
 export type OverviewTask = {
@@ -42,9 +42,7 @@ export type OverviewApproval = {
 };
 
 export type OverviewRisk = {
-  readonly id: string;
-  readonly severity: string;
-  readonly message: string;
+  readonly id: string; readonly severity: string; readonly message: string;
 };
 
 export type OverviewAgent = {
@@ -57,14 +55,11 @@ export type OverviewAgent = {
 };
 
 export type OverviewResponse = {
-  readonly schema_version: 1;
-  readonly generated_at: string;
-  readonly cards: readonly OverviewCard[];
-  readonly recent_tasks: readonly OverviewTask[];
-  readonly pending_approvals: readonly OverviewApproval[];
-  readonly risks: readonly OverviewRisk[];
-  readonly agents: readonly OverviewAgent[];
-  readonly portfolio: PortfolioOverview;
+  readonly schema_version: 1; readonly generated_at: string;
+  readonly cards: readonly OverviewCard[]; readonly recent_tasks: readonly OverviewTask[];
+  readonly pending_approvals: readonly OverviewApproval[]; readonly risks: readonly OverviewRisk[];
+  readonly agents: readonly OverviewAgent[]; readonly portfolio: PortfolioOverview;
+  readonly second_brain?: SecondBrainReadinessReportV1;
 };
 
 export type TaskListResponse = { readonly schema_version: 1; readonly items: readonly OverviewTask[] };
@@ -84,7 +79,10 @@ export type DashboardLookup<T> =
   | { readonly kind: "not_found" };
 
 export class DashboardReadModel {
-  constructor(private readonly db: AuthorityDb) {}
+  constructor(
+    private readonly db: AuthorityDb,
+    private readonly secondBrainProbe: SecondBrainReadinessProbe = runtimeSecondBrainReadinessProbe(),
+  ) {}
 
   async overview(now = new Date()): Promise<OverviewResponse> {
     const before = changeCount(this.db);
@@ -93,6 +91,7 @@ export class DashboardReadModel {
     const commands = new ControlPlane(this.db).list();
     const bindings = new LiveSupervisor(this.db).list();
     const portfolio = new PortfolioProjection(this.db).overview(now);
+    const secondBrain = await buildSecondBrainReadiness(this.secondBrainProbe, now);
     if (changeCount(this.db) !== before) throw new JarvisError("DASHBOARD_READ_MUTATED");
     const recent_tasks = tasks.map(toOverviewTask);
     const pending_approvals = commands.filter(isPending).map(toOverviewApproval);
@@ -112,7 +111,7 @@ export class DashboardReadModel {
       risks,
       agents,
     });
-    return { ...overview, portfolio: redactDashboardValue(portfolio) };
+    return { ...overview, portfolio: redactDashboardValue(portfolio), second_brain: redactDashboardValue(secondBrain) };
   }
 
   listTasks(limit: number): TaskListResponse {

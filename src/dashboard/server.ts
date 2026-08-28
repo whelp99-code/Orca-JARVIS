@@ -10,6 +10,7 @@ declare module "node:net" {
   }
 }
 import type { CapabilityProbe } from "../capabilities.js";
+import type { SecondBrainReadinessProbe } from "../second-brain-readiness.js";
 import { JarvisError, type AuthorityDb } from "../db.js";
 import type { OrcaRunner } from "../orca.js";
 import { tryHandleDashboardApi } from "./api-routes.js";
@@ -55,6 +56,7 @@ export type DashboardServerOptions = {
   readonly port: number;
   readonly orcaRunner?: OrcaRunner;
   readonly capabilityProbe?: CapabilityProbe;
+  readonly secondBrainProbe?: SecondBrainReadinessProbe;
   readonly planner?: TeamProposalPlanner;
   readonly clock?: () => Date;
 };
@@ -71,6 +73,7 @@ type RequestContext = {
   readonly origin: string;
   readonly clock: () => Date;
   readonly capabilityProbe?: CapabilityProbe;
+  readonly secondBrainProbe?: SecondBrainReadinessProbe;
   readonly planner?: TeamProposalPlanner;
 };
 
@@ -82,7 +85,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
     throw new JarvisError("VALIDATION_ERROR");
   }
   realpathSync(options.staticRoot);
-  const model = new DashboardReadModel(options.db);
+  const model = new DashboardReadModel(options.db, options.secondBrainProbe);
   const terminals = new DashboardTerminalReader(model, options.orcaRunner);
   const events = createDashboardEvents(options.db);
   const session = createDashboardSession();
@@ -102,6 +105,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
       origin: bind.origin,
       clock,
       capabilityProbe: options.capabilityProbe,
+      secondBrainProbe: options.secondBrainProbe,
       planner: options.planner,
     });
   });
@@ -153,6 +157,7 @@ async function handleRequest(input: RequestContext): Promise<void> {
       origin: input.origin,
       clock: input.clock,
       capabilityProbe: input.capabilityProbe,
+      secondBrainProbe: input.secondBrainProbe,
       planner: input.planner,
     })) {
       return;
