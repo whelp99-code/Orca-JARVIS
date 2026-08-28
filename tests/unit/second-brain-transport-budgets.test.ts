@@ -97,6 +97,12 @@ describe("Second Brain correlation and budgets", () => {
     await expect(transport.call("sb_search", { query: "healthy" })).resolves.toMatchObject({ kind: "data" }); expect(Math.max(...transport.diagnostics().map(item => item.correlation_count ?? 0))).toBeLessThanOrEqual(256);
   }, 20_000);
 
+  it("atomically reserves concurrent capacity at generation count 255", async () => {
+    const value = fixture(); const timers = new ManualTimers(); let dispatched: (() => void) | undefined; let burstCount = 0; let burstReady: (() => void) | undefined; const transport = createSecondBrainTransport(options(value, { timers, onDiagnostic: item => { if (item.code !== "SECOND_BRAIN_REQUESTED") return; dispatched?.(); burstCount += 1; if (burstCount === 5) burstReady?.(); } })); transports.push(transport); await expect(transport.call("sb_search", { query: "ready" })).resolves.toMatchObject({ kind: "data" });
+    for (let index = 0; index < 252; index += 1) { const signal = new Promise<void>(resolve => { dispatched = resolve; }); const call = transport.call("sb_search", { query: String(index), hang: true }); await signal; dispatched = undefined; timers.fire(10_000); await expect(call).rejects.toMatchObject({ code: "SECOND_BRAIN_READ_TIMEOUT" }); }
+    burstCount = 0; const burst = new Promise<void>(resolve => { burstReady = resolve; }); const calls = [transport.call("sb_remember", { content: "write", hold: true }), ...Array.from({ length: 4 }, (_, index) => transport.call("sb_search", { query: `read-${index}`, hold: true }))]; const settlements = Promise.allSettled(calls); await burst; release(value.control); const settled = await settlements; expect(settled.filter(item => item.status === "fulfilled").length).toBeGreaterThanOrEqual(4); expect(Math.max(...transport.diagnostics().map(item => item.correlation_count ?? 0))).toBeLessThanOrEqual(256);
+  }, 20_000);
+
   it("bounds newline-free stderr retention while reporting redacted byte metadata", async () => {
     // Given: a diagnostic subscription installed before a large newline-free stderr write.
     const value = fixture(); let timeout: ReturnType<typeof setTimeout> | undefined; let resolveDiagnostic: ((value: unknown) => void) | undefined;

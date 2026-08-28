@@ -2,22 +2,22 @@
 /* global Buffer, process, queueMicrotask */
 import { appendFileSync, readFileSync } from "node:fs";
 const config = JSON.parse(readFileSync(process.env.SB_CONFIG, "utf8"));
-const protocolVersion = config.protocolVersion ?? "2026-07-28";
+const protocolVersion = config.protocolVersion ?? "2025-11-25";
 const tools = [
   ["sb_open_conflicts", {}], ["sb_read_page", { id: { type: "string" } }], ["sb_recent_changes", { days: { default: 7, type: "integer" } }],
   ["sb_remember", { content: { type: "string" }, title: { default: null, type: ["string", "null"] } }], ["sb_search", { limit: { default: 10, type: "integer" }, query: { type: "string" } }],
 ].map(([name, properties]) => ({ name, inputSchema: { type: "object", properties, required: name === "sb_read_page" ? ["id"] : name === "sb_remember" ? ["content"] : name === "sb_search" ? ["query"] : [], additionalProperties: false } }));
-let input = ""; let calls = 0; const held = new Map();
+let input = ""; let calls = 0; let heldToolsId; const held = new Map();
 const send = value => process.stdout.write(`${JSON.stringify(value)}\n`);
 const toolResult = (id, value) => ({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: JSON.stringify(value) }], isError: false } });
-const release = () => { const entries = [...held]; const ordered = config.releaseForward ? entries : entries.reverse(); if (config.coalesceResponses) process.stdout.write(ordered.map(([id, value]) => `${JSON.stringify(toolResult(id, value))}\n`).join("")); else for (const [id, value] of ordered) send(toolResult(id, value)); held.clear(); };
+const release = () => { if (heldToolsId) { send({ jsonrpc: "2.0", id: heldToolsId, result: { tools: config.tools ?? tools } }); heldToolsId = undefined; } const entries = [...held]; const ordered = config.releaseForward ? entries : entries.reverse(); if (config.coalesceResponses) process.stdout.write(ordered.map(([id, value]) => `${JSON.stringify(toolResult(id, value))}\n`).join("")); else for (const [id, value] of ordered) send(toolResult(id, value)); held.clear(); };
 process.on("SIGUSR1", release);
 if (config.ignoreTerm) process.on("SIGTERM", () => { appendFileSync(config.receipt, `${JSON.stringify({ event: "signal", signal: "SIGTERM" })}\n`); process.stderr.write("signal\n"); });
 process.stdin.on("data", chunk => {
   input += chunk.toString("utf8");
   for (;;) {
     const newline = input.indexOf("\n"); if (newline < 0) break;
-    const message = JSON.parse(input.slice(0, newline)); input = input.slice(newline + 1);
+    const message = JSON.parse(input.slice(0, newline)); input = input.slice(newline + 1); if (config.wireReceipts) { appendFileSync(config.receipt, `${JSON.stringify({ event: "frame", method: message.method })}\n`); if (message.method === "notifications/cancelled") process.stderr.write("wire\n"); }
     if (message.method === "initialize") {
       if (config.mode === "hang-initialize") continue;
       const serverInfo = config.mode === "missing-server" ? undefined : config.mode === "invalid-server" ? { name: "second-brain" } : { name: "second-brain", version: "0.1.0" };
@@ -31,6 +31,7 @@ process.stdin.on("data", chunk => {
       else if (config.mode === "oversize") process.stdout.write(`${"x".repeat(1024 * 1024 + 1)}\n`);
       else send(JSON.parse(frame));
     } else if (message.method === "tools/list") {
+      if (config.mode === "hold-tools") { heldToolsId = message.id; process.stderr.write("tools\n"); continue; }
       if (config.mode === "hang-tools") continue;
       const availableTools = config.tools ?? tools; const listed = config.mode === "malformed-tool" ? [null, ...availableTools.slice(1)] : config.badTools ? availableTools.slice(1) : availableTools;
       send({ jsonrpc: "2.0", id: message.id, result: { tools: listed } });

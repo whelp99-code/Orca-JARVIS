@@ -23,7 +23,7 @@ describe("Second Brain launcher and handshake", () => {
     const runner: SecondBrainExecFile = (file, args, childOptions) => { launches.push({ file, args, options: childOptions }); return execFile(file, [...args], childOptions); };
     const transport = createSecondBrainTransport(options(value, { execFile: runner })); transports.push(transport);
     await expect(transport.call("sb_open_conflicts", {})).resolves.toMatchObject({ kind: "data" });
-    expect({ launcher: SECOND_BRAIN_LAUNCHER, config: SECOND_BRAIN_CONFIG, protocol: SECOND_BRAIN_PROTOCOL_VERSION, bytes: SECOND_BRAIN_FRAME_BYTES }).toEqual({ launcher: "/home/jm/.local/state/second-brain/app/current/bin/second-brain-mcp", config: "/home/jm/.config/second-brain/config.toml", protocol: "2026-07-28", bytes: 1_048_576 });
+    expect({ launcher: SECOND_BRAIN_LAUNCHER, config: SECOND_BRAIN_CONFIG, protocol: SECOND_BRAIN_PROTOCOL_VERSION, bytes: SECOND_BRAIN_FRAME_BYTES }).toEqual({ launcher: "/home/jm/.local/state/second-brain/app/current/bin/second-brain-mcp", config: "/home/jm/.config/second-brain/config.toml", protocol: "2025-11-25", bytes: 1_048_576 });
     expect(launches).toHaveLength(1); expect(launches[0]?.args).toEqual([]); expect(launches[0]?.options).toMatchObject({ shell: false, env: { SB_CONFIG: value.config }, windowsHide: true });
     expect(Object.keys(launches[0]?.options.env ?? {})).toEqual(["SB_CONFIG"]);
   });
@@ -42,6 +42,10 @@ describe("Second Brain launcher and handshake", () => {
     const missing = fixture(); rmSync(missing.launcher); const absent = createSecondBrainTransport(options(missing)); transports.push(absent); await expect(absent.call("sb_search", { query: "x" })).rejects.toMatchObject({ code: "SECOND_BRAIN_DISCOVERY_FAILED" });
     const denied = fixture(); rmSync(denied.launcher); writeFileSync(denied.launcher, "not executable", { mode: 0o600 }); const executable = createSecondBrainTransport(options(denied)); transports.push(executable); await expect(executable.call("sb_search", { query: "x" })).rejects.toMatchObject({ code: "SECOND_BRAIN_START_FAILED" });
     for (const [settings, code] of [[{ protocolVersion: "wrong" }, "SECOND_BRAIN_VERSION_MISMATCH"], [{ badTools: true }, "SECOND_BRAIN_SCHEMA_MISMATCH"], [{ mode: "malformed" }, "SECOND_BRAIN_MALFORMED_FRAME"], [{ mode: "oversize" }, "SECOND_BRAIN_OVERSIZE_FRAME"]] as const) { const value = fixture(settings); const transport = createSecondBrainTransport(options(value)); transports.push(transport); await expect(transport.call("sb_search", { query: "x" })).rejects.toMatchObject({ code }); }
+  });
+
+  it("rejects every negotiated version other than the measured producer version before tools/call", async () => {
+    const value = fixture({ protocolVersion: "2026-07-28" }); const transport = createSecondBrainTransport(options(value)); transports.push(transport); await expect(transport.call("sb_search", { query: "never" })).rejects.toMatchObject({ code: "SECOND_BRAIN_VERSION_MISMATCH", disposition: "fatal", generation: 1 }); expect(readFileSync(value.receipt, "utf8")).toBe(""); expect(transport.diagnostics().filter(item => item.code === "SECOND_BRAIN_REQUESTED" && item.method === "sb_search")).toHaveLength(0); await transport.close(); expect(transport.diagnostics().at(-1)).toMatchObject({ code: "SECOND_BRAIN_CLOSED", pending_count: 0, queued_count: 0, correlation_count: 0, listener_count: 0, timer_count: 0 });
   });
 
   it("classifies the exact startup deadline", async () => {
