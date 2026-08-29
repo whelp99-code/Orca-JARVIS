@@ -22,6 +22,11 @@ export {
 } from "./orca-env.js";
 export { canonicalize } from "./canonical.js";
 export {
+	assemblePersonalContext, CONTEXT_ASSEMBLER_BUDGET_IMPOSSIBLE, CONTEXT_ASSEMBLER_INPUT_INVALID, ContextAssemblerError,
+	type ContextAssemblerErrorCode, type ContextAssemblerInput, type ContextBudget,
+	type MemoryEvidenceInput, type MemoryGapInput, type MemoryInput,
+} from "./context-assembler.js";
+export {
 	createPersonalConnectorRegistry,
 	PERSONAL_CONNECTOR_IDS,
 	PERSONAL_CONNECTOR_REGISTRY_SESSION,
