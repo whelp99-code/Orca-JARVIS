@@ -42,6 +42,19 @@ export {
 } from "./personal-connectors.js";
 export * from "./personal-contracts.js";
 export {
+	normalizeAndPersistPersonalObservations,
+	normalizePersonalObservations,
+	PERSONAL_OBSERVATION_ERROR_CODES,
+	PersonalObservationNormalizationError,
+	type OrcaTaskObservationInput,
+	type PersonalObservationEnvironment,
+	type PersonalObservationErrorCode,
+	type PersonalObservationNormalizationInput,
+	type PersonalObservationPersistence,
+	type PersonalObservationPersistenceInput,
+	type SignedPortfolioObservationInput,
+} from "./personal-observations.js";
+export {
 	PersonalContractError,
 	canonicalPersonalContractHash,
 	canonicalPersonalContractJson,
