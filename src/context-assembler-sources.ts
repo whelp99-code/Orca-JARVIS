@@ -11,6 +11,7 @@ type ClassifiedSources = {
 type ClassificationState = {
   observations: ObservationEnvelopeV1[]; memories: MemoryEvidenceInput[]; excluded: string[]; conflicts: string[]; omissions: string[]; criticalGap: boolean;
 };
+type ClassificationLimits = { readonly clock: string; readonly maxExcerptBytes: number };
 
 function token(code: string, reference: string): string {
   const digest = createHash("sha256").update(canonicalize(reference)).digest("hex").slice(0, 8);
@@ -39,7 +40,7 @@ function observation(state: ClassificationState, item: ObservationEnvelopeV1, cl
     default: { const exhaustive: never = item.payload.state; return exhaustive; }
   }
 }
-function memory(state: ClassificationState, item: MemoryInput, clock: string): void {
+function memory(state: ClassificationState, item: MemoryInput, limits: ClassificationLimits): void {
   switch (item.kind) {
     case "gap":
       switch (item.state) {
@@ -48,6 +49,9 @@ function memory(state: ClassificationState, item: MemoryInput, clock: string): v
         default: { const exhaustive: never = item.state; return exhaustive; }
       }
     case "evidence":
+      if (Buffer.byteLength(item.excerpt, "utf8") > limits.maxExcerptBytes) {
+        omit(state, "EXCERPT_OVER_CAP", item.memory_ref); return;
+      }
       if (item.relevance === "unrelated") {
         const code = item.sensitivity === "sensitive" || item.sensitivity === "restricted"
           ? "SENSITIVE_UNRELATED"
@@ -55,7 +59,7 @@ function memory(state: ClassificationState, item: MemoryInput, clock: string): v
         omit(state, code, item.memory_ref, false); return;
       }
       if (item.trust !== "user_confirmed") { omit(state, "UNCONFIRMED_MEMORY", item.memory_ref); return; }
-      if (Date.parse(item.fresh_until) <= Date.parse(clock)) { omit(state, "STALE_MEMORY", item.memory_ref); return; }
+      if (Date.parse(item.fresh_until) <= Date.parse(limits.clock)) { omit(state, "STALE_MEMORY", item.memory_ref); return; }
       switch (item.relation) {
         case "supports": state.memories.push(item); return;
         case "contradicts":
@@ -72,13 +76,17 @@ function memory(state: ClassificationState, item: MemoryInput, clock: string): v
 export function classifyContextSources(
   observations: readonly ObservationEnvelopeV1[],
   memories: readonly MemoryInput[],
-  clock: string,
+  limits: ClassificationLimits,
 ): ClassifiedSources {
   const state: ClassificationState = {
     observations: [], memories: [], excluded: [], conflicts: [], omissions: [], criticalGap: false,
   };
-  for (const item of [...observations].sort((left, right) => left.id.localeCompare(right.id))) observation(state, item, clock);
-  for (const item of [...memories].sort((left, right) => left.memory_ref.localeCompare(right.memory_ref))) memory(state, item, clock);
+  for (const item of [...observations].sort((left, right) => left.id.localeCompare(right.id))) {
+    observation(state, item, limits.clock);
+  }
+  for (const item of [...memories].sort((left, right) => left.memory_ref.localeCompare(right.memory_ref))) {
+    memory(state, item, limits);
+  }
   if (state.observations.length === 0) { state.omissions.push(token("LIVE_LINUX_REQUIRED", "live-linux")); state.criticalGap = true; }
   if (state.memories.length === 0) { state.omissions.push(token("MEMORY_REQUIRED", "confirmed-memory")); state.criticalGap = true; }
   return {

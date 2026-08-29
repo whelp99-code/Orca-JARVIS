@@ -9,8 +9,12 @@ import {
   type ContextAssemblerInput,
   type MemoryEvidenceInput,
 } from "./context-assembler-input.js";
-import type { ContextSnapshotV1, ObservationEnvelopeV1 } from "./personal-contracts.js";
-import { canonicalPersonalContractHash, parseContextSnapshotV1 } from "./personal-validation.js";
+import type { ContextPayloadV1, ContextSnapshotV1, ObservationEnvelopeV1 } from "./personal-contracts.js";
+import {
+  canonicalPersonalContractHash,
+  canonicalPersonalContractJson,
+  parseContextSnapshotV1,
+} from "./personal-validation.js";
 
 export {
   CONTEXT_ASSEMBLER_BUDGET_IMPOSSIBLE,
@@ -24,6 +28,11 @@ export {
   type MemoryInput,
 } from "./context-assembler-input.js";
 
+type SnapshotMaterial = {
+  readonly payload: ContextPayloadV1;
+  readonly observations: readonly ObservationEnvelopeV1[];
+  readonly memories: readonly MemoryEvidenceInput[];
+};
 type RawEvidence = {
   readonly evidence_id: string;
   readonly digest: string;
@@ -59,26 +68,17 @@ function memoryEvidence(memory: MemoryEvidenceInput): RawEvidence {
   };
 }
 
-export function assemblePersonalContext(input: ContextAssemblerInput): ContextSnapshotV1;
-export function assemblePersonalContext(input: unknown): ContextSnapshotV1;
-export function assemblePersonalContext(input: unknown): ContextSnapshotV1 {
-  const parsed = parseContextAssemblerInput(input);
-  const sources = classifyContextSources(parsed.observations, parsed.memories, parsed.clock);
-  const observations = sources.observations;
-  const selection = selectWithinBudgets({
-    purpose: parsed.purpose, query: parsed.query, budgets: parsed.budgets,
-    observations, memories: sources.memories, authority: [...parsed.pending_authority_refs].sort(),
-    excluded: sources.excluded, conflicts: sources.conflicts, omissions: sources.omissions,
-    sufficient: !sources.criticalGap,
-  });
-  const payload = selection.payload;
-  const selectedMemories = selection.memories;
-  const evidence = [...selection.observations.map(observationEvidence), ...selectedMemories.map(memoryEvidence)];
+function buildSnapshot(parsed: ContextAssemblerInput, material: SnapshotMaterial): ContextSnapshotV1 {
+  const payload = material.payload;
+  const evidence = [
+    ...material.observations.map(observationEvidence),
+    ...material.memories.map(memoryEvidence),
+  ];
   const requestedExpiry = addMilliseconds(parsed.clock, parsed.expires_in_ms);
   const deadlines = [
     requestedExpiry,
-    ...selection.observations.flatMap(item => [item.freshness.fresh_until, item.expires_at]),
-    ...selectedMemories.map(item => item.fresh_until),
+    ...material.observations.flatMap(item => [item.freshness.fresh_until, item.expires_at]),
+    ...material.memories.map(item => item.fresh_until),
   ].sort();
   const expiresAt = deadlines[0];
   if (expiresAt === undefined || Date.parse(expiresAt) <= Date.parse(parsed.clock)) {
@@ -119,4 +119,25 @@ export function assemblePersonalContext(input: unknown): ContextSnapshotV1 {
     evidence,
     receipt: null,
   });
+}
+
+export function assemblePersonalContext(input: ContextAssemblerInput): ContextSnapshotV1;
+export function assemblePersonalContext(input: unknown): ContextSnapshotV1;
+export function assemblePersonalContext(input: unknown): ContextSnapshotV1 {
+  const parsed = parseContextAssemblerInput(input);
+  const sources = classifyContextSources(parsed.observations, parsed.memories, {
+    clock: parsed.clock,
+    maxExcerptBytes: parsed.budgets.max_excerpt_bytes,
+  });
+  const selection = selectWithinBudgets({
+    purpose: parsed.purpose, query: parsed.query, budgets: parsed.budgets,
+    observations: sources.observations, memories: sources.memories,
+    authority: [...parsed.pending_authority_refs].sort(),
+    excluded: sources.excluded, conflicts: sources.conflicts, omissions: sources.omissions,
+    sufficient: !sources.criticalGap,
+    serializedBytes: material => Buffer.byteLength(
+      canonicalPersonalContractJson(buildSnapshot(parsed, material)), "utf8",
+    ),
+  });
+  return buildSnapshot(parsed, selection);
 }
