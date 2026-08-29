@@ -27,12 +27,14 @@ const ACTUAL_TASK10_HANDSHAKE = JSON.stringify({
   },
 });
 
-function actualProducerRunner(): SecondBrainReadinessRunner {
+function actualProducerRunner(
+  status = "2026-08-28T11:00:00+00:00 run fixture ok pages=1 conflicts=0 errors=0\n",
+): SecondBrainReadinessRunner {
   return {
     executable: async () => "available",
     configuration: async () => "valid",
     run: async command => command === "status"
-      ? { kind: "ok", stdout: "2026-08-28T11:00:00+00:00 run fixture ok pages=1 conflicts=0 errors=0\n" }
+      ? { kind: "ok", stdout: status }
       : { kind: "ok", stdout: "" },
     handshake: async () => ({ kind: "ok", stdout: ACTUAL_TASK10_HANDSHAKE }),
   };
@@ -51,7 +53,7 @@ describe("actual Second Brain producer contracts", () => {
       doctor_operational: null,
       read_authorization: "unauthorized",
       write_authorization: "unauthorized",
-      data_state: "ready",
+      data_state: "unknown",
     });
     const report = evaluateSecondBrainReadiness(observation, NOW);
     expect(report).toMatchObject({
@@ -62,6 +64,17 @@ describe("actual Second Brain producer contracts", () => {
         authorized: { state: "unauthorized" },
       },
     });
+  });
+
+  it.each([
+    ["2026-08-28T11:00:00Z run fixture ok pages=1 conflicts=0 errors=0", "success", "2026-08-28T11:00:00.000Z"],
+    ["2026-08-28T11:00:00Z run fixture ok pages=0 conflicts=0 errors=0", "success", "2026-08-28T11:00:00.000Z"],
+    ["no runs", "missing", null],
+  ])("keeps historical status %s out of current data state", async (status, attempt, success) => {
+    const observation = await runtimeSecondBrainReadinessProbe(actualProducerRunner(status)).inspect();
+    expect(observation.data_state).toBe("unknown");
+    expect(observation.refresh.kind).toBe(attempt);
+    expect(observation.last_successful_refresh_at).toBe(success);
   });
 
   it("never defaults successful processes with missing operational facts to green", () => {

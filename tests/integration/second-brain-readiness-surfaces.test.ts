@@ -147,7 +147,7 @@ describe("Second Brain readiness projections", () => {
       expect(record(record(expected.stages).operational)).toMatchObject({
         state: "unavailable", reason: "probe_facts_missing",
       });
-      expect(record(record(expected.stages).data_state).state).toBe("ready");
+      expect(record(record(expected.stages).data_state).state).toBe("unknown");
       expect(record(record(expected.stages).authorized).state).toBe("unauthorized");
       expect(JSON.stringify(expected)).not.toMatch(/stdout|stderr|\/home\//i);
     } finally {

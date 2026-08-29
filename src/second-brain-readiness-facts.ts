@@ -77,7 +77,7 @@ export function parseSecondBrainPeerFacts(text: string): SecondBrainPeerFacts | 
 export function parseSecondBrainLegacyStatus(text: string): SecondBrainLegacyStatus | undefined {
   const trimmed = text.trim();
   if (trimmed === "no runs") {
-    return { data_state: "no_data", latest_refresh_attempt: null, last_successful_refresh_at: null };
+    return { data_state: "unknown", latest_refresh_attempt: null, last_successful_refresh_at: null };
   }
   const match = STATUS_PATTERN.exec(trimmed);
   if (match === null) return undefined;
@@ -88,7 +88,7 @@ export function parseSecondBrainLegacyStatus(text: string): SecondBrainLegacySta
     || !Number.isSafeInteger(pages)) return undefined;
   const attempt: SecondBrainAttemptFacts = { kind: kind === "ok" ? "success" : kind, at: instant.canonical };
   return {
-    data_state: kind === "ok" ? (pages === 0 ? "no_data" : "ready") : "unknown",
+    data_state: "unknown",
     latest_refresh_attempt: attempt,
     last_successful_refresh_at: kind === "ok" ? instant.canonical : null,
   };

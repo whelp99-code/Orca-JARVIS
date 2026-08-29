@@ -1,5 +1,9 @@
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
+import {
+  parseSecondBrainConfigWithPython,
+  type SecondBrainConfigParser,
+} from "./second-brain-config-python.js";
 
 export const SECOND_BRAIN_CONFIG_MAX_BYTES = 65_536;
 const OPEN_FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK;
@@ -27,6 +31,7 @@ const defaultOpener: SecondBrainConfigurationOpener = { open };
 export async function probeSecondBrainConfiguration(
   path: string,
   opener: SecondBrainConfigurationOpener = defaultOpener,
+  parser: SecondBrainConfigParser = parseSecondBrainConfigWithPython,
 ): Promise<SecondBrainConfigurationOutcome> {
   let handle: SecondBrainConfigurationHandle;
   try {
@@ -44,7 +49,7 @@ export async function probeSecondBrainConfiguration(
       outcome = "malformed";
     } else {
       const bytes = await readBounded(handle);
-      outcome = bytes === undefined ? "malformed" : validConfiguration(bytes) ? "valid" : "malformed";
+      outcome = bytes === undefined ? "malformed" : await parser(bytes);
     }
   } catch {
     outcome = "unavailable";
@@ -69,15 +74,6 @@ async function readBounded(handle: SecondBrainConfigurationHandle): Promise<Uint
   }
   if (offset < 1 || offset > SECOND_BRAIN_CONFIG_MAX_BYTES) return undefined;
   return buffer.subarray(0, offset);
-}
-
-function validConfiguration(bytes: Uint8Array): boolean {
-  try {
-    const value = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
-    return /^vault_root\s*=\s*"[^"\r\n]+"/m.test(value);
-  } catch {
-    return false;
-  }
 }
 
 function errorCode(error: unknown): string | undefined {

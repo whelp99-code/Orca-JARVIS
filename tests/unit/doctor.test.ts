@@ -4,6 +4,7 @@ import { dirname, join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { AuthorityDb, runDoctor, type CapabilityFact, type CapabilityProbe } from "../../src/index.js";
 import { runtimeCapabilityProbe } from "../../src/doctor.js";
+import { passiveSecondBrainReadinessProbe } from "../../src/second-brain-readiness.js";
 import { tempDb } from "../helpers.js";
 
 const now = new Date("2026-08-18T12:00:00.000Z");
@@ -99,6 +100,34 @@ describe("doctor", () => {
     expect(Number((db.db.prepare("SELECT total_changes() AS count").get() as { count: number }).count)).toBe(before);
     db.close();
   });
+  it("keeps every in-memory number finite or null for an invalid clock with populated runtime rows", async () => {
+    const db = new AuthorityDb(tempDb());
+    await db.migrate();
+    db.db.prepare(
+      "INSERT INTO gjc_runtime_status(id,pid,last_heartbeat_at,last_error_code,updated_at) VALUES(1,123,?,NULL,?)",
+    ).run("2026-08-18T11:59:30.000Z", "2026-08-18T11:59:30.000Z");
+    db.db.prepare(
+      "INSERT INTO gjc_runtime_leases(id,owner,fence,expires_at,heartbeat_at) VALUES(1,'fixture',1,?,?)",
+    ).run("2026-08-18T12:01:00.000Z", "2026-08-18T11:59:30.000Z");
+    try {
+      const report = await runDoctor(
+        db,
+        new Date(Number.NaN),
+        probeFor(),
+        passiveSecondBrainReadinessProbe(),
+      );
+      expect(nonfiniteNumbers(report)).toEqual([]);
+      expect(report.checks.find(check => check.name === "runtime.clock")).toMatchObject({
+        ok: false, actual: null, code: "SECOND_BRAIN_CLOCK_INVALID",
+      });
+      expect(report.checks.find(check => check.name === "service.heartbeat_age_ms")).toMatchObject({
+        ok: false, actual: null, code: "SECOND_BRAIN_CLOCK_INVALID",
+      });
+    } finally {
+      db.close();
+    }
+  });
+
   it("reaps a SIGTERM-ignoring --version helper after doctor capability inspection times out", async () => {
     const root = mkdtempSync(join(tmpdir(), "jarvis-doctor-probe-"));
     const pidFile = join(root, "probe.pid");
@@ -113,6 +142,7 @@ setInterval(() => {}, 60_000);
     const db = new AuthorityDb(tempDb());
     await db.migrate();
     let pid: number | undefined;
+    let cleanupError: unknown;
     try {
       const report = await runDoctor(db, now, runtimeCapabilityProbe());
       expect(fact(report.capabilities.capabilities, "codex").stages.installed).toEqual({ ok: false, evidence: "probe_timeout" });
@@ -122,11 +152,28 @@ setInterval(() => {}, 60_000);
       const childPid = pid;
       expect(() => process.kill(childPid, 0)).toThrow(/ESRCH/);
     } finally {
-      if (pid !== undefined) try { process.kill(pid, "SIGKILL"); } catch { /* already reaped */ }
+      if (pid !== undefined) {
+        try {
+          process.kill(pid, "SIGKILL");
+        } catch (error) {
+          if (!(error instanceof Error) || !error.message.includes("ESRCH")) cleanupError = error;
+        }
+      }
       process.env.PATH = previousPath;
       db.close();
       rmSync(root, { recursive: true, force: true });
       rmSync(dirname(db.filename), { recursive: true, force: true });
     }
+    if (cleanupError !== undefined) throw cleanupError;
   }, 15_000);
 });
+
+function nonfiniteNumbers(value: unknown, path = "$", found: string[] = []): readonly string[] {
+  if (typeof value === "number" && !Number.isFinite(value)) found.push(path);
+  else if (Array.isArray(value)) {
+    value.forEach((item, index) => nonfiniteNumbers(item, `${path}[${String(index)}]`, found));
+  } else if (typeof value === "object" && value !== null) {
+    for (const [key, item] of Object.entries(value)) nonfiniteNumbers(item, `${path}.${key}`, found);
+  }
+  return found;
+}

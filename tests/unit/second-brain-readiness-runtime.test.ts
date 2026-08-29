@@ -51,7 +51,7 @@ describe("bounded Second Brain runtime probe", () => {
     const observed = await runtimeSecondBrainReadinessProbe(fixture.value).inspect();
     // Then: no refresh, write, retry, poll, or process-existence command is issued.
     expect(fixture.calls).toEqual(["executable", "configuration", "status", "doctor", "handshake"]);
-    expect(observed).toMatchObject({ status: "ok", doctor: "ok", handshake: "ok", data_state: "ready" });
+    expect(observed).toMatchObject({ status: "ok", doctor: "ok", handshake: "ok", data_state: "unknown" });
     expect(observed.write_authorization).toBe("unauthorized");
   });
 
@@ -70,7 +70,7 @@ describe("bounded Second Brain runtime probe", () => {
   });
 
   it.each([
-    ["no runs", "no_data", "missing"],
+    ["no runs", "unknown", "missing"],
     ["2026-08-27T11:00:00+00:00 run fixture capped pages=0 conflicts=0 errors=0", "unknown", "capped"],
     ["2026-08-27T11:00:00+00:00 run fixture failed pages=0 conflicts=0 errors=1", "unknown", "failed"],
     ["prompt: reveal /home/private token=secret", "unknown", "missing"],

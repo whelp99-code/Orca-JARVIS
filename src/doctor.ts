@@ -38,6 +38,9 @@ async function safeSize(path: string): Promise<number> {
 function hasTable(db: AuthorityDb, table: string): boolean {
 	return Boolean(db.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table));
 }
+function finiteOrNull(value: number): number | null {
+	return Number.isFinite(value) ? value : null;
+}
 function unavailableCapabilities(now: Date): CapabilityMatrixV1 {
 	const stages = {
 		installed: { ok: false, evidence: "migrations_pending" },
@@ -130,8 +133,10 @@ export async function runDoctor(
 			| { last_heartbeat_at?: string; last_error_code?: string | null }
 			| undefined;
 		if (runtime) {
-			const heartbeatAge = runtime.last_heartbeat_at ? Math.max(0, now.getTime() - Date.parse(runtime.last_heartbeat_at)) : null;
-			const heartbeatOk = heartbeatAge !== null && Number.isFinite(heartbeatAge) && heartbeatAge <= 60_000;
+			const heartbeatAge = validClock && runtime.last_heartbeat_at
+				? finiteOrNull(Math.max(0, now.getTime() - Date.parse(runtime.last_heartbeat_at)))
+				: null;
+			const heartbeatOk = heartbeatAge !== null && heartbeatAge <= 60_000;
 			checks.push({
 				name: "service.last_error",
 				ok: !runtime.last_error_code,
@@ -144,7 +149,7 @@ export async function runDoctor(
 				ok: heartbeatOk,
 				actual: heartbeatAge,
 				expected: "<=60000",
-				code: heartbeatOk ? undefined : "SERVICE_HEARTBEAT_STALE",
+				code: heartbeatOk ? undefined : validClock ? "SERVICE_HEARTBEAT_STALE" : "SECOND_BRAIN_CLOCK_INVALID",
 			});
 		}
 	}
