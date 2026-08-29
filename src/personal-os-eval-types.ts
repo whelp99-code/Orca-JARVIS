@@ -29,7 +29,7 @@ export type PersonalOsCorpus = {
   readonly scenarios: readonly PersonalOsScenario[];
 };
 export type PersonalOsActualTrace = {
-  readonly scenario_id: string; readonly outcome: PersonalOsOutcome; readonly selected_record_ids: readonly string[];
+  readonly schema_version: 1; readonly scenario_id: string; readonly outcome: PersonalOsOutcome; readonly selected_record_ids: readonly string[];
   readonly citation_links: readonly string[]; readonly session_ids: readonly string[]; readonly value: string | null;
   readonly reason_code: string; readonly temporal_observation: boolean; readonly effect_events: readonly PersonalOsEffectEvent[];
   readonly dependencies: PersonalOsDependencies;

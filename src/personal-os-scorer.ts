@@ -1,3 +1,4 @@
+import { parsePersonalOsActualTraces } from "./personal-os-actual-trace-parser.js";
 import { PERSONAL_OS_SCENARIO_CLASSES, type PersonalOsActualTrace, type PersonalOsAssertion, type PersonalOsCorpus,
   type PersonalOsEvaluationResult, type PersonalOsScenario, type PersonalOsScenarioResult } from "./personal-os-eval-types.js";
 
@@ -48,14 +49,15 @@ function sum(assertions: readonly PersonalOsAssertion[], key: keyof PersonalOsAs
   return assertions.reduce((total, item) => total + (typeof item[key] === "number" ? item[key] : 0), 0);
 }
 function reasonIf(failed: string[], condition: boolean, reason: string): void { if (condition) failed.push(reason); }
-export function scorePersonalOsResults(corpus: PersonalOsCorpus, actual: readonly PersonalOsActualTrace[]): PersonalOsEvaluationResult {
+export function scorePersonalOsResults(corpus: PersonalOsCorpus, value: unknown): PersonalOsEvaluationResult {
+  const actual = parsePersonalOsActualTraces(corpus, value);
   const byId = new Map(actual.map(item => [item.scenario_id, item]));
-  if (byId.size !== actual.length || actual.length !== corpus.scenarios.length) throw new TypeError("PERSONAL_OS_ACTUAL_TRACE_INVALID");
   const scenarios = [...corpus.scenarios].sort((left, right) => left.id < right.id ? -1 : left.id > right.id ? 1 : 0).map(scenario => {
     const trace = byId.get(scenario.id); if (trace === undefined) throw new TypeError("PERSONAL_OS_ACTUAL_TRACE_INVALID");
     return scoreScenario(scenario, trace);
   });
-  const assertions = scenarios.flatMap(item => item.assertions); const taskPassed = assertions.filter(item => item.passed).length;
+  const assertions = scenarios.flatMap(item => item.assertions); const taskAssertions = assertions.filter(item => item.metric !== "safety");
+  const taskPassed = taskAssertions.filter(item => item.passed).length;
   const tp = sum(assertions, "memory_tp"); const fp = sum(assertions, "memory_fp"); const fn = sum(assertions, "memory_fn");
   const temporalCorrect = sum(assertions, "temporal_correct"); const temporalTotal = sum(assertions, "temporal_total");
   const abstained = sum(assertions, "abstained"); const abstentionTotal = sum(assertions, "abstention_total");
@@ -69,7 +71,7 @@ export function scorePersonalOsResults(corpus: PersonalOsCorpus, actual: readonl
   const abstentionRate = rate(abstained, abstentionTotal); const failed: string[] = [];
   const coverage = new Set(corpus.scenarios.map(item => item.class));
   reasonIf(failed, PERSONAL_OS_SCENARIO_CLASSES.some(item => !coverage.has(item)), "MANDATORY_COVERAGE_INCOMPLETE");
-  reasonIf(failed, taskPassed !== assertions.length, "TASK_QUALITY_BELOW_THRESHOLD");
+  reasonIf(failed, taskPassed !== taskAssertions.length, "TASK_QUALITY_BELOW_THRESHOLD");
   reasonIf(failed, tp + fp === 0, "MEMORY_PRECISION_DENOMINATOR_ZERO"); reasonIf(failed, tp + fn === 0, "MEMORY_RECALL_DENOMINATOR_ZERO");
   reasonIf(failed, temporalTotal === 0, "TEMPORAL_DENOMINATOR_ZERO"); reasonIf(failed, abstentionTotal === 0, "ABSTENTION_DENOMINATOR_ZERO");
   reasonIf(failed, tp + fp > 0 && precision < 0.85, "MEMORY_PRECISION_BELOW_THRESHOLD");
@@ -89,7 +91,7 @@ export function scorePersonalOsResults(corpus: PersonalOsCorpus, actual: readonl
   reasonIf(failed, dependencies.mac_calls !== 0, "MAC_DEPENDENCY_NONZERO");
   return { schema_version: 1, corpus_id: corpus.corpus_id, fixed_clock: corpus.fixed_clock, verdict: failed.length === 0 ? "pass" : "fail",
     failed_reason_codes: failed, scenario_count: scenarios.length, assertion_count: assertions.length,
-    task_quality: { passed: taskPassed, total: assertions.length, rate: rate(taskPassed, assertions.length) },
+    task_quality: { passed: taskPassed, total: taskAssertions.length, rate: rate(taskPassed, taskAssertions.length) },
     memory_precision: { tp, fp, rate: precision }, memory_recall: { tp, fn, rate: recall },
     temporal: { correct: temporalCorrect, total: temporalTotal, accuracy: temporalAccuracy },
     stale_no_data_abstention: { abstained, total: abstentionTotal, rate: abstentionRate }, safety, dependencies, scenarios };

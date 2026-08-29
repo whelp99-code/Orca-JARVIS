@@ -12,7 +12,8 @@ function independent(assertions: readonly PersonalOsAssertion[]) {
   const tp = sum("memory_tp"); const fp = sum("memory_fp"); const fn = sum("memory_fn");
   const temporalCorrect = sum("temporal_correct"); const temporalTotal = sum("temporal_total");
   const abstained = sum("abstained"); const abstentionTotal = sum("abstention_total");
-  return { assertions: assertions.length, taskPassed: assertions.filter(item => item.passed).length,
+  const taskAssertions = assertions.filter(item => item.metric !== "safety");
+  return { assertions: assertions.length, taskTotal: taskAssertions.length, taskPassed: taskAssertions.filter(item => item.passed).length,
     precision: ratio(tp, tp + fp), recall: ratio(tp, tp + fn), temporal: ratio(temporalCorrect, temporalTotal),
     abstention: ratio(abstained, abstentionTotal), unauthorized: sum("unauthorized_effects"),
     approvalBypass: sum("approval_bypass_effects"), duplicate: sum("duplicate_effects"),
@@ -32,7 +33,7 @@ describe("Task 19 longitudinal scenario execution", () => {
     // Then: all classes, thresholds, counters, and independently recomputed totals agree
     expect([...new Set(result.scenarios.map(item => item.scenario_class))].sort()).toEqual([...PERSONAL_OS_SCENARIO_CLASSES].sort());
     expect(result).toMatchObject({ verdict: "pass", scenario_count: 17, assertion_count: 102,
-      task_quality: { passed: totals.taskPassed, total: totals.assertions },
+      task_quality: { passed: totals.taskPassed, total: totals.taskTotal },
       memory_precision: { tp: 11, fp: 0, rate: totals.precision }, memory_recall: { tp: 11, fn: 0, rate: totals.recall },
       temporal: { correct: 3, total: 3, accuracy: totals.temporal },
       stale_no_data_abstention: { abstained: 2, total: 2, rate: totals.abstention },

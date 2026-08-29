@@ -71,6 +71,7 @@ function parseRecord(value: unknown): PersonalOsRecord {
     relationship: choice(input["relationship"], ["direct", "supporting", "unrelated"] as const),
   };
   if (Date.parse(parsed.valid_from) >= Date.parse(parsed.valid_until) || Date.parse(parsed.observed_at) > Date.parse(parsed.fresh_until)
+    || (parsed.state === "deleted" && Date.parse(parsed.observed_at) <= Date.parse(parsed.valid_from))
     || Date.parse(parsed.fresh_until) > Date.parse(parsed.valid_until) || !/^sha256:[0-9a-f]{64}$/.test(parsed.digest)
     || !/^sha256:[0-9a-f]{64}$/.test(parsed.transfer_digest)
     || !/^evidence:synthetic:[a-z0-9][a-z0-9:-]{0,120}$/.test(parsed.evidence_link)
@@ -87,7 +88,7 @@ function parseScenario(value: unknown, fixedClock: string): PersonalOsScenario {
   const input = record(value); closed(input, SCENARIO_KEYS); const queryAt = instant(input["query_at"]);
   if (Date.parse(queryAt) > Date.parse(fixedClock)) return fail();
   const records = list(input["records"], 64).map(parseRecord);
-  if (records.some(item => Date.parse(item.observed_at) > Date.parse(queryAt))) return fail();
+  if (records.some(item => Date.parse(item.observed_at) > Date.parse(fixedClock))) return fail();
   const expected = parseExpected(input["expected"]);
   if (expected.record_ids.some(id => !records.some(item => item.id === id))
     || expected.citation_links.some(link => !records.some(item => item.evidence_link === link))) return fail();
@@ -100,7 +101,9 @@ export function parsePersonalOsCorpus(value: unknown): PersonalOsCorpus {
   const fixedClock = instant(input["fixed_clock"]); const scenarios = list(input["scenarios"], 64).map(item => parseScenario(item, fixedClock));
   const records = scenarios.flatMap(item => item.records); const subjects = [...new Set(records.map(item => item.subject))];
   const foldedSubjects = subjects.map(item => item.toLocaleLowerCase("en-US"));
+  const tombstoneInstants = records.filter(item => item.state === "deleted").map(item => `${item.subject}\u0000${item.observed_at}`);
   if (scenarios.length === 0 || !unique(scenarios.map(item => item.id)) || !unique(records.map(item => item.id))
-    || !unique(records.map(item => item.evidence_link)) || !unique(records.map(item => item.digest)) || !unique(foldedSubjects)) return fail();
+    || !unique(records.map(item => item.evidence_link)) || !unique(records.map(item => item.digest)) || !unique(foldedSubjects)
+    || !unique(tombstoneInstants)) return fail();
   return { schema_version: 1, corpus_id: text(input["corpus_id"]), fixed_clock: fixedClock, scenarios };
 }

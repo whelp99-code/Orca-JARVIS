@@ -1,5 +1,7 @@
 export { evaluatePersonalOsCorpus, runPersonalOsCorpus, scorePersonalOsResults } from "./personal-os-evaluator.js";
 export { computePersonalOsRecordDigest } from "./personal-os-record-digest.js";
+export { parsePersonalOsActualTraces, PersonalOsActualTraceError,
+  PERSONAL_OS_ACTUAL_TRACE_INVALID } from "./personal-os-actual-trace-parser.js";
 export {
   loadPersonalOsCorpus, PersonalOsFixtureError, PERSONAL_OS_FIXTURE_PATH_INVALID, PERSONAL_OS_FIXTURE_READ_INVALID,
   type PersonalOsFileOperations, type PersonalOsFixtureErrorCode,
