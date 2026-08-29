@@ -107,7 +107,10 @@ export function priorityLexicographicCandidates(field: PriorityLexicographicFiel
       first["effort_cost"] = "low";
       second["effort_cost"] = "high";
       break;
-    case "stable_identity": break;
+    case "stable_identity":
+      first["stable_identity"] = { key: "identity-a", evidence_ref: "live:customer" };
+      second["stable_identity"] = { key: "identity-b", evidence_ref: "live:worker" };
+      break;
     default: { const exhaustive: never = field; return exhaustive; }
   }
   return [second, first];

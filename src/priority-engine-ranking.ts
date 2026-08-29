@@ -61,10 +61,11 @@ function selectedLinuxFact(reference: string | null, evaluation: PriorityEvidenc
 }
 function actionCitations(candidate: PriorityCandidateAction, evaluation: PriorityEvidenceEvaluation): PriorityCitations {
   const principle = evaluation.principle;
+  const stableIdentityRef = candidate.stable_identity?.evidence_ref ?? null;
   return {
     confirmed_principle_ref: principle?.principle_ref ?? null,
     confirmed_principle_evidence_ref: principle?.evidence_ref ?? null,
-    linux_policy_decision_ref: evaluation.input.linux_policy_decision_ref,
+    linux_policy_decision_ref: evaluation.policyDecisionRef,
     owner_import_decision_ref: principle?.import_gate.decision_ref ?? null,
     current_linux_evidence_ref: selectedLinuxFact(candidate.current_evidence_ref, evaluation) ? candidate.current_evidence_ref : null,
     deadline_evidence_ref: candidate.deadline === null
@@ -74,7 +75,7 @@ function actionCitations(candidate: PriorityCandidateAction, evaluation: Priorit
       ? null
       : selectedLinuxFact(candidate.dependency.evidence_ref, evaluation) ? candidate.dependency.evidence_ref : null,
     owner_gate_ref: candidate.owner_gate_ref,
-    stable_identity_evidence_ref: candidate.stable_identity?.evidence_ref ?? null,
+    stable_identity_evidence_ref: selectedLinuxFact(stableIdentityRef, evaluation) ? stableIdentityRef : null,
   };
 }
 function prepareCandidate(candidate: PriorityCandidateAction, evaluation: PriorityEvidenceEvaluation): PreparedAction {
@@ -143,7 +144,8 @@ function unresolvedTieIds(values: readonly PreparedAction[]): ReadonlySet<string
     if (group.length < 2) continue;
     const identities = group.map(item => item.candidate.stable_identity);
     const keys = identities.flatMap(item => item === null ? [] : [item.key]);
-    const sufficient = identities.every(item => item !== null && item.evidence_ref !== null)
+    const sufficient = identities.every(item => item !== null)
+      && group.every(item => item.citations.stable_identity_evidence_ref !== null)
       && keys.length === group.length && new Set(keys).size === group.length;
     if (!sufficient) for (const item of group) tied.add(item.candidate.action_id);
   }
@@ -173,11 +175,11 @@ function actionDecision(value: PreparedAction, placement: DecisionPlacement): Pr
 export function rankPriorityCandidates(evaluation: PriorityEvidenceEvaluation): PriorityCandidateRanking {
   const prepared = evaluation.input.candidates.map(candidate => prepareCandidate(candidate, evaluation));
   const globallyAbstained = evaluation.reasons.length > 0;
-  const eligible = globallyAbstained
-    ? []
-    : prepared.filter(item => item.disposition !== "excluded" && item.disposition !== "abstained");
+  const eligible = prepared.filter(item => item.disposition !== "excluded" && item.disposition !== "abstained");
   const ties = unresolvedTieIds(eligible);
-  const ranked = eligible.filter(item => !ties.has(item.candidate.action_id)).sort(comparePrepared);
+  const ranked = globallyAbstained
+    ? []
+    : eligible.filter(item => !ties.has(item.candidate.action_id)).sort(comparePrepared);
   const rankedIds = new Set(ranked.map(item => item.candidate.action_id));
   const rankedActions = ranked.map((item, index) => actionDecision(item, {
     rank: index + 1, decisive: decisiveField(ranked, index), tied: false,
@@ -187,7 +189,13 @@ export function rankPriorityCandidates(evaluation: PriorityEvidenceEvaluation): 
     .sort((left, right) => compareText(left.candidate.action_id, right.candidate.action_id))
     .map(item => globallyAbstained
       ? actionDecision(
-          { ...item, disposition: "abstained", reasons: evaluation.reasons },
+          {
+            ...item,
+            disposition: "abstained",
+            reasons: ties.has(item.candidate.action_id)
+              ? orderedPriorityReasons([...evaluation.reasons, "PRIORITY_EXACT_TIE_INSUFFICIENT_EVIDENCE"])
+              : evaluation.reasons,
+          },
           { rank: null, decisive: null, tied: false },
         )
       : actionDecision(item, { rank: null, decisive: null, tied: ties.has(item.candidate.action_id) }));

@@ -51,7 +51,7 @@ export function rankPriorityActions(policyValue: unknown, inputValue: unknown): 
     authority: "none",
     effect: "none",
     policy_id: evaluation.decision.policy_id,
-    linux_policy_decision_ref: evaluation.input.linux_policy_decision_ref,
+    linux_policy_decision_ref: evaluation.policyDecisionRef,
     context_policy_reason_codes: evaluation.decision.reason_codes,
     lexicographic_order: PRIORITY_LEXICOGRAPHIC_ORDER,
     reason_codes: ranking.reasons,

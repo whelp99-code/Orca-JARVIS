@@ -17,10 +17,12 @@ export type PriorityEvidenceEvaluation = {
   readonly input: ParsedPriorityEngineInput;
   readonly decision: ContextPolicyDecision;
   readonly principle: PriorityPrincipleEvidence | null;
+  readonly policyDecisionRef: string | null;
   readonly reasons: readonly PriorityReasonCode[];
 };
 type PrincipleAssessment = {
   readonly principle: PriorityPrincipleEvidence | null;
+  readonly policyDecisionRef: string | null;
   readonly reasons: readonly PriorityReasonCode[];
 };
 
@@ -28,6 +30,13 @@ const compareText = (left: string, right: string): number => left < right ? -1 :
 export function orderedPriorityReasons(values: Iterable<PriorityReasonCode>): readonly PriorityReasonCode[] {
   const selected = new Set(values);
   return PRIORITY_REASON_CODES.filter(code => selected.has(code));
+}
+function trustedPolicyDecisionRef(reference: string | null, policyId: string): string | null {
+  if (reference === null) return null;
+  const prefix = `policy:linux:${policyId}:`;
+  if (!reference.startsWith(prefix)) return null;
+  const selector = reference.slice(prefix.length);
+  return /^[a-z0-9][a-z0-9._-]{0,127}$/.test(selector) ? reference : null;
 }
 function parsePolicy(value: unknown): ParsedContextPolicy {
   try { return parseContextPolicyConfig(value); }
@@ -55,9 +64,8 @@ function assessPrinciples(
   const eligible: PriorityPrincipleEvidence[] = [];
   let foreignSourceSeen = false;
   if (decision.status === "abstain") reasons.add("PRIORITY_CONTEXT_POLICY_ABSTAINED");
-  if (input.linux_policy_decision_ref === null || !input.linux_policy_decision_ref.startsWith("policy:linux:")) {
-    reasons.add("PRIORITY_REQUIRED_CITATION_MISSING");
-  }
+  const policyDecisionRef = trustedPolicyDecisionRef(input.linux_policy_decision_ref, decision.policy_id);
+  if (policyDecisionRef === null) reasons.add("PRIORITY_REQUIRED_CITATION_MISSING");
   for (const source of [...input.principles].sort((left, right) => compareText(left.principle_ref, right.principle_ref))) {
     if (source.source_id !== SECOND_BRAIN_SOURCE_ID || source.source_host !== "linux-second-brain") {
       foreignSourceSeen = true;
@@ -108,7 +116,11 @@ function assessPrinciples(
   }
   if (eligible.length === 0 && foreignSourceSeen) reasons.add("PRIORITY_PRINCIPLE_NON_LINUX");
   if (eligible.length !== 1 && reasons.size === 0) reasons.add("PRIORITY_PRINCIPLE_NOT_POLICY_SELECTED");
-  return { principle: eligible.length === 1 ? eligible[0] ?? null : null, reasons: orderedPriorityReasons(reasons) };
+  return {
+    principle: eligible.length === 1 ? eligible[0] ?? null : null,
+    policyDecisionRef,
+    reasons: orderedPriorityReasons(reasons),
+  };
 }
 
 export function evaluatePriorityEvidence(policyValue: unknown, inputValue: unknown): PriorityEvidenceEvaluation {
@@ -116,5 +128,11 @@ export function evaluatePriorityEvidence(policyValue: unknown, inputValue: unkno
   const config = parsePolicy(policyValue);
   const decision = evaluateContext(policyValue, input);
   const assessment = assessPrinciples(input, decision, config);
-  return { input, decision, principle: assessment.principle, reasons: assessment.reasons };
+  return {
+    input,
+    decision,
+    principle: assessment.principle,
+    policyDecisionRef: assessment.policyDecisionRef,
+    reasons: assessment.reasons,
+  };
 }
