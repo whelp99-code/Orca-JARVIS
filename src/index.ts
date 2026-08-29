@@ -26,6 +26,8 @@ export {
 	type ContextAssemblerErrorCode, type ContextAssemblerInput, type ContextBudget,
 	type MemoryEvidenceInput, type MemoryGapInput, type MemoryInput,
 } from "./context-assembler.js";
+export { CONTEXT_POLICY_CONFIG_INVALID, CONTEXT_POLICY_INPUT_INVALID, CONTEXT_POLICY_REASON_CODES, ContextPolicyError, evaluateContextPolicy,
+	type ContextPolicyDecision, type ContextPolicyErrorCode, type ContextPolicyReasonCode } from "./context-policy.js";
 export {
 	createPersonalConnectorRegistry,
 	PERSONAL_CONNECTOR_IDS,
