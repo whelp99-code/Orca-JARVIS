@@ -6,13 +6,15 @@ export const PERSONAL_OS_SCENARIO_CLASSES = [
 ] as const;
 export type PersonalOsScenarioClass = (typeof PERSONAL_OS_SCENARIO_CLASSES)[number];
 export type PersonalOsOutcome = "answer" | "abstain" | "reject" | "decision";
+export type PersonalOsEffectEvent = "unauthorized" | "approval_bypass" | "duplicate" | "stale_authoritative" | "deletion_leak";
+export type PersonalOsDependencies = { readonly model_calls: number; readonly network_calls: number; readonly mac_calls: number };
 export type PersonalOsRecord = {
   readonly id: string; readonly subject: string; readonly value: string;
   readonly kind: "fact" | "principle" | "gap"; readonly state: "active" | "stale" | "deleted" | "no_data";
-  readonly trust: "confirmed" | "inferred"; readonly observed_at: string; readonly valid_from: string;
-  readonly valid_until: string; readonly fresh_until: string; readonly digest: string;
-  readonly transfer_digest: string; readonly evidence_link: string; readonly session_id: string;
-  readonly related: boolean; readonly injection: boolean;
+  readonly trust: "confirmed" | "inferred" | "untrusted"; readonly authority: "none" | "owner";
+  readonly observed_at: string; readonly valid_from: string; readonly valid_until: string; readonly fresh_until: string;
+  readonly digest: string; readonly transfer_digest: string; readonly evidence_link: string; readonly session_id: string;
+  readonly relationship: "direct" | "supporting" | "unrelated";
 };
 export type PersonalOsExpected = {
   readonly outcome: PersonalOsOutcome; readonly record_ids: readonly string[];
@@ -26,19 +28,21 @@ export type PersonalOsCorpus = {
   readonly schema_version: 1; readonly corpus_id: string; readonly fixed_clock: string;
   readonly scenarios: readonly PersonalOsScenario[];
 };
+export type PersonalOsActualTrace = {
+  readonly scenario_id: string; readonly outcome: PersonalOsOutcome; readonly selected_record_ids: readonly string[];
+  readonly citation_links: readonly string[]; readonly session_ids: readonly string[]; readonly value: string | null;
+  readonly reason_code: string; readonly temporal_observation: boolean; readonly effect_events: readonly PersonalOsEffectEvent[];
+  readonly dependencies: PersonalOsDependencies;
+};
 export type PersonalOsAssertion = {
   readonly id: string; readonly passed: boolean; readonly metric: "task_quality" | "temporal" | "abstention" | "safety";
   readonly memory_tp: number; readonly memory_fp: number; readonly memory_fn: number;
-  readonly temporal_correct: number; readonly temporal_total: number;
-  readonly abstained: number; readonly abstention_total: number;
+  readonly temporal_correct: number; readonly temporal_total: number; readonly abstained: number; readonly abstention_total: number;
   readonly unauthorized_effects: number; readonly approval_bypass_effects: number; readonly duplicate_effects: number;
   readonly stale_authoritative_effects: number; readonly deletion_leak_effects: number;
 };
-export type PersonalOsScenarioResult = {
-  readonly scenario_id: string; readonly scenario_class: PersonalOsScenarioClass;
-  readonly outcome: PersonalOsOutcome; readonly selected_record_ids: readonly string[];
-  readonly citation_links: readonly string[]; readonly value: string | null; readonly reason_code: string;
-  readonly assertions: readonly PersonalOsAssertion[];
+export type PersonalOsScenarioResult = PersonalOsActualTrace & {
+  readonly scenario_class: PersonalOsScenarioClass; readonly assertions: readonly PersonalOsAssertion[];
 };
 export type CountRate = { readonly passed: number; readonly total: number; readonly rate: number };
 export type Precision = { readonly tp: number; readonly fp: number; readonly rate: number };
@@ -51,5 +55,5 @@ export type PersonalOsEvaluationResult = {
   readonly stale_no_data_abstention: { readonly abstained: number; readonly total: number; readonly rate: number };
   readonly safety: { readonly unauthorized_effects: number; readonly approval_bypass_effects: number;
     readonly duplicate_effects: number; readonly stale_authoritative_effects: number; readonly deletion_leak_effects: number };
-  readonly scenarios: readonly PersonalOsScenarioResult[];
+  readonly dependencies: PersonalOsDependencies; readonly scenarios: readonly PersonalOsScenarioResult[];
 };

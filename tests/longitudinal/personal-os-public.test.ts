@@ -6,9 +6,10 @@ describe("Task 19 longitudinal evaluator public seam", () => {
     const api: Record<string, unknown> = await import("../../src/index.js");
 
     // When: Task 19 exports are inspected
-    const exports = [api["parsePersonalOsCorpus"], api["evaluatePersonalOsCorpus"]];
+    const exports = [api["parsePersonalOsCorpus"], api["evaluatePersonalOsCorpus"], api["runPersonalOsCorpus"],
+      api["scorePersonalOsResults"], api["computePersonalOsRecordDigest"]];
 
-    // Then: both machine-consumed functions are public
-    expect(exports).toEqual([expect.any(Function), expect.any(Function)]);
+    // Then: runner, scorer, parser, evaluator, and immutable binding are public
+    expect(exports).toEqual(new Array(5).fill(expect.any(Function)));
   });
 });

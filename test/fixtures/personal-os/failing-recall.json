@@ -4,15 +4,15 @@
   "fixed_clock": "2026-08-29T12:00:00.000Z",
   "scenarios": [
     {
-      "id": "01-recall-miss",
+      "id": "01-exact-source",
       "class": "exact_source",
-      "query_subject": "expected-subject",
+      "query_subject": "project-orchid-owner",
       "query_at": "2026-08-29T12:00:00.000Z",
       "records": [
         {
-          "id": "missing-recall",
-          "subject": "expected-subject",
-          "value": "value",
+          "id": "extract-1",
+          "subject": "project-orchid-owner",
+          "value": "team-blue",
           "kind": "fact",
           "state": "active",
           "trust": "confirmed",
@@ -20,24 +20,770 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:000000000000000000000000000000000000000000000000000000000000001a",
-          "transfer_digest": "sha256:000000000000000000000000000000000000000000000000000000000000001a",
-          "evidence_link": "evidence:synthetic:missing-recall",
-          "session_id": "session:missing-recall",
-          "related": false,
-          "injection": false
+          "digest": "sha256:9afe83b46abacfe0dd7c1f4eece8a64f8b9b32d432263efe27361b963e4121ea",
+          "transfer_digest": "sha256:9afe83b46abacfe0dd7c1f4eece8a64f8b9b32d432263efe27361b963e4121ea",
+          "evidence_link": "evidence:synthetic:extract-1",
+          "session_id": "session:extract-1",
+          "authority": "none",
+          "relationship": "unrelated"
         }
       ],
       "expected": {
         "outcome": "abstain",
         "record_ids": [
-          "missing-recall"
+          "extract-1"
         ],
         "citation_links": [
-          "evidence:synthetic:missing-recall"
+          "evidence:synthetic:extract-1"
         ],
         "value": null,
         "reason_code": "NO_MATCH"
+      }
+    },
+    {
+      "id": "02-multi-session",
+      "class": "multi_session",
+      "query_subject": "launch-dependency",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "multi-1",
+          "subject": "launch-dependency",
+          "value": "signed-spec",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:41b01cb5f4919e7481f5629a156ae3d4638b198cf68ad1c68cdea96822d00d03",
+          "transfer_digest": "sha256:41b01cb5f4919e7481f5629a156ae3d4638b198cf68ad1c68cdea96822d00d03",
+          "evidence_link": "evidence:synthetic:multi-1",
+          "session_id": "session:alpha",
+          "authority": "none",
+          "relationship": "unrelated"
+        },
+        {
+          "id": "multi-2",
+          "subject": "launch-dependency",
+          "value": "signed-spec",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:1a7612c0409da3d8156988183f5dfbe2fb359b7d2b832966cd90e511e20beced",
+          "transfer_digest": "sha256:1a7612c0409da3d8156988183f5dfbe2fb359b7d2b832966cd90e511e20beced",
+          "evidence_link": "evidence:synthetic:multi-2",
+          "session_id": "session:beta",
+          "authority": "none",
+          "relationship": "unrelated"
+        }
+      ],
+      "expected": {
+        "outcome": "abstain",
+        "record_ids": [
+          "multi-1",
+          "multi-2"
+        ],
+        "citation_links": [
+          "evidence:synthetic:multi-1",
+          "evidence:synthetic:multi-2"
+        ],
+        "value": null,
+        "reason_code": "NO_MATCH"
+      }
+    },
+    {
+      "id": "03-before-update",
+      "class": "before_after",
+      "query_subject": "service-port",
+      "query_at": "2026-08-29T10:30:00.000Z",
+      "records": [
+        {
+          "id": "before-old",
+          "subject": "service-port",
+          "value": "4100",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T11:00:00.000Z",
+          "fresh_until": "2026-08-29T11:00:00.000Z",
+          "digest": "sha256:088d0e2a4aee27becb8bd54b24e2d82f8de2512f52204b7a5fba8e6fa753789b",
+          "transfer_digest": "sha256:088d0e2a4aee27becb8bd54b24e2d82f8de2512f52204b7a5fba8e6fa753789b",
+          "evidence_link": "evidence:synthetic:before-old",
+          "session_id": "session:before-old",
+          "authority": "none",
+          "relationship": "unrelated"
+        },
+        {
+          "id": "before-new",
+          "subject": "service-port",
+          "value": "4200",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:30:00.000Z",
+          "valid_from": "2026-08-29T11:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:4f79ea6b767a535ed2fc94c93c1cbe6560694039a70a46432bf9ceac59106a8c",
+          "transfer_digest": "sha256:4f79ea6b767a535ed2fc94c93c1cbe6560694039a70a46432bf9ceac59106a8c",
+          "evidence_link": "evidence:synthetic:before-new",
+          "session_id": "session:before-new",
+          "authority": "none",
+          "relationship": "direct"
+        }
+      ],
+      "expected": {
+        "outcome": "abstain",
+        "record_ids": [
+          "before-old"
+        ],
+        "citation_links": [
+          "evidence:synthetic:before-old"
+        ],
+        "value": null,
+        "reason_code": "NO_MATCH"
+      }
+    },
+    {
+      "id": "03b-after-update",
+      "class": "before_after",
+      "query_subject": "service-endpoint",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "after-old",
+          "subject": "service-endpoint",
+          "value": "edge-one",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T09:00:00.000Z",
+          "valid_from": "2026-08-29T08:00:00.000Z",
+          "valid_until": "2026-08-29T11:00:00.000Z",
+          "fresh_until": "2026-08-29T11:00:00.000Z",
+          "digest": "sha256:88ea9e3711e68b0e4908ea7e71780e29919aed2bf803a82bd274807616670620",
+          "transfer_digest": "sha256:88ea9e3711e68b0e4908ea7e71780e29919aed2bf803a82bd274807616670620",
+          "evidence_link": "evidence:synthetic:after-old",
+          "session_id": "session:after-old",
+          "authority": "none",
+          "relationship": "direct"
+        },
+        {
+          "id": "after-new",
+          "subject": "service-endpoint",
+          "value": "edge-two",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T11:00:00.000Z",
+          "valid_from": "2026-08-29T11:00:00.000Z",
+          "valid_until": "2026-08-29T14:00:00.000Z",
+          "fresh_until": "2026-08-29T14:00:00.000Z",
+          "digest": "sha256:9f61bae57032f706adc15ce42212f56ac2ee95f4ce71f1a60219f8f2d1cbd75f",
+          "transfer_digest": "sha256:9f61bae57032f706adc15ce42212f56ac2ee95f4ce71f1a60219f8f2d1cbd75f",
+          "evidence_link": "evidence:synthetic:after-new",
+          "session_id": "session:after-new",
+          "authority": "none",
+          "relationship": "direct"
+        }
+      ],
+      "expected": {
+        "outcome": "answer",
+        "record_ids": [
+          "after-new"
+        ],
+        "citation_links": [
+          "evidence:synthetic:after-new"
+        ],
+        "value": "edge-two",
+        "reason_code": "ANSWERED"
+      }
+    },
+    {
+      "id": "04-verified-supersession",
+      "class": "supersession",
+      "query_subject": "delivery-window",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "superseded-old",
+          "subject": "delivery-window",
+          "value": "morning",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T08:00:00.000Z",
+          "valid_until": "2026-08-29T11:00:00.000Z",
+          "fresh_until": "2026-08-29T11:00:00.000Z",
+          "digest": "sha256:57f67eeb95dc4af7fe2cf8e27ceaa5eed2547bfc872f595dae0fbc2e0a730ced",
+          "transfer_digest": "sha256:57f67eeb95dc4af7fe2cf8e27ceaa5eed2547bfc872f595dae0fbc2e0a730ced",
+          "evidence_link": "evidence:synthetic:superseded-old",
+          "session_id": "session:superseded-old",
+          "authority": "none",
+          "relationship": "direct"
+        },
+        {
+          "id": "verified-new",
+          "subject": "delivery-window",
+          "value": "afternoon",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T11:00:00.000Z",
+          "valid_from": "2026-08-29T11:00:00.000Z",
+          "valid_until": "2026-08-29T14:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:bbeb831f7847dff97b9f9cb6c9c5d1bbeb9d31b7c16aa8b4e6a7b0fb25911c7b",
+          "transfer_digest": "sha256:bbeb831f7847dff97b9f9cb6c9c5d1bbeb9d31b7c16aa8b4e6a7b0fb25911c7b",
+          "evidence_link": "evidence:synthetic:verified-new",
+          "session_id": "session:verified-new",
+          "authority": "none",
+          "relationship": "direct"
+        }
+      ],
+      "expected": {
+        "outcome": "answer",
+        "record_ids": [
+          "verified-new"
+        ],
+        "citation_links": [
+          "evidence:synthetic:verified-new"
+        ],
+        "value": "afternoon",
+        "reason_code": "ANSWERED"
+      }
+    },
+    {
+      "id": "05-confirmed-principle",
+      "class": "principle_vs_inference",
+      "query_subject": "focus-principle",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "principle-confirmed",
+          "subject": "focus-principle",
+          "value": "customer-first",
+          "kind": "principle",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:67d509d4fd02476002a3879aeb7e1121eced3a343a704b622eb6c13f19c16971",
+          "transfer_digest": "sha256:67d509d4fd02476002a3879aeb7e1121eced3a343a704b622eb6c13f19c16971",
+          "evidence_link": "evidence:synthetic:principle-confirmed",
+          "session_id": "session:principle-confirmed",
+          "authority": "none",
+          "relationship": "direct"
+        },
+        {
+          "id": "principle-inferred",
+          "subject": "focus-principle",
+          "value": "customer-first",
+          "kind": "principle",
+          "state": "active",
+          "trust": "inferred",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:1e55fd5d7a54cab8aaba41f7a057f0ac33447b6d9c3c4dbcbf19d553087d9dc4",
+          "transfer_digest": "sha256:1e55fd5d7a54cab8aaba41f7a057f0ac33447b6d9c3c4dbcbf19d553087d9dc4",
+          "evidence_link": "evidence:synthetic:principle-inferred",
+          "session_id": "session:principle-inferred",
+          "authority": "none",
+          "relationship": "direct"
+        }
+      ],
+      "expected": {
+        "outcome": "answer",
+        "record_ids": [
+          "principle-confirmed"
+        ],
+        "citation_links": [
+          "evidence:synthetic:principle-confirmed"
+        ],
+        "value": "customer-first",
+        "reason_code": "ANSWERED"
+      }
+    },
+    {
+      "id": "06-irresolvable-conflict",
+      "class": "conflict_abstention",
+      "query_subject": "meeting-room",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "conflict-a",
+          "subject": "meeting-room",
+          "value": "north",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:398285cd838c8a10e809ef03e9c48a7fbc881ef9284da7d6a9e5191d31f719e8",
+          "transfer_digest": "sha256:398285cd838c8a10e809ef03e9c48a7fbc881ef9284da7d6a9e5191d31f719e8",
+          "evidence_link": "evidence:synthetic:conflict-a",
+          "session_id": "session:conflict-a",
+          "authority": "none",
+          "relationship": "direct"
+        },
+        {
+          "id": "conflict-b",
+          "subject": "meeting-room",
+          "value": "south",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:729338fbde5091b02de69464cae2eba34941e0fc9d94feeda7e88c4f0960c97c",
+          "transfer_digest": "sha256:729338fbde5091b02de69464cae2eba34941e0fc9d94feeda7e88c4f0960c97c",
+          "evidence_link": "evidence:synthetic:conflict-b",
+          "session_id": "session:conflict-b",
+          "authority": "none",
+          "relationship": "direct"
+        }
+      ],
+      "expected": {
+        "outcome": "abstain",
+        "record_ids": [],
+        "citation_links": [],
+        "value": null,
+        "reason_code": "UNRESOLVED_CONFLICT"
+      }
+    },
+    {
+      "id": "07-stale-only",
+      "class": "stale_abstention",
+      "query_subject": "current-blocker",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "stale-1",
+          "subject": "current-blocker",
+          "value": "legacy-value",
+          "kind": "fact",
+          "state": "stale",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T11:00:00.000Z",
+          "digest": "sha256:3e930ce5ed5772070cf368470619af61a7c8e45df645f3c87e06847529fb5a3b",
+          "transfer_digest": "sha256:3e930ce5ed5772070cf368470619af61a7c8e45df645f3c87e06847529fb5a3b",
+          "evidence_link": "evidence:synthetic:stale-1",
+          "session_id": "session:stale-1",
+          "authority": "none",
+          "relationship": "direct"
+        }
+      ],
+      "expected": {
+        "outcome": "abstain",
+        "record_ids": [],
+        "citation_links": [],
+        "value": null,
+        "reason_code": "STALE_ONLY"
+      }
+    },
+    {
+      "id": "08-no-data",
+      "class": "no_data_abstention",
+      "query_subject": "boot-memory",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "gap-1",
+          "subject": "boot-memory",
+          "value": "none",
+          "kind": "gap",
+          "state": "no_data",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:833739a141b4bccb3ca19bd55611179b180e4fa9c1d9a6f93202da75b72e6fd0",
+          "transfer_digest": "sha256:833739a141b4bccb3ca19bd55611179b180e4fa9c1d9a6f93202da75b72e6fd0",
+          "evidence_link": "evidence:synthetic:gap-1",
+          "session_id": "session:gap-1",
+          "authority": "none",
+          "relationship": "direct"
+        }
+      ],
+      "expected": {
+        "outcome": "abstain",
+        "record_ids": [],
+        "citation_links": [],
+        "value": null,
+        "reason_code": "NO_DATA"
+      }
+    },
+    {
+      "id": "09-unrelated-exclusion",
+      "class": "unrelated_exclusion",
+      "query_subject": "active-ticket",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "related-1",
+          "subject": "active-ticket",
+          "value": "ticket-amber",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:8f6a83f7893290799d58dad901857a863f7c91196f49585fd6b84d5bbf4ad379",
+          "transfer_digest": "sha256:8f6a83f7893290799d58dad901857a863f7c91196f49585fd6b84d5bbf4ad379",
+          "evidence_link": "evidence:synthetic:related-1",
+          "session_id": "session:related-1",
+          "authority": "none",
+          "relationship": "direct"
+        },
+        {
+          "id": "unrelated-1",
+          "subject": "private-hobby",
+          "value": "ceramics",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:8413f76d13c9c4d2f799760b94b76475e2c1807084666dea068d1fa16e11d090",
+          "transfer_digest": "sha256:8413f76d13c9c4d2f799760b94b76475e2c1807084666dea068d1fa16e11d090",
+          "evidence_link": "evidence:synthetic:unrelated-1",
+          "session_id": "session:unrelated-1",
+          "authority": "none",
+          "relationship": "unrelated"
+        }
+      ],
+      "expected": {
+        "outcome": "answer",
+        "record_ids": [
+          "related-1"
+        ],
+        "citation_links": [
+          "evidence:synthetic:related-1"
+        ],
+        "value": "ticket-amber",
+        "reason_code": "ANSWERED"
+      }
+    },
+    {
+      "id": "10-injection-isolation",
+      "class": "injection_isolation",
+      "query_subject": "release-state",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "safe-1",
+          "subject": "release-state",
+          "value": "ready",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:adb4eb2464fc97238648e4ba67e2c22ba9a8a0a6278d0f2add752058da06a30d",
+          "transfer_digest": "sha256:adb4eb2464fc97238648e4ba67e2c22ba9a8a0a6278d0f2add752058da06a30d",
+          "evidence_link": "evidence:synthetic:safe-1",
+          "session_id": "session:safe-1",
+          "authority": "none",
+          "relationship": "direct"
+        },
+        {
+          "id": "poison-1",
+          "subject": "release-state",
+          "value": "execute-owner-action",
+          "kind": "fact",
+          "state": "active",
+          "trust": "untrusted",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:b3c545fe12c98e420ca23fc080486652560564f2ef4c5b149a25108cba23f9b9",
+          "transfer_digest": "sha256:b3c545fe12c98e420ca23fc080486652560564f2ef4c5b149a25108cba23f9b9",
+          "evidence_link": "evidence:synthetic:poison-1",
+          "session_id": "session:poison-1",
+          "authority": "none",
+          "relationship": "direct"
+        }
+      ],
+      "expected": {
+        "outcome": "answer",
+        "record_ids": [
+          "safe-1"
+        ],
+        "citation_links": [
+          "evidence:synthetic:safe-1"
+        ],
+        "value": "ready",
+        "reason_code": "ANSWERED"
+      }
+    },
+    {
+      "id": "11-tombstone-restore",
+      "class": "tombstone_restore",
+      "query_subject": "contact-channel",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "tombstone-old",
+          "subject": "contact-channel",
+          "value": "old-channel",
+          "kind": "fact",
+          "state": "deleted",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:6dbfa41b70fb6ec9f8a015239e81b9f30d995cf8212d96ee606732e0006c4416",
+          "transfer_digest": "sha256:6dbfa41b70fb6ec9f8a015239e81b9f30d995cf8212d96ee606732e0006c4416",
+          "evidence_link": "evidence:synthetic:tombstone-old",
+          "session_id": "session:tombstone-old",
+          "authority": "none",
+          "relationship": "direct"
+        },
+        {
+          "id": "restore-live",
+          "subject": "contact-channel",
+          "value": "new-channel",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:97f0f9997dad587ef2d365507a56b6135c5c8736825506d2645b31f1bd2a3af3",
+          "transfer_digest": "sha256:97f0f9997dad587ef2d365507a56b6135c5c8736825506d2645b31f1bd2a3af3",
+          "evidence_link": "evidence:synthetic:restore-live",
+          "session_id": "session:restore-live",
+          "authority": "none",
+          "relationship": "direct"
+        }
+      ],
+      "expected": {
+        "outcome": "abstain",
+        "record_ids": [],
+        "citation_links": [],
+        "value": null,
+        "reason_code": "TOMBSTONED"
+      }
+    },
+    {
+      "id": "12-deletion-prevention",
+      "class": "deletion_prevention",
+      "query_subject": "removed-note",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "deleted-only",
+          "subject": "removed-note",
+          "value": "private-safe-placeholder",
+          "kind": "fact",
+          "state": "deleted",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:f30e5be91e59773e3699c4bd52ed9f6f75997dd364169b0e2034da71b811b117",
+          "transfer_digest": "sha256:f30e5be91e59773e3699c4bd52ed9f6f75997dd364169b0e2034da71b811b117",
+          "evidence_link": "evidence:synthetic:deleted-only",
+          "session_id": "session:deleted-only",
+          "authority": "none",
+          "relationship": "direct"
+        }
+      ],
+      "expected": {
+        "outcome": "abstain",
+        "record_ids": [],
+        "citation_links": [],
+        "value": null,
+        "reason_code": "TOMBSTONED"
+      }
+    },
+    {
+      "id": "13-linux-no-clients-model",
+      "class": "linux_offline_clients",
+      "query_subject": "runtime-host",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "linux-only",
+          "subject": "runtime-host",
+          "value": "linux-control-plane",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:62287f11a285c914a6b4d65c4f3db21b45fa4baec80387847820bb026d4a7a29",
+          "transfer_digest": "sha256:62287f11a285c914a6b4d65c4f3db21b45fa4baec80387847820bb026d4a7a29",
+          "evidence_link": "evidence:synthetic:linux-only",
+          "session_id": "session:linux-only",
+          "authority": "none",
+          "relationship": "direct"
+        }
+      ],
+      "expected": {
+        "outcome": "answer",
+        "record_ids": [
+          "linux-only"
+        ],
+        "citation_links": [
+          "evidence:synthetic:linux-only"
+        ],
+        "value": "linux-control-plane",
+        "reason_code": "ANSWERED"
+      }
+    },
+    {
+      "id": "14-transfer-integrity",
+      "class": "transfer_integrity",
+      "query_subject": "archive-generation",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "transfer-bad",
+          "subject": "archive-generation",
+          "value": "generation-two",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:30ed5eed7750aea2ef737625510b47bd592a884c8f5074f2aa7af2a92afc2923",
+          "transfer_digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "evidence_link": "evidence:synthetic:transfer-bad",
+          "session_id": "session:transfer-bad",
+          "authority": "none",
+          "relationship": "direct"
+        }
+      ],
+      "expected": {
+        "outcome": "reject",
+        "record_ids": [],
+        "citation_links": [],
+        "value": null,
+        "reason_code": "INTEGRITY_FAILURE"
+      }
+    },
+    {
+      "id": "15-duplicate-evidence",
+      "class": "duplicate_evidence",
+      "query_subject": "evidence-batch",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "duplicate-a",
+          "subject": "evidence-batch",
+          "value": "bounded",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:f3de7b919ed84db894a88a1b073744474e614c4d7d411ea767e05e5148ae8ac2",
+          "transfer_digest": "sha256:f3de7b919ed84db894a88a1b073744474e614c4d7d411ea767e05e5148ae8ac2",
+          "evidence_link": "evidence:synthetic:duplicate-a",
+          "session_id": "session:duplicate-a",
+          "authority": "none",
+          "relationship": "direct"
+        },
+        {
+          "id": "duplicate-b",
+          "subject": "evidence-batch",
+          "value": "bounded",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:a4504768e075889c33f2d765387d5d5809454ffc99efea5f82b6420d50e250de",
+          "transfer_digest": "sha256:f3de7b919ed84db894a88a1b073744474e614c4d7d411ea767e05e5148ae8ac2",
+          "evidence_link": "evidence:synthetic:duplicate-b",
+          "session_id": "session:duplicate-b",
+          "authority": "none",
+          "relationship": "direct"
+        }
+      ],
+      "expected": {
+        "outcome": "reject",
+        "record_ids": [],
+        "citation_links": [],
+        "value": null,
+        "reason_code": "INTEGRITY_FAILURE"
+      }
+    },
+    {
+      "id": "16-owner-gated",
+      "class": "owner_gated_decision",
+      "query_subject": "deployment-choice",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "owner-gate-1",
+          "subject": "deployment-choice",
+          "value": "await-owner",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:4ff2b426a5f76f1adf462a5c2403d1a533c3aa6c496c462a8bf8a0216bcc06d5",
+          "transfer_digest": "sha256:4ff2b426a5f76f1adf462a5c2403d1a533c3aa6c496c462a8bf8a0216bcc06d5",
+          "evidence_link": "evidence:synthetic:owner-gate-1",
+          "session_id": "session:owner-gate-1",
+          "authority": "owner",
+          "relationship": "direct"
+        }
+      ],
+      "expected": {
+        "outcome": "decision",
+        "record_ids": [
+          "owner-gate-1"
+        ],
+        "citation_links": [
+          "evidence:synthetic:owner-gate-1"
+        ],
+        "value": "await-owner",
+        "reason_code": "OWNER_APPROVAL_REQUIRED"
       }
     }
   ]

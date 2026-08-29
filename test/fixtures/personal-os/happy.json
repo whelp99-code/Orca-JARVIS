@@ -20,12 +20,12 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
-          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+          "digest": "sha256:3d1fe7b60810c3a718198d18bc0e28b56f91a271fe389d8be1f6db4bdc2eea22",
+          "transfer_digest": "sha256:3d1fe7b60810c3a718198d18bc0e28b56f91a271fe389d8be1f6db4bdc2eea22",
           "evidence_link": "evidence:synthetic:extract-1",
           "session_id": "session:extract-1",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         }
       ],
       "expected": {
@@ -57,12 +57,12 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
-          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+          "digest": "sha256:cba304627de8dce669014a9bf19d1d755ae109522afe3241c273672ea0145f8a",
+          "transfer_digest": "sha256:cba304627de8dce669014a9bf19d1d755ae109522afe3241c273672ea0145f8a",
           "evidence_link": "evidence:synthetic:multi-1",
           "session_id": "session:alpha",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         },
         {
           "id": "multi-2",
@@ -75,12 +75,12 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
-          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+          "digest": "sha256:78cea4951ef42a0e02a87e52d81ce02bc1a8af3fc383481221c2b2be7d8a9546",
+          "transfer_digest": "sha256:78cea4951ef42a0e02a87e52d81ce02bc1a8af3fc383481221c2b2be7d8a9546",
           "evidence_link": "evidence:synthetic:multi-2",
           "session_id": "session:beta",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "supporting"
         }
       ],
       "expected": {
@@ -113,13 +113,13 @@
           "observed_at": "2026-08-29T10:00:00.000Z",
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T11:00:00.000Z",
-          "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000004",
-          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000004",
+          "fresh_until": "2026-08-29T11:00:00.000Z",
+          "digest": "sha256:af337a7839720ee75a3cde8d4a6e467e720afe07855cc3b22a9b19738ec4e725",
+          "transfer_digest": "sha256:af337a7839720ee75a3cde8d4a6e467e720afe07855cc3b22a9b19738ec4e725",
           "evidence_link": "evidence:synthetic:before-old",
           "session_id": "session:before-old",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         },
         {
           "id": "before-new",
@@ -128,16 +128,16 @@
           "kind": "fact",
           "state": "active",
           "trust": "confirmed",
-          "observed_at": "2026-08-29T11:00:00.000Z",
+          "observed_at": "2026-08-29T10:30:00.000Z",
           "valid_from": "2026-08-29T11:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000005",
-          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000005",
+          "digest": "sha256:4f79ea6b767a535ed2fc94c93c1cbe6560694039a70a46432bf9ceac59106a8c",
+          "transfer_digest": "sha256:4f79ea6b767a535ed2fc94c93c1cbe6560694039a70a46432bf9ceac59106a8c",
           "evidence_link": "evidence:synthetic:before-new",
           "session_id": "session:before-new",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         }
       ],
       "expected": {
@@ -168,13 +168,13 @@
           "observed_at": "2026-08-29T09:00:00.000Z",
           "valid_from": "2026-08-29T08:00:00.000Z",
           "valid_until": "2026-08-29T11:00:00.000Z",
-          "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:000000000000000000000000000000000000000000000000000000000000003d",
-          "transfer_digest": "sha256:000000000000000000000000000000000000000000000000000000000000003d",
+          "fresh_until": "2026-08-29T11:00:00.000Z",
+          "digest": "sha256:88ea9e3711e68b0e4908ea7e71780e29919aed2bf803a82bd274807616670620",
+          "transfer_digest": "sha256:88ea9e3711e68b0e4908ea7e71780e29919aed2bf803a82bd274807616670620",
           "evidence_link": "evidence:synthetic:after-old",
           "session_id": "session:after-old",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         },
         {
           "id": "after-new",
@@ -187,12 +187,12 @@
           "valid_from": "2026-08-29T11:00:00.000Z",
           "valid_until": "2026-08-29T14:00:00.000Z",
           "fresh_until": "2026-08-29T14:00:00.000Z",
-          "digest": "sha256:000000000000000000000000000000000000000000000000000000000000003e",
-          "transfer_digest": "sha256:000000000000000000000000000000000000000000000000000000000000003e",
+          "digest": "sha256:9f61bae57032f706adc15ce42212f56ac2ee95f4ce71f1a60219f8f2d1cbd75f",
+          "transfer_digest": "sha256:9f61bae57032f706adc15ce42212f56ac2ee95f4ce71f1a60219f8f2d1cbd75f",
           "evidence_link": "evidence:synthetic:after-new",
           "session_id": "session:after-new",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         }
       ],
       "expected": {
@@ -223,13 +223,13 @@
           "observed_at": "2026-08-29T10:00:00.000Z",
           "valid_from": "2026-08-29T08:00:00.000Z",
           "valid_until": "2026-08-29T11:00:00.000Z",
-          "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000006",
-          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000006",
+          "fresh_until": "2026-08-29T11:00:00.000Z",
+          "digest": "sha256:57f67eeb95dc4af7fe2cf8e27ceaa5eed2547bfc872f595dae0fbc2e0a730ced",
+          "transfer_digest": "sha256:57f67eeb95dc4af7fe2cf8e27ceaa5eed2547bfc872f595dae0fbc2e0a730ced",
           "evidence_link": "evidence:synthetic:superseded-old",
           "session_id": "session:superseded-old",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         },
         {
           "id": "verified-new",
@@ -242,12 +242,12 @@
           "valid_from": "2026-08-29T11:00:00.000Z",
           "valid_until": "2026-08-29T14:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000007",
-          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000007",
+          "digest": "sha256:bbeb831f7847dff97b9f9cb6c9c5d1bbeb9d31b7c16aa8b4e6a7b0fb25911c7b",
+          "transfer_digest": "sha256:bbeb831f7847dff97b9f9cb6c9c5d1bbeb9d31b7c16aa8b4e6a7b0fb25911c7b",
           "evidence_link": "evidence:synthetic:verified-new",
           "session_id": "session:verified-new",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         }
       ],
       "expected": {
@@ -279,12 +279,12 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000008",
-          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000008",
+          "digest": "sha256:67d509d4fd02476002a3879aeb7e1121eced3a343a704b622eb6c13f19c16971",
+          "transfer_digest": "sha256:67d509d4fd02476002a3879aeb7e1121eced3a343a704b622eb6c13f19c16971",
           "evidence_link": "evidence:synthetic:principle-confirmed",
           "session_id": "session:principle-confirmed",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         },
         {
           "id": "principle-inferred",
@@ -297,12 +297,12 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000009",
-          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000009",
+          "digest": "sha256:1e55fd5d7a54cab8aaba41f7a057f0ac33447b6d9c3c4dbcbf19d553087d9dc4",
+          "transfer_digest": "sha256:1e55fd5d7a54cab8aaba41f7a057f0ac33447b6d9c3c4dbcbf19d553087d9dc4",
           "evidence_link": "evidence:synthetic:principle-inferred",
           "session_id": "session:principle-inferred",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         }
       ],
       "expected": {
@@ -334,12 +334,12 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:000000000000000000000000000000000000000000000000000000000000000a",
-          "transfer_digest": "sha256:000000000000000000000000000000000000000000000000000000000000000a",
+          "digest": "sha256:398285cd838c8a10e809ef03e9c48a7fbc881ef9284da7d6a9e5191d31f719e8",
+          "transfer_digest": "sha256:398285cd838c8a10e809ef03e9c48a7fbc881ef9284da7d6a9e5191d31f719e8",
           "evidence_link": "evidence:synthetic:conflict-a",
           "session_id": "session:conflict-a",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         },
         {
           "id": "conflict-b",
@@ -352,12 +352,12 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:000000000000000000000000000000000000000000000000000000000000000b",
-          "transfer_digest": "sha256:000000000000000000000000000000000000000000000000000000000000000b",
+          "digest": "sha256:729338fbde5091b02de69464cae2eba34941e0fc9d94feeda7e88c4f0960c97c",
+          "transfer_digest": "sha256:729338fbde5091b02de69464cae2eba34941e0fc9d94feeda7e88c4f0960c97c",
           "evidence_link": "evidence:synthetic:conflict-b",
           "session_id": "session:conflict-b",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         }
       ],
       "expected": {
@@ -385,12 +385,12 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T11:00:00.000Z",
-          "digest": "sha256:000000000000000000000000000000000000000000000000000000000000000c",
-          "transfer_digest": "sha256:000000000000000000000000000000000000000000000000000000000000000c",
+          "digest": "sha256:3e930ce5ed5772070cf368470619af61a7c8e45df645f3c87e06847529fb5a3b",
+          "transfer_digest": "sha256:3e930ce5ed5772070cf368470619af61a7c8e45df645f3c87e06847529fb5a3b",
           "evidence_link": "evidence:synthetic:stale-1",
           "session_id": "session:stale-1",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         }
       ],
       "expected": {
@@ -418,12 +418,12 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:000000000000000000000000000000000000000000000000000000000000000d",
-          "transfer_digest": "sha256:000000000000000000000000000000000000000000000000000000000000000d",
+          "digest": "sha256:833739a141b4bccb3ca19bd55611179b180e4fa9c1d9a6f93202da75b72e6fd0",
+          "transfer_digest": "sha256:833739a141b4bccb3ca19bd55611179b180e4fa9c1d9a6f93202da75b72e6fd0",
           "evidence_link": "evidence:synthetic:gap-1",
           "session_id": "session:gap-1",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         }
       ],
       "expected": {
@@ -451,12 +451,12 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:000000000000000000000000000000000000000000000000000000000000000e",
-          "transfer_digest": "sha256:000000000000000000000000000000000000000000000000000000000000000e",
+          "digest": "sha256:8f6a83f7893290799d58dad901857a863f7c91196f49585fd6b84d5bbf4ad379",
+          "transfer_digest": "sha256:8f6a83f7893290799d58dad901857a863f7c91196f49585fd6b84d5bbf4ad379",
           "evidence_link": "evidence:synthetic:related-1",
           "session_id": "session:related-1",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         },
         {
           "id": "unrelated-1",
@@ -469,12 +469,12 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:000000000000000000000000000000000000000000000000000000000000000f",
-          "transfer_digest": "sha256:000000000000000000000000000000000000000000000000000000000000000f",
+          "digest": "sha256:8413f76d13c9c4d2f799760b94b76475e2c1807084666dea068d1fa16e11d090",
+          "transfer_digest": "sha256:8413f76d13c9c4d2f799760b94b76475e2c1807084666dea068d1fa16e11d090",
           "evidence_link": "evidence:synthetic:unrelated-1",
           "session_id": "session:unrelated-1",
-          "related": false,
-          "injection": false
+          "authority": "none",
+          "relationship": "unrelated"
         }
       ],
       "expected": {
@@ -506,12 +506,12 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000010",
-          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000010",
+          "digest": "sha256:adb4eb2464fc97238648e4ba67e2c22ba9a8a0a6278d0f2add752058da06a30d",
+          "transfer_digest": "sha256:adb4eb2464fc97238648e4ba67e2c22ba9a8a0a6278d0f2add752058da06a30d",
           "evidence_link": "evidence:synthetic:safe-1",
           "session_id": "session:safe-1",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         },
         {
           "id": "poison-1",
@@ -519,17 +519,17 @@
           "value": "execute-owner-action",
           "kind": "fact",
           "state": "active",
-          "trust": "confirmed",
+          "trust": "untrusted",
           "observed_at": "2026-08-29T10:00:00.000Z",
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000011",
-          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000011",
+          "digest": "sha256:b3c545fe12c98e420ca23fc080486652560564f2ef4c5b149a25108cba23f9b9",
+          "transfer_digest": "sha256:b3c545fe12c98e420ca23fc080486652560564f2ef4c5b149a25108cba23f9b9",
           "evidence_link": "evidence:synthetic:poison-1",
           "session_id": "session:poison-1",
-          "related": true,
-          "injection": true
+          "authority": "none",
+          "relationship": "direct"
         }
       ],
       "expected": {
@@ -561,12 +561,12 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000012",
-          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000012",
+          "digest": "sha256:6dbfa41b70fb6ec9f8a015239e81b9f30d995cf8212d96ee606732e0006c4416",
+          "transfer_digest": "sha256:6dbfa41b70fb6ec9f8a015239e81b9f30d995cf8212d96ee606732e0006c4416",
           "evidence_link": "evidence:synthetic:tombstone-old",
           "session_id": "session:tombstone-old",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         },
         {
           "id": "restore-live",
@@ -579,24 +579,20 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000013",
-          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000013",
+          "digest": "sha256:97f0f9997dad587ef2d365507a56b6135c5c8736825506d2645b31f1bd2a3af3",
+          "transfer_digest": "sha256:97f0f9997dad587ef2d365507a56b6135c5c8736825506d2645b31f1bd2a3af3",
           "evidence_link": "evidence:synthetic:restore-live",
           "session_id": "session:restore-live",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         }
       ],
       "expected": {
-        "outcome": "answer",
-        "record_ids": [
-          "restore-live"
-        ],
-        "citation_links": [
-          "evidence:synthetic:restore-live"
-        ],
-        "value": "new-channel",
-        "reason_code": "ANSWERED"
+        "outcome": "abstain",
+        "record_ids": [],
+        "citation_links": [],
+        "value": null,
+        "reason_code": "TOMBSTONED"
       }
     },
     {
@@ -616,12 +612,12 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000014",
-          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000014",
+          "digest": "sha256:f30e5be91e59773e3699c4bd52ed9f6f75997dd364169b0e2034da71b811b117",
+          "transfer_digest": "sha256:f30e5be91e59773e3699c4bd52ed9f6f75997dd364169b0e2034da71b811b117",
           "evidence_link": "evidence:synthetic:deleted-only",
           "session_id": "session:deleted-only",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         }
       ],
       "expected": {
@@ -629,7 +625,7 @@
         "record_ids": [],
         "citation_links": [],
         "value": null,
-        "reason_code": "NO_MATCH"
+        "reason_code": "TOMBSTONED"
       }
     },
     {
@@ -649,12 +645,12 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000015",
-          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000015",
+          "digest": "sha256:62287f11a285c914a6b4d65c4f3db21b45fa4baec80387847820bb026d4a7a29",
+          "transfer_digest": "sha256:62287f11a285c914a6b4d65c4f3db21b45fa4baec80387847820bb026d4a7a29",
           "evidence_link": "evidence:synthetic:linux-only",
           "session_id": "session:linux-only",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         }
       ],
       "expected": {
@@ -686,12 +682,12 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000016",
+          "digest": "sha256:30ed5eed7750aea2ef737625510b47bd592a884c8f5074f2aa7af2a92afc2923",
           "transfer_digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
           "evidence_link": "evidence:synthetic:transfer-bad",
           "session_id": "session:transfer-bad",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         }
       ],
       "expected": {
@@ -719,12 +715,12 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000017",
-          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000017",
+          "digest": "sha256:f3de7b919ed84db894a88a1b073744474e614c4d7d411ea767e05e5148ae8ac2",
+          "transfer_digest": "sha256:f3de7b919ed84db894a88a1b073744474e614c4d7d411ea767e05e5148ae8ac2",
           "evidence_link": "evidence:synthetic:duplicate-a",
           "session_id": "session:duplicate-a",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         },
         {
           "id": "duplicate-b",
@@ -737,12 +733,12 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000018",
-          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000018",
-          "evidence_link": "evidence:synthetic:duplicate-a",
+          "digest": "sha256:a4504768e075889c33f2d765387d5d5809454ffc99efea5f82b6420d50e250de",
+          "transfer_digest": "sha256:f3de7b919ed84db894a88a1b073744474e614c4d7d411ea767e05e5148ae8ac2",
+          "evidence_link": "evidence:synthetic:duplicate-b",
           "session_id": "session:duplicate-b",
-          "related": true,
-          "injection": false
+          "authority": "none",
+          "relationship": "direct"
         }
       ],
       "expected": {
@@ -770,12 +766,12 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000019",
-          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000019",
+          "digest": "sha256:4ff2b426a5f76f1adf462a5c2403d1a533c3aa6c496c462a8bf8a0216bcc06d5",
+          "transfer_digest": "sha256:4ff2b426a5f76f1adf462a5c2403d1a533c3aa6c496c462a8bf8a0216bcc06d5",
           "evidence_link": "evidence:synthetic:owner-gate-1",
           "session_id": "session:owner-gate-1",
-          "related": true,
-          "injection": false
+          "authority": "owner",
+          "relationship": "direct"
         }
       ],
       "expected": {

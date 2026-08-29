@@ -37,9 +37,9 @@ describe("Task 19 built CLI surface", () => {
     // When: it is evaluated
     const result = run(["--fixture", "failing-recall.json"]);
 
-    // Then: stdout remains one result and identifies only the recall threshold
+    // Then: stdout remains one full-benchmark result and identifies quality plus recall thresholds
     expect(result.status).toBe(1);
-    expect(result.stdout).toContain('"failed_reason_codes":["MEMORY_RECALL_BELOW_THRESHOLD"]');
+    expect(result.stdout).toContain('"failed_reason_codes":["TASK_QUALITY_BELOW_THRESHOLD","MEMORY_RECALL_BELOW_THRESHOLD"]');
     expect(result.stderr).toBe("");
   });
 

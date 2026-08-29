@@ -1,4 +1,4 @@
-export { AuthorityDb, JarvisError } from "./db.js";
+export * from "./core-api.js";
 export {
 	OrcaReadonlyAdapter,
 	classifyOrcaTerminal,
@@ -20,20 +20,7 @@ export {
 	parseOrcaEnvironments,
 	withOrcaEnvironment,
 } from "./orca-env.js";
-export { canonicalize } from "./canonical.js";
-export {
-	evaluatePersonalOsCorpus,
-} from "./personal-os-evaluator.js";
-export {
-	loadPersonalOsCorpus, PersonalOsFixtureError, PERSONAL_OS_FIXTURE_PATH_INVALID, PERSONAL_OS_FIXTURE_READ_INVALID,
-	type PersonalOsFixtureErrorCode,
-} from "./personal-os-eval-file.js";
-export {
-	parsePersonalOsCorpus, PersonalOsCorpusError, PERSONAL_OS_CORPUS_INVALID,
-} from "./personal-os-corpus-parser.js";
-export type {
-	PersonalOsAssertion, PersonalOsCorpus, PersonalOsEvaluationResult, PersonalOsScenarioResult,
-} from "./personal-os-eval-types.js";
+export * from "./personal-os-evaluation.js";
 export * from "./priority-engine.js";
 export {
 	Recommendations, RecommendationError, RECOMMENDATION_ERROR_CODES,

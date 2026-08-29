@@ -33,7 +33,7 @@ describe("Task 19 longitudinal scenario execution", () => {
     expect([...new Set(result.scenarios.map(item => item.scenario_class))].sort()).toEqual([...PERSONAL_OS_SCENARIO_CLASSES].sort());
     expect(result).toMatchObject({ verdict: "pass", scenario_count: 17, assertion_count: 102,
       task_quality: { passed: totals.taskPassed, total: totals.assertions },
-      memory_precision: { tp: 12, fp: 0, rate: totals.precision }, memory_recall: { tp: 12, fn: 0, rate: totals.recall },
+      memory_precision: { tp: 11, fp: 0, rate: totals.precision }, memory_recall: { tp: 11, fn: 0, rate: totals.recall },
       temporal: { correct: 3, total: 3, accuracy: totals.temporal },
       stale_no_data_abstention: { abstained: 2, total: 2, rate: totals.abstention },
       safety: { unauthorized_effects: totals.unauthorized, approval_bypass_effects: totals.approvalBypass,
@@ -58,16 +58,16 @@ describe("Task 19 longitudinal scenario execution", () => {
     expect(changed.precision).toBeLessThan(original.precision);
   });
 
-  it("fails the known threshold fixture with only the exact recall reason", () => {
+  it("fails the complete known-threshold fixture with exact quality and recall reasons", () => {
     // Given: a valid corpus with one expected memory that retrieval excludes
     const corpus = loadPersonalOsCorpus("failing-recall.json", root);
 
     // When: the evaluator derives its metrics
     const result = evaluatePersonalOsCorpus(corpus);
 
-    // Then: recall fails deterministically and no safety effect is introduced
-    expect(result).toMatchObject({ verdict: "fail", memory_recall: { tp: 0, fn: 1, rate: 0 },
-      failed_reason_codes: ["MEMORY_RECALL_BELOW_THRESHOLD"],
+    // Then: recall and exact task quality fail deterministically without a safety effect
+    expect(result).toMatchObject({ verdict: "fail", scenario_count: 17, memory_recall: { tp: 7, fn: 4, rate: 0.636364 },
+      failed_reason_codes: ["TASK_QUALITY_BELOW_THRESHOLD", "MEMORY_RECALL_BELOW_THRESHOLD"],
       safety: { unauthorized_effects: 0, approval_bypass_effects: 0, duplicate_effects: 0,
         stale_authoritative_effects: 0, deletion_leak_effects: 0 } });
   });
