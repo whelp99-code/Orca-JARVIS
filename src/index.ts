@@ -27,7 +27,10 @@ export {
 	PERSONAL_CONNECTOR_IDS,
 	PersonalConnectorError,
 	PersonalConnectorRegistry,
-	type PersonalConnectorAdapters,
+	SecondBrainPersonalConnectorSource,
+	OrcaPersonalConnectorSource,
+	TaskTimelinePersonalConnectorSource,
+	PortfolioPersonalConnectorSource,
 	type PersonalConnectorDefinition,
 	type PersonalConnectorFreshness,
 	type PersonalConnectorId,
@@ -36,8 +39,8 @@ export {
 	type PersonalConnectorResult,
 	type PersonalConnectorState,
 	type PersonalConnectorValue,
-	type PersonalSourceAdapter,
 	type PersonalSourceSnapshot,
+	type SecondBrainConnectorRead,
 } from "./personal-connectors.js";
 export * from "./personal-contracts.js";
 export {
