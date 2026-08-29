@@ -8,6 +8,9 @@ function expectCode(action: () => unknown, code: string): void {
   expect(action).toThrowError(PersonalObservationNormalizationError);
   expect(action).toThrow(expect.objectContaining({ code }));
 }
+function normalizeUnknown(input: unknown): unknown {
+  return Reflect.apply(normalizePersonalObservations, undefined, [input]);
+}
 
 describe("Task 14 fail-closed observation matrix", () => {
   it("rejects an ambiguous structured terminal identity", () => {
@@ -57,10 +60,50 @@ describe("Task 14 fail-closed observation matrix", () => {
 describe("Task 14 private input rejection", () => {
   it("rejects raw terminal preview and secret-bearing fields", () => {
     // Given: otherwise structured task records carry forbidden raw fields.
-    const previewInput = { ...observationInput(), portfolios: [], orca_tasks: [{ ...observationTask(), preview: "agent done" }] };
-    const secretInput = { ...observationInput(), portfolios: [], orca_tasks: [{ ...observationTask(), access_token: "secret-value" }] };
+    const previewInput = {
+      ...observationInput(),
+      portfolios: [],
+      orca_tasks: [{ ...observationTask(), preview: "agent done" }],
+    };
+    const secretInput = {
+      ...observationInput(),
+      portfolios: [],
+      orca_tasks: [{ ...observationTask(), access_token: "secret-value" }],
+    };
     // When/Then: neither field can cross the normalization boundary.
     expectCode(() => normalizePersonalObservations(previewInput), "PERSONAL_OBSERVATION_PRIVATE_INPUT");
     expectCode(() => normalizePersonalObservations(secretInput), "PERSONAL_OBSERVATION_PRIVATE_INPUT");
+  });
+
+  it("does not return a secret-bearing evidence-reference value", () => {
+    // Given: a timeline event references evidence with a secret-bearing source value.
+    const task = observationTask();
+    const event = task.timeline.events[0];
+    if (event === undefined) throw new TypeError("event fixture required");
+    const input = {
+      ...observationInput(),
+      portfolios: [],
+      orca_tasks: [{ ...task, timeline: { ...task.timeline, events: [{ ...event, evidence_refs: ["token=super-secret"] }] } }],
+    };
+    // When: the public normalizer returns its envelope.
+    const serialized = JSON.stringify(normalizePersonalObservations(input));
+    // Then: only derived evidence identity may leave the boundary.
+    expect(serialized).not.toContain("token=super-secret");
+  });
+});
+
+const malformedInputs: readonly [string, unknown][] = [
+  ["null input", null],
+  ["missing arrays", { checked_at: OBSERVATION_CHECKED_AT }],
+  ["wrong scalar types", { checked_at: 7, orca_tasks: [], portfolios: [] }],
+  ["hostile extra keys", { ...observationInput(), hostile: true }],
+  ["null task items", { ...observationInput(), portfolios: [], orca_tasks: [null] }],
+];
+
+describe("Task 14 malformed public input", () => {
+  it.each(malformedInputs)("throws the typed input error for %s", (_name, input) => {
+    // Given: malformed data crosses the exported runtime boundary.
+    // When/Then: normalization emits only the typed Task 14 input error.
+    expectCode(() => normalizeUnknown(input), "PERSONAL_OBSERVATION_INPUT_INVALID");
   });
 });

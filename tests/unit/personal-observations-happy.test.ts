@@ -8,11 +8,28 @@ describe("Task 14 happy observation aggregation", () => {
     const input = observationInput();
     // When: every result is checked at the public contract boundary.
     const parsed = normalizePersonalObservations(input).map(parseObservationEnvelopeV1);
-    // Then: explicit host/environment/task identities and structured references survive.
+    // Then: explicit host/environment/task identities and derived evidence identities survive.
     expect(parsed).toHaveLength(4);
     expect(parsed.map(item => item.payload.kind)).toEqual(["live_task", "live_task", "portfolio", "portfolio"]);
-    expect(parsed[0]).toMatchObject({ source: { host_id: "host:pos:linux-control-plane" }, payload: { value: { environment: "local", terminal_id: "terminal-local", incarnation_id: "incarnation-local", cursor: "cursor-local", task_id: "task-local", decision_ids: ["decision-local"], evidence_refs: ["receipt-local", "verify-local"] } } });
-    expect(parsed[1]).toMatchObject({ source: { host_id: "host:pos:linux-control-plane" }, payload: { value: { environment: "jm-server", terminal_id: "terminal-jm-server", task_id: "task-jm-server" } } });
+    expect(parsed[0]).toMatchObject({
+      source: { host_id: "host:pos:linux-control-plane" },
+      payload: {
+        value: {
+          environment: "local",
+          terminal_id: "terminal-local",
+          incarnation_id: "incarnation-local",
+          cursor: "cursor-local",
+          task_id: "task-local",
+          decision_ids: ["decision-local"],
+        },
+      },
+    });
+    expect(parsed[0]?.evidence).toHaveLength(2);
+    expect(parsed[0]?.evidence.every(item => item.digest.startsWith("sha256:"))).toBe(true);
+    expect(parsed[1]).toMatchObject({
+      source: { host_id: "host:pos:linux-control-plane" },
+      payload: { value: { environment: "jm-server", terminal_id: "terminal-jm-server", task_id: "task-jm-server" } },
+    });
     expect(parsed[2]?.payload.value).toMatchObject({ environment: "local", active_task_count: 5 });
     expect(parsed[3]?.payload.value).toMatchObject({ environment: "jm-server", active_task_count: 1 });
   });
