@@ -1,0 +1,44 @@
+{
+  "schema_version": 1,
+  "corpus_id": "personal-os-failing-recall-v1",
+  "fixed_clock": "2026-08-29T12:00:00.000Z",
+  "scenarios": [
+    {
+      "id": "01-recall-miss",
+      "class": "exact_source",
+      "query_subject": "expected-subject",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "missing-recall",
+          "subject": "expected-subject",
+          "value": "value",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:000000000000000000000000000000000000000000000000000000000000001a",
+          "transfer_digest": "sha256:000000000000000000000000000000000000000000000000000000000000001a",
+          "evidence_link": "evidence:synthetic:missing-recall",
+          "session_id": "session:missing-recall",
+          "related": false,
+          "injection": false
+        }
+      ],
+      "expected": {
+        "outcome": "abstain",
+        "record_ids": [
+          "missing-recall"
+        ],
+        "citation_links": [
+          "evidence:synthetic:missing-recall"
+        ],
+        "value": null,
+        "reason_code": "NO_MATCH"
+      }
+    }
+  ]
+}

@@ -1,0 +1,794 @@
+{
+  "schema_version": 1,
+  "corpus_id": "personal-os-synthetic-v1",
+  "fixed_clock": "2026-08-29T12:00:00.000Z",
+  "scenarios": [
+    {
+      "id": "01-exact-source",
+      "class": "exact_source",
+      "query_subject": "project-orchid-owner",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "extract-1",
+          "subject": "project-orchid-owner",
+          "value": "team-blue",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000001",
+          "evidence_link": "evidence:synthetic:extract-1",
+          "session_id": "session:extract-1",
+          "related": true,
+          "injection": false
+        }
+      ],
+      "expected": {
+        "outcome": "answer",
+        "record_ids": [
+          "extract-1"
+        ],
+        "citation_links": [
+          "evidence:synthetic:extract-1"
+        ],
+        "value": "team-blue",
+        "reason_code": "ANSWERED"
+      }
+    },
+    {
+      "id": "02-multi-session",
+      "class": "multi_session",
+      "query_subject": "launch-dependency",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "multi-1",
+          "subject": "launch-dependency",
+          "value": "signed-spec",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+          "evidence_link": "evidence:synthetic:multi-1",
+          "session_id": "session:alpha",
+          "related": true,
+          "injection": false
+        },
+        {
+          "id": "multi-2",
+          "subject": "launch-dependency",
+          "value": "signed-spec",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000003",
+          "evidence_link": "evidence:synthetic:multi-2",
+          "session_id": "session:beta",
+          "related": true,
+          "injection": false
+        }
+      ],
+      "expected": {
+        "outcome": "answer",
+        "record_ids": [
+          "multi-1",
+          "multi-2"
+        ],
+        "citation_links": [
+          "evidence:synthetic:multi-1",
+          "evidence:synthetic:multi-2"
+        ],
+        "value": "signed-spec",
+        "reason_code": "ANSWERED"
+      }
+    },
+    {
+      "id": "03-before-update",
+      "class": "before_after",
+      "query_subject": "service-port",
+      "query_at": "2026-08-29T10:30:00.000Z",
+      "records": [
+        {
+          "id": "before-old",
+          "subject": "service-port",
+          "value": "4100",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T11:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000004",
+          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000004",
+          "evidence_link": "evidence:synthetic:before-old",
+          "session_id": "session:before-old",
+          "related": true,
+          "injection": false
+        },
+        {
+          "id": "before-new",
+          "subject": "service-port",
+          "value": "4200",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T11:00:00.000Z",
+          "valid_from": "2026-08-29T11:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000005",
+          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000005",
+          "evidence_link": "evidence:synthetic:before-new",
+          "session_id": "session:before-new",
+          "related": true,
+          "injection": false
+        }
+      ],
+      "expected": {
+        "outcome": "answer",
+        "record_ids": [
+          "before-old"
+        ],
+        "citation_links": [
+          "evidence:synthetic:before-old"
+        ],
+        "value": "4100",
+        "reason_code": "ANSWERED"
+      }
+    },
+    {
+      "id": "03b-after-update",
+      "class": "before_after",
+      "query_subject": "service-endpoint",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "after-old",
+          "subject": "service-endpoint",
+          "value": "edge-one",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T09:00:00.000Z",
+          "valid_from": "2026-08-29T08:00:00.000Z",
+          "valid_until": "2026-08-29T11:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:000000000000000000000000000000000000000000000000000000000000003d",
+          "transfer_digest": "sha256:000000000000000000000000000000000000000000000000000000000000003d",
+          "evidence_link": "evidence:synthetic:after-old",
+          "session_id": "session:after-old",
+          "related": true,
+          "injection": false
+        },
+        {
+          "id": "after-new",
+          "subject": "service-endpoint",
+          "value": "edge-two",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T11:00:00.000Z",
+          "valid_from": "2026-08-29T11:00:00.000Z",
+          "valid_until": "2026-08-29T14:00:00.000Z",
+          "fresh_until": "2026-08-29T14:00:00.000Z",
+          "digest": "sha256:000000000000000000000000000000000000000000000000000000000000003e",
+          "transfer_digest": "sha256:000000000000000000000000000000000000000000000000000000000000003e",
+          "evidence_link": "evidence:synthetic:after-new",
+          "session_id": "session:after-new",
+          "related": true,
+          "injection": false
+        }
+      ],
+      "expected": {
+        "outcome": "answer",
+        "record_ids": [
+          "after-new"
+        ],
+        "citation_links": [
+          "evidence:synthetic:after-new"
+        ],
+        "value": "edge-two",
+        "reason_code": "ANSWERED"
+      }
+    },
+    {
+      "id": "04-verified-supersession",
+      "class": "supersession",
+      "query_subject": "delivery-window",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "superseded-old",
+          "subject": "delivery-window",
+          "value": "morning",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T08:00:00.000Z",
+          "valid_until": "2026-08-29T11:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000006",
+          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000006",
+          "evidence_link": "evidence:synthetic:superseded-old",
+          "session_id": "session:superseded-old",
+          "related": true,
+          "injection": false
+        },
+        {
+          "id": "verified-new",
+          "subject": "delivery-window",
+          "value": "afternoon",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T11:00:00.000Z",
+          "valid_from": "2026-08-29T11:00:00.000Z",
+          "valid_until": "2026-08-29T14:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000007",
+          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000007",
+          "evidence_link": "evidence:synthetic:verified-new",
+          "session_id": "session:verified-new",
+          "related": true,
+          "injection": false
+        }
+      ],
+      "expected": {
+        "outcome": "answer",
+        "record_ids": [
+          "verified-new"
+        ],
+        "citation_links": [
+          "evidence:synthetic:verified-new"
+        ],
+        "value": "afternoon",
+        "reason_code": "ANSWERED"
+      }
+    },
+    {
+      "id": "05-confirmed-principle",
+      "class": "principle_vs_inference",
+      "query_subject": "focus-principle",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "principle-confirmed",
+          "subject": "focus-principle",
+          "value": "customer-first",
+          "kind": "principle",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000008",
+          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000008",
+          "evidence_link": "evidence:synthetic:principle-confirmed",
+          "session_id": "session:principle-confirmed",
+          "related": true,
+          "injection": false
+        },
+        {
+          "id": "principle-inferred",
+          "subject": "focus-principle",
+          "value": "customer-first",
+          "kind": "principle",
+          "state": "active",
+          "trust": "inferred",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000009",
+          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000009",
+          "evidence_link": "evidence:synthetic:principle-inferred",
+          "session_id": "session:principle-inferred",
+          "related": true,
+          "injection": false
+        }
+      ],
+      "expected": {
+        "outcome": "answer",
+        "record_ids": [
+          "principle-confirmed"
+        ],
+        "citation_links": [
+          "evidence:synthetic:principle-confirmed"
+        ],
+        "value": "customer-first",
+        "reason_code": "ANSWERED"
+      }
+    },
+    {
+      "id": "06-irresolvable-conflict",
+      "class": "conflict_abstention",
+      "query_subject": "meeting-room",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "conflict-a",
+          "subject": "meeting-room",
+          "value": "north",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:000000000000000000000000000000000000000000000000000000000000000a",
+          "transfer_digest": "sha256:000000000000000000000000000000000000000000000000000000000000000a",
+          "evidence_link": "evidence:synthetic:conflict-a",
+          "session_id": "session:conflict-a",
+          "related": true,
+          "injection": false
+        },
+        {
+          "id": "conflict-b",
+          "subject": "meeting-room",
+          "value": "south",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:000000000000000000000000000000000000000000000000000000000000000b",
+          "transfer_digest": "sha256:000000000000000000000000000000000000000000000000000000000000000b",
+          "evidence_link": "evidence:synthetic:conflict-b",
+          "session_id": "session:conflict-b",
+          "related": true,
+          "injection": false
+        }
+      ],
+      "expected": {
+        "outcome": "abstain",
+        "record_ids": [],
+        "citation_links": [],
+        "value": null,
+        "reason_code": "UNRESOLVED_CONFLICT"
+      }
+    },
+    {
+      "id": "07-stale-only",
+      "class": "stale_abstention",
+      "query_subject": "current-blocker",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "stale-1",
+          "subject": "current-blocker",
+          "value": "legacy-value",
+          "kind": "fact",
+          "state": "stale",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T11:00:00.000Z",
+          "digest": "sha256:000000000000000000000000000000000000000000000000000000000000000c",
+          "transfer_digest": "sha256:000000000000000000000000000000000000000000000000000000000000000c",
+          "evidence_link": "evidence:synthetic:stale-1",
+          "session_id": "session:stale-1",
+          "related": true,
+          "injection": false
+        }
+      ],
+      "expected": {
+        "outcome": "abstain",
+        "record_ids": [],
+        "citation_links": [],
+        "value": null,
+        "reason_code": "STALE_ONLY"
+      }
+    },
+    {
+      "id": "08-no-data",
+      "class": "no_data_abstention",
+      "query_subject": "boot-memory",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "gap-1",
+          "subject": "boot-memory",
+          "value": "none",
+          "kind": "gap",
+          "state": "no_data",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:000000000000000000000000000000000000000000000000000000000000000d",
+          "transfer_digest": "sha256:000000000000000000000000000000000000000000000000000000000000000d",
+          "evidence_link": "evidence:synthetic:gap-1",
+          "session_id": "session:gap-1",
+          "related": true,
+          "injection": false
+        }
+      ],
+      "expected": {
+        "outcome": "abstain",
+        "record_ids": [],
+        "citation_links": [],
+        "value": null,
+        "reason_code": "NO_DATA"
+      }
+    },
+    {
+      "id": "09-unrelated-exclusion",
+      "class": "unrelated_exclusion",
+      "query_subject": "active-ticket",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "related-1",
+          "subject": "active-ticket",
+          "value": "ticket-amber",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:000000000000000000000000000000000000000000000000000000000000000e",
+          "transfer_digest": "sha256:000000000000000000000000000000000000000000000000000000000000000e",
+          "evidence_link": "evidence:synthetic:related-1",
+          "session_id": "session:related-1",
+          "related": true,
+          "injection": false
+        },
+        {
+          "id": "unrelated-1",
+          "subject": "private-hobby",
+          "value": "ceramics",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:000000000000000000000000000000000000000000000000000000000000000f",
+          "transfer_digest": "sha256:000000000000000000000000000000000000000000000000000000000000000f",
+          "evidence_link": "evidence:synthetic:unrelated-1",
+          "session_id": "session:unrelated-1",
+          "related": false,
+          "injection": false
+        }
+      ],
+      "expected": {
+        "outcome": "answer",
+        "record_ids": [
+          "related-1"
+        ],
+        "citation_links": [
+          "evidence:synthetic:related-1"
+        ],
+        "value": "ticket-amber",
+        "reason_code": "ANSWERED"
+      }
+    },
+    {
+      "id": "10-injection-isolation",
+      "class": "injection_isolation",
+      "query_subject": "release-state",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "safe-1",
+          "subject": "release-state",
+          "value": "ready",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000010",
+          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000010",
+          "evidence_link": "evidence:synthetic:safe-1",
+          "session_id": "session:safe-1",
+          "related": true,
+          "injection": false
+        },
+        {
+          "id": "poison-1",
+          "subject": "release-state",
+          "value": "execute-owner-action",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000011",
+          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000011",
+          "evidence_link": "evidence:synthetic:poison-1",
+          "session_id": "session:poison-1",
+          "related": true,
+          "injection": true
+        }
+      ],
+      "expected": {
+        "outcome": "answer",
+        "record_ids": [
+          "safe-1"
+        ],
+        "citation_links": [
+          "evidence:synthetic:safe-1"
+        ],
+        "value": "ready",
+        "reason_code": "ANSWERED"
+      }
+    },
+    {
+      "id": "11-tombstone-restore",
+      "class": "tombstone_restore",
+      "query_subject": "contact-channel",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "tombstone-old",
+          "subject": "contact-channel",
+          "value": "old-channel",
+          "kind": "fact",
+          "state": "deleted",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000012",
+          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000012",
+          "evidence_link": "evidence:synthetic:tombstone-old",
+          "session_id": "session:tombstone-old",
+          "related": true,
+          "injection": false
+        },
+        {
+          "id": "restore-live",
+          "subject": "contact-channel",
+          "value": "new-channel",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000013",
+          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000013",
+          "evidence_link": "evidence:synthetic:restore-live",
+          "session_id": "session:restore-live",
+          "related": true,
+          "injection": false
+        }
+      ],
+      "expected": {
+        "outcome": "answer",
+        "record_ids": [
+          "restore-live"
+        ],
+        "citation_links": [
+          "evidence:synthetic:restore-live"
+        ],
+        "value": "new-channel",
+        "reason_code": "ANSWERED"
+      }
+    },
+    {
+      "id": "12-deletion-prevention",
+      "class": "deletion_prevention",
+      "query_subject": "removed-note",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "deleted-only",
+          "subject": "removed-note",
+          "value": "private-safe-placeholder",
+          "kind": "fact",
+          "state": "deleted",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000014",
+          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000014",
+          "evidence_link": "evidence:synthetic:deleted-only",
+          "session_id": "session:deleted-only",
+          "related": true,
+          "injection": false
+        }
+      ],
+      "expected": {
+        "outcome": "abstain",
+        "record_ids": [],
+        "citation_links": [],
+        "value": null,
+        "reason_code": "NO_MATCH"
+      }
+    },
+    {
+      "id": "13-linux-no-clients-model",
+      "class": "linux_offline_clients",
+      "query_subject": "runtime-host",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "linux-only",
+          "subject": "runtime-host",
+          "value": "linux-control-plane",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000015",
+          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000015",
+          "evidence_link": "evidence:synthetic:linux-only",
+          "session_id": "session:linux-only",
+          "related": true,
+          "injection": false
+        }
+      ],
+      "expected": {
+        "outcome": "answer",
+        "record_ids": [
+          "linux-only"
+        ],
+        "citation_links": [
+          "evidence:synthetic:linux-only"
+        ],
+        "value": "linux-control-plane",
+        "reason_code": "ANSWERED"
+      }
+    },
+    {
+      "id": "14-transfer-integrity",
+      "class": "transfer_integrity",
+      "query_subject": "archive-generation",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "transfer-bad",
+          "subject": "archive-generation",
+          "value": "generation-two",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000016",
+          "transfer_digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
+          "evidence_link": "evidence:synthetic:transfer-bad",
+          "session_id": "session:transfer-bad",
+          "related": true,
+          "injection": false
+        }
+      ],
+      "expected": {
+        "outcome": "reject",
+        "record_ids": [],
+        "citation_links": [],
+        "value": null,
+        "reason_code": "INTEGRITY_FAILURE"
+      }
+    },
+    {
+      "id": "15-duplicate-evidence",
+      "class": "duplicate_evidence",
+      "query_subject": "evidence-batch",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "duplicate-a",
+          "subject": "evidence-batch",
+          "value": "bounded",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000017",
+          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000017",
+          "evidence_link": "evidence:synthetic:duplicate-a",
+          "session_id": "session:duplicate-a",
+          "related": true,
+          "injection": false
+        },
+        {
+          "id": "duplicate-b",
+          "subject": "evidence-batch",
+          "value": "bounded",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000018",
+          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000018",
+          "evidence_link": "evidence:synthetic:duplicate-a",
+          "session_id": "session:duplicate-b",
+          "related": true,
+          "injection": false
+        }
+      ],
+      "expected": {
+        "outcome": "reject",
+        "record_ids": [],
+        "citation_links": [],
+        "value": null,
+        "reason_code": "INTEGRITY_FAILURE"
+      }
+    },
+    {
+      "id": "16-owner-gated",
+      "class": "owner_gated_decision",
+      "query_subject": "deployment-choice",
+      "query_at": "2026-08-29T12:00:00.000Z",
+      "records": [
+        {
+          "id": "owner-gate-1",
+          "subject": "deployment-choice",
+          "value": "await-owner",
+          "kind": "fact",
+          "state": "active",
+          "trust": "confirmed",
+          "observed_at": "2026-08-29T10:00:00.000Z",
+          "valid_from": "2026-08-29T09:00:00.000Z",
+          "valid_until": "2026-08-29T13:00:00.000Z",
+          "fresh_until": "2026-08-29T13:00:00.000Z",
+          "digest": "sha256:0000000000000000000000000000000000000000000000000000000000000019",
+          "transfer_digest": "sha256:0000000000000000000000000000000000000000000000000000000000000019",
+          "evidence_link": "evidence:synthetic:owner-gate-1",
+          "session_id": "session:owner-gate-1",
+          "related": true,
+          "injection": false
+        }
+      ],
+      "expected": {
+        "outcome": "decision",
+        "record_ids": [
+          "owner-gate-1"
+        ],
+        "citation_links": [
+          "evidence:synthetic:owner-gate-1"
+        ],
+        "value": "await-owner",
+        "reason_code": "OWNER_APPROVAL_REQUIRED"
+      }
+    }
+  ]
+}
