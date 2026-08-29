@@ -21,6 +21,24 @@ export {
 	withOrcaEnvironment,
 } from "./orca-env.js";
 export { canonicalize } from "./canonical.js";
+export {
+	createPersonalConnectorRegistry,
+	PERSONAL_CONNECTOR_DEFINITIONS,
+	PERSONAL_CONNECTOR_IDS,
+	PersonalConnectorError,
+	PersonalConnectorRegistry,
+	type PersonalConnectorAdapters,
+	type PersonalConnectorDefinition,
+	type PersonalConnectorFreshness,
+	type PersonalConnectorId,
+	type PersonalConnectorReadRequest,
+	type PersonalConnectorReason,
+	type PersonalConnectorResult,
+	type PersonalConnectorState,
+	type PersonalConnectorValue,
+	type PersonalSourceAdapter,
+	type PersonalSourceSnapshot,
+} from "./personal-connectors.js";
 export * from "./personal-contracts.js";
 export {
 	PersonalContractError,
