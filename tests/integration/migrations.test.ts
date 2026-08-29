@@ -52,7 +52,7 @@ describe("migrations", () => {
       // Then both journals preserve unique checksummed order through 033
       for (const db of [empty, upgraded]) {
         const rows = db.db.prepare("SELECT id,checksum FROM schema_migrations WHERE id>='031_' ORDER BY id").all() as Array<{ id: string; checksum: string }>;
-        expect(rows.map(row => row.id)).toEqual(["031_control_ingress_idempotency.sql", "032_personal_context.sql", "033_personal_operations.sql"]);
+        expect(rows.map(row => row.id)).toEqual(["031_control_ingress_idempotency.sql", "032_personal_context.sql", "033_personal_operations.sql", "034_recommendation_transition_identity.sql"]);
         expect(new Set(rows.map(row => row.checksum)).size).toBe(rows.length);
       }
     } finally { empty.close(); upgraded.close(); rmSync(join(full, ".."), { recursive: true, force: true }); rmSync(join(prior, ".."), { recursive: true, force: true }); }

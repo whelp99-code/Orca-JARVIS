@@ -13,7 +13,8 @@ import {
   deriveRecommendationEvidenceLinks,
   RecommendationEvidenceBindingError,
 } from "./recommendation-evidence-binding.js";
-import { RecommendationIdentityError, encodeRecommendationProvenance } from "./recommendation-identity.js";
+import { encodeRecommendationProvenance } from "./recommendation-identity.js";
+import { RecommendationError, type RecommendationErrorCode } from "./recommendation-errors.js";
 import { projectRecommendations, type RecommendationReadProjection } from "./recommendation-projection.js";
 import {
   parseRecommendationActionMaterials,
@@ -24,16 +25,8 @@ import {
   type RecommendationProvenance,
 } from "./recommendation-provenance.js";
 
-export const RECOMMENDATION_ERROR_CODES = [
-  "RECOMMENDATION_INPUT_INVALID", "RECOMMENDATION_RANKING_INVALID", "RECOMMENDATION_CONTEXT_NOT_FOUND",
-  "RECOMMENDATION_CONTEXT_STALE", "RECOMMENDATION_IDENTITY_CONFLICT", "RECOMMENDATION_EVIDENCE_CONFLICT",
-  "RECOMMENDATION_TRANSITION_CONFLICT", "RECOMMENDATION_EXPIRED", "RECOMMENDATION_SUPERSESSION_CONFLICT",
-] as const;
-export type RecommendationErrorCode = (typeof RECOMMENDATION_ERROR_CODES)[number];
-export class RecommendationError extends Error {
-  readonly name = "RecommendationError";
-  constructor(readonly code: RecommendationErrorCode) { super(code); }
-}
+export { RecommendationError, RECOMMENDATION_ERROR_CODES } from "./recommendation-errors.js";
+export type { RecommendationErrorCode } from "./recommendation-errors.js";
 export type CreateRecommendationResult = {
   readonly recommendation: RecommendationV1;
   readonly canonical_digest: Sha256Digest;
@@ -110,7 +103,7 @@ function mapPersistenceError(error: unknown): never {
     case "PERSONAL_CONTEXT_EXPIRED": case "PERSONAL_RECOMMENDATION_STALE": return fail("RECOMMENDATION_CONTEXT_STALE");
     case "PERSONAL_RECOMMENDATION_EXPIRED": return fail("RECOMMENDATION_EXPIRED");
     case "PERSONAL_ACTION_STATE_CONFLICT": return fail("RECOMMENDATION_TRANSITION_CONFLICT");
-    default: return fail("RECOMMENDATION_INPUT_INVALID");
+    default: throw error;
   }
 }
 
@@ -166,12 +159,7 @@ export class Recommendations {
     }
     const provenance: RecommendationProvenance = { ranking: parsedRanking, linux_evidence: links, actions: supplied,
       approval_requirement: approval, confidence_class: confidence };
-    let confidenceBasis: string;
-    try { confidenceBasis = encodeRecommendationProvenance(provenance); }
-    catch (error) {
-      if (error instanceof RecommendationIdentityError) return fail("RECOMMENDATION_INPUT_INVALID");
-      throw error;
-    }
+    const confidenceBasis = encodeRecommendationProvenance(provenance);
     const recommendation = parseRecommendationV1({
       schema_version: 1, id: recommendationId(input["id"]), created_at: now, observed_at: now, valid_at: now,
       source: { source_id: "src:pos:v1:jarvis:recommendations", source_kind: "authority",
@@ -219,7 +207,7 @@ export class Recommendations {
           replacement_identity_digest: digest(raw["replacement_identity_digest"]) } : {}) });
     } catch (error) {
       if (error instanceof JarvisError && error.code === "PERSONAL_ACTION_SUPERSESSION_CONFLICT") return fail("RECOMMENDATION_SUPERSESSION_CONFLICT");
-      if (error instanceof RecommendationIdentityError) return fail("RECOMMENDATION_INPUT_INVALID");
+      if (error instanceof RecommendationError) throw error;
       return mapPersistenceError(error);
     }
   }
@@ -227,11 +215,7 @@ export class Recommendations {
   project(now: string, limit = 100): RecommendationReadProjection {
     const clock = instant(now);
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) return fail("RECOMMENDATION_INPUT_INVALID");
-    try { return projectRecommendations(this.authority.db, clock, limit); }
-    catch (error) {
-      if (error instanceof RecommendationIdentityError) return fail("RECOMMENDATION_INPUT_INVALID");
-      throw error;
-    }
+    return projectRecommendations(this.authority.db, clock, limit);
   }
 }
 export type { RecommendationActionMaterial, RecommendationEvidenceLink } from "./recommendation-provenance.js";

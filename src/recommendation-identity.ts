@@ -3,6 +3,7 @@ import { canonicalize } from "./canonical.js";
 import type { RecommendationV1, Sha256Digest } from "./personal-contracts.js";
 import { parseRecommendationV1 } from "./personal-validation.js";
 import { persistenceHash, persistenceText } from "./personal-persistence-values.js";
+import { RecommendationError } from "./recommendation-errors.js";
 import {
   parseRecommendationProvenance,
   RecommendationProvenanceContractError,
@@ -14,11 +15,7 @@ export const MAX_RECOMMENDATION_PROVENANCE_ENCODED_BYTES = 32_768;
 export const MAX_RECOMMENDATION_PROVENANCE_INFLATED_BYTES = 262_144;
 const MAX_RECOMMENDATION_ENVELOPE_BYTES = 65_536;
 
-export class RecommendationIdentityError extends Error {
-  readonly name = "RecommendationIdentityError";
-  constructor() { super("RECOMMENDATION_PROVENANCE_INVALID"); }
-}
-function invalid(): never { throw new RecommendationIdentityError(); }
+function invalid(): never { throw new RecommendationError("RECOMMENDATION_INPUT_INVALID"); }
 
 export function encodeRecommendationProvenance(value: RecommendationProvenance): string {
   const raw = Buffer.from(canonicalize(value), "utf8");
@@ -45,7 +42,7 @@ function decode(value: string): RecommendationProvenance {
     const inflated = inflateRawSync(compressed, { maxOutputLength: MAX_RECOMMENDATION_PROVENANCE_INFLATED_BYTES });
     return parseRecommendationProvenance(JSON.parse(inflated.toString("utf8")));
   } catch (error) {
-    if (error instanceof RecommendationIdentityError) throw error;
+    if (error instanceof RecommendationError) throw error;
     if (error instanceof RecommendationProvenanceContractError) return invalid();
     if (error instanceof Error) return invalid();
     return invalid();
@@ -74,7 +71,7 @@ export function storedRecommendationIdentity(
       }),
     };
   } catch (error) {
-    if (error instanceof RecommendationIdentityError) throw error;
+    if (error instanceof RecommendationError) throw error;
     if (error instanceof Error) return invalid();
     return invalid();
   }

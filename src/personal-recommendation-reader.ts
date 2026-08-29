@@ -7,6 +7,8 @@ import {
   reconstructedMemoryEvidence,
 } from "./personal-recommendation-reconstruction.js";
 import type { ReconstructedRecommendation } from "./personal-recommendation-types.js";
+import { storedRecommendationIdentity } from "./recommendation-identity.js";
+import { validateStoredRecommendationEvents } from "./recommendation-transition-identity.js";
 
 export class PersonalRecommendationReader {
   constructor(private readonly database: Database.Database) {}
@@ -19,6 +21,15 @@ export class PersonalRecommendationReader {
     ).get(id);
     if (value === undefined) return undefined;
     const recommendation = persistenceRow(value);
+    const identity = this.database.prepare(
+      "SELECT canonical_envelope_json FROM personal_recommendations WHERE recommendation_id=?",
+    ).get(id);
+    if (identity === undefined) return undefined;
+    const envelope = persistenceRow(identity)["canonical_envelope_json"];
+    if (typeof envelope === "string" && envelope.includes('"source_version":"task18-v1"')) {
+      const source = storedRecommendationIdentity(recommendation["canonical_digest"], recommendation["evidence_digest"], envelope);
+      validateStoredRecommendationEvents(this.database, source, recommendation["evidence_digest"]);
+    }
     const contextEvidence = this.database.prepare(
       `SELECT e.evidence_id,e.source_id,e.evidence_kind AS kind,e.evidence_digest AS digest,
               e.observed_at,e.fresh_until
@@ -53,7 +64,9 @@ export class PersonalRecommendationReader {
        WHERE a.recommendation_id=? ORDER BY a.rank`,
     ).all(id).map(persistenceRow);
     const events = this.database.prepare(
-      "SELECT rank,state,evidence_digest,occurred_at FROM personal_recommendation_action_events WHERE recommendation_id=? ORDER BY event_sequence",
+      `SELECT rank,state,evidence_digest,COALESCE(transition_occurred_at,occurred_at) AS occurred_at,
+              occurred_at AS recorded_at,transition_digest,replacement_recommendation_id
+       FROM personal_recommendation_action_events WHERE recommendation_id=? ORDER BY event_sequence`,
     ).all(id).map(persistenceRow);
     return {
       recommendation,

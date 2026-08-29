@@ -1,10 +1,12 @@
 import type Database from "better-sqlite3";
-import { isActionState, type RecommendationActionTransition } from "./personal-recommendation-types.js";
+import type { RecommendationActionTransition } from "./personal-recommendation-types.js";
+import { isActionState } from "./personal-recommendation-types.js";
+import type { ReplacementRecommendationIdentity } from "./recommendation-transition-identity.js";
+import { supersessionEvidenceDigest, transitionDigest } from "./recommendation-transition-identity.js";
 import { storedRecommendationIdentity } from "./recommendation-identity.js";
 import {
   type PersistenceErrorFactory,
   isPersistenceTime,
-  persistenceHash,
   persistenceRow,
   persistenceText,
   recordPersonalAudit,
@@ -33,7 +35,7 @@ export class PersonalRecommendationActionStore {
               (SELECT state FROM personal_recommendation_action_events e
                WHERE e.recommendation_id=a.recommendation_id AND e.rank=a.rank
                ORDER BY event_sequence DESC LIMIT 1) AS state,
-              (SELECT occurred_at FROM personal_recommendation_action_events e
+              (SELECT COALESCE(transition_occurred_at,occurred_at) FROM personal_recommendation_action_events e
                WHERE e.recommendation_id=a.recommendation_id AND e.rank=a.rank
                ORDER BY event_sequence DESC LIMIT 1) AS occurred_at
        FROM personal_recommendation_actions a
@@ -46,46 +48,58 @@ export class PersonalRecommendationActionStore {
     if (action["evidence_digest"] !== input.evidence_digest) {
       throw this.error("PERSONAL_RECOMMENDATION_EVIDENCE_CONFLICT");
     }
-    const eventDigest = this.eventDigest(input);
-    const persistenceDeadline = [
-      persistenceText(action["recommendation_expires_at"]),
-      persistenceText(action["context_expires_at"]),
-    ].sort()[0];
-    if (persistenceDeadline === undefined) throw new TypeError("recommendation persistence deadline required");
-    const recordedAt = input.state === "expired" && input.occurred_at < persistenceDeadline
-      && action["recommendation_source_version"] === "task18-v1" ? persistenceDeadline : input.occurred_at;
+    const replacement = this.inputReplacement(input);
+    const eventEvidenceDigest = replacement === null
+      ? input.evidence_digest
+      : supersessionEvidenceDigest(input.evidence_digest, replacement);
+    const exactTransitionDigest = transitionDigest({
+      recommendation_id: input.recommendation_id,
+      rank: input.rank,
+      state: input.state,
+      evidence_digest: input.evidence_digest,
+      occurred_at: input.occurred_at,
+      replacement,
+    });
     const exact = this.database.prepare(
-      `SELECT evidence_digest,occurred_at FROM personal_recommendation_action_events
-       WHERE recommendation_id=? AND rank=? AND state=?`,
+      `SELECT evidence_digest,transition_occurred_at,transition_digest,replacement_recommendation_id
+       FROM personal_recommendation_action_events WHERE recommendation_id=? AND rank=? AND state=?`,
     ).get(input.recommendation_id, input.rank, input.state);
     if (exact !== undefined) {
       const replay = persistenceRow(exact);
-      if (replay["evidence_digest"] === eventDigest && replay["occurred_at"] === recordedAt) return;
+      if (replay["evidence_digest"] === eventEvidenceDigest
+        && replay["transition_occurred_at"] === input.occurred_at
+        && replay["transition_digest"] === exactTransitionDigest
+        && replay["replacement_recommendation_id"] === (replacement?.recommendation_id ?? null)) return;
       throw this.error("PERSONAL_ACTION_STATE_CONFLICT");
     }
     if (action["state"] !== "pending" || input.occurred_at < persistenceText(action["occurred_at"])) {
       throw this.error("PERSONAL_ACTION_STATE_CONFLICT");
     }
-    const deadline = [
-      persistenceText(action["recommendation_expires_at"]),
-      persistenceText(action["recommendation_fresh_until"]),
-      persistenceText(action["context_expires_at"]),
-      persistenceText(action["context_fresh_until"]),
-    ].sort()[0];
+    const deadline = [persistenceText(action["recommendation_expires_at"]),
+      persistenceText(action["recommendation_fresh_until"]), persistenceText(action["context_expires_at"]),
+      persistenceText(action["context_fresh_until"])].sort()[0];
     if (deadline === undefined) throw new TypeError("recommendation deadline required");
     if (input.state === "expired") {
       if (input.occurred_at < deadline) throw this.error("PERSONAL_ACTION_STATE_CONFLICT");
-    } else if (input.occurred_at >= deadline) {
-      throw this.error("PERSONAL_RECOMMENDATION_EXPIRED");
-    }
+    } else if (input.occurred_at >= deadline) throw this.error("PERSONAL_RECOMMENDATION_EXPIRED");
+    if (replacement !== null) this.requireCurrentReplacement(replacement, input.occurred_at);
+    const persistenceDeadline = [persistenceText(action["recommendation_expires_at"]),
+      persistenceText(action["context_expires_at"])].sort()[0];
+    if (persistenceDeadline === undefined) throw new TypeError("recommendation persistence deadline required");
+    const recordedAt = input.state === "expired" && input.occurred_at < persistenceDeadline
+      && action["recommendation_source_version"] === "task18-v1" ? persistenceDeadline : input.occurred_at;
     try {
       this.database.prepare(
         `INSERT INTO personal_recommendation_action_events(
-           recommendation_id,rank,state,evidence_digest,occurred_at
-         ) VALUES(?,?,?,?,?)`,
-      ).run(input.recommendation_id, input.rank, input.state, eventDigest, recordedAt);
+           recommendation_id,rank,state,evidence_digest,occurred_at,
+           transition_occurred_at,transition_digest,replacement_recommendation_id
+         ) VALUES(?,?,?,?,?,?,?,?)`,
+      ).run(input.recommendation_id, input.rank, input.state, eventEvidenceDigest, recordedAt,
+        input.occurred_at, exactTransitionDigest, replacement?.recommendation_id ?? null);
     } catch (caught) {
-      if (caught instanceof Error && caught.message === "action event deadline invalid") {
+      if (caught instanceof Error && (caught.message === "action event deadline invalid"
+        || caught.message === "action exact transition deadline invalid"
+        || caught.message === "action transition identity invalid")) {
         throw this.error("PERSONAL_ACTION_STATE_CONFLICT");
       }
       throw caught;
@@ -93,27 +107,33 @@ export class PersonalRecommendationActionStore {
     recordPersonalAudit(this.database, {
       event: "action_state_recorded",
       subject: `${input.recommendation_id}:${input.rank}:${input.state}`,
-      digest: eventDigest,
+      digest: exactTransitionDigest,
       correlation: input.recommendation_id,
       causation: null,
-      occurredAt: recordedAt,
+      occurredAt: input.occurred_at,
     });
   }
 
-  private eventDigest(input: RecommendationActionTransition): string {
+  private inputReplacement(input: RecommendationActionTransition): ReplacementRecommendationIdentity | null {
     if (input.state !== "superseded") {
       if (input.replacement_recommendation_id !== undefined || input.replacement_context_digest !== undefined
         || input.replacement_evidence_digest !== undefined || input.replacement_identity_digest !== undefined) {
         throw this.error("PERSONAL_ACTION_SUPERSESSION_CONFLICT");
       }
-      return input.evidence_digest;
+      return null;
     }
     if (input.replacement_recommendation_id === undefined || input.replacement_context_digest === undefined
       || input.replacement_evidence_digest === undefined || input.replacement_identity_digest === undefined
       || input.replacement_recommendation_id === input.recommendation_id) {
       throw this.error("PERSONAL_ACTION_SUPERSESSION_CONFLICT");
     }
-    const replacement = this.database.prepare(
+    return { recommendation_id: input.replacement_recommendation_id,
+      context_digest: input.replacement_context_digest, evidence_digest: input.replacement_evidence_digest,
+      identity_digest: input.replacement_identity_digest };
+  }
+
+  private requireCurrentReplacement(replacement: ReplacementRecommendationIdentity, occurredAt: string): void {
+    const value = this.database.prepare(
       `SELECT r.context_digest,r.canonical_digest,r.evidence_digest,r.canonical_envelope_json,
               r.expires_at,json_extract(r.canonical_envelope_json,'$.freshness.fresh_until') AS recommendation_fresh_until,
               c.expires_at AS context_expires_at,c.fresh_until,
@@ -122,24 +142,14 @@ export class PersonalRecommendationActionStore {
                  AND e.state IN ('rejected','expired','superseded','dismissed','snoozed')) AS terminal_count
        FROM personal_recommendations r JOIN personal_context_snapshots c ON c.context_id=r.context_id
        WHERE r.recommendation_id=?`,
-    ).get(input.replacement_recommendation_id);
-    if (replacement === undefined) throw this.error("PERSONAL_ACTION_SUPERSESSION_CONFLICT");
-    const row = persistenceRow(replacement);
+    ).get(replacement.recommendation_id);
+    if (value === undefined) throw this.error("PERSONAL_ACTION_SUPERSESSION_CONFLICT");
+    const row = persistenceRow(value);
     const deadline = [persistenceText(row["expires_at"]), persistenceText(row["recommendation_fresh_until"]),
       persistenceText(row["context_expires_at"]), persistenceText(row["fresh_until"])].sort()[0];
-    if (deadline === undefined || input.occurred_at >= deadline || Number(row["terminal_count"]) !== 0
-      || row["context_digest"] !== input.replacement_context_digest
-      || row["evidence_digest"] !== input.replacement_evidence_digest
+    if (deadline === undefined || occurredAt >= deadline || Number(row["terminal_count"]) !== 0
+      || row["context_digest"] !== replacement.context_digest || row["evidence_digest"] !== replacement.evidence_digest
       || storedRecommendationIdentity(row["canonical_digest"], row["evidence_digest"], row["canonical_envelope_json"]).identity_digest
-        !== input.replacement_identity_digest) {
-      throw this.error("PERSONAL_ACTION_SUPERSESSION_CONFLICT");
-    }
-    return persistenceHash({
-      evidence_digest: input.evidence_digest,
-      replacement_context_digest: input.replacement_context_digest,
-      replacement_evidence_digest: input.replacement_evidence_digest,
-      replacement_identity_digest: input.replacement_identity_digest,
-      replacement_recommendation_id: input.replacement_recommendation_id,
-    });
+        !== replacement.identity_digest) throw this.error("PERSONAL_ACTION_SUPERSESSION_CONFLICT");
   }
 }

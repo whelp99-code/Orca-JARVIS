@@ -2,6 +2,7 @@ import { AuthorityDb, JarvisError } from "./db.js";
 import { persistenceRow, persistenceText } from "./personal-persistence-values.js";
 import { projectRecommendations } from "./recommendation-projection.js";
 import { storedRecommendationIdentity } from "./recommendation-identity.js";
+import { validateStoredRecommendationEvents } from "./recommendation-transition-identity.js";
 import {
   TaskTimeline as BaseTaskTimeline,
   type TaskTimelineContext as BaseContext,
@@ -37,6 +38,10 @@ function ownerRanks(row: Row): ReadonlySet<number> {
     const rank = Reflect.get(action, "rank"); return typeof rank === "number" ? [rank] : [];
   }) : []);
 }
+function validateEvents(database: AuthorityDb["db"], row: Row): void {
+  const source = storedRecommendationIdentity(row["canonical_digest"], row["evidence_digest"], row["canonical_envelope_json"]);
+  validateStoredRecommendationEvents(database, source, row["evidence_digest"]);
+}
 function recommendationSummary(row: Row): TaskTimelineSummary {
   const ranks = ownerRanks(row);
   const states: unknown = JSON.parse(persistenceText(row["states_json"]));
@@ -52,8 +57,8 @@ const SUMMARY_SQL = `SELECT r.recommendation_id,r.canonical_digest,r.evidence_di
   (SELECT title FROM personal_recommendation_actions a WHERE a.recommendation_id=r.recommendation_id ORDER BY rank LIMIT 1) AS title,
   (SELECT state FROM personal_recommendation_action_events e WHERE e.recommendation_id=r.recommendation_id
    ORDER BY event_sequence DESC LIMIT 1) AS latest_state,
-  (SELECT occurred_at FROM personal_recommendation_action_events e WHERE e.recommendation_id=r.recommendation_id
-   ORDER BY event_sequence DESC LIMIT 1) AS updated_at,
+  (SELECT COALESCE(transition_occurred_at,occurred_at) FROM personal_recommendation_action_events e
+   WHERE e.recommendation_id=r.recommendation_id ORDER BY event_sequence DESC LIMIT 1) AS updated_at,
   (SELECT json_group_array(json_object('rank',rank,'state',state)) FROM
     (SELECT a.rank,(SELECT state FROM personal_recommendation_action_events e WHERE e.recommendation_id=a.recommendation_id
      AND e.rank=a.rank ORDER BY event_sequence DESC LIMIT 1) AS state FROM personal_recommendation_actions a
@@ -66,20 +71,28 @@ export class TaskTimeline {
 
   list(limit = 100): TaskTimelineSummary[] {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) throw new JarvisError("TASK_TIMELINE_INVALID");
-    const recommendations = this.authority.db.prepare(`${SUMMARY_SQL} ORDER BY r.created_at DESC,r.recommendation_id DESC LIMIT ?`)
-      .all(limit).map(persistenceRow).map(recommendationSummary);
+    const rows = this.authority.db.prepare(`${SUMMARY_SQL} ORDER BY r.created_at DESC,r.recommendation_id DESC LIMIT ?`)
+      .all(limit).map(persistenceRow);
+    for (const row of rows) validateEvents(this.authority.db, row);
+    const recommendations = rows.map(recommendationSummary);
     const base = this.base.list(limit);
     return [...base, ...recommendations].sort((left, right) => right.updated_at.localeCompare(left.updated_at)
       || left.task_id.localeCompare(right.task_id)).slice(0, limit);
   }
 
   timeline(taskId: string, limit = 200): TaskTimelineEvent[] {
-    const exists = this.authority.db.prepare("SELECT 1 FROM personal_recommendations WHERE recommendation_id=?").get(taskId);
+    const exists = this.authority.db.prepare(
+      "SELECT canonical_digest,evidence_digest,canonical_envelope_json FROM personal_recommendations WHERE recommendation_id=?",
+    ).get(taskId);
     if (exists === undefined) return this.base.timeline(taskId, limit);
+    validateEvents(this.authority.db, persistenceRow(exists));
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw new JarvisError("TASK_TIMELINE_INVALID");
     return this.authority.db.prepare(
-      `SELECT e.event_sequence,e.rank,e.state,e.evidence_digest,e.occurred_at,a.title,a.operation,a.target_digest,
-              r.context_id,r.context_digest,r.canonical_digest,r.approval_requirement,r.confidence_class
+      `SELECT e.event_sequence,e.rank,e.state,e.evidence_digest,
+              COALESCE(e.transition_occurred_at,e.occurred_at) AS transition_occurred_at,
+              e.occurred_at AS recorded_at,e.transition_digest,e.replacement_recommendation_id,
+              a.title,a.operation,a.target_digest,r.context_id,r.context_digest,r.canonical_digest,
+              r.approval_requirement,r.confidence_class
        FROM personal_recommendation_action_events e
        JOIN personal_recommendation_actions a ON a.recommendation_id=e.recommendation_id AND a.rank=e.rank
        JOIN personal_recommendations r ON r.recommendation_id=e.recommendation_id
@@ -91,8 +104,10 @@ export class TaskTimeline {
       payload: { rank: row["rank"], operation: row["operation"], target_digest: row["target_digest"],
         context_id: row["context_id"], context_digest: row["context_digest"], canonical_digest: row["canonical_digest"],
         approval_requirement: row["approval_requirement"], confidence_class: row["confidence_class"],
+        recorded_at: row["recorded_at"], transition_digest: row["transition_digest"],
+        replacement_recommendation_id: row["replacement_recommendation_id"],
         authority: "none", executable: false }, evidence_refs: [persistenceText(row["evidence_digest"])],
-      created_at: persistenceText(row["occurred_at"]), sequence: index + 1,
+      created_at: persistenceText(row["transition_occurred_at"]), sequence: index + 1,
     }));
   }
 
