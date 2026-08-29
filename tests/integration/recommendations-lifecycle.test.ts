@@ -51,10 +51,10 @@ describe("Task 18 recommendation lifecycle", () => {
     const early = await setup();
     try {
       expect(() => early.service.transition({ recommendation_id: RECOMMENDATION_ID, rank: 1, state: "expired",
-        evidence_digest: early.first.evidence_digest, occurred_at: "2026-08-28T12:59:59.999Z" }))
+        evidence_digest: early.first.evidence_digest, occurred_at: "2026-08-28T12:59:59.998Z" }))
         .toThrowError(expect.objectContaining({ code: "RECOMMENDATION_TRANSITION_CONFLICT" }));
       early.service.transition({ recommendation_id: RECOMMENDATION_ID, rank: 1, state: "expired",
-        evidence_digest: early.first.evidence_digest, occurred_at: RECOMMENDATION_EXPIRES });
+        evidence_digest: early.first.evidence_digest, occurred_at: "2026-08-28T12:59:59.999Z" });
       expect(early.service.project(RECOMMENDATION_EXPIRES)).toMatchObject({ next_actions: [], warnings: [{ code: "RECOMMENDATION_EXPIRED" }] });
     } finally { early.db.close(); }
     const late = await setup();
@@ -71,7 +71,8 @@ describe("Task 18 recommendation lifecycle", () => {
       const replacement = service.create(task18Request(context, REPLACEMENT_ID));
       const transition = { recommendation_id: RECOMMENDATION_ID, rank: 1, state: "superseded", evidence_digest: first.evidence_digest,
         occurred_at: "2026-08-28T12:30:00.000Z", replacement_recommendation_id: REPLACEMENT_ID,
-        replacement_context_digest: replacement.recommendation.payload.context_digest, replacement_evidence_digest: replacement.evidence_digest };
+        replacement_context_digest: replacement.recommendation.payload.context_digest,
+        replacement_evidence_digest: replacement.evidence_digest, replacement_identity_digest: replacement.identity_digest };
       expect(() => service.transition({
         ...transition, replacement_evidence_digest: `sha256:${"f".repeat(64)}`,
       })).toThrowError(expect.objectContaining({ code: "RECOMMENDATION_SUPERSESSION_CONFLICT" }));
@@ -81,6 +82,12 @@ describe("Task 18 recommendation lifecycle", () => {
       expect(remaining).toEqual([2, 3]);
       const event = db.getPersonalRecommendation(first.recommendation.id)?.action_events.at(-1);
       expect(event?.["evidence_digest"]).not.toBe(first.evidence_digest);
+      const projected = service.project("2026-08-28T12:30:00.000Z", 100);
+      const superseded = projected.lifecycle_actions
+        .find(action => action.recommendation_id === RECOMMENDATION_ID && action.rank === 1);
+      expect(superseded).toMatchObject({ state: "superseded", replacement_recommendation_id: REPLACEMENT_ID });
+      expect(projected.next_actions.find(action => action.recommendation_id === REPLACEMENT_ID)?.identity_digest)
+        .toBe(replacement.identity_digest);
     } finally { db.close(); }
   });
 });

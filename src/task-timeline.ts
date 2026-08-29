@@ -1,10 +1,9 @@
 import { realpathSync } from "node:fs";
 import { canonicalize } from "./canonical.js";
 import { AuthorityDb, JarvisError } from "./db.js";
-import { projectRecommendations } from "./recommendation-projection.js";
 
-export type TaskTimelineSource = "work" | "control" | "workflow" | "gjc" | "verification" | "progress" | "recommendation";
-export type TaskTimelineKind = "status" | "command" | "approval" | "workflow" | "agent" | "verification" | "evidence" | "system" | "recommendation";
+export type TaskTimelineSource = "work" | "control" | "workflow" | "gjc" | "verification" | "progress";
+export type TaskTimelineKind = "status" | "command" | "approval" | "workflow" | "agent" | "verification" | "evidence" | "system";
 
 export interface TaskTimelineEvent {
   event_id: string;
@@ -23,7 +22,7 @@ export interface TaskTimelineEvent {
 export interface TaskTimelineSummary {
   task_id: string;
   title: string;
-  kind: "work" | "command" | "workflow" | "agent" | "recommendation";
+  kind: "work" | "command" | "workflow" | "agent";
   state: string;
   updated_at: string;
   pending_approval: boolean;
@@ -61,7 +60,7 @@ interface TimelineGraph {
 
 const parse = (value: unknown): unknown => {
   if (typeof value !== "string") return value;
-  try { const parsed: unknown = JSON.parse(value); return parsed; } catch { return value; }
+  try { return JSON.parse(value) as unknown; } catch { return value; }
 };
 const isRow = (value: unknown): value is Row => typeof value === "object" && value !== null && !Array.isArray(value);
 const rowJson = (value: unknown): Row => { const parsed = parse(value); return isRow(parsed) ? parsed : {}; };
@@ -207,10 +206,7 @@ export class TaskTimeline {
     const sourceIds = this.sourceIds(graph, taskId); const extraPending = this.graphPendingApproval(graph);
     const workRows = this.inRows("SELECT w.id,w.action,w.state,w.created_at,p.state AS projection_state,p.updated_at AS projection_updated,(SELECT MAX(created_at) FROM event_ledger WHERE work_id=w.id) AS ledger_at FROM work_items w LEFT JOIN work_projection p ON p.work_id=w.id WHERE w.id IN", graph.workIds, "ORDER BY w.created_at,w.id");
     if (workRows.length > 0) {
-      const exact = workRows.find(row => row.id === taskId) ?? workRows.sort((left, right) => latest(
-        right.projection_updated, right.ledger_at, right.created_at,
-      ).localeCompare(latest(left.projection_updated, left.ledger_at, left.created_at))).at(0);
-      if (exact === undefined) throw new TypeError("timeline work summary required");
+      const exact = workRows.find(row => row.id === taskId) ?? workRows.sort((left, right) => latest(right.projection_updated, right.ledger_at, right.created_at).localeCompare(latest(left.projection_updated, left.ledger_at, left.created_at)))[0]!;
       const state = optional(exact.projection_state) ?? string(exact.state);
       return { task_id: string(exact.id), title: string(exact.action), kind: "work", state, updated_at: latest(exact.projection_updated, exact.ledger_at, exact.created_at), pending_approval: pendingApproval(state) || extraPending, source_ids: sourceIds };
     }
@@ -229,18 +225,6 @@ export class TaskTimeline {
     }
     for (const intent of this.inRows("SELECT intent_id,continuation_id,kind,state,COALESCE(completed_at,accepted_at,created_at) AS updated_at FROM gjc_intents WHERE intent_id IN", graph.intentIds, "ORDER BY updated_at,intent_id")) {
       const state = string(intent.state); consider({ task_id: optional(intent.continuation_id) ?? taskId, title: `GJC ${string(intent.kind)}`, kind: "agent", state, updated_at: string(intent.updated_at), pending_approval: extraPending, source_ids: sourceIds });
-    }
-    const recommendation = this.row(
-      `SELECT r.recommendation_id,r.approval_requirement,r.created_at,a.title,
-              (SELECT state FROM personal_recommendation_action_events e WHERE e.recommendation_id=r.recommendation_id ORDER BY event_sequence DESC LIMIT 1) AS state,
-              (SELECT occurred_at FROM personal_recommendation_action_events e WHERE e.recommendation_id=r.recommendation_id ORDER BY event_sequence DESC LIMIT 1) AS updated_at
-       FROM personal_recommendations r JOIN personal_recommendation_actions a ON a.recommendation_id=r.recommendation_id AND a.rank=1
-       WHERE r.recommendation_id=?`, taskId);
-    if (recommendation) {
-      const state = string(recommendation.state);
-      consider({ task_id: taskId, title: string(recommendation.title), kind: "recommendation", state,
-        updated_at: string(recommendation.updated_at || recommendation.created_at),
-        pending_approval: recommendation.approval_requirement === "owner" && state === "pending", source_ids: [taskId] });
     }
     return summary;
   }
@@ -275,16 +259,6 @@ export class TaskTimeline {
       }
       for (const item of this.rows("SELECT intent_id,continuation_id,kind,state,COALESCE(completed_at,accepted_at,created_at) AS updated_at FROM gjc_intents ORDER BY updated_at DESC,intent_id DESC LIMIT ?", maximum)) {
         const state = string(item.state); const taskId = optional(item.continuation_id) ?? string(item.intent_id); upsert({ task_id: taskId, title: `GJC ${string(item.kind)}`, kind: "agent", state, updated_at: string(item.updated_at), pending_approval: false, source_ids: [string(item.intent_id)] });
-      }
-      for (const item of this.rows(
-        `SELECT r.recommendation_id,r.approval_requirement,r.created_at,a.title,
-                (SELECT state FROM personal_recommendation_action_events e WHERE e.recommendation_id=r.recommendation_id ORDER BY event_sequence DESC LIMIT 1) AS state,
-                (SELECT occurred_at FROM personal_recommendation_action_events e WHERE e.recommendation_id=r.recommendation_id ORDER BY event_sequence DESC LIMIT 1) AS updated_at
-         FROM personal_recommendations r JOIN personal_recommendation_actions a ON a.recommendation_id=r.recommendation_id AND a.rank=1
-         ORDER BY r.created_at DESC,r.recommendation_id DESC LIMIT ?`, maximum)) {
-        const taskId = string(item.recommendation_id); const state = string(item.state);
-        upsert({ task_id: taskId, title: string(item.title), kind: "recommendation", state,
-          updated_at: string(item.updated_at || item.created_at), pending_approval: item.approval_requirement === "owner" && state === "pending", source_ids: [taskId] });
       }
       return [...tasks.values()].sort((left, right) => right.updated_at.localeCompare(left.updated_at) || left.task_id.localeCompare(right.task_id)).slice(0, maximum);
     });
@@ -349,22 +323,6 @@ export class TaskTimeline {
       }
     }
   }
-  private addRecommendationEvents(taskId: string, add: (event: MutableEvent) => void): void {
-    for (const row of this.rows(
-      `SELECT e.event_sequence,e.rank,e.state,e.evidence_digest,e.occurred_at,a.title,a.operation,a.target_digest,
-              r.context_id,r.context_digest,r.canonical_digest,r.approval_requirement,r.confidence_class
-       FROM personal_recommendation_action_events e
-       JOIN personal_recommendation_actions a ON a.recommendation_id=e.recommendation_id AND a.rank=e.rank
-       JOIN personal_recommendations r ON r.recommendation_id=e.recommendation_id
-       WHERE e.recommendation_id=? ORDER BY e.event_sequence`, taskId)) {
-      add({ event_id: `recommendation:${taskId}:${string(row.event_sequence)}`, task_id: taskId, source: "recommendation",
-        kind: "recommendation", actor: "jarvis-recommendations", title: string(row.title), status: string(row.state),
-        payload: { rank: row.rank, operation: row.operation, target_digest: row.target_digest, context_id: row.context_id,
-          context_digest: row.context_digest, canonical_digest: row.canonical_digest, approval_requirement: row.approval_requirement,
-          confidence_class: row.confidence_class, authority: "none", executable: false },
-        evidence_refs: evidence(row.evidence_digest), created_at: string(row.occurred_at) });
-    }
-  }
   private addNegativeEvidenceEvents(taskId: string, graph: TimelineGraph, add: (event: MutableEvent) => void): void {
     const requestIds = values(graph.controlIds);
     const predicates = ["task_id=?"];
@@ -405,7 +363,6 @@ export class TaskTimeline {
     this.addGjcEvents(taskId, graph, add);
     this.addProgressEvents(taskId, graph, add);
     this.addPreGjcEvents(taskId, graph, add);
-    this.addRecommendationEvents(taskId, add);
 
     const sorted = events.sort((left, right) => left.created_at.localeCompare(right.created_at) || left.source.localeCompare(right.source) || left.event_id.localeCompare(right.event_id));
     if (sorted.length === 0 && !this.summaryFromGraph(taskId, graph)) throw new JarvisError("TASK_TIMELINE_NOT_FOUND");
@@ -420,8 +377,6 @@ export class TaskTimeline {
       const pendingDecisions: unknown[] = controls.filter(item => item.state === "pending").map(item => ({ kind: "command", request_id: item.request_id, action: item.action, action_level: item.action_level, expires_at: item.expires_at }));
       for (const work of this.inRows("SELECT id,action,state,deadline FROM work_items WHERE id IN", graph.workIds, "ORDER BY created_at,id")) if (work.state === "awaiting_decision") pendingDecisions.push({ kind: "work", work_id: work.id, action: work.action, deadline: work.deadline });
       if (intentIds.length > 0) pendingDecisions.push(...this.inRows("SELECT question_id,intent_id,state,created_at FROM gjc_questions WHERE state='open' AND intent_id IN", intentIds, "ORDER BY created_at,question_id"));
-      pendingDecisions.push(...projectRecommendations(this.authority.db, now.toISOString(), 500).owner_decisions_needed
-        .filter(action => action.recommendation_id === taskId).map(action => ({ kind: "recommendation", ...action })));
       const projects = values(graph.projectIds); if (projects.length > 0) pendingDecisions.push(...this.inRows("SELECT request_id,project_id,authority_kind,state,expires_at FROM pre_gjc_authority_requests WHERE state='pending' AND project_id IN", projects, "ORDER BY created_at,request_id").map(row => ({ kind: "pre_gjc", ...row })));
       const workers = [...graph.bindings.values()].sort((left, right) => string(left.canonical_path).localeCompare(string(right.canonical_path)) || string(left.provider).localeCompare(string(right.provider)) || string(left.terminal_id).localeCompare(string(right.terminal_id)));
       const evidenceRows = [

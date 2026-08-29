@@ -68,12 +68,40 @@ export function persistTask18Context(db: AuthorityDb, expiresAt = RECOMMENDATION
 
 export function task18Request(context: ReturnType<typeof parseContextSnapshotV1>, id = RECOMMENDATION_ID) {
   const ranking = task18Ranking();
+  const contextDigest = canonicalPersonalContractHash(context);
+  const citationKinds: Readonly<Record<string, "principle" | "policy" | "owner" | "current" | "deadline" | "dependency" | "stable_identity">> = {
+    confirmed_principle_ref: "principle",
+    confirmed_principle_evidence_ref: "principle",
+    linux_policy_decision_ref: "policy",
+    owner_import_decision_ref: "owner",
+    current_linux_evidence_ref: "current",
+    deadline_evidence_ref: "deadline",
+    dependency_evidence_ref: "dependency",
+    owner_gate_ref: "owner",
+    stable_identity_evidence_ref: "stable_identity",
+  };
+  const selected = ranking.actions.filter(action => action.rank !== null);
+  const citations = new Map<string, (typeof citationKinds)[keyof typeof citationKinds]>();
+  for (const action of selected) {
+    for (const [key, ref] of Object.entries(action.rationale.citations)) {
+      const kind = citationKinds[key];
+      if (ref !== null && kind !== undefined) citations.set(ref, kind);
+    }
+  }
   return {
     id, idempotency_key: `idem:pos:v1:recommendation:${createHash("sha256").update(id).digest("hex")}`,
     correlation_id: "corr:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7301", causation_id: null,
-    context_id: context.id, context_digest: canonicalPersonalContractHash(context), expires_at: RECOMMENDATION_EXPIRES,
-    ranking, actions: ranking.actions.filter(action => action.rank !== null).map(action => ({ action_id: action.action_id,
+    context_id: context.id, context_digest: contextDigest, expires_at: RECOMMENDATION_EXPIRES,
+    ranking, actions: selected.map(action => ({ action_id: action.action_id,
       title: `Next: ${action.action_id}`, operation: "review", target_digest: digest(action.action_id) })),
+    linux_evidence: [...citations].map(([ref, kind]) => {
+      if (kind === "policy") return { ref, kind, context_evidence_id: null, digest: contextDigest };
+      const evidenceKind = kind === "principle" ? "user_confirmed_principle"
+        : kind === "owner" ? "owner_decision" : "linux_live_fact";
+      const linked = context.evidence.find(item => item.kind === evidenceKind);
+      if (linked === undefined) throw new TypeError("context evidence required");
+      return { ref, kind, context_evidence_id: linked.evidence_id, digest: linked.digest };
+    }),
     approval_requirement: "owner", confidence_class: "high",
   };
 }

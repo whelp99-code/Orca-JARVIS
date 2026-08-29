@@ -9,7 +9,6 @@ import type {
 	StoredObservation,
 	StoredRecommendation,
 } from "./personal-context-persistence.js";
-import type { RecommendationId } from "./personal-contracts.js";
 import { parseProgressBatch, serializeProgressReport } from "./progress.js";
 import type {
 	OrcaObservationSource,
@@ -32,7 +31,7 @@ export abstract class ProgressAuthorityDb extends GjcQuestionAuthorityDb {
 		this.personalContext.transitionAction(input);
 	}
 	getPersonalRecommendation(
-		id: RecommendationId,
+		id: RecommendationActionTransition["recommendation_id"],
 	): ReconstructedRecommendation | undefined {
 		return this.personalContext.getRecommendation(id);
 	}

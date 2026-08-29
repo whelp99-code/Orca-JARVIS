@@ -4,7 +4,7 @@ import { ControlPlane, type ActionLevel, type StoredControlCommand } from "../co
 import { JarvisError, type AuthorityDb } from "../db.js";
 import { LiveSupervisor, type LiveBinding } from "../live-supervisor.js";
 import { buildCurrentState } from "../state-projection.js";
-import { TaskTimeline, type TaskTimelineEvent, type TaskTimelineSummary } from "../task-timeline.js";
+import { TaskTimeline, type TaskTimelineEvent, type TaskTimelineSummary } from "../recommendation-timeline.js";
 import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
 import { invalidClockOverview } from "./invalid-clock-overview.js";
 import { overviewCards } from "./overview-cards.js";

@@ -25,14 +25,15 @@ export type RecommendationPersistenceInput = {
   readonly confidence_class: ConfidenceClass;
 };
 export type RecommendationActionTransition = {
-  readonly recommendation_id: string;
+  readonly recommendation_id: RecommendationId;
   readonly rank: number;
   readonly state: ActionState;
-  readonly evidence_digest: string;
+  readonly evidence_digest: Sha256Digest;
   readonly occurred_at: string;
-  readonly replacement_recommendation_id?: string;
-  readonly replacement_context_digest?: string;
-  readonly replacement_evidence_digest?: string;
+  readonly replacement_recommendation_id?: RecommendationId;
+  readonly replacement_context_digest?: Sha256Digest;
+  readonly replacement_evidence_digest?: Sha256Digest;
+  readonly replacement_identity_digest?: Sha256Digest;
 };
 export type StoredRecommendation = {
   readonly recommendation_id: RecommendationId;

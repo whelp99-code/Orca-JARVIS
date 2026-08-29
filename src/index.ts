@@ -161,7 +161,7 @@ export {
 	type TaskTimelineKind,
 	type TaskTimelineSource,
 	type TaskTimelineSummary,
-} from "./task-timeline.js";
+} from "./recommendation-timeline.js";
 export type {
 	CensusSnapshot,
 	CensusWork,
@@ -235,7 +235,7 @@ export {
 	type ClaimedControlCommand,
 	type ControlEventInput,
 } from "./control-plane.js";
-export { buildCurrentState, type CurrentStateProjection } from "./state-projection.js";
+export { buildCurrentState, type CurrentStateProjection } from "./recommendation-state-projection.js";
 export { ApprovedCommandExecutor, type ApprovedExecutionResult } from "./approved-executor.js";
 export {
 	DEFAULT_AGENTOPS_LOOP,
