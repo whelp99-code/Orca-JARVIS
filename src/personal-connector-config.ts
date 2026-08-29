@@ -39,8 +39,32 @@ function transportCall(value: unknown): value is ParsedPersonalConnectorConfig["
 function readinessInspect(value: unknown): value is () => Promise<SecondBrainReadinessObservation> {
   return typeof value === "function";
 }
-function text(value: unknown): string {
+const MAX_SEARCH_QUERY_BYTES = 4_096;
+const MAX_WORKTREE_SELECTOR_BYTES = 4_096;
+function wellFormed(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index);
+    if (unit <= 0x1f || unit >= 0x7f && unit <= 0x9f) return false;
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      const next = value.charCodeAt(index + 1);
+      if (next < 0xdc00 || next > 0xdfff) return false;
+      index += 1;
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) return false;
+  }
+  return true;
+}
+function identifier(value: unknown): string {
   return typeof value === "string" && /^[A-Za-z0-9][A-Za-z0-9:._/-]{0,255}$/u.test(value) ? value : fail();
+}
+function searchQuery(value: unknown): string {
+  if (typeof value !== "string" || !wellFormed(value)) return fail();
+  const normalized = value.normalize("NFC").trim();
+  return normalized.length > 0 && Buffer.byteLength(normalized, "utf8") <= MAX_SEARCH_QUERY_BYTES ? normalized : fail();
+}
+function worktreeSelector(value: unknown): string {
+  if (typeof value !== "string" || !wellFormed(value)) return fail();
+  const recognized = value === "active" || value.startsWith("/");
+  return recognized && Buffer.byteLength(value, "utf8") <= MAX_WORKTREE_SELECTOR_BYTES ? value : fail();
 }
 function positive(value: unknown, maximum: number): number {
   return typeof value === "number" && Number.isSafeInteger(value) && value > 0 && value <= maximum ? value : fail();
@@ -53,8 +77,8 @@ function operation(value: unknown): SecondBrainConnectorRead {
     : kindDescriptor.value === "recent" ? ["days", "kind"]
       : kindDescriptor.value === "page" ? ["kind", "page_id"] : ["kind", "query"]);
   switch (base["kind"]) {
-    case "search": return { kind: "search", query: text(base["query"]) };
-    case "page": return { kind: "page", page_id: text(base["page_id"]) };
+    case "search": return { kind: "search", query: searchQuery(base["query"]) };
+    case "page": return { kind: "page", page_id: identifier(base["page_id"]) };
     case "recent": return { kind: "recent", days: positive(base["days"], 365) };
     case "conflicts": return { kind: "conflicts" };
     default: return fail();
@@ -94,7 +118,11 @@ export function parsePersonalConnectorConfig(value: unknown): ParsedPersonalConn
         max_age_ms: positive(memory["max_age_ms"], 31 * 86_400_000),
         expiry_ms: positive(memory["expiry_ms"], 31 * 86_400_000), operation: operation(memory["operation"]),
       }),
-      orca: Object.freeze({ runner: run, environment: text(orca["environment"]), worktree: text(orca["worktree"]) }),
+      orca: Object.freeze({
+        runner: run,
+        environment: identifier(orca["environment"]),
+        worktree: worktreeSelector(orca["worktree"]),
+      }),
       timeline: Object.freeze({ authority, limit: positive(timeline["limit"], 32) }),
       portfolio: Object.freeze({ envelope: Buffer.from(envelope), key: Buffer.from(key), source, received_at: new Date(receivedAt.getTime()) }),
     });

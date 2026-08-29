@@ -1,5 +1,6 @@
 import { PERSONAL_CONNECTOR_REGISTRY_SESSION } from "./personal-connector-checkpoints.js";
 import type {
+  PersonalCheckpointSessionResult,
   PersonalConnectorDefinition,
   PersonalConnectorFreshness,
   PersonalConnectorId,
@@ -10,7 +11,12 @@ import type {
 } from "./personal-connector-types.js";
 import { freezePersonalResult, personalConnectorDigest } from "./personal-connector-values.js";
 
-export function personalResultBase(definition: PersonalConnectorDefinition, checkedAt: string | null) {
+export type PersonalResultContext = {
+  readonly checked_at: string | null;
+  readonly checkpoint_session: PersonalCheckpointSessionResult;
+};
+
+export function personalResultBase(definition: PersonalConnectorDefinition, context: PersonalResultContext) {
   return {
     schema_version: 1 as const,
     registry_version: 1 as const,
@@ -20,18 +26,19 @@ export function personalResultBase(definition: PersonalConnectorDefinition, chec
     capabilities: [...definition.capabilities],
     scopes: [...definition.scopes],
     allowed_fields: [...definition.allowed_fields],
-    checked_at: checkedAt,
+    checked_at: context.checked_at,
+    checkpoint_session: context.checkpoint_session,
   };
 }
 
 export function personalUnavailable(
   definition: PersonalConnectorDefinition,
   reason: PersonalConnectorReason,
-  checkedAt: string | null,
+  context: PersonalResultContext,
 ): PersonalConnectorResult {
-  const evidence = personalConnectorDigest({ connector_id: definition.id, reason, checked_at: checkedAt });
+  const evidence = personalConnectorDigest({ connector_id: definition.id, reason, checked_at: context.checked_at });
   return freezePersonalResult({
-    ...personalResultBase(definition, checkedAt),
+    ...personalResultBase(definition, context),
     state: "unavailable",
     reason,
     evidence: { evidence_id: `connector:${definition.id}:${evidence.slice(7)}`, digest: evidence },
@@ -39,13 +46,16 @@ export function personalUnavailable(
   });
 }
 
-export function personalNoScope(definition: PersonalConnectorDefinition, checkedAt: string): PersonalConnectorResult {
-  const evidence = personalConnectorDigest({ connector_id: definition.id, reason: "no_scope", checked_at: checkedAt });
+export function personalNoScope(
+  definition: PersonalConnectorDefinition,
+  context: PersonalResultContext & { readonly checked_at: string },
+): PersonalConnectorResult {
+  const evidence = personalConnectorDigest({ connector_id: definition.id, reason: "no_scope", checked_at: context.checked_at });
   return freezePersonalResult({
-    ...personalResultBase(definition, checkedAt),
+    ...personalResultBase(definition, context),
     state: "no_data", reason: "no_scope", freshness: "unknown",
     evidence: { evidence_id: `connector:${definition.id}:${evidence.slice(7)}`, digest: evidence },
-    evidence_refs: [], observed_at: checkedAt, cursor: null, checkpoint: null, values: {},
+    evidence_refs: [], observed_at: context.checked_at, cursor: null, checkpoint: null, values: {},
   });
 }
 

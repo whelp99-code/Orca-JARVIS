@@ -1,4 +1,4 @@
-import type { OrcaReadonlyAdapter } from "./orca.js";
+import { OrcaCollectionLimitError, type OrcaReadonlyAdapter } from "./orca.js";
 import type { TaskTimeline } from "./task-timeline.js";
 import { verifyPortfolioAuthenticatedReport } from "./dashboard/portfolio-auth.js";
 import type { PortfolioEnvironment } from "./dashboard/portfolio-contracts.js";
@@ -11,6 +11,16 @@ import {
   safeCount,
 } from "./personal-connector-values.js";
 
+const MAX_ORCA_TERMINALS = 32;
+const MAX_TIMELINE_EVENTS = 64;
+const MAX_TIMELINE_DECISIONS = 32;
+const MAX_TIMELINE_EVIDENCE = 128;
+
+export class PersonalSourceBudgetError extends Error {
+  readonly name = "PersonalSourceBudgetError";
+  constructor() { super("PERSONAL_SOURCE_BUDGET_EXCEEDED"); }
+}
+
 type OrcaSourceOptions = {
   readonly adapter: OrcaReadonlyAdapter;
   readonly environment: string;
@@ -22,7 +32,12 @@ export class OrcaPersonalConnectorSource {
   constructor(private readonly options: OrcaSourceOptions) {}
 
   async read(now: Date): Promise<PersonalSourceSnapshot> {
-    const terminals = await this.options.adapter.list(this.options.worktree);
+    let terminals;
+    try { terminals = await this.options.adapter.list(this.options.worktree, MAX_ORCA_TERMINALS); }
+    catch (error) {
+      if (error instanceof OrcaCollectionLimitError) throw new PersonalSourceBudgetError();
+      throw error;
+    }
     if (terminals.length === 0) return this.empty(now, "no_data");
     if (!terminals.some(item => item.connected)) return this.empty(now, "disconnected");
     const connected = terminals.filter(item => item.connected);
@@ -30,6 +45,8 @@ export class OrcaPersonalConnectorSource {
     const worktreeIds = connected.map(item => safeConnectorId(item.worktreeId ?? "")).sort();
     const incarnations = connected.map(item => safeConnectorId(item.incarnationId)).sort();
     const lastOutput = connected.flatMap(item => item.lastOutputAt === null ? [] : [item.lastOutputAt]);
+    let latestOutput: number | null = null;
+    for (const value of lastOutput) latestOutput = latestOutput === null ? value : Math.max(latestOutput, value);
     const cursor = personalConnectorDigest({ terminalIds, incarnations, connected: true });
     return freezePersonalSnapshot({
       connector_id: this.connectorId,
@@ -48,7 +65,7 @@ export class OrcaPersonalConnectorSource {
         incarnation_id: incarnations,
         cursor,
         connected: true,
-        last_output_at: lastOutput.length === 0 ? null : Math.max(...lastOutput),
+        last_output_at: latestOutput,
       },
     });
   }
@@ -78,10 +95,26 @@ export class TaskTimelinePersonalConnectorSource {
   }
 
   async read(now: Date): Promise<PersonalSourceSnapshot> {
-    const tasks = this.options.timeline.list(this.options.limit);
+    const tasks = this.options.timeline.list(this.options.limit + 1);
+    if (tasks.length > this.options.limit) throw new PersonalSourceBudgetError();
     if (tasks.length === 0) return this.empty(now);
+    const events = [];
+    let evidenceCount = 0;
+    let decisionCount = 0;
+    for (const task of tasks) {
+      const remaining = MAX_TIMELINE_EVENTS - events.length;
+      const taskEvents = this.options.timeline.timeline(task.task_id, remaining + 1);
+      if (taskEvents.length > remaining) throw new PersonalSourceBudgetError();
+      for (const event of taskEvents) {
+        evidenceCount += event.evidence_refs.length;
+        if (event.kind === "approval") decisionCount += 1;
+        if (evidenceCount > MAX_TIMELINE_EVIDENCE || decisionCount > MAX_TIMELINE_DECISIONS) {
+          throw new PersonalSourceBudgetError();
+        }
+      }
+      events.push(...taskEvents);
+    }
     const taskIds = tasks.map(item => safeConnectorId(item.task_id));
-    const events = tasks.flatMap(task => this.options.timeline.timeline(task.task_id, this.options.limit));
     for (let index = 1; index < events.length; index += 1) {
       const prior = events[index - 1]; const current = events[index];
       if (prior !== undefined && current !== undefined && prior.task_id === current.task_id && current.sequence <= prior.sequence) {
@@ -100,7 +133,7 @@ export class TaskTimelinePersonalConnectorSource {
       incarnation: null,
       sequence: Date.parse(observed),
       cursor,
-      observed_at: now.toISOString(),
+      observed_at: observed,
       fresh_until: null,
       status: "current",
       evidence_refs: evidence,

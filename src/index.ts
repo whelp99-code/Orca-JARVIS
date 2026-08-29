@@ -23,17 +23,16 @@ export {
 export { canonicalize } from "./canonical.js";
 export {
 	createPersonalConnectorRegistry,
-	PERSONAL_CONNECTOR_DEFINITIONS,
 	PERSONAL_CONNECTOR_IDS,
 	PERSONAL_CONNECTOR_REGISTRY_SESSION,
 	PersonalConnectorConfigError,
 	PersonalConnectorError,
-	PersonalConnectorRegistry,
 	type PersonalConnectorDefinition,
 	type PersonalConnectorFreshness,
 	type PersonalConnectorId,
 	type PersonalConnectorReadRequest,
 	type PersonalConnectorReason,
+	type PersonalConnectorRegistry,
 	type PersonalConnectorResult,
 	type PersonalConnectorState,
 	type PersonalConnectorValue,

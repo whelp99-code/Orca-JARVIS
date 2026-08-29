@@ -122,7 +122,7 @@ export async function connectorHarness(options: HarnessOptions = {}) {
   return { db, factory_input, registry: createPersonalConnectorRegistry(factory_input) };
 }
 
-export function connectorRequest(id: PersonalConnectorId, checkpoint?: string) {
+export function connectorRequest(id: PersonalConnectorId) {
   const table = {
     second_brain: {
       scopes: ["second_brain.search.read"],
@@ -146,5 +146,14 @@ export function connectorRequest(id: PersonalConnectorId, checkpoint?: string) {
     calendar: { scopes: [], fields: [] }, mail: { scopes: [], fields: [] }, messenger: { scopes: [], fields: [] },
   };
   const selected = table[id];
-  return { connector_id: id, scopes: selected.scopes, fields: selected.fields, ...(checkpoint === undefined ? {} : { checkpoint }) };
+  return { connector_id: id, scopes: selected.scopes, fields: selected.fields };
+}
+
+export function connectorSessionRequest(id: PersonalConnectorId, handle?: string) {
+  return {
+    ...connectorRequest(id),
+    checkpoint_session: handle === undefined
+      ? { mode: "start" as const, version: 1 as const }
+      : { mode: "continue" as const, version: 1 as const, handle },
+  };
 }

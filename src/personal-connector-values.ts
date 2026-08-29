@@ -56,11 +56,13 @@ export function freezePersonalResult<T extends {
   readonly allowed_fields: readonly string[];
   readonly evidence_refs: readonly string[];
   readonly evidence: object;
+  readonly checkpoint_session: object;
   readonly values: Readonly<Record<string, PersonalConnectorValue>>;
 }>(result: T): T {
   for (const value of Object.values(result.values)) if (Array.isArray(value)) Object.freeze(value);
   Object.freeze(result.values);
   Object.freeze(result.evidence);
+  Object.freeze(result.checkpoint_session);
   Object.freeze(result.capabilities);
   Object.freeze(result.scopes);
   Object.freeze(result.allowed_fields);

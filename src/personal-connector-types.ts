@@ -7,8 +7,8 @@ export type PersonalConnectorState = "ready" | "no_data" | "stale" | "offline" |
 export type PersonalConnectorReason =
   | "current" | "current_empty" | "source_stale" | "freshness_threshold_exceeded" | "source_offline" | "disconnected"
   | "source_unavailable" | "not_configured" | "invalid_source" | "adapter_failed" | "invalid_clock"
-  | "no_scope" | "checkpoint_invalid" | "checkpoint_session_invalid" | "checkpoint_mismatch"
-  | "checkpoint_stale" | "checkpoint_capacity" | "replay_conflict";
+  | "no_scope" | "source_budget_exceeded" | "checkpoint_invalid" | "checkpoint_session_invalid"
+  | "checkpoint_mismatch" | "checkpoint_stale" | "checkpoint_capacity" | "replay_conflict";
 export type PersonalConnectorFreshness = "fresh" | "stale" | "unknown";
 export type PersonalConnectorValue = string | number | boolean | null | readonly string[];
 export type PersonalRegistrySessionContract = {
@@ -28,8 +28,20 @@ export type PersonalConnectorDefinition = {
   readonly freshness: { readonly live_ms: number | null; readonly stale_ms: number | null };
   readonly registry_session: PersonalRegistrySessionContract;
 };
+export type PersonalConnectorRegistry = {
+  readonly registry_session: PersonalRegistrySessionContract;
+  readonly list: () => readonly PersonalConnectorDefinition[];
+  readonly inspect: (input: unknown) => Promise<PersonalConnectorResult>;
+};
 
 export type PersonalConnectorEvidence = { readonly evidence_id: string; readonly digest: string };
+export type PersonalCheckpointSessionRequest =
+  | { readonly mode: "start"; readonly version: 1 }
+  | { readonly mode: "continue"; readonly version: 1; readonly handle: string };
+export type PersonalCheckpointSessionResult =
+  | { readonly mode: "stateless"; readonly version: 1; readonly persistence: "process_local"; readonly handle: null }
+  | { readonly mode: "explicit"; readonly version: 1; readonly persistence: "process_local"; readonly handle: string | null };
+
 export type PersonalConnectorResult = {
   readonly schema_version: 1;
   readonly registry_version: 1;
@@ -48,6 +60,7 @@ export type PersonalConnectorResult = {
   readonly freshness: PersonalConnectorFreshness;
   readonly cursor: string | null;
   readonly checkpoint: string | null;
+  readonly checkpoint_session: PersonalCheckpointSessionResult;
   readonly values: Readonly<Record<string, PersonalConnectorValue>>;
 };
 
@@ -55,7 +68,7 @@ export type PersonalConnectorReadRequest = {
   readonly connector_id: PersonalConnectorId;
   readonly scopes: readonly string[];
   readonly fields: readonly string[];
-  readonly checkpoint?: string;
+  readonly checkpoint_session?: PersonalCheckpointSessionRequest;
 };
 
 export type PersonalSourceSnapshot = {

@@ -1,12 +1,10 @@
 import { createSecondBrainReadAdapter } from "./second-brain-adapter.js";
 import { PersonalCheckpointStore, PERSONAL_CONNECTOR_REGISTRY_SESSION } from "./personal-connector-checkpoints.js";
 import { parsePersonalConnectorConfig, type ParsedPersonalConnectorConfig } from "./personal-connector-config.js";
-import {
-  PERSONAL_CONNECTOR_DEFINITIONS,
-  personalConnectorDefinitionsForSecondBrain,
-} from "./personal-connector-definitions.js";
+import { personalConnectorDefinitionsForSecondBrain } from "./personal-connector-definitions.js";
 import {
   OrcaPersonalConnectorSource,
+  PersonalSourceBudgetError,
   PortfolioPersonalConnectorSource,
   TaskTimelinePersonalConnectorSource,
 } from "./personal-connector-live-sources.js";
@@ -20,14 +18,16 @@ import {
   PersonalConnectorConfigError,
   PersonalConnectorError,
   type ConfiguredPersonalConnectorId,
+  type PersonalCheckpointSessionResult,
   type PersonalConnectorDefinition,
   type PersonalConnectorReadRequest,
+  type PersonalConnectorRegistry,
   type PersonalConnectorResult,
   type PersonalSourceSnapshot,
 } from "./personal-connector-types.js";
 import { freezePersonalResult, personalConnectorDigest } from "./personal-connector-values.js";
 
-export { PERSONAL_CONNECTOR_DEFINITIONS, PERSONAL_CONNECTOR_IDS, PERSONAL_CONNECTOR_REGISTRY_SESSION, PersonalConnectorError };
+export { PERSONAL_CONNECTOR_IDS, PERSONAL_CONNECTOR_REGISTRY_SESSION, PersonalConnectorError };
 export { PersonalConnectorConfigError } from "./personal-connector-types.js";
 export type {
   ConfiguredPersonalConnectorId,
@@ -36,6 +36,7 @@ export type {
   PersonalConnectorId,
   PersonalConnectorReadRequest,
   PersonalConnectorReason,
+  PersonalConnectorRegistry,
   PersonalConnectorResult,
   PersonalConnectorState,
   PersonalConnectorValue,
@@ -102,6 +103,14 @@ function definitionFor(definitions: readonly PersonalConnectorDefinition[], id: 
   if (found === undefined) throw new TypeError("PERSONAL_CONNECTOR_DEFINITION_MISSING");
   return found;
 }
+function checkpointSession(
+  request: PersonalConnectorReadRequest,
+  handle: string | null,
+): PersonalCheckpointSessionResult {
+  return request.checkpoint_session === undefined
+    ? { mode: "stateless", version: 1, persistence: "process_local", handle: null }
+    : { mode: "explicit", version: 1, persistence: "process_local", handle };
+}
 function buildSources(config: ParsedPersonalConnectorConfig): PersonalConnectorSources {
   const transport = Object.freeze({
     call: config.second_brain.call,
@@ -135,7 +144,7 @@ function buildSources(config: ParsedPersonalConnectorConfig): PersonalConnectorS
   });
 }
 
-export class PersonalConnectorRegistry {
+class PersonalConnectorRegistryAuthority {
   readonly registry_session = PERSONAL_CONNECTOR_REGISTRY_SESSION;
   readonly #checkpoints = new PersonalCheckpointStore();
   readonly #config: ParsedPersonalConnectorConfig;
@@ -155,6 +164,7 @@ export class PersonalConnectorRegistry {
   async inspect(input: unknown): Promise<PersonalConnectorResult> {
     const request = parsePersonalConnectorRequest(input);
     const definition = definitionFor(this.#definitions, request.connector_id);
+    const emptyCheckpointSession = checkpointSession(request, null);
     if (!requested(request.scopes, definition.scopes) || !requested(request.fields, definition.allowed_fields)) {
       throw new PersonalConnectorError("PERSONAL_CONNECTOR_REQUEST_INVALID");
     }
@@ -165,49 +175,77 @@ export class PersonalConnectorRegistry {
       }
     }
     const now = readPersonalClock(this.#config.clock);
-    if (now === undefined) return personalUnavailable(definition, "invalid_clock", null);
+    if (now === undefined) {
+      return personalUnavailable(definition, "invalid_clock", { checked_at: null, checkpoint_session: emptyCheckpointSession });
+    }
     const checkedAt = now.toISOString();
-    if (!configured(request.connector_id)) return personalUnavailable(definition, "not_configured", checkedAt);
-    if (request.scopes.length === 0) return personalNoScope(definition, checkedAt);
-    if (request.checkpoint !== undefined) {
-      const resolution = this.#checkpoints.resolve(request.checkpoint);
-      if (resolution === "session_invalid") return personalUnavailable(definition, "checkpoint_session_invalid", checkedAt);
-      if (resolution === "invalid") return personalUnavailable(definition, "checkpoint_invalid", checkedAt);
+    const resultContext = { checked_at: checkedAt, checkpoint_session: emptyCheckpointSession };
+    if (!configured(request.connector_id)) return personalUnavailable(definition, "not_configured", resultContext);
+    if (request.scopes.length === 0) return personalNoScope(definition, resultContext);
+    const session = request.checkpoint_session;
+    if (session?.mode === "continue") {
+      const resolution = this.#checkpoints.resolve(session.handle);
+      if (resolution === "session_invalid") {
+        return personalUnavailable(definition, "checkpoint_session_invalid", resultContext);
+      }
+      if (resolution === "invalid") return personalUnavailable(definition, "checkpoint_invalid", resultContext);
     }
     let snapshot: PersonalSourceSnapshot;
     try { snapshot = await sourceFor(this.#sources, request.connector_id).read(now); }
-    catch { return personalUnavailable(definition, "adapter_failed", checkedAt); }
+    catch (error) {
+      return personalUnavailable(
+        definition,
+        error instanceof PersonalSourceBudgetError ? "source_budget_exceeded" : "adapter_failed",
+        resultContext,
+      );
+    }
     if (snapshot.connector_id !== request.connector_id || Date.parse(snapshot.observed_at) > now.getTime()) {
-      return personalUnavailable(definition, "invalid_source", checkedAt);
+      return personalUnavailable(definition, "invalid_source", resultContext);
     }
     if (snapshot.status !== "current" && snapshot.status !== "stale" && Object.keys(snapshot.values).length !== 0) {
-      return personalUnavailable(definition, "invalid_source", checkedAt);
+      return personalUnavailable(definition, "invalid_source", resultContext);
     }
     const sourceDigest = personalConnectorDigest(snapshot);
     const health = classifyPersonalSnapshot(snapshot, request.connector_id, now);
-    const checkpoint = this.#checkpoints.decide({
-      connector_id: request.connector_id, source_version: snapshot.source_version, incarnation: snapshot.incarnation,
-      sequence: snapshot.sequence, cursor: snapshot.cursor, observed_at: snapshot.observed_at, state: health.state,
-      source_digest: sourceDigest,
-    }, request.checkpoint);
-    if (checkpoint.kind === "capacity") return personalUnavailable(definition, "checkpoint_capacity", checkedAt);
-    if (checkpoint.kind === "session_invalid") return personalUnavailable(definition, "checkpoint_session_invalid", checkedAt);
-    if (checkpoint.kind === "invalid") return personalUnavailable(definition, "checkpoint_invalid", checkedAt);
-    if (checkpoint.kind === "mismatch") return personalUnavailable(definition, "checkpoint_mismatch", checkedAt);
-    if (checkpoint.kind === "stale") return personalUnavailable(definition, "checkpoint_stale", checkedAt);
-    if (checkpoint.kind === "conflict") return personalUnavailable(definition, "replay_conflict", checkedAt);
+    let checkpointHandle: string | null = null;
+    if (session !== undefined) {
+      const checkpoint = this.#checkpoints.decide({
+        connector_id: request.connector_id, source_version: snapshot.source_version, incarnation: snapshot.incarnation,
+        sequence: snapshot.sequence, cursor: snapshot.cursor, observed_at: snapshot.observed_at, state: health.state,
+        source_digest: sourceDigest,
+      }, session.mode === "continue" ? session.handle : undefined);
+      if (checkpoint.kind === "capacity") return personalUnavailable(definition, "checkpoint_capacity", resultContext);
+      if (checkpoint.kind === "session_invalid") {
+        return personalUnavailable(definition, "checkpoint_session_invalid", resultContext);
+      }
+      if (checkpoint.kind === "invalid") return personalUnavailable(definition, "checkpoint_invalid", resultContext);
+      if (checkpoint.kind === "mismatch") return personalUnavailable(definition, "checkpoint_mismatch", resultContext);
+      if (checkpoint.kind === "stale") return personalUnavailable(definition, "checkpoint_stale", resultContext);
+      if (checkpoint.kind === "conflict") return personalUnavailable(definition, "replay_conflict", resultContext);
+      checkpointHandle = checkpoint.handle;
+    }
     const exposeValues = health.state === "ready" || health.state === "stale";
     const values = Object.fromEntries(Object.entries(snapshot.values).filter(([field]) => request.fields.includes(field)));
     return freezePersonalResult({
-      ...personalResultBase(definition, checkedAt), ...health,
+      ...personalResultBase(definition, {
+        checked_at: checkedAt, checkpoint_session: checkpointSession(request, checkpointHandle),
+      }),
+      ...health,
       evidence: { evidence_id: `connector:${request.connector_id}:${sourceDigest.slice(7)}`, digest: sourceDigest },
       evidence_refs: exposeValues ? [...snapshot.evidence_refs] : [],
-      observed_at: snapshot.observed_at, cursor: snapshot.cursor, checkpoint: checkpoint.handle,
+      observed_at: snapshot.observed_at, cursor: snapshot.cursor, checkpoint: checkpointHandle,
       values: exposeValues ? values : {},
     });
   }
 }
 
 export function createPersonalConnectorRegistry(input: unknown): PersonalConnectorRegistry {
-  return new PersonalConnectorRegistry(REGISTRY_TOKEN, parsePersonalConnectorConfig(input));
+  const authority = new PersonalConnectorRegistryAuthority(REGISTRY_TOKEN, parsePersonalConnectorConfig(input));
+  const facade = {
+    registry_session: authority.registry_session,
+    list: authority.list.bind(authority),
+    inspect: authority.inspect.bind(authority),
+  };
+  Object.setPrototypeOf(facade, null);
+  return Object.freeze(facade);
 }

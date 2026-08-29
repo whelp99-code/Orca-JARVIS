@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import {
-  PERSONAL_CONNECTOR_DEFINITIONS,
   PERSONAL_CONNECTOR_IDS,
   PersonalConnectorError,
 } from "../../src/index.js";
@@ -8,6 +7,7 @@ import {
   CONNECTOR_NOW,
   connectorHarness,
   connectorRequest,
+  connectorSessionRequest,
 } from "../fixtures/personal-connector-sources.js";
 
 describe("personal connector registry", () => {
@@ -92,13 +92,13 @@ describe("personal connector registry", () => {
     let now = CONNECTOR_NOW;
     const { db, registry } = await connectorHarness({ clock: () => now });
     try {
-      const first = await registry.inspect(connectorRequest("orca"));
+      const first = await registry.inspect(connectorSessionRequest("orca"));
       if (first.checkpoint === null) throw new TypeError("checkpoint missing");
       expect(first.checkpoint).toMatch(/^pcp:1:[0-9a-f-]{36}:[0-9a-f-]{36}$/u);
-      const exact = await registry.inspect(connectorRequest("orca", first.checkpoint));
+      const exact = await registry.inspect(connectorSessionRequest("orca", first.checkpoint));
       now = new Date(CONNECTOR_NOW.getTime() + 1);
-      const stale = await registry.inspect(connectorRequest("orca", first.checkpoint));
-      const wrong = await registry.inspect(connectorRequest("portfolio", first.checkpoint));
+      const stale = await registry.inspect(connectorSessionRequest("orca", first.checkpoint));
+      const wrong = await registry.inspect(connectorSessionRequest("portfolio", first.checkpoint));
       expect(exact.checkpoint).toBe(first.checkpoint);
       expect([stale.reason, wrong.reason]).toEqual(["checkpoint_stale", "checkpoint_mismatch"]);
       expect(first.checkpoint).not.toContain("source_version");
@@ -116,18 +116,21 @@ describe("personal connector registry", () => {
           code: "PERSONAL_CONNECTOR_REQUEST_INVALID",
         });
       }
-      const first = await registry.inspect(connectorRequest("orca"));
+      const first = await registry.inspect(connectorSessionRequest("orca"));
       if (first.checkpoint === null) throw new TypeError("checkpoint missing");
       const parts = first.checkpoint.split(":");
       const unknown = `${parts.slice(0, 3).join(":")}:00000000-0000-0000-0000-000000000000`;
-      expect((await registry.inspect(connectorRequest("orca", unknown))).reason).toBe("checkpoint_invalid");
+      expect((await registry.inspect(connectorSessionRequest("orca", unknown))).reason).toBe("checkpoint_invalid");
     } finally { db.close(); }
   });
 
-  it("deep-freezes canonical definitions", () => {
-    expect(Object.isFrozen(PERSONAL_CONNECTOR_DEFINITIONS)).toBe(true);
-    expect(PERSONAL_CONNECTOR_DEFINITIONS.every(item => Object.isFrozen(item)
-      && Object.isFrozen(item.capabilities) && Object.isFrozen(item.scopes)
-      && Object.isFrozen(item.allowed_fields) && Object.isFrozen(item.freshness))).toBe(true);
+  it("deep-freezes runtime definitions", async () => {
+    const harness = await connectorHarness();
+    try {
+      const definitions = harness.registry.list();
+      expect(Object.isFrozen(definitions)).toBe(true);
+      expect(definitions.every(item => Object.isFrozen(item) && Object.isFrozen(item.capabilities)
+        && Object.isFrozen(item.scopes) && Object.isFrozen(item.allowed_fields) && Object.isFrozen(item.freshness))).toBe(true);
+    } finally { harness.db.close(); }
   });
 });

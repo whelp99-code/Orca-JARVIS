@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import * as publicApi from "../../src/index.js";
 import {
-  PERSONAL_CONNECTOR_DEFINITIONS,
   PersonalConnectorConfigError,
   PersonalConnectorError,
   createPersonalConnectorRegistry,
@@ -10,6 +9,7 @@ import {
   CONNECTOR_NOW,
   connectorHarness,
   connectorRequest,
+  connectorSessionRequest,
 } from "../fixtures/personal-connector-sources.js";
 
 const OLD = "2020-01-01T00:00:00.000Z";
@@ -88,10 +88,10 @@ describe("Task 13 remediation roots", () => {
     let now = CONNECTOR_NOW;
     const { db, registry } = await connectorHarness({ clock: () => now });
     try {
-      const first = await registry.inspect(connectorRequest("orca"));
+      const first = await registry.inspect(connectorSessionRequest("orca"));
       if (first.checkpoint === null) throw new TypeError("checkpoint missing");
       now = new Date(CONNECTOR_NOW.getTime() + 1);
-      const stale = await registry.inspect(connectorRequest("orca", first.checkpoint));
+      const stale = await registry.inspect(connectorSessionRequest("orca", first.checkpoint));
       expect(stale.reason).toBe("checkpoint_stale");
       expect(first.checkpoint).toMatch(/^pcp:1:[0-9a-f-]{36}:[0-9a-f-]{36}$/u);
     } finally { db.close(); }
@@ -101,8 +101,8 @@ describe("Task 13 remediation roots", () => {
     const { db, registry } = await connectorHarness();
     try {
       const result = await registry.inspect(connectorRequest("orca"));
-      expect(Object.isFrozen(PERSONAL_CONNECTOR_DEFINITIONS)).toBe(true);
-      expect(Object.isFrozen(PERSONAL_CONNECTOR_DEFINITIONS[0]?.capabilities)).toBe(true);
+      expect(Object.isFrozen(registry.list())).toBe(true);
+      expect(Object.isFrozen(registry.list()[0]?.capabilities)).toBe(true);
       expect(Object.isFrozen(result)).toBe(true);
       expect(Object.isFrozen(result.values)).toBe(true);
       expect(Object.isFrozen(result.evidence_refs)).toBe(true);

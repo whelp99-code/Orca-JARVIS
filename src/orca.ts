@@ -23,6 +23,10 @@ const string = (value: unknown): string => typeof value === "string" && value.le
 const boolean = (value: unknown): boolean => typeof value === "boolean" ? value : invalidSchema();
 const number = (value: unknown): number => typeof value === "number" && Number.isInteger(value) && value >= 0 ? value : invalidSchema();
 function invalidSchema(): never { throw new JarvisError("ORCA_CLI_SCHEMA_INVALID"); }
+export class OrcaCollectionLimitError extends Error {
+  readonly name = "OrcaCollectionLimitError";
+  constructor() { super("ORCA_COLLECTION_LIMIT_EXCEEDED"); }
+}
 function identity(worktree: string, terminalHandle: string, incarnationId: string, cursorBefore: string | null): string { return `orca_${createHash("sha256").update(JSON.stringify([worktree, terminalHandle, incarnationId, cursorBefore])).digest("hex")}`; }
 
 export const defaultRunner: OrcaRunner = async args => {
@@ -46,10 +50,13 @@ export class OrcaReadonlyAdapter {
     try { output = await this.runner(args); } catch (error) { if (error instanceof JarvisError) throw error; throw new JarvisError("ORCA_CLI_FAILED"); }
     return parsePayload(output);
   }
-  async list(worktree: string): Promise<OrcaTerminal[]> {
-    if (!worktree) throw new JarvisError("ORCA_WORKTREE_INVALID");
+  async list(worktree: string, maximum?: number): Promise<OrcaTerminal[]> {
+    if (!worktree || maximum !== undefined && (!Number.isSafeInteger(maximum) || maximum < 0)) {
+      throw new JarvisError("ORCA_WORKTREE_INVALID");
+    }
     const result = await this.call(["terminal", "list", "--worktree", worktree, "--json"]); const terminals = result.terminals;
     if (!Array.isArray(terminals)) return invalidSchema();
+    if (maximum !== undefined && terminals.length > maximum) throw new OrcaCollectionLimitError();
     return terminals.map(value => {
       if (!isRecord(value)) return invalidSchema();
       const worktreeId = nullableString(value.worktreeId); const worktreePath = nullableString(value.worktreePath ?? value.path);
