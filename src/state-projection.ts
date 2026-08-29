@@ -5,6 +5,7 @@ import { canonicalize } from "./canonical.js";
 import { AuthorityDb } from "./db.js";
 import { passiveCapabilityProbe, runDoctor } from "./doctor.js";
 import type { CapabilityProbe } from "./capabilities.js";
+import { projectRecommendations, type RecommendationReadProjection } from "./recommendation-projection.js";
 import { TaskTimeline } from "./task-timeline.js";
 import { assertRootIdentity, secureRoot, syncDirectory, syncFile } from "./secure-filesystem.js";
 
@@ -17,6 +18,7 @@ export interface CurrentStateProjection {
   next_3: unknown[];
   workers: unknown[];
   risks: unknown[];
+  recommendations: RecommendationReadProjection;
 }
 
 const table = (db: AuthorityDb, name: string): boolean => Boolean(db.db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(name));
@@ -40,16 +42,23 @@ export async function buildCurrentState(db: AuthorityDb, now = new Date(), optio
   const gjcQueue = table(db, "gjc_intents") ? db.db.prepare("SELECT intent_id,kind,state,created_at FROM gjc_intents WHERE state IN ('pending','claimed','accepted','uncertain') ORDER BY created_at,intent_id LIMIT 3").all() : [];
   const workflowQueue = table(db, "workflow_runs") ? db.db.prepare("SELECT run_id,loop_id,state,current_node,updated_at FROM workflow_runs WHERE state NOT IN ('completed','failed','cancelled') ORDER BY updated_at,run_id LIMIT 3").all() : [];
   const taskTimelines = table(db, "control_command_requests") && table(db, "workflow_runs") ? new TaskTimeline(db).list(500) : [];
-  const risks = doctor.checks.filter(check => !check.ok).map(check => ({ name: check.name, code: check.code ?? "CHECK_FAILED", actual: check.actual, expected: check.expected }));
+  const recommendations = table(db, "personal_recommendations")
+    ? projectRecommendations(db.db, now.toISOString(), 100)
+    : { generated_at: now.toISOString(), next_actions: [], owner_decisions_needed: [], conflicts: [], omissions: [], warnings: [] };
+  const risks = [
+    ...doctor.checks.filter(check => !check.ok).map(check => ({ name: check.name, code: check.code ?? "CHECK_FAILED", actual: check.actual, expected: check.expected })),
+    ...recommendations.warnings,
+  ];
   return {
     schema_version: 1,
     generated_at: now.toISOString(),
     now: { state_counts: stateCounts, pending_reports: pendingReports, bindings: bindings.length, doctor_ok: doctor.ok, task_timelines: taskTimelines.length, task_timelines_pending_approval: taskTimelines.filter(item => item.pending_approval).length },
     blocked,
-    decisions: [...workDecisions, ...commandDecisions],
-    next_3: [...commandQueue, ...workflowQueue, ...gjcQueue].slice(0, 3),
+    decisions: [...recommendations.owner_decisions_needed, ...workDecisions, ...commandDecisions],
+    next_3: [...recommendations.next_actions, ...commandQueue, ...workflowQueue, ...gjcQueue].slice(0, 3),
     workers: bindings,
     risks,
+    recommendations,
   };
 }
 

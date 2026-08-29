@@ -25,11 +25,14 @@ export type RecommendationPersistenceInput = {
   readonly confidence_class: ConfidenceClass;
 };
 export type RecommendationActionTransition = {
-  readonly recommendation_id: RecommendationId;
+  readonly recommendation_id: string;
   readonly rank: number;
   readonly state: ActionState;
-  readonly evidence_digest: Sha256Digest;
+  readonly evidence_digest: string;
   readonly occurred_at: string;
+  readonly replacement_recommendation_id?: string;
+  readonly replacement_context_digest?: string;
+  readonly replacement_evidence_digest?: string;
 };
 export type StoredRecommendation = {
   readonly recommendation_id: RecommendationId;

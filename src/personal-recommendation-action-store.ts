@@ -3,6 +3,7 @@ import { isActionState, type RecommendationActionTransition } from "./personal-r
 import {
   type PersistenceErrorFactory,
   isPersistenceTime,
+  persistenceHash,
   persistenceRow,
   persistenceText,
   recordPersonalAudit,
@@ -23,16 +24,6 @@ export class PersonalRecommendationActionStore {
   }
 
   private insert(input: RecommendationActionTransition): void {
-    const exact = this.database.prepare(
-      `SELECT evidence_digest,occurred_at FROM personal_recommendation_action_events
-       WHERE recommendation_id=? AND rank=? AND state=?`,
-    ).get(input.recommendation_id, input.rank, input.state);
-    if (exact !== undefined) {
-      const replay = persistenceRow(exact);
-      if (replay["evidence_digest"] === input.evidence_digest
-        && replay["occurred_at"] === input.occurred_at) return;
-      throw this.error("PERSONAL_ACTION_STATE_CONFLICT");
-    }
     const value = this.database.prepare(
       `SELECT r.evidence_digest,r.expires_at AS recommendation_expires_at,
               c.expires_at AS context_expires_at,
@@ -52,6 +43,16 @@ export class PersonalRecommendationActionStore {
     if (action["evidence_digest"] !== input.evidence_digest) {
       throw this.error("PERSONAL_RECOMMENDATION_EVIDENCE_CONFLICT");
     }
+    const eventDigest = this.eventDigest(input);
+    const exact = this.database.prepare(
+      `SELECT evidence_digest,occurred_at FROM personal_recommendation_action_events
+       WHERE recommendation_id=? AND rank=? AND state=?`,
+    ).get(input.recommendation_id, input.rank, input.state);
+    if (exact !== undefined) {
+      const replay = persistenceRow(exact);
+      if (replay["evidence_digest"] === eventDigest && replay["occurred_at"] === input.occurred_at) return;
+      throw this.error("PERSONAL_ACTION_STATE_CONFLICT");
+    }
     if (action["state"] !== "pending" || input.occurred_at < persistenceText(action["occurred_at"])) {
       throw this.error("PERSONAL_ACTION_STATE_CONFLICT");
     }
@@ -69,14 +70,41 @@ export class PersonalRecommendationActionStore {
       `INSERT INTO personal_recommendation_action_events(
          recommendation_id,rank,state,evidence_digest,occurred_at
        ) VALUES(?,?,?,?,?)`,
-    ).run(input.recommendation_id, input.rank, input.state, input.evidence_digest, input.occurred_at);
+    ).run(input.recommendation_id, input.rank, input.state, eventDigest, input.occurred_at);
     recordPersonalAudit(this.database, {
       event: "action_state_recorded",
       subject: `${input.recommendation_id}:${input.rank}:${input.state}`,
-      digest: input.evidence_digest,
+      digest: eventDigest,
       correlation: input.recommendation_id,
       causation: null,
       occurredAt: input.occurred_at,
+    });
+  }
+
+  private eventDigest(input: RecommendationActionTransition): string {
+    if (input.state !== "superseded") {
+      if (input.replacement_recommendation_id !== undefined || input.replacement_context_digest !== undefined
+        || input.replacement_evidence_digest !== undefined) throw this.error("PERSONAL_ACTION_SUPERSESSION_CONFLICT");
+      return input.evidence_digest;
+    }
+    if (input.replacement_recommendation_id === undefined || input.replacement_context_digest === undefined
+      || input.replacement_evidence_digest === undefined || input.replacement_recommendation_id === input.recommendation_id) {
+      throw this.error("PERSONAL_ACTION_SUPERSESSION_CONFLICT");
+    }
+    const replacement = this.database.prepare(
+      "SELECT context_digest,evidence_digest FROM personal_recommendations WHERE recommendation_id=?",
+    ).get(input.replacement_recommendation_id);
+    if (replacement === undefined) throw this.error("PERSONAL_ACTION_SUPERSESSION_CONFLICT");
+    const row = persistenceRow(replacement);
+    if (row["context_digest"] !== input.replacement_context_digest
+      || row["evidence_digest"] !== input.replacement_evidence_digest) {
+      throw this.error("PERSONAL_ACTION_SUPERSESSION_CONFLICT");
+    }
+    return persistenceHash({
+      evidence_digest: input.evidence_digest,
+      replacement_context_digest: input.replacement_context_digest,
+      replacement_evidence_digest: input.replacement_evidence_digest,
+      replacement_recommendation_id: input.replacement_recommendation_id,
     });
   }
 }

@@ -23,6 +23,11 @@ export {
 export { canonicalize } from "./canonical.js";
 export * from "./priority-engine.js";
 export {
+	Recommendations, RecommendationError, RECOMMENDATION_ERROR_CODES,
+	type CreateRecommendationResult, type RecommendationActionMaterial, type RecommendationErrorCode,
+	type RecommendationReadProjection, type ProjectedRecommendationAction, type RecommendationWarning,
+} from "./recommendations.js";
+export {
 	assemblePersonalContext, CONTEXT_ASSEMBLER_BUDGET_IMPOSSIBLE, CONTEXT_ASSEMBLER_INPUT_INVALID, ContextAssemblerError,
 	type ContextAssemblerErrorCode, type ContextAssemblerInput, type ContextBudget,
 	type MemoryEvidenceInput, type MemoryGapInput, type MemoryInput,
