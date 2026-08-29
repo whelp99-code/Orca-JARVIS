@@ -70,17 +70,13 @@ function classifyFact(evaluation: Evaluation, fact: ContextFact): void {
   const { input, state } = evaluation;
   if (isClientHost(fact.source_host)) { exclude(state, fact.ref, "MAC_NON_AUTHORITATIVE"); return; }
   if (fact.source_host !== expectedHost(fact.evidence_class)) { exclude(state, fact.ref, "SOURCE_HOST_MISMATCH"); return; }
-  if (fact.state === "stale" || Date.parse(fact.fresh_until) <= Date.parse(input.clock)
-    || Date.parse(fact.valid_until) <= Date.parse(input.clock)) {
-    const supersessionTarget = [...evaluation.facts.values()].some(
-      candidate => candidate.relation === "supersedes" && candidate.relates_to === fact.ref,
-    );
-    if (supersessionTarget) { state.selected.add(fact.ref); return; }
+  if (fact.state === "stale" || Date.parse(fact.fresh_until) <= Date.parse(input.clock)) {
     exclude(state, fact.ref, "STALE_EVIDENCE"); return;
   }
   if (Date.parse(fact.observed_at) > Date.parse(input.clock) || Date.parse(fact.valid_from) > Date.parse(input.clock)) {
     exclude(state, fact.ref, "SOURCE_CLOCK_SKEW"); return;
   }
+  if (fact.relation === "unrelated") { state.excluded.add(fact.ref); return; }
   switch (fact.trust) {
     case "inferred":
       exclude(state, fact.ref, "INFERRED_EVIDENCE");
@@ -99,9 +95,14 @@ function classifyFact(evaluation: Evaluation, fact: ContextFact): void {
     case "user_confirmed": break;
     default: { const exhaustive: never = fact.trust; return exhaustive; }
   }
+  if (Date.parse(fact.valid_until) <= Date.parse(input.clock)) {
+    const supersessionTarget = [...evaluation.facts.values()].some(
+      candidate => candidate.relation === "supersedes" && candidate.relates_to === fact.ref,
+    );
+    if (!supersessionTarget) { exclude(state, fact.ref, "STALE_EVIDENCE"); return; }
+  }
   switch (fact.relation) {
     case "supports": state.selected.add(fact.ref); return;
-    case "unrelated": state.excluded.add(fact.ref); return;
     case "contradicts":
       state.excluded.add(fact.ref);
       conflict(state, [fact.ref, ...(fact.relates_to === null ? [] : [fact.relates_to])], "UNRESOLVED_CONFLICT");
@@ -121,6 +122,11 @@ function applySupersession(evaluation: Evaluation, candidate: ContextFact): void
   }
   if (target.trust !== "user_confirmed") {
     exclude(state, candidate.ref, "SUPERSESSION_TRUST_INADEQUATE");
+    conflict(state, [candidate.ref, target.ref], "UNRESOLVED_PRIORITY_CONFLICT");
+    return;
+  }
+  if (!state.selected.has(target.ref)) {
+    state.excluded.add(candidate.ref);
     conflict(state, [candidate.ref, target.ref], "UNRESOLVED_PRIORITY_CONFLICT");
     return;
   }
@@ -172,7 +178,7 @@ function requiredReferences(evaluation: Evaluation): readonly string[] {
 function policyTimeDecision(policy: ParsedContextPolicy, input: ParsedContextPolicyInput): ContextPolicyReasonCode | null {
   const clock = Date.parse(input.clock);
   if (clock < Date.parse(policy.effective_at)) return "POLICY_NOT_EFFECTIVE";
-  if (clock > Date.parse(policy.expires_at)) return "POLICY_EXPIRED";
+  if (clock >= Date.parse(policy.expires_at)) return "POLICY_EXPIRED";
   return null;
 }
 

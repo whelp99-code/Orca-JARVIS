@@ -19,6 +19,21 @@ describe("Task 16 eligible and relation decisions", () => {
     });
   });
 
+  it.each(["inferred", "untrusted"] as const)("keeps optional unrelated %s evidence exclusion-only", trust => {
+    // Given: sufficient required evidence plus optional irrelevant low-trust memory.
+    const base = contextPolicyInput();
+    const unrelated = contextPolicyFact(`memory:unrelated:${trust}`, "user_confirmed_principle");
+    unrelated["relation"] = "unrelated"; unrelated["trust"] = trust;
+    const evidence = structuredClone(base["evidence"]);
+    if (!Array.isArray(evidence)) throw new TypeError("policy evidence fixture required");
+    // When: irrelevance is classified before trust authority.
+    const decision = evaluateContextPolicy(contextPolicyConfig(), { ...base, evidence: [...evidence, unrelated] });
+    // Then: the optional ref is excluded without introducing a global abstention reason.
+    expect(decision.status).toBe("eligible");
+    expect(decision.reason_codes).toEqual(["POLICY_SATISFIED"]);
+    expect(decision.excluded_refs).toContain(`memory:unrelated:${trust}`);
+  });
+
   it("excludes unrelated evidence without making optional evidence authoritative", () => {
     // Given: sufficient required evidence plus an unrelated optional principle.
     const base = contextPolicyInput();

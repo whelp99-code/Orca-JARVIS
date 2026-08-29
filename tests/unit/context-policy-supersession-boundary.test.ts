@@ -2,7 +2,44 @@ import { describe, expect, it } from "vitest";
 import { CONTEXT_POLICY_CONFIG_INVALID, CONTEXT_POLICY_INPUT_INVALID, ContextPolicyError, evaluateContextPolicy } from "../../src/index.js";
 import { contextPolicyConfig, contextPolicyFact, contextPolicyInput } from "../fixtures/context-policy-input.js";
 
+const invalidTargetCases = [
+  ["explicit stale state", "STALE_EVIDENCE", (target: Record<string, unknown>, replacement: Record<string, unknown>) => {
+    target["state"] = "stale"; target["valid_until"] = "2026-08-28T11:15:00.000Z";
+    replacement["valid_from"] = "2026-08-28T11:15:00.000Z";
+  }],
+  ["expired freshness", "STALE_EVIDENCE", (target: Record<string, unknown>, replacement: Record<string, unknown>) => {
+    target["fresh_until"] = "2026-08-28T11:45:00.000Z"; target["valid_until"] = "2026-08-28T11:50:00.000Z";
+    replacement["valid_from"] = "2026-08-28T11:50:00.000Z";
+  }],
+  ["future observation", "SOURCE_CLOCK_SKEW", (target: Record<string, unknown>, replacement: Record<string, unknown>) => {
+    target["observed_at"] = "2026-08-28T12:00:00.001Z"; target["valid_until"] = "2026-08-28T11:15:00.000Z";
+    replacement["valid_from"] = "2026-08-28T11:15:00.000Z";
+  }],
+  ["future valid-from", "SOURCE_CLOCK_SKEW", (target: Record<string, unknown>, replacement: Record<string, unknown>) => {
+    target["valid_from"] = "2026-08-28T12:00:00.001Z"; target["valid_until"] = "2026-08-28T12:00:00.002Z";
+    replacement["valid_from"] = "2026-08-28T12:00:00.002Z";
+  }],
+] as const;
+
 describe("Task 16 supersession, skew, and public boundary", () => {
+  it.each(invalidTargetCases)("does not revive a supersession target with %s", (_name, code, mutate) => {
+    // Given: a candidate points at a target that cannot establish current source validity.
+    const base = contextPolicyInput();
+    const evidence = structuredClone(base["evidence"]);
+    if (!Array.isArray(evidence) || typeof evidence[1] !== "object" || evidence[1] === null) throw new TypeError("memory fixture required");
+    const target = evidence[1];
+    const replacement = contextPolicyFact("memory:principle:2", "user_confirmed_principle");
+    replacement["relation"] = "supersedes"; replacement["relates_to"] = "memory:principle:1"; mutate(target, replacement);
+    // When: deterministic supersession policy evaluates both facts.
+    const decision = evaluateContextPolicy(contextPolicyConfig(), { ...base, evidence: [...evidence, replacement] });
+    // Then: the invalid target is excluded and cannot satisfy or be superseded into eligibility.
+    expect(decision.status).toBe("abstain");
+    expect(decision.reason_codes).toContain(code);
+    expect(decision.excluded_refs).toContain("memory:principle:1");
+    expect(decision.selected_refs).not.toContain("memory:principle:1");
+    expect(decision.superseded_refs).not.toContain("memory:principle:1");
+  });
+
   it("accepts explicit trusted non-overlapping valid-time supersession", () => {
     // Given: a confirmed replacement starts when the prior principle ceases to be valid.
     const base = contextPolicyInput();
@@ -62,6 +99,18 @@ describe("Task 16 supersession, skew, and public boundary", () => {
     expect(decision.status).toBe("abstain");
     expect(decision.reason_codes).toContain("SOURCE_CLOCK_SKEW");
     expect(decision.excluded_refs).toContain("live:task:1");
+  });
+
+  it("treats exact policy expiry as expired while retaining the effective boundary", () => {
+    // Given: the supplied policy expires exactly at the evaluation clock.
+    const policy = contextPolicyConfig();
+    if (typeof policy !== "object" || policy === null || Array.isArray(policy)) throw new TypeError("policy fixture required");
+    Reflect.set(policy, "expires_at", "2026-08-28T12:00:00.000Z");
+    // When: policy time boundaries are evaluated.
+    const decision = evaluateContextPolicy(policy, contextPolicyInput());
+    // Then: expiry is exclusive and yields the stable fail-closed code.
+    expect(decision.status).toBe("abstain");
+    expect(decision.reason_codes).toEqual(["POLICY_EXPIRED"]);
   });
 
   it("rejects malformed and accessor-bearing public values with typed errors and zero getter reads", () => {
