@@ -21,6 +21,7 @@ export {
 	withOrcaEnvironment,
 } from "./orca-env.js";
 export { canonicalize } from "./canonical.js";
+export * from "./priority-engine.js";
 export {
 	assemblePersonalContext, CONTEXT_ASSEMBLER_BUDGET_IMPOSSIBLE, CONTEXT_ASSEMBLER_INPUT_INVALID, ContextAssemblerError,
 	type ContextAssemblerErrorCode, type ContextAssemblerInput, type ContextBudget,
@@ -77,14 +78,8 @@ export {
 	parseRemotePrincipalV1,
 } from "./personal-validation.js";
 export type {
-	ContextMemoryEvidenceBinding,
-	ContextPersistenceInput,
-	ReconstructedRecommendation,
-	RecommendationActionTransition,
-	RecommendationPersistenceInput,
-	StoredContext,
-	StoredObservation,
-	StoredRecommendation,
+	ContextMemoryEvidenceBinding, ContextPersistenceInput, ReconstructedRecommendation, RecommendationActionTransition,
+	RecommendationPersistenceInput, StoredContext, StoredObservation, StoredRecommendation,
 } from "./personal-context-persistence.js";
 export { parseProgressBatch, serializeProgressReport } from "./progress.js";
 export {
