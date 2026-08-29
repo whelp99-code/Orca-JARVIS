@@ -34,7 +34,9 @@ export class SecondBrainPersonalConnectorSource {
     if (outcome.kind === "invalid" || outcome.kind === "unavailable") return this.empty(now, "unavailable");
     if (outcome.kind === "offline") return this.empty(now, "offline");
     if (outcome.kind === "no_data") {
-      return readiness.stages.freshness.state === "fresh" ? this.emptyAt(outcome.checked_at, "no_data") : this.empty(now, "unavailable");
+      return readiness.stages.freshness.state === "fresh"
+        ? this.emptyAt(outcome.checked_at, "no_data", outcome.fresh_until)
+        : this.empty(now, "unavailable");
     }
     const evidence = outcome.kind === "conflicts"
       ? outcome.conflicts.flatMap(conflict => [conflict.left, conflict.right])
@@ -59,6 +61,7 @@ export class SecondBrainPersonalConnectorSource {
       sequence: Date.parse(outcome.checked_at),
       cursor: personalConnectorDigest({ digests, observed }),
       observed_at: observed,
+      fresh_until: null,
       status: stale ? "stale" : "current",
       evidence_refs: digests,
       values,
@@ -76,10 +79,14 @@ export class SecondBrainPersonalConnectorSource {
   }
 
   private empty(now: Date, status: "offline" | "unavailable"): PersonalSourceSnapshot {
-    return this.emptyAt(now.toISOString(), status);
+    return this.emptyAt(now.toISOString(), status, null);
   }
 
-  private emptyAt(observedAt: string, status: "no_data" | "offline" | "unavailable"): PersonalSourceSnapshot {
+  private emptyAt(
+    observedAt: string,
+    status: "no_data" | "offline" | "unavailable",
+    freshUntil: string | null,
+  ): PersonalSourceSnapshot {
     const checked = safeConnectorInstant(observedAt);
     return freezePersonalSnapshot({
       connector_id: this.connectorId,
@@ -88,6 +95,7 @@ export class SecondBrainPersonalConnectorSource {
       sequence: Date.parse(checked),
       cursor: personalConnectorDigest({ status, checked }),
       observed_at: checked,
+      fresh_until: freshUntil === null ? null : safeConnectorInstant(freshUntil),
       status,
       evidence_refs: [],
       values: {},

@@ -2,6 +2,8 @@ import { PERSONAL_CONNECTOR_IDS, PersonalConnectorError, type PersonalConnectorI
 
 const MAX_ITEMS = 32;
 const MAX_TEXT = 256;
+const UUID_PATTERN = "[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}";
+const CHECKPOINT_PATTERN = new RegExp(`^pcp:1:${UUID_PATTERN}:${UUID_PATTERN}$`, "u");
 
 function fail(): never { throw new PersonalConnectorError("PERSONAL_CONNECTOR_REQUEST_INVALID"); }
 
@@ -39,7 +41,7 @@ export function parsePersonalConnectorRequest(value: unknown): PersonalConnector
     const scopes = denseStrings(descriptors["scopes"]?.value);
     const fields = denseStrings(descriptors["fields"]?.value);
     const checkpoint = descriptors["checkpoint"]?.value;
-    if (checkpoint !== undefined && (typeof checkpoint !== "string" || !/^pcp:[0-9a-f-]{36}$/u.test(checkpoint))) return fail();
+    if (checkpoint !== undefined && (typeof checkpoint !== "string" || !CHECKPOINT_PATTERN.test(checkpoint))) return fail();
     return checkpoint === undefined ? { connector_id: id, scopes, fields } : { connector_id: id, scopes, fields, checkpoint };
   } catch (error) {
     if (error instanceof PersonalConnectorError) throw error;

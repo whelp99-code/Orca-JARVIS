@@ -38,6 +38,7 @@ export class OrcaPersonalConnectorSource {
       sequence: now.getTime(),
       cursor,
       observed_at: now.toISOString(),
+      fresh_until: null,
       status: "current",
       evidence_refs: [cursor],
       values: {
@@ -60,6 +61,7 @@ export class OrcaPersonalConnectorSource {
       sequence: now.getTime(),
       cursor: personalConnectorDigest({ status, checked_at: now.toISOString() }),
       observed_at: now.toISOString(),
+      fresh_until: status === "no_data" ? now.toISOString() : null,
       status,
       evidence_refs: [],
       values: {},
@@ -87,6 +89,7 @@ export class TaskTimelinePersonalConnectorSource {
       }
     }
     const eventIds = events.map(item => safeConnectorId(item.event_id));
+    const decisionIds = events.filter(item => item.kind === "approval").map(item => safeConnectorId(item.event_id));
     const evidence = events.flatMap(item => item.evidence_refs).map(safeConnectorId);
     const observed = tasks.map(item => safeConnectorInstant(item.updated_at)).sort().at(-1);
     if (observed === undefined) throw new TypeError("PERSONAL_SOURCE_INVALID");
@@ -97,13 +100,15 @@ export class TaskTimelinePersonalConnectorSource {
       incarnation: null,
       sequence: Date.parse(observed),
       cursor,
-      observed_at: observed,
+      observed_at: now.toISOString(),
+      fresh_until: null,
       status: "current",
       evidence_refs: evidence,
       values: {
         task_id: taskIds,
         event_id: eventIds,
         evidence_id: evidence,
+        decision_id: decisionIds,
         state: tasks.map(item => safeConnectorId(item.state)),
         sequence: events.length,
         observed_at: observed,
@@ -116,7 +121,7 @@ export class TaskTimelinePersonalConnectorSource {
     return freezePersonalSnapshot({
       connector_id: this.connectorId, source_version: "task-timeline-v1", incarnation: null, sequence: now.getTime(),
       cursor: personalConnectorDigest({ empty: true, checked_at: now.toISOString() }), observed_at: now.toISOString(),
-      status: "no_data", evidence_refs: [], values: {},
+      fresh_until: now.toISOString(), status: "no_data", evidence_refs: [], values: {},
     });
   }
 }
@@ -135,19 +140,24 @@ export class PortfolioPersonalConnectorSource {
   private readonly receivedAt: Date;
 
   constructor(private readonly options: PortfolioSourceOptions) {
-    this.envelope = Buffer.from(options.envelope);
-    this.key = Buffer.from(options.key);
-    this.receivedAt = new Date(options.received_at.getTime());
+    this.envelope = options.envelope;
+    this.key = options.key;
+    this.receivedAt = options.received_at;
   }
 
-  async read(): Promise<PersonalSourceSnapshot> {
+  async read(now: Date): Promise<PersonalSourceSnapshot> {
     const verified = verifyPortfolioAuthenticatedReport(this.envelope, this.key, this.options.source);
     if (verified.kind === "error") return this.unavailable();
     const report = verified.report;
+    const reportedAt = safeConnectorInstant(report.reported_at);
+    const receivedAt = safeConnectorInstant(this.receivedAt.toISOString());
+    if (Date.parse(reportedAt) > Date.parse(receivedAt) || Date.parse(receivedAt) > now.getTime()) {
+      throw new TypeError("PERSONAL_SOURCE_TIME_INVALID");
+    }
     const reportDigest = personalConnectorDigest(report);
     const values: Record<string, PersonalConnectorValue> = {
       source: report.source,
-      reported_at: safeConnectorInstant(report.reported_at),
+      reported_at: reportedAt,
       collector_status: "ok",
       report_digest: reportDigest,
       worktree_count: safeCount(report.host.worktree_count),
@@ -163,8 +173,8 @@ export class PortfolioPersonalConnectorSource {
     }
     return freezePersonalSnapshot({
       connector_id: this.connectorId, source_version: "portfolio-auth-v1", incarnation: report.source,
-      sequence: this.receivedAt.getTime(), cursor: reportDigest, observed_at: this.receivedAt.toISOString(), status: "current",
-      evidence_refs: [reportDigest], values,
+      sequence: Date.parse(reportedAt), cursor: reportDigest, observed_at: reportedAt,
+      fresh_until: null, status: "current", evidence_refs: [reportDigest], values,
     });
   }
 
@@ -172,7 +182,8 @@ export class PortfolioPersonalConnectorSource {
     return freezePersonalSnapshot({
       connector_id: this.connectorId, source_version: "portfolio-auth-v1", incarnation: this.options.source,
       sequence: this.receivedAt.getTime(), cursor: personalConnectorDigest({ error: true, at: this.receivedAt.toISOString() }),
-      observed_at: this.receivedAt.toISOString(), status: "unavailable", evidence_refs: [], values: {},
+      observed_at: this.receivedAt.toISOString(), fresh_until: null,
+      status: "unavailable", evidence_refs: [], values: {},
     });
   }
 }

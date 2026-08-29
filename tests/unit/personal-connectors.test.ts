@@ -94,14 +94,14 @@ describe("personal connector registry", () => {
     try {
       const first = await registry.inspect(connectorRequest("orca"));
       if (first.checkpoint === null) throw new TypeError("checkpoint missing");
-      expect(first.checkpoint).toMatch(/^pcp:[0-9a-f-]{36}$/u);
+      expect(first.checkpoint).toMatch(/^pcp:1:[0-9a-f-]{36}:[0-9a-f-]{36}$/u);
       const exact = await registry.inspect(connectorRequest("orca", first.checkpoint));
       now = new Date(CONNECTOR_NOW.getTime() + 1);
       const stale = await registry.inspect(connectorRequest("orca", first.checkpoint));
       const wrong = await registry.inspect(connectorRequest("portfolio", first.checkpoint));
       expect(exact.checkpoint).toBe(first.checkpoint);
       expect([stale.reason, wrong.reason]).toEqual(["checkpoint_stale", "checkpoint_mismatch"]);
-      expect(Buffer.from(first.checkpoint, "base64url").toString("utf8")).not.toContain("source_version");
+      expect(first.checkpoint).not.toContain("source_version");
     } finally { db.close(); }
   });
 
@@ -116,8 +116,11 @@ describe("personal connector registry", () => {
           code: "PERSONAL_CONNECTOR_REQUEST_INVALID",
         });
       }
-      expect((await registry.inspect(connectorRequest("orca", "pcp:00000000-0000-0000-0000-000000000000"))).reason)
-        .toBe("checkpoint_invalid");
+      const first = await registry.inspect(connectorRequest("orca"));
+      if (first.checkpoint === null) throw new TypeError("checkpoint missing");
+      const parts = first.checkpoint.split(":");
+      const unknown = `${parts.slice(0, 3).join(":")}:00000000-0000-0000-0000-000000000000`;
+      expect((await registry.inspect(connectorRequest("orca", unknown))).reason).toBe("checkpoint_invalid");
     } finally { db.close(); }
   });
 

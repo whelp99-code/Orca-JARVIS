@@ -1,15 +1,23 @@
-import { PersonalCheckpointStore } from "./personal-connector-checkpoints.js";
-import { PERSONAL_CONNECTOR_DEFINITIONS, personalConnectorDefinition } from "./personal-connector-definitions.js";
+import { createSecondBrainReadAdapter } from "./second-brain-adapter.js";
+import { PersonalCheckpointStore, PERSONAL_CONNECTOR_REGISTRY_SESSION } from "./personal-connector-checkpoints.js";
+import { parsePersonalConnectorConfig, type ParsedPersonalConnectorConfig } from "./personal-connector-config.js";
+import {
+  PERSONAL_CONNECTOR_DEFINITIONS,
+  personalConnectorDefinitionsForSecondBrain,
+} from "./personal-connector-definitions.js";
 import {
   OrcaPersonalConnectorSource,
   PortfolioPersonalConnectorSource,
   TaskTimelinePersonalConnectorSource,
 } from "./personal-connector-live-sources.js";
 import { parsePersonalConnectorRequest, readPersonalClock } from "./personal-connector-request.js";
-import { classifyPersonalSnapshot, personalResultBase, personalUnavailable } from "./personal-connector-results.js";
-import { SecondBrainPersonalConnectorSource } from "./personal-connector-second-brain-source.js";
+import { classifyPersonalSnapshot, personalNoScope, personalResultBase, personalUnavailable } from "./personal-connector-results.js";
+import { SecondBrainPersonalConnectorSource, type SecondBrainConnectorRead } from "./personal-connector-second-brain-source.js";
+import { OrcaReadonlyAdapter } from "./orca.js";
+import { TaskTimeline } from "./task-timeline.js";
 import {
   PERSONAL_CONNECTOR_IDS,
+  PersonalConnectorConfigError,
   PersonalConnectorError,
   type ConfiguredPersonalConnectorId,
   type PersonalConnectorDefinition,
@@ -19,9 +27,8 @@ import {
 } from "./personal-connector-types.js";
 import { freezePersonalResult, personalConnectorDigest } from "./personal-connector-values.js";
 
-export { PERSONAL_CONNECTOR_DEFINITIONS, PERSONAL_CONNECTOR_IDS, PersonalConnectorError };
-export { OrcaPersonalConnectorSource, PortfolioPersonalConnectorSource, TaskTimelinePersonalConnectorSource };
-export { SecondBrainPersonalConnectorSource };
+export { PERSONAL_CONNECTOR_DEFINITIONS, PERSONAL_CONNECTOR_IDS, PERSONAL_CONNECTOR_REGISTRY_SESSION, PersonalConnectorError };
+export { PersonalConnectorConfigError } from "./personal-connector-types.js";
 export type {
   ConfiguredPersonalConnectorId,
   PersonalConnectorDefinition,
@@ -32,6 +39,7 @@ export type {
   PersonalConnectorResult,
   PersonalConnectorState,
   PersonalConnectorValue,
+  PersonalRegistrySessionContract,
   PersonalSourceSnapshot,
 } from "./personal-connector-types.js";
 export type { SecondBrainConnectorRead } from "./personal-connector-second-brain-source.js";
@@ -42,14 +50,21 @@ type PersonalConnectorSources = {
   readonly task_timeline: TaskTimelinePersonalConnectorSource;
   readonly portfolio: PortfolioPersonalConnectorSource;
 };
-
-type RegistryOptions = { readonly sources: PersonalConnectorSources; readonly clock: () => Date };
 type ConfiguredSource = PersonalConnectorSources[ConfiguredPersonalConnectorId];
+const REGISTRY_TOKEN = Symbol("personal-connector-registry");
 
-function requested(values: readonly string[], allowed: readonly string[]): boolean {
-  return values.length === new Set(values).size && values.every(value => allowed.includes(value));
+function operationInfo(operation: SecondBrainConnectorRead): {
+  readonly capability: "search" | "read_page" | "recent_changes" | "open_conflicts";
+  readonly scope: string;
+} {
+  switch (operation.kind) {
+    case "search": return { capability: "search", scope: "second_brain.search.read" };
+    case "page": return { capability: "read_page", scope: "second_brain.page.read" };
+    case "recent": return { capability: "recent_changes", scope: "second_brain.recent.read" };
+    case "conflicts": return { capability: "open_conflicts", scope: "second_brain.conflict.read" };
+    default: { const exhaustive: never = operation; return exhaustive; }
+  }
 }
-
 function sourceFor(sources: PersonalConnectorSources, id: ConfiguredPersonalConnectorId): ConfiguredSource {
   switch (id) {
     case "second_brain": return sources.second_brain;
@@ -59,48 +74,109 @@ function sourceFor(sources: PersonalConnectorSources, id: ConfiguredPersonalConn
     default: { const exhaustive: never = id; return exhaustive; }
   }
 }
-
 function configured(id: PersonalConnectorReadRequest["connector_id"]): id is ConfiguredPersonalConnectorId {
   return id === "second_brain" || id === "orca" || id === "task_timeline" || id === "portfolio";
 }
-
-function validSourceClass(source: ConfiguredSource, id: ConfiguredPersonalConnectorId): boolean {
-  switch (id) {
-    case "second_brain": return source instanceof SecondBrainPersonalConnectorSource;
-    case "orca": return source instanceof OrcaPersonalConnectorSource;
-    case "task_timeline": return source instanceof TaskTimelinePersonalConnectorSource;
-    case "portfolio": return source instanceof PortfolioPersonalConnectorSource;
-    default: { const exhaustive: never = id; return exhaustive; }
+function requested(values: readonly string[], allowed: readonly string[]): boolean {
+  return values.length === new Set(values).size && values.every(value => allowed.includes(value));
+}
+function fieldAllowed(id: ConfiguredPersonalConnectorId, field: string, scopes: readonly string[]): boolean {
+  if (id === "portfolio") return scopes.includes("portfolio.projection.read");
+  if (id === "second_brain") return scopes.length === 1;
+  if (id === "orca") {
+    if (field === "environment") return scopes.includes("orca.identity.read");
+    if (field === "connected" || field === "last_output_at") return scopes.includes("orca.connectivity.read");
+    if (field === "worktree_id") return scopes.includes("orca.worktree.read");
+    if (field === "terminal_id" || field === "incarnation_id") return scopes.includes("orca.terminal.read");
+    return field === "cursor" && scopes.includes("orca.cursor.read");
   }
+  if (field === "task_id" || field === "state" || field === "observed_at" || field === "pending_approval") {
+    return scopes.includes("task_timeline.task.read");
+  }
+  if (field === "event_id" || field === "sequence") return scopes.includes("task_timeline.event.read");
+  if (field === "decision_id") return scopes.includes("task_timeline.decision.read");
+  return field === "evidence_id" && scopes.includes("task_timeline.evidence.read");
+}
+function definitionFor(definitions: readonly PersonalConnectorDefinition[], id: PersonalConnectorReadRequest["connector_id"]): PersonalConnectorDefinition {
+  const found = definitions.find(item => item.id === id);
+  if (found === undefined) throw new TypeError("PERSONAL_CONNECTOR_DEFINITION_MISSING");
+  return found;
+}
+function buildSources(config: ParsedPersonalConnectorConfig): PersonalConnectorSources {
+  const transport = Object.freeze({
+    call: config.second_brain.call,
+    restart: async () => {},
+    close: async () => {},
+    diagnostics: () => [],
+  });
+  const memory = new SecondBrainPersonalConnectorSource({
+    adapter: createSecondBrainReadAdapter({
+      transport,
+      budgets: config.second_brain.budgets,
+      clock: config.clock,
+      max_age_ms: config.second_brain.max_age_ms,
+      expiry_ms: config.second_brain.expiry_ms,
+    }),
+    readiness: { inspect: config.second_brain.readiness_inspect },
+    read: config.second_brain.operation,
+  });
+  return Object.freeze({
+    second_brain: memory,
+    orca: new OrcaPersonalConnectorSource({
+      adapter: new OrcaReadonlyAdapter(config.orca.runner),
+      environment: config.orca.environment,
+      worktree: config.orca.worktree,
+    }),
+    task_timeline: new TaskTimelinePersonalConnectorSource({
+      timeline: new TaskTimeline(config.timeline.authority),
+      limit: config.timeline.limit,
+    }),
+    portfolio: new PortfolioPersonalConnectorSource(config.portfolio),
+  });
 }
 
 export class PersonalConnectorRegistry {
-  private readonly checkpoints = new PersonalCheckpointStore();
-  constructor(private readonly options: RegistryOptions) {}
+  readonly registry_session = PERSONAL_CONNECTOR_REGISTRY_SESSION;
+  readonly #checkpoints = new PersonalCheckpointStore();
+  readonly #config: ParsedPersonalConnectorConfig;
+  readonly #sources: PersonalConnectorSources;
+  readonly #definitions: readonly PersonalConnectorDefinition[];
 
-  list(): readonly PersonalConnectorDefinition[] { return PERSONAL_CONNECTOR_DEFINITIONS; }
+  constructor(token: symbol, config: ParsedPersonalConnectorConfig) {
+    if (token !== REGISTRY_TOKEN) throw new PersonalConnectorConfigError();
+    const info = operationInfo(config.second_brain.operation);
+    this.#config = config;
+    this.#sources = buildSources(config);
+    this.#definitions = personalConnectorDefinitionsForSecondBrain(info.capability, info.scope);
+  }
+
+  list(): readonly PersonalConnectorDefinition[] { return this.#definitions; }
 
   async inspect(input: unknown): Promise<PersonalConnectorResult> {
     const request = parsePersonalConnectorRequest(input);
-    const definition = personalConnectorDefinition(request.connector_id);
+    const definition = definitionFor(this.#definitions, request.connector_id);
     if (!requested(request.scopes, definition.scopes) || !requested(request.fields, definition.allowed_fields)) {
       throw new PersonalConnectorError("PERSONAL_CONNECTOR_REQUEST_INVALID");
     }
-    const now = readPersonalClock(this.options.clock);
+    if (configured(request.connector_id)) {
+      const configuredId = request.connector_id;
+      if (!request.fields.every(field => fieldAllowed(configuredId, field, request.scopes))) {
+        throw new PersonalConnectorError("PERSONAL_CONNECTOR_REQUEST_INVALID");
+      }
+    }
+    const now = readPersonalClock(this.#config.clock);
     if (now === undefined) return personalUnavailable(definition, "invalid_clock", null);
     const checkedAt = now.toISOString();
     if (!configured(request.connector_id)) return personalUnavailable(definition, "not_configured", checkedAt);
-    if (request.checkpoint !== undefined && !this.checkpoints.has(request.checkpoint)) {
-      return personalUnavailable(definition, "checkpoint_invalid", checkedAt);
+    if (request.scopes.length === 0) return personalNoScope(definition, checkedAt);
+    if (request.checkpoint !== undefined) {
+      const resolution = this.#checkpoints.resolve(request.checkpoint);
+      if (resolution === "session_invalid") return personalUnavailable(definition, "checkpoint_session_invalid", checkedAt);
+      if (resolution === "invalid") return personalUnavailable(definition, "checkpoint_invalid", checkedAt);
     }
-    const source = sourceFor(this.options.sources, request.connector_id);
-    if (!validSourceClass(source, request.connector_id)) return personalUnavailable(definition, "invalid_source", checkedAt);
     let snapshot: PersonalSourceSnapshot;
-    try {
-      snapshot = await source.read(now);
-    } catch {
-      return personalUnavailable(definition, "adapter_failed", checkedAt);
-    }
+    try { snapshot = await sourceFor(this.#sources, request.connector_id).read(now); }
+    catch { return personalUnavailable(definition, "adapter_failed", checkedAt); }
     if (snapshot.connector_id !== request.connector_id || Date.parse(snapshot.observed_at) > now.getTime()) {
       return personalUnavailable(definition, "invalid_source", checkedAt);
     }
@@ -109,33 +185,29 @@ export class PersonalConnectorRegistry {
     }
     const sourceDigest = personalConnectorDigest(snapshot);
     const health = classifyPersonalSnapshot(snapshot, request.connector_id, now);
-    const checkpoint = this.checkpoints.decide({
-      connector_id: request.connector_id,
-      source_version: snapshot.source_version,
-      incarnation: snapshot.incarnation,
-      sequence: snapshot.sequence,
-      cursor: snapshot.cursor,
-      observed_at: snapshot.observed_at,
-      state: health.state,
+    const checkpoint = this.#checkpoints.decide({
+      connector_id: request.connector_id, source_version: snapshot.source_version, incarnation: snapshot.incarnation,
+      sequence: snapshot.sequence, cursor: snapshot.cursor, observed_at: snapshot.observed_at, state: health.state,
       source_digest: sourceDigest,
     }, request.checkpoint);
+    if (checkpoint.kind === "capacity") return personalUnavailable(definition, "checkpoint_capacity", checkedAt);
+    if (checkpoint.kind === "session_invalid") return personalUnavailable(definition, "checkpoint_session_invalid", checkedAt);
     if (checkpoint.kind === "invalid") return personalUnavailable(definition, "checkpoint_invalid", checkedAt);
     if (checkpoint.kind === "mismatch") return personalUnavailable(definition, "checkpoint_mismatch", checkedAt);
     if (checkpoint.kind === "stale") return personalUnavailable(definition, "checkpoint_stale", checkedAt);
     if (checkpoint.kind === "conflict") return personalUnavailable(definition, "replay_conflict", checkedAt);
+    const exposeValues = health.state === "ready" || health.state === "stale";
+    const values = Object.fromEntries(Object.entries(snapshot.values).filter(([field]) => request.fields.includes(field)));
     return freezePersonalResult({
-      ...personalResultBase(definition, checkedAt),
-      ...health,
+      ...personalResultBase(definition, checkedAt), ...health,
       evidence: { evidence_id: `connector:${request.connector_id}:${sourceDigest.slice(7)}`, digest: sourceDigest },
-      evidence_refs: [...snapshot.evidence_refs],
-      observed_at: snapshot.observed_at,
-      cursor: snapshot.cursor,
-      checkpoint: checkpoint.handle,
-      values: { ...snapshot.values },
+      evidence_refs: exposeValues ? [...snapshot.evidence_refs] : [],
+      observed_at: snapshot.observed_at, cursor: snapshot.cursor, checkpoint: checkpoint.handle,
+      values: exposeValues ? values : {},
     });
   }
 }
 
-export function createPersonalConnectorRegistry(options: RegistryOptions): PersonalConnectorRegistry {
-  return new PersonalConnectorRegistry(options);
+export function createPersonalConnectorRegistry(input: unknown): PersonalConnectorRegistry {
+  return new PersonalConnectorRegistry(REGISTRY_TOKEN, parsePersonalConnectorConfig(input));
 }

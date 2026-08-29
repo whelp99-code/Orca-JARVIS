@@ -7,9 +7,17 @@ export type PersonalConnectorState = "ready" | "no_data" | "stale" | "offline" |
 export type PersonalConnectorReason =
   | "current" | "current_empty" | "source_stale" | "freshness_threshold_exceeded" | "source_offline" | "disconnected"
   | "source_unavailable" | "not_configured" | "invalid_source" | "adapter_failed" | "invalid_clock"
-  | "checkpoint_invalid" | "checkpoint_mismatch" | "checkpoint_stale" | "replay_conflict";
+  | "no_scope" | "checkpoint_invalid" | "checkpoint_session_invalid" | "checkpoint_mismatch"
+  | "checkpoint_stale" | "checkpoint_capacity" | "replay_conflict";
 export type PersonalConnectorFreshness = "fresh" | "stale" | "unknown";
 export type PersonalConnectorValue = string | number | boolean | null | readonly string[];
+export type PersonalRegistrySessionContract = {
+  readonly version: 1;
+  readonly persistence: "process_local";
+  readonly restart: "handles_invalid";
+  readonly max_total: 4;
+  readonly max_per_connector: 1;
+};
 
 export type PersonalConnectorDefinition = {
   readonly id: PersonalConnectorId;
@@ -18,12 +26,14 @@ export type PersonalConnectorDefinition = {
   readonly scopes: readonly string[];
   readonly allowed_fields: readonly string[];
   readonly freshness: { readonly live_ms: number | null; readonly stale_ms: number | null };
+  readonly registry_session: PersonalRegistrySessionContract;
 };
 
 export type PersonalConnectorEvidence = { readonly evidence_id: string; readonly digest: string };
 export type PersonalConnectorResult = {
   readonly schema_version: 1;
   readonly registry_version: 1;
+  readonly registry_session: PersonalRegistrySessionContract;
   readonly connector_id: PersonalConnectorId;
   readonly configured: boolean;
   readonly capabilities: readonly string[];
@@ -55,10 +65,17 @@ export type PersonalSourceSnapshot = {
   readonly sequence: number;
   readonly cursor: string;
   readonly observed_at: string;
+  readonly fresh_until: string | null;
   readonly status: "current" | "no_data" | "stale" | "offline" | "unavailable" | "disconnected";
   readonly evidence_refs: readonly string[];
   readonly values: Readonly<Record<string, PersonalConnectorValue>>;
 };
+
+export class PersonalConnectorConfigError extends Error {
+  readonly name = "PersonalConnectorConfigError";
+  readonly code = "PERSONAL_CONNECTOR_CONFIG_INVALID";
+  constructor() { super("PERSONAL_CONNECTOR_CONFIG_INVALID"); }
+}
 
 export class PersonalConnectorError extends Error {
   readonly name = "PersonalConnectorError";

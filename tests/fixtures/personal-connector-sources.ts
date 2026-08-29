@@ -1,19 +1,15 @@
 import {
   AuthorityDb,
-  OrcaPersonalConnectorSource,
-  OrcaReadonlyAdapter,
-  PortfolioPersonalConnectorSource,
-  SecondBrainPersonalConnectorSource,
-  TaskTimeline,
-  TaskTimelinePersonalConnectorSource,
-  createPersonalConnectorRegistry,
   SECOND_BRAIN_FROZEN_DIGEST,
   SECOND_BRAIN_PROTOCOL_VERSION,
   SECOND_BRAIN_REQUIRED_TOOLS,
+  createPersonalConnectorRegistry,
   type PersonalConnectorId,
   type SecondBrainReadOutcome,
 } from "../../src/index.js";
 import { signPortfolioEnvelope } from "../../src/dashboard/portfolio-auth.js";
+import { SecondBrainTransportError, type SecondBrainReadMethod } from "../../src/second-brain-transport.js";
+import { page } from "./second-brain-adapter-fixtures.js";
 import { localReport } from "./portfolio-report.js";
 import { tempDb } from "../helpers.js";
 
@@ -22,9 +18,7 @@ const DIGEST = `sha256:${"a".repeat(64)}`;
 
 export function currentMemoryOutcome(observedAt = CONNECTOR_NOW.toISOString()): SecondBrainReadOutcome {
   return {
-    kind: "current",
-    checked_at: CONNECTOR_NOW.toISOString(),
-    evidence: [{
+    kind: "current", checked_at: CONNECTOR_NOW.toISOString(), evidence: [{
       kind: "memory", page_id: "page-1", sid: "sid-1", source_ref: "source-1",
       source_id: "src:pos:v1:second-brain:primary", source_version: "source-v1", sensitivity: "personal",
       observed_at: observedAt, valid_at: observedAt,
@@ -35,82 +29,104 @@ export function currentMemoryOutcome(observedAt = CONNECTOR_NOW.toISOString()): 
   };
 }
 
-function memorySource(outcome: SecondBrainReadOutcome): SecondBrainPersonalConnectorSource {
-  const adapter = {
-    search: async () => outcome, readPage: async () => outcome,
-    recentChanges: async () => outcome, openConflicts: async () => outcome,
-  };
-  return new SecondBrainPersonalConnectorSource({
-    adapter,
-    readiness: { inspect: async () => ({
-      executable: "available", configuration: "valid", contract_digest: SECOND_BRAIN_FROZEN_DIGEST,
-      protocol_version: SECOND_BRAIN_PROTOCOL_VERSION, tools: SECOND_BRAIN_REQUIRED_TOOLS, schemas_compatible: true,
-      status: "ok", doctor: "ok", handshake: "ok", status_operational: true, doctor_operational: true,
-      read_authorization: "authorized", write_authorization: "disabled", data_state: "ready",
-      refresh: { kind: "success", completed_at: CONNECTOR_NOW.toISOString() },
-    }) },
-    read: { kind: "search", query: "fixture" },
-  });
-}
-
-type OrcaFixture = {
-  readonly connected: boolean;
-  readonly overrides: Readonly<Record<string, unknown>>;
-  readonly error: Error | undefined;
-  readonly calls: { count: number } | undefined;
-};
-
-function orcaSource(fixture: OrcaFixture): OrcaPersonalConnectorSource {
-  const runner = async () => {
-    if (fixture.calls !== undefined) fixture.calls.count += 1;
-    if (fixture.error !== undefined) throw fixture.error;
-    return JSON.stringify({ ok: true, result: { terminals: [{
-    handle: "terminal-1", ptyId: "pty-1", incarnationId: "incarnation-1", worktreeId: "worktree-1",
-    worktreePath: "/fixture", title: "ignored prose", connected: fixture.connected, writable: false,
-    lastOutputAt: CONNECTOR_NOW.getTime(), preview: "ignored body", ...fixture.overrides,
-  }] } });
-  };
-  return new OrcaPersonalConnectorSource({ adapter: new OrcaReadonlyAdapter(runner), environment: "local", worktree: "active" });
-}
-
-export async function connectorHarness(options: {
+type HarnessOptions = {
   readonly outcome?: SecondBrainReadOutcome;
   readonly connected?: boolean;
   readonly clock?: () => Date;
   readonly orca_overrides?: Readonly<Record<string, unknown>>;
   readonly portfolio_envelope?: Buffer;
   readonly portfolio_key?: Buffer;
+  readonly portfolio_reported_at?: string;
+  readonly portfolio_received_at?: Date;
   readonly orca_error?: Error;
   readonly orca_calls?: { count: number };
-} = {}) {
+  readonly memory_calls?: { methods: SecondBrainReadMethod[] };
+  readonly max_age_ms?: number;
+  readonly expiry_ms?: number;
+  readonly operation?:
+    | { readonly kind: "search"; readonly query: string }
+    | { readonly kind: "page"; readonly page_id: string }
+    | { readonly kind: "recent"; readonly days: number }
+    | { readonly kind: "conflicts" };
+};
+
+function transportCall(options: HarnessOptions) {
+  return async (method: SecondBrainReadMethod) => {
+    options.memory_calls?.methods.push(method);
+    const outcome = options.outcome;
+    if (outcome?.kind === "no_data") return { kind: "no_data" as const, reason: "empty_result" as const };
+    if (outcome?.kind === "offline") throw new SecondBrainTransportError(outcome.code, "unavailable", { generation: 1 });
+    if (outcome?.kind === "unavailable") throw new SecondBrainTransportError(outcome.code, "unavailable", { generation: 1 });
+    if (method === "sb_search") return {
+      kind: "data" as const,
+      value: { results: [{ page_id: "wiki/principle", section: "Rule", snippet: "principle", score: 1 }] },
+    };
+    if (method === "sb_recent_changes") return {
+      kind: "data" as const,
+      value: { changes: [{ page_id: "wiki/principle", change: "modified", date: "2026-08-28" }] },
+    };
+    if (method === "sb_open_conflicts") return {
+      kind: "data" as const,
+      value: { conflicts: [{ conflict_id: "2026-08-28-project", page_id: "wiki/project", summary: "unresolved" }] },
+    };
+    if (options.operation?.kind === "conflicts") return page(
+      "Use A.[^aaaaaaaa]\nUse B.[^bbbbbbbb]\n[^aaaaaaaa]: source:a\n[^bbbbbbbb]: source:b\n",
+      { id: "conflicts/2026-08-28-project", status: "conflict" },
+    );
+    return page();
+  };
+}
+
+export async function connectorHarness(options: HarnessOptions = {}) {
   const db = new AuthorityDb(tempDb());
   await db.migrate();
   const key = options.portfolio_key ?? Buffer.alloc(32, 7);
-  const envelope = options.portfolio_envelope
-    ?? Buffer.from(JSON.stringify(signPortfolioEnvelope(localReport(), key)), "utf8");
-  const sources = {
-    second_brain: memorySource(options.outcome ?? currentMemoryOutcome()),
-    orca: orcaSource({
-      connected: options.connected ?? true,
-      overrides: options.orca_overrides ?? {},
-      error: options.orca_error,
-      calls: options.orca_calls,
-    }),
-    task_timeline: new TaskTimelinePersonalConnectorSource({ timeline: new TaskTimeline(db), limit: 8 }),
-    portfolio: new PortfolioPersonalConnectorSource({ envelope, key, source: "local", received_at: CONNECTOR_NOW }),
+  const envelope = options.portfolio_envelope ?? Buffer.from(JSON.stringify(signPortfolioEnvelope(localReport({
+    reported_at: options.portfolio_reported_at ?? CONNECTOR_NOW.toISOString(),
+  }), key)), "utf8");
+  const runner = async () => {
+    if (options.orca_calls !== undefined) options.orca_calls.count += 1;
+    if (options.orca_error !== undefined) throw options.orca_error;
+    return JSON.stringify({ ok: true, result: { terminals: [{
+      handle: "terminal-1", ptyId: "pty-1", incarnationId: "incarnation-1", worktreeId: "worktree-1",
+      worktreePath: "/fixture", title: "ignored prose", connected: options.connected ?? true, writable: false,
+      lastOutputAt: CONNECTOR_NOW.getTime(), preview: "ignored body", ...(options.orca_overrides ?? {}),
+    }] } });
   };
-  return {
-    db,
-    sources,
-    registry: createPersonalConnectorRegistry({ sources, clock: options.clock ?? (() => CONNECTOR_NOW) }),
+  const clock = options.clock ?? (() => CONNECTOR_NOW);
+  const factory_input = {
+    clock,
+    second_brain: {
+      call: transportCall(options),
+      readiness_inspect: async () => ({
+        executable: "available", configuration: "valid", contract_digest: SECOND_BRAIN_FROZEN_DIGEST,
+        protocol_version: SECOND_BRAIN_PROTOCOL_VERSION, tools: SECOND_BRAIN_REQUIRED_TOOLS, schemas_compatible: true,
+        status: "ok", doctor: "ok", handshake: "ok", status_operational: true, doctor_operational: true,
+        read_authorization: "authorized", write_authorization: "disabled", data_state: "ready",
+        refresh: { kind: "success", completed_at: CONNECTOR_NOW.toISOString() },
+      }),
+      budgets: { max_hits: 4, max_excerpt_bytes: 256, max_total_bytes: 4_096, max_page_bytes: 8_192 },
+      max_age_ms: options.max_age_ms ?? 86_400_000,
+      expiry_ms: options.expiry_ms ?? 172_800_000,
+      operation: options.operation ?? { kind: "search" as const, query: "fixture" },
+    },
+    orca: { runner, environment: "local", worktree: "active" },
+    timeline: { authority: db, limit: 8 },
+    portfolio: {
+      envelope,
+      key,
+      source: "local" as const,
+      received_at: options.portfolio_received_at ?? CONNECTOR_NOW,
+    },
   };
+  return { db, factory_input, registry: createPersonalConnectorRegistry(factory_input) };
 }
 
 export function connectorRequest(id: PersonalConnectorId, checkpoint?: string) {
   const table = {
     second_brain: {
-      scopes: ["second_brain.search.read", "second_brain.page.read", "second_brain.recent.read", "second_brain.conflict.read"],
-      fields: ["evidence_id", "content_digest", "source_version", "sensitivity", "observed_at", "conflict_id"],
+      scopes: ["second_brain.search.read"],
+      fields: ["evidence_id", "content_digest", "source_version", "sensitivity", "observed_at"],
     },
     orca: {
       scopes: ["orca.identity.read", "orca.connectivity.read", "orca.worktree.read", "orca.terminal.read", "orca.cursor.read"],

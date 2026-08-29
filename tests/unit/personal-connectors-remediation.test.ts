@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import * as publicApi from "../../src/index.js";
 import {
   PERSONAL_CONNECTOR_DEFINITIONS,
+  PersonalConnectorConfigError,
   PersonalConnectorError,
-  PersonalConnectorRegistry,
+  createPersonalConnectorRegistry,
 } from "../../src/index.js";
 import {
   CONNECTOR_NOW,
@@ -14,20 +15,12 @@ import {
 const OLD = "2020-01-01T00:00:00.000Z";
 
 describe("Task 13 remediation roots", () => {
-  it("root 1 rejects structurally injected unauthenticated configured sources", async () => {
-    const { db, sources } = await connectorHarness();
-    const forged = {
-      ...sources,
-      portfolio: { read: async () => ({
-        connector_id: "portfolio", source_version: "forged-v1", incarnation: "local", sequence: 1,
-        cursor: `sha256:${"b".repeat(64)}`, observed_at: CONNECTOR_NOW.toISOString(), status: "current",
-        evidence_refs: [], values: { report_digest: `sha256:${"c".repeat(64)}` },
-      }) },
-    };
-    const subject: unknown = Reflect.construct(PersonalConnectorRegistry, [{ sources: forged, clock: () => CONNECTOR_NOW }]);
+  it("root 1 rejects structurally injected configured wrapper objects", async () => {
+    const { db } = await connectorHarness();
     try {
-      if (!(subject instanceof PersonalConnectorRegistry)) throw new TypeError("registry fixture invalid");
-      expect(await subject.inspect(connectorRequest("portfolio"))).toMatchObject({ state: "unavailable", reason: "invalid_source" });
+      expect(() => createPersonalConnectorRegistry({ sources: { portfolio: { read: async () => ({}) } } })).toThrow(
+        new PersonalConnectorConfigError(),
+      );
     } finally { db.close(); }
   });
 
@@ -79,7 +72,11 @@ describe("Task 13 remediation roots", () => {
 
   it("root 4 rejects stale no_data and keeps disconnected Orca offline", async () => {
     const outcome = { kind: "no_data", checked_at: OLD, fresh_until: OLD } as const;
-    const staleHarness = await connectorHarness({ outcome });
+    let clockCalls = 0;
+    const staleHarness = await connectorHarness({
+      outcome,
+      clock: () => { clockCalls += 1; return clockCalls === 1 ? CONNECTOR_NOW : new Date(OLD); },
+    });
     const disconnectedHarness = await connectorHarness({ connected: false });
     try {
       expect((await staleHarness.registry.inspect(connectorRequest("second_brain"))).state).toBe("unavailable");
@@ -96,7 +93,7 @@ describe("Task 13 remediation roots", () => {
       now = new Date(CONNECTOR_NOW.getTime() + 1);
       const stale = await registry.inspect(connectorRequest("orca", first.checkpoint));
       expect(stale.reason).toBe("checkpoint_stale");
-      expect(first.checkpoint).toMatch(/^pcp:[0-9a-f-]{36}$/u);
+      expect(first.checkpoint).toMatch(/^pcp:1:[0-9a-f-]{36}:[0-9a-f-]{36}$/u);
     } finally { db.close(); }
   });
 
@@ -112,11 +109,11 @@ describe("Task 13 remediation roots", () => {
     } finally { db.close(); }
   });
 
-  it("root 7 exports concrete wrappers and rejects unsigned portfolio input", async () => {
-    expect("SecondBrainPersonalConnectorSource" in publicApi).toBe(true);
-    expect("OrcaPersonalConnectorSource" in publicApi).toBe(true);
-    expect("TaskTimelinePersonalConnectorSource" in publicApi).toBe(true);
-    expect("PortfolioPersonalConnectorSource" in publicApi).toBe(true);
+  it("root 7 hides concrete wrappers and rejects unsigned portfolio input", async () => {
+    expect("SecondBrainPersonalConnectorSource" in publicApi).toBe(false);
+    expect("OrcaPersonalConnectorSource" in publicApi).toBe(false);
+    expect("TaskTimelinePersonalConnectorSource" in publicApi).toBe(false);
+    expect("PortfolioPersonalConnectorSource" in publicApi).toBe(false);
     const unsigned = await connectorHarness({ portfolio_envelope: Buffer.from('{"source":"local"}', "utf8") });
     try {
       expect(await unsigned.registry.inspect(connectorRequest("portfolio"))).toMatchObject({

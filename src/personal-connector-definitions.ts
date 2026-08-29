@@ -1,12 +1,14 @@
+import { PERSONAL_CONNECTOR_REGISTRY_SESSION } from "./personal-connector-checkpoints.js";
 import type { PersonalConnectorDefinition, PersonalConnectorId } from "./personal-connector-types.js";
 
-function frozenDefinition(value: PersonalConnectorDefinition): PersonalConnectorDefinition {
+function frozenDefinition(value: Omit<PersonalConnectorDefinition, "registry_session">): PersonalConnectorDefinition {
   return Object.freeze({
     ...value,
     capabilities: Object.freeze([...value.capabilities]),
     scopes: Object.freeze([...value.scopes]),
     allowed_fields: Object.freeze([...value.allowed_fields]),
     freshness: Object.freeze({ ...value.freshness }),
+    registry_session: PERSONAL_CONNECTOR_REGISTRY_SESSION,
   });
 }
 
@@ -45,6 +47,23 @@ export const PERSONAL_CONNECTOR_DEFINITIONS = Object.freeze([
   frozenDefinition({ id: "mail", configured: false, capabilities: [], scopes: [], allowed_fields: [], freshness: { live_ms: null, stale_ms: null } }),
   frozenDefinition({ id: "messenger", configured: false, capabilities: [], scopes: [], allowed_fields: [], freshness: { live_ms: null, stale_ms: null } }),
 ]);
+
+export function personalConnectorDefinitionsForSecondBrain(
+  capability: "search" | "read_page" | "recent_changes" | "open_conflicts",
+  scope: string,
+): readonly PersonalConnectorDefinition[] {
+  const memory = PERSONAL_CONNECTOR_DEFINITIONS[0];
+  if (memory === undefined) throw new TypeError("PERSONAL_CONNECTOR_DEFINITION_MISSING");
+  const narrowed = frozenDefinition({
+    ...memory,
+    capabilities: [capability],
+    scopes: [scope],
+    allowed_fields: capability === "open_conflicts"
+      ? memory.allowed_fields
+      : memory.allowed_fields.filter(field => field !== "conflict_id"),
+  });
+  return Object.freeze([narrowed, ...PERSONAL_CONNECTOR_DEFINITIONS.slice(1)]);
+}
 
 export function personalConnectorDefinition(id: PersonalConnectorId): PersonalConnectorDefinition {
   const found = PERSONAL_CONNECTOR_DEFINITIONS.find(item => item.id === id);

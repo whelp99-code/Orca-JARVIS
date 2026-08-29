@@ -1,3 +1,4 @@
+import { PERSONAL_CONNECTOR_REGISTRY_SESSION } from "./personal-connector-checkpoints.js";
 import type {
   PersonalConnectorDefinition,
   PersonalConnectorFreshness,
@@ -13,6 +14,7 @@ export function personalResultBase(definition: PersonalConnectorDefinition, chec
   return {
     schema_version: 1 as const,
     registry_version: 1 as const,
+    registry_session: PERSONAL_CONNECTOR_REGISTRY_SESSION,
     connector_id: definition.id,
     configured: definition.configured,
     capabilities: [...definition.capabilities],
@@ -37,6 +39,16 @@ export function personalUnavailable(
   });
 }
 
+export function personalNoScope(definition: PersonalConnectorDefinition, checkedAt: string): PersonalConnectorResult {
+  const evidence = personalConnectorDigest({ connector_id: definition.id, reason: "no_scope", checked_at: checkedAt });
+  return freezePersonalResult({
+    ...personalResultBase(definition, checkedAt),
+    state: "no_data", reason: "no_scope", freshness: "unknown",
+    evidence: { evidence_id: `connector:${definition.id}:${evidence.slice(7)}`, digest: evidence },
+    evidence_refs: [], observed_at: checkedAt, cursor: null, checkpoint: null, values: {},
+  });
+}
+
 export function classifyPersonalSnapshot(snapshot: PersonalSourceSnapshot, id: PersonalConnectorId, checkedAt: Date): {
   readonly state: PersonalConnectorState;
   readonly reason: PersonalConnectorReason;
@@ -45,7 +57,8 @@ export function classifyPersonalSnapshot(snapshot: PersonalSourceSnapshot, id: P
   const age = checkedAt.getTime() - Date.parse(snapshot.observed_at);
   switch (snapshot.status) {
     case "disconnected": return { state: "offline", reason: "disconnected", freshness: "unknown" };
-    case "no_data": return age === 0
+    case "no_data": return age >= 0 && snapshot.fresh_until !== null
+      && checkedAt.getTime() <= Date.parse(snapshot.fresh_until)
       ? { state: "no_data", reason: "current_empty", freshness: "fresh" }
       : { state: "unavailable", reason: "source_stale", freshness: "unknown" };
     case "stale": return { state: "stale", reason: "source_stale", freshness: "stale" };
@@ -57,7 +70,6 @@ export function classifyPersonalSnapshot(snapshot: PersonalSourceSnapshot, id: P
         if (age <= 300_000) return { state: "stale", reason: "freshness_threshold_exceeded", freshness: "stale" };
         return { state: "offline", reason: "source_offline", freshness: "unknown" };
       }
-      if (id === "task_timeline" && age !== 0) return { state: "unavailable", reason: "source_stale", freshness: "unknown" };
       return { state: "ready", reason: "current", freshness: "unknown" };
     }
     default: { const exhaustive: never = snapshot.status; return exhaustive; }
