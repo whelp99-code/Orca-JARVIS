@@ -15,10 +15,19 @@ export const RECOMMENDATION_EXPIRES = "2026-08-28T13:00:00.000Z";
 export const RECOMMENDATION_ID = "rec:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7101";
 export const REPLACEMENT_ID = "rec:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7102";
 const CONTEXT_ID = "ctx:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7100";
-const UUIDS = [
-  "018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7201",
-  "018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7202",
-  "018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7203",
+const CONTEXT_REFERENCE_KINDS = [
+  ["memory:principle:customer-first", "user_confirmed_principle"],
+  ["second-brain:sid:customer-first", "user_confirmed_principle"],
+  ["decision:owner:import", "owner_decision"],
+  ["live:customer", "linux_live_fact"],
+  ["live:deadline", "linux_live_fact"],
+  ["live:dependency", "linux_live_fact"],
+  ["identity:customer-delivery", "linux_live_fact"],
+  ["live:worker", "linux_live_fact"],
+  ["identity:worker-implementation", "linux_live_fact"],
+  ["live:owner-gated", "linux_live_fact"],
+  ["request:owner:deploy", "owner_decision"],
+  ["identity:owner-gated-deploy", "linux_live_fact"],
 ] as const;
 function digest(value: string): Sha256Digest {
   const candidate = `sha256:${createHash("sha256").update(value).digest("hex")}`;
@@ -26,10 +35,10 @@ function digest(value: string): Sha256Digest {
   if (!valid(candidate)) throw new TypeError("fixture digest required");
   return candidate;
 }
-const evidence = UUIDS.map((uuid, index) => ({
-  evidence_id: `evi:pos:v1:${uuid}`,
-  digest: digest(`evidence-${index}`),
-  kind: ["linux_live_fact", "user_confirmed_principle", "owner_decision"][index] ?? "bounded",
+const evidence = CONTEXT_REFERENCE_KINDS.map(([reference, kind], index) => ({
+  evidence_id: `evi:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f72${String(index + 1).padStart(2, "0")}`,
+  digest: digest(`evidence:${reference}`),
+  kind,
   source_id: "src:pos:v1:second-brain:primary",
   observed_at: "2026-08-28T11:59:00.000Z",
 }));
@@ -53,17 +62,24 @@ export function persistTask18Context(db: AuthorityDb, expiresAt = RECOMMENDATION
     expires_at: expiresAt, idempotency_key: `idem:pos:v1:context:${"1".repeat(64)}`,
     correlation_id: "corr:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7301", causation_id: null,
     payload: { purpose: "daily_prioritization", query: "What should happen next?", included_observation_refs: [],
-      included_memory_refs: ["sid:principle:customer-first", "sid:live", "sid:decision"], excluded_refs: [], pending_authority_refs: [],
+      included_memory_refs: CONTEXT_REFERENCE_KINDS.map(([reference]) => reference), excluded_refs: [], pending_authority_refs: [],
       conflicts: ["calendar and customer dates differ"], omissions: ["mail unavailable"],
       budgets: { max_items: 16, max_excerpt_bytes: 1024, max_total_bytes: 8192 }, state: "sufficient" },
     policy_decision: { decision: "allow", policy_version: "policy-v1", reason_codes: ["POLICY_SATISFIED"] }, evidence, receipt: null,
   });
   db.persistContextSnapshot({ context, memory_evidence: evidence.map((item, index) => ({
-    memory_ref: ["sid:principle:customer-first", "sid:live", "sid:decision"][index] ?? `sid:${index}`,
+    memory_ref: CONTEXT_REFERENCE_KINDS[index]?.[0] ?? `missing:${index}`,
     evidence_id: item.evidence_id, source_id: item.source_id, digest: item.digest,
     observed_at: item.observed_at, fresh_until: context.expires_at,
   })) }, RECOMMENDATION_NOW);
   return context;
+}
+
+export function task18EvidenceForReference(context: ReturnType<typeof parseContextSnapshotV1>, reference: string) {
+  const referenceIndex = CONTEXT_REFERENCE_KINDS.findIndex(([candidate]) => candidate === reference);
+  const linked = context.evidence[referenceIndex];
+  if (linked === undefined) throw new TypeError("context evidence required");
+  return linked;
 }
 
 export function task18Request(context: ReturnType<typeof parseContextSnapshotV1>, id = RECOMMENDATION_ID) {
@@ -96,10 +112,7 @@ export function task18Request(context: ReturnType<typeof parseContextSnapshotV1>
       title: `Next: ${action.action_id}`, operation: "review", target_digest: digest(action.action_id) })),
     linux_evidence: [...citations].map(([ref, kind]) => {
       if (kind === "policy") return { ref, kind, context_evidence_id: null, digest: contextDigest };
-      const evidenceKind = kind === "principle" ? "user_confirmed_principle"
-        : kind === "owner" ? "owner_decision" : "linux_live_fact";
-      const linked = context.evidence.find(item => item.kind === evidenceKind);
-      if (linked === undefined) throw new TypeError("context evidence required");
+      const linked = task18EvidenceForReference(context, ref);
       return { ref, kind, context_evidence_id: linked.evidence_id, digest: linked.digest };
     }),
     approval_requirement: "owner", confidence_class: "high",

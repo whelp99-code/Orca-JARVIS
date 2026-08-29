@@ -60,7 +60,7 @@ interface TimelineGraph {
 
 const parse = (value: unknown): unknown => {
   if (typeof value !== "string") return value;
-  try { return JSON.parse(value) as unknown; } catch { return value; }
+  try { return JSON.parse(value); } catch { return value; }
 };
 const isRow = (value: unknown): value is Row => typeof value === "object" && value !== null && !Array.isArray(value);
 const rowJson = (value: unknown): Row => { const parsed = parse(value); return isRow(parsed) ? parsed : {}; };
@@ -206,7 +206,7 @@ export class TaskTimeline {
     const sourceIds = this.sourceIds(graph, taskId); const extraPending = this.graphPendingApproval(graph);
     const workRows = this.inRows("SELECT w.id,w.action,w.state,w.created_at,p.state AS projection_state,p.updated_at AS projection_updated,(SELECT MAX(created_at) FROM event_ledger WHERE work_id=w.id) AS ledger_at FROM work_items w LEFT JOIN work_projection p ON p.work_id=w.id WHERE w.id IN", graph.workIds, "ORDER BY w.created_at,w.id");
     if (workRows.length > 0) {
-      const exact = workRows.find(row => row.id === taskId) ?? workRows.sort((left, right) => latest(right.projection_updated, right.ledger_at, right.created_at).localeCompare(latest(left.projection_updated, left.ledger_at, left.created_at)))[0]!;
+      const exact = workRows.find(row => row.id === taskId) ?? workRows.sort((left, right) => latest(right.projection_updated, right.ledger_at, right.created_at).localeCompare(latest(left.projection_updated, left.ledger_at, left.created_at))).at(0); if (exact === undefined) return undefined;
       const state = optional(exact.projection_state) ?? string(exact.state);
       return { task_id: string(exact.id), title: string(exact.action), kind: "work", state, updated_at: latest(exact.projection_updated, exact.ledger_at, exact.created_at), pending_approval: pendingApproval(state) || extraPending, source_ids: sourceIds };
     }

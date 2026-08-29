@@ -2,11 +2,12 @@ import type Database from "better-sqlite3";
 import type { Sha256Digest } from "./personal-contracts.js";
 import { persistenceHash, persistenceRow, persistenceText } from "./personal-persistence-values.js";
 import { storedRecommendationIdentity } from "./recommendation-identity.js";
+import type { RecommendationEvidenceKind } from "./recommendation-provenance.js";
 
 export type RecommendationLifecycleState = "pending" | "accepted" | "rejected" | "expired" | "superseded";
 export type ProjectedEvidenceLink = {
   readonly ref: string;
-  readonly kind: string;
+  readonly kind: RecommendationEvidenceKind;
   readonly context_evidence_id: string | null;
   readonly digest: string;
 };
@@ -54,36 +55,19 @@ type EnvelopeSummary = {
   readonly linksByRank: ReadonlyMap<number, readonly ProjectedEvidenceLink[]>;
   readonly identity: ReturnType<typeof storedRecommendationIdentity>;
 };
-function record(value: unknown): Readonly<Record<string, unknown>> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new TypeError("stored object required");
-  return Object.fromEntries(Object.entries(value));
-}
-function stringList(value: unknown): readonly string[] {
-  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
-}
 function summary(row: Readonly<Record<string, unknown>>): EnvelopeSummary {
-  const envelope = record(JSON.parse(persistenceText(row["canonical_envelope_json"])));
-  const payload = record(envelope["payload"]);
   const identity = storedRecommendationIdentity(row["canonical_digest"], row["evidence_digest"], row["canonical_envelope_json"]);
-  const provenance = record(identity.provenance);
-  const ranking = record(provenance["ranking"]);
-  const actions = Array.isArray(ranking["actions"]) ? ranking["actions"].map(record) : [];
-  const links = Array.isArray(provenance["linux_evidence"])
-    ? provenance["linux_evidence"].map(record).map(link => ({
-        ref: persistenceText(link["ref"]), kind: persistenceText(link["kind"]),
-        context_evidence_id: link["context_evidence_id"] === null ? null : persistenceText(link["context_evidence_id"]),
-        digest: persistenceText(link["digest"]),
-      }))
-    : [];
-  const ownerRanks = new Set(actions.filter(action => action["disposition"] === "owner_gate_required")
-    .map(action => Number(action["rank"])));
+  const actions = identity.provenance.ranking.actions;
+  const links = identity.provenance.linux_evidence;
+  const ownerRanks = new Set(actions.filter(action => action.disposition === "owner_gate_required")
+    .flatMap(action => action.rank === null ? [] : [action.rank]));
   const linksByRank = new Map<number, readonly ProjectedEvidenceLink[]>();
   for (const action of actions) {
-    const rationale = record(action["rationale"]); const citations = record(rationale["citations"]);
-    const refs = new Set(Object.values(citations).filter((value): value is string => typeof value === "string"));
-    linksByRank.set(Number(action["rank"]), links.filter(link => refs.has(link.ref)));
+    if (action.rank === null) continue;
+    const refs = new Set(Object.values(action.rationale.citations).filter((value): value is string => value !== null));
+    linksByRank.set(action.rank, links.filter(link => refs.has(link.ref)));
   }
-  return { conflicts: stringList(payload["conflicts"]), omissions: stringList(payload["omissions"]),
+  return { conflicts: identity.recommendation.payload.conflicts, omissions: identity.recommendation.payload.omissions,
     ownerRanks, linksByRank, identity };
 }
 function lifecycle(value: unknown): RecommendationLifecycleState {
@@ -128,8 +112,9 @@ export function projectRecommendations(database: Database.Database, now: string,
      ORDER BY r.created_at DESC,r.recommendation_id,a.rank LIMIT ?`,
   ).all(limit).map(persistenceRow);
   const candidateRows = database.prepare(
-    "SELECT recommendation_id,context_digest,canonical_digest,evidence_digest,canonical_envelope_json FROM personal_recommendations",
-  ).all().map(persistenceRow);
+    `SELECT recommendation_id,context_digest,canonical_digest,evidence_digest,canonical_envelope_json
+     FROM personal_recommendations ORDER BY created_at DESC,recommendation_id LIMIT ?`,
+  ).all(limit).map(persistenceRow);
   const summaries = new Map<string, EnvelopeSummary>();
   for (const row of [...rows, ...candidateRows]) {
     const id = persistenceText(row["recommendation_id"]);
@@ -137,10 +122,10 @@ export function projectRecommendations(database: Database.Database, now: string,
   }
   const actions = rows.map(row => {
     const state = lifecycle(row["state"]); const rank = Number(row["rank"]); const id = persistenceText(row["recommendation_id"]);
-    const deadline = [persistenceText(row["expires_at"]), persistenceText(row["context_expires_at"]),
-      persistenceText(row["context_fresh_until"])].sort()[0];
-    if (deadline === undefined) throw new TypeError("stored recommendation deadline required");
     const details = summaries.get(id); if (details === undefined) throw new TypeError("stored recommendation summary required");
+    const deadline = [persistenceText(row["expires_at"]), persistenceText(row["context_expires_at"]),
+      persistenceText(row["context_fresh_until"]), details.identity.recommendation.freshness.fresh_until].sort()[0];
+    if (deadline === undefined) throw new TypeError("stored recommendation deadline required");
     const current = (state === "pending" || state === "accepted") && now < deadline;
     const approval = persistenceText(row["approval_requirement"]);
     const confidence = persistenceText(row["confidence_class"]);
@@ -162,8 +147,11 @@ export function projectRecommendations(database: Database.Database, now: string,
   const current = actions.filter(action => action.current).sort((left, right) => left.rank - right.rank
     || left.recommendation_id.localeCompare(right.recommendation_id));
   const warnings = [...new Map(rows.flatMap(row => {
-    const id = persistenceText(row["recommendation_id"]); const expires = [persistenceText(row["expires_at"]),
-      persistenceText(row["context_expires_at"])].sort()[0]; const fresh = persistenceText(row["context_fresh_until"]);
+    const id = persistenceText(row["recommendation_id"]); const details = summaries.get(id);
+    if (details === undefined) throw new TypeError("stored recommendation summary required");
+    const expires = [persistenceText(row["expires_at"]), persistenceText(row["context_expires_at"]),
+      details.identity.recommendation.freshness.fresh_until].sort()[0];
+    const fresh = persistenceText(row["context_fresh_until"]);
     const warning = now >= (expires ?? fresh)
       ? { recommendation_id: id, code: "RECOMMENDATION_EXPIRED" as const, deadline: expires ?? fresh }
       : now >= fresh ? { recommendation_id: id, code: "RECOMMENDATION_STALE" as const, deadline: fresh } : undefined;

@@ -9,8 +9,20 @@ import { canonicalPersonalContractHash, parseContextSnapshotV1, parseRecommendat
 import { persistenceHash } from "./personal-persistence-values.js";
 import type { PriorityActionDecision, PriorityEngineResult } from "./priority-engine.js";
 import { parsePriorityEngineResult, PriorityResultContractError } from "./priority-result-parser.js";
+import {
+  deriveRecommendationEvidenceLinks,
+  RecommendationEvidenceBindingError,
+} from "./recommendation-evidence-binding.js";
+import { RecommendationIdentityError, encodeRecommendationProvenance } from "./recommendation-identity.js";
 import { projectRecommendations, type RecommendationReadProjection } from "./recommendation-projection.js";
-import { encodeRecommendationProvenance } from "./recommendation-identity.js";
+import {
+  parseRecommendationActionMaterials,
+  parseRecommendationEvidenceLinks,
+  RecommendationProvenanceContractError,
+  type RecommendationActionMaterial,
+  type RecommendationEvidenceLink,
+  type RecommendationProvenance,
+} from "./recommendation-provenance.js";
 
 export const RECOMMENDATION_ERROR_CODES = [
   "RECOMMENDATION_INPUT_INVALID", "RECOMMENDATION_RANKING_INVALID", "RECOMMENDATION_CONTEXT_NOT_FOUND",
@@ -22,18 +34,6 @@ export class RecommendationError extends Error {
   readonly name = "RecommendationError";
   constructor(readonly code: RecommendationErrorCode) { super(code); }
 }
-export type RecommendationActionMaterial = {
-  readonly action_id: string;
-  readonly title: string;
-  readonly operation: string;
-  readonly target_digest: Sha256Digest;
-};
-export type RecommendationEvidenceLink = {
-  readonly ref: string;
-  readonly kind: "principle" | "policy" | "owner" | "current" | "deadline" | "dependency" | "stable_identity";
-  readonly context_evidence_id: string | null;
-  readonly digest: Sha256Digest;
-};
 export type CreateRecommendationResult = {
   readonly recommendation: RecommendationV1;
   readonly canonical_digest: Sha256Digest;
@@ -43,7 +43,6 @@ export type CreateRecommendationResult = {
 };
 
 type Input = Readonly<Record<string, unknown>>;
-const EFFECTS = new Set(["execute", "dispatch", "stage", "claim", "redeem", "settle"]);
 function fail(code: RecommendationErrorCode): never { throw new RecommendationError(code); }
 function object(value: unknown, keys: readonly string[], code: RecommendationErrorCode): Input {
   if (typeof value !== "object" || value === null || Array.isArray(value)
@@ -55,16 +54,6 @@ function object(value: unknown, keys: readonly string[], code: RecommendationErr
     if (descriptor === undefined || !descriptor.enumerable || descriptor.get !== undefined || descriptor.set !== undefined) return fail(code);
   }
   return Object.fromEntries(keys.map(key => [key, descriptors[key]?.value]));
-}
-function array(value: unknown, maximum: number, code: RecommendationErrorCode): readonly unknown[] {
-  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype || value.length > maximum) return fail(code);
-  const descriptors = Object.getOwnPropertyDescriptors(value); const own = Reflect.ownKeys(value);
-  if (own.length !== value.length + 1 || !own.includes("length")) return fail(code);
-  return Array.from({ length: value.length }, (_, index) => {
-    const descriptor = descriptors[String(index)];
-    if (descriptor === undefined || !descriptor.enumerable || descriptor.get !== undefined || descriptor.set !== undefined) return fail(code);
-    return descriptor.value;
-  });
 }
 function text(value: unknown, maximum = 512): string {
   if (typeof value !== "string" || value.trim().length === 0 || value !== value.normalize("NFC")
@@ -91,12 +80,6 @@ function recommendationId(value: unknown): RecommendationId {
   }
   return valid(parsed) ? parsed : fail("RECOMMENDATION_INPUT_INVALID");
 }
-function operation(value: unknown): string {
-  const parsed = text(value, 128);
-  const segments = parsed.toLowerCase().split(/[\s.:/_-]+/u).filter(Boolean);
-  if (segments.some(segment => EFFECTS.has(segment))) return fail("RECOMMENDATION_INPUT_INVALID");
-  return parsed;
-}
 function ranking(value: unknown): PriorityEngineResult {
   try { return parsePriorityEngineResult(value); }
   catch (error) { if (error instanceof PriorityResultContractError) return fail("RECOMMENDATION_RANKING_INVALID"); throw error; }
@@ -108,29 +91,16 @@ function selectedActions(result: PriorityEngineResult): readonly PriorityActionD
       || action.disposition === "excluded" || action.disposition === "abstained")) return fail("RECOMMENDATION_RANKING_INVALID");
   return selected;
 }
-function materials(value: unknown): readonly RecommendationActionMaterial[] {
-  const values = array(value, 32, "RECOMMENDATION_INPUT_INVALID");
-  if (values.length === 0) return fail("RECOMMENDATION_INPUT_INVALID");
-  return values.map(item => {
-    const input = object(item, ["action_id", "title", "operation", "target_digest"], "RECOMMENDATION_INPUT_INVALID");
-    return { action_id: text(input["action_id"]), title: text(input["title"]), operation: operation(input["operation"]),
-      target_digest: digest(input["target_digest"]) };
-  });
-}
-function evidenceLinks(value: unknown): readonly RecommendationEvidenceLink[] {
-  const values = array(value, 32, "RECOMMENDATION_INPUT_INVALID");
-  return values.map(item => {
-    const input = object(item, ["ref", "kind", "context_evidence_id", "digest"], "RECOMMENDATION_INPUT_INVALID");
-    const kind = input["kind"];
-    if (kind !== "principle" && kind !== "policy" && kind !== "owner" && kind !== "current" && kind !== "deadline"
-      && kind !== "dependency" && kind !== "stable_identity") return fail("RECOMMENDATION_INPUT_INVALID");
-    return { ref: text(input["ref"]), kind, context_evidence_id: input["context_evidence_id"] === null
-      ? null : text(input["context_evidence_id"]), digest: digest(input["digest"]) };
-  });
-}
-function citedRefs(actions: readonly PriorityActionDecision[]): readonly string[] {
-  return [...new Set(actions.flatMap(action => Object.values(action.rationale.citations)
-    .filter((value): value is string => value !== null)))].sort();
+function creationProvenanceInputs(value: unknown, links: unknown): {
+  readonly materials: readonly RecommendationActionMaterial[];
+  readonly evidenceLinks: readonly RecommendationEvidenceLink[];
+} {
+  try {
+    return { materials: parseRecommendationActionMaterials(value), evidenceLinks: parseRecommendationEvidenceLinks(links) };
+  } catch (error) {
+    if (error instanceof RecommendationProvenanceContractError) return fail("RECOMMENDATION_INPUT_INVALID");
+    throw error;
+  }
 }
 function mapPersistenceError(error: unknown): never {
   if (!(error instanceof JarvisError)) throw error;
@@ -151,7 +121,8 @@ export class Recommendations {
     const input = object(value, ["id", "idempotency_key", "correlation_id", "causation_id", "context_id", "context_digest",
       "expires_at", "ranking", "actions", "linux_evidence", "approval_requirement", "confidence_class"], "RECOMMENDATION_INPUT_INVALID");
     const parsedRanking = ranking(input["ranking"]); const selected = selectedActions(parsedRanking);
-    const supplied = materials(input["actions"]); const links = evidenceLinks(input["linux_evidence"]);
+    const provenanceInputs = creationProvenanceInputs(input["actions"], input["linux_evidence"]);
+    const supplied = provenanceInputs.materials;
     if (selected.length !== supplied.length
       || new Set(supplied.map(action => action.action_id)).size !== supplied.length) {
       return fail("RECOMMENDATION_RANKING_INVALID");
@@ -171,39 +142,47 @@ export class Recommendations {
     if (stored["canonical_digest"] !== contextDigest) return fail("RECOMMENDATION_EVIDENCE_CONFLICT");
     const context = parseContextSnapshotV1(JSON.parse(text(stored["canonical_envelope_json"], 65_536)));
     const now = parsedRanking.generated_at; const requestedExpiry = instant(input["expires_at"]);
-    const expiresAt = [requestedExpiry, context.expires_at, context.freshness.fresh_until].sort()[0];
+    const expiresAt = [requestedExpiry, context.expires_at].sort()[0];
     if (expiresAt === undefined) return fail("RECOMMENDATION_INPUT_INVALID");
+    const freshUntil = [context.freshness.fresh_until,
+      new Date(Date.parse(expiresAt) - 1).toISOString()].sort()[0];
+    if (freshUntil === undefined) return fail("RECOMMENDATION_INPUT_INVALID");
     if (context.payload.state !== "sufficient" || context.freshness.state !== "fresh"
-      || now >= context.freshness.fresh_until || now >= context.expires_at || expiresAt <= now) return fail("RECOMMENDATION_CONTEXT_STALE");
-    if (new Set(links.map(link => link.ref)).size !== links.length
-      || citedRefs(selected).some(ref => !links.some(link => link.ref === ref))
-      || links.some(link => {
-        if (link.kind === "policy") return link.context_evidence_id !== null || link.digest !== contextDigest;
-        const expectedKind = link.kind === "principle" ? "user_confirmed_principle"
-          : link.kind === "owner" ? "owner_decision" : "linux_live_fact";
-        return link.context_evidence_id === null || !context.evidence.some(item => item.evidence_id === link.context_evidence_id
-          && item.digest === link.digest && item.kind === expectedKind);
-      })) {
-      return fail("RECOMMENDATION_EVIDENCE_CONFLICT");
-    }
+      || now >= context.freshness.fresh_until || now >= context.expires_at
+      || expiresAt <= now || freshUntil <= now) return fail("RECOMMENDATION_CONTEXT_STALE");
     const approval = input["approval_requirement"];
+    if (approval !== "none" && approval !== "owner") return fail("RECOMMENDATION_INPUT_INVALID");
     const ownerRequired = selected.some(action => action.disposition === "owner_gate_required");
-    if ((approval !== "none" && approval !== "owner") || (approval === "owner") !== ownerRequired) return fail("RECOMMENDATION_INPUT_INVALID");
+    if ((approval === "owner") !== ownerRequired) return fail("RECOMMENDATION_INPUT_INVALID");
     const confidence = input["confidence_class"];
     if (confidence !== "low" && confidence !== "medium" && confidence !== "high") return fail("RECOMMENDATION_INPUT_INVALID");
-    const provenance = { ranking: parsedRanking, linux_evidence: links, actions: supplied,
+    let links: readonly RecommendationEvidenceLink[];
+    try {
+      links = deriveRecommendationEvidenceLinks({ database: this.authority.db, contextId, contextDigest,
+        result: parsedRanking, actions: selected, supplied: provenanceInputs.evidenceLinks });
+    } catch (error) {
+      if (error instanceof RecommendationEvidenceBindingError) return fail("RECOMMENDATION_EVIDENCE_CONFLICT");
+      throw error;
+    }
+    const provenance: RecommendationProvenance = { ranking: parsedRanking, linux_evidence: links, actions: supplied,
       approval_requirement: approval, confidence_class: confidence };
+    let confidenceBasis: string;
+    try { confidenceBasis = encodeRecommendationProvenance(provenance); }
+    catch (error) {
+      if (error instanceof RecommendationIdentityError) return fail("RECOMMENDATION_INPUT_INVALID");
+      throw error;
+    }
     const recommendation = parseRecommendationV1({
       schema_version: 1, id: recommendationId(input["id"]), created_at: now, observed_at: now, valid_at: now,
       source: { source_id: "src:pos:v1:jarvis:recommendations", source_kind: "authority",
         host_id: "host:pos:linux-control-plane", source_version: "task18-v1", evidence_ref: `ranking:${persistenceHash(provenance)}` },
       authority: { authority_kind: "none", principal_id: null, request_id: null, receipt_id: null },
-      freshness: { ...context.freshness, fresh_until: new Date(Date.parse(expiresAt) - 1).toISOString() },
+      freshness: { ...context.freshness, fresh_until: freshUntil },
       expires_at: expiresAt, idempotency_key: text(input["idempotency_key"]),
       correlation_id: text(input["correlation_id"]), causation_id: input["causation_id"],
       payload: { context_id: context.id, context_digest: canonicalPersonalContractHash(context), actions: bound,
         citations: context.evidence.map(item => item.evidence_id), conflicts: context.payload.conflicts,
-        omissions: context.payload.omissions, confidence_basis: encodeRecommendationProvenance(provenance), state: "eligible" },
+        omissions: context.payload.omissions, confidence_basis: confidenceBasis, state: "eligible" },
       policy_decision: { decision: "allow", policy_version: parsedRanking.policy_id,
         reason_codes: ["POLICY_SATISFIED"] }, evidence: context.evidence, receipt: null,
     });
@@ -240,6 +219,7 @@ export class Recommendations {
           replacement_identity_digest: digest(raw["replacement_identity_digest"]) } : {}) });
     } catch (error) {
       if (error instanceof JarvisError && error.code === "PERSONAL_ACTION_SUPERSESSION_CONFLICT") return fail("RECOMMENDATION_SUPERSESSION_CONFLICT");
+      if (error instanceof RecommendationIdentityError) return fail("RECOMMENDATION_INPUT_INVALID");
       return mapPersistenceError(error);
     }
   }
@@ -247,7 +227,12 @@ export class Recommendations {
   project(now: string, limit = 100): RecommendationReadProjection {
     const clock = instant(now);
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) return fail("RECOMMENDATION_INPUT_INVALID");
-    return projectRecommendations(this.authority.db, clock, limit);
+    try { return projectRecommendations(this.authority.db, clock, limit); }
+    catch (error) {
+      if (error instanceof RecommendationIdentityError) return fail("RECOMMENDATION_INPUT_INVALID");
+      throw error;
+    }
   }
 }
+export type { RecommendationActionMaterial, RecommendationEvidenceLink } from "./recommendation-provenance.js";
 export type { RecommendationReadProjection, ProjectedRecommendationAction, RecommendationWarning } from "./recommendation-projection.js";
