@@ -132,7 +132,7 @@ async function postPreview(
   server: DashboardServer,
   init: { readonly csrf?: string; readonly contentType?: string; readonly body: string },
 ): Promise<{ readonly status: number; readonly body: unknown; readonly requestId: string }> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { origin: originOf(server) };
   if (init.contentType !== undefined) headers["content-type"] = init.contentType;
   if (init.csrf !== undefined) headers[CSRF_HEADER] = init.csrf;
   const response = await request(`${originOf(server)}${PREVIEW_PATH}`, { method: "POST", headers, body: init.body });

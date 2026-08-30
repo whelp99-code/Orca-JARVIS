@@ -113,7 +113,7 @@ async function post(
   path: string,
   init: { readonly csrf?: string; readonly type?: string; readonly body: string },
 ): Promise<{ readonly status: number; readonly body: unknown }> {
-  const headers: Record<string, string> = {};
+  const headers: Record<string, string> = { origin: origin(server) };
   if (init.type !== undefined) headers["content-type"] = init.type;
   if (init.csrf !== undefined) headers[CSRF] = init.csrf;
   const response = await request(`${origin(server)}${path}`, { method: "POST", headers, body: init.body });

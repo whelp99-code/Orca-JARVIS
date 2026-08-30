@@ -39,7 +39,7 @@ type BodyRead =
   | { readonly kind: "too_large" };
 
 export async function readJsonPost(input: JsonPostInput): Promise<PostBoundaryResult> {
-  if (!originAllowed(input.request.headers.origin, input.origin)) {
+  if (!hasExactMutationOrigin(input.request, input.origin)) {
     return reject(403, POST_ERROR_CODES.LOCAL_SESSION_REQUIRED);
   }
   if (!sessionMatchesCsrf(input.session, headerValue(input.request.headers[CSRF_HEADER]))) {
@@ -104,10 +104,18 @@ function reject(status: number, code: PostErrorCode): Extract<PostBoundaryResult
   return { kind: "rejected", status, code };
 }
 
-function originAllowed(header: string | readonly string[] | undefined, expected: string): boolean {
-  if (header === undefined) return true;
-  if (typeof header === "string") return header === expected;
-  return header.length === 1 && header[0] === expected;
+export function hasExactMutationOrigin(
+  request: Pick<IncomingMessage, "rawHeaders">,
+  expected: string,
+): boolean {
+  let found: string | undefined;
+  for (let index = 0; index < request.rawHeaders.length; index += 2) {
+    const name = request.rawHeaders[index];
+    if (name?.toLowerCase() !== "origin") continue;
+    if (found !== undefined) return false;
+    found = request.rawHeaders[index + 1];
+  }
+  return found === expected;
 }
 
 function isJsonContentType(header: string | readonly string[] | undefined): boolean {
