@@ -117,4 +117,22 @@ describe("Task 22 owner decision queue boundary", () => {
     expect(reads).toBe(0);
     expect(NotificationIntentError).toBeTypeOf("function");
   });
+
+  it("rejects generic key metadata without rejecting benign prompt-like text", () => {
+    for (const overrides of [
+      { title: "key: generic-secret" },
+      { recommendation_id: "key: generic-secret" },
+      { source_ids: ["key: generic-secret"], citations: [{
+        source_id: "key: generic-secret", evidence_ref: "live:deploy", evidence_digest: `sha256:${"9".repeat(64)}`,
+        observed_at: "2026-08-28T11:00:00.000Z", fresh_until: "2026-08-28T13:30:00.000Z",
+      }] },
+    ]) {
+      expect(() => parseDecisionQueueInput(decisionInput([decisionRecord(overrides)])))
+        .toThrowError(expect.objectContaining({ code: "NOTIFICATION_INPUT_INVALID" }));
+    }
+    for (const title of ["#priority", ">quote", "$100 budget"]) {
+      expect(projectOwnerDecisionQueue(parseDecisionQueueInput(decisionInput([decisionRecord({ title })]))).active)
+        .toHaveLength(1);
+    }
+  });
 });

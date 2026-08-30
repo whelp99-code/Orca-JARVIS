@@ -118,7 +118,7 @@ describe("morning brief remediation boundary", () => {
 
   it("rejects sensitive bytes in every emitted metadata class and leaves serialized output sentinel-free", () => {
     // Given / When / Then
-    for (const sentinel of ["token=task21-secret", "-----BEGIN PRIVATE KEY-----"]) {
+    for (const sentinel of ["token=task21-secret", "key: generic-secret", "-----BEGIN PRIVATE KEY-----"]) {
       const cases = [
         { item_id: sentinel }, { recommendation_id: sentinel }, { action_id: sentinel }, { semantic_key: sentinel },
         { copy: sentinel },
@@ -133,6 +133,9 @@ describe("morning brief remediation boundary", () => {
     expect(() => parseMorningBriefInput(raw([signed({
       citations: [{ link_id: "link-1", source_id: "source-1", evidence_ref: "/home/owner/private" }],
     })]))).toThrow(MorningBriefContractError);
+    for (const copy of ["#priority", ">quote", "$100 budget"]) {
+      expect(generateMorningBrief(parseMorningBriefInput(raw([signed({ copy })]))).needs_you_first[0]?.copy).toBe(copy);
+    }
     const serialized = JSON.stringify(generateMorningBrief(parseMorningBriefInput(raw([signed()]))));
     expect(serialized.includes("task21-secret") || serialized.includes("/home/owner") || serialized.includes("\u001b[")).toBe(false);
   });
