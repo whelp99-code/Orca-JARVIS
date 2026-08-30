@@ -1,4 +1,8 @@
-import { DashboardApiError, type SessionResponse } from "./api.js";
+import type { SessionResponse } from "./api.js";
+import {
+  booleanValue, closedArray, closedRecord, digest as closedDigest, integer as closedInteger,
+  literal as closedLiteral, member, text as closedText, timestamp, validationFailure,
+} from "./personal-closed.js";
 import { parseHealthItem } from "./personal-health-parser.js";
 import { requestPersonalJson } from "./personal-http.js";
 import type {
@@ -18,10 +22,18 @@ import type {
 } from "./personal-types.js";
 export type * from "./personal-types.js";
 
-const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 const QUALITY = ["ready", "degraded", "no_data", "offline", "stale"] as const;
+const CONFIDENCE = ["low", "medium", "high"] as const;
+const DECISION_STATES = ["pending", "accepted", "rejected", "expired", "superseded"] as const;
+const RECOMMENDATION_STATES = ["drafted", "parsed", "eligible", "abstained", "presented", "selected", "rejected", "expired"] as const;
+const NOTIFICATION_STATES = ["created", "deferred", "ready", "delivering", "delivered", "suppressed", "failed", "expired"] as const;
+const NOTIFICATION_URGENCIES = ["low", "normal", "high", "critical"] as const;
+const NOTIFICATION_CHANNELS = ["in_app", "mac_native", "phone_web"] as const;
+const FRESHNESS_STATES = ["fresh", "stale", "no_data", "unavailable", "offline"] as const;
+const CITATION_KINDS = ["principle", "policy", "owner", "current", "deadline", "dependency", "stable_identity"] as const;
+const EVIDENCE_KINDS = ["user_confirmed_principle", "owner_decision", "linux_live_fact", "context_observation", "confirmed_memory"] as const;
+const ACTION_OPERATIONS = ["review", "continue_work", "execute"] as const;
 const MAX_ITEMS = 100;
-const MAX_TEXT = 4096;
 const ACCEPT_KEYS = ["schema_version", "recommendation_id", "action_rank", "request_id", "action", "state"] as const;
 
 type SessionLoader = () => Promise<SessionResponse>;
@@ -49,7 +61,7 @@ async function get(path: string): Promise<unknown> {
   return await requestPersonalJson(path, { headers: { Accept: "application/json" } });
 }
 
-function parseToday(value: unknown): TodayResponse {
+export function parseToday(value: unknown): TodayResponse {
   const row = exact(value, ["schema_version", "resource", "generated_at", "state", "brief", "active_decision_count",
     "notification_summary", "current_daily_run", "last_daily_run", "latest_verified_closeout", "next_actions", "conflicts",
     "omissions", "freshness", "deep_links"]);
@@ -61,16 +73,18 @@ function parseToday(value: unknown): TodayResponse {
   return {
     schema_version: literal(row["schema_version"], 1), resource: literal(row["resource"], "today"),
     generated_at: time(row["generated_at"]), state: quality(row["state"]),
-    brief: { state: text(brief["state"]), brief_id: nullableText(brief["brief_id"]),
+    brief: { state: member(brief["state"], ["ready", "degraded", "no_data"] as const),
+      brief_id: nullableText(brief["brief_id"]),
       generated_at: nullableTime(brief["generated_at"]), item_count: integer(brief["item_count"]) },
     active_decision_count: integer(row["active_decision_count"]),
     notification_summary: { total: integer(notifications["total"]), states: array(notifications["states"], (entry) => {
-      const item = exact(entry, ["state", "count"]); return { state: text(item["state"]), count: integer(item["count"]) };
+      const item = exact(entry, ["state", "count"]);
+      return { state: member(item["state"], NOTIFICATION_STATES), count: integer(item["count"]) };
     }, MAX_ITEMS) },
     current_daily_run: nullableRecord(row["current_daily_run"]), last_daily_run: nullableRecord(row["last_daily_run"]),
     latest_verified_closeout: closeout(row["latest_verified_closeout"]), next_actions: actions,
     conflicts: strings(row["conflicts"]), omissions: strings(row["omissions"]),
-    freshness: { state: text(freshness["state"]), checked_at: nullableTime(freshness["checked_at"]),
+    freshness: { state: member(freshness["state"], FRESHNESS_STATES), checked_at: nullableTime(freshness["checked_at"]),
       fresh_until: nullableTime(freshness["fresh_until"]) },
     deep_links: { decisions: path(links["decisions"]), daily_runs: path(links["daily_runs"]),
       notifications: path(links["notifications"]), source_health: path(links["source_health"]) },
@@ -80,7 +94,8 @@ function parseToday(value: unknown): TodayResponse {
 function parseTodayAction(value: unknown): TodayAction {
   const row = exact(value, ["recommendation_id", "rank", "title", "confidence_class", "expires_at", "deep_link"]);
   return { recommendation_id: text(row["recommendation_id"]), rank: integer(row["rank"]), title: text(row["title"]),
-    confidence_class: text(row["confidence_class"]), expires_at: time(row["expires_at"]), deep_link: path(row["deep_link"]) };
+    confidence_class: member(row["confidence_class"], CONFIDENCE), expires_at: time(row["expires_at"]),
+    deep_link: path(row["deep_link"]) };
 }
 
 function parsePage<T>(value: unknown, resource: string, item: (value: unknown) => T): PersonalPage<T> {
@@ -94,37 +109,42 @@ function parsePage<T>(value: unknown, resource: string, item: (value: unknown) =
     items: array(row["items"], item, MAX_ITEMS) };
 }
 
-function parseDecision(value: unknown): DecisionItem {
+export function parseDecision(value: unknown): DecisionItem {
   const row = exact(value, ["recommendation_id", "context_id", "rank", "title", "state", "confidence_class", "occurred_at",
     "expires_at", "evidence_digest", "identity_digest", "provenance_digest", "citations", "deep_link"]);
   digest(row["evidence_digest"]); digest(row["identity_digest"]); digest(row["provenance_digest"]);
   return { recommendation_id: text(row["recommendation_id"]), context_id: text(row["context_id"]), rank: integer(row["rank"]),
-    title: text(row["title"]), state: text(row["state"]), confidence_class: text(row["confidence_class"]), occurred_at: time(row["occurred_at"]),
+    title: text(row["title"]), state: member(row["state"], DECISION_STATES),
+    confidence_class: member(row["confidence_class"], CONFIDENCE), occurred_at: time(row["occurred_at"]),
     expires_at: time(row["expires_at"]), citations: array(row["citations"], parseCitation, MAX_ITEMS),
     deep_link: path(row["deep_link"]) };
 }
 
 function parseCitation(value: unknown): Citation {
   const row = exact(value, ["context_evidence_id", "digest", "kind", "ref"]);
-  return { context_evidence_id: nullableText(row["context_evidence_id"]), digest: text(row["digest"]),
-    kind: text(row["kind"]), ref: text(row["ref"]) };
+  return { context_evidence_id: nullableText(row["context_evidence_id"]), digest: digest(row["digest"]),
+    kind: member(row["kind"], CITATION_KINDS), ref: text(row["ref"]) };
 }
 
-function parseNotification(value: unknown): NotificationItem {
+export function parseNotification(value: unknown): NotificationItem {
   const row = exact(value, ["intent_id", "correlation_id", "urgency", "channel", "preview", "deep_link", "state", "expires_at", "created_at", "updated_at"]);
   text(row["correlation_id"]); time(row["created_at"]);
-  return { intent_id: text(row["intent_id"]), urgency: text(row["urgency"]), channel: text(row["channel"]), preview: text(row["preview"]),
-    deep_link: path(row["deep_link"]), state: text(row["state"]), expires_at: time(row["expires_at"]), updated_at: time(row["updated_at"]) };
+  return { intent_id: text(row["intent_id"]), urgency: member(row["urgency"], NOTIFICATION_URGENCIES),
+    channel: member(row["channel"], NOTIFICATION_CHANNELS), preview: text(row["preview"]),
+    deep_link: path(row["deep_link"]), state: member(row["state"], NOTIFICATION_STATES),
+    expires_at: time(row["expires_at"]), updated_at: time(row["updated_at"]) };
 }
 
-function parseRecommendation(value: unknown): RecommendationDetail {
+export function parseRecommendation(value: unknown): RecommendationDetail {
   const row = exact(value, ["schema_version", "resource", "recommendation_id", "context_id", "canonical_digest", "evidence_digest",
     "approval_requirement", "confidence_class", "lifecycle_state", "expires_at", "state", "actions", "evidence", "conflicts", "omissions", "deep_links"]);
   const links = exact(row["deep_links"], ["context_evidence"]); literal(row["resource"], "recommendation");
-  digest(row["canonical_digest"]); digest(row["evidence_digest"]); text(row["approval_requirement"]);
+  digest(row["canonical_digest"]); digest(row["evidence_digest"]);
+  member(row["approval_requirement"], ["none", "owner"] as const);
   array(row["actions"], parseRecommendationAction, 32);
   return { schema_version: literal(row["schema_version"], 1), recommendation_id: text(row["recommendation_id"]), context_id: text(row["context_id"]),
-    confidence_class: text(row["confidence_class"]), lifecycle_state: text(row["lifecycle_state"]), expires_at: time(row["expires_at"]),
+    confidence_class: member(row["confidence_class"], CONFIDENCE),
+    lifecycle_state: member(row["lifecycle_state"], RECOMMENDATION_STATES), expires_at: time(row["expires_at"]),
     state: quality(row["state"]), evidence: array(row["evidence"], parseEvidenceItem, MAX_ITEMS), conflicts: strings(row["conflicts"]),
     omissions: strings(row["omissions"]), context_evidence_link: path(links["context_evidence"]) };
 }
@@ -132,19 +152,19 @@ function parseRecommendation(value: unknown): RecommendationDetail {
 function parseRecommendationAction(value: unknown): void {
   const row = exact(value, ["rank", "title", "operation", "target_digest", "state", "owner_decision_required",
     "current", "occurred_at", "transition_digest"]);
-  integer(row["rank"]); text(row["title"]); text(row["operation"]); digest(row["target_digest"]);
-  text(row["state"]); bool(row["owner_decision_required"]); bool(row["current"]); time(row["occurred_at"]);
+  integer(row["rank"]); text(row["title"]); member(row["operation"], ACTION_OPERATIONS); digest(row["target_digest"]);
+  member(row["state"], DECISION_STATES); bool(row["owner_decision_required"]); bool(row["current"]); time(row["occurred_at"]);
   if (row["transition_digest"] !== null) digest(row["transition_digest"]);
 }
 
-function parseEvidence(value: unknown): ContextEvidence {
+export function parseEvidence(value: unknown): ContextEvidence {
   const row = exact(value, [
     "schema_version", "resource", "context_id", "recommendation_id", "state",
     "freshness", "evidence", "conflicts", "omissions",
   ]);
   literal(row["resource"], "context-evidence");
   const freshness = exact(row["freshness"], ["state", "fresh_until"]);
-  text(freshness["state"]); time(freshness["fresh_until"]);
+  member(freshness["state"], FRESHNESS_STATES); time(freshness["fresh_until"]);
   return {
     schema_version: literal(row["schema_version"], 1),
     context_id: text(row["context_id"]),
@@ -158,7 +178,8 @@ function parseEvidence(value: unknown): ContextEvidence {
 
 function parseEvidenceItem(value: unknown): EvidenceItem {
   const row = exact(value, ["evidence_id", "source_id", "kind", "digest", "observed_at", "fresh_until"]);
-  return { evidence_id: text(row["evidence_id"]), source_id: text(row["source_id"]), kind: text(row["kind"]), digest: text(row["digest"]),
+  return { evidence_id: text(row["evidence_id"]), source_id: text(row["source_id"]),
+    kind: member(row["kind"], EVIDENCE_KINDS), digest: digest(row["digest"]),
     observed_at: time(row["observed_at"]), fresh_until: nullableTime(row["fresh_until"]) };
 }
 function parseAccepted(value: unknown): AcceptedAction {
@@ -167,47 +188,24 @@ function parseAccepted(value: unknown): AcceptedAction {
     request_id: text(row["request_id"]), action: literal(row["action"], "workflow.start"), state: literal(row["state"], "pending") };
 }
 
-function exact(value: unknown, keys: readonly string[]): Record<string, unknown> {
-  const row = record(value);
-  const actual = Object.keys(row);
-  if (actual.length !== keys.length || !actual.every((key) => keys.includes(key))) fail();
-  return row;
-}
-function record(value: unknown): Record<string, unknown> {
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return fail();
-  return Object.fromEntries(Object.entries(value));
-}
+function exact(value: unknown, keys: readonly string[]): Record<string, unknown> { return closedRecord(value, keys); }
 function array<T>(value: unknown, parse: (item: unknown) => T, max: number): readonly T[] {
-  if (!Array.isArray(value) || value.length > max) return fail();
-  return value.map(parse);
+  return closedArray(value, parse, max);
 }
 function strings(value: unknown): readonly string[] { return array(value, text, MAX_ITEMS); }
-function bool(value: unknown): boolean { if (typeof value !== "boolean") return fail(); return value; }
-function digest(value: unknown): string { const parsed = text(value); if (!/^sha256:[0-9a-f]{64}$/u.test(parsed)) return fail(); return parsed; }
-function text(value: unknown): string {
-  if (typeof value !== "string" || value.length > MAX_TEXT || /[\uD800-\uDFFF]/u.test(value)) return fail();
-  return value;
-}
+function bool(value: unknown): boolean { return booleanValue(value); }
+function digest(value: unknown): string { return closedDigest(value); }
+function text(value: unknown): string { return closedText(value); }
 function path(value: unknown): string {
   const parsed = text(value);
   if (!parsed.startsWith("/") || parsed.startsWith("//")) return fail();
   return parsed;
 }
-function time(value: unknown): string {
-  const parsed = text(value);
-  if (!TIME.test(parsed) || !Number.isFinite(Date.parse(parsed))) return fail();
-  return parsed;
-}
+function time(value: unknown): string { return timestamp(value); }
 function nullableText(value: unknown): string | null { return value === null ? null : text(value); }
 function nullableTime(value: unknown): string | null { return value === null ? null : time(value); }
-function integer(value: unknown): number {
-  if (!Number.isSafeInteger(value) || Number(value) < 0) return fail();
-  return Number(value);
-}
-function literal<T extends string | number>(value: unknown, expected: T): T {
-  if (value !== expected) return fail();
-  return expected;
-}
+function integer(value: unknown): number { return closedInteger(value); }
+function literal<T extends string | number>(value: unknown, expected: T): T { return closedLiteral(value, expected); }
 function quality(value: unknown): ResourceQuality {
   const parsed = text(value);
   const found = QUALITY.find((item) => item === parsed);
@@ -243,15 +241,4 @@ function closeout(value: unknown): TodayResponse["latest_verified_closeout"] {
 function safeLink(value: string): string {
   return value.startsWith("/api/v1/contexts/") && !value.startsWith("//") ? value : fail();
 }
-function apiError(
-  kind: "offline" | "forbidden" | "not_found" | "server",
-  code: string,
-): DashboardApiError {
-  return new DashboardApiError({
-    kind,
-    code,
-    message: kind === "offline" ? "Dashboard unavailable" : "Validation error",
-    request_id: "",
-  });
-}
-function fail(): never { throw apiError("server", "VALIDATION_ERROR"); }
+function fail(): never { return validationFailure(); }

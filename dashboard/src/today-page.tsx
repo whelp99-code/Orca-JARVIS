@@ -100,7 +100,8 @@ function TodayContent({
             {decisions.items.map((decision) => (
               <li className="record" key={`${decision.recommendation_id}:${decision.rank}`}>
                 <RecommendationAction decision={decision} client={client}
-                  actionable={recommendationActionable} onSettled={onRefresh} />
+                  actionable={recommendationActionable && decision.state === "pending"
+                    && decision.expires_at > today.generated_at} onSettled={onRefresh} />
               </li>
             ))}
             {authorityClient === undefined ? null : approvals.map((approval) => (

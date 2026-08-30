@@ -7,6 +7,7 @@ import type {
   PersonalPage,
   TodayResponse,
 } from "./personal-api.js";
+import { advancesPersonalRevision, parsePersonalSseFrame, type PersonalSseRevision, type PersonalSseType } from "./personal-sse.js";
 import type { ConnectionState, EventSourceLike } from "./store-types.js";
 
 export type PersonalData = Readonly<{
@@ -46,6 +47,7 @@ export function createPersonalStore(options: Options) {
   let loadSequence = 0;
   let running = false;
   let sourceOpen = false;
+  let serverRevision: PersonalSseRevision | undefined;
   let source: EventSourceLike | undefined;
   const listeners = new Set<() => void>();
 
@@ -58,8 +60,9 @@ export function createPersonalStore(options: Options) {
     running = true;
     const token = generation;
     source = options.eventSourceFactory("/api/v1/events");
-    source.addEventListener("snapshot", (event) => { void frame(token, event); });
-    source.addEventListener("reconcile", (event) => { void frame(token, event); });
+    serverRevision = undefined;
+    source.addEventListener("snapshot", (event) => { void frame(token, "snapshot", event); });
+    source.addEventListener("reconcile", (event) => { void frame(token, "reconcile", event); });
     source.onopen = () => {
       if (token !== generation) return;
       sourceOpen = true;
@@ -84,14 +87,15 @@ export function createPersonalStore(options: Options) {
     source?.close();
     source = undefined;
     sourceOpen = false;
+    serverRevision = undefined;
   }
 
   async function refresh(): Promise<void> { await load(generation); }
 
-  async function frame(token: number, event: Event): Promise<void> {
+  async function frame(token: number, eventType: PersonalSseType, event: Event): Promise<void> {
     if (token !== generation) return;
-    const topics = topicsFrom(event);
-    if (topics === undefined) {
+    const parsed = parsePersonalSseFrame(eventType, event);
+    if (parsed === undefined) {
       const error = { kind: "server", code: "VALIDATION_ERROR", message: "Validation error", request_id: "" } as const;
       if (snapshot.status === "success" || snapshot.status === "stale") {
         assign({ status: "stale", connectionState: "reconnecting", data: snapshot.data, error });
@@ -100,7 +104,9 @@ export function createPersonalStore(options: Options) {
       }
       return;
     }
-    if (topics.some((topic) => PERSONAL_TOPICS.has(topic))) await load(token);
+    if (!advancesPersonalRevision(serverRevision, parsed)) return;
+    serverRevision = parsed.revision;
+    if (parsed.topics.some((topic) => PERSONAL_TOPICS.has(topic))) await load(token);
   }
 
   async function load(token: number): Promise<void> {
@@ -137,16 +143,4 @@ export function createPersonalStore(options: Options) {
   }
 
   return { getSnapshot, subscribe, start, stop, refresh };
-}
-
-function topicsFrom(event: Event): readonly string[] | undefined {
-  if (!(event instanceof MessageEvent) || typeof event.data !== "string") return undefined;
-  let value: unknown;
-  try { value = JSON.parse(event.data); }
-  catch (error: unknown) { if (error instanceof SyntaxError) return undefined; throw error; }
-  if (typeof value !== "object" || value === null || Array.isArray(value)) return undefined;
-  const topics = Reflect.get(value, "topics");
-  if (Reflect.get(value, "schema_version") !== 1 || !Array.isArray(topics)
-    || topics.length > 32 || !topics.every((topic) => typeof topic === "string" && topic.length <= 128)) return undefined;
-  return topics;
 }

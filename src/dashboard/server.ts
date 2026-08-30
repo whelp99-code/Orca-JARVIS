@@ -61,6 +61,7 @@ export type DashboardServerOptions = {
   readonly secondBrainProbe?: SecondBrainReadinessProbe;
   readonly planner?: TeamProposalPlanner;
   readonly clock?: () => Date;
+  readonly sessionStore?: DashboardSessionStore;
 };
 
 type RequestContext = {
@@ -90,7 +91,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
   const model = new DashboardReadModel(options.db, options.secondBrainProbe, options.capabilityProbe);
   const terminals = new DashboardTerminalReader(model, options.orcaRunner);
   const events = createDashboardEvents(options.db);
-  const session = createDashboardSession();
+  const session = options.sessionStore ?? createDashboardSession();
   const clock = options.clock ?? (() => new Date());
   const bind = { origin: `http://${LOOPBACK_HOST}:0` };
   const bound = new BoundSocket({ host: LOOPBACK_HOST, port: options.port });

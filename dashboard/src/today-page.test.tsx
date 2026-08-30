@@ -4,20 +4,21 @@ import userEvent from "@testing-library/user-event";
 import { describe, expect, it, vi } from "vitest";
 import type { OverviewResponse } from "../../src/dashboard/read-model.js";
 import type { PersonalClient, TodayResponse } from "./personal-api.js";
-import type { PersonalSnapshot } from "./personal-store.js";
+import type { PersonalData, PersonalSnapshot } from "./personal-store.js";
+import type { DecisionState } from "./personal-types.js";
 import { unseenPortfolio } from "./portfolio-test-fixture.js";
 import { TodayPage } from "./today-page.js";
 
 const AT = "2026-08-28T12:10:00.000Z";
 const today = { schema_version: 1, resource: "today", generated_at: AT, state: "ready",
   brief: { state: "ready", brief_id: "brief:1", generated_at: AT, item_count: 3 }, active_decision_count: 1,
-  notification_summary: { total: 1, states: [{ state: "pending", count: 1 }] }, current_daily_run: null,
+  notification_summary: { total: 1, states: [{ state: "ready", count: 1 }] }, current_daily_run: null,
   last_daily_run: null, latest_verified_closeout: null,
   next_actions: [{ recommendation_id: "rec:1", rank: 1, title: "검증된 다음 작업을 안전하게 시작합니다", confidence_class: "high", expires_at: "2026-08-28T13:00:00.000Z", deep_link: "/recommendations/rec%3A1" }],
   conflicts: ["calendar and customer dates differ"], omissions: ["mail unavailable"],
   freshness: { state: "fresh", checked_at: AT, fresh_until: "2026-08-28T13:00:00.000Z" },
   deep_links: { decisions: "/api/v1/decision-inbox", daily_runs: "/api/v1/daily-runs", notifications: "/api/v1/notification-intents", source_health: "/api/v1/source-health" } } as const satisfies TodayResponse;
-const data = { today,
+const data: PersonalData = { today,
   decisions: { schema_version: 1 as const, generated_at: AT, state: "ready" as const, items: [{ recommendation_id: "rec:1", context_id: "ctx:1", rank: 1,
     title: today.next_actions[0].title, state: "pending", confidence_class: "high", occurred_at: AT, expires_at: today.next_actions[0].expires_at,
     citations: [{ context_evidence_id: "evidence:1", digest: `sha256:${"a".repeat(64)}`, kind: "current", ref: "live:customer" }],
@@ -40,6 +41,15 @@ function snapshot(connectionState: "live" | "reconnecting" = "live"): PersonalSn
     : { status: "stale", connectionState, data, error: { kind: "offline", code: "OFFLINE", message: "Offline", request_id: "" } };
 }
 
+function decisionSnapshot(state: DecisionState, expiresAt = "2026-08-28T13:00:00.000Z"): PersonalSnapshot {
+  const canonical = data.decisions.items[0];
+  if (canonical === undefined) throw new TypeError("canonical decision expected");
+  const decision = { ...canonical, state, expires_at: expiresAt };
+  return { status: "success", connectionState: "live", data: {
+    ...data, decisions: { ...data.decisions, items: [decision] },
+  } };
+}
+
 describe("Task31 Today page", () => {
   it("renders all six semantic sections with freshness, notification, and closeout state", () => {
     render(<TodayPage snapshot={snapshot()} overview={overview} approvals={[]} client={client()} onRefresh={() => undefined} />);
@@ -47,6 +57,26 @@ describe("Task31 Today page", () => {
     expect(screen.getByText("calendar and customer dates differ")).toBeInTheDocument();
     expect(screen.getByText("No verified closeout")).toBeInTheDocument();
     expect(screen.getByText("capacity warning")).toBeInTheDocument();
+  });
+
+  it.each<DecisionState>(["accepted", "rejected", "expired", "superseded"])(
+    "fails closed for terminal decision state %s",
+    (state) => {
+      render(<TodayPage snapshot={decisionSnapshot(state)} overview={overview} approvals={[]}
+        client={client()} onRefresh={() => undefined} />);
+      expect(screen.getByRole("button", { name: "Accept action 1" })).toBeDisabled();
+    },
+  );
+
+  it("fails closed at expiry and removes controls with the canonical snapshot action", () => {
+    const view = render(<TodayPage snapshot={decisionSnapshot("pending", AT)} overview={overview}
+      approvals={[]} client={client()} onRefresh={() => undefined} />);
+    expect(screen.getByRole("button", { name: "Accept action 1" })).toBeDisabled();
+    const removed: PersonalSnapshot = { status: "success", connectionState: "live", data: { ...data,
+      decisions: { ...data.decisions, items: [] } } };
+    view.rerender(<TodayPage snapshot={removed} overview={overview} approvals={[]}
+      client={client()} onRefresh={() => undefined} />);
+    expect(screen.queryByRole("button", { name: "Accept action 1" })).not.toBeInTheDocument();
   });
 
   it("stages once immediately and disables stale cached authority", async () => {

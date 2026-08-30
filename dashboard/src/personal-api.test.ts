@@ -1,5 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { createPersonalClient } from "./personal-api.js";
+import {
+  createPersonalClient, parseDecision, parseEvidence, parseNotification, parseRecommendation, parseToday,
+} from "./personal-api.js";
 
 const AT = "2026-08-28T12:10:00.000Z";
 const originalFetch = globalThis.fetch;
@@ -16,7 +18,7 @@ const today = {
   state: "ready",
   brief: { state: "ready", brief_id: "brief:1", generated_at: AT, item_count: 3 },
   active_decision_count: 1,
-  notification_summary: { total: 1, states: [{ state: "pending", count: 1 }] },
+  notification_summary: { total: 1, states: [{ state: "ready", count: 1 }] },
   current_daily_run: null,
   last_daily_run: null,
   latest_verified_closeout: null,
@@ -26,6 +28,22 @@ const today = {
   freshness: { state: "fresh", checked_at: AT, fresh_until: AT },
   deep_links: { decisions: "/api/v1/decision-inbox", daily_runs: "/api/v1/daily-runs", notifications: "/api/v1/notification-intents", source_health: "/api/v1/source-health" },
 } as const;
+
+const DIGEST = `sha256:${"a".repeat(64)}`;
+const decision = { recommendation_id: "rec:1", context_id: "ctx:1", rank: 1, title: "Review", state: "pending",
+  confidence_class: "high", occurred_at: AT, expires_at: AT, evidence_digest: DIGEST, identity_digest: DIGEST,
+  provenance_digest: DIGEST, citations: [{ context_evidence_id: "evi:1", digest: DIGEST, kind: "current", ref: "live:1" }],
+  deep_link: "/recommendations/rec%3A1" };
+const notification = { intent_id: "intent:1", correlation_id: "corr:1", urgency: "normal", channel: "in_app",
+  preview: "Ready", deep_link: "/today", state: "ready", expires_at: AT, created_at: AT, updated_at: AT };
+const recommendation = { schema_version: 1, resource: "recommendation", recommendation_id: "rec:1", context_id: "ctx:1",
+  canonical_digest: DIGEST, evidence_digest: DIGEST, approval_requirement: "owner", confidence_class: "high",
+  lifecycle_state: "eligible", expires_at: AT, state: "ready", actions: [{ rank: 1, title: "Review", operation: "review",
+    target_digest: DIGEST, state: "pending", owner_decision_required: true, current: true, occurred_at: AT,
+    transition_digest: null }], evidence: [], conflicts: [], omissions: [], deep_links: { context_evidence: "/api/v1/contexts/ctx:1/evidence" } };
+const evidence = { schema_version: 1, resource: "context-evidence", context_id: "ctx:1", recommendation_id: "rec:1",
+  state: "ready", freshness: { state: "fresh", fresh_until: AT }, evidence: [{ evidence_id: "evi:1", source_id: "src:1",
+    kind: "linux_live_fact", digest: DIGEST, observed_at: AT, fresh_until: AT }], conflicts: [], omissions: [] };
 
 describe("Task31 personal client", () => {
   it("parses the closed Today resource and rejects unknown fields", async () => {
@@ -49,6 +67,43 @@ describe("Task31 personal client", () => {
 
     // When/Then: aggregate size fails before the resource parser accepts it.
     await expect(client.today()).rejects.toMatchObject({ code: "VALIDATION_ERROR" });
+  });
+
+  it.each([
+    { name: "today state", parse: parseToday, value: { ...today, state: "unknown" } },
+    { name: "today freshness", parse: parseToday, value: { ...today, freshness: { ...today.freshness, state: "unknown" } } },
+    { name: "decision state", parse: parseDecision, value: { ...decision, state: "resolved" } },
+    { name: "decision confidence", parse: parseDecision, value: { ...decision, confidence_class: "unknown" } },
+    { name: "notification urgency", parse: parseNotification, value: { ...notification, urgency: "unknown" } },
+    { name: "notification channel", parse: parseNotification, value: { ...notification, channel: "unknown" } },
+    { name: "notification state", parse: parseNotification, value: { ...notification, state: "unknown" } },
+    { name: "recommendation lifecycle", parse: parseRecommendation, value: { ...recommendation, lifecycle_state: "unknown" } },
+    { name: "recommendation approval", parse: parseRecommendation, value: { ...recommendation, approval_requirement: "unknown" } },
+    { name: "recommendation operation", parse: parseRecommendation, value: { ...recommendation,
+      actions: [{ ...recommendation.actions[0], operation: "unknown" }] } },
+    { name: "citation kind", parse: parseDecision, value: { ...decision,
+      citations: [{ ...decision.citations[0], kind: "unknown" }] } },
+    { name: "evidence kind", parse: parseEvidence, value: { ...evidence,
+      evidence: [{ ...evidence.evidence[0], kind: "unknown" }] } },
+  ])("rejects unknown $name vocabulary", ({ parse, value }) => {
+    expect(() => parse(value)).toThrowError(expect.objectContaining({ code: "VALIDATION_ERROR" }));
+  });
+
+  it("rejects missing values, exotic prototypes, and nested accessors without invoking getters", () => {
+    // Given: a missing discriminant, an exotic object, and an accessor nested inside an array.
+    const missing: Record<string, unknown> = { ...today };
+    delete missing["state"];
+    const exotic = Object.assign(Object.create(null), today);
+    let accesses = 0;
+    const citation = { ...decision.citations[0] };
+    Object.defineProperty(citation, "kind", { enumerable: true, get: () => { accesses += 1; return "current"; } });
+
+    // When/Then: all fail generically and the getter remains untouched.
+    expect(() => parseToday(missing)).toThrowError(expect.objectContaining({ code: "VALIDATION_ERROR" }));
+    expect(() => parseToday(exotic)).toThrowError(expect.objectContaining({ code: "VALIDATION_ERROR" }));
+    expect(() => parseDecision({ ...decision, citations: [citation] }))
+      .toThrowError(expect.objectContaining({ code: "VALIDATION_ERROR" }));
+    expect(accesses).toBe(0);
   });
 
   it("posts only schema_version when accepting an action", async () => {

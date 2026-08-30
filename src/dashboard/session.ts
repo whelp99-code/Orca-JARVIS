@@ -5,6 +5,7 @@ import { writeDashboardJson } from "./http.js";
 
 const SESSION_PATH = "/api/v1/session" as const;
 const CSRF_BYTE_LENGTH = 32;
+const AUTHENTICATED_SESSION_PREFIX = "dashboard-session:";
 const CSRF_TOKEN_PATTERN = /^[A-Za-z0-9_-]{32,128}$/;
 
 export type DashboardSession = {
@@ -15,6 +16,7 @@ export type DashboardSession = {
 export type DashboardSessionStore = {
   snapshot(): DashboardSession;
   matches(candidate: string): boolean;
+  authenticatedSessionId(): string;
 };
 
 export type DashboardSessionRouteInput = {
@@ -24,7 +26,9 @@ export type DashboardSessionRouteInput = {
   readonly session: DashboardSessionStore;
 };
 
-export function createDashboardSession(): DashboardSessionStore {
+export function createDashboardSession(
+  authenticatedSessionId = `${AUTHENTICATED_SESSION_PREFIX}${randomBytes(CSRF_BYTE_LENGTH).toString("base64url")}`,
+): DashboardSessionStore {
   const csrfToken = randomBytes(CSRF_BYTE_LENGTH).toString("base64url");
   return {
     snapshot(): DashboardSession {
@@ -34,6 +38,9 @@ export function createDashboardSession(): DashboardSessionStore {
       const left = Buffer.from(csrfToken);
       const right = Buffer.from(candidate);
       return left.length === right.length && timingSafeEqual(left, right);
+    },
+    authenticatedSessionId(): string {
+      return authenticatedSessionId;
     },
   };
 }

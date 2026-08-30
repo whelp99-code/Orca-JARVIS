@@ -4,6 +4,7 @@ import { RecommendationWorkflowStager } from "../recommendation-workflow-staging
 import type { ReconcileHub } from "./events.js";
 import { PERSONAL_TOPICS } from "./personal-contracts.js";
 import { writeDashboardJson } from "./http.js";
+import type { DashboardSessionStore } from "./session.js";
 
 const ACCEPT_KEYS = ["schema_version"] as const;
 const MAX_STEPS = 6;
@@ -19,6 +20,7 @@ type Input = {
   readonly body: unknown;
   readonly hub: ReconcileHub;
   readonly clock: () => Date;
+  readonly session: DashboardSessionStore;
 };
 
 type Route =
@@ -68,7 +70,7 @@ function accept(input: Input, route: Extract<Route, { readonly kind: "accept" }>
       action_rank: route.rank,
       requested_by: {
         principal_id: principal,
-        authenticated_session_id: `session:${principal}`,
+        authenticated_session_id: input.session.authenticatedSessionId(),
       },
       target: { repository: REPOSITORY, environment: "local" },
       workflow: {

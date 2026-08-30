@@ -5,6 +5,7 @@ import { request } from "undici";
 import { describe, expect, it } from "vitest";
 import { AuthorityDb } from "../../src/db.js";
 import { createDashboardServer, type DashboardServer } from "../../src/dashboard/server.js";
+import { createDashboardSession } from "../../src/dashboard/session.js";
 
 const originOf = (server: DashboardServer): string =>
   `http://${server.address.host}:${server.address.port}`;
@@ -18,6 +19,16 @@ function sessionBody(value: unknown): { readonly schema_version: 1; readonly csr
 }
 
 describe("dashboard local session", () => {
+  it("keeps an independently generated authenticated session out of the browser snapshot", () => {
+    // Given / When: Linux creates one server-owned dashboard session.
+    const session = createDashboardSession();
+
+    // Then: its internal authority identity is stable, opaque, and absent from browser bytes.
+    expect(session.authenticatedSessionId()).toMatch(/^dashboard-session:[A-Za-z0-9_-]{43}$/u);
+    expect(session.authenticatedSessionId()).toBe(session.authenticatedSessionId());
+    expect(JSON.stringify(session.snapshot())).not.toContain(session.authenticatedSessionId());
+  });
+
   it("returns one stable no-store token per server without mutating authority", async () => {
     const root = mkdtempSync(join(tmpdir(), "jarvis-dashboard-session-"));
     writeFileSync(join(root, "index.html"), "<!doctype html><div id=\"root\"></div>", "utf8");

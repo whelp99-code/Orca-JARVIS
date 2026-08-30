@@ -75,6 +75,7 @@ export async function tryHandleDashboardPost(input: DashboardPostInput): Promise
     body: parsed.value,
     hub: input.hub,
     clock: input.clock,
+    session: input.session,
   })) {
     return true;
   }

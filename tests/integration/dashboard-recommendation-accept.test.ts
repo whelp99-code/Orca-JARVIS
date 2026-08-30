@@ -5,6 +5,7 @@ import { request } from "undici";
 import { afterEach, describe, expect, it } from "vitest";
 import { Recommendations } from "../../src/index.js";
 import { createDashboardServer, type DashboardServer } from "../../src/dashboard/server.js";
+import { createDashboardSession } from "../../src/dashboard/session.js";
 import { persistTask18Context, RECOMMENDATION_ID, task18Request } from "../fixtures/recommendation-fixture.js";
 import { initialized } from "../helpers.js";
 
@@ -12,14 +13,15 @@ const NOW = new Date("2026-08-28T12:10:00.000Z");
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
-async function fixture() {
+async function fixture(authenticatedSessionId?: string) {
   const db = await initialized();
   const context = persistTask18Context(db);
   new Recommendations(db).create(task18Request(context));
   const root = mkdtempSync(join(tmpdir(), "jarvis-task31-route-"));
   roots.push(root);
   writeFileSync(join(root, "index.html"), "<!doctype html><div id=\"root\"></div>", "utf8");
-  const server = createDashboardServer({ db, staticRoot: root, host: "127.0.0.1", port: 0, clock: () => NOW });
+  const server = createDashboardServer({ db, staticRoot: root, host: "127.0.0.1", port: 0, clock: () => NOW,
+    ...(authenticatedSessionId === undefined ? {} : { sessionStore: createDashboardSession(authenticatedSessionId) }) });
   return { db, server };
 }
 
@@ -50,8 +52,9 @@ function count(serverDb: Awaited<ReturnType<typeof initialized>>, table: string)
 
 describe("Task31 recommendation acceptance route", () => {
   it("stages one redacted pending workflow request when an eligible action is accepted twice", async () => {
-    // Given: Linux owns a fresh recommendation and the browser has only its CSRF token.
-    const { db, server } = await fixture();
+    // Given: Linux owns a fresh recommendation and a browser-hidden authenticated session.
+    const authenticatedSessionId = "dashboard-session:test-route-independent";
+    const { db, server } = await fixture(authenticatedSessionId);
     try {
       const token = await csrf(server);
 
@@ -71,6 +74,11 @@ describe("Task31 recommendation acceptance route", () => {
         state: "pending",
       });
       expect(JSON.stringify(first.body)).not.toMatch(/session|principal|goal|args|budget|deadline|receipt|digest/iu);
+      const stored = db.db.prepare("SELECT args_json FROM control_command_requests LIMIT 1").get();
+      if (typeof stored !== "object" || stored === null) throw new TypeError("staged args expected");
+      const args: unknown = JSON.parse(String(Reflect.get(stored, "args_json")));
+      expect(JSON.stringify(args)).toContain(authenticatedSessionId);
+      expect(JSON.stringify(args)).not.toContain("session:test-operator");
       expect(count(db, "control_command_requests")).toBe(1);
       expect(count(db, "workflow_runs")).toBe(0);
       expect(count(db, "control_command_effects")).toBe(0);
