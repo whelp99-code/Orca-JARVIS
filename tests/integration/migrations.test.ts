@@ -51,12 +51,13 @@ describe("migrations", () => {
       // When the exact 032 and later migrations become available
       for (const file of readdirSync(full)) if (file >= "032_personal_context.sql") cpSync(join(full, file), join(prior, file));
       await empty.migrate(); await upgraded.migrate();
-      // Then both journals preserve unique checksummed order through 033
+      // Then both journals preserve unique checksummed order through independent slot 038.
       for (const db of [empty, upgraded]) {
         const rows = db.db.prepare("SELECT id,checksum FROM schema_migrations WHERE id>='031_' ORDER BY id").all() as Array<{ id: string; checksum: string }>;
         expect(rows.map(row => row.id)).toEqual(["031_control_ingress_idempotency.sql", "032_personal_context.sql",
           "033_personal_operations.sql", "034_recommendation_transition_identity.sql", "035_daily_loop_durable_guards.sql",
-          "036_notification_intent_immutable_delete.sql", "037_recommendation_work_runtime.sql"]);
+          "036_notification_intent_immutable_delete.sql", "037_recommendation_work_runtime.sql",
+          "038_memory_candidate_classification.sql"]);
         expect(new Set(rows.map(row => row.checksum)).size).toBe(rows.length);
       }
     } finally { empty.close(); upgraded.close(); rmSync(join(full, ".."), { recursive: true, force: true }); rmSync(join(prior, ".."), { recursive: true, force: true }); }

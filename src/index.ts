@@ -1,5 +1,5 @@
 export * from "./core-api.js"; export * from "./daily-loop.js"; export * from "./morning-brief.js";
-export * from "./notification-intents.js"; export * from "./recommendation-workflow-public.js";
+export * from "./notification-intents.js"; export * from "./recommendation-workflow-public.js"; export * from "./memory-candidates.js";
 export {
 	OrcaReadonlyAdapter,
 	classifyOrcaTerminal,
