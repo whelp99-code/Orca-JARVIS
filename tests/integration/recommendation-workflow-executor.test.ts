@@ -5,13 +5,15 @@ import {
   ControlPlane,
   Recommendations,
   RecommendationWorkflowStager,
+  RecordingWorkflowStageAdapter,
   signCommandApproval,
   type CommandApprovalReceipt,
   type Sha256Digest,
   type WorkflowRunInput,
   type WorkflowStageAdapter,
 } from "../../src/index.js";
-import { LoopGraph } from "../../src/loopgraph.js";
+import { controlWorkflowRunInput } from "../../src/control-workflow-input.js";
+import { workflowInputDigest, type WorkflowStageOutcome } from "../../src/workflow-stage-outcome.js";
 import { persistTask18Context, RECOMMENDATION_ID, task18Request } from "../fixtures/recommendation-fixture.js";
 import { initialized, localKey } from "../helpers.js";
 
@@ -45,14 +47,16 @@ function approve(db: AuthorityDb, staged: ReturnType<RecommendationWorkflowStage
 }
 class Recorder implements WorkflowStageAdapter {
   readonly calls: WorkflowRunInput[] = [];
-  async stage(input: WorkflowRunInput, now: Date): Promise<unknown> {
-    void now; this.calls.push(input); return { run_id: input.run_id, staged: true };
+  async stage(input: WorkflowRunInput, now: Date): Promise<WorkflowStageOutcome> {
+    void now; this.calls.push(input);
+    return { kind: "staged", run_id: input.run_id, workflow_digest: workflowInputDigest(input) };
   }
 }
 class PersistentRecorder extends Recorder {
-  constructor(private readonly db: AuthorityDb) { super(); }
-  override async stage(input: WorkflowRunInput, now: Date): Promise<unknown> {
-    await super.stage(input, now); const graph = new LoopGraph(this.db); graph.ensureDefaults(now); return graph.start(input, now);
+  private readonly delegate: RecordingWorkflowStageAdapter;
+  constructor(db: AuthorityDb) { super(); this.delegate = new RecordingWorkflowStageAdapter(db); }
+  override async stage(input: WorkflowRunInput, now: Date): Promise<WorkflowStageOutcome> {
+    await super.stage(input, now); return this.delegate.stage(input, now);
   }
 }
 
@@ -64,6 +68,8 @@ describe("Task 25 approved workflow stage executor", () => {
       const { staged } = seed(db); const recorder = new PersistentRecorder(db); const executor = new ApprovedCommandExecutor(db);
       await expect(executor.executeWorkflowStage({ requestId: staged.request_id, worker: WORKER, adapter: recorder, now: CLAIMED }))
         .rejects.toMatchObject({ code: "CONTROL_APPROVAL_REQUIRED" });
+      await expect(new RecordingWorkflowStageAdapter(db).stage(controlWorkflowRunInput(staged.args), CLAIMED))
+        .rejects.toMatchObject({ code: "RECOMMENDATION_WORKFLOW_RECORDING_AUTHORITY_REQUIRED" });
       expect(recorder.calls).toHaveLength(0);
       approve(db, staged);
 
@@ -134,7 +140,10 @@ describe("Task 25 approved workflow stage executor", () => {
     const secondDb = new AuthorityDb(firstDb.filename);
     try {
       const { staged } = seed(firstDb); approve(firstDb, staged); const entered = Promise.withResolvers<void>(); const release = Promise.withResolvers<void>();
-      const recorder: WorkflowStageAdapter = { async stage(input) { entered.resolve(); await release.promise; return { run_id: input.run_id }; } };
+      const recorder: WorkflowStageAdapter = { async stage(input) {
+        entered.resolve(); await release.promise;
+        return { kind: "staged", run_id: input.run_id, workflow_digest: workflowInputDigest(input) };
+      } };
       const first = new ApprovedCommandExecutor(firstDb).executeWorkflowStage({ requestId: staged.request_id, worker: WORKER, adapter: recorder, now: CLAIMED });
       await entered.promise;
 
@@ -169,6 +178,57 @@ describe("Task 25 approved workflow stage executor", () => {
       expect(recorder.calls).toHaveLength(0);
       expect(exactDb.db.prepare("SELECT COUNT(*) AS count FROM control_command_redemptions").get()).toEqual({ count: 0 });
     } finally { beforeDb.close(); exactDb.close(); }
+  });
+
+  it("preserves a resolved uncertain stage outcome without false completion", async () => {
+    // Given: an approved request whose adapter resolves an explicit uncertain outcome.
+    const db = await initialized();
+    try {
+      const { staged } = seed(db); approve(db, staged); let calls = 0;
+      const evidence = `sha256:${"a".repeat(64)}`;
+      const adapter: WorkflowStageAdapter = {
+        async stage() { calls += 1; return { kind: "uncertain", reason: "stage_boundary_uncertain", evidence_digest: evidence }; },
+      };
+      const executor = new ApprovedCommandExecutor(db);
+
+      // When: the approved executor parses the resolved outcome.
+      const result = await executor.executeWorkflowStage({ requestId: staged.request_id, worker: WORKER, adapter, now: CLAIMED });
+
+      // Then: uncertainty is durable, no completed workflow/effect exists, and replay never invokes again.
+      expect(result).toMatchObject({ state: "uncertain", result: { kind: "uncertain", evidence_digest: evidence } });
+      expect(db.db.prepare("SELECT state FROM control_command_requests WHERE request_id=?").get(staged.request_id))
+        .toEqual({ state: "uncertain" });
+      expect(db.db.prepare("SELECT COUNT(*) AS count FROM workflow_runs").get()).toEqual({ count: 0 });
+      expect(db.db.prepare("SELECT COUNT(*) AS count FROM control_command_effects WHERE effect_type='recommendation.workflow.staged'").get())
+        .toEqual({ count: 0 });
+      await expect(executor.executeWorkflowStage({ requestId: staged.request_id, worker: WORKER, adapter, now: CLAIMED }))
+        .rejects.toMatchObject({ code: "CONTROL_APPROVAL_REQUIRED" });
+      expect(calls).toBe(1);
+    } finally { db.close(); }
+  });
+
+  it("maps an unknown resolved adapter result to typed durable uncertainty", async () => {
+    // Given: an approved request and a runtime adapter violating its declared outcome contract.
+    const db = await initialized();
+    try {
+      const { staged } = seed(db); approve(db, staged); let calls = 0;
+      const adapter: WorkflowStageAdapter = {
+        async stage(): Promise<WorkflowStageOutcome> { calls += 1; return JSON.parse('{"kind":"mystery"}'); },
+      };
+
+      // When: the executor parses the unknown result.
+      const result = await new ApprovedCommandExecutor(db).executeWorkflowStage({
+        requestId: staged.request_id, worker: WORKER, adapter, now: CLAIMED,
+      });
+
+      // Then: it settles typed uncertainty and cannot invoke the adapter again.
+      expect(result).toMatchObject({
+        state: "uncertain", result: { kind: "uncertain", reason: "invalid_outcome" },
+      });
+      expect(calls).toBe(1);
+      expect(db.db.prepare("SELECT state FROM control_command_requests WHERE request_id=?").get(staged.request_id))
+        .toEqual({ state: "uncertain" });
+    } finally { db.close(); }
   });
 
   it("settles an adapter throw as uncertain and never retries the boundary", async () => {

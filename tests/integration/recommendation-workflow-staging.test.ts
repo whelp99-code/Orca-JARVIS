@@ -71,10 +71,71 @@ describe("Task 25 recommendation workflow staging", () => {
         request({ target: { repository: "Orca-JARVIS", environment: "remote" } })];
 
       // When/Then: every malformed request fails closed without invoking an accessor or writing a request.
-      for (const value of cases) expect(() => stager.stage(value)).toThrow();
+      cases.forEach((value, index) => expect(() => stager.stage(value), `hostile case ${index}`).toThrow());
       expect(accessed).toBe(0);
       expect(count(db, "control_command_requests")).toBe(0);
     } finally { db.close(); }
+  });
+
+  it("rejects every noncanonical nested array without traps or writes", async () => {
+    // Given: array shapes that could execute code or hide noncanonical values.
+    const db = await initialized();
+    try {
+      seed(db); const stager = new RecommendationWorkflowStager(db, () => NOW); let accesses = 0;
+      const accessor: unknown[] = [];
+      Object.defineProperty(accessor, "0", { enumerable: true, get: () => { accesses += 1; return "hidden"; } });
+      Object.defineProperty(accessor, "length", { value: 1, writable: true, configurable: false });
+      const sparse = new Array(1);
+      const custom = ["value"]; Object.defineProperty(custom, "extra", { value: true, enumerable: true });
+      const nonenumerable = ["value"]; Object.defineProperty(nonenumerable, "hidden", { value: true });
+      const frozen = Object.freeze(["value"]);
+      const symbol = ["value"]; Object.defineProperty(symbol, Symbol("hidden"), { value: true });
+      const inherited = ["value"]; Object.setPrototypeOf(inherited, Object.create(Array.prototype));
+      const proxied = new Proxy(["value"], { ownKeys: () => { accesses += 1; return ["0", "length"]; } });
+      const cases = [accessor, sparse, custom, nonenumerable, frozen, symbol, inherited, proxied];
+
+      // When/Then: no array is indexed, iterated, or measured before exact closure.
+      for (const value of cases) {
+        expect(() => stager.stage(request({ workflow: { goal: "bounded", args: { nested: value } } })))
+          .toThrowError(expect.objectContaining({ code: "RECOMMENDATION_WORKFLOW_INVALID" }));
+      }
+      expect(accesses).toBe(0);
+      expect(count(db, "control_command_requests")).toBe(0);
+    } finally { db.close(); }
+  });
+
+  it("maps malformed deadline and clock values to the Task25 contract error", async () => {
+    // Given: invalid, overflowing, custom, and proxied time values.
+    const decorated = new Date(NOW); Object.defineProperty(decorated, "hidden", { value: true });
+    const clocks: Array<() => unknown> = [
+      () => null,
+      () => Number.NaN,
+      () => "2026-08-28T12:10:00.000Z",
+      () => Number.MAX_VALUE,
+      () => new Date(Number.NaN),
+      () => new (class CustomDate extends Date {})(NOW.getTime()),
+      () => new Proxy(NOW, {}),
+      () => decorated,
+    ];
+    for (const clock of clocks) {
+      const db = await initialized();
+      try {
+        seed(db);
+        expect(() => new RecommendationWorkflowStager(db, clock).stage(request()))
+          .toThrowError(expect.objectContaining({ code: "RECOMMENDATION_WORKFLOW_INVALID" }));
+        expect(count(db, "control_command_requests")).toBe(0);
+      } finally { db.close(); }
+    }
+    const malformed = ["not-time", "+999999-01-01T00:00:00.000Z", "2026-08-28T12:45:00Z", "NaN"];
+    for (const deadline of malformed) {
+      const db = await initialized();
+      try {
+        seed(db);
+        expect(() => new RecommendationWorkflowStager(db, () => NOW).stage(request({ deadline })))
+          .toThrowError(expect.objectContaining({ code: "RECOMMENDATION_WORKFLOW_INVALID" }));
+        expect(count(db, "control_command_requests")).toBe(0);
+      } finally { db.close(); }
+    }
   });
 
   it("conflicts changed bytes under immutable identity and preserves one request", async () => {
@@ -114,6 +175,21 @@ describe("Task 25 recommendation workflow staging", () => {
         .toThrowError(expect.objectContaining({ code: "RECOMMENDATION_WORKFLOW_NOT_ELIGIBLE" }));
       expect(count(terminalDb, "control_command_requests")).toBe(0);
     } finally { terminalDb.close(); }
+  });
+
+  it("rejects a persisted recommendation expiry mutation before staging", async () => {
+    // Given: the persisted scalar expiry changed behind its immutable guard while the envelope remains canonical.
+    const db = await initialized();
+    try {
+      seed(db); db.db.exec("DROP TRIGGER personal_recommendations_immutable_update");
+      db.db.prepare("UPDATE personal_recommendations SET expires_at=? WHERE recommendation_id=?")
+        .run("2026-08-28T12:50:00.000Z", RECOMMENDATION_ID);
+
+      // When/Then: authoritative row/envelope disagreement has exact zero request writes.
+      expect(() => new RecommendationWorkflowStager(db, () => NOW).stage(request()))
+        .toThrowError(expect.objectContaining({ code: "RECOMMENDATION_WORKFLOW_NOT_ELIGIBLE" }));
+      expect(count(db, "control_command_requests")).toBe(0);
+    } finally { db.close(); }
   });
 
   it("detects one-field persisted recommendation and context mutations", async () => {

@@ -1,5 +1,5 @@
 export * from "./core-api.js"; export * from "./daily-loop.js"; export * from "./morning-brief.js";
-export * from "./notification-intents.js"; export * from "./recommendation-workflow-staging.js";
+export * from "./notification-intents.js"; export * from "./recommendation-workflow-public.js";
 export {
 	OrcaReadonlyAdapter,
 	classifyOrcaTerminal,
@@ -236,7 +236,6 @@ export {
 } from "./control-plane.js";
 export { buildCurrentState, type CurrentStateProjection } from "./recommendation-state-projection.js";
 export { ApprovedCommandExecutor, type ApprovedExecutionResult } from "./approved-executor.js";
-export { type ExecuteWorkflowStageInput, type WorkflowStageAdapter } from "./approved-workflow-stage.js";
 export {
 	DEFAULT_AGENTOPS_LOOP,
 	type LoopNodeKind,

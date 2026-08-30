@@ -9,10 +9,13 @@ describe("Task 25 public orchestration boundary", () => {
     // When: the Task 25 runtime seams are inspected.
     const stager = api["RecommendationWorkflowStager"];
     const executor = api["ApprovedCommandExecutor"];
+    const recorder = api["RecordingWorkflowStageAdapter"];
 
-    // Then: both machine-consumed constructors are public without exposing a real dispatcher.
+    // Then: the service and recording seam are public without exposing raw LoopGraph authority.
     expect(typeof stager).toBe("function");
     expect(typeof executor).toBe("function");
+    expect(typeof recorder).toBe("function");
+    expect(api["LoopGraph"]).toBeUndefined();
     expect(api["RecommendationWorkflowDispatcher"]).toBeUndefined();
   });
 });
