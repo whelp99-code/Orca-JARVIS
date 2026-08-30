@@ -1,56 +1,136 @@
-import { generateKeyPairSync } from "node:crypto";
 import { describe, expect, it } from "vitest";
-import { generateEveningCloseout, parseEveningCloseoutInput, verifyEveningCloseout } from "../../src/index.js";
+import {
+  generateEveningCloseout,
+  parseEveningCloseoutInput,
+  verifyEveningCloseoutArtifact,
+} from "../../src/index.js";
+import {
+  closeoutInput,
+  failedVerificationRecord,
+  priority,
+  signer,
+  trustedCloseoutKey,
+  workerRecord,
+} from "../fixtures/evening-closeout.js";
 
-const digest = `sha256:${"a".repeat(64)}`;
-const citation = { source_id: "linux-loop", evidence_id: "verify-1" };
-const base = (outcome: "completed" | "worker_done" = "completed", reason: string | null = null,
-  verification: { readonly outcome: "passed" | "missing"; readonly evidence_id: string | null; readonly evidence_digest: string | null }
-    = { outcome: "passed", evidence_id: "verify-1", evidence_digest: digest }) => ({
-  schema_version: 1, run_id: "dlr:evening", correlation_id: "daily:2026-08-30:abcdef", local_date: "2026-08-30",
-  generated_at: "2026-08-30T12:00:00.000Z", source_readiness: "ready", source_omissions: [],
-  records: [{ item_id: "item-1", outcome, reason, copy: "Shipped change", citations: [citation],
-    observed_at: "2026-08-30T11:00:00.000Z", fresh_until: "2026-08-30T13:00:00.000Z", trust: "trusted", verification }],
-  decisions: [{ decision_id: "decision-1", state: "owner_required", copy: "Choose release window", citations: [citation] }],
-  memory_candidates: [{ candidate_id: "candidate-1", eligible: true, citations: [citation] }],
-  tomorrow_actions: [{ action_id: "action-1", rank: 1, disposition: "executable", citations: [citation] }],
-  risks: [{ risk_id: "risk-1", copy: "Release window unresolved", citations: [citation] }], limits: null,
-});
+const generated = () => generateEveningCloseout(parseEveningCloseoutInput(closeoutInput()), signer());
 
-describe("evening closeout", () => {
-  it("Given verified cited facts When generated Then emits a verifiable deterministic artifact", () => {
-    const keys = generateKeyPairSync("ed25519");
-    const parsed = parseEveningCloseoutInput(base());
-    const artifact = generateEveningCloseout(parsed, { key_id: "closeout-test", private_key: keys.privateKey, clock: () => new Date("2026-08-30T12:00:00.000Z") });
+describe("evening closeout signed continuity", () => {
+  it("Given independently verified evidence When generated Then emits a closed signed artifact", () => {
+    const artifact = generated();
     expect(artifact.verified_completions).toHaveLength(1);
-    expect(artifact.tomorrow_first_action).toEqual({ action_id: "action-1", citations: [citation] });
-    expect(verifyEveningCloseout(artifact, { key_id: "closeout-test", public_key: keys.publicKey })).toBe(true);
-    expect(generateEveningCloseout(parseEveningCloseoutInput({ ...base(), records: [...base().records].reverse() }),
-      { key_id: "closeout-test", private_key: keys.privateKey, clock: () => new Date("2026-08-30T12:00:00.000Z") })).toEqual(artifact);
+    expect(artifact.verified_completions[0]?.verification?.verdict).toBe("passed");
+    expect(artifact.envelope.public_key_fingerprint).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(verifyEveningCloseoutArtifact(artifact, trustedCloseoutKey)).toEqual(artifact);
   });
 
-  it("Given done prose without verification When generated Then remains uncertain", () => {
-    const keys = generateKeyPairSync("ed25519");
-    const artifact = generateEveningCloseout(parseEveningCloseoutInput(base("worker_done", "EVIDENCE_MISSING",
-      { outcome: "missing", evidence_id: null, evidence_digest: null })), { key_id: "closeout-test", private_key: keys.privateKey, clock: () => new Date("2026-08-30T12:00:00.000Z") });
+  it("Given an envelope mutation or unknown field When verified Then rejects the whole artifact", () => {
+    const artifact = generated();
+    const mutations: readonly unknown[] = [
+      { ...artifact, unsigned_unknown: "rejected" },
+      { ...artifact, canonical_digest: `sha256:${"0".repeat(64)}` },
+      { ...artifact, envelope: { ...artifact.envelope, schema_version: 2 } },
+      { ...artifact, envelope: { ...artifact.envelope, algorithm: "RSA" } },
+      { ...artifact, envelope: { ...artifact.envelope, key_id: "Wrong_Key" } },
+      { ...artifact, envelope: { ...artifact.envelope, public_key_spki: "AA" } },
+      { ...artifact, envelope: { ...artifact.envelope, public_key_fingerprint: `sha256:${"0".repeat(64)}` } },
+      { ...artifact, envelope: { ...artifact.envelope, signature: "AA" } },
+    ];
+    for (const mutation of mutations) {
+      expect(() => verifyEveningCloseoutArtifact(mutation, trustedCloseoutKey))
+        .toThrow("EVENING_CLOSEOUT_INTEGRITY_FAILURE");
+    }
+  });
+
+  it("Given a malformed signing handle When generated Then rejects before emission", () => {
+    const input = parseEveningCloseoutInput(closeoutInput());
+    const valid = signer();
+    expect(() => generateEveningCloseout(input, {
+      ...valid,
+      identity: Object.assign({}, valid.identity, { unknown: "field" }),
+    })).toThrow("EVENING_CLOSEOUT_INPUT_INVALID");
+    expect(() => generateEveningCloseout(input, {
+      ...valid,
+      sign: () => new Uint8Array(63),
+    })).toThrow("EVENING_CLOSEOUT_INPUT_INVALID");
+  });
+
+  it("Given prose-only or failed verification When generated Then keeps exact uncertain reasons", () => {
+    const input = closeoutInput();
+    const artifact = generateEveningCloseout(
+      parseEveningCloseoutInput({
+        ...input,
+        records: [workerRecord(), failedVerificationRecord()],
+        memory_candidates: [],
+      }),
+      signer(),
+    );
     expect(artifact.verified_completions).toEqual([]);
-    expect(artifact.open_or_failed[0]?.reason).toBe("EVIDENCE_MISSING");
+    expect(artifact.open_or_failed.map(item => item.reason)).toEqual([
+      "VERIFICATION_FAILED",
+      "EVIDENCE_MISSING",
+    ]);
   });
 
-  it("Given no data When generated Then does not invent continuity", () => {
-    const keys = generateKeyPairSync("ed25519");
-    const artifact = generateEveningCloseout(parseEveningCloseoutInput({ ...base(), source_readiness: "no_data",
-      records: [], decisions: [], memory_candidates: [], tomorrow_actions: [], risks: [] }),
-      { key_id: "closeout-test", private_key: keys.privateKey, clock: () => new Date("2026-08-30T12:00:00.000Z") });
-    expect(artifact.tomorrow_first_action).toBe("none");
-    expect(artifact.verified_completions).toEqual([]);
-  });
-
-  it("Given hostile or private input When parsed Then fails closed without executing accessors", () => {
-    let invoked = 0; const hostile = Object.defineProperty({}, "schema_version", { enumerable: true, get: () => { invoked += 1; return 1; } });
-    expect(() => parseEveningCloseoutInput(hostile)).toThrow("EVENING_CLOSEOUT_INPUT_INVALID");
-    expect(() => parseEveningCloseoutInput({ ...base(), risks: [{ risk_id: "risk", copy: "/home/alice/.ssh/id_ed25519", citations: [citation] }] }))
+  it("Given mismatched completion evidence When parsed Then cannot promote the claim", () => {
+    const input = closeoutInput();
+    const source = input.records[0];
+    expect(source).toBeDefined();
+    if (source === undefined) return;
+    const mismatched = {
+      ...source,
+      citations: [{ ...source.citations[0], evidence_id: "different-evidence" }],
+    };
+    expect(() => parseEveningCloseoutInput({ ...input, records: [mismatched] }))
       .toThrow("EVENING_CLOSEOUT_INPUT_INVALID");
-    expect(invoked).toBe(0);
+  });
+
+  it("Given duplicate identities across sections When parsed Then rejects collisions", () => {
+    const input = closeoutInput();
+    expect(() => parseEveningCloseoutInput({ ...input, risks: [...input.risks, input.risks[0]] }))
+      .toThrow("EVENING_CLOSEOUT_INPUT_INVALID");
+    expect(() => parseEveningCloseoutInput({
+      ...input,
+      decisions: [{ ...input.decisions[0], decision_id: input.records[0]?.item_id }],
+    })).toThrow("EVENING_CLOSEOUT_INPUT_INVALID");
+  });
+
+  it("Given Task17 candidates When reordered Then uses the six-field tuple and stable identity", () => {
+    const input = closeoutInput();
+    const action = input.tomorrow_actions[0];
+    expect(action).toBeDefined();
+    if (action === undefined) return;
+    const internal = {
+      ...action,
+      action_id: "internal",
+      priority: priority("stable-z", "internal"),
+      citations: [{ ...action.citations[0], citation_id: "citation-internal", source_id: "source-internal" }],
+    };
+    const critical = {
+      ...action,
+      action_id: "critical",
+      priority: priority("stable-a", "customer_critical"),
+      citations: [{ ...action.citations[0], citation_id: "citation-critical", source_id: "source-critical" }],
+    };
+    const first = generateEveningCloseout(
+      parseEveningCloseoutInput({ ...input, tomorrow_actions: [internal, critical] }),
+      signer(),
+    );
+    const reordered = generateEveningCloseout(
+      parseEveningCloseoutInput({ ...input, tomorrow_actions: [critical, internal] }),
+      signer(),
+    );
+    expect(first.tomorrow_first_action).toEqual(reordered.tomorrow_first_action);
+    expect(first.tomorrow_first_action).toMatchObject({ action_id: "critical" });
+  });
+
+  it("Given hostile Unicode or private metadata When parsed Then rejects before emission", () => {
+    const input = closeoutInput();
+    expect(() => parseEveningCloseoutInput({ ...input, run_id: "bad\ud800" }))
+      .toThrow("EVENING_CLOSEOUT_INPUT_INVALID");
+    expect(() => parseEveningCloseoutInput({ ...input, run_id: "bad\udc00" }))
+      .toThrow("EVENING_CLOSEOUT_INPUT_INVALID");
+    expect(() => parseEveningCloseoutInput({ ...input, source_omissions: ["token=private"] }))
+      .toThrow("EVENING_CLOSEOUT_INPUT_INVALID");
   });
 });

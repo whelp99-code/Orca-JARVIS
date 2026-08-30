@@ -3,21 +3,26 @@ import { canonicalize } from "./canonical.js";
 import { parseDailyLoopClaim, parseDailyLoopInstant, parseDailyLoopRunId } from "./daily-loop-input.js";
 import { assertDailyLoopIntegrity } from "./daily-loop-integrity.js";
 import { DailyLoopStore } from "./daily-loop-store.js";
-import type { EveningCloseoutArtifact, CloseoutVerifier } from "./evening-closeout-types.js";
+import { verifyEveningCloseoutArtifact } from "./evening-closeout-artifact.js";
+import type { EveningCloseoutArtifact, TrustedCloseoutKey } from "./evening-closeout-types.js";
 import { EveningCloseoutError } from "./evening-closeout-types.js";
-import { verifyEveningCloseout } from "./evening-closeout-generator.js";
 import { persistenceRow, persistenceText } from "./personal-persistence-values.js";
 
 type Settlement = { readonly claim: unknown; readonly artifact: EveningCloseoutArtifact; readonly at: unknown };
 type StoreOptions = { readonly after_artifact_persisted?: () => void };
 export class EveningCloseoutStore {
   private readonly loop: DailyLoopStore;
-  constructor(private readonly authority: AuthorityDb, private readonly verifier: CloseoutVerifier, private readonly options: StoreOptions = {}) {
+  constructor(
+    private readonly authority: AuthorityDb,
+    private readonly verifier: TrustedCloseoutKey,
+    private readonly options: StoreOptions = {},
+  ) {
     this.loop = new DailyLoopStore(authority);
   }
   settle(input: Settlement): boolean {
-    const claim = parseDailyLoopClaim(input.claim); const at = parseDailyLoopInstant(input.at); const artifact = input.artifact;
-    if (!verifyEveningCloseout(artifact, this.verifier)) throw new EveningCloseoutError("EVENING_CLOSEOUT_INTEGRITY_FAILURE");
+    const claim = parseDailyLoopClaim(input.claim);
+    const at = parseDailyLoopInstant(input.at);
+    const artifact = verifyEveningCloseoutArtifact(input.artifact, this.verifier);
     assertDailyLoopIntegrity(this.authority, claim.run_id);
     const rowValue = this.authority.db.prepare(
       "SELECT r.loop_date,r.correlation_id,r.phase,r.state AS run_state,s.state,s.detail_json " +
@@ -46,15 +51,6 @@ export class EveningCloseoutStore {
     ).get(runId);
     if (value === undefined) throw new EveningCloseoutError("EVENING_CLOSEOUT_IDENTITY_CONFLICT");
     const parsed: unknown = JSON.parse(persistenceText(persistenceRow(value)["detail_json"]));
-    if (!this.isArtifact(parsed) || !verifyEveningCloseout(parsed, this.verifier)) {
-      throw new EveningCloseoutError("EVENING_CLOSEOUT_INTEGRITY_FAILURE");
-    }
-    return parsed;
-  }
-  private isArtifact(value: unknown): value is EveningCloseoutArtifact {
-    if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
-    const descriptors = Object.getOwnPropertyDescriptors(value);
-    return typeof descriptors["schema_version"]?.value === "number" && descriptors["schema_version"]?.value === 1
-      && typeof descriptors["artifact_id"]?.value === "string" && typeof descriptors["signature"]?.value === "string";
+    return verifyEveningCloseoutArtifact(parsed, this.verifier);
   }
 }
