@@ -28,6 +28,8 @@ export function recommendationDetail(db: AuthorityDb, id: string, now: Date): Pe
       || text(row, "context_digest") !== text(row, "stored_context_digest")
       || text(row, "stored_context_digest") !== canonicalPersonalContractHash(context)
       || text(row, "evidence_digest") !== persistenceHash(recommendation.evidence)
+      || text(row, "lifecycle_state") !== recommendation.payload.state
+      || text(row, "expires_at") !== recommendation.expires_at
       || text(row, "persistence_digest") !== persistenceHash({ approval_requirement: text(row, "approval_requirement"),
         canonical_digest: text(row, "canonical_digest"), confidence_class: text(row, "confidence_class") })) {
       throw new PersonalProjectionIntegrityError();
@@ -94,7 +96,8 @@ function storedRecommendationEvidence(
   expected: readonly EvidenceIdentity[],
 ): readonly RecommendationEvidenceProjection[] {
   const rows = dbRows(db.db.prepare(
-    `SELECT r.position,e.evidence_id,e.source_id,e.evidence_kind,e.evidence_digest,e.observed_at
+    `SELECT r.position AS recommendation_position,e.position AS context_position,
+            e.evidence_id,e.source_id,e.evidence_kind,e.evidence_digest,e.observed_at
      FROM personal_recommendation_evidence r JOIN personal_recommendations p ON p.recommendation_id=r.recommendation_id
      JOIN personal_context_evidence e ON e.context_id=p.context_id AND e.evidence_id=r.evidence_id
      WHERE r.recommendation_id=? ORDER BY r.position`,
@@ -102,7 +105,8 @@ function storedRecommendationEvidence(
   if (rows.length !== expected.length) throw new PersonalProjectionIntegrityError();
   return rows.map((row, index) => {
     const canonical = expected[index];
-    if (canonical === undefined || numberValue(row, "position") !== index || !evidenceMatches(row, canonical)) {
+    if (canonical === undefined || numberValue(row, "recommendation_position") !== index
+      || numberValue(row, "context_position") !== index || !evidenceMatches(row, canonical)) {
       throw new PersonalProjectionIntegrityError();
     }
     return { ...canonical, fresh_until: null };

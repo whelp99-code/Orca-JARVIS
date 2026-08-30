@@ -196,4 +196,35 @@ describe("personal persisted projection integrity", () => {
       expect(changes(db)).toBe(before);
     } finally { server.close(); db.close(); }
   });
+
+  it("rejects a schema-valid recommendation lifecycle state outside its canonical envelope", async () => {
+    const { db, server } = await fixture();
+    db.db.exec("DROP TRIGGER personal_recommendations_immutable_update");
+    db.db.prepare(
+      "UPDATE personal_recommendations SET lifecycle_state='selected' WHERE recommendation_id=?",
+    ).run(RECOMMENDATION_ID);
+    const before = changes(db);
+    try {
+      const response = await get(server, `/api/v1/recommendations/${encodeURIComponent(RECOMMENDATION_ID)}`);
+      expectSafeFailure(response);
+      expect(response.body).not.toContain('"lifecycle_state":"selected"');
+      expect(changes(db)).toBe(before);
+    } finally { server.close(); db.close(); }
+  });
+
+  it("rejects a context evidence position outside its canonical index", async () => {
+    const { db, server } = await fixture();
+    db.db.exec("DROP TRIGGER personal_context_evidence_immutable_update");
+    db.db.prepare(
+      `UPDATE personal_context_evidence SET position=31
+       WHERE context_id=(SELECT context_id FROM personal_recommendations WHERE recommendation_id=?)
+         AND position=0`,
+    ).run(RECOMMENDATION_ID);
+    const before = changes(db);
+    try {
+      const response = await get(server, `/api/v1/recommendations/${encodeURIComponent(RECOMMENDATION_ID)}`);
+      expectSafeFailure(response);
+      expect(changes(db)).toBe(before);
+    } finally { server.close(); db.close(); }
+  });
 });
