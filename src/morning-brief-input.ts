@@ -77,7 +77,8 @@ function privateText(value: unknown, maximum = 512): string {
   const parsed = text(value, maximum);
   if (/(?:password|passwd|token|secret|api[_-]?key|authorization)\s*[:=]/iu.test(parsed) || /\bbearer\s+\S+/iu.test(parsed)
     || /\/(?:home|Users|root)\//u.test(parsed) || /[$#>]\s*(?:sudo|cat|ssh|tail|less)\b/u.test(parsed)
-    || parsed.includes(`${String.fromCharCode(27)}[`) || /(?:last login:|-----BEGIN [A-Z ]+PRIVATE KEY-----)/iu.test(parsed)) return fail();
+    || parsed.includes(`${String.fromCharCode(27)}[`)
+    || /(?:last login:|-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----)/iu.test(parsed)) return fail();
   return parsed;
 }
 function instant(value: unknown): string {

@@ -117,17 +117,22 @@ describe("morning brief remediation boundary", () => {
   });
 
   it("rejects sensitive bytes in every emitted metadata class and leaves serialized output sentinel-free", () => {
-    // Given
-    const sentinel = "token=task21-secret";
-    const cases = [
-      { item_id: sentinel }, { recommendation_id: sentinel }, { action_id: sentinel }, { semantic_key: sentinel }, { copy: sentinel },
-      { source_ids: [sentinel], citations: [{ link_id: "link-1", source_id: sentinel, evidence_ref: "evidence-1" }] },
-      { citations: [{ link_id: sentinel, source_id: "source-1", evidence_ref: "evidence-1" }] },
-      { citations: [{ link_id: "link-1", source_id: "source-1", evidence_ref: "/home/owner/private" }] },
-    ];
-
-    // When / Then
-    for (const overrides of cases) expect(() => parseMorningBriefInput(raw([signed(overrides)]))).toThrow(MorningBriefContractError);
+    // Given / When / Then
+    for (const sentinel of ["token=task21-secret", "-----BEGIN PRIVATE KEY-----"]) {
+      const cases = [
+        { item_id: sentinel }, { recommendation_id: sentinel }, { action_id: sentinel }, { semantic_key: sentinel },
+        { copy: sentinel },
+        { source_ids: [sentinel], citations: [{ link_id: "link-1", source_id: sentinel, evidence_ref: "evidence-1" }] },
+        { citations: [{ link_id: sentinel, source_id: "source-1", evidence_ref: "evidence-1" }] },
+        { citations: [{ link_id: "link-1", source_id: "source-1", evidence_ref: sentinel }] },
+      ];
+      for (const overrides of cases) {
+        expect(() => parseMorningBriefInput(raw([signed(overrides)]))).toThrow(MorningBriefContractError);
+      }
+    }
+    expect(() => parseMorningBriefInput(raw([signed({
+      citations: [{ link_id: "link-1", source_id: "source-1", evidence_ref: "/home/owner/private" }],
+    })]))).toThrow(MorningBriefContractError);
     const serialized = JSON.stringify(generateMorningBrief(parseMorningBriefInput(raw([signed()]))));
     expect(serialized.includes("task21-secret") || serialized.includes("/home/owner") || serialized.includes("\u001b[")).toBe(false);
   });
