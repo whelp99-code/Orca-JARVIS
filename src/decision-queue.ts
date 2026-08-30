@@ -7,7 +7,8 @@ import type { DecisionOmissionReason, DecisionQueueInput, DecisionQueueProjectio
 const hash = (value: unknown): string => createHash("sha256").update(canonicalize(value)).digest("hex");
 const compareText = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
 const ordinal = (left: string, right: string, order: readonly string[]): number => order.indexOf(left) - order.indexOf(right);
-function compareRecord(left: DecisionQueueRecord, right: DecisionQueueRecord): number {
+type QueueOrder = Pick<DecisionQueueRecord, "priority" | "deadline" | "semantic_key" | "recommendation_id">;
+function compareOrder(left: QueueOrder, right: QueueOrder): number {
   const comparisons = [
     ordinal(left.priority.owner_safety_gate, right.priority.owner_safety_gate, PRIORITY_LEXICOGRAPHIC_POLICY.owner_safety_gate),
     ordinal(left.priority.customer_impact, right.priority.customer_impact, PRIORITY_LEXICOGRAPHIC_POLICY.customer_impact),
@@ -40,7 +41,7 @@ function omission(value: DecisionQueueRecord, clock: string): DecisionOmissionRe
 }
 function unique(values: readonly string[]): readonly string[] { return [...new Set(values)].sort(compareText); }
 function entry(values: readonly DecisionQueueRecord[], clock: string): OwnerDecisionQueueEntry {
-  const sorted = [...values].sort(compareRecord); const representative = sorted[0];
+  const sorted = [...values].sort(compareOrder); const representative = sorted[0];
   if (representative === undefined) throw new NotificationQueueInvariantError();
   const citations = [...new Map(sorted.flatMap(value => value.citations)
     .map(value => [`${value.source_id}:${value.evidence_ref}:${value.evidence_digest}`, value] as const)).values()]
@@ -101,10 +102,7 @@ export function projectOwnerDecisionQueue(input: DecisionQueueInput): DecisionQu
     if (reason !== null) omissions.push({ semantic_key: value.semantic_key, reason });
     else groups.set(value.semantic_key, [...(groups.get(value.semantic_key) ?? []), value]);
   }
-  return { generated_at: input.generated_at, active: [...groups.values()].map(values => entry(values, input.generated_at)).sort((left, right) => {
-    const leftRecord = input.items.find(value => value.semantic_key === left.semantic_key);
-    const rightRecord = input.items.find(value => value.semantic_key === right.semantic_key);
-    if (leftRecord === undefined || rightRecord === undefined) throw new NotificationQueueInvariantError();
-    return compareRecord(leftRecord, rightRecord);
-  }), omissions: omissions.sort((left, right) => compareText(left.semantic_key, right.semantic_key) || compareText(left.reason, right.reason)) };
+  const active = [...groups.values()].map(values => entry(values, input.generated_at)).sort(compareOrder);
+  return { generated_at: input.generated_at, active,
+    omissions: omissions.sort((left, right) => compareText(left.semantic_key, right.semantic_key) || compareText(left.reason, right.reason)) };
 }

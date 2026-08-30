@@ -11,6 +11,7 @@ import {
   type MorningBriefRecordState,
 } from "./morning-brief-types.js";
 import { PRIORITY_LEXICOGRAPHIC_POLICY } from "./priority-engine-contracts.js";
+import { containsPrivateMetadata } from "./private-text.js";
 
 export class MorningBriefContractError extends Error {
   readonly name = "MorningBriefContractError";
@@ -75,11 +76,7 @@ function text(value: unknown, maximum = 512): string {
 }
 function privateText(value: unknown, maximum = 512): string {
   const parsed = text(value, maximum);
-  if (/(?:password|passwd|token|secret|api[_-]?key|authorization)\s*[:=]/iu.test(parsed) || /\bbearer\s+\S+/iu.test(parsed)
-    || /\/(?:home|Users|root)\//u.test(parsed) || /[$#>]\s*(?:sudo|cat|ssh|tail|less)\b/u.test(parsed)
-    || parsed.includes(`${String.fromCharCode(27)}[`)
-    || /(?:last login:|-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----)/iu.test(parsed)) return fail();
-  return parsed;
+  return containsPrivateMetadata(parsed) ? fail() : parsed;
 }
 function instant(value: unknown): string {
   const parsed = text(value, 32);

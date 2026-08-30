@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { types } from "node:util";
 import { canonicalize } from "./canonical.js";
 import { PRIORITY_LEXICOGRAPHIC_POLICY } from "./priority-engine-contracts.js";
+import { containsPrivateMetadata } from "./private-text.js";
 import { NotificationIntentError, type DecisionCitation, type DecisionEvent, type DecisionQueueInput,
   type DecisionQueueRecord } from "./notification-intent-types.js";
 
@@ -45,8 +46,7 @@ function text(value: unknown, maximum = 512): string {
   if (typeof value !== "string" || value.length === 0 || value.trim() !== value || value !== value.normalize("NFC")
     || hasUnpairedSurrogate(value) || Buffer.byteLength(value, "utf8") > maximum
     || [...value].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)
-    || /(?:password|passwd|token|secret|api[_-]?key|authorization)\s*[:=]/iu.test(value) || /\bbearer\s+\S+/iu.test(value)
-    || /\/(?:home|Users|root)\//u.test(value) || /-----BEGIN (?:[A-Z0-9]+ )*PRIVATE KEY-----/u.test(value)) return fail();
+    || containsPrivateMetadata(value)) return fail();
   return value;
 }
 function instant(value: unknown): string {

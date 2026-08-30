@@ -1,3 +1,5 @@
+import { once } from "node:events";
+import { Worker } from "node:worker_threads";
 import { describe, expect, it } from "vitest";
 import { AuthorityDb, DecisionNotificationService, NotificationIntentStore, deriveNotificationDecision,
   parseDecisionQueueInput, projectOwnerDecisionQueue, type DecisionQueueEventSource } from "../../src/index.js";
@@ -13,10 +15,31 @@ const queue = (record = decisionRecord(), now = NOTICE_NOW) => projectOwnerDecis
   schema_version: 1, generated_at: now, items: [record],
 }));
 const counts = (db: AuthorityDb) => ({
-  intents: Number((db.db.prepare("SELECT COUNT(*) AS n FROM notification_intents").get() as { n: number }).n),
-  deliveries: Number((db.db.prepare("SELECT COUNT(*) AS n FROM notification_deliveries").get() as { n: number }).n),
-  changes: Number((db.db.prepare("SELECT total_changes() AS n").get() as { n: number }).n),
+  intents: Number(Reflect.get(db.db.prepare("SELECT COUNT(*) AS n FROM notification_intents").get() ?? {}, "n")),
+  deliveries: Number(Reflect.get(db.db.prepare("SELECT COUNT(*) AS n FROM notification_deliveries").get() ?? {}, "n")),
+  changes: Number(Reflect.get(db.db.prepare("SELECT total_changes() AS n").get() ?? {}, "n")),
 });
+type RaceResult = { readonly ok: boolean; readonly urgency?: string; readonly reason?: string; readonly code?: string };
+const raceWorkerUrl = new URL("../../scripts/task22-intent-race-worker.mjs", import.meta.url);
+async function race(path: string, entry: unknown): Promise<readonly RaceResult[]> {
+  const workers = [new Worker(raceWorkerUrl, { workerData: { path, entry, clock: NOTICE_NOW } }),
+    new Worker(raceWorkerUrl, { workerData: { path, entry, clock: NOTICE_NOW } })];
+  const signal = AbortSignal.timeout(5_000);
+  try {
+    await Promise.all(workers.map(async worker => {
+      const [message] = await once(worker, "message", { signal });
+      expect(Reflect.get(message ?? {}, "kind")).toBe("ready");
+    }));
+    const results = workers.map(async worker => {
+      const [message] = await once(worker, "message", { signal });
+      if (Reflect.get(message ?? {}, "kind") !== "result") throw new TypeError("Task22 race result required");
+      return { ok: Reflect.get(message ?? {}, "ok") === true, urgency: Reflect.get(message ?? {}, "urgency"),
+        reason: Reflect.get(message ?? {}, "reason"), code: Reflect.get(message ?? {}, "code") };
+    });
+    for (const worker of workers) worker.postMessage({ kind: "go" });
+    return await Promise.all(results);
+  } finally { await Promise.all(workers.map(worker => worker.terminate())); }
+}
 
 describe("Task 22 notification intent policy and store", () => {
   it("derives allowed and quiet critical urgency while deferring noncritical exactly to 07:00 KST", () => {
@@ -63,6 +86,38 @@ describe("Task 22 notification intent policy and store", () => {
       expect(() => store.persist(changed, NOTICE_NOW)).toThrowError(expect.objectContaining({ code: "NOTIFICATION_IDENTITY_CONFLICT" }));
       const after = counts(second); expect(after.changes - before.changes).toBe(0); expect(after.deliveries).toBe(0);
     } finally { second.close(); }
+  });
+
+  it("converges two barrier-released connections on one byte-identical intent and survives reopen", async () => {
+    // Given: two real workers with independent connections waiting before persistence.
+    const path = tempDb(); const db = new AuthorityDb(path); await db.migrate(); const entry = queue().active[0];
+    try {
+      expect(entry).toBeDefined();
+      // When: both callers are released after both subscriptions report ready.
+      const results = await race(path, entry);
+      // Then: both calls are typed successes, exactly one queues, and one converges idempotently.
+      expect(results.every(result => result.ok)).toBe(true);
+      expect(results.map(result => result.urgency).sort()).toEqual(["critical", "silent"]);
+      expect(counts(db)).toMatchObject({ intents: 1, deliveries: 0 });
+      const reopened = new AuthorityDb(path);
+      expect(new NotificationIntentStore(reopened).persist(entry, NOTICE_NOW)).toMatchObject({ urgency: "silent" });
+      expect(counts(reopened)).toMatchObject({ intents: 1, deliveries: 0 }); reopened.close();
+    } finally { db.close(); }
+  });
+
+  it("rejects private metadata before projection or any database write", async () => {
+    const db = new AuthorityDb(tempDb()); await db.migrate(); const source = new PushSource();
+    try {
+      const service = new DecisionNotificationService(new NotificationIntentStore(db), source, () => new Date(NOTICE_NOW));
+      const stop = service.start(); const before = counts(db);
+      for (const hostile of [decisionRecord({ title: "credential: hunter2" }), decisionRecord({ recommendation_id: "login: admin" }),
+        decisionRecord({ action_id: "sudo rm -rf workspace" }), decisionRecord({ source_ids: ["login: admin"],
+          citations: [{ source_id: "login: admin", evidence_ref: "live:deploy", evidence_digest: `sha256:${"6".repeat(64)}`,
+            observed_at: "2026-08-28T11:00:00.000Z", fresh_until: "2026-08-28T13:30:00.000Z" }] })]) {
+        expect(() => source.publish(decisionInput([hostile]))).toThrowError(expect.objectContaining({ code: "NOTIFICATION_INPUT_INVALID" }));
+      }
+      stop(); expect(counts(db)).toEqual(before);
+    } finally { db.close(); }
   });
 
   it("subscribes before a push trigger and suppresses unchanged and resolved state exactly", async () => {

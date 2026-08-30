@@ -8,7 +8,7 @@ import { persistTask18Context, RECOMMENDATION_ID, task18Request } from "../fixtu
 import { tempDb } from "../helpers.js";
 
 const MIGRATION = "034_recommendation_transition_identity.sql";
-const LATER_MIGRATION = "035_daily_loop_durable_guards.sql";
+const LATER_MIGRATIONS = ["035_daily_loop_durable_guards.sql", "036_notification_intent_immutable_delete.sql"] as const;
 const OLD_HASHES = {
 	"032_personal_context.sql": "a419b923fa3c2dfe6f957199256ad3ad5e5601e2fd60e0ba3ea5d3b7277c841b",
 	"033_personal_operations.sql": "33e2755a78d87d281bfd3bfe7b18aed07ee3b93216f5131c4453329f169596b4",
@@ -25,7 +25,7 @@ describe("Task 18 transition identity migration", () => {
 		const migrations = join(root, "migrations");
 		cpSync(join(process.cwd(), "migrations"), migrations, { recursive: true });
 		unlinkSync(join(migrations, MIGRATION));
-		unlinkSync(join(migrations, LATER_MIGRATION));
+		for (const later of LATER_MIGRATIONS) unlinkSync(join(migrations, later));
 		const db = new AuthorityDb(tempDb(), migrations);
 		try {
 			await db.migrate();

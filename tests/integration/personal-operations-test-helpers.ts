@@ -45,10 +45,12 @@ export function closePersonalDb(db: AuthorityDb): void {
 export function migrationCopy(include033 = true): string {
   const root = mkdtempSync(join(tmpdir(), "jarvis-personal-migrations-"));
   const directory = join(root, "migrations");
-  cpSync(join(process.cwd(), "migrations"), directory, {
-    recursive: true,
-    filter: source => include033 || (!source.endsWith("033_personal_operations.sql") && !source.endsWith("035_daily_loop_durable_guards.sql")),
-  });
+  cpSync(join(process.cwd(), "migrations"), directory, { recursive: true });
+  if (!include033) {
+    for (const file of readdirSync(directory)) {
+      if (file.endsWith(".sql") && file > "032_personal_context.sql") rmSync(join(directory, file));
+    }
+  }
   return directory;
 }
 

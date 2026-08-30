@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { cpSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -15,7 +15,10 @@ const sha = (value: string): string => `sha256:${createHash("sha256").update(val
 const migrationRoot = (through035: boolean): { readonly root: string; readonly migrations: string; readonly path: string } => {
   const root = mkdtempSync(join(tmpdir(), "task20-schema-"));
   const migrations = join(root, "migrations"); cpSync(join(process.cwd(), "migrations"), migrations, { recursive: true });
-  if (!through035) rmSync(join(migrations, "035_daily_loop_durable_guards.sql"));
+  const upperBound = through035 ? "035_daily_loop_durable_guards.sql" : "034_recommendation_transition_identity.sql";
+  for (const file of readdirSync(migrations)) {
+    if (file.endsWith(".sql") && file > upperBound) rmSync(join(migrations, file));
+  }
   return { root, migrations, path: join(root, "authority.sqlite") };
 };
 const insertLegacy = (db: AuthorityDb, id: string, state: "pending" | "claimed" | "running" | "completed" | "failed" | "uncertain"): void => {
@@ -95,8 +98,8 @@ describe("migration 035 upgrade integrity", () => {
         { run_id: "dlr:claimed", state: "completed", record_version: 0 }, { run_id: "dlr:partial", state: "completed", record_version: 0 }, { run_id: "dlr:pending", state: "completed", record_version: 0 },
       ]);
       expect(db.db.prepare("SELECT previous_digest FROM daily_loop_checkpoints WHERE run_id='dlr:partial' AND record_version=1 ORDER BY sequence LIMIT 1").get()).toEqual({ previous_digest: opaque });
-      db.close(); const reopened = new AuthorityDb(fixture.path, fixture.migrations); expect(reopened.db.prepare("SELECT count(*) AS n FROM daily_loop_checkpoints c WHERE c.record_version=1 AND c.sequence>1 AND NOT EXISTS(SELECT 1 FROM daily_loop_checkpoints p WHERE p.run_id=c.run_id AND p.sequence=c.sequence-1 AND p.checkpoint_digest=c.previous_digest)").get()).toEqual({ n: 0 }); reopened.close();
-    } finally { try { db.close(); } catch { /* closed */ } rmSync(fixture.root, { recursive: true, force: true }); }
+      const reopened = new AuthorityDb(fixture.path, fixture.migrations); expect(reopened.db.prepare("SELECT count(*) AS n FROM daily_loop_checkpoints c WHERE c.record_version=1 AND c.sequence>1 AND NOT EXISTS(SELECT 1 FROM daily_loop_checkpoints p WHERE p.run_id=c.run_id AND p.sequence=c.sequence-1 AND p.checkpoint_digest=c.previous_digest)").get()).toEqual({ n: 0 }); reopened.close();
+    } finally { db.close(); rmSync(fixture.root, { recursive: true, force: true }); }
   });
 
   it.each(["fence999", "gap", "wrong_predecessor", "cross_run_step", "expired_snapshot"])("rolls back corrupt legacy %s without a 035 journal or object", async corruption => {
@@ -181,8 +184,8 @@ describe("permanent direct-SQL daily-loop guards", () => {
       // When / Then
       expectZero(() => insert("wrong", 2, sha("wrong"))); expectZero(() => insert("null", 2, null)); expectZero(() => insert("duplicate", 1, null)); expectZero(() => insert("stale", 2, head, 0)); expectZero(() => insert("future", 2, head, 2)); expectZero(() => insert("skipped", 2, head, 3)); expectZero(() => insert("lease", 2, head, 1, "2026-08-30T22:16:00.001Z"));
       const other = loop.prepare({ kind: "event", event_id: "other", occurred_at: "2026-08-31T03:00:00.000Z", critical: false, items: 1, work: 1, bytes: 1 }); if (other.kind !== "prepared") throw new Error("other not prepared"); const otherStep = db.db.prepare("SELECT step_id FROM daily_loop_steps WHERE run_id=?").get(other.run_id) as { step_id: string }; expectZero(() => insert("cross", 2, head, 1, claim.lease_expires_at, otherStep.step_id));
-      insert("child", 2, head); expectZero(() => insert("branch", 3, head)); db.close(); const reopened = new AuthorityDb(fixture.path, fixture.migrations); expect(reopened.db.prepare("SELECT count(*) AS n FROM daily_loop_checkpoints WHERE checkpoint_id IN ('dlc:wrong','dlc:null','dlc:duplicate','dlc:stale','dlc:future','dlc:skipped','dlc:lease','dlc:cross','dlc:branch')").get()).toEqual({ n: 0 }); expect(reopened.db.prepare("SELECT count(*) AS n FROM daily_loop_checkpoints c WHERE c.sequence>1 AND NOT EXISTS(SELECT 1 FROM daily_loop_checkpoints p WHERE p.run_id=c.run_id AND p.sequence=c.sequence-1 AND p.checkpoint_digest=c.previous_digest)").get()).toEqual({ n: 0 }); reopened.close();
-    } finally { try { db.close(); } catch { /* closed */ } rmSync(fixture.root, { recursive: true, force: true }); }
+      insert("child", 2, head); expectZero(() => insert("branch", 3, head)); const reopened = new AuthorityDb(fixture.path, fixture.migrations); expect(reopened.db.prepare("SELECT count(*) AS n FROM daily_loop_checkpoints WHERE checkpoint_id IN ('dlc:wrong','dlc:null','dlc:duplicate','dlc:stale','dlc:future','dlc:skipped','dlc:lease','dlc:cross','dlc:branch')").get()).toEqual({ n: 0 }); expect(reopened.db.prepare("SELECT count(*) AS n FROM daily_loop_checkpoints c WHERE c.sequence>1 AND NOT EXISTS(SELECT 1 FROM daily_loop_checkpoints p WHERE p.run_id=c.run_id AND p.sequence=c.sequence-1 AND p.checkpoint_digest=c.previous_digest)").get()).toEqual({ n: 0 }); reopened.close();
+    } finally { db.close(); rmSync(fixture.root, { recursive: true, force: true }); }
   });
 
 });

@@ -27,6 +27,40 @@ describe("Task 22 owner decision queue boundary", () => {
     expect(output.active[0]?.contributing_context_ids).toHaveLength(2);
   });
 
+  it("ignores omitted duplicates when selecting and ordering active representatives for every reorder", () => {
+    // Given: an omitted duplicate with a competing tuple and two eligible actions.
+    const active = decisionRecord();
+    const stale = decisionRecord({ recommendation_id: "rec:pos:v1:stale", context_id: "ctx:pos:v1:stale",
+      source_state: "stale", source_ids: ["src:linux:stale"], citations: [{ source_id: "src:linux:stale",
+        evidence_ref: "live:stale", evidence_digest: `sha256:${"8".repeat(64)}`, observed_at: "2026-08-28T11:00:00.000Z",
+        fresh_until: "2026-08-28T13:30:00.000Z" }], priority: { owner_safety_gate: "owner_approval_required",
+        customer_impact: "internal", deadline_bucket: "none", dependency_blocking: "non_blocking", irreversible_risk: "high",
+        effort_cost: "high", stable_identity: "stale" } });
+    const competing = decisionRecord({ semantic_key: "customer:competing", recommendation_id: "rec:pos:v1:competing",
+      action_id: "owner-competing", context_id: "ctx:pos:v1:competing", priority: { owner_safety_gate: "owner_approval_required",
+        customer_impact: "customer_high", deadline_bucket: "today", dependency_blocking: "blocks_work", irreversible_risk: "low",
+        effort_cost: "low", stable_identity: "competing" } });
+    const permutations = [[stale, active, competing], [active, stale, competing], [competing, stale, active],
+      [competing, active, stale]];
+    // When: every order is projected under changed process locale settings.
+    const previousTz = process.env.TZ; const previousLang = process.env.LANG; const outputs = [];
+    try {
+      for (const [index, items] of permutations.entries()) {
+        process.env.TZ = index % 2 === 0 ? "Pacific/Honolulu" : "Asia/Seoul";
+        process.env.LANG = index % 2 === 0 ? "ko_KR.UTF-8" : "C";
+        outputs.push(projectOwnerDecisionQueue(parseDecisionQueueInput(decisionInput(items))));
+      }
+    } finally {
+      if (previousTz === undefined) delete process.env.TZ; else process.env.TZ = previousTz;
+      if (previousLang === undefined) delete process.env.LANG; else process.env.LANG = previousLang;
+    }
+    // Then: bytes and order match, and omitted provenance never enters the active entry.
+    expect(new Set(outputs.map(output => JSON.stringify(output))).size).toBe(1);
+    expect(outputs[0]?.active.map(item => item.semantic_key)).toEqual(["deploy:customer-api", "customer:competing"]);
+    expect(JSON.stringify(outputs[0]?.active)).not.toContain("rec:pos:v1:stale");
+    expect(JSON.stringify(outputs[0]?.active)).not.toContain("src:linux:stale");
+  });
+
   it("derives inactive states and exact omission reasons", () => {
     expect(reason(decisionRecord({ events: [{ state: "snoozed", occurred_at: NOTICE_NOW,
       event_digest: `sha256:${"a".repeat(64)}` }] }))).toBe("snoozed");
@@ -66,7 +100,18 @@ describe("Task 22 owner decision queue boundary", () => {
     let reads = 0;
     const accessor = decisionRecord(); Object.defineProperty(accessor, "title", { enumerable: true, get() { reads += 1; return "bad"; } });
     const hostile = [accessor, new Proxy(decisionRecord(), {}), decisionRecord({ title: "bad\ud800" }),
-      decisionRecord({ title: "Authorization: Bearer private" }), { ...decisionRecord(), record_digest: `sha256:${"f".repeat(64)}` }];
+      decisionRecord({ title: "Authorization: Bearer private" }), decisionRecord({ title: "credential: hunter2" }),
+      decisionRecord({ recommendation_id: "login: admin" }), decisionRecord({ action_id: "sudo rm -rf workspace" }),
+      decisionRecord({ context_id: "$ cat /protected" }), decisionRecord({ semantic_key: "command: erase" }),
+      decisionRecord({ priority: { owner_safety_gate: "owner_approval_required", customer_impact: "customer_critical",
+        deadline_bucket: "today", dependency_blocking: "blocks_customer", irreversible_risk: "low", effort_cost: "low",
+        stable_identity: "credential: deploy" } }), decisionRecord({ source_ids: ["login: admin"],
+        citations: [{ source_id: "login: admin", evidence_ref: "live:deploy", evidence_digest: `sha256:${"9".repeat(64)}`,
+          observed_at: "2026-08-28T11:00:00.000Z", fresh_until: "2026-08-28T13:30:00.000Z" }] }),
+      decisionRecord({ citations: [{ source_id: "src:linux:recommendations", evidence_ref: "credential: vault",
+        evidence_digest: `sha256:${"7".repeat(64)}`, observed_at: "2026-08-28T11:00:00.000Z",
+        fresh_until: "2026-08-28T13:30:00.000Z" }] }), { ...decisionRecord(), private_key: "hidden" },
+      { ...decisionRecord(), record_digest: `sha256:${"f".repeat(64)}` }];
     for (const value of hostile) expect(() => parseDecisionQueueInput(decisionInput([value])))
       .toThrowError(expect.objectContaining({ code: "NOTIFICATION_INPUT_INVALID" }));
     expect(reads).toBe(0);
