@@ -1,0 +1,22 @@
+[Unit]
+Description=Refresh the external Linux Second Brain snapshot
+Documentation=file:%h/.config/jm-second-brain/README.md
+
+[Service]
+Type=oneshot
+EnvironmentFile=%h/.config/jm-second-brain/refresh.env
+ExecStart=/usr/bin/env -- ${SECOND_BRAIN_REFRESH_ENTRYPOINT}
+TimeoutStartSec=10min
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+PrivateDevices=true
+ProtectSystem=strict
+ProtectHome=read-only
+ProtectKernelTunables=true
+ProtectKernelModules=true
+ProtectControlGroups=true
+RestrictSUIDSGID=true
+LockPersonality=true
+MemoryDenyWriteExecute=true
+ReadWritePaths=%h/.local/state/jm-second-brain

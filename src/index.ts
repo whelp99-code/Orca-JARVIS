@@ -1,4 +1,4 @@
-export * from "./core-api.js";
+export * from "./core-api.js"; export * from "./daily-loop.js";
 export {
 	OrcaReadonlyAdapter,
 	classifyOrcaTerminal,
