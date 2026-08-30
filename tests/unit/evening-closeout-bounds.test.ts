@@ -5,7 +5,9 @@ import {
   parseEveningCloseoutInput,
 } from "../../src/index.js";
 import {
+  additionalVerifiedRecord,
   closeoutInput,
+  futureVerificationRecord,
   signer,
 } from "../fixtures/evening-closeout.js";
 
@@ -42,9 +44,35 @@ describe("evening closeout deterministic bounds", () => {
     const equal = generate({ max_evidence: 3 });
     const above = generate({ max_evidence: 4 });
     expect(below.verified_completions).toEqual([]);
-    expect(below.omissions).toContainEqual({ reason: "evidence_cap", count: 1 });
+    expect(below.omissions).toContainEqual({ reason: "evidence_cap", count: 2 });
     expect(equal.verified_completions).toHaveLength(1);
     expect(above.verified_completions).toHaveLength(1);
+  });
+
+  it("enforces source, citation, and evidence caps over the whole artifact", () => {
+    const input = closeoutInput();
+    const records = [...input.records, additionalVerifiedRecord()];
+    for (const [key, below, equal, above] of [
+      ["max_sources", 1, 2, 3],
+      ["max_citations", 1, 2, 3],
+      ["max_evidence", 5, 6, 7],
+    ] as const) {
+      const belowArtifact = generate({ [key]: below }, { ...input, records });
+      const equalArtifact = generate({ [key]: equal }, { ...input, records });
+      const aboveArtifact = generate({ [key]: above }, { ...input, records });
+      expect(belowArtifact.verified_completions).toHaveLength(1);
+      expect(equalArtifact.verified_completions).toHaveLength(2);
+      expect(aboveArtifact.verified_completions).toHaveLength(2);
+      expect(belowArtifact.omitted_count).toBeGreaterThan(0);
+    }
+  });
+
+  it("rejects independently signed verification after the fixed closeout instant", () => {
+    const input = closeoutInput();
+    expect(() => parseEveningCloseoutInput({
+      ...input,
+      records: [futureVerificationRecord()],
+    })).toThrow("EVENING_CLOSEOUT_INPUT_INVALID");
   });
 
   it("Given source and citation zero/equality/plus one Then invalid or covered", () => {

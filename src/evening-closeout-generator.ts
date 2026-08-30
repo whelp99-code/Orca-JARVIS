@@ -7,6 +7,7 @@ import {
   verifyCloseoutSignature,
 } from "./evening-closeout-crypto.js";
 import { compareCloseoutAction } from "./evening-closeout-priority.js";
+import { createProvenanceFilter } from "./evening-closeout-provenance.js";
 import type {
   CloseoutCitation,
   CloseoutOmission,
@@ -172,18 +173,37 @@ export function generateEveningCloseout(
   });
   let risks = riskCandidates.slice(0, input.limits.max_risks);
   increment(counts, "risk_cap", riskCandidates.length - risks.length);
+  const withinArtifactProvenance = createProvenanceFilter(
+    input.limits,
+    reason => increment(counts, reason),
+  );
+  completions = withinArtifactProvenance(completions, value => value.verification === null ? [] : [
+    value.verification.evidence_id,
+    value.verification.artifact_id,
+    value.verification.completion_evidence_id,
+  ]);
+  open = withinArtifactProvenance(open);
+  made = withinArtifactProvenance(made);
+  owner = withinArtifactProvenance(owner);
   const completionEvidence = new Set(completions.flatMap(value =>
     value.verification === null ? [] : [value.verification.evidence_id]));
   const candidateCandidates = sorted(input.memory_candidates, value => value.candidate_id)
     .filter(value => citationsWithin(value.citations, input)
       && completionEvidence.has(value.verification_evidence_id));
-  let candidateSupport = candidateCandidates.slice(0, input.limits.max_candidates);
+  let candidateSupport = withinArtifactProvenance(
+    candidateCandidates.slice(0, input.limits.max_candidates),
+  );
   let candidateIds = candidateSupport.map(value => value.candidate_id);
   increment(counts, "candidate_cap", input.memory_candidates.length - candidateIds.length);
   const eligibleActions = input.tomorrow_actions.filter(value => value.actionable && value.trust === "trusted"
     && citationsWithin(value.citations, input) && Date.parse(value.fresh_until) > now.getTime()
     && Date.parse(value.observed_at) <= now.getTime()).sort(compareCloseoutAction);
   let first = eligibleActions[0] ?? "none" as const;
+  if (first !== "none") {
+    const selected = withinArtifactProvenance([first]);
+    first = selected[0] ?? "none";
+  }
+  risks = withinArtifactProvenance(risks);
   increment(counts, "action_cap", Math.max(0, eligibleActions.length - 1));
   const buildCore = (): Core => {
     const listed = omissions(counts);

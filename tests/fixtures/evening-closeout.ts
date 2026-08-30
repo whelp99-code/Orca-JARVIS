@@ -29,7 +29,11 @@ const citation = (suffix: string) => ({
   source_id: `source-${suffix}`,
   evidence_id: `completion-${suffix}`,
 });
-function verification(suffix: string, verdict: "passed" | "failed" = "passed") {
+function verification(
+  suffix: string,
+  verdict: "passed" | "failed" = "passed",
+  verifiedAt = "2026-08-30T11:01:00.000Z",
+) {
   const core = {
     schema_version: 1 as const,
     evidence_id: `verification-${suffix}`,
@@ -41,7 +45,7 @@ function verification(suffix: string, verdict: "passed" | "failed" = "passed") {
     completion_evidence_id: `completion-${suffix}`,
     completion_evidence_digest: digest({ completion: suffix }),
     observed_at: "2026-08-30T11:00:00.000Z",
-    verified_at: "2026-08-30T11:01:00.000Z",
+    verified_at: verifiedAt,
     key_id: "verification-key-v1",
     public_key_spki: spki(verifierKeys.publicKey),
     public_key_fingerprint: fingerprint(spki(verifierKeys.publicKey)),
@@ -116,6 +120,22 @@ export function closeoutInput() {
   };
 }
 export const workerRecord = () => record("worker", "worker_done");
+export const additionalVerifiedRecord = () => record("two");
+export const futureVerificationRecord = () => {
+  const value = record("future");
+  const payload = {
+    item_id: value.item_id,
+    outcome: value.outcome,
+    reason: value.reason,
+    copy: value.copy,
+    citations: value.citations,
+    observed_at: value.observed_at,
+    fresh_until: value.fresh_until,
+    trust: value.trust,
+    verification: verification("future", "passed", "2026-08-30T12:01:00.000Z"),
+  };
+  return { ...payload, record_digest: digest(payload) };
+};
 export const failedVerificationRecord = () => {
   const value = record("failed");
   const payload = {

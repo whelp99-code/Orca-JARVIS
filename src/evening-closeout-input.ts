@@ -128,6 +128,8 @@ export function parseEveningCloseoutInput(value: unknown): EveningCloseoutInput 
   if (!/^\d{4}-\d\d-\d\d$/.test(result.local_date)
     || (result.source_readiness === "no_data" && count > 0)
     || (result.source_readiness === "degraded" && result.source_omissions.length === 0)) return invalidCloseout();
+  if (result.records.some(record => record.verification !== null
+    && Date.parse(record.verification.verified_at) > Date.parse(result.generated_at))) return invalidCloseout();
   assertGlobalIdentity(result);
   return result;
 }
