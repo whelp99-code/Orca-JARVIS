@@ -78,9 +78,9 @@ function createClient() {
   return { client, decideRequest, executeRequest, retryRequest };
 }
 
-function renderControls(request: OverviewApproval, client: AuthorityMutationClient) {
+function renderControls(request: OverviewApproval, client: AuthorityMutationClient, enabled = true) {
   const idFactory = vi.fn<IdFactory>((kind) => IDS[kind]);
-  render(<AuthorityControls request={request} client={client} idFactory={idFactory} />);
+  render(<AuthorityControls request={request} client={client} idFactory={idFactory} enabled={enabled} />);
   return { user: userEvent.setup(), idFactory };
 }
 
@@ -99,6 +99,19 @@ describe("receipt-bound authority controls", () => {
     expect(screen.getByText("pending")).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Signed receipt JSON" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Submit signed receipt" })).toBeEnabled();
+  });
+
+  it("disables every receipt input when the canonical resource is stale", async () => {
+    // Given / When: cached authority evidence is rendered without live authority.
+    const current = createClient();
+    const { user } = renderControls(BASE_REQUEST, current.client, false);
+
+    // Then: neither keyboard nor pointer submission can cross the mutation seam.
+    expect(screen.getByRole("textbox", { name: "Signed receipt JSON" })).toBeDisabled();
+    const submit = screen.getByRole("button", { name: "Submit signed receipt" });
+    expect(submit).toBeDisabled();
+    await user.click(submit);
+    expect(current.decideRequest).not.toHaveBeenCalled();
   });
 
   it.each([

@@ -17,6 +17,7 @@ import { ApprovalsPage } from "./pages/approvals-page.js";
 import { TaskDetailPage } from "./pages/task-detail-page.js";
 import { TaskListPage } from "./pages/task-list-page.js";
 import { ProposalPage } from "./proposal-page.js";
+import { TodayRoute, type PersonalRuntime } from "./today-route.js";
 import type { createDashboardStore, DashboardState, ResourceState } from "./store.js";
 import { useDetailResource } from "./use-detail-resource.js";
 
@@ -29,6 +30,7 @@ type ControlCenterRootProps = Readonly<{
   client: RootClient;
   authorityClient?: AuthorityMutationClient;
   authorityIdFactory?: AuthorityIdFactory;
+  personalRuntime?: PersonalRuntime;
   initialPath?: string;
 }>;
 export function ControlCenterRoot({
@@ -36,6 +38,7 @@ export function ControlCenterRoot({
   client,
   authorityClient,
   authorityIdFactory,
+  personalRuntime,
   initialPath,
 }: ControlCenterRootProps) {
   const content = (
@@ -44,6 +47,7 @@ export function ControlCenterRoot({
       client={client}
       authorityClient={authorityClient}
       authorityIdFactory={authorityIdFactory}
+      personalRuntime={personalRuntime}
     />
   );
   return initialPath === undefined ? (
@@ -58,6 +62,7 @@ function ControlCenter({
   client,
   authorityClient,
   authorityIdFactory,
+  personalRuntime,
 }: Omit<ControlCenterRootProps, "initialPath">) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const proposalClient = useMemo(() => createProposalMutationClient(client.session), [client]);
@@ -74,7 +79,11 @@ function ControlCenter({
   return (
     <OperationalShell connectionState={state.connectionState}>
       <Routes>
-        <Route path="/" element={<OverviewRoute state={state} store={store} />} />
+        <Route path="/" element={(
+          <TodayRoute runtime={personalRuntime} overview={state.overview} approvals={state.approvals}
+            authorityClient={liveAuthorityClient} authorityConnection={state.connectionState} />
+        )} />
+        <Route path="/overview" element={<OverviewRoute state={state} store={store} />} />
         <Route
           path="/tasks"
           element={(

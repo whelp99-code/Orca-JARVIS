@@ -204,7 +204,7 @@ ul {
 .shell-footer a {
   color: var(--color-text-muted);
   font-family: var(--font-mono);
-  font-size: var(--type-xs);
+  font-size: var(--type-sm);
   overflow-wrap: anywhere;
 }
 

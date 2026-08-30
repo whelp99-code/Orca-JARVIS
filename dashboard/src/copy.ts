@@ -3,6 +3,7 @@ export const copy = {
   skip: "본문으로 건너뛰기",
   navLabel: "주요 메뉴",
   nav: {
+    today: "오늘",
     overview: "한눈에",
     tasks: "작업",
     proposals: "새 제안",

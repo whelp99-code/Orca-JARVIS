@@ -6,7 +6,8 @@ import { MemoryRouter } from "react-router-dom";
 import { OperationalShell } from "./operational-shell.js";
 
 const NAV_ITEMS = [
-  { label: "한눈에", href: "/" },
+  { label: "오늘", href: "/" },
+  { label: "한눈에", href: "/overview" },
   { label: "작업", href: "/tasks" },
   { label: "새 제안", href: "/proposals" },
   { label: "에이전트", href: "/agents" },

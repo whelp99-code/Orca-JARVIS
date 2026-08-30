@@ -5,6 +5,7 @@ import { tryHandleAuthorityPost } from "./authority-routes.js";
 import type { ReconcileHub } from "./events.js";
 import { DASHBOARD_ERROR_CODES, writeDashboardError } from "./http.js";
 import { tryHandleProposalPreview } from "./proposal-routes.js";
+import { tryHandleRecommendationAccept } from "./recommendation-action-routes.js";
 import type { TeamProposalPlanner } from "./proposal-service.js";
 import { readJsonPost, writePostBoundaryError } from "./request-boundary.js";
 import type { DashboardSessionStore } from "./session.js";
@@ -63,6 +64,17 @@ export async function tryHandleDashboardPost(input: DashboardPostInput): Promise
     clock: input.clock,
     capabilityProbe: input.capabilityProbe,
     planner: input.planner,
+  })) {
+    return true;
+  }
+  if (tryHandleRecommendationAccept({
+    db: input.db,
+    path: input.path,
+    response: input.response,
+    requestId: input.requestId,
+    body: parsed.value,
+    hub: input.hub,
+    clock: input.clock,
   })) {
     return true;
   }

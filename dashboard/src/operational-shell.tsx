@@ -9,7 +9,8 @@ type OperationalShellProps = Readonly<{
 }>;
 
 const NAV_ITEMS = [
-  { label: copy.nav.overview, to: "/" },
+  { label: copy.nav.today, to: "/" },
+  { label: copy.nav.overview, to: "/overview" },
   { label: copy.nav.tasks, to: "/tasks" },
   { label: copy.nav.proposals, to: "/proposals" },
   { label: copy.nav.agents, to: "/agents" },

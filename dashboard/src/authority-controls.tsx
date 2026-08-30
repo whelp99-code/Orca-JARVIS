@@ -13,6 +13,7 @@ export type AuthorityControlsProps = Readonly<{
   request: OverviewApproval;
   client: Pick<AuthorityMutationClient, "decideRequest" | "executeRequest" | "retryRequest">;
   idFactory?: AuthorityIdFactory;
+  enabled?: boolean;
 }>;
 
 type Action = "decision" | "execution" | "retry";
@@ -37,10 +38,11 @@ export function AuthorityControls({
   request,
   client,
   idFactory = SYSTEM_AUTHORITY_ID_FACTORY,
+  enabled = true,
 }: AuthorityControlsProps) {
   const [receiptJson, setReceiptJson] = useState("");
   const [operation, setOperation] = useState<Operation>({ kind: "idle" });
-  const busy = operation.kind === "loading";
+  const busy = operation.kind === "loading" || !enabled;
 
   async function decide(): Promise<void> {
     const parsed = parseReceiptJson(receiptJson);
@@ -111,6 +113,7 @@ export function AuthorityControls({
             <span>Signed receipt JSON</span>
             <textarea
               required
+              disabled={!enabled}
               value={receiptJson}
               onChange={(event) => { setReceiptJson(event.target.value); }}
             />

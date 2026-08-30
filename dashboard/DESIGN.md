@@ -115,6 +115,14 @@ The document owns vertical scrolling. The operational shell uses StyleGallery's 
 - **Motion**: none.
 - **Layout**: feed stack; no internal scroll owner.
 
+### Today Decision Surface
+- **Structure**: six semantic panels in fixed source order: NOW, BLOCKED, DECISIONS, NEXT 3, WORKERS, RISKS.
+- **States**: loading, live, stale, offline, blocked, staging, accepted, and validation error.
+- **Spacing**: `--space-1` through `--space-6`; action rows use existing Record List and Form Control geometry.
+- **Accessibility**: native headings, lists, `details`/`summary`, `time`, buttons, status, and alert semantics; cached data never enables mutation.
+- **Motion**: none; async controls swap labels and disabled state immediately.
+- **Layout**: StyleGallery `ram-grid` inside the existing sticky-header shell; document owns scrolling and source/focus order is unchanged at every width.
+
 ## 6. Motion & Interaction
 
 Motion intensity is low. State changes are immediate and no automatic animation is used. Hover, active, and focus feedback communicate affordance without moving layout. Any future non-essential motion must animate only transform or opacity and honor `prefers-reduced-motion`.

@@ -189,7 +189,7 @@ async function liveRoot(
 
 describe("ControlCenterRoot live routing", () => {
   it("starts the store and renders live overview after a snapshot", async () => {
-    const current = await liveRoot("/");
+    const current = await liveRoot("/overview");
     expect(current.lifecycle.started).toBe(1);
     expect(screen.getByRole("heading", { level: 1, name: "JARVIS 현황판" })).toBeInTheDocument();
     expect(screen.getByRole("status", { name: "실시간" })).toHaveTextContent("연결됨");
@@ -199,7 +199,8 @@ describe("ControlCenterRoot live routing", () => {
   it("exposes accessible nav and lists tasks in backend order on /tasks", async () => {
     await liveRoot("/tasks");
     const nav = screen.getByRole("navigation");
-    expect(within(nav).getByRole("link", { name: "한눈에" })).toHaveAttribute("href", "/");
+    expect(within(nav).getByRole("link", { name: "오늘" })).toHaveAttribute("href", "/");
+    expect(within(nav).getByRole("link", { name: "한눈에" })).toHaveAttribute("href", "/overview");
     expect(within(nav).getByRole("link", { name: "작업" })).toHaveAttribute("href", "/tasks");
     expect(within(nav).getByRole("link", { name: "새 제안" })).toHaveAttribute("href", "/proposals");
     expect(within(nav).getByRole("link", { name: "에이전트" })).toHaveAttribute("href", "/agents");

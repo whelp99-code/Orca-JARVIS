@@ -46,7 +46,7 @@ export class DashboardApiError extends Error {
   }
 }
 
-const TASK_KINDS = ["work", "command", "workflow", "agent"] as const;
+const TASK_KINDS = ["work", "command", "workflow", "agent", "recommendation"] as const;
 const EVENT_SOURCES = ["work", "control", "workflow", "gjc", "verification", "progress"] as const;
 const EVENT_KINDS = ["status", "command", "approval", "workflow", "agent", "verification", "evidence", "system"] as const;
 const ACTION_LEVELS = [0, 1, 2, 3, 4, 5] as const;
