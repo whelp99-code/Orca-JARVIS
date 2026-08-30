@@ -2,7 +2,9 @@ import { canonicalize } from "./canonical.js";
 import { RecommendationWorkReviewRuntime } from "./recommendation-work-review.js";
 import { persistenceHash } from "./personal-persistence-values.js";
 import { workFail, workRow, workText, type WorkRow } from "./recommendation-work-dispatch.js";
-import type { RecommendationWorkSettlement, WorkLease } from "./recommendation-work-types.js";
+import type {
+  RecommendationCancellationResult, RecommendationWorkSettlement, WorkLease,
+} from "./recommendation-work-types.js";
 
 function settlement(value: WorkRow): RecommendationWorkSettlement {
   const payload = workRow(JSON.parse(workText(value["settlement_json"]))); const candidate = payload["candidate"];
@@ -58,27 +60,36 @@ export class RecommendationWorkRuntime extends RecommendationWorkReviewRuntime {
     this.checkpoint("settlement_committed");
     return result;
   }
-  cancel(runtimeId: string, lease: WorkLease, reason: string): RecommendationWorkSettlement {
-    const prior = this.authority.db.prepare("SELECT * FROM recommendation_work_settlements WHERE runtime_id=?")
+  cancel(runtimeId: string, lease: WorkLease, reason: string): RecommendationCancellationResult {
+    const settled = this.authority.db.prepare("SELECT * FROM recommendation_work_settlements WHERE runtime_id=?")
       .get(runtimeId);
-    if (prior !== undefined) return settlement(workRow(prior));
-    const current = this.leased(runtimeId, lease); const identity = this.identity(current);
-    const settlementId = `settlement:${persistenceHash({ runtime_id: runtimeId, outcome: "cancelled", reason }).slice(7)}`;
-    const result: RecommendationWorkSettlement = { settlement_id: settlementId, runtime_id: runtimeId,
-      state: "cancelled", candidate: null };
-    this.authority.db.transaction(() => {
+    if (settled !== undefined) return settlement(workRow(settled));
+    const prior = this.authority.db.prepare("SELECT * FROM recommendation_work_cancel_requests WHERE runtime_id=?")
+      .get(runtimeId);
+    if (prior !== undefined) {
+      const request = workRow(prior);
+      if (request["reason"] !== reason) return workFail("RECOMMENDATION_CANCEL_REPLAY_CONFLICT");
+      return { cancel_id: workText(request["cancel_id"]), runtime_id: runtimeId,
+        state: "cancellation_pending", reason };
+    }
+    const current = this.leased(runtimeId, lease);
+    const request = { schema_version: 1, runtime_id: runtimeId, request_id: current["request_id"],
+      run_id: current["run_id"], lease_fence: lease.fence, reason };
+    const requestDigest = persistenceHash(request); const cancelId = `cancel:${requestDigest.slice(7)}`;
+    const pending = { cancel_id: cancelId, runtime_id: runtimeId, state: "cancellation_pending" as const, reason };
+    return this.authority.db.transaction(() => {
       this.leased(runtimeId, lease); const now = this.clock().toISOString();
-      const changed = this.authority.db.prepare(`UPDATE recommendation_work_runtimes SET state='cancelled',
-        failure_code=?,updated_at=? WHERE runtime_id=? AND lease_fence=?
-        AND state NOT IN ('dispatching','completed','failed','cancelled')`).run(reason, now, runtimeId, lease.fence);
-      if (changed.changes !== 1) return workFail("RECOMMENDATION_WORK_TERMINAL_RACE");
-      this.authority.db.prepare(`INSERT INTO recommendation_work_settlements
-        (settlement_id,runtime_id,outcome,settlement_json,settlement_digest,created_at) VALUES(?,?,?,?,?,?)`)
-        .run(settlementId, runtimeId, "cancelled", canonicalize(result), persistenceHash(result), now);
-      this.authority.db.prepare(`UPDATE workflow_runs SET state='cancelled',completed_at=?,updated_at=?,failure_code=?
-        WHERE run_id=? AND state NOT IN ('completed','failed','cancelled')`).run(now, now, reason, identity.run_id);
+      this.authority.db.prepare(`INSERT INTO recommendation_work_cancel_requests(cancel_id,runtime_id,request_json,
+        request_digest,reason,lease_fence,state,created_at) VALUES(?,?,?,?,?,?,?,?)`)
+        .run(cancelId, runtimeId, canonicalize(request), requestDigest, reason, lease.fence, "pending", now);
+      this.authority.db.prepare(`UPDATE recommendation_work_runtimes SET cancel_request_id=?,updated_at=?
+        WHERE runtime_id=? AND lease_fence=?`).run(cancelId, now, runtimeId, lease.fence);
+      if (current["state"] === "dispatching") return pending;
+      if (!this.resolvePendingCancellation(runtimeId, lease)) return workFail("RECOMMENDATION_WORK_TERMINAL_RACE");
+      const result = this.authority.db.prepare("SELECT * FROM recommendation_work_settlements WHERE runtime_id=?")
+        .get(runtimeId);
+      return settlement(workRow(result));
     })();
-    return result;
   }
   status(runtimeId: string): Readonly<Record<string, unknown>> {
     const current = workRow(this.authority.db.prepare(
@@ -87,10 +98,13 @@ export class RecommendationWorkRuntime extends RecommendationWorkReviewRuntime {
     const settled = this.authority.db.prepare(
       "SELECT settlement_json FROM recommendation_work_settlements WHERE runtime_id=?",
     ).get(runtimeId);
+    const cancellation = this.authority.db.prepare(`SELECT cancel_id,state,reason FROM recommendation_work_cancel_requests
+      WHERE runtime_id=?`).get(runtimeId);
     return { runtime_id: runtimeId, state: current["state"], failure_code: current["failure_code"],
       dispatch_attempts: current["dispatch_attempts"], recovery_attempts: current["recovery_attempts"],
-      progress_sequence: current["progress_sequence"], next_operator_action: current["state"] === "blocked"
-        ? "reconcile_exact_receipt" : null, settlement: settled === undefined ? null
+      progress_sequence: current["progress_sequence"], cancellation: cancellation ?? null,
+      next_operator_action: current["state"] === "blocked" ? "reconcile_exact_receipt" : null,
+      settlement: settled === undefined ? null
           : JSON.parse(workText(workRow(settled)["settlement_json"])) };
   }
 }

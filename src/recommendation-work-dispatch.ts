@@ -79,7 +79,11 @@ export class RecommendationWorkDispatchRuntime {
     if (["completed", "failed", "cancelled"].includes(String(current["state"]))) {
       return workFail("RECOMMENDATION_WORK_TERMINAL");
     }
-    this.identity(current);
+    const identity = this.identity(current); const identityJson = canonicalize(identity.correlation);
+    if (identity.runtime_id !== runtimeId || identity.run_id !== current["run_id"]
+      || identityJson !== current["identity_json"] || persistenceHash(identity.correlation) !== current["identity_digest"]) {
+      return workFail("RECOMMENDATION_WORK_BINDING_STALE");
+    }
     return current;
   }
   protected identity(current: WorkRow): RecommendationWorkIdentity {
@@ -93,12 +97,40 @@ export class RecommendationWorkDispatchRuntime {
   }
   protected providerKey(keyId: string, provider: "codex" | "claude",
     purpose: "progress-signal" | "authority-receipt"): string {
-    const current = this.clock().toISOString();
-    const key = workRow(this.authority.db.prepare(`SELECT k.public_key_pem FROM pre_gjc_progress_keys k
-      LEFT JOIN pre_gjc_key_revocations r ON r.key_id=k.key_id AND r.provider=k.provider AND r.purpose=k.purpose
-      WHERE k.key_id=? AND k.provider=? AND k.purpose=? AND k.not_before<=? AND k.expires_at>?
-        AND r.key_id IS NULL`).get(keyId, provider, purpose, current, current), "RECOMMENDATION_PROVIDER_KEY_INVALID");
+    const current = this.clock().toISOString(); const bindingPurpose = purpose === "progress-signal"
+      ? "progress" : "dispatch";
+    const key = workRow(this.authority.db.prepare(`SELECT b.public_key_pem
+      FROM recommendation_work_provider_bindings b
+      LEFT JOIN authority_revocations r ON r.reference IN (b.revocation_reference,b.key_id)
+      WHERE b.key_id=? AND b.provider=? AND b.purpose=? AND b.endpoint_scope='recommendation-work'
+        AND b.not_before<=? AND b.expires_at>? AND r.reference IS NULL`)
+      .get(keyId, provider, bindingPurpose, current, current), "RECOMMENDATION_PROVIDER_KEY_INVALID");
     return workText(key["public_key_pem"]);
+  }
+  protected pendingCancellation(runtimeId: string): WorkRow | undefined {
+    const value = this.authority.db.prepare(`SELECT * FROM recommendation_work_cancel_requests
+      WHERE runtime_id=? AND state='pending'`).get(runtimeId);
+    return value === undefined ? undefined : workRow(value);
+  }
+  protected resolvePendingCancellation(runtimeId: string, lease: WorkLease): boolean {
+    const pending = this.pendingCancellation(runtimeId); if (pending === undefined) return false;
+    const current = this.leased(runtimeId, lease); const identity = this.identity(current); const now = this.clock().toISOString();
+    const settlementId = `settlement:${persistenceHash({ cancel_id: pending["cancel_id"] }).slice(7)}`;
+    const settlement = { settlement_id: settlementId, runtime_id: runtimeId, state: "cancelled", candidate: null };
+    const changed = this.authority.db.prepare(`UPDATE recommendation_work_runtimes SET state='cancelled',
+      failure_code=?,updated_at=? WHERE runtime_id=? AND lease_fence=? AND state NOT IN ('completed','failed','cancelled')`)
+      .run(pending["reason"], now, runtimeId, lease.fence);
+    if (changed.changes !== 1) return workFail("RECOMMENDATION_WORK_TERMINAL_RACE");
+    this.authority.db.prepare(`UPDATE recommendation_work_cancel_requests
+      SET state='resolved',outcome='cancelled',resolved_at=? WHERE cancel_id=? AND state='pending'`)
+      .run(now, pending["cancel_id"]);
+    this.authority.db.prepare(`INSERT INTO recommendation_work_settlements
+      (settlement_id,runtime_id,outcome,settlement_json,settlement_digest,created_at) VALUES(?,?,?,?,?,?)`)
+      .run(settlementId, runtimeId, "cancelled", canonicalize(settlement), persistenceHash(settlement), now);
+    this.authority.db.prepare(`UPDATE workflow_runs SET state='cancelled',completed_at=?,updated_at=?,failure_code=?
+      WHERE run_id=? AND state NOT IN ('completed','failed','cancelled')`)
+      .run(now, now, pending["reason"], identity.run_id);
+    return true;
   }
   protected negative(runtimeId: string, reason: string, material: unknown): void {
     const evidenceDigest = persistenceHash({ runtime_id: runtimeId, reason, material });

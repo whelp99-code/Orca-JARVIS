@@ -22,7 +22,7 @@ export class RecommendationWorkReviewRuntime extends RecommendationWorkProgressR
       b.incarnation_id FROM trusted_authority_keys k
       JOIN authority_key_purposes p ON p.key_id=k.key_id AND p.purpose='verifier'
       JOIN recommendation_work_verifier_bindings b ON b.key_id=k.key_id AND b.principal_id=k.principal_id
-      LEFT JOIN authority_revocations r ON r.reference IN (k.key_id,k.principal_id,b.binding_id)
+      LEFT JOIN authority_revocations r ON r.reference IN (k.key_id,k.principal_id,b.revocation_reference)
       WHERE k.key_id=? AND b.not_before<=? AND b.expires_at>? AND r.reference IS NULL`)
       .get(value.key_id, nowText, nowText), "RECOMMENDATION_VERIFICATION_INVALID");
     const receipt = verifyRecommendationReceipt(value, workText(verifier["public_key_pem"]), this.clock());

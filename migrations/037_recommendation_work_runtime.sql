@@ -1,6 +1,7 @@
 CREATE TABLE recommendation_work_verifier_bindings (
  binding_id TEXT PRIMARY KEY, key_id TEXT NOT NULL UNIQUE REFERENCES trusted_authority_keys(key_id),
  principal_id TEXT NOT NULL UNIQUE, session_id TEXT NOT NULL UNIQUE, incarnation_id TEXT NOT NULL UNIQUE,
+ revocation_reference TEXT NOT NULL UNIQUE,
  not_before TEXT NOT NULL CHECK(not_before GLOB '????-??-??T??:??:??.???Z'),
  expires_at TEXT NOT NULL CHECK(expires_at GLOB '????-??-??T??:??:??.???Z' AND expires_at>not_before),
  created_at TEXT NOT NULL CHECK(created_at GLOB '????-??-??T??:??:??.???Z')
@@ -14,6 +15,24 @@ CREATE TRIGGER recommendation_work_verifier_update BEFORE UPDATE ON recommendati
  BEGIN SELECT RAISE(ABORT,'immutable recommendation work verifier'); END;
 CREATE TRIGGER recommendation_work_verifier_delete BEFORE DELETE ON recommendation_work_verifier_bindings
  BEGIN SELECT RAISE(ABORT,'immutable recommendation work verifier'); END;
+CREATE TABLE recommendation_work_provider_bindings (
+ binding_id TEXT PRIMARY KEY,
+ key_id TEXT NOT NULL UNIQUE,
+ purpose TEXT NOT NULL UNIQUE CHECK(purpose IN ('dispatch','progress')),
+ provider TEXT NOT NULL CHECK(provider IN ('codex','claude')),
+ endpoint_scope TEXT NOT NULL CHECK(endpoint_scope='recommendation-work'),
+ public_key_pem TEXT NOT NULL,
+ revocation_reference TEXT NOT NULL UNIQUE,
+ not_before TEXT NOT NULL CHECK(not_before GLOB '????-??-??T??:??:??.???Z'),
+ expires_at TEXT NOT NULL CHECK(expires_at GLOB '????-??-??T??:??:??.???Z' AND expires_at>not_before),
+ created_at TEXT NOT NULL CHECK(created_at GLOB '????-??-??T??:??:??.???Z')
+);
+CREATE INDEX recommendation_work_provider_validity
+ ON recommendation_work_provider_bindings(purpose,provider,not_before,expires_at,key_id);
+CREATE TRIGGER recommendation_work_provider_update BEFORE UPDATE ON recommendation_work_provider_bindings
+ BEGIN SELECT RAISE(ABORT,'immutable recommendation work provider'); END;
+CREATE TRIGGER recommendation_work_provider_delete BEFORE DELETE ON recommendation_work_provider_bindings
+ BEGIN SELECT RAISE(ABORT,'immutable recommendation work provider'); END;
 CREATE TABLE recommendation_work_runtimes (
  runtime_id TEXT PRIMARY KEY CHECK(runtime_id GLOB 'recommendation-work:[0-9a-f]*' AND length(runtime_id)=84),
  request_id TEXT NOT NULL UNIQUE REFERENCES control_command_requests(request_id),
@@ -34,6 +53,7 @@ CREATE TABLE recommendation_work_runtimes (
  failure_code TEXT,
  current_incarnation_id TEXT,
  current_dispatch_receipt_id TEXT,
+ cancel_request_id TEXT REFERENCES recommendation_work_cancel_requests(cancel_id),
  created_at TEXT NOT NULL CHECK(created_at GLOB '????-??-??T??:??:??.???Z'),
  updated_at TEXT NOT NULL CHECK(updated_at GLOB '????-??-??T??:??:??.???Z'),
  CHECK((lease_owner IS NULL)=(lease_expires_at IS NULL)),
@@ -41,6 +61,30 @@ CREATE TABLE recommendation_work_runtimes (
 );
 CREATE INDEX recommendation_work_runtime_state ON recommendation_work_runtimes(state,updated_at,runtime_id);
 CREATE INDEX recommendation_work_runtime_lease ON recommendation_work_runtimes(lease_expires_at,lease_fence);
+CREATE TABLE recommendation_work_cancel_requests (
+ cancel_id TEXT PRIMARY KEY,
+ runtime_id TEXT NOT NULL UNIQUE REFERENCES recommendation_work_runtimes(runtime_id),
+ request_json TEXT NOT NULL CHECK(json_valid(request_json)),
+ request_digest TEXT NOT NULL UNIQUE CHECK(request_digest GLOB 'sha256:[0-9a-f]*' AND length(request_digest)=71),
+ reason TEXT NOT NULL,
+ lease_fence INTEGER NOT NULL CHECK(lease_fence>0),
+ state TEXT NOT NULL CHECK(state IN ('pending','resolved')),
+ outcome TEXT CHECK(outcome IN ('cancelled','dispatch_won')),
+ created_at TEXT NOT NULL CHECK(created_at GLOB '????-??-??T??:??:??.???Z'),
+ resolved_at TEXT CHECK(resolved_at IS NULL OR resolved_at GLOB '????-??-??T??:??:??.???Z'),
+ CHECK((state='pending' AND outcome IS NULL AND resolved_at IS NULL)
+  OR (state='resolved' AND outcome IS NOT NULL AND resolved_at IS NOT NULL))
+);
+CREATE INDEX recommendation_work_cancel_state ON recommendation_work_cancel_requests(state,created_at,cancel_id);
+CREATE TRIGGER recommendation_work_cancel_identity BEFORE UPDATE OF cancel_id,runtime_id,request_json,
+ request_digest,reason,lease_fence,created_at ON recommendation_work_cancel_requests
+ BEGIN SELECT RAISE(ABORT,'immutable recommendation work cancel identity'); END;
+CREATE TRIGGER recommendation_work_cancel_transition BEFORE UPDATE OF state,outcome,resolved_at
+ ON recommendation_work_cancel_requests WHEN NOT (OLD.state='pending' AND NEW.state='resolved'
+ AND NEW.outcome IS NOT NULL AND NEW.resolved_at IS NOT NULL)
+ BEGIN SELECT RAISE(ABORT,'recommendation work cancel transition invalid'); END;
+CREATE TRIGGER recommendation_work_cancel_delete BEFORE DELETE ON recommendation_work_cancel_requests
+ BEGIN SELECT RAISE(ABORT,'immutable recommendation work cancel'); END;
 CREATE TABLE recommendation_work_dispatch_attempts (
  attempt_id TEXT PRIMARY KEY, runtime_id TEXT NOT NULL REFERENCES recommendation_work_runtimes(runtime_id),
  lease_fence INTEGER NOT NULL CHECK(lease_fence>0), attempt INTEGER NOT NULL CHECK(attempt>0),
@@ -122,7 +166,8 @@ CREATE TRIGGER recommendation_work_runtime_identity BEFORE UPDATE OF runtime_id,
  identity_digest,workflow_digest,dispatch_intent_id,verification_request_id,created_at ON recommendation_work_runtimes
  BEGIN SELECT RAISE(ABORT,'immutable recommendation work identity'); END;
 CREATE TRIGGER recommendation_work_runtime_fence BEFORE UPDATE OF state,dispatch_attempts,recovery_attempts,
- progress_sequence,current_incarnation_id,current_dispatch_receipt_id,failure_code ON recommendation_work_runtimes
+ progress_sequence,current_incarnation_id,current_dispatch_receipt_id,cancel_request_id,failure_code
+ ON recommendation_work_runtimes
  WHEN OLD.lease_owner IS NULL OR OLD.lease_fence<=0 OR OLD.lease_expires_at<=NEW.updated_at
  BEGIN SELECT RAISE(ABORT,'current recommendation work fence required'); END;
 CREATE TRIGGER recommendation_work_runtime_lease BEFORE UPDATE OF lease_owner,lease_fence,lease_expires_at
@@ -131,11 +176,13 @@ CREATE TRIGGER recommendation_work_runtime_lease BEFORE UPDATE OF lease_owner,le
  BEGIN SELECT RAISE(ABORT,'recommendation work lease invalid'); END;
 CREATE TRIGGER recommendation_work_runtime_transition BEFORE UPDATE OF state ON recommendation_work_runtimes
  WHEN OLD.state<>NEW.state AND OLD.state||':'||NEW.state NOT IN
- ('prepared:dispatching','prepared:failed','prepared:cancelled','dispatching:prepared','dispatching:blocked',
+ ('prepared:dispatching','prepared:dispatched','prepared:failed','prepared:cancelled',
+ 'dispatching:prepared','dispatching:blocked',
  'dispatching:dispatched','dispatched:progressed','dispatched:recovering','dispatched:cancelled',
  'progressed:verified','progressed:recovering','progressed:cancelled','verified:completed','verified:cancelled',
  'recovering:prepared','recovering:dispatched','recovering:failed','recovering:cancelled','blocked:dispatched',
- 'blocked:cancelled') BEGIN SELECT RAISE(ABORT,'recommendation work transition invalid'); END;
+ 'blocked:cancelled','dispatching:cancelled')
+ BEGIN SELECT RAISE(ABORT,'recommendation work transition invalid'); END;
 CREATE TRIGGER recommendation_work_runtime_counters BEFORE UPDATE OF dispatch_attempts,recovery_attempts,
  progress_sequence ON recommendation_work_runtimes WHEN NEW.dispatch_attempts<OLD.dispatch_attempts
  OR NEW.dispatch_attempts>OLD.dispatch_attempts+1 OR NEW.recovery_attempts<OLD.recovery_attempts

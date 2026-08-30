@@ -17,6 +17,7 @@ export {
 } from "./recommendation-work-crypto.js";
 export type {
   DispatchAdapter, DispatchIntent, DispatchOutcome, DispatchReceipt, PreparedRecommendationWork,
-  RecommendationCompletion, RecommendationVerificationReceipt, RecommendationWorkSettlement,
+  PendingRecommendationCancellation, RecommendationCancellationResult, RecommendationCompletion,
+  RecommendationVerificationReceipt, RecommendationWorkSettlement,
   SignedDispatchReceipt, WorkLease,
 } from "./recommendation-work-types.js";

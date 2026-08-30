@@ -51,8 +51,13 @@ export type RecommendationVerificationReceipt = {
   readonly verifier_incarnation_id: string; readonly key_id: string;
   readonly algorithm: "Ed25519"; readonly issued_at: string; readonly signature: string;
 };
+export type PendingRecommendationCancellation = {
+  readonly cancel_id: string; readonly runtime_id: string; readonly state: "cancellation_pending";
+  readonly reason: string;
+};
 export type RecommendationWorkSettlement = {
   readonly settlement_id: string; readonly runtime_id: string;
   readonly state: "completed" | "failed" | "cancelled";
   readonly candidate: Readonly<Record<string, unknown>> | null;
 };
+export type RecommendationCancellationResult = RecommendationWorkSettlement | PendingRecommendationCancellation;

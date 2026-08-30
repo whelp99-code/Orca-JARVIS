@@ -48,42 +48,63 @@ export class RecommendationWorkSendRuntime extends RecommendationWorkDispatchRun
     const intent = this.intent(current, attemptId); let eventId: string;
     try { eventId = workText((await adapter.subscribe(intent)).event_id); }
     catch (error) {
-      this.dispatchFailure(runtimeId, lease, attemptId, "not_sent", "subscription_failed",
+      const cancelled = this.dispatchFailure(runtimeId, lease, attemptId, "not_sent", "subscription_failed",
         error instanceof Error ? error.name : typeof error);
-      return { state: "prepared", receipt: null, verification_request_id: identity.verification_request_id };
+      return { state: cancelled ? "cancelled" : "prepared", receipt: null,
+        verification_request_id: identity.verification_request_id };
     }
     const invoking = this.authority.db.prepare(`UPDATE recommendation_work_runtimes
       SET state='dispatching',updated_at=? WHERE runtime_id=? AND lease_fence=? AND state='prepared'`)
       .run(this.clock().toISOString(), runtimeId, lease.fence);
-    if (invoking.changes !== 1) return workFail("RECOMMENDATION_WORK_TERMINAL_RACE");
+    if (invoking.changes !== 1) {
+      const terminal = this.authority.db.prepare(`SELECT outcome FROM recommendation_work_settlements
+        WHERE runtime_id=?`).get(runtimeId) as { outcome: string } | undefined;
+      if (terminal?.outcome === "cancelled") return { state: "cancelled", receipt: null,
+        verification_request_id: identity.verification_request_id };
+      return workFail("RECOMMENDATION_WORK_TERMINAL_RACE");
+    }
     let raw: unknown;
     try { raw = await adapter.trigger(intent); }
     catch (error) {
-      this.dispatchFailure(runtimeId, lease, attemptId, "uncertain", "trigger_threw",
+      const cancelled = this.dispatchFailure(runtimeId, lease, attemptId, "uncertain", "trigger_threw",
         error instanceof Error ? error.name : typeof error, eventId);
-      return { state: "blocked", receipt: null, verification_request_id: identity.verification_request_id };
+      return { state: cancelled ? "cancelled" : "blocked", receipt: null,
+        verification_request_id: identity.verification_request_id };
     }
     let outcome: ReturnType<typeof parseDispatchOutcome>;
     try { outcome = parseDispatchOutcome(raw); }
     catch (error) {
-      this.dispatchFailure(runtimeId, lease, attemptId, "uncertain", "invalid_outcome",
+      const cancelled = this.dispatchFailure(runtimeId, lease, attemptId, "uncertain", "invalid_outcome",
         error instanceof Error ? error.name : typeof error, eventId);
-      return { state: "blocked", receipt: null, verification_request_id: identity.verification_request_id };
+      return { state: cancelled ? "cancelled" : "blocked", receipt: null,
+        verification_request_id: identity.verification_request_id };
     }
     switch (outcome.kind) {
-      case "not_sent":
-        this.dispatchFailure(runtimeId, lease, attemptId, "not_sent", outcome.reason, outcome, eventId);
-        return { state: "prepared", receipt: null, verification_request_id: identity.verification_request_id };
-      case "uncertain":
-        this.dispatchFailure(runtimeId, lease, attemptId, "uncertain", outcome.reason, outcome, eventId);
-        return { state: "blocked", receipt: null, verification_request_id: identity.verification_request_id };
+      case "not_sent": {
+        const cancelled = this.dispatchFailure(runtimeId, lease, attemptId, "not_sent", outcome.reason, outcome, eventId);
+        return { state: cancelled ? "cancelled" : "prepared", receipt: null,
+          verification_request_id: identity.verification_request_id };
+      }
+      case "uncertain": {
+        const cancelled = this.dispatchFailure(runtimeId, lease, attemptId, "uncertain", outcome.reason, outcome, eventId);
+        return { state: cancelled ? "cancelled" : "blocked", receipt: null,
+          verification_request_id: identity.verification_request_id };
+      }
       case "accepted": {
         const header = closedRecord(outcome.receipt); const provider = header["provider"];
         if (provider !== "codex" && provider !== "claude") return workFail("RECOMMENDATION_DISPATCH_RECEIPT_INVALID");
-        const keyId = workText(header["key_id"]); const receipt = parseDispatchReceipt(outcome.receipt, {
-          intent, publicKey: this.providerKey(keyId, provider, "authority-receipt"), now: this.clock(),
-        });
-        this.accept(runtimeId, lease, receipt, eventId); return { state: "dispatched", receipt,
+        const keyId = workText(header["key_id"]); let receipt: DispatchReceipt;
+        try {
+          receipt = parseDispatchReceipt(outcome.receipt, {
+            intent, publicKey: this.providerKey(keyId, provider, "authority-receipt"), now: this.clock(),
+          });
+        } catch (error) {
+          const cancelled = this.dispatchFailure(runtimeId, lease, attemptId, "uncertain", "invalid_receipt",
+            error instanceof Error ? error.name : typeof error, eventId);
+          return { state: cancelled ? "cancelled" : "blocked", receipt: null,
+            verification_request_id: identity.verification_request_id };
+        }
+        const state = this.accept(runtimeId, lease, receipt, eventId); return { state, receipt,
           verification_request_id: identity.verification_request_id };
       }
       default: {
@@ -91,7 +112,8 @@ export class RecommendationWorkSendRuntime extends RecommendationWorkDispatchRun
       }
     }
   }
-  protected accept(runtimeId: string, lease: WorkLease, receipt: DispatchReceipt, eventId: string): void {
+  protected accept(runtimeId: string, lease: WorkLease, receipt: DispatchReceipt, eventId: string): "dispatched" | "cancelled" {
+    let finalState: "dispatched" | "cancelled" = "dispatched";
     this.authority.db.transaction(() => {
       this.leased(runtimeId, lease); const receiptJson = canonicalize(receipt);
       this.authority.db.prepare(`UPDATE recommendation_work_dispatch_attempts SET state='accepted',event_id=?,
@@ -100,24 +122,36 @@ export class RecommendationWorkSendRuntime extends RecommendationWorkDispatchRun
       this.authority.db.prepare(`INSERT INTO recommendation_work_dispatch_receipts(receipt_id,runtime_id,attempt_id,
         incarnation_id,receipt_json,receipt_digest,accepted_at) VALUES(?,?,?,?,?,?,?)`).run(receipt.receipt_id,
         runtimeId, receipt.attempt_id, receipt.incarnation_id, receiptJson, persistenceHash(receipt), receipt.accepted_at);
-      const changed = this.authority.db.prepare(`UPDATE recommendation_work_runtimes SET state='dispatched',
+      const pending = this.pendingCancellation(runtimeId); const now = this.clock().toISOString();
+      const changed = this.authority.db.prepare(`UPDATE recommendation_work_runtimes SET state=?,
         current_incarnation_id=?,current_dispatch_receipt_id=?,updated_at=? WHERE runtime_id=? AND lease_fence=?`)
-        .run(receipt.incarnation_id, receipt.receipt_id, this.clock().toISOString(), runtimeId, lease.fence);
+        .run(pending === undefined ? "dispatched" : "dispatching", receipt.incarnation_id,
+          receipt.receipt_id, now, runtimeId, lease.fence);
       if (changed.changes !== 1) return workFail("RECOMMENDATION_WORK_STALE_FENCE");
+      if (pending !== undefined) {
+        if (!this.resolvePendingCancellation(runtimeId, lease)) return workFail("RECOMMENDATION_WORK_TERMINAL_RACE");
+        finalState = "cancelled";
+      }
     })();
-    this.checkpoint("dispatch_committed");
+    this.checkpoint("dispatch_committed"); return finalState;
   }
   private dispatchFailure(runtimeId: string, lease: WorkLease, attemptId: string,
-    state: "not_sent" | "uncertain", reason: string, material: unknown, eventId?: string): void {
+    state: "not_sent" | "uncertain", reason: string, material: unknown, eventId?: string): boolean {
+    let cancelled = false;
     this.authority.db.transaction(() => {
       this.leased(runtimeId, lease); const evidence = persistenceHash({ runtime_id: runtimeId, reason, material });
       this.authority.db.prepare(`UPDATE recommendation_work_dispatch_attempts
         SET state=?,event_id=?,evidence_digest=?,updated_at=? WHERE attempt_id=? AND lease_fence=?`)
         .run(state, eventId ?? null, evidence, this.clock().toISOString(), attemptId, lease.fence);
-      this.authority.db.prepare(`UPDATE recommendation_work_runtimes SET state=?,failure_code=?,updated_at=?
-        WHERE runtime_id=? AND lease_fence=?`).run(state === "uncertain" ? "blocked" : "prepared",
-        state === "uncertain" ? "DISPATCH_UNCERTAIN" : null, this.clock().toISOString(), runtimeId, lease.fence);
       this.negative(runtimeId, reason, material);
+      if (this.pendingCancellation(runtimeId) !== undefined) {
+        cancelled = this.resolvePendingCancellation(runtimeId, lease);
+      } else {
+        this.authority.db.prepare(`UPDATE recommendation_work_runtimes SET state=?,failure_code=?,updated_at=?
+          WHERE runtime_id=? AND lease_fence=?`).run(state === "uncertain" ? "blocked" : "prepared",
+          state === "uncertain" ? "DISPATCH_UNCERTAIN" : null, this.clock().toISOString(), runtimeId, lease.fence);
+      }
     })();
+    return cancelled;
   }
 }
