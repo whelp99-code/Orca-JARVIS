@@ -52,12 +52,31 @@ function trust(values: readonly MorningBriefRecord[]): "confirmed" | "inferred" 
 function citations(values: readonly MorningBriefRecord[]): readonly MorningBriefCitation[] {
   return [...values.flatMap(item => item.citations)].sort((left, right) => compareText(left.link_id, right.link_id));
 }
+function hasCitationCoverage(value: MorningBriefRecord): boolean {
+  return value.source_ids.length > 0 && value.citations.length > 0
+    && value.source_ids.every(sourceId => value.citations.some(citation => citation.source_id === sourceId))
+    && value.citations.every(citation => value.source_ids.includes(citation.source_id));
+}
+function boundedProvenance(values: readonly MorningBriefRecord[], maximum: number): {
+  readonly sourceIds: readonly string[]; readonly citations: readonly MorningBriefCitation[];
+} {
+  const allCitations = citations(values);
+  const sourceIds = uniqueSorted(values.flatMap(value => value.source_ids)).slice(0, maximum);
+  const primary = sourceIds.flatMap(sourceId => {
+    const citation = allCitations.find(value => value.source_id === sourceId);
+    return citation === undefined ? [] : [citation];
+  });
+  const primaryIds = new Set(primary.map(value => value.link_id));
+  const extras = allCitations.filter(value => sourceIds.includes(value.source_id) && !primaryIds.has(value.link_id));
+  return { sourceIds, citations: [...primary, ...extras].slice(0, maximum) };
+}
 function item(values: readonly MorningBriefRecord[], maximumCopyBytes: number, maximumSources: number): MorningBriefItem {
   const sorted = [...values].sort(compareRecord);
   const representative = sorted[0];
   if (representative === undefined) throw new MorningBriefContractInvariantError();
-  const sourceIds = uniqueSorted(sorted.flatMap(value => value.source_ids)).slice(0, maximumSources);
-  const selectedCitations = citations(sorted).filter(value => sourceIds.includes(value.source_id)).slice(0, maximumSources);
+  const bounded = boundedProvenance(sorted, maximumSources);
+  const sourceIds = bounded.sourceIds;
+  const selectedCitations = bounded.citations;
   const core = {
     recommendation_id: representative.recommendation_id, action_id: representative.action_id,
     contributing_item_ids: uniqueSorted(sorted.map(value => value.item_id)),
@@ -85,10 +104,18 @@ export class MorningBriefContractInvariantError extends Error {
 function omissionReason(value: MorningBriefRecord, clock: string): MorningBriefOmissionReason | null {
   if (value.state === "deleted" || value.state === "corrupt" || value.state === "conflicting" || value.state === "unrelated"
     || value.state === "insufficient_citation") return value.state;
-  if (value.state === "untrusted" || value.trust === "untrusted") return "untrusted";
+  if (value.state === "untrusted" || value.trust === "untrusted"
+    || (value.state === "information" && value.trust !== "confirmed")) return "untrusted";
   if (value.state === "expired" || Date.parse(value.valid_until) <= Date.parse(clock)) return "expired";
   if (value.state === "stale" || Date.parse(value.fresh_until) <= Date.parse(clock)) return "stale";
-  if (value.citations.length === 0 || value.source_ids.length === 0) return "insufficient_citation";
+  const waiting = value.state === "blocked" || value.state === "deferred" || value.state === "dependency_waiting";
+  const invalidInformation = value.state === "information" && (value.kind !== "information" || value.owner_decision_required);
+  const invalidAction = value.state === "actionable" && (value.kind !== "action"
+    || (value.priority.deadline_bucket === "today"
+      && (value.deadline === null || value.deadline.slice(0, 10) !== clock.slice(0, 10))));
+  if (!hasCitationCoverage(value) || (waiting && value.owner_decision_required) || invalidInformation || invalidAction) {
+    return "insufficient_citation";
+  }
   return null;
 }
 type Sections = {
@@ -145,7 +172,11 @@ export function generateMorningBrief(input: MorningBriefInput): MorningBriefResu
   for (const value of eligible) groups.set(value.semantic_key, [...(groups.get(value.semantic_key) ?? []), value]);
   const merged = [...groups.values()].map(values => {
     const sources = uniqueSorted(values.flatMap(value => value.source_ids)).length;
-    if (sources > input.limits.max_sources_per_item) increment(counts, "citation_cap", sources - input.limits.max_sources_per_item);
+    const citationCount = values.reduce((sum, value) => sum + value.citations.length, 0);
+    const provenanceCount = Math.max(sources, citationCount);
+    if (provenanceCount > input.limits.max_sources_per_item) {
+      increment(counts, "citation_cap", provenanceCount - input.limits.max_sources_per_item);
+    }
     return { source: [...values].sort(compareRecord)[0], output: item(values, input.limits.max_copy_bytes, input.limits.max_sources_per_item) };
   }).filter((value): value is { readonly source: MorningBriefRecord; readonly output: MorningBriefItem } => value.source !== undefined)
     .sort((left, right) => compareRecord(left.source, right.source));

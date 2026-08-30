@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { types } from "node:util";
 import { canonicalize } from "./canonical.js";
 import {
   MORNING_BRIEF_EXTERNAL_STATES,
@@ -25,7 +26,6 @@ const RECORD_KEYS = [
   "observed_at", "valid_from", "valid_until", "fresh_until", "trust", "confidence", "owner_decision_required", "deadline",
   "priority", "provenance_digest", "canonical_digest",
 ] as const;
-const PAYLOAD_KEYS = RECORD_KEYS.slice(0, -2);
 const STATES = [
   "actionable", "blocked", "deferred", "dependency_waiting", "information", "stale", "expired", "deleted", "corrupt",
   "untrusted", "conflicting", "unrelated", "insufficient_citation",
@@ -33,7 +33,8 @@ const STATES = [
 const fail = (): never => { throw new MorningBriefContractError(); };
 type Input = Readonly<Record<string, unknown>>;
 function object(value: unknown, keys: readonly string[]): Input {
-  if (typeof value !== "object" || value === null || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) return fail();
+  if (typeof value !== "object" || value === null || types.isProxy(value)) return fail();
+  if (Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) return fail();
   const descriptors = Object.getOwnPropertyDescriptors(value);
   const own = Reflect.ownKeys(value);
   if (own.length !== keys.length || own.some(key => typeof key !== "string" || !keys.includes(key))) return fail();
@@ -44,6 +45,7 @@ function object(value: unknown, keys: readonly string[]): Input {
   return Object.fromEntries(keys.map(key => [key, descriptors[key]?.value]));
 }
 function array(value: unknown, maximum: number): readonly unknown[] {
+  if (typeof value !== "object" || value === null || types.isProxy(value)) return fail();
   if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype || value.length > maximum) return fail();
   const descriptors = Object.getOwnPropertyDescriptors(value);
   if (Reflect.ownKeys(value).length !== value.length + 1) return fail();
@@ -53,16 +55,28 @@ function array(value: unknown, maximum: number): readonly unknown[] {
     return descriptor.value;
   });
 }
+function hasUnpairedSurrogate(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const unit = value.charCodeAt(index);
+    if (unit >= 0xd800 && unit <= 0xdbff) {
+      if (index + 1 >= value.length) return true;
+      const next = value.charCodeAt(index + 1);
+      if (next < 0xdc00 || next > 0xdfff) return true;
+      index += 1;
+    } else if (unit >= 0xdc00 && unit <= 0xdfff) return true;
+  }
+  return false;
+}
 function text(value: unknown, maximum = 512): string {
-  if (typeof value !== "string" || value.trim() !== value || value.length === 0 || value !== value.normalize("NFC")
-    || Buffer.byteLength(value, "utf8") > maximum
+  if (typeof value !== "string" || value.trim() !== value || value.length === 0 || hasUnpairedSurrogate(value)
+    || value !== value.normalize("NFC") || Buffer.byteLength(value, "utf8") > maximum
     || [...value].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)) return fail();
   return value;
 }
-function safeCopy(value: unknown): string {
-  const parsed = text(value, 4_096);
+function privateText(value: unknown, maximum = 512): string {
+  const parsed = text(value, maximum);
   if (/(?:password|passwd|token|secret|api[_-]?key|authorization)\s*[:=]/iu.test(parsed) || /\bbearer\s+\S+/iu.test(parsed)
-    || /(?:^|\s)\/(?:home|Users|root)\//u.test(parsed) || /(?:^|\n)\s*[$#>]\s*(?:sudo|cat|ssh|tail|less)\b/u.test(parsed)
+    || /\/(?:home|Users|root)\//u.test(parsed) || /[$#>]\s*(?:sudo|cat|ssh|tail|less)\b/u.test(parsed)
     || parsed.includes(`${String.fromCharCode(27)}[`) || /(?:last login:|-----BEGIN [A-Z ]+PRIVATE KEY-----)/iu.test(parsed)) return fail();
   return parsed;
 }
@@ -89,7 +103,8 @@ function digest(value: unknown): string {
 const hash = (value: unknown): string => `sha256:${createHash("sha256").update(canonicalize(value)).digest("hex")}`;
 function citation(value: unknown): MorningBriefCitation {
   const input = object(value, ["link_id", "source_id", "evidence_ref"]);
-  return { link_id: text(input["link_id"]), source_id: text(input["source_id"]), evidence_ref: text(input["evidence_ref"]) };
+  return { link_id: privateText(input["link_id"]), source_id: privateText(input["source_id"]),
+    evidence_ref: privateText(input["evidence_ref"]) };
 }
 function priority(value: unknown): MorningBriefPriority {
   const input = object(value, ["owner_safety_gate", "customer_impact", "deadline_bucket", "dependency_blocking",
@@ -100,35 +115,38 @@ function priority(value: unknown): MorningBriefPriority {
     deadline_bucket: member(input["deadline_bucket"], PRIORITY_LEXICOGRAPHIC_POLICY.deadline_bucket),
     dependency_blocking: member(input["dependency_blocking"], PRIORITY_LEXICOGRAPHIC_POLICY.dependency_blocking),
     irreversible_risk: member(input["irreversible_risk"], PRIORITY_LEXICOGRAPHIC_POLICY.irreversible_risk),
-    effort_cost: member(input["effort_cost"], PRIORITY_LEXICOGRAPHIC_POLICY.effort_cost), stable_identity: text(input["stable_identity"]),
+    effort_cost: member(input["effort_cost"], PRIORITY_LEXICOGRAPHIC_POLICY.effort_cost),
+    stable_identity: privateText(input["stable_identity"]),
   };
 }
 function record(value: unknown): MorningBriefRecord {
   const input = object(value, RECORD_KEYS);
-  const sources = array(input["source_ids"], 128).map(item => text(item));
-  const citations = array(input["citations"], 128).map(citation);
+  const itemId = privateText(input["item_id"]); const recommendationId = privateText(input["recommendation_id"]);
+  const actionId = privateText(input["action_id"]); const semanticKey = privateText(input["semantic_key"]);
+  const kind = member(input["kind"], ["action", "information"] as const);
+  const state = member(input["state"], STATES) satisfies MorningBriefRecordState;
+  const copy = privateText(input["copy"], 4_096);
+  const sources = array(input["source_ids"], 128).map(item => privateText(item));
+  const parsedCitations = array(input["citations"], 128).map(citation);
   const observed = instant(input["observed_at"]); const validFrom = instant(input["valid_from"]);
   const validUntil = instant(input["valid_until"]); const freshUntil = instant(input["fresh_until"]);
+  const trust = member(input["trust"], ["confirmed", "inferred", "untrusted"] as const);
+  const confidence = member(input["confidence"], ["low", "medium", "high"] as const);
+  const ownerRequired = input["owner_decision_required"] === true ? true : input["owner_decision_required"] === false ? false : fail();
+  const deadline = input["deadline"] === null ? null : instant(input["deadline"]);
+  const parsedPriority = priority(input["priority"]);
   if (Date.parse(validFrom) > Date.parse(observed) || Date.parse(validUntil) <= Date.parse(validFrom)
     || Date.parse(freshUntil) <= Date.parse(observed) || new Set(sources).size !== sources.length
-    || citations.some(item => !sources.includes(item.source_id))) return fail();
-  const payload = Object.fromEntries(PAYLOAD_KEYS.map(key => [key, input[key]]));
-  const provenance = { item_id: input["item_id"], recommendation_id: input["recommendation_id"], action_id: input["action_id"],
-    source_ids: input["source_ids"], citations: input["citations"], observed_at: input["observed_at"], valid_from: input["valid_from"],
-    valid_until: input["valid_until"], fresh_until: input["fresh_until"] };
+    || parsedCitations.some(item => !sources.includes(item.source_id))) return fail();
+  const payload = { item_id: itemId, recommendation_id: recommendationId, action_id: actionId, semantic_key: semanticKey,
+    kind, state, copy, source_ids: sources, citations: parsedCitations, observed_at: observed, valid_from: validFrom,
+    valid_until: validUntil, fresh_until: freshUntil, trust, confidence, owner_decision_required: ownerRequired, deadline,
+    priority: parsedPriority };
+  const provenance = { item_id: itemId, recommendation_id: recommendationId, action_id: actionId, source_ids: sources,
+    citations: parsedCitations, observed_at: observed, valid_from: validFrom, valid_until: validUntil, fresh_until: freshUntil };
   const provenanceDigest = digest(input["provenance_digest"]); const canonicalDigest = digest(input["canonical_digest"]);
   if (hash(provenance) !== provenanceDigest || hash(payload) !== canonicalDigest) return fail();
-  return {
-    item_id: text(input["item_id"]), recommendation_id: text(input["recommendation_id"]), action_id: text(input["action_id"]),
-    semantic_key: text(input["semantic_key"]), kind: member(input["kind"], ["action", "information"] as const),
-    state: member(input["state"], STATES) satisfies MorningBriefRecordState, copy: safeCopy(input["copy"]), source_ids: sources, citations,
-    observed_at: observed, valid_from: validFrom, valid_until: validUntil, fresh_until: freshUntil,
-    trust: member(input["trust"], ["confirmed", "inferred", "untrusted"] as const),
-    confidence: member(input["confidence"], ["low", "medium", "high"] as const),
-    owner_decision_required: input["owner_decision_required"] === true ? true : input["owner_decision_required"] === false ? false : fail(),
-    deadline: input["deadline"] === null ? null : instant(input["deadline"]), priority: priority(input["priority"]),
-    provenance_digest: provenanceDigest, canonical_digest: canonicalDigest,
-  };
+  return { ...payload, provenance_digest: provenanceDigest, canonical_digest: canonicalDigest };
 }
 function limits(value: unknown): MorningBriefLimits {
   if (value === null) return DEFAULT_MORNING_BRIEF_LIMITS;
@@ -151,12 +169,20 @@ export function parseMorningBriefInput(value: unknown): MorningBriefInput {
   const enabled = external["enabled"] === true ? true : external["enabled"] === false ? false : fail();
   const state = member(external["state"], MORNING_BRIEF_EXTERNAL_STATES);
   if ((!enabled && state !== "off") || (enabled && state === "off")) return fail();
+  const generatedAt = instant(input["generated_at"]);
   const items = array(input["items"], 256).map(record);
+  for (const item of items) {
+    const waiting = item.state === "blocked" || item.state === "deferred" || item.state === "dependency_waiting";
+    if ((waiting && item.owner_decision_required) || (item.state === "actionable" && item.kind !== "action")
+      || (item.state === "information" && (item.kind !== "information" || item.owner_decision_required))
+      || (item.state === "actionable" && item.priority.deadline_bucket === "today"
+        && (item.deadline === null || item.deadline.slice(0, 10) !== generatedAt.slice(0, 10)))) return fail();
+  }
   const identities = items.flatMap(item => [item.item_id, item.recommendation_id, item.action_id]);
   const globalValues = [...identities, ...items.flatMap(item => item.source_ids), ...items.flatMap(item => item.citations.map(c => c.link_id)),
     ...items.flatMap(item => [item.provenance_digest, item.canonical_digest])];
   if (new Set(globalValues).size !== globalValues.length) return fail();
-  return { schema_version: 1, generated_at: instant(input["generated_at"]),
+  return { schema_version: 1, generated_at: generatedAt,
     context_readiness: member(input["context_readiness"], ["ready", "degraded", "no_data"] as const),
     external_intelligence: { enabled, state }, limits: limits(input["limits"]), items };
 }
