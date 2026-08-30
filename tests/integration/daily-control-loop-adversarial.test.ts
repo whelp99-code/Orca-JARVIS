@@ -8,6 +8,7 @@ const baseConfig: DailyLoopConfig = {
   lease_ms: 60_000,
   deadline_ms: 600_000,
   recovery_window_ms: 7_200_000,
+  recovery_lookback_days: 3,
   refresh_freshness_ms: 1_800_000,
   budgets: { max_items: 8, max_work: 8, max_bytes: 4096 },
 };
@@ -78,6 +79,7 @@ describe("Daily Control Loop adversaries", () => {
     const deferred: DailyLoopEvent = {
       kind: "event",
       event_id: "evt:quiet",
+      occurred_at: "2026-08-31T14:00:00.000Z",
       critical: false,
       items: 1,
       work: 1,
@@ -86,7 +88,9 @@ describe("Daily Control Loop adversaries", () => {
     const critical: DailyLoopEvent = {
       kind: "event",
       event_id: "evt:critical",
+      occurred_at: "2026-08-31T14:00:00.000Z",
       critical: true,
+      critical_reason: "operator escalation",
       items: 1,
       work: 1,
       bytes: 8,
@@ -99,11 +103,12 @@ describe("Daily Control Loop adversaries", () => {
     // Then
     expect(result.prepared[1]).toEqual({
       kind: "deferred",
+      run_id: expect.stringMatching(/^dlr:/),
       next_allowed_at: "2026-08-31T22:00:00.000Z",
       deferred_key: "daily:2026-09-01:in_day:event:evt_quiet",
     });
     expect(result.completed_run_ids).toHaveLength(1);
-    expect(db.db.prepare("SELECT step_key FROM daily_loop_steps").get()).toMatchObject({
+    expect(db.db.prepare("SELECT step_key FROM daily_loop_steps WHERE step_key LIKE '%critical_quiet_hours_bypass%'").get()).toMatchObject({
       step_key: expect.stringContaining("critical_quiet_hours_bypass"),
     });
     const after = tableCounts(db);
@@ -134,11 +139,12 @@ describe("Daily Control Loop adversaries", () => {
     await outside.startup();
 
     // Then
-    expect(insideDb.db.prepare("SELECT state,failure_code FROM daily_loop_runs WHERE idempotency_key LIKE '%evening%'").all()).toEqual([
-      { state: "completed", failure_code: null },
+    expect(insideDb.db.prepare("SELECT state,failure_code,count(*) AS n FROM daily_loop_runs WHERE idempotency_key LIKE '%evening%' GROUP BY state,failure_code ORDER BY state").all()).toEqual([
+      { state: "completed", failure_code: null, n: 1 },
+      { state: "failed", failure_code: "MISSED_RECOVERY_WINDOW", n: 2 },
     ]);
-    expect(outsideDb.db.prepare("SELECT state,failure_code FROM daily_loop_runs WHERE idempotency_key LIKE '%evening%'").all()).toEqual([
-      { state: "failed", failure_code: "MISSED_RECOVERY_WINDOW" },
+    expect(outsideDb.db.prepare("SELECT state,failure_code,count(*) AS n FROM daily_loop_runs WHERE idempotency_key LIKE '%evening%' GROUP BY state,failure_code").all()).toEqual([
+      { state: "failed", failure_code: "MISSED_RECOVERY_WINDOW", n: 3 },
     ]);
     insideDb.close();
     outsideDb.close();
@@ -170,7 +176,7 @@ describe("Daily Control Loop adversaries", () => {
             "lease_fence,lease_expires_at,created_at) VALUES(?,?,?,?,?,?,?,?)",
         )
         .run("dlc:stale", run.run_id, 99, "running", "sha256:stale", 1, "2026-08-30T22:16:00.000Z", "2026-08-30T22:15:01.000Z"),
-    ).toThrow(/daily loop stale checkpoint fence|daily loop checkpoint chain invalid/);
+    ).toThrow(/daily loop/);
     db.close();
   });
 

@@ -26,6 +26,16 @@ export async function personalDb(migrationsPath = process.env.PERSONAL_OPERATION
   }
 }
 
+export function insertDailyRun(db: AuthorityDb, input: { readonly runId: string; readonly correlation: string; readonly idempotency: string; readonly createdAt?: string; readonly expiresAt?: string; readonly loopDate?: string; readonly state?: string; readonly steps?: readonly { readonly key: string; readonly sequence: number }[] }): void {
+  const createdAt = input.createdAt ?? T0;
+  const expiresAt = input.expiresAt ?? T5;
+  const loopDate = input.loopDate ?? "2026-08-28";
+  const steps = input.steps ?? [];
+  const material = canonicalize({ logical_key: input.idempotency, local_date: loopDate, phase: "morning", scheduled_at: createdAt, occurred_at: null, event_id: null, critical: false, critical_reason: null, event_cost: null, not_before: createdAt, created_at: createdAt, deadline_at: expiresAt, steps });
+  const inputDigest = `sha256:${createHash("sha256").update("orca-jarvis/daily-loop-input/v1\0").update(material).digest("hex")}`;
+  db.db.prepare("INSERT INTO daily_loop_runs(run_id,loop_date,correlation_id,idempotency_key,state,lease_fence,expires_at,created_at,updated_at,record_version,phase,not_before,input_json,input_digest) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(input.runId, loopDate, input.correlation, input.idempotency, input.state ?? "pending", 0, expiresAt, createdAt, createdAt, 1, "morning", createdAt, material, inputDigest);
+}
+
 export function closePersonalDb(db: AuthorityDb): void {
   const root = join(db.filename, "..");
   db.close();
@@ -37,7 +47,7 @@ export function migrationCopy(include033 = true): string {
   const directory = join(root, "migrations");
   cpSync(join(process.cwd(), "migrations"), directory, {
     recursive: true,
-    filter: source => include033 || !source.endsWith("033_personal_operations.sql"),
+    filter: source => include033 || (!source.endsWith("033_personal_operations.sql") && !source.endsWith("035_daily_loop_durable_guards.sql")),
   });
   return directory;
 }

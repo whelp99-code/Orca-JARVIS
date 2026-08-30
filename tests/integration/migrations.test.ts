@@ -17,7 +17,7 @@ const collaborationWriteAttempts = [
 ];
 
 describe("migrations", () => {
-  it("preserves the shipped migration 021 through 030 bytes", () => {
+  it("preserves reviewed migration bytes", () => {
     const expected = new Map([
       ["021_approval_control_plane.sql", "75ebf5cb20ab0f1a357dd55a52899cf94bf44a788a1a01c07aa3c74135942c43"],
       ["022_loopgraph_runtime.sql", "2c1fdba25a351919ab0bd4ed80e217d80754af232bf85e9f93382bf349a3529b"],
@@ -27,6 +27,7 @@ describe("migrations", () => {
       ["026_task_timeline.sql", "cb1e19353670d180a5b27ba077e27e506d66bc532d3ead1dd7e33059ba641770"],
       ["027_control_execution_hardening.sql", "a5004fed13610811c1d7b47cf15bc3d5a02388b80f18f0cd7a2e3d0a6a1c0172"],
       ["030_dashboard_portfolio_projection.sql", "ea58ca0a324793af837be8a179dd4a7b700943d5a6a8a0b0d765d065dcc24482"],
+      ["035_daily_loop_durable_guards.sql", "5e8be32e037f0fa87a6139da97b883fd343dce98469d0fecd456009bae641fef"],
     ]);
 
     for (const [name, checksum] of expected) {
@@ -52,7 +53,7 @@ describe("migrations", () => {
       // Then both journals preserve unique checksummed order through 033
       for (const db of [empty, upgraded]) {
         const rows = db.db.prepare("SELECT id,checksum FROM schema_migrations WHERE id>='031_' ORDER BY id").all() as Array<{ id: string; checksum: string }>;
-        expect(rows.map(row => row.id)).toEqual(["031_control_ingress_idempotency.sql", "032_personal_context.sql", "033_personal_operations.sql", "034_recommendation_transition_identity.sql"]);
+        expect(rows.map(row => row.id)).toEqual(["031_control_ingress_idempotency.sql", "032_personal_context.sql", "033_personal_operations.sql", "034_recommendation_transition_identity.sql", "035_daily_loop_durable_guards.sql"]);
         expect(new Set(rows.map(row => row.checksum)).size).toBe(rows.length);
       }
     } finally { empty.close(); upgraded.close(); rmSync(join(full, ".."), { recursive: true, force: true }); rmSync(join(prior, ".."), { recursive: true, force: true }); }

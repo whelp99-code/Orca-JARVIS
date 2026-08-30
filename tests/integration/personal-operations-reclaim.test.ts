@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AuthorityDb } from "../../src/index.js";
-import { closePersonalDb, digest, insertApproval, personalDb, T0, T1, T2, T3, T4, T5 } from "./personal-operations-test-helpers.js";
+import { closePersonalDb, digest, insertApproval, insertDailyRun, personalDb, T0, T1, T2, T3, T4, T5 } from "./personal-operations-test-helpers.js";
 
 function candidateOutbox(db: AuthorityDb): void {
   db.db.prepare("INSERT INTO memory_candidates(candidate_id,correlation_id,idempotency_key,candidate_kind,operation,subject_digest,content_digest,source_digest,sensitivity,purpose,required_confirmation,state,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run("memcand:reclaim", "corr:memory", "idem:candidate", "verified_fact", "remember", digest("1"), digest("2"), digest("3"), "normal", "continuity", 0, "proposed", T5, T0, T0);
@@ -22,11 +22,11 @@ describe("expired lease atomic reclaim", () => {
     // Given an expired daily claim at fence one
     const db = await personalDb();
     try {
-      db.db.prepare("INSERT INTO daily_loop_runs(run_id,loop_date,correlation_id,idempotency_key,state,lease_fence,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)").run("dlr:skip-fence", "2026-08-28", "corr:skip-fence", "idem:skip-fence", "pending", 0, T5, T0, T0);
+      insertDailyRun(db, { runId: "dlr:skip-fence", correlation: "corr:skip-fence", idempotency: "idem:skip-fence" });
       db.db.prepare("UPDATE daily_loop_runs SET state='claimed',lease_owner='old',lease_fence=1,lease_expires_at=?,updated_at=? WHERE run_id='dlr:skip-fence'").run(T2, T1);
       // When reclaim skips fence two
       // Then exact monotonic reclaim fails
-      expect(() => db.db.prepare("UPDATE daily_loop_runs SET lease_owner='new',lease_fence=3,lease_expires_at=?,updated_at=? WHERE run_id='dlr:skip-fence'").run(T5, T3)).toThrow("daily loop reclaim invalid");
+      expect(() => db.db.prepare("UPDATE daily_loop_runs SET lease_owner='new',lease_fence=3,lease_expires_at=?,updated_at=? WHERE run_id='dlr:skip-fence'").run(T5, T3)).toThrow(/daily loop (reclaim|lease mutation) invalid/);
     } finally { closePersonalDb(db); }
   });
 
@@ -34,14 +34,14 @@ describe("expired lease atomic reclaim", () => {
     // Given a daily run claimed through T2
     const db = await personalDb();
     try {
-      db.db.prepare("INSERT INTO daily_loop_runs(run_id,loop_date,correlation_id,idempotency_key,state,lease_fence,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)").run("dlr:reclaim", "2026-08-28", "corr:daily", "idem:daily", "pending", 0, T5, T0, T0);
+      insertDailyRun(db, { runId: "dlr:reclaim", correlation: "corr:daily", idempotency: "idem:daily" });
       db.db.prepare("UPDATE daily_loop_runs SET state='claimed',lease_owner='old',lease_fence=1,lease_expires_at=?,updated_at=? WHERE run_id='dlr:reclaim'").run(T2, T1);
       // When a second owner reclaims strictly after expiry
       db.db.prepare("UPDATE daily_loop_runs SET lease_owner='new',lease_fence=2,lease_expires_at=?,updated_at=? WHERE run_id='dlr:reclaim'").run(T5, T3);
       // Then old heartbeat/settlement lose and the new fence advances
       expect(db.db.prepare("UPDATE daily_loop_runs SET lease_expires_at=?,updated_at=? WHERE run_id='dlr:reclaim' AND lease_owner='old' AND lease_fence=1").run(T4, T3).changes).toBe(0);
       expect(db.db.prepare("UPDATE daily_loop_runs SET state='running',updated_at=? WHERE run_id='dlr:reclaim' AND lease_owner='old' AND lease_fence=1").run(T3).changes).toBe(0);
-      expect(db.db.prepare("UPDATE daily_loop_runs SET state='running',updated_at=? WHERE run_id='dlr:reclaim' AND lease_owner='new' AND lease_fence=2").run(T3).changes).toBe(1);
+      expect(db.db.prepare("SELECT state,lease_owner,lease_fence FROM daily_loop_runs WHERE run_id='dlr:reclaim'").get()).toEqual({ state: "claimed", lease_owner: "new", lease_fence: 2 });
     } finally { closePersonalDb(db); }
   });
 

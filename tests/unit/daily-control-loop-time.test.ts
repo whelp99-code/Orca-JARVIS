@@ -20,6 +20,7 @@ describe("Daily Control Loop calendar", () => {
     const deferred = classifyDailyLoopInstant(quiet, {
       kind: "event",
       event_id: "evt:quiet",
+      occurred_at: "2026-08-31T14:00:00.000Z",
       critical: false,
       items: 1,
       work: 1,
@@ -28,7 +29,9 @@ describe("Daily Control Loop calendar", () => {
     const bypassed = classifyDailyLoopInstant(quiet, {
       kind: "event",
       event_id: "evt:critical",
+      occurred_at: "2026-08-31T14:00:00.000Z",
       critical: true,
+      critical_reason: "operator escalation",
       items: 1,
       work: 1,
       bytes: 8,

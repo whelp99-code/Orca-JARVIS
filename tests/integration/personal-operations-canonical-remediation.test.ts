@@ -84,7 +84,7 @@ describe("canonical personal operation timestamps", () => {
     try {
       // When a daily row carries a malformed timestamp
       // Then canonical UTC persistence fails closed
-      expect(() => db.db.prepare("INSERT INTO daily_loop_runs(run_id,loop_date,correlation_id,idempotency_key,state,lease_fence,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)").run(`dlr:${timestamp}`, "2026-08-28", `corr:${timestamp}`, `idem:${timestamp}`, "pending", 0, T5, timestamp, timestamp)).toThrow(/CHECK constraint failed|personal timestamp invalid/);
+      expect(() => db.db.prepare("INSERT INTO daily_loop_runs(run_id,loop_date,correlation_id,idempotency_key,state,lease_fence,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)").run(`dlr:${timestamp}`, "2026-08-28", `corr:${timestamp}`, `idem:${timestamp}`, "pending", 0, T5, timestamp, timestamp)).toThrow(/CHECK constraint failed|personal timestamp invalid|daily loop v1 input invalid/g);
     } finally { closePersonalDb(db); }
   });
 
@@ -94,8 +94,8 @@ describe("canonical personal operation timestamps", () => {
     try {
       // When impossible loop dates or reversed expiry are inserted
       // Then semantic time checks reject both
-      expect(() => db.db.prepare("INSERT INTO daily_loop_runs(run_id,loop_date,correlation_id,idempotency_key,state,lease_fence,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)").run("dlr:date", "2026-02-30", "corr:date", "idem:date", "pending", 0, T5, T0, T0)).toThrow(/CHECK constraint failed|personal timestamp invalid/);
-      expect(() => db.db.prepare("INSERT INTO retention_jobs(job_id,job_key,idempotency_key,data_class,state,lease_fence,not_before,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)").run("ret:reverse", "reverse", "idem:reverse", "audit", "pending", 0, T2, T1, T0, T0)).toThrow(/CHECK constraint failed|personal timestamp invalid/);
+      expect(() => db.db.prepare("INSERT INTO daily_loop_runs(run_id,loop_date,correlation_id,idempotency_key,state,lease_fence,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)").run("dlr:date", "2026-02-30", "corr:date", "idem:date", "pending", 0, T5, T0, T0)).toThrow(/CHECK constraint failed|personal timestamp invalid|daily loop v1 input invalid/g);
+      expect(() => db.db.prepare("INSERT INTO retention_jobs(job_id,job_key,idempotency_key,data_class,state,lease_fence,not_before,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)").run("ret:reverse", "reverse", "idem:reverse", "audit", "pending", 0, T2, T1, T0, T0)).toThrow(/CHECK constraint failed|personal timestamp invalid|daily loop v1 input invalid/g);
     } finally { closePersonalDb(db); }
   });
 });

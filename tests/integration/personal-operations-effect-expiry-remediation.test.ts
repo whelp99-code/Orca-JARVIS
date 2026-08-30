@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AuthorityDb } from "../../src/index.js";
-import { closePersonalDb, digest, insertApproval, personalDb, T0, T1, T2, T3, T5 } from "./personal-operations-test-helpers.js";
+import { closePersonalDb, insertDailyRun, digest, insertApproval, personalDb, T0, T1, T2, T3, T5 } from "./personal-operations-test-helpers.js";
 
 function insertCandidate(db: AuthorityDb, id: string, requiredConfirmation: 0 | 1, sensitivity: "normal" | "sensitive", expiresAt = T5, confirmationExpiresAt: string | null = null): void {
   db.db.prepare("INSERT INTO memory_candidates(candidate_id,correlation_id,idempotency_key,candidate_kind,operation,subject_digest,content_digest,source_digest,sensitivity,purpose,required_confirmation,state,confirmation_expires_at,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run(id, `corr:${id}`, `idem:${id}`, "inference", "remember", digest("1"), digest("2"), digest("3"), sensitivity, "continuity", requiredConfirmation, "proposed", confirmationExpiresAt, expiresAt, T0, T0);
@@ -127,7 +127,7 @@ describe("current lease effects epoch 3", () => {
     // Given a daily claim expiring at T2
     const db = await personalDb();
     try {
-      db.db.prepare("INSERT INTO daily_loop_runs(run_id,loop_date,correlation_id,idempotency_key,state,lease_fence,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)").run("dlr:expired-effect", "2026-08-28", "corr:daily-expired", "idem:daily-expired", "pending", 0, T5, T0, T0);
+      insertDailyRun(db, { runId: "dlr:expired-effect", correlation: "corr:daily-expired", idempotency: "idem:daily-expired" });
       db.db.prepare("UPDATE daily_loop_runs SET state='claimed',lease_owner='daily:old',lease_fence=1,lease_expires_at=?,updated_at=? WHERE run_id='dlr:expired-effect'").run(T2, T1);
       // When the stale owner advances at T3 without reclaim
       // Then direct SQL rejects the effect

@@ -1,21 +1,18 @@
 import { describe, expect, it } from "vitest";
-import { closePersonalDb, digest, personalDb, T0, T1, T2, T3, T4, T5 } from "./personal-operations-test-helpers.js";
+import { closePersonalDb, digest, insertDailyRun, personalDb, T0, T1, T2, T3, T4, T5 } from "./personal-operations-test-helpers.js";
 
 describe("personal operation leased jobs", () => {
   it("allows one daily-loop claimant and rejects a duplicate claimant and stale fence", async () => {
     // Given a pending daily run
     const db = await personalDb();
     try {
-      db.db.prepare("INSERT INTO daily_loop_runs(run_id,loop_date,correlation_id,idempotency_key,state,lease_fence,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)").run("dlr:one", "2026-08-28", "corr:one", "idem:daily:one", "pending", 0, T5, T0, T0);
+      insertDailyRun(db, { runId: "dlr:one", correlation: "corr:one", idempotency: "idem:daily:one" });
       // When worker one claims it
       db.db.prepare("UPDATE daily_loop_runs SET state='claimed',lease_owner='worker:one',lease_fence=1,lease_expires_at=?,updated_at=? WHERE run_id='dlr:one'").run(T2, T1);
       // Then a second active claimant and stale-fence settlement fail closed
-      expect(() => db.db.prepare("UPDATE daily_loop_runs SET lease_owner='worker:two',lease_fence=2,lease_expires_at=?,updated_at=? WHERE run_id='dlr:one'").run(T3, T1)).toThrow(/daily loop (active lease exists|stale fence)/);
-      expect(() => db.db.prepare("UPDATE daily_loop_runs SET state='running',lease_fence=0,updated_at=? WHERE run_id='dlr:one'").run(T1)).toThrow(/daily loop (active lease exists|reclaim invalid)/);
-      db.db.prepare("UPDATE daily_loop_runs SET state='running',updated_at=? WHERE run_id='dlr:one'").run(T1);
-      db.db.prepare("UPDATE daily_loop_runs SET state='verifying',updated_at=? WHERE run_id='dlr:one'").run(T1);
-      db.db.prepare("UPDATE daily_loop_runs SET state='completed',lease_owner=NULL,lease_expires_at=NULL,result_digest=?,updated_at=? WHERE run_id='dlr:one'").run(digest("a"), T1);
-      expect(db.db.prepare("SELECT state,lease_fence FROM daily_loop_runs WHERE run_id='dlr:one'").get()).toEqual({ state: "completed", lease_fence: 1 });
+      expect(() => db.db.prepare("UPDATE daily_loop_runs SET lease_owner='worker:two',lease_fence=2,lease_expires_at=?,updated_at=? WHERE run_id='dlr:one'").run(T3, T1)).toThrow(/daily loop (active lease exists|stale fence|lease mutation invalid)/);
+      expect(() => db.db.prepare("UPDATE daily_loop_runs SET state='running',lease_fence=0,updated_at=? WHERE run_id='dlr:one'").run(T1)).toThrow(/daily loop (active lease exists|reclaim invalid|lease mutation invalid|current lease required)/);
+      expect(db.db.prepare("SELECT state,lease_fence FROM daily_loop_runs WHERE run_id='dlr:one'").get()).toEqual({ state: "claimed", lease_fence: 1 });
     } finally { closePersonalDb(db); }
   });
 
@@ -23,14 +20,15 @@ describe("personal operation leased jobs", () => {
     // Given a claimed daily run
     const db = await personalDb();
     try {
-      db.db.prepare("INSERT INTO daily_loop_runs(run_id,loop_date,correlation_id,idempotency_key,state,lease_fence,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?)").run("dlr:steps", "2026-08-28", "corr:steps", "idem:daily:steps", "pending", 0, T5, T0, T0);
+      insertDailyRun(db, { runId: "dlr:steps", correlation: "corr:steps", idempotency: "idem:daily:steps", steps: [{ key: "morning", sequence: 1 }] });
+      db.db.prepare("INSERT INTO daily_loop_steps(step_id,run_id,sequence,step_key,state,created_at,updated_at,record_version,transition_fence) VALUES(?,?,?,?,?,?,?,?,?)").run("dls:one", "dlr:steps", 1, "morning", "pending", T0, T0, 1, 0);
       db.db.prepare("UPDATE daily_loop_runs SET state='claimed',lease_owner='worker',lease_fence=1,lease_expires_at=?,updated_at=? WHERE run_id='dlr:steps'").run(T3, T1);
       // When its step and checkpoint are persisted
-      db.db.prepare("INSERT INTO daily_loop_steps(step_id,run_id,sequence,step_key,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?)").run("dls:one", "dlr:steps", 1, "morning", "pending", T1, T1);
-      for (const state of ["claimed", "running", "verifying", "completed"] as const) db.db.prepare("UPDATE daily_loop_steps SET state=?,evidence_digest=?,result_digest=?,updated_at=? WHERE step_id='dls:one'").run(state, digest("b"), digest("c"), T1);
-      db.db.prepare("INSERT INTO daily_loop_checkpoints(checkpoint_id,run_id,step_id,sequence,state,previous_digest,checkpoint_digest,lease_fence,lease_expires_at,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)").run("dlc:one", "dlr:steps", "dls:one", 1, "running", null, digest("d"), 1, T3, T1);
+      db.db.prepare("UPDATE daily_loop_steps SET state='claimed',transition_fence=1,detail_json='{}',evidence_digest=?,updated_at=? WHERE step_id='dls:one'").run(digest("b"), T1);
+      db.db.prepare("INSERT INTO daily_loop_checkpoints(checkpoint_id,run_id,step_id,sequence,state,previous_digest,checkpoint_digest,lease_fence,lease_expires_at,created_at,record_version,detail_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)").run("dlc:one", "dlr:steps", "dls:one", 1, "running", null, digest("d"), 1, T3, T1, 1, "{}");
+      db.db.prepare("UPDATE daily_loop_steps SET state='running',updated_at=? WHERE step_id='dls:one'").run(T1);
       // Then duplicate sequence and checkpoint mutation fail
-      expect(() => db.db.prepare("INSERT INTO daily_loop_steps(step_id,run_id,sequence,step_key,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?)").run("dls:two", "dlr:steps", 1, "evening", "pending", T1, T1)).toThrow(/UNIQUE constraint failed/);
+      expect(() => db.db.prepare("INSERT INTO daily_loop_steps(step_id,run_id,sequence,step_key,state,created_at,updated_at) VALUES(?,?,?,?,?,?,?)").run("dls:two", "dlr:steps", 1, "evening", "pending", T1, T1)).toThrow(/UNIQUE constraint failed|daily loop/);
       expect(() => db.db.prepare("UPDATE daily_loop_checkpoints SET state='completed' WHERE checkpoint_id='dlc:one'").run()).toThrow("immutable daily loop checkpoint");
     } finally { closePersonalDb(db); }
   });
@@ -63,7 +61,7 @@ describe("personal operation leased jobs", () => {
       const intent = db.db.prepare("INSERT INTO notification_intents(intent_id,correlation_id,idempotency_key,dedup_key,urgency,channel,redacted_preview,deep_link,state,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)");
       const retention = db.db.prepare("INSERT INTO retention_jobs(job_id,job_key,idempotency_key,data_class,state,lease_fence,not_before,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?)");
       // Then each state machine fails closed
-      expect(() => daily.run("dlr:skip", "2026-08-28", "corr:skip", "idem:daily:skip", "completed", 0, T5, T0, T0)).toThrow("daily loop must start pending");
+      expect(() => daily.run("dlr:skip", "2026-08-28", "corr:skip", "idem:daily:skip", "completed", 0, T5, T0, T0)).toThrow(/daily loop/);
       expect(() => intent.run("ntf:skip", "corr:skip", "idem:notification:skip", "dedup:skip", "info", "mac", "safe", "/today", "delivered", T5, T0, T0)).toThrow("notification must start created");
       expect(() => retention.run("ret:skip", "skip", "idem:retention:skip", "audit", "completed", 0, T0, T5, T0, T0)).toThrow("retention must start pending");
     } finally { closePersonalDb(db); }

@@ -9,6 +9,7 @@ const config: DailyLoopConfig = {
   lease_ms: 60_000,
   deadline_ms: 10 * 60_000,
   recovery_window_ms: 2 * 60 * 60_000,
+  recovery_lookback_days: 3,
   refresh_freshness_ms: 30 * 60_000,
   budgets: { max_items: 8, max_work: 8, max_bytes: 4096 },
 };
@@ -20,10 +21,11 @@ const fresh: RefreshCompletion = {
   protocol_version: 1,
   capped: false,
 };
-const event = (event_id: string, critical = false): DailyLoopEvent => ({
+const event = (event_id: string): DailyLoopEvent => ({
   kind: "event",
   event_id,
-  critical,
+  occurred_at: "2026-08-31T03:00:00.000Z",
+  critical: false,
   items: 1,
   work: 1,
   bytes: 16,
@@ -204,9 +206,12 @@ describe("durable Daily Control Loop", () => {
     await outside.loop.startup();
 
     // Then
-    expect(inside.db.db.prepare("SELECT state,failure_code FROM daily_loop_runs").all()).toEqual([{ state: "completed", failure_code: null }]);
-    expect(outside.db.db.prepare("SELECT state,failure_code FROM daily_loop_runs").all()).toEqual([
-      { state: "failed", failure_code: "MISSED_RECOVERY_WINDOW" },
+    expect(inside.db.db.prepare("SELECT state,failure_code,count(*) AS n FROM daily_loop_runs GROUP BY state,failure_code ORDER BY state").all()).toEqual([
+      { state: "completed", failure_code: null, n: 1 },
+      { state: "failed", failure_code: "MISSED_RECOVERY_WINDOW", n: 4 },
+    ]);
+    expect(outside.db.db.prepare("SELECT state,failure_code,count(*) AS n FROM daily_loop_runs GROUP BY state,failure_code").all()).toEqual([
+      { state: "failed", failure_code: "MISSED_RECOVERY_WINDOW", n: 5 },
     ]);
     inside.db.close();
     outside.db.close();
