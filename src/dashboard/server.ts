@@ -15,6 +15,7 @@ import { JarvisError, type AuthorityDb } from "../db.js";
 import type { OrcaRunner } from "../orca.js";
 import { tryHandleDashboardApi } from "./api-routes.js";
 import { createDashboardEvents, type ReconcileHub } from "./events.js";
+import type { PersonalEventKind } from "./personal-contracts.js";
 import {
   createRequestId,
   DASHBOARD_ERROR_CODES,
@@ -46,6 +47,7 @@ export type DashboardAddress = {
 export type DashboardServer = {
   readonly address: DashboardAddress;
   publish(topics: readonly string[]): void;
+  publishPersonal(kind: PersonalEventKind): void;
   close(): void;
 };
 
@@ -85,7 +87,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
     throw new JarvisError("VALIDATION_ERROR");
   }
   realpathSync(options.staticRoot);
-  const model = new DashboardReadModel(options.db, options.secondBrainProbe);
+  const model = new DashboardReadModel(options.db, options.secondBrainProbe, options.capabilityProbe);
   const terminals = new DashboardTerminalReader(model, options.orcaRunner);
   const events = createDashboardEvents(options.db);
   const session = createDashboardSession();
@@ -121,6 +123,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
   return {
     address: { host: LOOPBACK_HOST, port: boundAddress.port, family: "IPv4" },
     publish(topics: readonly string[]): void { events.hub.publish(topics); },
+    publishPersonal(kind: PersonalEventKind): void { events.hub.publishPersonal(kind); },
     close(): void { events.close(); httpServer.closeAllConnections(); httpServer.close(); },
   };
 }

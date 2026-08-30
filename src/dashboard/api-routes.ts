@@ -11,6 +11,7 @@ import {
   writeDashboardJson,
 } from "./http.js";
 import { tryHandleDashboardPost } from "./post-routes.js";
+import { tryHandlePersonalRead } from "./personal-routes.js";
 import type { TeamProposalPlanner } from "./proposal-service.js";
 import type { DashboardReadModel } from "./read-model.js";
 import { tryHandleDashboardRead } from "./read-routes.js";
@@ -67,6 +68,14 @@ export async function tryHandleDashboardApi(input: DashboardApiInput): Promise<b
     return true;
   }
   if (await tryHandleDashboardLogs(input)) return true;
+  if (await tryHandlePersonalRead({
+    model: input.model.personal,
+    url: input.url,
+    path: input.path,
+    response: input.response,
+    requestId: input.requestId,
+    now: input.clock(),
+  })) return true;
   return tryHandleDashboardRead({
     model: input.model,
     url: input.url,

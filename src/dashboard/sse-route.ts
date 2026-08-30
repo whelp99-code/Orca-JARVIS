@@ -37,7 +37,7 @@ function attachSseClient(input: DashboardSseInput): void {
     },
   };
 
-  const unsubscribe = hub.connect(sink);
+  const unsubscribe = hub.connect(sink, lastEventId(request));
   const heartbeat = setInterval(() => {
     sink.write(":\n\n");
   }, HEARTBEAT_MS);
@@ -52,4 +52,10 @@ function attachSseClient(input: DashboardSseInput): void {
   };
   request.on("close", cleanup);
   response.on("close", cleanup);
+}
+
+function lastEventId(request: IncomingMessage): string | undefined {
+  const value = request.headers["last-event-id"];
+  if (typeof value === "string" && Buffer.byteLength(value, "utf8") <= 256) return value;
+  return value === undefined ? undefined : "invalid";
 }

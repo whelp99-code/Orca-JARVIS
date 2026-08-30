@@ -1,0 +1,104 @@
+import { createHash } from "node:crypto";
+import { canonicalize } from "../canonical.js";
+import type { AuthorityDb } from "../db.js";
+import { verifyEveningCloseoutArtifact } from "../evening-closeout-artifact.js";
+import { parseContextSnapshotV1 } from "../personal-validation.js";
+import { Recommendations } from "../recommendations.js";
+import { dbRow, dbRows, nullableText, numberValue, readOnlySnapshot, text } from "./personal-db.js";
+
+type BriefSummary = { readonly state: string; readonly brief_id: string | null; readonly generated_at: string | null; readonly item_count: number };
+
+export function todayProjection(db: AuthorityDb, now: Date): Readonly<Record<string, unknown>> {
+  return readOnlySnapshot(db, () => {
+    const recommendation = new Recommendations(db).project(now.toISOString(), 500);
+    const runs = dbRows(db.db.prepare(
+      `SELECT run_id,loop_date,phase,state,result_digest,failure_code,created_at,updated_at
+       FROM daily_loop_runs WHERE record_version=1 ORDER BY updated_at DESC,run_id DESC LIMIT 2`,
+    ).all());
+    const notifications = dbRows(db.db.prepare(
+      "SELECT state,count(*) AS count FROM notification_intents GROUP BY state ORDER BY state",
+    ).all()).map((row) => ({ state: text(row, "state"), count: numberValue(row, "count") }));
+    const context = latestContext(db, now);
+    const brief = latestBrief(db);
+    const closeout = latestCloseout(db);
+    const current = runs[0];
+    return {
+      schema_version: 1, resource: "today", generated_at: now.toISOString(),
+      state: context.state === "ready" || recommendation.next_actions.length > 0 ? "ready" : context.state,
+      brief, active_decision_count: recommendation.owner_decisions_needed.length,
+      notification_summary: { total: notifications.reduce((sum, item) => sum + item.count, 0), states: notifications },
+      current_daily_run: current === undefined ? null : runSummary(current),
+      last_daily_run: runs[1] === undefined ? null : runSummary(runs[1]), latest_verified_closeout: closeout,
+      next_actions: recommendation.next_actions.slice(0, 3).map((action) => ({ recommendation_id: action.recommendation_id,
+        rank: action.rank, title: action.title, confidence_class: action.confidence_class, expires_at: action.expires_at,
+        deep_link: `/recommendations/${encodeURIComponent(action.recommendation_id)}` })),
+      conflicts: recommendation.conflicts, omissions: [...new Set([...recommendation.omissions, ...context.omissions])].sort(),
+      freshness: context.freshness,
+      deep_links: { decisions: "/api/v1/decision-inbox", daily_runs: "/api/v1/daily-runs",
+        notifications: "/api/v1/notification-intents", source_health: "/api/v1/source-health" },
+    };
+  });
+}
+
+function latestContext(db: AuthorityDb, now: Date): { readonly state: string; readonly freshness: unknown; readonly omissions: readonly string[] } {
+  const raw = db.db.prepare(
+    "SELECT canonical_envelope_json FROM personal_context_snapshots ORDER BY created_at DESC,context_id DESC LIMIT 1",
+  ).get();
+  if (raw === undefined) return { state: "no_data", freshness: { state: "no_data", fresh_until: null }, omissions: ["context_no_data"] };
+  const context = parseContextSnapshotV1(JSON.parse(text(dbRow(raw), "canonical_envelope_json")));
+  const state = context.freshness.state === "fresh" && now.toISOString() >= context.freshness.fresh_until ? "stale" : context.freshness.state;
+  return { state: state === "fresh" ? "ready" : state, freshness: context.freshness, omissions: context.payload.omissions };
+}
+
+function latestBrief(db: AuthorityDb): BriefSummary {
+  const raw = db.db.prepare(
+    `SELECT detail_json FROM daily_loop_steps s JOIN daily_loop_runs r ON r.run_id=s.run_id
+     WHERE s.step_key='morning_reconcile' AND s.state='completed' ORDER BY r.loop_date DESC,r.run_id DESC LIMIT 1`,
+  ).get();
+  if (raw === undefined) return { state: "no_data", brief_id: null, generated_at: null, item_count: 0 };
+  const parsed: unknown = JSON.parse(text(dbRow(raw), "detail_json"));
+  if (!record(parsed) || typeof parsed["brief_id"] !== "string" || typeof parsed["generated_at"] !== "string"
+    || typeof parsed["canonical_digest"] !== "string") return { state: "no_data", brief_id: null, generated_at: null, item_count: 0 };
+  const core = Object.fromEntries(Object.entries(parsed).filter(([key]) => key !== "brief_id" && key !== "canonical_digest"));
+  const digest = `sha256:${createHash("sha256").update(canonicalize(core)).digest("hex")}`;
+  if (digest !== parsed["canonical_digest"]) throw new PersonalTodayIntegrityError();
+  const needs = parsed["needs_you_first"];
+  const waiting = parsed["waiting"];
+  const fyi = parsed["fyi"];
+  if (!Array.isArray(needs) || !Array.isArray(waiting) || !Array.isArray(fyi)) throw new PersonalTodayIntegrityError();
+  const itemCount = needs.length + waiting.length + fyi.length;
+  return { state: parsed["context_readiness"] === "ready" ? "ready" : "degraded",
+    brief_id: parsed["brief_id"], generated_at: parsed["generated_at"], item_count: itemCount };
+}
+
+function latestCloseout(db: AuthorityDb): Readonly<Record<string, unknown>> | null {
+  const raw = db.db.prepare(
+    `SELECT s.detail_json FROM daily_loop_steps s JOIN daily_loop_runs r ON r.run_id=s.run_id
+     WHERE s.step_key='evening_summary' AND s.state='completed' ORDER BY r.loop_date DESC,r.run_id DESC LIMIT 1`,
+  ).get();
+  if (raw === undefined) return null;
+  const parsed: unknown = JSON.parse(text(dbRow(raw), "detail_json"));
+  if (!record(parsed) || !record(parsed["envelope"]) || typeof parsed["envelope"]["key_id"] !== "string"
+    || typeof parsed["envelope"]["public_key_spki"] !== "string") throw new PersonalTodayIntegrityError();
+  const artifact = verifyEveningCloseoutArtifact(parsed, {
+    key_id: parsed["envelope"]["key_id"], public_key_spki: parsed["envelope"]["public_key_spki"],
+  });
+  return { artifact_id: artifact.artifact_id, run_id: artifact.run_id, local_date: artifact.local_date,
+    generated_at: artifact.generated_at, canonical_digest: artifact.canonical_digest,
+    verified_completion_count: artifact.verified_completions.length, source_readiness: artifact.source_readiness };
+}
+
+function runSummary(row: Readonly<Record<string, unknown>>): Readonly<Record<string, unknown>> {
+  return { run_id: text(row, "run_id"), loop_date: text(row, "loop_date"), phase: nullableText(row, "phase"),
+    state: text(row, "state"), result_digest: nullableText(row, "result_digest"), failure_code: nullableText(row, "failure_code"),
+    created_at: text(row, "created_at"), updated_at: text(row, "updated_at") };
+}
+
+function record(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
+export class PersonalTodayIntegrityError extends Error {
+  readonly name = "PersonalTodayIntegrityError";
+  constructor() { super("PERSONAL_TODAY_INTEGRITY_FAILURE"); }
+}

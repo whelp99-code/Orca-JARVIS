@@ -10,9 +10,11 @@ import { invalidClockOverview } from "./invalid-clock-overview.js";
 import { overviewCards } from "./overview-cards.js";
 import type { PortfolioOverview } from "./portfolio-contracts.js";
 import { PortfolioProjection } from "./portfolio-projection.js";
+import { PersonalDashboardReadModel } from "./personal-read-model.js";
 import { redactDashboardValue } from "./redaction.js";
 import { buildSecondBrainReadiness, type SecondBrainReadinessProbe, type SecondBrainReadinessReportV1 } from "../second-brain-readiness.js";
 import { runtimeSecondBrainReadinessProbe } from "../second-brain-readiness-runtime.js";
+import type { CapabilityProbe } from "../capabilities.js";
 
 const RECENT_TASK_LIMIT = 20;
 const TASK_EVENT_LIMIT = 500;
@@ -81,10 +83,15 @@ export type DashboardLookup<T> =
   | { readonly kind: "not_found" };
 
 export class DashboardReadModel {
+  readonly personal: PersonalDashboardReadModel;
+
   constructor(
     private readonly db: AuthorityDb,
     private readonly secondBrainProbe: SecondBrainReadinessProbe = runtimeSecondBrainReadinessProbe(),
-  ) {}
+    capabilityProbe?: CapabilityProbe,
+  ) {
+    this.personal = new PersonalDashboardReadModel(db, capabilityProbe);
+  }
 
   async overview(now = new Date()): Promise<OverviewResponse> {
     if (!Number.isFinite(now.getTime())) {
