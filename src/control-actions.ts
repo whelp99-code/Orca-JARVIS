@@ -108,7 +108,8 @@ function workflowRegister(input: RuntimeControlActionInput): void {
 }
 
 function workflowStart(input: RuntimeControlActionInput): void {
-  validateOptionalLocalTarget(input.target, ["environment", "run_id", "loop_id", "correlation_id", "task_id"]);
+  validateOptionalLocalTarget(input.target, ["environment", "repository", "run_id", "loop_id", "correlation_id", "task_id"]);
+  optionalString(input.target, "repository", "CONTROL_TARGET_MISMATCH");
   requireOnlyArgs(input.args, ["run_id", "loop_id", "correlation_id", "input", "budget"]);
   const runId = requireString(input.args, "run_id", "CONTROL_ARGS_MISMATCH");
   const loopId = requireString(input.args, "loop_id", "CONTROL_ARGS_MISMATCH");
@@ -194,6 +195,8 @@ export function validateControlAction(input: RuntimeControlActionInput, options:
   if (!descriptor) throw new JarvisError("CONTROL_ACTION_UNKNOWN");
   if (!Number.isInteger(input.action_level) || input.action_level < 0 || input.action_level > 5) throw new JarvisError("CONTROL_COMMAND_INVALID");
   descriptor.validate(input);
-  if (options.enforceMinimumLevel && input.action_level < descriptor.minimum_level) throw new JarvisError(options.levelErrorCode ?? "CONTROL_ACTION_LEVEL_TOO_LOW");
+  if (options.enforceMinimumLevel && input.action_level < descriptor.minimum_level) {
+    throw new JarvisError(options.levelErrorCode ?? "CONTROL_ACTION_LEVEL_TOO_LOW");
+  }
   return { action: descriptor.action, minimum_level: descriptor.minimum_level, executable: descriptor.executable };
 }

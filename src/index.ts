@@ -1,4 +1,5 @@
-export * from "./core-api.js"; export * from "./daily-loop.js"; export * from "./morning-brief.js"; export * from "./notification-intents.js";
+export * from "./core-api.js"; export * from "./daily-loop.js"; export * from "./morning-brief.js";
+export * from "./notification-intents.js"; export * from "./recommendation-workflow-staging.js";
 export {
 	OrcaReadonlyAdapter,
 	classifyOrcaTerminal,
@@ -20,8 +21,7 @@ export {
 	parseOrcaEnvironments,
 	withOrcaEnvironment,
 } from "./orca-env.js";
-export * from "./personal-os-evaluation.js";
-export * from "./priority-engine.js";
+export * from "./personal-os-evaluation.js"; export * from "./priority-engine.js"; export * from "./personal-contracts.js";
 export {
 	Recommendations, RecommendationError, RECOMMENDATION_ERROR_CODES,
 	type CreateRecommendationResult, type RecommendationActionMaterial, type RecommendationErrorCode,
@@ -53,7 +53,6 @@ export {
 	type PersonalSourceSnapshot,
 	type SecondBrainConnectorRead,
 } from "./personal-connectors.js";
-export * from "./personal-contracts.js";
 export {
 	normalizeAndPersistPersonalObservations,
 	normalizePersonalObservations,
@@ -237,6 +236,7 @@ export {
 } from "./control-plane.js";
 export { buildCurrentState, type CurrentStateProjection } from "./recommendation-state-projection.js";
 export { ApprovedCommandExecutor, type ApprovedExecutionResult } from "./approved-executor.js";
+export { type ExecuteWorkflowStageInput, type WorkflowStageAdapter } from "./approved-workflow-stage.js";
 export {
 	DEFAULT_AGENTOPS_LOOP,
 	type LoopNodeKind,
