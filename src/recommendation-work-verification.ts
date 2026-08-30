@@ -5,7 +5,7 @@ import { closedRecord, closedText, task25Timestamp } from "./task25-closed-input
 import type { RecommendationVerificationReceipt } from "./recommendation-work-types.js";
 
 export const RECOMMENDATION_VERIFICATION_DOMAIN = "orca-jarvis/recommendation-verification/v1\0";
-const KEYS = ["schema_version", "receipt_id", "verification_request_id", "runtime_id", "run_id",
+const KEYS = ["schema_version", "receipt_id", "verification_request_id", "request_digest", "runtime_id", "run_id",
   "workflow_digest", "dispatch_receipt_id", "commit_digest", "incarnation_id", "artifact_digest",
   "test_digest", "evidence_digest", "decision", "verifier_principal_id", "verifier_session_id",
   "verifier_incarnation_id", "key_id", "algorithm", "issued_at", "signature"] as const;
@@ -26,6 +26,7 @@ export function parseRecommendationVerification(value: unknown): RecommendationV
   if (!/^[A-Za-z0-9_-]+$/.test(signature)) return invalid();
   return { schema_version: 1, receipt_id: closedText(row["receipt_id"]),
     verification_request_id: closedText(row["verification_request_id"]),
+    request_digest: digest(row["request_digest"]),
     runtime_id: closedText(row["runtime_id"]), run_id: closedText(row["run_id"]),
     workflow_digest: digest(row["workflow_digest"]), dispatch_receipt_id: closedText(row["dispatch_receipt_id"]),
     commit_digest: digest(row["commit_digest"]), incarnation_id: closedText(row["incarnation_id"]),

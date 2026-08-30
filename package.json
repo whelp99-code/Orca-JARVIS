@@ -14,6 +14,7 @@
   },
   "scripts": {
     "build": "npm run build:backend && npm run build:dashboard",
+    "postinstall": "install-electron",
     "lint": "eslint src tests dashboard e2e playwright.config.ts --max-warnings=0",
     "pretest": "npm run build",
     "test": "vitest run --no-file-parallelism --exclude \"dashboard/**\" --exclude \"e2e/**\" --exclude \".omo/**\" && vitest run --config dashboard/vite.config.ts --no-file-parallelism",

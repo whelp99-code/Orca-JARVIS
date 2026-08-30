@@ -4,6 +4,7 @@ import { canonicalize } from "./canonical.js";
 import { controlWorkflowRunInput } from "./control-workflow-input.js";
 import { persistenceHash } from "./personal-persistence-values.js";
 import { workflowInputDigest } from "./workflow-stage-outcome.js";
+import { verifyRecommendationWorkflowBinding } from "./recommendation-workflow-staging.js";
 import type { PreparedRecommendationWork } from "./recommendation-work-types.js";
 
 export type RecommendationWorkIdentity = {
@@ -19,7 +20,7 @@ function record(value: unknown): Readonly<Record<string, unknown>> {
     ? value as Readonly<Record<string, unknown>> : fail();
 }
 function text(value: unknown): string { return typeof value === "string" && value.length > 0 ? value : fail(); }
-export function reconstructRecommendationWork(db: AuthorityDb, requestId: string): RecommendationWorkIdentity {
+export function reconstructRecommendationWork(db: AuthorityDb, requestId: string, now: Date): RecommendationWorkIdentity {
   const row = db.db.prepare(`SELECT r.*,a.receipt_id,a.command_digest AS receipt_command_digest,
     a.signer_principal_id,a.authenticated_session_id,x.lease_fence AS redemption_fence,
     e.payload_json AS effect_json,w.input_json AS workflow_input_json,w.budget_json AS workflow_budget_json,
@@ -35,6 +36,7 @@ export function reconstructRecommendationWork(db: AuthorityDb, requestId: string
       Readonly<Record<string, unknown>> | undefined;
   if (row === undefined) return fail();
   const target = record(JSON.parse(text(row["target_json"]))); const args = record(JSON.parse(text(row["args_json"])));
+  verifyRecommendationWorkflowBinding(db, args, now);
   const input = record(args["input"]); const proposal = record(input["proposal"]);
   const members = proposal["members"];
   if (!Array.isArray(members)) return fail();
