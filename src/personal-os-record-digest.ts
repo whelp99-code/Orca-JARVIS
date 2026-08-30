@@ -12,6 +12,7 @@ export function computePersonalOsRecordDigest(record: PersonalOsRecord): string 
     observed_at: record.observed_at,
     relationship: record.relationship,
     session_id: record.session_id,
+    support_for: record.support_for,
     state: record.state,
     subject: record.subject,
     trust: record.trust,

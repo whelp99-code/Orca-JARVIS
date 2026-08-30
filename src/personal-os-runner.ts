@@ -20,21 +20,15 @@ function hasTemporalHistory(records: readonly PersonalOsRecord[]): boolean {
   if (history.length < 2) return false;
   return history.every((item, index) => index === 0 || instant(history[index - 1]?.valid_until ?? item.valid_from) <= instant(item.valid_from));
 }
-function aligned(left: PersonalOsRecord, right: PersonalOsRecord): boolean {
-  return left.subject === right.subject && left.value === right.value && left.kind === right.kind && left.state === right.state
-    && left.trust === right.trust && left.authority === right.authority && left.observed_at === right.observed_at
-    && left.valid_from === right.valid_from && left.valid_until === right.valid_until && left.fresh_until === right.fresh_until;
-}
 function contributing(records: readonly PersonalOsRecord[]): readonly PersonalOsRecord[] {
   const supports = records.filter(item => item.relationship === "supporting");
   const ranked = records.filter(item => item.relationship === "direct").map(item => ({ item,
-    supports: supports.filter(support => aligned(item, support)).sort(byIdentity) }))
-    .sort((left, right) => right.supports.length - left.supports.length
+    support: supports.find(support => support.support_for === item.id) }))
+    .sort((left, right) => Number(right.support !== undefined) - Number(left.support !== undefined)
       || instant(right.item.observed_at) - instant(left.item.observed_at) || byIdentity(left.item, right.item));
   const selected = ranked[0];
   if (selected === undefined) return [];
-  const support = selected.supports[0];
-  return support === undefined ? [selected.item] : [selected.item, support].sort(byIdentity);
+  return selected.support === undefined ? [selected.item] : [selected.item, selected.support].sort(byIdentity);
 }
 function runScenario(scenario: PersonalOsScenario, tombstones: readonly PersonalOsRecord[]): PersonalOsActualTrace {
   const temporalObservation = hasTemporalHistory(scenario.records.filter(item => item.subject === scenario.query_subject));

@@ -10,7 +10,7 @@ export class PersonalOsCorpusError extends Error {
 const CORPUS_KEYS = ["schema_version", "corpus_id", "fixed_clock", "scenarios"] as const;
 const SCENARIO_KEYS = ["id", "class", "query_subject", "query_at", "records", "expected"] as const;
 const RECORD_KEYS = ["id", "subject", "value", "kind", "state", "trust", "authority", "observed_at", "valid_from",
-  "valid_until", "fresh_until", "digest", "transfer_digest", "evidence_link", "session_id", "relationship"] as const;
+  "valid_until", "fresh_until", "digest", "transfer_digest", "evidence_link", "session_id", "relationship", "support_for"] as const;
 const EXPECTED_KEYS = ["outcome", "record_ids", "citation_links", "value", "reason_code"] as const;
 const fail = (): never => { throw new PersonalOsCorpusError(PERSONAL_OS_CORPUS_INVALID); };
 function record(value: unknown): Readonly<Record<string, unknown>> {
@@ -69,6 +69,7 @@ function parseRecord(value: unknown): PersonalOsRecord {
     digest: text(input["digest"], 71), transfer_digest: text(input["transfer_digest"], 71),
     evidence_link: text(input["evidence_link"]), session_id: text(input["session_id"]),
     relationship: choice(input["relationship"], ["direct", "supporting", "unrelated"] as const),
+    support_for: input["support_for"] === null ? null : text(input["support_for"]),
   };
   if (Date.parse(parsed.valid_from) >= Date.parse(parsed.valid_until) || Date.parse(parsed.observed_at) > Date.parse(parsed.fresh_until)
     || (parsed.state === "deleted" && Date.parse(parsed.observed_at) <= Date.parse(parsed.valid_from))
@@ -89,6 +90,18 @@ function parseScenario(value: unknown, fixedClock: string): PersonalOsScenario {
   if (Date.parse(queryAt) > Date.parse(fixedClock)) return fail();
   const records = list(input["records"], 64).map(parseRecord);
   if (records.some(item => Date.parse(item.observed_at) > Date.parse(fixedClock))) return fail();
+  const supporters = records.filter(item => item.relationship === "supporting");
+  if (records.some(item => (item.relationship === "supporting") !== (item.support_for !== null))
+    || new Set(supporters.map(item => item.support_for)).size !== supporters.length) return fail();
+  for (const supporter of supporters) {
+    const target = records.find(item => item.id === supporter.support_for);
+    if (target === undefined || target.relationship !== "direct" || target.state !== "active" || target.trust !== "confirmed"
+      || supporter.state !== "active" || supporter.trust !== "confirmed" || target.session_id === supporter.session_id
+      || target.subject.toLocaleLowerCase("en-US") !== supporter.subject.toLocaleLowerCase("en-US")
+      || target.value !== supporter.value || target.kind !== supporter.kind || target.authority !== supporter.authority
+      || target.observed_at !== supporter.observed_at || target.valid_from !== supporter.valid_from
+      || target.valid_until !== supporter.valid_until || target.fresh_until !== supporter.fresh_until) return fail();
+  }
   const expected = parseExpected(input["expected"]);
   if (expected.record_ids.some(id => !records.some(item => item.id === id))
     || expected.citation_links.some(link => !records.some(item => item.evidence_link === link))) return fail();

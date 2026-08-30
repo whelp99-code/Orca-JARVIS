@@ -67,7 +67,7 @@ describe("Task 19 stable multi-session contribution", () => {
     if (scenario === undefined || direct === undefined) throw new TypeError("multi-session fixture missing");
     const noise = (id: string, observed_at: string): PersonalOsRecord => bind({ ...direct, id, observed_at,
       evidence_link: `evidence:synthetic:${id}`, session_id: `session:${id}` });
-    const sameTime = noise("multi-same-noise", direct.observed_at);
+    const sameTime = noise("final-same-noise", direct.observed_at);
     const additions = [noise("multi-newer-noise", "2026-08-29T11:00:00.000Z"),
       noise("multi-older-noise", "2026-08-29T09:30:00.000Z"), sameTime,
       bind({ ...sameTime, id: "multi-unrelated", relationship: "unrelated", evidence_link: "evidence:synthetic:multi-unrelated",

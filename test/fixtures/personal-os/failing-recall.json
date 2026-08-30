@@ -20,12 +20,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:9afe83b46abacfe0dd7c1f4eece8a64f8b9b32d432263efe27361b963e4121ea",
-          "transfer_digest": "sha256:9afe83b46abacfe0dd7c1f4eece8a64f8b9b32d432263efe27361b963e4121ea",
+          "digest": "sha256:44c00845c1e154e4c0caef72f3b2d54da4c86c8fc9765008e6f396b1d377a2b7",
+          "transfer_digest": "sha256:44c00845c1e154e4c0caef72f3b2d54da4c86c8fc9765008e6f396b1d377a2b7",
           "evidence_link": "evidence:synthetic:extract-1",
           "session_id": "session:extract-1",
           "authority": "none",
-          "relationship": "unrelated"
+          "relationship": "unrelated",
+          "support_for": null
         }
       ],
       "expected": {
@@ -57,12 +58,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:41b01cb5f4919e7481f5629a156ae3d4638b198cf68ad1c68cdea96822d00d03",
-          "transfer_digest": "sha256:41b01cb5f4919e7481f5629a156ae3d4638b198cf68ad1c68cdea96822d00d03",
+          "digest": "sha256:de6c8a80b8194f3fdbdc6d523fc3d041cc8c9a72d880cf699afef05b304bb5c4",
+          "transfer_digest": "sha256:de6c8a80b8194f3fdbdc6d523fc3d041cc8c9a72d880cf699afef05b304bb5c4",
           "evidence_link": "evidence:synthetic:multi-1",
           "session_id": "session:alpha",
           "authority": "none",
-          "relationship": "unrelated"
+          "relationship": "unrelated",
+          "support_for": null
         },
         {
           "id": "multi-2",
@@ -75,12 +77,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:1a7612c0409da3d8156988183f5dfbe2fb359b7d2b832966cd90e511e20beced",
-          "transfer_digest": "sha256:1a7612c0409da3d8156988183f5dfbe2fb359b7d2b832966cd90e511e20beced",
+          "digest": "sha256:fba1563773e253942cc1396e48b56b3e39dcfcf866740b0c9b0bea5b77a3734f",
+          "transfer_digest": "sha256:fba1563773e253942cc1396e48b56b3e39dcfcf866740b0c9b0bea5b77a3734f",
           "evidence_link": "evidence:synthetic:multi-2",
           "session_id": "session:beta",
           "authority": "none",
-          "relationship": "unrelated"
+          "relationship": "unrelated",
+          "support_for": null
         }
       ],
       "expected": {
@@ -114,12 +117,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T11:00:00.000Z",
           "fresh_until": "2026-08-29T11:00:00.000Z",
-          "digest": "sha256:088d0e2a4aee27becb8bd54b24e2d82f8de2512f52204b7a5fba8e6fa753789b",
-          "transfer_digest": "sha256:088d0e2a4aee27becb8bd54b24e2d82f8de2512f52204b7a5fba8e6fa753789b",
+          "digest": "sha256:bbc6f0bb4c9c10f12775c9c5fe91857ddc2b2642f9c42951c55529c757f7b815",
+          "transfer_digest": "sha256:bbc6f0bb4c9c10f12775c9c5fe91857ddc2b2642f9c42951c55529c757f7b815",
           "evidence_link": "evidence:synthetic:before-old",
           "session_id": "session:before-old",
           "authority": "none",
-          "relationship": "unrelated"
+          "relationship": "unrelated",
+          "support_for": null
         },
         {
           "id": "before-new",
@@ -132,12 +136,13 @@
           "valid_from": "2026-08-29T11:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:4f79ea6b767a535ed2fc94c93c1cbe6560694039a70a46432bf9ceac59106a8c",
-          "transfer_digest": "sha256:4f79ea6b767a535ed2fc94c93c1cbe6560694039a70a46432bf9ceac59106a8c",
+          "digest": "sha256:92dbfaf28dc3986c89b34ccaa5c657ad15da5ddc82246b55f8dee6e6a89ca0b8",
+          "transfer_digest": "sha256:92dbfaf28dc3986c89b34ccaa5c657ad15da5ddc82246b55f8dee6e6a89ca0b8",
           "evidence_link": "evidence:synthetic:before-new",
           "session_id": "session:before-new",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         }
       ],
       "expected": {
@@ -169,12 +174,13 @@
           "valid_from": "2026-08-29T08:00:00.000Z",
           "valid_until": "2026-08-29T11:00:00.000Z",
           "fresh_until": "2026-08-29T11:00:00.000Z",
-          "digest": "sha256:88ea9e3711e68b0e4908ea7e71780e29919aed2bf803a82bd274807616670620",
-          "transfer_digest": "sha256:88ea9e3711e68b0e4908ea7e71780e29919aed2bf803a82bd274807616670620",
+          "digest": "sha256:7768787223daa522dee079999753ee08be2d2a88458ecf5123bc57cda46d5338",
+          "transfer_digest": "sha256:7768787223daa522dee079999753ee08be2d2a88458ecf5123bc57cda46d5338",
           "evidence_link": "evidence:synthetic:after-old",
           "session_id": "session:after-old",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         },
         {
           "id": "after-new",
@@ -187,12 +193,13 @@
           "valid_from": "2026-08-29T11:00:00.000Z",
           "valid_until": "2026-08-29T14:00:00.000Z",
           "fresh_until": "2026-08-29T14:00:00.000Z",
-          "digest": "sha256:9f61bae57032f706adc15ce42212f56ac2ee95f4ce71f1a60219f8f2d1cbd75f",
-          "transfer_digest": "sha256:9f61bae57032f706adc15ce42212f56ac2ee95f4ce71f1a60219f8f2d1cbd75f",
+          "digest": "sha256:760d8e2c2adc760ec3f3c4cd7bb54e5a91f445f55af28eac8a931cc00cfc4618",
+          "transfer_digest": "sha256:760d8e2c2adc760ec3f3c4cd7bb54e5a91f445f55af28eac8a931cc00cfc4618",
           "evidence_link": "evidence:synthetic:after-new",
           "session_id": "session:after-new",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         }
       ],
       "expected": {
@@ -224,12 +231,13 @@
           "valid_from": "2026-08-29T08:00:00.000Z",
           "valid_until": "2026-08-29T11:00:00.000Z",
           "fresh_until": "2026-08-29T11:00:00.000Z",
-          "digest": "sha256:57f67eeb95dc4af7fe2cf8e27ceaa5eed2547bfc872f595dae0fbc2e0a730ced",
-          "transfer_digest": "sha256:57f67eeb95dc4af7fe2cf8e27ceaa5eed2547bfc872f595dae0fbc2e0a730ced",
+          "digest": "sha256:dbd8018fa5b06e40437e82c321e81ce1140fade288d1969141e0943bd0e358ec",
+          "transfer_digest": "sha256:dbd8018fa5b06e40437e82c321e81ce1140fade288d1969141e0943bd0e358ec",
           "evidence_link": "evidence:synthetic:superseded-old",
           "session_id": "session:superseded-old",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         },
         {
           "id": "verified-new",
@@ -242,12 +250,13 @@
           "valid_from": "2026-08-29T11:00:00.000Z",
           "valid_until": "2026-08-29T14:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:bbeb831f7847dff97b9f9cb6c9c5d1bbeb9d31b7c16aa8b4e6a7b0fb25911c7b",
-          "transfer_digest": "sha256:bbeb831f7847dff97b9f9cb6c9c5d1bbeb9d31b7c16aa8b4e6a7b0fb25911c7b",
+          "digest": "sha256:a41c805e8ee438dcc17033d4705cd14e5d83b65102b526eb7abef19de4dd7f7d",
+          "transfer_digest": "sha256:a41c805e8ee438dcc17033d4705cd14e5d83b65102b526eb7abef19de4dd7f7d",
           "evidence_link": "evidence:synthetic:verified-new",
           "session_id": "session:verified-new",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         }
       ],
       "expected": {
@@ -279,12 +288,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:67d509d4fd02476002a3879aeb7e1121eced3a343a704b622eb6c13f19c16971",
-          "transfer_digest": "sha256:67d509d4fd02476002a3879aeb7e1121eced3a343a704b622eb6c13f19c16971",
+          "digest": "sha256:ba34deb056ec3e030ab059cde753363c5f8352617318fe2de056689753493096",
+          "transfer_digest": "sha256:ba34deb056ec3e030ab059cde753363c5f8352617318fe2de056689753493096",
           "evidence_link": "evidence:synthetic:principle-confirmed",
           "session_id": "session:principle-confirmed",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         },
         {
           "id": "principle-inferred",
@@ -297,12 +307,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:1e55fd5d7a54cab8aaba41f7a057f0ac33447b6d9c3c4dbcbf19d553087d9dc4",
-          "transfer_digest": "sha256:1e55fd5d7a54cab8aaba41f7a057f0ac33447b6d9c3c4dbcbf19d553087d9dc4",
+          "digest": "sha256:165c1cd09784f9f2ab94368c7ab7504491dfd271b5e9ffb5a3b6c263743034e4",
+          "transfer_digest": "sha256:165c1cd09784f9f2ab94368c7ab7504491dfd271b5e9ffb5a3b6c263743034e4",
           "evidence_link": "evidence:synthetic:principle-inferred",
           "session_id": "session:principle-inferred",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         }
       ],
       "expected": {
@@ -334,12 +345,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:398285cd838c8a10e809ef03e9c48a7fbc881ef9284da7d6a9e5191d31f719e8",
-          "transfer_digest": "sha256:398285cd838c8a10e809ef03e9c48a7fbc881ef9284da7d6a9e5191d31f719e8",
+          "digest": "sha256:462fd0a61258654372a75d1fade8ddc371878fe08158ac2b22634301fc08a4c2",
+          "transfer_digest": "sha256:462fd0a61258654372a75d1fade8ddc371878fe08158ac2b22634301fc08a4c2",
           "evidence_link": "evidence:synthetic:conflict-a",
           "session_id": "session:conflict-a",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         },
         {
           "id": "conflict-b",
@@ -352,12 +364,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:729338fbde5091b02de69464cae2eba34941e0fc9d94feeda7e88c4f0960c97c",
-          "transfer_digest": "sha256:729338fbde5091b02de69464cae2eba34941e0fc9d94feeda7e88c4f0960c97c",
+          "digest": "sha256:1ba54749fa8753a8e4c01c0d99877991c57daaf85f3dde868cf300abc4672318",
+          "transfer_digest": "sha256:1ba54749fa8753a8e4c01c0d99877991c57daaf85f3dde868cf300abc4672318",
           "evidence_link": "evidence:synthetic:conflict-b",
           "session_id": "session:conflict-b",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         }
       ],
       "expected": {
@@ -385,12 +398,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T11:00:00.000Z",
-          "digest": "sha256:3e930ce5ed5772070cf368470619af61a7c8e45df645f3c87e06847529fb5a3b",
-          "transfer_digest": "sha256:3e930ce5ed5772070cf368470619af61a7c8e45df645f3c87e06847529fb5a3b",
+          "digest": "sha256:93c1b9f071b0fdca6567926b5481009e9325d12f8dddacbadeb4164b281cbde9",
+          "transfer_digest": "sha256:93c1b9f071b0fdca6567926b5481009e9325d12f8dddacbadeb4164b281cbde9",
           "evidence_link": "evidence:synthetic:stale-1",
           "session_id": "session:stale-1",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         }
       ],
       "expected": {
@@ -418,12 +432,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:833739a141b4bccb3ca19bd55611179b180e4fa9c1d9a6f93202da75b72e6fd0",
-          "transfer_digest": "sha256:833739a141b4bccb3ca19bd55611179b180e4fa9c1d9a6f93202da75b72e6fd0",
+          "digest": "sha256:f9ae2fdd300b7bd0c3a4982c05fe16ef4dbb1b05c98e132bbd2ed373a81e9ff2",
+          "transfer_digest": "sha256:f9ae2fdd300b7bd0c3a4982c05fe16ef4dbb1b05c98e132bbd2ed373a81e9ff2",
           "evidence_link": "evidence:synthetic:gap-1",
           "session_id": "session:gap-1",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         }
       ],
       "expected": {
@@ -451,12 +466,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:8f6a83f7893290799d58dad901857a863f7c91196f49585fd6b84d5bbf4ad379",
-          "transfer_digest": "sha256:8f6a83f7893290799d58dad901857a863f7c91196f49585fd6b84d5bbf4ad379",
+          "digest": "sha256:04321637c690be3af59f06fc09970be848181c320e04de18e5e5047e40d2530d",
+          "transfer_digest": "sha256:04321637c690be3af59f06fc09970be848181c320e04de18e5e5047e40d2530d",
           "evidence_link": "evidence:synthetic:related-1",
           "session_id": "session:related-1",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         },
         {
           "id": "unrelated-1",
@@ -469,12 +485,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:8413f76d13c9c4d2f799760b94b76475e2c1807084666dea068d1fa16e11d090",
-          "transfer_digest": "sha256:8413f76d13c9c4d2f799760b94b76475e2c1807084666dea068d1fa16e11d090",
+          "digest": "sha256:bb4c85708528f478fec9fdbab0f19e0de161cd974abd43005d716deb62f02579",
+          "transfer_digest": "sha256:bb4c85708528f478fec9fdbab0f19e0de161cd974abd43005d716deb62f02579",
           "evidence_link": "evidence:synthetic:unrelated-1",
           "session_id": "session:unrelated-1",
           "authority": "none",
-          "relationship": "unrelated"
+          "relationship": "unrelated",
+          "support_for": null
         }
       ],
       "expected": {
@@ -506,12 +523,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:adb4eb2464fc97238648e4ba67e2c22ba9a8a0a6278d0f2add752058da06a30d",
-          "transfer_digest": "sha256:adb4eb2464fc97238648e4ba67e2c22ba9a8a0a6278d0f2add752058da06a30d",
+          "digest": "sha256:87ccce19ad8e5d1035566679b4a1c2b4d9214e48351733880a8675d0e640f648",
+          "transfer_digest": "sha256:87ccce19ad8e5d1035566679b4a1c2b4d9214e48351733880a8675d0e640f648",
           "evidence_link": "evidence:synthetic:safe-1",
           "session_id": "session:safe-1",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         },
         {
           "id": "poison-1",
@@ -524,12 +542,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:b3c545fe12c98e420ca23fc080486652560564f2ef4c5b149a25108cba23f9b9",
-          "transfer_digest": "sha256:b3c545fe12c98e420ca23fc080486652560564f2ef4c5b149a25108cba23f9b9",
+          "digest": "sha256:ad1422eb63796a6359c2e617fba7828ab91b29225a9219604c74c738f72567f7",
+          "transfer_digest": "sha256:ad1422eb63796a6359c2e617fba7828ab91b29225a9219604c74c738f72567f7",
           "evidence_link": "evidence:synthetic:poison-1",
           "session_id": "session:poison-1",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         }
       ],
       "expected": {
@@ -561,12 +580,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:6dbfa41b70fb6ec9f8a015239e81b9f30d995cf8212d96ee606732e0006c4416",
-          "transfer_digest": "sha256:6dbfa41b70fb6ec9f8a015239e81b9f30d995cf8212d96ee606732e0006c4416",
+          "digest": "sha256:dfd129b8d88b5a34dd47a7066255bc43d4b5e997b42705e396ff551ae6cf7eda",
+          "transfer_digest": "sha256:dfd129b8d88b5a34dd47a7066255bc43d4b5e997b42705e396ff551ae6cf7eda",
           "evidence_link": "evidence:synthetic:tombstone-old",
           "session_id": "session:tombstone-old",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         },
         {
           "id": "restore-live",
@@ -579,12 +599,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:97f0f9997dad587ef2d365507a56b6135c5c8736825506d2645b31f1bd2a3af3",
-          "transfer_digest": "sha256:97f0f9997dad587ef2d365507a56b6135c5c8736825506d2645b31f1bd2a3af3",
+          "digest": "sha256:a43b095c76a39c8d79da311a397457c76012e9f9402ad67e5c4568386c157262",
+          "transfer_digest": "sha256:a43b095c76a39c8d79da311a397457c76012e9f9402ad67e5c4568386c157262",
           "evidence_link": "evidence:synthetic:restore-live",
           "session_id": "session:restore-live",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         }
       ],
       "expected": {
@@ -612,12 +633,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:f30e5be91e59773e3699c4bd52ed9f6f75997dd364169b0e2034da71b811b117",
-          "transfer_digest": "sha256:f30e5be91e59773e3699c4bd52ed9f6f75997dd364169b0e2034da71b811b117",
+          "digest": "sha256:cc1615a19bc3ff12489e83dbc0eb0e0bb89ea1cdb557436e9e52d5a64d6dd35e",
+          "transfer_digest": "sha256:cc1615a19bc3ff12489e83dbc0eb0e0bb89ea1cdb557436e9e52d5a64d6dd35e",
           "evidence_link": "evidence:synthetic:deleted-only",
           "session_id": "session:deleted-only",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         }
       ],
       "expected": {
@@ -645,12 +667,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:62287f11a285c914a6b4d65c4f3db21b45fa4baec80387847820bb026d4a7a29",
-          "transfer_digest": "sha256:62287f11a285c914a6b4d65c4f3db21b45fa4baec80387847820bb026d4a7a29",
+          "digest": "sha256:789445c4307ffb8904c2576b40edf62c66597a1bbfd1b37356e8a77c514486f4",
+          "transfer_digest": "sha256:789445c4307ffb8904c2576b40edf62c66597a1bbfd1b37356e8a77c514486f4",
           "evidence_link": "evidence:synthetic:linux-only",
           "session_id": "session:linux-only",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         }
       ],
       "expected": {
@@ -682,12 +705,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:30ed5eed7750aea2ef737625510b47bd592a884c8f5074f2aa7af2a92afc2923",
+          "digest": "sha256:c939f60fed8b416cc906afcbd2d7e01ad6f2727b450b5cdebcc0798d3c7e7978",
           "transfer_digest": "sha256:ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff",
           "evidence_link": "evidence:synthetic:transfer-bad",
           "session_id": "session:transfer-bad",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         }
       ],
       "expected": {
@@ -715,12 +739,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:f3de7b919ed84db894a88a1b073744474e614c4d7d411ea767e05e5148ae8ac2",
-          "transfer_digest": "sha256:f3de7b919ed84db894a88a1b073744474e614c4d7d411ea767e05e5148ae8ac2",
+          "digest": "sha256:e839c65183fe77e586634fb6b15ed574efd8b6203b49b9e5b48d5da2a821b407",
+          "transfer_digest": "sha256:e839c65183fe77e586634fb6b15ed574efd8b6203b49b9e5b48d5da2a821b407",
           "evidence_link": "evidence:synthetic:duplicate-a",
           "session_id": "session:duplicate-a",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         },
         {
           "id": "duplicate-b",
@@ -733,12 +758,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:a4504768e075889c33f2d765387d5d5809454ffc99efea5f82b6420d50e250de",
+          "digest": "sha256:860d880e720804aa4c6e906fdeb1a425cbe7920d3e2381d227ff9e5d4b51b0de",
           "transfer_digest": "sha256:f3de7b919ed84db894a88a1b073744474e614c4d7d411ea767e05e5148ae8ac2",
           "evidence_link": "evidence:synthetic:duplicate-b",
           "session_id": "session:duplicate-b",
           "authority": "none",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         }
       ],
       "expected": {
@@ -766,12 +792,13 @@
           "valid_from": "2026-08-29T09:00:00.000Z",
           "valid_until": "2026-08-29T13:00:00.000Z",
           "fresh_until": "2026-08-29T13:00:00.000Z",
-          "digest": "sha256:4ff2b426a5f76f1adf462a5c2403d1a533c3aa6c496c462a8bf8a0216bcc06d5",
-          "transfer_digest": "sha256:4ff2b426a5f76f1adf462a5c2403d1a533c3aa6c496c462a8bf8a0216bcc06d5",
+          "digest": "sha256:7998a6414904a0ae48370aa95844ea05955466c3924057a1eb0c6c9067624461",
+          "transfer_digest": "sha256:7998a6414904a0ae48370aa95844ea05955466c3924057a1eb0c6c9067624461",
           "evidence_link": "evidence:synthetic:owner-gate-1",
           "session_id": "session:owner-gate-1",
           "authority": "owner",
-          "relationship": "direct"
+          "relationship": "direct",
+          "support_for": null
         }
       ],
       "expected": {

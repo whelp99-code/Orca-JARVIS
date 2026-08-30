@@ -14,7 +14,7 @@ export type PersonalOsRecord = {
   readonly trust: "confirmed" | "inferred" | "untrusted"; readonly authority: "none" | "owner";
   readonly observed_at: string; readonly valid_from: string; readonly valid_until: string; readonly fresh_until: string;
   readonly digest: string; readonly transfer_digest: string; readonly evidence_link: string; readonly session_id: string;
-  readonly relationship: "direct" | "supporting" | "unrelated";
+  readonly relationship: "direct" | "supporting" | "unrelated"; readonly support_for: string | null;
 };
 export type PersonalOsExpected = {
   readonly outcome: PersonalOsOutcome; readonly record_ids: readonly string[];

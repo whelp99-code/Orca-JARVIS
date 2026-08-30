@@ -59,6 +59,7 @@ describe("Task 19 record-derived remediation", () => {
       { ...record, observed_at: "2026-08-29T10:01:00.000Z" }, { ...record, valid_from: "2026-08-29T09:01:00.000Z" },
       { ...record, valid_until: "2026-08-29T12:59:00.000Z" }, { ...record, fresh_until: "2026-08-29T12:59:00.000Z" },
       { ...record, evidence_link: `${record.evidence_link}-changed` }, { ...record, relationship: "unrelated" },
+      { ...record, support_for: record.id },
       { ...record, digest: `sha256:${"f".repeat(64)}`, transfer_digest: `sha256:${"f".repeat(64)}` },
     ];
 
