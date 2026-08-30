@@ -169,6 +169,35 @@ function evidenceNegativeRecord(input: RuntimeControlActionInput): void {
   bindTaskTarget(input.target, [taskId]);
 }
 
+const MEMORY_BINDING_KEYS = [
+  "schema_version", "candidate_id", "correlation_id", "subject_digest", "content_digest", "source_id",
+  "source_version", "operation", "purpose", "sensitivity",
+] as const;
+const opaque = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
+const digest = /^sha256:[0-9a-f]{64}$/;
+
+function memoryAuthority(input: RuntimeControlActionInput, identityKey: "instruction_id" | "decision_id"): void {
+  requireOnlyArgs(input.target, ["candidate_id", "correlation_id"]);
+  requireOnlyArgs(input.args, [...MEMORY_BINDING_KEYS, identityKey]);
+  const candidate = requireString(input.args, "candidate_id", "CONTROL_ARGS_MISMATCH");
+  const correlation = requireString(input.args, "correlation_id", "CONTROL_ARGS_MISMATCH");
+  if (input.args.schema_version !== 1 || !/^memcand:pos:v1:[0-9a-f]{64}$/.test(candidate)
+    || !/^corr:memory:[0-9a-f]{64}$/.test(correlation)
+    || !digest.test(requireString(input.args, "subject_digest", "CONTROL_ARGS_MISMATCH"))
+    || !digest.test(requireString(input.args, "content_digest", "CONTROL_ARGS_MISMATCH"))
+    || !opaque.test(requireString(input.args, "source_id", "CONTROL_ARGS_MISMATCH"))
+    || !opaque.test(requireString(input.args, "source_version", "CONTROL_ARGS_MISMATCH"))
+    || !opaque.test(requireString(input.args, identityKey, "CONTROL_ARGS_MISMATCH"))
+    || (input.args.operation !== "remember" && input.args.operation !== "correct")
+    || input.args.purpose !== "personal_memory"
+    || !["public", "personal", "sensitive", "restricted"].includes(String(input.args.sensitivity))) {
+    throw new JarvisError("CONTROL_ARGS_MISMATCH");
+  }
+  if (input.target.candidate_id !== candidate || input.target.correlation_id !== correlation) {
+    throw new JarvisError("CONTROL_TARGET_MISMATCH");
+  }
+}
+
 const descriptors: Record<string, Descriptor> = {
   "database.backup": { action: "database.backup", minimum_level: 2, executable: true, validate: databaseBackup },
   "database.restore_drill": { action: "database.restore_drill", minimum_level: 1, executable: true, validate: databaseRestoreDrill },
@@ -181,6 +210,11 @@ const descriptors: Record<string, Descriptor> = {
   "git.push": { action: "git.push", minimum_level: 4, executable: false, validate: gitPush },
   "collaboration.room.create": { action: "collaboration.room.create", minimum_level: 3, executable: false, validate: retiredCollaborationRoomCreate },
   "evidence.negative.record": { action: "evidence.negative.record", minimum_level: 2, executable: true, validate: evidenceNegativeRecord },
+  "memory.instruction.record": {
+    action: "memory.instruction.record", minimum_level: 3, executable: false,
+    validate: input => memoryAuthority(input, "instruction_id"),
+  },
+  "memory.decision.record": { action: "memory.decision.record", minimum_level: 3, executable: false, validate: input => memoryAuthority(input, "decision_id") },
 };
 
 export const KNOWN_CONTROL_ACTIONS = Object.freeze(Object.keys(descriptors).sort());

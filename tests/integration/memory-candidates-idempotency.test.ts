@@ -15,10 +15,10 @@ import {
   memoryCandidateStore,
   memoryDatabase,
   memoryPolicyWithRetention,
-  memoryRecord,
   memorySource,
   memoryTableCount,
   memoryTableCounts,
+  seedMemoryVerification,
 } from "../fixtures/memory-candidate-store.js";
 
 function expectReplayConflict(action: () => unknown): void {
@@ -31,27 +31,33 @@ describe("Task 27 memory candidate conflict and idempotency", () => {
     const database = await memoryDatabase();
     try {
       const candidates = memoryCandidateStore(database.authority);
-      const prior = candidates.classify(verifiedMemoryInput());
+      const priorInput = verifiedMemoryInput();
+      seedMemoryVerification(database.authority, priorInput);
+      const prior = candidates.classify(priorInput);
       const priorRow = database.authority.db.prepare(
         "SELECT * FROM memory_candidates WHERE candidate_id=?",
       ).get(prior.candidate_id);
       const openConflict = verifiedMemoryInput({
+        authority_id: "open-conflict",
         idempotency_key: "candidate:task27:open-conflict",
         statement: "Task 27 has a contradictory technical outcome.",
         conflict: {
           state: "conflict",
-          references: [evidenceRef("second_brain_conflict", "conflict:task27")],
+          references: [evidenceRef("second_brain_conflict", "conflict-task27")],
         },
       });
       const supersede = verifiedMemoryInput({
+        authority_id: "supersede",
         idempotency_key: "candidate:task27:supersede",
         operation: "correct",
         statement: "Task 27 has a verified replacement outcome.",
         conflict: {
           state: "supersede",
-          references: [evidenceRef("existing_memory", "memory:task27", { evidence_digest: prior.content_digest })],
+          references: [evidenceRef("existing_memory", "memory-task27", { evidence_digest: prior.content_digest })],
         },
       });
+      seedMemoryVerification(database.authority, openConflict);
+      seedMemoryVerification(database.authority, supersede);
 
       // When: contradiction and replacement evidence are classified.
       const rejected = candidates.classify(openConflict);
@@ -79,12 +85,11 @@ describe("Task 27 memory candidate conflict and idempotency", () => {
     try {
       const input = verifiedMemoryInput();
       const candidates = memoryCandidateStore(database.authority);
+      seedMemoryVerification(database.authority, input);
       const first = candidates.classify(input);
       const before = memoryTableCounts(database.authority);
       const changedSource = verifiedMemoryInput();
-      const references = memorySource(changedSource)["references"];
-      if (!Array.isArray(references)) throw new TypeError("references required");
-      memoryRecord(references[1])["source_ref"] = "artifact:changed";
+      memorySource(changedSource)["evidence_id"] = "verification-changed";
       const changes = [
         verifiedMemoryInput({ statement: "Task 27 changed technical verification." }),
         changedSource,
@@ -126,6 +131,7 @@ describe("Task 27 memory candidate conflict and idempotency", () => {
     });
     let first: ReturnType<MemoryCandidateStore["classify"]>;
     try {
+      seedMemoryVerification(database.authority, input);
       first = memoryCandidateStore(database.authority).classify(input);
       expect(first).toMatchObject({
         state: "classified",
@@ -143,6 +149,7 @@ describe("Task 27 memory candidate conflict and idempotency", () => {
       }
     } finally {
       rmSync(database.root, { recursive: true, force: true });
+      rmSync(database.anchorsRoot, { recursive: true, force: true });
     }
   });
 
@@ -151,7 +158,9 @@ describe("Task 27 memory candidate conflict and idempotency", () => {
     const database = await memoryDatabase();
     try {
       const candidates = memoryCandidateStore(database.authority);
-      candidates.classify(verifiedMemoryInput());
+      const input = verifiedMemoryInput();
+      seedMemoryVerification(database.authority, input);
+      candidates.classify(input);
       const changed = verifiedMemoryInput({ statement: "Changed bytes." });
       const before = memoryTableCounts(database.authority);
 

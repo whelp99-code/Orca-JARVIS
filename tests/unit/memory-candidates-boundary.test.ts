@@ -60,15 +60,28 @@ describe("Task 27 closed memory candidate boundary", () => {
     });
     Object.defineProperty(references, "length", { value: 1, writable: true });
     record(arrayAccessor["source"])["references"] = references;
+    const identifierAccessor = inferredMemoryInput();
+    const inferredReferences = record(identifierAccessor["source"])["references"];
+    if (!Array.isArray(inferredReferences)) throw new TypeError("references required");
+    Object.defineProperty(record(record(inferredReferences[0])["identifier"]), "id", {
+      enumerable: true,
+      get: () => { accesses += 1; return "0".repeat(64); },
+    });
     const proxied = new Proxy(verifiedMemoryInput(), {
       ownKeys: () => {
         accesses += 1;
         return [];
       },
     });
+    const proxiedIdentifier = inferredMemoryInput();
+    const proxiedReferences = record(proxiedIdentifier["source"])["references"];
+    if (!Array.isArray(proxiedReferences)) throw new TypeError("references required");
+    record(proxiedReferences[0])["identifier"] = new Proxy(record(record(proxiedReferences[0])["identifier"]), {
+      ownKeys: () => { accesses += 1; return []; },
+    });
 
     // When/Then: every value is rejected before any accessor or proxy trap executes.
-    for (const value of [rootAccessor, sourceAccessor, arrayAccessor, proxied]) expectInvalid(value);
+    for (const value of [rootAccessor, sourceAccessor, arrayAccessor, identifierAccessor, proxied, proxiedIdentifier]) expectInvalid(value);
     expect(accesses).toBe(0);
   });
 
@@ -148,7 +161,7 @@ describe("Task 27 closed memory candidate boundary", () => {
     const privateReference = inferredMemoryInput();
     const references = record(privateReference["source"])["references"];
     if (!Array.isArray(references)) throw new TypeError("references required");
-    record(references[0])["source_ref"] = "token=sk-proj-abcdefghijklmnopqrstuvwxyz";
+    record(record(references[0])["identifier"])["id"] = "token=sk-proj-abcdefghijklmnopqrstuvwxyz";
 
     // When/Then: subject content is terminally rejected and persisted source metadata never accepts the secret.
     expect(classify(privateSubject)).toMatchObject({ state: "rejected", classification_reason: "PROHIBITED_CONTENT" });
@@ -175,20 +188,19 @@ describe("Task 27 closed memory candidate boundary", () => {
   it("rejects missing, foreign, stale, and internally inconsistent provenance", () => {
     // Given: provenance that cannot establish the closed source class.
     const missing = verifiedMemoryInput();
-    record(missing["source"])["references"] = [];
+    delete record(missing["source"])["evidence_id"];
     const foreignOwner = explicitMemoryInput({ principal_id: "principal:foreign" });
-    const stale = verifiedMemoryInput();
+    const stale = inferredMemoryInput();
     const staleReferences = record(stale["source"])["references"];
     if (!Array.isArray(staleReferences)) throw new TypeError("references required");
     for (const reference of staleReferences) record(reference)["fresh_until"] = "2026-08-28T11:59:59.999Z";
-    const workerVerified = verifiedMemoryInput();
-    record(workerVerified["source"])["verifier_id"] = "worker:task27";
+    const unknownVerifier = verifiedMemoryInput({ authority_id: "unknown-verifier" });
 
     // When/Then: malformed shape is refused and semantic provenance is terminally rejected.
     expectInvalid(missing);
     expect(classify(foreignOwner)).toMatchObject({ state: "rejected", classification_reason: "PRINCIPAL_MISMATCH" });
     expect(classify(stale)).toMatchObject({ state: "rejected", classification_reason: "SOURCE_STALE" });
-    expect(classify(workerVerified)).toMatchObject({ state: "rejected", classification_reason: "UNVERIFIED_OUTCOME" });
+    expect(classify(unknownVerifier)).toMatchObject({ state: "rejected", classification_reason: "UNVERIFIED_OUTCOME" });
   });
 
   it("keeps malformed clocks and policies inside the typed Task 27 error boundary", () => {

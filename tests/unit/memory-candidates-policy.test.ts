@@ -43,14 +43,11 @@ function policyWithMemoryRetention(days: number): unknown {
 }
 
 describe("Task 27 deterministic memory candidate policy", () => {
-  it("auto-stages a verified technical outcome with ordered exact provenance", () => {
-    // Given: an independently verified machine outcome bound to verification and artifact evidence.
-    const input = verifiedMemoryInput();
+  it("keeps a caller-declared verified outcome provisional", () => {
+    // Given: a closed pointer to evidence that the pure classifier cannot query.
+    const result = classify(verifiedMemoryInput());
 
-    // When: the current personal memory policy classifies it.
-    const result = classify(input);
-
-    // Then: verified normal memory is approved without creating confirmation authority.
+    // Then: identity and policy digests are deterministic, but only the store may resolve verifier authority.
     expect(result).toMatchObject({
       schema_version: 1,
       input_class: "verified_outcome",
@@ -62,40 +59,25 @@ describe("Task 27 deterministic memory candidate policy", () => {
       retention_days: 3650,
       required_confirmation: false,
       confirmation_gate: null,
-      state: "approved",
-      classification_reason: "VERIFIED_OUTCOME_APPROVED",
-      delivery: { state: "not_created", reason: null },
+      state: "rejected",
+      classification_reason: "UNVERIFIED_OUTCOME",
+      delivery: { state: "blocked", reason: "UNVERIFIED_OUTCOME" },
     });
-    expect(result.source_refs.map(reference => reference.kind)).toEqual(["verification", "artifact"]);
-    expect(result.source_refs.map(reference => reference.position)).toEqual([0, 1]);
-    expect(result.content_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
-    expect(result.subject_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
-    expect(result.source_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
-    expect(result.candidate_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
-    expect(result.classification_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
-    expect(result.policy_digest).toMatch(/^sha256:[0-9a-f]{64}$/);
-    expect(result.dedup_key).toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(result.source_refs).toEqual([]);
+    for (const digest of [result.content_digest, result.subject_digest, result.source_digest, result.candidate_digest,
+      result.classification_digest, result.policy_digest, result.dedup_key]) expect(digest).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
 
-  it("auto-stages an exact owner instruction as confirmed", () => {
-    // Given: one instruction with exact owner and authenticated-session evidence.
-    const input = explicitMemoryInput();
-
-    // When: it is classified.
-    const result = classify(input);
-
-    // Then: owner provenance determines confirmed confidence and approval.
+  it("keeps an owner-instruction pointer provisional", () => {
+    const result = classify(explicitMemoryInput());
     expect(result).toMatchObject({
       input_class: "explicit_user_instruction",
       confidence: "confirmed",
-      state: "approved",
-      classification_reason: "EXPLICIT_OWNER_INSTRUCTION_APPROVED",
-      source: {
-        principal_id: "principal:owner",
-        authenticated_session_id: "session:owner:task27",
-      },
+      state: "rejected",
+      classification_reason: "OWNER_PROVENANCE_INVALID",
+      source: { principal_id: "principal:owner", authenticated_session_digest: null },
     });
-    expect(result.source_refs.map(reference => reference.kind)).toEqual(["owner_instruction", "owner_session"]);
+    expect(result.source_refs).toEqual([]);
   });
 
   it("requires confirmation for sensitive memory, every inference, correction, and supersession", () => {
@@ -109,7 +91,7 @@ describe("Task 27 deterministic memory candidate policy", () => {
         idempotency_key: "candidate:supersede",
         conflict: {
           state: "supersede",
-          references: [evidenceRef("existing_memory", "memory:existing")],
+          references: [evidenceRef("existing_memory", "memory-existing")],
         },
       }),
     ];
@@ -117,13 +99,13 @@ describe("Task 27 deterministic memory candidate policy", () => {
     // When: each candidate is classified.
     const results = values.map(value => classify(value));
 
-    // Then: none auto-approves and every result binds the exact policy gate.
-    expect(results.every(result => result.state === "awaiting_confirmation")).toBe(true);
+    // Then: authority-dependent classes remain rejected; the closed inference alone reaches the confirmation gate.
+    expect(results.map(result => result.state)).toEqual(["rejected", "awaiting_confirmation", "rejected", "rejected"]);
     expect(results.every(result => result.required_confirmation)).toBe(true);
     expect(results.every(result => result.confirmation_gate === MEMORY_CANDIDATE_CONFIRMATION_GATE)).toBe(true);
     expect(results[0]).toMatchObject({ policy_sensitivity: "sensitive", storage_sensitivity: "sensitive" });
     expect(results[1]).toMatchObject({ confidence: "inferred", storage_sensitivity: "normal" });
-    expect(results[3]).toMatchObject({ conflict_state: "supersede", classification_reason: "SUPERSEDE_CONFIRMATION_REQUIRED" });
+    expect(results[3]).toMatchObject({ conflict_state: "supersede", classification_reason: "UNVERIFIED_OUTCOME" });
   });
 
   it("never trusts caller-provided approved-decision receipt facts", () => {
@@ -140,32 +122,22 @@ describe("Task 27 deterministic memory candidate policy", () => {
       state: "rejected",
       classification_reason: "APPROVAL_RECEIPT_INVALID",
       source: {
-        request_id: "request:task27:decision",
-        receipt_id: "receipt:task27:decision",
-        command_digest: `sha256:${"a".repeat(64)}`,
+        request_id: "decision-request-task27",
+        receipt_id: "decision-receipt-task27",
+        command_digest: null,
       },
     });
     expect(Object.keys(result)).not.toContain("receipt");
   });
 
-  it("classifies current no-data input but stops before approval or delivery creation", () => {
-    // Given: valid source provenance and a current explicit Second Brain no-data result.
-    const input = verifiedMemoryInput({
-      second_brain: {
-        state: "no_data",
-        checked_at: MEMORY_NOW,
-        fresh_until: "2026-08-28T12:01:00.000Z",
-      },
-    });
-
-    // When: policy evaluates no-data independently from source validity.
-    const result = classify(input);
-
-    // Then: the candidate is classified and delivery remains pending with the frozen code.
+  it("does not let no-data mask missing outcome authority", () => {
+    const result = classify(verifiedMemoryInput({
+      second_brain: { state: "no_data", checked_at: MEMORY_NOW, fresh_until: "2026-08-28T12:01:00.000Z" },
+    }));
     expect(result).toMatchObject({
-      state: "classified",
-      classification_reason: "SECOND_BRAIN_NO_DATA",
-      delivery: { state: "pending", reason: "SECOND_BRAIN_NO_DATA" },
+      state: "rejected",
+      classification_reason: "UNVERIFIED_OUTCOME",
+      delivery: { state: "blocked", reason: "UNVERIFIED_OUTCOME" },
     });
   });
 
@@ -213,7 +185,8 @@ describe("Task 27 deterministic memory candidate policy", () => {
     for (const [now, state] of times) {
       const policy = structuredClone(memoryPolicy());
       record(policy)["expires_at"] = boundary;
-      expect(classifyMemoryCandidate(policy, verifiedMemoryInput(), new Date(now)).state).toBe(state);
+      expect(classifyMemoryCandidate(policy, inferredMemoryInput(), new Date(now)).state)
+        .toBe(state === "approved" ? "awaiting_confirmation" : state);
     }
 
     // When/Then: assigned retention is also half-open at candidate expiry.
@@ -234,8 +207,8 @@ describe("Task 27 deterministic memory candidate policy", () => {
     const first = inferredMemoryInput();
     const source = record(first["source"]);
     source["references"] = [
-      evidenceRef("inference_evidence", "inference-evidence:first"),
-      evidenceRef("inference_evidence", "inference-evidence:second"),
+      evidenceRef("inference_evidence", "inference-evidence-first"),
+      evidenceRef("inference_evidence", "inference-evidence-second"),
     ];
     const reversed = structuredClone(first);
     record(reversed["source"])["references"] = [...sourceReferences(reversed)].reverse();

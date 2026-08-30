@@ -15,7 +15,10 @@ import {
   memoryTableCount,
   memoryTableCounts,
   memoryTableDelta,
+  seedMemoryAuthority,
   seedMemoryDecision,
+  seedMemoryInstruction,
+  seedMemoryVerification,
 } from "../fixtures/memory-candidate-store.js";
 
 describe("Task 27 authority-side memory candidate persistence", () => {
@@ -23,12 +26,14 @@ describe("Task 27 authority-side memory candidate persistence", () => {
     // Given: a fresh migrated authority database and one verified outcome.
     const database = await memoryDatabase();
     try {
+      const input = verifiedMemoryInput();
+      seedMemoryVerification(database.authority, input);
       const before = memoryTableCounts(database.authority);
       const candidates = memoryCandidateStore(database.authority);
 
       // When: the exact candidate is classified twice.
-      const first = candidates.classify(verifiedMemoryInput());
-      const replay = candidates.classify(verifiedMemoryInput());
+      const first = candidates.classify(input);
+      const replay = candidates.classify(input);
       const after = memoryTableCounts(database.authority);
 
       // Then: one atomic identity and audit event persist while every effect table remains unchanged.
@@ -39,6 +44,7 @@ describe("Task 27 authority-side memory candidate persistence", () => {
         memory_candidate_classifications: 1,
         memory_candidate_source_refs: 2,
         memory_candidate_idempotency: 1,
+        memory_candidate_authority_claims: 1,
         personal_operation_audit_events: 1,
       };
       for (const table of Object.keys(after)) {
@@ -65,16 +71,21 @@ describe("Task 27 authority-side memory candidate persistence", () => {
     const database = await memoryDatabase();
     try {
       const decision = approvedDecisionMemoryInput();
-      seedMemoryDecision(database.authority, decision);
-      const candidates = memoryCandidateStore(database.authority);
-
-      // When: each distinct candidate is classified once.
-      const explicit = candidates.classify(explicitMemoryInput());
-      const sensitive = candidates.classify(explicitMemoryInput({
+      const explicitInput = explicitMemoryInput();
+      const sensitiveInput = explicitMemoryInput({
+        authority_id: "sensitive",
         idempotency_key: "candidate:task27:sensitive",
         statement: "Remember my sensitive bounded preference.",
         sensitivity: "sensitive",
-      }));
+      });
+      seedMemoryDecision(database.authority, decision);
+      seedMemoryInstruction(database.authority, explicitInput);
+      seedMemoryInstruction(database.authority, sensitiveInput);
+      const candidates = memoryCandidateStore(database.authority);
+
+      // When: each distinct candidate is classified once.
+      const explicit = candidates.classify(explicitInput);
+      const sensitive = candidates.classify(sensitiveInput);
       const inferred = candidates.classify(inferredMemoryInput());
       const approved = candidates.classify(decision);
 
@@ -86,7 +97,8 @@ describe("Task 27 authority-side memory candidate persistence", () => {
       expect(memoryTableCount(database.authority, "memory_candidates")).toBe(4);
       expect(memoryTableCount(database.authority, "memory_candidate_classifications")).toBe(4);
       expect(memoryTableCount(database.authority, "memory_outbox")).toBe(0);
-      expect(memoryTableCount(database.authority, "control_command_receipts")).toBe(1);
+      expect(memoryTableCount(database.authority, "control_command_receipts")).toBe(3);
+      expect(memoryTableCount(database.authority, "memory_candidate_authority_claims")).toBe(3);
     } finally {
       closeMemoryDatabase(database);
     }
@@ -100,15 +112,20 @@ describe("Task 27 authority-side memory candidate persistence", () => {
       const values = [
         ...REJECTED_SOURCE_CLASSES.map(sourceClass => rejectedMemoryInput(sourceClass)),
         verifiedMemoryInput({
+          authority_id: "prohibited-content",
           idempotency_key: "candidate:task27:secret",
           statement: "access_token=ghp_abcdefghijklmnopqrstuvwxyz",
         }),
         verifiedMemoryInput({
+          authority_id: "field",
           idempotency_key: "candidate:task27:field",
           payload_fields: ["summary", "raw_body"],
         }),
-        approvedDecisionMemoryInput({ idempotency_key: "candidate:task27:missing-decision" }),
+        approvedDecisionMemoryInput({ authority_id: "missing", idempotency_key: "candidate:task27:missing-decision" }),
       ];
+      for (const value of values) {
+        if (memoryRecord(value["source"])["class"] === "verified_outcome") seedMemoryAuthority(database.authority, value);
+      }
 
       // When: each bounded input is classified.
       const results = values.map(value => candidates.classify(value));

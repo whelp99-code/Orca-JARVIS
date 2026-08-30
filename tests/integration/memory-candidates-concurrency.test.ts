@@ -1,15 +1,12 @@
 import { once } from "node:events";
-import { mkdtempSync, rmSync } from "node:fs";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
 import { Worker } from "node:worker_threads";
 import { describe, expect, it } from "vitest";
-import { AuthorityDb } from "../../src/index.js";
+import { memoryPolicy, MEMORY_NOW, verifiedMemoryInput } from "../fixtures/memory-candidate-fixture.js";
 import {
-  memoryPolicy,
-  MEMORY_NOW,
-  verifiedMemoryInput,
-} from "../fixtures/memory-candidate-fixture.js";
+  closeMemoryDatabase,
+  memoryDatabase,
+  seedMemoryVerification,
+} from "../fixtures/memory-candidate-store.js";
 
 type RaceResult = {
   readonly ok: boolean;
@@ -29,8 +26,8 @@ function record(value: unknown): Record<string, unknown> {
   return value;
 }
 
-async function race(path: string, input: unknown): Promise<readonly RaceResult[]> {
-  const workers = [0, 1].map(() => new Worker(raceWorker, {
+async function race(path: string, inputs: readonly [unknown, unknown]): Promise<readonly RaceResult[]> {
+  const workers = inputs.map(input => new Worker(raceWorker, {
     workerData: { path, input, policy: memoryPolicy(), clock: MEMORY_NOW },
   }));
   const signal = AbortSignal.timeout(5_000);
@@ -62,14 +59,13 @@ async function race(path: string, input: unknown): Promise<readonly RaceResult[]
 describe("Task 27 two-connection candidate convergence", () => {
   it("releases two SQLite writers together and persists one candidate, metadata row, and event", async () => {
     // Given: two independent package-root workers connected to one migrated SQLite authority database.
-    const root = mkdtempSync(join(tmpdir(), "jarvis-task27-race-"));
-    const path = join(root, "authority.sqlite");
-    const authority = new AuthorityDb(path);
+    const database = await memoryDatabase();
     try {
-      await authority.migrate();
+      const input = verifiedMemoryInput();
+      seedMemoryVerification(database.authority, input);
 
       // When: both workers announce readiness before the same candidate is released.
-      const results = await race(path, verifiedMemoryInput());
+      const results = await race(database.path, [input, input]);
 
       // Then: both return one byte-identical canonical result and no duplicate audit state exists.
       expect(results.every(result => result.ok)).toBe(true);
@@ -78,15 +74,46 @@ describe("Task 27 two-connection candidate convergence", () => {
       expect(results.map(result => result.state)).toEqual(["approved", "approved"]);
       for (const table of ["memory_candidates", "memory_candidate_classifications", "memory_candidate_idempotency",
         "personal_operation_audit_events"]) {
-        expect(record(authority.db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get())["count"], table).toBe(1);
+        expect(record(database.authority.db.prepare(`SELECT COUNT(*) AS count FROM ${table}`).get())["count"], table).toBe(1);
       }
-      expect(record(authority.db.prepare(
+      expect(record(database.authority.db.prepare(
         "SELECT COUNT(*) AS count FROM memory_candidate_source_refs",
       ).get())["count"]).toBe(2);
-      expect(record(authority.db.prepare("SELECT COUNT(*) AS count FROM memory_outbox").get())["count"]).toBe(0);
+      expect(record(database.authority.db.prepare(
+        "SELECT COUNT(*) AS count FROM memory_candidate_authority_claims",
+      ).get())["count"]).toBe(1);
+      expect(record(database.authority.db.prepare("SELECT COUNT(*) AS count FROM memory_outbox").get())["count"]).toBe(0);
     } finally {
-      authority.close();
-      rmSync(root, { recursive: true, force: true });
+      closeMemoryDatabase(database);
+    }
+  });
+
+  it("releases conflicting submissions together and stages only the authority-bound candidate", async () => {
+    const database = await memoryDatabase();
+    try {
+      const approved = verifiedMemoryInput({ authority_id: "conflicting-race" });
+      const rejected = structuredClone(approved);
+      rejected["idempotency_key"] = "candidate:task27:conflicting-race-mutated";
+      rejected["statement"] = "A conflicting caller mutation cannot inherit verifier authority.";
+      seedMemoryVerification(database.authority, approved);
+
+      const results = await race(database.path, [approved, rejected]);
+
+      expect(results.every(result => result.ok)).toBe(true);
+      expect(results.map(result => result.state).sort()).toEqual(["approved", "rejected"]);
+      expect(new Set(results.map(result => result.candidate_id)).size).toBe(2);
+      expect(record(database.authority.db.prepare(
+        "SELECT COUNT(*) AS count FROM memory_candidates WHERE state='approved'",
+      ).get())["count"]).toBe(1);
+      expect(record(database.authority.db.prepare(
+        "SELECT COUNT(*) AS count FROM memory_candidates WHERE state='rejected'",
+      ).get())["count"]).toBe(1);
+      expect(record(database.authority.db.prepare(
+        "SELECT COUNT(*) AS count FROM memory_candidate_authority_claims",
+      ).get())["count"]).toBe(1);
+      expect(record(database.authority.db.prepare("SELECT COUNT(*) AS count FROM memory_outbox").get())["count"]).toBe(0);
+    } finally {
+      closeMemoryDatabase(database);
     }
   });
 });

@@ -54,6 +54,11 @@ function sourceTimes(context: MemoryPolicyContext): {
   readonly fresh_until: string;
   readonly expires_at: string;
 } {
+  if (context.references.length === 0) {
+    const observedAt = context.now.toISOString();
+    const provisionalExpiry = new Date(context.now.getTime() + 1).toISOString();
+    return { observed_at: observedAt, fresh_until: provisionalExpiry, expires_at: provisionalExpiry };
+  }
   return {
     observed_at: latest(context.references.map(reference => reference.observed_at)),
     fresh_until: earliest(context.references.map(reference => reference.fresh_until)),

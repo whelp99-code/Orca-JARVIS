@@ -15,6 +15,11 @@ const FORBIDDEN_EXPORTS = [
   "MemoryDeliveryWorker",
   "MemoryDeletionExecutor",
   "MemoryModelClassifier",
+  "registerMemoryOutcome",
+  "registerMemoryVerification",
+  "registerMemoryAuthorityKey",
+  "registerMemoryVerifier",
+  "registerOwnerSession",
 ] as const;
 
 describe("Task 27 public memory candidate boundary", () => {

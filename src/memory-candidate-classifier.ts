@@ -13,6 +13,6 @@ export function classifyMemoryCandidate(
   const input = parseMemoryCandidateInput(inputValue);
   return computeMemoryCandidate(policy, input, {
     now: memoryDate(nowValue),
-    approved_decision_valid: false,
+    authority: { valid: false },
   }).classification;
 }

@@ -4,6 +4,13 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { AuthorityDb } from "../../src/index.js";
+import { verifiedMemoryInput } from "../fixtures/memory-candidate-fixture.js";
+import {
+  closeMemoryDatabase,
+  memoryCandidateStore,
+  memoryDatabase,
+  seedMemoryVerification,
+} from "../fixtures/memory-candidate-store.js";
 
 const MIGRATION = "038_memory_candidate_classification.sql";
 const BASELINE_MANIFEST_DIGEST = "fed3a674aa63174052b28f4268871373254719966a78563d3291f7e967034d82";
@@ -59,18 +66,30 @@ describe("Task 27 forward memory classification migration", () => {
       ).get(MIGRATION))["count"]).toBe(1);
       const expectedColumns: Readonly<Record<string, readonly string[]>> = {
         memory_candidate_classifications: [
-          "candidate_id", "schema_version", "input_digest", "candidate_digest", "input_class", "confidence",
-          "policy_sensitivity", "retention_days", "confirmation_gate", "policy_digest", "classification_reason",
-          "classification_digest", "dedup_key", "source_id", "source_version", "owner_principal",
-          "authenticated_session_id", "worker_id", "verifier_id", "control_request_id", "control_receipt_id",
-          "control_command_digest", "inference_label", "conflict_state", "delivery_state", "delivery_reason", "created_at",
+          "candidate_id", "schema_version", "input_digest", "identity_source_digest", "candidate_digest", "input_class",
+          "confidence", "policy_sensitivity", "retention_days", "confirmation_gate", "policy_digest",
+          "classification_reason", "classification_digest", "dedup_key", "source_id", "source_version", "owner_principal",
+          "authenticated_session_digest", "worker_id", "worker_session_digest", "verifier_id", "instruction_id",
+          "outcome_id", "attempt_id", "verification_evidence_id", "control_request_id", "control_receipt_id",
+          "control_command_digest", "authority_key_id", "authority_expires_at", "inference_id", "inference_label",
+          "conflict_state", "delivery_state", "delivery_reason", "created_at",
         ],
         memory_candidate_source_refs: [
-          "candidate_id", "position", "ref_kind", "source_ref", "evidence_digest", "observed_at", "fresh_until",
-          "expires_at",
+          "candidate_id", "position", "ref_kind", "ref_namespace", "ref_id", "ref_version", "evidence_digest",
+          "observed_at", "fresh_until", "expires_at",
         ],
         memory_candidate_idempotency: [
           "idempotency_digest", "request_digest", "input_digest", "candidate_id", "created_at",
+        ],
+        memory_candidate_verification_authority: [
+          "evidence_id", "schema_version", "candidate_id", "correlation_id", "principal_id", "source_id",
+          "source_version", "subject_digest", "content_digest", "operation", "purpose", "sensitivity", "outcome_id",
+          "outcome", "attempt_id", "worker_id", "worker_session_id", "verifier_id", "verifier_key_id", "artifact_id",
+          "evidence_digest", "issued_at", "not_before", "expires_at", "nonce", "max_uses", "status", "signer_key_id",
+          "payload_json", "signature", "created_at",
+        ],
+        memory_candidate_authority_claims: [
+          "authority_kind", "authority_id", "candidate_id", "classification_digest", "claimed_at",
         ],
       };
       for (const [table, expected] of Object.entries(expectedColumns)) {
@@ -80,20 +99,62 @@ describe("Task 27 forward memory classification migration", () => {
       const triggers: readonly unknown[] = authority.db.prepare(
         `SELECT name FROM sqlite_master
          WHERE type='trigger' AND tbl_name IN (
-           'memory_candidate_classifications','memory_candidate_source_refs','memory_candidate_idempotency'
+           'memory_candidate_classifications','memory_candidate_source_refs','memory_candidate_idempotency',
+           'memory_candidate_verification_authority','memory_candidate_authority_claims'
          ) AND name LIKE '%immutable%' ORDER BY name`,
       ).all();
       expect(triggers.map(value => record(value)["name"])).toEqual([
+        "memory_candidate_authority_claim_immutable_delete",
+        "memory_candidate_authority_claim_immutable_update",
         "memory_candidate_classification_immutable_delete",
         "memory_candidate_classification_immutable_update",
         "memory_candidate_idempotency_immutable_delete",
         "memory_candidate_idempotency_immutable_update",
         "memory_candidate_source_ref_immutable_delete",
         "memory_candidate_source_ref_immutable_update",
+        "memory_verification_authority_immutable_delete",
+        "memory_verification_authority_immutable_update",
       ]);
     } finally {
       authority.close();
       rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("enforces lowercase hexadecimal bytes on every migration-038 digest column", async () => {
+    const database = await memoryDatabase();
+    try {
+      const input = verifiedMemoryInput({ authority_id: "migration-digests" });
+      seedMemoryVerification(database.authority, input);
+      memoryCandidateStore(database.authority).classify(input);
+      const digestColumns: Readonly<Record<string, readonly string[]>> = {
+        memory_candidate_classifications: [
+          "input_digest", "identity_source_digest", "candidate_digest", "policy_digest", "classification_digest",
+          "dedup_key", "authenticated_session_digest", "worker_session_digest", "control_command_digest",
+        ],
+        memory_candidate_source_refs: ["evidence_digest"],
+        memory_candidate_idempotency: ["idempotency_digest", "request_digest", "input_digest"],
+        memory_candidate_verification_authority: ["subject_digest", "content_digest", "evidence_digest"],
+        memory_candidate_authority_claims: ["classification_digest"],
+      };
+      for (const [table, columns] of Object.entries(digestColumns)) {
+        const row = record(database.authority.db.prepare(
+          "SELECT sql FROM sqlite_master WHERE type='table' AND name=?",
+        ).get(table));
+        const sql = String(row["sql"]);
+        database.authority.db.exec("DROP TABLE IF EXISTS task27_digest_probe");
+        database.authority.db.exec(sql.replace(`CREATE TABLE ${table}`, "CREATE TABLE task27_digest_probe"));
+        database.authority.db.exec(`INSERT INTO task27_digest_probe SELECT * FROM ${table}`);
+        for (const column of columns) {
+          for (const invalid of [`sha256:G${"0".repeat(63)}`, `sha256:z${"0".repeat(63)}`]) {
+            expect(() => database.authority.db.prepare(
+              `UPDATE task27_digest_probe SET ${column}=?`,
+            ).run(invalid), `${table}.${column}`).toThrow(/constraint/i);
+          }
+        }
+      }
+    } finally {
+      closeMemoryDatabase(database);
     }
   });
 

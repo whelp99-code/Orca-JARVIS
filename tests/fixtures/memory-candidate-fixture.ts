@@ -7,12 +7,12 @@ export const MEMORY_NOW = "2026-08-28T12:00:00.000Z";
 export const MEMORY_OBSERVED = "2026-08-28T11:00:00.000Z";
 export const MEMORY_FRESH_UNTIL = "2026-08-28T13:00:00.000Z";
 export const MEMORY_SOURCE_EXPIRES = "2026-08-29T12:00:00.000Z";
+export const MEMORY_AUTHORITY_ISSUED = "2026-08-28T11:55:00.000Z";
+export const MEMORY_AUTHORITY_EXPIRES = "2026-08-28T12:05:00.000Z";
 export const MEMORY_DOMAINS = {
   content: "orca-jarvis/memory-content/v1\0",
   subject: "orca-jarvis/memory-subject/v1\0",
-  instruction: "orca-jarvis/memory-owner-instruction/v1\0",
   verification: "orca-jarvis/memory-verification/v1\0",
-  decision: "orca-jarvis/memory-decision-binding/v1\0",
 } as const;
 
 export function memoryHash(domain: string, value: unknown): string {
@@ -25,20 +25,32 @@ export function memoryPolicy(): unknown {
 }
 
 type EvidenceRefOptions = {
+  readonly namespace?: string;
   readonly evidence_digest?: string;
   readonly observed_at?: string;
   readonly fresh_until?: string;
   readonly expires_at?: string;
 };
-export function evidenceRef(
-  kind: string,
-  sourceRef: string,
-  options: EvidenceRefOptions = {},
-): Record<string, unknown> {
+const defaultNamespace: Readonly<Record<string, string>> = {
+  verification: "verification_authority",
+  artifact: "verification_artifact",
+  owner_instruction: "control_command",
+  owner_session: "control_receipt",
+  inference_evidence: "inference_evidence",
+  existing_memory: "memory_candidate",
+  second_brain_conflict: "second_brain_conflict",
+  transcript: "rejected_input",
+  unverified: "rejected_input",
+};
+export function evidenceRef(kind: string, id: string, options: EvidenceRefOptions = {}): Record<string, unknown> {
   return {
     kind,
-    source_ref: sourceRef,
-    evidence_digest: options.evidence_digest ?? memoryHash("fixture/evidence/v1\0", sourceRef),
+    identifier: {
+      namespace: options.namespace ?? defaultNamespace[kind],
+      id: memoryHash("fixture/reference-id/v1\0", { kind, id }).slice(7),
+      version: 1,
+    },
+    evidence_digest: options.evidence_digest ?? memoryHash("fixture/evidence/v1\0", id),
     observed_at: options.observed_at ?? MEMORY_OBSERVED,
     fresh_until: options.fresh_until ?? MEMORY_FRESH_UNTIL,
     expires_at: options.expires_at ?? MEMORY_SOURCE_EXPIRES,
@@ -47,6 +59,7 @@ export function evidenceRef(
 
 type CandidateOptions = {
   readonly idempotency_key?: string;
+  readonly authority_id?: string;
   readonly operation?: "remember" | "correct";
   readonly subject?: string;
   readonly statement?: string;
@@ -79,51 +92,25 @@ function candidate(source: Record<string, unknown>, options: CandidateOptions): 
 }
 
 export function verifiedMemoryInput(options: CandidateOptions = {}): Record<string, unknown> {
-  const statement = options.statement ?? "Task 27 passed independent technical verification.";
-  const artifact = evidenceRef("artifact", "artifact:task27");
-  const verificationDigest = memoryHash(MEMORY_DOMAINS.verification, {
-    outcome_id: "outcome:task27",
-    worker_id: "worker:task27",
-    verifier_id: "verifier:independent",
-    verdict: "passed",
-    machine_outcome: "succeeded",
-    content_digest: memoryHash(MEMORY_DOMAINS.content, statement),
-    artifact,
-  });
-  const source = {
+  const authority = options.authority_id ?? "task27";
+  return candidate({
     class: "verified_outcome",
-    source_id: "src:closeout:task27",
+    source_id: `verified-source-${authority}`,
     source_version: "v1",
-    outcome_id: "outcome:task27",
-    worker_id: "worker:task27",
-    verifier_id: "verifier:independent",
-    verdict: "passed",
-    machine_outcome: "succeeded",
-    references: [evidenceRef("verification", "verification:task27", { evidence_digest: verificationDigest }), artifact],
-  };
-  return candidate(source, options);
+    evidence_id: `verification-${authority}`,
+  }, options);
 }
 
 export function explicitMemoryInput(options: CandidateOptions = {}): Record<string, unknown> {
+  const authority = options.authority_id ?? "task27";
   const statement = options.statement ?? "Remember that I prefer bounded technical summaries.";
-  const session = evidenceRef("owner_session", "session-evidence:owner");
-  const instructionDigest = memoryHash(MEMORY_DOMAINS.instruction, {
-    instruction_id: "instruction:task27",
-    principal_id: "principal:owner",
-    authenticated_session_id: "session:owner:task27",
-    statement,
-    session_evidence: session,
-  });
-  const source = {
+  return candidate({
     class: "explicit_user_instruction",
-    source_id: "src:owner:instruction",
+    source_id: `instruction-source-${authority}`,
     source_version: "v1",
-    instruction_id: "instruction:task27",
-    principal_id: "principal:owner",
-    authenticated_session_id: "session:owner:task27",
-    references: [evidenceRef("owner_instruction", "instruction-evidence:task27", { evidence_digest: instructionDigest }), session],
-  };
-  return candidate(source, {
+    request_id: `instruction-request-${authority}`,
+    receipt_id: `instruction-receipt-${authority}`,
+  }, {
     ...options,
     idempotency_key: options.idempotency_key ?? "candidate:task27:instruction",
     statement,
@@ -131,15 +118,15 @@ export function explicitMemoryInput(options: CandidateOptions = {}): Record<stri
 }
 
 export function inferredMemoryInput(options: CandidateOptions = {}): Record<string, unknown> {
-  const source = {
+  const authority = options.authority_id ?? "task27";
+  return candidate({
     class: "labeled_inference",
-    source_id: "src:inference:task27",
+    source_id: `inference-source-${authority}`,
     source_version: "v1",
-    inference_id: "inference:task27",
+    inference_id: `inference-${authority}`,
     label: "inference",
-    references: [evidenceRef("inference_evidence", "inference-evidence:task27")],
-  };
-  return candidate(source, {
+    references: [evidenceRef("inference_evidence", `inference-evidence-${authority}`)],
+  }, {
     ...options,
     idempotency_key: options.idempotency_key ?? "candidate:task27:inference",
     subject: options.subject ?? "Owner summary preference",
@@ -148,19 +135,14 @@ export function inferredMemoryInput(options: CandidateOptions = {}): Record<stri
 }
 
 export function approvedDecisionMemoryInput(options: CandidateOptions = {}): Record<string, unknown> {
-  const source = {
+  const authority = options.authority_id ?? "task27";
+  return candidate({
     class: "approved_decision",
-    source_id: "src:control-plane:decision",
+    source_id: `decision-source-${authority}`,
     source_version: "v1",
-    request_id: "request:task27:decision",
-    receipt_id: "receipt:task27:decision",
-    command_digest: `sha256:${"a".repeat(64)}`,
-    signer_principal_id: "principal:owner",
-    authenticated_session_id: "session:owner:task27",
-    issued_at: MEMORY_OBSERVED,
-    expires_at: MEMORY_SOURCE_EXPIRES,
-  };
-  return candidate(source, {
+    request_id: `decision-request-${authority}`,
+    receipt_id: `decision-receipt-${authority}`,
+  }, {
     ...options,
     idempotency_key: options.idempotency_key ?? "candidate:task27:decision",
     subject: options.subject ?? "Approved control-plane decision",
@@ -169,11 +151,7 @@ export function approvedDecisionMemoryInput(options: CandidateOptions = {}): Rec
 }
 
 export const REJECTED_SOURCE_CLASSES = [
-  "raw_transcript",
-  "worker_assertion",
-  "unverified_summary",
-  "transient_runtime",
-  "unlabeled_trait_inference",
+  "raw_transcript", "worker_assertion", "unverified_summary", "transient_runtime", "unlabeled_trait_inference",
   "model_assertion",
 ] as const;
 
@@ -181,29 +159,12 @@ export function rejectedMemoryInput(
   sourceClass: (typeof REJECTED_SOURCE_CLASSES)[number],
   options: CandidateOptions = {},
 ): Record<string, unknown> {
+  const authority = options.authority_id ?? sourceClass.replaceAll("_", "-");
   const source = {
     class: sourceClass,
-    source_id: `src:rejected:${sourceClass}`,
+    source_id: `rejected-source-${authority}`,
     source_version: "v1",
-    references: [evidenceRef(sourceClass === "raw_transcript" ? "transcript" : "unverified", `rejected:${sourceClass}`)],
+    references: [evidenceRef(sourceClass === "raw_transcript" ? "transcript" : "unverified", `rejected-${authority}`)],
   };
-  return candidate(source, {
-    ...options,
-    idempotency_key: options.idempotency_key ?? `candidate:task27:${sourceClass}`,
-  });
-}
-
-function requiredText(value: unknown): string {
-  if (typeof value !== "string") throw new TypeError("memory fixture text required");
-  return value;
-}
-
-export function decisionBindingDigest(value: Readonly<Record<string, unknown>>): string {
-  return memoryHash(MEMORY_DOMAINS.decision, {
-    content_digest: memoryHash(MEMORY_DOMAINS.content, requiredText(value["statement"])),
-    subject_digest: memoryHash(MEMORY_DOMAINS.subject, requiredText(value["subject"])),
-    operation: value["operation"],
-    purpose: value["purpose"],
-    sensitivity: value["sensitivity"],
-  });
+  return candidate(source, { ...options, idempotency_key: options.idempotency_key ?? `candidate:task27:${sourceClass}` });
 }

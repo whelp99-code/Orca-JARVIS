@@ -23,10 +23,15 @@ const INPUT_KEYS = [
   "principal_id", "payload_fields", "source", "second_brain", "conflict",
 ] as const;
 const HOSTS = ["linux-control-plane", "linux-second-brain"] as const;
+const PURPOSES = [
+  "personal_memory", "live_awareness", "owner_notification", "data_portability", "data_erasure", "vault_migration",
+  "disaster_recovery",
+] as const;
 
-function metadataText(value: unknown): string {
-  const parsed = memoryText(value, 128);
-  return containsMemorySecret(parsed) ? memoryFail() : parsed;
+function principalId(value: unknown): string {
+  const parsed = memoryText(value, 96);
+  return /^principal:[A-Za-z0-9][A-Za-z0-9_-]{0,64}$/.test(parsed) && !containsMemorySecret(parsed)
+    ? parsed : memoryFail();
 }
 
 function stringList(value: unknown): readonly string[] {
@@ -73,10 +78,10 @@ export function parseMemoryCandidateInput(value: unknown): ParsedMemoryCandidate
     operation: memoryMember(input["operation"], MEMORY_CANDIDATE_OPERATIONS),
     subject: memoryText(input["subject"]),
     statement: memoryText(input["statement"], 4_096),
-    purpose: metadataText(input["purpose"]),
+    purpose: memoryMember(input["purpose"], PURPOSES),
     sensitivity: memoryMember(input["sensitivity"], MEMORY_CANDIDATE_POLICY_SENSITIVITIES),
     host: memoryMember(input["host"], HOSTS),
-    principal_id: metadataText(input["principal_id"]),
+    principal_id: principalId(input["principal_id"]),
     payload_fields: stringList(input["payload_fields"]),
     source: parseMemoryCandidateSource(input["source"]),
     second_brain: secondBrainState(input["second_brain"]),
