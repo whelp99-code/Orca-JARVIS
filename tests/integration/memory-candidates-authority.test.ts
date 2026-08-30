@@ -15,6 +15,7 @@ import {
   memoryRecord,
   memorySource,
   memoryTableCount,
+  memoryTableCounts,
   memoryVerificationPayload,
   seedMemoryDecision,
   seedMemoryInstruction,
@@ -28,6 +29,10 @@ function withKey(value: Record<string, unknown>, key: string): Record<string, un
 
 function changedHex(value: string): string {
   return `${value.slice(0, -1)}${value.endsWith("0") ? "1" : "0"}`;
+}
+
+function expectAuthorityFailure(action: () => unknown): void {
+  expect(action).toThrowError(expect.objectContaining({ code: "MEMORY_CANDIDATE_AUTHORITY_INVALID" }));
 }
 
 describe("Task 27 immutable authority provenance", () => {
@@ -51,7 +56,9 @@ describe("Task 27 immutable authority provenance", () => {
       for (const [key, mutate] of mutations) {
         const value = withKey(structuredClone(baseline), key);
         mutate(value);
-        expect(store.classify(value).state, key).toBe("rejected");
+        const before = memoryTableCounts(database.authority);
+        expectAuthorityFailure(() => store.classify(value));
+        expect(memoryTableCounts(database.authority), key).toEqual(before);
       }
       expect(memoryTableCount(database.authority, "memory_candidate_authority_claims")).toBe(0);
       const approved = store.classify(baseline);
@@ -74,7 +81,9 @@ describe("Task 27 immutable authority provenance", () => {
       expect(approved.source_refs[1]?.evidence_digest).toBe(authority["evidence_digest"]);
       const reused = withKey(structuredClone(baseline), "after-claim");
       reused["statement"] = "A claimed verifier record cannot approve changed content.";
-      expect(store.classify(reused)).toMatchObject({ state: "rejected", classification_reason: "UNVERIFIED_OUTCOME" });
+      const beforeReuse = memoryTableCounts(database.authority);
+      expectAuthorityFailure(() => store.classify(reused));
+      expect(memoryTableCounts(database.authority)).toEqual(beforeReuse);
       expect(memoryTableCount(database.authority, "memory_candidate_authority_claims")).toBe(1);
     } finally {
       closeMemoryDatabase(database);
@@ -102,7 +111,9 @@ describe("Task 27 immutable authority provenance", () => {
       for (const [key, mutate] of cases) {
         const input = verifiedMemoryInput({ authority_id: `record-${key}`, idempotency_key: `candidate:record:${key}` });
         insertMemoryVerification(database.authority, mutate(memoryVerificationPayload(input)));
-        expect(store.classify(input), key).toMatchObject({ state: "rejected", classification_reason: "UNVERIFIED_OUTCOME" });
+        const before = memoryTableCounts(database.authority);
+        expectAuthorityFailure(() => store.classify(input));
+        expect(memoryTableCounts(database.authority), key).toEqual(before);
       }
       const signatureInput = verifiedMemoryInput({ authority_id: "signature", idempotency_key: "candidate:record:signature" });
       const signaturePayload = memoryVerificationPayload(signatureInput);
@@ -110,12 +121,16 @@ describe("Task 27 immutable authority provenance", () => {
         ...signaturePayload,
         nonce: `${signaturePayload.nonce}-other`,
       });
-      expect(store.classify(signatureInput)).toMatchObject({ state: "rejected", classification_reason: "UNVERIFIED_OUTCOME" });
+      const beforeSignature = memoryTableCounts(database.authority);
+      expectAuthorityFailure(() => store.classify(signatureInput));
+      expect(memoryTableCounts(database.authority)).toEqual(beforeSignature);
       const revokedInput = verifiedMemoryInput({ authority_id: "revoked", idempotency_key: "candidate:record:revoked" });
       seedMemoryVerification(database.authority, revokedInput);
       database.authority.db.prepare("INSERT INTO authority_revocations(reference,reason,created_at) VALUES(?,?,?)")
         .run("verification-revoked", "test-revocation", "2026-08-28T11:59:00.000Z");
-      expect(store.classify(revokedInput)).toMatchObject({ state: "rejected", classification_reason: "UNVERIFIED_OUTCOME" });
+      const beforeRevoked = memoryTableCounts(database.authority);
+      expectAuthorityFailure(() => store.classify(revokedInput));
+      expect(memoryTableCounts(database.authority)).toEqual(beforeRevoked);
       expect(memoryTableCount(database.authority, "memory_candidate_authority_claims")).toBe(0);
     } finally {
       closeMemoryDatabase(database);
@@ -142,7 +157,9 @@ describe("Task 27 immutable authority provenance", () => {
       for (const [key, mutate] of mutations) {
         const value = withKey(structuredClone(instruction), `control-${key}`);
         mutate(value);
-        expect(store.classify(value).state, key).toBe("rejected");
+        const before = memoryTableCounts(database.authority);
+        expectAuthorityFailure(() => store.classify(value));
+        expect(memoryTableCounts(database.authority), key).toEqual(before);
       }
       expect(store.classify(instruction)).toMatchObject({
         state: "approved",
@@ -158,21 +175,52 @@ describe("Task 27 immutable authority provenance", () => {
     }
   });
 
+  it("enforces owner and verifier expiry at minus-one, equality, and plus-one milliseconds", async () => {
+    const classes = [
+      { kind: "verified", input: () => verifiedMemoryInput({ authority_id: "boundary-verified" }), seed: seedMemoryVerification },
+      { kind: "instruction", input: () => explicitMemoryInput({ authority_id: "boundary-instruction" }), seed: seedMemoryInstruction },
+      { kind: "decision", input: () => approvedDecisionMemoryInput({ authority_id: "boundary-decision" }), seed: seedMemoryDecision },
+    ] as const;
+    const boundaries = [
+      ["2026-08-28T12:04:59.999Z", true],
+      ["2026-08-28T12:05:00.000Z", false],
+      ["2026-08-28T12:05:00.001Z", false],
+    ] as const;
+    for (const sourceClass of classes) {
+      for (const [now, valid] of boundaries) {
+        const database = await memoryDatabase();
+        try {
+          const input = sourceClass.input();
+          sourceClass.seed(database.authority, input);
+          const store = new MemoryCandidateStore(database.authority, memoryPolicy(), () => new Date(now));
+          if (valid) expect(store.classify(input).state, `${sourceClass.kind}:${now}`).toBe("approved");
+          else expectAuthorityFailure(() => store.classify(input));
+          expect(memoryTableCount(database.authority, "memory_candidates"), `${sourceClass.kind}:${now}`)
+            .toBe(valid ? 1 : 0);
+        } finally {
+          closeMemoryDatabase(database);
+        }
+      }
+    }
+  });
+
   it("fails closed at authority expiry and revocation, and seals immutable records", async () => {
     const database = await memoryDatabase();
     try {
       const expired = explicitMemoryInput({ authority_id: "expiry" });
       seedMemoryInstruction(database.authority, expired);
       const late = new MemoryCandidateStore(database.authority, memoryPolicy(), () => new Date("2026-08-28T12:05:00.000Z"));
-      expect(late.classify(expired)).toMatchObject({ state: "rejected", classification_reason: "OWNER_PROVENANCE_INVALID" });
+      const beforeExpired = memoryTableCounts(database.authority);
+      expectAuthorityFailure(() => late.classify(expired));
+      expect(memoryTableCounts(database.authority)).toEqual(beforeExpired);
 
       const revoked = approvedDecisionMemoryInput({ authority_id: "revoked-control" });
       seedMemoryDecision(database.authority, revoked);
       database.authority.db.prepare("INSERT INTO authority_revocations(reference,reason,created_at) VALUES(?,?,?)")
         .run("decision-request-revoked-control", "test-revocation", "2026-08-28T11:59:00.000Z");
-      expect(memoryCandidateStore(database.authority).classify(revoked)).toMatchObject({
-        state: "rejected", classification_reason: "APPROVAL_RECEIPT_INVALID",
-      });
+      const beforeRevoked = memoryTableCounts(database.authority);
+      expectAuthorityFailure(() => memoryCandidateStore(database.authority).classify(revoked));
+      expect(memoryTableCounts(database.authority)).toEqual(beforeRevoked);
 
       const evidence = verifiedMemoryInput({ authority_id: "immutable" });
       seedMemoryVerification(database.authority, evidence);

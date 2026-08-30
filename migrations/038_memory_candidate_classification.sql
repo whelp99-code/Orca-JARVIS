@@ -2,8 +2,14 @@ CREATE TABLE memory_candidate_classifications (
   candidate_id TEXT PRIMARY KEY REFERENCES memory_candidates(candidate_id),
   schema_version INTEGER NOT NULL CHECK(schema_version=1),
   input_digest TEXT NOT NULL CHECK(length(input_digest)=71 AND substr(input_digest,1,7)='sha256:' AND substr(input_digest,8) NOT GLOB '*[^0-9a-f]*'),
-  identity_source_digest TEXT NOT NULL CHECK(length(identity_source_digest)=71 AND substr(identity_source_digest,1,7)='sha256:' AND substr(identity_source_digest,8) NOT GLOB '*[^0-9a-f]*'),
-  candidate_digest TEXT NOT NULL UNIQUE CHECK(length(candidate_digest)=71 AND substr(candidate_digest,1,7)='sha256:' AND substr(candidate_digest,8) NOT GLOB '*[^0-9a-f]*'),
+  identity_source_digest TEXT NOT NULL CHECK(
+    length(identity_source_digest)=71 AND substr(identity_source_digest,1,7)='sha256:'
+    AND substr(identity_source_digest,8) NOT GLOB '*[^0-9a-f]*'
+  ),
+  candidate_digest TEXT NOT NULL UNIQUE CHECK(
+    length(candidate_digest)=71 AND substr(candidate_digest,1,7)='sha256:'
+    AND substr(candidate_digest,8) NOT GLOB '*[^0-9a-f]*'
+  ),
   input_class TEXT NOT NULL CHECK(input_class IN (
     'explicit_user_instruction','verified_outcome','approved_decision','labeled_inference','raw_transcript',
     'worker_assertion','unverified_summary','transient_runtime','unlabeled_trait_inference','model_assertion'
@@ -14,14 +20,25 @@ CREATE TABLE memory_candidate_classifications (
   confirmation_gate TEXT CHECK(confirmation_gate IS NULL OR confirmation_gate='PERSONAL_MEMORY_CONFIRMATION'),
   policy_digest TEXT NOT NULL CHECK(length(policy_digest)=71 AND substr(policy_digest,1,7)='sha256:' AND substr(policy_digest,8) NOT GLOB '*[^0-9a-f]*'),
   classification_reason TEXT NOT NULL,
-  classification_digest TEXT NOT NULL UNIQUE CHECK(length(classification_digest)=71 AND substr(classification_digest,1,7)='sha256:' AND substr(classification_digest,8) NOT GLOB '*[^0-9a-f]*'),
+  classification_digest TEXT NOT NULL UNIQUE CHECK(
+    length(classification_digest)=71 AND substr(classification_digest,1,7)='sha256:'
+    AND substr(classification_digest,8) NOT GLOB '*[^0-9a-f]*'
+  ),
   dedup_key TEXT NOT NULL UNIQUE CHECK(length(dedup_key)=71 AND substr(dedup_key,1,7)='sha256:' AND substr(dedup_key,8) NOT GLOB '*[^0-9a-f]*'),
   source_id TEXT NOT NULL CHECK(length(source_id) BETWEEN 1 AND 128 AND source_id NOT GLOB '*[^A-Za-z0-9_-]*'),
   source_version TEXT NOT NULL CHECK(length(source_version) BETWEEN 1 AND 128 AND source_version NOT GLOB '*[^A-Za-z0-9_-]*'),
   owner_principal TEXT NOT NULL,
-  authenticated_session_digest TEXT CHECK(authenticated_session_digest IS NULL OR length(authenticated_session_digest)=71 AND substr(authenticated_session_digest,1,7)='sha256:' AND substr(authenticated_session_digest,8) NOT GLOB '*[^0-9a-f]*'),
+  authenticated_session_digest TEXT CHECK(
+    authenticated_session_digest IS NULL OR length(authenticated_session_digest)=71
+    AND substr(authenticated_session_digest,1,7)='sha256:'
+    AND substr(authenticated_session_digest,8) NOT GLOB '*[^0-9a-f]*'
+  ),
   worker_id TEXT,
-  worker_session_digest TEXT CHECK(worker_session_digest IS NULL OR length(worker_session_digest)=71 AND substr(worker_session_digest,1,7)='sha256:' AND substr(worker_session_digest,8) NOT GLOB '*[^0-9a-f]*'),
+  worker_session_digest TEXT CHECK(
+    worker_session_digest IS NULL OR length(worker_session_digest)=71
+    AND substr(worker_session_digest,1,7)='sha256:'
+    AND substr(worker_session_digest,8) NOT GLOB '*[^0-9a-f]*'
+  ),
   verifier_id TEXT,
   instruction_id TEXT,
   outcome_id TEXT,
@@ -29,9 +46,17 @@ CREATE TABLE memory_candidate_classifications (
   verification_evidence_id TEXT,
   control_request_id TEXT,
   control_receipt_id TEXT,
-  control_command_digest TEXT CHECK(control_command_digest IS NULL OR length(control_command_digest)=71 AND substr(control_command_digest,1,7)='sha256:' AND substr(control_command_digest,8) NOT GLOB '*[^0-9a-f]*'),
+  control_command_digest TEXT CHECK(
+    control_command_digest IS NULL OR length(control_command_digest)=71
+    AND substr(control_command_digest,1,7)='sha256:'
+    AND substr(control_command_digest,8) NOT GLOB '*[^0-9a-f]*'
+  ),
   authority_key_id TEXT,
-  authority_expires_at TEXT CHECK(authority_expires_at IS NULL OR strftime('%Y-%m-%dT%H:%M:%fZ',authority_expires_at) IS NOT NULL AND strftime('%Y-%m-%dT%H:%M:%fZ',authority_expires_at)=authority_expires_at),
+  authority_expires_at TEXT CHECK(
+    authority_expires_at IS NULL
+    OR strftime('%Y-%m-%dT%H:%M:%fZ',authority_expires_at) IS NOT NULL
+    AND strftime('%Y-%m-%dT%H:%M:%fZ',authority_expires_at)=authority_expires_at
+  ),
   inference_id TEXT,
   inference_label TEXT CHECK(inference_label IS NULL OR inference_label='inference'),
   conflict_state TEXT NOT NULL CHECK(conflict_state IN ('none','same','conflict','supersede')),
@@ -76,7 +101,10 @@ CREATE TABLE memory_candidate_source_refs (
   )),
   ref_id TEXT NOT NULL CHECK(length(ref_id)=64 AND ref_id NOT GLOB '*[^0-9a-f]*'),
   ref_version INTEGER NOT NULL CHECK(ref_version=1),
-  evidence_digest TEXT NOT NULL CHECK(length(evidence_digest)=71 AND substr(evidence_digest,1,7)='sha256:' AND substr(evidence_digest,8) NOT GLOB '*[^0-9a-f]*'),
+  evidence_digest TEXT NOT NULL CHECK(
+    length(evidence_digest)=71 AND substr(evidence_digest,1,7)='sha256:'
+    AND substr(evidence_digest,8) NOT GLOB '*[^0-9a-f]*'
+  ),
   observed_at TEXT NOT NULL CHECK(strftime('%Y-%m-%dT%H:%M:%fZ',observed_at) IS NOT NULL AND strftime('%Y-%m-%dT%H:%M:%fZ',observed_at)=observed_at),
   fresh_until TEXT NOT NULL CHECK(strftime('%Y-%m-%dT%H:%M:%fZ',fresh_until) IS NOT NULL AND strftime('%Y-%m-%dT%H:%M:%fZ',fresh_until)=fresh_until),
   expires_at TEXT NOT NULL CHECK(strftime('%Y-%m-%dT%H:%M:%fZ',expires_at) IS NOT NULL AND strftime('%Y-%m-%dT%H:%M:%fZ',expires_at)=expires_at),
@@ -98,8 +126,14 @@ CREATE TABLE memory_candidate_source_refs (
 CREATE INDEX memory_candidate_source_ref_identity ON memory_candidate_source_refs(ref_namespace,ref_id,ref_version,evidence_digest,candidate_id,position);
 
 CREATE TABLE memory_candidate_idempotency (
-  idempotency_digest TEXT PRIMARY KEY CHECK(length(idempotency_digest)=71 AND substr(idempotency_digest,1,7)='sha256:' AND substr(idempotency_digest,8) NOT GLOB '*[^0-9a-f]*'),
-  request_digest TEXT NOT NULL UNIQUE CHECK(length(request_digest)=71 AND substr(request_digest,1,7)='sha256:' AND substr(request_digest,8) NOT GLOB '*[^0-9a-f]*'),
+  idempotency_digest TEXT PRIMARY KEY CHECK(
+    length(idempotency_digest)=71 AND substr(idempotency_digest,1,7)='sha256:'
+    AND substr(idempotency_digest,8) NOT GLOB '*[^0-9a-f]*'
+  ),
+  request_digest TEXT NOT NULL UNIQUE CHECK(
+    length(request_digest)=71 AND substr(request_digest,1,7)='sha256:'
+    AND substr(request_digest,8) NOT GLOB '*[^0-9a-f]*'
+  ),
   input_digest TEXT NOT NULL CHECK(length(input_digest)=71 AND substr(input_digest,1,7)='sha256:' AND substr(input_digest,8) NOT GLOB '*[^0-9a-f]*'),
   candidate_id TEXT NOT NULL REFERENCES memory_candidate_classifications(candidate_id),
   created_at TEXT NOT NULL CHECK(strftime('%Y-%m-%dT%H:%M:%fZ',created_at) IS NOT NULL AND strftime('%Y-%m-%dT%H:%M:%fZ',created_at)=created_at)
@@ -109,8 +143,14 @@ CREATE INDEX memory_candidate_idempotency_candidate ON memory_candidate_idempote
 CREATE TABLE memory_candidate_verification_authority (
   evidence_id TEXT PRIMARY KEY CHECK(length(evidence_id) BETWEEN 1 AND 128 AND evidence_id NOT GLOB '*[^A-Za-z0-9_-]*'),
   schema_version INTEGER NOT NULL CHECK(schema_version=1),
-  candidate_id TEXT NOT NULL UNIQUE CHECK(length(candidate_id)=79 AND substr(candidate_id,1,15)='memcand:pos:v1:' AND substr(candidate_id,16) NOT GLOB '*[^0-9a-f]*'),
-  correlation_id TEXT NOT NULL UNIQUE CHECK(length(correlation_id)=76 AND substr(correlation_id,1,12)='corr:memory:' AND substr(correlation_id,13) NOT GLOB '*[^0-9a-f]*'),
+  candidate_id TEXT NOT NULL UNIQUE CHECK(
+    length(candidate_id)=79 AND substr(candidate_id,1,15)='memcand:pos:v1:'
+    AND substr(candidate_id,16) NOT GLOB '*[^0-9a-f]*'
+  ),
+  correlation_id TEXT NOT NULL UNIQUE CHECK(
+    length(correlation_id)=76 AND substr(correlation_id,1,12)='corr:memory:'
+    AND substr(correlation_id,13) NOT GLOB '*[^0-9a-f]*'
+  ),
   principal_id TEXT NOT NULL,
   source_id TEXT NOT NULL CHECK(length(source_id) BETWEEN 1 AND 128 AND source_id NOT GLOB '*[^A-Za-z0-9_-]*'),
   source_version TEXT NOT NULL CHECK(length(source_version) BETWEEN 1 AND 128 AND source_version NOT GLOB '*[^A-Za-z0-9_-]*'),
@@ -127,7 +167,10 @@ CREATE TABLE memory_candidate_verification_authority (
   verifier_id TEXT NOT NULL CHECK(length(verifier_id) BETWEEN 1 AND 128 AND verifier_id NOT GLOB '*[^A-Za-z0-9_-]*'),
   verifier_key_id TEXT NOT NULL CHECK(length(verifier_key_id) BETWEEN 1 AND 128 AND verifier_key_id NOT GLOB '*[^A-Za-z0-9_-]*'),
   artifact_id TEXT NOT NULL CHECK(length(artifact_id) BETWEEN 1 AND 128 AND artifact_id NOT GLOB '*[^A-Za-z0-9_-]*'),
-  evidence_digest TEXT NOT NULL CHECK(length(evidence_digest)=71 AND substr(evidence_digest,1,7)='sha256:' AND substr(evidence_digest,8) NOT GLOB '*[^0-9a-f]*'),
+  evidence_digest TEXT NOT NULL CHECK(
+    length(evidence_digest)=71 AND substr(evidence_digest,1,7)='sha256:'
+    AND substr(evidence_digest,8) NOT GLOB '*[^0-9a-f]*'
+  ),
   issued_at TEXT NOT NULL CHECK(strftime('%Y-%m-%dT%H:%M:%fZ',issued_at) IS NOT NULL AND strftime('%Y-%m-%dT%H:%M:%fZ',issued_at)=issued_at),
   not_before TEXT NOT NULL CHECK(strftime('%Y-%m-%dT%H:%M:%fZ',not_before) IS NOT NULL AND strftime('%Y-%m-%dT%H:%M:%fZ',not_before)=not_before),
   expires_at TEXT NOT NULL CHECK(strftime('%Y-%m-%dT%H:%M:%fZ',expires_at) IS NOT NULL AND strftime('%Y-%m-%dT%H:%M:%fZ',expires_at)=expires_at),
@@ -147,7 +190,10 @@ CREATE TABLE memory_candidate_authority_claims (
   authority_kind TEXT NOT NULL CHECK(authority_kind IN ('explicit_instruction','approved_decision','verified_outcome')),
   authority_id TEXT NOT NULL,
   candidate_id TEXT NOT NULL UNIQUE REFERENCES memory_candidate_classifications(candidate_id),
-  classification_digest TEXT NOT NULL CHECK(length(classification_digest)=71 AND substr(classification_digest,1,7)='sha256:' AND substr(classification_digest,8) NOT GLOB '*[^0-9a-f]*'),
+  classification_digest TEXT NOT NULL CHECK(
+    length(classification_digest)=71 AND substr(classification_digest,1,7)='sha256:'
+    AND substr(classification_digest,8) NOT GLOB '*[^0-9a-f]*'
+  ),
   claimed_at TEXT NOT NULL CHECK(strftime('%Y-%m-%dT%H:%M:%fZ',claimed_at) IS NOT NULL AND strftime('%Y-%m-%dT%H:%M:%fZ',claimed_at)=claimed_at),
   PRIMARY KEY(authority_kind,authority_id)
 );
@@ -156,7 +202,10 @@ CREATE TRIGGER memory_candidate_classification_insert_guard BEFORE INSERT ON mem
 WHEN NOT EXISTS (SELECT 1 FROM memory_candidates WHERE candidate_id=NEW.candidate_id AND state='proposed' AND created_at=NEW.created_at)
 BEGIN SELECT RAISE(ABORT,'memory candidate proposed row required'); END;
 CREATE TRIGGER memory_candidate_idempotency_insert_guard BEFORE INSERT ON memory_candidate_idempotency
-WHEN NOT EXISTS (SELECT 1 FROM memory_candidate_classifications WHERE candidate_id=NEW.candidate_id AND input_digest=NEW.input_digest AND created_at=NEW.created_at)
+WHEN NOT EXISTS (
+  SELECT 1 FROM memory_candidate_classifications
+  WHERE candidate_id=NEW.candidate_id AND input_digest=NEW.input_digest AND created_at=NEW.created_at
+)
 BEGIN SELECT RAISE(ABORT,'memory candidate classification binding required'); END;
 CREATE TRIGGER memory_verification_authority_key_guard BEFORE INSERT ON memory_candidate_verification_authority
 WHEN NOT EXISTS (SELECT 1 FROM authority_key_purposes WHERE key_id=NEW.signer_key_id AND purpose='verifier')

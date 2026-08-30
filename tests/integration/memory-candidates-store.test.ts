@@ -105,7 +105,7 @@ describe("Task 27 authority-side memory candidate persistence", () => {
   });
 
   it("persists prohibited and foreign provenance only as terminal rejected or expired audits", async () => {
-    // Given: every prohibited source class, secret content, a policy field, and missing decision authority.
+    // Given: prohibited source classes plus authoritative secret and prohibited-field inputs.
     const database = await memoryDatabase();
     try {
       const candidates = memoryCandidateStore(database.authority);
@@ -121,7 +121,6 @@ describe("Task 27 authority-side memory candidate persistence", () => {
           idempotency_key: "candidate:task27:field",
           payload_fields: ["summary", "raw_body"],
         }),
-        approvedDecisionMemoryInput({ authority_id: "missing", idempotency_key: "candidate:task27:missing-decision" }),
       ];
       for (const value of values) {
         if (memoryRecord(value["source"])["class"] === "verified_outcome") seedMemoryAuthority(database.authority, value);
@@ -129,8 +128,14 @@ describe("Task 27 authority-side memory candidate persistence", () => {
 
       // When: each bounded input is classified.
       const results = values.map(value => candidates.classify(value));
+      const beforeMissing = memoryTableCounts(database.authority);
+      expect(() => candidates.classify(approvedDecisionMemoryInput({
+        authority_id: "missing",
+        idempotency_key: "candidate:task27:missing-decision",
+      }))).toThrowError(expect.objectContaining({ code: "MEMORY_CANDIDATE_AUTHORITY_INVALID" }));
+      expect(memoryTableCounts(database.authority)).toEqual(beforeMissing);
 
-      // Then: immutable audit rows exist, but approved/outbox/delivery/deletion effects remain zero.
+      // Then: authoritative policy failures have audits, while missing authority has none.
       expect(results.every(result => result.state === "rejected" || result.state === "expired")).toBe(true);
       expect(memoryTableCount(database.authority, "memory_candidates")).toBe(values.length);
       expect(memoryTableCount(database.authority, "memory_candidates"))

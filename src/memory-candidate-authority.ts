@@ -22,6 +22,11 @@ function existingClaimAllows(
   return row === undefined || (row["candidate_id"] === candidateId && typeof row["classification_digest"] === "string");
 }
 
+function authorityRequired(inputClass: MemoryAuthorityResolverInput["input"]["source"]["input_class"]): boolean {
+  return inputClass === "explicit_user_instruction" || inputClass === "verified_outcome"
+    || inputClass === "approved_decision";
+}
+
 export function resolveMemoryCandidateAuthority(
   database: Database.Database,
   context: MemoryAuthorityResolverInput,
@@ -33,6 +38,17 @@ export function resolveMemoryCandidateAuthority(
       ? resolveControlMemoryAuthority(database, context)
       : null;
   if (!resolution || !existingClaimAllows(database, resolution, context.identity.candidate_id)) return { valid: false };
+  return resolution;
+}
+
+export function requireMemoryCandidateAuthority(
+  database: Database.Database,
+  context: MemoryAuthorityResolverInput,
+): MemoryAuthorityResolution {
+  const resolution = resolveMemoryCandidateAuthority(database, context);
+  if (authorityRequired(context.input.source.input_class) && !resolution.valid) {
+    return memoryFail("MEMORY_CANDIDATE_AUTHORITY_INVALID");
+  }
   return resolution;
 }
 
@@ -58,6 +74,6 @@ export function claimMemoryCandidateAuthority(
   ).get(resolution.claim.authority_kind, resolution.claim.authority_id) as Record<string, unknown> | undefined;
   if (!row || row["candidate_id"] !== classification.candidate_id
     || row["classification_digest"] !== classification.classification_digest) {
-    return memoryFail("MEMORY_CANDIDATE_REPLAY_CONFLICT");
+    return memoryFail("MEMORY_CANDIDATE_AUTHORITY_INVALID");
   }
 }

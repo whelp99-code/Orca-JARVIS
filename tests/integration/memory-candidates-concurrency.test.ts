@@ -5,6 +5,7 @@ import { memoryPolicy, MEMORY_NOW, verifiedMemoryInput } from "../fixtures/memor
 import {
   closeMemoryDatabase,
   memoryDatabase,
+  memoryTableCounts,
   seedMemoryVerification,
 } from "../fixtures/memory-candidate-store.js";
 
@@ -96,22 +97,33 @@ describe("Task 27 two-connection candidate convergence", () => {
       rejected["idempotency_key"] = "candidate:task27:conflicting-race-mutated";
       rejected["statement"] = "A conflicting caller mutation cannot inherit verifier authority.";
       seedMemoryVerification(database.authority, approved);
+      const before = memoryTableCounts(database.authority);
 
       const results = await race(database.path, [approved, rejected]);
 
-      expect(results.every(result => result.ok)).toBe(true);
-      expect(results.map(result => result.state).sort()).toEqual(["approved", "rejected"]);
-      expect(new Set(results.map(result => result.candidate_id)).size).toBe(2);
+      expect(results.map(result => result.ok).sort()).toEqual([false, true]);
+      expect(results.filter(result => result.ok).map(result => result.state)).toEqual(["approved"]);
+      expect(results.filter(result => !result.ok).map(result => result.code)).toEqual([
+        "MEMORY_CANDIDATE_AUTHORITY_INVALID",
+      ]);
       expect(record(database.authority.db.prepare(
         "SELECT COUNT(*) AS count FROM memory_candidates WHERE state='approved'",
       ).get())["count"]).toBe(1);
       expect(record(database.authority.db.prepare(
         "SELECT COUNT(*) AS count FROM memory_candidates WHERE state='rejected'",
-      ).get())["count"]).toBe(1);
-      expect(record(database.authority.db.prepare(
-        "SELECT COUNT(*) AS count FROM memory_candidate_authority_claims",
-      ).get())["count"]).toBe(1);
-      expect(record(database.authority.db.prepare("SELECT COUNT(*) AS count FROM memory_outbox").get())["count"]).toBe(0);
+      ).get())["count"]).toBe(0);
+      const after = memoryTableCounts(database.authority);
+      const expected: Readonly<Record<string, number>> = {
+        memory_candidates: 1,
+        memory_candidate_classifications: 1,
+        memory_candidate_idempotency: 1,
+        memory_candidate_source_refs: 2,
+        personal_operation_audit_events: 1,
+        memory_candidate_authority_claims: 1,
+      };
+      for (const [table, count] of Object.entries(after)) {
+        expect(count - (before[table] ?? 0), table).toBe(expected[table] ?? 0);
+      }
     } finally {
       closeMemoryDatabase(database);
     }

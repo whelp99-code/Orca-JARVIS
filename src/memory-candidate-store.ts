@@ -1,4 +1,4 @@
-import { claimMemoryCandidateAuthority, resolveMemoryCandidateAuthority } from "./memory-candidate-authority.js";
+import { claimMemoryCandidateAuthority, requireMemoryCandidateAuthority } from "./memory-candidate-authority.js";
 import type { MemoryAuthorityResolution } from "./memory-candidate-authority-types.js";
 import { parseMemoryCandidateInput } from "./memory-candidate-input.js";
 import { computeMemoryCandidate, memoryCandidateIdentity } from "./memory-candidate-material.js";
@@ -14,7 +14,6 @@ import { memoryDate, memoryFail, memoryHash } from "./memory-candidate-values.js
 import type { AuthorityDb } from "./db.js";
 import { persistenceRow, persistenceText } from "./personal-persistence-values.js";
 
-type PersistContext = { readonly input: ParsedMemoryCandidateInput; readonly now: Date; readonly preliminary: MemoryCandidateComputation };
 type IdempotencyInsert = { readonly computation: MemoryCandidateComputation; readonly candidate_id: string; readonly created_at: string };
 
 export class MemoryCandidateStore {
@@ -27,10 +26,15 @@ export class MemoryCandidateStore {
   classify(value: unknown): MemoryCandidateClassification {
     const input = parseMemoryCandidateInput(value);
     const now = memoryDate(this.clock());
-    const preliminary = computeMemoryCandidate(this.policy, input, { now, authority: { valid: false } });
-    const replay = this.replay(preliminary);
+    const authority = requireMemoryCandidateAuthority(this.authority.db, {
+      input,
+      identity: memoryCandidateIdentity(input),
+      now,
+    });
+    const computation = computeMemoryCandidate(this.policy, input, { now, authority });
+    const replay = this.replay(computation);
     if (replay !== undefined) return replay;
-    return this.authority.db.transaction(() => this.persist({ input, now, preliminary })).immediate();
+    return this.authority.db.transaction(() => this.persist(input)).immediate();
   }
 
   private replay(computation: MemoryCandidateComputation): MemoryCandidateClassification | undefined {
@@ -44,15 +48,16 @@ export class MemoryCandidateStore {
       ?? memoryFail("MEMORY_CANDIDATE_INTEGRITY_FAILURE");
   }
 
-  private persist(context: PersistContext): MemoryCandidateClassification {
-    const replay = this.replay(context.preliminary);
-    if (replay !== undefined) return replay;
-    const authority = resolveMemoryCandidateAuthority(this.authority.db, {
-      input: context.input,
-      identity: memoryCandidateIdentity(context.input),
-      now: context.now,
+  private persist(input: ParsedMemoryCandidateInput): MemoryCandidateClassification {
+    const now = memoryDate(this.clock());
+    const authority = requireMemoryCandidateAuthority(this.authority.db, {
+      input,
+      identity: memoryCandidateIdentity(input),
+      now,
     });
-    const computation = computeMemoryCandidate(this.policy, context.input, { now: context.now, authority });
+    const computation = computeMemoryCandidate(this.policy, input, { now, authority });
+    const replay = this.replay(computation);
+    if (replay !== undefined) return replay;
     const existingValue = this.authority.db.prepare(
       "SELECT candidate_id,input_digest,created_at FROM memory_candidate_classifications WHERE dedup_key=?",
     ).get(computation.classification.dedup_key);
@@ -63,7 +68,7 @@ export class MemoryCandidateStore {
       this.insertIdempotency({ computation, candidate_id: candidateId, created_at: persistenceText(existing["created_at"]) });
       return readMemoryCandidate(this.authority.db, candidateId) ?? memoryFail("MEMORY_CANDIDATE_INTEGRITY_FAILURE");
     }
-    this.insertCandidate(computation, context.input, authority);
+    this.insertCandidate(computation, input, authority);
     return computation.classification;
   }
 

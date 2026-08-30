@@ -27,8 +27,12 @@ describe("Task 27 authoritative provenance remediation", () => {
       const store = memoryCandidateStore(database.authority);
       expect(classify(explicitMemoryInput())).toMatchObject({ state: "rejected", classification_reason: "OWNER_PROVENANCE_INVALID" });
       expect(classify(verifiedMemoryInput())).toMatchObject({ state: "rejected", classification_reason: "UNVERIFIED_OUTCOME" });
-      expect(store.classify(explicitMemoryInput())).toMatchObject({ state: "rejected", classification_reason: "OWNER_PROVENANCE_INVALID" });
-      expect(store.classify(verifiedMemoryInput())).toMatchObject({ state: "rejected", classification_reason: "UNVERIFIED_OUTCOME" });
+      expect(() => store.classify(explicitMemoryInput())).toThrowError(expect.objectContaining({
+        code: "MEMORY_CANDIDATE_AUTHORITY_INVALID",
+      }));
+      expect(() => store.classify(verifiedMemoryInput())).toThrowError(expect.objectContaining({
+        code: "MEMORY_CANDIDATE_AUTHORITY_INVALID",
+      }));
       expect(memoryTableCount(database.authority, "memory_outbox")).toBe(0);
     } finally {
       closeMemoryDatabase(database);

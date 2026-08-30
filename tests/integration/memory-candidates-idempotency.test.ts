@@ -24,6 +24,9 @@ import {
 function expectReplayConflict(action: () => unknown): void {
   expect(action).toThrowError(expect.objectContaining({ code: "MEMORY_CANDIDATE_REPLAY_CONFLICT" }));
 }
+function expectAuthorityFailure(action: () => unknown): void {
+  expect(action).toThrowError(expect.objectContaining({ code: "MEMORY_CANDIDATE_AUTHORITY_INVALID" }));
+}
 
 describe("Task 27 memory candidate conflict and idempotency", () => {
   it("rejects open conflict without changing prior memory and confirmation-binds supersession", async () => {
@@ -97,8 +100,8 @@ describe("Task 27 memory candidate conflict and idempotency", () => {
         verifiedMemoryInput({ sensitivity: "sensitive" }),
       ];
 
-      // When/Then: every changed material replay conflicts before a second row or event.
-      for (const value of changes) expectReplayConflict(() => candidates.classify(value));
+      // When/Then: changed authority bindings fail preflight before replay or persistence.
+      for (const value of changes) expectAuthorityFailure(() => candidates.classify(value));
       expectReplayConflict(() => memoryCandidateStore(
         database.authority,
         memoryPolicyWithRetention(30),

@@ -43,6 +43,12 @@ function baselineManifestDigest(): string {
 }
 
 describe("Task 27 forward memory classification migration", () => {
+  it("keeps migration 038 within the production reviewability limits", () => {
+    const lines = readFileSync(join(process.cwd(), "migrations", MIGRATION), "utf8").split("\n");
+    expect(lines.filter(line => line.trim() !== "").length).toBeLessThanOrEqual(250);
+    expect(Math.max(...lines.map(line => line.length))).toBeLessThanOrEqual(160);
+  });
+
   it("preserves every baseline 001-036 migration byte", () => {
     // Given/When: the complete baseline migration manifest is hashed in filename order.
     const digest = baselineManifestDigest();
@@ -155,6 +161,75 @@ describe("Task 27 forward memory classification migration", () => {
       }
     } finally {
       closeMemoryDatabase(database);
+    }
+  });
+
+  it("upgrades an exact prior-036 database through current 037 and 038 without changing prior data", async () => {
+    const directory = migrationDirectory();
+    rmSync(join(directory.path, MIGRATION));
+    const database = join(directory.root, "authority.sqlite");
+    const prior = new AuthorityDb(database, directory.path);
+    try {
+      await prior.migrate();
+      prior.db.prepare("INSERT INTO projects(id,target_kind,created_at) VALUES(?,?,?)")
+        .run("task27-upgrade-sentinel", "codex", "2026-08-28T00:00:00.000Z");
+    } finally {
+      prior.close();
+    }
+    const fixture = join(process.cwd(), "tests", "fixtures", "task27", "037_recommendation_work_runtime.sql");
+    writeFileSync(join(directory.path, "037_recommendation_work_runtime.sql"), readFileSync(fixture));
+    writeFileSync(join(directory.path, MIGRATION), readFileSync(join(process.cwd(), "migrations", MIGRATION)));
+    const upgraded = new AuthorityDb(database, directory.path);
+    try {
+      await upgraded.migrate();
+      expect(record(upgraded.db.prepare(
+        "SELECT id,target_kind,created_at FROM projects WHERE id='task27-upgrade-sentinel'",
+      ).get())).toEqual({
+        id: "task27-upgrade-sentinel",
+        target_kind: "codex",
+        created_at: "2026-08-28T00:00:00.000Z",
+      });
+      const rows: readonly unknown[] = upgraded.db.prepare(
+        "SELECT id FROM schema_migrations WHERE id>='037_' ORDER BY id",
+      ).all();
+      expect(rows.map(value => record(value)["id"]))
+        .toEqual(["037_recommendation_work_runtime.sql", MIGRATION]);
+      expect(record(upgraded.db.prepare(
+        "SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='memory_candidate_classifications'",
+      ).get())["count"]).toBe(1);
+    } finally {
+      upgraded.close();
+      rmSync(directory.root, { recursive: true, force: true });
+    }
+  });
+
+  it("applies after the exact current Task 26 migration 037", async () => {
+    const directory = migrationDirectory();
+    const fixture = join(process.cwd(), "tests", "fixtures", "task27", "037_recommendation_work_runtime.sql");
+    const bytes = readFileSync(fixture);
+    expect(createHash("sha256").update(bytes).digest("hex"))
+      .toBe("a231ce3f25b7e7bd495dc3b24a40cd826c761d85f75524d495ff9e060f51645b");
+    writeFileSync(join(directory.path, "037_recommendation_work_runtime.sql"), bytes);
+    const authority = new AuthorityDb(join(directory.root, "authority.sqlite"), directory.path);
+    try {
+      await authority.migrate();
+      const rows: readonly unknown[] = authority.db.prepare(
+        "SELECT id FROM schema_migrations WHERE id>='037_' ORDER BY id",
+      ).all();
+      expect(rows.map(value => record(value)["id"]))
+        .toEqual(["037_recommendation_work_runtime.sql", MIGRATION]);
+      expect(record(authority.db.prepare(
+        "SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name LIKE 'recommendation_work_%'",
+      ).get())["count"]).toBe(12);
+      expect(record(authority.db.prepare(
+        "SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='recommendation_verified_outcomes'",
+      ).get())["count"]).toBe(1);
+      expect(record(authority.db.prepare(
+        "SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='memory_candidate_classifications'",
+      ).get())["count"]).toBe(1);
+    } finally {
+      authority.close();
+      rmSync(directory.root, { recursive: true, force: true });
     }
   });
 
