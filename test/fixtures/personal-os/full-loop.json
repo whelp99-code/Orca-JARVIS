@@ -1,0 +1,16 @@
+{
+  "schema_version": 1,
+  "dataset_id": "fixture:personal-os:full-loop:v1",
+  "cases": [
+    {"id":"extract-1","dimension":"information_extraction","expected":{"answer_ids":["fact:customer-deadline"],"memory_ids":["mem:deadline"]},"observed":{"answer_ids":["fact:customer-deadline"],"retrieved_memory_ids":["mem:deadline"]}},
+    {"id":"session-1","dimension":"multi_session_reasoning","expected":{"answer_ids":["session:yesterday-resolution"],"memory_ids":["mem:resolution"]},"observed":{"answer_ids":["session:yesterday-resolution"],"retrieved_memory_ids":["mem:resolution"]}},
+    {"id":"time-1","dimension":"temporal_reasoning","expected":{"answer_ids":["fact:current"],"memory_ids":["mem:current"],"cited_session":"session:2026-08-28"},"observed":{"answer_ids":["fact:current"],"retrieved_memory_ids":["mem:current"],"cited_session":"session:2026-08-28"}},
+    {"id":"update-1","dimension":"knowledge_updates","expected":{"answer_ids":["fact:superseding"],"memory_ids":["mem:new"]},"observed":{"answer_ids":["fact:superseding"],"retrieved_memory_ids":["mem:new"]}},
+    {"id":"abstain-1","dimension":"abstention","expected":{"answer_ids":[],"abstain":true},"observed":{"answer_ids":[],"abstained":true}},
+    {"id":"conflict-1","dimension":"conflict_resolution","expected":{"answer_ids":[],"abstain":true},"observed":{"answer_ids":[],"abstained":true}},
+    {"id":"stale-1","dimension":"stale_live_state","expected":{"answer_ids":[],"abstain":true},"observed":{"answer_ids":[],"abstained":true}},
+    {"id":"delete-1","dimension":"deletion","expected":{"answer_ids":[],"deleted_ids":["mem:forgotten"]},"observed":{"answer_ids":[],"exposed_deleted_ids":[]}},
+    {"id":"extract-2","dimension":"information_extraction","expected":{"answer_ids":["fact:owner-decision"]},"observed":{"answer_ids":["fact:owner-decision"]}},
+    {"id":"session-2","dimension":"multi_session_reasoning","expected":{"answer_ids":["session:verified-closeout"]},"observed":{"answer_ids":["session:verified-closeout"]}}
+  ]
+}

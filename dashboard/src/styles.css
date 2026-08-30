@@ -271,3 +271,29 @@ h1 {
 .connection-state[data-state="offline"] .connection-icon {
   background: var(--color-danger);
 }
+
+.today-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: var(--space-4);
+  margin-block: var(--space-6);
+}
+
+.today-grid article {
+  min-block-size: 8rem;
+  padding: var(--space-5);
+  border: var(--border-width) solid var(--color-border);
+  background: var(--color-surface);
+}
+
+.today-grid h2 {
+  color: var(--color-text-muted);
+  font-size: var(--type-sm);
+  letter-spacing: var(--tracking-label);
+}
+
+@media (max-width: 40rem) {
+  .today-grid {
+    grid-template-columns: 1fr;
+  }
+}

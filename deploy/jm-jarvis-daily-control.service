@@ -1,0 +1,27 @@
+[Unit]
+Description=JARVIS Daily Control Loop reconciliation
+After=jm-jarvis.service second-brain-web.service
+Wants=jm-jarvis.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/jm/.local/state/orca-jarvis/control-center/current
+Environment=PATH=/home/jm/.nvm/versions/node/v24.19.0/bin:/home/jm/.local/bin:/usr/bin:/bin
+Environment=JARVIS_DB=/home/jm/.local/state/orca-jarvis/jarvis.sqlite
+Environment=SECOND_BRAIN_PROVIDER_BIN=/home/jm/.local/bin/sb
+Environment=SECOND_BRAIN_PROVIDER_CONFIG=/home/jm/.config/second-brain/config.toml
+ExecStart=/home/jm/.nvm/versions/node/v24.19.0/bin/node /home/jm/.local/state/orca-jarvis/control-center/current/scripts/jarvis-daily-control.mjs once
+TimeoutStartSec=120s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/jm/.local/state/orca-jarvis /home/jm/.local/share/second-brain
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+StandardOutput=journal
+StandardError=journal

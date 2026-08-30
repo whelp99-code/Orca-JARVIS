@@ -1,0 +1,60 @@
+{
+  "node": "v24.19.0",
+  "abi": 137,
+  "runtime_check": "passed",
+  "lint": "passed",
+  "typecheck": "passed",
+  "backend_tests": {
+    "files": 148,
+    "tests": 965
+  },
+  "dashboard_tests": {
+    "files": 20,
+    "tests": 100
+  },
+  "acceptance_pre_gjc": {
+    "boundary": "pre_gjc_ready",
+    "aggregate_status": "stopped",
+    "completion_promoted": true,
+    "gjc_dispatched": false
+  },
+  "build": "passed",
+  "cli_smoke": "passed",
+  "mcp_stdio": {
+    "responses": 3,
+    "tools": 9,
+    "protocol": "2025-11-25"
+  },
+  "mcp_frame_errors": {
+    "malformed": -32700,
+    "oversized": -32600
+  },
+  "provider_smoke": {
+    "status": "ready",
+    "write": "accepted",
+    "request_status": "accepted",
+    "provider_version": "fixture",
+    "writable": true
+  },
+  "daily_control_smoke": {
+    "mode": "once",
+    "runs": 0
+  },
+  "shell_fallback_smoke": {
+    "replay": true,
+    "event_id": "event:smoke"
+  },
+  "shell_installer_smoke": {
+    "enabled": false,
+    "collector_mode": "0700",
+    "hook_mode": "0600"
+  },
+  "migration_033_sha256": {
+    "head": "33e2755a78d87d281bfd3bfe7b18aed07ee3b93216f5131c4453329f169596b4",
+    "worktree": "33e2755a78d87d281bfd3bfe7b18aed07ee3b93216f5131c4453329f169596b4"
+  },
+  "shipping_harness": "not_used_per_user_instruction",
+  "commit": false,
+  "push": false,
+  "deploy": false
+}

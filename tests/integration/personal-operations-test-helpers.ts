@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { cpSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { basename, join } from "node:path";
 import { canonicalize } from "../../src/canonical.js";
 import { AuthorityDb } from "../../src/index.js";
 
@@ -37,7 +37,7 @@ export function migrationCopy(include033 = true): string {
   const directory = join(root, "migrations");
   cpSync(join(process.cwd(), "migrations"), directory, {
     recursive: true,
-    filter: source => include033 || !source.endsWith("033_personal_operations.sql"),
+    filter: source => include033 || !basename(source).endsWith(".sql") || basename(source) < "033_personal_operations.sql",
   });
   return directory;
 }

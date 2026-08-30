@@ -1,0 +1,11 @@
+[Unit]
+Description=Refresh Second Brain daily at 07:00 KST
+
+[Timer]
+OnCalendar=*-*-* 07:00:00 Asia/Seoul
+Persistent=true
+AccuracySec=30s
+Unit=jm-second-brain-refresh.service
+
+[Install]
+WantedBy=timers.target

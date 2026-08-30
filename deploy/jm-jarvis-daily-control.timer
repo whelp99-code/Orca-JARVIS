@@ -1,0 +1,12 @@
+[Unit]
+Description=Run JARVIS Daily Control at morning and evening KST
+
+[Timer]
+OnCalendar=*-*-* 07:15:00 Asia/Seoul
+OnCalendar=*-*-* 21:30:00 Asia/Seoul
+Persistent=true
+AccuracySec=30s
+Unit=jm-jarvis-daily-control.service
+
+[Install]
+WantedBy=timers.target

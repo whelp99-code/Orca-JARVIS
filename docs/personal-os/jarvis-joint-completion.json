@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "workstream": "jarvis-joint-implementation",
+  "status": "implemented_unactivated",
+  "scope": {
+    "daily_loop_repairs": 5,
+    "new_source_modules": 18,
+    "new_dashboard_read_surfaces": 5,
+    "new_integration_test_files": 1,
+    "new_integration_tests": 6,
+    "migration": "034_terminal_work_memory.sql",
+    "deployment_units": 6,
+    "operator_documents": 2
+  },
+  "verification": {
+    "runtime_check": {
+      "status": "passed",
+      "node": "v24.19.0",
+      "abi": 137
+    },
+    "lint": "passed",
+    "typecheck": "passed",
+    "backend_tests": {
+      "status": "passed",
+      "files": 148,
+      "tests": 965
+    },
+    "dashboard_tests": {
+      "status": "passed",
+      "files": 20,
+      "tests": 100
+    },
+    "acceptance_pre_gjc": {
+      "status": "passed",
+      "boundary": "pre_gjc_ready",
+      "aggregate_status": "stopped",
+      "completion_promoted": true,
+      "gjc_dispatched": false
+    },
+    "build": "passed",
+    "cli_smoke": "passed",
+    "recovery_rehearsal": {
+      "status": "passed",
+      "checks": 4
+    }
+  },
+  "delivery_constraints": {
+    "shipping_harness": "not_used_per_user_instruction",
+    "commit": false,
+    "push": false,
+    "deploy": false,
+    "unrelated_omo_files_changed": false
+  }
+}

@@ -10,7 +10,11 @@
     ".": "./dist/src/index.js"
   },
   "bin": {
-    "jarvis": "dist/src/cli.js"
+    "jarvis": "dist/src/cli.js",
+    "jarvis-agent-mcp": "scripts/jarvis-agent-mcp.mjs",
+    "jarvis-daily-control": "scripts/jarvis-daily-control.mjs",
+    "jarvis-memory-settlement": "scripts/jarvis-memory-settlement.mjs",
+    "jarvis-shell-ingest": "scripts/collect-terminal-evidence.mjs"
   },
   "scripts": {
     "build": "npm run build:backend && npm run build:dashboard",
@@ -25,12 +29,19 @@
     "typecheck": "tsc --noEmit && tsc -p tsconfig.dashboard.json --noEmit && tsc -p tsconfig.e2e.json --noEmit",
     "build:dashboard": "vite build --config dashboard/vite.config.ts",
     "build:fixtures": "npm run build:backend",
+    "runtime:agent-mcp": "node scripts/jarvis-agent-mcp.mjs",
+    "runtime:daily-control": "node scripts/jarvis-daily-control.mjs",
+    "runtime:provider-smoke": "node scripts/second-brain-provider-smoke.mjs",
+    "runtime:shell-ingest": "node scripts/collect-terminal-evidence.mjs",
+    "runtime:shell-install": "node scripts/install-shell-fallback.mjs",
+    "runtime:shell-uninstall": "node scripts/uninstall-shell-fallback.mjs",
     "test:e2e": "npm run build && playwright test e2e/control-center.spec.ts",
     "test:e2e:production-smoke": "JARVIS_E2E_NO_FIXTURE=1 playwright test e2e/production-smoke.spec.ts",
     "product:install-electron": "install-electron",
     "preproduct:package-electron": "npm run product:install-electron",
     "product:package-electron": "node scripts/package-electron.mjs",
-    "product:open-electron": "node scripts/open-electron.mjs"
+    "product:open-electron": "node scripts/open-electron.mjs",
+    "runtime:release-smoke": "node scripts/runtime-release-smoke.mjs"
   },
   "dependencies": {
     "better-sqlite3": "^12.2.0",

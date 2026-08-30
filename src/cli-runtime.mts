@@ -11,12 +11,13 @@ import { executeGjcCommand } from "./cli-gjc-commands.js";
 import { executeLiveCommand } from "./cli-live-commands.js";
 import { executePreGjcCommand } from "./cli-pre-gjc-commands.js";
 import { executeStateCommand } from "./cli-state-commands.js";
+import { executeRuntimeCommand } from "./cli-runtime-commands.js";
 import { AuthorityDb, JarvisError } from "./db.js";
 
 const CLI_HELP =
   "JARVIS — agent-ops runtime\n"
   + "Commands: init, db migrate, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, "
-  + "observe, pre-gjc, capabilities, team, portfolio, status";
+  + "observe, pre-gjc, capabilities, team, portfolio, status, runtime";
 
 const COMMAND_HANDLERS: readonly CliCommandHandler[] = [
   executeCoreCommand,
@@ -25,6 +26,7 @@ const COMMAND_HANDLERS: readonly CliCommandHandler[] = [
   executeGjcCommand,
   executePreGjcCommand,
   executeStateCommand,
+  executeRuntimeCommand,
 ];
 
 export async function execute(

@@ -1,0 +1,30 @@
+[Unit]
+Description=JARVIS tailnet-only phone gateway
+After=jm-jarvis-dashboard.service tailscaled.service
+Requires=jm-jarvis-dashboard.service
+
+[Service]
+Type=simple
+WorkingDirectory=/home/jm/.local/state/orca-jarvis/control-center/current
+Environment=PATH=/home/jm/.nvm/versions/node/v24.19.0/bin:/home/jm/.local/bin:/usr/bin:/bin
+EnvironmentFile=/home/jm/.config/orca-jarvis/phone-gateway.env
+ExecStart=/home/jm/.nvm/versions/node/v24.19.0/bin/node /home/jm/.local/state/orca-jarvis/control-center/current/dist/src/phone-gateway-main.js
+Restart=on-failure
+RestartSec=5s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+RestrictSUIDSGID=true
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+LockPersonality=true
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=default.target

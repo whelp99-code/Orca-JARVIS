@@ -15,13 +15,19 @@ export interface DoctorCheck {
 	code?: string;
 }
 export interface DoctorReport {
-	ok: boolean;
-	checked_at: string | null;
-	runtime: { node: string; abi: string; platform: string; arch: string };
-	database: { filename: string; sqlite_version: string | null; wal_bytes: number; applied_migrations: number; expected_migrations: number };
-	checks: DoctorCheck[];
-	capabilities: CapabilityMatrixV1;
-	second_brain: SecondBrainReadinessReportV1;
+  ok: boolean;
+  checked_at: string | null;
+  runtime: { node: string; abi: string; platform: string; arch: string };
+  database: { filename: string; sqlite_version: string | null; wal_bytes: number; applied_migrations: number; expected_migrations: number };
+  checks: DoctorCheck[];
+  capabilities: CapabilityMatrixV1;
+  second_brain: SecondBrainReadinessReportV1;
+  runtime_components: {
+    agent_mcp: { configured: boolean; executable: string };
+    daily_control: { configured: boolean; executable: string };
+    memory_settlement: { configured: boolean; executable: string; provider_bin: boolean };
+    shell_ingest: { configured: boolean; executable: string; enabled: boolean };
+  };
 }
 const expectedNodeMajor = 24;
 const expectedAbi = "137";
@@ -184,7 +190,12 @@ export async function runDoctor(
 	const report: DoctorReport = {
 		ok: checks.every((check) => check.ok),
 		checked_at: validClock ? now.toISOString() : null,
-		runtime: { node: process.version, abi: process.versions.modules, platform: process.platform, arch: process.arch },
+		runtime: {
+			node: process.version,
+			abi: process.versions.modules,
+			platform: process.platform,
+			arch: process.arch,
+		},
 		database: {
 			filename: db.filename,
 			sqlite_version: sqliteVersion,
@@ -195,6 +206,26 @@ export async function runDoctor(
 		checks,
 		capabilities,
 		second_brain: secondBrain,
+		runtime_components: {
+			agent_mcp: {
+				configured: Boolean(process.env.JARVIS_DB),
+				executable: "scripts/jarvis-agent-mcp.mjs",
+			},
+			daily_control: {
+				configured: hasTable(db, "daily_loop_runs"),
+				executable: "scripts/jarvis-daily-control.mjs",
+			},
+			memory_settlement: {
+				configured: hasTable(db, "memory_outbox"),
+				executable: "scripts/jarvis-memory-settlement.mjs",
+				provider_bin: Boolean(process.env.SECOND_BRAIN_PROVIDER_BIN),
+			},
+			shell_ingest: {
+				configured: hasTable(db, "terminal_events"),
+				executable: "scripts/collect-terminal-evidence.mjs",
+				enabled: process.env.JARVIS_SHELL_FALLBACK_ENABLE === "1",
+			},
+		},
 	};
 	return report;
 }
