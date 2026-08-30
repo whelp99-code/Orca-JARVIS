@@ -6,7 +6,9 @@ import {
   type MemoryCandidateStore,
 } from "../../src/index.js";
 import {
+  approvedDecisionMemoryInput,
   evidenceRef,
+  explicitMemoryInput,
   MEMORY_NOW,
   verifiedMemoryInput,
 } from "../fixtures/memory-candidate-fixture.js";
@@ -18,6 +20,7 @@ import {
   memorySource,
   memoryTableCount,
   memoryTableCounts,
+  seedMemoryAuthority,
   seedMemoryVerification,
 } from "../fixtures/memory-candidate-store.js";
 
@@ -77,6 +80,73 @@ describe("Task 27 memory candidate conflict and idempotency", () => {
       ).get(prior.candidate_id)).toEqual(priorRow);
       expect(memoryTableCount(database.authority, "memory_outbox")).toBe(0);
       expect(memoryTableCount(database.authority, "memory_deletion_requests")).toBe(0);
+    } finally {
+      closeMemoryDatabase(database);
+    }
+  });
+
+  it("consumes signed rejected and expired authority before exact alias replay", async () => {
+    const database = await memoryDatabase();
+    try {
+      const classes = [
+        ["instruction", explicitMemoryInput],
+        ["outcome", verifiedMemoryInput],
+        ["decision", approvedDecisionMemoryInput],
+      ] as const;
+      const outcomes = ["rejected", "expired"] as const;
+      const store = memoryCandidateStore(database.authority);
+      for (const [sourceClass, factory] of classes) {
+        for (const outcome of outcomes) {
+          const id = `${sourceClass}-${outcome}`;
+          const input = factory({
+            authority_id: `terminal-${id}`,
+            idempotency_key: `candidate:terminal:${id}`,
+            payload_fields: outcome === "rejected" ? ["summary", "raw_body"] : ["summary"],
+            conflict: outcome === "expired" ? {
+              state: "conflict",
+              references: [evidenceRef("second_brain_conflict", `terminal-${id}`, {
+                fresh_until: MEMORY_NOW,
+                expires_at: MEMORY_NOW,
+              })],
+            } : { state: "none", references: [] },
+          });
+          seedMemoryAuthority(database.authority, input);
+          const first = store.classify(input);
+          expect(first, id).toMatchObject({
+            state: outcome,
+            classification_reason: outcome === "rejected" ? "PROHIBITED_POLICY_FIELD" : "SOURCE_EXPIRED",
+          });
+          expect(database.authority.db.prepare(
+            `SELECT candidate_id,classification_digest FROM memory_candidate_authority_claims
+             WHERE candidate_id=?`,
+          ).get(first.candidate_id), `${id}:claim`).toEqual({
+            candidate_id: first.candidate_id,
+            classification_digest: first.classification_digest,
+          });
+
+          const alias = structuredClone(input);
+          alias["idempotency_key"] = `candidate:terminal:${id}:alias`;
+          const beforeAlias = memoryTableCounts(database.authority);
+          expect(store.classify(alias), `${id}:alias`).toEqual(first);
+          const afterAlias = memoryTableCounts(database.authority);
+          for (const [table, count] of Object.entries(afterAlias)) {
+            expect(count - (beforeAlias[table] ?? 0), `${id}:alias:${table}`)
+              .toBe(table === "memory_candidate_idempotency" ? 1 : 0);
+          }
+
+          const corrected = structuredClone(input);
+          corrected["idempotency_key"] = `candidate:terminal:${id}:corrected`;
+          corrected["statement"] = `${String(corrected["statement"])} corrected`;
+          const beforeCorrected = memoryTableCounts(database.authority);
+          expectAuthorityFailure(() => store.classify(corrected));
+          expect(memoryTableCounts(database.authority), `${id}:corrected`).toEqual(beforeCorrected);
+        }
+      }
+      expect(memoryTableCount(database.authority, "memory_candidate_authority_claims")).toBe(6);
+      for (const table of [
+        "memory_outbox", "memory_outbox_attempts", "memory_reconciliation_events", "memory_deletion_requests",
+        "memory_tombstones", "notification_deliveries", "control_effect_attempts", "outbox", "consumer_inbox",
+      ]) expect(memoryTableCount(database.authority, table), table).toBe(0);
     } finally {
       closeMemoryDatabase(database);
     }

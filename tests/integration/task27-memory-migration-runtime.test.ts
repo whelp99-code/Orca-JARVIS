@@ -167,7 +167,10 @@ describe("Task 27 migration 038 runtime invariants", () => {
   it("executes insert guards and update/delete immutability on populated rows", async () => {
     const fixture = await memoryDatabase();
     try {
-      const input = verifiedMemoryInput({ authority_id: "migration-guards" });
+      const input = verifiedMemoryInput({
+        authority_id: "migration-guards",
+        payload_fields: ["summary", "raw_body"],
+      });
       seedMemoryVerification(fixture.authority, input);
       const result = memoryCandidateStore(fixture.authority).classify(input);
       const database = fixture.authority.db;
@@ -212,7 +215,14 @@ describe("Task 27 migration 038 runtime invariants", () => {
          ) VALUES(?,?,?,?,?)`,
       ).run("verified_outcome", "verification-missing", unrelated.candidate_id,
         unrelated.classification_digest, unrelated.created_at)).toThrow("memory candidate authority binding required");
-      expect(result.state).toBe("approved");
+      expect(result.state).toBe("rejected");
+      expect(database.prepare(
+        `SELECT candidate_id,classification_digest FROM memory_candidate_authority_claims
+         WHERE candidate_id=?`,
+      ).get(result.candidate_id)).toEqual({
+        candidate_id: result.candidate_id,
+        classification_digest: result.classification_digest,
+      });
     } finally {
       closeMemoryDatabase(fixture);
     }

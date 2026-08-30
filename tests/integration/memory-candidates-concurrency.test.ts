@@ -89,29 +89,32 @@ describe("Task 27 two-connection candidate convergence", () => {
     }
   });
 
-  it("releases conflicting submissions together and stages only the authority-bound candidate", async () => {
+  it("rolls back a terminal-policy race loser while the signed winner consumes authority", async () => {
     const database = await memoryDatabase();
     try {
-      const approved = verifiedMemoryInput({ authority_id: "conflicting-race" });
-      const rejected = structuredClone(approved);
-      rejected["idempotency_key"] = "candidate:task27:conflicting-race-mutated";
-      rejected["statement"] = "A conflicting caller mutation cannot inherit verifier authority.";
-      seedMemoryVerification(database.authority, approved);
+      const terminal = verifiedMemoryInput({
+        authority_id: "conflicting-terminal-race",
+        payload_fields: ["summary", "raw_body"],
+      });
+      const losing = structuredClone(terminal);
+      losing["idempotency_key"] = "candidate:task27:conflicting-terminal-race-mutated";
+      losing["statement"] = "A conflicting caller mutation cannot inherit verifier authority.";
+      seedMemoryVerification(database.authority, terminal);
       const before = memoryTableCounts(database.authority);
 
-      const results = await race(database.path, [approved, rejected]);
+      const results = await race(database.path, [terminal, losing]);
 
       expect(results.map(result => result.ok).sort()).toEqual([false, true]);
-      expect(results.filter(result => result.ok).map(result => result.state)).toEqual(["approved"]);
+      expect(results.filter(result => result.ok).map(result => result.state)).toEqual(["rejected"]);
       expect(results.filter(result => !result.ok).map(result => result.code)).toEqual([
         "MEMORY_CANDIDATE_AUTHORITY_INVALID",
       ]);
       expect(record(database.authority.db.prepare(
         "SELECT COUNT(*) AS count FROM memory_candidates WHERE state='approved'",
-      ).get())["count"]).toBe(1);
+      ).get())["count"]).toBe(0);
       expect(record(database.authority.db.prepare(
         "SELECT COUNT(*) AS count FROM memory_candidates WHERE state='rejected'",
-      ).get())["count"]).toBe(0);
+      ).get())["count"]).toBe(1);
       const after = memoryTableCounts(database.authority);
       const expected: Readonly<Record<string, number>> = {
         memory_candidates: 1,

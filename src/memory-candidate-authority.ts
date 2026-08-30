@@ -57,7 +57,7 @@ export function claimMemoryCandidateAuthority(
   resolution: MemoryAuthorityResolution,
   classification: MemoryCandidateClassification,
 ): void {
-  if (!resolution.valid || classification.state === "rejected" || classification.state === "expired") return;
+  if (!resolution.valid) return;
   database.prepare(
     `INSERT INTO memory_candidate_authority_claims(
       authority_kind,authority_id,candidate_id,classification_digest,claimed_at
