@@ -1,86 +1,53 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "../canonical.js";
-import { ControlPlane, type ActionLevel, type StoredControlCommand } from "../control-plane.js";
+import { ControlPlane, type StoredControlCommand } from "../control-plane.js";
 import { JarvisError, type AuthorityDb } from "../db.js";
 import { LiveSupervisor, type LiveBinding } from "../live-supervisor.js";
 import { buildCurrentState } from "../state-projection.js";
-import { TaskTimeline, type TaskTimelineEvent, type TaskTimelineSummary } from "../recommendation-timeline.js";
+import { TaskTimeline, type TaskTimelineSummary } from "../recommendation-timeline.js";
 import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
 import { invalidClockOverview } from "./invalid-clock-overview.js";
 import { overviewCards } from "./overview-cards.js";
-import type { PortfolioOverview } from "./portfolio-contracts.js";
 import { PortfolioProjection } from "./portfolio-projection.js";
-import { PersonalDashboardReadModel } from "./personal-read-model.js";
+import type {
+  AgentDetailResponse,
+  AgentListResponse,
+  ControlRequestListResponse,
+  DashboardLookup,
+  OverviewAgent,
+  OverviewApproval,
+  OverviewResponse,
+  OverviewRisk,
+  OverviewTask,
+  TaskDetailResponse,
+  TaskListResponse,
+} from "./legacy-read-contracts.js";
+import { createPersonalCursorSession, PersonalDashboardReadModel } from "./personal-read-model.js";
+import type { PersonalCursorCodecOptions } from "./personal-cursor.js";
 import { redactDashboardValue } from "./redaction.js";
-import { buildSecondBrainReadiness, type SecondBrainReadinessProbe, type SecondBrainReadinessReportV1 } from "../second-brain-readiness.js";
+import { buildSecondBrainReadiness, type SecondBrainReadinessProbe } from "../second-brain-readiness.js";
 import { runtimeSecondBrainReadinessProbe } from "../second-brain-readiness-runtime.js";
 import type { CapabilityProbe } from "../capabilities.js";
+
+export type {
+  AgentDetailResponse,
+  AgentListResponse,
+  ControlRequestListResponse,
+  DashboardLookup,
+  OverviewAgent,
+  OverviewApproval,
+  OverviewCard,
+  OverviewResponse,
+  OverviewRisk,
+  OverviewTask,
+  TaskDetailEvent,
+  TaskDetailResponse,
+  TaskListResponse,
+} from "./legacy-read-contracts.js";
 
 const RECENT_TASK_LIMIT = 20;
 const TASK_EVENT_LIMIT = 500;
 const SETTLED_STATES = new Set(["completed", "failed", "cancelled", "rejected"]);
-
-export type OverviewCard = {
-  readonly id: string; readonly label: string;
-  readonly value: number; readonly detail: string;
-};
-
-export type OverviewTask = {
-  readonly task_id: string;
-  readonly title: string;
-  readonly kind: TaskTimelineSummary["kind"];
-  readonly state: string;
-  readonly updated_at: string;
-  readonly pending_approval: boolean;
-  readonly source_ids: readonly string[];
-};
-
-export type OverviewApproval = {
-  readonly request_id: string;
-  readonly action: string;
-  readonly action_level: ActionLevel;
-  readonly requested_at: string;
-  readonly requested_by: string;
-  readonly summary: string;
-  readonly state: string;
-};
-
-export type OverviewRisk = {
-  readonly id: string; readonly severity: string; readonly message: string;
-};
-
-export type OverviewAgent = {
-  readonly agent_id: string;
-  readonly provider: string;
-  readonly terminal_id: string;
-  readonly incarnation_id: string;
-  readonly canonical_path: string;
-  readonly status: string;
-};
-
-export type OverviewResponse = {
-  readonly schema_version: 1; readonly generated_at: string | null;
-  readonly cards: readonly OverviewCard[]; readonly recent_tasks: readonly OverviewTask[];
-  readonly pending_approvals: readonly OverviewApproval[]; readonly risks: readonly OverviewRisk[];
-  readonly agents: readonly OverviewAgent[]; readonly portfolio: PortfolioOverview;
-  readonly second_brain?: SecondBrainReadinessReportV1;
-};
-
-export type TaskListResponse = { readonly schema_version: 1; readonly items: readonly OverviewTask[] };
-export type TaskDetailEvent = Omit<TaskTimelineEvent, "evidence_refs"> & { readonly evidence_refs: readonly string[] };
-export type TaskDetailResponse = {
-  readonly schema_version: 1;
-  readonly context: { readonly task: OverviewTask; readonly events: readonly TaskDetailEvent[] };
-};
-export type AgentListResponse = { readonly schema_version: 1; readonly items: readonly OverviewAgent[] };
-export type AgentDetailResponse = { readonly schema_version: 1; readonly agent: OverviewAgent };
-export type ControlRequestListResponse = {
-  readonly schema_version: 1;
-  readonly items: readonly OverviewApproval[];
-};
-export type DashboardLookup<T> =
-  | { readonly kind: "found"; readonly value: T }
-  | { readonly kind: "not_found" };
 
 export class DashboardReadModel {
   readonly personal: PersonalDashboardReadModel;
@@ -89,8 +56,9 @@ export class DashboardReadModel {
     private readonly db: AuthorityDb,
     private readonly secondBrainProbe: SecondBrainReadinessProbe = runtimeSecondBrainReadinessProbe(),
     capabilityProbe?: CapabilityProbe,
+    cursorSession: PersonalCursorCodecOptions = createPersonalCursorSession(),
   ) {
-    this.personal = new PersonalDashboardReadModel(db, capabilityProbe);
+    this.personal = new PersonalDashboardReadModel(db, capabilityProbe, cursorSession);
   }
 
   async overview(now = new Date()): Promise<OverviewResponse> {

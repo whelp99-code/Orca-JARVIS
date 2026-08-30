@@ -1,24 +1,35 @@
 import type { AuthorityDb } from "../db.js";
 import { canonicalPersonalContractHash, parseContextSnapshotV1, parseRecommendationV1 } from "../personal-validation.js";
+import { persistenceHash } from "../personal-persistence-values.js";
 import { Recommendations } from "../recommendations.js";
 import type { ContextEvidenceProjection, RecommendationDetailProjection, RecommendationEvidenceProjection } from "./personal-contracts.js";
+import { dbRow, dbRows, numberValue, readOnlySnapshot, text } from "./personal-db.js";
 
 type EvidenceIdentity = Omit<RecommendationEvidenceProjection, "fresh_until">;
-import { dbRow, dbRows, readOnlySnapshot, text } from "./personal-db.js";
 
 export type PersonalLookup<T> = { readonly kind: "found"; readonly value: T } | { readonly kind: "not_found" };
 
 export function recommendationDetail(db: AuthorityDb, id: string, now: Date): PersonalLookup<RecommendationDetailProjection> {
   return readOnlySnapshot(db, () => {
     const raw = db.db.prepare(
-      `SELECT recommendation_id,context_id,canonical_digest,evidence_digest,approval_requirement,
-              confidence_class,lifecycle_state,expires_at,canonical_envelope_json
-       FROM personal_recommendations WHERE recommendation_id=?`,
+      `SELECT r.recommendation_id,r.context_id,r.context_digest,r.canonical_digest,r.evidence_digest,r.persistence_digest,
+              r.approval_requirement,r.confidence_class,r.lifecycle_state,r.expires_at,r.canonical_envelope_json,
+              c.canonical_digest AS stored_context_digest,c.canonical_envelope_json AS context_envelope
+       FROM personal_recommendations r JOIN personal_context_snapshots c ON c.context_id=r.context_id
+       WHERE r.recommendation_id=?`,
     ).get(id);
     if (raw === undefined) return { kind: "not_found" };
     const row = dbRow(raw);
     const recommendation = parseRecommendationV1(JSON.parse(text(row, "canonical_envelope_json")));
-    if (recommendation.id !== id || canonicalPersonalContractHash(recommendation) !== text(row, "canonical_digest")) {
+    const context = parseContextSnapshotV1(JSON.parse(text(row, "context_envelope")));
+    if (recommendation.id !== id || canonicalPersonalContractHash(recommendation) !== text(row, "canonical_digest")
+      || recommendation.payload.context_id !== context.id
+      || recommendation.payload.context_digest !== canonicalPersonalContractHash(context)
+      || text(row, "context_digest") !== text(row, "stored_context_digest")
+      || text(row, "stored_context_digest") !== canonicalPersonalContractHash(context)
+      || text(row, "evidence_digest") !== persistenceHash(recommendation.evidence)
+      || text(row, "persistence_digest") !== persistenceHash({ approval_requirement: text(row, "approval_requirement"),
+        canonical_digest: text(row, "canonical_digest"), confidence_class: text(row, "confidence_class") })) {
       throw new PersonalProjectionIntegrityError();
     }
     const projection = new Recommendations(db).project(now.toISOString(), 500);
@@ -27,7 +38,12 @@ export function recommendationDetail(db: AuthorityDb, id: string, now: Date): Pe
       state: action.state, owner_decision_required: action.owner_decision_required, current: action.current,
       occurred_at: action.occurred_at, transition_digest: action.transition_digest,
     }));
-    const evidence = storedEvidence(db, id, recommendation.evidence);
+    if (actions.length !== recommendation.payload.actions.length || actions.some((action, index) => {
+      const canonical = recommendation.payload.actions[index];
+      return canonical === undefined || action.rank !== canonical.rank || action.title !== canonical.title
+        || action.operation !== canonical.operation || action.target_digest !== canonical.target_digest;
+    })) throw new PersonalProjectionIntegrityError();
+    const evidence = storedRecommendationEvidence(db, id, recommendation.evidence);
     return { kind: "found", value: {
       schema_version: 1, resource: "recommendation", recommendation_id: id,
       context_id: text(row, "context_id"), canonical_digest: text(row, "canonical_digest"),
@@ -61,6 +77,7 @@ export function contextEvidence(db: AuthorityDb, contextId: string, recommendati
       || canonicalPersonalContractHash(recommendation) !== text(row, "recommendation_digest")) {
       throw new PersonalProjectionIntegrityError();
     }
+    validateContextEvidence(db, contextId, context.evidence);
     return { kind: "found", value: {
       schema_version: 1, resource: "context-evidence", context_id: contextId, recommendation_id: recommendationId,
       state: contextState(context.freshness.state, context.freshness.fresh_until, now),
@@ -71,21 +88,45 @@ export function contextEvidence(db: AuthorityDb, contextId: string, recommendati
   });
 }
 
-function storedEvidence(db: AuthorityDb, recommendationId: string, expected: readonly EvidenceIdentity[]): readonly RecommendationEvidenceProjection[] {
+function storedRecommendationEvidence(
+  db: AuthorityDb,
+  recommendationId: string,
+  expected: readonly EvidenceIdentity[],
+): readonly RecommendationEvidenceProjection[] {
   const rows = dbRows(db.db.prepare(
-    `SELECT e.evidence_id,e.source_id,e.evidence_kind,e.evidence_digest,e.observed_at,e.fresh_until
+    `SELECT r.position,e.evidence_id,e.source_id,e.evidence_kind,e.evidence_digest,e.observed_at
      FROM personal_recommendation_evidence r JOIN personal_recommendations p ON p.recommendation_id=r.recommendation_id
      JOIN personal_context_evidence e ON e.context_id=p.context_id AND e.evidence_id=r.evidence_id
      WHERE r.recommendation_id=? ORDER BY r.position`,
   ).all(recommendationId));
-  return rows.map((row) => {
-    const evidenceId = text(row, "evidence_id");
-    const digest = text(row, "evidence_digest");
-    const matching = expected.find((item) => item.evidence_id === evidenceId && item.digest === digest);
-    if (matching === undefined) throw new PersonalProjectionIntegrityError();
-    return { evidence_id: evidenceId, source_id: text(row, "source_id"), kind: text(row, "evidence_kind"), digest,
-      observed_at: text(row, "observed_at"), fresh_until: text(row, "fresh_until") };
+  if (rows.length !== expected.length) throw new PersonalProjectionIntegrityError();
+  return rows.map((row, index) => {
+    const canonical = expected[index];
+    if (canonical === undefined || numberValue(row, "position") !== index || !evidenceMatches(row, canonical)) {
+      throw new PersonalProjectionIntegrityError();
+    }
+    return { ...canonical, fresh_until: null };
   });
+}
+
+function validateContextEvidence(db: AuthorityDb, contextId: string, expected: readonly EvidenceIdentity[]): void {
+  const rows = dbRows(db.db.prepare(
+    `SELECT position,evidence_id,source_id,evidence_kind,evidence_digest,observed_at
+     FROM personal_context_evidence WHERE context_id=? ORDER BY position`,
+  ).all(contextId));
+  if (rows.length !== expected.length) throw new PersonalProjectionIntegrityError();
+  rows.forEach((row, index) => {
+    const canonical = expected[index];
+    if (canonical === undefined || numberValue(row, "position") !== index || !evidenceMatches(row, canonical)) {
+      throw new PersonalProjectionIntegrityError();
+    }
+  });
+}
+
+function evidenceMatches(row: Readonly<Record<string, unknown>>, expected: EvidenceIdentity): boolean {
+  return text(row, "evidence_id") === expected.evidence_id && text(row, "source_id") === expected.source_id
+    && text(row, "evidence_kind") === expected.kind && text(row, "evidence_digest") === expected.digest
+    && text(row, "observed_at") === expected.observed_at;
 }
 
 function contextState(state: string, freshUntil: string, now: Date): "ready" | "stale" | "no_data" | "offline" | "degraded" {

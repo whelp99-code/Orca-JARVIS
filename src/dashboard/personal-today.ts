@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { canonicalize } from "../canonical.js";
 import type { AuthorityDb } from "../db.js";
 import { verifyEveningCloseoutArtifact } from "../evening-closeout-artifact.js";
-import { parseContextSnapshotV1 } from "../personal-validation.js";
+import { canonicalPersonalContractHash, parseContextSnapshotV1 } from "../personal-validation.js";
 import { Recommendations } from "../recommendations.js";
 import { dbRow, dbRows, nullableText, numberValue, readOnlySnapshot, text } from "./personal-db.js";
 
@@ -42,10 +42,13 @@ export function todayProjection(db: AuthorityDb, now: Date): Readonly<Record<str
 
 function latestContext(db: AuthorityDb, now: Date): { readonly state: string; readonly freshness: unknown; readonly omissions: readonly string[] } {
   const raw = db.db.prepare(
-    "SELECT canonical_envelope_json FROM personal_context_snapshots ORDER BY created_at DESC,context_id DESC LIMIT 1",
+    `SELECT canonical_digest,canonical_envelope_json FROM personal_context_snapshots
+     ORDER BY created_at DESC,context_id DESC LIMIT 1`,
   ).get();
   if (raw === undefined) return { state: "no_data", freshness: { state: "no_data", fresh_until: null }, omissions: ["context_no_data"] };
-  const context = parseContextSnapshotV1(JSON.parse(text(dbRow(raw), "canonical_envelope_json")));
+  const row = dbRow(raw);
+  const context = parseContextSnapshotV1(JSON.parse(text(row, "canonical_envelope_json")));
+  if (canonicalPersonalContractHash(context) !== text(row, "canonical_digest")) throw new PersonalTodayIntegrityError();
   const state = context.freshness.state === "fresh" && now.toISOString() >= context.freshness.fresh_until ? "stale" : context.freshness.state;
   return { state: state === "fresh" ? "ready" : state, freshness: context.freshness, omissions: context.payload.omissions };
 }

@@ -1,9 +1,15 @@
 import { containsPrivateMetadata } from "../private-text.js";
 import { REDACTED, SECRET_KEY_PATTERN, TERMINAL_SECRET_PATTERN } from "./contracts.js";
 
-const PRIVATE_KEY = /passkey|webauthn|public_key|private_key|credential|signature|terminal|canonical_path|session_id/i;
+const TOKEN_START = "(?:^|[^a-z0-9])";
+const TOKEN_END = "(?=$|[^a-z0-9])";
+const PRIVATE_KEY = new RegExp(TOKEN_START
+  + "(?:passkeys?|webauthn|public(?:[_ -]+)keys?|private(?:[_ -]+)keys?|signatures?|credentials?|terminals?"
+  + "|canonical(?:[_ -]+)paths?|session(?:[_ -]+)ids?)" + TOKEN_END, "i");
 const INTERNAL_PATH = /(?:^|[\s"'=(])\/(?:home|Users|root|tmp|var|etc)\//u;
-const PRIVATE_VALUE = /passkey|webauthn|public[_ -]?key|signing[_ -]?key/iu;
+const PRIVATE_VALUE = new RegExp(TOKEN_START
+  + "(?:passkeys?|webauthn|public(?:[_ -]+)keys?|private(?:[_ -]+)keys?|signing(?:[_ -]+)keys?)"
+  + TOKEN_END, "iu");
 const MAX_DEPTH = 8;
 const MAX_STRING_BYTES = 4_096;
 

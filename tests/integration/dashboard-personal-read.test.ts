@@ -82,21 +82,35 @@ describe("personal operating dashboard reads", () => {
     } finally { server.close(); db.close(); }
   });
 
+  it("accepts default, minimum, and maximum page limits", async () => {
+    // Given
+    const { db, server } = await fixture();
+    try {
+      // When
+      const accepted = await Promise.all([call(server, "/api/v1/source-health"),
+        call(server, "/api/v1/source-health?limit=1"), call(server, "/api/v1/source-health?limit=100")]);
+      // Then
+      expect(accepted.map((item) => item.status)).toEqual([200, 200, 200]);
+      expect(accepted.map((item) => record(record(item.body)["page"])["limit"])).toEqual([20, 1, 100]);
+    } finally { server.close(); db.close(); }
+  });
+
   it("fails closed for malformed queries, foreign cursors, unknown IDs, and unsupported methods", async () => {
     // Given
     const { db, server } = await fixture();
     try {
       // When
       const invalid = await Promise.all([
-        call(server, "/api/v1/daily-runs?limit=0"), call(server, "/api/v1/daily-runs?limit=101"),
+        call(server, "/api/v1/daily-runs?limit=-1"), call(server, "/api/v1/daily-runs?limit=0"),
+        call(server, "/api/v1/daily-runs?limit=101"),
         call(server, "/api/v1/daily-runs?limit=20&limit=20"), call(server, "/api/v1/daily-runs?unknown=1"),
         call(server, "/api/v1/daily-runs?cursor=not-a-cursor"), call(server, "/api/v1/recommendations/missing"),
         call(server, "/api/v1/today", "PUT"),
       ]);
       // Then
-      expect(invalid.map((item) => item.status)).toEqual([400, 400, 400, 400, 400, 404, 404]);
-      expect(record(record(invalid[4]?.body)["error"])["code"]).toBe("PERSONAL_CURSOR_INVALID");
-      expect(record(record(invalid[5]?.body)["error"])["code"]).toBe("PERSONAL_RESOURCE_NOT_FOUND");
+      expect(invalid.map((item) => item.status)).toEqual([400, 400, 400, 400, 400, 400, 404, 404]);
+      expect(record(record(invalid[5]?.body)["error"])["code"]).toBe("PERSONAL_CURSOR_INVALID");
+      expect(record(record(invalid[6]?.body)["error"])["code"]).toBe("PERSONAL_RESOURCE_NOT_FOUND");
     } finally { server.close(); db.close(); }
   });
 });

@@ -1,6 +1,6 @@
 import type { ServerResponse } from "node:http";
 import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
-import { PersonalCursorError } from "./personal-cursor.js";
+import { PersonalCursorError, PersonalCursorStaleError } from "./personal-cursor.js";
 import { writeDashboardJson } from "./http.js";
 import { PERSONAL_PAGE_DEFAULT, PERSONAL_PAGE_MAX } from "./personal-contracts.js";
 import type { PersonalLookup } from "./personal-details.js";
@@ -19,6 +19,7 @@ const ERRORS = {
   PERSONAL_QUERY_INVALID: { status: 400, message: "Invalid personal read query" },
   PERSONAL_ID_INVALID: { status: 400, message: "Invalid personal resource identity" },
   PERSONAL_CURSOR_INVALID: { status: 400, message: "Invalid personal page cursor" },
+  PERSONAL_CURSOR_STALE: { status: 400, message: "Stale personal page cursor" },
   PERSONAL_RESPONSE_TOO_LARGE: { status: 413, message: "Personal response is too large" },
   PERSONAL_RESOURCE_NOT_FOUND: { status: 404, message: "Personal resource not found" },
 } as const;
@@ -27,6 +28,7 @@ export async function tryHandlePersonalRead(input: Input): Promise<boolean> {
   try {
     return await handlePersonalRead(input);
   } catch (error) {
+    if (error instanceof PersonalCursorStaleError) { writeError(input, "PERSONAL_CURSOR_STALE"); return true; }
     if (error instanceof PersonalCursorError) { writeError(input, "PERSONAL_CURSOR_INVALID"); return true; }
     if (error instanceof PersonalResponseTooLargeError) { writeError(input, "PERSONAL_RESPONSE_TOO_LARGE"); return true; }
     throw error;

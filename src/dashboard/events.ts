@@ -21,12 +21,17 @@ export class ReconcileHub {
   private readonly replay: StoredFrame[] = [];
 
   connect(sink: SseSink, lastEventId?: string): () => void {
-    if (lastEventId === undefined || lastEventId.length === 0) {
-      sink.write(this.frame("snapshot", DEFAULT_RECONCILE_TOPICS).frame);
-    } else {
-      this.resume(sink, lastEventId);
-    }
     this.clients.add(sink);
+    try {
+      if (lastEventId === undefined || lastEventId.length === 0) {
+        sink.write(this.frame("snapshot", DEFAULT_RECONCILE_TOPICS).frame);
+      } else {
+        this.resume(sink, lastEventId);
+      }
+    } catch (error) {
+      this.clients.delete(sink);
+      throw error;
+    }
     return () => { this.clients.delete(sink); };
   }
 

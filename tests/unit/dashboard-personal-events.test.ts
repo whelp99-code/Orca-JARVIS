@@ -19,6 +19,37 @@ describe("personal dashboard invalidation events", () => {
     expect(topicsForPersonalEvent("context")).toEqual([PERSONAL_TOPICS.evidence, PERSONAL_TOPICS.health, PERSONAL_TOPICS.today]);
   });
 
+  it("registers before snapshot so a synchronous trigger is delivered exactly once", () => {
+    // Given
+    const hub = new ReconcileHub();
+    const frames: string[] = [];
+    // When
+    hub.connect({
+      write: (frame) => {
+        frames.push(frame);
+        if (frames.length === 1) hub.publishPersonal("decision");
+      },
+      close: () => undefined,
+    });
+    // Then
+    expect(frames.filter((frame) => frame.includes("event: reconcile"))).toHaveLength(1);
+    expect(frames[1]).toContain(PERSONAL_TOPICS.decisions);
+    hub.close();
+  });
+
+  it("rolls registration back when the initial sink write fails", () => {
+    // Given
+    const hub = new ReconcileHub();
+    let writes = 0;
+    // When
+    expect(() => hub.connect({ write: () => { writes += 1; throw new TypeError("closed sink"); }, close: () => undefined }))
+      .toThrow(TypeError);
+    hub.publishPersonal("decision");
+    // Then
+    expect(writes).toBe(1);
+    hub.close();
+  });
+
   it("replays events after Last-Event-ID once and resets malformed or stale identities", () => {
     // Given
     const hub = new ReconcileHub();
