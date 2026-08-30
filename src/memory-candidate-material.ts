@@ -22,10 +22,29 @@ export type MemoryClassificationContext = {
   readonly authority: MemoryAuthorityResolution;
 };
 
+function policyInputIdentityDigest(input: ParsedMemoryCandidateInput): string {
+  return memoryHash(MEMORY_CANDIDATE_DIGEST_DOMAINS.policyInputIdentity, {
+    schema_version: input.schema_version,
+    operation: input.operation,
+    subject: input.subject,
+    statement: input.statement,
+    purpose: input.purpose,
+    sensitivity: input.sensitivity,
+    host: input.host,
+    principal_id: input.principal_id,
+    payload_fields: input.payload_fields,
+    source: input.source,
+    second_brain: input.second_brain,
+    conflict: input.conflict,
+  });
+}
+
 export function memoryCandidateIdentity(input: ParsedMemoryCandidateInput): MemoryCandidateIdentity {
   const contentDigest = memoryHash(MEMORY_CANDIDATE_DIGEST_DOMAINS.content, input.statement);
   const subjectDigest = memoryHash(MEMORY_CANDIDATE_DIGEST_DOMAINS.subject, input.subject);
+  const policyInputDigest = policyInputIdentityDigest(input);
   const sourceIdentityDigest = memoryHash(MEMORY_CANDIDATE_DIGEST_DOMAINS.identitySource, {
+    policy_input_identity_digest: policyInputDigest,
     input_class: input.source.input_class,
     source_id: input.source.source_id,
     source_version: input.source.source_version,

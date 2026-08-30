@@ -28,6 +28,7 @@ export const MEMORY_CANDIDATE_DIGEST_DOMAINS = {
   session: "orca-jarvis/memory-session/v1\0",
   source: "orca-jarvis/memory-source/v1\0",
   policy: "orca-jarvis/memory-policy/v1\0",
+  policyInputIdentity: "orca-jarvis/memory-policy-input-identity/v1\0",
   input: "orca-jarvis/memory-input/v1\0",
   idempotency: "orca-jarvis/memory-idempotency/v1\0",
   request: "orca-jarvis/memory-request/v1\0",

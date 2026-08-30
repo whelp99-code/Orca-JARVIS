@@ -1,7 +1,7 @@
 import { once } from "node:events";
 import { Worker } from "node:worker_threads";
 import { describe, expect, it } from "vitest";
-import { memoryPolicy, MEMORY_NOW, verifiedMemoryInput } from "../fixtures/memory-candidate-fixture.js";
+import { evidenceRef, memoryPolicy, MEMORY_NOW, verifiedMemoryInput } from "../fixtures/memory-candidate-fixture.js";
 import {
   closeMemoryDatabase,
   memoryDatabase,
@@ -98,7 +98,10 @@ describe("Task 27 two-connection candidate convergence", () => {
       });
       const losing = structuredClone(terminal);
       losing["idempotency_key"] = "candidate:task27:conflicting-terminal-race-mutated";
-      losing["statement"] = "A conflicting caller mutation cannot inherit verifier authority.";
+      losing["conflict"] = {
+        state: "conflict",
+        references: [evidenceRef("second_brain_conflict", "conflicting-terminal-race")],
+      };
       seedMemoryVerification(database.authority, terminal);
       const before = memoryTableCounts(database.authority);
 
