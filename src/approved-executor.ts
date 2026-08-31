@@ -10,6 +10,7 @@ import { LoopGraph, type LoopSpec } from "./loopgraph.js";
 import { RunbookEngine, type HostOperations } from "./runbook.js";
 import { appendSettledNegativeEvidence } from "./negative-evidence.js";
 import { executeApprovedWorkflowStage, type ExecuteWorkflowStageInput } from "./approved-workflow-stage.js";
+import type { MemoryOutboxService } from "./memory-outbox.js";
 import { copyPinnedRegularFile, privatePath, publishFile, removeSqliteCopy, secureBasename, secureRoot } from "./secure-filesystem.js";
 
 export interface ApprovedExecutionResult {
@@ -28,6 +29,7 @@ export class ApprovedCommandExecutor {
     private readonly stateRoot = resolve("state"),
     private readonly hostOperations: HostOperations = {},
     private readonly clock: () => Date = () => new Date(),
+    private readonly memoryOutbox?: MemoryOutboxService,
   ) { this.control = new ControlPlane(authority); }
 
   private externalEffectContext(command: ClaimedControlCommand): { request_id: string; fence: number; effect_id: string; idempotency_key: string } {
@@ -185,6 +187,25 @@ export class ApprovedCommandExecutor {
         if (command.action_level !== 2) throw new JarvisError("APPROVED_ACTION_LEVEL_TOO_LOW");
         const payload = appendSettledNegativeEvidence(this.authority, this.control, command, now, this.clock());
         return { request_id: requestId, action: command.action, state: "completed", result: payload };
+      }
+      if (command.action === "memory.outbox.dispatch") {
+        validateControlAction(command, { enforceMinimumLevel: true, levelErrorCode: "APPROVED_ACTION_LEVEL_TOO_LOW" });
+        if (!this.memoryOutbox) throw new JarvisError("MEMORY_OUTBOX_SERVICE_UNAVAILABLE");
+        const queued = this.memoryOutbox.enqueue(command);
+        await this.memoryOutbox.runOnce(worker, 1);
+        const saga = this.memoryOutbox.get(queued.outbox_id) ?? queued;
+        const completedAt = this.clock();
+        const completed = saga.state === "settled";
+        this.control.settle(requestId, command.fence, {
+          state: completed ? "completed" : "uncertain",
+          effect_type: completed ? "memory.outbox.settled" : "memory.outbox.reconciling",
+          payload: { outbox_id: saga.outbox_id, state: saga.state, request_digest: saga.request_digest,
+            settlement_receipt_digest: saga.settlement_receipt_digest },
+          ...(completed ? {} : { failure_code: "MEMORY_OUTBOX_RECONCILING" }),
+        }, completedAt);
+        return { request_id: requestId, action: command.action, state: completed ? "completed" : "uncertain",
+          result: { outbox_id: saga.outbox_id, state: saga.state },
+          ...(completed ? {} : { failure_code: "MEMORY_OUTBOX_RECONCILING" }) };
       }
       const effect = await this.run(command, now, externalContext, worker);
       const completedAt = this.clock();

@@ -176,6 +176,20 @@ const MEMORY_BINDING_KEYS = [
 const opaque = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
 const digest = /^sha256:[0-9a-f]{64}$/;
 
+function memoryOutboxDispatch(input: RuntimeControlActionInput): void {
+  requireOnlyArgs(input.target, ["candidate_id", "candidate_digest", "classification_digest"]);
+  requireOnlyArgs(input.args, ["schema_version", "request", "expected_artifact"]);
+  const request = requireRecord(input.args, "request", "CONTROL_ARGS_MISMATCH");
+  const expected = requireRecord(input.args, "expected_artifact", "CONTROL_ARGS_MISMATCH");
+  requireOnlyArgs(expected, ["page_id", "sid", "source_digest"]);
+  if (input.args.schema_version !== 2 || request.candidate_id !== input.target.candidate_id
+    || request.candidate_digest !== input.target.candidate_digest
+    || request.classification_digest !== input.target.classification_digest
+    || !nonempty(expected.page_id) || !nonempty(expected.sid) || !nonempty(expected.source_digest)) {
+    throw new JarvisError("CONTROL_ARGS_MISMATCH");
+  }
+}
+
 function memoryAuthority(input: RuntimeControlActionInput, identityKey: "instruction_id" | "decision_id"): void {
   requireOnlyArgs(input.target, ["candidate_id", "correlation_id"]);
   requireOnlyArgs(input.args, [...MEMORY_BINDING_KEYS, identityKey]);
@@ -210,6 +224,7 @@ const descriptors: Record<string, Descriptor> = {
   "git.push": { action: "git.push", minimum_level: 4, executable: false, validate: gitPush },
   "collaboration.room.create": { action: "collaboration.room.create", minimum_level: 3, executable: false, validate: retiredCollaborationRoomCreate },
   "evidence.negative.record": { action: "evidence.negative.record", minimum_level: 2, executable: true, validate: evidenceNegativeRecord },
+  "memory.outbox.dispatch": { action: "memory.outbox.dispatch", minimum_level: 3, executable: true, validate: memoryOutboxDispatch },
   "memory.instruction.record": {
     action: "memory.instruction.record", minimum_level: 3, executable: false,
     validate: input => memoryAuthority(input, "instruction_id"),

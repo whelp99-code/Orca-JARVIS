@@ -117,6 +117,7 @@ export {
 export { GjcRuntimeService } from "./service.js";
 export {
 	createSecondBrainReadAdapter,
+	createSecondBrainWriteRequestAdapter,
 	SECOND_BRAIN_SENSITIVITIES,
 	SECOND_BRAIN_SOURCE_ID,
 	SECOND_BRAIN_TRUST,
@@ -127,7 +128,19 @@ export {
 	type SecondBrainReadAdapter,
 	type SecondBrainReadOutcome,
 	type SecondBrainSensitivity,
+	type SecondBrainWriteOutcome,
+	type SecondBrainWriteRequestAdapter,
+	type SecondBrainWriteRequestV1,
 } from "./second-brain-adapter.js";
+export {
+	MemoryOutboxService,
+	MEMORY_OUTBOX_RUNTIME_DEADLINE_MS,
+	type MemoryExpectedArtifactV2,
+	type MemoryOutboxCycleResult,
+	type MemoryOutboxSagaV2,
+	type MemoryOutboxServiceOptions,
+	type MemoryOutboxStateV2,
+} from "./memory-outbox.js";
 export {
 	createSecondBrainTransport,
 	SecondBrainTransportError,

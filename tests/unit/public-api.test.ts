@@ -37,5 +37,7 @@ describe("package root public API", () => {
     expect(typeof publicApi.planTeamProposal).toBe("function");
     expect(typeof publicApi.createSecondBrainTransport).toBe("function");
     expect(typeof publicApi.createSecondBrainReadAdapter).toBe("function");
+    expect(typeof publicApi.MemoryOutboxService).toBe("function");
+    expect(publicApi.MEMORY_OUTBOX_RUNTIME_DEADLINE_MS).toBe(600_000);
   });
 });

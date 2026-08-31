@@ -57,7 +57,7 @@ describe("migrations", () => {
         expect(rows.map(row => row.id)).toEqual(["031_control_ingress_idempotency.sql", "032_personal_context.sql",
           "033_personal_operations.sql", "034_recommendation_transition_identity.sql", "035_daily_loop_durable_guards.sql",
           "036_notification_intent_immutable_delete.sql", "037_recommendation_work_runtime.sql",
-          "038_memory_candidate_classification.sql"]);
+          "038_memory_candidate_classification.sql", "039_memory_outbox_saga.sql"]);
         expect(new Set(rows.map(row => row.checksum)).size).toBe(rows.length);
       }
     } finally { empty.close(); upgraded.close(); rmSync(join(full, ".."), { recursive: true, force: true }); rmSync(join(prior, ".."), { recursive: true, force: true }); }

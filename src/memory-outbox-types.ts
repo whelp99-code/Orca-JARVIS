@@ -1,0 +1,75 @@
+import type { ClaimedControlCommand } from "./control-plane.js";
+import type {
+  SecondBrainReadAdapter,
+  SecondBrainWriteOutcome,
+  SecondBrainWriteRequestAdapter,
+  SecondBrainWriteRequestV1,
+} from "./second-brain-adapter-types.js";
+
+export const MEMORY_OUTBOX_STATES_V2 = [
+  "queued", "claimed", "dispatching", "reconciling", "settled", "conflict", "failed", "expired",
+] as const;
+export type MemoryOutboxStateV2 = (typeof MEMORY_OUTBOX_STATES_V2)[number];
+export type MemoryExpectedArtifactV2 = {
+  readonly page_id: string;
+  readonly sid: string;
+  readonly source_digest: string;
+};
+export type MemoryOutboxActionV2 = {
+  readonly command: ClaimedControlCommand;
+  readonly request: SecondBrainWriteRequestV1;
+  readonly expected_artifact: MemoryExpectedArtifactV2;
+};
+export type MemoryOutboxSagaV2 = {
+  readonly schema_version: 2;
+  readonly outbox_id: string;
+  readonly candidate_id: string;
+  readonly request_id: string;
+  readonly request_digest: string;
+  readonly operation: "remember" | "correct";
+  readonly expected_artifact: MemoryExpectedArtifactV2;
+  readonly state: MemoryOutboxStateV2;
+  readonly lease_owner: string | null;
+  readonly lease_fence: number;
+  readonly dispatch_fence: number | null;
+  readonly dispatched_at: string | null;
+  readonly reconcile_deadline_at: string | null;
+  readonly failure_code: string | null;
+  readonly settlement_receipt_digest: string | null;
+  readonly settled_at: string | null;
+  readonly created_at: string;
+  readonly updated_at: string;
+};
+export type MemoryOutboxCycleResult = {
+  readonly claimed: number;
+  readonly dispatched: number;
+  readonly reconciling: number;
+  readonly settled: number;
+  readonly conflicts: number;
+  readonly failed: number;
+};
+export type MemoryOutboxServiceOptions = {
+  readonly authority: import("./db.js").AuthorityDb;
+  readonly writer: SecondBrainWriteRequestAdapter;
+  readonly reader: SecondBrainReadAdapter;
+  readonly clock: () => Date;
+  readonly leaseMs?: number;
+  readonly artifactDeadlineMs?: number;
+};
+export type MemoryDispatch = {
+  readonly saga: MemoryOutboxSagaV2;
+  readonly request: SecondBrainWriteRequestV1;
+  readonly attempt_id: string;
+  readonly invocation_digest: string;
+};
+export type MemoryObservation = {
+  readonly kind: "missing" | "match" | "conflict";
+  readonly code: string;
+  readonly page_id?: string;
+  readonly sid?: string;
+  readonly source_version?: string;
+  readonly source_digest?: string;
+};
+export type MemoryOutboxWriter = SecondBrainWriteRequestAdapter;
+export type MemoryOutboxReader = SecondBrainReadAdapter;
+export type MemoryWriteResult = SecondBrainWriteOutcome;

@@ -4,12 +4,26 @@ import { dirname, join, sep } from "node:path";
 import { describe, expect, it } from "vitest";
 import { ApprovedCommandExecutor, ControlPlane, signCommandApproval, type CommandApprovalReceipt, type ControlCommandRequestInput } from "../../src/index.js";
 import { future, initialized, localKey } from "../helpers.js";
+import { closeMemoryDatabase } from "../fixtures/memory-candidate-store.js";
+import { evidence, FixtureReader, OUTBOX_ARTIFACT_DIGEST, outboxFixture } from "../fixtures/memory-outbox-fixture.js";
 
 const request = (id: string, action: string, level: 0 | 1 | 2 | 3 | 4 | 5, args: Record<string, unknown>): ControlCommandRequestInput => ({ schema_version: 1, request_id: id, action, action_level: level, target: { environment: "local" }, args, reversible: true, requested_by: "operator", requested_at: new Date().toISOString(), expires_at: future(10), nonce: `nonce-${id}` });
 const approve = (db: Awaited<ReturnType<typeof initialized>>, control: ControlPlane, input: ControlCommandRequestInput): string => { const staged = control.stage(input); const now = new Date().toISOString(); const receipt: Omit<CommandApprovalReceipt, "signature"> = { schema_version: 1, receipt_id: `approval-${input.request_id}`, request_id: input.request_id, decision: "approve", command_digest: staged.command_digest, signer_principal_id: "test-operator", authenticated_session_id: "action-hub", key_id: "decision-test", algorithm: "Ed25519", issued_at: now, not_before: now, expires_at: input.expires_at, nonce: `approval-nonce-${input.request_id}`, max_uses: 1, status: "issued" }; control.decide(signCommandApproval(receipt, localKey(db))); return input.request_id; };
 const dispose = (db: Awaited<ReturnType<typeof initialized>>, root: string): void => { db.close(); rmSync(root, { recursive: true, force: true }); rmSync(dirname(db.filename), { recursive: true, force: true }); };
 
 describe("approved built-in executor", () => {
+  it("maps an exact approved memory outbox action to observed settlement", async () => {
+    const digest = OUTBOX_ARTIFACT_DIGEST;
+    const fixture = await outboxFixture({ reader: new FixtureReader({ kind: "current", checked_at: "2026-08-28T12:00:00.000Z", evidence: [evidence(digest)] }) });
+    try {
+      const executor = new ApprovedCommandExecutor(fixture.database.authority, undefined, undefined, {},
+        () => fixture.clock.now, fixture.service);
+      await expect(executor.execute(fixture.commandId, "memory-executor", fixture.clock.now)).resolves.toMatchObject({
+        state: "completed", action: "memory.outbox.dispatch", result: { state: "settled" },
+      });
+      expect(fixture.writer.calls).toHaveLength(1);
+    } finally { closeMemoryDatabase(fixture.database); }
+  });
   it("backs up, restore-checks, and projects state only after human approval", async () => {
     const root = mkdtempSync(join(tmpdir(), "jarvis-approved-")); const backupRoot = join(root, "backups"); const stateRoot = join(root, "state");
     const db = await initialized(); const control = new ControlPlane(db); const executor = new ApprovedCommandExecutor(db, backupRoot, stateRoot);
