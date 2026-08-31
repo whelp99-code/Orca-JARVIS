@@ -1,9 +1,27 @@
 import { afterEach, describe, expect, it } from "vitest";
+import { hasSecondBrainWriteAuthority } from "../../src/second-brain-write-authority.js";
 import { closeMemoryDatabase } from "../fixtures/memory-candidate-store.js";
 import { claimAction, outboxFixture, type OutboxFixture } from "../fixtures/memory-outbox-fixture.js";
 const fixtures: OutboxFixture[] = [];
 afterEach(() => { for (const fixture of fixtures.splice(0)) closeMemoryDatabase(fixture.database); });
 describe("memory outbox complete authority binding", () => {
+  it("opens post-marker write authority only for the exact accepted-unsettled projection", async () => {
+    const fixture = await outboxFixture(); fixtures.push(fixture); const queued = fixture.service.enqueue(claimAction(fixture));
+    const store = Object.getOwnPropertyDescriptor(fixture.service, "store")?.value as {
+      claimDispatch(worker: string, now: Date, lease: number): { outbox_id: string; lease_fence: number };
+      markDispatch(id: string, worker: string, fence: number, now: Date): object;
+    };
+    expect(hasSecondBrainWriteAuthority(fixture.database.authority, fixture.request, fixture.clock.now)).toBe(false);
+    const claimed = store.claimDispatch("authority-worker", fixture.clock.now, 10_000);
+    store.markDispatch(claimed.outbox_id, "authority-worker", claimed.lease_fence, fixture.clock.now);
+    expect(fixture.database.authority.db.prepare("SELECT state FROM memory_candidates WHERE candidate_id=?")
+      .get(queued.candidate_id)).toEqual({ state: "accepted_unsettled" });
+    expect(hasSecondBrainWriteAuthority(fixture.database.authority, fixture.request, fixture.clock.now)).toBe(true);
+    fixture.database.authority.db.exec("DROP TRIGGER memory_candidates_transition");
+    fixture.database.authority.db.prepare("UPDATE memory_candidates SET state='delivering' WHERE candidate_id=?")
+      .run(queued.candidate_id);
+    expect(hasSecondBrainWriteAuthority(fixture.database.authority, fixture.request, fixture.clock.now)).toBe(false);
+  });
   it("rejects at least twenty forged authority classes with zero frames", async () => {
     const fixture = await outboxFixture(); fixtures.push(fixture); const original = claimAction(fixture);
     const mutations: Array<(value: typeof original) => void> = [

@@ -22,6 +22,8 @@ describe("memory outbox concurrency and crash fencing", () => {
     const store = internalStore(fixture);
     const claimed = store.claimDispatch("crashed-worker", fixture.clock.now, 10_000);
     store.markDispatch(claimed.outbox_id, "crashed-worker", claimed.lease_fence, fixture.clock.now);
+    expect(fixture.database.authority.db.prepare("SELECT state FROM memory_candidates WHERE candidate_id=?")
+      .get(queued.candidate_id)).toEqual({ state: "accepted_unsettled" });
     fixture.clock.now = new Date(fixture.clock.now.getTime() + 10_000);
     await fixture.service.runOnce("restart-worker", 1);
     expect(fixture.writer.calls).toHaveLength(0);

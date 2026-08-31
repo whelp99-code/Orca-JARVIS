@@ -64,7 +64,7 @@ export function hasSecondBrainWriteAuthority(
   const row = persistenceRow(value);
   const terminalReceipt = row["control_receipt_id"] ?? row["verification_evidence_id"];
   const candidateStateValid = row["state"] === "approved" || (
-    row["state"] === "delivering" && row["outbox_state"] === "dispatching"
+    row["state"] === "accepted_unsettled" && row["outbox_state"] === "dispatching"
     && row["outbox_request_id"] === request.request_id
     && row["outbox_request_digest"] === request.request_digest
     && row["outbox_idempotency_key"] === request.idempotency_key

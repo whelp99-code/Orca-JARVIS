@@ -70,7 +70,8 @@ export type MemoryObservationDigestInput = {
   readonly source_digest: string | null; readonly observed_at: string; readonly outcome: string;
 };
 export type MemorySettlementDigestInput = {
-  readonly outbox_id: string; readonly candidate_id: string; readonly candidate_digest: string;
+  readonly event_type: "settled"; readonly outbox_id: string; readonly candidate_id: string;
+  readonly candidate_digest: string;
   readonly request_id: string; readonly request_digest: string; readonly attempt_id: string;
   readonly invocation_digest: string; readonly dispatch_fence: number;
   readonly acceptance_receipt_digest: string | null; readonly page_id: string; readonly sid: string;

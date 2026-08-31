@@ -204,12 +204,13 @@ export class MemoryOutboxStore {
     const eventType = state === "settled" ? "artifact_observed" : "artifact_conflict";
     const attempt = this.attempt(saga.outbox_id);
     const observationDigest = this.event(saga.outbox_id, saga.lease_fence, eventType, observation.code, at,
-      attempt.attempt_id, undefined, observation);
+      attempt.attempt_id, undefined, observation, true);
     if (state === "settled" && (saga.dispatch_fence === null || observation.page_id === undefined
       || observation.sid === undefined || observation.source_version === undefined
       || observation.source_digest === undefined)) throw new JarvisError("MEMORY_OUTBOX_INTEGRITY_FAILURE");
     const receipt = state === "settled" ? memorySettlementDigest({
-      outbox_id: saga.outbox_id, candidate_id: saga.candidate_id, candidate_digest: saga.candidate_digest,
+      event_type: "settled", outbox_id: saga.outbox_id, candidate_id: saga.candidate_id,
+      candidate_digest: saga.candidate_digest,
       request_id: saga.request_id, request_digest: saga.request_digest, attempt_id: attempt.attempt_id,
       invocation_digest: attempt.invocation_digest, dispatch_fence: saga.dispatch_fence ?? 0,
       acceptance_receipt_digest: attempt.acceptance_receipt_digest,
@@ -217,14 +218,14 @@ export class MemoryOutboxStore {
       source_version: observation.source_version ?? "", source_digest: observation.source_digest ?? "",
       observation_digest: observationDigest, reconciled_at: at,
     }) : null;
+    if (receipt !== null) this.event(saga.outbox_id, saga.lease_fence, "settled", observation.code, at,
+      attempt.attempt_id, receipt, observation, true);
     const changed = this.authority.db.prepare(
       `UPDATE memory_outbox SET state=?,lease_owner=NULL,lease_expires_at=NULL,failure_code=?,
        settlement_receipt_digest=?,settled_at=?,updated_at=? WHERE outbox_id=? AND state='reconciling' AND lease_fence=?`,
     ).run(state, state === "conflict" ? observation.code : null, receipt, state === "settled" ? at : null,
       at, saga.outbox_id, saga.lease_fence).changes;
     if (changed !== 1) throw new JarvisError("MEMORY_OUTBOX_STALE_FENCE");
-    this.event(saga.outbox_id, saga.lease_fence, state, observation.code, at,
-      this.attempt(saga.outbox_id).attempt_id, receipt ?? undefined, observation);
     this.audit(saga.outbox_id, state, "reconciling", state, saga.lease_fence, saga.request_id, receipt, at);
     return this.getRequired(saga.outbox_id);
   }
@@ -243,8 +244,8 @@ export class MemoryOutboxStore {
     if (row === undefined) throw new JarvisError("MEMORY_OUTBOX_STALE_FENCE");
   }
   private event(outboxId: string, fence: number, type: string, code: string | null, at: string,
-    attemptId?: string, receipt?: string, observation?: MemoryObservation): string {
-    return this.ledger.event(outboxId, fence, type, code, at, attemptId, receipt, observation);
+    attemptId?: string, receipt?: string, observation?: MemoryObservation, required = false): string {
+    return this.ledger.event(outboxId, fence, type, code, at, attemptId, receipt, observation, required);
   }
   private audit(id: string, event: string, prior: string | null, next: string, fence: number,
     cause: string, receipt: string | null, at: string): void {

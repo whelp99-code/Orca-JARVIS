@@ -17,7 +17,8 @@ describe("memory outbox V2 values", () => {
       Reflect.set(changed, key, typeof observation[key] === "number" ? 4 : `${observation[key]}-changed`);
       expect(memoryObservationDigest(changed), key).not.toBe(observationDigest);
     }
-    const settlement = { outbox_id: "outbox", candidate_id: "candidate", candidate_digest: `sha256:${"2".repeat(64)}`,
+    const settlement = { event_type: "settled" as const, outbox_id: "outbox", candidate_id: "candidate",
+      candidate_digest: `sha256:${"2".repeat(64)}`,
       request_id: "request", request_digest: `sha256:${"3".repeat(64)}`, attempt_id: "attempt",
       invocation_digest: `sha256:${"4".repeat(64)}`, dispatch_fence: 3, acceptance_receipt_digest: `sha256:${"5".repeat(64)}`,
       page_id: "wiki/page", sid: "12345678", source_version: "version", source_digest: `sha256:${"6".repeat(64)}`,
