@@ -5,8 +5,10 @@ import { JarvisError } from "./db.js";
 import { parseSecondBrainWriteRequest } from "./second-brain-write-request.js";
 import type {
   MemoryExpectedArtifactV2,
+  MemoryObservationDigestInput,
   MemoryOutboxActionV2,
   MemoryOutboxSagaV2,
+  MemorySettlementDigestInput,
   MemoryOutboxStateV2,
 } from "./memory-outbox-types.js";
 
@@ -21,6 +23,12 @@ const domain = (name: string): string => `orca-jarvis/${name}/v2\0`;
 
 export function memoryOutboxHash(name: string, value: unknown): string {
   return `sha256:${createHash("sha256").update(domain(name)).update(canonicalize(value)).digest("hex")}`;
+}
+export function memoryObservationDigest(input: MemoryObservationDigestInput): string {
+  return memoryOutboxHash("memory-outbox-observation", input);
+}
+export function memorySettlementDigest(input: MemorySettlementDigestInput): string {
+  return memoryOutboxHash("memory-outbox-settlement", input);
 }
 export function memoryV1Hash(name: "subject" | "content", value: unknown): string {
   return `sha256:${createHash("sha256").update(`orca-jarvis/memory-${name}/v1\0`).update(canonicalize(value)).digest("hex")}`;
@@ -99,6 +107,7 @@ export function parseSagaRow(value: unknown): MemoryOutboxSagaV2 {
     || typeof row["expected_artifact_digest"] !== "string") throw new JarvisError("MEMORY_OUTBOX_INTEGRITY_FAILURE");
   return {
     schema_version: 2, outbox_id: row["outbox_id"], candidate_id: row["candidate_id"],
+    candidate_digest: String(row["candidate_digest"]), classification_digest: String(row["classification_digest"]),
     request_id: row["request_id"], request_digest: row["request_digest"], operation: row["operation"],
     expected_artifact: { page_id: row["expected_page_id"], sid: row["expected_sid"], source_digest: row["expected_artifact_digest"] },
     state: state as MemoryOutboxStateV2, lease_owner: typeof row["lease_owner"] === "string" ? row["lease_owner"] : null,

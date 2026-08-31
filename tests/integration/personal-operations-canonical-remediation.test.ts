@@ -2,10 +2,11 @@ import { readdirSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { closePersonalDb, digest, migrationCopy, personalDb, removeMigrationCopy, T0, T1, T2, T3, T5 } from "./personal-operations-test-helpers.js";
+import { closePersonalDb, migrationCopy, personalDb, removeMigrationCopy, T0, T1, T2, T5 } from "./personal-operations-test-helpers.js";
 
 const notificationStates = ["created", "deferred", "queued", "delivering", "delivered", "suppressed", "failed", "expired"] as const;
 const memoryStates = ["proposed", "classified", "awaiting_confirmation", "approved", "queued", "delivering", "accepted_unsettled", "settled", "rejected", "uncertain", "expired"] as const;
+const outboxStates = ["queued", "claimed", "dispatching", "reconciling", "settled", "conflict", "failed", "expired"] as const;
 
 function tableSql(db: Awaited<ReturnType<typeof personalDb>>, table: string): string {
   const row = db.db.prepare("SELECT sql FROM sqlite_master WHERE type='table' AND name=?").get(table) as { sql: string };
@@ -34,8 +35,10 @@ describe("canonical personal operation states", () => {
       // Then exact canonical states are present and reduced local states are absent
       for (const state of notificationStates) { expect(notification).toContain(`'${state}'`); expect(delivery).toContain(`'${state}'`); }
       expect(notification).not.toContain("'proposed'"); expect(delivery).not.toContain("'ready'");
-      for (const state of memoryStates) { expect(candidate).toContain(`'${state}'`); expect(outbox).toContain(`'${state}'`); }
-      expect(candidate).not.toContain("'failed'"); expect(outbox).not.toContain("'failed'");
+      for (const state of memoryStates) expect(candidate).toContain(`'${state}'`);
+      for (const state of outboxStates) expect(outbox).toContain(`'${state}'`);
+      expect(candidate).not.toContain("'failed'");
+      for (const legacy of ["proposed", "classified", "awaiting_confirmation", "approved", "delivering", "accepted_unsettled", "rejected", "uncertain"]) expect(outbox).not.toContain(`'${legacy}'`);
     } finally { closePersonalDb(db); }
   });
 
@@ -52,18 +55,16 @@ describe("canonical personal operation states", () => {
     } finally { closePersonalDb(db); }
   });
 
-  it("requires accepted_unsettled before memory settlement", async () => {
-    // Given a delivering memory outbox with current lease
+  it("requires reconciling and an exact observation before memory settlement", async () => {
     const db = await personalDb();
     try {
-      db.db.prepare("INSERT INTO memory_candidates(candidate_id,correlation_id,idempotency_key,candidate_kind,operation,subject_digest,content_digest,source_digest,sensitivity,purpose,required_confirmation,state,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)").run("memcand:states", "corr:states", "idem:candidate:states", "verified_fact", "remember", digest("1"), digest("2"), digest("3"), "normal", "continuity", 0, "proposed", T5, T0, T0);
-      db.db.prepare("UPDATE memory_candidates SET state='classified',updated_at=? WHERE candidate_id='memcand:states'").run(T1);
-      db.db.prepare("UPDATE memory_candidates SET state='approved',updated_at=? WHERE candidate_id='memcand:states'").run(T1);
-      db.db.prepare("INSERT INTO memory_outbox(outbox_id,candidate_id,idempotency_key,operation,request_digest,expected_artifact_digest,state,lease_fence,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run("memout:states", "memcand:states", "idem:outbox:states", "remember", digest("4"), digest("5"), "queued", 0, T5, T0, T0);
-      db.db.prepare("UPDATE memory_outbox SET state='delivering',lease_owner='worker',lease_fence=1,lease_expires_at=?,updated_at=? WHERE outbox_id='memout:states'").run(T3, T1);
-      // When settlement skips provider acceptance
-      // Then the canonical transition rejects it
-      expect(() => db.db.prepare("UPDATE memory_outbox SET state='settled',lease_owner=NULL,lease_expires_at=NULL,settled_at=?,updated_at=? WHERE outbox_id='memout:states'").run(T2, T2)).toThrow("memory outbox transition invalid");
+      const transition = transitionSql(db, "memory_outbox_v2_transition");
+      expect(transition).toContain("dispatching:reconciling");
+      expect(transition).toContain("reconciling:settled");
+      expect(transition).not.toContain("dispatching:settled");
+      const settlement = transitionSql(db, "memory_outbox_v2_settlement_guard");
+      expect(settlement).toContain("artifact_observed");
+      expect(settlement).toContain("reconcile_fence=OLD.lease_fence");
     } finally { closePersonalDb(db); }
   });
 });

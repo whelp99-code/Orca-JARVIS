@@ -6,8 +6,8 @@ import { MemoryOutboxLedger } from "./memory-outbox-ledger.js";
 import { MemoryOutboxRecordReader } from "./memory-outbox-record.js";
 import type { MemoryDispatch, MemoryObservation, MemoryOutboxActionV2, MemoryOutboxSagaV2,
   MemoryWriteResult } from "./memory-outbox-types.js";
-import { memoryInvocation, memoryOutboxHash, memoryOutboxIdentity, parseMemoryOutboxAction,
-  parseSagaRow } from "./memory-outbox-values.js";
+import { memoryInvocation, memoryOutboxHash, memoryOutboxIdentity, memorySettlementDigest,
+  parseMemoryOutboxAction, parseSagaRow } from "./memory-outbox-values.js";
 
 function iso(value: Date): string {
   if (!Number.isFinite(value.getTime())) throw new JarvisError("MEMORY_OUTBOX_TIME_INVALID");
@@ -127,9 +127,10 @@ export class MemoryOutboxStore {
       if (changed !== 1) throw new JarvisError("MEMORY_OUTBOX_STALE_FENCE");
       this.authority.db.prepare(
         `INSERT INTO memory_outbox_attempts(
-          attempt_id,outbox_id,lease_fence,dispatch_fence,invocation_digest,request_digest,outcome,dispatched_at,created_at,updated_at
-         ) VALUES(?,?,?,?,?,?,?,?,?,?)`,
-      ).run(invocation.attempt_id, outboxId, fence, fence, invocation.digest, saga.request_digest,
+          attempt_id,outbox_id,dispatch_fence,invocation_digest,request_digest,outcome,
+          dispatched_at,created_at,updated_at
+         ) VALUES(?,?,?,?,?,?,?,?,?)`,
+      ).run(invocation.attempt_id, outboxId, fence, invocation.digest, saga.request_digest,
         "dispatching", at, at, at);
       this.event(outboxId, fence, "dispatch_authority_spent", null, at, invocation.attempt_id);
       this.audit(outboxId, "dispatching", "claimed", "dispatching", fence, saga.request_id, invocation.digest, at);
@@ -141,21 +142,23 @@ export class MemoryOutboxStore {
     const at = iso(now); const accepted = result.kind === "accepted";
     const receipt = accepted ? memoryOutboxHash("memory-outbox-acceptance", result) : null;
     const code = accepted ? "PROVIDER_ACCEPTED" : result.code;
-    return this.authority.db.transaction(() => {
+    this.authority.db.transaction(() => {
       const changed = this.authority.db.prepare(
         `UPDATE memory_outbox_attempts SET outcome=?,outcome_code=?,accepted_result_json=?,acceptance_receipt_digest=?,
          completed_at=?,updated_at=? WHERE attempt_id=? AND outcome='dispatching'`,
       ).run(accepted ? "accepted" : "uncertain", code, accepted ? canonicalize(result) : null,
         receipt, at, at, dispatch.attempt_id).changes;
       if (changed !== 1) throw new JarvisError("MEMORY_OUTBOX_STALE_FENCE");
+      const eventType = accepted ? "provider_accepted" : "dispatch_uncertain";
+      this.event(dispatch.saga.outbox_id, dispatch.saga.dispatch_fence ?? 0, eventType, code, at,
+        dispatch.attempt_id, receipt ?? undefined);
+    }).immediate();
+    return this.authority.db.transaction(() => {
       const transitioned = this.authority.db.prepare(
-        `UPDATE memory_outbox SET state='reconciling',lease_owner=NULL,lease_expires_at=NULL,failure_code=?,updated_at=?
-         WHERE outbox_id=? AND state='dispatching' AND dispatch_fence=?`,
+        `UPDATE memory_outbox SET state='reconciling',lease_owner=NULL,lease_expires_at=NULL,
+         failure_code=?,updated_at=? WHERE outbox_id=? AND state='dispatching' AND dispatch_fence=?`,
       ).run(accepted ? null : code, at, dispatch.saga.outbox_id, dispatch.saga.dispatch_fence).changes;
       if (transitioned !== 1) throw new JarvisError("MEMORY_OUTBOX_STALE_FENCE");
-      const eventType = accepted ? "provider_accepted" : "dispatch_uncertain";
-      this.event(dispatch.saga.outbox_id, dispatch.saga.dispatch_fence ?? 0, eventType, code, at, dispatch.attempt_id,
-        receipt ?? undefined);
       this.audit(dispatch.saga.outbox_id, "reconciling", "dispatching", "reconciling",
         dispatch.saga.dispatch_fence ?? 0, dispatch.saga.request_id, receipt, at);
       return this.getRequired(dispatch.saga.outbox_id);
@@ -186,9 +189,9 @@ export class MemoryOutboxStore {
       if (observation.kind === "conflict") return this.terminalObservation(saga, observation, "conflict", at);
       if (observation.kind === "match") return this.terminalObservation(saga, observation, "settled", at);
       this.event(saga.outbox_id, saga.lease_fence, "artifact_missing", observation.code, at,
-        this.attemptId(saga.outbox_id), undefined, observation);
+        this.attempt(saga.outbox_id).attempt_id, undefined, observation);
       if (timedOut) this.event(saga.outbox_id, saga.lease_fence, "reconcile_timeout", "RECONCILE_TIMEOUT", at,
-        this.attemptId(saga.outbox_id));
+        this.attempt(saga.outbox_id).attempt_id);
       this.authority.db.prepare(
         `UPDATE memory_outbox SET lease_owner=NULL,lease_expires_at=NULL,failure_code=?,updated_at=?
          WHERE outbox_id=? AND state='reconciling' AND lease_fence=?`,
@@ -199,13 +202,20 @@ export class MemoryOutboxStore {
   private terminalObservation(saga: MemoryOutboxSagaV2, observation: MemoryObservation,
     state: "settled" | "conflict", at: string): MemoryOutboxSagaV2 {
     const eventType = state === "settled" ? "artifact_observed" : "artifact_conflict";
+    const attempt = this.attempt(saga.outbox_id);
     const observationDigest = this.event(saga.outbox_id, saga.lease_fence, eventType, observation.code, at,
-      this.attemptId(saga.outbox_id), undefined, observation);
-    const receipt = state === "settled" ? memoryOutboxHash("memory-outbox-settlement", {
-      outbox_id: saga.outbox_id, candidate_id: saga.candidate_id, request_id: saga.request_id,
-      request_digest: saga.request_digest, dispatch_fence: saga.dispatch_fence,
-      page_id: observation.page_id, sid: observation.sid, source_version: observation.source_version,
-      source_digest: observation.source_digest, observation_digest: observationDigest, reconciled_at: at,
+      attempt.attempt_id, undefined, observation);
+    if (state === "settled" && (saga.dispatch_fence === null || observation.page_id === undefined
+      || observation.sid === undefined || observation.source_version === undefined
+      || observation.source_digest === undefined)) throw new JarvisError("MEMORY_OUTBOX_INTEGRITY_FAILURE");
+    const receipt = state === "settled" ? memorySettlementDigest({
+      outbox_id: saga.outbox_id, candidate_id: saga.candidate_id, candidate_digest: saga.candidate_digest,
+      request_id: saga.request_id, request_digest: saga.request_digest, attempt_id: attempt.attempt_id,
+      invocation_digest: attempt.invocation_digest, dispatch_fence: saga.dispatch_fence ?? 0,
+      acceptance_receipt_digest: attempt.acceptance_receipt_digest,
+      page_id: observation.page_id ?? "", sid: observation.sid ?? "",
+      source_version: observation.source_version ?? "", source_digest: observation.source_digest ?? "",
+      observation_digest: observationDigest, reconciled_at: at,
     }) : null;
     const changed = this.authority.db.prepare(
       `UPDATE memory_outbox SET state=?,lease_owner=NULL,lease_expires_at=NULL,failure_code=?,
@@ -214,7 +224,7 @@ export class MemoryOutboxStore {
       at, saga.outbox_id, saga.lease_fence).changes;
     if (changed !== 1) throw new JarvisError("MEMORY_OUTBOX_STALE_FENCE");
     this.event(saga.outbox_id, saga.lease_fence, state, observation.code, at,
-      this.attemptId(saga.outbox_id), receipt ?? undefined, observation);
+      this.attempt(saga.outbox_id).attempt_id, receipt ?? undefined, observation);
     this.audit(saga.outbox_id, state, "reconciling", state, saga.lease_fence, saga.request_id, receipt, at);
     return this.getRequired(saga.outbox_id);
   }
@@ -224,7 +234,7 @@ export class MemoryOutboxStore {
   private getRequired(id: string): MemoryOutboxSagaV2 {
     return this.get(id) ?? (() => { throw new JarvisError("MEMORY_OUTBOX_INTEGRITY_FAILURE"); })();
   }
-  private attemptId(id: string): string | undefined { return this.ledger.attemptId(id); }
+  private attempt(id: string) { return this.records.attempt(id); }
   private requireReconcileFence(saga: MemoryOutboxSagaV2, at: string): void {
     const row = this.authority.db.prepare(
       `SELECT 1 FROM memory_outbox WHERE outbox_id=? AND state='reconciling' AND lease_fence=?

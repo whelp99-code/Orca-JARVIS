@@ -24,6 +24,8 @@ export type MemoryOutboxSagaV2 = {
   readonly schema_version: 2;
   readonly outbox_id: string;
   readonly candidate_id: string;
+  readonly candidate_digest: string;
+  readonly classification_digest: string;
   readonly request_id: string;
   readonly request_digest: string;
   readonly operation: "remember" | "correct";
@@ -61,6 +63,19 @@ export type MemoryDispatch = {
   readonly request: SecondBrainWriteRequestV1;
   readonly attempt_id: string;
   readonly invocation_digest: string;
+};
+export type MemoryObservationDigestInput = {
+  readonly outbox_id: string; readonly attempt_id: string; readonly reconcile_fence: number;
+  readonly page_id: string | null; readonly sid: string | null; readonly source_version: string | null;
+  readonly source_digest: string | null; readonly observed_at: string; readonly outcome: string;
+};
+export type MemorySettlementDigestInput = {
+  readonly outbox_id: string; readonly candidate_id: string; readonly candidate_digest: string;
+  readonly request_id: string; readonly request_digest: string; readonly attempt_id: string;
+  readonly invocation_digest: string; readonly dispatch_fence: number;
+  readonly acceptance_receipt_digest: string | null; readonly page_id: string; readonly sid: string;
+  readonly source_version: string; readonly source_digest: string; readonly observation_digest: string;
+  readonly reconciled_at: string;
 };
 export type MemoryObservation = {
   readonly kind: "missing" | "match" | "conflict";

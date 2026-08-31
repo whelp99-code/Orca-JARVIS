@@ -63,21 +63,11 @@ describe("expired lease atomic reclaim", () => {
     } finally { closePersonalDb(db); }
   });
 
-  it("reclaims memory delivery without accepting old-fence reconciliation", async () => {
-    // Given an expired delivering memory outbox
+  it("rejects legacy memory delivery before any reclaimable effect exists", async () => {
     const db = await personalDb();
     try {
-      candidateOutbox(db);
-      db.db.prepare("UPDATE memory_outbox SET state='delivering',lease_owner='old',lease_fence=1,lease_expires_at=?,updated_at=? WHERE outbox_id='memout:reclaim'").run(T2, T1);
-      db.db.prepare("INSERT INTO memory_outbox_attempts(attempt_id,outbox_id,lease_fence,invocation_digest,outcome,created_at) VALUES(?,?,?,?,?,?)").run("mema:old", "memout:reclaim", 1, digest("a"), "uncertain", T1);
-      // When a new worker reclaims after expiry
-      db.db.prepare("UPDATE memory_outbox SET lease_owner='new',lease_fence=2,lease_expires_at=?,updated_at=? WHERE outbox_id='memout:reclaim'").run(T5, T3);
-      // Then the old fence cannot reconcile and the new accepted-unsettled path can settle
-      expect(() => db.db.prepare("INSERT INTO memory_reconciliation_events(event_id,outbox_id,attempt_id,lease_fence,event_type,observed_artifact_digest,effect_digest,created_at) VALUES(?,?,?,?,?,?,?,?)").run("memrec:old", "memout:reclaim", "mema:old", 1, "artifact_observed", digest("5"), digest("b"), T3)).toThrow("memory outbox current fence required");
-      db.db.prepare("INSERT INTO memory_outbox_attempts(attempt_id,outbox_id,lease_fence,invocation_digest,outcome,created_at) VALUES(?,?,?,?,?,?)").run("mema:new", "memout:reclaim", 2, digest("c"), "accepted", T3);
-      db.db.prepare("UPDATE memory_outbox SET state='accepted_unsettled',updated_at=? WHERE outbox_id='memout:reclaim' AND lease_owner='new' AND lease_fence=2").run(T3);
-      db.db.prepare("INSERT INTO memory_reconciliation_events(event_id,outbox_id,attempt_id,lease_fence,event_type,observed_artifact_digest,effect_digest,created_at) VALUES(?,?,?,?,?,?,?,?)").run("memrec:new", "memout:reclaim", "mema:new", 2, "artifact_observed", digest("5"), digest("d"), T3);
-      expect(db.db.prepare("UPDATE memory_outbox SET state='settled',settled_at=?,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE outbox_id='memout:reclaim' AND lease_owner='new' AND lease_fence=2").run(T3, T3).changes).toBe(1);
+      expect(() => candidateOutbox(db)).toThrow("memory candidate approval required");
+      expect((db.db.prepare("SELECT COUNT(*) AS n FROM memory_outbox").get() as { n: number }).n).toBe(0);
     } finally { closePersonalDb(db); }
   });
 

@@ -40,6 +40,9 @@ export function hasSecondBrainWriteAuthority(
       rd.request_id AS control_redeemed,rv.request_id AS control_revoked,
       v.status AS verification_status,v.candidate_id AS verification_candidate_id,
       v.expires_at AS verification_expires_at,
+      o.state AS outbox_state,o.request_id AS outbox_request_id,o.request_digest AS outbox_request_digest,
+      o.idempotency_key AS outbox_idempotency_key,o.dispatch_fence,o.lease_fence AS outbox_lease_fence,
+      o.lease_expires_at AS outbox_lease_expires_at,o.action_request_id,o.action_receipt_id,
       CASE WHEN v.evidence_id IS NULL THEN 0 ELSE (SELECT COUNT(*) FROM authority_revocations ar
         WHERE ar.reference IN (v.evidence_id,v.verifier_key_id,v.nonce,v.evidence_digest,v.signature,v.attempt_id))
       END AS verification_revoked
@@ -54,12 +57,23 @@ export function hasSecondBrainWriteAuthority(
      LEFT JOIN control_command_revocations rv ON rv.request_id=r.request_id
      LEFT JOIN memory_candidate_verification_authority v
        ON v.evidence_id=m.verification_evidence_id
+     LEFT JOIN memory_outbox o ON o.candidate_id=c.candidate_id
      WHERE c.candidate_id=?`,
   ).get(request.candidate_id);
   if (value === undefined) return false;
   const row = persistenceRow(value);
   const terminalReceipt = row["control_receipt_id"] ?? row["verification_evidence_id"];
-  return row["state"] === "approved"
+  const candidateStateValid = row["state"] === "approved" || (
+    row["state"] === "delivering" && row["outbox_state"] === "dispatching"
+    && row["outbox_request_id"] === request.request_id
+    && row["outbox_request_digest"] === request.request_digest
+    && row["outbox_idempotency_key"] === request.idempotency_key
+    && row["dispatch_fence"] === row["outbox_lease_fence"]
+    && typeof row["outbox_lease_expires_at"] === "string"
+    && Date.parse(row["outbox_lease_expires_at"]) > now.getTime()
+    && typeof row["action_request_id"] === "string" && typeof row["action_receipt_id"] === "string"
+  );
+  return candidateStateValid
     && row["operation"] === request.operation
     && row["candidate_digest"] === request.candidate_digest
     && row["classification_digest"] === request.classification_digest

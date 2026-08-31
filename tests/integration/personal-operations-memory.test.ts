@@ -9,37 +9,24 @@ function insertCandidate(db: AuthorityDb, id: string): void {
 }
 
 describe("memory outbox persistence", () => {
-  it("allows one outbox row per candidate and semantic idempotency key", async () => {
-    // Given one approved candidate
+  it("rejects every outbox row that bypasses the V2 approved action", async () => {
     const db = await personalDb();
     try {
       insertCandidate(db, "memcand:one");
-      // When one semantic outbox row is queued
-      db.db.prepare("INSERT INTO memory_outbox(outbox_id,candidate_id,idempotency_key,operation,request_digest,expected_artifact_digest,state,lease_fence,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run("memout:one", "memcand:one", "idem:send:one", "remember", digest("d"), digest("e"), "queued", 0, T5, T0, T0);
-      // Then candidate and key duplication fail
-      expect(() => db.db.prepare("INSERT INTO memory_outbox(outbox_id,candidate_id,idempotency_key,operation,request_digest,expected_artifact_digest,state,lease_fence,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run("memout:two", "memcand:one", "idem:send:two", "remember", digest("d"), digest("e"), "queued", 0, T5, T0, T0)).toThrow(/UNIQUE constraint failed/);
-      insertCandidate(db, "memcand:two");
-      expect(() => db.db.prepare("INSERT INTO memory_outbox(outbox_id,candidate_id,idempotency_key,operation,request_digest,expected_artifact_digest,state,lease_fence,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run("memout:three", "memcand:two", "idem:send:one", "remember", digest("f"), digest("1"), "queued", 0, T5, T0, T0)).toThrow(/UNIQUE constraint failed/);
+      expect(() => db.db.prepare("INSERT INTO memory_outbox(outbox_id,candidate_id,idempotency_key,operation,request_digest,expected_artifact_digest,state,lease_fence,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run("memout:one", "memcand:one", "idem:send:one", "remember", digest("d"), digest("e"), "queued", 0, T5, T0, T0)).toThrow("memory candidate approval required");
+      expect((db.db.prepare("SELECT COUNT(*) AS n FROM memory_outbox").get() as { n: number }).n).toBe(0);
     } finally { closePersonalDb(db); }
   });
 
-  it("requires accepted provider response and current-fence reconciliation", async () => {
-    // Given one current delivering outbox
+  it("publishes one immutable V2 attempt and exact reconciliation-fence columns", async () => {
     const db = await personalDb();
     try {
-      insertCandidate(db, "memcand:delivery");
-      db.db.prepare("INSERT INTO memory_outbox(outbox_id,candidate_id,idempotency_key,operation,request_digest,expected_artifact_digest,state,lease_fence,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run("memout:delivery", "memcand:delivery", "idem:send:delivery", "remember", digest("2"), digest("3"), "queued", 0, T5, T0, T0);
-      db.db.prepare("UPDATE memory_outbox SET state='delivering',lease_owner='memory:one',lease_fence=1,lease_expires_at=?,updated_at=? WHERE outbox_id='memout:delivery'").run(T3, T1);
-      db.db.prepare("INSERT INTO memory_outbox_attempts(attempt_id,outbox_id,lease_fence,invocation_digest,outcome,created_at) VALUES(?,?,?,?,?,?)").run("mema:one", "memout:delivery", 1, digest("4"), "accepted", T1);
-      // When provider acceptance and observed artifact are recorded
-      db.db.prepare("UPDATE memory_outbox SET state='accepted_unsettled',updated_at=? WHERE outbox_id='memout:delivery'").run(T2);
-      db.db.prepare("INSERT INTO memory_reconciliation_events(event_id,outbox_id,attempt_id,lease_fence,event_type,observed_artifact_digest,effect_digest,created_at) VALUES(?,?,?,?,?,?,?,?)").run("memrec:one", "memout:delivery", "mema:one", 1, "artifact_observed", digest("3"), digest("5"), T2);
-      // Then duplicate sends/effects and stale fence fail
-      expect(() => db.db.prepare("INSERT INTO memory_outbox_attempts(attempt_id,outbox_id,lease_fence,invocation_digest,outcome,created_at) VALUES(?,?,?,?,?,?)").run("mema:two", "memout:delivery", 1, digest("4"), "accepted", T2)).toThrow(/UNIQUE constraint failed|memory outbox current fence required/);
-      expect(() => db.db.prepare("INSERT INTO memory_reconciliation_events(event_id,outbox_id,attempt_id,lease_fence,event_type,observed_artifact_digest,effect_digest,created_at) VALUES(?,?,?,?,?,?,?,?)").run("memrec:two", "memout:delivery", "mema:one", 1, "artifact_observed", digest("3"), digest("5"), T2)).toThrow(/UNIQUE constraint failed/);
-      expect(db.db.prepare("UPDATE memory_outbox SET state='settled',lease_owner=NULL,lease_expires_at=NULL,settled_at=?,updated_at=? WHERE outbox_id='memout:delivery' AND lease_fence=0").run(T2, T2).changes).toBe(0);
-      db.db.prepare("UPDATE memory_outbox SET state='settled',lease_owner=NULL,lease_expires_at=NULL,settled_at=?,updated_at=? WHERE outbox_id='memout:delivery' AND lease_fence=1").run(T2, T2);
-      expect(() => db.db.prepare("DELETE FROM memory_outbox_attempts WHERE attempt_id='mema:one'").run()).toThrow("immutable memory outbox attempt");
+      const attempts = (db.db.prepare("PRAGMA table_info(memory_outbox_attempts)").all() as Array<{ name: string }>).map(row => row.name);
+      const events = (db.db.prepare("PRAGMA table_info(memory_reconciliation_events)").all() as Array<{ name: string }>).map(row => row.name);
+      expect(attempts).toContain("dispatch_fence"); expect(attempts).not.toContain("lease_fence");
+      expect(events).toContain("reconcile_fence"); expect(events).not.toContain("lease_fence");
+      const indexes = (db.db.prepare("SELECT name FROM sqlite_master WHERE type='index' AND tbl_name='memory_outbox_attempts'").all() as Array<{ name: string }>).map(row => row.name);
+      expect(indexes).toContain("memory_outbox_v2_one_attempt");
     } finally { closePersonalDb(db); }
   });
 

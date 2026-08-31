@@ -17,6 +17,15 @@ export class MemoryOutboxRecordReader {
     if (parsed === undefined) throw new JarvisError("MEMORY_OUTBOX_AUTHORITY_INVALID");
     return parsed;
   }
+  attempt(outboxId: string): { attempt_id: string; invocation_digest: string;
+    acceptance_receipt_digest: string | null } {
+    const row = this.authority.db.prepare(
+      "SELECT attempt_id,invocation_digest,acceptance_receipt_digest FROM memory_outbox_attempts WHERE outbox_id=?",
+    ).get(outboxId) as { attempt_id: string; invocation_digest: string;
+      acceptance_receipt_digest: string | null } | undefined;
+    if (row === undefined) throw new JarvisError("MEMORY_OUTBOX_INTEGRITY_FAILURE");
+    return row;
+  }
   command(outboxId: string): ClaimedControlCommand {
     const row = this.authority.db.prepare(
       `SELECT r.*,x.receipt_id FROM memory_outbox o

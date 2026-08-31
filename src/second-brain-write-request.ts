@@ -220,6 +220,8 @@ export function snapshotSecondBrainWriteArguments(
 ): Readonly<Record<string, unknown>> | undefined {
   const input = record(value);
   if (input === undefined || !exact(input, ["request"])) return undefined;
-  const request = parseSecondBrainWriteRequest(input["request"]);
+  const rawRequest = record(input["request"]); const createdAt = rawRequest?.["created_at"];
+  if (typeof createdAt !== "string") return undefined;
+  const request = parseSecondBrainWriteRequest(rawRequest, new Date(createdAt));
   return request === undefined ? undefined : Object.freeze({ request });
 }

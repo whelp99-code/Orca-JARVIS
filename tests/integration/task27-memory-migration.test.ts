@@ -13,6 +13,7 @@ import {
 } from "../fixtures/memory-candidate-store.js";
 
 const MIGRATION = "038_memory_candidate_classification.sql";
+const TASK29_MIGRATION = "039_memory_outbox_saga.sql";
 const BASELINE_MANIFEST_DIGEST = "fed3a674aa63174052b28f4268871373254719966a78563d3291f7e967034d82";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -193,7 +194,7 @@ describe("Task 27 forward memory classification migration", () => {
         "SELECT id FROM schema_migrations WHERE id>='037_' ORDER BY id",
       ).all();
       expect(rows.map(value => record(value)["id"]))
-        .toEqual(["037_recommendation_work_runtime.sql", MIGRATION]);
+        .toEqual(["037_recommendation_work_runtime.sql", MIGRATION, TASK29_MIGRATION]);
       expect(record(upgraded.db.prepare(
         "SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name='memory_candidate_classifications'",
       ).get())["count"]).toBe(1);
@@ -217,7 +218,7 @@ describe("Task 27 forward memory classification migration", () => {
         "SELECT id FROM schema_migrations WHERE id>='037_' ORDER BY id",
       ).all();
       expect(rows.map(value => record(value)["id"]))
-        .toEqual(["037_recommendation_work_runtime.sql", MIGRATION]);
+        .toEqual(["037_recommendation_work_runtime.sql", MIGRATION, TASK29_MIGRATION]);
       expect(record(authority.db.prepare(
         "SELECT COUNT(*) AS count FROM sqlite_master WHERE type='table' AND name LIKE 'recommendation_work_%'",
       ).get())["count"]).toBe(12);
@@ -247,7 +248,8 @@ describe("Task 27 forward memory classification migration", () => {
       const rows: readonly unknown[] = authority.db.prepare(
         "SELECT id FROM schema_migrations WHERE id>='037_' ORDER BY id",
       ).all();
-      expect(rows.map(value => record(value)["id"])).toEqual(["037_task26_placeholder.sql", MIGRATION]);
+      expect(rows.map(value => record(value)["id"]))
+        .toEqual(["037_task26_placeholder.sql", MIGRATION, TASK29_MIGRATION]);
       const foreignKeys: readonly unknown[] = authority.db.prepare(
         "PRAGMA foreign_key_list(memory_candidate_classifications)",
       ).all();

@@ -19,6 +19,12 @@ describe("package root public API", () => {
     expect(directMutationApis.filter(name => name in publicApi)).toEqual([]);
   });
 
+  it("exports only the frozen outbox service and keeps saga internals private", () => {
+    expect(typeof publicApi.MemoryOutboxService).toBe("function");
+    for (const internal of ["MemoryOutboxStore", "MemoryOutboxLedger", "MemoryOutboxRecordReader",
+      "memoryOutboxHash", "memoryObservationDigest", "memorySettlementDigest"]) expect(internal in publicApi).toBe(false);
+  });
+
   it("does not export a standalone writer that can persist evidence without settlement", () => {
     expect("recordNegativeEvidence" in negativeEvidence).toBe(false);
     expect("persistNegativeEvidence" in negativeEvidence).toBe(false);

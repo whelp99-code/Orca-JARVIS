@@ -141,11 +141,9 @@ describe("current lease effects epoch 3", () => {
     try {
       insertCandidate(db, "memcand:expired-outbox", 0, "normal");
       db.db.prepare("UPDATE memory_candidates SET state='approved',updated_at=? WHERE candidate_id='memcand:expired-outbox'").run(T1);
-      db.db.prepare("INSERT INTO memory_outbox(outbox_id,candidate_id,idempotency_key,operation,request_digest,expected_artifact_digest,state,lease_fence,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run("memout:expired-effect", "memcand:expired-outbox", "idem:expired-outbox", "remember", digest("b"), digest("c"), "queued", 0, T5, T0, T0);
-      db.db.prepare("UPDATE memory_outbox SET state='delivering',lease_owner='memory:expired',lease_fence=1,lease_expires_at=?,updated_at=? WHERE outbox_id='memout:expired-effect'").run(T2, T1);
-      // When the stale owner accepts at T3
-      // Then effect and reconciliation require reclaim first
-      expect(() => db.db.prepare("UPDATE memory_outbox SET state='accepted_unsettled',updated_at=? WHERE outbox_id='memout:expired-effect'").run(T3)).toThrow("memory outbox current lease required");
+      // When legacy SQL attempts to bypass the V2 approved-action binding
+      // Then it fails before any lease or provider effect can exist.
+      expect(() => db.db.prepare("INSERT INTO memory_outbox(outbox_id,candidate_id,idempotency_key,operation,request_digest,expected_artifact_digest,state,lease_fence,expires_at,created_at,updated_at) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run("memout:expired-effect", "memcand:expired-outbox", "idem:expired-outbox", "remember", digest("b"), digest("c"), "queued", 0, T5, T0, T0)).toThrow("memory candidate approval required");
     } finally { closePersonalDb(db); }
   });
 

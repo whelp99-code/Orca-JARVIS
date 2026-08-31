@@ -1,25 +1,24 @@
 import type { AuthorityDb } from "./db.js";
 import type { MemoryObservation } from "./memory-outbox-types.js";
-import { memoryOutboxHash } from "./memory-outbox-values.js";
+import { memoryObservationDigest, memoryOutboxHash } from "./memory-outbox-values.js";
 
 export class MemoryOutboxLedger {
   constructor(private readonly authority: AuthorityDb) {}
-  attemptId(id: string): string | undefined {
-    return (this.authority.db.prepare(
-      "SELECT attempt_id FROM memory_outbox_attempts WHERE outbox_id=? AND attempt_id LIKE 'memattempt:pos:v2:%'",
-    ).get(id) as { attempt_id?: string } | undefined)?.attempt_id;
-  }
   event(outboxId: string, fence: number, type: string, code: string | null, at: string,
     attemptId?: string, receipt?: string, observation?: MemoryObservation): string {
-    const digest = memoryOutboxHash("memory-outbox-observation", {
-      outbox_id: outboxId, attempt_id: attemptId ?? null, reconcile_fence: fence, event_type: type,
-      outcome_code: code, page_id: observation?.page_id ?? null, sid: observation?.sid ?? null,
-      source_version: observation?.source_version ?? null,
-      source_digest: observation?.source_digest ?? receipt ?? null, observed_at: at,
+    if (observation !== undefined && attemptId === undefined) throw new TypeError("memory observation attempt required");
+    const digest = observation === undefined ? memoryOutboxHash("memory-outbox-event", {
+      outbox_id: outboxId, attempt_id: attemptId ?? null, reconcile_fence: fence,
+      event_type: type, outcome_code: code, receipt_digest: receipt ?? null, created_at: at,
+    }) : memoryObservationDigest({
+      outbox_id: outboxId, attempt_id: attemptId ?? "", reconcile_fence: fence,
+      page_id: observation.page_id ?? null, sid: observation.sid ?? null,
+      source_version: observation.source_version ?? null, source_digest: observation.source_digest ?? null,
+      observed_at: at, outcome: code ?? type,
     });
     this.authority.db.prepare(
       `INSERT OR IGNORE INTO memory_reconciliation_events(
-        event_id,outbox_id,attempt_id,lease_fence,event_type,outcome_code,page_id,sid,source_version,
+        event_id,outbox_id,attempt_id,reconcile_fence,event_type,outcome_code,page_id,sid,source_version,
         observed_artifact_digest,effect_digest,created_at
        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).run(`event:memory-outbox:v2:${digest.slice(7)}`, outboxId, attemptId ?? null, fence, type, code,
