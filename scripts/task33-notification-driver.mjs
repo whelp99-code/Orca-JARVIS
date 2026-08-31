@@ -38,6 +38,17 @@ async function runPackage(executable, options) {
     if (launched.child.exitCode === null) { launched.child.kill("SIGTERM"); await launched.exited; }
   }
 }
+function markerCount(output, marker) { return output.split(marker).length - 1; }
+function observationReceipt(requests, output) {
+  return { windows: markerCount(output, "TASK33_OBSERVE_WINDOW"),
+    sseClients: markerCount(output, "TASK33_OBSERVE_SSE_CLIENT"),
+    drains: markerCount(output, "TASK33_OBSERVE_DRAIN"), adapters: markerCount(output, "TASK33_OBSERVE_ADAPTER"),
+    focus: markerCount(output, "TASK33_OBSERVE_FOCUS"), navigation: markerCount(output, "TASK33_OBSERVE_NAVIGATION"),
+    show: markerCount(output, "TASK33_OBSERVE_SHOW"), resource: requests.resources, settle: requests.settles };
+}
+function receiptDelta(before, after) {
+  return Object.fromEntries(Object.keys(before).map(key => [key, after[key] - before[key]]));
+}
 function recommendationDetails() {
   return { schema_version: 1, resource: "recommendation", recommendation_id: RECOMMENDATION,
     context_id: "ctx:pos:v1:driver", canonical_digest: "sha256:" + "3".repeat(64),
@@ -105,27 +116,36 @@ try {
     throw new TypeError("package contract invalid");
   }
   const sharedUserData = join(root, "shared-user-data");
-  firstPackage = launchPackage(packaged.executable, [], sharedUserData);
+  firstPackage = launchPackage(packaged.executable, ["--task33-driver-observe"], sharedUserData);
   const happyMarker = "TASK33_PACKAGED_ELECTRON_HAPPY_PASS claims=2 shows=1 settles=1";
   await firstPackage.waitFor(happyMarker);
   const metrics = /claims=(\d+) shows=(\d+) settles=(\d+)/u.exec(firstPackage.stdout());
   const claims = Number(metrics?.[1]); const shows = Number(metrics?.[2]); const settles = Number(metrics?.[3]);
+  const initial = observationReceipt(requests, firstPackage.stdout());
   if (!(claims === 2 && shows === 1 && settles === 1) || requests.claims !== 2 || requests.settles !== 1
-    || requests.events !== 1) throw new TypeError("adapter effects invalid");
+    || requests.events !== 1 || initial.windows !== 1 || initial.sseClients !== 1 || initial.drains !== 1
+    || initial.adapters !== 1 || initial.show !== 1) throw new TypeError("adapter effects invalid");
   const validLink = "jarvis://open/recommendation?id=" + Buffer.from(RECOMMENDATION, "utf8").toString("base64url") + "&rank=1";
-  const navigated = firstPackage.waitFor("TASK33_DEEP_LINK_OPENED route=recommendation");
-  const second = launchPackage(packaged.executable, [validLink], sharedUserData);
+  const navigated = firstPackage.waitFor("TASK33_OBSERVE_NAVIGATION");
+  const second = launchPackage(packaged.executable, ["--task33-driver-observe", validLink], sharedUserData);
   await second.waitFor("ELECTRON_SINGLE_INSTANCE_REDIRECTED"); const [secondExit] = await second.exited; await navigated;
-  const navigationCount = firstPackage.stdout().split("TASK33_DEEP_LINK_OPENED route=recommendation").length - 1;
-  if (!(secondExit === 0) || !(navigationCount === 1) || requests.resources !== 1) throw new TypeError("second process invalid");
-  const beforeMalformed = navigationCount;
-  const malformed = launchPackage(packaged.executable, ["--help", "jarvis://evil/today"], sharedUserData);
-  await malformed.waitFor("TASK33_PACKAGED_ELECTRON_HELP_PASS"); const [malformedExit] = await malformed.exited;
-  const malformedNavigationCount = firstPackage.stdout().split("TASK33_DEEP_LINK_OPENED").length - 1 - beforeMalformed;
-  const malformedFocusCount = 0;
-  if (malformedExit !== 0 || !(malformedNavigationCount === 0) || malformedFocusCount !== 0) {
-    throw new TypeError("malformed second process invalid");
-  }
+  const secondRedirected = markerCount(second.stdout(), "ELECTRON_SINGLE_INSTANCE_REDIRECTED");
+  const valid = observationReceipt(requests, firstPackage.stdout()); const validDelta = receiptDelta(initial, valid);
+  if (!(secondExit === 0) || secondRedirected !== 1 || valid.focus !== 1 || valid.navigation !== 1 || valid.resource !== 1
+    || validDelta.windows !== 0 || validDelta.sseClients !== 0 || validDelta.drains !== 0 || validDelta.adapters !== 0
+    || validDelta.show !== 0 || validDelta.settle !== 0) throw new TypeError("second process invalid");
+  const invalidHandled = firstPackage.waitFor("TASK33_OBSERVE_INVALID_SECOND");
+  const invalidCode = firstPackage.waitFor("ELECTRON_DEEP_LINK_INVALID", "stderr");
+  const malformed = launchPackage(packaged.executable, ["--task33-driver-observe", "jarvis://evil/today"], sharedUserData);
+  await malformed.waitFor("ELECTRON_SINGLE_INSTANCE_REDIRECTED"); const [malformedExit] = await malformed.exited;
+  await invalidHandled; await invalidCode;
+  const malformedRedirected = markerCount(malformed.stdout(), "ELECTRON_SINGLE_INSTANCE_REDIRECTED");
+  const malformedReceipt = observationReceipt(requests, firstPackage.stdout());
+  const malformedDelta = receiptDelta(valid, malformedReceipt);
+  if (malformedExit !== 0 || malformedRedirected !== 1 || malformedDelta.focus !== 0 || malformedDelta.navigation !== 0
+    || malformedDelta.resource !== 0 || malformedDelta.show !== 0 || malformedDelta.settle !== 0
+    || malformedDelta.windows !== 0 || malformedDelta.sseClients !== 0 || malformedDelta.drains !== 0
+    || malformedDelta.adapters !== 0) throw new TypeError("malformed second process invalid");
   const measured = { ...requests };
   const after = counts();
   const unexpected = tables.filter(name => name !== "notification_deliveries" && after[name] !== before[name]);
@@ -139,9 +159,14 @@ try {
     + ` settles=${measured.settles} sse=${measured.events} unauthorized_effects=0\n`);
   process.stdout.write(`TASK33_PACKAGED_ELECTRON_HAPPY_PASS claims=${claims} shows=${shows} settles=${settles}\n`);
   process.stdout.write("TASK33_PACKAGED_ELECTRON_HELP_PASS\nTASK33_PACKAGED_ELECTRON_BAD_PATHS_PASS\n");
-  process.stdout.write(`TASK33_REAL_SECOND_PROCESS_PASS second_exit=${secondExit} redirected=1 windows=1 sse_clients=1`
-    + ` drains=1 adapters=1 focus=1 navigation=${navigationCount} malformed_focus=${malformedFocusCount}`
-    + ` malformed_navigation=${malformedNavigationCount}\n`);
+  process.stdout.write(`TASK33_REAL_SECOND_PROCESS_PASS second_exit=${secondExit} redirected=${secondRedirected}`
+    + ` windows=${valid.windows}`
+    + ` sse_clients=${valid.sseClients} drains=${valid.drains} adapters=${valid.adapters} focus=${valid.focus}`
+    + ` navigation=${valid.navigation}\n`);
+  process.stdout.write(`TASK33_REAL_MALFORMED_SECOND_PASS exit=${malformedExit} redirected=${malformedRedirected}`
+    + ` focus=${malformedDelta.focus}`
+    + ` navigation=${malformedDelta.navigation} resource=${malformedDelta.resource} show=${malformedDelta.show}`
+    + ` settle=${malformedDelta.settle}\n`);
   process.stdout.write("TASK33_NOTIFICATION_DRIVER_PASS\n");
 } finally {
   if (firstPackage?.child.exitCode === null) { firstPackage.child.kill("SIGTERM"); await firstPackage.exited; }

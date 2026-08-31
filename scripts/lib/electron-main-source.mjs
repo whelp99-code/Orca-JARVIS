@@ -5,13 +5,26 @@ if (process.argv.includes("--help")) {
   process.stdout.write("JARVIS Electron client\nTASK33_PACKAGED_ELECTRON_HELP_PASS\n"); app.exit(0);
 }
 let windowRef; let pendingLink; let client; let deepLinkCoordinator;
+const driverObservations = process.argv.includes("--task33-driver-observe");
+const observe = marker => { if (driverObservations) process.stdout.write(marker + "\n"); };
 const deepLinkArg = argv => argv.find(value => typeof value === "string" && value.startsWith("jarvis:"));
 pendingLink = deepLinkArg(process.argv);
 const lock = app.requestSingleInstanceLock();
 if (!lock) { process.stdout.write("ELECTRON_SINGLE_INSTANCE_REDIRECTED\n"); app.quit(); }
 app.on("open-url", (event, value) => { event.preventDefault(); pendingLink = value; if (windowRef) void openLink(value); });
-app.on("second-instance", (_event, argv) => { const value = deepLinkArg(argv); if (value) pendingLink = value; focus(); if (value) void openLink(value); });
-function focus() { if (!windowRef) return; if (windowRef.isMinimized()) windowRef.restore(); windowRef.show(); windowRef.focus(); }
+app.on("second-instance", (_event, argv) => { void handleSecondInstance(argv); });
+async function handleSecondInstance(argv) {
+  const value = deepLinkArg(argv);
+  try {
+    if (value === undefined) throw new TypeError("invalid link");
+    const deepLinks = await import("./electron-deep-link.mjs"); deepLinks.parseJarvisDeepLink(value);
+  } catch { process.stderr.write("ELECTRON_DEEP_LINK_INVALID\n"); observe("TASK33_OBSERVE_INVALID_SECOND"); return; }
+  pendingLink = value; await openLink(value);
+}
+function focus() {
+  if (!windowRef) return; observe("TASK33_OBSERVE_FOCUS");
+  if (windowRef.isMinimized()) windowRef.restore(); windowRef.show(); windowRef.focus();
+}
 async function openLink(value) {
   if (!deepLinkCoordinator) { pendingLink = value; return; }
   await deepLinkCoordinator.open(value);
@@ -46,6 +59,7 @@ function makeTransport(protocol, metrics) {
       return protocol.parseSettlementResponse(response.status, await json(response));
     },
     subscribe: onNotification => {
+      observe("TASK33_OBSERVE_SSE_CLIENT");
       controller = new AbortController(); let readyResolve; let connected = false; let lastEventId;
       const ready = new Promise(resolve => { readyResolve = resolve; });
       void (async () => {
@@ -84,7 +98,9 @@ function makeTransport(protocol, metrics) {
 }
 async function createWindow() {
   app.setAsDefaultProtocolClient(config.protocol_scheme);
-  windowRef = new BrowserWindow({ width: 1280, height: 800, webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  windowRef = new BrowserWindow({ width: 1280, height: 800,
+    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true } });
+  observe("TASK33_OBSERVE_WINDOW");
   const authority = new URL(config.authority_url);
   windowRef.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
   windowRef.webContents.on("will-navigate", (event, target) => { if (new URL(target).origin !== authority.origin) event.preventDefault(); });
@@ -93,7 +109,7 @@ async function createWindow() {
   const deepLinks = await import("./electron-deep-link.mjs");
   deepLinkCoordinator = deepLinks.createDeepLinkCoordinator({ authorityUrl: config.authority_url,
     request: async url => net.fetch(url), focus, navigate: async route => {
-      await windowRef.loadURL(config.authority_url + route);
+      focus(); await windowRef.loadURL(config.authority_url + route); observe("TASK33_OBSERVE_NAVIGATION");
       process.stdout.write("TASK33_DEEP_LINK_OPENED route=" + (route === "/" ? "today" : "recommendation") + "\n");
     }, onError: code => process.stderr.write(code + "\n") });
   const protocol = await import("./electron-notification-client.mjs");
@@ -101,13 +117,14 @@ async function createWindow() {
   const nativeAdapter = protocol.createElectronNotificationAdapter(Notification, value => {
     process.stdout.write("TASK33_NATIVE_NOTIFICATION_CLICK\n"); void openLink(value);
   });
+  observe("TASK33_OBSERVE_ADAPTER");
   const adapter = { isSupported: nativeAdapter.isSupported, show: async input => {
-    const result = await nativeAdapter.show(input); metrics.shows += 1; return result;
+    const result = await nativeAdapter.show(input); metrics.shows += 1; observe("TASK33_OBSERVE_SHOW"); return result;
   } };
   client = protocol.createNotificationDeliveryClient({ transport: makeTransport(protocol, metrics), adapter,
     onError: error => process.stderr.write(error instanceof protocol.ElectronProtocolError
       ? "ELECTRON_PROTOCOL_INVALID\n" : "LINUX_AUTHORITY_UNAVAILABLE\n") });
-  await client.start();
+  observe("TASK33_OBSERVE_DRAIN"); await client.start();
   process.stdout.write("TASK33_PACKAGED_ELECTRON_HAPPY_PASS claims=" + metrics.claims
     + " shows=" + metrics.shows + " settles=" + metrics.settles + "\n");
   if (pendingLink) await openLink(pendingLink);
