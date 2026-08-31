@@ -1,7 +1,9 @@
 import { execFile } from "node:child_process";
+import { createHash } from "node:crypto";
 import { chmodSync, closeSync, mkdtempSync, openSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { canonicalize } from "../../src/canonical.js";
 import type { SecondBrainTimerHandle, SecondBrainTransportOptions } from "../../src/second-brain-transport.js";
 
 export type Fixture = { readonly root: string; readonly launcher: string; readonly config: string; readonly control: string; readonly receipt: string };
@@ -11,7 +13,16 @@ export function writeRequest(extra: Readonly<Record<string, unknown>> = {}): Rea
   const happy = parsed["tools"]["sb_write_request"]["happy"];
   if (!isRecord(happy) || !isRecord(happy["arguments"]) || !isRecord(happy["arguments"]["request"])) throw new Error("write fixture malformed");
   const request = structuredClone(happy["arguments"]["request"]); const payload = request["payload"];
-  if (Object.keys(extra).length > 0 && isRecord(payload)) payload["content"] = JSON.stringify(extra);
+  if (Object.keys(extra).length > 0 && isRecord(payload)) {
+    payload["content"] = JSON.stringify(extra);
+    const base = Object.fromEntries(Object.entries(request).filter(
+      ([key]) => key !== "request_id" && key !== "request_digest",
+    ));
+    const requestDigest = `sha256:${createHash("sha256")
+      .update("orca-jarvis/memory-write-request/v1\0").update(canonicalize(base)).digest("hex")}`;
+    request["request_digest"] = requestDigest;
+    request["request_id"] = `memreq:pos:v1:${requestDigest.slice(7)}`;
+  }
   return { request };
 }
 export function fixture(settings: Readonly<Record<string, unknown>> = {}): Fixture {
