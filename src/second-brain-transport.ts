@@ -1,17 +1,34 @@
-import { execFile as nodeExecFile, type ChildProcess, } from "node:child_process"; import { realpathSync } from "node:fs";
-import { parseSecondBrainStrictJson } from "./second-brain-strict-json.js"; import { snapshotSecondBrainWriteArguments } from "./second-brain-write-request.js"; import { frozenArgumentsMatch,
-	inspectFrozenSchemas, snapshotArguments, } from "./second-brain-frozen.js"; import { SECOND_BRAIN_CONFIG, SECOND_BRAIN_DEADLINES, SECOND_BRAIN_FRAME_BYTES,
-	SECOND_BRAIN_LAUNCHER, SECOND_BRAIN_LIMITS, SECOND_BRAIN_PROTOCOL_VERSION, SECOND_BRAIN_READ_METHODS as READ_METHODS,
-	SECOND_BRAIN_WRITE_METHOD as WRITE_METHOD, SecondBrainTransportError, isSecondBrainReadMethod as isRead, loadSecondBrainContract, normalizeSecondBrainOutcome,
-	type SecondBrainCallOptions, type SecondBrainDiagnostic, type SecondBrainDisposition, type SecondBrainExecFile, type SecondBrainMethod,
-	type SecondBrainOutcome, type SecondBrainTimerHandle, type SecondBrainTimers, type SecondBrainTransport,
-	type SecondBrainTransportOptions, } from "./second-brain-transport-contract.js"; import { isSecondBrainRecord as isRecord, secondBrainRecord as record,
-	type SecondBrainErrorCorrelation as ErrorCorrelation, type SecondBrainGenerationState as GenerationState, type SecondBrainPending as Pending,
-	type SecondBrainQueueItem as QueueItem, } from "./second-brain-transport-state.js"; export { SECOND_BRAIN_CONFIG, SECOND_BRAIN_DEADLINES,
-	SECOND_BRAIN_FRAME_BYTES, SECOND_BRAIN_LAUNCHER, SECOND_BRAIN_LIMITS, SECOND_BRAIN_PROTOCOL_VERSION, SecondBrainTransportError,
-	normalizeSecondBrainToolSchemas, } from "./second-brain-transport-contract.js"; export type { SecondBrainCallOptions, SecondBrainDiagnostic,
-	SecondBrainDisposition, SecondBrainExecFile, SecondBrainExecFileOptions, SecondBrainMethod, SecondBrainOutcome, SecondBrainReadMethod,
-	SecondBrainTimerHandle, SecondBrainTimers, SecondBrainTransport, SecondBrainTransportOptions, } from "./second-brain-transport-contract.js";
+import { execFile as nodeExecFile, type ChildProcess } from "node:child_process";
+import { realpathSync } from "node:fs";
+import { frozenArgumentsMatch, inspectFrozenSchemas, snapshotArguments } from "./second-brain-frozen.js";
+import { parseSecondBrainStrictJson } from "./second-brain-strict-json.js";
+import {
+	SECOND_BRAIN_CONFIG, SECOND_BRAIN_DEADLINES, SECOND_BRAIN_FRAME_BYTES, SECOND_BRAIN_LAUNCHER,
+	SECOND_BRAIN_LIMITS, SECOND_BRAIN_PROTOCOL_VERSION, SECOND_BRAIN_READ_METHODS as READ_METHODS,
+	SECOND_BRAIN_WRITE_METHOD as WRITE_METHOD, SecondBrainTransportError,
+	isSecondBrainReadMethod as isRead, loadSecondBrainContract, normalizeSecondBrainOutcome,
+	type SecondBrainCallOptions, type SecondBrainDiagnostic, type SecondBrainDisposition,
+	type SecondBrainExecFile, type SecondBrainMethod, type SecondBrainOutcome,
+	type SecondBrainTimerHandle, type SecondBrainTimers, type SecondBrainTransport,
+	type SecondBrainTransportOptions,
+} from "./second-brain-transport-contract.js";
+import {
+	isSecondBrainRecord as isRecord, secondBrainRecord as record,
+	type SecondBrainErrorCorrelation as ErrorCorrelation,
+	type SecondBrainGenerationState as GenerationState, type SecondBrainPending as Pending,
+	type SecondBrainQueueItem as QueueItem,
+} from "./second-brain-transport-state.js";
+import { snapshotSecondBrainWriteArguments } from "./second-brain-write-request.js";
+export {
+	SECOND_BRAIN_CONFIG, SECOND_BRAIN_DEADLINES, SECOND_BRAIN_FRAME_BYTES, SECOND_BRAIN_LAUNCHER,
+	SECOND_BRAIN_LIMITS, SECOND_BRAIN_PROTOCOL_VERSION, SecondBrainTransportError,
+	normalizeSecondBrainToolSchemas,
+} from "./second-brain-transport-contract.js";
+export type {
+	SecondBrainCallOptions, SecondBrainDiagnostic, SecondBrainDisposition, SecondBrainExecFile,
+	SecondBrainExecFileOptions, SecondBrainMethod, SecondBrainOutcome, SecondBrainReadMethod,
+	SecondBrainTimerHandle, SecondBrainTimers, SecondBrainTransport, SecondBrainTransportOptions,
+} from "./second-brain-transport-contract.js";
 
 const SECOND_BRAIN_SHUTDOWN_GRACE_MS = 1_000;
 
@@ -37,10 +54,13 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 		this.report = options.onDiagnostic; } diagnostics(): readonly SecondBrainDiagnostic[] { return this.events.map((item) => ({ ...item })); } call(
 		method: SecondBrainMethod, arguments_: Readonly<Record<string, unknown>>, options: SecondBrainCallOptions = {}, ): Promise<SecondBrainOutcome> {
 		if (this.terminalFailure) return Promise.reject(this.terminalFailure); if (![...READ_METHODS, WRITE_METHOD].includes(method))
-			return Promise.reject(this.error("SECOND_BRAIN_METHOD_DENIED", "fatal")); const snapshot = method === WRITE_METHOD ? snapshotSecondBrainWriteArguments(arguments_) : snapshotArguments(arguments_); if (!snapshot)
+			return Promise.reject(this.error("SECOND_BRAIN_METHOD_DENIED", "fatal"));
+		const snapshot = method === WRITE_METHOD
+			? snapshotSecondBrainWriteArguments(arguments_) : snapshotArguments(arguments_); if (!snapshot)
 			return Promise.reject( this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }), ); let argumentBytes: number; try {
 			argumentBytes = Buffer.byteLength(JSON.stringify(snapshot), "utf8"); } catch { return Promise.reject(
-				this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }), ); } if ( argumentBytes > SECOND_BRAIN_LIMITS.argument_bytes || (this.localArguments && isRead(method) &&
+				this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }), ); }
+		if (argumentBytes > SECOND_BRAIN_LIMITS.argument_bytes || (this.localArguments && isRead(method) &&
 				!frozenArgumentsMatch(method, snapshot, this.contract)) ) return Promise.reject( this.error( argumentBytes > SECOND_BRAIN_LIMITS.argument_bytes
 						? "SECOND_BRAIN_ARGUMENTS_OVERSIZE" : "SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }, ), );
 		const queue = isRead(method) ? this.readQueue : this.writeQueue; const limit = isRead(method) ? SECOND_BRAIN_LIMITS.read_queue
