@@ -3,6 +3,7 @@ import { readFile, readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type Database from "better-sqlite3";
+import { Task30MigrationRecovery } from "./migration-task30-recovery.js";
 import type { PersistenceErrorFactory } from "./personal-persistence-values.js";
 
 function isRow(value: unknown): value is Readonly<Record<string, unknown>> {
@@ -35,20 +36,38 @@ export class MigrationStore {
     this.database.exec(
       "CREATE TABLE IF NOT EXISTS schema_migrations (id TEXT PRIMARY KEY, checksum TEXT NOT NULL, applied_at TEXT NOT NULL)",
     );
-    for (const id of await this.files()) {
+    const migrations = await Promise.all((await this.files()).map(async id => {
       const body = await readFile(join(this.directory(), id));
-      const digest = checksum(body);
-      const prior = row(this.database.prepare("SELECT checksum FROM schema_migrations WHERE id=?").get(id));
-      if (prior !== undefined && prior["checksum"] !== digest) throw this.error("MIGRATION_CHECKSUM_MISMATCH", id);
+      return { id, body, digest: checksum(body) };
+    }));
+    for (const migration of migrations) {
+      const prior = row(this.database.prepare(
+        "SELECT checksum FROM schema_migrations WHERE id=?",
+      ).get(migration.id));
+      if (prior !== undefined && prior["checksum"] !== migration.digest) {
+        throw this.error("MIGRATION_CHECKSUM_MISMATCH", migration.id);
+      }
+    }
+    const recovery = new Task30MigrationRecovery(this.database, this.error);
+    recovery.recoverRejectedCandidate();
+    for (const migration of migrations) {
+      if (migration.id === "042_memory_deletion_proof.sql"
+        || migration.id === "045_task30_schema_compatibility.sql") {
+        recovery.prepareLegacyDeletionSnapshot();
+      }
+      const prior = row(this.database.prepare(
+        "SELECT checksum FROM schema_migrations WHERE id=?",
+      ).get(migration.id));
       if (prior === undefined) {
         this.database.transaction(() => {
-          this.database.exec(body.toString("utf8"));
+          this.database.exec(migration.body.toString("utf8"));
           this.database.prepare(
             "INSERT INTO schema_migrations(id,checksum,applied_at) VALUES(?,?,?)",
-          ).run(id, digest, new Date().toISOString());
+          ).run(migration.id, migration.digest, new Date().toISOString());
         }).immediate();
       }
     }
+    recovery.restorePreservedKeys();
   }
 
   async assertReady(): Promise<void> {
@@ -56,6 +75,8 @@ export class MigrationStore {
       "SELECT 1 FROM sqlite_master WHERE type='table' AND name='schema_migrations'",
     ).get();
     if (journal === undefined) throw this.error("MIGRATIONS_PENDING");
+    const recovery = new Task30MigrationRecovery(this.database, this.error);
+    if (recovery.hasRecoveryResidue()) throw this.error("MIGRATIONS_PENDING");
     for (const id of await this.files()) {
       const prior = row(this.database.prepare("SELECT checksum FROM schema_migrations WHERE id=?").get(id));
       if (prior === undefined) throw this.error("MIGRATIONS_PENDING", id);

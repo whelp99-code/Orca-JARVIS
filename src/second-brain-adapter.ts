@@ -1,4 +1,5 @@
 import { parseSecondBrainPage } from "./second-brain-evidence-parser.js";
+import { bindSecondBrainGenerationRead } from "./second-brain-generation-read.js";
 import { normalizeSecondBrainProviderRecord } from "./second-brain-provider-value.js";
 import { secondBrainUtf8Bytes, SecondBrainReadBudget } from "./second-brain-read-budget.js";
 import {
@@ -16,7 +17,6 @@ import {
   type SecondBrainReadAdapter,
   type SecondBrainReadOutcome,
 } from "./second-brain-adapter-types.js";
-import type { MemoryReadFenceV1 } from "./second-brain-effect-v2.js";
 import {
   SecondBrainTransportError,
   type SecondBrainOutcome,
@@ -221,25 +221,6 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
     return `${evidence.sid}\0${evidence.source_ref}\0${evidence.content_digest}`;
   }
 
-  private boundReadValue(value: Readonly<Record<string, unknown>>, fence: MemoryReadFenceV1 | undefined,
-    method: SecondBrainReadMethod): Readonly<Record<string, unknown>> | undefined {
-    if (!["sb_search", "sb_read_page", "sb_recent_changes", "sb_open_conflicts"].includes(method)) return value;
-    const metadata = ["provider_instance_id", "generation_id", "generation_manifest_digest", "vault_head", "vault_tree",
-      "tombstone_sequence", "tombstone_set_root"] as const;
-    const present = metadata.filter(key => Object.hasOwn(value, key));
-    if (present.length === 0) return fence !== undefined && fence.tombstone_sequence > 0 ? undefined : value;
-    if (present.length !== metadata.length || typeof value.provider_instance_id !== "string"
-      || !/^sbgen:v1:[0-9a-f]{64}$/.test(String(value.generation_id))
-      || !/^sha256:[0-9a-f]{64}$/.test(String(value.generation_manifest_digest))
-      || !/^[0-9a-f]{40}$/.test(String(value.vault_head)) || !/^[0-9a-f]{40}$/.test(String(value.vault_tree))
-      || !Number.isSafeInteger(value.tombstone_sequence) || !/^sha256:[0-9a-f]{64}$/.test(String(value.tombstone_set_root))) return undefined;
-    if (fence === undefined) {
-      if (value.tombstone_sequence !== 0) return undefined;
-    } else if (value.provider_instance_id !== fence.provider_instance_id
-      || value.tombstone_sequence !== fence.tombstone_sequence || value.tombstone_set_root !== fence.tombstone_set_root) return undefined;
-    return Object.freeze(Object.fromEntries(Object.entries(value).filter(([key]) => !metadata.includes(key as typeof metadata[number]))));
-  }
-
   private async call(
     method: SecondBrainReadMethod,
     arguments_: Readonly<Record<string, unknown>>,
@@ -251,7 +232,9 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
         readFence === undefined ? arguments_ : { ...arguments_, read_fence: readFence });
       if (outcome.kind !== "data") return { kind: "transport", outcome };
       const value = normalizeSecondBrainProviderRecord(outcome.value);
-      const bound = value === undefined ? undefined : this.boundReadValue(value, readFence, method);
+      const bound = value === undefined
+        ? undefined
+        : bindSecondBrainGenerationRead(value, readFence, method);
       return bound === undefined
         ? { kind: "adapter", outcome: invalid("SECOND_BRAIN_PROVIDER_VALUE_INVALID", checkedAt) }
         : { kind: "transport", outcome: { kind: "data", value: bound } };

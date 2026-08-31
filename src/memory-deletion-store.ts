@@ -25,7 +25,7 @@ export type MemoryDeletionRecord = {
 export class MemoryDeletionStore {
   constructor(private readonly authority: AuthorityDb) {}
   get(id: string): MemoryDeletionRecord | undefined {
-    return this.authority.db.prepare("SELECT * FROM memory_deletion_requests WHERE deletion_id=?")
+    return this.authority.db.prepare("SELECT * FROM memory_deletion_effect_requests WHERE deletion_id=?")
       .get(id) as MemoryDeletionRecord | undefined;
   }
   request(input: {
@@ -43,7 +43,7 @@ export class MemoryDeletionStore {
     }
     const at = now.toISOString();
     this.authority.db.prepare(
-      `INSERT INTO memory_deletion_requests(
+      `INSERT INTO memory_deletion_effect_requests(
         deletion_id,correlation_id,idempotency_key,operation,keyed_subject_digest,scope_digest,
         target_manifest_digest,payload_digest,requested_by,state,spool_locator,spool_digest,
         dispatch_fence,expires_at,created_at,updated_at
@@ -59,7 +59,7 @@ export class MemoryDeletionStore {
     readonly control_receipt_id: string; readonly control_command_digest: string;
   }, now: Date): void {
     const changed = this.authority.db.prepare(
-      `UPDATE memory_deletion_requests SET state='approved',lane_id=?,provider_instance_id=?,
+      `UPDATE memory_deletion_effect_requests SET state='approved',lane_id=?,provider_instance_id=?,
        control_request_id=?,control_receipt_id=?,control_command_digest=?,updated_at=?
        WHERE deletion_id=? AND state='requested'`,
     ).run(value.lane_id, value.provider_instance_id, value.control_request_id,
@@ -69,7 +69,7 @@ export class MemoryDeletionStore {
   }
   suppress(id: string, sequence: number, setRoot: string, now: Date): void {
     const changed = this.authority.db.prepare(
-      `UPDATE memory_deletion_requests SET state='suppressed',tombstone_sequence=?,
+      `UPDATE memory_deletion_effect_requests SET state='suppressed',tombstone_sequence=?,
        tombstone_set_root=?,updated_at=? WHERE deletion_id=? AND state='approved'`,
     ).run(sequence, setRoot, now.toISOString(), id);
     if (changed.changes !== 1) throw new JarvisError("MEMORY_DELETION_TRANSITION_INVALID");
@@ -81,7 +81,7 @@ export class MemoryDeletionStore {
     readonly delegation_digest: string; readonly spool_locator: string;
   }, now: Date): void {
     const changed = this.authority.db.prepare(
-      `UPDATE memory_deletion_requests SET state='queued',request_id=?,request_digest=?,envelope_digest=?,
+      `UPDATE memory_deletion_effect_requests SET state='queued',request_id=?,request_digest=?,envelope_digest=?,
        provider_idempotency_key=?,delegation_id=?,delegation_digest=?,spool_locator=?,updated_at=?
        WHERE deletion_id=? AND state='suppressed'`,
     ).run(value.request_id, value.request_digest, value.envelope_digest,
@@ -99,7 +99,7 @@ export class MemoryDeletionStore {
       }
       const at = now.toISOString();
       const changed = this.authority.db.prepare(
-        `UPDATE memory_deletion_requests SET state='applying',dispatch_fence=1,dispatched_at=?,
+        `UPDATE memory_deletion_effect_requests SET state='applying',dispatch_fence=1,dispatched_at=?,
          reconcile_deadline_at=?,updated_at=? WHERE deletion_id=? AND state='queued' AND dispatch_fence=0`,
       ).run(at, new Date(now.getTime() + 600_000).toISOString(), at, id);
       if (changed.changes !== 1) throw new JarvisError("MEMORY_DELETION_DISPATCH_RACE");
@@ -122,7 +122,7 @@ export class MemoryDeletionStore {
          WHERE deletion_id=? AND outcome='dispatching'`,
       ).run(acceptanceDigest, hash({ queue_locator: queueLocator }), at, id);
       const changed = this.authority.db.prepare(
-        `UPDATE memory_deletion_requests SET state='reconciling',spool_locator=NULL,
+        `UPDATE memory_deletion_effect_requests SET state='reconciling',spool_locator=NULL,
          failure_code=NULL,updated_at=? WHERE deletion_id=? AND state='applying'`,
       ).run(at, id);
       if (changed.changes !== 1) throw new JarvisError("MEMORY_DELETION_TRANSITION_INVALID");
@@ -138,7 +138,7 @@ export class MemoryDeletionStore {
          WHERE deletion_id=? AND outcome='dispatching'`,
       ).run(code, at, id);
       const changed = this.authority.db.prepare(
-        `UPDATE memory_deletion_requests SET state='reconciling',failure_code=?,updated_at=?
+        `UPDATE memory_deletion_effect_requests SET state='reconciling',failure_code=?,updated_at=?
          WHERE deletion_id=? AND state='applying'`,
       ).run(code, at, id);
       if (changed.changes !== 1) throw new JarvisError("MEMORY_DELETION_TRANSITION_INVALID");
@@ -161,7 +161,7 @@ export class MemoryDeletionStore {
       ).run(id, proof.proof_id, proof.proof_digest, proof.provider_release_sha,
         proof.result_generation_id, proof.surface_manifest_digest, proof.proof_json, at);
       const changed = this.authority.db.prepare(
-        `UPDATE memory_deletion_requests SET state='provider_proved',provider_proof_digest=?,
+        `UPDATE memory_deletion_effect_requests SET state='provider_proved',provider_proof_digest=?,
          surface_manifest_digest=?,failure_code=NULL,updated_at=?
          WHERE deletion_id=? AND state='reconciling'`,
       ).run(proof.proof_digest, proof.surface_manifest_digest, at, id);
@@ -176,7 +176,7 @@ export class MemoryDeletionStore {
         "UPDATE memory_deletion_proofs SET purge_receipt_digest=?,settled_at=? WHERE deletion_id=?",
       ).run(purgeReceipt, at, id);
       const changed = this.authority.db.prepare(
-        `UPDATE memory_deletion_requests SET state='settled',purge_receipt_digest=?,settled_at=?,
+        `UPDATE memory_deletion_effect_requests SET state='settled',purge_receipt_digest=?,settled_at=?,
          updated_at=? WHERE deletion_id=? AND state='provider_proved'`,
       ).run(purgeReceipt, at, at, id);
       if (changed.changes !== 1) throw new JarvisError("MEMORY_DELETION_TRANSITION_INVALID");

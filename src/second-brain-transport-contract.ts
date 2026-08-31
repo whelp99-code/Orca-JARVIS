@@ -8,6 +8,7 @@ import { parseSecondBrainStrictJson } from "./second-brain-strict-json.js";
 export const SECOND_BRAIN_LAUNCHER = "/home/jm/.local/state/second-brain/app/current/bin/second-brain-mcp";
 export const SECOND_BRAIN_CONFIG = "/home/jm/.config/second-brain/config.toml";
 export const SECOND_BRAIN_PROTOCOL_VERSION = "2025-11-25";
+export const SECOND_BRAIN_CONTRACT_PROFILE = "task30-schema3" as const;
 export const SECOND_BRAIN_FRAME_BYTES = 1_048_576;
 export const SECOND_BRAIN_DEADLINES = { startup: 5_000, read: 10_000, write: 30_000 } as const;
 export const SECOND_BRAIN_LIMITS = {
@@ -65,7 +66,10 @@ export type SecondBrainTimers = {
 export type SecondBrainExecFileOptions = {
   readonly encoding: "buffer";
   readonly shell: false;
-  readonly env: Readonly<Record<string, string>>;
+  readonly env: {
+    readonly SB_CONFIG: string;
+    readonly SB_MCP_CONTRACT_PROFILE: typeof SECOND_BRAIN_CONTRACT_PROFILE;
+  };
   readonly windowsHide: true;
 };
 export type SecondBrainExecFile = (

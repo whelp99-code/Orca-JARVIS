@@ -39,7 +39,7 @@ async function database(): Promise<AuthorityDb> {
 }
 
 describe("Task 30 proof-bound authority", () => {
-  it("publishes the exact five forward architecture migrations", async () => {
+  it("publishes the immutable architecture plus consecutive remediation migrations", async () => {
     const db = await database();
     try {
       const migrations = (db.db.prepare(
@@ -51,6 +51,9 @@ describe("Task 30 proof-bound authority", () => {
         "042_memory_deletion_proof.sql",
         "043_memory_export_saga.sql",
         "044_memory_content_propagation.sql",
+        "045_task30_schema_compatibility.sql",
+        "046_task30_legacy_guards.sql",
+        "047_task30_confirmation_compatibility.sql",
       ]);
       const tables = (db.db.prepare(
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
@@ -60,6 +63,7 @@ describe("Task 30 proof-bound authority", () => {
         "memory_tombstone_delegation_links",
         "memory_correction_requests",
         "memory_deletion_requests",
+        "memory_deletion_effect_requests",
         "memory_export_requests",
         "memory_purge_jobs",
         "memory_surface_manifests",

@@ -3,8 +3,9 @@ import { realpathSync } from "node:fs";
 import { frozenArgumentsMatch, inspectFrozenSchemas, snapshotArguments } from "./second-brain-frozen.js";
 import { parseSecondBrainStrictJson } from "./second-brain-strict-json.js";
 import {
-	SECOND_BRAIN_CONFIG, SECOND_BRAIN_DEADLINES, SECOND_BRAIN_FRAME_BYTES, SECOND_BRAIN_LAUNCHER,
-	SECOND_BRAIN_LIMITS, SECOND_BRAIN_PROTOCOL_VERSION, SECOND_BRAIN_READ_METHODS as READ_METHODS,
+	SECOND_BRAIN_CONFIG, SECOND_BRAIN_CONTRACT_PROFILE, SECOND_BRAIN_DEADLINES,
+	SECOND_BRAIN_FRAME_BYTES, SECOND_BRAIN_LAUNCHER, SECOND_BRAIN_LIMITS,
+	SECOND_BRAIN_PROTOCOL_VERSION, SECOND_BRAIN_READ_METHODS as READ_METHODS,
 	SECOND_BRAIN_WRITE_METHOD as WRITE_METHOD, SecondBrainTransportError,
 	isSecondBrainReadMethod as isRead, loadSecondBrainContract, normalizeSecondBrainOutcome,
 	type SecondBrainCallOptions, type SecondBrainDiagnostic, type SecondBrainDisposition,
@@ -20,8 +21,9 @@ import {
 } from "./second-brain-transport-state.js";
 import { snapshotMemoryWriteArguments } from "./memory-effect-write-request.js";
 export {
-	SECOND_BRAIN_CONFIG, SECOND_BRAIN_DEADLINES, SECOND_BRAIN_FRAME_BYTES, SECOND_BRAIN_LAUNCHER,
-	SECOND_BRAIN_LIMITS, SECOND_BRAIN_PROTOCOL_VERSION, SecondBrainTransportError,
+	SECOND_BRAIN_CONFIG, SECOND_BRAIN_CONTRACT_PROFILE, SECOND_BRAIN_DEADLINES,
+	SECOND_BRAIN_FRAME_BYTES, SECOND_BRAIN_LAUNCHER, SECOND_BRAIN_LIMITS,
+	SECOND_BRAIN_PROTOCOL_VERSION, SecondBrainTransportError,
 	normalizeSecondBrainToolSchemas,
 } from "./second-brain-transport-contract.js";
 export type {
@@ -98,7 +100,9 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 			target = this.resolvePath(this.launcher); } catch { throw this.error("SECOND_BRAIN_DISCOVERY_FAILED", "unavailable"); } this.generation += 1;
 		this.sequence = 0; this.buffer = Buffer.alloc(0); this.stderrBuffer = Buffer.alloc(0); this.stderrBytes = 0; this.stderrEvents = 0; this.state = "starting";
 		this.localArguments = false; this.seen.clear(); this.retired.clear(); if (this.child) throw this.error("SECOND_BRAIN_SHUTDOWN_FAILED", "fatal");
-		const child = this.run(target, [], { encoding: "buffer", shell: false, env: { SB_CONFIG: this.config }, windowsHide: true, }); this.child = child;
+		const child = this.run(target, [], { encoding: "buffer", shell: false,
+			env: { SB_CONFIG: this.config, SB_MCP_CONTRACT_PROFILE: SECOND_BRAIN_CONTRACT_PROFILE },
+			windowsHide: true, }); this.child = child;
 		child.stdout?.removeAllListeners("data"); child.stderr?.removeAllListeners("data"); child.stdout?.on("data", this.onData);
 		child.stderr?.on("data", this.onStderr); child.once("error", this.onStartError); child.once("close", this.onClose); try {
 			const initialize = await this.request( undefined, { protocolVersion: SECOND_BRAIN_PROTOCOL_VERSION, capabilities: {},

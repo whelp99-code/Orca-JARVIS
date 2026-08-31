@@ -22,6 +22,12 @@ export function confirmMemoryCorrectionCandidate(
     || typeof command.args.evidence_digest !== "string") {
     throw new JarvisError("MEMORY_CORRECTION_CONFIRMATION_INVALID");
   }
+  const candidate = authority.db.prepare(
+    "SELECT operation FROM memory_candidates WHERE candidate_id=? AND state='awaiting_confirmation'",
+  ).get(command.target.candidate_id) as { readonly operation: string } | undefined;
+  if (candidate?.operation !== "correct") {
+    throw new JarvisError("MEMORY_CORRECTION_CONFIRMATION_INVALID");
+  }
   const receipt = authority.db.prepare(
     "SELECT payload_json,signature FROM control_command_receipts WHERE receipt_id=? AND request_id=?",
   ).get(command.receipt_id, command.request_id) as {

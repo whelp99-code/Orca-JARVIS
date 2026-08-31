@@ -77,12 +77,18 @@ export class MemoryOutboxService {
     const expected = saga.expected_artifact;
     if (recent.kind === "conflicts") return this.conflictFrom(recent, expected.page_id);
     const recentEvidence = this.evidence(recent).filter(item => item.page_id === expected.page_id);
-    if (recentEvidence.length === 0) return { kind: "missing", code: this.readCode(recent, "ARTIFACT_NOT_RECENT") };
     const page = await this.options.reader.readPage(expected.page_id);
     if (page.kind === "conflicts") return this.conflictFrom(page, expected.page_id);
-    const recentMatch = recentEvidence.filter(item => item.sid === expected.sid);
-    const pageMatch = this.evidence(page).filter(item => item.page_id === expected.page_id && item.sid === expected.sid);
-    if (recentMatch.length === 0 || pageMatch.length === 0) return { kind: "missing", code: "ARTIFACT_SELECTOR_MISSING" };
+    const pageMatch = this.evidence(page).filter(item =>
+      item.page_id === expected.page_id && item.sid === expected.sid);
+    const directReplay = pageMatch.filter(item =>
+      item.source_ref === `memory-candidate:${saga.candidate_id}`);
+    const recentMatch = recentEvidence.length === 0
+      ? directReplay
+      : recentEvidence.filter(item => item.sid === expected.sid);
+    if (recentMatch.length === 0 || pageMatch.length === 0) {
+      return { kind: "missing", code: this.readCode(recent, "ARTIFACT_NOT_RECENT") };
+    }
     const identities = new Set([...recentMatch, ...pageMatch].map(item => `${item.source_version}\0${item.content_digest}`));
     if (identities.size !== 1 || pageMatch.some(item => item.content_digest !== expected.source_digest)) {
       return { kind: "conflict", code: "ARTIFACT_DIGEST_MISMATCH", page_id: expected.page_id,

@@ -56,7 +56,7 @@ class BoundedSecondBrainWriteRequestAdapter implements SecondBrainWriteRequestAd
          AND lane_id=? AND state='dispatching' AND dispatch_fence=1`,
       ).get(...identity) !== undefined;
       case "forget": return this.authority.db.prepare(
-        `SELECT 1 FROM memory_deletion_requests WHERE request_id=? AND request_digest=?
+        `SELECT 1 FROM memory_deletion_effect_requests WHERE request_id=? AND request_digest=?
          AND envelope_digest=? AND provider_idempotency_key=? AND delegation_id=? AND delegation_digest=?
          AND lane_id=? AND state='applying' AND dispatch_fence=1`,
       ).get(...identity) !== undefined;
