@@ -236,6 +236,7 @@ describe("Task 27 forward memory classification migration", () => {
   it("applies after an unrelated migration 037 without reading Task 26 schema", async () => {
     // Given: the exact Task 27 set plus an unrelated no-op Task 26 slot 037.
     const directory = migrationDirectory();
+    rmSync(join(directory.path, "037_recommendation_work_runtime.sql"));
     writeFileSync(join(directory.path, "037_task26_placeholder.sql"), "CREATE TABLE task26_placeholder(id TEXT PRIMARY KEY);\n");
     const authority = new AuthorityDb(join(directory.root, "authority.sqlite"), directory.path);
     try {
