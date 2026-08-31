@@ -8,31 +8,33 @@ export class MemoryOutboxLedger {
   event(outboxId: string, fence: number, type: string, code: string | null, at: string,
     attemptId?: string, receipt?: string, observation?: MemoryObservation, required = false): string {
     if (observation !== undefined && attemptId === undefined) throw new TypeError("memory observation attempt required");
-    const digest = type === "settled" && receipt !== undefined ? receipt
-      : observation === undefined ? memoryOutboxHash("memory-outbox-event", {
+    const auditDigest = memoryOutboxHash("memory-outbox-event", {
       outbox_id: outboxId, attempt_id: attemptId ?? null, reconcile_fence: fence,
       event_type: type, outcome_code: code, receipt_digest: receipt ?? null, created_at: at,
-    }) : memoryObservationDigest({
-      outbox_id: outboxId, attempt_id: attemptId ?? "", reconcile_fence: fence,
-      page_id: observation.page_id ?? null, sid: observation.sid ?? null,
-      source_version: observation.source_version ?? null, source_digest: observation.source_digest ?? null,
-      observed_at: at, outcome: code ?? type,
     });
+    const effectDigest = type === "settled" && receipt !== undefined ? receipt
+      : observation === undefined ? auditDigest : memoryObservationDigest({
+        outbox_id: outboxId, attempt_id: attemptId ?? "", reconcile_fence: fence,
+        page_id: observation.page_id ?? null, sid: observation.sid ?? null,
+        source_version: observation.source_version ?? null, source_digest: observation.source_digest ?? null,
+        observed_at: at, outcome: code ?? type,
+      });
+    const identityDigest = type === "settled" ? auditDigest : effectDigest;
     const changed = this.authority.db.prepare(
       `INSERT OR IGNORE INTO memory_reconciliation_events(
         event_id,outbox_id,attempt_id,reconcile_fence,event_type,outcome_code,page_id,sid,source_version,
         observed_artifact_digest,effect_digest,created_at
        ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)`,
-    ).run(`event:memory-outbox:v2:${digest.slice(7)}`, outboxId, attemptId ?? null, fence, type, code,
+    ).run(`event:memory-outbox:v2:${identityDigest.slice(7)}`, outboxId, attemptId ?? null, fence, type, code,
       observation?.page_id ?? null, observation?.sid ?? null, observation?.source_version ?? null,
-      observation?.source_digest ?? null, digest, at).changes;
+      observation?.source_digest ?? null, effectDigest, at).changes;
     if (changed !== 1) {
       const row = this.authority.db.prepare(
         "SELECT effect_digest FROM memory_reconciliation_events WHERE event_id=? OR effect_digest=?",
-      ).get(`event:memory-outbox:v2:${digest.slice(7)}`, digest) as { effect_digest: string } | undefined;
-      if (required || row?.effect_digest !== digest) throw new JarvisError("MEMORY_OUTBOX_EVIDENCE_CONFLICT");
+      ).get(`event:memory-outbox:v2:${identityDigest.slice(7)}`, effectDigest) as { effect_digest: string } | undefined;
+      if (required || row?.effect_digest !== effectDigest) throw new JarvisError("MEMORY_OUTBOX_EVIDENCE_CONFLICT");
     }
-    return digest;
+    return effectDigest;
   }
   audit(id: string, event: string, prior: string | null, next: string, fence: number,
     cause: string, receipt: string | null, at: string): void {

@@ -17,8 +17,7 @@ describe("memory outbox V2 values", () => {
       Reflect.set(changed, key, typeof observation[key] === "number" ? 4 : `${observation[key]}-changed`);
       expect(memoryObservationDigest(changed), key).not.toBe(observationDigest);
     }
-    const settlement = { event_type: "settled" as const, outbox_id: "outbox", candidate_id: "candidate",
-      candidate_digest: `sha256:${"2".repeat(64)}`,
+    const settlement = { outbox_id: "outbox", candidate_id: "candidate", candidate_digest: `sha256:${"2".repeat(64)}`,
       request_id: "request", request_digest: `sha256:${"3".repeat(64)}`, attempt_id: "attempt",
       invocation_digest: `sha256:${"4".repeat(64)}`, dispatch_fence: 3, acceptance_receipt_digest: `sha256:${"5".repeat(64)}`,
       page_id: "wiki/page", sid: "12345678", source_version: "version", source_digest: `sha256:${"6".repeat(64)}`,
@@ -29,6 +28,17 @@ describe("memory outbox V2 values", () => {
       Reflect.set(changed, key, typeof settlement[key] === "number" ? 4 : `${settlement[key]}-changed`);
       expect(memorySettlementDigest(changed), key).not.toBe(settlementDigest);
     }
+  });
+  it("matches the frozen exact settlement receipt vector", () => {
+    const frozen = { outbox_id: "outbox", candidate_id: "candidate", candidate_digest: `sha256:${"2".repeat(64)}`,
+      request_id: "request", request_digest: `sha256:${"3".repeat(64)}`, attempt_id: "attempt",
+      invocation_digest: `sha256:${"4".repeat(64)}`, dispatch_fence: 3,
+      acceptance_receipt_digest: `sha256:${"5".repeat(64)}`, page_id: "wiki/page", sid: "12345678",
+      source_version: "version", source_digest: `sha256:${"6".repeat(64)}`,
+      observation_digest: `sha256:${"7".repeat(64)}`, reconciled_at: "2026-08-31T03:30:00.000Z" };
+    expect(memorySettlementDigest(frozen)).toBe(
+      "sha256:f187be2d3ed5a5804e3926718d5053e02d323b17eb51e552d3809183fc7f2a7e",
+    );
   });
   it("rejects unbounded constructor durations", () => {
     const stub = {} as ConstructorParameters<typeof MemoryOutboxService>[0];

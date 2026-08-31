@@ -209,8 +209,7 @@ export class MemoryOutboxStore {
       || observation.sid === undefined || observation.source_version === undefined
       || observation.source_digest === undefined)) throw new JarvisError("MEMORY_OUTBOX_INTEGRITY_FAILURE");
     const receipt = state === "settled" ? memorySettlementDigest({
-      event_type: "settled", outbox_id: saga.outbox_id, candidate_id: saga.candidate_id,
-      candidate_digest: saga.candidate_digest,
+      outbox_id: saga.outbox_id, candidate_id: saga.candidate_id, candidate_digest: saga.candidate_digest,
       request_id: saga.request_id, request_digest: saga.request_digest, attempt_id: attempt.attempt_id,
       invocation_digest: attempt.invocation_digest, dispatch_fence: saga.dispatch_fence ?? 0,
       acceptance_receipt_digest: attempt.acceptance_receipt_digest,

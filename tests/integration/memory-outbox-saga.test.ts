@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { memoryOutboxHash } from "../../src/memory-outbox-values.js";
 import { snapshotSecondBrainWriteArguments } from "../../src/second-brain-write-request.js";
 import { closeMemoryDatabase } from "../fixtures/memory-candidate-store.js";
 import { claimAction, evidence, FixtureReader, OUTBOX_ARTIFACT_DIGEST, outboxFixture, type OutboxFixture } from "../fixtures/memory-outbox-fixture.js";
@@ -24,12 +25,21 @@ describe("memory outbox V2 saga", () => {
     expect(fixture.service.get(queued.outbox_id)).toMatchObject({ state: "settled", settlement_receipt_digest: expect.stringMatching(/^sha256:/) });
     expect(fixture.database.authority.db.prepare("SELECT state FROM memory_candidates WHERE candidate_id=?").get(queued.candidate_id)).toEqual({ state: "settled" });
     const terminal = fixture.database.authority.db.prepare(
-      "SELECT event_type,effect_digest FROM memory_reconciliation_events WHERE outbox_id=? AND event_type IN ('artifact_observed','settled') ORDER BY event_type",
-    ).all(queued.outbox_id) as Array<{ event_type: string; effect_digest: string }>;
+      `SELECT event_id,event_type,effect_digest,attempt_id,reconcile_fence,outcome_code,created_at
+       FROM memory_reconciliation_events WHERE outbox_id=?
+         AND event_type IN ('artifact_observed','settled') ORDER BY event_type`,
+    ).all(queued.outbox_id) as Array<{ event_id: string; event_type: string; effect_digest: string;
+      attempt_id: string; reconcile_fence: number; outcome_code: string; created_at: string }>;
     expect(terminal.map(row => row.event_type)).toEqual(["artifact_observed", "settled"]);
+    expect(new Set(terminal.map(row => row.event_id)).size).toBe(2);
     expect(new Set(terminal.map(row => row.effect_digest)).size).toBe(2);
-    expect(terminal.find(row => row.event_type === "settled")?.effect_digest)
-      .toBe(fixture.service.get(queued.outbox_id)?.settlement_receipt_digest);
+    const settledEvent = terminal.find(row => row.event_type === "settled");
+    expect(settledEvent?.effect_digest).toBe(fixture.service.get(queued.outbox_id)?.settlement_receipt_digest);
+    const auditDigest = memoryOutboxHash("memory-outbox-event", { outbox_id: queued.outbox_id,
+      attempt_id: settledEvent?.attempt_id, reconcile_fence: settledEvent?.reconcile_fence,
+      event_type: "settled", outcome_code: settledEvent?.outcome_code,
+      receipt_digest: settledEvent?.effect_digest, created_at: settledEvent?.created_at });
+    expect(settledEvent?.event_id).toBe(`event:memory-outbox:v2:${auditDigest.slice(7)}`);
     await fixture.service.runOnce("worker-two", 1); expect(fixture.writer.calls).toHaveLength(1);
   });
 

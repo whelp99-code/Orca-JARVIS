@@ -28,7 +28,14 @@ export function memoryObservationDigest(input: MemoryObservationDigestInput): st
   return memoryOutboxHash("memory-outbox-observation", input);
 }
 export function memorySettlementDigest(input: MemorySettlementDigestInput): string {
-  return memoryOutboxHash("memory-outbox-settlement", input);
+  return memoryOutboxHash("memory-outbox-settlement", {
+    outbox_id: input.outbox_id, candidate_id: input.candidate_id, candidate_digest: input.candidate_digest,
+    request_id: input.request_id, request_digest: input.request_digest, attempt_id: input.attempt_id,
+    invocation_digest: input.invocation_digest, dispatch_fence: input.dispatch_fence,
+    acceptance_receipt_digest: input.acceptance_receipt_digest, page_id: input.page_id, sid: input.sid,
+    source_version: input.source_version, source_digest: input.source_digest,
+    observation_digest: input.observation_digest, reconciled_at: input.reconciled_at,
+  });
 }
 export function memoryV1Hash(name: "subject" | "content", value: unknown): string {
   return `sha256:${createHash("sha256").update(`orca-jarvis/memory-${name}/v1\0`).update(canonicalize(value)).digest("hex")}`;
