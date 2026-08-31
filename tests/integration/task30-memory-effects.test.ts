@@ -54,6 +54,7 @@ describe("Task 30 proof-bound authority", () => {
         "045_task30_schema_compatibility.sql",
         "046_task30_legacy_guards.sql",
         "047_task30_confirmation_compatibility.sql",
+        "048_task30_atomic_effect_runtime.sql",
       ]);
       const tables = (db.db.prepare(
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
@@ -67,6 +68,7 @@ describe("Task 30 proof-bound authority", () => {
         "memory_export_requests",
         "memory_purge_jobs",
         "memory_surface_manifests",
+        "memory_effect_dispatch_cursor",
       ]));
       expect(tables).not.toContain("memory_effect_requests");
     } finally { db.close(); }

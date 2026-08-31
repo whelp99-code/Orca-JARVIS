@@ -3,26 +3,20 @@ import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./db.js";
 import type { ClaimedControlCommand, ControlCommandRequestInput } from "./control-plane.js";
 import { ControlPlane } from "./control-plane.js";
-import { parseCorrectionSpool, persistCorrectionTargets,
-  recordCorrectionDispatchOutcome } from "./memory-correction-dispatch.js";
+import { MemoryCorrectionDispatcher } from "./memory-correction-dispatcher.js";
 import { MemoryCorrectionStore, type MemoryCorrectionRecord } from "./memory-correction-store.js";
 import type { MemoryCorrectionSagaOptions, PrepareMemoryCorrectionInput } from "./memory-correction-types.js";
 import { purgeMemoryContent } from "./memory-content-purge.js";
 import { verifyMemoryDispositionProof } from "./memory-disposition-proof.js";
 import { MemoryEffectSpool } from "./memory-effect-spool.js";
-import { MemoryTombstoneChain } from "./memory-tombstone-chain.js";
 import {
-  memoryExpectedPrior,
   memoryTargetManifestDigest,
   memoryTargetScopeDigest,
   sameMemoryGeneration,
 } from "./memory-target-values.js";
 import {
-  createMemoryEffectWriteRequest,
   memoryEffectDigest,
   type MemoryCorrectionPayloadV2,
-  type MemoryEffectScopeV2,
-  type ResolvedMemoryTargetV2,
 } from "./second-brain-effect-v2.js";
 
 const hash = (domain: string, value: unknown): string => `sha256:${createHash("sha256")
@@ -34,13 +28,13 @@ export { confirmMemoryCorrectionCandidate } from "./memory-correction-confirmati
 export class MemoryCorrectionSaga {
   private readonly store: MemoryCorrectionStore;
   private readonly spool: MemoryEffectSpool;
-  private readonly chain: MemoryTombstoneChain;
+  private readonly dispatcher: MemoryCorrectionDispatcher;
   private readonly control: ControlPlane;
 
   constructor(private readonly options: MemoryCorrectionSagaOptions) {
     this.store = new MemoryCorrectionStore(options.authority);
     this.spool = new MemoryEffectSpool(options.spool_root, options.authority);
-    this.chain = new MemoryTombstoneChain(options.authority, options.subject_key);
+    this.dispatcher = new MemoryCorrectionDispatcher(options);
     this.control = new ControlPlane(options.authority);
   }
 
@@ -110,81 +104,8 @@ export class MemoryCorrectionSaga {
     };
   }
 
-  async dispatch(command: ClaimedControlCommand): Promise<MemoryCorrectionRecord> {
-    const now = this.options.clock();
-    if (command.action !== "memory.outbox.dispatch" || command.action_level !== 3
-      || command.args.schema_version !== 3 || command.args.lane !== "correction"
-      || typeof command.args.lane_id !== "string") {
-      throw new JarvisError("MEMORY_CORRECTION_AUTHORITY_INVALID");
-    }
-    const laneId = command.args.lane_id;
-    const preparation = this.options.authority.db.prepare(
-      "SELECT * FROM memory_effect_preparations WHERE lane_id=?",
-    ).get(laneId) as { readonly provider_instance_id: string; readonly candidate_id: string;
-      readonly target_manifest_digest: string; readonly scope_digest: string; readonly payload_digest: string;
-      readonly spool_locator: string; readonly spool_digest: string; readonly state: string;
-      readonly expires_at: string } | undefined;
-    if (preparation === undefined || preparation.state !== "staged"
-      || preparation.candidate_id !== command.target.candidate_id
-      || preparation.target_manifest_digest !== command.args.target_manifest_digest
-      || preparation.scope_digest !== command.args.scope_digest
-      || preparation.payload_digest !== command.args.payload_digest
-      || preparation.spool_digest !== command.args.spool_digest
-      || Date.parse(preparation.expires_at) <= now.getTime()) {
-      throw new JarvisError("MEMORY_CORRECTION_AUTHORITY_INVALID");
-    }
-    const staged = parseCorrectionSpool(
-      await this.spool.read(preparation.spool_locator, preparation.spool_digest),
-    );
-    const targets: readonly [ResolvedMemoryTargetV2] = staged.targets;
-    const scope: MemoryEffectScopeV2 = staged.scope;
-    const payload: MemoryCorrectionPayloadV2 = { content: staged.content,
-      content_digest: memoryEffectDigest("effect_content", { content: staged.content }),
-      content_bytes: Buffer.byteLength(staged.content, "utf8"), disposition: "superseded" };
-    const receipt = this.options.authority.db.prepare(
-      "SELECT payload_json,signature FROM control_command_receipts WHERE receipt_id=? AND request_id=?",
-    ).get(command.receipt_id, command.request_id) as { readonly payload_json: string; readonly signature: string } | undefined;
-    if (receipt === undefined) throw new JarvisError("MEMORY_CORRECTION_AUTHORITY_INVALID");
-    const providerSequence = this.chain.highWater().sequence;
-    const receiptDigest = hash("orca-jarvis/memory-correction-receipt/v1\0", receipt);
-    const appended = this.chain.append({ operation: "correct", lane_id: laneId, targets,
-      target_manifest_digest: preparation.target_manifest_digest, scope_digest: preparation.scope_digest,
-      authority_receipt_digest: receiptDigest, payload_digest: preparation.payload_digest,
-      effective_at: now.toISOString() });
-    const request = createMemoryEffectWriteRequest({
-      schema_version: 2, kind: "memory_effect", provider_instance_id: staged.provider_instance_id,
-      lane: "correction", lane_id: laneId, operation: "correct",
-      target_manifest_digest: preparation.target_manifest_digest, targets, scope,
-      scope_digest: preparation.scope_digest, expected_prior: memoryExpectedPrior(targets[0]),
-      tombstone_high_water: appended.high_water,
-      tombstone_chain_delta: this.chain.delta(providerSequence),
-      created_at: staged.created_at, expires_at: staged.expires_at, payload,
-    }, { principal_id: "principal:owner", not_before: staged.created_at, nonce: staged.nonce,
-      signing_key_id: this.options.signing_key_id }, this.options.private_key);
-    const locator = await this.spool.rename(preparation.spool_locator, request.request_id);
-    this.options.authority.db.prepare(
-      `UPDATE memory_effect_preparations SET spool_locator=?,state='approved',updated_at=?
-       WHERE lane_id=? AND state='staged'`,
-    ).run(locator, now.toISOString(), laneId);
-    persistCorrectionTargets(this.options.authority, targets, now);
-    const correctionId = `memcorr:v1:${request.request_digest.slice(7)}`;
-    let record = this.store.insert({ correction_id: correctionId, lane_id: laneId,
-      candidate_id: staged.candidate_id, control_request_id: command.request_id,
-      control_receipt_id: command.receipt_id, provider_instance_id: request.provider_instance_id,
-      request_id: request.request_id, request_digest: request.request_digest,
-      envelope_digest: request.envelope_digest, idempotency_key: request.idempotency_key,
-      delegation_id: request.delegation.delegation_id,
-      delegation_digest: request.delegation.delegation_digest,
-      target_manifest_digest: request.target_manifest_digest, scope_digest: request.scope_digest,
-      payload_digest: request.delegation.payload_digest, tombstone_sequence: appended.entry.sequence,
-      tombstone_set_root: appended.entry.set_root, spool_locator: locator,
-      spool_digest: preparation.spool_digest, expires_at: request.expires_at }, command.command_digest, now);
-    this.chain.link(appended.entry.sequence, request.delegation.delegation_digest,
-      request.request_digest, now);
-    record = this.store.beginDispatch(correctionId, now);
-    const outcome = await this.options.writer.write(request);
-    await recordCorrectionDispatchOutcome(this.store, this.spool, record, request, outcome, now);
-    return this.store.get(correctionId) ?? record;
+  dispatch(command: ClaimedControlCommand): Promise<MemoryCorrectionRecord> {
+    return this.dispatcher.dispatch(command);
   }
 
   async reconcile(correctionId: string): Promise<MemoryCorrectionRecord> {

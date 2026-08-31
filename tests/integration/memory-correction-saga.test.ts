@@ -186,6 +186,16 @@ describe("proof-bound memory correction saga", () => {
       expect(controlState.state).toBe("claimed");
       expect(writer.calls).toHaveLength(1);
       expect(isMemorySuppressed(db, { target_digest: target().target_digest })).toBe(true);
+      const prepared = db.db.prepare(
+        `SELECT effective_at,request_id,request_digest,request_tombstone_sequence
+         FROM memory_effect_preparations WHERE lane='correction'`,
+      ).get();
+      expect(prepared).toEqual({ effective_at: NOW.toISOString(),
+        request_id: writer.calls[0]?.request_id, request_digest: writer.calls[0]?.request_digest,
+        request_tombstone_sequence: 1 });
+      expect(db.db.prepare(
+        "SELECT active_lane_id,accepted_through_sequence FROM memory_effect_dispatch_cursor",
+      ).get()).toEqual({ active_lane_id: null, accepted_through_sequence: 1 });
       db.close();
       expect(readFileSync(db.filename).includes(Buffer.from(corrected, "utf8"))).toBe(false);
     } finally {

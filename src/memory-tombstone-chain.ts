@@ -22,6 +22,8 @@ export type AppendMemoryTombstoneInput = {
 };
 export type AppendedMemoryTombstone = {
   readonly entry: MemoryTombstoneChainEntryV2;
+  readonly entry_request_high_water: MemoryTombstoneHighWaterV2;
+  readonly current_global_high_water: MemoryTombstoneHighWaterV2;
   readonly high_water: MemoryTombstoneHighWaterV2;
   readonly replayed: boolean;
 };
@@ -84,12 +86,15 @@ export class MemoryTombstoneChain {
         input.payload_digest) as ChainRow | undefined;
       if (prior !== undefined) {
         if (prior.lane_id !== input.lane_id
-          || prior.authority_receipt_digest !== input.authority_receipt_digest
-          || prior.effective_at !== input.effective_at) {
+          || prior.authority_receipt_digest !== input.authority_receipt_digest) {
           throw new JarvisError("MEMORY_TOMBSTONE_REPLAY_CONFLICT");
         }
         const entry = chainEntry(prior);
-        return { entry, high_water: { sequence: entry.sequence, set_root: entry.set_root }, replayed: true };
+        const entryRequestHighWater = { sequence: entry.sequence, set_root: entry.set_root };
+        const currentGlobalHighWater = this.highWater();
+        return { entry, entry_request_high_water: entryRequestHighWater,
+          current_global_high_water: currentGlobalHighWater,
+          high_water: currentGlobalHighWater, replayed: true };
       }
       const current = this.highWater();
       const sequence = current.sequence + 1;
@@ -159,7 +164,9 @@ export class MemoryTombstoneChain {
           ).run(input.effective_at, managedExport.export_id);
         }
       }
-      return { entry, high_water: { sequence, set_root: setRoot }, replayed: false };
+      const highWater = { sequence, set_root: setRoot };
+      return { entry, entry_request_high_water: highWater,
+        current_global_high_water: highWater, high_water: highWater, replayed: false };
     }).immediate();
   }
 

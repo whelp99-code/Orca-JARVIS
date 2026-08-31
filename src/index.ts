@@ -118,7 +118,7 @@ export { GjcRuntimeService } from "./service.js";
 export * from "./second-brain-adapter.js";
 export * from "./second-brain-effect-v2.js";
 export * from "./second-brain-effect-authority.js";
-export * from "./second-brain-effect-service.js";
+export * from "./memory-lifecycle-api.js";
 export {
 	MemoryOutboxService,
 	MEMORY_OUTBOX_RUNTIME_DEADLINE_MS,

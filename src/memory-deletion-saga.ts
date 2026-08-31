@@ -1,71 +1,33 @@
-import { createHash, type KeyObject } from "node:crypto";
-import { z } from "zod";
+import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
-import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./db.js";
 import type { ClaimedControlCommand, ControlCommandRequestInput } from "./control-plane.js";
 import { ControlPlane } from "./control-plane.js";
 import { purgeMemoryContent } from "./memory-content-purge.js";
+import { MemoryDeletionDispatcher } from "./memory-deletion-dispatch.js";
 import { MemoryDeletionStore, type MemoryDeletionRecord } from "./memory-deletion-store.js";
+import type { MemoryDeletionSagaOptions, PrepareMemoryDeletionInput } from "./memory-deletion-types.js";
 import { verifyMemoryDispositionProof } from "./memory-disposition-proof.js";
 import { MemoryEffectSpool } from "./memory-effect-spool.js";
+import { memoryTargetManifestDigest, memoryTargetScopeDigest, sameMemoryGeneration } from "./memory-target-values.js";
 import {
-  MemoryDeletionPayloadSchema,
-  MemoryEffectScopeSchema,
-  ResolvedMemoryTargetSchema,
-} from "./memory-effect-write-zod.js";
-import { MemoryTombstoneChain } from "./memory-tombstone-chain.js";
-import { memoryExpectedPrior, memoryTargetManifestDigest, memoryTargetScopeDigest, sameMemoryGeneration } from "./memory-target-values.js";
-import type { SecondBrainWriteOutcome, SecondBrainWriteRequestAdapter } from "./second-brain-adapter-types.js";
-import type { SecondBrainEffectService } from "./second-brain-effect-service.js";
-import {
-  createMemoryEffectWriteRequest,
   memoryEffectDigest,
-  parseMemoryEffectAccepted,
-  type ExternalErasureReceiptV2,
   type MemoryDeletePayloadV2,
-  type MemoryEffectScopeV2,
-  type MemoryEffectWriteRequestV2,
-  type ResolvedMemoryTargetV2,
 } from "./second-brain-effect-v2.js";
 
 const hash = (domain: string, value: unknown): string => `sha256:${createHash("sha256")
   .update(domain).update(canonicalize(value)).digest("hex")}`;
-const deletionSpool = z.object({
-  schema_version: z.literal(1), lane_id: z.string(), deletion_id: z.string(), provider_instance_id: z.string(),
-  targets: z.array(ResolvedMemoryTargetSchema).min(1).max(64),
-  scope: MemoryEffectScopeSchema,
-  payload: MemoryDeletionPayloadSchema,
-  created_at: z.string(), expires_at: z.string(), nonce: z.string(),
-}).strict();
-
-export type PrepareMemoryDeletionInput = {
-  readonly deletion_id: string; readonly correlation_id: string;
-  readonly provider_instance_id: string; readonly targets: readonly ResolvedMemoryTargetV2[];
-  readonly scope: MemoryEffectScopeV2; readonly erasure_claim: "managed_erasure" | "provider_local_suppression";
-  readonly external_receipts: readonly ExternalErasureReceiptV2[];
-  readonly requested_at: Date; readonly expires_at: Date; readonly nonce: string;
-};
-export type MemoryDeletionSagaOptions = {
-  readonly authority: AuthorityDb; readonly spool_root: string;
-  readonly writer: SecondBrainWriteRequestAdapter; readonly provider: SecondBrainEffectService;
-  readonly signing_key_id: string; readonly private_key: KeyObject; readonly subject_key: Buffer;
-  readonly clock: () => Date;
-  readonly absence_verified: (proof: Readonly<Record<string, unknown>>) => Promise<boolean>;
-  readonly purge_needles: (record: MemoryDeletionRecord) => readonly Buffer[];
-  readonly managed_roots?: readonly { readonly path: string; readonly kind: "projection" | "state" | "backup" | "spool" | "restore" }[];
-  readonly backup_roots?: readonly string[];
-};
+export type { MemoryDeletionSagaOptions, PrepareMemoryDeletionInput } from "./memory-deletion-types.js";
 
 export class MemoryDeletionSaga {
   private readonly store: MemoryDeletionStore;
   private readonly spool: MemoryEffectSpool;
-  private readonly chain: MemoryTombstoneChain;
+  private readonly dispatcher: MemoryDeletionDispatcher;
   private readonly control: ControlPlane;
   constructor(private readonly options: MemoryDeletionSagaOptions) {
     this.store = new MemoryDeletionStore(options.authority);
     this.spool = new MemoryEffectSpool(options.spool_root, options.authority);
-    this.chain = new MemoryTombstoneChain(options.authority, options.subject_key);
+    this.dispatcher = new MemoryDeletionDispatcher(options);
     this.control = new ControlPlane(options.authority);
   }
   async prepare(input: PrepareMemoryDeletionInput): Promise<ControlCommandRequestInput> {
@@ -120,69 +82,10 @@ export class MemoryDeletionSaga {
       requested_by: "principal:owner", requested_at: input.requested_at.toISOString(),
       expires_at: input.expires_at.toISOString(), nonce: input.nonce };
   }
-  async dispatch(command: ClaimedControlCommand): Promise<MemoryDeletionRecord> {
-    const now = this.options.clock();
-    if (command.action !== "memory.delete" || command.action_level !== 3
-      || command.args.schema_version !== 3 || command.args.lane !== "deletion"
-      || typeof command.target.deletion_id !== "string" || typeof command.args.lane_id !== "string") {
-      throw new JarvisError("MEMORY_DELETION_AUTHORITY_INVALID");
-    }
-    const id = command.target.deletion_id; const laneId = command.args.lane_id;
-    const preparation = this.options.authority.db.prepare(
-      "SELECT * FROM memory_effect_preparations WHERE lane_id=? AND lane='deletion'",
-    ).get(laneId) as { readonly spool_locator: string; readonly spool_digest: string;
-      readonly target_manifest_digest: string; readonly scope_digest: string; readonly payload_digest: string;
-      readonly state: string } | undefined;
-    const row = this.store.get(id);
-    if (preparation === undefined || preparation.state !== "staged" || row === undefined
-      || preparation.spool_digest !== command.args.spool_digest
-      || row.target_manifest_digest !== command.args.target_manifest_digest
-      || row.scope_digest !== command.args.scope_digest) throw new JarvisError("MEMORY_DELETION_AUTHORITY_INVALID");
-    const parsed = deletionSpool.safeParse(await this.spool.read(preparation.spool_locator,
-      preparation.spool_digest));
-    if (!parsed.success) throw new JarvisError("MEMORY_DELETION_SPOOL_INVALID");
-    const targets: ResolvedMemoryTargetV2[] = parsed.data.targets;
-    const scope: MemoryEffectScopeV2 = parsed.data.scope;
-    const payload: MemoryDeletePayloadV2 = parsed.data.payload;
-    const receipt = this.options.authority.db.prepare(
-      "SELECT payload_json,signature FROM control_command_receipts WHERE receipt_id=? AND request_id=?",
-    ).get(command.receipt_id, command.request_id) as { readonly payload_json: string; readonly signature: string } | undefined;
-    if (receipt === undefined) throw new JarvisError("MEMORY_DELETION_AUTHORITY_INVALID");
-    const providerSequence = this.chain.highWater().sequence;
-    this.store.approve(id, { lane_id: laneId, provider_instance_id: parsed.data.provider_instance_id,
-      control_request_id: command.request_id, control_receipt_id: command.receipt_id,
-      control_command_digest: command.command_digest }, now);
-    const appended = this.chain.append({ operation: "forget", lane_id: laneId, targets,
-      target_manifest_digest: row.target_manifest_digest, scope_digest: row.scope_digest,
-      authority_receipt_digest: hash("orca-jarvis/memory-delete-receipt/v1\0", receipt),
-      payload_digest: row.payload_digest, effective_at: now.toISOString() });
-    this.store.suppress(id, appended.entry.sequence, appended.entry.set_root, now);
-    const firstTarget = targets[0];
-    if (firstTarget === undefined) throw new JarvisError("MEMORY_DELETION_TARGET_MISSING");
-    const request = createMemoryEffectWriteRequest({ schema_version: 2, kind: "memory_effect",
-      provider_instance_id: parsed.data.provider_instance_id, lane: "deletion", lane_id: laneId,
-      operation: "forget", target_manifest_digest: row.target_manifest_digest, targets,
-      scope, scope_digest: row.scope_digest, expected_prior: memoryExpectedPrior(firstTarget),
-      tombstone_high_water: appended.high_water,
-      tombstone_chain_delta: this.chain.delta(providerSequence),
-      created_at: parsed.data.created_at, expires_at: parsed.data.expires_at, payload },
-    { principal_id: "principal:owner", not_before: parsed.data.created_at,
-      nonce: parsed.data.nonce, signing_key_id: this.options.signing_key_id }, this.options.private_key);
-    const locator = await this.spool.rename(preparation.spool_locator, request.request_id);
-    this.options.authority.db.prepare(
-      "UPDATE memory_effect_preparations SET spool_locator=?,state='approved',updated_at=? WHERE lane_id=?",
-    ).run(locator, now.toISOString(), laneId);
-    this.store.queue(id, { request_id: request.request_id, request_digest: request.request_digest,
-      envelope_digest: request.envelope_digest, provider_idempotency_key: request.idempotency_key,
-      delegation_id: request.delegation.delegation_id,
-      delegation_digest: request.delegation.delegation_digest, spool_locator: locator }, now);
-    this.chain.link(appended.entry.sequence, request.delegation.delegation_digest,
-      request.request_digest, now);
-    const applying = this.store.begin(id, now);
-    const outcome = await this.options.writer.write(request);
-    await this.recordOutcome(applying, request, outcome, now);
-    return this.store.get(id) ?? applying;
+  dispatch(command: ClaimedControlCommand): Promise<MemoryDeletionRecord> {
+    return this.dispatcher.dispatch(command);
   }
+
   async reconcile(id: string): Promise<MemoryDeletionRecord> {
     const row = this.store.get(id); if (row === undefined) throw new JarvisError("MEMORY_DELETION_NOT_FOUND");
     if (row.state === "settled") return row;
@@ -226,19 +129,5 @@ export class MemoryDeletionSaga {
           proof_digest: proof.proof_digest, purge_receipt_digest: purge.receipt_digest } }, now);
     return settled;
   }
-  private async recordOutcome(row: MemoryDeletionRecord, request: MemoryEffectWriteRequestV2,
-    outcome: SecondBrainWriteOutcome, now: Date): Promise<void> {
-    if (outcome.kind === "accepted" && outcome.schema_version === 2) {
-      const accepted = parseMemoryEffectAccepted(outcome);
-      if (accepted === undefined || accepted.request_id !== request.request_id) {
-        throw new JarvisError("MEMORY_DELETION_ACCEPTANCE_INVALID");
-      }
-      if (row.spool_locator === null || row.spool_digest === null || row.lane_id === null) {
-        throw new JarvisError("MEMORY_DELETION_SPOOL_MISSING");
-      }
-      await this.spool.remove(row.lane_id, row.spool_locator, row.spool_digest, "accepted", now);
-      this.store.accepted(row.deletion_id, accepted, accepted.queue_locator, now); return;
-    }
-    this.store.uncertain(row.deletion_id, "code" in outcome ? outcome.code : "MEMORY_DELETION_UNCERTAIN", now);
-  }
+
 }

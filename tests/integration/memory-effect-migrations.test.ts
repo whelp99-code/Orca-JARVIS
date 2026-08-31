@@ -60,6 +60,7 @@ const CURRENT_TASK30_MIGRATIONS = [
   "045_task30_schema_compatibility.sql",
   "046_task30_legacy_guards.sql",
   "047_task30_confirmation_compatibility.sql",
+  "048_task30_atomic_effect_runtime.sql",
 ] as const;
 
 describe("Task 30 forward migration closure", () => {

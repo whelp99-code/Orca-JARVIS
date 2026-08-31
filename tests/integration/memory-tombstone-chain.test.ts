@@ -47,4 +47,51 @@ describe("permanent JARVIS tombstone high-water", () => {
       ).run()).toThrow(/memory tombstone chain fork/);
     } finally { db.close(); }
   });
+
+  it("returns the original entry and current global high-water when semantic replay uses a later clock", async () => {
+    // Given: a correction followed by a distinct deletion in the permanent chain.
+    const db = new AuthorityDb(tempDb()); await db.migrate();
+    try {
+      const chain = new MemoryTombstoneChain(db, Buffer.alloc(32, 9));
+      const correction = contract.vectors.correction.request;
+      const correctionDelta = correction.tombstone_chain_delta[0];
+      const forget = contract.vectors.forget.request;
+      const forgetDelta = forget.tombstone_chain_delta.at(-1);
+      if (correctionDelta === undefined || forgetDelta === undefined) throw new Error("MEMORY_FIXTURE_INVALID");
+      const correctionInput = { operation: "correct" as const, lane_id: correction.lane_id,
+        targets: correction.targets, target_manifest_digest: correction.target_manifest_digest,
+        scope_digest: correction.scope_digest,
+        authority_receipt_digest: correctionDelta.authority_receipt_digest,
+        payload_digest: correction.delegation.payload_digest, effective_at: correction.created_at };
+      const first = chain.append(correctionInput);
+      const second = chain.append({ operation: "forget", lane_id: forget.lane_id,
+        targets: forget.targets, target_manifest_digest: forget.target_manifest_digest,
+        scope_digest: forget.scope_digest, authority_receipt_digest: forgetDelta.authority_receipt_digest,
+        payload_digest: forget.delegation.payload_digest, effective_at: forget.created_at });
+
+      // When: the exact correction is retried after the process clock advances.
+      const replay = chain.append({ ...correctionInput, effective_at: "2026-08-31T00:00:00.001Z" });
+
+      // Then: request identity keeps the original effective time while status exposes the latest root.
+      expect(replay).toMatchObject({ replayed: true, entry: { sequence: first.entry.sequence,
+        effective_at: correction.created_at }, high_water: second.high_water });
+      expect(db.db.prepare("SELECT COUNT(*) AS count FROM memory_tombstone_chain").get()).toEqual({ count: 2 });
+    } finally { db.close(); }
+  });
+
+  it("initializes one durable global destructive dispatch cursor", async () => {
+    // Given: a freshly migrated authority database.
+    const db = new AuthorityDb(tempDb()); await db.migrate();
+    try {
+      // When: the global cursor is read before any destructive preparation.
+      const cursor = db.db.prepare(
+        `SELECT singleton_id,fence,active_lane_id,active_request_digest,
+                accepted_through_sequence FROM memory_effect_dispatch_cursor`,
+      ).get();
+
+      // Then: one inactive singleton starts at genesis and can serialize every destructive lane.
+      expect(cursor).toEqual({ singleton_id: 1, fence: 0, active_lane_id: null,
+        active_request_digest: null, accepted_through_sequence: 0 });
+    } finally { db.close(); }
+  });
 });
