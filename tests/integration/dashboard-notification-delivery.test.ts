@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { request } from "undici";
 import { describe, expect, it } from "vitest";
 import { AuthorityDb, Recommendations } from "../../src/index.js";
+import { publishNotificationMutation } from "../../src/dashboard/notification-delivery-routes.js";
 import { createDashboardServer } from "../../src/dashboard/server.js";
 import { createDashboardSession } from "../../src/dashboard/session.js";
 import { persistTask18Context, RECOMMENDATION_ID, RECOMMENDATION_NOW, task18Request } from "../fixtures/recommendation-fixture.js";
@@ -36,6 +37,15 @@ async function post(origin: string, path: string, csrf: string, body: unknown) {
 }
 
 describe("dashboard notification delivery routes", () => {
+  it("publishes only mutations that committed writes", () => {
+    // Given
+    const published: string[] = []; const hub = { publishPersonal: (kind: string) => { published.push(kind); } };
+    // When
+    publishNotificationMutation(hub, true); publishNotificationMutation(hub, false);
+    // Then
+    expect(published).toEqual(["notification"]);
+  });
+
   it("claims and settles through the real session boundary", async () => {
     // Given
     const value = await fixture();

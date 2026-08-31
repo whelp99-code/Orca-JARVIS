@@ -4,7 +4,7 @@ const config = require("./client-config.json");
 if (process.argv.includes("--help")) {
   process.stdout.write("JARVIS Electron client\nTASK33_PACKAGED_ELECTRON_HELP_PASS\n"); app.exit(0);
 }
-let windowRef; let pendingLink; let client;
+let windowRef; let pendingLink; let client; let deepLinkCoordinator;
 const deepLinkArg = argv => argv.find(value => typeof value === "string" && value.startsWith("jarvis:"));
 pendingLink = deepLinkArg(process.argv);
 const lock = app.requestSingleInstanceLock();
@@ -13,34 +13,38 @@ app.on("open-url", (event, value) => { event.preventDefault(); pendingLink = val
 app.on("second-instance", (_event, argv) => { const value = deepLinkArg(argv); if (value) pendingLink = value; focus(); if (value) void openLink(value); });
 function focus() { if (!windowRef) return; if (windowRef.isMinimized()) windowRef.restore(); windowRef.show(); windowRef.focus(); }
 async function openLink(value) {
-  const { parseJarvisDeepLink } = await import("./electron-deep-link.mjs");
-  let parsed;
-  try { parsed = parseJarvisDeepLink(value); } catch { process.stderr.write("ELECTRON_DEEP_LINK_INVALID\n"); return; }
-  let route = "/";
-  if (parsed.kind === "recommendation") {
-    try {
-      const response = await net.fetch(config.authority_url + "/api/v1/recommendations/" + encodeURIComponent(parsed.recommendationId));
-      if (response.status !== 200) throw new Error("unavailable");
-      const body = await response.json();
-      const action = Array.isArray(body.actions) && body.actions.some(item => item && item.rank === parsed.rank && item.current === true);
-      if (!action) throw new Error("unavailable");
-      route = "/recommendations/" + encodeURIComponent(parsed.recommendationId) + "?rank=" + parsed.rank;
-    } catch { process.stderr.write("ELECTRON_RESOURCE_UNAVAILABLE\n"); }
-  }
-  focus(); await windowRef.loadURL(config.authority_url + route);
+  if (!deepLinkCoordinator) { pendingLink = value; return; }
+  await deepLinkCoordinator.open(value);
 }
-function makeTransport() {
+function makeTransport(protocol, metrics) {
   let csrf; let controller;
+  const json = async response => {
+    if (!/^application\/json(?:; charset=utf-8)?$/iu.test(response.headers.get("content-type") ?? "")) {
+      throw new protocol.ElectronProtocolError();
+    }
+    return response.json();
+  };
   const post = async (path, body) => {
-    if (!csrf) { const session = await net.fetch(config.authority_url + "/api/v1/session"); csrf = (await session.json()).csrf_token; }
+    if (!csrf) {
+      const session = await net.fetch(config.authority_url + "/api/v1/session");
+      if (session.status !== 200) throw new protocol.ElectronProtocolError();
+      csrf = protocol.parseSessionResponse(await json(session)).csrf_token;
+    }
     return net.fetch(config.authority_url + path, { method: "POST", headers: { "Content-Type": "application/json",
       "X-JARVIS-CSRF": csrf, Origin: config.authority_url }, body: JSON.stringify(body) });
   };
   return {
-    claim: async () => { const response = await post("/api/v1/notification-deliveries/claim", { schema_version: 1 });
-      return response.status === 204 ? null : response.json(); },
-    settle: async (id, body) => { const response = await post("/api/v1/notification-deliveries/" + encodeURIComponent(id) + "/settle", body);
-      if (response.status !== 200 && response.status !== 410) throw new Error("settle failed"); return response.json(); },
+    claim: async () => {
+      metrics.claims += 1;
+      const response = await post("/api/v1/notification-deliveries/claim", { schema_version: 1 });
+      const value = response.status === 204 ? undefined : await json(response);
+      return protocol.parseClaimResponse(response.status, value);
+    },
+    settle: async (id, body) => {
+      metrics.settles += 1;
+      const response = await post("/api/v1/notification-deliveries/" + encodeURIComponent(id) + "/settle", body);
+      return protocol.parseSettlementResponse(response.status, await json(response));
+    },
     subscribe: onNotification => {
       controller = new AbortController(); let readyResolve; let connected = false; let lastEventId;
       const ready = new Promise(resolve => { readyResolve = resolve; });
@@ -49,18 +53,27 @@ function makeTransport() {
           try {
             const headers = lastEventId ? { "Last-Event-ID": lastEventId } : {};
             const response = await net.fetch(config.authority_url + "/api/v1/events", { signal: controller.signal, headers });
+            if (response.status !== 200 || !/^text\/event-stream(?:; charset=utf-8)?$/iu
+              .test(response.headers.get("content-type") ?? "") || !response.body) throw new protocol.ElectronProtocolError();
             if (!connected) { connected = true; readyResolve(); }
             const reader = response.body.getReader(); const decoder = new TextDecoder(); let buffered = "";
             for (;;) { const part = await reader.read(); if (part.done) break; buffered += decoder.decode(part.value, { stream: true });
               let boundary; while ((boundary = buffered.indexOf("\n\n")) >= 0) {
                 const frame = buffered.slice(0, boundary); buffered = buffered.slice(boundary + 2);
-                const id = /^id: ([0-9a-f-]{36}:[1-9]\d*)$/mu.exec(frame)?.[1];
-                if (id) lastEventId = id;
-                if (id && /^event: (?:snapshot|reconcile)$/mu.test(frame)
-                  && frame.includes("personal.notification-intents.v1")) onNotification();
+                try {
+                  const parsed = protocol.parseSseFrame(frame);
+                  if (parsed.id !== null) lastEventId = parsed.id;
+                  if (parsed.notification) onNotification();
+                } catch (error) {
+                  if (error instanceof protocol.ElectronProtocolError) process.stderr.write("ELECTRON_PROTOCOL_INVALID\n");
+                  else throw error;
+                }
               }
             }
-          } catch { if (!controller.signal.aborted) process.stderr.write("LINUX_AUTHORITY_UNAVAILABLE\n"); }
+          } catch (error) {
+            if (!controller.signal.aborted) process.stderr.write(error instanceof protocol.ElectronProtocolError
+              ? "ELECTRON_PROTOCOL_INVALID\n" : "LINUX_AUTHORITY_UNAVAILABLE\n");
+          }
           if (!controller.signal.aborted) await new Promise(resolve => setTimeout(resolve, 1_000));
         }
       })();
@@ -77,10 +90,26 @@ async function createWindow() {
   windowRef.webContents.on("will-navigate", (event, target) => { if (new URL(target).origin !== authority.origin) event.preventDefault(); });
   windowRef.webContents.session.setPermissionRequestHandler((_contents, _permission, callback) => callback(false));
   await windowRef.loadURL(config.authority_url);
-  const { createElectronNotificationAdapter, createNotificationDeliveryClient } = await import("./electron-notification-client.mjs");
-  const adapter = createElectronNotificationAdapter(Notification, value => { void openLink(value); });
-  client = createNotificationDeliveryClient({ transport: makeTransport(), adapter, onError: () => process.stderr.write("LINUX_AUTHORITY_UNAVAILABLE\n") });
-  await client.start(); process.stdout.write("TASK33_PACKAGED_ELECTRON_HAPPY_PASS\n");
+  const deepLinks = await import("./electron-deep-link.mjs");
+  deepLinkCoordinator = deepLinks.createDeepLinkCoordinator({ authorityUrl: config.authority_url,
+    request: async url => net.fetch(url), focus, navigate: async route => {
+      await windowRef.loadURL(config.authority_url + route);
+      process.stdout.write("TASK33_DEEP_LINK_OPENED route=" + (route === "/" ? "today" : "recommendation") + "\n");
+    }, onError: code => process.stderr.write(code + "\n") });
+  const protocol = await import("./electron-notification-client.mjs");
+  const metrics = { claims: 0, shows: 0, settles: 0 };
+  const nativeAdapter = protocol.createElectronNotificationAdapter(Notification, value => {
+    process.stdout.write("TASK33_NATIVE_NOTIFICATION_CLICK\n"); void openLink(value);
+  });
+  const adapter = { isSupported: nativeAdapter.isSupported, show: async input => {
+    const result = await nativeAdapter.show(input); metrics.shows += 1; return result;
+  } };
+  client = protocol.createNotificationDeliveryClient({ transport: makeTransport(protocol, metrics), adapter,
+    onError: error => process.stderr.write(error instanceof protocol.ElectronProtocolError
+      ? "ELECTRON_PROTOCOL_INVALID\n" : "LINUX_AUTHORITY_UNAVAILABLE\n") });
+  await client.start();
+  process.stdout.write("TASK33_PACKAGED_ELECTRON_HAPPY_PASS claims=" + metrics.claims
+    + " shows=" + metrics.shows + " settles=" + metrics.settles + "\n");
   if (pendingLink) await openLink(pendingLink);
 }
 if (lock) app.whenReady().then(createWindow).catch(() => { process.stderr.write("ELECTRON_OPEN_FAILED\n"); app.quit(); });

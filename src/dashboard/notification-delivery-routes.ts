@@ -7,6 +7,7 @@ import type { ReconcileHub } from "./events.js";
 import { writeDashboardJson } from "./http.js";
 import type { DashboardSessionStore } from "./session.js";
 
+export type NotificationPublisher = { publishPersonal(kind: "notification"): void };
 type Input = { readonly db: AuthorityDb; readonly path: string; readonly body: unknown; readonly response: ServerResponse;
   readonly requestId: string; readonly hub: ReconcileHub; readonly session: DashboardSessionStore; readonly clock: () => Date };
 type Route = { readonly kind: "claim" } | { readonly kind: "settle"; readonly deliveryId: string }
@@ -30,25 +31,29 @@ export function tryHandleNotificationDelivery(input: Input): boolean {
 function claim(input: Input): boolean {
   try {
     parseNotificationClaimInput(input.body);
-    const result = store(input).claim(now(input), input.session.authenticatedSessionId());
-    if (result === null) {
+    const result = store(input).claimEffect(now(input), input.session.authenticatedSessionId());
+    publishNotificationMutation(input.hub, result.changed);
+    if (result.value === null) {
       input.response.statusCode = 204; input.response.setHeader("Cache-Control", "no-store");
       input.response.setHeader("X-Request-Id", input.requestId); input.response.end(); return true;
     }
-    input.hub.publishPersonal("notification");
-    writeDashboardJson(input.response, { status: 200, requestId: input.requestId, body: result });
+    writeDashboardJson(input.response, { status: 200, requestId: input.requestId, body: result.value });
     return true;
   } catch (error) { if (error instanceof NotificationDeliveryError) { writeError(input, error); return true; } throw error; }
 }
 function settle(input: Input, deliveryId: string): boolean {
   try {
     const body = parseNotificationSettleInput(input.body);
-    const result = store(input).settle({ deliveryId, input: body, now: now(input),
+    const result = store(input).settleEffect({ deliveryId, input: body, now: now(input),
       sessionId: input.session.authenticatedSessionId() });
-    input.hub.publishPersonal("notification");
-    writeDashboardJson(input.response, { status: result.state === "expired" ? 410 : 200, requestId: input.requestId, body: result });
+    publishNotificationMutation(input.hub, result.changed);
+    writeDashboardJson(input.response, { status: result.value.state === "expired" ? 410 : 200,
+      requestId: input.requestId, body: result.value });
     return true;
   } catch (error) { if (error instanceof NotificationDeliveryError) { writeError(input, error); return true; } throw error; }
+}
+export function publishNotificationMutation(hub: NotificationPublisher, changed: boolean): void {
+  if (changed) hub.publishPersonal("notification");
 }
 function store(input: Input): NotificationDeliveryStore {
   return new NotificationDeliveryStore({ authority: input.db, resourceIsCurrent: (link, instant) => resourceCurrent(input.db, link, instant) });
