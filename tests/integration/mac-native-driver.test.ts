@@ -1,9 +1,22 @@
 import { spawnSync } from "node:child_process";
+import { readFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const SCRIPT = join(process.cwd(), "scripts", "task33-mac-native-qa.mjs");
 describe("Task33 Mac native QA driver", () => {
+  it("matches exactly one synthetic title and body before clicking", () => {
+    // Given / When
+    const source = readFileSync(SCRIPT, "utf8");
+    // Then
+    expect(source).toContain("--expected-title"); expect(source).toContain("--expected-body");
+    expect(source).toContain("matchCount is not 1"); expect(source).toContain("candidateTitle is expectedTitle");
+    expect(source).toContain("candidateBody is expectedBody"); expect(source).toContain("click matchedCandidate");
+    expect(source).not.toMatch(/click first|click item|substring/iu);
+    expect(source).not.toContain("process.stdout.write(expectedTitle");
+    expect(source).not.toContain("process.stdout.write(expectedBody");
+  });
+
   it("has safe help and Linux platform refusal without authority effects", () => {
     // Given / When
     const help = spawnSync(process.execPath, [SCRIPT, "--help"], { encoding: "utf8" });

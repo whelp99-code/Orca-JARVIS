@@ -3,6 +3,9 @@ import { parseJarvisDeepLink } from "./electron-deep-link.mjs";
 const TIME = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 const REVISION = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}:[1-9]\d*$/u;
 const DELIVERY = /^ndl:pos:v1:[0-9a-f]{64}$/u;
+const PRIVATE_PAYLOAD = new RegExp("(?:password|passkey|token|secret|credential|authorization|bearer|session"
+  + "|private[_ -]?key|shell|command|excerpt|raw[_ -]?body"
+  + "|TASK33_(?:TOKEN|PRIVATE_NAME|COMMAND|EXCERPT|BEARER)_CANARY|/(?:home|Users|root|tmp|var|etc)/)", "iu");
 const TOPICS = new Set(["overview", "tasks", "agents", "approvals", "personal.today.v1", "personal.recommendations.v1",
   "personal.context-evidence.v1", "personal.daily-runs.v1", "personal.decision-inbox.v1",
   "personal.notification-intents.v1", "personal.source-health.v1"]);
@@ -24,7 +27,7 @@ function timestamp(value) {
 }
 function identifier(value, delivery = false) {
   if (typeof value !== "string" || value.length === 0 || Buffer.byteLength(value, "utf8") > 256
-    || (delivery && !DELIVERY.test(value))) return protocolInvalid();
+    || (delivery && !DELIVERY.test(value)) || (!delivery && privateText(value))) return protocolInvalid();
   return value;
 }
 export function parseSessionResponse(value) {
@@ -34,22 +37,34 @@ export function parseSessionResponse(value) {
   }
   return { schema_version: 1, csrf_token: row.csrf_token };
 }
+function privateText(value) {
+  if (typeof value !== "string" || value !== value.normalize("NFC") || PRIVATE_PAYLOAD.test(value)) return true;
+  for (const character of value) { const code = character.charCodeAt(0); if (code < 32 || code === 127) return true; }
+  return false;
+}
 function parsePayload(value) {
   const row = exact(value, ["title", "summary", "alert_class", "deep_link"]);
   if (!["Decision needed", "Critical decision needed", "Decision digest"].includes(row.title)
     || typeof row.summary !== "string" || row.summary.length === 0 || Buffer.byteLength(row.summary, "utf8") > 160
     || !["decision_action", "decision_critical", "decision_digest"].includes(row.alert_class)
     || typeof row.deep_link !== "string") return protocolInvalid();
-  parseJarvisDeepLink(row.deep_link);
-  return { title: row.title, summary: row.summary, alert_class: row.alert_class, deep_link: row.deep_link };
+  let parsed;
+  try { parsed = parseJarvisDeepLink(row.deep_link); } catch { return protocolInvalid(); }
+  if (parsed.kind === "recommendation" && privateText(parsed.recommendationId)) return protocolInvalid();
+  const payload = { title: row.title, summary: row.summary, alert_class: row.alert_class, deep_link: row.deep_link };
+  for (const field of Object.values(payload)) if (privateText(field)) return protocolInvalid();
+  if (privateText(JSON.stringify(payload))) return protocolInvalid();
+  return payload;
 }
 export function parseClaimResponse(status, value) {
   if (status === 204) { if (value !== undefined && value !== null) return protocolInvalid(); return null; }
   if (status !== 200) return protocolInvalid();
   const row = exact(value, ["schema_version", "delivery_id", "intent_id", "expires_at", "payload"]);
   if (row.schema_version !== 1) return protocolInvalid();
-  return { schema_version: 1, delivery_id: identifier(row.delivery_id, true), intent_id: identifier(row.intent_id),
+  const claim = { schema_version: 1, delivery_id: identifier(row.delivery_id, true), intent_id: identifier(row.intent_id),
     expires_at: timestamp(row.expires_at), payload: parsePayload(row.payload) };
+  if (privateText(JSON.stringify(claim))) return protocolInvalid();
+  return claim;
 }
 export function parseSettlementResponse(status, value) {
   if (status !== 200 && status !== 410) return protocolInvalid();

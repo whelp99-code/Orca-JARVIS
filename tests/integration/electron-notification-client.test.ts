@@ -66,6 +66,35 @@ describe("Electron notification delivery client", () => {
     expect(adapterEffects).toBe(0); expect(settles).toBe(0); expect(errors).toEqual(["ELECTRON_PROTOCOL_INVALID"]); client.close();
   });
 
+  it("rejects six privacy classes at summary and decoded identity with effects zero", async () => {
+    // Given
+    const canaries = ["TASK33_TOKEN_CANARY_7Q2M", "TASK33_PRIVATE_NAME_CANARY_4K9P", "TASK33_COMMAND_CANARY_RM9",
+      "TASK33_EXCERPT_CANARY_2VX", "/Users/fictional-owner/task33-private",
+      "Authorization: Bearer TASK33_BEARER_CANARY"];
+    const safeLink = "jarvis://open/recommendation?id="
+      + Buffer.from("rec:pos:v1:privacy-safe", "utf8").toString("base64url") + "&rank=1";
+    const effects = { show: 0, settle: 0, focus: 0, navigation: 0 }; const errors: string[] = [];
+    const envelopes = canaries.flatMap(canary => [{ summary: canary, deep_link: safeLink }, { summary: "Review decision",
+      deep_link: "jarvis://open/recommendation?id=" + Buffer.from(canary, "utf8").toString("base64url") + "&rank=1" }]);
+    // When
+    for (const values of envelopes) {
+      let claimed = false;
+      const transport = { subscribe: () => ({ ready: Promise.resolve() }), claim: async () => {
+        if (claimed) return null; claimed = true; return parseClaimResponse(200,
+          { schema_version: 1, delivery_id: "ndl:pos:v1:" + "a".repeat(64), intent_id: "ntf:pos:v1:privacy",
+            expires_at: "2026-08-28T13:00:00.000Z", payload: { title: "Decision needed", alert_class: "decision_action",
+              ...values } }); }, settle: async () => { effects.settle += 1; }, close: () => undefined };
+      const adapter = { isSupported: () => true, show: async () => { effects.show += 1; effects.focus += 1;
+        effects.navigation += 1; return "shown"; } };
+      const client = createNotificationDeliveryClient({ transport, adapter,
+        onError: (error: unknown) => { if (error instanceof Error) errors.push(error.message); } });
+      await client.start(); client.close();
+    }
+    // Then
+    expect(envelopes).toHaveLength(12); expect(errors).toEqual(Array(12).fill("ELECTRON_PROTOCOL_INVALID"));
+    expect(effects).toEqual({ show: 0, settle: 0, focus: 0, navigation: 0 });
+  });
+
   it("subscribes before claim, shows once, and settles after show", async () => {
     // Given
     const order: string[] = []; let claims = 0;

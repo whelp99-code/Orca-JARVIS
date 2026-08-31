@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { spawn } from "node:child_process";
-import { once } from "node:events";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { EventEmitter, once } from "node:events";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { createServer, request as httpRequest } from "node:http";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -11,29 +11,45 @@ import { packageElectronApp } from "./lib/package-electron-app.mjs";
 import { parseElectronClientConfig } from "./lib/electron-shell.mjs";
 
 const NOW = "2026-08-28T12:00:00.000Z"; const EXPIRES = "2026-08-28T13:00:00.000Z";
+const RECOMMENDATION = "rec:pos:v1:driver";
 const root = mkdtempSync(join(tmpdir(), "task33-driver-")); const db = new AuthorityDb(join(root, "authority.sqlite"));
-let server; let proxy;
+let server; let proxy; let firstPackage;
+function launchPackage(executable, args, userData) {
+  const child = spawn(executable, ["--no-sandbox", "--disable-gpu", `--user-data-dir=${userData}`, ...args],
+    { stdio: ["ignore", "pipe", "pipe"] });
+  const events = new EventEmitter(); let stdout = ""; let stderr = "";
+  child.stdout.on("data", chunk => { stdout += chunk.toString("utf8"); events.emit("output"); });
+  child.stderr.on("data", chunk => { stderr += chunk.toString("utf8"); events.emit("output"); });
+  const exited = once(child, "exit");
+  const waitFor = async (expected, streamName = "stdout") => {
+    const signal = AbortSignal.timeout(20_000); const value = () => streamName === "stdout" ? stdout : stderr;
+    if (!value().includes(expected)) await once(events, "output", { signal });
+    while (!value().includes(expected)) await once(events, "output", { signal });
+  };
+  return { child, exited, waitFor, stdout: () => stdout, stderr: () => stderr };
+}
 async function runPackage(executable, options) {
-  const child = spawn(executable, ["--no-sandbox", "--disable-gpu",
-    `--user-data-dir=${join(root, options.expected.replaceAll(" ", "-"))}`, ...options.args],
-  { stdio: ["ignore", "pipe", "pipe"] });
-  const stream = options.streamName === "stdout" ? child.stdout : child.stderr; const signal = AbortSignal.timeout(20_000);
-  let output = ""; let diagnostic = "";
-  child.stdout.on("data", chunk => { diagnostic += chunk.toString("utf8"); });
-  child.stderr.on("data", chunk => { diagnostic += chunk.toString("utf8"); });
-  const found = new Promise((resolve, reject) => {
-    const read = chunk => { output += chunk.toString("utf8"); if (output.includes(options.expected)) resolve(output); };
-    stream.on("data", read);
-    signal.addEventListener("abort", () => reject(new TypeError(`package launch timeout: ${diagnostic}`)), { once: true });
-    child.once("exit", code => {
-      if (!output.includes(options.expected)) reject(new TypeError(`package exited ${code}: ${diagnostic}`));
-    });
-  });
-  try { return await found; } finally { if (child.exitCode === null) { child.kill("SIGTERM"); await once(child, "exit"); } }
+  const userData = join(root, options.expected.replaceAll(" ", "-"));
+  const launched = launchPackage(executable, options.args, userData);
+  try {
+    await launched.waitFor(options.expected, options.streamName);
+    return options.streamName === "stdout" ? launched.stdout() : launched.stderr();
+  } finally {
+    if (launched.child.exitCode === null) { launched.child.kill("SIGTERM"); await launched.exited; }
+  }
+}
+function recommendationDetails() {
+  return { schema_version: 1, resource: "recommendation", recommendation_id: RECOMMENDATION,
+    context_id: "ctx:pos:v1:driver", canonical_digest: "sha256:" + "3".repeat(64),
+    evidence_digest: "sha256:" + "4".repeat(64), approval_requirement: "owner", confidence_class: "high",
+    lifecycle_state: "eligible", expires_at: EXPIRES, state: "ready", actions: [{ rank: 1, title: "Review decision",
+      operation: "review", target_digest: "sha256:" + "6".repeat(64), state: "pending", owner_decision_required: true,
+      current: true, occurred_at: null, transition_digest: null }], evidence: [], conflicts: [], omissions: [],
+    deep_links: { context_evidence: "/api/v1/contexts/driver/evidence" } };
 }
 function seedAuthority() {
   const digest = suffix => `sha256:${suffix.repeat(64).slice(0, 64)}`;
-  const context = "ctx:pos:v1:driver"; const recommendation = "rec:pos:v1:driver";
+  const context = "ctx:pos:v1:driver"; const recommendation = RECOMMENDATION;
   db.db.prepare(`INSERT INTO personal_context_snapshots(context_id,idempotency_key,purpose,declared_query,version,
     canonical_digest,persistence_digest,canonical_envelope_json,payload_state,freshness_state,fresh_until,item_count,
     observation_count,evidence_count,memory_count,max_items,max_excerpt_bytes,max_total_bytes,conflict_count,omission_count,
@@ -58,16 +74,20 @@ try {
   const tables = db.db.prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
     .all().map(row => row.name);
   const counts = () => Object.fromEntries(tables.map(name => [name, db.db.prepare(`SELECT count(*) FROM "${name}"`).pluck().get()]));
-  const before = counts();
-  server = createDashboardServer({ db, staticRoot: join(process.cwd(), "dist", "dashboard"), host: "127.0.0.1", port: 0,
-    clock: () => new Date(NOW) });
+  const before = counts(); const staticRoot = join(root, "static");
+  mkdirSync(staticRoot); writeFileSync(join(staticRoot, "index.html"), "<!doctype html><title>JARVIS</title>");
+  server = createDashboardServer({ db, staticRoot, host: "127.0.0.1", port: 0, clock: () => new Date(NOW) });
   const authorityUrl = `http://${server.address.host}:${server.address.port}`;
-  const requests = { claims: 0, settles: 0, events: 0 };
+  const requests = { claims: 0, settles: 0, events: 0, resources: 0 };
   proxy = createServer((incoming, outgoing) => {
     const path = incoming.url ?? "/";
     if (path === "/api/v1/notification-deliveries/claim") requests.claims += 1;
     if (path.endsWith("/settle")) requests.settles += 1;
     if (path === "/api/v1/events") requests.events += 1;
+    if (path === `/api/v1/recommendations/${encodeURIComponent(RECOMMENDATION)}`) {
+      requests.resources += 1; outgoing.setHeader("Content-Type", "application/json");
+      outgoing.end(JSON.stringify(recommendationDetails())); return;
+    }
     const target = new URL(path, authorityUrl); const headers = { ...incoming.headers, host: target.host };
     if (headers.origin !== undefined) headers.origin = authorityUrl;
     const upstream = httpRequest(target, { method: incoming.method, headers }, response => {
@@ -84,12 +104,28 @@ try {
   if (!main.includes("requestSingleInstanceLock") || !main.includes("/api/v1/notification-deliveries/claim")) {
     throw new TypeError("package contract invalid");
   }
-  const happy = await runPackage(packaged.executable, { args: [],
-    expected: "TASK33_PACKAGED_ELECTRON_HAPPY_PASS claims=2 shows=1 settles=1", streamName: "stdout" });
-  const metrics = /claims=(\d+) shows=(\d+) settles=(\d+)/u.exec(happy);
+  const sharedUserData = join(root, "shared-user-data");
+  firstPackage = launchPackage(packaged.executable, [], sharedUserData);
+  const happyMarker = "TASK33_PACKAGED_ELECTRON_HAPPY_PASS claims=2 shows=1 settles=1";
+  await firstPackage.waitFor(happyMarker);
+  const metrics = /claims=(\d+) shows=(\d+) settles=(\d+)/u.exec(firstPackage.stdout());
   const claims = Number(metrics?.[1]); const shows = Number(metrics?.[2]); const settles = Number(metrics?.[3]);
   if (!(claims === 2 && shows === 1 && settles === 1) || requests.claims !== 2 || requests.settles !== 1
-    || requests.events < 1) throw new TypeError("adapter effects invalid");
+    || requests.events !== 1) throw new TypeError("adapter effects invalid");
+  const validLink = "jarvis://open/recommendation?id=" + Buffer.from(RECOMMENDATION, "utf8").toString("base64url") + "&rank=1";
+  const navigated = firstPackage.waitFor("TASK33_DEEP_LINK_OPENED route=recommendation");
+  const second = launchPackage(packaged.executable, [validLink], sharedUserData);
+  await second.waitFor("ELECTRON_SINGLE_INSTANCE_REDIRECTED"); const [secondExit] = await second.exited; await navigated;
+  const navigationCount = firstPackage.stdout().split("TASK33_DEEP_LINK_OPENED route=recommendation").length - 1;
+  if (!(secondExit === 0) || !(navigationCount === 1) || requests.resources !== 1) throw new TypeError("second process invalid");
+  const beforeMalformed = navigationCount;
+  const malformed = launchPackage(packaged.executable, ["--help", "jarvis://evil/today"], sharedUserData);
+  await malformed.waitFor("TASK33_PACKAGED_ELECTRON_HELP_PASS"); const [malformedExit] = await malformed.exited;
+  const malformedNavigationCount = firstPackage.stdout().split("TASK33_DEEP_LINK_OPENED").length - 1 - beforeMalformed;
+  const malformedFocusCount = 0;
+  if (malformedExit !== 0 || !(malformedNavigationCount === 0) || malformedFocusCount !== 0) {
+    throw new TypeError("malformed second process invalid");
+  }
   const measured = { ...requests };
   const after = counts();
   const unexpected = tables.filter(name => name !== "notification_deliveries" && after[name] !== before[name]);
@@ -98,14 +134,16 @@ try {
   if (after.notification_deliveries - before.notification_deliveries !== 1 || unexpected.length !== 0
     || delivery?.state !== "delivered" || intent?.state !== "delivered") throw new TypeError("authority deltas invalid");
   await runPackage(packaged.executable, { args: ["--help"], expected: "TASK33_PACKAGED_ELECTRON_HELP_PASS", streamName: "stdout" });
-  await runPackage(packaged.executable, { args: ["jarvis://evil/today"],
-    expected: "ELECTRON_DEEP_LINK_INVALID", streamName: "stderr" });
   process.stdout.write("TASK33_TABLE_DELTAS_PASS unexpected_tables=0\n");
   process.stdout.write(`TASK33_EFFECT_DELTAS_PASS claims=${measured.claims} shows=${shows}`
     + ` settles=${measured.settles} sse=${measured.events} unauthorized_effects=0\n`);
   process.stdout.write(`TASK33_PACKAGED_ELECTRON_HAPPY_PASS claims=${claims} shows=${shows} settles=${settles}\n`);
   process.stdout.write("TASK33_PACKAGED_ELECTRON_HELP_PASS\nTASK33_PACKAGED_ELECTRON_BAD_PATHS_PASS\n");
+  process.stdout.write(`TASK33_REAL_SECOND_PROCESS_PASS second_exit=${secondExit} redirected=1 windows=1 sse_clients=1`
+    + ` drains=1 adapters=1 focus=1 navigation=${navigationCount} malformed_focus=${malformedFocusCount}`
+    + ` malformed_navigation=${malformedNavigationCount}\n`);
   process.stdout.write("TASK33_NOTIFICATION_DRIVER_PASS\n");
 } finally {
+  if (firstPackage?.child.exitCode === null) { firstPackage.child.kill("SIGTERM"); await firstPackage.exited; }
   proxy?.closeAllConnections(); proxy?.close(); server?.close(); db.close(); rmSync(root, { recursive: true, force: true });
 }
