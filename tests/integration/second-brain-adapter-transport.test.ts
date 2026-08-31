@@ -31,6 +31,6 @@ describe("Second Brain adapter over supervised stdio", () => {
       { page_id: "wiki/principle", sid: "a1b2c3d4", source_ref: "fixture:principle" },
       { page_id: "wiki/project", sid: "bbbbbbbb", source_ref: "fixture:project" },
     ] });
-    expect(transport.diagnostics().filter(item => item.method === "sb_remember")).toEqual([]);
+    expect(transport.diagnostics().filter(item => item.method === "sb_write_request")).toEqual([]);
   });
 });

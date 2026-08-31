@@ -1,5 +1,5 @@
 import { execFile as nodeExecFile, type ChildProcess, } from "node:child_process"; import { realpathSync } from "node:fs";
-import { parseSecondBrainStrictJson } from "./second-brain-strict-json.js"; import { frozenArgumentsMatch,
+import { parseSecondBrainStrictJson } from "./second-brain-strict-json.js"; import { snapshotSecondBrainWriteArguments } from "./second-brain-write-request.js"; import { frozenArgumentsMatch,
 	inspectFrozenSchemas, snapshotArguments, } from "./second-brain-frozen.js"; import { SECOND_BRAIN_CONFIG, SECOND_BRAIN_DEADLINES, SECOND_BRAIN_FRAME_BYTES,
 	SECOND_BRAIN_LAUNCHER, SECOND_BRAIN_LIMITS, SECOND_BRAIN_PROTOCOL_VERSION, SECOND_BRAIN_READ_METHODS as READ_METHODS,
 	SECOND_BRAIN_WRITE_METHOD as WRITE_METHOD, SecondBrainTransportError, isSecondBrainReadMethod as isRead, loadSecondBrainContract, normalizeSecondBrainOutcome,
@@ -37,10 +37,10 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 		this.report = options.onDiagnostic; } diagnostics(): readonly SecondBrainDiagnostic[] { return this.events.map((item) => ({ ...item })); } call(
 		method: SecondBrainMethod, arguments_: Readonly<Record<string, unknown>>, options: SecondBrainCallOptions = {}, ): Promise<SecondBrainOutcome> {
 		if (this.terminalFailure) return Promise.reject(this.terminalFailure); if (![...READ_METHODS, WRITE_METHOD].includes(method))
-			return Promise.reject(this.error("SECOND_BRAIN_METHOD_DENIED", "fatal")); const snapshot = snapshotArguments(arguments_); if (!snapshot)
+			return Promise.reject(this.error("SECOND_BRAIN_METHOD_DENIED", "fatal")); const snapshot = method === WRITE_METHOD ? snapshotSecondBrainWriteArguments(arguments_) : snapshotArguments(arguments_); if (!snapshot)
 			return Promise.reject( this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }), ); let argumentBytes: number; try {
 			argumentBytes = Buffer.byteLength(JSON.stringify(snapshot), "utf8"); } catch { return Promise.reject(
-				this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }), ); } if ( argumentBytes > SECOND_BRAIN_LIMITS.argument_bytes || (this.localArguments &&
+				this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }), ); } if ( argumentBytes > SECOND_BRAIN_LIMITS.argument_bytes || (this.localArguments && isRead(method) &&
 				!frozenArgumentsMatch(method, snapshot, this.contract)) ) return Promise.reject( this.error( argumentBytes > SECOND_BRAIN_LIMITS.argument_bytes
 						? "SECOND_BRAIN_ARGUMENTS_OVERSIZE" : "SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }, ), );
 		const queue = isRead(method) ? this.readQueue : this.writeQueue; const limit = isRead(method) ? SECOND_BRAIN_LIMITS.read_queue
@@ -63,7 +63,7 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 		let release = (): void => undefined; this.admissionTail = new Promise<void>((resolve) => { release = resolve; }); await previous;
 		let response: Promise<Record<string, unknown>>; try { await this.ensureCorrelationCapacity(); if (item.abort && item.options.signal)
 				item.options.signal.removeEventListener("abort", item.abort); if (item.cancelled || item.options.signal?.aborted)
-				throw this.error("SECOND_BRAIN_CANCELLED", "cancelled", { method: item.method, }); if ( this.localArguments &&
+				throw this.error("SECOND_BRAIN_CANCELLED", "cancelled", { method: item.method, }); if ( this.localArguments && isRead(item.method) &&
 				!frozenArgumentsMatch(item.method, item.arguments_, this.contract) ) throw this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method: item.method, });
 			response = this.request( item.method, item.arguments_, item.options.signal, isRead(item.method) ? this.deadlines.read : this.deadlines.write, ); } finally {
 			release(); } return response; } private async ensureCorrelationCapacity(): Promise<void> { if ( this.sequence < SECOND_BRAIN_LIMITS.correlation_ids &&

@@ -57,13 +57,19 @@ function withoutTitles(value: unknown): unknown {
   return result;
 }
 function canonical(value: unknown): string { return JSON.stringify(withoutTitles(value)); }
-function outputSchema(name: string): unknown {
+function writeInputCanonical(value: unknown): string {
+  const normalized = withoutTitles(value);
+  if (isRecord(normalized) && isRecord(normalized.$defs)) delete normalized.$defs["MemoryWriteRequestModel"];
+  return JSON.stringify(normalized);
+}
+function outputSchema(name: string, tool: Record<string, unknown>): unknown {
   switch (name) {
     case "sb_search": return OUTPUT_SCHEMAS.sb_search;
     case "sb_read_page": return OUTPUT_SCHEMAS.sb_read_page;
     case "sb_recent_changes": return OUTPUT_SCHEMAS.sb_recent_changes;
     case "sb_open_conflicts": return OUTPUT_SCHEMAS.sb_open_conflicts;
     case "sb_remember": return OUTPUT_SCHEMAS.sb_remember;
+    case "sb_write_request": return tool["output_schema"];
     default: return undefined;
   }
 }
@@ -75,9 +81,11 @@ export function inspectFrozenSchemas(observed: unknown, contract: unknown): { re
     if (!isRecord(value) || typeof value.name !== "string" || names.has(value.name)) return { matches: false, requiresLocalArguments: false };
     const keys = Object.keys(value).sort().join("\0"); const producer = keys === "description\0inputSchema\0name\0outputSchema";
     if (keys !== "inputSchema\0name" && (!producer || typeof value.description !== "string" || Buffer.byteLength(value.description, "utf8") > DESCRIPTION_BYTES)) return { matches: false, requiresLocalArguments: false };
-    const tool = contract.tools[value.name]; if (!isRecord(tool) || !inputSchemaMatches(value.inputSchema, tool.arguments)) return { matches: false, requiresLocalArguments: false };
-    if (producer && (!titlesValid(value.outputSchema) || canonical(value.outputSchema) !== canonical(outputSchema(value.name)))) return { matches: false, requiresLocalArguments: false };
-    if (isRecord(value.inputSchema) && value.inputSchema.additionalProperties === undefined) requiresLocalArguments = true; names.add(value.name);
+    const tool = contract.tools[value.name]; if (!isRecord(tool)) return { matches: false, requiresLocalArguments: false };
+    const inputMatches = value.name === "sb_write_request" ? writeInputCanonical(value.inputSchema) === writeInputCanonical(tool.arguments) : inputSchemaMatches(value.inputSchema, tool.arguments);
+    if (!inputMatches) return { matches: false, requiresLocalArguments: false };
+    if (producer && (!titlesValid(value.outputSchema) || canonical(value.outputSchema) !== canonical(outputSchema(value.name, tool)))) return { matches: false, requiresLocalArguments: false };
+    if (value.name !== "sb_write_request" && isRecord(value.inputSchema) && value.inputSchema.additionalProperties === undefined) requiresLocalArguments = true; names.add(value.name);
   }
   return { matches: names.size === Object.keys(contract.tools).length, requiresLocalArguments };
 }

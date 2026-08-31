@@ -22,6 +22,7 @@ import {
   type SecondBrainReadMethod,
 } from "./second-brain-transport.js";
 
+export { createSecondBrainWriteRequestAdapter } from "./second-brain-write-adapter.js";
 export type {
   SecondBrainAdapterBudgets,
   SecondBrainAdapterOptions,
@@ -30,6 +31,10 @@ export type {
   SecondBrainReadAdapter,
   SecondBrainReadOutcome,
   SecondBrainSensitivity,
+  SecondBrainWriteOperation,
+  SecondBrainWriteOutcome,
+  SecondBrainWriteRequestAdapter,
+  SecondBrainWriteRequestV1,
 } from "./second-brain-adapter-types.js";
 export { SECOND_BRAIN_SENSITIVITIES, SECOND_BRAIN_SOURCE_ID, SECOND_BRAIN_TRUST } from "./second-brain-adapter-types.js";
 

@@ -25,7 +25,7 @@ export const SECOND_BRAIN_READ_METHODS = [
   "sb_recent_changes",
   "sb_open_conflicts",
 ] as const;
-export const SECOND_BRAIN_WRITE_METHOD = "sb_remember" as const;
+export const SECOND_BRAIN_WRITE_METHOD = "sb_write_request" as const;
 
 export type SecondBrainReadMethod = (typeof SECOND_BRAIN_READ_METHODS)[number];
 export type SecondBrainMethod = SecondBrainReadMethod | typeof SECOND_BRAIN_WRITE_METHOD;
@@ -152,7 +152,7 @@ function exactEmptyResult(method: SecondBrainMethod, value: Readonly<Record<stri
     case "sb_search": expected = "results"; break;
     case "sb_recent_changes": expected = "changes"; break;
     case "sb_open_conflicts": expected = "conflicts"; break;
-    case "sb_read_page": case "sb_remember": expected = undefined; break;
+    case "sb_read_page": case "sb_write_request": expected = undefined; break;
     default: { const exhaustive: never = method; return exhaustive; }
   }
   if (expected === undefined || Object.getPrototypeOf(value) !== Object.prototype) return false;

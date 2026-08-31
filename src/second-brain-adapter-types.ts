@@ -61,6 +61,24 @@ export type SecondBrainReadOutcome =
   }
   | { readonly kind: "conflicts"; readonly checked_at: string; readonly conflicts: readonly SecondBrainConflict[] };
 
+export type SecondBrainWriteOperation = "remember" | "correct" | "forget" | "export";
+export type SecondBrainWriteRequestV1 = {
+  readonly schema_version: 1; readonly candidate_id: string; readonly candidate_digest: string;
+  readonly classification_digest: string; readonly idempotency_key: string; readonly request_id: string;
+  readonly request_digest: string; readonly operation: SecondBrainWriteOperation; readonly subject: string;
+  readonly purpose: "personal_memory" | "data_erasure" | "data_portability";
+  readonly sensitivity: SecondBrainSensitivity; readonly retention_days: number; readonly created_at: string;
+  readonly expires_at: string; readonly expected_prior: Readonly<Record<string, string>> | null;
+  readonly receipt: Readonly<Record<string, string | number>>; readonly receipt_digest: string;
+  readonly payload: Readonly<Record<string, string>>;
+};
+export type SecondBrainWriteOutcome =
+  | { readonly kind: "accepted"; readonly state: "pending"; readonly candidate_id: string; readonly request_id: string;
+    readonly request_digest: string; readonly idempotency_key: string; readonly operation: SecondBrainWriteOperation;
+    readonly accepted_at: string; readonly inbox_path: string; readonly request_file_digest: string; readonly replayed: boolean }
+  | { readonly kind: "invalid" | "unavailable" | "uncertain"; readonly code: string };
+export interface SecondBrainWriteRequestAdapter { write(value: unknown): Promise<SecondBrainWriteOutcome>; }
+
 export interface SecondBrainReadAdapter {
   search(query: string): Promise<SecondBrainReadOutcome>;
   readPage(pageId: string): Promise<SecondBrainReadOutcome>;

@@ -5,6 +5,15 @@ import { join, resolve } from "node:path";
 import type { SecondBrainTimerHandle, SecondBrainTransportOptions } from "../../src/second-brain-transport.js";
 
 export type Fixture = { readonly root: string; readonly launcher: string; readonly config: string; readonly control: string; readonly receipt: string };
+export function writeRequest(extra: Readonly<Record<string, unknown>> = {}): Readonly<Record<string, unknown>> {
+  const parsed: unknown = JSON.parse(readFileSync("contracts/second-brain-mcp-v1.json", "utf8"));
+  if (!isRecord(parsed) || !isRecord(parsed["tools"]) || !isRecord(parsed["tools"]["sb_write_request"])) throw new Error("write fixture missing");
+  const happy = parsed["tools"]["sb_write_request"]["happy"];
+  if (!isRecord(happy) || !isRecord(happy["arguments"]) || !isRecord(happy["arguments"]["request"])) throw new Error("write fixture malformed");
+  const request = structuredClone(happy["arguments"]["request"]); const payload = request["payload"];
+  if (Object.keys(extra).length > 0 && isRecord(payload)) payload["content"] = JSON.stringify(extra);
+  return { request };
+}
 export function fixture(settings: Readonly<Record<string, unknown>> = {}): Fixture {
   const root = mkdtempSync(join(tmpdir(), "second-brain-transport-")); const target = resolve("tests/fixtures/second-brain-mcp-child.mjs"); chmodSync(target, 0o755);
   const launcher = join(root, "second-brain-mcp"); const config = join(root, "config.json"); const control = join(root, "control"); const receipt = join(root, "receipt");

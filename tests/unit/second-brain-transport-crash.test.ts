@@ -3,7 +3,7 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { PassThrough, Writable } from "node:stream";
 import { afterEach, describe, expect, it } from "vitest";
 import { createSecondBrainTransport, type SecondBrainExecFile } from "../../src/second-brain-transport.js";
-import { ManualTimers, cleanupFixtures, fixture, forceKill, options, receiptSignal } from "../fixtures/second-brain-transport-harness.js";
+import { ManualTimers, cleanupFixtures, fixture, forceKill, options, receiptSignal, writeRequest } from "../fixtures/second-brain-transport-harness.js";
 
 const contract = JSON.parse(readFileSync("contracts/second-brain-mcp-v1.json", "utf8")) as { tools: Record<string, { arguments: unknown }> };
 class SignalProcess extends ChildProcess {
@@ -33,10 +33,10 @@ describe("Second Brain crash and uncertainty", () => {
 
   it("marks a dispatched write uncertain and never replays it automatically", async () => {
     const value = fixture(); const transport = createSecondBrainTransport(options(value)); transports.push(transport);
-    await expect(transport.call("sb_remember", { content: "once", crash: true })).rejects.toMatchObject({ code: "SECOND_BRAIN_WRITE_INTERRUPTED", disposition: "uncertain", generation: 1 });
-    const writes = (await receiptSignal(value.receipt, 1)).filter(row => row.name === "sb_remember"); expect(writes).toHaveLength(1);
+    await expect(transport.call("sb_write_request", writeRequest({ crash: true }))).rejects.toMatchObject({ code: "SECOND_BRAIN_WRITE_INTERRUPTED", disposition: "uncertain", generation: 1 });
+    const writes = (await receiptSignal(value.receipt, 1)).filter(row => row.name === "sb_write_request"); expect(writes).toHaveLength(1);
     await expect(transport.call("sb_search", { query: "restart" })).resolves.toMatchObject({ kind: "data" });
-    expect((await receiptSignal(value.receipt, 2)).filter(row => row.name === "sb_remember")).toHaveLength(1);
+    expect((await receiptSignal(value.receipt, 2)).filter(row => row.name === "sb_write_request")).toHaveLength(1);
   });
 
   it("surfaces restart handshake failure without reviving old work", async () => {

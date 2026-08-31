@@ -1,3 +1,4 @@
+import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 import {
   SECOND_BRAIN_REQUIRED_TOOLS,
@@ -10,6 +11,12 @@ import {
 import { SECOND_BRAIN_PROTOCOL_VERSION } from "../../src/second-brain-transport.js";
 
 const NOW = new Date("2026-08-28T12:00:00.000Z");
+function writeInputSchema(): unknown {
+  const fixture: unknown = JSON.parse(readFileSync("contracts/second-brain-mcp-v1.json", "utf8"));
+  if (typeof fixture !== "object" || fixture === null) return undefined;
+  const tools = Reflect.get(fixture, "tools"); const write = typeof tools === "object" && tools !== null ? Reflect.get(tools, "sb_write_request") : undefined;
+  return typeof write === "object" && write !== null ? Reflect.get(write, "arguments") : undefined;
+}
 const ACTUAL_TASK10_HANDSHAKE = JSON.stringify({
   initialize: {
     protocolVersion: SECOND_BRAIN_PROTOCOL_VERSION,
@@ -23,6 +30,7 @@ const ACTUAL_TASK10_HANDSHAKE = JSON.stringify({
       { name: "sb_recent_changes", inputSchema: { type: "object", properties: { days: { default: 7, type: "integer" } }, required: [], additionalProperties: false } },
       { name: "sb_remember", inputSchema: { type: "object", properties: { content: { type: "string" }, title: { default: null, type: ["string", "null"] } }, required: ["content"], additionalProperties: false } },
       { name: "sb_search", inputSchema: { type: "object", properties: { limit: { default: 10, type: "integer" }, query: { type: "string" } }, required: ["query"], additionalProperties: false } },
+      { name: "sb_write_request", inputSchema: writeInputSchema() },
     ],
   },
 });

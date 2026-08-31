@@ -16,7 +16,7 @@ export const SECOND_BRAIN_READINESS_VERSION = 1 as const;
 export const SECOND_BRAIN_FROZEN_DIGEST = "2749af8b2a87b34e8a46191051d03126ff5bceebfb38c3f7a0b1acb0239acbaa" as const;
 export const SECOND_BRAIN_FRESHNESS_MS = 24 * 60 * 60 * 1_000;
 export const SECOND_BRAIN_REQUIRED_TOOLS = [
-  "sb_open_conflicts", "sb_read_page", "sb_recent_changes", "sb_remember", "sb_search",
+  "sb_open_conflicts", "sb_read_page", "sb_recent_changes", "sb_remember", "sb_search", "sb_write_request",
 ] as const;
 
 export type SecondBrainProbeFailure = "timeout" | "crash" | "nonzero" | "malformed" | "oversize" | "locked" | "unavailable";

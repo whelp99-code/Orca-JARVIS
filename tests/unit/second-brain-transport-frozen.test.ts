@@ -12,12 +12,17 @@ function canonicalTools(): Array<Record<string, unknown>> {
   if (!isRecord(contract) || !isRecord(contract.tools)) return [];
   return Object.entries(contract.tools).flatMap(([name, value]) => isRecord(value) ? [{ name, inputSchema: structuredClone(value.arguments) }] : []);
 }
+function writeOutputSchema(): unknown {
+  if (!isRecord(contract) || !isRecord(contract.tools) || !isRecord(contract.tools.sb_write_request)) return undefined;
+  return contract.tools.sb_write_request.output_schema;
+}
 const PRODUCER_OUTPUTS: Readonly<Record<string, unknown>> = {
   sb_search: { $defs: { SearchHitDict: { properties: { page_id: { type: "string" }, section: { type: "string" }, snippet: { type: "string" }, score: { type: "number" } }, required: ["page_id", "section", "snippet", "score"], type: "object" } }, additionalProperties: { items: { $ref: "#/$defs/SearchHitDict" }, type: "array" }, type: "object" },
   sb_read_page: { additionalProperties: { anyOf: [{ additionalProperties: { type: "string" }, type: "object" }, { type: "string" }] }, type: "object" },
   sb_recent_changes: { additionalProperties: { items: { additionalProperties: { type: "string" }, type: "object" }, type: "array" }, type: "object" },
   sb_open_conflicts: { additionalProperties: { items: { additionalProperties: { type: "string" }, type: "object" }, type: "array" }, type: "object" },
   sb_remember: { additionalProperties: { type: "string" }, type: "object" },
+  sb_write_request: writeOutputSchema(),
 };
 function producerTools(): Array<Record<string, unknown>> { return canonicalTools().map(tool => ({ ...tool, description: "bounded metadata", outputSchema: structuredClone(PRODUCER_OUTPUTS[String(tool.name)]) })); }
 

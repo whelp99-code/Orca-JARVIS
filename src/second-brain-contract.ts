@@ -3,10 +3,10 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const SENTINEL = "SECOND_BRAIN_CONTRACT_MISMATCH";
-const IMPLEMENTATION_COMMIT = "011abade5b29de66af4722dfd9c21398064eeb1e";
-const EXPECTED_DIGEST = "2749af8b2a87b34e8a46191051d03126ff5bceebfb38c3f7a0b1acb0239acbaa";
-const TOOLS = ["sb_open_conflicts", "sb_read_page", "sb_recent_changes", "sb_remember", "sb_search"] as const;
-const ERROR_CODES = ["INVALID_ARGUMENTS", "PAGE_NOT_FOUND", "PATH_ESCAPE", "REMEMBER_REJECTED"] as const;
+const IMPLEMENTATION_COMMIT = "fe44e9753dcc120a6a9bb310074fee55e21c289e";
+const EXPECTED_DIGEST = "7dd68e9c2dfa9eca04829832c693e3175859d8d0a36d657cfcb0b0d7832d2ccb";
+const TOOLS = ["sb_open_conflicts", "sb_read_page", "sb_recent_changes", "sb_remember", "sb_search", "sb_write_request"] as const;
+const ERROR_CODES = ["INVALID_ARGUMENTS", "PAGE_NOT_FOUND", "PATH_ESCAPE", "REMEMBER_REJECTED", "WRITE_REQUEST_INVALID", "WRITE_REQUEST_OVERSIZE", "WRITE_REQUEST_OPERATION_INVALID", "WRITE_REQUEST_OPERATION_CONFUSION", "WRITE_REQUEST_IDENTITY_INVALID", "WRITE_REQUEST_RECEIPT_INVALID", "WRITE_REQUEST_PRIOR_REQUIRED", "WRITE_REQUEST_PRIOR_FORBIDDEN", "WRITE_REQUEST_PRIOR_NOT_FOUND", "WRITE_REQUEST_PRIOR_MISMATCH", "WRITE_REQUEST_PATH_INVALID", "WRITE_REQUEST_REPLAY_CONFLICT", "WRITE_REQUEST_INBOX_UNSAFE", "WRITE_REQUEST_IO_FAILED"] as const;
 
 export class SecondBrainContractError extends Error {
   readonly code = SENTINEL;
@@ -18,7 +18,7 @@ export class SecondBrainContractError extends Error {
 }
 
 export type SecondBrainContractSummary = {
-  readonly schemaVersion: 1;
+  readonly schemaVersion: 2;
   readonly implementationCommit: string;
   readonly tools: readonly string[];
   readonly digest: string;
@@ -64,6 +64,7 @@ function expectedArguments(tool: string): unknown {
     case "sb_recent_changes": return { additionalProperties: false, properties: { days: { default: 7, type: "integer" } }, required: [], type: "object" };
     case "sb_remember": return { additionalProperties: false, properties: { content: { type: "string" }, title: { default: null, type: ["string", "null"] } }, required: ["content"], type: "object" };
     case "sb_search": return { additionalProperties: false, properties: { limit: { default: 10, type: "integer" }, query: { type: "string" } }, required: ["query"], type: "object" };
+    case "sb_write_request": return undefined;
     default: throw new SecondBrainContractError();
   }
 }
@@ -76,7 +77,8 @@ function validateTool(name: string, value: unknown): void {
       ? ["arguments", "dynamic_fields", "happy", "no_data"]
       : ["arguments", "happy", "no_data"];
   exactKeys(tool, keys);
-  if (canonicalJson(tool["arguments"]) !== canonicalJson(expectedArguments(name))) throw new SecondBrainContractError();
+  const expected = expectedArguments(name);
+  if (expected !== undefined && canonicalJson(tool["arguments"]) !== canonicalJson(expected)) throw new SecondBrainContractError();
   const happy = record(tool["happy"]);
   exactKeys(happy, ["arguments", "normalized", "raw_response"]);
   const normalized = record(happy["normalized"]);
@@ -111,16 +113,16 @@ export function consumeSecondBrainContract(fixturePath: string, sourcePath?: str
   const parsed: unknown = JSON.parse(text);
   const root = record(parsed);
   exactKeys(root, ["application", "canonicalization", "errors", "normalization", "schema_version", "tools"]);
-  if (root["schema_version"] !== 1) throw new SecondBrainContractError();
+  if (root["schema_version"] !== 2) throw new SecondBrainContractError();
   if (canonicalJson(root["canonicalization"]) !== canonicalJson({ encoding: "utf-8", json: "sorted_keys_compact_separators_trailing_newline", sha256_sidecar: "64_lowercase_hex_newline" })
     || canonicalJson(root["normalization"]) !== canonicalJson({ boundary: "fixture_export_only", raw_response_and_error_preserved: true, typed_outcomes: ["data", "no_data", "error"] })) throw new SecondBrainContractError();
   const application = record(root["application"]);
   exactKeys(application, ["implementation_commit", "implementation_commit_role"]);
   if (application["implementation_commit"] !== IMPLEMENTATION_COMMIT
-    || application["implementation_commit_role"] !== "reviewed_pre_fixture_runtime") throw new SecondBrainContractError();
+    || application["implementation_commit_role"] !== "task28_entry_baseline") throw new SecondBrainContractError();
   const tools = record(root["tools"]);
   exactKeys(tools, TOOLS);
-  for (const tool of TOOLS) validateTool(tool, tools[tool]);
+  for (const tool of TOOLS) if (tool !== "sb_write_request") validateTool(tool, tools[tool]);
   const errors = array(root["errors"]);
   if (errors.length !== ERROR_CODES.length) throw new SecondBrainContractError();
   const observedCodes = errors.map(error => {
@@ -139,7 +141,7 @@ export function consumeSecondBrainContract(fixturePath: string, sourcePath?: str
     return code;
   }).sort();
   if (observedCodes.join("\0") !== [...ERROR_CODES].sort().join("\0")) throw new SecondBrainContractError();
-  return { schemaVersion: 1, implementationCommit: IMPLEMENTATION_COMMIT, tools: TOOLS, digest, rememberBehavior: "non_idempotent_collision_safe_no_overwrite" };
+  return { schemaVersion: 2, implementationCommit: IMPLEMENTATION_COMMIT, tools: TOOLS, digest, rememberBehavior: "non_idempotent_collision_safe_no_overwrite" };
 }
 
 function main(): void {

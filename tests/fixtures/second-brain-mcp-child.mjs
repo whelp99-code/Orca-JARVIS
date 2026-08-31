@@ -7,6 +7,9 @@ const tools = [
   ["sb_open_conflicts", {}], ["sb_read_page", { id: { type: "string" } }], ["sb_recent_changes", { days: { default: 7, type: "integer" } }],
   ["sb_remember", { content: { type: "string" }, title: { default: null, type: ["string", "null"] } }], ["sb_search", { limit: { default: 10, type: "integer" }, query: { type: "string" } }],
 ].map(([name, properties]) => ({ name, inputSchema: { type: "object", properties, required: name === "sb_read_page" ? ["id"] : name === "sb_remember" ? ["content"] : name === "sb_search" ? ["query"] : [], additionalProperties: false } }));
+const frozen = JSON.parse(readFileSync("contracts/second-brain-mcp-v1.json", "utf8"));
+const writeContract = frozen.tools.sb_write_request;
+tools.push({ name: "sb_write_request", description: "accept pending request", inputSchema: writeContract.arguments, outputSchema: writeContract.output_schema });
 let input = ""; let calls = 0; let heldToolsId; const held = new Map();
 const send = value => process.stdout.write(`${JSON.stringify(value)}\n`);
 const toolResult = (id, value) => ({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: JSON.stringify(value) }], isError: false } });
@@ -63,13 +66,13 @@ process.stdin.on("data", chunk => {
       const availableTools = config.tools ?? tools; const listed = config.mode === "malformed-tool" ? [null, ...availableTools.slice(1)] : config.badTools ? availableTools.slice(1) : availableTools;
       send({ jsonrpc: "2.0", id: message.id, result: { tools: listed } });
     } else if (message.method === "tools/call") {
-      calls += 1; const { name, arguments: args } = message.params;
+      calls += 1; const { name, arguments: wireArgs } = message.params; const controlText = name === "sb_write_request" ? wireArgs?.request?.payload?.content : undefined; const controls = typeof controlText === "string" && controlText.startsWith("{") ? JSON.parse(controlText) : {}; const args = { ...wireArgs, ...controls };
       if (config.receipt) { appendFileSync(config.receipt, `${JSON.stringify({ event: "call", name, calls, id: message.id })}\n`); process.stderr.write("state\n"); }
       const priorCalls = config.receipt ? readFileSync(config.receipt, "utf8").split(`"name":${JSON.stringify(name)}`).length - 1 : calls;
       if (args?.crash || (args?.crashOnce && priorCalls === 1)) process.exit(23); if (args?.hang) continue;
       if (config.adapterScenario === "deep-wire" && name === "sb_search") { let nested = '{"leaf":"value"}'; for (let depth = 0; depth < 20_000; depth += 1) nested = `{"next":${nested}}`; const text = `{"results":[{"page_id":"wiki/principle","section":"small","snippet":"small","score":1}],"ignored":${nested}}`; send({ jsonrpc: "2.0", id: message.id, result: { content: [{ type: "text", text }], isError: false } }); continue; }
       const adapterValue = config.adapterScenario || config.emptyResponse ? adapterResponse(name, args) : undefined;
-      const values = adapterValue === undefined ? { sb_search: args?.empty ? { results: [] } : { results: [{ page_id: "wiki/example", score: 1, section: "Intro", snippet: args.query }] }, sb_read_page: { frontmatter: { id: args.id }, body: "example body" }, sb_recent_changes: args?.empty ? { changes: [] } : { changes: [{ page_id: "wiki/example", change: "added", date: "2026-08-28" }] }, sb_open_conflicts: args?.empty ? { conflicts: [] } : { conflicts: [{ conflict_id: "c", page_id: "wiki/example", summary: "example" }] }, sb_remember: { inbox_path: "inbox/example.md" } } : { [name]: adapterValue };
+      const values = adapterValue === undefined ? { sb_search: args?.empty ? { results: [] } : { results: [{ page_id: "wiki/example", score: 1, section: "Intro", snippet: args.query }] }, sb_read_page: { frontmatter: { id: args.id }, body: "example body" }, sb_recent_changes: args?.empty ? { changes: [] } : { changes: [{ page_id: "wiki/example", change: "added", date: "2026-08-28" }] }, sb_open_conflicts: args?.empty ? { conflicts: [] } : { conflicts: [{ conflict_id: "c", page_id: "wiki/example", summary: "example" }] }, sb_remember: { inbox_path: "inbox/example.md" }, sb_write_request: { ...writeContract.happy.raw_response, candidate_id: args.request?.candidate_id, request_id: args.request?.request_id, request_digest: args.request?.request_digest, idempotency_key: args.request?.idempotency_key, operation: args.request?.operation, accepted_at: "2026-08-31T12:00:00.000Z", inbox_path: `inbox/.requests/pending/${args.request?.request_id}.json`, request_file_digest: `sha256:${"4".repeat(64)}` } } : { [name]: adapterValue };
       if (args?.stderrBytes) process.stderr.write("s".repeat(args.stderrBytes));
       if (config.duplicateResultEnvelope && name === "sb_search") {
         const result = JSON.stringify({ content: [{ type: "text", text: "{\"results\":[]}" }], isError: false });

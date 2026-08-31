@@ -2,7 +2,7 @@ import { execFile, type ChildProcess } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { afterEach, describe, expect, it } from "vitest";
 import { createSecondBrainTransport } from "../../src/second-brain-transport.js";
-import { ManualTimers, cleanupFixtures, fixture, options, receiptSignal, release } from "../fixtures/second-brain-transport-harness.js";
+import { ManualTimers, cleanupFixtures, fixture, options, receiptSignal, release, writeRequest } from "../fixtures/second-brain-transport-harness.js";
 
 const transports: Array<{ close(): Promise<void> }> = [];
 afterEach(async () => { await Promise.all(transports.splice(0).map(item => item.close())); cleanupFixtures(); });
@@ -21,13 +21,13 @@ describe("Second Brain correlation and budgets", () => {
 
   it("serializes writes and marks in-flight cancellation once", async () => {
     const value = fixture(); const transport = createSecondBrainTransport(options(value)); transports.push(transport);
-    const first = transport.call("sb_remember", { content: "one", hold: true }); const second = transport.call("sb_remember", { content: "two", hold: true });
-    await expect(receiptSignal(value.receipt, 1)).resolves.toHaveLength(1); expect(transport.diagnostics().filter(item => item.code === "SECOND_BRAIN_REQUESTED" && item.method === "sb_remember")).toHaveLength(1);
-    const controller = new AbortController(); const cancelled = transport.call("sb_remember", { content: "three", hold: true }, { signal: controller.signal }); controller.abort();
+    const first = transport.call("sb_write_request", writeRequest({ hold: true })); const second = transport.call("sb_write_request", writeRequest({ hold: true }));
+    await expect(receiptSignal(value.receipt, 1)).resolves.toHaveLength(1); expect(transport.diagnostics().filter(item => item.code === "SECOND_BRAIN_REQUESTED" && item.method === "sb_write_request")).toHaveLength(1);
+    const controller = new AbortController(); const cancelled = transport.call("sb_write_request", writeRequest({ hold: true }), { signal: controller.signal }); controller.abort();
     await expect(cancelled).rejects.toMatchObject({ code: "SECOND_BRAIN_CANCELLED", disposition: "cancelled" });
     release(value.control); await expect(first).resolves.toMatchObject({ kind: "data" });
     await expect(receiptSignal(value.receipt, 2)).resolves.toHaveLength(2); release(value.control); await expect(second).resolves.toMatchObject({ kind: "data" });
-    expect((await receiptSignal(value.receipt, 2)).filter(row => row.name === "sb_remember")).toHaveLength(2);
+    expect((await receiptSignal(value.receipt, 2)).filter(row => row.name === "sb_write_request")).toHaveLength(2);
   });
 
   it("cancels an in-flight request once and accepts its bounded late response", async () => {
@@ -41,7 +41,7 @@ describe("Second Brain correlation and budgets", () => {
     const value = fixture(); const timers = new ManualTimers(); const transport = createSecondBrainTransport(options(value, { timers })); transports.push(transport);
     await expect(transport.call("sb_search", { query: "ready" })).resolves.toMatchObject({ kind: "data" });
     const read = transport.call("sb_search", { query: "hang", hang: true }); await receiptSignal(value.receipt, 2); timers.fireLatest(); await expect(read).rejects.toMatchObject({ code: "SECOND_BRAIN_READ_TIMEOUT", disposition: "unavailable" });
-    const write = transport.call("sb_remember", { content: "hang", hang: true }); await receiptSignal(value.receipt, 3); timers.fireLatest(); await expect(write).rejects.toMatchObject({ code: "SECOND_BRAIN_WRITE_TIMEOUT", disposition: "uncertain" });
+    const write = transport.call("sb_write_request", writeRequest({ hang: true })); await receiptSignal(value.receipt, 3); timers.fireLatest(); await expect(write).rejects.toMatchObject({ code: "SECOND_BRAIN_WRITE_TIMEOUT", disposition: "uncertain" });
     expect(timers.delays).toEqual(expect.arrayContaining([5_000, 10_000, 30_000])); expect(timers.count).toBe(0);
   });
 
@@ -107,7 +107,7 @@ describe("Second Brain correlation and budgets", () => {
   it("atomically reserves concurrent capacity at generation count 255", async () => {
     const value = fixture(); const timers = new ManualTimers(); let dispatched: (() => void) | undefined; let burstCount = 0; let burstReady: (() => void) | undefined; const transport = createSecondBrainTransport(options(value, { timers, onDiagnostic: item => { if (item.code !== "SECOND_BRAIN_REQUESTED") return; dispatched?.(); burstCount += 1; if (burstCount === 5) burstReady?.(); } })); transports.push(transport); await expect(transport.call("sb_search", { query: "ready" })).resolves.toMatchObject({ kind: "data" });
     for (let index = 0; index < 252; index += 1) { const signal = new Promise<void>(resolve => { dispatched = resolve; }); const call = transport.call("sb_search", { query: String(index), hang: true }); await signal; dispatched = undefined; timers.fire(10_000); await expect(call).rejects.toMatchObject({ code: "SECOND_BRAIN_READ_TIMEOUT" }); }
-    burstCount = 0; const burst = new Promise<void>(resolve => { burstReady = resolve; }); const calls = [transport.call("sb_remember", { content: "write", hold: true }), ...Array.from({ length: 4 }, (_, index) => transport.call("sb_search", { query: `read-${index}`, hold: true }))]; const settlements = Promise.allSettled(calls); await burst; release(value.control); const settled = await settlements; expect(settled.filter(item => item.status === "fulfilled").length).toBeGreaterThanOrEqual(4); expect(Math.max(...transport.diagnostics().map(item => item.correlation_count ?? 0))).toBeLessThanOrEqual(256);
+    burstCount = 0; const burst = new Promise<void>(resolve => { burstReady = resolve; }); const calls = [transport.call("sb_write_request", writeRequest({ hold: true })), ...Array.from({ length: 4 }, (_, index) => transport.call("sb_search", { query: `read-${index}`, hold: true }))]; const settlements = Promise.allSettled(calls); await burst; release(value.control); const settled = await settlements; expect(settled.filter(item => item.status === "fulfilled").length).toBeGreaterThanOrEqual(4); expect(Math.max(...transport.diagnostics().map(item => item.correlation_count ?? 0))).toBeLessThanOrEqual(256);
   }, 20_000);
 
   it("bounds newline-free stderr retention while reporting redacted byte metadata", async () => {
