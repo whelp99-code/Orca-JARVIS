@@ -3,13 +3,11 @@
 import { appendFileSync, readFileSync } from "node:fs";
 const config = JSON.parse(readFileSync(process.env.SB_CONFIG, "utf8"));
 const protocolVersion = config.protocolVersion ?? "2025-11-25";
-const tools = [
-  ["sb_open_conflicts", {}], ["sb_read_page", { id: { type: "string" } }], ["sb_recent_changes", { days: { default: 7, type: "integer" } }],
-  ["sb_remember", { content: { type: "string" }, title: { default: null, type: ["string", "null"] } }], ["sb_search", { limit: { default: 10, type: "integer" }, query: { type: "string" } }],
-].map(([name, properties]) => ({ name, inputSchema: { type: "object", properties, required: name === "sb_read_page" ? ["id"] : name === "sb_remember" ? ["content"] : name === "sb_search" ? ["query"] : [], additionalProperties: false } }));
 const frozen = JSON.parse(readFileSync("contracts/second-brain-mcp-v1.json", "utf8"));
 const writeContract = frozen.tools.sb_write_request;
-tools.push({ name: "sb_write_request", description: "accept pending request", inputSchema: writeContract.arguments, outputSchema: writeContract.output_schema });
+const tools = Object.entries(frozen.tools).map(([name, tool]) => name === "sb_write_request"
+  ? { name, description: "accept pending request", inputSchema: tool.arguments, outputSchema: tool.output_schema }
+  : { name, inputSchema: tool.arguments });
 let input = ""; let calls = 0; let heldToolsId; const held = new Map();
 const send = value => process.stdout.write(`${JSON.stringify(value)}\n`);
 const toolResult = (id, value) => ({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: JSON.stringify(value) }], isError: false } });

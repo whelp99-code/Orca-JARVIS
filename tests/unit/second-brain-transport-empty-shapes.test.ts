@@ -17,6 +17,11 @@ const argumentsByMethod: Readonly<Record<SecondBrainReadMethod, Readonly<Record<
   sb_read_page: { id: "wiki/principle" },
   sb_recent_changes: {},
   sb_open_conflicts: {},
+  sb_generation_status: {},
+  sb_request_status: { request_id: `memeff:req:v2:${"1".repeat(64)}` },
+  sb_resolve_memory_target: {
+    page_id: "wiki/principle", exact_record: "fixture", source_identity_full: "2".repeat(64),
+  },
 };
 
 async function call(method: SecondBrainReadMethod, value: unknown): Promise<SecondBrainOutcome> {

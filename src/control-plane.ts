@@ -143,6 +143,8 @@ export class ControlPlane {
     const nowMs = finiteDate(now, "CONTROL_COMMAND_INVALID"); const requested = finiteIso(input.requested_at); const expires = finiteIso(input.expires_at);
     if (input.schema_version !== 1 || !nonempty(input.request_id) || !nonempty(input.action) || !Number.isInteger(input.action_level) || input.action_level < 0 || input.action_level > 5 || !isRecord(input.target) || !isRecord(input.args) || typeof input.reversible !== "boolean" || !nonempty(input.requested_by) || !nonempty(input.nonce) || !Number.isFinite(requested) || !Number.isFinite(expires) || requested > nowMs || expires <= nowMs || expires <= requested || expires - requested > 24 * 60 * 60_000) throw new JarvisError("CONTROL_COMMAND_INVALID");
     validateControlAction(input);
+    if (["memory.correct", "memory.export", "memory.forget", "memory.generation.rollback"].includes(input.action)
+      && input.reversible) throw new JarvisError("CONTROL_COMMAND_INVALID");
     const digest = controlCommandDigest(input); const targetJson = canonicalize(input.target); const argsJson = canonicalize(input.args); const at = now.toISOString();
     const prior = this.authority.db.prepare("SELECT command_digest,state FROM control_command_requests WHERE request_id=?").get(input.request_id) as { command_digest: string; state: ControlCommandState } | undefined;
     if (prior) { if (prior.command_digest !== digest) throw new JarvisError("CONTROL_COMMAND_REPLAY_CONFLICT"); return { ...input, command_digest: digest, state: prior.state }; }

@@ -190,6 +190,34 @@ function memoryOutboxDispatch(input: RuntimeControlActionInput): void {
   }
 }
 
+function memoryEffect(input: RuntimeControlActionInput, operation: "correct" | "forget" | "export"): void {
+  requireOnlyArgs(input.target, ["request_id", "provider_instance_id", "lane_id", "operation"]);
+  requireOnlyArgs(input.args, ["schema_version", "request"]);
+  const request = requireRecord(input.args, "request", "CONTROL_ARGS_MISMATCH");
+  const expectedLane = operation === "correct" ? "correction" : operation === "forget" ? "deletion" : "export";
+  if (input.args.schema_version !== 2 || request.schema_version !== 2 || request.kind !== "memory_effect"
+    || request.operation !== operation || request.lane !== expectedLane
+    || !/^memeff:req:v2:[0-9a-f]{64}$/.test(String(request.request_id))
+    || !/^sha256:[0-9a-f]{64}$/.test(String(request.request_digest))
+    || !/^memeff:idem:v2:[0-9a-f]{64}$/.test(String(request.idempotency_key))
+    || !/^sha256:[0-9a-f]{64}$/.test(String(request.envelope_digest))) throw new JarvisError("CONTROL_ARGS_MISMATCH");
+  bindTarget(input.target, "request_id", request.request_id);
+  bindTarget(input.target, "provider_instance_id", request.provider_instance_id);
+  bindTarget(input.target, "lane_id", request.lane_id);
+  bindTarget(input.target, "operation", operation);
+}
+
+function memoryGenerationRollback(input: RuntimeControlActionInput): void {
+  requireOnlyArgs(input.target, ["provider_instance_id", "generation_id"]);
+  requireOnlyArgs(input.args, ["schema_version", "provider_instance_id", "generation_id", "reason"]);
+  if (input.args.schema_version !== 1) throw new JarvisError("CONTROL_ARGS_MISMATCH");
+  const provider = requireString(input.args, "provider_instance_id", "CONTROL_ARGS_MISMATCH");
+  const generation = requireString(input.args, "generation_id", "CONTROL_ARGS_MISMATCH");
+  requireString(input.args, "reason", "CONTROL_ARGS_MISMATCH");
+  bindTarget(input.target, "provider_instance_id", provider);
+  bindTarget(input.target, "generation_id", generation);
+}
+
 function memoryAuthority(input: RuntimeControlActionInput, identityKey: "instruction_id" | "decision_id"): void {
   requireOnlyArgs(input.target, ["candidate_id", "correlation_id"]);
   requireOnlyArgs(input.args, [...MEMORY_BINDING_KEYS, identityKey]);
@@ -225,6 +253,10 @@ const descriptors: Record<string, Descriptor> = {
   "collaboration.room.create": { action: "collaboration.room.create", minimum_level: 3, executable: false, validate: retiredCollaborationRoomCreate },
   "evidence.negative.record": { action: "evidence.negative.record", minimum_level: 2, executable: true, validate: evidenceNegativeRecord },
   "memory.outbox.dispatch": { action: "memory.outbox.dispatch", minimum_level: 3, executable: true, validate: memoryOutboxDispatch },
+  "memory.correct": { action: "memory.correct", minimum_level: 3, executable: true, validate: input => memoryEffect(input, "correct") },
+  "memory.export": { action: "memory.export", minimum_level: 3, executable: true, validate: input => memoryEffect(input, "export") },
+  "memory.forget": { action: "memory.forget", minimum_level: 4, executable: true, validate: input => memoryEffect(input, "forget") },
+  "memory.generation.rollback": { action: "memory.generation.rollback", minimum_level: 4, executable: true, validate: memoryGenerationRollback },
   "memory.instruction.record": {
     action: "memory.instruction.record", minimum_level: 3, executable: false,
     validate: input => memoryAuthority(input, "instruction_id"),

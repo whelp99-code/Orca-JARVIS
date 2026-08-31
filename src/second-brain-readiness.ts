@@ -13,10 +13,11 @@ export type {
 import { SECOND_BRAIN_PROTOCOL_VERSION } from "./second-brain-transport.js";
 
 export const SECOND_BRAIN_READINESS_VERSION = 1 as const;
-export const SECOND_BRAIN_FROZEN_DIGEST = "2749af8b2a87b34e8a46191051d03126ff5bceebfb38c3f7a0b1acb0239acbaa" as const;
+export const SECOND_BRAIN_FROZEN_DIGEST = "1406f97695970a099af2569ab93777b67603a2a2261b9f6d03646e430d6098fe" as const;
 export const SECOND_BRAIN_FRESHNESS_MS = 24 * 60 * 60 * 1_000;
 export const SECOND_BRAIN_REQUIRED_TOOLS = [
-  "sb_open_conflicts", "sb_read_page", "sb_recent_changes", "sb_remember", "sb_search", "sb_write_request",
+  "sb_generation_status", "sb_open_conflicts", "sb_read_page", "sb_recent_changes", "sb_remember",
+  "sb_request_status", "sb_resolve_memory_target", "sb_search", "sb_write_request",
 ] as const;
 
 export type SecondBrainProbeFailure = "timeout" | "crash" | "nonzero" | "malformed" | "oversize" | "locked" | "unavailable";

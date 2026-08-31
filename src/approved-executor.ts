@@ -11,6 +11,7 @@ import { RunbookEngine, type HostOperations } from "./runbook.js";
 import { appendSettledNegativeEvidence } from "./negative-evidence.js";
 import { executeApprovedWorkflowStage, type ExecuteWorkflowStageInput } from "./approved-workflow-stage.js";
 import type { MemoryOutboxService } from "./memory-outbox.js";
+import type { SecondBrainEffectService } from "./second-brain-effect-service.js";
 import { copyPinnedRegularFile, privatePath, publishFile, removeSqliteCopy, secureBasename, secureRoot } from "./secure-filesystem.js";
 
 export interface ApprovedExecutionResult {
@@ -30,6 +31,7 @@ export class ApprovedCommandExecutor {
     private readonly hostOperations: HostOperations = {},
     private readonly clock: () => Date = () => new Date(),
     private readonly memoryOutbox?: MemoryOutboxService,
+    private readonly memoryEffects?: SecondBrainEffectService,
   ) { this.control = new ControlPlane(authority); }
 
   private externalEffectContext(command: ClaimedControlCommand): { request_id: string; fence: number; effect_id: string; idempotency_key: string } {
@@ -206,6 +208,24 @@ export class ApprovedCommandExecutor {
         return { request_id: requestId, action: command.action, state: completed ? "completed" : "uncertain",
           result: { outbox_id: saga.outbox_id, state: saga.state },
           ...(completed ? {} : { failure_code: "MEMORY_OUTBOX_RECONCILING" }) };
+      }
+      if (["memory.correct", "memory.export", "memory.forget", "memory.generation.rollback"].includes(command.action)) {
+        validateControlAction(command, { enforceMinimumLevel: true, levelErrorCode: "APPROVED_ACTION_LEVEL_TOO_LOW" });
+        if (!this.memoryEffects) throw new JarvisError("MEMORY_EFFECT_SERVICE_UNAVAILABLE");
+        const outcome = command.action === "memory.generation.rollback"
+          ? this.memoryEffects.rollback(command.args)
+          : await this.memoryEffects.submit(command.args.request);
+        const accepted = outcome.kind === "accepted" && outcome.schema_version === 2;
+        const state = accepted ? "completed" : outcome.kind === "uncertain" ? "uncertain" : "failed";
+        const failureCode = accepted ? undefined : "code" in outcome ? outcome.code : "MEMORY_EFFECT_RESULT_INVALID";
+        const completedAt = this.clock();
+        const payload = accepted ? outcome : { code: failureCode };
+        this.control.settle(requestId, command.fence, {
+          state, effect_type: accepted ? `memory.effect.${outcome.operation}.accepted` : "memory.effect.failure",
+          payload, ...(failureCode === undefined ? {} : { failure_code: failureCode }),
+        }, completedAt);
+        return { request_id: requestId, action: command.action, state, result: payload,
+          ...(failureCode === undefined ? {} : { failure_code: failureCode }) };
       }
       const effect = await this.run(command, now, externalContext, worker);
       const completedAt = this.clock();

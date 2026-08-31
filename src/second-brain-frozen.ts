@@ -2,33 +2,14 @@ import { types as utilTypes } from "node:util";
 
 const DESCRIPTION_BYTES = 8_192;
 const OUTPUT_SCHEMAS = {
-  sb_search: {
-    $defs: { SearchHitDict: {
-      properties: {
-        page_id: { type: "string" }, section: { type: "string" }, snippet: { type: "string" },
-        score: { type: "number" },
-      },
-      required: ["page_id", "section", "snippet", "score"], type: "object",
-    } },
-    additionalProperties: { items: { $ref: "#/$defs/SearchHitDict" }, type: "array" },
-    type: "object",
-  },
-  sb_read_page: {
-    additionalProperties: { anyOf: [
-      { additionalProperties: { type: "string" }, type: "object" }, { type: "string" },
-    ] }, type: "object",
-  },
-  sb_recent_changes: {
-    additionalProperties: {
-      items: { additionalProperties: { type: "string" }, type: "object" }, type: "array",
-    }, type: "object",
-  },
-  sb_open_conflicts: {
-    additionalProperties: {
-      items: { additionalProperties: { type: "string" }, type: "object" }, type: "array",
-    }, type: "object",
-  },
+  sb_search: { additionalProperties: true, type: "object" },
+  sb_read_page: { additionalProperties: true, type: "object" },
+  sb_recent_changes: { additionalProperties: true, type: "object" },
+  sb_open_conflicts: { additionalProperties: true, type: "object" },
   sb_remember: { additionalProperties: { type: "string" }, type: "object" },
+  sb_generation_status: { additionalProperties: true, type: "object" },
+  sb_request_status: { additionalProperties: true, type: "object" },
+  sb_resolve_memory_target: { additionalProperties: true, type: "object" },
 } as const;
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -44,9 +25,29 @@ function titlesValid(value: unknown): boolean {
   return titleValid(value)
     && Object.entries(value).every(([key, item]) => key === "title" || titlesValid(item));
 }
-function safeArgumentValue(value: unknown): boolean {
-  return value === null || typeof value === "string" || typeof value === "boolean"
-    || (typeof value === "number" && Number.isFinite(value) && Number.isSafeInteger(value));
+type ArgumentSnapshot = { readonly ok: true; readonly value: unknown } | { readonly ok: false };
+function safeArgumentSnapshot(value: unknown, depth = 0): ArgumentSnapshot {
+  if (depth > 8 || utilTypes.isProxy(value)) return { ok: false };
+  if (value === null || typeof value === "string" || typeof value === "boolean"
+    || (typeof value === "number" && Number.isFinite(value) && Number.isSafeInteger(value))) {
+    return { ok: true, value };
+  }
+  if (Array.isArray(value)) {
+    if (Object.getPrototypeOf(value) !== Array.prototype || Reflect.ownKeys(value).length !== value.length + 1) return { ok: false };
+    const result: unknown[] = [];
+    for (const item of value) { const child = safeArgumentSnapshot(item, depth + 1); if (!child.ok) return child; result.push(child.value); }
+    return { ok: true, value: Object.freeze(result) };
+  }
+  if (!isRecord(value) || Object.getPrototypeOf(value) !== Object.prototype) return { ok: false };
+  const result: Record<string, unknown> = {};
+  for (const key of Reflect.ownKeys(value)) {
+    if (typeof key !== "string" || key === "toJSON") return { ok: false };
+    const descriptor = Object.getOwnPropertyDescriptor(value, key);
+    if (descriptor === undefined || !descriptor.enumerable || !("value" in descriptor)) return { ok: false };
+    const child = safeArgumentSnapshot(descriptor.value, depth + 1); if (!child.ok) return child;
+    result[key] = child.value;
+  }
+  return { ok: true, value: Object.freeze(result) };
 }
 
 export function snapshotArguments(value: unknown): Readonly<Record<string, unknown>> | undefined {
@@ -59,9 +60,9 @@ export function snapshotArguments(value: unknown): Readonly<Record<string, unkno
       if (typeof key !== "string" || key === "toJSON") return undefined;
       const descriptor = descriptors[key];
       if (!descriptor || !descriptor.enumerable || !("value" in descriptor)
-        || descriptor.get !== undefined || descriptor.set !== undefined
-        || !safeArgumentValue(descriptor.value)) return undefined;
-      snapshot[key] = descriptor.value;
+        || descriptor.get !== undefined || descriptor.set !== undefined) return undefined;
+      const child = safeArgumentSnapshot(descriptor.value, 1); if (!child.ok) return undefined;
+      snapshot[key] = child.value;
     }
     return Object.freeze(snapshot);
   } catch {
@@ -69,6 +70,11 @@ export function snapshotArguments(value: unknown): Readonly<Record<string, unkno
   }
 }
 
+const JSON_VALUE_DEFS = { JsonValue: { anyOf: [
+  { type: "boolean" }, { type: "integer" }, { type: "number" }, { type: "string" },
+  { items: { $ref: "#/$defs/JsonValue" }, type: "array" },
+  { additionalProperties: { $ref: "#/$defs/JsonValue" }, type: "object" }, { type: "null" },
+] } } as const;
 function normalizedType(value: Record<string, unknown>): readonly string[] | undefined {
   if (typeof value.type === "string") return [value.type];
   if (Array.isArray(value.type) && value.type.every(item => typeof item === "string")) {
@@ -77,9 +83,15 @@ function normalizedType(value: Record<string, unknown>): readonly string[] | und
   if (!Array.isArray(value.anyOf) || value.anyOf.length !== 2) return undefined;
   const types: string[] = [];
   for (const item of value.anyOf) {
-    if (!isRecord(item) || !titleValid(item)
-      || !Object.keys(item).every(key => key === "type" || key === "title")
-      || typeof item.type !== "string") return undefined;
+    if (!isRecord(item) || !titleValid(item) || typeof item.type !== "string") return undefined;
+    const keys = Object.keys(item);
+    const simple = keys.every(key => key === "type" || key === "title");
+    const recursiveObject = item.type === "object" && keys.every(key => ["type", "title", "additionalProperties"].includes(key))
+      && isRecord(item.additionalProperties) && item.additionalProperties.$ref === "#/$defs/JsonValue"
+      && Object.keys(item.additionalProperties).length === 1;
+    const recursiveArray = item.type === "array" && keys.every(key => ["type", "title", "items"].includes(key))
+      && isRecord(item.items) && item.items.$ref === "#/$defs/JsonValue" && Object.keys(item.items).length === 1;
+    if (!simple && !recursiveObject && !recursiveArray) return undefined;
     types.push(item.type);
   }
   return types.sort();
@@ -99,8 +111,9 @@ function inputSchemaMatches(observed: unknown, expected: unknown): boolean {
     || observed.type !== "object" || expected.type !== "object"
     || !isRecord(observed.properties) || !isRecord(expected.properties)) return false;
   const left = observed.properties; const right = expected.properties;
-  const allowed = ["type", "properties", "required", "additionalProperties", "title"];
+  const allowed = ["$defs", "type", "properties", "required", "additionalProperties", "title"];
   if (!Object.keys(observed).every(key => allowed.includes(key))
+     || (observed.$defs !== undefined && canonical(observed.$defs) !== canonical(JSON_VALUE_DEFS))
     || (observed.additionalProperties !== undefined && observed.additionalProperties !== false)) {
     return false;
   }
@@ -123,7 +136,18 @@ function withoutTitles(value: unknown): unknown {
 function canonical(value: unknown): string { return JSON.stringify(withoutTitles(value)); }
 function writeInputCanonical(value: unknown): string {
   const normalized = withoutTitles(value);
+  if (isRecord(normalized) && (normalized.additionalProperties === false
+    || normalized.additionalProperties === undefined)) delete normalized.additionalProperties;
   if (isRecord(normalized) && isRecord(normalized.$defs)) {
+    const union = normalized.$defs["MemoryWriteRequest"];
+    if (isRecord(union) && isRecord(normalized.properties)) {
+      const discriminator = union["discriminator"];
+      if (isRecord(discriminator) && canonical(discriminator["mapping"]) === canonical({
+        "1": "#/$defs/MemoryWriteRequestModel", "2": "#/$defs/MemoryEffectWriteRequestV2",
+      })) delete discriminator["mapping"];
+      normalized.properties["request"] = union;
+      delete normalized.$defs["MemoryWriteRequest"];
+    }
     delete normalized.$defs["MemoryWriteRequestModel"];
   }
   return JSON.stringify(normalized);
@@ -135,6 +159,9 @@ function outputSchema(name: string, tool: Record<string, unknown>): unknown {
     case "sb_recent_changes": return OUTPUT_SCHEMAS.sb_recent_changes;
     case "sb_open_conflicts": return OUTPUT_SCHEMAS.sb_open_conflicts;
     case "sb_remember": return OUTPUT_SCHEMAS.sb_remember;
+    case "sb_generation_status": return OUTPUT_SCHEMAS.sb_generation_status;
+    case "sb_request_status": return OUTPUT_SCHEMAS.sb_request_status;
+    case "sb_resolve_memory_target": return OUTPUT_SCHEMAS.sb_resolve_memory_target;
     case "sb_write_request": return tool["output_schema"];
     default: return undefined;
   }
@@ -162,8 +189,9 @@ export function inspectFrozenSchemas(observed: unknown, contract: unknown): Sche
       ? writeInputCanonical(value.inputSchema) === writeInputCanonical(tool.arguments)
       : inputSchemaMatches(value.inputSchema, tool.arguments);
     if (!inputMatches) return mismatch();
+    const expectedOutput = outputSchema(value.name, tool);
     if (producer && (!titlesValid(value.outputSchema)
-      || canonical(value.outputSchema) !== canonical(outputSchema(value.name, tool)))) return mismatch();
+      || (expectedOutput !== undefined && canonical(value.outputSchema) !== canonical(expectedOutput)))) return mismatch();
     if (value.name !== "sb_write_request" && isRecord(value.inputSchema)
       && value.inputSchema.additionalProperties === undefined) requiresLocalArguments = true;
     names.add(value.name);
@@ -178,6 +206,8 @@ function validType(value: unknown, types: readonly string[]): boolean {
       case "integer": return typeof value === "number" && Number.isSafeInteger(value);
       case "number": return typeof value === "number" && Number.isFinite(value);
       case "boolean": return typeof value === "boolean";
+      case "object": return isRecord(value) && Object.getPrototypeOf(value) === Object.prototype;
+      case "array": return Array.isArray(value) && Object.getPrototypeOf(value) === Array.prototype;
       default: return false;
     }
   });

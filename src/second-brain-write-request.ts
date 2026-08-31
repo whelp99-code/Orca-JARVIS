@@ -4,6 +4,7 @@ import type {
   SecondBrainWriteRequestV1,
 } from "./second-brain-adapter-types.js";
 import { canonicalize } from "./canonical.js";
+import { snapshotMemoryEffectWriteArguments } from "./second-brain-effect-v2.js";
 
 const OPERATIONS = ["remember", "correct", "forget", "export"] as const;
 const SENSITIVITIES = ["public", "personal", "sensitive", "restricted"] as const;
@@ -220,7 +221,9 @@ export function snapshotSecondBrainWriteArguments(
 ): Readonly<Record<string, unknown>> | undefined {
   const input = record(value);
   if (input === undefined || !exact(input, ["request"])) return undefined;
-  const rawRequest = record(input["request"]); const createdAt = rawRequest?.["created_at"];
+  const rawRequest = record(input["request"]);
+  if (rawRequest?.["schema_version"] === 2) return snapshotMemoryEffectWriteArguments(value);
+  const createdAt = rawRequest?.["created_at"];
   if (typeof createdAt !== "string") return undefined;
   const request = parseSecondBrainWriteRequest(rawRequest, new Date(createdAt));
   return request === undefined ? undefined : Object.freeze({ request });

@@ -11,11 +11,13 @@ import {
 import { SECOND_BRAIN_PROTOCOL_VERSION } from "../../src/second-brain-transport.js";
 
 const NOW = new Date("2026-08-28T12:00:00.000Z");
-function writeInputSchema(): unknown {
+function producerTools(): readonly unknown[] {
   const fixture: unknown = JSON.parse(readFileSync("contracts/second-brain-mcp-v1.json", "utf8"));
-  if (typeof fixture !== "object" || fixture === null) return undefined;
-  const tools = Reflect.get(fixture, "tools"); const write = typeof tools === "object" && tools !== null ? Reflect.get(tools, "sb_write_request") : undefined;
-  return typeof write === "object" && write !== null ? Reflect.get(write, "arguments") : undefined;
+  if (typeof fixture !== "object" || fixture === null) return [];
+  const tools = Reflect.get(fixture, "tools");
+  if (typeof tools !== "object" || tools === null) return [];
+  return Object.entries(tools).map(([name, tool]) => ({ name,
+    inputSchema: typeof tool === "object" && tool !== null ? Reflect.get(tool, "arguments") : undefined }));
 }
 const ACTUAL_TASK10_HANDSHAKE = JSON.stringify({
   initialize: {
@@ -23,16 +25,7 @@ const ACTUAL_TASK10_HANDSHAKE = JSON.stringify({
     capabilities: { tools: {} },
     serverInfo: { name: "second-brain", version: "0.1.0" },
   },
-  tools_list: {
-    tools: [
-      { name: "sb_open_conflicts", inputSchema: { type: "object", properties: {}, required: [], additionalProperties: false } },
-      { name: "sb_read_page", inputSchema: { type: "object", properties: { id: { type: "string" } }, required: ["id"], additionalProperties: false } },
-      { name: "sb_recent_changes", inputSchema: { type: "object", properties: { days: { default: 7, type: "integer" } }, required: [], additionalProperties: false } },
-      { name: "sb_remember", inputSchema: { type: "object", properties: { content: { type: "string" }, title: { default: null, type: ["string", "null"] } }, required: ["content"], additionalProperties: false } },
-      { name: "sb_search", inputSchema: { type: "object", properties: { limit: { default: 10, type: "integer" }, query: { type: "string" } }, required: ["query"], additionalProperties: false } },
-      { name: "sb_write_request", inputSchema: writeInputSchema() },
-    ],
-  },
+  tools_list: { tools: producerTools() },
 });
 
 function actualProducerRunner(

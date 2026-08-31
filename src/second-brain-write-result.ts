@@ -1,6 +1,6 @@
 import type {
+  SecondBrainWriteAcceptedV1,
   SecondBrainWriteOperation,
-  SecondBrainWriteOutcome,
 } from "./second-brain-adapter-types.js";
 
 const OPERATIONS = ["remember", "correct", "forget", "export"] as const;
@@ -30,7 +30,7 @@ function instant(value: string): boolean {
   return INSTANT.test(value) && Number.isFinite(milliseconds)
     && new Date(milliseconds).toISOString() === value;
 }
-export function parseSecondBrainWriteResult(value: unknown): SecondBrainWriteOutcome | undefined {
+export function parseSecondBrainWriteResult(value: unknown): SecondBrainWriteAcceptedV1 | undefined {
   const result = record(value); const replayed = result?.["replayed"];
   if (result === undefined || !exact(result) || result["schema_version"] !== 1
     || result["kind"] !== "accepted" || result["state"] !== "pending"

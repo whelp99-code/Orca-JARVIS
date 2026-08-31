@@ -3,192 +3,73 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const SENTINEL = "SECOND_BRAIN_CONTRACT_MISMATCH";
-const IMPLEMENTATION_COMMIT = "fe44e9753dcc120a6a9bb310074fee55e21c289e";
-const EXPECTED_DIGEST = "20214d51742e396df3bfd6c4df2762c18830e5da034803f0621f4a9960525a1b";
+const IMPLEMENTATION_COMMIT = "30cebe1670c0b65dc9832066a09c2c64f8371b20";
+const EXPECTED_DIGEST = "1406f97695970a099af2569ab93777b67603a2a2261b9f6d03646e430d6098fe";
 const TOOLS = [
-  "sb_open_conflicts", "sb_read_page", "sb_recent_changes", "sb_remember", "sb_search",
-  "sb_write_request",
-] as const;
-const ERROR_CODES = [
-  "INVALID_ARGUMENTS", "PAGE_NOT_FOUND", "PATH_ESCAPE", "REMEMBER_REJECTED",
-  "WRITE_REQUEST_INVALID", "WRITE_REQUEST_OVERSIZE", "WRITE_REQUEST_OPERATION_INVALID",
-  "WRITE_REQUEST_OPERATION_CONFUSION", "WRITE_REQUEST_IDENTITY_INVALID",
-  "WRITE_REQUEST_RECEIPT_INVALID", "WRITE_REQUEST_PRIOR_REQUIRED", "WRITE_REQUEST_PRIOR_FORBIDDEN",
-  "WRITE_REQUEST_PRIOR_NOT_FOUND", "WRITE_REQUEST_PRIOR_MISMATCH", "WRITE_REQUEST_PATH_INVALID",
-  "WRITE_REQUEST_REPLAY_CONFLICT", "WRITE_REQUEST_INBOX_UNSAFE", "WRITE_REQUEST_IO_FAILED",
+  "sb_generation_status", "sb_open_conflicts", "sb_read_page", "sb_recent_changes", "sb_remember",
+  "sb_request_status", "sb_resolve_memory_target", "sb_search", "sb_write_request",
 ] as const;
 
 export class SecondBrainContractError extends Error {
   readonly code = SENTINEL;
-
-  constructor() {
-    super(SENTINEL);
-    this.name = "SecondBrainContractError";
-  }
+  constructor() { super(SENTINEL); this.name = "SecondBrainContractError"; }
 }
-
 export type SecondBrainContractSummary = {
-  readonly schemaVersion: 2;
-  readonly implementationCommit: string;
-  readonly tools: readonly string[];
-  readonly digest: string;
-  readonly rememberBehavior: "non_idempotent_collision_safe_no_overwrite";
+  readonly schemaVersion: 3; readonly implementationCommit: string; readonly tools: readonly string[];
+  readonly digest: string; readonly rememberBehavior: "non_idempotent_collision_safe_no_overwrite";
+  readonly features: readonly string[]; readonly toolCount: 9;
 };
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
-
 function record(value: unknown): Record<string, unknown> {
-  if (!isRecord(value)) throw new SecondBrainContractError();
-  return value;
+  if (typeof value !== "object" || value === null || Array.isArray(value)) throw new SecondBrainContractError();
+  return value as Record<string, unknown>;
 }
-
-function canonicalJson(value: unknown): string {
-  if (value === null) return "null";
-  if (typeof value === "string" || typeof value === "number") return JSON.stringify(value);
-  if (typeof value === "boolean") return value ? "true" : "false";
-  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(",")}]`;
-  const item = record(value);
-  return `{${Object.keys(item).sort().map(key => `${JSON.stringify(key)}:${canonicalJson(item[key])}`).join(",")}}`;
-}
-
-function exactKeys(value: Record<string, unknown>, keys: readonly string[]): void {
+function exact(value: Record<string, unknown>, keys: readonly string[]): void {
   if (Object.keys(value).sort().join("\0") !== [...keys].sort().join("\0")) throw new SecondBrainContractError();
 }
-
-function string(value: unknown): string {
-  if (typeof value !== "string") throw new SecondBrainContractError();
-  return value;
-}
-
 function array(value: unknown): readonly unknown[] {
-  if (!Array.isArray(value)) throw new SecondBrainContractError();
-  return value;
+  if (!Array.isArray(value)) throw new SecondBrainContractError(); return value;
 }
-
-function expectedArguments(tool: string): unknown {
-  switch (tool) {
-    case "sb_open_conflicts": return { additionalProperties: false, properties: {}, required: [], type: "object" };
-    case "sb_read_page": return { additionalProperties: false, properties: { id: { type: "string" } }, required: ["id"], type: "object" };
-    case "sb_recent_changes": return { additionalProperties: false, properties: { days: { default: 7, type: "integer" } }, required: [], type: "object" };
-    case "sb_remember": return { additionalProperties: false, properties: {
-      content: { type: "string" }, title: { default: null, type: ["string", "null"] },
-    }, required: ["content"], type: "object" };
-    case "sb_search": return { additionalProperties: false, properties: {
-      limit: { default: 10, type: "integer" }, query: { type: "string" },
-    }, required: ["query"], type: "object" };
-    case "sb_write_request": return undefined;
-    default: throw new SecondBrainContractError();
-  }
-}
-
-function validateTool(name: string, value: unknown): void {
-  const tool = record(value);
-  const keys = name === "sb_remember"
-    ? ["arguments", "dynamic_fields", "happy", "no_data", "repeated_call"]
-    : name === "sb_search" || name === "sb_read_page" || name === "sb_recent_changes"
-      ? ["arguments", "dynamic_fields", "happy", "no_data"]
-      : ["arguments", "happy", "no_data"];
-  exactKeys(tool, keys);
-  const expected = expectedArguments(name);
-  if (expected !== undefined && canonicalJson(tool["arguments"]) !== canonicalJson(expected)) throw new SecondBrainContractError();
-  const happy = record(tool["happy"]);
-  exactKeys(happy, ["arguments", "normalized", "raw_response"]);
-  const normalized = record(happy["normalized"]);
-  exactKeys(normalized, ["kind", "value"]);
-  if (normalized["kind"] !== "data") throw new SecondBrainContractError();
-  if (name === "sb_read_page" || name === "sb_remember") {
-    if (tool["no_data"] !== null) throw new SecondBrainContractError();
-  } else {
-    const noData = record(tool["no_data"]);
-    exactKeys(noData, ["normalized", "raw_response"]);
-    const outcome = record(noData["normalized"]);
-    exactKeys(outcome, ["kind", "reason"]);
-    if (outcome["kind"] !== "no_data" || outcome["reason"] !== "empty_result") throw new SecondBrainContractError();
-  }
-  if (name === "sb_remember") {
-    const repeated = record(tool["repeated_call"]);
-    exactKeys(repeated, ["behavior", "paths_are_distinct", "same_input_creates_distinct_files"]);
-    if (repeated["behavior"] !== "non_idempotent_collision_safe_no_overwrite"
-      || repeated["paths_are_distinct"] !== true || repeated["same_input_creates_distinct_files"] !== true) throw new SecondBrainContractError();
-  }
-}
-
 export function consumeSecondBrainContract(fixturePath: string, sourcePath?: string): SecondBrainContractSummary {
-  const payload = readFileSync(fixturePath);
-  const text = payload.toString("utf8");
-  const digest = createHash("sha256").update(payload).digest("hex");
-  if (digest !== EXPECTED_DIGEST) throw new SecondBrainContractError();
-  if (!/^[0-9a-f]{64}\n$/.test(readFileSync(`${fixturePath}.sha256`, "ascii"))
-    || readFileSync(`${fixturePath}.sha256`, "ascii") !== `${digest}\n`) throw new SecondBrainContractError();
-  if (sourcePath !== undefined && (!payload.equals(readFileSync(sourcePath))
-    || readFileSync(`${sourcePath}.sha256`, "ascii") !== `${digest}\n`)) throw new SecondBrainContractError();
-  const parsed: unknown = JSON.parse(text);
-  const root = record(parsed);
-  exactKeys(root, ["application", "canonicalization", "errors", "normalization", "schema_version", "tools"]);
-  if (root["schema_version"] !== 2) throw new SecondBrainContractError();
-  const canonicalization = {
-    encoding: "utf-8", json: "sorted_keys_compact_separators_trailing_newline",
-    sha256_sidecar: "64_lowercase_hex_newline",
-  };
-  const normalization = {
-    boundary: "fixture_export_only", raw_response_and_error_preserved: true,
-    typed_outcomes: ["data", "no_data", "error"],
-  };
-  if (canonicalJson(root["canonicalization"]) !== canonicalJson(canonicalization)
-    || canonicalJson(root["normalization"]) !== canonicalJson(normalization)) {
-    throw new SecondBrainContractError();
+  const payload = readFileSync(fixturePath); const digest = createHash("sha256").update(payload).digest("hex");
+  if (digest !== EXPECTED_DIGEST || readFileSync(`${fixturePath}.sha256`, "ascii") !== `${digest}\n`
+    || (sourcePath !== undefined && (!payload.equals(readFileSync(sourcePath))
+      || readFileSync(`${sourcePath}.sha256`, "ascii") !== `${digest}\n`))) throw new SecondBrainContractError();
+  const root = record(JSON.parse(payload.toString("utf8")) as unknown);
+  exact(root, ["application", "canonicalization", "errors", "normalization", "schema_version", "tools", "vectors"]);
+  if (root.schema_version !== 3) throw new SecondBrainContractError();
+  const application = record(root.application); exact(application, ["implementation_commit", "implementation_commit_role"]);
+  if (application.implementation_commit !== IMPLEMENTATION_COMMIT
+    || application.implementation_commit_role !== "task28_entry_baseline") throw new SecondBrainContractError();
+  const tools = record(root.tools); exact(tools, TOOLS);
+  for (const name of TOOLS) {
+    const tool = record(tools[name]);
+    if (!("arguments" in tool) || !("happy" in tool) || !("no_data" in tool)) throw new SecondBrainContractError();
   }
-  const application = record(root["application"]);
-  exactKeys(application, ["implementation_commit", "implementation_commit_role"]);
-  if (application["implementation_commit"] !== IMPLEMENTATION_COMMIT
-    || application["implementation_commit_role"] !== "task28_entry_baseline") throw new SecondBrainContractError();
-  const tools = record(root["tools"]);
-  exactKeys(tools, TOOLS);
-  for (const tool of TOOLS) if (tool !== "sb_write_request") validateTool(tool, tools[tool]);
-  const errors = array(root["errors"]);
-  if (errors.length !== ERROR_CODES.length) throw new SecondBrainContractError();
-  const observedCodes = errors.map(error => {
-    const entry = record(error);
-    const code = string(entry["code"]);
-    const errorClass = string(entry["class"]);
-    if (code === "INVALID_ARGUMENTS") {
-      exactKeys(entry, ["class", "code", "raw_error_pattern"]);
-      string(entry["raw_error_pattern"]);
-      if (errorClass !== "pydantic.ValidationError") throw new SecondBrainContractError();
-    } else {
-      exactKeys(entry, ["class", "code", "raw_error"]);
-      string(entry["raw_error"]);
-      if (errorClass !== "ToolError") throw new SecondBrainContractError();
-    }
-    return code;
-  }).sort();
-  if (observedCodes.join("\0") !== [...ERROR_CODES].sort().join("\0")) throw new SecondBrainContractError();
-  return {
-    schemaVersion: 2, implementationCommit: IMPLEMENTATION_COMMIT, tools: TOOLS, digest,
-    rememberBehavior: "non_idempotent_collision_safe_no_overwrite",
-  };
+  const remember = record(tools.sb_remember); const repeated = record(remember.repeated_call);
+  if (repeated.behavior !== "non_idempotent_collision_safe_no_overwrite"
+    || repeated.paths_are_distinct !== true || repeated.same_input_creates_distinct_files !== true) throw new SecondBrainContractError();
+  const vectors = record(root.vectors);
+  exact(vectors, ["correction", "delegation_revocation", "export", "features", "forget", "tool_count"]);
+  const correction = record(vectors.correction);
+  if (vectors.tool_count !== 9 || correction.envelope_bytes !== 6426
+    || correction.request_digest !== "sha256:3b785d65b826d91040d99a1f1a99f4981547bc2909c20ddda39295e4a1c10ffa"
+    || correction.envelope_digest !== "sha256:3f324697dd8c0e69c3ea29f76b945282be3f16ff5935ed49c997597fa33c807e"
+    || array(root.errors).length < 35) throw new SecondBrainContractError();
+  const features = array(vectors.features);
+  if (!features.every(feature => typeof feature === "string")) throw new SecondBrainContractError();
+  return { schemaVersion: 3, implementationCommit: IMPLEMENTATION_COMMIT, tools: TOOLS, digest,
+    rememberBehavior: "non_idempotent_collision_safe_no_overwrite", features: features as string[], toolCount: 9 };
 }
-
 function main(): void {
   const args = process.argv.slice(2);
   if (args.length === 1 && (args[0] === "--help" || args[0] === "-h")) {
-    process.stdout.write("usage: node src/second-brain-contract.ts --fixture PATH [--source PATH]\n");
-    return;
+    process.stdout.write("usage: node src/second-brain-contract.ts --fixture PATH [--source PATH]\n"); return;
   }
   if ((args.length !== 2 && args.length !== 4) || args[0] !== "--fixture" || args[1] === undefined
     || (args.length === 4 && (args[2] !== "--source" || args[3] === undefined))) throw new SecondBrainContractError();
   process.stdout.write(`${consumeSecondBrainContract(args[1], args[3]).digest}\n`);
 }
-
 const entry = process.argv[1];
 if (entry !== undefined && import.meta.url === pathToFileURL(entry).href) {
-  try {
-    main();
-  } catch (error) {
-    if (!(error instanceof Error)) process.exitCode = 1;
-    process.stderr.write(`${SENTINEL}\n`);
-    process.exitCode = 1;
-  }
+  try { main(); } catch { process.stderr.write(`${SENTINEL}\n`); process.exitCode = 1; }
 }

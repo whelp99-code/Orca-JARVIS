@@ -20,6 +20,31 @@ const adapter = (transport: QueuedTransport, selected = budgets) => createSecond
 });
 
 describe("Second Brain cited page evidence", () => {
+  it("strips only generation metadata bound to the signed latest tombstone fence", async () => {
+    const fence = { schema_version: 1 as const, fence_id: `memfence:v1:${"1".repeat(64)}`,
+      fence_digest: `sha256:${"1".repeat(64)}`, provider_instance_id: "provider:fixture",
+      principal_id: "principal:owner" as const, purpose: "memory_read" as const, operation: "read" as const,
+      tombstone_sequence: 2, tombstone_set_root: `sha256:${"2".repeat(64)}`,
+      issued_at: NOW.toISOString(), not_before: NOW.toISOString(), expires_at: new Date(NOW.getTime() + 60_000).toISOString(),
+      nonce: "nonce:fence", signing_key_id: "jarvis:fixture", signature: "A".repeat(86) };
+    const raw = page(); if (raw.kind !== "data") throw new Error("page fixture invalid");
+    const metadata = { provider_instance_id: "provider:fixture", generation_id: `sbgen:v1:${"3".repeat(64)}`,
+      generation_manifest_digest: `sha256:${"3".repeat(64)}`, vault_head: "4".repeat(40), vault_tree: "5".repeat(40),
+      tombstone_sequence: 2, tombstone_set_root: fence.tombstone_set_root };
+    const transport = new QueuedTransport([{ kind: "data", value: { ...raw.value, ...metadata } }]);
+    const reader = createSecondBrainReadAdapter({ transport, budgets, clock: () => NOW,
+      max_age_ms: 86_400_000, expiry_ms: 172_800_000, read_fence: () => fence });
+    await expect(reader.readPage("wiki/principle")).resolves.toMatchObject({ kind: "current" });
+    expect(transport.calls[0]?.arguments_).toEqual({ id: "wiki/principle", read_fence: fence });
+    const stale = new QueuedTransport([{ kind: "data", value: { ...raw.value, ...metadata,
+      tombstone_set_root: `sha256:${"9".repeat(64)}` } }]);
+    const staleReader = createSecondBrainReadAdapter({ transport: stale, budgets, clock: () => NOW,
+      max_age_ms: 86_400_000, expiry_ms: 172_800_000, read_fence: () => fence });
+    await expect(staleReader.readPage("wiki/principle")).resolves.toMatchObject({
+      kind: "invalid", code: "SECOND_BRAIN_PROVIDER_VALUE_INVALID",
+    });
+  });
+
   it("returns bounded non-authoritative evidence with complete provenance", async () => {
     // Given: a current provider page with one cited project fact.
     const transport = new QueuedTransport([page()]);

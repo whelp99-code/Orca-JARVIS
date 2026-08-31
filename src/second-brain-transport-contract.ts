@@ -24,6 +24,9 @@ export const SECOND_BRAIN_READ_METHODS = [
   "sb_read_page",
   "sb_recent_changes",
   "sb_open_conflicts",
+  "sb_resolve_memory_target",
+  "sb_generation_status",
+  "sb_request_status",
 ] as const;
 export const SECOND_BRAIN_WRITE_METHOD = "sb_write_request" as const;
 
@@ -152,7 +155,8 @@ function exactEmptyResult(method: SecondBrainMethod, value: Readonly<Record<stri
     case "sb_search": expected = "results"; break;
     case "sb_recent_changes": expected = "changes"; break;
     case "sb_open_conflicts": expected = "conflicts"; break;
-    case "sb_read_page": case "sb_write_request": expected = undefined; break;
+    case "sb_read_page": case "sb_write_request": case "sb_resolve_memory_target":
+    case "sb_generation_status": case "sb_request_status": expected = undefined; break;
     default: { const exhaustive: never = method; return exhaustive; }
   }
   if (expected === undefined || Object.getPrototypeOf(value) !== Object.prototype) return false;
@@ -165,11 +169,39 @@ function exactEmptyResult(method: SecondBrainMethod, value: Readonly<Record<stri
     && list.length === 0 && Reflect.ownKeys(list).length === 1;
 }
 
+const PROVIDER_ERROR_CODES = new Set([
+  "WRITE_REQUEST_INVALID", "WRITE_REQUEST_OVERSIZE", "WRITE_REQUEST_OPERATION_INVALID",
+  "WRITE_REQUEST_OPERATION_CONFUSION", "WRITE_REQUEST_IDENTITY_INVALID", "WRITE_REQUEST_RECEIPT_INVALID",
+  "WRITE_REQUEST_PRIOR_REQUIRED", "WRITE_REQUEST_PRIOR_FORBIDDEN", "WRITE_REQUEST_PRIOR_NOT_FOUND",
+  "WRITE_REQUEST_PRIOR_MISMATCH", "WRITE_REQUEST_PATH_INVALID", "WRITE_REQUEST_REPLAY_CONFLICT",
+  "WRITE_REQUEST_INBOX_UNSAFE", "WRITE_REQUEST_IO_FAILED", "EFFECT_REQUEST_INVALID", "EFFECT_REQUEST_OVERSIZE",
+  "EFFECT_OPERATION_CONFUSION", "EFFECT_IDENTITY_INVALID", "EFFECT_SPEC_DIGEST_INVALID",
+  "EFFECT_IDEMPOTENCY_INVALID", "EFFECT_ENVELOPE_DIGEST_INVALID", "EFFECT_TARGET_INVALID",
+  "EFFECT_TARGET_AMBIGUOUS", "EFFECT_SCOPE_INVALID", "EFFECT_PRIOR_STALE", "EFFECT_PAYLOAD_INVALID",
+  "EFFECT_DELEGATION_INVALID", "EFFECT_DELEGATION_USED", "EFFECT_TOMBSTONE_STALE",
+  "EFFECT_TOMBSTONE_DELTA_INVALID", "TOMBSTONE_DELTA_TOO_LARGE", "EXTERNAL_RECEIPT_INVALID",
+  "MANAGED_ERASURE_SCOPE_INVALID", "EXPORT_SCOPE_AMBIGUOUS", "REAPPROVAL_REQUIRED",
+  "TOMBSTONE_FENCE_REQUIRED", "TOMBSTONE_SET_STALE",
+]);
+function providerToolError(value: Record<string, unknown>): string {
+  const content = value.content;
+  if (!Array.isArray(content) || content.length !== 1) return "SECOND_BRAIN_TOOL_ERROR";
+  const entry = content[0];
+  if (!isRecord(entry) || entry.type !== "text") return "SECOND_BRAIN_TOOL_ERROR";
+  const text = entry.text; if (typeof text !== "string") return "SECOND_BRAIN_TOOL_ERROR";
+  const direct = [...PROVIDER_ERROR_CODES].find(code => text === code || text.endsWith(`: ${code}`));
+  if (direct !== undefined) return direct;
+  const start = text.indexOf("{"); const encoded = start < 0 ? text : text.slice(start);
+  const parsed = parseSecondBrainStrictJson(encoded);
+  if (!isRecord(parsed) || parsed.kind !== "error" || parsed.retryable !== false || typeof parsed.code !== "string"
+    || !PROVIDER_ERROR_CODES.has(parsed.code)) return "SECOND_BRAIN_TOOL_ERROR";
+  return parsed.code;
+}
 export function normalizeSecondBrainOutcome(
   method: SecondBrainMethod,
   value: Record<string, unknown>,
 ): SecondBrainOutcome {
-  if (value.isError === true) return { kind: "error", code: "SECOND_BRAIN_TOOL_ERROR" };
+  if (value.isError === true) return { kind: "error", code: providerToolError(value) };
   const content = value.content;
   if (!Array.isArray(content) || content.length !== 1) {
     throw new SecondBrainTransportError("SECOND_BRAIN_SCHEMA_MISMATCH", "fatal", { generation: 0 });

@@ -17,11 +17,14 @@ function writeOutputSchema(): unknown {
   return contract.tools.sb_write_request.output_schema;
 }
 const PRODUCER_OUTPUTS: Readonly<Record<string, unknown>> = {
-  sb_search: { $defs: { SearchHitDict: { properties: { page_id: { type: "string" }, section: { type: "string" }, snippet: { type: "string" }, score: { type: "number" } }, required: ["page_id", "section", "snippet", "score"], type: "object" } }, additionalProperties: { items: { $ref: "#/$defs/SearchHitDict" }, type: "array" }, type: "object" },
-  sb_read_page: { additionalProperties: { anyOf: [{ additionalProperties: { type: "string" }, type: "object" }, { type: "string" }] }, type: "object" },
-  sb_recent_changes: { additionalProperties: { items: { additionalProperties: { type: "string" }, type: "object" }, type: "array" }, type: "object" },
-  sb_open_conflicts: { additionalProperties: { items: { additionalProperties: { type: "string" }, type: "object" }, type: "array" }, type: "object" },
+  sb_search: { additionalProperties: true, type: "object" },
+  sb_read_page: { additionalProperties: true, type: "object" },
+  sb_recent_changes: { additionalProperties: true, type: "object" },
+  sb_open_conflicts: { additionalProperties: true, type: "object" },
   sb_remember: { additionalProperties: { type: "string" }, type: "object" },
+  sb_generation_status: { additionalProperties: true, type: "object" },
+  sb_request_status: { additionalProperties: true, type: "object" },
+  sb_resolve_memory_target: { additionalProperties: true, type: "object" },
   sb_write_request: writeOutputSchema(),
 };
 function producerTools(): Array<Record<string, unknown>> { return canonicalTools().map(tool => ({ ...tool, description: "bounded metadata", outputSchema: structuredClone(PRODUCER_OUTPUTS[String(tool.name)]) })); }
@@ -32,14 +35,14 @@ describe("frozen Second Brain boundary", () => {
     const mutations: Array<(tools: Array<Record<string, unknown>>) => void> = [
       tools => { if (isRecord(tools[0]?.inputSchema)) tools[0].inputSchema.additionalProperties = true; },
       tools => { if (isRecord(tools[0]?.inputSchema)) tools[0].inputSchema.pattern = "extra"; },
-      tools => { const schema = tools[1]?.inputSchema; if (isRecord(schema) && isRecord(schema.properties) && isRecord(schema.properties.id)) schema.properties.id.minLength = 1; },
+      tools => { const schema = tools.find(tool => tool.name === "sb_read_page")?.inputSchema; if (isRecord(schema) && isRecord(schema.properties) && isRecord(schema.properties.id)) schema.properties.id.minLength = 1; },
       tools => { if (tools[0]) tools[0].extra = true; }, tools => { tools[0] = structuredClone(tools[1] ?? {}); },
     ];
     for (const mutate of mutations) { const tools = canonicalTools(); mutate(tools); expect(normalizeSecondBrainToolSchemas(tools, contract)).toBe(false); }
   });
 
   it("freezes every producer output schema while bounding discarded description metadata", () => {
-    const actual = producerTools(); expect(normalizeSecondBrainToolSchemas(actual, contract)).toBe(true); const mutations: Array<(schema: Record<string, unknown>) => void> = [schema => { schema.additionalProperties = true; }, schema => { schema.required = ["drift"]; }, schema => { schema.properties = { drift: { type: "string" } }; }, schema => { schema.type = "array"; }, schema => { schema.unknown = true; }];
+    const actual = producerTools(); expect(normalizeSecondBrainToolSchemas(actual, contract)).toBe(true); const mutations: Array<(schema: Record<string, unknown>) => void> = [schema => { schema.additionalProperties = schema.additionalProperties === true ? false : true; }, schema => { schema.required = ["drift"]; }, schema => { schema.properties = { drift: { type: "string" } }; }, schema => { schema.type = "array"; }, schema => { schema.unknown = true; }];
     for (const tool of actual) for (const mutate of mutations) { const changed = producerTools(); const target = changed.find(item => item.name === tool.name)?.outputSchema; if (isRecord(target)) mutate(target); expect(normalizeSecondBrainToolSchemas(changed, contract)).toBe(false); }
     const bounded = producerTools(); if (bounded[0]) bounded[0].description = "x".repeat(8_192); expect(normalizeSecondBrainToolSchemas(bounded, contract)).toBe(true); if (bounded[0]) bounded[0].description = "x".repeat(8_193); expect(normalizeSecondBrainToolSchemas(bounded, contract)).toBe(false);
   });

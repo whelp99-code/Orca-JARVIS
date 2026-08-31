@@ -17,6 +17,7 @@ export type SecondBrainAdapterOptions = {
   readonly clock: () => Date;
   readonly max_age_ms: number;
   readonly expiry_ms: number;
+  readonly read_fence?: (at: Date) => import("./second-brain-effect-v2.js").MemoryReadFenceV1;
 };
 export type SecondBrainEvidence = {
   readonly kind: "memory";
@@ -72,10 +73,17 @@ export type SecondBrainWriteRequestV1 = {
   readonly receipt: Readonly<Record<string, string | number>>; readonly receipt_digest: string;
   readonly payload: Readonly<Record<string, string>>;
 };
+export type SecondBrainWriteRequestV2 = import("./second-brain-effect-v2.js").MemoryEffectWriteRequestV2;
+export type SecondBrainWriteRequest = SecondBrainWriteRequestV1 | SecondBrainWriteRequestV2;
+export type SecondBrainWriteAcceptedV1 = {
+  readonly schema_version?: 1; readonly kind: "accepted"; readonly state: "pending"; readonly candidate_id: string;
+  readonly request_id: string; readonly request_digest: string; readonly idempotency_key: string;
+  readonly operation: SecondBrainWriteOperation; readonly accepted_at: string; readonly inbox_path: string;
+  readonly request_file_digest: string; readonly replayed: boolean;
+};
 export type SecondBrainWriteOutcome =
-  | { readonly kind: "accepted"; readonly state: "pending"; readonly candidate_id: string; readonly request_id: string;
-    readonly request_digest: string; readonly idempotency_key: string; readonly operation: SecondBrainWriteOperation;
-    readonly accepted_at: string; readonly inbox_path: string; readonly request_file_digest: string; readonly replayed: boolean }
+  | SecondBrainWriteAcceptedV1
+  | import("./second-brain-effect-v2.js").MemoryEffectAcceptedV2
   | { readonly kind: "invalid" | "unavailable" | "uncertain"; readonly code: string };
 export interface SecondBrainWriteRequestAdapter { write(value: unknown): Promise<SecondBrainWriteOutcome>; }
 
