@@ -38,7 +38,8 @@
     "better-sqlite3": "^12.2.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "react-router-dom": "7.18.2"
+    "react-router-dom": "7.18.2",
+    "zod": "4.1.5"
   },
   "devDependencies": {
     "@axe-core/playwright": "4.13.0",
@@ -52,6 +53,7 @@
     "@types/react": "19.2.18",
     "@types/react-dom": "19.2.4",
     "@vitejs/plugin-react": "5.1.4",
+    "electron": "44.0.0",
     "eslint": "^9.33.0",
     "fast-check": "^4.9.0",
     "jsdom": "30.0.1",
@@ -59,8 +61,7 @@
     "typescript-eslint": "^8.39.0",
     "undici": "8.10.0",
     "vite": "7.3.6",
-    "vitest": "^3.2.4",
-    "electron": "44.0.0"
+    "vitest": "^3.2.4"
   },
   "packageManager": "npm@11.17.0",
   "allowScripts": {

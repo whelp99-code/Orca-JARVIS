@@ -18,7 +18,7 @@ import {
 	type SecondBrainGenerationState as GenerationState, type SecondBrainPending as Pending,
 	type SecondBrainQueueItem as QueueItem,
 } from "./second-brain-transport-state.js";
-import { snapshotSecondBrainWriteArguments } from "./second-brain-write-request.js";
+import { snapshotMemoryWriteArguments } from "./memory-effect-write-request.js";
 export {
 	SECOND_BRAIN_CONFIG, SECOND_BRAIN_DEADLINES, SECOND_BRAIN_FRAME_BYTES, SECOND_BRAIN_LAUNCHER,
 	SECOND_BRAIN_LIMITS, SECOND_BRAIN_PROTOCOL_VERSION, SecondBrainTransportError,
@@ -56,7 +56,7 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 		if (this.terminalFailure) return Promise.reject(this.terminalFailure); if (![...READ_METHODS, WRITE_METHOD].includes(method))
 			return Promise.reject(this.error("SECOND_BRAIN_METHOD_DENIED", "fatal"));
 		const snapshot = method === WRITE_METHOD
-			? snapshotSecondBrainWriteArguments(arguments_) : snapshotArguments(arguments_); if (!snapshot)
+			? snapshotMemoryWriteArguments(arguments_) : snapshotArguments(arguments_); if (!snapshot)
 			return Promise.reject( this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }), ); let argumentBytes: number; try {
 			argumentBytes = Buffer.byteLength(JSON.stringify(snapshot), "utf8"); } catch { return Promise.reject(
 				this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }), ); }

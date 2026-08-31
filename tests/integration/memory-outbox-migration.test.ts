@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { cpSync, mkdtempSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -16,7 +16,7 @@ const invalidStates = ["proposed", "classified", "awaiting_confirmation", "appro
 function migrationRoot(): { root: string; migrations: string; database: string } {
   const root = mkdtempSync(join(tmpdir(), "task29-migration-")); const migrations = join(root, "migrations");
   cpSync(join(process.cwd(), "migrations"), migrations, { recursive: true });
-  rmSync(join(migrations, SLOT));
+  for (const name of readdirSync(migrations)) if (name >= SLOT) rmSync(join(migrations, name));
   return { root, migrations, database: join(root, "authority.sqlite") };
 }
 function seedCandidate(db: AuthorityDb, suffix: string, operation = "remember"): string {
@@ -63,7 +63,10 @@ function schema(db: AuthorityDb): readonly { type: string; name: string; sql: st
   ).all() as Array<{ type: string; name: string; sql: string }>;
 }
 async function applySlot(value: ReturnType<typeof migrationRoot>, db: AuthorityDb): Promise<void> {
-  db.close(); cpSync(join(process.cwd(), "migrations", SLOT), join(value.migrations, SLOT));
+  db.close();
+  for (const name of readdirSync(join(process.cwd(), "migrations"))) {
+    if (name >= SLOT) cpSync(join(process.cwd(), "migrations", name), join(value.migrations, name));
+  }
   const upgraded = new AuthorityDb(value.database, value.migrations);
   try { await upgraded.migrate(); } finally { upgraded.close(); }
 }
@@ -107,7 +110,9 @@ describe("memory outbox V2 forward migration", () => {
       seedLegacy(prior, lane, state, lane === "forget" || lane === "export" ? lane : "remember",
         lane !== "settled_without_observation");
       restoreLegacyGuards(prior, guards); prior.close();
-      cpSync(join(process.cwd(), "migrations", SLOT), join(value.migrations, SLOT));
+      for (const name of readdirSync(join(process.cwd(), "migrations"))) {
+        if (name >= SLOT) cpSync(join(process.cwd(), "migrations", name), join(value.migrations, name));
+      }
       const upgraded = new AuthorityDb(value.database, value.migrations);
       try { await expect(upgraded.migrate()).rejects.toThrow("MEMORY_OUTBOX_MIGRATION_INVALID"); }
       finally { upgraded.close(); }

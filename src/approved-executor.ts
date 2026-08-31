@@ -1,8 +1,7 @@
-import { createHash } from "node:crypto";
 import { resolve } from "node:path";
-import { canonicalize } from "./canonical.js";
 import { AuthorityDb, JarvisError } from "./db.js";
 import { validateControlAction } from "./control-actions.js";
+import { ControlEffectAttempts, type ExternalEffectContext } from "./control-effect-attempts.js";
 import { ControlPlane, type ClaimedControlCommand } from "./control-plane.js";
 import { controlWorkflowAdvanceInput, controlWorkflowRunInput } from "./control-workflow-input.js";
 import { writeCurrentState } from "./state-projection.js";
@@ -10,20 +9,17 @@ import { LoopGraph, type LoopSpec } from "./loopgraph.js";
 import { RunbookEngine, type HostOperations } from "./runbook.js";
 import { appendSettledNegativeEvidence } from "./negative-evidence.js";
 import { executeApprovedWorkflowStage, type ExecuteWorkflowStageInput } from "./approved-workflow-stage.js";
+import type { ApprovedExecutionResult, MemoryLifecycleServices } from "./approved-executor-types.js";
 import type { MemoryOutboxService } from "./memory-outbox.js";
+import { confirmMemoryCorrectionCandidate } from "./memory-correction-saga.js";
 import type { SecondBrainEffectService } from "./second-brain-effect-service.js";
 import { copyPinnedRegularFile, privatePath, publishFile, removeSqliteCopy, secureBasename, secureRoot } from "./secure-filesystem.js";
 
-export interface ApprovedExecutionResult {
-  request_id: string;
-  action: string;
-  state: "completed" | "failed" | "uncertain";
-  result: unknown;
-  failure_code?: string;
-}
+export type { ApprovedExecutionResult, MemoryLifecycleServices } from "./approved-executor-types.js";
 
 export class ApprovedCommandExecutor {
   private readonly control: ControlPlane;
+  private readonly effects: ControlEffectAttempts;
   constructor(
     private readonly authority: AuthorityDb,
     private readonly backupRoot = resolve(".jarvis-backups"),
@@ -32,42 +28,16 @@ export class ApprovedCommandExecutor {
     private readonly clock: () => Date = () => new Date(),
     private readonly memoryOutbox?: MemoryOutboxService,
     private readonly memoryEffects?: SecondBrainEffectService,
-  ) { this.control = new ControlPlane(authority); }
-
-  private externalEffectContext(command: ClaimedControlCommand): { request_id: string; fence: number; effect_id: string; idempotency_key: string } {
-    const digest = (value: unknown): string => `sha256:${createHash("sha256").update(canonicalize(value)).digest("hex")}`;
-    const idempotencyKey = digest({ request_id: command.request_id, receipt_id: command.receipt_id, fence: command.fence, action: command.action });
-    return {
-      request_id: command.request_id, fence: command.fence,
-      effect_id: `external-effect:${idempotencyKey.slice(7)}`, idempotency_key: idempotencyKey,
-    };
-  }
-
-  private prepareExternalEffect(command: ClaimedControlCommand, effectType: string, at: Date): ReturnType<ApprovedCommandExecutor["externalEffectContext"]> {
-    const context = this.externalEffectContext(command);
-    this.authority.db.prepare(
-      `INSERT INTO control_effect_attempts(
-         attempt_id,request_id,receipt_id,lease_fence,effect_type,idempotency_key,state,created_at,updated_at
-       ) VALUES(?,?,?,?,?,?,?,?,?)`,
-    ).run(`attempt:${context.idempotency_key.slice(7)}`, command.request_id, command.receipt_id,
-      command.fence, effectType, context.idempotency_key, "prepared", at.toISOString(), at.toISOString());
-    return context;
-  }
-
-  private updateExternalEffect(requestId: string, state: "invoking" | "confirmed" | "uncertain", at: Date, receipt?: unknown, errorCode?: string): void {
-    const receiptJson = receipt === undefined ? null : canonicalize(receipt);
-    const receiptDigest = receiptJson === null ? null : `sha256:${createHash("sha256").update(receiptJson).digest("hex")}`;
-    const changed = this.authority.db.prepare(
-      `UPDATE control_effect_attempts
-       SET state=?,receipt_json=?,receipt_digest=?,error_code=?,updated_at=? WHERE request_id=?`,
-    ).run(state, receiptJson, receiptDigest, errorCode ?? null, at.toISOString(), requestId);
-    if (changed.changes !== 1) throw new JarvisError("EXTERNAL_EFFECT_ATTEMPT_MISSING");
+    private readonly memoryLifecycles?: MemoryLifecycleServices,
+  ) {
+    this.control = new ControlPlane(authority);
+    this.effects = new ControlEffectAttempts(authority);
   }
 
   private async run(
     command: ClaimedControlCommand,
     now: Date,
-    externalContext: ReturnType<ApprovedCommandExecutor["externalEffectContext"]> | undefined,
+    externalContext: ExternalEffectContext | undefined,
     worker: string,
   ): Promise<{ effect_type: string; payload: unknown }> {
     const action = validateControlAction(command, { enforceMinimumLevel: true, levelErrorCode: "APPROVED_ACTION_LEVEL_TOO_LOW" });
@@ -179,19 +149,35 @@ export class ApprovedCommandExecutor {
       && command.args.runbook_id === "daemon-dead"
       && command.action_level >= 3
       && Boolean(this.hostOperations.restartService);
-    let externalContext: ReturnType<ApprovedCommandExecutor["externalEffectContext"]> | undefined;
+    let externalContext: ExternalEffectContext | undefined;
     try {
       if (externalRunbook) {
-        externalContext = this.prepareExternalEffect(command, "service.restart", now);
-        this.updateExternalEffect(requestId, "invoking", now);
+        externalContext = this.effects.prepare(command, "service.restart", now);
+        this.effects.update(requestId, "invoking", now);
       }
       if (command.action === "evidence.negative.record") {
         if (command.action_level !== 2) throw new JarvisError("APPROVED_ACTION_LEVEL_TOO_LOW");
         const payload = appendSettledNegativeEvidence(this.authority, this.control, command, now, this.clock());
         return { request_id: requestId, action: command.action, state: "completed", result: payload };
       }
+      if (command.action === "memory.confirm") {
+        confirmMemoryCorrectionCandidate(this.authority, command, now);
+        return { request_id: requestId, action: command.action, state: "completed",
+          result: { candidate_id: command.target.candidate_id, state: "approved" } };
+      }
       if (command.action === "memory.outbox.dispatch") {
         validateControlAction(command, { enforceMinimumLevel: true, levelErrorCode: "APPROVED_ACTION_LEVEL_TOO_LOW" });
+        if (command.args.schema_version === 3) {
+          if (!this.memoryLifecycles?.correction) throw new JarvisError("MEMORY_LIFECYCLE_SERVICE_UNAVAILABLE");
+          const dispatched = await this.memoryLifecycles.correction.dispatch(command);
+          const reconciled = await this.memoryLifecycles.correction.reconcile(dispatched.correction_id);
+          const completed = reconciled.state === "settled";
+          return { request_id: requestId, action: command.action,
+            state: completed ? "completed" : "uncertain",
+            result: { correction_id: reconciled.correction_id, state: reconciled.state,
+              request_digest: reconciled.request_digest },
+            ...(completed ? {} : { failure_code: "MEMORY_CORRECTION_RECONCILING" }) };
+        }
         if (!this.memoryOutbox) throw new JarvisError("MEMORY_OUTBOX_SERVICE_UNAVAILABLE");
         const queued = this.memoryOutbox.enqueue(command);
         await this.memoryOutbox.runOnce(worker, 1);
@@ -209,36 +195,57 @@ export class ApprovedCommandExecutor {
           result: { outbox_id: saga.outbox_id, state: saga.state },
           ...(completed ? {} : { failure_code: "MEMORY_OUTBOX_RECONCILING" }) };
       }
-      if (["memory.correct", "memory.export", "memory.forget", "memory.generation.rollback"].includes(command.action)) {
+      if (command.action === "memory.delete" || command.action === "memory.export") {
         validateControlAction(command, { enforceMinimumLevel: true, levelErrorCode: "APPROVED_ACTION_LEVEL_TOO_LOW" });
+        if (!this.memoryLifecycles) throw new JarvisError("MEMORY_LIFECYCLE_SERVICE_UNAVAILABLE");
+        if (command.action === "memory.delete") {
+          if (!this.memoryLifecycles.deletion) throw new JarvisError("MEMORY_LIFECYCLE_SERVICE_UNAVAILABLE");
+          const dispatched = await this.memoryLifecycles.deletion.dispatch(command);
+          const reconciled = await this.memoryLifecycles.deletion.reconcile(dispatched.deletion_id);
+          const completed = reconciled.state === "settled";
+          return { request_id: requestId, action: command.action,
+            state: completed ? "completed" : "uncertain",
+            result: { deletion_id: reconciled.deletion_id, state: reconciled.state },
+            ...(completed ? {} : { failure_code: "MEMORY_DELETION_RECONCILING" }) };
+        }
+        if (!this.memoryLifecycles.export) throw new JarvisError("MEMORY_LIFECYCLE_SERVICE_UNAVAILABLE");
+        const dispatched = await this.memoryLifecycles.export.dispatch(command);
+        const reconciled = await this.memoryLifecycles.export.reconcile(dispatched.export_id);
+        const completed = reconciled.state === "available";
+        return { request_id: requestId, action: command.action,
+          state: completed ? "completed" : "uncertain",
+          result: { export_id: reconciled.export_id, state: reconciled.state },
+          ...(completed ? {} : { failure_code: "MEMORY_EXPORT_WRITING" }) };
+      }
+      if (command.action === "memory.generation.rollback") {
         if (!this.memoryEffects) throw new JarvisError("MEMORY_EFFECT_SERVICE_UNAVAILABLE");
-        const outcome = command.action === "memory.generation.rollback"
-          ? this.memoryEffects.rollback(command.args)
-          : await this.memoryEffects.submit(command.args.request);
-        const accepted = outcome.kind === "accepted" && outcome.schema_version === 2;
-        const state = accepted ? "completed" : outcome.kind === "uncertain" ? "uncertain" : "failed";
-        const failureCode = accepted ? undefined : "code" in outcome ? outcome.code : "MEMORY_EFFECT_RESULT_INVALID";
-        const completedAt = this.clock();
-        const payload = accepted ? outcome : { code: failureCode };
-        this.control.settle(requestId, command.fence, {
-          state, effect_type: accepted ? `memory.effect.${outcome.operation}.accepted` : "memory.effect.failure",
-          payload, ...(failureCode === undefined ? {} : { failure_code: failureCode }),
-        }, completedAt);
-        return { request_id: requestId, action: command.action, state, result: payload,
-          ...(failureCode === undefined ? {} : { failure_code: failureCode }) };
+        const outcome = this.memoryEffects.rollback(command.args);
+        const failureCode = outcome.kind === "data" ? "ROLLBACK_REQUIRES_GENERATION_AUTHORITY" : outcome.code;
+        this.control.settle(requestId, command.fence, { state: "failed",
+          effect_type: "memory.effect.failure", payload: { code: failureCode },
+          failure_code: failureCode }, this.clock());
+        return { request_id: requestId, action: command.action, state: "failed",
+          result: { code: failureCode }, failure_code: failureCode };
       }
       const effect = await this.run(command, now, externalContext, worker);
       const completedAt = this.clock();
-      if (externalContext) this.updateExternalEffect(requestId, "confirmed", completedAt, effect.payload);
+      if (externalContext) this.effects.update(requestId, "confirmed", completedAt, effect.payload);
       this.control.settle(requestId, command.fence, { state: "completed", effect_type: effect.effect_type, payload: effect.payload }, completedAt);
       return { request_id: requestId, action: command.action, state: "completed", result: effect.payload };
     } catch (error) {
+      if ((command.action === "memory.outbox.dispatch" && command.args.schema_version === 3)
+        || command.action === "memory.delete" || command.action === "memory.export") {
+        const code = error instanceof JarvisError ? error.code : "MEMORY_LIFECYCLE_RECONCILING";
+        return { request_id: requestId, action: command.action, state: "uncertain",
+          result: { code }, failure_code: code };
+      }
       const externalUncertain = externalContext !== undefined;
       const code = externalUncertain ? "EXTERNAL_EFFECT_UNCERTAIN" : error instanceof JarvisError ? error.code : "APPROVED_COMMAND_FAILED";
       const payload = { error: error instanceof Error ? error.message : "unknown" };
       const state = this.uncertainOnError(command, code) ? "uncertain" : "failed";
       const completedAt = this.clock();
-      if (externalContext) this.updateExternalEffect(requestId, "uncertain", completedAt, undefined, "EXTERNAL_EFFECT_UNCERTAIN");
+      if (externalContext) this.effects.update(requestId, "uncertain", completedAt,
+        undefined, "EXTERNAL_EFFECT_UNCERTAIN");
       this.control.settle(requestId, command.fence, {
         state, effect_type: state === "uncertain" ? "command.uncertain" : "command.failure",
         payload, failure_code: code,

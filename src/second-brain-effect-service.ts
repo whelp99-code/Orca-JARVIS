@@ -1,11 +1,9 @@
 import { randomUUID, type KeyObject } from "node:crypto";
-import { canonicalize } from "./canonical.js";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./db.js";
 import type { SecondBrainWriteOutcome, SecondBrainWriteRequestAdapter } from "./second-brain-adapter-types.js";
-import { recordMemoryEffectProviderStatus } from "./second-brain-effect-authority.js";
 import { createMemoryReadFence, MEMORY_TOMBSTONE_GENESIS_ROOT, parseResolvedMemoryTarget,
-  type MemoryEffectWriteRequestV2, type MemoryReadFenceV1, type ResolvedMemoryTargetV2 } from "./second-brain-effect-v2.js";
+  type MemoryReadFenceV1, type ResolvedMemoryTargetV2 } from "./second-brain-effect-v2.js";
 import type { SecondBrainOutcome, SecondBrainTransport } from "./second-brain-transport.js";
 import { SecondBrainTransportError } from "./second-brain-transport.js";
 
@@ -41,9 +39,8 @@ export class SecondBrainEffectService {
   submit(value: unknown): Promise<SecondBrainWriteOutcome> { return this.options.writer.write(value); }
   private highWater(): { readonly sequence: number; readonly set_root: string } {
     const row = this.options.authority.db.prepare(
-      `SELECT sequence,set_root FROM memory_tombstone_watermarks WHERE provider_instance_id=?
-       ORDER BY sequence DESC LIMIT 1`,
-    ).get(this.options.provider_instance_id) as { sequence: number; set_root: string } | undefined;
+      "SELECT sequence,set_root FROM memory_tombstone_chain ORDER BY sequence DESC LIMIT 1",
+    ).get() as { sequence: number; set_root: string } | undefined;
     return row ?? { sequence: 0, set_root: MEMORY_TOMBSTONE_GENESIS_ROOT };
   }
   private fence(purpose: "memory_read" | "memory_status" | "memory_resolve",
@@ -90,26 +87,13 @@ export class SecondBrainEffectService {
   }
   async requestStatus(requestId: string): Promise<SecondBrainEffectServiceResult<Readonly<Record<string, unknown>>>> {
     if (!/^memeff:req:v2:[0-9a-f]{64}$/.test(requestId)) return { kind: "invalid", code: "MEMORY_EFFECT_REQUEST_ID_INVALID" };
-    const stored = this.options.authority.db.prepare("SELECT request_json,state FROM memory_effect_requests WHERE request_id=?")
-      .get(requestId) as { request_json: string; state: string } | undefined;
-    const local = this.highWater(); const at = this.options.clock();
-    const candidateRequest = stored === undefined ? undefined : JSON.parse(stored.request_json) as MemoryEffectWriteRequestV2;
-    const candidate = stored !== undefined && ["prepared", "uncertain"].includes(stored.state)
-      && candidateRequest !== undefined ? candidateRequest.tombstone_high_water : local;
-    let result = await this.call("sb_request_status", { request_id: requestId,
-      read_fence: this.fence("memory_status", candidate, at) });
-    if (result.kind !== "data" && (candidate.sequence !== local.sequence || candidate.set_root !== local.set_root)) {
-      result = await this.call("sb_request_status", { request_id: requestId,
-        read_fence: this.fence("memory_status", local, this.options.clock()) });
-    }
+    const local = this.highWater();
+    const result = await this.call("sb_request_status", { request_id: requestId,
+      read_fence: this.fence("memory_status", local, this.options.clock()) });
     if (result.kind !== "data") return result;
     const value = record(result.value);
     if (value === undefined || value.schema_version !== 1 || value.request_id !== requestId || typeof value.state !== "string") {
       return { kind: "invalid", code: "SECOND_BRAIN_REQUEST_STATUS_INVALID" };
-    }
-    if (value.state !== "not_found") {
-      try { recordMemoryEffectProviderStatus(this.options.authority, requestId, value, this.options.clock()); }
-      catch (error) { return { kind: "invalid", code: error instanceof JarvisError ? error.code : "SECOND_BRAIN_REQUEST_STATUS_INVALID" }; }
     }
     return { kind: "data", value: Object.freeze({ ...value }) };
   }
@@ -126,32 +110,42 @@ export class SecondBrainEffectService {
     if (result.kind !== "data") return result;
     const target = parseResolvedMemoryTarget(result.value, this.options.provider_instance_id, at);
     if (target === undefined) return { kind: "invalid", code: "SECOND_BRAIN_TARGET_RESULT_INVALID" };
-    const targetJson = canonicalize(target);
     try {
       this.options.authority.db.prepare(
-        `INSERT OR IGNORE INTO memory_resolved_targets(
-          target_id,target_digest,provider_instance_id,generation_id,generation_manifest_digest,page_id,page_blob_oid,
-          page_content_digest,source_identity_full,content_identity_full,citation_identity_full,subject_digest,sensitivity,
-          source_owner_class,source_owner_id_digest,target_json,resolved_at,expires_at
-         ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+        `INSERT OR IGNORE INTO memory_resolved_target_metadata(
+          target_id,target_digest,provider_instance_id,generation_id,generation_manifest_digest,
+          page_content_digest,source_identity_digest,content_identity_digest,citation_identity_digest,
+          keyed_subject_digest,sensitivity,source_owner_class,source_owner_id_digest,resolved_at,expires_at,created_at
+         ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
       ).run(target.target_id, target.target_digest, target.provider_instance_id, target.generation_id,
-        target.generation_manifest_digest, target.page_id, target.page_blob_oid, target.page_content_digest,
-        target.source_identity_full, target.content_identity_full, target.citation_identity_full, target.subject_digest,
-        target.sensitivity, target.source_owner_class, target.source_owner_id_digest, targetJson,
-        target.resolved_at, target.expires_at);
-      const prior = this.options.authority.db.prepare("SELECT target_json FROM memory_resolved_targets WHERE target_id=?")
-        .get(target.target_id) as { target_json: string } | undefined;
-      if (prior?.target_json !== targetJson) return { kind: "invalid", code: "MEMORY_EFFECT_TARGET_REPLAY_CONFLICT" };
+        target.generation_manifest_digest, target.page_content_digest, target.source_identity_full,
+        target.content_identity_full, target.citation_identity_full, target.subject_digest,
+        target.sensitivity, target.source_owner_class, target.source_owner_id_digest,
+        target.resolved_at, target.expires_at, at.toISOString());
+      const prior = this.options.authority.db.prepare(
+        "SELECT target_digest FROM memory_resolved_target_metadata WHERE target_id=?",
+      ).get(target.target_id) as { target_digest: string } | undefined;
+      if (prior?.target_digest !== target.target_digest) {
+        return { kind: "invalid", code: "MEMORY_EFFECT_TARGET_REPLAY_CONFLICT" };
+      }
     } catch { return { kind: "invalid", code: "MEMORY_EFFECT_TARGET_STORE_FAILED" }; }
     return { kind: "data", value: target };
   }
+  async restartForGeneration(expectedGenerationId: string): Promise<SecondBrainEffectServiceResult<Readonly<Record<string, unknown>>>> {
+    try { await this.options.transport.restart(); }
+    catch (error) {
+      return { kind: "unavailable", code: error instanceof SecondBrainTransportError
+        ? error.code : "SECOND_BRAIN_RESTART_FAILED" };
+    }
+    const status = await this.generationStatus();
+    if (status.kind !== "data" || status.value.generation_id !== expectedGenerationId) {
+      return { kind: "invalid", code: "SECOND_BRAIN_GENERATION_RESTART_MISMATCH" };
+    }
+    return status;
+  }
+
   rollback(value: unknown): SecondBrainEffectServiceResult<never> {
     void value;
     return { kind: "invalid", code: "ROLLBACK_REQUIRES_GENERATION_AUTHORITY" };
-  }
-  storedRequest(requestId: string): MemoryEffectWriteRequestV2 | undefined {
-    const row = this.options.authority.db.prepare("SELECT request_json FROM memory_effect_requests WHERE request_id=?")
-      .get(requestId) as { request_json: string } | undefined;
-    return row === undefined ? undefined : JSON.parse(row.request_json) as MemoryEffectWriteRequestV2;
   }
 }

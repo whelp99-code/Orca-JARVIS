@@ -58,9 +58,9 @@ describe("migrations", () => {
           "033_personal_operations.sql", "034_recommendation_transition_identity.sql", "035_daily_loop_durable_guards.sql",
           "036_notification_intent_immutable_delete.sql", "037_recommendation_work_runtime.sql",
           "038_memory_candidate_classification.sql", "039_memory_outbox_saga.sql",
-          "040_memory_effect_requests.sql", "041_memory_effect_delegations.sql",
-          "042_memory_effect_progress.sql", "043_memory_erasure_ledger.sql",
-          "044_memory_targets_tombstones.sql"]);
+          "040_memory_tombstone_authority.sql", "041_memory_correction_saga.sql",
+          "042_memory_deletion_proof.sql", "043_memory_export_saga.sql",
+          "044_memory_content_propagation.sql"]);
         expect(new Set(rows.map(row => row.checksum)).size).toBe(rows.length);
       }
     } finally { empty.close(); upgraded.close(); rmSync(join(full, ".."), { recursive: true, force: true }); rmSync(join(prior, ".."), { recursive: true, force: true }); }

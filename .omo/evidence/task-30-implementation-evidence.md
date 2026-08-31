@@ -1,47 +1,84 @@
 # Task 30 implementation evidence
 
 Acceptance authority: SHA-256 `bcf1336f5ca8eeb1686c04dbaf334d38827f7fc2619ab1365baa2b79773e843c` (`task-30-option-b-frozen-acceptance.md`).
+Red-team authority: SHA-256 `75dcbc26d83b5c0818b52a509bf89fed2c77bca844daac710f015a621040c462` (`task-30-acceptance-redteam.md`).
 
-## Entry and commits
+## Entry and atomic provider-first pair
 
-- JARVIS entry: `c89fd43a2f4bac9862f2c4427e71e1b74657d840`
-- Second Brain entry: `30cebe1670c0b65dc9832066a09c2c64f8371b20`
-- Second Brain provider commit: `b847824359f764a9ddb2fb5f4332bb6ced7d4a93`
+- JARVIS entry: `4853f7d643551354778cc6245a4d02f354127497`
+- Second Brain entry: `b847824359f764a9ddb2fb5f4332bb6ced7d4a93`
+- Second Brain provider commit: `b1c6b981862853b4b2510c27244de0bc00477c54`
 - JARVIS implementation: the commit containing this evidence
 - Both commit subjects: `feat(memory): propagate correction and erasure`
+- No push, deployment, release activation, service action, or production/personal/Mac path was used.
 
-## Frozen contract and vectors
+## Frozen contract, dependency, and vectors
 
 - MCP schema/tool count: `3` / `9`
-- Canonical contract SHA-256: `1406f97695970a099af2569ab93777b67603a2a2261b9f6d03646e430d6098fe`
-- Actual provider `tools/list` consumed by JARVIS: `wire=9/9 schemas=match`
-- Correction request/envelope/file: `sha256:3b785d65b826d91040d99a1f1a99f4981547bc2909c20ddda39295e4a1c10ffa` / `sha256:3f324697dd8c0e69c3ea29f76b945282be3f16ff5935ed49c997597fa33c807e` / `sha256:71f682a8318e85032290d02c96b165e28320d2188141e0899053cf4c1d4b47ec`; 6426 bytes
-- Export request/envelope/file: `sha256:160c29d0aa51391bad00d5f907fac1de5a6e4fb65e6109116752e91dea60e547` / `sha256:02d2dee97b9de45eb807c348c306075b973494e06846272dd6aaf6d5679cbaa1` / `sha256:bd12b027d00c9c9924ba8f348ed33c3b695fd66817630aff7233645d31a6ca8a`; 5586 bytes
-- Forget request/envelope/file: `sha256:13d7c62b3bcd9d6f0679fbd5a2a91ca8e503a8e98d1d2c2270df87fed7303401` / `sha256:8db39e03a91e901bc88d579b2b23c221279b6229f5b7cf27fab950ad97739d31` / `sha256:a8b9f0d05e443ee70c12bbe8aab14738b448106ff7ce5c3b144dd148783c7a0f`; 6329 bytes
-- Delegation revocation digest: `sha256:d83f74797606be5d7fd8c2e243b710df2b8588097d8784080d9a58178e4167e9`
-- Post-forget read-fence digest: `sha256:0f9d63c623a72abe72f1c717bf9136f04fc2a41ba1be44f8c2c395d0e8c70fea`
+- Tools: `sb_generation_status`, `sb_open_conflicts`, `sb_read_page`, `sb_recent_changes`, `sb_remember`, `sb_request_status`, `sb_resolve_memory_target`, `sb_search`, `sb_write_request`
+- Canonical contract SHA-256 and checked sync result: `1406f97695970a099af2569ab93777b67603a2a2261b9f6d03646e430d6098fe`
+- Frozen vectors: correction, export, forget, delegation revocation, feature/tool count; cross-language byte/digest tests passed.
+- Runtime Zod dependency: exact `4.1.5`; registry integrity `sha512-rcUUZqlLJgBC33IT3PNMgsCq6TzLQEG/Ei/KTCU0PedSWRMAXoOUN+4t/0H+Q8bdnLPdqUYnvboJT0bn/229qg==`.
+- Provider wheel SHA-256 at the final provider commit: `89ebfbf6526cf11ca4da9bd344b883f2c53abaf2a9f4b2d6b29ae6c5b498c56c` (the final build is repeated by the recorded build gate).
 
-## Verification
+## RED and implementation closure
 
-Second Brain scoped provider validation (the reserved full canonical suite was not run):
+Characterization/RED reproduced the rejected behavior before remediation: local control completed while the provider remained pending, the superseded provider record remained readable, and correction plaintext remained in JARVIS SQLite bytes. Provider RED also demonstrated missing cross-process FD drain and missing fresh derived stores.
 
-- `uv run ruff check sb tests` -> clean
-- `uv run basedpyright sb tests` -> 0 errors, 0 warnings
-- Focused Task 30/provider MCP, lifecycle, crash, restore, and two-process tests -> 132 passed
-- `python -m sb.mcp_contract check` -> contract digest above
+The implemented closure provides:
 
-JARVIS scoped validation (`npm run verify` was not run):
+- provider-owned durable V1/V2 request execution, global replay aliases, one claim/fence, signed disposition proof, and additive Task 29 compatibility;
+- sealed copy-on-write generations with fresh Git/ledger/search/vector/brief stores, shared read pins, process FD drain, atomic activation journal, predecessor/backup/export disposal, and crash recovery;
+- permanent JARVIS tombstone high-water plus distinct correction, deletion, and export sagas;
+- strict Zod wire parsing, signed delegated capability, release-bound provider proof verification, metadata-only authority rows, mode-0600 erasable spool, immediate suppression, physical compaction, restore sanitation, and reingress rejection;
+- same-target sequential export/forget support without treating target/scope/payload bindings as globally unique replay aliases;
+- Task 29 genesis remember through Task 30 MCP mode without requiring a pre-existing generation, with deterministic citation/frontmatter materialization for artifact settlement.
 
-- LSP diagnostics on changed source/tests -> 0 diagnostics
-- Targeted ESLint on changed source/tests -> clean
-- `npx tsc --noEmit` -> clean
-- Related Second Brain, memory, control, migration, and Task 30 tests -> 53 files, 444 passed
-- `npm run build:backend` -> pass
-- Migrations `040` through `044` apply repeatedly and publish immutable effect, delegation, progress, proof, target, and tombstone journals
+## Writer gates
+
+Second Brain writer gates (reserved independent canonical command not used):
+
+- focused effect/executor/erasure/generation/export/write/MCP/search/brief/vault: `105 passed`;
+- sqlite-vec deterministic lane: `18 passed, 1 skipped`;
+- target/delegation/proof/store/restore/reingress/systemd/lifecycle/crash/two-process: `21 passed`;
+- connector/store/compile/CLI/MCP-contract/walking-skeleton adjacent lane: `214 passed, 1 skipped`;
+- `uv run ruff check sb tests`: clean;
+- `uv run basedpyright sb tests`: `0 errors, 0 warnings, 0 notes`;
+- installed Python no-excuse checker: `no violations in 21 file(s)`;
+- `uv build`: sdist and wheel built successfully.
+
+JARVIS writer gates (`npm run verify` was not used):
+
+- exact Task 30 focused command including real process driver: `16 files, 20 passed`;
+- all memory/Second Brain Task 27-30 adjacent lanes: `67 files, 446 passed`;
+- policy/context/recommendation/daily/morning/evening/notification/TaskTimeline/dashboard/API/SSE reads: `84 files, 642 passed`;
+- control plane and approved-executor focused lane: `2 files, 21 passed`;
+- reviewability derivation: no omitted modules or non-baselined offenders;
+- installed TypeScript no-excuse checker: `No violations in 57 file(s)`;
+- changed-file LSP diagnostics: zero errors/warnings/hints on checked Task 30 source and real driver;
+- `npm run lint`, `npm run typecheck`, and `npm run build`: pass.
+
+## Real non-synthetic lifecycle
+
+`tests/integration/memory-real-process-driver.test.ts` runs with a runtime-random old/corrected sentinel and cleans its unique roots in `finally`. It uses the built provider wheel, actual stdio MCP child, JARVIS transport, approved and signed Task 29 remember authority, actual `sb apply-requests --once` processes, and the three dedicated Task 30 sagas.
+
+Observed/asserted effect delta:
+
+- exactly four `sb_write_request` frames: one schema-1 remember and one each correction/export/forget schema-2 frame;
+- four provider requests, each `proved`, phase `proved`, fence `1`;
+- one correction proof/settlement, one export proof/publication/settlement, and one deletion proof/settlement;
+- export state `available` before forget and `invalidated` after forget;
+- JARVIS high-water advances only for correction and forget;
+- pre-correction and pre-forget managed backups contain zero target matches before proof;
+- stale pre-correction JARVIS DB restore is sanitized and not activated;
+- replay/reconcile calls produce zero additional write frames or effects;
+- final active provider generation count is one, managed export data files are zero, provider/JARVIS physical sentinel matches are zero, and old-generation open FDs are zero.
+
+No sentinel value, private key material, correction content, or external receipt body is recorded in this evidence.
 
 ## Scope and cleanup
 
-- No push, deploy, service enable/start, production path access, refresh, compile, reindex, export effect, restore effect, or rollback authority was exercised.
-- Public rollback deterministically returns `ROLLBACK_REQUIRES_GENERATION_AUTHORITY`.
-- Provider tracked work is clean; approved untracked `.test-config.toml` and `.test-vault/` remain.
-- JARVIS commit stages only Task 30 product/tests/migrations/contract plus this evidence; pre-existing approved `.omo/` artifacts remain otherwise untracked.
+- Runtime lifecycle roots were created only under unique `/tmp/task30-real-process-*` directories and were removed by the test; post-run enumeration found none.
+- The separate manual QA root under `/tmp/orca-task30-real-lifecycle` is removed in the final cleanup receipt after digest-only evidence extraction.
+- Provider tracked work is clean at the provider commit. JARVIS stages only Task 30 product/tests/migrations/package metadata and this evidence; pre-existing approved `.omo/` work is preserved.
+- Canonical reserved commands `uv run pytest -q --ignore=tests/test_embeddings.py` and `npm run verify` were not invoked. No push or deploy was performed.

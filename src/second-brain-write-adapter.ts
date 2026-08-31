@@ -4,11 +4,9 @@ import type {
   SecondBrainWriteRequestAdapter,
   SecondBrainWriteRequestV1,
 } from "./second-brain-adapter-types.js";
-import { JarvisError } from "./db.js";
-import { hasMemoryEffectWriteAuthority, memoryEffectValidationOptions, prepareMemoryEffectDispatch,
-  recordMemoryEffectAccepted, recordMemoryEffectDispatchFailure } from "./second-brain-effect-authority.js";
-import { parseMemoryEffectAccepted, parseMemoryEffectWriteRequest,
-  type MemoryEffectWriteRequestV2 } from "./second-brain-effect-v2.js";
+import { memoryEffectValidationOptions } from "./second-brain-effect-authority.js";
+import { parseMemoryEffectRequest } from "./memory-effect-write-request.js";
+import { parseMemoryEffectAccepted, type MemoryEffectWriteRequestV2 } from "./second-brain-effect-v2.js";
 import type { SecondBrainTransport } from "./second-brain-transport.js";
 import { SecondBrainTransportError } from "./second-brain-transport.js";
 import { hasSecondBrainWriteAuthority } from "./second-brain-write-authority.js";
@@ -47,40 +45,54 @@ class BoundedSecondBrainWriteRequestAdapter implements SecondBrainWriteRequestAd
     }
   }
 
-  private async writeV2(request: MemoryEffectWriteRequestV2, now: Date): Promise<SecondBrainWriteOutcome> {
-    try {
-      prepareMemoryEffectDispatch(this.authority, request, now);
-    } catch (error) {
-      return { kind: "invalid", code: error instanceof JarvisError ? error.code : "MEMORY_EFFECT_AUTHORITY_INVALID" };
+  private dedicatedAuthority(request: MemoryEffectWriteRequestV2): boolean {
+    const identity = [request.request_id, request.request_digest, request.envelope_digest,
+      request.idempotency_key, request.delegation.delegation_id,
+      request.delegation.delegation_digest, request.lane_id];
+    switch (request.operation) {
+      case "correct": return this.authority.db.prepare(
+        `SELECT 1 FROM memory_correction_requests WHERE request_id=? AND request_digest=?
+         AND envelope_digest=? AND idempotency_key=? AND delegation_id=? AND delegation_digest=?
+         AND lane_id=? AND state='dispatching' AND dispatch_fence=1`,
+      ).get(...identity) !== undefined;
+      case "forget": return this.authority.db.prepare(
+        `SELECT 1 FROM memory_deletion_requests WHERE request_id=? AND request_digest=?
+         AND envelope_digest=? AND provider_idempotency_key=? AND delegation_id=? AND delegation_digest=?
+         AND lane_id=? AND state='applying' AND dispatch_fence=1`,
+      ).get(...identity) !== undefined;
+      case "export": return this.authority.db.prepare(
+        `SELECT 1 FROM memory_export_requests WHERE request_id=? AND request_digest=?
+         AND envelope_digest=? AND provider_idempotency_key=? AND delegation_id=? AND delegation_digest=?
+         AND lane_id=? AND state='writing' AND dispatch_fence=1`,
+      ).get(...identity) !== undefined;
+      default: { const exhaustive: never = request.operation; return exhaustive; }
+    }
+  }
+
+  private async writeV2(request: MemoryEffectWriteRequestV2): Promise<SecondBrainWriteOutcome> {
+    if (!this.dedicatedAuthority(request)) {
+      return { kind: "invalid", code: "SECOND_BRAIN_WRITE_AUTHORITY_INVALID" };
     }
     try {
       const outcome = await this.transport.call("sb_write_request", { request });
       switch (outcome.kind) {
         case "data": {
           const result = parseMemoryEffectAccepted(outcome.value);
-          if (result === undefined) {
-            recordMemoryEffectDispatchFailure(this.authority, request.request_id, "failed",
-              "SECOND_BRAIN_WRITE_RESULT_INVALID", this.clock());
+          if (result === undefined || result.request_id !== request.request_id
+            || result.request_digest !== request.request_digest
+            || result.envelope_digest !== request.envelope_digest
+            || result.idempotency_key !== request.idempotency_key
+            || result.operation !== request.operation || result.lane !== request.lane) {
             return { kind: "invalid", code: "SECOND_BRAIN_WRITE_RESULT_INVALID" };
-          }
-          try { recordMemoryEffectAccepted(this.authority, request, result, this.clock()); }
-          catch (error) {
-            return { kind: "invalid", code: error instanceof JarvisError ? error.code : "MEMORY_EFFECT_RESULT_INVALID" };
           }
           return result;
         }
-        case "error":
-          recordMemoryEffectDispatchFailure(this.authority, request.request_id, "failed", outcome.code, this.clock());
-          return { kind: "unavailable", code: outcome.code };
-        case "no_data":
-          recordMemoryEffectDispatchFailure(this.authority, request.request_id, "failed",
-            "SECOND_BRAIN_WRITE_RESULT_INVALID", this.clock());
-          return { kind: "invalid", code: "SECOND_BRAIN_WRITE_RESULT_INVALID" };
+        case "error": return { kind: "unavailable", code: outcome.code };
+        case "no_data": return { kind: "invalid", code: "SECOND_BRAIN_WRITE_RESULT_INVALID" };
         default: { const exhaustive: never = outcome; return exhaustive; }
       }
     } catch (error) {
       if (!(error instanceof SecondBrainTransportError)) throw error;
-      recordMemoryEffectDispatchFailure(this.authority, request.request_id, "uncertain", error.code, this.clock());
       return error.disposition === "uncertain"
         ? { kind: "uncertain", code: error.code }
         : { kind: "unavailable", code: error.code };
@@ -89,19 +101,16 @@ class BoundedSecondBrainWriteRequestAdapter implements SecondBrainWriteRequestAd
 
   async write(value: unknown): Promise<SecondBrainWriteOutcome> {
     const now = this.clock();
-    let v1: SecondBrainWriteRequestV1 | undefined;
-    try { v1 = parseSecondBrainWriteRequest(value, now); } catch { v1 = undefined; }
+    const v1 = parseSecondBrainWriteRequest(value, now);
     if (v1 !== undefined) {
       if (!hasSecondBrainWriteAuthority(this.authority, v1, now)) {
         return { kind: "invalid", code: "SECOND_BRAIN_WRITE_AUTHORITY_INVALID" };
       }
       return this.writeV1(v1);
     }
-    const v2 = parseMemoryEffectWriteRequest(value, memoryEffectValidationOptions(this.authority, now));
-    if (v2 === undefined || !hasMemoryEffectWriteAuthority(this.authority, v2, now)) {
-      return { kind: "invalid", code: "SECOND_BRAIN_WRITE_AUTHORITY_INVALID" };
-    }
-    return this.writeV2(v2, now);
+    const v2 = parseMemoryEffectRequest(value, memoryEffectValidationOptions(this.authority, now));
+    if (v2 === undefined) return { kind: "invalid", code: "SECOND_BRAIN_WRITE_AUTHORITY_INVALID" };
+    return this.writeV2(v2);
   }
 }
 

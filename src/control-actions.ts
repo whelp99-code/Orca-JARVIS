@@ -1,4 +1,6 @@
 import { JarvisError } from "./db.js";
+import { memoryAuthority, memoryConfirm, memoryDedicatedEffect,
+  memoryGenerationRollback, memoryOutboxDispatch } from "./memory-control-actions.js";
 
 export interface RuntimeControlActionInput {
   action: string;
@@ -169,77 +171,6 @@ function evidenceNegativeRecord(input: RuntimeControlActionInput): void {
   bindTaskTarget(input.target, [taskId]);
 }
 
-const MEMORY_BINDING_KEYS = [
-  "schema_version", "candidate_id", "correlation_id", "subject_digest", "content_digest", "source_id",
-  "source_version", "operation", "purpose", "sensitivity",
-] as const;
-const opaque = /^[A-Za-z0-9][A-Za-z0-9_-]{0,127}$/;
-const digest = /^sha256:[0-9a-f]{64}$/;
-
-function memoryOutboxDispatch(input: RuntimeControlActionInput): void {
-  requireOnlyArgs(input.target, ["candidate_id", "candidate_digest", "classification_digest"]);
-  requireOnlyArgs(input.args, ["schema_version", "request", "expected_artifact"]);
-  const request = requireRecord(input.args, "request", "CONTROL_ARGS_MISMATCH");
-  const expected = requireRecord(input.args, "expected_artifact", "CONTROL_ARGS_MISMATCH");
-  requireOnlyArgs(expected, ["page_id", "sid", "source_digest"]);
-  if (input.args.schema_version !== 2 || request.candidate_id !== input.target.candidate_id
-    || request.candidate_digest !== input.target.candidate_digest
-    || request.classification_digest !== input.target.classification_digest
-    || !nonempty(expected.page_id) || !nonempty(expected.sid) || !nonempty(expected.source_digest)) {
-    throw new JarvisError("CONTROL_ARGS_MISMATCH");
-  }
-}
-
-function memoryEffect(input: RuntimeControlActionInput, operation: "correct" | "forget" | "export"): void {
-  requireOnlyArgs(input.target, ["request_id", "provider_instance_id", "lane_id", "operation"]);
-  requireOnlyArgs(input.args, ["schema_version", "request"]);
-  const request = requireRecord(input.args, "request", "CONTROL_ARGS_MISMATCH");
-  const expectedLane = operation === "correct" ? "correction" : operation === "forget" ? "deletion" : "export";
-  if (input.args.schema_version !== 2 || request.schema_version !== 2 || request.kind !== "memory_effect"
-    || request.operation !== operation || request.lane !== expectedLane
-    || !/^memeff:req:v2:[0-9a-f]{64}$/.test(String(request.request_id))
-    || !/^sha256:[0-9a-f]{64}$/.test(String(request.request_digest))
-    || !/^memeff:idem:v2:[0-9a-f]{64}$/.test(String(request.idempotency_key))
-    || !/^sha256:[0-9a-f]{64}$/.test(String(request.envelope_digest))) throw new JarvisError("CONTROL_ARGS_MISMATCH");
-  bindTarget(input.target, "request_id", request.request_id);
-  bindTarget(input.target, "provider_instance_id", request.provider_instance_id);
-  bindTarget(input.target, "lane_id", request.lane_id);
-  bindTarget(input.target, "operation", operation);
-}
-
-function memoryGenerationRollback(input: RuntimeControlActionInput): void {
-  requireOnlyArgs(input.target, ["provider_instance_id", "generation_id"]);
-  requireOnlyArgs(input.args, ["schema_version", "provider_instance_id", "generation_id", "reason"]);
-  if (input.args.schema_version !== 1) throw new JarvisError("CONTROL_ARGS_MISMATCH");
-  const provider = requireString(input.args, "provider_instance_id", "CONTROL_ARGS_MISMATCH");
-  const generation = requireString(input.args, "generation_id", "CONTROL_ARGS_MISMATCH");
-  requireString(input.args, "reason", "CONTROL_ARGS_MISMATCH");
-  bindTarget(input.target, "provider_instance_id", provider);
-  bindTarget(input.target, "generation_id", generation);
-}
-
-function memoryAuthority(input: RuntimeControlActionInput, identityKey: "instruction_id" | "decision_id"): void {
-  requireOnlyArgs(input.target, ["candidate_id", "correlation_id"]);
-  requireOnlyArgs(input.args, [...MEMORY_BINDING_KEYS, identityKey]);
-  const candidate = requireString(input.args, "candidate_id", "CONTROL_ARGS_MISMATCH");
-  const correlation = requireString(input.args, "correlation_id", "CONTROL_ARGS_MISMATCH");
-  if (input.args.schema_version !== 1 || !/^memcand:pos:v1:[0-9a-f]{64}$/.test(candidate)
-    || !/^corr:memory:[0-9a-f]{64}$/.test(correlation)
-    || !digest.test(requireString(input.args, "subject_digest", "CONTROL_ARGS_MISMATCH"))
-    || !digest.test(requireString(input.args, "content_digest", "CONTROL_ARGS_MISMATCH"))
-    || !opaque.test(requireString(input.args, "source_id", "CONTROL_ARGS_MISMATCH"))
-    || !opaque.test(requireString(input.args, "source_version", "CONTROL_ARGS_MISMATCH"))
-    || !opaque.test(requireString(input.args, identityKey, "CONTROL_ARGS_MISMATCH"))
-    || (input.args.operation !== "remember" && input.args.operation !== "correct")
-    || input.args.purpose !== "personal_memory"
-    || !["public", "personal", "sensitive", "restricted"].includes(String(input.args.sensitivity))) {
-    throw new JarvisError("CONTROL_ARGS_MISMATCH");
-  }
-  if (input.target.candidate_id !== candidate || input.target.correlation_id !== correlation) {
-    throw new JarvisError("CONTROL_TARGET_MISMATCH");
-  }
-}
-
 const descriptors: Record<string, Descriptor> = {
   "database.backup": { action: "database.backup", minimum_level: 2, executable: true, validate: databaseBackup },
   "database.restore_drill": { action: "database.restore_drill", minimum_level: 1, executable: true, validate: databaseRestoreDrill },
@@ -252,10 +183,10 @@ const descriptors: Record<string, Descriptor> = {
   "git.push": { action: "git.push", minimum_level: 4, executable: false, validate: gitPush },
   "collaboration.room.create": { action: "collaboration.room.create", minimum_level: 3, executable: false, validate: retiredCollaborationRoomCreate },
   "evidence.negative.record": { action: "evidence.negative.record", minimum_level: 2, executable: true, validate: evidenceNegativeRecord },
+  "memory.confirm": { action: "memory.confirm", minimum_level: 3, executable: false, validate: memoryConfirm },
   "memory.outbox.dispatch": { action: "memory.outbox.dispatch", minimum_level: 3, executable: true, validate: memoryOutboxDispatch },
-  "memory.correct": { action: "memory.correct", minimum_level: 3, executable: true, validate: input => memoryEffect(input, "correct") },
-  "memory.export": { action: "memory.export", minimum_level: 3, executable: true, validate: input => memoryEffect(input, "export") },
-  "memory.forget": { action: "memory.forget", minimum_level: 4, executable: true, validate: input => memoryEffect(input, "forget") },
+  "memory.delete": { action: "memory.delete", minimum_level: 3, executable: true, validate: input => memoryDedicatedEffect(input, "deletion") },
+  "memory.export": { action: "memory.export", minimum_level: 3, executable: true, validate: input => memoryDedicatedEffect(input, "export") },
   "memory.generation.rollback": { action: "memory.generation.rollback", minimum_level: 4, executable: true, validate: memoryGenerationRollback },
   "memory.instruction.record": {
     action: "memory.instruction.record", minimum_level: 3, executable: false,

@@ -134,7 +134,7 @@ export class ControlPlane {
   }
 
   private parseStoredAction(row: Record<string, unknown>): { action: string; action_level: ActionLevel; target: Record<string, unknown>; args: Record<string, unknown> } {
-    const target = JSON.parse(String(row.target_json)) as unknown; const args = JSON.parse(String(row.args_json)) as unknown;
+    const target: unknown = JSON.parse(String(row.target_json)); const args: unknown = JSON.parse(String(row.args_json));
     if (!isRecord(target) || !isRecord(args)) throw new JarvisError("CONTROL_COMMAND_INVALID");
     return { action: String(row.action), action_level: Number(row.action_level) as ActionLevel, target, args };
   }
@@ -143,7 +143,7 @@ export class ControlPlane {
     const nowMs = finiteDate(now, "CONTROL_COMMAND_INVALID"); const requested = finiteIso(input.requested_at); const expires = finiteIso(input.expires_at);
     if (input.schema_version !== 1 || !nonempty(input.request_id) || !nonempty(input.action) || !Number.isInteger(input.action_level) || input.action_level < 0 || input.action_level > 5 || !isRecord(input.target) || !isRecord(input.args) || typeof input.reversible !== "boolean" || !nonempty(input.requested_by) || !nonempty(input.nonce) || !Number.isFinite(requested) || !Number.isFinite(expires) || requested > nowMs || expires <= nowMs || expires <= requested || expires - requested > 24 * 60 * 60_000) throw new JarvisError("CONTROL_COMMAND_INVALID");
     validateControlAction(input);
-    if (["memory.correct", "memory.export", "memory.forget", "memory.generation.rollback"].includes(input.action)
+    if (["memory.outbox.dispatch", "memory.delete", "memory.export", "memory.generation.rollback"].includes(input.action)
       && input.reversible) throw new JarvisError("CONTROL_COMMAND_INVALID");
     const digest = controlCommandDigest(input); const targetJson = canonicalize(input.target); const argsJson = canonicalize(input.args); const at = now.toISOString();
     const prior = this.authority.db.prepare("SELECT command_digest,state FROM control_command_requests WHERE request_id=?").get(input.request_id) as { command_digest: string; state: ControlCommandState } | undefined;

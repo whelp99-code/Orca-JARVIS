@@ -28,6 +28,7 @@ function migrationDirectory(): { readonly root: string; readonly path: string } 
   const root = mkdtempSync(join(tmpdir(), "jarvis-task27-migrations-"));
   const path = join(root, "migrations");
   cpSync(join(process.cwd(), "migrations"), path, { recursive: true });
+  for (const name of readdirSync(path)) if (name > TASK29_MIGRATION) rmSync(join(path, name));
   return { root, path };
 }
 
