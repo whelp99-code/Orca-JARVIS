@@ -174,6 +174,8 @@ describe("Electron package contract", () => {
       authority_mode: "remote-only",
       authority_url: env.JARVIS_AUTHORITY_URL,
       shell: "cli-jaw",
+      client_host: "host:pos:mac-client",
+      protocol_scheme: "jarvis",
       electron_version: "44.0.0",
       web_preferences: {
         contextIsolation: true,

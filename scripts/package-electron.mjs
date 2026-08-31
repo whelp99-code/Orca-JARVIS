@@ -2,7 +2,8 @@
 import { mkdirSync } from "node:fs";
 import { spawnSync } from "node:child_process";
 import { packageElectronApp } from "./lib/package-electron-app.mjs";
-import { describeElectronShell, ElectronClientError, ELECTRON_VERSION, parseElectronClientConfig, resolveElectronBinary } from "./lib/electron-shell.mjs";
+import { describeElectronShell, ELECTRON_BUNDLE_ID, ElectronClientError, ELECTRON_PROTOCOL_SCHEME, ELECTRON_VERSION,
+  parseElectronClientConfig, resolveElectronBinary } from "./lib/electron-shell.mjs";
 
 function fail(error) {
   const code = error instanceof ElectronClientError ? error.code : "ELECTRON_PACKAGE_FAILED";
@@ -35,6 +36,8 @@ try {
     executable: packaged.executable,
     authority_url: config.authority_url,
     authority_mode: config.authority_mode,
+    bundle_id: ELECTRON_BUNDLE_ID,
+    protocol_scheme: ELECTRON_PROTOCOL_SCHEME,
   })}\n`);
 } catch (error) {
   fail(error);

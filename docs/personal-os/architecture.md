@@ -26,6 +26,10 @@ Production Second Brain starts with an empty Linux vault generation and typed `n
 | Audit / evidence | AuthorityDb for effects; Second Brain provenance for memory | respective Linux owner | deterministic executor/verifier -> auditor/timeline/client | append-only minimized digests, receipts, correlation, outcomes | event time immutable; validity/retention explicit | missing/unverifiable means not proven; external effect may be uncertain | display and Task Timeline are projections, never authority/verification substitute |
 | Client projection | Linux read APIs over canonical owners | Linux serves; Mac/phone render | canonical stores -> bounded redacted projection -> client | bounded expiring cache only, never canonical | generated-at and expiry; stale cache visibly read-only | degraded/offline display, mutation disabled, no local fallback | UI/cache/cards/deep links/notifications cannot become authority or memory truth |
 
+## Native notification client boundary
+
+Linux exposes CSRF/Origin-protected claim and settle mutations over the existing notification intent and delivery tables. The packaged Electron client subscribes to Linux SSE before claiming, displays only the four-field redacted payload, and acknowledges after the native `show` signal. Private `jarvis:` links resolve recommendation IDs through Linux before focusing the one existing app window. macOS has no JARVIS database, queue, scheduler, policy, or replay authority.
+
 ## Data and control flow
 
 ```text

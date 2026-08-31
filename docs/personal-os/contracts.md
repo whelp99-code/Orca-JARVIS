@@ -116,6 +116,8 @@ States: `proposed`, `classified`, `awaiting_confirmation`, `approved`, `queued`,
 
 ### Notification
 
+Task 33 implements Linux-owned native delivery over the existing persisted states. Database `queued` is the implemented spelling of contract `ready`. Linux claims and settles; macOS performs one at-most-once native display attempt and stores no delivery authority. If the client crashes after claim, expiry reconciliation records `failed|expired` and never redisplays an uncertain attempt.
+
 States: `created`, `deferred`, `ready`, `delivering`, `delivered`, `suppressed`, `failed`, `expired`.
 
 | Transition | Authority | Idempotency key | Freshness / expiry | Failure disposition |

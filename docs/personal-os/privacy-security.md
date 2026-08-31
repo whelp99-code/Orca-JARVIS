@@ -32,7 +32,7 @@ Every class explicitly defines purpose, retention, confirmation, export, deletio
 
 `secret`, `raw_body`, `raw_screen`, `audio`, and `video` are prohibited field classes. They are denied before any client projection. Full mail/calendar bodies, continuous screens, audio, and video therefore have no default ingestion path. Future adapters must classify fields before calling the evaluator and must retain the existing filesystem and dashboard redaction controls.
 
-Notification payloads are limited to `title`, `summary`, `alert_class`, and `deep_link`. From 22:00 through 23:59 UTC only `authority_expiry` and `security_incident` alert classes are eligible; other alerts abstain. Notifications are informational: no payload or deep link is an executable command, credential, receipt, or approval.
+Task 33 enforces the Mac native payload as a closed object containing only `title`, `summary`, `alert_class`, and `deep_link`; client session and SSE cursor values remain memory-only and no Mac JARVIS queue is introduced. Notification payloads are limited to `title`, `summary`, `alert_class`, and `deep_link`. From 22:00 through 23:59 UTC only `authority_expiry` and `security_incident` alert classes are eligible; other alerts abstain. Notifications are informational: no payload or deep link is an executable command, credential, receipt, or approval.
 
 Mac and phone projections require a configured client ID and return `redact`, metadata-only redaction, or denial according to the data class. Clients may cache only bounded expiring projections and cannot copy canonical personal data or fall back to local authority.
 

@@ -1,57 +1,48 @@
-import { cpSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { cpSync, mkdirSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { electronUnavailableHtml } from "./print-surfaces.mjs";
-import { installedElectron } from "./electron-shell.mjs";
+import { electronMainSource } from "./electron-main-source.mjs";
+import { ELECTRON_BUNDLE_ID, ELECTRON_PROTOCOL_SCHEME, installedElectron } from "./electron-shell.mjs";
 
-const MAIN = String.raw`const { app, BrowserWindow } = require("electron");
-const config = require("./client-config.json");
-let failed = false;
-app.whenReady().then(() => {
-  const win = new BrowserWindow({
-    width: 1280,
-    height: 800,
-    webPreferences: { contextIsolation: true, nodeIntegration: false, sandbox: true },
-  });
-  const authority = new URL(config.authority_url);
-  win.webContents.setWindowOpenHandler(() => ({ action: "deny" }));
-  win.webContents.on("will-navigate", (event, target) => {
-    if (new URL(target).origin !== authority.origin) event.preventDefault();
-  });
-  win.webContents.on("did-fail-load", () => {
-    if (failed) return;
-    failed = true;
-    void win.loadFile("unavailable.html");
-  });
-  void win.loadURL(config.authority_url);
-});
-app.on("window-all-closed", () => app.quit());
-`;
-
+const LIB = dirname(fileURLToPath(import.meta.url));
 function writeClientApp(appRoot, config) {
   mkdirSync(appRoot, { recursive: true });
-  writeFileSync(join(appRoot, "package.json"), `${JSON.stringify({ name: "jarvis-cli-jaw-client", version: "1.0.0", private: true, main: "main.cjs" }, null, 2)}\n`);
+  writeFileSync(join(appRoot, "package.json"), `${JSON.stringify({
+    name: "jarvis-cli-jaw-client", version: "1.0.0", private: true, main: "main.cjs",
+  }, null, 2)}\n`);
   writeFileSync(join(appRoot, "client-config.json"), `${JSON.stringify(config, null, 2)}\n`);
-  writeFileSync(join(appRoot, "main.cjs"), MAIN);
+  writeFileSync(join(appRoot, "main.cjs"), electronMainSource());
+  cpSync(join(LIB, "electron-deep-link.mjs"), join(appRoot, "electron-deep-link.mjs"));
+  cpSync(join(LIB, "electron-notification-client.mjs"), join(appRoot, "electron-notification-client.mjs"));
   writeFileSync(join(appRoot, "unavailable.html"), electronUnavailableHtml("LINUX_AUTHORITY_UNAVAILABLE"));
 }
-
+function configureMacBundle(packagePath) {
+  const infoPath = join(packagePath, "Contents", "Info.plist");
+  let info = readFileSync(infoPath, "utf8");
+  info = info.replace(/<key>CFBundleIdentifier<\/key>\s*<string>[^<]+<\/string>/u,
+    `<key>CFBundleIdentifier</key>\n\t<string>${ELECTRON_BUNDLE_ID}</string>`);
+  const protocol = `\n\t<key>CFBundleURLTypes</key>\n\t<array><dict>\n\t\t<key>CFBundleURLName</key>`
+    + `\n\t\t<string>${ELECTRON_BUNDLE_ID}</string>\n\t\t<key>CFBundleURLSchemes</key>`
+    + `\n\t\t<array><string>${ELECTRON_PROTOCOL_SCHEME}</string></array>\n\t</dict></array>\n`;
+  const marker = info.lastIndexOf("</dict>");
+  if (marker < 0) throw new TypeError("ELECTRON_PACKAGE_FAILED");
+  writeFileSync(infoPath, `${info.slice(0, marker)}${protocol}${info.slice(marker)}`);
+}
 export function packageElectronApp(home, config, platform = process.platform) {
   const { root } = installedElectron();
-  const dist = join(root, "dist");
-  const output = join(home, "electron-package");
-  rmSync(output, { recursive: true, force: true });
-  mkdirSync(output, { recursive: true });
+  const dist = join(root, "dist"); const output = join(home, "electron-package");
+  rmSync(output, { recursive: true, force: true }); mkdirSync(output, { recursive: true });
   if (platform === "darwin") {
     const packagePath = join(output, "JARVIS.app");
     cpSync(join(dist, "Electron.app"), packagePath, { recursive: true, verbatimSymlinks: true });
+    configureMacBundle(packagePath);
     const resources = join(packagePath, "Contents", "Resources");
-    rmSync(join(resources, "default_app.asar"), { force: true });
-    writeClientApp(join(resources, "app"), config);
+    rmSync(join(resources, "default_app.asar"), { force: true }); writeClientApp(join(resources, "app"), config);
     return { packagePath, appResources: resources, executable: join(packagePath, "Contents", "MacOS", "Electron") };
   }
   cpSync(dist, output, { recursive: true, verbatimSymlinks: true });
-  const resources = join(output, "resources");
-  rmSync(join(resources, "default_app.asar"), { force: true });
+  const resources = join(output, "resources"); rmSync(join(resources, "default_app.asar"), { force: true });
   writeClientApp(join(resources, "app"), config);
   const executable = platform === "win32" ? join(output, "electron.exe") : join(output, "electron");
   return { packagePath: output, appResources: resources, executable };

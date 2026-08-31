@@ -53,8 +53,11 @@ describe("real Electron package", () => {
       authority_mode: "remote-only",
       authority_url: authorityUrl,
       shell: "cli-jaw",
+      client_host: "host:pos:mac-client",
+      protocol_scheme: "jarvis",
     });
-    expect(main).toContain("loadURL(config.authority_url)");
+    expect(main).toContain("requestSingleInstanceLock");
+    expect(main).toContain("/api/v1/notification-deliveries/claim");
     expect(main).not.toMatch(/AuthorityDb|better-sqlite3|jarvis-authority|local-authority/u);
     expect(JSON.stringify(client)).not.toMatch(/AuthorityDb|better-sqlite3|jarvis-authority/u);
   });

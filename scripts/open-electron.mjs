@@ -2,6 +2,7 @@
 import { spawn } from "node:child_process";
 import { request } from "undici";
 import { packageElectronApp } from "./lib/package-electron-app.mjs";
+import { ElectronDeepLinkError, parseJarvisDeepLink } from "./lib/electron-deep-link.mjs";
 import { ElectronClientError, parseElectronClientConfig, resolveElectronBinary } from "./lib/electron-shell.mjs";
 
 function fail(code) {
@@ -10,6 +11,12 @@ function fail(code) {
 }
 
 try {
+  if (process.argv.includes("--help")) {
+    process.stdout.write("Usage: npm run product:open-electron -- [jarvis://open/today|recommendation-link]\n");
+    process.exit(0);
+  }
+  const link = process.argv.slice(2).find(value => value.startsWith("jarvis:"));
+  if (link !== undefined) parseJarvisDeepLink(link);
   const config = parseElectronClientConfig();
   try {
     const response = await request(`${config.authority_url}/api/v1/health`, {
@@ -26,9 +33,9 @@ try {
   if (typeof home !== "string" || home.length === 0) throw new ElectronClientError("ELECTRON_PACKAGE_HOME_REQUIRED");
   resolveElectronBinary();
   const packaged = packageElectronApp(home, config);
-  const child = spawn(packaged.executable, [], { detached: true, stdio: "ignore" });
+  const child = spawn(packaged.executable, link === undefined ? [] : [link], { detached: true, stdio: "ignore" });
   child.unref();
   process.stdout.write(`${JSON.stringify({ ok: true, launched: true, pid: child.pid, package_path: packaged.packagePath, authority_url: config.authority_url })}\n`);
 } catch (error) {
-  fail(error instanceof ElectronClientError ? error.code : "ELECTRON_OPEN_FAILED");
+  fail(error instanceof ElectronClientError || error instanceof ElectronDeepLinkError ? error.code : "ELECTRON_OPEN_FAILED");
 }

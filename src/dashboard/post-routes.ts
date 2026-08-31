@@ -4,6 +4,7 @@ import type { AuthorityDb } from "../db.js";
 import { tryHandleAuthorityPost } from "./authority-routes.js";
 import type { ReconcileHub } from "./events.js";
 import { DASHBOARD_ERROR_CODES, writeDashboardError } from "./http.js";
+import { tryHandleNotificationDelivery } from "./notification-delivery-routes.js";
 import { tryHandleProposalPreview } from "./proposal-routes.js";
 import { tryHandleRecommendationAccept } from "./recommendation-action-routes.js";
 import type { TeamProposalPlanner } from "./proposal-service.js";
@@ -76,6 +77,18 @@ export async function tryHandleDashboardPost(input: DashboardPostInput): Promise
     hub: input.hub,
     clock: input.clock,
     session: input.session,
+  })) {
+    return true;
+  }
+  if (tryHandleNotificationDelivery({
+    db: input.db,
+    path: input.path,
+    body: parsed.value,
+    response: input.response,
+    requestId: input.requestId,
+    hub: input.hub,
+    session: input.session,
+    clock: input.clock,
   })) {
     return true;
   }

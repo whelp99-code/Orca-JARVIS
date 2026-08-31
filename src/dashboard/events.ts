@@ -1,5 +1,6 @@
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { AuthorityDb } from "../db.js";
+import { canonicalize } from "../canonical.js";
 import { JarvisError } from "../db.js";
 import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
 import { PERSONAL_EVENT_TOPICS, type PersonalEventKind } from "./personal-contracts.js";
@@ -8,6 +9,7 @@ export const DEFAULT_RECONCILE_TOPICS = ["overview", "tasks", "agents", "approva
 
 const DATA_VERSION_INTERVAL_MS = 1_000;
 const REPLAY_LIMIT = 128;
+const NOTIFICATION_FINGERPRINT_LIMIT = 1_024;
 
 type SseSink = { write(frame: string): void; close(): void };
 type ReconcileEventType = "snapshot" | "reconcile";
@@ -75,17 +77,22 @@ export class ReconcileHub {
 
 export class DataVersionObserver {
   private lastVersion: number;
+  private notificationFingerprint: string;
   private timer: ReturnType<typeof setInterval> | undefined;
 
   constructor(private readonly db: AuthorityDb, private readonly onChange: (topics: readonly string[]) => void) {
     this.lastVersion = readDataVersion(db);
+    this.notificationFingerprint = readNotificationFingerprint(db, this.lastVersion);
   }
 
   check(): boolean {
     const current = readDataVersion(this.db);
     if (current === this.lastVersion) return false;
     this.lastVersion = current;
-    this.onChange(DEFAULT_RECONCILE_TOPICS);
+    const fingerprint = readNotificationFingerprint(this.db, current);
+    const changed = fingerprint !== this.notificationFingerprint;
+    this.notificationFingerprint = fingerprint;
+    this.onChange(changed ? PERSONAL_EVENT_TOPICS.notification : DEFAULT_RECONCILE_TOPICS);
     return true;
   }
 
@@ -119,6 +126,15 @@ function uniqueTopics(topics: readonly string[]): readonly string[] {
 
 function allPersonalTopics(): readonly string[] {
   return uniqueTopics(Object.values(PERSONAL_EVENT_TOPICS).flat());
+}
+
+function readNotificationFingerprint(db: AuthorityDb, dataVersion: number): string {
+  const countValue = db.db.prepare("SELECT count(*) AS count FROM notification_intents").get();
+  const count = typeof countValue === "object" && countValue !== null ? Reflect.get(countValue, "count") : undefined;
+  if (typeof count !== "number" || !Number.isSafeInteger(count) || count < 0) throw new JarvisError("INTERNAL_ERROR");
+  if (count > NOTIFICATION_FINGERPRINT_LIMIT) return `overflow:${dataVersion}`;
+  const rows = db.db.prepare("SELECT intent_id,state,updated_at FROM notification_intents ORDER BY intent_id").all();
+  return createHash("sha256").update(canonicalize(rows)).digest("hex");
 }
 
 function readDataVersion(db: AuthorityDb): number {

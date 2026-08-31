@@ -5,6 +5,8 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 export const ELECTRON_VERSION = "44.0.0";
+export const ELECTRON_BUNDLE_ID = "com.jmpark.orca-jarvis";
+export const ELECTRON_PROTOCOL_SCHEME = "jarvis";
 
 export class ElectronClientError extends Error {
   constructor(code) {
@@ -38,6 +40,8 @@ export function parseElectronClientConfig(env = process.env) {
     authority_mode: "remote-only",
     authority_url: authorityUrl.origin,
     shell: "cli-jaw",
+    client_host: "host:pos:mac-client",
+    protocol_scheme: ELECTRON_PROTOCOL_SCHEME,
   };
 }
 
