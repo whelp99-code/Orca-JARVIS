@@ -29,7 +29,10 @@ export class MemoryOutboxService {
   constructor(private readonly options: MemoryOutboxServiceOptions) {
     this.leaseMs = requireDuration(options.leaseMs ?? DEFAULT_LEASE_MS);
     this.deadlineMs = requireDuration(options.artifactDeadlineMs ?? MEMORY_OUTBOX_RUNTIME_DEADLINE_MS);
-    this.store = new MemoryOutboxStore(options.authority, this.deadlineMs);
+    this.store = new MemoryOutboxStore(options.authority, this.deadlineMs, {
+      candidate_dispatch_spool_root: options.candidate_dispatch_spool_root,
+      candidate_review_spool_root: options.candidate_review_spool_root,
+    });
   }
   enqueue(command: ClaimedControlCommand): MemoryOutboxSagaV2 {
     return this.store.enqueue(command, this.options.clock());

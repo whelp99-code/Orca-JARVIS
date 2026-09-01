@@ -1,8 +1,12 @@
 import { createHash } from "node:crypto";
+import { join } from "node:path";
 import { canonicalize } from "../../src/canonical.js";
 import {
   ControlPlane,
+  MemoryCandidateDispatchSpool,
+  MemoryCandidateReviewSpool,
   MemoryCandidateStore,
+  memoryCandidateWriteReceipt,
   MemoryOutboxService,
   signCommandApproval,
   type CommandApprovalReceipt,
@@ -17,6 +21,8 @@ import {
 import { localKey } from "../helpers.js";
 import { MEMORY_NOW, memoryPolicy, verifiedMemoryInput } from "./memory-candidate-fixture.js";
 import { insertMemoryVerification, memoryDatabase, memoryVerificationPayload, type MemoryDatabase } from "./memory-candidate-store.js";
+import type { MemoryCandidateReviewEnvelope } from "../../src/memory-candidate-review-spool.js";
+import { memoryCandidateReviewDigest } from "../../src/memory-candidate-review-spool.js";
 
 export const OUTBOX_NOW = new Date("2026-08-31T03:30:00.000Z");
 export const OUTBOX_EXPIRES = "2026-09-01T03:30:00.000Z";
@@ -63,25 +69,51 @@ export async function outboxFixture(options: { writer?: FixtureWriter; reader?: 
     issued_at: OUTBOX_NOW.toISOString(), not_before: OUTBOX_NOW.toISOString(), expires_at: OUTBOX_EXPIRES,
   }));
   const classification = new MemoryCandidateStore(database.authority, memoryPolicy(), () => OUTBOX_NOW).classify(input);
-  const receipt = { schema_version: 1 as const, receipt_id: `receipt:memory:${"4".repeat(64)}`,
-    candidate_id: classification.candidate_id, candidate_digest: classification.candidate_digest,
-    classification_digest: classification.classification_digest, operation: classification.operation,
-    decision: "auto_staged", principal_id: "principal:owner", issued_at: OUTBOX_NOW.toISOString(),
-    expires_at: OUTBOX_EXPIRES };
-  const identity = { candidate_id: classification.candidate_id, candidate_digest: classification.candidate_digest,
-    classification_digest: classification.classification_digest, operation: classification.operation };
-  const idem = hash("orca-jarvis/memory-write-idempotency/v1\0", identity);
-  const base = { schema_version: 1 as const, ...identity, idempotency_key: `memidem:pos:v1:${idem.slice(7)}`,
-    subject: "wiki/example-alpha", purpose: "personal_memory" as const, sensitivity: classification.policy_sensitivity,
-    retention_days: classification.retention_days, created_at: OUTBOX_NOW.toISOString(), expires_at: OUTBOX_EXPIRES,
-    expected_prior: null, receipt, receipt_digest: hash("orca-jarvis/memory-write-receipt/v1\0", receipt),
-    payload: { content: "ExampleAlpha" } };
-  const requestDigest = hash("orca-jarvis/memory-write-request/v1\0", base);
-  const request = { ...base, request_id: `memreq:pos:v1:${requestDigest.slice(7)}`, request_digest: requestDigest } as SecondBrainWriteRequestV1;
+  const reviewCore: Omit<MemoryCandidateReviewEnvelope, "review_envelope_digest"> = {
+    schema_version: 1, candidate_id: classification.candidate_id,
+    candidate_digest: classification.candidate_digest, classification_digest: classification.classification_digest,
+    subject_digest: classification.subject_digest, content_digest: classification.content_digest,
+    operation: "remember", subject: "wiki/example-alpha", statement: "ExampleAlpha",
+    purpose: "personal_memory", sensitivity: classification.policy_sensitivity,
+    source_class: "verified_outcome", source_id: "verified-source-outbox", source_version: "v1",
+    policy_digest: classification.policy_digest,
+    idempotency_key: `memidem:pos:v1:${hash("orca-jarvis/memory-write-idempotency/v1\0", {
+      candidate_id: classification.candidate_id, candidate_digest: classification.candidate_digest,
+      classification_digest: classification.classification_digest, operation: "remember",
+    }).slice(7)}`,
+    request_id: `memreq:pos:v1:${"2".repeat(64)}`, request_digest: `sha256:${"2".repeat(64)}`,
+    retention_days: classification.retention_days, created_at: OUTBOX_NOW.toISOString(),
+    candidate_expires_at: OUTBOX_EXPIRES, confirmation_expires_at: OUTBOX_EXPIRES,
+  };
+  const review: MemoryCandidateReviewEnvelope = {
+    ...reviewCore, review_envelope_digest: memoryCandidateReviewDigest({
+      ...reviewCore, review_envelope_digest: `sha256:${"3".repeat(64)}`,
+    }),
+  };
+  const reviewRoot = join(database.root, "candidate-review");
+  const dispatchRoot = join(database.root, "candidate-dispatch");
+  new MemoryCandidateReviewSpool(reviewRoot).publish(review);
+  const dispatchSpool = new MemoryCandidateDispatchSpool(dispatchRoot);
+  dispatchSpool.publish(review, {
+    control_request_id: "candidate-confirmation", control_receipt_id: "candidate-receipt",
+    command_digest: `sha256:${"4".repeat(64)}`, issued_at: OUTBOX_NOW.toISOString(),
+    principal_id: "principal:owner", expires_at: OUTBOX_EXPIRES, decision: "auto_staged",
+  });
+  const dispatch = dispatchSpool.read(review.candidate_id);
+  const providerReceipt = memoryCandidateWriteReceipt(dispatch);
+  const requestBase = { schema_version: 1 as const, candidate_id: dispatch.candidate_id,
+    candidate_digest: dispatch.candidate_digest, classification_digest: dispatch.classification_digest,
+    idempotency_key: dispatch.idempotency_key, operation: dispatch.operation, subject: review.subject,
+    purpose: dispatch.purpose, sensitivity: dispatch.sensitivity, retention_days: dispatch.retention_days,
+    created_at: dispatch.created_at, expires_at: dispatch.expires_at, expected_prior: null,
+    receipt: providerReceipt, receipt_digest: dispatch.receipt_digest, payload: { content: review.statement } };
+  const request: SecondBrainWriteRequestV1 = { ...requestBase, request_id: dispatch.request_id,
+    request_digest: dispatch.request_digest };
   const sourceDigest = OUTBOX_ARTIFACT_DIGEST; const commandId = "memory-outbox-action";
   const action: ControlCommandRequestInput = { schema_version: 1, request_id: commandId, action: "memory.outbox.dispatch",
     action_level: 3, target: { candidate_id: classification.candidate_id, candidate_digest: classification.candidate_digest,
-      classification_digest: classification.classification_digest }, args: { schema_version: 2, request,
+      classification_digest: classification.classification_digest }, args: { schema_version: 2,
+      dispatch_spool_digest: dispatch.dispatch_spool_digest,
       expected_artifact: { page_id: "wiki/example-alpha", sid: "12345678", source_digest: sourceDigest } },
     reversible: false, requested_by: "principal:owner", requested_at: OUTBOX_NOW.toISOString(),
     expires_at: OUTBOX_ACTION_EXPIRES, nonce: "memory-outbox-action-nonce" };
@@ -94,7 +126,8 @@ export async function outboxFixture(options: { writer?: FixtureWriter; reader?: 
   control.decide(signCommandApproval(unsigned, localKey(database.authority)), OUTBOX_NOW);
   const writer = options.writer ?? new FixtureWriter(); const reader = options.reader ?? missingReader(); const clock = { now: OUTBOX_NOW };
   const service = new MemoryOutboxService({ authority: database.authority, writer, reader, clock: () => clock.now,
-    artifactDeadlineMs: options.deadline ?? 30_000, leaseMs: 10_000 });
+    artifactDeadlineMs: options.deadline ?? 30_000, leaseMs: 10_000,
+    candidate_dispatch_spool_root: dispatchRoot, candidate_review_spool_root: reviewRoot });
   return { database, service, writer, reader, request, commandId, digest: sourceDigest, clock };
 }
 export function claimAction(value: OutboxFixture) {

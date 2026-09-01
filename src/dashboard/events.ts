@@ -28,7 +28,7 @@ export class ReconcileHub {
     this.clients.add(sink);
     try {
       if (lastEventId === undefined || lastEventId.length === 0) {
-        sink.write(this.frame("snapshot", DEFAULT_RECONCILE_TOPICS).frame);
+        sink.write(this.frame("snapshot", snapshotTopics()).frame);
       } else {
         this.resume(sink, lastEventId);
       }
@@ -61,12 +61,10 @@ export class ReconcileHub {
     const index = this.replay.findIndex((item) => item.id === lastEventId);
     if (index >= 0) {
       for (const item of this.replay.slice(index + 1)) sink.write(item.frame);
-      if (index === this.replay.length - 1) {
-        sink.write(this.frame("snapshot", [...DEFAULT_RECONCILE_TOPICS, ...allPersonalTopics()]).frame);
-      }
+      if (index === this.replay.length - 1) sink.write(this.frame("snapshot", snapshotTopics()).frame);
       return;
     }
-    sink.write(this.frame("snapshot", [...DEFAULT_RECONCILE_TOPICS, ...allPersonalTopics()]).frame);
+    sink.write(this.frame("snapshot", snapshotTopics()).frame);
   }
 
   private frame(type: ReconcileEventType, topics: readonly string[]): StoredFrame {
@@ -115,7 +113,7 @@ export function createDashboardEvents(db: AuthorityDb): { readonly hub: Reconcil
   const hub = new ReconcileHub();
   const observer = new DataVersionObserver(db, (topics) => { hub.publish(topics); });
   const unsubscribeSuppression = subscribeMemorySuppression(db, () => {
-    hub.publish([...allPersonalTopics(), "state"]);
+    hub.publish(["memory.privacy.v1", "memory.records.v1", "memory.conflicts.v1", "memory.effects.v1"]);
   });
   observer.start(DATA_VERSION_INTERVAL_MS);
   return { hub, close(): void { unsubscribeSuppression(); observer.close(); hub.close(); } };
@@ -131,6 +129,9 @@ function uniqueTopics(topics: readonly string[]): readonly string[] {
 
 function allPersonalTopics(): readonly string[] {
   return uniqueTopics([...Object.values(PERSONAL_EVENT_TOPICS).flat(), ...MEMORY_TOPICS]);
+}
+function snapshotTopics(): readonly string[] {
+  return uniqueTopics([...DEFAULT_RECONCILE_TOPICS, ...allPersonalTopics()]);
 }
 
 function readNotificationFingerprint(db: AuthorityDb, dataVersion: number): string {

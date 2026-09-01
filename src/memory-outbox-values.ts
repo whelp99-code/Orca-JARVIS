@@ -2,9 +2,11 @@ import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import type { ClaimedControlCommand } from "./control-plane.js";
 import { JarvisError } from "./db.js";
+import { resolveSpooledDispatch } from "./memory-outbox-dispatch-request.js";
 import { parseSecondBrainWriteRequest } from "./second-brain-write-request.js";
 import type {
   MemoryExpectedArtifactV2,
+  MemoryObservation,
   MemoryObservationDigestInput,
   MemoryOutboxActionV2,
   MemoryOutboxSagaV2,
@@ -20,6 +22,10 @@ const STATES = new Set<MemoryOutboxStateV2>([
   "queued", "claimed", "dispatching", "reconciling", "settled", "conflict", "failed", "expired",
 ]);
 const domain = (name: string): string => `orca-jarvis/${name}/v2\0`;
+export type MemoryOutboxSpoolRoots = {
+  readonly candidate_dispatch_spool_root?: string;
+  readonly candidate_review_spool_root?: string;
+};
 
 export function memoryOutboxHash(name: string, value: unknown): string {
   return `sha256:${createHash("sha256").update(domain(name)).update(canonicalize(value)).digest("hex")}`;
@@ -60,22 +66,42 @@ function artifact(value: unknown): MemoryExpectedArtifactV2 {
   }
   return Object.freeze({ page_id: pageId, sid, source_digest: sourceDigest });
 }
-export function parseMemoryOutboxAction(command: ClaimedControlCommand, now: Date): MemoryOutboxActionV2 {
+export function parseMemoryOutboxAction(
+  command: ClaimedControlCommand,
+  now: Date,
+  roots: MemoryOutboxSpoolRoots = {},
+): MemoryOutboxActionV2 {
   if (command.action !== "memory.outbox.dispatch" || command.action_level < 3) {
     throw new JarvisError("MEMORY_OUTBOX_AUTHORITY_INVALID");
   }
-  const args = record(command.args); exact(args, ["schema_version", "request", "expected_artifact"]);
+  const args = record(command.args);
   const target = record(command.target); exact(target, ["candidate_id", "candidate_digest", "classification_digest"]);
   if (args["schema_version"] !== 2) throw new JarvisError("MEMORY_OUTBOX_INPUT_INVALID");
-  const request = parseSecondBrainWriteRequest(args["request"], now);
+  // Either the command names a private dispatch spool by digest, or it carries
+  // the shipped inline request body.
+  const spoolDigest = args["dispatch_spool_digest"];
+  const spooled = spoolDigest !== undefined;
+  exact(args, ["schema_version", spooled ? "dispatch_spool_digest" : "request", "expected_artifact"]);
+  const candidateId = target["candidate_id"];
+  if (typeof candidateId !== "string") throw new JarvisError("MEMORY_OUTBOX_INPUT_INVALID");
+  if (spooled && (typeof spoolDigest !== "string" || !DIGEST.test(spoolDigest))) {
+    throw new JarvisError("MEMORY_OUTBOX_INPUT_INVALID");
+  }
+  const request = spooled && typeof spoolDigest === "string"
+    ? resolveSpooledDispatch({ candidate_id: candidateId, dispatch_spool_digest: spoolDigest,
+      roots: { dispatch: roots.candidate_dispatch_spool_root, review: roots.candidate_review_spool_root },
+      now })
+    : parseSecondBrainWriteRequest(args["request"], now);
   if (request === undefined || (request.operation !== "remember" && request.operation !== "correct")) {
     throw new JarvisError("MEMORY_OUTBOX_INPUT_INVALID");
   }
-  if (target["candidate_id"] !== request.candidate_id || target["candidate_digest"] !== request.candidate_digest
+  if (candidateId !== request.candidate_id || target["candidate_digest"] !== request.candidate_digest
     || target["classification_digest"] !== request.classification_digest) {
     throw new JarvisError("MEMORY_OUTBOX_AUTHORITY_INVALID");
   }
-  return { command, request, expected_artifact: artifact(args["expected_artifact"]) };
+  return { command, request, ...(spooled && typeof spoolDigest === "string"
+    ? { dispatch_spool_digest: spoolDigest } : {}),
+    expected_artifact: artifact(args["expected_artifact"]) };
 }
 export function memoryOutboxIdentity(action: MemoryOutboxActionV2): { outbox_id: string; digest: string } {
   const request = action.request; const digest = memoryOutboxHash("memory-outbox", {
@@ -126,4 +152,28 @@ export function parseSagaRow(value: unknown): MemoryOutboxSagaV2 {
     settled_at: typeof row["settled_at"] === "string" ? row["settled_at"] : null,
     created_at: String(row["created_at"]), updated_at: String(row["updated_at"]),
   };
+}
+
+/** Settlement receipt for a reconciled outbox saga, or null while it is not yet settled. */
+export function memoryOutboxSettlementReceipt(input: {
+  readonly saga: MemoryOutboxSagaV2;
+  readonly observation: MemoryObservation;
+  readonly attempt: { readonly attempt_id: string; readonly invocation_digest: string;
+    readonly acceptance_receipt_digest: string | null };
+  readonly settled: { readonly observationDigest: string; readonly at: string };
+}): string {
+  const { saga, observation, attempt } = input;
+  if (saga.dispatch_fence === null || observation.page_id === undefined || observation.sid === undefined
+    || observation.source_version === undefined || observation.source_digest === undefined) {
+    throw new JarvisError("MEMORY_OUTBOX_INTEGRITY_FAILURE");
+  }
+  return memorySettlementDigest({
+    outbox_id: saga.outbox_id, candidate_id: saga.candidate_id, candidate_digest: saga.candidate_digest,
+    request_id: saga.request_id, request_digest: saga.request_digest, attempt_id: attempt.attempt_id,
+    invocation_digest: attempt.invocation_digest, dispatch_fence: saga.dispatch_fence,
+    acceptance_receipt_digest: attempt.acceptance_receipt_digest,
+    page_id: observation.page_id, sid: observation.sid, source_version: observation.source_version,
+    source_digest: observation.source_digest, observation_digest: input.settled.observationDigest,
+    reconciled_at: input.settled.at,
+  });
 }

@@ -45,12 +45,18 @@ export type DecideInput = {
   readonly now: Date;
 };
 
+export type DashboardExecutorFactory = (input: {
+  readonly db: AuthorityDb;
+  readonly now: Date;
+  readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
+}) => ApprovedCommandExecutor;
 export type ExecuteInput = {
   readonly db: AuthorityDb;
   readonly requestId: string;
   readonly body: unknown;
   readonly now: Date;
   readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
+  readonly executorFactory?: DashboardExecutorFactory;
 };
 
 export type CancelInput = {
@@ -83,7 +89,9 @@ export function decideDashboardRequest(input: DecideInput): DashboardDecision {
 
 export async function executeDashboardRequest(input: ExecuteInput): Promise<DashboardExecution> {
   parseExecuteRequest(input.body);
-  const executed = await new ApprovedCommandExecutor(
+  const executor = input.executorFactory?.({
+    db: input.db, now: input.now, memoryLifecycle: input.memoryLifecycle,
+  }) ?? new ApprovedCommandExecutor(
     input.db,
     resolve(".jarvis-backups"),
     resolve("state"),
@@ -92,7 +100,8 @@ export async function executeDashboardRequest(input: ExecuteInput): Promise<Dash
     undefined,
     undefined,
     input.memoryLifecycle,
-  ).execute(input.requestId, "dashboard-approved-executor", input.now);
+  );
+  const executed = await executor.execute(input.requestId, "dashboard-approved-executor", input.now);
   return {
     schema_version: DASHBOARD_SCHEMA_VERSION,
     execution: executionBody(executed),

@@ -4,6 +4,7 @@ import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.j
 import {
   decideDashboardRequest,
   executeDashboardRequest,
+  type DashboardExecutorFactory,
   stageDashboardCancel,
   stageDashboardRetry,
 } from "./authority-service.js";
@@ -62,6 +63,7 @@ export type AuthorityRouteInput = {
   readonly hub: ReconcileHub;
   readonly clock: () => Date;
   readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
+  readonly executorFactory?: DashboardExecutorFactory;
 };
 
 export async function tryHandleAuthorityPost(input: AuthorityRouteInput): Promise<boolean> {
@@ -111,6 +113,7 @@ async function writeExecute(input: AuthorityRouteInput, requestId: string): Prom
       body: input.body,
       now: input.clock(),
       memoryLifecycle: input.memoryLifecycle,
+      executorFactory: input.executorFactory,
     });
     input.hub.publish(["overview", "tasks", "approvals"]);
     writeDashboardJson(input.response, { status: 200, requestId: input.requestId, body });

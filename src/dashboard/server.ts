@@ -15,6 +15,7 @@ import type { SecondBrainReadinessProbe } from "../second-brain-readiness.js";
 import { JarvisError, type AuthorityDb } from "../db.js";
 import type { OrcaRunner } from "../orca.js";
 import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
+import type { DashboardExecutorFactory } from "./authority-service.js";
 import { composeRemoteApproval } from "../remote-approval-compose.js";
 import type { RemoteApprovalService } from "../remote-approval.js";
 import { tryHandleDashboardApi } from "./api-routes.js";
@@ -68,9 +69,12 @@ export type DashboardServerOptions = {
   readonly clock?: () => Date;
   readonly sessionStore?: DashboardSessionStore;
   readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
+  readonly executorFactory?: DashboardExecutorFactory;
   readonly memoryAdapter?: SecondBrainReadAdapter;
   readonly memoryProjectionKey?: Buffer;
   readonly memoryEffectSpoolRoot?: string;
+  readonly memoryCandidateReviewSpoolRoot?: string;
+  readonly memoryCandidateDispatchSpoolRoot?: string;
   readonly remoteApproval?: RemoteApprovalService;
 };
 
@@ -89,6 +93,7 @@ type RequestContext = {
   readonly secondBrainProbe?: SecondBrainReadinessProbe;
   readonly planner?: TeamProposalPlanner;
   readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
+  readonly executorFactory?: DashboardExecutorFactory;
   readonly memoryRuntime: MemoryRuntime;
   readonly remoteApproval?: RemoteApprovalService;
 };
@@ -108,7 +113,9 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
   const clock = options.clock ?? (() => new Date());
   const memoryRuntime = createMemoryRuntime({ authority: options.db, session, clock,
     adapter: options.memoryAdapter, projection_key: options.memoryProjectionKey,
-    effect_spool_root: options.memoryEffectSpoolRoot });
+    effect_spool_root: options.memoryEffectSpoolRoot,
+    candidate_review_spool_root: options.memoryCandidateReviewSpoolRoot,
+    candidate_dispatch_spool_root: options.memoryCandidateDispatchSpoolRoot });
   const bind = { origin: `http://${LOOPBACK_HOST}:0` };
   const bound = new BoundSocket({ host: LOOPBACK_HOST, port: options.port });
   const httpServer = createServer((request, response) => {
@@ -127,6 +134,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
       secondBrainProbe: options.secondBrainProbe,
       planner: options.planner,
       memoryLifecycle: options.memoryLifecycle,
+      executorFactory: options.executorFactory,
       memoryRuntime,
       remoteApproval: options.remoteApproval ?? composeRemoteApproval(options.db),
     });
@@ -183,6 +191,7 @@ async function handleRequest(input: RequestContext): Promise<void> {
       secondBrainProbe: input.secondBrainProbe,
       planner: input.planner,
       memoryLifecycle: input.memoryLifecycle,
+      executorFactory: input.executorFactory,
       memoryRuntime: input.memoryRuntime,
       remoteApproval: input.remoteApproval,
     })) {

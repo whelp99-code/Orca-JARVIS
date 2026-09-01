@@ -18,6 +18,7 @@ export type SecondBrainAdapterOptions = {
   readonly max_age_ms: number;
   readonly expiry_ms: number;
   readonly read_fence?: (at: Date) => import("./second-brain-effect-v2.js").MemoryReadFenceV1;
+  readonly contract_profile?: "schema3-read-only" | "schema4";
 };
 export type SecondBrainGenerationBinding = {
   readonly provider_instance_id: string;
@@ -109,6 +110,7 @@ export type SecondBrainWriteOutcome =
 export interface SecondBrainWriteRequestAdapter { write(value: unknown): Promise<SecondBrainWriteOutcome>; }
 
 export interface SecondBrainReadAdapter {
+  readonly contract_profile?: "schema3-read-only" | "schema4";
   search(query: string): Promise<SecondBrainReadOutcome>;
   readPage(pageId: string): Promise<SecondBrainReadOutcome>;
   recentChanges(days: number): Promise<SecondBrainReadOutcome>;

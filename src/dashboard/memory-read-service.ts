@@ -1,12 +1,23 @@
 import type { AuthorityDb } from "../db.js";
-import type { SecondBrainReadAdapter, SecondBrainReadOutcome } from "../second-brain-adapter-types.js";
+import { MEMORY_TOMBSTONE_GENESIS_ROOT } from "../second-brain-effect-v2.js";
+import type { SecondBrainEvidence, SecondBrainReadAdapter } from "../second-brain-adapter-types.js";
 import type { DashboardSessionStore } from "./session.js";
-import { MemoryTokenCache } from "./memory-token-cache.js";
+import { MemoryTokenCache, type MemoryTokenAuthority } from "./memory-token-cache.js";
 import { projectMemoryRecord } from "./memory-redaction.js";
+import { listMemoryEffects, outcomeOmissions, outcomeState, privateSensitivity, readEvidence,
+  sameGeneration } from "./memory-read-projection.js";
 
 export type MemoryReadServiceOptions = { readonly authority: AuthorityDb;
   readonly adapter: SecondBrainReadAdapter | undefined; readonly tokens: MemoryTokenCache;
   readonly session: DashboardSessionStore; readonly clock: () => Date };
+type SurfaceAuthoritySnapshot = MemoryTokenAuthority & {
+  readonly privacy_epoch: number;
+  readonly suppression_sequence: number;
+  readonly suppression_root: string;
+  readonly tombstone_sequence: number;
+  readonly tombstone_set_root: string;
+  readonly membership_revision: string;
+};
 export class MemoryReadService {
   private readonly authority: AuthorityDb; private readonly adapter: SecondBrainReadAdapter | undefined;
   private readonly tokens: MemoryTokenCache; private readonly session: DashboardSessionStore;
@@ -16,46 +27,118 @@ export class MemoryReadService {
     this.session = options.session; this.clock = options.clock;
   }
   status() {
-    const row = this.authority.db.prepare("SELECT privacy_epoch FROM memory_surface_authority WHERE singleton_id=1")
-      .get() as { readonly privacy_epoch: number };
+    const authority = this.surfaceSnapshot();
+    const profile = this.adapter?.contract_profile;
+    const checkedAt = this.clock();
     return { schema_version: 1, resource: "memory-status", state: this.adapter === undefined ? "unavailable" : "ready",
-      privacy_epoch: row.privacy_epoch, checked_at: this.clock().toISOString(),
-      fresh_until: new Date(this.clock().getTime() + 60_000).toISOString(),
-      contract_schema: this.adapter === undefined ? null : 4, mutations_enabled: this.adapter !== undefined };
+      privacy_epoch: authority.privacy_epoch, checked_at: checkedAt.toISOString(),
+      fresh_until: new Date(checkedAt.getTime() + 60_000).toISOString(),
+      contract_schema: this.adapter === undefined ? null : profile === "schema4" ? 4 : 3,
+      mutations_enabled: profile === "schema4" };
   }
   async search(query: string, limit: number) {
-    const status = this.status(); const now = this.clock();
+    const initial = this.surfaceSnapshot(); const now = this.clock();
     if (this.adapter === undefined) return { schema_version: 1, resource: "memory-search",
       generated_at: now.toISOString(), state: "unavailable", query_revision: this.tokens.revision("query",
         this.session.authenticatedSessionId(), query), resource_revision: this.tokens.revision("resource",
-        this.session.authenticatedSessionId(), `search\0${String(status.privacy_epoch)}`),
-      privacy_epoch: status.privacy_epoch, provider_generation: null, items: [], truncated: false,
-      omissions: ["provider_unavailable"], checked_at: now.toISOString(), fresh_until: status.fresh_until };
+        this.session.authenticatedSessionId(), `search\0${String(initial.privacy_epoch)}`),
+      privacy_epoch: initial.privacy_epoch, provider_generation: null, items: [], truncated: false,
+      omissions: ["provider_unavailable"], checked_at: now.toISOString(), fresh_until: this.freshUntil(now) };
     const outcome = await this.adapter.search(query);
-    const evidence = readEvidence(outcome).slice(0, limit);
+    const allEvidence = readEvidence(outcome);
+    const final = this.surfaceSnapshot();
+    const visible = allEvidence.filter(item => !this.suppressed(item));
+    const evidence = visible.slice(0, limit);
+    const sessionId = this.session.authenticatedSessionId();
     const items = evidence.map(item => projectMemoryRecord({ evidence: item, tokens: this.tokens,
-      sessionId: this.session.authenticatedSessionId(), privacyEpoch: status.privacy_epoch, now }))
+      sessionId, sessionIncarnation: final.session_incarnation, privacyEpoch: final.privacy_epoch,
+      policyDigest: final.policy_digest, now }))
       .filter(item => item !== undefined);
+    const forgotten = visible.length === 0 && allEvidence.length > 0;
     return { schema_version: 1, resource: "memory-search", generated_at: now.toISOString(),
-      state: outcomeState(outcome), query_revision: this.tokens.revision("query",
-        this.session.authenticatedSessionId(), query), resource_revision: this.tokens.revision("resource",
-        this.session.authenticatedSessionId(), `search\0${String(status.privacy_epoch)}`),
-      privacy_epoch: status.privacy_epoch, provider_generation: evidence[0]?.record?.generation.generation_id ?? null,
-      items, truncated: evidence.length < readEvidence(outcome).length, omissions: outcomeOmissions(outcome),
-      checked_at: now.toISOString(), fresh_until: status.fresh_until };
+      state: forgotten ? "no_data" : outcomeState(outcome), query_revision: this.tokens.revision("query", sessionId, query),
+      resource_revision: this.tokens.revision("resource", sessionId, `search\0${String(final.privacy_epoch)}\0${final.membership_revision}`),
+      privacy_epoch: final.privacy_epoch, provider_generation: evidence[0]?.record?.generation.generation_id ?? null,
+      items, truncated: evidence.length < visible.length,
+      omissions: forgotten ? ["privacy_filtered"] : outcomeOmissions(outcome),
+      checked_at: now.toISOString(), fresh_until: this.freshUntil(now) };
   }
   async detail(token: string) {
-    const status = this.status(); const sessionId = this.session.authenticatedSessionId();
-    const selection = this.tokens.get(token, sessionId, status.privacy_epoch);
+    const authority = this.surfaceSnapshot(); const sessionId = this.session.authenticatedSessionId();
+    const selection = this.tokens.get(token, {
+      owner_session_id: sessionId, session_incarnation: authority.session_incarnation,
+      privacy_epoch: authority.privacy_epoch, policy_digest: authority.policy_digest,
+      tombstone_sequence: authority.tombstone_sequence, tombstone_set_root: authority.tombstone_set_root,
+    });
     if (selection === undefined || this.adapter === undefined) return undefined;
     const outcome = await this.adapter.readPage(selection.page_id);
     const evidence = readEvidence(outcome).find(item => item.record?.record_id === selection.record_id
-      && item.record.record_digest === selection.record_digest);
-    const item = evidence === undefined ? undefined : projectMemoryRecord({ evidence, tokens: this.tokens,
-      sessionId, privacyEpoch: status.privacy_epoch, now: this.clock() });
+      && item.record.record_digest === selection.record_digest
+      && sameGeneration(item, selection));
+    const final = this.surfaceSnapshot();
+    if (final.privacy_epoch !== authority.privacy_epoch
+      || final.membership_revision !== authority.membership_revision
+      || final.tombstone_sequence !== selection.tombstone_sequence
+      || final.tombstone_set_root !== selection.tombstone_set_root) return undefined;
+    const item = evidence === undefined || this.suppressed(evidence) ? undefined : projectMemoryRecord({
+      evidence, tokens: this.tokens, sessionId, sessionIncarnation: final.session_incarnation,
+      privacyEpoch: final.privacy_epoch, policyDigest: final.policy_digest, now: this.clock() });
     return item === undefined ? undefined : { schema_version: 1, resource: "memory-record-detail",
-      privacy_epoch: status.privacy_epoch, item, conflicts: [], history: [], effect_counts: { total: 0 } };
+      privacy_epoch: final.privacy_epoch, item, conflicts: [], history: [], effect_counts: { total: 0 } };
   }
+
+  private surfaceSnapshot(): SurfaceAuthoritySnapshot {
+    const authority = this.authority.db.prepare(
+      `SELECT privacy_epoch,suppression_sequence,suppression_root,policy_digest
+       FROM memory_surface_authority WHERE singleton_id=1`,
+    ).get() as { readonly privacy_epoch: number; readonly suppression_sequence: number;
+      readonly suppression_root: string; readonly policy_digest: string | null };
+    const tombstone = this.authority.db.prepare(
+      "SELECT sequence,set_root FROM memory_tombstone_chain ORDER BY sequence DESC LIMIT 1",
+    ).get() as { readonly sequence: number; readonly set_root: string } | undefined;
+    const membership = this.authority.db.prepare(
+      "SELECT COUNT(*) AS count,COALESCE(MAX(created_at),'') AS latest FROM memory_surface_target_versions",
+    ).get() as { readonly count: number; readonly latest: string };
+    const sessionId = this.session.authenticatedSessionId();
+    return {
+      owner_session_id: sessionId, session_incarnation: sessionId,
+      privacy_epoch: authority.privacy_epoch, policy_digest: authority.policy_digest ?? undefined,
+      tombstone_sequence: tombstone?.sequence ?? 0,
+      tombstone_set_root: tombstone?.set_root ?? MEMORY_TOMBSTONE_GENESIS_ROOT,
+      suppression_sequence: authority.suppression_sequence, suppression_root: authority.suppression_root,
+      membership_revision: `${String(membership.count)}:${membership.latest}`,
+    };
+  }
+
+  private suppressed(evidence: SecondBrainEvidence): boolean {
+    const record = evidence.record;
+    if (record === null) return false;
+    const recordMembership = this.tokens.membership("record", `${record.record_id}\0${record.record_digest}`);
+    const sourceMembership = this.tokens.membership("source", record.source_identity_full);
+    const contentMembership = this.tokens.membership("content", record.content_identity_full);
+    const citationMembership = this.tokens.membership("citation", record.citation_identity_full);
+    const surface = this.authority.db.prepare(
+      `SELECT 1 FROM memory_surface_suppressions s
+       JOIN memory_surface_target_versions t ON t.target_version_digest=s.target_version_digest
+       WHERE t.record_membership_hmac IN (?,?,?,?)
+          OR t.source_membership_hmac IN (?,?,?,?)
+          OR t.content_membership_hmac IN (?,?,?,?)
+          OR t.citation_membership_hmac IN (?,?,?,?) LIMIT 1`,
+    ).get(recordMembership, sourceMembership, contentMembership, citationMembership,
+      recordMembership, sourceMembership, contentMembership, citationMembership,
+      recordMembership, sourceMembership, contentMembership, citationMembership,
+      recordMembership, sourceMembership, contentMembership, citationMembership);
+    if (surface !== undefined) return true;
+    const legacy = this.authority.db.prepare(
+      `SELECT 1 FROM memory_suppressions WHERE state='active' AND (
+        target_digest IN (?,?) OR source_identity_digest IN (?,?)
+        OR content_identity_digest IN (?,?) OR citation_identity_digest IN (?,?)) LIMIT 1`,
+    ).get(record.record_digest, record.record_id, record.source_identity_full, sourceMembership,
+      record.content_identity_full, contentMembership, record.citation_identity_full, citationMembership);
+    return legacy !== undefined;
+  }
+
+  private freshUntil(now: Date): string { return new Date(now.getTime() + 60_000).toISOString(); }
   candidates(state: string, limit: number) {
     const rows = this.authority.db.prepare(
       `SELECT c.candidate_id,c.candidate_kind,c.operation,c.sensitivity,c.state,c.expires_at,c.created_at,
@@ -75,19 +158,7 @@ export class MemoryReadService {
         has_more: rows.length === limit, next_cursor: null } };
   }
   effects(operation: string, state: string, limit: number) {
-    const table = operation === "correct" ? "memory_correction_requests"
-      : operation === "forget" ? "memory_deletion_effect_requests" : "memory_export_requests";
-    const id = operation === "correct" ? "correction_id" : operation === "forget" ? "deletion_id" : "export_id";
-    const rows = this.authority.db.prepare(
-      `SELECT ${id} AS request_id,state,failure_code,created_at,updated_at FROM ${table}
-       WHERE state=? ORDER BY created_at,${id} LIMIT ?`,
-    ).all(state, limit) as Array<Record<string, unknown>>;
-    return { schema_version: 1, resource: "memory-effects", generated_at: this.clock().toISOString(),
-      state: "ready", items: rows.map(row => ({ request_id: String(row["request_id"]), operation,
-        state: String(row["state"]), failure_code: row["failure_code"] === null ? null
-          : String(row["failure_code"]), updated_at: String(row["updated_at"]), proof_state: "pending",
-        export_lifecycle: null })), page: { limit, returned: rows.length,
-        has_more: rows.length === limit, next_cursor: null } };
+    return listMemoryEffects(this.authority, this.clock, { operation, state, limit });
   }
   candidate(candidateId: string) {
     const page = this.candidates("awaiting_confirmation", 100);
@@ -119,26 +190,3 @@ export class MemoryReadService {
       truncated: conflicts.length < (outcome.kind === "conflicts" ? outcome.conflicts.length : 0) };
   }
 }
-function privateSensitivity(value: string): boolean { return value === "sensitive" || value === "restricted"; }
-function readEvidence(outcome: SecondBrainReadOutcome) {
-  switch (outcome.kind) {
-    case "current": case "stale": return outcome.evidence;
-    case "conflicts": return outcome.conflicts.flatMap(item => [item.left, item.right]);
-    case "no_data": case "unavailable": case "offline": case "invalid": return [];
-    default: return assertNever(outcome);
-  }
-}
-function outcomeState(outcome: SecondBrainReadOutcome) {
-  switch (outcome.kind) {
-    case "current": case "conflicts": return "ready";
-    case "stale": return "stale";
-    case "no_data": return "no_data";
-    case "offline": return "offline";
-    case "unavailable": case "invalid": return "unavailable";
-    default: return assertNever(outcome);
-  }
-}
-function outcomeOmissions(outcome: SecondBrainReadOutcome): readonly string[] {
-  return outcome.kind === "current" || outcome.kind === "conflicts" ? [] : [outcome.kind];
-}
-function assertNever(value: never): never { throw new Error(`unexpected memory outcome: ${JSON.stringify(value)}`); }

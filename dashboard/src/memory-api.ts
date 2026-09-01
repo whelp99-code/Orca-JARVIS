@@ -25,8 +25,16 @@ export function createMemoryClient(loadSession: SessionLoader) {
       "/api/v1/memory/conflicts?state=unresolved&limit=20", { signal })),
     candidates: async () => MemoryCandidatesSchema.parse(await request(
       "/api/v1/memory/candidates?state=awaiting_confirmation&limit=20")),
-    effects: async () => MemoryEffectsSchema.parse(await request(
-      "/api/v1/memory/effects?operation=export&state=available&limit=20")),
+    effects: async () => {
+      const states = ["pending_approval", "applying", "completed", "available"] as const;
+      const pages = await Promise.all(states.map(async state => MemoryEffectsSchema.parse(
+        await request(`/api/v1/memory/effects?operation=export&state=${state}&limit=20`))));
+      const items = pages.flatMap(page => page.items).slice(0, 100);
+      const first = pages[0];
+      if (first === undefined) throw new Error("MEMORY_REQUEST_FAILED");
+      return { ...first, items, page: { limit: 20, returned: items.length, has_more: false,
+        next_cursor: null } };
+    },
     search: async (query: string, signal?: AbortSignal) => MemorySearchSchema.parse(await post(
       "/api/v1/memory/search", { schema_version: 1, query, limit: 20 }, signal)),
     correct: (record_token: string, record_revision: string, replacement: string) => post(

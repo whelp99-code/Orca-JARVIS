@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 /* global Buffer, process, queueMicrotask */
+import { createHash } from "node:crypto";
 import { appendFileSync, readFileSync } from "node:fs";
 const config = JSON.parse(readFileSync(process.env.SB_CONFIG, "utf8"));
 const protocolVersion = config.protocolVersion ?? "2025-11-25";
@@ -13,7 +14,80 @@ const send = value => process.stdout.write(`${JSON.stringify(value)}\n`);
 const toolResult = (id, value) => ({ jsonrpc: "2.0", id, result: { content: [{ type: "text", text: JSON.stringify(value) }], isError: false } });
 const citedPage = (id, sid, source, fact, overrides = {}) => ({ frontmatter: { id, title: id, updated: "2026-08-28", compiled_by: "sb/0.1.0|prompt-v1|model-v1", status: "active", sources: "", ...overrides }, body: `${fact}[^${sid}]\n\n[^${sid}]: ${source}\n` });
 const conflictPage = (id, sides) => ({ frontmatter: { id: `conflicts/${id}`, title: "conflict", updated: "2026-08-28", compiled_by: "sb/0.1.0|prompt-v1|model-v1", status: "conflict", sources: "" }, body: `${sides.map(sid => `1234567890[^${sid}]`).join("\n")}\n${sides.map(sid => `[^${sid}]: fixture:${sid}`).join("\n")}\n` });
+
+// Schema-4 bound-record scenario: a real stdio child that serves provider record
+// identity so the dashboard can reach a Memory-ready state without route mocks.
+const canonical = value => {
+  if (value === null) return "null";
+  if (typeof value === "string") return JSON.stringify(value);
+  if (typeof value === "boolean") return value ? "true" : "false";
+  if (typeof value === "number") return JSON.stringify(value);
+  if (Array.isArray(value)) return `[${value.map(canonical).join(",")}]`;
+  return `{${Object.keys(value).sort().map(k => `${JSON.stringify(k)}:${canonical(value[k])}`).join(",")}}`;
+};
+const sha256 = (...parts) => {
+  const hash = createHash("sha256");
+  for (const part of parts) hash.update(part);
+  return `sha256:${hash.digest("hex")}`;
+};
+const SCHEMA4_GENERATION = {
+  provider_instance_id: "provider:task32-v6-qa",
+  generation_id: `sbgen:v1:${"3".repeat(64)}`,
+  generation_manifest_digest: `sha256:${"4".repeat(64)}`,
+  vault_head: "5".repeat(40),
+  vault_tree: "6".repeat(40),
+  tombstone_sequence: 0,
+  tombstone_set_root: "sha256:7fb694c8abb7c9a4477aa38381c49446493bc4da1c01b50690c1db5b2c20b9d3",
+};
+const schema4Record = (sid, text, sensitivity, sourceSeed) => {
+  const textDigest = sha256(text);
+  const core = {
+    schema_version: 1, sid, record_text: text, record_text_digest: textDigest,
+    citation_span_start: 0, citation_span_end: Buffer.byteLength(text, "utf8"),
+    source_identity_full: sha256(`source\0${sourceSeed}`).slice(7),
+    content_identity_full: textDigest.slice(7),
+    citation_identity_full: sha256(`citation\0${sourceSeed}`).slice(7),
+    sensitivity, source_owner_class: "provider_owned",
+    source_owner_id_digest: `sha256:${"1".repeat(64)}`,
+    origin_label: "Second Brain",
+    valid_from: "2026-08-31T00:00:00.000Z", valid_until: "2126-09-02T00:00:00.000Z",
+  };
+  const recordDigest = sha256("second-brain/memory-record/v1\0", canonical(core));
+  return { ...core, record_id: `sbrecord:v1:${recordDigest.slice(7)}`, record_digest: recordDigest };
+};
+const SCHEMA4_PAGES = {
+  "wiki/principle": { sensitivity: "personal", records: [
+    schema4Record("a1b2c3d4", "Prefer cited evidence over recollection.", "personal", "principle"),
+    schema4Record("a1b2c3d5", "\uae30\uc5b5 \ud45c\uba74\uc740 \ud55c\uad6d\uc5b4 \uc904\ubc14\uafc8\uc744 \uc62c\ubc14\ub974\uac8c \ucc98\ub9ac\ud574\uc57c \ud569\ub2c8\ub2e4. \uae34 \ubb38\uc7a5\uc744 \ub123\uc5b4 \uc904\ubc14\uafc8\uc744 \uac80\uc99d\ud569\ub2c8\ub2e4.", "personal", "principle-cjk"),
+  ] },
+  "wiki/private": { sensitivity: "restricted", records: [
+    schema4Record("b1b2c3d4", "Restricted personal detail held privately.", "restricted", "private"),
+  ] },
+};
+const schema4SearchRows = () => Object.entries(SCHEMA4_PAGES).flatMap(([pageId, page], pageIndex) =>
+  page.records.map((record, index) => ({
+    page_id: pageId, section: "Record", snippet: record.record_text.slice(0, 64),
+    score: 10 - pageIndex - index, record_id: record.record_id, record_digest: record.record_digest,
+  })));
+const schema4Response = (name, args) => {
+  if (name === "sb_search") return { ...SCHEMA4_GENERATION, results: schema4SearchRows() };
+  if (name === "sb_open_conflicts") {
+    return config.schema4Conflicts === true
+      ? { ...SCHEMA4_GENERATION, conflicts: [{ conflict_id: "2026-09-01-principle", page_id: "wiki/principle", summary: "unresolved" }] }
+      : { ...SCHEMA4_GENERATION, conflicts: [] };
+  }
+  if (name === "sb_recent_changes") return { ...SCHEMA4_GENERATION, changes: [] };
+  if (name !== "sb_read_page") return undefined;
+  const page = SCHEMA4_PAGES[args.id];
+  if (page === undefined) return undefined;
+  return { ...SCHEMA4_GENERATION, frontmatter: { id: args.id, title: args.id, updated: "2026-08-31",
+    compiled_by: "sb/0.1.0|prompt-v1|model-v1", status: "active", sources: "",
+    sensitivity: page.sensitivity },
+    body: "legacy body is not mutation authority", records: page.records };
+};
+
 const adapterResponse = (name, args) => {
+  if (config.adapterScenario === "schema4") return schema4Response(name, args);
   if (config.emptyResponse?.method === name) return config.emptyResponse.value;
   const scenario = config.adapterScenario;
   if (scenario === "no-data" && name === "sb_search") return { results: [] };

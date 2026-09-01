@@ -5,10 +5,12 @@ import { MemoryTokenCache } from "./memory-token-cache.js";
 const REDACTED = "[REDACTED]";
 export function projectMemoryRecord(input: {
   readonly evidence: SecondBrainEvidence; readonly tokens: MemoryTokenCache;
-  readonly sessionId: string; readonly privacyEpoch: number; readonly now: Date;
+  readonly sessionId: string; readonly sessionIncarnation?: string; readonly privacyEpoch: number;
+  readonly policyDigest?: string; readonly now: Date;
 }): MemoryPublicRecord | undefined {
   const binding = input.evidence.record;
-  const issued = input.tokens.issue(input.evidence, input.sessionId, input.privacyEpoch);
+  const issued = input.tokens.issue(input.evidence, input.sessionId, input.privacyEpoch,
+    input.policyDigest, input.sessionIncarnation);
   if (binding === null || issued === undefined) return undefined;
   const privateTier = input.evidence.sensitivity === "sensitive"
     || input.evidence.sensitivity === "restricted";

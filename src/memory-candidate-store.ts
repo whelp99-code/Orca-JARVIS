@@ -5,6 +5,11 @@ import { computeMemoryCandidate, memoryCandidateIdentity } from "./memory-candid
 import { parseMemoryCandidatePolicy, type ParsedMemoryCandidatePolicy } from "./memory-candidate-policy.js";
 import { readMemoryCandidate } from "./memory-candidate-reader.js";
 import {
+  createMemoryCandidateReviewEnvelope,
+  MemoryCandidateReviewSpool,
+  type MemoryCandidateReviewPublication,
+} from "./memory-candidate-review-spool.js";
+import {
   MEMORY_CANDIDATE_DIGEST_DOMAINS,
   type MemoryCandidateClassification,
   type MemoryCandidateComputation,
@@ -18,9 +23,14 @@ type IdempotencyInsert = { readonly computation: MemoryCandidateComputation; rea
 
 export class MemoryCandidateStore {
   private readonly policy: ParsedMemoryCandidatePolicy;
+  private reviewSpool: MemoryCandidateReviewSpool | undefined;
 
   constructor(private readonly authority: AuthorityDb, policyValue: unknown, private readonly clock: () => unknown) {
     this.policy = parseMemoryCandidatePolicy(policyValue);
+  }
+
+  attachReviewSpool(root: string): void {
+    this.reviewSpool = new MemoryCandidateReviewSpool(root);
   }
 
   classify(value: unknown): MemoryCandidateClassification {
@@ -34,7 +44,16 @@ export class MemoryCandidateStore {
     const computation = computeMemoryCandidate(this.policy, input, { now, authority });
     const replay = this.replay(computation);
     if (replay !== undefined) return replay;
-    return this.authority.db.transaction(() => this.persist(input)).immediate();
+    const publication = computation.classification.required_confirmation && this.reviewSpool !== undefined
+      ? this.reviewSpool.publish(createMemoryCandidateReviewEnvelope({ input, computation,
+        classification: computation.classification }))
+      : undefined;
+    try {
+      return this.authority.db.transaction(() => this.persist(input, publication)).immediate();
+    } catch (error) {
+      if (publication?.created === true) this.reviewSpool?.remove(publication);
+      throw error;
+    }
   }
 
   private replay(computation: MemoryCandidateComputation): MemoryCandidateClassification | undefined {
@@ -48,7 +67,7 @@ export class MemoryCandidateStore {
       ?? memoryFail("MEMORY_CANDIDATE_INTEGRITY_FAILURE");
   }
 
-  private persist(input: ParsedMemoryCandidateInput): MemoryCandidateClassification {
+  private persist(input: ParsedMemoryCandidateInput, publication?: MemoryCandidateReviewPublication): MemoryCandidateClassification {
     const now = memoryDate(this.clock());
     const authority = requireMemoryCandidateAuthority(this.authority.db, {
       input,
@@ -68,7 +87,7 @@ export class MemoryCandidateStore {
       this.insertIdempotency({ computation, candidate_id: candidateId, created_at: persistenceText(existing["created_at"]) });
       return readMemoryCandidate(this.authority.db, candidateId) ?? memoryFail("MEMORY_CANDIDATE_INTEGRITY_FAILURE");
     }
-    this.insertCandidate(computation, input, authority);
+    this.insertCandidate(computation, input, authority, publication);
     return computation.classification;
   }
 
@@ -84,6 +103,7 @@ export class MemoryCandidateStore {
     computation: MemoryCandidateComputation,
     input: ParsedMemoryCandidateInput,
     authority: MemoryAuthorityResolution,
+    publication?: MemoryCandidateReviewPublication,
   ): void {
     const result = computation.classification;
     this.authority.db.prepare(
@@ -97,6 +117,16 @@ export class MemoryCandidateStore {
       result.candidate_expires_at, result.created_at, result.created_at);
     this.insertClassification(computation);
     this.insertReferences(result);
+    if (publication !== undefined) {
+      this.authority.db.prepare(
+        `INSERT OR IGNORE INTO memory_candidate_review_publications(
+          candidate_id,candidate_digest,classification_digest,subject_digest,content_digest,
+          content_bytes,review_spool_digest,expires_at,published_at
+        ) VALUES(?,?,?,?,?,?,?,?,?)`,
+      ).run(result.candidate_id, result.candidate_digest, result.classification_digest,
+        result.subject_digest, result.content_digest, publication.content_bytes,
+        publication.review_spool_digest, publication.expires_at, result.created_at);
+    }
     claimMemoryCandidateAuthority(this.authority.db, authority, result);
     this.insertIdempotency({ computation, candidate_id: result.candidate_id, created_at: result.created_at });
     this.insertAudit(result, input.principal_id);

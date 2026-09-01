@@ -8,7 +8,7 @@ const record = z.object({ record_token: z.string(), record_revision: z.string(),
   actions: z.array(z.enum(["inspect", "correct", "forget", "export"])) }).strict();
 export const MemoryStatusSchema = z.object({ schema_version: z.literal(1), resource: z.literal("memory-status"),
   state: z.string(), privacy_epoch: z.number().int(), checked_at: z.string(), fresh_until: z.string(),
-  contract_schema: z.literal(4).nullable(), mutations_enabled: z.boolean() }).strict();
+  contract_schema: z.union([z.literal(3), z.literal(4)]).nullable(), mutations_enabled: z.boolean() }).strict();
 export const MemorySearchSchema = z.object({ schema_version: z.literal(1), resource: z.literal("memory-search"),
   generated_at: z.string(), state: z.string(), query_revision: z.string(), resource_revision: z.string(),
   privacy_epoch: z.number().int(), provider_generation: z.string().nullable(), items: z.array(record).max(20),

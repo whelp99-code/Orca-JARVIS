@@ -1,4 +1,5 @@
 import type { IncomingHttpHeaders, IncomingMessage, ServerResponse } from "node:http";
+import { parseSecondBrainStrictJsonBytes } from "../second-brain-strict-json.js";
 import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
 import { DASHBOARD_ERROR_CODES, writeDashboardError, writeDashboardJson } from "./http.js";
 import { sessionMatchesCsrf, type DashboardSessionStore } from "./session.js";
@@ -10,6 +11,8 @@ export const POST_ERROR_CODES = {
   UNSUPPORTED_MEDIA_TYPE: "UNSUPPORTED_MEDIA_TYPE",
   BODY_TOO_LARGE: "BODY_TOO_LARGE",
   JSON_INVALID: "JSON_INVALID",
+  MEMORY_REQUEST_TOO_LARGE: "MEMORY_REQUEST_TOO_LARGE",
+  MEMORY_INPUT_INVALID: "MEMORY_INPUT_INVALID",
 } as const;
 
 export type PostErrorCode = (typeof POST_ERROR_CODES)[keyof typeof POST_ERROR_CODES];
@@ -22,6 +25,7 @@ export type JsonPostInput = {
   readonly request: IncomingMessage;
   readonly session: DashboardSessionStore;
   readonly origin: string;
+  readonly path: string;
 };
 
 const POST_ERROR_MESSAGES = {
@@ -29,6 +33,8 @@ const POST_ERROR_MESSAGES = {
   UNSUPPORTED_MEDIA_TYPE: "Unsupported media type",
   BODY_TOO_LARGE: "Body too large",
   JSON_INVALID: "Invalid JSON",
+  MEMORY_REQUEST_TOO_LARGE: "Memory request too large",
+  MEMORY_INPUT_INVALID: "Invalid Memory input",
 } as const satisfies Record<PostErrorCode, string>;
 
 const CSRF_HEADER = "x-jarvis-csrf";
@@ -51,19 +57,17 @@ export async function readJsonPost(input: JsonPostInput): Promise<PostBoundaryRe
   const body = await readLimitedBody(input.request, MAX_JSON_BODY_BYTES);
   switch (body.kind) {
     case "too_large":
-      return reject(413, POST_ERROR_CODES.BODY_TOO_LARGE);
+      return reject(413, input.path.startsWith("/api/v1/memory/")
+        ? POST_ERROR_CODES.MEMORY_REQUEST_TOO_LARGE : POST_ERROR_CODES.BODY_TOO_LARGE);
     case "ok":
       break;
     default:
       return assertNever(body);
   }
-  try {
-    const value: unknown = JSON.parse(body.buffer.toString("utf8"));
-    return { kind: "accepted", value };
-  } catch (error) {
-    if (error instanceof SyntaxError) return reject(400, POST_ERROR_CODES.JSON_INVALID);
-    throw error;
-  }
+  const value = parseSecondBrainStrictJsonBytes(body.buffer);
+  if (value === undefined) return reject(400, input.path.startsWith("/api/v1/memory/")
+    ? POST_ERROR_CODES.MEMORY_INPUT_INVALID : POST_ERROR_CODES.JSON_INVALID);
+  return { kind: "accepted", value };
 }
 
 export function writePostBoundaryError(
@@ -82,6 +86,8 @@ export function writePostBoundaryError(
     case POST_ERROR_CODES.UNSUPPORTED_MEDIA_TYPE:
     case POST_ERROR_CODES.BODY_TOO_LARGE:
     case POST_ERROR_CODES.JSON_INVALID:
+    case POST_ERROR_CODES.MEMORY_REQUEST_TOO_LARGE:
+    case POST_ERROR_CODES.MEMORY_INPUT_INVALID:
       writeDashboardJson(response, {
         status: failure.status,
         requestId,

@@ -87,20 +87,16 @@ function blockedOutboxes(
   source: AuthorityDb,
   current: AuthorityDb,
 ): readonly SuppressedProjection[] {
-  const blocked = blockedContentIdentities(current);
+  // memory_outbox carries no request content, so an outbox row is matched by the
+  // source identity of its candidate; content-identity suppression is enforced by
+  // the projection layer that owns the only copy of the bytes.
   const blockedSources = blockedSourceIdentities(current);
-  return source.db.prepare(
-    "SELECT outbox_id,candidate_id,request_json FROM memory_outbox WHERE request_json IS NOT NULL",
-  ).all().flatMap(value => {
+  return source.db.prepare("SELECT outbox_id,candidate_id FROM memory_outbox").all().flatMap(value => {
     if (value === null || typeof value !== "object") return [];
     const id = Reflect.get(value, "outbox_id"); const candidateId = Reflect.get(value, "candidate_id");
-    const encoded = Reflect.get(value, "request_json");
-    if (typeof id !== "string" || typeof candidateId !== "string" || typeof encoded !== "string") return [];
-    const content = requestContent(JSON.parse(encoded));
-    const contentMatch = content !== undefined
-      && contentIdentities(content, candidateId).some(identity => blocked.has(identity));
+    if (typeof id !== "string" || typeof candidateId !== "string") return [];
     const sourceMatch = blockedSources.has(createHash("sha256").update(candidateId).digest("hex"));
-    return contentMatch || sourceMatch ? [{ kind: "outbox", id, component_id: id }] : [];
+    return sourceMatch ? [{ kind: "outbox", id, component_id: id }] : [];
   });
 }
 

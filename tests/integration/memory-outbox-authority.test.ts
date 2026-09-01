@@ -31,25 +31,26 @@ describe("memory outbox complete authority binding", () => {
       value => { value.args.extra = true; }, value => { (value.args.expected_artifact as Record<string, unknown>).page_id = "../x"; },
       value => { (value.args.expected_artifact as Record<string, unknown>).sid = "bad"; },
       value => { (value.args.expected_artifact as Record<string, unknown>).source_digest = "bad"; },
-      value => { (value.args.request as Record<string, unknown>).extra = true; },
-      value => { (value.args.request as Record<string, unknown>).request_digest = `sha256:${"0".repeat(64)}`; },
-      value => { (value.args.request as Record<string, unknown>).candidate_id = `memcand:pos:v1:${"0".repeat(64)}`; },
-      value => { (value.args.request as Record<string, unknown>).candidate_digest = `sha256:${"0".repeat(64)}`; },
-      value => { (value.args.request as Record<string, unknown>).classification_digest = `sha256:${"0".repeat(64)}`; },
-      value => { (value.args.request as Record<string, unknown>).purpose = "data_erasure"; },
-      value => { (value.args.request as Record<string, unknown>).sensitivity = "restricted"; },
-      value => { (value.args.request as Record<string, unknown>).retention_days = 0; },
-      value => { (value.args.request as Record<string, unknown>).expected_prior = {}; },
-      value => { (value.args.request as Record<string, unknown>).expires_at = "2026-08-28T11:00:00.000Z"; },
-      value => { ((value.args.request as Record<string, unknown>).payload as Record<string, unknown>).content = "forged"; },
+      value => { value.args.dispatch_spool_digest = `sha256:${"0".repeat(64)}`; },
+      value => { (value.args.expected_artifact as Record<string, unknown>).extra = true; },
+      value => { (value.args.expected_artifact as Record<string, unknown>).page_id = ""; },
+      value => { (value.args.expected_artifact as Record<string, unknown>).sid = "1"; },
+      value => { (value.args.expected_artifact as Record<string, unknown>).source_digest = ""; },
+      value => { value.args.schema_version = 3; },
+      value => { value.args.dispatch_spool_digest = ""; },
+      value => { Object.assign(value.args, { expected_artifact: null }); },
+      value => { Object.assign(value.args, { expected_artifact: { page_id: "wiki/example-alpha" } }); },
+      value => { Object.assign(value.args, { request: fixture.request }); },
+      value => { value.target.candidate_digest = ""; },
+      value => { value.target.classification_digest = ""; },
     ];
     for (const mutate of mutations) { const changed = structuredClone(original); mutate(changed); expect(() => fixture.service.enqueue(changed)).toThrow(); }
     expect(mutations.length).toBeGreaterThanOrEqual(20); expect(fixture.writer.calls).toHaveLength(0);
   });
-  it("rejects changed content even when candidate identities remain unchanged", async () => {
+  it("rejects legacy inline content even when candidate identities remain unchanged", async () => {
     const fixture = await outboxFixture(); fixtures.push(fixture); const command = claimAction(fixture);
-    const args = structuredClone(command.args) as Record<string, unknown>; const request = args.request as Record<string, unknown>;
-    request.payload = { content: "changed" }; command.args = args;
+    const args = structuredClone(command.args) as Record<string, unknown>;
+    args.request = fixture.request; command.args = args;
     expect(() => fixture.service.enqueue(command)).toThrowError(/MEMORY_OUTBOX_INPUT_INVALID|MEMORY_OUTBOX_AUTHORITY_INVALID/);
     expect(fixture.writer.calls).toHaveLength(0);
   });

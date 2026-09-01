@@ -29,7 +29,8 @@ const store = createDashboardStore({
 });
 const personalClient = createPersonalClient(client.session);
 const memoryClient = createMemoryClient(client.session);
-const memoryStore = createMemoryStore(memoryClient);
+const memoryStore = createMemoryStore({ client: memoryClient,
+  eventSourceFactory: url => new EventSource(url) });
 const personalStore = createPersonalStore({
   client: personalClient,
   eventSourceFactory: (url) => new EventSource(url),

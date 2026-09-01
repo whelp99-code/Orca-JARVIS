@@ -33,6 +33,7 @@ function evidence(sensitivity: "personal" | "restricted", suffix: string): Secon
         tombstone_set_root: `sha256:${"3".repeat(64)}` } } };
 }
 class RuntimeAdapter implements SecondBrainReadAdapter {
+  readonly contract_profile = "schema4" as const;
   readonly left = evidence("personal", "4"); readonly right = evidence("restricted", "5");
   search(): Promise<SecondBrainReadOutcome> { return Promise.resolve({ kind: "current",
     checked_at: NOW.toISOString(), evidence: [this.left] }); }

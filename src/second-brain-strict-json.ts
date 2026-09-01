@@ -20,7 +20,7 @@ class StrictJsonReader {
     this.value(0);
     this.whitespace();
     if (this.index !== this.text.length) throw new StrictJsonError();
-    return JSON.parse(this.text);
+    return immutableJsonValue(JSON.parse(this.text));
   }
 
   private value(depth: number): void {
@@ -154,11 +154,54 @@ class StrictJsonReader {
   }
 }
 
+function immutableJsonValue(value: unknown): unknown {
+  if (typeof value === "string") {
+    // Escaped controls and non-NFC text are legal JSON content; only an unpaired
+    // surrogate is unrepresentable in UTF-8 and must be refused here.
+    if (hasLoneSurrogate(value)) throw new StrictJsonError();
+    return value;
+  }
+  if (value === null || typeof value === "boolean" || typeof value === "number") return value;
+  if (Array.isArray(value)) return Object.freeze(value.map(immutableJsonValue));
+  if (typeof value !== "object" || Object.getPrototypeOf(value) !== Object.prototype) throw new StrictJsonError();
+  const result: Record<string, unknown> = {};
+  for (const [key, item] of Object.entries(value)) {
+    const parsedKey = immutableJsonValue(key);
+    if (typeof parsedKey !== "string") throw new StrictJsonError();
+    result[parsedKey] = immutableJsonValue(item);
+  }
+  return Object.freeze(result);
+}
+
+
+function hasLoneSurrogate(value: string): boolean {
+  for (let index = 0; index < value.length; index += 1) {
+    const code = value.charCodeAt(index);
+    if (code >= 0xd800 && code <= 0xdbff) {
+      if (index + 1 >= value.length) return true;
+      const following = value.charCodeAt(index + 1);
+      if (following < 0xdc00 || following > 0xdfff) return true;
+      index += 1;
+    } else if (code >= 0xdc00 && code <= 0xdfff) return true;
+  }
+  return false;
+}
+
 export function parseSecondBrainStrictJson(text: string): unknown | undefined {
   try {
     return new StrictJsonReader(text).read();
   } catch (error) {
     if (error instanceof StrictJsonError || error instanceof SyntaxError) return undefined;
+    throw error;
+  }
+}
+
+export function parseSecondBrainStrictJsonBytes(bytes: Uint8Array): unknown | undefined {
+  if (bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return undefined;
+  try {
+    return parseSecondBrainStrictJson(new TextDecoder("utf-8", { fatal: true }).decode(bytes));
+  } catch (error) {
+    if (error instanceof TypeError) return undefined;
     throw error;
   }
 }

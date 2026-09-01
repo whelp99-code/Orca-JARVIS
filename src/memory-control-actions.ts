@@ -36,12 +36,26 @@ function bindTarget(target: Record<string, unknown>, key: string, expected: stri
 
 export function memoryConfirm(input: RuntimeControlActionInput): void {
   requireOnly(input.target, ["candidate_id", "candidate_digest", "classification_digest"]);
-  requireOnly(input.args, ["schema_version", "operation", "evidence_digest"]);
-  if (input.args.schema_version !== 1 || input.args.operation !== "correct"
+  if (input.args.schema_version !== 1
     || !/^memcand:pos:v1:[0-9a-f]{64}$/.test(String(input.target.candidate_id))
     || !digest.test(String(input.target.candidate_digest))
-    || !digest.test(String(input.target.classification_digest))
-    || !digest.test(String(input.args.evidence_digest))) {
+    || !digest.test(String(input.target.classification_digest))) {
+    throw new JarvisError("CONTROL_ARGS_MISMATCH");
+  }
+  // Two confirmation shapes are authoritative: the evidence-bound correction
+  // command and the owner-decision command the Memory surface stages.
+  if (Object.hasOwn(input.args, "evidence_digest")) {
+    requireOnly(input.args, ["schema_version", "operation", "evidence_digest"]);
+    if (input.args.operation !== "correct" || !digest.test(String(input.args.evidence_digest))) {
+      throw new JarvisError("CONTROL_ARGS_MISMATCH");
+    }
+    return;
+  }
+  requireOnly(input.args, ["schema_version", "operation", "decision", "content_digest", "review_spool_digest"]);
+  if ((input.args.operation !== "remember" && input.args.operation !== "correct")
+    || (input.args.decision !== "confirm" && input.args.decision !== "reject")
+    || !digest.test(String(input.args.content_digest))
+    || !digest.test(String(input.args.review_spool_digest))) {
     throw new JarvisError("CONTROL_ARGS_MISMATCH");
   }
 }
@@ -64,17 +78,33 @@ function memorySurfaceEffect(input: RuntimeControlActionInput, operation: "corre
   }
 }
 
+function inlineDispatchBound(
+  request: Record<string, unknown>,
+  target: Record<string, unknown>,
+): boolean {
+  return request.operation === "remember" && request.candidate_id === target.candidate_id
+    && request.candidate_digest === target.candidate_digest
+    && request.classification_digest === target.classification_digest;
+}
+
 export function memoryOutboxDispatch(input: RuntimeControlActionInput): void {
   if (input.args.schema_version === 1) { memorySurfaceEffect(input, "correct"); return; }
   requireOnly(input.target, ["candidate_id", "candidate_digest", "classification_digest"]);
   if (input.args.schema_version === 2) {
-    requireOnly(input.args, ["schema_version", "request", "expected_artifact"]);
-    const request = requireRecord(input.args, "request");
+    // The spool-digest form carries no request body; the inline-request form is
+    // the shipped shape and stays authoritative.
+    const spooled = Object.hasOwn(input.args, "dispatch_spool_digest");
+    requireOnly(input.args, ["schema_version", spooled ? "dispatch_spool_digest" : "request",
+      "expected_artifact"]);
     const expected = requireRecord(input.args, "expected_artifact");
     requireOnly(expected, ["page_id", "sid", "source_digest"]);
-    if (request.operation !== "remember" || request.candidate_id !== input.target.candidate_id
-      || request.candidate_digest !== input.target.candidate_digest
-      || request.classification_digest !== input.target.classification_digest
+    const bound = spooled
+      ? digest.test(String(input.args.dispatch_spool_digest))
+      : inlineDispatchBound(requireRecord(input.args, "request"), input.target);
+    if (!bound
+      || !/^memcand:pos:v1:[0-9a-f]{64}$/.test(String(input.target.candidate_id))
+      || !digest.test(String(input.target.candidate_digest))
+      || !digest.test(String(input.target.classification_digest))
       || !nonempty(expected.page_id) || !nonempty(expected.sid) || !nonempty(expected.source_digest)) {
       throw new JarvisError("CONTROL_ARGS_MISMATCH");
     }

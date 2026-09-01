@@ -6,7 +6,7 @@ import { dirname, join } from "node:path";
 import { request } from "undici";
 import { afterAll, describe, expect, it } from "vitest";
 import { AuthorityDb } from "../../src/index.js";
-import { parseDashboardCli } from "../../src/dashboard/main.js";
+import { parseDashboardCli, startDashboardCli } from "../../src/dashboard/main.js";
 
 const roots = new Set<string>();
 const MAIN = join(process.cwd(), "dist/src/dashboard/main.js");
@@ -76,6 +76,31 @@ describe("dashboard CLI", () => {
     } finally {
       child.kill("SIGTERM");
       await new Promise<void>(resolve => child.once("close", () => resolve()));
+    }
+  });
+
+  it("injects a production Memory runtime without extra CLI flags", async () => {
+    const dbPath = await migratedDb();
+    const staticRoot = join(dirname(dbPath), "static");
+    let origin = "";
+    const runtime = startDashboardCli({ host: "127.0.0.1", port: 0, dbPath, staticRoot },
+      line => { origin = line; });
+    try {
+      const session = await request(`${origin}/api/v1/session`);
+      const parsed: unknown = JSON.parse(await session.body.text());
+      const token = typeof parsed === "object" && parsed !== null
+        ? Reflect.get(parsed, "csrf_token") : undefined;
+      if (typeof token !== "string") throw new TypeError("session token required");
+      const response = await request(`${origin}/api/v1/memory/status`, {
+        headers: { "X-JARVIS-CSRF": token },
+      });
+      const body: unknown = JSON.parse(await response.body.text());
+      const record = typeof body === "object" && body !== null ? body : {};
+      expect(Reflect.get(record, "state")).not.toBe("unavailable");
+      expect(Reflect.get(record, "contract_schema")).toBe(4);
+      expect(Reflect.get(record, "mutations_enabled")).toBe(true);
+    } finally {
+      runtime.close();
     }
   });
 });

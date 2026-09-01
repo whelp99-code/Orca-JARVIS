@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CapabilityProbe } from "../capabilities.js";
 import type { AuthorityDb } from "../db.js";
 import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
+import type { DashboardExecutorFactory } from "./authority-service.js";
 import { tryHandleAuthorityPost } from "./authority-routes.js";
 import type { ReconcileHub } from "./events.js";
 import { DASHBOARD_ERROR_CODES, writeDashboardError } from "./http.js";
@@ -28,6 +29,7 @@ export type DashboardPostInput = {
   readonly capabilityProbe?: CapabilityProbe;
   readonly planner?: TeamProposalPlanner;
   readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
+  readonly executorFactory?: DashboardExecutorFactory;
   readonly memoryRuntime: MemoryRuntime;
 };
 
@@ -37,6 +39,7 @@ export async function tryHandleDashboardPost(input: DashboardPostInput): Promise
     request: input.request,
     session: input.session,
     origin: input.origin,
+    path: input.path,
   });
   switch (parsed.kind) {
     case "rejected":
@@ -110,6 +113,7 @@ export async function tryHandleDashboardPost(input: DashboardPostInput): Promise
     hub: input.hub,
     clock: input.clock,
     memoryLifecycle: input.memoryLifecycle,
+    executorFactory: input.executorFactory,
   })) {
     return true;
   }

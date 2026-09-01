@@ -60,7 +60,10 @@ function invalid(code: string, checkedAt: Date): SecondBrainReadOutcome {
   return { kind: "invalid", code, checked_at: checkedAt.toISOString() };
 }
 class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
+  readonly contract_profile: "schema3-read-only" | "schema4";
+  private readonly unboundGenerations = new Map<SecondBrainReadMethod, string>();
   constructor(private readonly options: SecondBrainAdapterOptions) {
+    this.contract_profile = options.contract_profile ?? "schema3-read-only";
     const { budgets } = options;
     if (!Number.isSafeInteger(budgets.max_hits) || budgets.max_hits < 1 || budgets.max_hits > 32
       || !Number.isSafeInteger(budgets.max_excerpt_bytes) || budgets.max_excerpt_bytes < 1 || budgets.max_excerpt_bytes > 4_096
@@ -241,7 +244,7 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
       const value = normalizeSecondBrainProviderRecord(outcome.value);
       const bound = value === undefined
         ? undefined
-        : bindSecondBrainGenerationRead(value, readFence, method);
+        : bindSecondBrainGenerationRead(value, { fence: readFence, method, unbound_generations: this.unboundGenerations });
       return bound === undefined
         ? { kind: "adapter", outcome: invalid("SECOND_BRAIN_PROVIDER_VALUE_INVALID", checkedAt) }
         : { kind: "transport", outcome: { kind: "data", value: bound } };

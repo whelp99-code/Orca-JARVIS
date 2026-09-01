@@ -18,6 +18,7 @@ export type MemoryExpectedArtifactV2 = {
 export type MemoryOutboxActionV2 = {
   readonly command: ClaimedControlCommand;
   readonly request: SecondBrainWriteRequestV1;
+  readonly dispatch_spool_digest?: string;
   readonly expected_artifact: MemoryExpectedArtifactV2;
 };
 export type MemoryOutboxSagaV2 = {
@@ -57,6 +58,8 @@ export type MemoryOutboxServiceOptions = {
   readonly clock: () => Date;
   readonly leaseMs?: number;
   readonly artifactDeadlineMs?: number;
+  readonly candidate_dispatch_spool_root?: string;
+  readonly candidate_review_spool_root?: string;
 };
 export type MemoryDispatch = {
   readonly saga: MemoryOutboxSagaV2;

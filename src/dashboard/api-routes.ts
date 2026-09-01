@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CapabilityProbe } from "../capabilities.js";
 import type { AuthorityDb } from "../db.js";
 import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
+import type { DashboardExecutorFactory } from "./authority-service.js";
 import type { RemoteApprovalService } from "../remote-approval.js";
 import { tryHandleRemoteLifecycleRoutes } from "./remote-lifecycle-routes.js";
 import { tryHandleRemoteAuthRoutes } from "./remote-auth-routes.js";
@@ -51,6 +52,7 @@ export type DashboardApiInput = {
   readonly secondBrainProbe?: SecondBrainReadinessProbe;
   readonly planner?: TeamProposalPlanner;
   readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
+  readonly executorFactory?: DashboardExecutorFactory;
   readonly memoryRuntime: MemoryRuntime;
   readonly remoteApproval?: RemoteApprovalService;
 };

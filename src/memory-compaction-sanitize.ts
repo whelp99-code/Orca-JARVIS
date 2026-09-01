@@ -16,7 +16,6 @@ const CONTENT_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   morning_brief: ["detail_json"],
   evening_closeout: ["detail_json"],
   notification_intent: ["redacted_preview", "deep_link"],
-  outbox: ["request_json"],
   control_payload: ["target_json", "args_json"],
   restore_control: ["target_json", "args_json"],
 } as const;

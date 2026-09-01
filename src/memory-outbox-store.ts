@@ -6,8 +6,8 @@ import { MemoryOutboxLedger } from "./memory-outbox-ledger.js";
 import { MemoryOutboxRecordReader } from "./memory-outbox-record.js";
 import type { MemoryDispatch, MemoryObservation, MemoryOutboxActionV2, MemoryOutboxSagaV2,
   MemoryWriteResult } from "./memory-outbox-types.js";
-import { memoryInvocation, memoryOutboxHash, memoryOutboxIdentity, memorySettlementDigest,
-  parseMemoryOutboxAction, parseSagaRow } from "./memory-outbox-values.js";
+import { memoryInvocation, memoryOutboxHash, memoryOutboxIdentity, memoryOutboxSettlementReceipt,
+  parseMemoryOutboxAction, parseSagaRow, type MemoryOutboxSpoolRoots } from "./memory-outbox-values.js";
 
 function iso(value: Date): string {
   if (!Number.isFinite(value.getTime())) throw new JarvisError("MEMORY_OUTBOX_TIME_INVALID");
@@ -16,12 +16,18 @@ function iso(value: Date): string {
 export class MemoryOutboxStore {
   private readonly ledger: MemoryOutboxLedger;
   private readonly records: MemoryOutboxRecordReader;
-  constructor(private readonly authority: AuthorityDb, private readonly deadlineMs: number) {
-    this.ledger = new MemoryOutboxLedger(authority); this.records = new MemoryOutboxRecordReader(authority);
+  constructor(
+    private readonly authority: AuthorityDb,
+    private readonly deadlineMs: number,
+    private readonly spoolRoots: MemoryOutboxSpoolRoots = {},
+  ) {
+    this.ledger = new MemoryOutboxLedger(authority);
+    this.records = new MemoryOutboxRecordReader(authority, spoolRoots);
   }
 
   enqueue(command: Parameters<typeof parseMemoryOutboxAction>[0], now: Date): MemoryOutboxSagaV2 {
-    const action = parseMemoryOutboxAction(command, now); requireMemoryOutboxAuthority(this.authority, action, now);
+    const action = parseMemoryOutboxAction(command, now, this.spoolRoots);
+    requireMemoryOutboxAuthority(this.authority, action, now);
     return this.authority.db.transaction(() => this.insertOrReplay(action, now)).immediate();
   }
   private insertOrReplay(action: MemoryOutboxActionV2, now: Date): MemoryOutboxSagaV2 {
@@ -40,12 +46,12 @@ export class MemoryOutboxStore {
     this.authority.db.prepare(
       `INSERT INTO memory_outbox(
         outbox_id,candidate_id,action_request_id,action_receipt_id,action_command_digest,idempotency_key,
-        request_id,request_digest,request_json,candidate_digest,classification_digest,operation,expected_page_id,
+        request_id,request_digest,candidate_digest,classification_digest,operation,expected_page_id,
         expected_sid,expected_artifact_digest,state,expires_at,created_at,updated_at
-       ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+       ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
     ).run(identity.outbox_id, request.candidate_id, action.command.request_id, action.command.receipt_id,
       action.command.command_digest, request.idempotency_key, request.request_id, request.request_digest,
-      canonicalize(request), request.candidate_digest, request.classification_digest, request.operation,
+      request.candidate_digest, request.classification_digest, request.operation,
       action.expected_artifact.page_id, action.expected_artifact.sid, action.expected_artifact.source_digest,
       "queued", request.expires_at, at, at);
     this.audit(identity.outbox_id, "queued", null, "queued", 0, action.command.request_id, identity.digest, at);
@@ -93,7 +99,7 @@ export class MemoryOutboxStore {
       let request; let command; let action;
       try {
         request = this.request(prior.outbox_id, now); command = this.command(prior.outbox_id);
-        action = parseMemoryOutboxAction(command, now);
+        action = parseMemoryOutboxAction(command, now, this.spoolRoots);
         if (request.request_digest !== action.request.request_digest) throw new JarvisError("MEMORY_OUTBOX_INTEGRITY_FAILURE");
         requireMemoryOutboxAuthority(this.authority, action, now, false);
       } catch (error) {
@@ -205,18 +211,10 @@ export class MemoryOutboxStore {
     const attempt = this.attempt(saga.outbox_id);
     const observationDigest = this.event(saga.outbox_id, saga.lease_fence, eventType, observation.code, at,
       attempt.attempt_id, undefined, observation, true);
-    if (state === "settled" && (saga.dispatch_fence === null || observation.page_id === undefined
-      || observation.sid === undefined || observation.source_version === undefined
-      || observation.source_digest === undefined)) throw new JarvisError("MEMORY_OUTBOX_INTEGRITY_FAILURE");
-    const receipt = state === "settled" ? memorySettlementDigest({
-      outbox_id: saga.outbox_id, candidate_id: saga.candidate_id, candidate_digest: saga.candidate_digest,
-      request_id: saga.request_id, request_digest: saga.request_digest, attempt_id: attempt.attempt_id,
-      invocation_digest: attempt.invocation_digest, dispatch_fence: saga.dispatch_fence ?? 0,
-      acceptance_receipt_digest: attempt.acceptance_receipt_digest,
-      page_id: observation.page_id ?? "", sid: observation.sid ?? "",
-      source_version: observation.source_version ?? "", source_digest: observation.source_digest ?? "",
-      observation_digest: observationDigest, reconciled_at: at,
-    }) : null;
+    const receipt = state === "settled"
+      ? memoryOutboxSettlementReceipt({ saga, observation, attempt,
+        settled: { observationDigest, at } })
+      : null;
     if (receipt !== null) this.event(saga.outbox_id, saga.lease_fence, "settled", observation.code, at,
       attempt.attempt_id, receipt, observation, true);
     const changed = this.authority.db.prepare(

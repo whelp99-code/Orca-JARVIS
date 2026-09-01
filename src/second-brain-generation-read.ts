@@ -24,12 +24,19 @@ const GENERATION_BOUND_METHODS: readonly SecondBrainReadMethod[] = [
   "sb_recent_changes",
   "sb_open_conflicts",
 ];
+/** Per-provider-session read context: the fence, the method, and that session's
+ *  first-seen unbound generation identity per method. */
+export type SecondBrainGenerationReadContext = {
+  readonly fence: MemoryReadFenceV1 | undefined;
+  readonly method: SecondBrainReadMethod;
+  readonly unbound_generations: Map<SecondBrainReadMethod, string>;
+};
 
 export function bindSecondBrainGenerationRead(
   value: Readonly<Record<string, unknown>>,
-  fence: MemoryReadFenceV1 | undefined,
-  method: SecondBrainReadMethod,
+  context: SecondBrainGenerationReadContext,
 ): Readonly<Record<string, unknown>> | undefined {
+  const { fence, method } = context;
   if (!GENERATION_BOUND_METHODS.includes(method)) return value;
   const present = GENERATION_METADATA.filter(key => Object.hasOwn(value, key));
   if (present.length === 0) {
@@ -45,6 +52,10 @@ export function bindSecondBrainGenerationRead(
     || !/^sha256:[0-9a-f]{64}$/.test(String(value.tombstone_set_root))) return undefined;
   if (fence === undefined) {
     if (value.tombstone_sequence !== 0) return undefined;
+    const identity = GENERATION_METADATA.map(key => String(value[key])).join("\0");
+    const prior = context.unbound_generations.get(method);
+    if (prior !== undefined && prior !== identity) return undefined;
+    context.unbound_generations.set(method, identity);
   } else if (value.provider_instance_id !== fence.provider_instance_id
     || value.tombstone_sequence !== fence.tombstone_sequence
     || value.tombstone_set_root !== fence.tombstone_set_root) return undefined;

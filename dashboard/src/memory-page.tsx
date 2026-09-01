@@ -10,7 +10,7 @@ import type { MemoryRecord } from "./memory-types.js";
 export function MemoryPage({ store, client }: Readonly<{ store: MemoryStore; client: MemoryClient }>) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const [selected, setSelected] = useState<MemoryRecord>(); const [announcement, setAnnouncement] = useState("");
-  useEffect(() => { void store.load(); return () => store.clearPrivate(); }, [store]);
+  useEffect(() => { store.start(); return () => store.stop(); }, [store]);
   useEffect(() => {
     const clear = (): void => { setSelected(undefined); store.clearPrivate(); };
     const restore = (event: PageTransitionEvent): void => { if (event.persisted) { clear(); void store.load(); } };

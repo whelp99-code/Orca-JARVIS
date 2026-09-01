@@ -4,10 +4,13 @@ import { dirname, join } from "node:path";
 import { request, type Dispatcher } from "undici";
 import { afterAll, describe, expect, it } from "vitest";
 import { AuthorityDb } from "../../src/index.js";
+import { MEMORY_TOPICS } from "../../src/dashboard/memory-contracts.js";
+import { PERSONAL_EVENT_TOPICS } from "../../src/dashboard/personal-contracts.js";
 import { createDashboardServer, type DashboardServer } from "../../src/dashboard/server.js";
 import { tempDb } from "../helpers.js";
 
-const SNAPSHOT_TOPICS = ["overview", "tasks", "agents", "approvals"] as const;
+const SNAPSHOT_TOPICS = ["overview", "tasks", "agents", "approvals",
+  ...new Set(Object.values(PERSONAL_EVENT_TOPICS).flat()), ...MEMORY_TOPICS] as const;
 const PUBLISH_TOPICS = ["overview", "tasks"] as const;
 const SSE_TIMEOUT_MS = 2_000;
 
