@@ -15,6 +15,7 @@ import { OperationalShell } from "./operational-shell.js";
 import { AgentDetailPage } from "./pages/agent-detail-page.js";
 import { AgentsPage } from "./pages/agents-page.js";
 import { ApprovalsPage } from "./pages/approvals-page.js";
+import { createBrowserSecurityClient, SecurityPage } from "./pages/security-page.js";
 import { TaskDetailPage } from "./pages/task-detail-page.js";
 import { TaskListPage } from "./pages/task-list-page.js";
 import { ProposalPage } from "./proposal-page.js";
@@ -137,6 +138,7 @@ function ControlCenter({
             />
           )}
         />
+        <Route path="/security" element={<SecurityPage client={createBrowserSecurityClient()} />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </OperationalShell>

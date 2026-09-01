@@ -15,6 +15,7 @@
   "include": [
     "e2e/**/*.ts", "e2e/**/*.mts", "e2e/**/*.cts", "e2e/**/*.tsx",
     "playwright.config.ts",
+    "playwright.remote.config.ts",
     "tests/fixtures/**/*.ts", "tests/fixtures/**/*.mts", "tests/fixtures/**/*.cts", "tests/fixtures/**/*.tsx"
   ]
 }

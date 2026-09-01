@@ -15,6 +15,8 @@ import type { SecondBrainReadinessProbe } from "../second-brain-readiness.js";
 import { JarvisError, type AuthorityDb } from "../db.js";
 import type { OrcaRunner } from "../orca.js";
 import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
+import { composeRemoteApproval } from "../remote-approval-compose.js";
+import type { RemoteApprovalService } from "../remote-approval.js";
 import { tryHandleDashboardApi } from "./api-routes.js";
 import { createDashboardEvents, type ReconcileHub } from "./events.js";
 import type { PersonalEventKind } from "./personal-contracts.js";
@@ -69,6 +71,7 @@ export type DashboardServerOptions = {
   readonly memoryAdapter?: SecondBrainReadAdapter;
   readonly memoryProjectionKey?: Buffer;
   readonly memoryEffectSpoolRoot?: string;
+  readonly remoteApproval?: RemoteApprovalService;
 };
 
 type RequestContext = {
@@ -87,6 +90,7 @@ type RequestContext = {
   readonly planner?: TeamProposalPlanner;
   readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
   readonly memoryRuntime: MemoryRuntime;
+  readonly remoteApproval?: RemoteApprovalService;
 };
 
 export function createDashboardServer(options: DashboardServerOptions): DashboardServer & {
@@ -124,6 +128,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
       planner: options.planner,
       memoryLifecycle: options.memoryLifecycle,
       memoryRuntime,
+      remoteApproval: options.remoteApproval ?? composeRemoteApproval(options.db),
     });
   });
   httpServer.listen(bound);
@@ -179,6 +184,7 @@ async function handleRequest(input: RequestContext): Promise<void> {
       planner: input.planner,
       memoryLifecycle: input.memoryLifecycle,
       memoryRuntime: input.memoryRuntime,
+      remoteApproval: input.remoteApproval,
     })) {
       return;
     }

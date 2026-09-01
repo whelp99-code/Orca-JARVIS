@@ -1,3 +1,5 @@
+import { parseRemoteApprovalPolicy, RemoteApprovalPolicyError, type RemoteApprovalPolicy } from "./remote-approval-policy.js";
+
 const PURPOSES = ["personal_memory", "live_awareness", "owner_notification", "data_portability", "data_erasure", "vault_migration", "disaster_recovery"] as const;
 const SENSITIVITIES = ["public", "personal", "sensitive", "restricted"] as const;
 const ACTIONS = ["memory", "observation", "notification", "export", "delete", "transfer", "restore"] as const;
@@ -36,7 +38,7 @@ type DataClassPolicy = {
   readonly restore: (typeof MIGRATION)[number];
   readonly client_projection: (typeof PROJECTIONS)[number];
 };
-type PersonalOsPolicy = {
+export type PersonalOsPolicy = {
   readonly schema_version: 1;
   readonly policy_id: string;
   readonly owner_principal: string;
@@ -50,6 +52,7 @@ type PersonalOsPolicy = {
   readonly client_hosts: readonly ClientHost[];
   readonly gates: { readonly [Key in keyof typeof CANONICAL_GATES]: (typeof CANONICAL_GATES)[Key] };
   readonly data_classes: Readonly<Record<Action, DataClassPolicy>>;
+  readonly remote_approval: RemoteApprovalPolicy;
 };
 type EvaluationInput = {
   readonly action: Action;
@@ -153,7 +156,7 @@ function parseDataClass(value: unknown, purpose: Purpose, host: Host, maxDays: n
 
 export function parsePersonalOsPolicy(value: unknown): PersonalOsPolicy {
   const input = record(value);
-  closed(input, ["schema_version", "policy_id", "owner_principal", "authority_host", "effective_at", "expires_at", "purposes", "sensitivity_tiers", "actions", "retention", "quiet_hours", "prohibited_fields", "notification_allowed_fields", "client_hosts", "gates", "data_classes"]);
+  closed(input, ["schema_version", "policy_id", "owner_principal", "authority_host", "effective_at", "expires_at", "purposes", "sensitivity_tiers", "actions", "retention", "quiet_hours", "prohibited_fields", "notification_allowed_fields", "client_hosts", "gates", "data_classes", "remote_approval"]);
   if (input.schema_version !== 1) invalid();
   exactList(input.purposes, PURPOSES); exactList(input.sensitivity_tiers, SENSITIVITIES); exactList(input.actions, ACTIONS);
   const retention = record(input.retention); closed(retention, ["max_days"]); const maxDays = integer(retention.max_days, 1, 3650);
@@ -180,9 +183,14 @@ export function parsePersonalOsPolicy(value: unknown): PersonalOsPolicy {
   if (dataClasses.memory.transfer !== "exact_gate" || dataClasses.memory.restore !== "exact_gate" || dataClasses.export.confirmation !== "exact" || dataClasses.export.export !== "exact_confirmation" || dataClasses.delete.confirmation !== "exact" || dataClasses.delete.deletion !== "exact_confirmation" || dataClasses.transfer.confirmation !== "exact" || dataClasses.transfer.transfer !== "exact_gate" || dataClasses.restore.confirmation !== "exact" || dataClasses.restore.restore !== "exact_gate") invalid();
   const effectiveAt = timestamp(input.effective_at); const expiresAt = timestamp(input.expires_at);
   if (Date.parse(effectiveAt) >= Date.parse(expiresAt) || Date.parse(expiresAt) - Date.parse(effectiveAt) > 366 * 86_400_000) invalid();
+  let remoteApproval: RemoteApprovalPolicy;
+  try { remoteApproval = parseRemoteApprovalPolicy(input.remote_approval); } catch (error) {
+    if (error instanceof RemoteApprovalPolicyError) invalid();
+    throw error;
+  }
   return { schema_version: 1, policy_id: text(input.policy_id), owner_principal: text(input.owner_principal), authority_host: literal(input.authority_host, ["linux-control-plane"] as const), effective_at: effectiveAt, expires_at: expiresAt,
     retention: { max_days: maxDays }, quiet_hours: { start, end, critical_alert_classes: stringList(quiet.critical_alert_classes) }, prohibited_fields: prohibited,
-    notification_allowed_fields: notificationFields, client_hosts: exactList(input.client_hosts, CLIENT_HOSTS), gates: parsedGates, data_classes: dataClasses };
+    notification_allowed_fields: notificationFields, client_hosts: exactList(input.client_hosts, CLIENT_HOSTS), gates: parsedGates, data_classes: dataClasses, remote_approval: remoteApproval };
 }
 
 function parseEvaluationInput(value: unknown): EvaluationInput {

@@ -1,0 +1,26 @@
+.security-page { display: grid; gap: var(--space-4); }
+.security-lead, .security-status { color: var(--color-text-muted); font-size: var(--type-body); }
+.security-alert { color: var(--color-danger); }
+.security-label { display: grid; gap: var(--space-2); font-size: var(--type-sm); }
+.security-label input {
+  min-height: var(--size-control);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+  font-family: var(--font-mono);
+}
+.security-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); }
+.security-action {
+  min-height: 44px;
+  min-width: 44px;
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  border: 1px solid var(--color-border-strong);
+}
+.security-action:focus-visible { outline: 2px solid var(--color-focus); outline-offset: 2px; }
+.security-review { display: grid; gap: var(--space-2); }
+.security-review div { display: grid; gap: var(--space-1); }
+.security-review dt { color: var(--color-text-dim); font-size: var(--type-xs); }
+.security-review dd { margin: 0; }
+.mono { font-family: var(--font-mono); overflow-wrap: anywhere; }

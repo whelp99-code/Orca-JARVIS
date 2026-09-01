@@ -33,6 +33,16 @@ const fixture = () => ({
     transfer: { purpose: "vault_migration", retention_days: 1, confirmation: "exact", export: "prohibited", deletion: "allowed", host_owner: "linux-second-brain", no_data: "abstain", transfer: "exact_gate", restore: "prohibited", client_projection: "prohibited" },
     restore: { purpose: "disaster_recovery", retention_days: 30, confirmation: "exact", export: "prohibited", deletion: "allowed", host_owner: "linux-second-brain", no_data: "abstain", transfer: "prohibited", restore: "exact_gate", client_projection: "prohibited" },
   },
+  remote_approval: {
+    schema_version: 1,
+    allowed_actions: ["workflow.start", "workflow.advance", "workflow.cancel", "runbook.execute", "state.project", "evidence.negative.record"],
+    max_action_level: 3, begin_ttl_seconds: 600, registration_ttl_seconds: 300, challenge_ttl_seconds: 300,
+    activation_ttl_seconds: 600, pending_credential_ttl_seconds: 600, verification_reservation_ttl_seconds: 30,
+    ingress_nonce_ttl_seconds: 30, audit_retention_days: 365, active_credential_cap: 5, pending_credential_cap: 2,
+    live_registration_cap: 8, live_challenge_cap: 128, live_ingress_nonce_cap: 1024,
+    counter_regression_policy: "reject_audit_local_owner_revoke",
+    credential_tombstone_retention: "indefinite_security_identifier",
+  },
 });
 
 const isObject = (value: unknown): value is Record<string, unknown> => typeof value === "object" && value !== null && !Array.isArray(value);

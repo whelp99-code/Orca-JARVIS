@@ -1,6 +1,7 @@
 import { JarvisError } from "./db.js";
 import { memoryAuthority, memoryConfirm, memoryDedicatedEffect,
   memoryGenerationRollback, memoryOutboxDispatch } from "./memory-control-actions.js";
+import { REMOTE_LIFECYCLE_ACTIONS } from "./remote-approval-actions.js";
 
 export interface RuntimeControlActionInput {
   action: string;
@@ -193,6 +194,7 @@ const descriptors: Record<string, Descriptor> = {
     validate: input => memoryAuthority(input, "instruction_id"),
   },
   "memory.decision.record": { action: "memory.decision.record", minimum_level: 3, executable: false, validate: input => memoryAuthority(input, "decision_id") },
+  ...REMOTE_LIFECYCLE_ACTIONS,
 };
 
 export const KNOWN_CONTROL_ACTIONS = Object.freeze(Object.keys(descriptors).sort());

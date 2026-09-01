@@ -10,6 +10,7 @@ export const copy = {
     proposals: "새 제안",
     agents: "에이전트",
     approvals: "승인",
+    security: "보안",
   },
   liveUpdates: "실시간",
   connected: "연결됨",

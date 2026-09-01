@@ -6,6 +6,7 @@ import { AuthorityDb, JarvisError } from "../db.js";
 import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
 import { runtimeCapabilityProbe } from "../doctor.js";
 import { defaultRunner } from "../orca.js";
+import { composeRemoteApproval } from "../remote-approval-compose.js";
 import { createDashboardServer } from "./server.js";
 
 const LOOPBACK = "127.0.0.1";
@@ -50,6 +51,7 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
     orcaRunner: defaultRunner,
     capabilityProbe: runtimeCapabilityProbe(),
     memoryLifecycle,
+    remoteApproval: composeRemoteApproval(db),
   });
   write(`http://${server.address.host}:${String(server.address.port)}`);
   const close = (): void => {
