@@ -6,6 +6,9 @@ const TOKEN_CAPACITY = 256;
 export type MemoryTokenSelection = {
   readonly token: string; readonly session_id: string; readonly privacy_epoch: number;
   readonly page_id: string; readonly record_id: string; readonly record_digest: string;
+  readonly record_revision: string; readonly provider_instance_id: string; readonly generation_id: string;
+  readonly generation_manifest_digest: string; readonly source_identity_full: string;
+  readonly content_identity_full: string; readonly citation_identity_full: string;
   readonly issued_at: string; readonly expires_at: string;
 };
 export class MemoryTokenCache {
@@ -21,8 +24,15 @@ export class MemoryTokenCache {
     if (binding === null) return undefined;
     const issued = this.clock(); const expires = new Date(issued.getTime() + TOKEN_TTL_MS);
     const token = randomBytes(32).toString("base64url");
+    const recordRevision = this.revision("record", sessionId,
+      `${binding.record_id}\0${binding.record_digest}`);
     const selection: MemoryTokenSelection = { token, session_id: sessionId, privacy_epoch: privacyEpoch,
       page_id: evidence.page_id, record_id: binding.record_id, record_digest: binding.record_digest,
+      record_revision: recordRevision, provider_instance_id: binding.generation.provider_instance_id,
+      generation_id: binding.generation.generation_id,
+      generation_manifest_digest: binding.generation.generation_manifest_digest,
+      source_identity_full: binding.source_identity_full, content_identity_full: binding.content_identity_full,
+      citation_identity_full: binding.citation_identity_full,
       issued_at: issued.toISOString(), expires_at: expires.toISOString() };
     this.entries.set(token, selection);
     while (this.entries.size > TOKEN_CAPACITY) {
@@ -30,8 +40,7 @@ export class MemoryTokenCache {
       if (typeof oldest !== "string") break;
       this.entries.delete(oldest);
     }
-    return { token, record_revision: this.revision("record", sessionId,
-      `${binding.record_id}\0${binding.record_digest}`) };
+    return { token, record_revision: recordRevision };
   }
   get(token: string, sessionId: string, privacyEpoch: number): MemoryTokenSelection | undefined {
     const entry = this.entries.get(token);
@@ -42,6 +51,10 @@ export class MemoryTokenCache {
     this.entries.delete(token); this.entries.set(token, entry); return entry;
   }
   clear(): void { this.entries.clear(); }
+  membership(kind: "source" | "content" | "citation" | "record", value: string): string {
+    return `hmac-sha256:${createHmac("sha256", this.revisionKey)
+      .update(`orca-jarvis/memory-membership-${kind}/v1\0`).update(value).digest("hex")}`;
+  }
   revision(kind: "query" | "record" | "origin" | "candidate" | "resource",
     sessionId: string, value: string): string {
     return `hmac-sha256:${createHmac("sha256", this.revisionKey)

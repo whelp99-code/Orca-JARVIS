@@ -11,5 +11,11 @@
 .memory-detail { display: grid; gap: var(--space-4); }
 .memory-detail form, .memory-detail fieldset { display: grid; gap: var(--space-2); }
 .memory-detail textarea { min-block-size: var(--size-textarea); }
-@media (max-width: 40rem) { .memory-primary, .memory-secondary { grid-template-columns: minmax(0, 1fr); }
+.conflict-list, .conflict-list ol { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
+.conflict-list > li { display: grid; gap: var(--space-2); }
+.conflict-list ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+.conflict-list ol > li { display: grid; gap: var(--space-1); border-inline-start: var(--border-width) solid var(--color-border);
+  padding-inline-start: var(--space-3); overflow-wrap: anywhere; }
+@media (max-width: 40rem) { .memory-primary, .memory-secondary, .conflict-list ol {
+    grid-template-columns: minmax(0, 1fr); }
   .memory-heading { align-items: start; flex-direction: column; } }

@@ -1,6 +1,7 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
 import type { MemoryClient } from "./memory-api.js";
 import { MemoryCandidates } from "./memory-candidates.js";
+import { MemoryConflicts } from "./memory-conflicts.js";
 import { MemoryDetail } from "./memory-detail.js";
 import { MemoryEffects } from "./memory-effects.js";
 import { MemorySearch } from "./memory-search.js";
@@ -10,8 +11,12 @@ export function MemoryPage({ store, client }: Readonly<{ store: MemoryStore; cli
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const [selected, setSelected] = useState<MemoryRecord>(); const [announcement, setAnnouncement] = useState("");
   useEffect(() => { void store.load(); return () => store.clearPrivate(); }, [store]);
-  useEffect(() => { const clear = (): void => { setSelected(undefined); store.clearPrivate(); };
-    addEventListener("pagehide", clear); return () => removeEventListener("pagehide", clear); }, [store]);
+  useEffect(() => {
+    const clear = (): void => { setSelected(undefined); store.clearPrivate(); };
+    const restore = (event: PageTransitionEvent): void => { if (event.persisted) { clear(); void store.load(); } };
+    window.addEventListener("pagehide", clear); window.addEventListener("pageshow", restore);
+    return () => { window.removeEventListener("pagehide", clear); window.removeEventListener("pageshow", restore); };
+  }, [store]);
   if (snapshot.state === "loading") return <div className="page-frame route-state" aria-busy="true">
     <section role="status"><h1>Memory</h1><p>Loading private memory surface</p></section></div>;
   if (snapshot.state === "error") return <div className="page-frame route-state"><section role="alert">
@@ -24,9 +29,7 @@ export function MemoryPage({ store, client }: Readonly<{ store: MemoryStore; cli
     <div className="memory-primary"><MemorySearch result={snapshot.search} onSearch={store.search}
       onSelect={setSelected} /><MemoryDetail record={selected} client={client} onSettled={message => {
         setAnnouncement(message); setSelected(undefined); void store.load(); }} /></div>
-    <section className="panel" aria-labelledby="memory-conflicts-heading"><header className="panel-header">
-      <h2 id="memory-conflicts-heading">Conflicts</h2></header><div className="panel-body">
-      <p className="empty-state">Unresolved conflicts appear without private side text.</p></div></section>
+    <MemoryConflicts value={snapshot.conflicts} />
     <div className="memory-secondary"><MemoryCandidates value={snapshot.candidates} />
       <MemoryEffects value={snapshot.effects} /></div></div>;
 }

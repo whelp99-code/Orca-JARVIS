@@ -1,5 +1,6 @@
 import type { SessionResponse } from "./api.js";
-import { MemoryCandidatesSchema, MemoryEffectsSchema, MemorySearchSchema, MemoryStatusSchema } from "./memory-types.js";
+import { MemoryCandidatesSchema, MemoryConflictsSchema, MemoryEffectsSchema,
+  MemorySearchSchema, MemoryStatusSchema } from "./memory-types.js";
 
 type SessionLoader = () => Promise<SessionResponse>;
 export type MemoryClient = ReturnType<typeof createMemoryClient>;
@@ -20,6 +21,8 @@ export function createMemoryClient(loadSession: SessionLoader) {
   }
   return {
     status: async () => MemoryStatusSchema.parse(await request("/api/v1/memory/status")),
+    conflicts: async (signal?: AbortSignal) => MemoryConflictsSchema.parse(await request(
+      "/api/v1/memory/conflicts?state=unresolved&limit=20", { signal })),
     candidates: async () => MemoryCandidatesSchema.parse(await request(
       "/api/v1/memory/candidates?state=awaiting_confirmation&limit=20")),
     effects: async () => MemoryEffectsSchema.parse(await request(

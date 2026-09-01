@@ -112,13 +112,14 @@ export class MemoryReadService {
     return { schema_version: 1, resource: "memory-conflicts", generated_at: this.clock().toISOString(),
       state: outcomeState(outcome), privacy_epoch: status.privacy_epoch, items: conflicts.map(item => ({
         conflict_revision: this.tokens.revision("resource", this.session.authenticatedSessionId(), item.conflict_id),
-        subject: item.left.sensitivity === "sensitive" || item.right.sensitivity === "sensitive"
+        subject: privateSensitivity(item.left.sensitivity) || privateSensitivity(item.right.sensitivity)
           ? "[REDACTED]" : "Unresolved memory conflict", state: item.state,
         sides: [item.left, item.right].map(side => ({ sensitivity: side.sensitivity,
-          citation: side.sensitivity === "sensitive" ? "Private citation" : "Memory citation" })) })),
+          citation: privateSensitivity(side.sensitivity) ? "Private citation" : "Memory citation" })) })),
       truncated: conflicts.length < (outcome.kind === "conflicts" ? outcome.conflicts.length : 0) };
   }
 }
+function privateSensitivity(value: string): boolean { return value === "sensitive" || value === "restricted"; }
 function readEvidence(outcome: SecondBrainReadOutcome) {
   switch (outcome.kind) {
     case "current": case "stale": return outcome.evidence;

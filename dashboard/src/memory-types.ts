@@ -15,6 +15,11 @@ export const MemorySearchSchema = z.object({ schema_version: z.literal(1), resou
   truncated: z.boolean(), omissions: z.array(z.string()), checked_at: z.string(), fresh_until: z.string() }).strict();
 const page = z.object({ limit: z.number().int(), returned: z.number().int(), has_more: z.boolean(),
   next_cursor: z.string().nullable() }).strict();
+export const MemoryConflictsSchema = z.object({ schema_version: z.literal(1),
+  resource: z.literal("memory-conflicts"), generated_at: z.string(), state: z.string(),
+  privacy_epoch: z.number().int(), items: z.array(z.object({ conflict_revision: z.string(), subject: z.string(),
+    state: z.literal("unresolved"), sides: z.array(z.object({ sensitivity: z.string(),
+      citation: z.string() }).strict()).length(2) }).strict()).max(20), truncated: z.boolean() }).strict();
 export const MemoryCandidatesSchema = z.object({ schema_version: z.literal(1), resource: z.literal("memory-candidates"),
   generated_at: z.string(), state: z.string(), items: z.array(z.object({ candidate_id: z.string(),
     candidate_revision: z.string(), kind: z.string(), operation: z.string(), confidence: z.string(),
@@ -28,8 +33,10 @@ export const MemoryEffectsSchema = z.object({ schema_version: z.literal(1), reso
 export type MemoryStatus = z.infer<typeof MemoryStatusSchema>;
 export type MemorySearch = z.infer<typeof MemorySearchSchema>;
 export type MemoryRecord = z.infer<typeof record>;
+export type MemoryConflicts = z.infer<typeof MemoryConflictsSchema>;
 export type MemoryCandidates = z.infer<typeof MemoryCandidatesSchema>;
 export type MemoryEffects = z.infer<typeof MemoryEffectsSchema>;
 export type MemorySnapshot = { readonly state: "loading" | "ready" | "error"; readonly status?: MemoryStatus;
-  readonly search?: MemorySearch; readonly candidates?: MemoryCandidates; readonly effects?: MemoryEffects;
+  readonly search?: MemorySearch; readonly conflicts?: MemoryConflicts;
+  readonly candidates?: MemoryCandidates; readonly effects?: MemoryEffects;
   readonly message?: string };
