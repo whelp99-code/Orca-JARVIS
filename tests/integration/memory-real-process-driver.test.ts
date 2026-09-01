@@ -185,6 +185,17 @@ describe("Task 30 real built-process lifecycle", () => {
           max_total_bytes: 65_536, max_page_bytes: 1_048_576 },
         clock, max_age_ms: 86_400_000, expiry_ms: 2 * 86_400_000,
         read_fence: provider.readFenceFactory() });
+      const resolveBoundTarget = async (targetPageId: string, targetSid: string) => {
+        const page = await reader.readPage(targetPageId);
+        const binding = (page.kind === "current" || page.kind === "stale")
+          ? page.evidence.find(item => item.sid === targetSid)?.record : undefined;
+        if (binding === undefined || binding === null) throw new Error("TASK32_RECORD_BINDING_MISSING");
+        const result = await provider.resolveTarget({ record_id: binding.record_id,
+          record_digest: binding.record_digest, generation_id: binding.generation.generation_id,
+          generation_manifest_digest: binding.generation.generation_manifest_digest });
+        if (result.kind !== "data") throw new Error(result.code);
+        return result.value;
+      };
       const lifecycleLayout = { spool_root: spoolRoot,
         state_root: join(root, "jarvis-state"), dist_root: join(root, "jarvis-release", "dist"),
         backup_root: join(root, "jarvis-backups"),
@@ -292,10 +303,7 @@ describe("Task 30 real built-process lifecycle", () => {
           settlement_receipt_digest: rememberRow?.settlement_receipt_digest,
         } }, clockValue);
 
-      const targetOldResult = await provider.resolveTarget({ page_id: pageId,
-        exact_record: oldRecord, source_identity_full: "6".repeat(64) });
-      if (targetOldResult.kind !== "data") throw new Error(targetOldResult.code);
-      const targetOld = targetOldResult.value;
+      const targetOld = await resolveBoundTarget(pageId, sid);
       const staleJarvis = join(restoreRoot, "pre-correction.sqlite");
       mkdirSync(dirname(staleJarvis), { recursive: true, mode: 0o700 });
       await authority.db.backup(staleJarvis);
@@ -356,10 +364,7 @@ describe("Task 30 real built-process lifecycle", () => {
       expectAbsent(preCorrectionBackup, [oldNeedle]);
       expectAbsent(providerRoot, [oldNeedle]);
 
-      const targetCorrectedResult = await provider.resolveTarget({ page_id: pageId,
-        exact_record: corrected, source_identity_full: "6".repeat(64) });
-      if (targetCorrectedResult.kind !== "data") throw new Error(targetCorrectedResult.code);
-      const targetCorrected = targetCorrectedResult.value;
+      const targetCorrected = await resolveBoundTarget(pageId, sid);
       const exportId = `memexp:v1:${randomBytes(12).toString("hex")}`;
       const exportAction = await lifecycle.prepareExport({ export_id: exportId,
         correlation_id: `corr:${randomBytes(12).toString("hex")}`,

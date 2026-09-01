@@ -20,6 +20,9 @@ export type ResolveMemoryTargetInput = {
   readonly page_id: string; readonly exact_record: string; readonly source_identity_full: string;
   readonly sensitivity?: "public" | "personal" | "sensitive" | "restricted";
   readonly source_owner_class?: "provider_owned" | "external_read_only"; readonly source_owner_id?: string;
+} | {
+  readonly record_id: string; readonly record_digest: string;
+  readonly generation_id: string; readonly generation_manifest_digest: string;
 };
 
 function record(value: unknown): Record<string, unknown> | undefined {
@@ -98,14 +101,28 @@ export class SecondBrainEffectService {
     return { kind: "data", value: Object.freeze({ ...value }) };
   }
   async resolveTarget(input: ResolveMemoryTargetInput): Promise<SecondBrainEffectServiceResult<ResolvedMemoryTargetV2>> {
-    if (!input.page_id || !input.exact_record || !/^[0-9a-f]{64}$/.test(input.source_identity_full)) {
-      return { kind: "invalid", code: "MEMORY_EFFECT_TARGET_SELECTOR_INVALID" };
+    let selector: Readonly<Record<string, unknown>>;
+    if ("record_id" in input) {
+      if (!/^sbrecord:v1:[0-9a-f]{64}$/.test(input.record_id)
+        || !/^sha256:[0-9a-f]{64}$/.test(input.record_digest)
+        || !/^sbgen:v1:[0-9a-f]{64}$/.test(input.generation_id)
+        || !/^sha256:[0-9a-f]{64}$/.test(input.generation_manifest_digest)) {
+        return { kind: "invalid", code: "MEMORY_EFFECT_TARGET_SELECTOR_INVALID" };
+      }
+      selector = { record_id: input.record_id, record_digest: input.record_digest,
+        generation_id: input.generation_id, generation_manifest_digest: input.generation_manifest_digest };
+    } else {
+      if (!input.page_id || !input.exact_record || !/^[0-9a-f]{64}$/.test(input.source_identity_full)) {
+        return { kind: "invalid", code: "MEMORY_EFFECT_TARGET_SELECTOR_INVALID" };
+      }
+      selector = { page_id: input.page_id, exact_record: input.exact_record,
+        source_identity_full: input.source_identity_full, sensitivity: input.sensitivity ?? "personal",
+        source_owner_class: input.source_owner_class ?? "provider_owned",
+        source_owner_id: input.source_owner_id ?? "provider" };
     }
     const at = this.options.clock();
     const result = await this.call("sb_resolve_memory_target", {
-      page_id: input.page_id, exact_record: input.exact_record, source_identity_full: input.source_identity_full,
-      sensitivity: input.sensitivity ?? "personal", source_owner_class: input.source_owner_class ?? "provider_owned",
-      source_owner_id: input.source_owner_id ?? "provider", read_fence: this.readFence("memory_resolve", at),
+      ...selector, read_fence: this.readFence("memory_resolve", at),
     });
     if (result.kind !== "data") return result;
     const target = parseResolvedMemoryTarget(result.value, this.options.provider_instance_id, at);

@@ -119,10 +119,6 @@ export * from "./second-brain-adapter.js";
 export * from "./second-brain-effect-v2.js";
 export * from "./second-brain-effect-authority.js";
 export * from "./memory-lifecycle-api.js";
-export * from "./dashboard/memory-contracts.js";
-export * from "./dashboard/memory-runtime.js";
-export * from "./memory-correction-spool.js";
-export * from "./memory-surface-authority.js";
 export {
 	MemoryOutboxService,
 	MEMORY_OUTBOX_RUNTIME_DEADLINE_MS,

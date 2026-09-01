@@ -7,8 +7,10 @@ import { describe, expect, it } from "vitest";
 describe("Task33 checked-in driver", () => {
   it("runs malformed second process through single-instance handling with measured zero effects", async () => {
     // Given
-    const child = spawn("xvfb-run", ["-a", process.execPath, join(process.cwd(), "scripts", "task33-notification-driver.mjs")],
-      { stdio: ["ignore", "pipe", "pipe"] });
+    const script = join(process.cwd(), "scripts", "task33-notification-driver.mjs");
+    const child = process.env.DISPLAY === undefined
+      ? spawn("xvfb-run", ["-a", process.execPath, script], { stdio: ["ignore", "pipe", "pipe"] })
+      : spawn(process.execPath, [script], { stdio: ["ignore", "pipe", "pipe"] });
     let output = ""; child.stdout.on("data", chunk => { output += chunk.toString("utf8"); });
     child.stderr.on("data", chunk => { output += chunk.toString("utf8"); });
     // When

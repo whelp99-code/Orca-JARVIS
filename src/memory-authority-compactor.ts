@@ -143,17 +143,19 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
       authority.db.pragma("wal_checkpoint(TRUNCATE)");
       authority.close();
       removeSidecars(authority.filename);
-      try {
-        renameSync(input.fresh_path, authority.filename);
-        syncPath(dirname(authority.filename), true);
-      } catch (error) {
-        authority.reopen();
-        throw error;
-      }
+      const oldInode = (() => {
+        try {
+          renameSync(input.fresh_path, authority.filename);
+          syncPath(dirname(authority.filename), true);
+          return this.options.runtime.observeOldInode(input.old_device, input.old_inode);
+        } catch (error) {
+          authority.reopen();
+          throw error;
+        }
+      })();
       authority.reopen();
       this.options.runtime.acknowledgeGeneration(input.result_generation);
       const active = statSync(authority.filename, { bigint: true });
-      const oldInode = this.options.runtime.observeOldInode(input.old_device, input.old_inode);
       const oldFdCount = oldInode.fd_count;
       authority.db.prepare(
         `UPDATE memory_compaction_runs SET state='draining',result_device=?,result_inode=?,

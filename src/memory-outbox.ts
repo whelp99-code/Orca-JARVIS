@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { JarvisError } from "./db.js";
 import { MemoryOutboxStore } from "./memory-outbox-store.js";
 import type {
@@ -15,6 +16,12 @@ export const MEMORY_OUTBOX_RUNTIME_DEADLINE_MS = 600_000;
 const empty = (): MemoryOutboxCycleResult => ({
   claimed: 0, dispatched: 0, reconciling: 0, settled: 0, conflicts: 0, failed: 0,
 });
+function artifactDigestMatches(item: SecondBrainEvidence, expected: string): boolean {
+  if (item.content_digest === expected) return true;
+  if (item.record === null || item.excerpt === null) return false;
+  const cited = [`${item.excerpt}[^${item.sid}]`, `${item.excerpt} [^${item.sid}]`];
+  return cited.some(value => `sha256:${createHash("sha256").update(value).digest("hex")}` === expected);
+}
 export class MemoryOutboxService {
   private readonly store: MemoryOutboxStore;
   private readonly leaseMs: number;
@@ -81,8 +88,8 @@ export class MemoryOutboxService {
     if (page.kind === "conflicts") return this.conflictFrom(page, expected.page_id);
     const pageMatch = this.evidence(page).filter(item =>
       item.page_id === expected.page_id && item.sid === expected.sid);
-    const directReplay = pageMatch.filter(item =>
-      item.source_ref === `memory-candidate:${saga.candidate_id}`);
+    const directReplay = pageMatch.filter(item => item.record !== null
+      || item.source_ref === `memory-candidate:${saga.candidate_id}`);
     const recentMatch = recentEvidence.length === 0
       ? directReplay
       : recentEvidence.filter(item => item.sid === expected.sid);
@@ -90,14 +97,14 @@ export class MemoryOutboxService {
       return { kind: "missing", code: this.readCode(recent, "ARTIFACT_NOT_RECENT") };
     }
     const identities = new Set([...recentMatch, ...pageMatch].map(item => `${item.source_version}\0${item.content_digest}`));
-    if (identities.size !== 1 || pageMatch.some(item => item.content_digest !== expected.source_digest)) {
+    if (identities.size !== 1 || pageMatch.some(item => !artifactDigestMatches(item, expected.source_digest))) {
       return { kind: "conflict", code: "ARTIFACT_DIGEST_MISMATCH", page_id: expected.page_id,
         sid: expected.sid, source_version: pageMatch[0]?.source_version, source_digest: pageMatch[0]?.content_digest };
     }
     const matched = pageMatch[0];
     if (matched === undefined) return { kind: "missing", code: "ARTIFACT_SELECTOR_MISSING" };
     return { kind: "match", code: "ARTIFACT_OBSERVED", page_id: matched.page_id, sid: matched.sid,
-      source_version: matched.source_version, source_digest: matched.content_digest };
+      source_version: matched.source_version, source_digest: expected.source_digest };
   }
   private evidence(outcome: SecondBrainReadOutcome): readonly SecondBrainEvidence[] {
     return outcome.kind === "current" || outcome.kind === "stale" ? outcome.evidence : [];

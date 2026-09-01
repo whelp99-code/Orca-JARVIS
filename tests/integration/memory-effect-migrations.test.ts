@@ -47,7 +47,7 @@ async function rejectedCandidate(prefixLength: number): Promise<{
 
 function task30Journal(db: AuthorityDb): readonly string[] {
   return (db.db.prepare(
-    "SELECT id FROM schema_migrations WHERE id>='040_' ORDER BY id",
+    "SELECT id FROM schema_migrations WHERE id>='040_' AND id<='051_task30_observed_inventory.sql' ORDER BY id",
   ).all() as Array<{ readonly id: string }>).map(row => row.id);
 }
 
