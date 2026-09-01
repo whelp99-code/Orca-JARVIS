@@ -86,13 +86,51 @@ const absence = z.object({
   omission_count: z.literal(0),
   scan_digest: digest,
 }).strict();
-const exportObservation = z.object({
+const exportFile = z.object({
+  name: z.literal("memory.json"),
+  digest,
+  mode: z.literal(384),
+  bytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+}).strict();
+const exportManifest = z.object({
+  schema_version: z.literal(1),
+  manifest_id: z.string().regex(/^sbexport:v1:[0-9a-f]{64}$/),
   manifest_digest: digest,
-  file_count: z.number().int().positive(),
-  byte_count: z.number().int().positive(),
-  record_count: z.number().int().positive(),
+  request_id: z.string().regex(/^memeff:req:v2:[0-9a-f]{64}$/),
+  request_digest: digest,
+  delegation_id: z.string().regex(/^memdeleg:v1:[0-9a-f]{64}$/),
+  delegation_digest: digest,
+  scope_digest: digest,
+  provider_instance_id: z.string().min(1).max(128),
+  provider_release_sha: z.string().regex(/^[0-9a-f]{40}$/),
+  generation_id: z.string().min(1).max(160),
+  vault_head: z.string().regex(/^[0-9a-f]{40}$/),
+  vault_tree: z.string().regex(/^[0-9a-f]{40}$/),
+  tombstone_sequence: count,
+  tombstone_set_root: digest,
+  target_ids: z.array(z.string().min(1).max(256)).min(1).max(64),
+  source_identities: z.array(z.string().min(1).max(256)).min(1).max(64),
+  content_identities: z.array(z.string().min(1).max(256)).min(1).max(64),
+  citation_identities: z.array(z.string().min(1).max(256)).min(1).max(64),
+  sensitivity_classes: z.array(z.enum(["public", "personal", "sensitive", "restricted"]))
+    .min(1).max(4),
+  valid_from: z.iso.datetime({ offset: false, precision: 3 }),
+  valid_until: z.iso.datetime({ offset: false, precision: 3 }),
+  record_count: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  data_bytes: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  files: z.array(exportFile).length(1),
+  created_at: z.iso.datetime({ offset: false, precision: 3 }),
+  expires_at: z.iso.datetime({ offset: false, precision: 3 }),
+}).strict();
+export const ExportObservationSchema = z.object({
+  manifest_digest: digest,
+  manifest: exportManifest,
+  file_count: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  byte_count: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
+  record_count: z.number().int().positive().max(Number.MAX_SAFE_INTEGER),
   scan_digest: digest,
 }).strict();
+export type ExportObservation = z.infer<typeof ExportObservationSchema>;
 
 export const MemoryLifecycleObservationManifestSchema = z.object({
   schema_version: z.literal(1),
@@ -102,5 +140,5 @@ export const MemoryLifecycleObservationManifestSchema = z.object({
   surface_manifest: surfaceManifest,
   artifact: artifact.nullable(),
   absence: absence.nullable(),
-  export: exportObservation.nullable(),
+  export: ExportObservationSchema.nullable(),
 }).strict();

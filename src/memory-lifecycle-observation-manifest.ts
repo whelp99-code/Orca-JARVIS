@@ -2,6 +2,10 @@ import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./db.js";
 import {
+  verifyExportObservation,
+  type VerifiedExportObservation,
+} from "./memory-export-observation.js";
+import {
   MEMORY_MANAGED_SURFACE_CATALOG,
   MEMORY_PROVIDER_SURFACE_CATALOG_DIGEST,
 } from "./memory-managed-surface-catalog.js";
@@ -98,9 +102,7 @@ export type MemoryLifecycleObservedResult =
   | { readonly kind: "deletion"; readonly absence_manifest_digest: string;
       readonly target_manifest_digest: string; readonly scanned_surface_count: 40;
       readonly match_count: 0; readonly error_count: 0; readonly omission_count: 0 }
-  | { readonly kind: "export"; readonly export_manifest_digest: string;
-      readonly file_count: number; readonly byte_count: number;
-      readonly record_count: number };
+  | VerifiedExportObservation;
 
 export type ParsedMemoryLifecycleObservationManifest = {
   readonly schema_version: 1;
@@ -229,13 +231,10 @@ function observedResult(
         match_count: absence.match_count, error_count: absence.error_count,
         omission_count: absence.omission_count };
     case "export":
-      if (artifact !== null || absence !== null || exported === null
-        || exported.manifest_digest !== expected.export_manifest_digest) {
+      if (artifact !== null || absence !== null || exported === null) {
         throw new JarvisError("MEMORY_LIFECYCLE_OBSERVATION_BINDING_INVALID");
       }
-      return { kind: "export", export_manifest_digest: exported.manifest_digest,
-        file_count: exported.file_count, byte_count: exported.byte_count,
-        record_count: exported.record_count };
+      return verifyExportObservation(exported, expected);
     default:
       return assertNever(observed.operation);
   }

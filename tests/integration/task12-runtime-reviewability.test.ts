@@ -16,15 +16,11 @@ describe("Task 12 runtime reviewability", () => {
     const modules = [...new Set(`${changed}\n${untracked}`.trim().split("\n"))]
       .filter(path => PRODUCTION_EXTENSION.test(path))
       .sort();
-    const baselineLimits = new Map([
-      ["src/task-timeline.ts", { pureLines: 376, maximumLine: 613 }],
-    ]);
     const offenders = modules.flatMap(path => {
       const lines = readFileSync(path, "utf8").split("\n");
       const pureLines = lines.filter(line => line.trim() !== "").length;
       const maximumLine = Math.max(...lines.map(line => line.length));
-      const limit = baselineLimits.get(path) ?? { pureLines: 250, maximumLine: 160 };
-      return pureLines > limit.pureLines || maximumLine > limit.maximumLine ? [{ path, pureLines, maximumLine }] : [];
+      return pureLines > 250 || maximumLine > 160 ? [{ path, pureLines, maximumLine }] : [];
     });
     expect({ modules, offenders }).toEqual({
       modules: expect.arrayContaining(["src/cli-runtime.mts"]),
