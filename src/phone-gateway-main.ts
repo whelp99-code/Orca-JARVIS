@@ -1,0 +1,102 @@
+import { parseArgs } from "node:util";
+import { realpathSync } from "node:fs";
+import { resolve } from "node:path";
+import { fileURLToPath } from "node:url";
+import {
+  createPhoneGatewayServer,
+  parsePhoneGatewayConfig,
+  PhoneGatewayError,
+  PHONE_ERROR_CODES,
+  type PhoneGatewayServer,
+} from "./phone-gateway.js";
+
+const LOOPBACK = "127.0.0.1" as const;
+const GATEWAY_PORT = 4174;
+const UPSTREAM = "http://127.0.0.1:4173" as const;
+
+export type PhoneGatewayCliOptions = {
+  readonly host: string;
+  readonly port: number;
+  readonly upstream: string;
+  readonly staticRoot: string;
+  readonly envFile: string;
+};
+
+export function parsePhoneGatewayCli(argv: readonly string[]): PhoneGatewayCliOptions {
+  const { values } = parseArgs({
+    args: [...argv],
+    options: {
+      host: { type: "string" },
+      port: { type: "string" },
+      upstream: { type: "string" },
+      "static-root": { type: "string" },
+      "env-file": { type: "string" },
+    },
+    strict: true,
+  });
+  if (values.host !== LOOPBACK) throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
+  if (values.port !== String(GATEWAY_PORT)) throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
+  if (values.upstream !== UPSTREAM) throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
+  if (typeof values["static-root"] !== "string" || values["static-root"].length === 0) {
+    throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
+  }
+  if (typeof values["env-file"] !== "string" || values["env-file"].length === 0) {
+    throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
+  }
+  return {
+    host: LOOPBACK,
+    port: GATEWAY_PORT,
+    upstream: UPSTREAM,
+    staticRoot: resolve(values["static-root"]),
+    envFile: resolve(values["env-file"]),
+  };
+}
+
+export function startPhoneGatewayCli(
+  options: PhoneGatewayCliOptions,
+  write: (line: string) => void = line => { process.stdout.write(`${line}\n`); },
+): { close: () => void } {
+  const getuid = process.getuid;
+  const home = process.env.HOME;
+  if (getuid === undefined || home === undefined || home.length === 0) {
+    throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
+  }
+  const uid = getuid();
+  const config = parsePhoneGatewayConfig({ home, envFile: options.envFile, uid });
+  const server: PhoneGatewayServer = createPhoneGatewayServer({
+    host: options.host,
+    port: options.port,
+    upstream: options.upstream,
+    staticRoot: options.staticRoot,
+    config,
+  });
+  write(`http://${server.address.host}:${String(server.address.port)}`);
+  return { close: () => { server.close(); } };
+}
+
+function isDirectRun(): boolean {
+  const entry = process.argv[1];
+  if (entry === undefined) return false;
+  try {
+    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
+  } catch (error) {
+    if (error instanceof Error) return false;
+    throw error;
+  }
+}
+
+if (isDirectRun()) {
+  try {
+    const runtime = startPhoneGatewayCli(parsePhoneGatewayCli(process.argv.slice(2)));
+    const shutdown = (): void => {
+      runtime.close();
+      process.exit(0);
+    };
+    process.on("SIGTERM", shutdown);
+    process.on("SIGINT", shutdown);
+  } catch (error) {
+    const code = error instanceof PhoneGatewayError ? error.code : "PHONE_NOT_READY";
+    process.stderr.write(`${code}\n`);
+    process.exit(2);
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "schema_version": 1,
+  "exposure": "tailnet-only",
+  "protocol": "https",
+  "port": 443,
+  "target": "http://127.0.0.1:4174",
+  "funnel": false,
+  "command_argv": ["tailscale", "serve", "--https=443", "http://127.0.0.1:4174"]
+}
