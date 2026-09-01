@@ -52,7 +52,7 @@ export function evidence(digest: string, sid = "12345678"): SecondBrainEvidence 
     sensitivity: "personal", observed_at: MEMORY_NOW, valid_at: MEMORY_NOW,
     freshness: { state: "fresh", checked_at: MEMORY_NOW, fresh_until: "2026-08-28T13:00:00.000Z" },
     expires_at: "2026-08-29T12:00:00.000Z", trust: "untrusted", authority: "none",
-    excerpt: OUTBOX_ARTIFACT_LINE, content_digest: digest, omission: null };
+    excerpt: OUTBOX_ARTIFACT_LINE, content_digest: digest, omission: null, record: null };
 }
 export type OutboxFixture = { database: MemoryDatabase; service: MemoryOutboxService; writer: FixtureWriter;
   reader: FixtureReader; request: SecondBrainWriteRequestV1; commandId: string; digest: string; clock: { now: Date } };

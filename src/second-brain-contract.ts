@@ -3,8 +3,20 @@ import { readFileSync } from "node:fs";
 import { pathToFileURL } from "node:url";
 
 const SENTINEL = "SECOND_BRAIN_CONTRACT_MISMATCH";
-const IMPLEMENTATION_COMMIT = "30cebe1670c0b65dc9832066a09c2c64f8371b20";
-const EXPECTED_DIGEST = "1406f97695970a099af2569ab93777b67603a2a2261b9f6d03646e430d6098fe";
+const PROFILES = {
+  schema3: {
+    schemaVersion: 3,
+    implementationCommit: "30cebe1670c0b65dc9832066a09c2c64f8371b20",
+    implementationRole: "task28_entry_baseline",
+    digest: "1406f97695970a099af2569ab93777b67603a2a2261b9f6d03646e430d6098fe",
+  },
+  schema4: {
+    schemaVersion: 4,
+    implementationCommit: "313adfb90accb6b9687d4826c305887066166170",
+    implementationRole: "task32_entry_baseline",
+    digest: "ae2e4b4f41ade29e8781e47e60dad6ddb17ed8cea516b82ccd16454acd5dc3e0",
+  },
+} as const;
 const TOOLS = [
   "sb_generation_status", "sb_open_conflicts", "sb_read_page", "sb_recent_changes", "sb_remember",
   "sb_request_status", "sb_resolve_memory_target", "sb_search", "sb_write_request",
@@ -15,7 +27,7 @@ export class SecondBrainContractError extends Error {
   constructor() { super(SENTINEL); this.name = "SecondBrainContractError"; }
 }
 export type SecondBrainContractSummary = {
-  readonly schemaVersion: 3; readonly implementationCommit: string; readonly tools: readonly string[];
+  readonly schemaVersion: 3 | 4; readonly implementationCommit: string; readonly tools: readonly string[];
   readonly digest: string; readonly rememberBehavior: "non_idempotent_collision_safe_no_overwrite";
   readonly features: readonly string[]; readonly toolCount: 9;
 };
@@ -31,16 +43,18 @@ function array(value: unknown): readonly unknown[] {
 }
 export function consumeSecondBrainContract(fixturePath: string, sourcePath?: string): SecondBrainContractSummary {
   const payload = readFileSync(fixturePath); const digest = createHash("sha256").update(payload).digest("hex");
-  if (digest !== EXPECTED_DIGEST || readFileSync(`${fixturePath}.sha256`, "ascii") !== `${digest}\n`
+  const profile = digest === PROFILES.schema3.digest ? PROFILES.schema3
+    : digest === PROFILES.schema4.digest ? PROFILES.schema4 : undefined;
+  if (profile === undefined || readFileSync(`${fixturePath}.sha256`, "ascii") !== `${digest}\n`
     || (sourcePath !== undefined && (!payload.equals(readFileSync(sourcePath))
       || readFileSync(`${sourcePath}.sha256`, "ascii") !== `${digest}\n`))) throw new SecondBrainContractError();
   const parsed: unknown = JSON.parse(payload.toString("utf8"));
   const root = record(parsed);
   exact(root, ["application", "canonicalization", "errors", "normalization", "schema_version", "tools", "vectors"]);
-  if (root.schema_version !== 3) throw new SecondBrainContractError();
+  if (root.schema_version !== profile.schemaVersion) throw new SecondBrainContractError();
   const application = record(root.application); exact(application, ["implementation_commit", "implementation_commit_role"]);
-  if (application.implementation_commit !== IMPLEMENTATION_COMMIT
-    || application.implementation_commit_role !== "task28_entry_baseline") throw new SecondBrainContractError();
+  if (application.implementation_commit !== profile.implementationCommit
+    || application.implementation_commit_role !== profile.implementationRole) throw new SecondBrainContractError();
   const tools = record(root.tools); exact(tools, TOOLS);
   for (const name of TOOLS) {
     const tool = record(tools[name]);
@@ -58,7 +72,7 @@ export function consumeSecondBrainContract(fixturePath: string, sourcePath?: str
     || array(root.errors).length < 35) throw new SecondBrainContractError();
   const features = array(vectors.features);
   if (!features.every(feature => typeof feature === "string")) throw new SecondBrainContractError();
-  return { schemaVersion: 3, implementationCommit: IMPLEMENTATION_COMMIT, tools: TOOLS, digest,
+  return { schemaVersion: profile.schemaVersion, implementationCommit: profile.implementationCommit, tools: TOOLS, digest,
     rememberBehavior: "non_idempotent_collision_safe_no_overwrite", features: features as string[], toolCount: 9 };
 }
 function main(): void {

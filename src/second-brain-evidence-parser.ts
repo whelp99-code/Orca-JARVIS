@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { canonicalize } from "./canonical.js";
 import { secondBrainUtf8Bytes, type SecondBrainReadBudget } from "./second-brain-read-budget.js";
 import {
   SECOND_BRAIN_SENSITIVITIES,
@@ -9,8 +10,15 @@ import {
   type SecondBrainEvidence,
   type SecondBrainSensitivity,
 } from "./second-brain-adapter-types.js";
+import { SECOND_BRAIN_GENERATION_BINDING_KEY, secondBrainGenerationBinding } from "./second-brain-generation-read.js";
+import { boundSecondBrainEvidence, type BoundRecordProjection } from "./second-brain-read-values.js";
 
 const PAGE_KEYS = ["body", "frontmatter"] as const;
+const BOUND_PAGE_KEYS = ["body", "frontmatter", "records", SECOND_BRAIN_GENERATION_BINDING_KEY] as const;
+const RECORD_KEYS = ["schema_version", "record_id", "record_digest", "sid", "record_text",
+  "record_text_digest", "citation_span_start", "citation_span_end", "source_identity_full",
+  "content_identity_full", "citation_identity_full", "sensitivity", "source_owner_class",
+  "source_owner_id_digest", "origin_label", "valid_from", "valid_until"] as const;
 const FRONTMATTER_KEYS = ["compiled_by", "id", "sensitivity", "sources", "status", "title", "updated"] as const;
 const PROHIBITED_FIELDS = ["secret", "raw_body", "raw_screen", "audio", "video"] as const;
 const SID_PATTERN = /^[0-9a-f]{8,64}$/;
@@ -36,7 +44,8 @@ function record(value: unknown): Readonly<Record<string, unknown>> | undefined {
     : undefined;
 }
 function exactKeys(value: Readonly<Record<string, unknown>>, allowed: readonly string[]): boolean {
-  return Object.keys(value).every(key => allowed.includes(key));
+  const keys = Object.keys(value);
+  return keys.length === allowed.length && keys.every(key => allowed.includes(key));
 }
 function timestamp(date: Date): string { return date.toISOString(); }
 function digest(value: string): string {
@@ -51,12 +60,15 @@ function invalid(code: string): ParsedPage { return { kind: "invalid", code }; }
 export function parseSecondBrainPage(input: PageParseInput): ParsedPage {
   const budgetCode = input.requestBudget.consumeProvider(input.value, true);
   if (budgetCode !== undefined) return invalid(budgetCode);
-  if (!exactKeys(input.value, PAGE_KEYS)) return invalid("SECOND_BRAIN_PAGE_MALFORMED");
+  const bound = Object.hasOwn(input.value, "records");
+  if (!exactKeys(input.value, bound ? BOUND_PAGE_KEYS : PAGE_KEYS)) return invalid("SECOND_BRAIN_PAGE_MALFORMED");
   const frontmatter = record(input.value["frontmatter"]);
   const body = input.value["body"];
   if (frontmatter === undefined || typeof body !== "string") return invalid("SECOND_BRAIN_PAGE_MALFORMED");
   if (PROHIBITED_FIELDS.some(field => field in frontmatter)) return invalid("SECOND_BRAIN_PROHIBITED_FIELD");
-  if (!exactKeys(frontmatter, FRONTMATTER_KEYS)) return invalid("SECOND_BRAIN_PAGE_MALFORMED");
+  const frontmatterKeys = Object.hasOwn(frontmatter, "sensitivity")
+    ? FRONTMATTER_KEYS : FRONTMATTER_KEYS.filter(key => key !== "sensitivity");
+  if (!exactKeys(frontmatter, frontmatterKeys)) return invalid("SECOND_BRAIN_PAGE_MALFORMED");
   const pageId = frontmatter["id"];
   const version = frontmatter["compiled_by"];
   const updated = frontmatter["updated"];
@@ -79,6 +91,7 @@ export function parseSecondBrainPage(input: PageParseInput): ParsedPage {
   if (!Number.isFinite(validAt.getTime()) || validAt.toISOString().slice(0, 10) !== updated
     || validAt.getTime() > checkedMs) return invalid("SECOND_BRAIN_TIME_INVALID");
   if (checkedMs >= validAt.getTime() + input.expiryMs) return invalid("SECOND_BRAIN_EVIDENCE_EXPIRED");
+  if (bound) return parseBoundRecords(input, frontmatter, tier);
   return parseCitations(input, body, {
     pageId,
     version,
@@ -86,6 +99,62 @@ export function parseSecondBrainPage(input: PageParseInput): ParsedPage {
     tier,
     validAt,
   });
+}
+
+function parseBoundRecords(
+  input: PageParseInput,
+  frontmatter: Readonly<Record<string, unknown>>,
+  pageSensitivity: SecondBrainSensitivity,
+): ParsedPage {
+  const generation = secondBrainGenerationBinding(input.value);
+  const values = input.value["records"];
+  const version = frontmatter["compiled_by"];
+  if (generation === undefined || !Array.isArray(values) || values.length > 64
+    || typeof version !== "string") return invalid("SECOND_BRAIN_RECORDS_MALFORMED");
+  const evidence: SecondBrainEvidence[] = [];
+  for (const value of values) {
+    const row = record(value);
+    if (row === undefined || !exactKeys(row, RECORD_KEYS) || row["schema_version"] !== 1) {
+      return invalid("SECOND_BRAIN_RECORDS_MALFORMED");
+    }
+    const recordId = row["record_id"]; const recordDigest = row["record_digest"];
+    const sid = row["sid"]; const text = row["record_text"]; const textDigest = row["record_text_digest"];
+    const source = row["source_identity_full"]; const content = row["content_identity_full"];
+    const citation = row["citation_identity_full"]; const owner = row["source_owner_class"];
+    const ownerDigest = row["source_owner_id_digest"]; const origin = row["origin_label"];
+    const validFrom = row["valid_from"]; const validUntil = row["valid_until"];
+    const start = row["citation_span_start"]; const end = row["citation_span_end"];
+    const tier = sensitivity(row["sensitivity"]);
+    if (typeof recordId !== "string" || typeof recordDigest !== "string" || typeof sid !== "string"
+      || typeof text !== "string" || typeof textDigest !== "string" || typeof source !== "string"
+      || typeof content !== "string" || typeof citation !== "string" || typeof ownerDigest !== "string"
+      || typeof origin !== "string" || typeof validFrom !== "string" || typeof validUntil !== "string"
+      || typeof start !== "number" || typeof end !== "number" || tier === undefined
+      || tier !== pageSensitivity || !/^sbrecord:v1:[0-9a-f]{64}$/.test(recordId)
+      || !DIGEST_PATTERN.test(recordDigest) || !DIGEST_PATTERN.test(textDigest)
+      || !/^[0-9a-f]{64}$/.test(source) || !/^[0-9a-f]{64}$/.test(content)
+      || !/^[0-9a-f]{64}$/.test(citation) || !DIGEST_PATTERN.test(ownerDigest)
+      || (owner !== "provider_owned" && owner !== "external_read_only")
+      || !SID_PATTERN.test(sid) || !Number.isSafeInteger(start) || !Number.isSafeInteger(end)
+      || start < 0 || end <= start || secondBrainUtf8Bytes(text) > input.budgets.max_excerpt_bytes
+      || secondBrainUtf8Bytes(origin) > 512 || /(?:^|[/\\])(?:home|Users|Volumes)(?:[/\\]|$)/.test(origin)) {
+      return invalid("SECOND_BRAIN_RECORDS_MALFORMED");
+    }
+    const core = Object.fromEntries(Object.entries(row)
+      .filter(([key]) => key !== "record_id" && key !== "record_digest"));
+    const expected = `sha256:${createHash("sha256").update("second-brain/memory-record/v1\0")
+      .update(canonicalize(core)).digest("hex")}`;
+    const from = Date.parse(validFrom); const until = Date.parse(validUntil);
+    if (recordDigest !== expected || recordId !== `sbrecord:v1:${expected.slice(7)}`
+      || textDigest !== digest(text) || content !== textDigest.slice(7)
+      || !Number.isFinite(from) || !Number.isFinite(until) || from >= until
+      || input.checkedAt.getTime() >= until) return invalid("SECOND_BRAIN_RECORD_IDENTITY_INVALID");
+    const projection: BoundRecordProjection = { recordId, recordDigest, sid, text, textDigest,
+      source, content, citation, owner, ownerDigest, origin, validFrom, validUntil, tier, version };
+    evidence.push(boundSecondBrainEvidence({ pageId: input.requestedPageId,
+      checkedAt: input.checkedAt, maxAgeMs: input.maxAgeMs, generation, row: projection }));
+  }
+  return resolveDuplicates(evidence);
 }
 
 type CitationContext = {
@@ -159,6 +228,7 @@ function buildEvidence(
     excerpt: redacted ? null : excerpt,
     content_digest: contentDigest,
     omission: redacted ? "policy_redacted" : null,
+    record: null,
   };
 }
 

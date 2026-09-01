@@ -19,6 +19,26 @@ export type SecondBrainAdapterOptions = {
   readonly expiry_ms: number;
   readonly read_fence?: (at: Date) => import("./second-brain-effect-v2.js").MemoryReadFenceV1;
 };
+export type SecondBrainGenerationBinding = {
+  readonly provider_instance_id: string;
+  readonly generation_id: string;
+  readonly generation_manifest_digest: string;
+  readonly vault_head: string;
+  readonly vault_tree: string;
+  readonly tombstone_sequence: number;
+  readonly tombstone_set_root: string;
+};
+export type SecondBrainRecordBinding = {
+  readonly record_id: string;
+  readonly record_digest: string;
+  readonly source_identity_full: string;
+  readonly content_identity_full: string;
+  readonly citation_identity_full: string;
+  readonly source_owner_class: "provider_owned" | "external_read_only";
+  readonly source_owner_id_digest: string;
+  readonly origin_label: string;
+  readonly generation: SecondBrainGenerationBinding;
+};
 export type SecondBrainEvidence = {
   readonly kind: "memory";
   readonly page_id: string;
@@ -40,6 +60,7 @@ export type SecondBrainEvidence = {
   readonly excerpt: string | null;
   readonly content_digest: string;
   readonly omission: "policy_redacted" | null;
+  readonly record: SecondBrainRecordBinding | null;
 };
 export type SecondBrainConflict = {
   readonly conflict_id: string;

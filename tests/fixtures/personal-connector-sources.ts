@@ -24,7 +24,7 @@ export function currentMemoryOutcome(observedAt = CONNECTOR_NOW.toISOString()): 
       observed_at: observedAt, valid_at: observedAt,
       freshness: { state: "fresh", checked_at: CONNECTOR_NOW.toISOString(), fresh_until: CONNECTOR_NOW.toISOString() },
       expires_at: CONNECTOR_NOW.toISOString(), trust: "untrusted", authority: "none", excerpt: null,
-      content_digest: DIGEST, omission: null,
+      content_digest: DIGEST, omission: null, record: null,
     }],
   };
 }

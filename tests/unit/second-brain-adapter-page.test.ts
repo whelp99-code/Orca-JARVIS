@@ -77,6 +77,7 @@ describe("Second Brain cited page evidence", () => {
         excerpt: "Prefer cited evidence.[^a1b2c3d4]",
         content_digest: digest("Prefer cited evidence.[^a1b2c3d4]"),
         omission: null,
+        record: null,
       }],
     });
     expect(transport.calls).toEqual([{ method: "sb_read_page", arguments_: { id: "wiki/principle" } }]);

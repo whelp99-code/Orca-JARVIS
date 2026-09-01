@@ -94,7 +94,7 @@ describe("Second Brain contract consumer", () => {
   });
 
   it("rejects no-data raw mapping drift", () => {
-    expectMismatch(mutated('"raw_response":{"results":[]}', '"raw_response":{"items":[]}'));
+    expectMismatch(mutated('"results":[]', '"results_drift":[]'));
   });
 
   it("rejects raw error wording drift", () => {

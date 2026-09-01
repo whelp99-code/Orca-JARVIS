@@ -1,15 +1,28 @@
-import type {
-  SecondBrainAdapterBudgets,
-  SecondBrainEvidence,
-  SecondBrainReadOutcome,
+import {
+  SECOND_BRAIN_SOURCE_ID,
+  SECOND_BRAIN_TRUST,
+  type SecondBrainAdapterBudgets,
+  type SecondBrainEvidence,
+  type SecondBrainGenerationBinding,
+  type SecondBrainReadOutcome,
+  type SecondBrainSensitivity,
 } from "./second-brain-adapter-types.js";
-import { secondBrainUtf8Bytes } from "./second-brain-read-budget.js";
+import { secondBrainUtf8Bytes, type SecondBrainReadBudget } from "./second-brain-read-budget.js";
 
 export type SecondBrainSearchRow = {
   readonly page_id: string;
   readonly section: string;
   readonly snippet: string;
   readonly score: number;
+  readonly record_id: string | null;
+  readonly record_digest: string | null;
+};
+export type BoundRecordProjection = {
+  readonly recordId: string; readonly recordDigest: string; readonly sid: string;
+  readonly text: string; readonly textDigest: string; readonly source: string; readonly content: string;
+  readonly citation: string; readonly owner: "provider_owned" | "external_read_only";
+  readonly ownerDigest: string; readonly origin: string; readonly validFrom: string;
+  readonly validUntil: string; readonly tier: SecondBrainSensitivity; readonly version: string;
 };
 export type SecondBrainConflictRow = {
   readonly conflict_id: string;
@@ -40,20 +53,28 @@ export function parseSecondBrainSearchRows(
 ): readonly SecondBrainSearchRow[] | undefined {
   const rows: SecondBrainSearchRow[] = [];
   for (const candidate of value) {
-    if (!isSecondBrainRecord(candidate)
-      || !hasExactSecondBrainKeys(candidate, ["page_id", "score", "section", "snippet"])
+    if (!isSecondBrainRecord(candidate)) return undefined;
+    const bound = Object.hasOwn(candidate, "record_id") || Object.hasOwn(candidate, "record_digest");
+    const keys = bound ? ["page_id", "record_digest", "record_id", "score", "section", "snippet"]
+      : ["page_id", "score", "section", "snippet"];
+    if (!hasExactSecondBrainKeys(candidate, keys)
       || !isSecondBrainPageId(candidate["page_id"])
       || typeof candidate["section"] !== "string"
       || secondBrainUtf8Bytes(candidate["section"]) > budgets.max_excerpt_bytes
       || typeof candidate["snippet"] !== "string"
       || secondBrainUtf8Bytes(candidate["snippet"]) > budgets.max_excerpt_bytes
-      || typeof candidate["score"] !== "number"
-      || !Number.isFinite(candidate["score"])) return undefined;
+      || typeof candidate["score"] !== "number" || !Number.isFinite(candidate["score"])
+      || (bound && (typeof candidate["record_id"] !== "string"
+        || !/^sbrecord:v1:[0-9a-f]{64}$/.test(candidate["record_id"])
+        || typeof candidate["record_digest"] !== "string"
+        || !/^sha256:[0-9a-f]{64}$/.test(candidate["record_digest"])))) return undefined;
     rows.push({
       page_id: candidate["page_id"],
       section: candidate["section"],
       snippet: candidate["snippet"],
       score: candidate["score"],
+      record_id: bound ? String(candidate["record_id"]) : null,
+      record_digest: bound ? String(candidate["record_digest"]) : null,
     });
   }
   return rows;
@@ -95,18 +116,66 @@ export function combineSecondBrainEvidence(
   return { kind: "current", checked_at: checkedAt.toISOString(), evidence };
 }
 
+export function boundSecondBrainEvidence(input: {
+  readonly pageId: string; readonly checkedAt: Date; readonly maxAgeMs: number;
+  readonly generation: SecondBrainGenerationBinding; readonly row: BoundRecordProjection;
+}): SecondBrainEvidence {
+  const from = Date.parse(input.row.validFrom); const until = Date.parse(input.row.validUntil);
+  const freshUntil = Math.min(from + input.maxAgeMs, until);
+  const redacted = input.row.tier === "sensitive" || input.row.tier === "restricted";
+  return { kind: "memory", page_id: input.pageId, sid: input.row.sid, source_ref: input.row.origin,
+    source_id: SECOND_BRAIN_SOURCE_ID, source_version: input.row.version, sensitivity: input.row.tier,
+    observed_at: input.checkedAt.toISOString(), valid_at: input.row.validFrom,
+    freshness: { state: input.checkedAt.getTime() >= freshUntil ? "stale" : "fresh",
+      checked_at: input.checkedAt.toISOString(), fresh_until: new Date(freshUntil).toISOString() },
+    expires_at: input.row.validUntil, trust: SECOND_BRAIN_TRUST, authority: "none",
+    excerpt: redacted ? null : input.row.text, content_digest: input.row.textDigest,
+    omission: redacted ? "policy_redacted" : null,
+    record: { record_id: input.row.recordId, record_digest: input.row.recordDigest,
+      source_identity_full: input.row.source, content_identity_full: input.row.content,
+      citation_identity_full: input.row.citation, source_owner_class: input.row.owner,
+      source_owner_id_digest: input.row.ownerDigest, origin_label: input.row.origin,
+      generation: input.generation } };
+}
+
+export function boundSecondBrainOutcome(
+  outcome: SecondBrainReadOutcome,
+  checkedAt: Date,
+  requestBudget: SecondBrainReadBudget,
+): SecondBrainReadOutcome {
+  if (outcome.kind !== "current" && outcome.kind !== "stale" && outcome.kind !== "conflicts") return outcome;
+  const code = requestBudget.consumeReturned(outcome);
+  return code === undefined ? outcome : { kind: "invalid", code, checked_at: checkedAt.toISOString() };
+}
+
+export function nonDataSecondBrainOutcome(
+  outcome: { readonly kind: "no_data"; readonly reason: "empty_result" }
+    | { readonly kind: "error"; readonly code: string },
+  checkedAt: Date,
+): SecondBrainReadOutcome {
+  switch (outcome.kind) {
+    case "no_data": return { kind: "no_data", checked_at: checkedAt.toISOString(),
+      fresh_until: new Date(checkedAt.getTime() + 60_000).toISOString() };
+    case "error": return { kind: "unavailable", code: outcome.code, checked_at: checkedAt.toISOString() };
+    default: return assertNever(outcome);
+  }
+}
+
 export function parseSecondBrainConflictRows(
   value: readonly unknown[],
   budgets: SecondBrainAdapterBudgets,
 ): readonly SecondBrainConflictRow[] | undefined {
   const rows: SecondBrainConflictRow[] = [];
   for (const candidate of value) {
-    if (!isSecondBrainRecord(candidate)
-      || !hasExactSecondBrainKeys(candidate, ["conflict_id", "page_id", "summary"])
+    if (!isSecondBrainRecord(candidate)) return undefined;
+    const bound = Object.hasOwn(candidate, "records");
+    if (!hasExactSecondBrainKeys(candidate,
+      bound ? ["conflict_id", "page_id", "records", "summary"] : ["conflict_id", "page_id", "summary"])
       || !isSecondBrainPageId(candidate["conflict_id"])
       || !isSecondBrainPageId(candidate["page_id"])
       || typeof candidate["summary"] !== "string"
-      || secondBrainUtf8Bytes(candidate["summary"]) > budgets.max_excerpt_bytes) return undefined;
+      || secondBrainUtf8Bytes(candidate["summary"]) > budgets.max_excerpt_bytes
+      || (bound && (!Array.isArray(candidate["records"]) || candidate["records"].length > 64))) return undefined;
     rows.push({
       conflict_id: candidate["conflict_id"],
       page_id: candidate["page_id"],
@@ -114,4 +183,8 @@ export function parseSecondBrainConflictRows(
     });
   }
   return rows;
+}
+
+function assertNever(value: never): never {
+  throw new Error(`unexpected Second Brain outcome: ${JSON.stringify(value)}`);
 }

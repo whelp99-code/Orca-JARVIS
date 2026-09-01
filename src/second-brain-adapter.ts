@@ -3,20 +3,26 @@ import { bindSecondBrainGenerationRead } from "./second-brain-generation-read.js
 import { normalizeSecondBrainProviderRecord } from "./second-brain-provider-value.js";
 import { secondBrainUtf8Bytes, SecondBrainReadBudget } from "./second-brain-read-budget.js";
 import {
+  boundSecondBrainOutcome,
   combineSecondBrainEvidence,
   hasExactSecondBrainKeys,
   isSecondBrainPageId,
   isSecondBrainRecord,
+  nonDataSecondBrainOutcome,
   parseSecondBrainConflictRows,
   parseSecondBrainSearchRows,
+  type SecondBrainSearchRow,
 } from "./second-brain-read-values.js";
 import {
   type SecondBrainAdapterOptions,
   type SecondBrainConflict,
   type SecondBrainEvidence,
+  type SecondBrainGenerationBinding,
   type SecondBrainReadAdapter,
   type SecondBrainReadOutcome,
 } from "./second-brain-adapter-types.js";
+import { SECOND_BRAIN_GENERATION_BINDING_KEY, secondBrainEvidenceGenerationMatches,
+  secondBrainGenerationBinding } from "./second-brain-generation-read.js";
 import {
   SecondBrainTransportError,
   type SecondBrainOutcome,
@@ -41,13 +47,11 @@ export type {
 } from "./second-brain-adapter-types.js";
 export { SECOND_BRAIN_SENSITIVITIES, SECOND_BRAIN_SOURCE_ID, SECOND_BRAIN_TRUST } from "./second-brain-adapter-types.js";
 
-const OFFLINE_CODES = [
-  "SECOND_BRAIN_CHILD_EXIT",
-  "SECOND_BRAIN_DISCOVERY_FAILED",
-  "SECOND_BRAIN_START_FAILED",
-] as const;
-const CHECK_FRESH_MS = 60_000;
-
+const OFFLINE_CODES = ["SECOND_BRAIN_CHILD_EXIT", "SECOND_BRAIN_DISCOVERY_FAILED",
+  "SECOND_BRAIN_START_FAILED"] as const;
+type PageSelection = Pick<SecondBrainSearchRow, "page_id" | "record_id" | "record_digest">;
+type PageBatch = { readonly selections: readonly PageSelection[]; readonly checkedAt: Date;
+  readonly requestBudget: SecondBrainReadBudget; readonly generation: SecondBrainGenerationBinding | undefined };
 type CallResult =
   | { readonly kind: "transport"; readonly outcome: SecondBrainOutcome }
   | { readonly kind: "adapter"; readonly outcome: SecondBrainReadOutcome };
@@ -78,17 +82,19 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
     }
     const called = await this.call("sb_search", { query, limit: this.options.budgets.max_hits }, checkedAt);
     if (called.kind === "adapter") return called.outcome;
-    if (called.outcome.kind !== "data") return this.nonData(called.outcome, checkedAt);
+    if (called.outcome.kind !== "data") return nonDataSecondBrainOutcome(called.outcome, checkedAt);
     const value = called.outcome.value;
     const budgetCode = requestBudget.consumeProvider(value);
     if (budgetCode !== undefined) return invalid(budgetCode, checkedAt);
-    if (!hasExactSecondBrainKeys(value, ["results"]) || !Array.isArray(value["results"])) {
+    const generation = secondBrainGenerationBinding(value);
+    if (!hasExactSecondBrainKeys(value, generation === undefined ? ["results"]
+      : ["results", SECOND_BRAIN_GENERATION_BINDING_KEY]) || !Array.isArray(value["results"])) {
       return invalid("SECOND_BRAIN_SEARCH_MALFORMED", checkedAt);
     }
     const parsed = parseSecondBrainSearchRows(value["results"], this.options.budgets);
     if (parsed === undefined) return invalid("SECOND_BRAIN_SEARCH_MALFORMED", checkedAt);
     if (parsed.length > this.options.budgets.max_hits) return invalid("SECOND_BRAIN_RESULTS_OVERSIZE", checkedAt);
-    return this.readPages(parsed.map(row => row.page_id), checkedAt, requestBudget);
+    return this.readPages({ selections: parsed, checkedAt, requestBudget, generation });
   }
 
   async readPage(pageId: string): Promise<SecondBrainReadOutcome> {
@@ -96,7 +102,7 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
     const requestBudget = new SecondBrainReadBudget(this.options.budgets);
     if (!isSecondBrainPageId(pageId)) return invalid("SECOND_BRAIN_PAGE_ID_INVALID", checkedAt);
     const result = await this.readPageAt(pageId, checkedAt, requestBudget);
-    return this.bounded(result, checkedAt, requestBudget);
+    return boundSecondBrainOutcome(result, checkedAt, requestBudget);
   }
 
   async recentChanges(days: number): Promise<SecondBrainReadOutcome> {
@@ -105,11 +111,13 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
     if (!Number.isSafeInteger(days) || days < 0 || days > 365) return invalid("SECOND_BRAIN_DAYS_INVALID", checkedAt);
     const called = await this.call("sb_recent_changes", { days }, checkedAt);
     if (called.kind === "adapter") return called.outcome;
-    if (called.outcome.kind !== "data") return this.nonData(called.outcome, checkedAt);
+    if (called.outcome.kind !== "data") return nonDataSecondBrainOutcome(called.outcome, checkedAt);
     const value = called.outcome.value;
     const budgetCode = requestBudget.consumeProvider(value);
     if (budgetCode !== undefined) return invalid(budgetCode, checkedAt);
-    if (!hasExactSecondBrainKeys(value, ["changes"]) || !Array.isArray(value["changes"])) {
+    const generation = secondBrainGenerationBinding(value);
+    if (!hasExactSecondBrainKeys(value, generation === undefined ? ["changes"]
+      : ["changes", SECOND_BRAIN_GENERATION_BINDING_KEY]) || !Array.isArray(value["changes"])) {
       return invalid("SECOND_BRAIN_CHANGES_MALFORMED", checkedAt);
     }
     if (value["changes"].length > this.options.budgets.max_hits) {
@@ -131,7 +139,8 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
       }
       pageIds.push(candidate["page_id"]);
     }
-    return this.readPages(pageIds, checkedAt, requestBudget);
+    return this.readPages({ selections: pageIds.map(page_id => ({ page_id, record_id: null,
+      record_digest: null })), checkedAt, requestBudget, generation });
   }
 
   async openConflicts(): Promise<SecondBrainReadOutcome> {
@@ -139,11 +148,13 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
     const requestBudget = new SecondBrainReadBudget(this.options.budgets);
     const called = await this.call("sb_open_conflicts", {}, checkedAt);
     if (called.kind === "adapter") return called.outcome;
-    if (called.outcome.kind !== "data") return this.nonData(called.outcome, checkedAt);
+    if (called.outcome.kind !== "data") return nonDataSecondBrainOutcome(called.outcome, checkedAt);
     const value = called.outcome.value;
     const budgetCode = requestBudget.consumeProvider(value);
     if (budgetCode !== undefined) return invalid(budgetCode, checkedAt);
-    if (!hasExactSecondBrainKeys(value, ["conflicts"]) || !Array.isArray(value["conflicts"])) {
+    const generation = secondBrainGenerationBinding(value);
+    if (!hasExactSecondBrainKeys(value, generation === undefined ? ["conflicts"]
+      : ["conflicts", SECOND_BRAIN_GENERATION_BINDING_KEY]) || !Array.isArray(value["conflicts"])) {
       return invalid("SECOND_BRAIN_CONFLICTS_MALFORMED", checkedAt);
     }
     const rows = parseSecondBrainConflictRows(value["conflicts"], this.options.budgets);
@@ -153,32 +164,42 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
     for (const row of rows) {
       const result = await this.readPageAt(`conflicts/${row.conflict_id}`, checkedAt, requestBudget);
       if (result.kind === "invalid" || result.kind === "offline" || result.kind === "unavailable") return result;
+      if (!secondBrainEvidenceGenerationMatches(result, generation)) {
+        return invalid("SECOND_BRAIN_GENERATION_CHANGED", checkedAt);
+      }
       if (result.kind === "no_data" || result.kind === "conflicts" || result.evidence.length !== 2) {
         return invalid("SECOND_BRAIN_CONFLICT_SHAPE_INVALID", checkedAt);
       }
       const left = result.evidence[0];
       const right = result.evidence[1];
-      if (left === undefined || right === undefined || this.sideIdentity(left) === this.sideIdentity(right)) {
+      if (left === undefined || right === undefined
+        || `${left.sid}\0${left.source_ref}\0${left.content_digest}`
+          === `${right.sid}\0${right.source_ref}\0${right.content_digest}`) {
         return invalid("SECOND_BRAIN_CONFLICT_SHAPE_INVALID", checkedAt);
       }
       conflicts.push({ conflict_id: row.conflict_id, page_id: row.page_id, state: "unresolved", left, right });
     }
     conflicts.sort((left, right) => left.conflict_id.localeCompare(right.conflict_id));
-    return this.bounded({ kind: "conflicts", checked_at: checkedAt.toISOString(), conflicts }, checkedAt, requestBudget);
+    return boundSecondBrainOutcome({ kind: "conflicts", checked_at: checkedAt.toISOString(), conflicts }, checkedAt, requestBudget);
   }
 
-  private async readPages(
-    pageIds: readonly string[],
-    checkedAt: Date,
-    requestBudget: SecondBrainReadBudget,
-  ): Promise<SecondBrainReadOutcome> {
+  private async readPages(input: PageBatch): Promise<SecondBrainReadOutcome> {
     const evidence: SecondBrainEvidence[] = [];
-    for (const pageId of new Set(pageIds)) {
-      const result = await this.readPageAt(pageId, checkedAt, requestBudget);
-      if (result.kind === "current" || result.kind === "stale") evidence.push(...result.evidence);
-      else return result;
+    const unique = new Map(input.selections.map(selection => [selection.page_id, selection]));
+    for (const selection of unique.values()) {
+      const result = await this.readPageAt(selection.page_id, input.checkedAt, input.requestBudget);
+      if (result.kind !== "current" && result.kind !== "stale") return result;
+      if (!secondBrainEvidenceGenerationMatches(result, input.generation)) {
+        return invalid("SECOND_BRAIN_GENERATION_CHANGED", input.checkedAt);
+      }
+      const selected = selection.record_id === null ? result.evidence : result.evidence.filter(item =>
+        item.record?.record_id === selection.record_id && item.record.record_digest === selection.record_digest);
+      if (selection.record_id !== null && selected.length !== 1) {
+        return invalid("SECOND_BRAIN_RECORD_SELECTION_INVALID", input.checkedAt);
+      }
+      evidence.push(...selected);
     }
-    return this.bounded(combineSecondBrainEvidence(evidence, checkedAt), checkedAt, requestBudget);
+    return boundSecondBrainOutcome(combineSecondBrainEvidence(evidence, input.checkedAt), input.checkedAt, input.requestBudget);
   }
 
   private async readPageAt(
@@ -188,7 +209,7 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
   ): Promise<SecondBrainReadOutcome> {
     const called = await this.call("sb_read_page", { id: pageId }, checkedAt);
     if (called.kind === "adapter") return called.outcome;
-    if (called.outcome.kind !== "data") return this.nonData(called.outcome, checkedAt);
+    if (called.outcome.kind !== "data") return nonDataSecondBrainOutcome(called.outcome, checkedAt);
     const parsed = parseSecondBrainPage({
       value: called.outcome.value,
       requestedPageId: pageId,
@@ -205,20 +226,6 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
       case "stale": return { kind: "stale", code: "SECOND_BRAIN_EVIDENCE_STALE", checked_at: checkedAt.toISOString(), evidence: parsed.evidence };
       default: { const exhaustive: never = parsed; return exhaustive; }
     }
-  }
-
-  private bounded(
-    outcome: SecondBrainReadOutcome,
-    checkedAt: Date,
-    requestBudget: SecondBrainReadBudget,
-  ): SecondBrainReadOutcome {
-    if (outcome.kind !== "current" && outcome.kind !== "stale" && outcome.kind !== "conflicts") return outcome;
-    const budgetCode = requestBudget.consumeReturned(outcome);
-    return budgetCode === undefined ? outcome : invalid(budgetCode, checkedAt);
-  }
-
-  private sideIdentity(evidence: SecondBrainEvidence): string {
-    return `${evidence.sid}\0${evidence.source_ref}\0${evidence.content_digest}`;
   }
 
   private async call(
@@ -242,18 +249,6 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
       if (!(error instanceof SecondBrainTransportError)) throw error;
       const kind = OFFLINE_CODES.some(code => code === error.code) ? "offline" : error.disposition === "fatal" ? "invalid" : "unavailable";
       return { kind: "adapter", outcome: { kind, code: error.code, checked_at: checkedAt.toISOString() } };
-    }
-  }
-
-  private nonData(outcome: Exclude<SecondBrainOutcome, { readonly kind: "data" }>, checkedAt: Date): SecondBrainReadOutcome {
-    switch (outcome.kind) {
-      case "no_data": return {
-        kind: "no_data",
-        checked_at: checkedAt.toISOString(),
-        fresh_until: new Date(checkedAt.getTime() + CHECK_FRESH_MS).toISOString(),
-      };
-      case "error": return { kind: "unavailable", code: outcome.code, checked_at: checkedAt.toISOString() };
-      default: { const exhaustive: never = outcome; return exhaustive; }
     }
   }
 }
