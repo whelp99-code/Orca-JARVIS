@@ -1,5 +1,7 @@
 # Dual-host portfolio collectors
 
+Status: Mac LaunchAgent/`/Volumes/DevSpace` LOCAL install steps below are `HISTORICAL_NON_EXECUTABLE`. Do not `launchctl` bootstrap a Mac portfolio agent from this file. Linux collector units: `deploy/jm-jarvis-portfolio-collector.service` and `deploy/jm-jarvis-portfolio-collector.timer`. Linux authority docs: `docs/personal-os/operations.md`.
+
 The portfolio dashboard uses one source-owned collector per host. JM-SERVER accepts LOCAL reports only through a restricted SSH key whose forced command is the LOCAL ingest wrapper.
 
 ## Secret and identity boundaries
@@ -50,6 +52,8 @@ from="<LOCAL_TAILSCALE_IP>",restrict,command="/bin/bash /home/jm/.local/state/or
 ```
 
 ## LOCAL installation
+
+Status: `HISTORICAL_NON_EXECUTABLE`. The following LaunchAgent recipe is archive text only. Do not install it.
 
 Install the publisher and LaunchAgent from the active full-SHA release:
 

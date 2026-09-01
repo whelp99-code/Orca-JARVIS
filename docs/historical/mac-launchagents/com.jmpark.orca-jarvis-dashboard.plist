@@ -1,5 +1,11 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+Status: HISTORICAL_NON_EXECUTABLE
+Do not launchctl bootstrap, bootout, or kickstart this file.
+This is not a Mac AuthorityDb or production runtime path.
+Linux authority: docs/personal-os/release.md, docs/personal-os/operations.md, deploy/jm-jarvis-dashboard.service
+-->
 <plist version="1.0">
 <dict>
   <key>Label</key>
@@ -27,9 +33,9 @@
     <string>/Users/jmpark/.nvm/versions/node/v24.19.0/bin:/opt/homebrew/bin:/usr/local/bin:/usr/bin:/bin</string>
   </dict>
   <key>RunAtLoad</key>
-  <true/>
+  <false/>
   <key>KeepAlive</key>
-  <true/>
+  <false/>
   <key>ThrottleInterval</key>
   <integer>10</integer>
   <key>StandardOutPath</key>

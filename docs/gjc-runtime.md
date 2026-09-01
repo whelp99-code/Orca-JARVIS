@@ -6,7 +6,7 @@
 
 The service commands are `jarvis service status --db <database>`, `jarvis service once --db <database>`, and `jarvis service run --interval-ms <milliseconds> --db <database>`. They run the supervisor cycle and GJC reconciliation under a restart-safe fenced lease. The runtime code does not install or invoke `launchctl`.
 
-The current installed LaunchAgent is `com.jmpark.orca-jarvis`. It uses Node 24 at `/Users/jmpark/.nvm/versions/node/v24.19.0/bin/node` (matching `package.json`'s `node >=24` contract) and the database `.jarvis-runtime/jarvis.sqlite`; restart recovery has been verified. The plist is installed under `~/Library/LaunchAgents/` because bootstrapping it directly from the external-volume repository returns launchd I/O error 5. This is deployment state, not an instruction for this runtime to install or modify a LaunchAgent.
+Status: `HISTORICAL_NON_EXECUTABLE` for any Mac LaunchAgent/`~/Library/LaunchAgents` text. A retired Mac `com.jmpark.orca-jarvis` LaunchAgent is not Linux authority. Do not bootstrap it. Linux authority and dashboard units are `deploy/jm-jarvis.service` and `deploy/jm-jarvis-dashboard.service`. Live ExecStart mutation is out of scope; see `docs/personal-os/operations.md`.
 
 `capabilities --json` reports `gjc: false` and `live_dispatch: false` until a valid connected configuration exists. Once the exact connected configuration is operational, the flags truthfully report the enabled GJC/live-dispatch state rather than a compile-time capability.
 
