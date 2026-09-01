@@ -43,19 +43,20 @@ function field(value: unknown, key: string): unknown {
   return Reflect.get(value, key);
 }
 
-function completeStep(db: AuthorityDb, phase: "morning" | "evening", key: string, detail: unknown): {
-  readonly runId: string;
-  readonly stepId: string;
-} {
+function completeStep(db: AuthorityDb, input: {
+  readonly phase: "morning" | "evening";
+  readonly key: string;
+  readonly detail: unknown;
+}): { readonly runId: string; readonly stepId: string } {
   const at = new Date("2026-08-28T11:00:00.000Z");
   const loop = new DailyLoopStore(db);
-  const runId = loop.prepare({ due: { kind: "due", local_date: "2026-08-28", phase,
+  const runId = loop.prepare({ due: { kind: "due", local_date: "2026-08-28", phase: input.phase,
     scheduled_at: at.toISOString() }, created_at: at,
-  deadline_at: new Date("2026-08-28T12:00:00.000Z"), steps: [{ key, sequence: 1 }] });
-  const claim = loop.claim({ run_id: runId, owner_id: `${phase}-worker`, at, lease_ms: 600_000 });
+  deadline_at: new Date("2026-08-28T12:00:00.000Z"), steps: [{ key: input.key, sequence: 1 }] });
+  const claim = loop.claim({ run_id: runId, owner_id: `${input.phase}-worker`, at, lease_ms: 600_000 });
   const step = loop.steps(runId)[0];
   if (step === undefined) throw new Error("MEMORY_DAILY_STEP_MISSING");
-  loop.completeStep({ claim, step, detail, at });
+  loop.completeStep({ claim, step, detail: input.detail, at });
   return { runId, stepId: step.step_id };
 }
 
@@ -87,10 +88,11 @@ describe("memory projection source readers", () => {
 
       const briefCore = { generated_at: RECOMMENDATION_NOW, context_readiness: "ready",
         needs_you_first: [{ copy: canary }], waiting: [], fyi: [], target_digest: target.target_digest };
-      const morning = completeStep(db, "morning", "morning_reconcile", { ...briefCore,
-        brief_id: `brief:${digest(canary).slice(7)}`, canonical_digest: digest(canonicalize(briefCore)) });
-      const evening = completeStep(db, "evening", "evening_summary",
-        { canary, target_digest: target.target_digest });
+      const morning = completeStep(db, { phase: "morning", key: "morning_reconcile",
+        detail: { ...briefCore, brief_id: `brief:${digest(canary).slice(7)}`,
+          canonical_digest: digest(canonicalize(briefCore)) } });
+      const evening = completeStep(db, { phase: "evening", key: "evening_summary",
+        detail: { canary, target_digest: target.target_digest } });
       projections.bind({ kind: "morning_brief", id: morning.stepId, component_id: morning.stepId },
         [{ target_digest: target.target_digest }], new Date(RECOMMENDATION_NOW));
       projections.bind({ kind: "evening_closeout", id: evening.stepId, component_id: evening.stepId },

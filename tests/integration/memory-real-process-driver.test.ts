@@ -43,6 +43,8 @@ import { memoryPolicy, verifiedMemoryInput } from "../fixtures/memory-candidate-
 import { localKey } from "../helpers.js";
 
 const PROVIDER = "/home/jm/orca/workspaces/second-brain-app/jarvis-personal-operating-system";
+const PROVIDER_WHEEL = process.env["TASK30_PROVIDER_WHEEL"]
+  ?? `${PROVIDER}/dist/second_brain-0.1.0-py3-none-any.whl`;
 const PYTHON = `${PROVIDER}/.venv/bin/python`;
 const CONTRACT = "contracts/second-brain-mcp-v1.json";
 const JARVIS_KEY_ID = "jarvis:task30:real-process";
@@ -106,7 +108,7 @@ function providerApply(root: string, config: string, site: string): Readonly<Rec
 
 describe("Task 30 real built-process lifecycle", () => {
   it("runs one approved remember and three proof-bound effects through the real MCP child", async () => {
-    const wheel = `${PROVIDER}/dist/second_brain-0.1.0-py3-none-any.whl`;
+    const wheel = PROVIDER_WHEEL;
     expect(existsSync(wheel), "provider writer must run uv build before this gate").toBe(true);
     const providerSha = execFileSync("git", ["rev-parse", "HEAD"], {
       cwd: PROVIDER, encoding: "utf8",
@@ -340,6 +342,17 @@ describe("Task 30 real built-process lifecycle", () => {
       expect(authority.db.prepare(
         "SELECT state FROM memory_correction_requests WHERE correction_id=?",
       ).get(correctionId)).toEqual({ state: "settled" });
+      expect(authority.db.prepare(
+        `SELECT COUNT(*) AS rows,
+                CASE WHEN SUM(file_count+row_count+object_count+fd_count)>0 THEN 1 ELSE 0 END AS observed,
+                SUM(match_count) AS matches,SUM(error_count) AS errors,SUM(omission_count) AS omissions
+         FROM memory_surface_catalog_entries WHERE scanner_kind='provider_manifest'`,
+      ).get()).toEqual({ rows: 40, observed: 1, matches: 0, errors: 0, omissions: 0 });
+      expect(authority.db.prepare(
+        `SELECT COUNT(*) AS rows,SUM(row_count) AS executions,SUM(object_count) AS blocks,
+                SUM(error_count) AS errors,SUM(omission_count) AS omissions
+         FROM memory_surface_catalog_entries WHERE scanner_kind='guard'`,
+      ).get()).toEqual({ rows: 10, executions: 10, blocks: 10, errors: 0, omissions: 0 });
       expectAbsent(preCorrectionBackup, [oldNeedle]);
       expectAbsent(providerRoot, [oldNeedle]);
 
@@ -362,8 +375,10 @@ describe("Task 30 real built-process lifecycle", () => {
       clockValue = new Date();
       await lifecycle.reconcilePending(10);
       expect(authority.db.prepare(
-        "SELECT state FROM memory_export_requests WHERE export_id=?",
-      ).get(exportId)).toEqual({ state: "available" });
+        `SELECT state,CASE WHEN export_file_count>0 THEN 1 ELSE 0 END AS files_observed,
+                CASE WHEN export_byte_count>1 THEN 1 ELSE 0 END AS bytes_observed
+         FROM memory_export_requests WHERE export_id=?`,
+      ).get(exportId)).toEqual({ state: "available", files_observed: 1, bytes_observed: 1 });
       const preForgetBackup = join(providerRoot, "backups", "pre-forget");
       mkdirSync(dirname(preForgetBackup), { recursive: true, mode: 0o700 });
       cpSync(realpathSync(join(providerRoot, "share", "vault")), preForgetBackup, { recursive: true });

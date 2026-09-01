@@ -16,8 +16,8 @@ const CONTENT_COLUMNS: Readonly<Record<string, readonly string[]>> = {
   morning_brief: ["detail_json"],
   evening_closeout: ["detail_json"],
   notification_intent: ["redacted_preview", "deep_link"],
-  candidate: ["payload_json"],
   outbox: ["request_json"],
+  control_payload: ["target_json", "args_json"],
   restore_control: ["target_json", "args_json"],
 } as const;
 
@@ -52,12 +52,28 @@ export function collectSuppressedContent(
       if (row === null || typeof row !== "object") continue;
       for (const column of columns) {
         const value = Reflect.get(row, column);
-        if (typeof value === "string" && value.length > 0) material.push(Buffer.from(value));
-        else if (Buffer.isBuffer(value) && value.byteLength > 0) material.push(Buffer.from(value));
+        if (typeof value === "string" && value.length > 0) {
+          const structured = projection.kind === "outbox" || projection.kind === "control_payload"
+            || projection.kind === "restore_control";
+          const content = structured ? requestContent(value) : undefined;
+          if (content !== undefined) material.push(Buffer.from(content));
+          else if (!structured) material.push(Buffer.from(value));
+        } else if (Buffer.isBuffer(value) && value.byteLength > 0) material.push(Buffer.from(value));
       }
     }
   }
   return material;
+}
+
+function requestContent(encoded: string): string | undefined {
+  const parsed: unknown = JSON.parse(encoded);
+  if (parsed === null || typeof parsed !== "object") return undefined;
+  const nested = Reflect.get(parsed, "request");
+  const request = nested !== null && typeof nested === "object" ? nested : parsed;
+  const payload = Reflect.get(request, "payload");
+  if (payload === null || typeof payload !== "object") return undefined;
+  const content = Reflect.get(payload, "content");
+  return typeof content === "string" && content.length > 0 ? content : undefined;
 }
 
 export function removeSuppressedRows(

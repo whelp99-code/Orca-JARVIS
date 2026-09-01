@@ -57,11 +57,13 @@ describe("Task 30 proof-bound authority", () => {
         "048_task30_atomic_effect_runtime.sql",
         "049_task30_projection_authority.sql",
         "050_task30_compaction_inventory.sql",
+        "051_task30_observed_inventory.sql",
       ]);
       const tables = (db.db.prepare(
         "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name",
       ).all() as Array<{ readonly name: string }>).map(row => row.name);
       expect(tables).toEqual(expect.arrayContaining([
+        "memory_forbidden_content_identities",
         "memory_tombstone_chain",
         "memory_tombstone_delegation_links",
         "memory_correction_requests",

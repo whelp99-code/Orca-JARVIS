@@ -2,7 +2,16 @@ import type { MemoryCorrectionRecord } from "./memory-correction-store.js";
 import type { MemoryDeletionRecord } from "./memory-deletion-store.js";
 import type { MemoryDispositionProofV1 } from "./memory-disposition-proof.js";
 import type { MemoryExportRecord } from "./memory-export-store.js";
-import type { ReingressGuardObservations } from "./memory-managed-surface-types.js";
+import type {
+  CompleteProviderSurfaceInventory,
+  CompleteReingressGuardObservations,
+  MemoryLifecycleObservedResult,
+} from "./memory-lifecycle-observation-manifest.js";
+
+export type {
+  CompleteProviderSurfaceInventory,
+  CompleteReingressGuardObservations,
+} from "./memory-lifecycle-observation-manifest.js";
 
 export type NotProved = {
   readonly kind: "not_proved";
@@ -16,47 +25,30 @@ export type VerifiedGenerationObservation = {
   readonly tombstone_set_root: string;
 };
 
-export type CompleteProviderSurfaceInventory = {
-  readonly manifest_digest: string;
-  readonly catalog_rows: 40;
-  readonly signature_verified: true;
+type ObservedCorrection = Extract<MemoryLifecycleObservedResult, { readonly kind: "correction" }>;
+type ObservedDeletion = Extract<MemoryLifecycleObservedResult, { readonly kind: "deletion" }>;
+type ObservedExport = Extract<MemoryLifecycleObservedResult, { readonly kind: "export" }>;
+
+type ObservedLifecycle = {
+  readonly proof: MemoryDispositionProofV1;
+  readonly generation: VerifiedGenerationObservation;
+  readonly provider_inventory: CompleteProviderSurfaceInventory;
+  readonly reingress_guards: CompleteReingressGuardObservations;
 };
 
-export type CorrectionLifecycleObservation = {
+export type CorrectionLifecycleObservation = ObservedLifecycle & {
   readonly kind: "correction";
-  readonly proof: MemoryDispositionProofV1;
-  readonly generation: VerifiedGenerationObservation;
-  readonly replacement: {
-    readonly artifact_manifest_digest: string;
-    readonly target_manifest_digest: string;
-  };
-  readonly provider_inventory: CompleteProviderSurfaceInventory;
-  readonly reingress_guards: ReingressGuardObservations;
+  readonly replacement: ObservedCorrection;
 };
 
-export type DeletionLifecycleObservation = {
+export type DeletionLifecycleObservation = ObservedLifecycle & {
   readonly kind: "deletion";
-  readonly proof: MemoryDispositionProofV1;
-  readonly generation: VerifiedGenerationObservation;
-  readonly absence: {
-    readonly surface_manifest_digest: string;
-    readonly target_manifest_digest: string;
-  };
-  readonly provider_inventory: CompleteProviderSurfaceInventory;
-  readonly reingress_guards: ReingressGuardObservations;
+  readonly absence: ObservedDeletion;
 };
 
-export type ExportLifecycleObservation = {
+export type ExportLifecycleObservation = ObservedLifecycle & {
   readonly kind: "export";
-  readonly proof: MemoryDispositionProofV1;
-  readonly generation: VerifiedGenerationObservation;
-  readonly export: {
-    readonly export_manifest_digest: string;
-    readonly file_count: 1;
-    readonly byte_count: number;
-  };
-  readonly provider_inventory: CompleteProviderSurfaceInventory;
-  readonly reingress_guards: ReingressGuardObservations;
+  readonly export: ObservedExport;
 };
 
 export interface MemoryLifecycleObserver {

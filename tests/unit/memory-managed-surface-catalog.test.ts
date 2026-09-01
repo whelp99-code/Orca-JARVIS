@@ -35,5 +35,7 @@ describe("fixed owner-qualified memory surface catalog", () => {
     ]);
     expect(Reflect.get(Jarvis, "MEMORY_MANAGED_SURFACE_CATALOG_DIGEST"))
       .toMatch(/^sha256:[0-9a-f]{64}$/);
+    expect(Reflect.get(Jarvis, "MEMORY_PROVIDER_SURFACE_CATALOG_DIGEST"))
+      .toBe("sha256:f684388b8b6d8c16d12cd3fc3779cddc8250deb41aef60c93bf16e3e722a0993");
   });
 });

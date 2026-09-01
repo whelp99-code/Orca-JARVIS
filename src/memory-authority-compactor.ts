@@ -10,11 +10,12 @@ import {
 } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { canonicalize } from "./canonical.js";
-import { countOpenInode } from "./authority-database-process.js";
 import type { AuthorityDatabaseRuntime } from "./authority-database-runtime.js";
 import { JarvisError as AuthorityError } from "./db.js";
 import { buildFreshAuthority } from "./memory-authority-fresh-builder.js";
+import { persistForbiddenContentIdentities } from "./memory-forbidden-content.js";
 import { restoreBlockedProjections } from "./memory-restore-authority.js";
+import { collectSuppressedContent } from "./memory-compaction-sanitize.js";
 import type {
   MemoryAuthorityCompactorPort,
   MemoryCompactionObservation,
@@ -83,11 +84,14 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
     beginCompaction(authority, request, start);
     const freshPath = join(dirname(authority.filename),
       `.${basename(authority.filename)}.${purgeDigest.slice(7, 23)}.fresh`);
-    let sensitive: Buffer[] = [];
+    let sensitive: readonly Buffer[] = [];
     try {
       const blocked = restoreBlockedProjections(authority, authority);
-      const build = await buildFreshAuthority(authority, freshPath, blocked);
-      sensitive = build.sensitive_material;
+      sensitive = collectSuppressedContent(authority.db, blocked);
+      persistForbiddenContentIdentities(authority, { purge_id: purgeId,
+        material: sensitive, observed_at: createdAt });
+      const build = await buildFreshAuthority(authority, freshPath,
+        { blocked_projections: blocked, sensitive_material: sensitive });
       syncPath(freshPath);
       syncPath(dirname(freshPath), true);
       const freshMetadata = statSync(freshPath, { bigint: true });
@@ -149,8 +153,8 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
       authority.reopen();
       this.options.runtime.acknowledgeGeneration(input.result_generation);
       const active = statSync(authority.filename, { bigint: true });
-      const oldFdCount = countOpenInode(this.options.runtime.registeredProcesses(),
-        input.old_device, input.old_inode);
+      const oldInode = this.options.runtime.observeOldInode(input.old_device, input.old_inode);
+      const oldFdCount = oldInode.fd_count;
       authority.db.prepare(
         `UPDATE memory_compaction_runs SET state='draining',result_device=?,result_inode=?,
          logical_result_digest=?,integrity_check='ok',foreign_key_error_count=0,
@@ -159,7 +163,8 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
         input.physical_scan_digest, input.observed_at, input.purge_id);
       const drainDigest = digest({ purge_id: input.purge_id,
         source_device: input.old_device.toString(), source_inode: input.old_inode.toString(),
-        old_fd_count: oldFdCount, acknowledged_generation: input.result_generation });
+        old_fd_count: oldFdCount, holders: oldInode.holders,
+        acknowledged_generation: input.result_generation });
       if (oldFdCount !== 0) throw new AuthorityError("MEMORY_OLD_DATABASE_FD_ACTIVE");
       for (const process of this.options.runtime.registeredProcesses()) {
         authority.db.prepare(

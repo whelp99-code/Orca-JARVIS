@@ -165,7 +165,7 @@ export class MemoryExportSaga {
       provider_release_sha: proof.provider_release_sha,
       generation_id: observed.generation.generation_id,
       export_manifest_digest: observed.export.export_manifest_digest,
-      surface_manifest_digest: observed.provider_inventory.manifest_digest,
+      surface_manifest_digest: proof.surface_manifest_digest,
       proof_json: canonicalize(proof) }, now);
     await this.options.barriers.reach({ barrier_id: "jarvis_proof_observation",
       lane_id: row.lane_id, request_id: row.request_id,

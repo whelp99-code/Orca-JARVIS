@@ -2,18 +2,23 @@ import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./db.js";
+import { loadForbiddenContentIdentities,
+  type ForbiddenContentIdentity } from "./memory-forbidden-content.js";
+import type {
+  CompleteProviderSurfaceInventory,
+  CompleteReingressGuardObservations,
+} from "./memory-lifecycle-observation-manifest.js";
 import {
   MEMORY_MANAGED_SURFACE_CATALOG,
   MEMORY_MANAGED_SURFACE_CATALOG_DIGEST,
 } from "./memory-managed-surface-catalog.js";
 import { scanFilesystemSurface } from "./memory-managed-surface-files.js";
+import { scanSqliteSurface } from "./memory-managed-surface-sqlite.js";
 import {
   CompleteMemorySurfaceInventory,
   type ManagedSurfaceDefinition,
   type MemoryManagedSurfaceEntry,
-  type ReingressGuardObservations,
 } from "./memory-managed-surface-types.js";
-import type { CompleteProviderSurfaceInventory } from "./memory-lifecycle-observation-types.js";
 
 const digest = (value: unknown): string => `sha256:${createHash("sha256")
   .update(canonicalize(value)).digest("hex")}`;
@@ -33,20 +38,20 @@ type ScannerOptions = {
 
 type ScanInput = {
   readonly provider: CompleteProviderSurfaceInventory;
-  readonly guards: ReingressGuardObservations;
+  readonly guards: CompleteReingressGuardObservations;
 };
 
 class CompleteInventoryRecord extends CompleteMemorySurfaceInventory {
   readonly catalog_digest = MEMORY_MANAGED_SURFACE_CATALOG_DIGEST;
   readonly expected_surface_count = 70 as const;
-  readonly observed_surface_count = 70 as const;
-  readonly omission_count = 0 as const;
-  readonly error_count = 0 as const;
-  readonly match_count = 0 as const;
 
   constructor(
     readonly manifest_digest: string,
     readonly entries: readonly MemoryManagedSurfaceEntry[],
+    readonly observed_surface_count: 70,
+    readonly omission_count: 0,
+    readonly error_count: 0,
+    readonly match_count: 0,
   ) {
     super();
   }
@@ -56,35 +61,38 @@ export class MemoryManagedSurfaceScanner {
   constructor(private readonly options: ScannerOptions) {}
 
   async scan(input: ScanInput): Promise<CompleteMemorySurfaceInventory> {
-    if (input.provider.catalog_rows !== 40 || input.provider.signature_verified !== true
-      || !/^sha256:[0-9a-f]{64}$/.test(input.provider.manifest_digest)) {
+    if (!Array.isArray(input.provider.entries) || input.provider.entries.length !== 40
+      || !Array.isArray(input.guards.entries) || input.guards.entries.length !== 10) {
       throw new JarvisError("MEMORY_PROVIDER_SURFACE_INVENTORY_INVALID");
     }
+    const identities = loadForbiddenContentIdentities(this.options.authority);
     const entries = MEMORY_MANAGED_SURFACE_CATALOG.map(definition =>
-      this.scanDefinition(definition, input));
+      this.scanDefinition(definition, input, identities));
     const omissionCount = entries.reduce((total, entry) => total + entry.omission_count, 0);
     const errorCount = entries.reduce((total, entry) => total + entry.error_count, 0);
     const matchCount = entries.reduce((total, entry) => total + entry.match_count, 0);
     if (entries.length !== 70 || omissionCount !== 0 || errorCount !== 0 || matchCount !== 0) {
       throw new JarvisError("MEMORY_SURFACE_INVENTORY_INCOMPLETE");
     }
-    return new CompleteInventoryRecord(digest({ catalog_digest: MEMORY_MANAGED_SURFACE_CATALOG_DIGEST,
-      entries }), Object.freeze(entries));
+    return new CompleteInventoryRecord(digest({
+      catalog_digest: MEMORY_MANAGED_SURFACE_CATALOG_DIGEST, entries,
+    }), Object.freeze(entries), exactSurfaceCount(entries.length), exactZero(omissionCount),
+    exactZero(errorCount), exactZero(matchCount));
   }
 
   private scanDefinition(
     definition: ManagedSurfaceDefinition,
     input: ScanInput,
+    identities: readonly ForbiddenContentIdentity[],
   ): MemoryManagedSurfaceEntry {
     switch (definition.scanner_kind) {
       case "provider_manifest":
         return this.providerEntry(definition, input.provider);
       case "filesystem":
-        return this.filesystemEntry(definition);
-      case "sqlite":
-        return this.sqliteEntry(definition);
-      case "proc_fd":
-        return this.sqliteEntry(definition);
+        return this.filesystemEntry(definition, identities);
+      case "sqlite": case "proc_fd":
+        return scanSqliteSurface({ authority: this.options.authority, definition,
+          prefixes: SQLITE_SURFACE_PREFIXES[definition.surface_id] ?? [], identities });
       case "guard":
         return this.guardEntry(definition, input.guards);
       default:
@@ -96,58 +104,52 @@ export class MemoryManagedSurfaceScanner {
     definition: ManagedSurfaceDefinition,
     provider: CompleteProviderSurfaceInventory,
   ): MemoryManagedSurfaceEntry {
-    return { ...definition, applicable: true, readable: true,
-      manifest_digest: provider.manifest_digest, file_count: 0, row_count: 0,
-      object_count: 1, fd_count: 0, match_count: 0, error_count: 0,
-      omission_count: 0, scan_digest: digest({ catalog_key: definition.catalog_key,
-        provider_manifest_digest: provider.manifest_digest }) };
+    const observed = provider.entries.find(entry => entry.catalog_key === definition.catalog_key);
+    if (observed === undefined || observed.owner !== definition.owner
+      || observed.surface_id !== definition.surface_id
+      || !observed.readable || observed.error_count !== 0
+      || observed.omission_count !== 0 || observed.match_count !== 0
+      || observed.errors.length !== 0) {
+      throw new JarvisError("MEMORY_PROVIDER_SURFACE_INVENTORY_INVALID");
+    }
+    return { ...definition, applicable: observed.applicable, readable: observed.readable,
+      manifest_digest: observed.manifest_digest, file_count: observed.file_count,
+      row_count: observed.row_count, object_count: observed.object_count,
+      fd_count: observed.fd_count, match_count: observed.match_count,
+      error_count: observed.error_count, omission_count: observed.omission_count,
+      scan_digest: observed.scan_digest };
   }
 
-  private filesystemEntry(definition: ManagedSurfaceDefinition): MemoryManagedSurfaceEntry {
-    const scan = scanFilesystemSurface(this.localRoot(definition.surface_id));
+  private filesystemEntry(
+    definition: ManagedSurfaceDefinition,
+    identities: readonly ForbiddenContentIdentity[],
+  ): MemoryManagedSurfaceEntry {
+    const scan = scanFilesystemSurface(this.localRoot(definition.surface_id), identities,
+      definition.surface_id === "dist_runtime_fixtures");
     return { ...definition, applicable: true, readable: scan.readable,
       manifest_digest: scan.manifest_digest, file_count: scan.file_count,
       row_count: 0, object_count: scan.object_count, fd_count: 0,
-      match_count: 0, error_count: scan.error_count,
+      match_count: scan.match_count, error_count: scan.error_count,
       omission_count: scan.omission_count, scan_digest: scan.scan_digest };
-  }
-
-  private sqliteEntry(definition: ManagedSurfaceDefinition): MemoryManagedSurfaceEntry {
-    const prefixes = SQLITE_SURFACE_PREFIXES[definition.surface_id] ?? [];
-    const names = this.options.authority.db.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-    ).all().flatMap(value => {
-      const name = typeof value === "object" && value !== null ? Reflect.get(value, "name") : undefined;
-      return typeof name === "string" && prefixes.some(prefix => name.startsWith(prefix)) ? [name] : [];
-    });
-    let rowCount = 0;
-    for (const name of names) {
-      const value = this.options.authority.db.prepare(
-        `SELECT COUNT(*) AS count FROM "${name.replaceAll('"', '""')}"`,
-      ).get();
-      const count = typeof value === "object" && value !== null ? Reflect.get(value, "count") : undefined;
-      if (typeof count !== "number") throw new JarvisError("MEMORY_SURFACE_SCAN_FAILED");
-      rowCount += count;
-    }
-    const manifestDigest = digest({ tables: names, row_count: rowCount });
-    return { ...definition, applicable: true, readable: true,
-      manifest_digest: manifestDigest, file_count: 0, row_count: rowCount,
-      object_count: names.length, fd_count: 0, match_count: 0, error_count: 0,
-      omission_count: 0, scan_digest: manifestDigest };
   }
 
   private guardEntry(
     definition: ManagedSurfaceDefinition,
-    guards: ReingressGuardObservations,
+    guards: CompleteReingressGuardObservations,
   ): MemoryManagedSurfaceEntry {
-    const observation = guards[definition.surface_id];
-    const valid = observation !== undefined && /^sha256:[0-9a-z]{64}$/.test(observation);
-    const observed = valid ? observation : digest({ missing: definition.surface_id });
-    return { ...definition, applicable: true, readable: valid,
-      manifest_digest: observed, file_count: 0, row_count: 0,
-      object_count: valid ? 1 : 0, fd_count: 0, match_count: 0,
-      error_count: valid ? 0 : 1, omission_count: valid ? 0 : 1,
-      scan_digest: observed };
+    const observed = guards.entries.find(entry => entry.guard_id === definition.surface_id);
+    if (observed === undefined || !observed.applicable || !observed.executed
+      || !observed.blocked || observed.error_code !== "TOMBSTONE_REINGRESS_BLOCKED"
+      || observed.error_count !== 0 || observed.omission_count !== 0
+      || observed.execution_count !== 1) {
+      throw new JarvisError("MEMORY_REINGRESS_GUARD_OBSERVATION_INVALID");
+    }
+    return { ...definition, applicable: true, readable: true,
+      manifest_digest: observed.observation_digest, file_count: 0,
+      row_count: observed.execution_count, object_count: observed.blocked ? 1 : 0,
+      fd_count: 0, match_count: 0,
+      error_count: observed.error_count, omission_count: observed.omission_count,
+      scan_digest: observed.observation_digest };
   }
 
   private localRoot(surfaceId: string): string {
@@ -179,6 +181,16 @@ const SQLITE_SURFACE_PREFIXES: Readonly<Record<string, readonly string[]>> = {
   dashboard_api_sse: ["memory_suppression_event"],
   authority_db_main_wal_shm_journal_freelist: ["schema_migrations"],
 };
+
+function exactSurfaceCount(value: number): 70 {
+  if (value !== 70) throw new JarvisError("MEMORY_SURFACE_INVENTORY_INCOMPLETE");
+  return value;
+}
+
+function exactZero(value: number): 0 {
+  if (value !== 0) throw new JarvisError("MEMORY_SURFACE_INVENTORY_INCOMPLETE");
+  return value;
+}
 
 function assertNever(value: never): never {
   throw new JarvisError(`MEMORY_SURFACE_SCANNER_INVALID:${String(value)}`);

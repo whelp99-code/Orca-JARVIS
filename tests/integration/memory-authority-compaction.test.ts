@@ -1,20 +1,22 @@
+import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import { once } from "node:events";
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { createInterface, type Interface } from "node:readline";
 import { describe, expect, it } from "vitest";
 import * as Jarvis from "../../src/index.js";
 import { AuthorityDb } from "../../src/db.js";
 import type { ResolvedMemoryTargetV2 } from "../../src/second-brain-effect-v2.js";
+import {
+  providerSurfaceInventory,
+  reingressGuardObservations,
+} from "../fixtures/memory-surface-observations.js";
 import { tempDb } from "../helpers.js";
 
 const GENESIS = "sha256:7fb694c8abb7c9a4477aa38381c49446493bc4da1c01b50690c1db5b2c20b9d3";
-const GUARDS = Object.fromEntries([
-  "sb_remember", "legacy_stable_import", "inbox_done", "all_connectors", "compile_brief",
-  "manual_pipeline", "export", "backup_import_restore_rollback", "duplicate_alias",
-  "stale_process_generation",
-].map(name => [name, `sha256:${"a".repeat(64)}`]));
 
 function target(): ResolvedMemoryTargetV2 {
   return { schema_version: 1, target_id: `sbtarget:v1:${"1".repeat(64)}`,
@@ -42,6 +44,8 @@ describe("quiesced fresh-file AuthorityDb reconstruction", () => {
     const db = new AuthorityDb(tempDb()); await db.migrate();
     const old = `old-${randomUUID()}-${randomUUID()}`;
     const unrelated = `unrelated-${randomUUID()}`;
+    let holder: ChildProcessWithoutNullStreams | undefined;
+    let holderLines: Interface | undefined;
     try {
       const layout = { spool_root: join(root, "spool"), state_root: join(root, "state"),
         dist_root: join(root, "release", "dist"), backup_root: join(root, "backups"),
@@ -78,6 +82,17 @@ describe("quiesced fresh-file AuthorityDb reconstruction", () => {
         payload_digest: `sha256:${"f".repeat(64)}`, effective_at: at });
       expect(appended.entry.previous_root).toBe(GENESIS);
       const source = statSync(db.filename);
+      holder = spawn(process.execPath, ["-e", [
+        "const fs=require('node:fs');",
+        "const readline=require('node:readline');",
+        "const lines=readline.createInterface({input:process.stdin});",
+        "lines.once('line',path=>{const fd=fs.openSync(path,'r');process.stdout.write('ready\\n');",
+        "lines.once('line',()=>{fs.closeSync(fd);process.exit(0)});});",
+      ].join("")]);
+      holderLines = createInterface({ input: holder.stdout });
+      const ready = once(holderLines, "line", { signal: AbortSignal.timeout(5_000) });
+      holder.stdin.write(`${db.filename}\n`);
+      expect((await ready)[0]).toBe("ready");
       const runtimeType = Reflect.get(Jarvis, "AuthorityDatabaseRuntime");
       const scannerType = Reflect.get(Jarvis, "MemoryManagedSurfaceScanner");
       const compactorType = Reflect.get(Jarvis, "MemoryAuthorityCompactor");
@@ -89,16 +104,29 @@ describe("quiesced fresh-file AuthorityDb reconstruction", () => {
       const compact = Reflect.get(compactor, "compact");
       if (typeof compact !== "function") throw new Error("MEMORY_COMPACTOR_FIXTURE_INVALID");
 
-      // When: compaction reconstructs and atomically swaps the authority database.
-      const result = await Reflect.apply(compact, compactor, [{ lane: "deletion",
+      // When: an independent process holds the old inode through the atomic swap.
+      await expect(Reflect.apply(compact, compactor, [{ lane: "deletion",
         lane_id: `memdel:req:v1:${"b".repeat(64)}`,
         target_manifest_digest: `sha256:${"c".repeat(64)}`,
         scope_digest: `sha256:${"d".repeat(64)}`,
         tombstone: { sequence: appended.entry.sequence, set_root: appended.entry.set_root },
-        provider_inventory: { manifest_digest: `sha256:${"a".repeat(64)}`,
-          catalog_rows: 40, signature_verified: true }, reingress_guards: GUARDS }]);
+        provider_inventory: providerSurfaceInventory(),
+        reingress_guards: reingressGuardObservations() }]))
+        .rejects.toMatchObject({ code: "MEMORY_OLD_DATABASE_FD_ACTIVE" });
+      const job: unknown = db.db.prepare(
+        "SELECT purge_id FROM memory_purge_jobs WHERE state='reconciling'",
+      ).get();
+      const purgeId = typeof job === "object" && job !== null ? Reflect.get(job, "purge_id") : undefined;
+      if (typeof purgeId !== "string") throw new Error("MEMORY_PURGE_JOB_MISSING");
+      const exited = once(holder, "exit", { signal: AbortSignal.timeout(5_000) });
+      holder.stdin.write("release\n");
+      await exited;
+      holderLines.close(); holderLines = undefined; holder = undefined;
+      const recover = Reflect.get(compactor, "recover");
+      if (typeof recover !== "function") throw new Error("MEMORY_COMPACTOR_FIXTURE_INVALID");
+      const result = await Reflect.apply(recover, compactor, [purgeId]);
 
-      // Then: a fresh inode is active, old bytes and sidecars are absent, and unrelated bytes remain.
+      // Then: completion waits for real FD release, preserves unrelated data, and removes old bytes.
       const active = statSync(db.filename);
       expect(active.ino).not.toBe(source.ino);
       expect(result).toMatchObject({ integrity_check: "ok", foreign_key_errors: 0,
@@ -108,6 +136,11 @@ describe("quiesced fresh-file AuthorityDb reconstruction", () => {
       expect(readFileSync(db.filename).includes(Buffer.from(old))).toBe(false);
       expect(readFileSync(db.filename).includes(Buffer.from(unrelated))).toBe(true);
       expect(["-wal", "-shm", "-journal"].some(suffix => existsSync(`${db.filename}${suffix}`))).toBe(false);
-    } finally { if (db.db.open) db.close(); rmSync(root, { recursive: true, force: true }); }
+    } finally {
+      holderLines?.close();
+      if (holder?.exitCode === null) holder.kill("SIGKILL");
+      if (db.db.open) db.close();
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });

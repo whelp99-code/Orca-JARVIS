@@ -9,8 +9,6 @@ export type ManagedSurfaceDefinition = {
   readonly required: true;
 };
 
-export type ReingressGuardObservations = Readonly<Record<string, string>>;
-
 export type MemoryManagedSurfaceEntry = {
   readonly catalog_key: `surface:${number}`;
   readonly owner: MemoryManagedSurfaceOwner;

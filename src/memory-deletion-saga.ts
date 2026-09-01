@@ -98,7 +98,7 @@ export class MemoryDeletionSaga {
     this.store.proved(id, { proof_id: proof.proof_id, proof_digest: proof.proof_digest,
       provider_release_sha: proof.provider_release_sha,
       result_generation_id: observed.generation.generation_id,
-      surface_manifest_digest: observed.provider_inventory.manifest_digest,
+      surface_manifest_digest: proof.surface_manifest_digest,
       proof_json: canonicalize(proof) }, now);
     await this.options.barriers.reach({ barrier_id: "jarvis_proof_observation",
       lane_id: row.lane_id ?? "", request_id: row.request_id,

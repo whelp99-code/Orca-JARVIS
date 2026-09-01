@@ -4,13 +4,17 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import * as Jarvis from "../../src/index.js";
 import { AuthorityDb } from "../../src/db.js";
+import { persistForbiddenContentIdentities } from "../../src/memory-forbidden-content.js";
+import {
+  providerSurfaceInventory,
+  reingressGuardObservations,
+} from "../fixtures/memory-surface-observations.js";
 import { tempDb } from "../helpers.js";
 
 type Scanner = {
   scan(input: {
-    readonly provider: { readonly manifest_digest: string; readonly catalog_rows: 40;
-      readonly signature_verified: true };
-    readonly guards: Readonly<Record<string, string>>;
+    readonly provider: ReturnType<typeof providerSurfaceInventory>;
+    readonly guards: ReturnType<typeof reingressGuardObservations>;
   }): Promise<{ readonly expected_surface_count: 70; readonly observed_surface_count: 70;
     readonly entries: readonly Readonly<Record<string, unknown>>[];
     readonly omission_count: 0; readonly error_count: 0 }>;
@@ -27,12 +31,6 @@ function isScannerConstructor(value: unknown): value is ScannerConstructor {
   return typeof value === "function";
 }
 
-const GUARDS = Object.fromEntries([
-  "sb_remember", "legacy_stable_import", "inbox_done", "all_connectors", "compile_brief",
-  "manual_pipeline", "export", "backup_import_restore_rollback", "duplicate_alias",
-  "stale_process_generation",
-].map(name => [name, `sha256:${"a".repeat(64)}`]));
-
 describe("complete managed memory surface inventory", () => {
   it("merges forty provider, twenty local, and ten reingress observations", async () => {
     // Given: all mandatory isolated runtime roots and exact signed provider/guard observations.
@@ -43,21 +41,69 @@ describe("complete managed memory surface inventory", () => {
         dist_root: join(root, "release", "dist"), backup_root: join(root, "backups"),
         restore_root: join(root, "restore") };
       for (const path of Object.values(layout)) mkdirSync(path, { recursive: true, mode: 0o700 });
-      writeFileSync(join(layout.dist_root, "runtime.json"), "{}\n", { mode: 0o600 });
       const constructor = Reflect.get(Jarvis, "MemoryManagedSurfaceScanner");
       expect(isScannerConstructor(constructor)).toBe(true);
       if (!isScannerConstructor(constructor)) return;
       const scanner = new constructor({ authority: db, layout });
 
       // When: the non-public complete inventory constructor merges all owners.
-      const inventory = await scanner.scan({ provider: { manifest_digest: `sha256:${"a".repeat(64)}`,
-        catalog_rows: 40, signature_verified: true }, guards: GUARDS });
+      const inventory = await scanner.scan({ provider: providerSurfaceInventory(),
+        guards: reingressGuardObservations() });
 
       // Then: no caller-selected row can disappear and the stable dist row is present once.
       expect(inventory).toMatchObject({ expected_surface_count: 70, observed_surface_count: 70,
         omission_count: 0, error_count: 0 });
       expect(inventory.entries.filter(row => row["surface_id"] === "dist_runtime_fixtures"))
         .toHaveLength(1);
+    } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it("fails closed when an unmanifested runtime file survives in dist fixtures", async () => {
+    // Given: every managed root exists but one runtime-random file remains under dist.
+    const root = mkdtempSync(join(tmpdir(), "jarvis-task30-inventory-canary-"));
+    const db = new AuthorityDb(tempDb()); await db.migrate();
+    try {
+      const layout = { spool_root: join(root, "spool"), state_root: join(root, "state"),
+        dist_root: join(root, "dist"), backup_root: join(root, "backups"),
+        restore_root: join(root, "restore") };
+      for (const path of Object.values(layout)) mkdirSync(path, { recursive: true, mode: 0o700 });
+      writeFileSync(join(layout.dist_root, "retained-runtime.bin"), "runtime-random-canary", { mode: 0o600 });
+      const constructor = Reflect.get(Jarvis, "MemoryManagedSurfaceScanner");
+      expect(isScannerConstructor(constructor)).toBe(true);
+      if (!isScannerConstructor(constructor)) return;
+
+      // When/Then: the fixed inventory reports the unknown file as fatal instead of synthesizing zero.
+      await expect(new constructor({ authority: db, layout }).scan({
+        provider: providerSurfaceInventory(), guards: reingressGuardObservations(),
+      })).rejects.toMatchObject({ code: "MEMORY_SURFACE_INVENTORY_INCOMPLETE" });
+    } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
+  });
+
+  it("fails closed when a forbidden byte identity remains in managed state", async () => {
+    // Given: a content-free forbidden identity and the matching bytes in a managed state file.
+    const root = mkdtempSync(join(tmpdir(), "jarvis-task30-inventory-match-"));
+    const db = new AuthorityDb(tempDb()); await db.migrate();
+    try {
+      const layout = { spool_root: join(root, "spool"), state_root: join(root, "state"),
+        dist_root: join(root, "dist"), backup_root: join(root, "backups"),
+        restore_root: join(root, "restore") };
+      for (const path of Object.values(layout)) mkdirSync(path, { recursive: true, mode: 0o700 });
+      const canary = Buffer.from("forbidden-runtime-state-canary");
+      db.db.pragma("foreign_keys=OFF");
+      persistForbiddenContentIdentities(db, { purge_id: "purge:test", material: [canary],
+        observed_at: "2026-08-31T00:00:00.000Z" });
+      db.db.pragma("foreign_keys=ON");
+      writeFileSync(join(layout.state_root, "retained.json"), Buffer.concat([
+        Buffer.from("prefix:"), canary, Buffer.from(":suffix"),
+      ]), { mode: 0o600 });
+      const constructor = Reflect.get(Jarvis, "MemoryManagedSurfaceScanner");
+      expect(isScannerConstructor(constructor)).toBe(true);
+      if (!isScannerConstructor(constructor)) return;
+
+      // When/Then: measured bytes produce a fatal match instead of a synthesized zero.
+      await expect(new constructor({ authority: db, layout }).scan({
+        provider: providerSurfaceInventory(), guards: reingressGuardObservations(),
+      })).rejects.toMatchObject({ code: "MEMORY_SURFACE_INVENTORY_INCOMPLETE" });
     } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
   });
 
@@ -78,8 +124,7 @@ describe("complete managed memory surface inventory", () => {
 
       // When/Then: scanning records the omission as fatal rather than filtering the row.
       await expect(new constructor({ authority: db, layout }).scan({
-        provider: { manifest_digest: `sha256:${"a".repeat(64)}`,
-          catalog_rows: 40, signature_verified: true }, guards: GUARDS,
+        provider: providerSurfaceInventory(), guards: reingressGuardObservations(),
       })).rejects.toMatchObject({ code: "MEMORY_SURFACE_INVENTORY_INCOMPLETE" });
     } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
   });

@@ -12,5 +12,8 @@ export type {
   MemoryManagedSurfaceEntry,
   MemoryManagedSurfaceOwner,
   MemoryManagedSurfaceScannerKind,
-  ReingressGuardObservations,
 } from "./memory-managed-surface-types.js";
+export type {
+  CompleteProviderSurfaceInventory,
+  CompleteReingressGuardObservations,
+} from "./memory-lifecycle-observation-manifest.js";

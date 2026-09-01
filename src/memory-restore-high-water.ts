@@ -59,7 +59,8 @@ export async function sanitizeMemoryRestoreCandidate(input: RestoreInput): Promi
   let sensitive: Buffer[] = [];
   try {
     const blocked = restoreBlockedProjections(sourceDb, input.authority);
-    const build = await buildFreshAuthority(sourceDb, candidate, blocked);
+    const build = await buildFreshAuthority(sourceDb, candidate,
+      { blocked_projections: blocked });
     sensitive = build.sensitive_material;
     sourceDb.close();
     const restored = new AuthorityDb(candidate);

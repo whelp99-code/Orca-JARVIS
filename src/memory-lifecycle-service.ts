@@ -10,6 +10,7 @@ import type { PrepareMemoryDeletionInput } from "./memory-deletion-types.js";
 import { MemoryExportSaga } from "./memory-export-saga.js";
 import { MemoryExportStore } from "./memory-export-store.js";
 import type { PrepareMemoryExportInput } from "./memory-export-types.js";
+import type { MemoryLifecycleObservationSource } from "./memory-lifecycle-observation-manifest.js";
 import { ProductionMemoryLifecycleObserver } from "./memory-lifecycle-observer.js";
 import {
   MemoryLifecycleBarriers,
@@ -26,6 +27,7 @@ import type {
 } from "./memory-lifecycle-service-types.js";
 import type { MemorySagaRuntime } from "./memory-saga-runtime.js";
 import { createSecondBrainWriteRequestAdapter } from "./second-brain-write-adapter.js";
+import { SecondBrainStatusObservationSource } from "./second-brain-lifecycle-observations.js";
 import { SecondBrainEffectService } from "./second-brain-effect-service.js";
 import { createSecondBrainTransport } from "./second-brain-transport.js";
 
@@ -38,6 +40,7 @@ export type ProductionMemoryLifecycleConfig = {
   readonly private_key: KeyObject;
   readonly subject_key: Buffer;
   readonly layout: MemoryRuntimeLayout;
+  readonly observation_source?: MemoryLifecycleObservationSource;
   readonly clock: () => Date;
 };
 
@@ -151,7 +154,9 @@ export function createProductionMemoryLifecycleService(
   const provider = new SecondBrainEffectService({ authority, transport, writer,
     clock: config.clock, provider_instance_id: config.provider_instance_id,
     signing_key_id: config.signing_key_id, private_key: config.private_key });
-  const observer = new ProductionMemoryLifecycleObserver({ authority, provider, clock: config.clock });
+  const observer = new ProductionMemoryLifecycleObserver({ authority, provider,
+    observations: config.observation_source ?? new SecondBrainStatusObservationSource(provider),
+    clock: config.clock });
   const scanner = new MemoryManagedSurfaceScanner({ authority, layout: config.layout });
   const compactor = new MemoryAuthorityCompactor({ runtime: databaseRuntime,
     scanner, layout: config.layout });

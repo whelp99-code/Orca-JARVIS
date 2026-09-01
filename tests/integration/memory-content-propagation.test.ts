@@ -5,6 +5,10 @@ import type {
   MemoryCompactionRequest,
 } from "../../src/memory-compaction-types.js";
 import { CompleteMemorySurfaceInventory } from "../../src/memory-managed-surface-types.js";
+import {
+  providerSurfaceInventory,
+  reingressGuardObservations,
+} from "../fixtures/memory-surface-observations.js";
 
 class TestInventory extends CompleteMemorySurfaceInventory {
   readonly catalog_digest = `sha256:${"1".repeat(64)}`;
@@ -22,9 +26,8 @@ const request: MemoryCompactionRequest = {
   target_manifest_digest: `sha256:${"4".repeat(64)}`,
   scope_digest: `sha256:${"5".repeat(64)}`,
   tombstone: { sequence: 1, set_root: `sha256:${"6".repeat(64)}` },
-  provider_inventory: { manifest_digest: `sha256:${"7".repeat(64)}`,
-    catalog_rows: 40, signature_verified: true },
-  reingress_guards: { sb_remember: `sha256:${"8".repeat(64)}` },
+  provider_inventory: providerSurfaceInventory(),
+  reingress_guards: reingressGuardObservations(),
 };
 
 describe("JARVIS content propagation compatibility boundary", () => {

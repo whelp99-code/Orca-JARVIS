@@ -1,9 +1,12 @@
-import { closeSync, fsyncSync, mkdirSync, openSync, rmSync, writeSync } from "node:fs";
-import { join } from "node:path";
-import { canonicalize } from "./canonical.js";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./db.js";
-import { processStartToken, type RegisteredAuthorityProcess } from "./authority-database-process.js";
+import {
+  discoverOpenInodeHolders,
+  processStartToken,
+  type OpenInodeObservation,
+  type RegisteredAuthorityProcess,
+} from "./authority-database-process.js";
+import { AuthorityProcessRegistry } from "./authority-database-registry.js";
 
 export type ManagedReaderSurface =
   | "context" | "recommendation" | "daily" | "notification"
@@ -31,7 +34,7 @@ export class AuthorityDatabaseRuntime {
   private quiescing = false;
   private readonly waiters = new Set<() => void>();
   private readonly processes = new Map<number, RegisteredAuthorityProcess>();
-  private readonly registryPath: string;
+  private readonly registry: AuthorityProcessRegistry;
 
   constructor(
     private readonly database: AuthorityDb,
@@ -39,9 +42,8 @@ export class AuthorityDatabaseRuntime {
   ) {
     if (!Number.isSafeInteger(options.watchdog_ms) || options.watchdog_ms < 100
       || options.watchdog_ms > 60_000) throw new JarvisError("AUTHORITY_RUNTIME_CONFIG_INVALID");
-    mkdirSync(options.registry_root, { recursive: true, mode: 0o700 });
-    const current = this.registerProcess(process.pid);
-    this.registryPath = join(options.registry_root, `${current.pid}.${current.start_token}.json`);
+    this.registry = new AuthorityProcessRegistry(options.registry_root, database.filename);
+    this.registerProcess(process.pid);
     this.persistRegistry();
   }
 
@@ -99,7 +101,19 @@ export class AuthorityDatabaseRuntime {
   }
 
   registeredProcesses(): readonly RegisteredAuthorityProcess[] {
-    return [...this.processes.values()];
+    const discovered = new Map(this.registry.processes().map(item => [item.pid, item]));
+    for (const process of this.processes.values()) {
+      if (processStartToken(process.pid) !== process.start_token) {
+        throw new JarvisError("AUTHORITY_PROCESS_INVALID");
+      }
+      discovered.set(process.pid, process);
+    }
+    return [...discovered.values()].sort((left, right) => left.pid - right.pid);
+  }
+
+  observeOldInode(device: bigint, inode: bigint): OpenInodeObservation {
+    const registered = this.registeredProcesses();
+    return discoverOpenInodeHolders(device, inode, registered);
   }
 
   close(): Promise<void> {
@@ -107,7 +121,7 @@ export class AuthorityDatabaseRuntime {
       return Promise.reject(new JarvisError("AUTHORITY_DATABASE_BUSY"));
     }
     if (this.database.db.open) this.database.close();
-    rmSync(this.registryPath, { force: true });
+    this.registry.close();
     return Promise.resolve();
   }
 
@@ -150,17 +164,9 @@ export class AuthorityDatabaseRuntime {
   }
 
   private persistRegistry(): void {
-    if (this.registryPath === undefined) return;
-    const payload = `${canonicalize({ schema_version: 1, pid: process.pid,
+    this.registry.persist({ schema_version: 1, pid: process.pid,
       start_token: processStartToken(process.pid), database: this.database.filename,
       generation: this.generation, active_leases: this.activeLeases,
-      state: this.quiescing ? "quiescing" : "active" })}\n`;
-    const descriptor = openSync(this.registryPath, "w", 0o600);
-    try {
-      writeSync(descriptor, payload);
-      fsyncSync(descriptor);
-    } finally {
-      closeSync(descriptor);
-    }
+      state: this.quiescing ? "quiescing" : "active" });
   }
 }

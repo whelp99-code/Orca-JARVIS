@@ -63,6 +63,7 @@ const CURRENT_TASK30_MIGRATIONS = [
   "048_task30_atomic_effect_runtime.sql",
   "049_task30_projection_authority.sql",
   "050_task30_compaction_inventory.sql",
+  "051_task30_observed_inventory.sql",
 ] as const;
 
 describe("Task 30 forward migration closure", () => {

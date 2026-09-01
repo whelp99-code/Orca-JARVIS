@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-import { canonicalize } from "./canonical.js";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./db.js";
 import type { MemoryCorrectionRecord } from "./memory-correction-store.js";
@@ -10,8 +8,12 @@ import {
   type MemoryProofExpectation,
 } from "./memory-disposition-proof.js";
 import type { MemoryExportRecord } from "./memory-export-store.js";
+import {
+  type MemoryLifecycleObservationBinding,
+  type MemoryLifecycleObservationSource,
+  type ParsedMemoryLifecycleObservationManifest,
+} from "./memory-lifecycle-observation-manifest.js";
 import type {
-  CompleteProviderSurfaceInventory,
   CorrectionLifecycleObservation,
   DeletionLifecycleObservation,
   ExportLifecycleObservation,
@@ -21,13 +23,10 @@ import type {
 } from "./memory-lifecycle-observation-types.js";
 import type { SecondBrainEffectService } from "./second-brain-effect-service.js";
 
-const REINGRESS_GUARDS = ["sb_remember", "legacy_stable_import", "inbox_done",
-  "all_connectors", "compile_brief", "manual_pipeline", "export",
-  "backup_import_restore_rollback", "duplicate_alias", "stale_process_generation"] as const;
-
 export type ProductionMemoryLifecycleObserverOptions = {
   readonly authority: AuthorityDb;
   readonly provider: SecondBrainEffectService;
+  readonly observations: MemoryLifecycleObservationSource;
   readonly clock: () => Date;
 };
 
@@ -41,14 +40,18 @@ export class ProductionMemoryLifecycleObserver implements MemoryLifecycleObserve
   async correction(record: MemoryCorrectionRecord): Promise<CorrectionLifecycleObservation | NotProved> {
     const proof = await this.proof(this.correctionExpectation(record));
     if (isNotProved(proof)) return proof;
-    if (proof.artifact_manifest_digest === null) {
-      throw new JarvisError("MEMORY_CORRECTION_ARTIFACT_INVALID");
+    const observed = await this.observation(proof);
+    const generation = await this.generation(proof, true, observed.generation_manifest_digest);
+    switch (observed.result.kind) {
+      case "correction":
+        return { kind: "correction", proof, generation, replacement: observed.result,
+          provider_inventory: observed.provider_inventory,
+          reingress_guards: observed.reingress_guards };
+      case "deletion": case "export":
+        throw new JarvisError("MEMORY_LIFECYCLE_OBSERVATION_BINDING_INVALID");
+      default:
+        return assertNever(observed.result);
     }
-    const generation = await this.generation(proof, true);
-    return { kind: "correction", proof, generation,
-      replacement: { artifact_manifest_digest: proof.artifact_manifest_digest,
-        target_manifest_digest: record.target_manifest_digest },
-      provider_inventory: this.inventory(proof), reingress_guards: this.guards(proof) };
   }
 
   async deletion(record: MemoryDeletionRecord): Promise<DeletionLifecycleObservation | NotProved> {
@@ -56,11 +59,18 @@ export class ProductionMemoryLifecycleObserver implements MemoryLifecycleObserve
     if (expectation === undefined) return { kind: "not_proved", code: "MEMORY_DELETION_NOT_PREPARED" };
     const proof = await this.proof(expectation);
     if (isNotProved(proof)) return proof;
-    const generation = await this.generation(proof, true);
-    return { kind: "deletion", proof, generation,
-      absence: { surface_manifest_digest: proof.surface_manifest_digest,
-        target_manifest_digest: record.target_manifest_digest },
-      provider_inventory: this.inventory(proof), reingress_guards: this.guards(proof) };
+    const observed = await this.observation(proof);
+    const generation = await this.generation(proof, true, observed.generation_manifest_digest);
+    switch (observed.result.kind) {
+      case "deletion":
+        return { kind: "deletion", proof, generation, absence: observed.result,
+          provider_inventory: observed.provider_inventory,
+          reingress_guards: observed.reingress_guards };
+      case "correction": case "export":
+        throw new JarvisError("MEMORY_LIFECYCLE_OBSERVATION_BINDING_INVALID");
+      default:
+        return assertNever(observed.result);
+    }
   }
 
   async export(record: MemoryExportRecord): Promise<ExportLifecycleObservation | NotProved> {
@@ -68,56 +78,87 @@ export class ProductionMemoryLifecycleObserver implements MemoryLifecycleObserve
     if (expectation === undefined) return { kind: "not_proved", code: "MEMORY_EXPORT_NOT_PREPARED" };
     const proof = await this.proof(expectation);
     if (isNotProved(proof)) return proof;
-    if (proof.export_manifest_digest === null) throw new JarvisError("MEMORY_EXPORT_MANIFEST_INVALID");
-    const generation = await this.generation(proof, false);
-    return { kind: "export", proof, generation,
-      export: { export_manifest_digest: proof.export_manifest_digest,
-        file_count: 1, byte_count: 1 }, provider_inventory: this.inventory(proof),
-      reingress_guards: this.guards(proof) };
+    const observed = await this.observation(proof);
+    const generation = await this.generation(proof, false, observed.generation_manifest_digest);
+    switch (observed.result.kind) {
+      case "export":
+        return { kind: "export", proof, generation, export: observed.result,
+          provider_inventory: observed.provider_inventory,
+          reingress_guards: observed.reingress_guards };
+      case "correction": case "deletion":
+        throw new JarvisError("MEMORY_LIFECYCLE_OBSERVATION_BINDING_INVALID");
+      default:
+        return assertNever(observed.result);
+    }
   }
 
-  private async proof(
-    expected: MemoryProofExpectation,
-  ): Promise<MemoryDispositionProofV1 | NotProved> {
+  private async proof(expected: MemoryProofExpectation): Promise<MemoryDispositionProofV1 | NotProved> {
     const status = await this.options.provider.requestStatus(expected.request_id);
-    if (status.kind !== "data") return { kind: "not_proved", code: status.code };
-    if (status.value.state !== "proved") return { kind: "not_proved",
-      code: `MEMORY_PROVIDER_${String(status.value.state).toUpperCase()}` };
-    return verifyMemoryDispositionProof(this.options.authority,
-      status.value.proof, expected, this.options.clock());
+    switch (status.kind) {
+      case "data":
+        if (status.value.state !== "proved") return { kind: "not_proved",
+          code: `MEMORY_PROVIDER_${String(status.value.state).toUpperCase()}` };
+        return verifyMemoryDispositionProof(this.options.authority,
+          status.value.proof, expected, this.options.clock());
+      case "invalid": case "unavailable": case "uncertain":
+        return { kind: "not_proved", code: status.code };
+      default:
+        return assertNever(status);
+    }
+  }
+
+  private async observation(
+    proof: MemoryDispositionProofV1,
+  ): Promise<ParsedMemoryLifecycleObservationManifest> {
+    const observed = await this.options.observations.observe(this.observationBinding(proof));
+    const observedAt = Date.parse(observed.observed_at);
+    if (observedAt < Date.parse(proof.completed_at) || observedAt > this.options.clock().getTime()) {
+      throw new JarvisError("MEMORY_LIFECYCLE_OBSERVATION_TIME_INVALID");
+    }
+    return observed;
   }
 
   private async generation(
     proof: MemoryDispositionProofV1,
     restart: boolean,
+    observedManifestDigest: string,
   ): Promise<VerifiedGenerationObservation> {
     const result = restart
       ? await this.options.provider.restartForGeneration(proof.result_generation_id)
       : await this.options.provider.generationStatus();
-    if (result.kind !== "data") throw new JarvisError("MEMORY_LIFECYCLE_GENERATION_INVALID");
-    const value = result.value;
-    if (value.generation_id !== proof.result_generation_id
-      || typeof value.generation_manifest_digest !== "string"
-      || value.tombstone_sequence !== proof.tombstone_sequence
-      || value.tombstone_set_root !== proof.tombstone_set_root) {
-      throw new JarvisError("MEMORY_LIFECYCLE_GENERATION_INVALID");
+    switch (result.kind) {
+      case "data": {
+        const value = result.value;
+        if (value.generation_id !== proof.result_generation_id
+          || typeof value.generation_manifest_digest !== "string"
+          || value.generation_manifest_digest !== observedManifestDigest
+          || value.tombstone_sequence !== proof.tombstone_sequence
+          || value.tombstone_set_root !== proof.tombstone_set_root) {
+          throw new JarvisError("MEMORY_LIFECYCLE_GENERATION_INVALID");
+        }
+        return { generation_id: proof.result_generation_id,
+          generation_manifest_digest: value.generation_manifest_digest,
+          tombstone_sequence: proof.tombstone_sequence,
+          tombstone_set_root: proof.tombstone_set_root };
+      }
+      case "invalid": case "unavailable": case "uncertain":
+        throw new JarvisError("MEMORY_LIFECYCLE_GENERATION_INVALID");
+      default:
+        return assertNever(result);
     }
-    return { generation_id: proof.result_generation_id,
-      generation_manifest_digest: value.generation_manifest_digest,
+  }
+
+  private observationBinding(proof: MemoryDispositionProofV1): MemoryLifecycleObservationBinding {
+    return { request_id: proof.request_id, operation: proof.operation,
+      provider_instance_id: proof.provider_instance_id,
+      target_manifest_digest: proof.target_manifest_digest,
+      result_generation_id: proof.result_generation_id,
+      result_head: proof.result_head, result_tree: proof.result_tree,
       tombstone_sequence: proof.tombstone_sequence,
-      tombstone_set_root: proof.tombstone_set_root };
-  }
-
-  private inventory(proof: MemoryDispositionProofV1): CompleteProviderSurfaceInventory {
-    return { manifest_digest: proof.surface_manifest_digest,
-      catalog_rows: 40, signature_verified: true };
-  }
-
-  private guards(proof: MemoryDispositionProofV1): Readonly<Record<string, string>> {
-    return Object.fromEntries(REINGRESS_GUARDS.map(name => [name,
-      `sha256:${createHash("sha256").update(canonicalize({ name,
-        proof_digest: proof.proof_digest, tombstone_sequence: proof.tombstone_sequence,
-        tombstone_set_root: proof.tombstone_set_root })).digest("hex")}`]));
+      tombstone_set_root: proof.tombstone_set_root,
+      surface_manifest_digest: proof.surface_manifest_digest,
+      artifact_manifest_digest: proof.artifact_manifest_digest,
+      export_manifest_digest: proof.export_manifest_digest };
   }
 
   private correctionExpectation(record: MemoryCorrectionRecord): MemoryProofExpectation {
@@ -160,4 +201,8 @@ export class ProductionMemoryLifecycleObserver implements MemoryLifecycleObserve
       tombstone_sequence: record.tombstone_sequence,
       tombstone_set_root: record.tombstone_set_root };
   }
+}
+
+function assertNever(value: never): never {
+  throw new JarvisError(`MEMORY_LIFECYCLE_OBSERVATION_INVALID:${String(value)}`);
 }

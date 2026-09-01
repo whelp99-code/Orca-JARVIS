@@ -77,3 +77,9 @@ export const MEMORY_MANAGED_SURFACE_CATALOG = [
 
 export const MEMORY_MANAGED_SURFACE_CATALOG_DIGEST = `sha256:${createHash("sha256")
   .update(canonicalize(MEMORY_MANAGED_SURFACE_CATALOG)).digest("hex")}`;
+
+export const MEMORY_PROVIDER_SURFACE_CATALOG_DIGEST = `sha256:${createHash("sha256")
+  .update("second-brain/memory-surface-manifest/v1\0")
+  .update(canonicalize({ catalog: MEMORY_MANAGED_SURFACE_CATALOG.slice(0, 40).map(
+    ({ catalog_key, owner, surface_id }) => ({ catalog_key, owner, surface_id })) }))
+  .digest("hex")}`;

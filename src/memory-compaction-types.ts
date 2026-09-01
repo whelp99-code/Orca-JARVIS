@@ -1,8 +1,8 @@
-import type { CompleteProviderSurfaceInventory } from "./memory-lifecycle-observation-types.js";
 import type {
-  CompleteMemorySurfaceInventory,
-  ReingressGuardObservations,
-} from "./memory-managed-surface-types.js";
+  CompleteProviderSurfaceInventory,
+  CompleteReingressGuardObservations,
+} from "./memory-lifecycle-observation-types.js";
+import type { CompleteMemorySurfaceInventory } from "./memory-managed-surface-types.js";
 
 export type MemoryCompactionRequest = {
   readonly lane: "correction" | "deletion";
@@ -14,7 +14,7 @@ export type MemoryCompactionRequest = {
     readonly set_root: string;
   };
   readonly provider_inventory: CompleteProviderSurfaceInventory;
-  readonly reingress_guards: ReingressGuardObservations;
+  readonly reingress_guards: CompleteReingressGuardObservations;
 };
 
 export type MemoryCompactionObservation = {

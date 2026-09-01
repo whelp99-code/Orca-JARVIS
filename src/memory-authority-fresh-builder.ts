@@ -35,11 +35,17 @@ type SchemaRow = {
 export async function buildFreshAuthority(
   source: AuthorityDb,
   freshPath: string,
-  blockedProjections: readonly SuppressedProjection[] = suppressedProjections(source.db),
+  input: {
+    readonly blocked_projections?: readonly SuppressedProjection[];
+    readonly sensitive_material?: readonly Buffer[];
+  } = {},
 ): Promise<FreshAuthorityBuild> {
+  const blockedProjections = input.blocked_projections ?? suppressedProjections(source.db);
   source.db.pragma("wal_checkpoint(TRUNCATE)");
   const sourceDigest = digest(readFileSync(source.filename));
-  const sensitive = collectSuppressedContent(source.db, blockedProjections);
+  const sensitive = input.sensitive_material === undefined
+    ? collectSuppressedContent(source.db, blockedProjections)
+    : [...input.sensitive_material];
   rmSync(freshPath, { force: true });
   const fresh = new AuthorityDb(freshPath);
   try {
