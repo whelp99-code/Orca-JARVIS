@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "scenario": "full-loop",
+  "commit": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+  "tree": "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+  "first_parent": "cccccccccccccccccccccccccccccccccccccccc",
+  "subject": "docs(operations): prove personal OS release and recovery",
+  "commit_timestamp": "2026-08-27T00:00:00.000Z",
+  "provider_commit": "dddddddddddddddddddddddddddddddddddddddd",
+  "provider_tree": "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee",
+  "provider_first_parent": "ffffffffffffffffffffffffffffffffffffffff",
+  "provider_subject": "chore: pair provider release fixture"
+}

@@ -1,0 +1,9 @@
+[Unit]
+Description=JM Second Brain pending request path
+
+[Path]
+PathExists=/home/jm/.local/state/second-brain/requests/pending
+Unit=jm-second-brain-requests.service
+
+[Install]
+WantedBy=paths.target

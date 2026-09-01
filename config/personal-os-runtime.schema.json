@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "mode"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "mode": { "enum": ["production", "fixture"] },
+    "run_root": { "type": "string" },
+    "jarvis_db": { "type": "string" },
+    "jarvis_backup_root": { "type": "string" }
+  }
+}

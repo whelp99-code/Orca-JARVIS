@@ -1,0 +1,81 @@
+{
+  "schema_version": 1,
+  "questions": [
+    {
+      "id": 1,
+      "required_tokens": ["linux-authority", "linux-scheduler", "provider-owned-effects", "mac-client-only"],
+      "allowed_docs": ["operations", "disaster-recovery", "release"],
+      "min_citations": 1
+    },
+    {
+      "id": 2,
+      "required_tokens": ["jarvis-authority-releases", "provider-app-releases", "relative-current-symlink", "atomic-rename"],
+      "allowed_docs": ["operations", "disaster-recovery", "release"],
+      "min_citations": 1
+    },
+    {
+      "id": 3,
+      "required_tokens": [
+        "jm-jarvis.service",
+        "jm-jarvis-dashboard.service",
+        "jm-jarvis-phone-gateway.service",
+        "jm-jarvis-backup.service",
+        "jm-jarvis-backup.timer",
+        "jm-jarvis-portfolio-collector.service",
+        "jm-jarvis-portfolio-collector.timer",
+        "jm-second-brain-refresh.service",
+        "jm-second-brain-refresh.timer",
+        "jm-second-brain-requests.service",
+        "jm-second-brain-requests.path",
+        "jm-second-brain-backup.service",
+        "jm-second-brain-backup.timer",
+        "jarvis-owner",
+        "provider-owner"
+      ],
+      "allowed_docs": ["operations", "disaster-recovery", "release"],
+      "min_citations": 1
+    },
+    {
+      "id": 4,
+      "required_tokens": ["07:00-Asia/Seoul", "07:15-Asia/Seoul", "21:30-Asia/Seoul", "02:30-Asia/Seoul", "22:00-07:00-Asia/Seoul"],
+      "allowed_docs": ["operations", "disaster-recovery", "release"],
+      "min_citations": 1
+    },
+    {
+      "id": 5,
+      "required_tokens": ["migration-vector", "quick-check", "foreign-key-check", "doctor", "status", "dashboard-health", "mcp-handshake", "scheduler-cursor", "uncertain-outbox"],
+      "allowed_docs": ["operations", "disaster-recovery", "release"],
+      "min_citations": 1
+    },
+    {
+      "id": 6,
+      "required_tokens": ["jarvis-rpo-15m", "provider-rpo-25h", "restore-new-generation", "tombstones-before-read", "proof-before-activation"],
+      "allowed_docs": ["operations", "disaster-recovery", "release"],
+      "min_citations": 1
+    },
+    {
+      "id": 7,
+      "required_tokens": ["exact-migration-vector", "provider-contract", "sealed-manifest", "RELEASE_ROLLBACK_INCOMPATIBLE"],
+      "allowed_docs": ["operations", "disaster-recovery", "release"],
+      "min_citations": 1
+    },
+    {
+      "id": 8,
+      "required_tokens": ["accepted-reconciling", "signed-provider-proof", "no-auto-replay", "visible-uncertain"],
+      "allowed_docs": ["operations", "disaster-recovery", "release"],
+      "min_citations": 1
+    },
+    {
+      "id": 9,
+      "required_tokens": ["bounded-read-routes", "tailnet-admission-not-approval", "webauthn-linux-verification", "controlplane-receipt-once"],
+      "allowed_docs": ["operations", "disaster-recovery", "release"],
+      "min_citations": 1
+    },
+    {
+      "id": 10,
+      "required_tokens": ["production-activation-gate", "vault-transfer-gate", "production-restore-gate", "systemd-runtime-skipped", "device-observation-separate"],
+      "allowed_docs": ["operations", "disaster-recovery", "release"],
+      "min_citations": 1
+    }
+  ]
+}

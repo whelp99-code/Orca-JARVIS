@@ -1,5 +1,11 @@
 # JM-SERVER control center release and rollback
 
+Status: `HISTORICAL_NON_EXECUTABLE`.
+Stale control-center `current` paths in this file are not executable Linux authority release procedures.
+Use `docs/personal-os/release.md` and `docs/personal-os/disaster-recovery.md`.
+Mac LaunchAgent/plist sections elsewhere are historical and non-executable.
+Do not change live production `jm-jarvis.service` ExecStart from this file (`live-bootstrap-execstart-out-of-scope`).
+
 Definitions only. These commands change JM-SERVER production state and require operator authorization.
 
 Runtime root: `/home/jm/.local/state/orca-jarvis`.

@@ -6,7 +6,8 @@ import { JarvisError } from "./db.js";
 import { GjcCoordinatorClient } from "./gjc.js";
 import { LiveSupervisor, type LiveSupervisorCycle } from "./live-supervisor.js";
 import { PreGjcShadow } from "./pre-gjc-shadow.js";
-import { GjcRuntimeService } from "./service.js";
+import { PERSONAL_OS_CONTROL_CHANNEL_ENV, servePersonalOsCycleChannel } from "./personal-os-cycle-channel.js";
+import { PersonalOsRuntime } from "./personal-os-runtime.js";
 
 function outputSync(value: object): void {
   writeSync(process.stdout.fd, `${JSON.stringify({ version: 1, ...value })}\n`);
@@ -21,17 +22,23 @@ export async function executeGjcCommand(
   const shadow = new PreGjcShadow(db);
   const supervisor = new LiveSupervisor(db);
   let serviceRunInterval: number | undefined;
-  const service = new GjcRuntimeService(db, gjc, "gjc-runtime", async () => {
-    try {
-      const result = await supervisor.cycleWithShadow(
-        shadow,
-        binding => observeBound(binding, dependencies.orcaRunner),
-        commandNow(context).toISOString(),
-      );
-      deliverReport({ context, supervisor, result, interval: serviceRunInterval });
-    } catch (error) {
-      if (!(error instanceof JarvisError) || error.code !== "LIVE_WORKTREE_UNREGISTERED") throw error;
-    }
+  const { service } = PersonalOsRuntime.forServiceRun({
+    authority: db,
+    coordinator: gjc,
+    worker: "gjc-runtime",
+    clock: () => commandNow(context),
+    supervisorCycle: async () => {
+      try {
+        const result = await supervisor.cycleWithShadow(
+          shadow,
+          binding => observeBound(binding, dependencies.orcaRunner),
+          commandNow(context).toISOString(),
+        );
+        deliverReport({ context, supervisor, result, interval: serviceRunInterval });
+      } catch (error) {
+        if (!(error instanceof JarvisError) || error.code !== "LIVE_WORKTREE_UNREGISTERED") throw error;
+      }
+    },
   });
   if (command === "gjc" && subcommand === "connect") {
     if (!argument) throw new JarvisError("GJC_CONFIG_INVALID");
@@ -112,6 +119,11 @@ export async function executeGjcCommand(
     return { ok: true, command: "service.once", ...(await service.once(commandNow(context).toISOString())) };
   }
   if (command === "service" && subcommand === "run") {
+    const control = process.env[PERSONAL_OS_CONTROL_CHANNEL_ENV];
+    if (control !== undefined && control.length > 0) {
+      await servePersonalOsCycleChannel({ db: db.db, socketPath: control });
+      return { ok: true, command: "service.run", runtime_surface: "staged-execstart" };
+    }
     const raw = values["interval-ms"] ?? values.interval_ms;
     const interval = raw === undefined ? 10_000 : integer(raw);
     if (interval < 1 || interval > 60_000) throw new JarvisError("GJC_INTERVAL_INVALID");

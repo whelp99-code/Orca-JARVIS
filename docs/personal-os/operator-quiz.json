@@ -1,0 +1,35 @@
+{
+  "schema_version": 1,
+  "answers": [
+    { "id": 1, "tokens": ["linux-authority", "linux-scheduler", "provider-owned-effects", "mac-client-only"], "citations": ["operations#host"] },
+    { "id": 2, "tokens": ["jarvis-authority-releases", "provider-app-releases", "relative-current-symlink", "atomic-rename"], "citations": ["release#roots"] },
+    {
+      "id": 3,
+      "tokens": [
+        "jm-jarvis.service",
+        "jm-jarvis-dashboard.service",
+        "jm-jarvis-phone-gateway.service",
+        "jm-jarvis-backup.service",
+        "jm-jarvis-backup.timer",
+        "jm-jarvis-portfolio-collector.service",
+        "jm-jarvis-portfolio-collector.timer",
+        "jm-second-brain-refresh.service",
+        "jm-second-brain-refresh.timer",
+        "jm-second-brain-requests.service",
+        "jm-second-brain-requests.path",
+        "jm-second-brain-backup.service",
+        "jm-second-brain-backup.timer",
+        "jarvis-owner",
+        "provider-owner"
+      ],
+      "citations": ["operations#units"]
+    },
+    { "id": 4, "tokens": ["07:00-Asia/Seoul", "07:15-Asia/Seoul", "21:30-Asia/Seoul", "02:30-Asia/Seoul", "22:00-07:00-Asia/Seoul"], "citations": ["operations#schedule"] },
+    { "id": 5, "tokens": ["migration-vector", "quick-check", "foreign-key-check", "doctor", "status", "dashboard-health", "mcp-handshake", "scheduler-cursor", "uncertain-outbox"], "citations": ["release#gates"] },
+    { "id": 6, "tokens": ["jarvis-rpo-15m", "provider-rpo-25h", "restore-new-generation", "tombstones-before-read", "proof-before-activation"], "citations": ["disaster-recovery#restore"] },
+    { "id": 7, "tokens": ["exact-migration-vector", "provider-contract", "sealed-manifest", "RELEASE_ROLLBACK_INCOMPATIBLE"], "citations": ["release#rollback"] },
+    { "id": 8, "tokens": ["accepted-reconciling", "signed-provider-proof", "no-auto-replay", "visible-uncertain"], "citations": ["operations#provider"] },
+    { "id": 9, "tokens": ["bounded-read-routes", "tailnet-admission-not-approval", "webauthn-linux-verification", "controlplane-receipt-once"], "citations": ["operations#gateway"] },
+    { "id": 10, "tokens": ["production-activation-gate", "vault-transfer-gate", "production-restore-gate", "systemd-runtime-skipped", "device-observation-separate"], "citations": ["operations#gates"] }
+  ]
+}

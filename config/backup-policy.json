@@ -1,0 +1,8 @@
+{
+  "schema_version": 1,
+  "jarvis_rpo_ms": 900000,
+  "provider_rpo_ms": 90000000,
+  "jarvis_timer": "*:0/15",
+  "provider_timer": "*-*-* 07:30:00 Asia/Seoul",
+  "restore_order": ["restore-new-generation", "tombstones-before-read", "proof-before-activation"]
+}

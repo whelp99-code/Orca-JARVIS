@@ -1,0 +1,15 @@
+[Unit]
+Description=Collect and ingest JM-SERVER portfolio status
+
+[Service]
+Type=oneshot
+Environment=ORCA_EXTRACTED_APPDIR=/home/jm/.local/state/orca-jarvis/orca-cli/current
+Environment=PATH=/home/jm/.local/state/orca-jarvis/orca-cli/current/usr/bin:/home/jm/.local/state/orca-jarvis/orca-cli/bin:/home/jm/.nvm/versions/node/v24.19.0/bin:/home/jm/.local/bin:/usr/bin:/bin
+ExecStart=/bin/bash /home/jm/.local/state/orca-jarvis/control-center/bin/jm-portfolio-collector.sh
+TimeoutStartSec=50s
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+ReadWritePaths=/home/jm/.local/state/orca-jarvis

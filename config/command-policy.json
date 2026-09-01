@@ -1,0 +1,15 @@
+{
+  "schema_version": 1,
+  "commands": {
+    "personal-os-rehearsal": {
+      "argv": ["node", "scripts/personal-os-release-rehearsal.mjs"],
+      "network": "denied",
+      "filesystem": "run-root"
+    },
+    "personal-os-backup": {
+      "argv": ["node", "dist/src/personal-os-backup-cli.js"],
+      "network": "denied",
+      "filesystem": "run-root"
+    }
+  }
+}

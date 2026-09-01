@@ -1,0 +1,30 @@
+[Unit]
+Description=JM JARVIS personal-OS authority (Linux)
+After=network-online.target
+StartLimitIntervalSec=60
+StartLimitBurst=5
+
+[Service]
+Type=simple
+WorkingDirectory=/home/jm/.local/state/orca-jarvis/authority/current
+Environment=PATH=/home/jm/.nvm/versions/node/v24.19.0/bin:/home/jm/.local/bin:/usr/bin:/bin
+Environment=NODE_ENV=production
+ExecStart=/home/jm/.nvm/versions/node/v24.19.0/bin/node /home/jm/.local/state/orca-jarvis/authority/current/dist/src/cli.js service run --db /home/jm/.local/state/orca-jarvis/jarvis.sqlite
+Restart=always
+RestartSec=5
+ReadWritePaths=/home/jm/.local/state/orca-jarvis/authority/current /home/jm/.local/state/orca-jarvis/jarvis.sqlite /home/jm/.local/state/orca-jarvis/backups
+RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6
+IPAddressDeny=any
+IPAddressAllow=localhost
+SystemCallFilter=@system-service
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+
+[Install]
+WantedBy=default.target

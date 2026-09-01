@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "accepted_vector_digests"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "accepted_vector_digests": {
+      "type": "array",
+      "items": { "type": "string", "pattern": "^[0-9a-f]{64}$" }
+    }
+  }
+}
