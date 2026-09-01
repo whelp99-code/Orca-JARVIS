@@ -1,5 +1,7 @@
 import { createRoot } from "react-dom/client";
 import { createDashboardClient } from "./api.js";
+import { createMemoryClient } from "./memory-api.js";
+import { createMemoryStore } from "./memory-store.js";
 import { createPersonalClient } from "./personal-api.js";
 import { createPersonalStore } from "./personal-store.js";
 import { ControlCenterRoot } from "./root.js";
@@ -10,6 +12,7 @@ import "./styles/controls.css";
 import "./styles/responsive.css";
 import "./styles/portfolio.css";
 import "./styles/today.css";
+import "./styles/memory.css";
 
 class DashboardInitializationError extends Error {
   readonly name = "DashboardInitializationError";
@@ -25,6 +28,8 @@ const store = createDashboardStore({
   eventSourceFactory: (url) => new EventSource(url),
 });
 const personalClient = createPersonalClient(client.session);
+const memoryClient = createMemoryClient(client.session);
+const memoryStore = createMemoryStore(memoryClient);
 const personalStore = createPersonalStore({
   client: personalClient,
   eventSourceFactory: (url) => new EventSource(url),
@@ -32,5 +37,6 @@ const personalStore = createPersonalStore({
 const rootElement = document.getElementById("root");
 if (rootElement === null) throw new DashboardInitializationError();
 createRoot(rootElement).render(
-  <ControlCenterRoot store={store} client={client} personalRuntime={{ store: personalStore, client: personalClient }} />,
+  <ControlCenterRoot store={store} client={client} personalRuntime={{ store: personalStore, client: personalClient }}
+    memoryRuntime={{ store: memoryStore, client: memoryClient }} />,
 );

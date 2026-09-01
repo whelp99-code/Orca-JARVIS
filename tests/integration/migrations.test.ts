@@ -83,7 +83,7 @@ import { AuthorityDb } from "../../src/index.js"; import { tempDb } from "../hel
       // When the exact 032 and later migrations become available
       for (const file of readdirSync(full)) if (file >= "032_personal_context.sql") cpSync(join(full, file), join(prior, file)); await empty.migrate();
       await upgraded.migrate();
-      // Then both journals preserve unique checksummed order through independent slot 038.
+      // Then both journals preserve unique checksummed order through the allocated Task 32 slots.
       for (const db of [empty, upgraded]) {
         const rows = db.db.prepare("SELECT id,checksum FROM schema_migrations WHERE id>='031_' ORDER BY id").all() as Array<{ id: string; checksum: string }>;
         expect(rows.map((row) => row.id)).toEqual([ "031_control_ingress_idempotency.sql", "032_personal_context.sql", "033_personal_operations.sql",
@@ -93,7 +93,8 @@ import { AuthorityDb } from "../../src/index.js"; import { tempDb } from "../hel
           "045_task30_schema_compatibility.sql", "046_task30_legacy_guards.sql",
           "047_task30_confirmation_compatibility.sql", "048_task30_atomic_effect_runtime.sql",
           "049_task30_projection_authority.sql", "050_task30_compaction_inventory.sql",
-          "051_task30_observed_inventory.sql", ]);
+          "051_task30_observed_inventory.sql", "052_memory_effect_content_free.sql",
+          "053_memory_surface_authority.sql", "054_memory_export_lifecycle.sql", ]);
         expect(new Set(rows.map((row) => row.checksum)).size).toBe(rows.length); } } finally { empty.close(); upgraded.close();
       rmSync(join(full, ".."), { recursive: true, force: true }); rmSync(join(prior, ".."), { recursive: true, force: true }); } });
   it("fails closed when migration is pending or its raw SQL bytes change", async () => { const pending = new AuthorityDb(tempDb());

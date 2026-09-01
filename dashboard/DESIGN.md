@@ -123,6 +123,15 @@ The document owns vertical scrolling. The operational shell uses StyleGallery's 
 - **Motion**: none; async controls swap labels and disabled state immediately.
 - **Layout**: StyleGallery `ram-grid` inside the existing sticky-header shell; document owns scrolling and source/focus order is unchanged at every width.
 
+### Memory Control Surface
+- **Structure**: heading/status, bounded Search, Results/Detail, Conflicts, Candidates, then Effects and privacy receipts in fixed DOM order.
+- **States**: loading, ready, no data, stale, offline, incompatible, sensitive-redacted, pending approval, applying, verified complete, and forgotten removal.
+- **Spacing**: `--space-1` through `--space-6`; forms, records, panels, and status reuse existing primitives.
+- **Accessibility**: persistent labels, native buttons/checkbox/fieldset, one atomic live status, initiator-safe focus, and no subject-revealing accessible names for redacted records.
+- **Motion**: none; privacy removal and authority state changes are immediate.
+- **Layout**: document scroll owner; Results/Detail and Candidates/Effects use overflow-safe two-column grids above 40rem and preserve source/focus order when stacked.
+- **Privacy**: no query in URL/storage, no memory-derived links or HTML, and no path/download/clipboard surface.
+
 ## 6. Motion & Interaction
 
 Motion intensity is low. State changes are immediate and no automatic animation is used. Hover, active, and focus feedback communicate affordance without moving layout. Any future non-essential motion must animate only transform or opacity and honor `prefers-reduced-motion`.

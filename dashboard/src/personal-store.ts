@@ -38,7 +38,8 @@ const PERSONAL_TOPICS = new Set([
   "personal.source-health.v1",
   "overview",
   "agents",
-  "approvals",
+  "approvals", "memory.records.v1", "memory.conflicts.v1", "memory.candidates.v1",
+  "memory.effects.v1", "memory.privacy.v1", "memory.status.v1",
 ]);
 
 export function createPersonalStore(options: Options) {

@@ -4,6 +4,7 @@ export const copy = {
   navLabel: "주요 메뉴",
   nav: {
     today: "오늘",
+    memory: "기억",
     overview: "한눈에",
     tasks: "작업",
     proposals: "새 제안",

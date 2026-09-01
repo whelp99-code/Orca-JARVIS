@@ -112,6 +112,7 @@ function writeBody(
   response.setHeader("X-Request-Id", input.requestId);
   response.setHeader("Content-Type", input.contentType);
   response.setHeader("Cache-Control", "no-store");
+  response.setHeader("X-Content-Type-Options", "nosniff");
   response.setHeader("Content-Length", Buffer.byteLength(input.payload));
   response.end(input.payload);
 }

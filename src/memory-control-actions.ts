@@ -46,7 +46,26 @@ export function memoryConfirm(input: RuntimeControlActionInput): void {
   }
 }
 
+function memorySurfaceEffect(input: RuntimeControlActionInput, operation: "correct" | "forget" | "export"): void {
+  requireOnly(input.target, ["record_selection_digest", "provider_instance_id", "operation"]);
+  requireOnly(input.args, ["schema_version", "intent_digest", "semantic_digest", "policy_digest",
+    "expected_prior_digest", "target_manifest_digest", "scope_digest", "target_version_digest",
+    "suppression_epoch", "selection_expires_at", "payload"]);
+  const payload = requireRecord(input.args, "payload");
+  requireOnly(payload, ["kind", "payload_digest"]);
+  if (input.args.schema_version !== 1 || input.target.operation !== operation || payload.kind !== operation
+    || !nonempty(input.target.provider_instance_id) || !digest.test(String(input.target.record_selection_digest))
+    || !digest.test(String(input.args.semantic_digest)) || !digest.test(String(input.args.policy_digest))
+    || !digest.test(String(input.args.expected_prior_digest))
+    || !digest.test(String(input.args.target_manifest_digest)) || !digest.test(String(input.args.scope_digest))
+    || !digest.test(String(input.args.target_version_digest)) || !digest.test(String(payload.payload_digest))
+    || !Number.isSafeInteger(input.args.suppression_epoch) || !nonempty(input.args.selection_expires_at)) {
+    throw new JarvisError("CONTROL_ARGS_MISMATCH");
+  }
+}
+
 export function memoryOutboxDispatch(input: RuntimeControlActionInput): void {
+  if (input.args.schema_version === 1) { memorySurfaceEffect(input, "correct"); return; }
   requireOnly(input.target, ["candidate_id", "candidate_digest", "classification_digest"]);
   if (input.args.schema_version === 2) {
     requireOnly(input.args, ["schema_version", "request", "expected_artifact"]);
@@ -76,6 +95,9 @@ export function memoryOutboxDispatch(input: RuntimeControlActionInput): void {
 
 export function memoryDedicatedEffect(input: RuntimeControlActionInput,
   lane: "deletion" | "export"): void {
+  if (input.args.schema_version === 1) {
+    memorySurfaceEffect(input, lane === "deletion" ? "forget" : "export"); return;
+  }
   const identity = lane === "deletion" ? "deletion_id" : "export_id";
   requireOnly(input.target, [identity, "target_manifest_digest", "scope_digest"]);
   requireOnly(input.args, ["schema_version", "lane", "lane_id", "provider_instance_id",

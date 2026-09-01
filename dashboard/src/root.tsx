@@ -10,6 +10,7 @@ import {
   type AuthorityMutationClient,
 } from "./authority-api.js";
 import App from "./app.js";
+import { MemoryRoute, type MemoryClientRuntime } from "./memory-route.js";
 import { OperationalShell } from "./operational-shell.js";
 import { AgentDetailPage } from "./pages/agent-detail-page.js";
 import { AgentsPage } from "./pages/agents-page.js";
@@ -31,6 +32,7 @@ type ControlCenterRootProps = Readonly<{
   authorityClient?: AuthorityMutationClient;
   authorityIdFactory?: AuthorityIdFactory;
   personalRuntime?: PersonalRuntime;
+  memoryRuntime?: MemoryClientRuntime;
   initialPath?: string;
 }>;
 export function ControlCenterRoot({
@@ -39,6 +41,7 @@ export function ControlCenterRoot({
   authorityClient,
   authorityIdFactory,
   personalRuntime,
+  memoryRuntime,
   initialPath,
 }: ControlCenterRootProps) {
   const content = (
@@ -48,6 +51,7 @@ export function ControlCenterRoot({
       authorityClient={authorityClient}
       authorityIdFactory={authorityIdFactory}
       personalRuntime={personalRuntime}
+      memoryRuntime={memoryRuntime}
     />
   );
   return initialPath === undefined ? (
@@ -63,6 +67,7 @@ function ControlCenter({
   authorityClient,
   authorityIdFactory,
   personalRuntime,
+  memoryRuntime,
 }: Omit<ControlCenterRootProps, "initialPath">) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const proposalClient = useMemo(() => createProposalMutationClient(client.session), [client]);
@@ -83,6 +88,7 @@ function ControlCenter({
           <TodayRoute runtime={personalRuntime} overview={state.overview} approvals={state.approvals}
             authorityClient={liveAuthorityClient} authorityConnection={state.connectionState} />
         )} />
+        <Route path="/memory" element={<MemoryRoute runtime={memoryRuntime} />} />
         <Route path="/overview" element={<OverviewRoute state={state} store={store} />} />
         <Route
           path="/tasks"

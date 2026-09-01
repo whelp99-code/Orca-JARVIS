@@ -10,6 +10,7 @@ declare module "node:net" {
   }
 }
 import type { CapabilityProbe } from "../capabilities.js";
+import type { SecondBrainReadAdapter } from "../second-brain-adapter-types.js";
 import type { SecondBrainReadinessProbe } from "../second-brain-readiness.js";
 import { JarvisError, type AuthorityDb } from "../db.js";
 import type { OrcaRunner } from "../orca.js";
@@ -24,6 +25,7 @@ import {
   writeDashboardError,
   writeDashboardHtml,
 } from "./http.js";
+import { createMemoryRuntime, type MemoryRuntime } from "./memory-runtime.js";
 import type { TeamProposalPlanner } from "./proposal-service.js";
 import { DashboardReadModel } from "./read-model.js";
 import { createDashboardSession, type DashboardSessionStore } from "./session.js";
@@ -64,6 +66,9 @@ export type DashboardServerOptions = {
   readonly clock?: () => Date;
   readonly sessionStore?: DashboardSessionStore;
   readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
+  readonly memoryAdapter?: SecondBrainReadAdapter;
+  readonly memoryProjectionKey?: Buffer;
+  readonly memoryEffectSpoolRoot?: string;
 };
 
 type RequestContext = {
@@ -81,6 +86,7 @@ type RequestContext = {
   readonly secondBrainProbe?: SecondBrainReadinessProbe;
   readonly planner?: TeamProposalPlanner;
   readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
+  readonly memoryRuntime: MemoryRuntime;
 };
 
 export function createDashboardServer(options: DashboardServerOptions): DashboardServer & {
@@ -96,6 +102,9 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
   const events = createDashboardEvents(options.db);
   const session = options.sessionStore ?? createDashboardSession();
   const clock = options.clock ?? (() => new Date());
+  const memoryRuntime = createMemoryRuntime({ authority: options.db, session, clock,
+    adapter: options.memoryAdapter, projection_key: options.memoryProjectionKey,
+    effect_spool_root: options.memoryEffectSpoolRoot });
   const bind = { origin: `http://${LOOPBACK_HOST}:0` };
   const bound = new BoundSocket({ host: LOOPBACK_HOST, port: options.port });
   const httpServer = createServer((request, response) => {
@@ -114,6 +123,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
       secondBrainProbe: options.secondBrainProbe,
       planner: options.planner,
       memoryLifecycle: options.memoryLifecycle,
+      memoryRuntime,
     });
   });
   httpServer.listen(bound);
@@ -168,6 +178,7 @@ async function handleRequest(input: RequestContext): Promise<void> {
       secondBrainProbe: input.secondBrainProbe,
       planner: input.planner,
       memoryLifecycle: input.memoryLifecycle,
+      memoryRuntime: input.memoryRuntime,
     })) {
       return;
     }

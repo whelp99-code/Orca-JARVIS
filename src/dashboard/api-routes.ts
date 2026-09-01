@@ -12,6 +12,8 @@ import {
   writeDashboardJson,
 } from "./http.js";
 import { tryHandleDashboardPost } from "./post-routes.js";
+import { tryHandleMemoryRead } from "./memory-read-routes.js";
+import type { MemoryRuntime } from "./memory-runtime.js";
 import { tryHandlePersonalRead } from "./personal-routes.js";
 import type { TeamProposalPlanner } from "./proposal-service.js";
 import type { DashboardReadModel } from "./read-model.js";
@@ -46,6 +48,7 @@ export type DashboardApiInput = {
   readonly secondBrainProbe?: SecondBrainReadinessProbe;
   readonly planner?: TeamProposalPlanner;
   readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
+  readonly memoryRuntime: MemoryRuntime;
 };
 
 type LogsRoute =
@@ -70,6 +73,9 @@ export async function tryHandleDashboardApi(input: DashboardApiInput): Promise<b
     return true;
   }
   if (await tryHandleDashboardLogs(input)) return true;
+  if (await tryHandleMemoryRead({ path: input.path, url: input.url, request: input.request,
+    response: input.response, requestId: input.requestId, session: input.session,
+    runtime: input.memoryRuntime })) return true;
   if (await tryHandlePersonalRead({
     model: input.model.personal,
     url: input.url,

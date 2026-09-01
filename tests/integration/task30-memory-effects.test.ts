@@ -43,7 +43,7 @@ describe("Task 30 proof-bound authority", () => {
     const db = await database();
     try {
       const migrations = (db.db.prepare(
-        "SELECT id FROM schema_migrations WHERE id>='040_' ORDER BY id",
+        "SELECT id FROM schema_migrations WHERE id>='040_' AND id<='051_task30_observed_inventory.sql' ORDER BY id",
       ).all() as Array<{ readonly id: string }>).map(row => row.id);
       expect(migrations).toEqual([
         "040_memory_tombstone_authority.sql",

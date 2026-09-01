@@ -2,7 +2,7 @@ import { canonicalize } from "./canonical.js"; import { validateControlAction } 
   controlValueDigest as hash, isControlRecord as isRecord, isNonemptyControlValue as nonempty, verifyCommandApproval, } from "./control-plane-contract.js";
 import type { ActionLevel, ClaimedControlCommand, CommandApprovalReceipt, ControlCancelInput, ControlCommandRequestInput, ControlCommandState,
   ControlEventInput, StoredControlCommand, } from "./control-plane-contract.js"; import { AuthorityDb, JarvisError } from "./db.js";
-import { MemoryProjectionAuthority } from "./memory-projection-authority.js"; export {
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js"; import { MemorySurfaceAuthority } from "./memory-surface-authority.js"; export {
   COMMAND_APPROVAL_DOMAIN, controlCommandDigest, signCommandApproval, verifyCommandApproval, } from "./control-plane-contract.js"; export type { ActionLevel,
   ClaimedControlCommand, CommandApprovalReceipt, ControlCancelInput, ControlCommandRequestInput, ControlCommandState, ControlEventInput, StoredControlCommand,
 } from "./control-plane-contract.js"; const validOutcomeStates = new Set(["completed", "failed", "uncertain"]);
@@ -69,7 +69,8 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
         ) .run( receipt.receipt_id, receipt.request_id, receipt.decision, receipt.command_digest, receipt.signer_principal_id, receipt.authenticated_session_id,
           receipt.key_id, canonicalize(receipt), receipt.signature, receipt.issued_at, receipt.expires_at, at, ); const changed = this.authority.db
         .prepare("UPDATE control_command_requests SET state=? WHERE request_id=? AND state='pending'") .run(state, receipt.request_id);
-      if (changed.changes !== 1) throw new JarvisError("CONTROL_APPROVAL_RACE"); this.event({ event_id: `evt:${receipt.request_id}:${state}`,
+      if (changed.changes !== 1) throw new JarvisError("CONTROL_APPROVAL_RACE");
+      new MemorySurfaceAuthority(this.authority).applyReceipt(receipt, receipt.request_id, now); this.event({ event_id: `evt:${receipt.request_id}:${state}`,
         event_type: `control.command.${state}`, source: "human-approval", subject: receipt.request_id, correlation_id: receipt.request_id,
         causation_id: `evt:${receipt.request_id}:requested`, payload: { receipt_id: receipt.receipt_id, signer_principal_id: receipt.signer_principal_id },
         created_at: at, }); }); tx(); } private authorityLossCode(row: Record<string, unknown>, nowMs: number): string | null {

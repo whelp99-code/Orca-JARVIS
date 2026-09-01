@@ -5,6 +5,8 @@ import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.j
 import { tryHandleAuthorityPost } from "./authority-routes.js";
 import type { ReconcileHub } from "./events.js";
 import { DASHBOARD_ERROR_CODES, writeDashboardError } from "./http.js";
+import { tryHandleMemoryMutation } from "./memory-mutation-routes.js";
+import type { MemoryRuntime } from "./memory-runtime.js";
 import { tryHandleNotificationDelivery } from "./notification-delivery-routes.js";
 import { tryHandleProposalPreview } from "./proposal-routes.js";
 import { tryHandleRecommendationAccept } from "./recommendation-action-routes.js";
@@ -26,6 +28,7 @@ export type DashboardPostInput = {
   readonly capabilityProbe?: CapabilityProbe;
   readonly planner?: TeamProposalPlanner;
   readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
+  readonly memoryRuntime: MemoryRuntime;
 };
 
 export async function tryHandleDashboardPost(input: DashboardPostInput): Promise<boolean> {
@@ -44,6 +47,9 @@ export async function tryHandleDashboardPost(input: DashboardPostInput): Promise
     default:
       return assertNever(parsed);
   }
+  if (await tryHandleMemoryMutation({ path: input.path, body: parsed.value,
+    response: input.response, requestId: input.requestId, runtime: input.memoryRuntime,
+    hub: input.hub })) return true;
   if (await tryHandleProposalPreview({
     db: input.db,
     path: input.path,

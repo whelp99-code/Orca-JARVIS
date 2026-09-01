@@ -4,6 +4,7 @@ import { canonicalize } from "../canonical.js";
 import { JarvisError } from "../db.js";
 import { subscribeMemorySuppression } from "../memory-suppression-events.js";
 import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
+import { MEMORY_TOPICS } from "./memory-contracts.js";
 import { PERSONAL_EVENT_TOPICS, type PersonalEventKind } from "./personal-contracts.js";
 
 export const DEFAULT_RECONCILE_TOPICS = ["overview", "tasks", "agents", "approvals"] as const;
@@ -129,7 +130,7 @@ function uniqueTopics(topics: readonly string[]): readonly string[] {
 }
 
 function allPersonalTopics(): readonly string[] {
-  return uniqueTopics(Object.values(PERSONAL_EVENT_TOPICS).flat());
+  return uniqueTopics([...Object.values(PERSONAL_EVENT_TOPICS).flat(), ...MEMORY_TOPICS]);
 }
 
 function readNotificationFingerprint(db: AuthorityDb, dataVersion: number): string {
