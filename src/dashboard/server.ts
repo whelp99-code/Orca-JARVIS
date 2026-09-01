@@ -13,6 +13,7 @@ import type { CapabilityProbe } from "../capabilities.js";
 import type { SecondBrainReadinessProbe } from "../second-brain-readiness.js";
 import { JarvisError, type AuthorityDb } from "../db.js";
 import type { OrcaRunner } from "../orca.js";
+import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
 import { tryHandleDashboardApi } from "./api-routes.js";
 import { createDashboardEvents, type ReconcileHub } from "./events.js";
 import type { PersonalEventKind } from "./personal-contracts.js";
@@ -62,6 +63,7 @@ export type DashboardServerOptions = {
   readonly planner?: TeamProposalPlanner;
   readonly clock?: () => Date;
   readonly sessionStore?: DashboardSessionStore;
+  readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
 };
 
 type RequestContext = {
@@ -78,6 +80,7 @@ type RequestContext = {
   readonly capabilityProbe?: CapabilityProbe;
   readonly secondBrainProbe?: SecondBrainReadinessProbe;
   readonly planner?: TeamProposalPlanner;
+  readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
 };
 
 export function createDashboardServer(options: DashboardServerOptions): DashboardServer & {
@@ -110,6 +113,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
       capabilityProbe: options.capabilityProbe,
       secondBrainProbe: options.secondBrainProbe,
       planner: options.planner,
+      memoryLifecycle: options.memoryLifecycle,
     });
   });
   httpServer.listen(bound);
@@ -163,6 +167,7 @@ async function handleRequest(input: RequestContext): Promise<void> {
       capabilityProbe: input.capabilityProbe,
       secondBrainProbe: input.secondBrainProbe,
       planner: input.planner,
+      memoryLifecycle: input.memoryLifecycle,
     })) {
       return;
     }

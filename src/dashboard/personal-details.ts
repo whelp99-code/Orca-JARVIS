@@ -1,4 +1,5 @@
 import type { AuthorityDb } from "../db.js";
+import { MemoryProjectionAuthority } from "../memory-projection-authority.js";
 import { canonicalPersonalContractHash, parseContextSnapshotV1, parseRecommendationV1 } from "../personal-validation.js";
 import { persistenceHash } from "../personal-persistence-values.js";
 import { Recommendations } from "../recommendations.js";
@@ -11,6 +12,9 @@ export type PersonalLookup<T> = { readonly kind: "found"; readonly value: T } | 
 
 export function recommendationDetail(db: AuthorityDb, id: string, now: Date): PersonalLookup<RecommendationDetailProjection> {
   return readOnlySnapshot(db, () => {
+    if (new MemoryProjectionAuthority(db).isSuppressed({
+      kind: "recommendation", id, component_id: id,
+    })) return { kind: "not_found" };
     const raw = db.db.prepare(
       `SELECT r.recommendation_id,r.context_id,r.context_digest,r.canonical_digest,r.evidence_digest,r.persistence_digest,
               r.approval_requirement,r.confidence_class,r.lifecycle_state,r.expires_at,r.canonical_envelope_json,
@@ -63,6 +67,10 @@ export function recommendationDetail(db: AuthorityDb, id: string, now: Date): Pe
 
 export function contextEvidence(db: AuthorityDb, contextId: string, recommendationId: string, now: Date): PersonalLookup<ContextEvidenceProjection> {
   return readOnlySnapshot(db, () => {
+    const projections = new MemoryProjectionAuthority(db);
+    if (projections.isSuppressed({ kind: "context", id: contextId, component_id: contextId })
+      || projections.isSuppressed({ kind: "recommendation", id: recommendationId,
+        component_id: recommendationId })) return { kind: "not_found" };
     const raw = db.db.prepare(
       `SELECT c.canonical_digest,c.canonical_envelope_json,r.canonical_digest AS recommendation_digest,
               r.canonical_envelope_json AS recommendation_envelope

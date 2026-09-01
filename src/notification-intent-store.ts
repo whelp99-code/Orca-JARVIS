@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { deriveNotificationDecision } from "./notification-policy.js";
+import { bindNotificationProjection } from "./memory-projection-bindings.js";
 import { persistenceRow, persistenceText } from "./personal-persistence-values.js";
 import { NotificationIntentError, type NotificationPolicyDecision, type NotificationStoreAuthority,
   type OwnerDecisionQueueEntry } from "./notification-intent-types.js";
@@ -53,6 +54,9 @@ export class NotificationIntentStore {
       }
       this.authority.db.prepare("UPDATE notification_intents SET state=?,updated_at=? WHERE intent_id=?")
         .run(decision.state, decision.not_before ?? clock, decision.intent_id);
+      bindNotificationProjection(this.authority.db, decision.intent_id,
+        [entry.recommendation_id, ...entry.contributing_recommendation_ids],
+        [entry.context_id, ...entry.contributing_context_ids], new Date(clock));
       return decision;
     }).immediate();
   }

@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import type { RecommendationActionTransition } from "./personal-recommendation-types.js";
 import { isActionState } from "./personal-recommendation-types.js";
 import type { ReplacementRecommendationIdentity } from "./recommendation-transition-identity.js";
@@ -23,6 +24,10 @@ export class PersonalRecommendationActionStore {
     if (!Number.isInteger(input.rank) || input.rank < 1 || !isActionState(input.state)) {
       throw this.error("PERSONAL_ACTION_STATE_CONFLICT");
     }
+    if (new MemoryProjectionAuthority({ db: this.database }).isSuppressed({
+      kind: "recommendation_action", id: input.recommendation_id,
+      component_id: String(input.rank),
+    })) throw this.error("PERSONAL_ACTION_STATE_CONFLICT");
     this.database.transaction(() => this.insert(input))();
   }
 

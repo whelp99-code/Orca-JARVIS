@@ -5,7 +5,9 @@ import { canonicalize } from "./canonical.js";
 import { AuthorityDb } from "./db.js";
 import { passiveCapabilityProbe, runDoctor } from "./doctor.js";
 import type { CapabilityProbe } from "./capabilities.js";
-import { TaskTimeline } from "./task-timeline.js";
+import { TaskTimeline } from "./recommendation-timeline.js";
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
+import { bindStructuredProjection } from "./memory-projection-bindings.js";
 import { assertRootIdentity, secureRoot, syncDirectory, syncFile } from "./secure-filesystem.js";
 
 export interface CurrentStateProjection {
@@ -26,45 +28,136 @@ export interface CurrentStateOptions {
   capabilityProbe?: CapabilityProbe;
 }
 
-export async function buildCurrentState(db: AuthorityDb, now = new Date(), options: CurrentStateOptions = {}): Promise<CurrentStateProjection> {
+export async function buildCurrentState(
+  db: AuthorityDb,
+  now = new Date(),
+  options: CurrentStateOptions = {},
+): Promise<CurrentStateProjection> {
   const doctor = await runDoctor(db, now, options.capabilityProbe ?? passiveCapabilityProbe());
-  const stateCounts = table(db, "work_projection") ? db.db.prepare("SELECT state,COUNT(*) AS count FROM work_projection GROUP BY state ORDER BY state").all() : [];
-  const pendingReports = table(db, "live_supervisor_reports") && table(db, "live_supervisor_report_receipts") ? Number((db.db.prepare("SELECT COUNT(*) AS count FROM live_supervisor_reports r LEFT JOIN live_supervisor_report_receipts a ON a.report_id=r.report_id WHERE a.report_id IS NULL").get() as { count: number }).count) : 0;
-  const bindings = table(db, "live_supervisor_bindings") ? db.db.prepare("SELECT canonical_path,provider,terminal_id,session_id,incarnation_id,project_id FROM live_supervisor_bindings ORDER BY canonical_path,provider,terminal_id").all() : [];
-  const blockedWork = table(db, "work_items") ? db.db.prepare("SELECT id,state,action,deadline FROM work_items WHERE state IN ('blocked','rejected') ORDER BY created_at,id").all() : [];
-  const blockedEvidence = table(db, "negative_evidence") ? db.db.prepare("SELECT evidence_id,task_id,attempt_id,reason_code,evidence_digest,created_at FROM negative_evidence ORDER BY created_at DESC,evidence_id DESC LIMIT 3").all() : [];
-  const blocked = [...blockedWork, ...blockedEvidence];
-  const workDecisions = table(db, "work_items") ? db.db.prepare("SELECT id,action,deadline FROM work_items WHERE state='awaiting_decision' ORDER BY created_at,id").all() : [];
-  const commandDecisions = table(db, "control_command_requests") ? db.db.prepare("SELECT request_id,action,action_level,expires_at FROM control_command_requests WHERE state='pending' ORDER BY requested_at,request_id").all() : [];
-  const commandQueue = table(db, "control_command_requests") ? db.db.prepare("SELECT request_id,action,state,expires_at FROM control_command_requests WHERE state IN ('approved','claimed') AND (? IS NULL OR request_id<>?) ORDER BY requested_at,request_id LIMIT 3").all(options.exclude_control_request_id ?? null, options.exclude_control_request_id ?? null) : [];
-  const gjcQueue = table(db, "gjc_intents") ? db.db.prepare("SELECT intent_id,kind,state,created_at FROM gjc_intents WHERE state IN ('pending','claimed','accepted','uncertain') ORDER BY created_at,intent_id LIMIT 3").all() : [];
-  const workflowQueue = table(db, "workflow_runs") ? db.db.prepare("SELECT run_id,loop_id,state,current_node,updated_at FROM workflow_runs WHERE state NOT IN ('completed','failed','cancelled') ORDER BY updated_at,run_id LIMIT 3").all() : [];
-  const taskTimelines = table(db, "control_command_requests") && table(db, "workflow_runs") ? new TaskTimeline(db).list(500) : [];
-  const risks = doctor.checks.filter(check => !check.ok).map(check => ({ name: check.name, code: check.code ?? "CHECK_FAILED", actual: check.actual, expected: check.expected }));
+  const stateCounts = table(db, "work_projection")
+    ? db.db.prepare(
+      "SELECT state,COUNT(*) AS count FROM work_projection GROUP BY state ORDER BY state",
+    ).all() : [];
+  const pendingReports = table(db, "live_supervisor_reports")
+    && table(db, "live_supervisor_report_receipts")
+    ? Number((db.db.prepare(
+      `SELECT COUNT(*) AS count FROM live_supervisor_reports r
+       LEFT JOIN live_supervisor_report_receipts a ON a.report_id=r.report_id
+       WHERE a.report_id IS NULL`,
+    ).get() as { count: number }).count) : 0;
+  const bindings = table(db, "live_supervisor_bindings")
+    ? db.db.prepare(
+      `SELECT canonical_path,provider,terminal_id,session_id,incarnation_id,project_id
+       FROM live_supervisor_bindings ORDER BY canonical_path,provider,terminal_id`,
+    ).all() : [];
+  const blockedWork = table(db, "work_items")
+    ? db.db.prepare(
+      `SELECT id,state,action,deadline FROM work_items
+       WHERE state IN ('blocked','rejected') ORDER BY created_at,id`,
+    ).all() : [];
+  const blockedEvidence = table(db, "negative_evidence")
+    ? db.db.prepare(
+      `SELECT evidence_id,task_id,attempt_id,reason_code,evidence_digest,created_at
+       FROM negative_evidence ORDER BY created_at DESC,evidence_id DESC LIMIT 3`,
+    ).all() : [];
+  const projections = new MemoryProjectionAuthority(db);
+  const blocked = visibleRows(projections, [...blockedWork, ...blockedEvidence]);
+  const workDecisions = table(db, "work_items")
+    ? db.db.prepare(
+      `SELECT id,action,deadline FROM work_items
+       WHERE state='awaiting_decision' ORDER BY created_at,id`,
+    ).all() : [];
+  const commandDecisions = table(db, "control_command_requests")
+    ? db.db.prepare(
+      `SELECT request_id,action,action_level,expires_at FROM control_command_requests
+       WHERE state='pending' ORDER BY requested_at,request_id`,
+    ).all() : [];
+  const commandQueue = table(db, "control_command_requests")
+    ? db.db.prepare(
+      `SELECT request_id,action,state,expires_at FROM control_command_requests
+       WHERE state IN ('approved','claimed') AND (? IS NULL OR request_id<>?)
+       ORDER BY requested_at,request_id LIMIT 3`,
+    ).all(options.exclude_control_request_id ?? null,
+      options.exclude_control_request_id ?? null) : [];
+  const gjcQueue = table(db, "gjc_intents")
+    ? db.db.prepare(
+      `SELECT intent_id,kind,state,created_at FROM gjc_intents
+       WHERE state IN ('pending','claimed','accepted','uncertain')
+       ORDER BY created_at,intent_id LIMIT 3`,
+    ).all() : [];
+  const workflowQueue = table(db, "workflow_runs")
+    ? db.db.prepare(
+      `SELECT run_id,loop_id,state,current_node,updated_at FROM workflow_runs
+       WHERE state NOT IN ('completed','failed','cancelled') ORDER BY updated_at,run_id LIMIT 3`,
+    ).all() : [];
+  const taskTimelines = table(db, "control_command_requests") && table(db, "workflow_runs")
+    ? new TaskTimeline(db).list(500) : [];
+  const risks = doctor.checks.filter(check => !check.ok).map(check => ({
+    name: check.name, code: check.code ?? "CHECK_FAILED",
+    actual: check.actual, expected: check.expected,
+  }));
   return {
     schema_version: 1,
     generated_at: now.toISOString(),
-    now: { state_counts: stateCounts, pending_reports: pendingReports, bindings: bindings.length, doctor_ok: doctor.ok, task_timelines: taskTimelines.length, task_timelines_pending_approval: taskTimelines.filter(item => item.pending_approval).length },
+    now: {
+      state_counts: stateCounts,
+      pending_reports: pendingReports,
+      bindings: bindings.length,
+      doctor_ok: doctor.ok,
+      task_timelines: taskTimelines.length,
+      task_timelines_pending_approval: taskTimelines.filter(item => item.pending_approval).length,
+    },
     blocked,
-    decisions: [...workDecisions, ...commandDecisions],
-    next_3: [...commandQueue, ...workflowQueue, ...gjcQueue].slice(0, 3),
-    workers: bindings,
+    decisions: visibleRows(projections, [...workDecisions, ...commandDecisions]),
+    next_3: visibleRows(projections, [...commandQueue, ...workflowQueue, ...gjcQueue]).slice(0, 3),
+    workers: visibleRows(projections, bindings),
     risks,
   };
 }
 
-export async function writeCurrentState(db: AuthorityDb, directory: string, now = new Date(), options: CurrentStateOptions = {}): Promise<{ generation: string; directory: string; json: string; markdown: string; projection: CurrentStateProjection }> {
+function visibleRows<T>(authority: MemoryProjectionAuthority, rows: readonly T[]): T[] {
+  return rows.filter(row => {
+    if (row === null || typeof row !== "object") return true;
+    return !Reflect.ownKeys(row).some(key => typeof key === "string"
+      && typeof Reflect.get(row, key) === "string"
+      && authority.isProjectionIdSuppressed(String(Reflect.get(row, key))));
+  });
+}
+
+export async function writeCurrentState(
+  db: AuthorityDb,
+  directory: string,
+  now = new Date(),
+  options: CurrentStateOptions = {},
+): Promise<{
+  generation: string;
+  directory: string;
+  json: string;
+  markdown: string;
+  projection: CurrentStateProjection;
+}> {
   const projection = await buildCurrentState(db, now, options);
   const root = await secureRoot(directory);
   const generationsRoot = join(root.path, ".current-state");
   await mkdir(generationsRoot, { mode: 0o700 });
   const generation = `generation-${now.getTime()}-${randomUUID()}`;
+  bindStructuredProjection(db.db, { kind: "state_generation", id: generation,
+    component_id: generation }, projection, now);
   const generationDirectory = join(generationsRoot, generation);
   await mkdir(generationDirectory, { mode: 0o700 });
   const jsonPath = join(generationDirectory, "CURRENT_STATE.json");
   const markdownPath = join(generationDirectory, "CURRENT_STATE.md");
   const section = (name: string, value: unknown) => `## ${name}\n\n\`\`\`json\n${JSON.stringify(value, null, 2)}\n\`\`\`\n`;
-  const markdown = `# JARVIS Current State\n\nGenerated: ${projection.generated_at}\n\n${section("NOW", projection.now)}\n${section("BLOCKED", projection.blocked)}\n${section("DECISIONS", projection.decisions)}\n${section("NEXT 3", projection.next_3)}\n${section("WORKERS", projection.workers)}\n${section("RISKS", projection.risks)}`;
+  const markdown = [
+    "# JARVIS Current State\n",
+    `Generated: ${projection.generated_at}\n`,
+    section("NOW", projection.now),
+    section("BLOCKED", projection.blocked),
+    section("DECISIONS", projection.decisions),
+    section("NEXT 3", projection.next_3),
+    section("WORKERS", projection.workers),
+    section("RISKS", projection.risks),
+  ].join("\n");
   try {
     await writeFile(jsonPath, `${canonicalize(projection)}\n`, { mode: 0o600, flag: "wx" });
     await writeFile(markdownPath, markdown, { mode: 0o600, flag: "wx" });

@@ -12,6 +12,8 @@ import type { MemoryCorrectionSagaOptions } from "./memory-correction-types.js";
 import { MemoryDestructiveDispatchCursor } from "./memory-destructive-dispatch.js";
 import { MemoryDestructivePreparationStore } from "./memory-destructive-preparation.js";
 import { MemoryEffectSpool } from "./memory-effect-spool.js";
+import { bindStructuredProjection } from "./memory-projection-bindings.js";
+import { publishMemorySuppression } from "./memory-suppression-events.js";
 import { memoryExpectedPrior } from "./memory-target-values.js";
 import {
   createMemoryEffectWriteRequest,
@@ -89,6 +91,8 @@ export class MemoryCorrectionDispatcher {
         signing_key_id: this.options.signing_key_id }, this.options.private_key),
       materialize: request => {
         persistCorrectionTargets(this.options.authority, targets, now);
+        bindStructuredProjection(this.options.authority.db, { kind: "control_payload",
+          id: command.request_id, component_id: command.request_id }, request, now);
         this.store.insert({ correction_id: `memcorr:v1:${request.request_digest.slice(7)}`,
           lane_id: laneId, candidate_id: staged.candidate_id,
           control_request_id: command.request_id, control_receipt_id: command.receipt_id,
@@ -104,6 +108,10 @@ export class MemoryCorrectionDispatcher {
           expires_at: request.expires_at }, command.command_digest, now);
       },
     });
+    await this.options.barriers.reach({ barrier_id: "jarvis_suppression_tombstone_commit",
+      lane_id: laneId, request_id: prepared.request.request_id,
+      tombstone_sequence: prepared.entry.sequence, now });
+    publishMemorySuppression(this.options.authority, prepared.entry.sequence, now);
     const correctionId = `memcorr:v1:${prepared.request.request_digest.slice(7)}`;
     let record = this.store.get(correctionId);
     if (record === undefined) throw new JarvisError("MEMORY_CORRECTION_NOT_FOUND");

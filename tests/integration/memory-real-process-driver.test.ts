@@ -1,3 +1,4 @@
+// allow: SIZE_OK — one indivisible four-operation real-process lifecycle scenario.
 import { execFileSync } from "node:child_process";
 import { createHash, createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
 import {
@@ -14,19 +15,18 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
 import { canonicalize } from "../../src/canonical.js";
 import { ApprovedCommandExecutor } from "../../src/approved-executor.js";
 import { ControlPlane, signCommandApproval, type CommandApprovalReceipt,
   type ControlCommandRequestInput } from "../../src/control-plane.js";
+import { AuthorityDatabaseRuntime } from "../../src/authority-database-runtime.js";
 import { MemoryCandidateStore } from "../../src/memory-candidate-store.js";
-import { MemoryCorrectionSaga } from "../../src/memory-correction-saga.js";
-import { MemoryDeletionSaga } from "../../src/memory-deletion-saga.js";
 import { registerMemoryEffectDelegationKey,
   registerMemoryProviderProofKey } from "../../src/memory-effect-delegation.js";
-import { MemoryExportSaga } from "../../src/memory-export-saga.js";
+import { createProductionMemoryLifecycleService } from "../../src/memory-lifecycle-service.js";
 import { MemoryOutboxService } from "../../src/memory-outbox.js";
 import { memoryOutboxHash } from "../../src/memory-outbox-values.js";
 import { sanitizeMemoryRestoreCandidate } from "../../src/memory-restore-high-water.js";
@@ -164,6 +164,7 @@ describe("Task 30 real built-process lifecycle", () => {
       diagnostics: () => rawTransport.diagnostics(),
     };
     let authorityClosed = false;
+    let closeLifecycle: (() => Promise<void>) | undefined;
     try {
       registerMemoryEffectDelegationKey(authority, { key_id: JARVIS_KEY_ID,
         principal_id: "principal:owner",
@@ -182,6 +183,22 @@ describe("Task 30 real built-process lifecycle", () => {
           max_total_bytes: 65_536, max_page_bytes: 1_048_576 },
         clock, max_age_ms: 86_400_000, expiry_ms: 2 * 86_400_000,
         read_fence: provider.readFenceFactory() });
+      const lifecycleLayout = { spool_root: spoolRoot,
+        state_root: join(root, "jarvis-state"), dist_root: join(root, "jarvis-release", "dist"),
+        backup_root: join(root, "jarvis-backups"),
+        restore_root: join(root, "jarvis-restore-candidates") };
+      for (const path of Object.values(lifecycleLayout)) {
+        mkdirSync(path, { recursive: true, mode: 0o700 });
+      }
+      const databaseRuntime = new AuthorityDatabaseRuntime(authority,
+        { registry_root: join(root, "jarvis-runtime"), watchdog_ms: 10_000 });
+      const lifecycle = createProductionMemoryLifecycleService(databaseRuntime, {
+        provider_instance_id: PROVIDER_ID, launcher_path: launcher,
+        provider_config_path: config, contract_path: resolve(CONTRACT),
+        signing_key_id: JARVIS_KEY_ID, private_key: jarvisKey,
+        subject_key: Buffer.alloc(32, 11), layout: lifecycleLayout, clock,
+      });
+      closeLifecycle = () => lifecycle.close();
       const control = new ControlPlane(authority);
       const approve = (input: ControlCommandRequestInput): void => {
         const staged = control.stage(input, clockValue);
@@ -194,9 +211,9 @@ describe("Task 30 real built-process lifecycle", () => {
           nonce: `approval:${randomBytes(8).toString("hex")}`, max_uses: 1, status: "issued" };
         control.decide(signCommandApproval(receipt, localKey(authority)), clockValue);
       };
-      const executor = (lifecycles: ConstructorParameters<typeof ApprovedCommandExecutor>[7] = {}) =>
+      const executor = (memoryLifecycle?: ConstructorParameters<typeof ApprovedCommandExecutor>[7]) =>
         new ApprovedCommandExecutor(authority, join(root, "jarvis-backups"),
-          join(root, "jarvis-state"), {}, clock, undefined, provider, lifecycles);
+          join(root, "jarvis-state"), {}, clock, undefined, provider, memoryLifecycle);
       const classify = (operation: "remember" | "correct", statement: string, id: string) => {
         const input = verifiedMemoryInput({ authority_id: id, idempotency_key: `task30:${id}`,
           operation, subject: "Task 30 runtime memory", statement });
@@ -304,23 +321,14 @@ describe("Task 30 real built-process lifecycle", () => {
       approve(confirmation);
       expect(await executor().execute(confirmation.request_id, "task30-confirm", clockValue))
         .toMatchObject({ state: "completed" });
-      const correction = new MemoryCorrectionSaga({ authority, spool_root: spoolRoot,
-        writer, provider, signing_key_id: JARVIS_KEY_ID, private_key: jarvisKey,
-        subject_key: Buffer.alloc(32, 11), clock,
-        artifact_verified: async proof => typeof proof.artifact_manifest_digest === "string",
-        purge_needles: () => [oldNeedle, correctedNeedle, Buffer.from(rememberedContent)],
-        managed_roots: [{ path: spoolRoot, kind: "spool" },
-          { path: join(root, "jarvis-state"), kind: "state" },
-          { path: join(root, "jarvis-backups"), kind: "backup" }],
-        backup_roots: [join(root, "jarvis-backups")] });
-      const correctionAction = await correction.prepare({
+      const correctionAction = await lifecycle.prepareCorrection({
         control_request_id: `control:correction:${randomBytes(8).toString("hex")}`,
         candidate_id: correctionCandidate.candidate_id, provider_instance_id: PROVIDER_ID,
         targets: [targetOld], scope: scope(targetOld, "none"), content: corrected,
         requested_at: clockValue, expires_at: new Date(clockValue.getTime() + 10 * 60_000),
         nonce: `correction:${randomBytes(8).toString("hex")}` });
       approve(correctionAction);
-      const correctionPending = await executor({ correction }).execute(
+      const correctionPending = await executor(lifecycle).execute(
         correctionAction.request_id, "task30-correction", clockValue);
       expect(correctionPending).toMatchObject({ state: "uncertain",
         failure_code: "MEMORY_CORRECTION_RECONCILING" });
@@ -328,7 +336,10 @@ describe("Task 30 real built-process lifecycle", () => {
         "TASK30_CORRECTION_ID_MISSING");
       expect(providerApply(root, config, site)).toMatchObject({ state: "proved", code: "PROVIDER_PROVED" });
       clockValue = new Date();
-      expect(await correction.reconcile(correctionId)).toMatchObject({ state: "settled" });
+      await lifecycle.reconcilePending(10);
+      expect(authority.db.prepare(
+        "SELECT state FROM memory_correction_requests WHERE correction_id=?",
+      ).get(correctionId)).toEqual({ state: "settled" });
       expectAbsent(preCorrectionBackup, [oldNeedle]);
       expectAbsent(providerRoot, [oldNeedle]);
 
@@ -336,42 +347,31 @@ describe("Task 30 real built-process lifecycle", () => {
         exact_record: corrected, source_identity_full: "6".repeat(64) });
       if (targetCorrectedResult.kind !== "data") throw new Error(targetCorrectedResult.code);
       const targetCorrected = targetCorrectedResult.value;
-      const exportSaga = new MemoryExportSaga({ authority, spool_root: spoolRoot,
-        writer, provider, signing_key_id: JARVIS_KEY_ID, private_key: jarvisKey,
-        subject_key: Buffer.alloc(32, 11), clock,
-        export_verified: async proof => ({ file_count: 1,
-          byte_count: statSync(join(providerRoot, "exports", String(proof.request_id), "memory.json")).size }) });
       const exportId = `memexp:v1:${randomBytes(12).toString("hex")}`;
-      const exportAction = await exportSaga.prepare({ export_id: exportId,
+      const exportAction = await lifecycle.prepareExport({ export_id: exportId,
         correlation_id: `corr:${randomBytes(12).toString("hex")}`,
         provider_instance_id: PROVIDER_ID, targets: [targetCorrected],
         scope: scope(targetCorrected, "json"), requested_at: clockValue,
         expires_at: new Date(clockValue.getTime() + 10 * 60_000),
         nonce: `export:${randomBytes(8).toString("hex")}` });
       approve(exportAction);
-      expect(await executor({ export: exportSaga }).execute(exportAction.request_id,
+      expect(await executor(lifecycle).execute(exportAction.request_id,
         "task30-export", clockValue)).toMatchObject({ state: "uncertain",
         failure_code: "MEMORY_EXPORT_WRITING" });
       expect(providerApply(root, config, site)).toMatchObject({ state: "proved", code: "PROVIDER_PROVED" });
       clockValue = new Date();
-      expect(await exportSaga.reconcile(exportId)).toMatchObject({ state: "available" });
+      await lifecycle.reconcilePending(10);
+      expect(authority.db.prepare(
+        "SELECT state FROM memory_export_requests WHERE export_id=?",
+      ).get(exportId)).toEqual({ state: "available" });
       const preForgetBackup = join(providerRoot, "backups", "pre-forget");
       mkdirSync(dirname(preForgetBackup), { recursive: true, mode: 0o700 });
       cpSync(realpathSync(join(providerRoot, "share", "vault")), preForgetBackup, { recursive: true });
       chmodSync(preForgetBackup, 0o700);
       writeFileSync(join(preForgetBackup, "manifest.json"), "{\"schema_version\":1}\n", { mode: 0o600 });
 
-      const deletion = new MemoryDeletionSaga({ authority, spool_root: spoolRoot,
-        writer, provider, signing_key_id: JARVIS_KEY_ID, private_key: jarvisKey,
-        subject_key: Buffer.alloc(32, 11), clock,
-        absence_verified: async proof => typeof proof.surface_manifest_digest === "string",
-        purge_needles: () => [oldNeedle, correctedNeedle, Buffer.from(rememberedContent)],
-        managed_roots: [{ path: spoolRoot, kind: "spool" },
-          { path: join(root, "jarvis-state"), kind: "state" },
-          { path: join(root, "jarvis-backups"), kind: "backup" }],
-        backup_roots: [join(root, "jarvis-backups")] });
       const deletionId = `memdel:v1:${randomBytes(12).toString("hex")}`;
-      const deletionAction = await deletion.prepare({ deletion_id: deletionId,
+      const deletionAction = await lifecycle.prepareDeletion({ deletion_id: deletionId,
         correlation_id: `corr:${randomBytes(12).toString("hex")}`,
         provider_instance_id: PROVIDER_ID, targets: [targetCorrected],
         scope: scope(targetCorrected, "none"), erasure_claim: "managed_erasure",
@@ -379,33 +379,55 @@ describe("Task 30 real built-process lifecycle", () => {
         expires_at: new Date(clockValue.getTime() + 10 * 60_000),
         nonce: `deletion:${randomBytes(8).toString("hex")}` });
       approve(deletionAction);
-      expect(await executor({ deletion }).execute(deletionAction.request_id,
+      expect(await executor(lifecycle).execute(deletionAction.request_id,
         "task30-deletion", clockValue)).toMatchObject({ state: "uncertain",
         failure_code: "MEMORY_DELETION_RECONCILING" });
       expect(providerApply(root, config, site)).toMatchObject({ state: "proved", code: "PROVIDER_PROVED" });
       clockValue = new Date();
-      expect(await deletion.reconcile(deletionId)).toMatchObject({ state: "settled" });
+      await lifecycle.reconcilePending(10);
+      expect(authority.db.prepare(
+        "SELECT state FROM memory_deletion_effect_requests WHERE deletion_id=?",
+      ).get(deletionId)).toEqual({ state: "settled" });
       expectAbsent(preForgetBackup, [oldNeedle, correctedNeedle]);
       expect(authority.db.prepare("SELECT state FROM memory_export_requests WHERE export_id=?")
         .get(exportId)).toEqual({ state: "invalidated" });
       const restore = await sanitizeMemoryRestoreCandidate({ authority, source: staleJarvis,
-        workspace: join(restoreRoot, "workspace"), subject_key: Buffer.alloc(32, 11),
-        needles: [oldNeedle, correctedNeedle], now: clockValue });
+        workspace: join(restoreRoot, "workspace"), now: clockValue });
       expect(restore).toMatchObject({ disposition: "sanitized", activated: false });
       expect(typeof restore.sanitized_path).toBe("string");
       if (typeof restore.sanitized_path !== "string") throw new Error("TASK30_RESTORE_PATH_MISSING");
       expectAbsent(restore.sanitized_path, [oldNeedle, correctedNeedle]);
       expect(await outbox.runOnce("task30-remember-replay", 1)).toMatchObject({ dispatched: 0 });
-      expect(await correction.reconcile(correctionId)).toMatchObject({ state: "settled" });
-      expect(await exportSaga.reconcile(exportId)).toMatchObject({ state: "invalidated" });
-      expect(await deletion.reconcile(deletionId)).toMatchObject({ state: "settled" });
-      expect(writeFrames).toBe(4);
+      await lifecycle.reconcilePending(10);
+      expect(authority.db.prepare(
+        "SELECT state FROM memory_correction_requests WHERE correction_id=?",
+      ).get(correctionId)).toEqual({ state: "settled" });
+      expect(authority.db.prepare(
+        "SELECT state FROM memory_export_requests WHERE export_id=?",
+      ).get(exportId)).toEqual({ state: "invalidated" });
+      expect(authority.db.prepare(
+        "SELECT state FROM memory_deletion_effect_requests WHERE deletion_id=?",
+      ).get(deletionId)).toEqual({ state: "settled" });
+      const v2Frames = Number((authority.db.prepare(
+        `SELECT (SELECT COUNT(*) FROM memory_correction_attempts)
+          +(SELECT COUNT(*) FROM memory_deletion_attempts)
+          +(SELECT COUNT(*) FROM memory_export_attempts) AS count`,
+      ).get() as { readonly count: number }).count);
+      expect(writeFrames + v2Frames).toBe(4);
       expect(authority.db.prepare("SELECT COUNT(*) AS count FROM memory_correction_proofs").get())
         .toEqual({ count: 1 });
       expect(authority.db.prepare("SELECT COUNT(*) AS count FROM memory_export_proofs").get())
         .toEqual({ count: 1 });
       expect(authority.db.prepare("SELECT COUNT(*) AS count FROM memory_deletion_proofs").get())
         .toEqual({ count: 1 });
+      expect(authority.db.prepare(
+        `SELECT barrier_id,COUNT(*) AS count FROM memory_lifecycle_barrier_events
+         GROUP BY barrier_id ORDER BY barrier_id`,
+      ).all()).toEqual([
+        { barrier_id: "before_settlement_commit", count: 3 },
+        { barrier_id: "jarvis_proof_observation", count: 3 },
+        { barrier_id: "jarvis_suppression_tombstone_commit", count: 2 },
+      ]);
       const providerJournal = new Database(join(providerRoot, "requests", "journal.db"), { readonly: true });
       try {
         expect(providerJournal.prepare("SELECT operation,state,phase,fence FROM requests ORDER BY accepted_at")
@@ -421,7 +443,7 @@ describe("Task 30 real built-process lifecycle", () => {
       expect(readdirSync(join(providerRoot, "share", "vault-generations"), { withFileTypes: true })
         .filter(entry => entry.isDirectory() && !entry.name.startsWith(".")).length).toBe(1);
       await transport.close();
-      authority.close(); authorityClosed = true;
+      await lifecycle.close(); closeLifecycle = undefined; authorityClosed = true;
       expectAbsent(providerRoot, [oldNeedle, correctedNeedle]);
       expectAbsent(database.root, [oldNeedle, correctedNeedle]);
       const generationRoot = realpathSync(join(providerRoot, "share", "vault-generations"));
@@ -442,6 +464,9 @@ describe("Task 30 real built-process lifecycle", () => {
       expect(openGenerationFds).toEqual([]);
     } finally {
       await transport.close();
+      if (closeLifecycle !== undefined) {
+        await closeLifecycle(); authorityClosed = true;
+      }
       if (!authorityClosed) closeMemoryDatabase(database);
       else {
         rmSync(database.root, { recursive: true, force: true });

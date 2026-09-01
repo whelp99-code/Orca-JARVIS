@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { JarvisError, type AuthorityDb } from "../db.js";
+import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
 import {
   decideDashboardRequest,
   executeDashboardRequest,
@@ -60,6 +61,7 @@ export type AuthorityRouteInput = {
   readonly body: unknown;
   readonly hub: ReconcileHub;
   readonly clock: () => Date;
+  readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
 };
 
 export async function tryHandleAuthorityPost(input: AuthorityRouteInput): Promise<boolean> {
@@ -96,7 +98,8 @@ function writeDecision(input: AuthorityRouteInput, requestId: string): boolean {
     writeDashboardJson(input.response, { status: 200, requestId: input.requestId, body });
     return true;
   } catch (error) {
-    return writeCaught(input, error);
+    if (error instanceof JarvisError) return writeCaught(input, error);
+    throw error;
   }
 }
 
@@ -107,12 +110,14 @@ async function writeExecute(input: AuthorityRouteInput, requestId: string): Prom
       requestId,
       body: input.body,
       now: input.clock(),
+      memoryLifecycle: input.memoryLifecycle,
     });
     input.hub.publish(["overview", "tasks", "approvals"]);
     writeDashboardJson(input.response, { status: 200, requestId: input.requestId, body });
     return true;
   } catch (error) {
-    return writeCaught(input, error);
+    if (error instanceof JarvisError) return writeCaught(input, error);
+    throw error;
   }
 }
 
@@ -132,7 +137,8 @@ function writeCancel(input: AuthorityRouteInput, taskId: string): boolean {
     });
     return true;
   } catch (error) {
-    return writeCaught(input, error);
+    if (error instanceof JarvisError) return writeCaught(input, error);
+    throw error;
   }
 }
 
@@ -152,7 +158,8 @@ function writeRetry(input: AuthorityRouteInput, sourceRequestId: string): boolea
     });
     return true;
   } catch (error) {
-    return writeCaught(input, error);
+    if (error instanceof JarvisError) return writeCaught(input, error);
+    throw error;
   }
 }
 

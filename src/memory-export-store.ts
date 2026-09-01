@@ -157,6 +157,14 @@ export class MemoryExportStore {
       "UPDATE memory_export_proofs SET available_at=? WHERE export_id=?",
     ).run(at, id); this.event(id, "available", now); return this.required(id);
   }
+  expireAvailable(now: Date): number {
+    const rows = this.authority.db.prepare(
+      `SELECT export_id FROM memory_export_requests
+       WHERE state='available' AND artifact_expires_at<=? ORDER BY artifact_expires_at,export_id`,
+    ).all(now.toISOString()) as Array<{ readonly export_id: string }>;
+    for (const row of rows) this.expire(row.export_id, now);
+    return rows.length;
+  }
   expire(id: string, now: Date): void {
     const changed = this.authority.db.prepare(
       "UPDATE memory_export_requests SET state='expired',updated_at=? WHERE export_id=? AND state='available' AND artifact_expires_at<=?",

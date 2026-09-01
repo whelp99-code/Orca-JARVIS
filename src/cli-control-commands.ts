@@ -1,4 +1,5 @@
 import { ApprovedCommandExecutor } from "./approved-executor.js";
+import { JarvisError } from "./db.js";
 import { type CliCommandContext, commandNow } from "./cli-command-context.js";
 import { integer, jsonFile, typedObject } from "./cli-command-input.js";
 import {
@@ -13,6 +14,11 @@ export async function executeControlCommand(
   context: CliCommandContext,
 ): Promise<Record<string, unknown> | undefined> {
   const { command, subcommand, argument, values, db } = context;
+  if (command === "memory" && subcommand === "lifecycle" && values.once === true) {
+    const lifecycle = context.dependencies.memoryLifecycle;
+    if (lifecycle === undefined) throw new JarvisError("MEMORY_LIFECYCLE_SERVICE_UNAVAILABLE");
+    return { ok: true, command: "memory.lifecycle", cycle: await lifecycle.reconcilePending(256) };
+  }
   if (command === "control") {
     const control = new ControlPlane(db);
     if (subcommand === "request" && argument) {
@@ -31,7 +37,9 @@ export async function executeControlCommand(
     }
     if (subcommand === "list") return { ok: true, command: "control.list", requests: control.list() };
     if (subcommand === "execute" && argument) {
-      const execution = await new ApprovedCommandExecutor(db).execute(
+      const execution = await new ApprovedCommandExecutor(db, undefined, undefined, {},
+        () => commandNow(context), undefined, undefined,
+        context.dependencies.memoryLifecycle).execute(
         argument,
         values.worker ?? "cli-approved-executor",
         commandNow(context),

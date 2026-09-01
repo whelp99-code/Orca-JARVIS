@@ -57,7 +57,9 @@ describe("dedicated export saga", () => {
         surface_manifest_digest: `sha256:${"4".repeat(64)}`, proof_json: "{}" }, NOW);
       expect(store.available(exportId, 1, 128, NOW)).toMatchObject({ state: "available",
         artifact_expires_at: new Date(NOW.getTime() + 86_400_000).toISOString() });
-      store.expire(exportId, new Date(NOW.getTime() + 86_400_001));
+      expect(store.expireAvailable(new Date(NOW.getTime() + 86_400_000 - 1))).toBe(0);
+      expect(store.get(exportId)?.state).toBe("available");
+      expect(store.expireAvailable(new Date(NOW.getTime() + 86_400_000))).toBe(1);
       expect(store.get(exportId)?.state).toBe("expired");
     } finally { db.close(); }
   });

@@ -20,6 +20,7 @@ import {
 import { MemoryCorrectionSaga } from "../../src/memory-correction-saga.js";
 import { registerMemoryEffectDelegationKey } from "../../src/memory-effect-delegation.js";
 import { isMemorySuppressed } from "../../src/memory-suppression.js";
+import { subscribeMemorySuppression } from "../../src/memory-suppression-events.js";
 import {
   memoryEffectDigest,
   type MemoryEffectScopeV2,
@@ -28,6 +29,11 @@ import {
 } from "../../src/second-brain-effect-v2.js";
 import { localKey } from "../helpers.js";
 import { memoryPolicy, verifiedMemoryInput } from "../fixtures/memory-candidate-fixture.js";
+import {
+  noopMemoryBarriers,
+  notProvedMemoryObserver,
+  unreachableMemoryCompactor,
+} from "../fixtures/memory-lifecycle-runtime.js";
 import {
   closeMemoryDatabase,
   insertMemoryVerification,
@@ -95,7 +101,9 @@ function approve(control: ControlPlane, input: ControlCommandRequestInput,
 }
 class AcceptedWriter implements SecondBrainWriteRequestAdapter {
   readonly calls: MemoryEffectWriteRequestV2[] = [];
+  constructor(private readonly beforeWrite: () => void = () => undefined) {}
   write(value: unknown): Promise<SecondBrainWriteOutcome> {
+    this.beforeWrite();
     const request = value as MemoryEffectWriteRequestV2;
     this.calls.push(request);
     return Promise.resolve({ schema_version: 2, kind: "accepted", state: "pending",
@@ -115,7 +123,8 @@ describe("proof-bound memory correction saga", () => {
     const database = await memoryDatabase();
     const db = database.authority;
     const corrected = `corrected-${randomUUID()}-${randomUUID()}`;
-    const writer = new AcceptedWriter();
+    let suppressionSeen = false;
+    const writer = new AcceptedWriter(() => { expect(suppressionSeen).toBe(true); });
     try {
       const candidateInput = verifiedMemoryInput({ authority_id: "task30-correction",
         idempotency_key: "candidate:task30:correction", operation: "correct",
@@ -163,17 +172,26 @@ describe("proof-bound memory correction saga", () => {
       const saga = new MemoryCorrectionSaga({ authority: db, spool_root: spoolRoot,
         writer, provider, signing_key_id: "jarvis:fixture", private_key: privateKey,
         subject_key: Buffer.alloc(32, 3), clock: () => NOW,
-        artifact_verified: async () => true,
-        purge_needles: () => [Buffer.from(corrected, "utf8")],
-        managed_roots: [{ path: spoolRoot, kind: "spool" }] });
+        observer: notProvedMemoryObserver, compactor: unreachableMemoryCompactor,
+        barriers: noopMemoryBarriers(db) });
       const action = await saga.prepare({ control_request_id: "task30-correction",
         candidate_id: candidate.candidate_id, provider_instance_id: "provider:fixture",
         targets: [target()], scope: scope(), content: corrected, requested_at: NOW,
         expires_at: new Date(EXPIRES), nonce: "nonce:task30-correction" });
       approve(control, action, localKey(db));
+      const unsubscribe = subscribeMemorySuppression(db, event => {
+        suppressionSeen = event.sequence === 1 && event.projection_count === 0;
+      });
+      const lifecycle = { async execute(command: Parameters<MemoryCorrectionSaga["dispatch"]>[0]) {
+        const dispatched = await saga.dispatch(command);
+        const reconciled = await saga.reconcile(dispatched.correction_id);
+        return { kind: "correction" as const, id: reconciled.correction_id,
+          state: reconciled.state, request_digest: reconciled.request_digest };
+      } };
       const executor = new ApprovedCommandExecutor(db, undefined, undefined, {}, () => NOW,
-        undefined, provider, { correction: saga });
+        undefined, provider, lifecycle);
       const execution = await executor.execute(action.request_id, "task30-correction", NOW);
+      unsubscribe();
       const correction = db.db.prepare(
         "SELECT state FROM memory_correction_requests",
       ).get() as { readonly state: string };

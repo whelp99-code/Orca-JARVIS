@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { ApprovedCommandExecutor, type ApprovedExecutionResult } from "../approved-executor.js";
+import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
 import { controlActionDescriptor } from "../control-actions.js";
 import {
   ControlPlane,
@@ -49,6 +50,7 @@ export type ExecuteInput = {
   readonly requestId: string;
   readonly body: unknown;
   readonly now: Date;
+  readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
 };
 
 export type CancelInput = {
@@ -87,6 +89,9 @@ export async function executeDashboardRequest(input: ExecuteInput): Promise<Dash
     resolve("state"),
     {},
     () => input.now,
+    undefined,
+    undefined,
+    input.memoryLifecycle,
   ).execute(input.requestId, "dashboard-approved-executor", input.now);
   return {
     schema_version: DASHBOARD_SCHEMA_VERSION,

@@ -2,10 +2,12 @@ import { createHash } from "node:crypto";
 import type { AuthorityDb } from "./db.js";
 import { canonicalize } from "./canonical.js";
 import { parseDailyLoopClaim, parseDailyLoopInstant, parseDailyLoopRunId } from "./daily-loop-input.js";
+import { DailyLoopReadStore } from "./daily-loop-read.js";
 import { assertDailyLoopIntegrity } from "./daily-loop-integrity.js";
 import { parseFailure, parseStoreCheckpoint, parseStoreClaim, parseStoreCompleteStep, parseStorePrepare, parseUncertain }
   from "./daily-loop-store-input.js";
 import { DailyLoopError, type DailyLoopClaim, type DailyLoopStep } from "./daily-loop-types.js";
+import { bindDailyLoopProjection } from "./memory-projection-bindings.js";
 import { canonicalDailyLoopKey } from "./daily-loop-time.js";
 
 type Row = Record<string, unknown>;
@@ -20,7 +22,10 @@ const inputDigest = (json: string): string => `sha256:${createHash("sha256")
   .update("orca-jarvis/daily-loop-input/v1\0").update(json).digest("hex")}`;
 
 export class DailyLoopStore {
-  constructor(private readonly authority: AuthorityDb) {}
+  private readonly reads: DailyLoopReadStore;
+  constructor(private readonly authority: AuthorityDb) {
+    this.reads = new DailyLoopReadStore(authority);
+  }
   private tx<Value>(runId: string, operation: () => Value): Value {
     return this.authority.db.transaction(() => {
       assertDailyLoopIntegrity(this.authority, runId); return operation();
@@ -138,25 +143,10 @@ export class DailyLoopStore {
     });
   }
   due(atValue: unknown): readonly string[] {
-    const at = parseDailyLoopInstant(atValue);
-    const rows = this.authority.db.prepare(
-      "SELECT run_id FROM daily_loop_runs WHERE state='pending' AND " +
-      "((record_version=1 AND not_before<=?) OR (record_version=0 AND created_at<=?)) " +
-      "AND ?<expires_at ORDER BY not_before,run_id",
-    ).all(at.toISOString(), at.toISOString(), at.toISOString()) as Row[];
-    const runIds = rows.map((row) => String(row["run_id"]));
-    for (const runId of runIds) assertDailyLoopIntegrity(this.authority, runId);
-    return runIds;
+    return this.reads.due(atValue);
   }
   steps(runIdValue: unknown): readonly DailyLoopStep[] {
-    const runId = parseDailyLoopRunId(runIdValue);
-    assertDailyLoopIntegrity(this.authority, runId);
-    return (this.authority.db.prepare(
-      "SELECT step_id,sequence,step_key,state FROM daily_loop_steps WHERE run_id=? ORDER BY sequence",
-    ).all(runId) as Row[]).map((row) => ({
-      step_id: String(row["step_id"]), sequence: Number(row["sequence"]), step_key: String(row["step_key"]),
-      state: String(row["state"]) as DailyLoopStep["state"],
-    }));
+    return this.reads.steps(runIdValue);
   }
   start(claimValue: unknown, atValue: unknown): void {
     const claim = parseDailyLoopClaim(claimValue); const at = parseDailyLoopInstant(atValue);
@@ -188,6 +178,8 @@ export class DailyLoopStore {
       sequence, input.state, previousDigest, checkpointDigest, input.claim.fence, input.claim.lease_expires_at,
       input.at.toISOString(), 1, detailJson,
     );
+    bindDailyLoopProjection(this.authority.db, input.claim.run_id,
+      input.step_id, input.detail, input.at);
     return checkpointDigest;
   }
   completeStep(value: unknown): boolean {

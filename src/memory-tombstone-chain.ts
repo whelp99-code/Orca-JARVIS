@@ -1,6 +1,7 @@
 import { createHmac } from "node:crypto";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./db.js";
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import {
   MEMORY_TOMBSTONE_GENESIS_ROOT,
   memoryEffectDigest,
@@ -25,6 +26,8 @@ export type AppendedMemoryTombstone = {
   readonly entry_request_high_water: MemoryTombstoneHighWaterV2;
   readonly current_global_high_water: MemoryTombstoneHighWaterV2;
   readonly high_water: MemoryTombstoneHighWaterV2;
+  readonly suppressed_projection_count: number;
+  readonly suppression_event_digest: string;
   readonly replayed: boolean;
 };
 
@@ -92,9 +95,12 @@ export class MemoryTombstoneChain {
         const entry = chainEntry(prior);
         const entryRequestHighWater = { sequence: entry.sequence, set_root: entry.set_root };
         const currentGlobalHighWater = this.highWater();
+        const activation = new MemoryProjectionAuthority(this.authority)
+          .activateForSequence(entry.sequence);
         return { entry, entry_request_high_water: entryRequestHighWater,
-          current_global_high_water: currentGlobalHighWater,
-          high_water: currentGlobalHighWater, replayed: true };
+          current_global_high_water: currentGlobalHighWater, high_water: currentGlobalHighWater,
+          suppressed_projection_count: activation.projection_count,
+          suppression_event_digest: activation.event_digest, replayed: true };
       }
       const current = this.highWater();
       const sequence = current.sequence + 1;
@@ -165,8 +171,11 @@ export class MemoryTombstoneChain {
         }
       }
       const highWater = { sequence, set_root: setRoot };
+      const activation = new MemoryProjectionAuthority(this.authority).activateForSequence(sequence);
       return { entry, entry_request_high_water: highWater,
-        current_global_high_water: highWater, high_water: highWater, replayed: false };
+        current_global_high_water: highWater, high_water: highWater,
+        suppressed_projection_count: activation.projection_count,
+        suppression_event_digest: activation.event_digest, replayed: false };
     }).immediate();
   }
 

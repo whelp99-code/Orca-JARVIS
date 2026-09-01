@@ -1,11 +1,9 @@
-import { createHash, type KeyObject } from "node:crypto";
+import { createHash } from "node:crypto";
 import { z } from "zod";
 import { canonicalize } from "./canonical.js";
-import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./db.js";
 import type { ClaimedControlCommand, ControlCommandRequestInput } from "./control-plane.js";
 import { ControlPlane } from "./control-plane.js";
-import { verifyMemoryDispositionProof } from "./memory-disposition-proof.js";
 import { MemoryEffectSpool } from "./memory-effect-spool.js";
 import {
   MemoryEffectScopeSchema,
@@ -13,10 +11,10 @@ import {
   ResolvedMemoryTargetSchema,
 } from "./memory-effect-write-zod.js";
 import { MemoryExportStore, type MemoryExportRecord } from "./memory-export-store.js";
+import type { MemoryExportSagaOptions, PrepareMemoryExportInput } from "./memory-export-types.js";
 import { MemoryTombstoneChain } from "./memory-tombstone-chain.js";
 import { memoryExpectedPrior, memoryTargetManifestDigest, memoryTargetScopeDigest, sameMemoryGeneration } from "./memory-target-values.js";
-import type { SecondBrainWriteOutcome, SecondBrainWriteRequestAdapter } from "./second-brain-adapter-types.js";
-import type { SecondBrainEffectService } from "./second-brain-effect-service.js";
+import type { SecondBrainWriteOutcome } from "./second-brain-adapter-types.js";
 import {
   createMemoryEffectWriteRequest,
   memoryEffectDigest,
@@ -34,20 +32,7 @@ const exportSpool = z.object({ schema_version: z.literal(1), lane_id: z.string()
   scope: MemoryEffectScopeSchema, payload: MemoryExportPayloadSchema,
   created_at: z.string(), expires_at: z.string(), nonce: z.string() }).strict();
 
-export type PrepareMemoryExportInput = {
-  readonly export_id: string; readonly correlation_id: string; readonly provider_instance_id: string;
-  readonly targets: readonly ResolvedMemoryTargetV2[]; readonly scope: MemoryEffectScopeV2;
-  readonly requested_at: Date; readonly expires_at: Date; readonly nonce: string;
-};
-export type MemoryExportSagaOptions = {
-  readonly authority: AuthorityDb; readonly spool_root: string;
-  readonly writer: SecondBrainWriteRequestAdapter; readonly provider: SecondBrainEffectService;
-  readonly signing_key_id: string; readonly private_key: KeyObject; readonly subject_key: Buffer;
-  readonly clock: () => Date;
-  readonly export_verified: (proof: Readonly<Record<string, unknown>>) => Promise<{
-    readonly file_count: 1; readonly byte_count: number;
-  }>;
-};
+export type { MemoryExportSagaOptions, PrepareMemoryExportInput } from "./memory-export-types.js";
 export class MemoryExportSaga {
   private readonly store: MemoryExportStore; private readonly spool: MemoryEffectSpool;
   private readonly chain: MemoryTombstoneChain; private readonly control: ControlPlane;
@@ -172,25 +157,24 @@ export class MemoryExportSaga {
     if (["available", "expired", "invalidated"].includes(row.state)) return row;
     if (row.request_id === null || row.request_digest === null || row.envelope_digest === null
       || row.provider_idempotency_key === null || row.delegation_id === null || row.delegation_digest === null) return row;
-    const status = await this.options.provider.requestStatus(row.request_id);
-    if (status.kind !== "data" || status.value.state !== "proved") return row;
-    const proof = verifyMemoryDispositionProof(this.options.authority, status.value.proof, {
-      provider_instance_id: row.provider_instance_id, request_id: row.request_id,
-      request_digest: row.request_digest, envelope_digest: row.envelope_digest,
-      idempotency_key: row.provider_idempotency_key, delegation_id: row.delegation_id,
-      delegation_digest: row.delegation_digest, lane_id: row.lane_id, operation: "export",
-      payload_digest: row.payload_digest, target_manifest_digest: row.target_manifest_digest,
-      scope_digest: row.scope_digest, tombstone_sequence: row.tombstone_sequence,
-      tombstone_set_root: row.tombstone_set_root }, this.options.clock());
-    const verified = await this.options.export_verified(proof);
-    if (proof.export_manifest_digest === null || verified.file_count !== 1
-      || verified.byte_count < 1) throw new JarvisError("MEMORY_EXPORT_MANIFEST_INVALID");
+    const observed = await this.options.observer.export(row);
+    if (observed.kind === "not_proved") return row;
+    const proof = observed.proof;
     const now = this.options.clock();
     this.store.proved(id, { proof_id: proof.proof_id, proof_digest: proof.proof_digest,
-      provider_release_sha: proof.provider_release_sha, generation_id: proof.result_generation_id,
-      export_manifest_digest: proof.export_manifest_digest,
-      surface_manifest_digest: proof.surface_manifest_digest, proof_json: canonicalize(proof) }, now);
-    const available = this.store.available(id, verified.file_count, verified.byte_count, now);
+      provider_release_sha: proof.provider_release_sha,
+      generation_id: observed.generation.generation_id,
+      export_manifest_digest: observed.export.export_manifest_digest,
+      surface_manifest_digest: observed.provider_inventory.manifest_digest,
+      proof_json: canonicalize(proof) }, now);
+    await this.options.barriers.reach({ barrier_id: "jarvis_proof_observation",
+      lane_id: row.lane_id, request_id: row.request_id,
+      tombstone_sequence: row.tombstone_sequence, now });
+    await this.options.barriers.reach({ barrier_id: "before_settlement_commit",
+      lane_id: row.lane_id, request_id: row.request_id,
+      tombstone_sequence: row.tombstone_sequence, now });
+    const available = this.store.available(id, observed.export.file_count,
+      observed.export.byte_count, new Date(proof.completed_at));
     this.options.authority.db.prepare(
       "UPDATE memory_effect_preparations SET state='consumed',updated_at=? WHERE lane_id=? AND state='approved'",
     ).run(now.toISOString(), row.lane_id);

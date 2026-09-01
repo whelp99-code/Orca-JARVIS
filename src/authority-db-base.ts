@@ -45,30 +45,54 @@ export const progressFaultPoints = new Set<ProgressFaultPoint>([
 ]);
 
 export abstract class AuthorityDbBase {
-	readonly db: Database.Database;
+	db: Database.Database;
 	beforeAckHook: (() => void) | undefined;
 	protected progressFaultPoint: ProgressFaultPoint | undefined;
 	protected progressTestHook: ((point: ProgressFaultPoint) => void) | undefined;
-	protected readonly migrations: MigrationStore;
-	protected readonly orcaObservations: OrcaObservationStore;
-	protected readonly personalContext: PersonalContextPersistence;
+	protected migrations: MigrationStore;
+	protected orcaObservations: OrcaObservationStore;
+	protected personalContext: PersonalContextPersistence;
+	private readonly migrationsPath: string | undefined;
 	constructor(
 		readonly filename = process.env.JARVIS_DB ?? "jarvis-authority.sqlite",
 		migrationsPath?: string,
 	) {
+		this.migrationsPath = migrationsPath;
 		this.db = new Database(filename);
+		const stores = this.stores(this.db);
+		this.migrations = stores.migrations;
+		this.orcaObservations = stores.orcaObservations;
+		this.personalContext = stores.personalContext;
+		this.configure();
+	}
+	close(): void {
+		this.db.close();
+	}
+	reopen(): void {
+		if (this.db.open) throw new JarvisError("AUTHORITY_DATABASE_ALREADY_OPEN");
+		this.db = new Database(this.filename);
+		const stores = this.stores(this.db);
+		this.migrations = stores.migrations;
+		this.orcaObservations = stores.orcaObservations;
+		this.personalContext = stores.personalContext;
+		this.configure();
+	}
+	private stores(database: Database.Database): {
+		readonly migrations: MigrationStore;
+		readonly orcaObservations: OrcaObservationStore;
+		readonly personalContext: PersonalContextPersistence;
+	} {
 		const error = (code: string, message?: string): JarvisError => new JarvisError(code, message);
-		this.migrations = new MigrationStore(this.db, migrationsPath, error);
-		this.orcaObservations = new OrcaObservationStore(this.db, error);
-		this.personalContext = new PersonalContextPersistence(this.db, error);
+		return { migrations: new MigrationStore(database, this.migrationsPath, error),
+			orcaObservations: new OrcaObservationStore(database, error),
+			personalContext: new PersonalContextPersistence(database, error) };
+	}
+	private configure(): void {
 		this.db.pragma("busy_timeout = 5000");
 		this.db.pragma("foreign_keys = ON");
 		this.db.pragma("synchronous = FULL");
 		if (String(this.db.pragma("journal_mode", { simple: true })).toLowerCase() !== "wal")
 			this.db.pragma("journal_mode = WAL");
-	}
-	close(): void {
-		this.db.close();
 	}
 	protected atomic<T>(fn: () => T): T {
 		// Pre-GJC bridge staging composes the existing progress transaction with its

@@ -1,4 +1,5 @@
 import { AuthorityDb, JarvisError } from "./db.js";
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { persistenceRow, persistenceText } from "./personal-persistence-values.js";
 import { projectRecommendations } from "./recommendation-projection.js";
 import { storedRecommendationIdentity } from "./recommendation-identity.js";
@@ -71,16 +72,25 @@ export class TaskTimeline {
 
   list(limit = 100): TaskTimelineSummary[] {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) throw new JarvisError("TASK_TIMELINE_INVALID");
-    const rows = this.authority.db.prepare(`${SUMMARY_SQL} ORDER BY r.created_at DESC,r.recommendation_id DESC LIMIT ?`)
-      .all(limit).map(persistenceRow);
+    const projections = new MemoryProjectionAuthority(this.authority);
+    const rows = projections.visible(
+      this.authority.db.prepare(`${SUMMARY_SQL} ORDER BY r.created_at DESC,r.recommendation_id DESC LIMIT ?`)
+        .all(limit).map(persistenceRow),
+      row => ({ kind: "recommendation", id: persistenceText(row["recommendation_id"]),
+        component_id: persistenceText(row["recommendation_id"]) }),
+    );
     for (const row of rows) validateEvents(this.authority.db, row);
     const recommendations = rows.map(recommendationSummary);
-    const base = this.base.list(limit);
+    const base = this.base.list(limit)
+      .filter(item => !projections.isProjectionIdSuppressed(item.task_id));
     return [...base, ...recommendations].sort((left, right) => right.updated_at.localeCompare(left.updated_at)
       || left.task_id.localeCompare(right.task_id)).slice(0, limit);
   }
 
   timeline(taskId: string, limit = 200): TaskTimelineEvent[] {
+    if (new MemoryProjectionAuthority(this.authority).isProjectionIdSuppressed(taskId)) {
+      throw new JarvisError("TASK_TIMELINE_NOT_FOUND");
+    }
     const exists = this.authority.db.prepare(
       "SELECT canonical_digest,evidence_digest,canonical_envelope_json FROM personal_recommendations WHERE recommendation_id=?",
     ).get(taskId);
@@ -112,6 +122,9 @@ export class TaskTimeline {
   }
 
   context(taskId: string, limit = 100, maxBytes = 128 * 1024, now = new Date()): TaskTimelineContext {
+    if (new MemoryProjectionAuthority(this.authority).isProjectionIdSuppressed(taskId)) {
+      throw new JarvisError("TASK_TIMELINE_NOT_FOUND");
+    }
     const value = this.authority.db.prepare(`${SUMMARY_SQL} WHERE r.recommendation_id=?`).get(taskId);
     if (value === undefined) return this.base.context(taskId, limit, maxBytes, now);
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000 || !Number.isSafeInteger(maxBytes) || maxBytes < 1024) {

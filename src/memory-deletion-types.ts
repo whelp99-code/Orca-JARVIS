@@ -1,8 +1,4 @@
-import type { KeyObject } from "node:crypto";
-import type { AuthorityDb } from "./db.js";
-import type { MemoryDeletionRecord } from "./memory-deletion-store.js";
-import type { SecondBrainWriteRequestAdapter } from "./second-brain-adapter-types.js";
-import type { SecondBrainEffectService } from "./second-brain-effect-service.js";
+import type { MemorySagaRuntime } from "./memory-saga-runtime.js";
 import type {
   ExternalErasureReceiptV2,
   MemoryEffectScopeV2,
@@ -22,20 +18,4 @@ export type PrepareMemoryDeletionInput = {
   readonly nonce: string;
 };
 
-export type MemoryDeletionSagaOptions = {
-  readonly authority: AuthorityDb;
-  readonly spool_root: string;
-  readonly writer: SecondBrainWriteRequestAdapter;
-  readonly provider: SecondBrainEffectService;
-  readonly signing_key_id: string;
-  readonly private_key: KeyObject;
-  readonly subject_key: Buffer;
-  readonly clock: () => Date;
-  readonly absence_verified: (proof: Readonly<Record<string, unknown>>) => Promise<boolean>;
-  readonly purge_needles: (record: MemoryDeletionRecord) => readonly Buffer[];
-  readonly managed_roots?: readonly {
-    readonly path: string;
-    readonly kind: "projection" | "state" | "backup" | "spool" | "restore";
-  }[];
-  readonly backup_roots?: readonly string[];
-};
+export type MemoryDeletionSagaOptions = MemorySagaRuntime;

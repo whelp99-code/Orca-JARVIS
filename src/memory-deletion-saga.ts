@@ -3,11 +3,9 @@ import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./db.js";
 import type { ClaimedControlCommand, ControlCommandRequestInput } from "./control-plane.js";
 import { ControlPlane } from "./control-plane.js";
-import { purgeMemoryContent } from "./memory-content-purge.js";
 import { MemoryDeletionDispatcher } from "./memory-deletion-dispatch.js";
 import { MemoryDeletionStore, type MemoryDeletionRecord } from "./memory-deletion-store.js";
 import type { MemoryDeletionSagaOptions, PrepareMemoryDeletionInput } from "./memory-deletion-types.js";
-import { verifyMemoryDispositionProof } from "./memory-disposition-proof.js";
 import { MemoryEffectSpool } from "./memory-effect-spool.js";
 import { memoryTargetManifestDigest, memoryTargetScopeDigest, sameMemoryGeneration } from "./memory-target-values.js";
 import {
@@ -93,30 +91,27 @@ export class MemoryDeletionSaga {
       || row.provider_idempotency_key === null || row.delegation_id === null || row.delegation_digest === null
       || row.provider_instance_id === null || row.tombstone_sequence === null
       || row.tombstone_set_root === null) return row;
-    const status = await this.options.provider.requestStatus(row.request_id);
-    if (status.kind !== "data" || status.value.state !== "proved") return row;
-    const proof = verifyMemoryDispositionProof(this.options.authority, status.value.proof, {
-      provider_instance_id: row.provider_instance_id, request_id: row.request_id,
-      request_digest: row.request_digest, envelope_digest: row.envelope_digest,
-      idempotency_key: row.provider_idempotency_key,
-      delegation_id: row.delegation_id, delegation_digest: row.delegation_digest,
-      lane_id: row.lane_id ?? "", operation: "forget", payload_digest: row.payload_digest,
-      target_manifest_digest: row.target_manifest_digest, scope_digest: row.scope_digest,
-      tombstone_sequence: row.tombstone_sequence, tombstone_set_root: row.tombstone_set_root,
-    }, this.options.clock());
-    if (!await this.options.absence_verified(proof)) throw new JarvisError("MEMORY_DELETION_ABSENCE_INVALID");
-    const restarted = await this.options.provider.restartForGeneration(proof.result_generation_id);
-    if (restarted.kind !== "data") throw new JarvisError("MEMORY_DELETION_RESTART_REQUIRED");
+    const observed = await this.options.observer.deletion(row);
+    if (observed.kind === "not_proved") return row;
+    const proof = observed.proof;
     const now = this.options.clock();
     this.store.proved(id, { proof_id: proof.proof_id, proof_digest: proof.proof_digest,
-      provider_release_sha: proof.provider_release_sha, result_generation_id: proof.result_generation_id,
-      surface_manifest_digest: proof.surface_manifest_digest, proof_json: canonicalize(proof) }, now);
-    const purge = purgeMemoryContent({ authority: this.options.authority, lane: "deletion",
+      provider_release_sha: proof.provider_release_sha,
+      result_generation_id: observed.generation.generation_id,
+      surface_manifest_digest: observed.provider_inventory.manifest_digest,
+      proof_json: canonicalize(proof) }, now);
+    await this.options.barriers.reach({ barrier_id: "jarvis_proof_observation",
+      lane_id: row.lane_id ?? "", request_id: row.request_id,
+      tombstone_sequence: row.tombstone_sequence, now });
+    const compaction = await this.options.compactor.compact({ lane: "deletion",
       lane_id: row.lane_id ?? "", target_manifest_digest: row.target_manifest_digest,
-      scope_digest: row.scope_digest, tombstone_sequence: row.tombstone_sequence,
-      tombstone_set_root: row.tombstone_set_root, needles: this.options.purge_needles(row),
-      managed_roots: this.options.managed_roots, backup_roots: this.options.backup_roots, now });
-    const settled = this.store.settle(id, purge.receipt_digest, now);
+      scope_digest: row.scope_digest, tombstone: { sequence: row.tombstone_sequence,
+        set_root: row.tombstone_set_root }, provider_inventory: observed.provider_inventory,
+      reingress_guards: observed.reingress_guards });
+    await this.options.barriers.reach({ barrier_id: "before_settlement_commit",
+      lane_id: row.lane_id ?? "", request_id: row.request_id,
+      tombstone_sequence: row.tombstone_sequence, now });
+    const settled = this.store.settle(id, compaction.compaction_receipt_digest, now);
     this.options.authority.db.prepare(
       "UPDATE memory_effect_preparations SET state='consumed',updated_at=? WHERE lane_id=? AND state='approved'",
     ).run(now.toISOString(), row.lane_id);
@@ -126,7 +121,8 @@ export class MemoryDeletionSaga {
     if (control?.state === "claimed" && row.control_request_id !== null) this.control.settle(
       row.control_request_id, control.lease_fence, { state: "completed",
         effect_type: "memory.deletion.settled", payload: { deletion_id: id,
-          proof_digest: proof.proof_digest, purge_receipt_digest: purge.receipt_digest } }, now);
+          proof_digest: proof.proof_digest,
+          purge_receipt_digest: compaction.compaction_receipt_digest } }, now);
     return settled;
   }
 

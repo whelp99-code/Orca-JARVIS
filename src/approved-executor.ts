@@ -1,4 +1,5 @@
 import { resolve } from "node:path";
+import { executeApprovedMemoryCommand } from "./approved-memory-execution.js";
 import { AuthorityDb, JarvisError } from "./db.js";
 import { validateControlAction } from "./control-actions.js";
 import { ControlEffectAttempts, type ExternalEffectContext } from "./control-effect-attempts.js";
@@ -9,13 +10,15 @@ import { LoopGraph, type LoopSpec } from "./loopgraph.js";
 import { RunbookEngine, type HostOperations } from "./runbook.js";
 import { appendSettledNegativeEvidence } from "./negative-evidence.js";
 import { executeApprovedWorkflowStage, type ExecuteWorkflowStageInput } from "./approved-workflow-stage.js";
-import type { ApprovedExecutionResult, MemoryLifecycleServices } from "./approved-executor-types.js";
+import type { ApprovedExecutionResult } from "./approved-executor-types.js";
 import type { MemoryOutboxService } from "./memory-outbox.js";
+import type { MemoryLifecycleService } from "./memory-lifecycle-service-types.js";
 import { confirmMemoryCorrectionCandidate } from "./memory-correction-saga.js";
 import type { SecondBrainEffectService } from "./second-brain-effect-service.js";
 import { copyPinnedRegularFile, privatePath, publishFile, removeSqliteCopy, secureBasename, secureRoot } from "./secure-filesystem.js";
 
-export type { ApprovedExecutionResult, MemoryLifecycleServices } from "./approved-executor-types.js";
+export type { ApprovedExecutionResult } from "./approved-executor-types.js";
+export type { MemoryLifecycleService } from "./memory-lifecycle-service-types.js";
 
 export class ApprovedCommandExecutor {
   private readonly control: ControlPlane;
@@ -28,7 +31,7 @@ export class ApprovedCommandExecutor {
     private readonly clock: () => Date = () => new Date(),
     private readonly memoryOutbox?: MemoryOutboxService,
     private readonly memoryEffects?: SecondBrainEffectService,
-    private readonly memoryLifecycles?: MemoryLifecycleServices,
+    private readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">,
   ) {
     this.control = new ControlPlane(authority);
     this.effects = new ControlEffectAttempts(authority);
@@ -168,15 +171,10 @@ export class ApprovedCommandExecutor {
       if (command.action === "memory.outbox.dispatch") {
         validateControlAction(command, { enforceMinimumLevel: true, levelErrorCode: "APPROVED_ACTION_LEVEL_TOO_LOW" });
         if (command.args.schema_version === 3) {
-          if (!this.memoryLifecycles?.correction) throw new JarvisError("MEMORY_LIFECYCLE_SERVICE_UNAVAILABLE");
-          const dispatched = await this.memoryLifecycles.correction.dispatch(command);
-          const reconciled = await this.memoryLifecycles.correction.reconcile(dispatched.correction_id);
-          const completed = reconciled.state === "settled";
-          return { request_id: requestId, action: command.action,
-            state: completed ? "completed" : "uncertain",
-            result: { correction_id: reconciled.correction_id, state: reconciled.state,
-              request_digest: reconciled.request_digest },
-            ...(completed ? {} : { failure_code: "MEMORY_CORRECTION_RECONCILING" }) };
+          if (this.memoryLifecycle === undefined) {
+            throw new JarvisError("MEMORY_LIFECYCLE_SERVICE_UNAVAILABLE");
+          }
+          return executeApprovedMemoryCommand(this.memoryLifecycle, command);
         }
         if (!this.memoryOutbox) throw new JarvisError("MEMORY_OUTBOX_SERVICE_UNAVAILABLE");
         const queued = this.memoryOutbox.enqueue(command);
@@ -196,26 +194,12 @@ export class ApprovedCommandExecutor {
           ...(completed ? {} : { failure_code: "MEMORY_OUTBOX_RECONCILING" }) };
       }
       if (command.action === "memory.delete" || command.action === "memory.export") {
-        validateControlAction(command, { enforceMinimumLevel: true, levelErrorCode: "APPROVED_ACTION_LEVEL_TOO_LOW" });
-        if (!this.memoryLifecycles) throw new JarvisError("MEMORY_LIFECYCLE_SERVICE_UNAVAILABLE");
-        if (command.action === "memory.delete") {
-          if (!this.memoryLifecycles.deletion) throw new JarvisError("MEMORY_LIFECYCLE_SERVICE_UNAVAILABLE");
-          const dispatched = await this.memoryLifecycles.deletion.dispatch(command);
-          const reconciled = await this.memoryLifecycles.deletion.reconcile(dispatched.deletion_id);
-          const completed = reconciled.state === "settled";
-          return { request_id: requestId, action: command.action,
-            state: completed ? "completed" : "uncertain",
-            result: { deletion_id: reconciled.deletion_id, state: reconciled.state },
-            ...(completed ? {} : { failure_code: "MEMORY_DELETION_RECONCILING" }) };
+        validateControlAction(command, { enforceMinimumLevel: true,
+          levelErrorCode: "APPROVED_ACTION_LEVEL_TOO_LOW" });
+        if (this.memoryLifecycle === undefined) {
+          throw new JarvisError("MEMORY_LIFECYCLE_SERVICE_UNAVAILABLE");
         }
-        if (!this.memoryLifecycles.export) throw new JarvisError("MEMORY_LIFECYCLE_SERVICE_UNAVAILABLE");
-        const dispatched = await this.memoryLifecycles.export.dispatch(command);
-        const reconciled = await this.memoryLifecycles.export.reconcile(dispatched.export_id);
-        const completed = reconciled.state === "available";
-        return { request_id: requestId, action: command.action,
-          state: completed ? "completed" : "uncertain",
-          result: { export_id: reconciled.export_id, state: reconciled.state },
-          ...(completed ? {} : { failure_code: "MEMORY_EXPORT_WRITING" }) };
+        return executeApprovedMemoryCommand(this.memoryLifecycle, command);
       }
       if (command.action === "memory.generation.rollback") {
         if (!this.memoryEffects) throw new JarvisError("MEMORY_EFFECT_SERVICE_UNAVAILABLE");

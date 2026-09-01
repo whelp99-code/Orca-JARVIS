@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { bindRecommendationProjection } from "./memory-projection-bindings.js";
 import type { RecommendationV1, Sha256Digest } from "./personal-contracts.js";
 import {
   PersonalContractError,
@@ -214,6 +215,8 @@ export class PersonalRecommendationStore {
         "INSERT INTO personal_recommendation_action_events(recommendation_id,rank,state,evidence_digest,occurred_at) VALUES(?,?,'pending',?,?)",
       ).run(recommendation.id, item.rank, input.evidenceDigest, input.now);
     });
+    bindRecommendationProjection(this.database, recommendation.id,
+      recommendation.payload.context_id, recommendation.payload.actions, new Date(input.now));
     recordPersonalAudit(this.database, {
       event: "recommendation_recorded",
       subject: recommendation.id,

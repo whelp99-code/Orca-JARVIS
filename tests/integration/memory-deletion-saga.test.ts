@@ -12,6 +12,11 @@ import { SecondBrainEffectService } from "../../src/second-brain-effect-service.
 import type { SecondBrainMethod, SecondBrainOutcome, SecondBrainTransport } from "../../src/second-brain-transport.js";
 import { MemoryTombstoneChain } from "../../src/memory-tombstone-chain.js";
 import type { MemoryEffectWriteRequestV2 } from "../../src/second-brain-effect-v2.js";
+import {
+  noopMemoryBarriers,
+  notProvedMemoryObserver,
+  unreachableMemoryCompactor,
+} from "../fixtures/memory-lifecycle-runtime.js";
 import { initialized, localKey } from "../helpers.js";
 
 const request = ((JSON.parse(readFileSync("contracts/second-brain-mcp-v1.json", "utf8")) as {
@@ -119,8 +124,9 @@ describe("dedicated irreversible deletion saga", () => {
         private_key: privateKey, nonce: () => "delete-status" });
       const saga = new MemoryDeletionSaga({ authority: db, spool_root: join(root, "spool"), writer,
         provider, signing_key_id: "jarvis:delete", private_key: privateKey,
-        subject_key: Buffer.alloc(32, 4), clock: () => NOW, absence_verified: async () => true,
-        purge_needles: () => [Buffer.from("never persisted")], managed_roots: [] });
+        subject_key: Buffer.alloc(32, 4), clock: () => NOW,
+        observer: notProvedMemoryObserver, compactor: unreachableMemoryCompactor,
+        barriers: noopMemoryBarriers(db) });
       const action = await saga.prepare({ deletion_id: "memdel:v1:atomic", correlation_id: "corr:atomic",
         provider_instance_id: request.provider_instance_id, targets: request.targets, scope: request.scope,
         erasure_claim: "managed_erasure", external_receipts: [], requested_at: new Date(request.created_at),

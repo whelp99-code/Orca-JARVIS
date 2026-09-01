@@ -128,6 +128,17 @@ export function projectRecommendations(database: Database.Database, now: string,
                WHERE e.recommendation_id=a.recommendation_id AND e.rank=a.rank ORDER BY event_sequence DESC LIMIT 1) AS replacement_recommendation_id
        FROM personal_recommendations r JOIN personal_context_snapshots c ON c.context_id=r.context_id
        JOIN personal_recommendation_actions a ON a.recommendation_id=r.recommendation_id
+       WHERE NOT EXISTS (
+         SELECT 1 FROM memory_projection_suppressions s
+         WHERE s.projection_id=r.recommendation_id
+           AND (s.projection_kind='recommendation'
+             OR (s.projection_kind='recommendation_action' AND s.component_id=CAST(a.rank AS TEXT)))
+       ) AND NOT EXISTS (
+         SELECT 1 FROM memory_projection_quarantine q
+         WHERE q.projection_id=r.recommendation_id
+           AND (q.projection_kind='recommendation'
+             OR (q.projection_kind='recommendation_action' AND q.component_id=CAST(a.rank AS TEXT)))
+       )
        ORDER BY r.created_at DESC,r.recommendation_id,a.rank LIMIT ?)
      SELECT s.*,rr.context_digest AS replacement_context_digest,rr.canonical_digest AS replacement_canonical_digest,
             rr.evidence_digest AS replacement_evidence_digest,rr.canonical_envelope_json AS replacement_envelope_json

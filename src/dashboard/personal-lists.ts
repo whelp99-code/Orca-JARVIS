@@ -1,6 +1,7 @@
 import type { CapabilityProbe } from "../capabilities.js";
 import { buildCapabilityMatrix } from "../capabilities.js";
 import type { AuthorityDb } from "../db.js";
+import { MemoryProjectionAuthority } from "../memory-projection-authority.js";
 import { Recommendations } from "../recommendations.js";
 import type { PersonalPage, ResourceState } from "./personal-contracts.js";
 import { dbRows, nullableText, readOnlySnapshot, readOnlySnapshotAsync, text } from "./personal-db.js";
@@ -11,10 +12,12 @@ type PageRequest = { readonly limit: number; readonly cursor: string | null; rea
 
 export function dailyRunHistory(db: AuthorityDb, request: PageRequest): PersonalPage<unknown> {
   return readOnlySnapshot(db, () => {
-    const rows = dbRows(db.db.prepare(
+    const projections = new MemoryProjectionAuthority(db);
+    const rows = projections.visible(dbRows(db.db.prepare(
       `SELECT run_id,loop_date,phase,state,result_digest,failure_code,created_at,updated_at,expires_at
        FROM daily_loop_runs WHERE record_version=1 ORDER BY updated_at DESC,run_id DESC`,
-    ).all());
+    ).all()), row => ({ kind: "daily_run", id: text(row, "run_id"),
+      component_id: text(row, "run_id") }));
     return request.pagination.page({ resource: "daily-runs", values: rows.map((row) => ({
       item: { run_id: safeText(row, "run_id"), loop_date: text(row, "loop_date"), phase: nullableText(row, "phase"),
         state: text(row, "state"), result_digest: nullableText(row, "result_digest"), failure_code: nullableText(row, "failure_code"),
@@ -46,10 +49,12 @@ export function decisionInbox(db: AuthorityDb, request: PageRequest): PersonalPa
 
 export function notificationIntentStates(db: AuthorityDb, request: PageRequest): PersonalPage<unknown> {
   return readOnlySnapshot(db, () => {
-    const rows = dbRows(db.db.prepare(
+    const projections = new MemoryProjectionAuthority(db);
+    const rows = projections.visible(dbRows(db.db.prepare(
       `SELECT intent_id,correlation_id,urgency,channel,redacted_preview,deep_link,state,expires_at,created_at,updated_at
        FROM notification_intents ORDER BY updated_at DESC,intent_id DESC`,
-    ).all());
+    ).all()), row => ({ kind: "notification_intent", id: text(row, "intent_id"),
+      component_id: text(row, "intent_id") }));
     return request.pagination.page({ resource: "notification-intents", values: rows.map((row) => ({ item: {
       intent_id: safeText(row, "intent_id"), correlation_id: safeText(row, "correlation_id"), urgency: text(row, "urgency"),
       channel: text(row, "channel"), preview: text(row, "redacted_preview"), deep_link: text(row, "deep_link"),

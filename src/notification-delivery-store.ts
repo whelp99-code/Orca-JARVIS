@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { projectMacNotificationPayload } from "./notification-delivery-payload.js";
+import { bindNotificationDeliveryProjection } from "./memory-projection-bindings.js";
 import { NotificationDeliveryError, type NotificationClaim, type NotificationSettleInput,
   type NotificationSettlement } from "./notification-delivery-types.js";
 import type { NotificationStoreAuthority } from "./notification-intent-types.js";
@@ -69,8 +70,12 @@ export class NotificationDeliveryStore {
       let changed = this.reconcile(epoch, now);
       for (;;) {
         const value = this.options.authority.db.prepare(
-          `SELECT intent_id,urgency,redacted_preview,deep_link,expires_at FROM notification_intents
+          `SELECT intent_id,urgency,redacted_preview,deep_link,expires_at FROM notification_intents i
            WHERE channel='mac' AND state='queued' AND julianday(expires_at)>julianday(?)
+             AND NOT EXISTS (SELECT 1 FROM memory_projection_suppressions s
+               WHERE s.projection_kind='notification_intent' AND s.projection_id=i.intent_id)
+             AND NOT EXISTS (SELECT 1 FROM memory_projection_quarantine q
+               WHERE q.projection_kind='notification_intent' AND q.projection_id=i.intent_id)
            ORDER BY CASE urgency WHEN 'critical' THEN 0 WHEN 'action' THEN 1 ELSE 2 END,created_at,intent_id LIMIT 1`,
         ).get(now);
         if (value === undefined) return { value: null, changed };
@@ -105,6 +110,8 @@ export class NotificationDeliveryStore {
         ).run(sessionId, lease, now, deliveryId);
         this.options.authority.db.prepare("UPDATE notification_intents SET state='delivering',updated_at=? WHERE intent_id=?")
           .run(now, intent.intent_id);
+        bindNotificationDeliveryProjection(this.options.authority.db,
+          deliveryId, intent.intent_id, new Date(now));
         const claimed: NotificationClaim = { schema_version: 1, delivery_id: deliveryId, intent_id: intent.intent_id,
           expires_at: intent.expires_at, payload };
         return { value: claimed, changed: true };

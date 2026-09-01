@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CapabilityProbe } from "../capabilities.js";
 import type { AuthorityDb } from "../db.js";
+import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
 import { buildSecondBrainReadiness, type SecondBrainReadinessProbe } from "../second-brain-readiness.js";
 import { runtimeSecondBrainReadinessProbe } from "../second-brain-readiness-runtime.js";
 import { DASHBOARD_SCHEMA_VERSION, ID_LIMIT } from "./contracts.js";
@@ -44,6 +45,7 @@ export type DashboardApiInput = {
   readonly capabilityProbe?: CapabilityProbe;
   readonly secondBrainProbe?: SecondBrainReadinessProbe;
   readonly planner?: TeamProposalPlanner;
+  readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
 };
 
 type LogsRoute =

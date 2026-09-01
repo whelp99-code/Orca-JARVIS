@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { PersonalContextEvidenceResolver } from "./personal-context-evidence.js";
 import { parseContextPersistenceInput } from "./personal-context-input.js";
+import { bindContextMemoryProjection } from "./memory-projection-bindings.js";
 import type {
   ContextPersistenceInput,
   ParsedContextPersistenceInput,
@@ -119,6 +120,8 @@ export class PersonalContextStore {
         item.fresh_until,
       );
     });
+    bindContextMemoryProjection(this.database, context.id,
+      value.input.memory_evidence.map(item => item.memory_ref), new Date(value.now));
     recordPersonalAudit(this.database, {
       event: "context_recorded",
       subject: context.id,

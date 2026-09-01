@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CapabilityProbe } from "../capabilities.js";
 import type { AuthorityDb } from "../db.js";
+import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
 import { tryHandleAuthorityPost } from "./authority-routes.js";
 import type { ReconcileHub } from "./events.js";
 import { DASHBOARD_ERROR_CODES, writeDashboardError } from "./http.js";
@@ -24,6 +25,7 @@ export type DashboardPostInput = {
   readonly clock: () => Date;
   readonly capabilityProbe?: CapabilityProbe;
   readonly planner?: TeamProposalPlanner;
+  readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
 };
 
 export async function tryHandleDashboardPost(input: DashboardPostInput): Promise<boolean> {
@@ -101,6 +103,7 @@ export async function tryHandleDashboardPost(input: DashboardPostInput): Promise
     body: parsed.value,
     hub: input.hub,
     clock: input.clock,
+    memoryLifecycle: input.memoryLifecycle,
   })) {
     return true;
   }

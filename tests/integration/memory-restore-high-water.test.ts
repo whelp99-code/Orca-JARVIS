@@ -5,6 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { AuthorityDb } from "../../src/db.js";
 import { sanitizeMemoryRestoreCandidate } from "../../src/memory-restore-high-water.js";
+import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
 import { MemoryTombstoneChain } from "../../src/memory-tombstone-chain.js";
 import type { ResolvedMemoryTargetV2 } from "../../src/second-brain-effect-v2.js";
 import { tempDb } from "../helpers.js";
@@ -29,8 +30,18 @@ describe("JARVIS restore tombstone high-water", () => {
     const root = mkdtempSync(join(tmpdir(), "jarvis-task30-restore-"));
     const source = join(root, "pre-forget.sqlite");
     try {
-      db.db.exec("CREATE TABLE task30_restore_projection(id TEXT PRIMARY KEY,payload TEXT NOT NULL)");
-      db.db.prepare("INSERT INTO task30_restore_projection VALUES('target',?)").run(sentinel);
+      const at = "2026-08-31T00:00:00.000Z";
+      db.db.prepare(
+        `INSERT INTO notification_intents(
+          intent_id,correlation_id,idempotency_key,dedup_key,urgency,channel,redacted_preview,
+          deep_link,state,expires_at,created_at,updated_at
+         ) VALUES('intent:restore','corr:restore','idem:restore','dedup:restore','action',
+          'mac',?,'/restore','created','2026-09-01T00:00:00.000Z',?,?)`,
+      ).run(sentinel, at, at);
+      db.db.prepare("UPDATE notification_intents SET state='queued' WHERE intent_id='intent:restore'").run();
+      new MemoryProjectionAuthority(db).bind({ kind: "notification_intent",
+        id: "intent:restore", component_id: "intent:restore" },
+      [{ target_digest: target.target_digest }], new Date(at));
       await db.db.backup(source);
       const chain = new MemoryTombstoneChain(db, Buffer.alloc(32, 5));
       chain.append({ operation: "forget", lane_id: `memdel:req:v1:${"b".repeat(64)}`,
@@ -38,8 +49,7 @@ describe("JARVIS restore tombstone high-water", () => {
         scope_digest: `sha256:${"d".repeat(64)}`, authority_receipt_digest: `sha256:${"e".repeat(64)}`,
         payload_digest: `sha256:${"f".repeat(64)}`, effective_at: "2026-08-31T00:00:00.000Z" });
       const result = await sanitizeMemoryRestoreCandidate({ authority: db, source,
-        workspace: join(root, "workspace"), subject_key: Buffer.alloc(32, 5),
-        needles: [Buffer.from(sentinel)], now: new Date("2026-08-31T00:00:01.000Z") });
+        workspace: join(root, "workspace"), now: new Date("2026-08-31T00:00:01.000Z") });
       expect(result).toMatchObject({ disposition: "sanitized", activated: false,
         sanitized_path: expect.any(String) });
       if (typeof result.sanitized_path !== "string") throw new Error("MEMORY_RESTORE_FIXTURE_INVALID");

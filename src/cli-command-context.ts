@@ -3,6 +3,7 @@ import type { AuthorityDb } from "./db.js";
 import type { GjcRunner } from "./gjc.js";
 import type { OrcaRunner } from "./orca.js";
 import type { OrcaCommand } from "./orca-resume.js";
+import type { MemoryLifecycleService } from "./memory-lifecycle-service-types.js";
 import type { SecondBrainReadinessProbe } from "./second-brain-readiness.js";
 
 export type CliDependencies = {
@@ -14,6 +15,7 @@ export type CliDependencies = {
   readonly capabilityProbe?: CapabilityProbe;
   readonly secondBrainProbe?: SecondBrainReadinessProbe;
   readonly readStdin?: () => Promise<Buffer>;
+  readonly memoryLifecycle?: MemoryLifecycleService;
 };
 
 export type CliValues = {

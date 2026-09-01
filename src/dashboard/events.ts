@@ -2,6 +2,7 @@ import { createHash, randomUUID } from "node:crypto";
 import type { AuthorityDb } from "../db.js";
 import { canonicalize } from "../canonical.js";
 import { JarvisError } from "../db.js";
+import { subscribeMemorySuppression } from "../memory-suppression-events.js";
 import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
 import { PERSONAL_EVENT_TOPICS, type PersonalEventKind } from "./personal-contracts.js";
 
@@ -112,8 +113,11 @@ export class DataVersionObserver {
 export function createDashboardEvents(db: AuthorityDb): { readonly hub: ReconcileHub; close(): void } {
   const hub = new ReconcileHub();
   const observer = new DataVersionObserver(db, (topics) => { hub.publish(topics); });
+  const unsubscribeSuppression = subscribeMemorySuppression(db, () => {
+    hub.publish([...allPersonalTopics(), "state"]);
+  });
   observer.start(DATA_VERSION_INTERVAL_MS);
-  return { hub, close(): void { observer.close(); hub.close(); } };
+  return { hub, close(): void { unsubscribeSuppression(); observer.close(); hub.close(); } };
 }
 
 export function topicsForPersonalEvent(kind: PersonalEventKind): readonly string[] {

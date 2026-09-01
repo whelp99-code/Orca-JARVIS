@@ -8,6 +8,8 @@ import type { MemoryDeletionSagaOptions } from "./memory-deletion-types.js";
 import { MemoryDestructiveDispatchCursor } from "./memory-destructive-dispatch.js";
 import { MemoryDestructivePreparationStore } from "./memory-destructive-preparation.js";
 import { MemoryEffectSpool } from "./memory-effect-spool.js";
+import { bindStructuredProjection } from "./memory-projection-bindings.js";
+import { publishMemorySuppression } from "./memory-suppression-events.js";
 import {
   MemoryDeletionPayloadSchema,
   MemoryEffectScopeSchema,
@@ -93,6 +95,8 @@ export class MemoryDeletionDispatcher {
         nonce: parsed.data.nonce, signing_key_id: this.options.signing_key_id },
       this.options.private_key),
       materialize: request => {
+        bindStructuredProjection(this.options.authority.db, { kind: "control_payload",
+          id: command.request_id, component_id: command.request_id }, request, now);
         this.store.approve(id, { lane_id: laneId,
           provider_instance_id: parsed.data.provider_instance_id,
           control_request_id: command.request_id, control_receipt_id: command.receipt_id,
@@ -107,6 +111,10 @@ export class MemoryDeletionDispatcher {
           spool_locator: preparation.spool_locator }, now);
       },
     });
+    await this.options.barriers.reach({ barrier_id: "jarvis_suppression_tombstone_commit",
+      lane_id: laneId, request_id: prepared.request.request_id,
+      tombstone_sequence: prepared.entry.sequence, now });
+    publishMemorySuppression(this.options.authority, prepared.entry.sequence, now);
     const current = this.store.get(id);
     if (current === undefined) throw new JarvisError("MEMORY_DELETION_NOT_FOUND");
     if (current.state !== "queued") return current;

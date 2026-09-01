@@ -6,8 +6,6 @@ import { ControlPlane } from "./control-plane.js";
 import { MemoryCorrectionDispatcher } from "./memory-correction-dispatcher.js";
 import { MemoryCorrectionStore, type MemoryCorrectionRecord } from "./memory-correction-store.js";
 import type { MemoryCorrectionSagaOptions, PrepareMemoryCorrectionInput } from "./memory-correction-types.js";
-import { purgeMemoryContent } from "./memory-content-purge.js";
-import { verifyMemoryDispositionProof } from "./memory-disposition-proof.js";
 import { MemoryEffectSpool } from "./memory-effect-spool.js";
 import {
   memoryTargetManifestDigest,
@@ -112,35 +110,28 @@ export class MemoryCorrectionSaga {
     const record = this.store.get(correctionId);
     if (record === undefined) throw new JarvisError("MEMORY_CORRECTION_NOT_FOUND");
     if (record.state === "settled" || record.state === "conflict") return record;
-    const status = await this.options.provider.requestStatus(record.request_id);
-    if (status.kind !== "data" || status.value.state !== "proved") return record;
-    const proof = verifyMemoryDispositionProof(this.options.authority, status.value.proof, {
-      provider_instance_id: record.provider_instance_id, request_id: record.request_id,
-      request_digest: record.request_digest, envelope_digest: record.envelope_digest,
-      idempotency_key: record.idempotency_key, delegation_id: record.delegation_id,
-      delegation_digest: record.delegation_digest, lane_id: record.lane_id, operation: "correct",
-      payload_digest: record.payload_digest, target_manifest_digest: record.target_manifest_digest,
-      scope_digest: record.scope_digest, tombstone_sequence: record.tombstone_sequence,
-      tombstone_set_root: record.tombstone_set_root,
-    }, this.options.clock());
-    if (!await this.options.artifact_verified(proof)) {
-      throw new JarvisError("MEMORY_CORRECTION_ARTIFACT_INVALID");
-    }
-    const restarted = await this.options.provider.restartForGeneration(proof.result_generation_id);
-    if (restarted.kind !== "data") throw new JarvisError("MEMORY_CORRECTION_RESTART_REQUIRED");
+    const observed = await this.options.observer.correction(record);
+    if (observed.kind === "not_proved") return record;
+    const proof = observed.proof;
     const now = this.options.clock();
     this.store.providerProved(correctionId, { proof_id: proof.proof_id,
       proof_digest: proof.proof_digest, provider_release_sha: proof.provider_release_sha,
-      result_generation_id: proof.result_generation_id,
-      surface_manifest_digest: proof.surface_manifest_digest,
-      artifact_manifest_digest: proof.artifact_manifest_digest ?? "",
+      result_generation_id: observed.generation.generation_id,
+      surface_manifest_digest: observed.provider_inventory.manifest_digest,
+      artifact_manifest_digest: observed.replacement.artifact_manifest_digest,
       proof_json: canonicalize(proof) }, now);
-    const purge = purgeMemoryContent({ authority: this.options.authority, lane: "correction",
+    await this.options.barriers.reach({ barrier_id: "jarvis_proof_observation",
+      lane_id: record.lane_id, request_id: record.request_id,
+      tombstone_sequence: record.tombstone_sequence, now });
+    const compaction = await this.options.compactor.compact({ lane: "correction",
       lane_id: record.lane_id, target_manifest_digest: record.target_manifest_digest,
-      scope_digest: record.scope_digest, tombstone_sequence: record.tombstone_sequence,
-      tombstone_set_root: record.tombstone_set_root, needles: this.options.purge_needles(record),
-      managed_roots: this.options.managed_roots, backup_roots: this.options.backup_roots, now });
-    const settled = this.store.settle(correctionId, purge.receipt_digest, now);
+      scope_digest: record.scope_digest, tombstone: { sequence: record.tombstone_sequence,
+        set_root: record.tombstone_set_root }, provider_inventory: observed.provider_inventory,
+      reingress_guards: observed.reingress_guards });
+    await this.options.barriers.reach({ barrier_id: "before_settlement_commit",
+      lane_id: record.lane_id, request_id: record.request_id,
+      tombstone_sequence: record.tombstone_sequence, now });
+    const settled = this.store.settle(correctionId, compaction.compaction_receipt_digest, now);
     this.options.authority.db.prepare(
       `UPDATE memory_effect_preparations SET state='consumed',updated_at=?
        WHERE lane_id=? AND state='approved'`,
@@ -151,7 +142,8 @@ export class MemoryCorrectionSaga {
     if (control.state === "claimed") this.control.settle(record.control_request_id,
       control.lease_fence, { state: "completed", effect_type: "memory.correction.settled",
         payload: { correction_id: correctionId, request_digest: record.request_digest,
-          proof_digest: proof.proof_digest, purge_receipt_digest: purge.receipt_digest } }, now);
+          proof_digest: proof.proof_digest,
+          purge_receipt_digest: compaction.compaction_receipt_digest } }, now);
     return settled;
   }
 }

@@ -3,6 +3,7 @@ import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { AuthorityDb, JarvisError } from "../db.js";
+import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
 import { runtimeCapabilityProbe } from "../doctor.js";
 import { defaultRunner } from "../orca.js";
 import { createDashboardServer } from "./server.js";
@@ -39,7 +40,7 @@ export function parseDashboardCli(argv: readonly string[]): DashboardCliOptions 
 
 export function startDashboardCli(options: DashboardCliOptions, write: (line: string) => void = line => {
   process.stdout.write(`${line}\n`);
-}): { close: () => void } {
+}, memoryLifecycle?: Pick<MemoryLifecycleService, "execute">): { close: () => void } {
   const db = new AuthorityDb(options.dbPath);
   const server = createDashboardServer({
     db,
@@ -48,6 +49,7 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
     port: options.port,
     orcaRunner: defaultRunner,
     capabilityProbe: runtimeCapabilityProbe(),
+    memoryLifecycle,
   });
   write(`http://${server.address.host}:${String(server.address.port)}`);
   const close = (): void => {
