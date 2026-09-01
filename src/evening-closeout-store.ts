@@ -3,6 +3,7 @@ import { canonicalize } from "./canonical.js";
 import { parseDailyLoopClaim, parseDailyLoopInstant, parseDailyLoopRunId } from "./daily-loop-input.js";
 import { assertDailyLoopIntegrity } from "./daily-loop-integrity.js";
 import { DailyLoopStore } from "./daily-loop-store.js";
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { verifyEveningCloseoutArtifact } from "./evening-closeout-artifact.js";
 import type { EveningCloseoutArtifact, TrustedCloseoutKey } from "./evening-closeout-types.js";
 import { EveningCloseoutError } from "./evening-closeout-types.js";
@@ -45,12 +46,20 @@ export class EveningCloseoutStore {
     this.loop.complete(claim, at); return true;
   }
   read(runIdValue: unknown): EveningCloseoutArtifact {
-    const runId = parseDailyLoopRunId(runIdValue); assertDailyLoopIntegrity(this.authority, runId);
+    const runId = parseDailyLoopRunId(runIdValue);
     const value = this.authority.db.prepare(
-      "SELECT detail_json FROM daily_loop_steps WHERE run_id=? AND step_key='evening_summary' AND state='completed'",
+      "SELECT step_id,detail_json FROM daily_loop_steps WHERE run_id=? AND step_key='evening_summary' AND state='completed'",
     ).get(runId);
     if (value === undefined) throw new EveningCloseoutError("EVENING_CLOSEOUT_IDENTITY_CONFLICT");
-    const parsed: unknown = JSON.parse(persistenceText(persistenceRow(value)["detail_json"]));
+    const row = persistenceRow(value);
+    const stepId = persistenceText(row["step_id"]);
+    const projections = new MemoryProjectionAuthority(this.authority);
+    if (projections.isSuppressed({ kind: "daily_run", id: runId, component_id: runId })
+      || projections.isProjectionIdSuppressed(stepId)) {
+      throw new EveningCloseoutError("EVENING_CLOSEOUT_NOT_FOUND");
+    }
+    assertDailyLoopIntegrity(this.authority, runId);
+    const parsed: unknown = JSON.parse(persistenceText(row["detail_json"]));
     return verifyEveningCloseoutArtifact(parsed, this.verifier);
   }
 }

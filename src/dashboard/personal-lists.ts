@@ -72,12 +72,15 @@ export async function sourceHealth(
   probe: CapabilityProbe | undefined,
 ): Promise<PersonalPage<unknown>> {
   return readOnlySnapshotAsync(db, async () => {
-    const sources = dbRows(db.db.prepare(
-      `SELECT source_id,freshness_state,fresh_until,observed_at,created_at FROM (
-         SELECT source_id,freshness_state,fresh_until,observed_at,created_at,
+    const projections = new MemoryProjectionAuthority(db);
+    const sources = projections.visible(dbRows(db.db.prepare(
+      `SELECT observation_id,source_id,freshness_state,fresh_until,observed_at,created_at FROM (
+         SELECT observation_id,source_id,freshness_state,fresh_until,observed_at,created_at,
                 row_number() OVER (PARTITION BY source_id ORDER BY observed_at DESC,observation_id DESC) AS position
          FROM personal_observations) WHERE position=1 ORDER BY observed_at DESC,source_id DESC`,
-    ).all()).map((row): { readonly item: Readonly<Record<string, unknown>>; readonly key: readonly [string, string] } => ({
+    ).all()), row => ({ kind: "observation", id: text(row, "observation_id"),
+      component_id: text(row, "observation_id") }))
+      .map((row): { readonly item: Readonly<Record<string, unknown>>; readonly key: readonly [string, string] } => ({
       item: { kind: "source", source_id: safeText(row, "source_id"), state: sourceState(row, request.now),
         observed_at: text(row, "observed_at"), fresh_until: text(row, "fresh_until"), checked_at: text(row, "created_at") },
       key: [text(row, "observed_at"), `source:${safeText(row, "source_id")}`],

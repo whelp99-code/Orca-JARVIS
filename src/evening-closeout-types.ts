@@ -166,7 +166,8 @@ export type EveningCloseoutArtifact = {
 export type EveningCloseoutErrorCode =
   | "EVENING_CLOSEOUT_INPUT_INVALID"
   | "EVENING_CLOSEOUT_INTEGRITY_FAILURE"
-  | "EVENING_CLOSEOUT_IDENTITY_CONFLICT";
+  | "EVENING_CLOSEOUT_IDENTITY_CONFLICT"
+  | "EVENING_CLOSEOUT_NOT_FOUND";
 export class EveningCloseoutError extends Error {
   readonly name = "EveningCloseoutError";
   constructor(readonly code: EveningCloseoutErrorCode) { super(code); }

@@ -34,7 +34,8 @@ export function consumeSecondBrainContract(fixturePath: string, sourcePath?: str
   if (digest !== EXPECTED_DIGEST || readFileSync(`${fixturePath}.sha256`, "ascii") !== `${digest}\n`
     || (sourcePath !== undefined && (!payload.equals(readFileSync(sourcePath))
       || readFileSync(`${sourcePath}.sha256`, "ascii") !== `${digest}\n`))) throw new SecondBrainContractError();
-  const root = record(JSON.parse(payload.toString("utf8")) as unknown);
+  const parsed: unknown = JSON.parse(payload.toString("utf8"));
+  const root = record(parsed);
   exact(root, ["application", "canonicalization", "errors", "normalization", "schema_version", "tools", "vectors"]);
   if (root.schema_version !== 3) throw new SecondBrainContractError();
   const application = record(root.application); exact(application, ["implementation_commit", "implementation_commit_role"]);

@@ -1,6 +1,9 @@
 import { realpathSync } from "node:fs";
 import { canonicalize } from "./canonical.js";
 import { AuthorityDb, JarvisError } from "./db.js";
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
+
+// allow: SIZE_OK - indivisible read-only graph traversal across the task authority ledger.
 
 export type TaskTimelineSource = "work" | "control" | "workflow" | "gjc" | "verification" | "progress";
 export type TaskTimelineKind = "status" | "command" | "approval" | "workflow" | "agent" | "verification" | "evidence" | "system";
@@ -202,6 +205,7 @@ export class TaskTimeline {
     return false;
   }
   private sourceIds(graph: TimelineGraph, fallback: string): string[] { const ids = values(graph.sourceIds).sort(); return ids.length > 0 ? ids : [fallback]; }
+  private suppressed(taskId: string): boolean { return new MemoryProjectionAuthority(this.authority).isProjectionIdSuppressed(taskId); }
   private summaryFromGraph(taskId: string, graph: TimelineGraph): TaskTimelineSummary | undefined {
     const sourceIds = this.sourceIds(graph, taskId); const extraPending = this.graphPendingApproval(graph);
     const workRows = this.inRows("SELECT w.id,w.action,w.state,w.created_at,p.state AS projection_state,p.updated_at AS projection_updated,(SELECT MAX(created_at) FROM event_ledger WHERE work_id=w.id) AS ledger_at FROM work_items w LEFT JOIN work_projection p ON p.work_id=w.id WHERE w.id IN", graph.workIds, "ORDER BY w.created_at,w.id");
@@ -260,14 +264,9 @@ export class TaskTimeline {
       for (const item of this.rows("SELECT intent_id,continuation_id,kind,state,COALESCE(completed_at,accepted_at,created_at) AS updated_at FROM gjc_intents ORDER BY updated_at DESC,intent_id DESC LIMIT ?", maximum)) {
         const state = string(item.state); const taskId = optional(item.continuation_id) ?? string(item.intent_id); upsert({ task_id: taskId, title: `GJC ${string(item.kind)}`, kind: "agent", state, updated_at: string(item.updated_at), pending_approval: false, source_ids: [string(item.intent_id)] });
       }
-      return [...tasks.values()].sort((left, right) => right.updated_at.localeCompare(left.updated_at) || left.task_id.localeCompare(right.task_id)).slice(0, maximum);
+      return [...tasks.values()].filter(item => !this.suppressed(item.task_id)).sort((left, right) => right.updated_at.localeCompare(left.updated_at) || left.task_id.localeCompare(right.task_id)).slice(0, maximum);
     });
   }
-
-  private summary(taskId: string): TaskTimelineSummary | undefined { return this.summaryFromGraph(taskId, this.buildGraph(taskId)); }
-
-  private relatedControlRequests(taskId: string): Row[] { return this.relatedControlRequestsFor([taskId]); }
-  private relatedWorkflowRuns(taskId: string): Row[] { return this.relatedWorkflowRunsFor([taskId]); }
 
   private addWorkEvents(taskId: string, graph: TimelineGraph, add: (event: MutableEvent) => void): void {
     for (const work of this.inRows("SELECT * FROM work_items WHERE id IN", graph.workIds, "ORDER BY created_at,id")) {
@@ -350,7 +349,7 @@ export class TaskTimeline {
     for (const row of this.inRows("SELECT * FROM pre_gjc_boundary_audits WHERE project_id IN", projects, "ORDER BY created_at,audit_id")) add({ event_id: string(row.audit_id), task_id: taskId, source: "progress", kind: "status", actor: "pre-gjc-shadow", title: "pre_gjc.boundary", status: string(row.aggregate_status), payload: row, evidence_refs: [], created_at: string(row.created_at) });
   }
 
-  timeline(taskId: string, limit = 200): TaskTimelineEvent[] { return this.readOnly(() => this.timelineUnsafe(taskId, limit)); }
+  timeline(taskId: string, limit = 200): TaskTimelineEvent[] { if (this.suppressed(taskId)) throw new JarvisError("TASK_TIMELINE_NOT_FOUND"); return this.readOnly(() => this.timelineUnsafe(taskId, limit)); }
   private timelineUnsafe(taskId: string, limit = 200, graph = this.buildGraph(taskId)): TaskTimelineEvent[] {
     if (!nonempty(taskId)) throw new JarvisError("TASK_TIMELINE_INVALID");
     const maximum = clamp(limit, 1, 1000); const events: MutableEvent[] = []; const eventIds = new Set<string>();
@@ -370,6 +369,7 @@ export class TaskTimeline {
   }
 
   context(taskId: string, limit = 100, maxBytes = 128 * 1024, now = new Date()): TaskTimelineContext {
+    if (this.suppressed(taskId)) throw new JarvisError("TASK_TIMELINE_NOT_FOUND");
     return this.readOnly(() => {
       const graph = this.buildGraph(taskId); const task = this.summaryFromGraph(taskId, graph); if (!task) throw new JarvisError("TASK_TIMELINE_NOT_FOUND");
       const controls = this.inRows("SELECT * FROM control_command_requests WHERE request_id IN", graph.controlIds, "ORDER BY requested_at,request_id");

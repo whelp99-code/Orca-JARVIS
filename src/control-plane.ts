@@ -1,7 +1,8 @@
 import { canonicalize } from "./canonical.js"; import { validateControlAction } from "./control-actions.js"; import { controlCommandDigest,
   controlValueDigest as hash, isControlRecord as isRecord, isNonemptyControlValue as nonempty, verifyCommandApproval, } from "./control-plane-contract.js";
 import type { ActionLevel, ClaimedControlCommand, CommandApprovalReceipt, ControlCancelInput, ControlCommandRequestInput, ControlCommandState,
-  ControlEventInput, StoredControlCommand, } from "./control-plane-contract.js"; import { AuthorityDb, JarvisError } from "./db.js"; export {
+  ControlEventInput, StoredControlCommand, } from "./control-plane-contract.js"; import { AuthorityDb, JarvisError } from "./db.js";
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js"; export {
   COMMAND_APPROVAL_DOMAIN, controlCommandDigest, signCommandApproval, verifyCommandApproval, } from "./control-plane-contract.js"; export type { ActionLevel,
   ClaimedControlCommand, CommandApprovalReceipt, ControlCancelInput, ControlCommandRequestInput, ControlCommandState, ControlEventInput, StoredControlCommand,
 } from "./control-plane-contract.js"; const validOutcomeStates = new Set(["completed", "failed", "uncertain"]);
@@ -195,7 +196,9 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
         correlation_id: input.request_id, causation_id: causation,
         payload: { revocation_id: revocationId, receipt_id: receipt?.receipt_id ?? null, previous_state: previous, state: next, reason: input.reason },
         created_at: input.revoked_at, }); }); tx(); } list(): StoredControlCommand[] {
-    return (this.authority.db.prepare("SELECT * FROM control_command_requests ORDER BY requested_at,request_id").all() as Array<Record<string, unknown>>).map(
+    const projections = new MemoryProjectionAuthority(this.authority);
+    return (this.authority.db.prepare("SELECT * FROM control_command_requests ORDER BY requested_at,request_id").all() as Array<Record<string, unknown>>)
+      .filter(row => !projections.isSuppressed({ kind: "control_payload", id: String(row.request_id), component_id: String(row.request_id) })).map(
       (row) => ({ schema_version: 1, request_id: String(row.request_id), action: String(row.action), action_level: Number(row.action_level) as ActionLevel,
         target: JSON.parse(String(row.target_json)) as Record<string, unknown>, args: JSON.parse(String(row.args_json)) as Record<string, unknown>,
         command_digest: String(row.command_digest), reversible: Boolean(row.reversible), requested_by: String(row.requested_by),
