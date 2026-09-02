@@ -13,6 +13,7 @@ const NAV_ITEMS = [
   { label: "새 제안", href: "/proposals" },
   { label: "에이전트", href: "/agents" },
   { label: "승인", href: "/approvals" },
+  { label: "보안", href: "/security" },
 ] as const;
 
 afterEach(cleanup);

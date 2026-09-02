@@ -16,6 +16,7 @@ const NAV_ITEMS = [
   { label: copy.nav.proposals, to: "/proposals" },
   { label: copy.nav.agents, to: "/agents" },
   { label: copy.nav.approvals, to: "/approvals" },
+  { label: copy.nav.security, to: "/security" },
 ] as const;
 
 const CONNECTION_LABELS = {
