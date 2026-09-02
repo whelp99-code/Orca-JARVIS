@@ -18,6 +18,7 @@ describe("phone gateway systemd and serve artifacts", () => {
     expect(text).toContain("--port 4174");
     expect(text).toContain("--upstream http://127.0.0.1:4173");
     expect(text).toContain("EnvironmentFile=%h/.config/orca-jarvis/phone-gateway.env");
+    expect(text).toContain("--env-file %h/.config/orca-jarvis/phone-gateway.env");
     expect(text).toContain("NODE_ENV=production");
     expect(text).toContain("UMask=0077");
     expect(text).toContain("Restart=on-failure");
@@ -41,6 +42,17 @@ describe("phone gateway systemd and serve artifacts", () => {
     expect(text).not.toMatch(/tailscale/i);
     expect(text).not.toMatch(/funnel/i);
     expect(text).not.toMatch(/\.plist/);
+  });
+
+  it("pins the env file schema to JARVIS_PHONE runtime keys", () => {
+    const schema = JSON.parse(readFileSync("config/phone-gateway.env.schema.json", "utf8")) as {
+      readonly required: readonly string[];
+    };
+    expect(schema.required).toEqual([
+      "JARVIS_PHONE_PUBLIC_ORIGIN",
+      "JARVIS_PHONE_OWNER_LOGIN",
+      "JARVIS_PHONE_SESSION_KEY_FILE",
+    ]);
   });
 
   it("parses the frozen tailnet-only Serve spec and never invokes Tailscale", () => {
