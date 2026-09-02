@@ -8,7 +8,8 @@ const PRIVATE_PAYLOAD = new RegExp("(?:password|passkey|token|secret|credential|
   + "|TASK33_(?:TOKEN|PRIVATE_NAME|COMMAND|EXCERPT|BEARER)_CANARY|/(?:home|Users|root|tmp|var|etc)/)", "iu");
 const TOPICS = new Set(["overview", "tasks", "agents", "approvals", "personal.today.v1", "personal.recommendations.v1",
   "personal.context-evidence.v1", "personal.daily-runs.v1", "personal.decision-inbox.v1",
-  "personal.notification-intents.v1", "personal.source-health.v1"]);
+  "personal.notification-intents.v1", "personal.source-health.v1", "memory.records.v1", "memory.conflicts.v1",
+  "memory.candidates.v1", "memory.effects.v1", "memory.privacy.v1", "memory.status.v1"]);
 export class ElectronProtocolError extends Error {
   constructor() { super("ELECTRON_PROTOCOL_INVALID"); this.name = "ElectronProtocolError"; this.code = "ELECTRON_PROTOCOL_INVALID"; }
 }
