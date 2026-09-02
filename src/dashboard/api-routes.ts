@@ -64,8 +64,13 @@ type LogsRoute =
 
 export async function tryHandleDashboardApi(input: DashboardApiInput): Promise<boolean> {
   if (input.remoteApproval) {
-    if (await tryHandleRemoteLifecycleRoutes({ service: input.remoteApproval, path: input.path, request: input.request, response: input.response, requestId: input.requestId, session: input.session, origin: input.origin, clock: input.clock })) return true;
-    if (await tryHandleRemoteAuthRoutes({ service: input.remoteApproval, path: input.path, request: input.request, response: input.response, requestId: input.requestId, session: input.session, origin: input.origin, clock: input.clock })) return true;
+    const remote = {
+      service: input.remoteApproval, path: input.path, request: input.request,
+      response: input.response, requestId: input.requestId, session: input.session,
+      origin: input.origin, clock: input.clock,
+    };
+    if (await tryHandleRemoteLifecycleRoutes(remote)) return true;
+    if (await tryHandleRemoteAuthRoutes(remote)) return true;
   }
   if (input.request.method === "POST") return tryHandleDashboardPost(input);
   if (tryHandleDashboardSession(input)) return true;
