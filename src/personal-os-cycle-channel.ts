@@ -31,7 +31,8 @@ function writeLine(socket: Socket, value: object): void {
 
 export function ensureCycleCursor(db: Database): void {
   db.exec(
-    "CREATE TABLE IF NOT EXISTS personal_os_cycle_cursor (k INTEGER PRIMARY KEY CHECK (k = 1), last_completed INTEGER NOT NULL, applied_count INTEGER NOT NULL)",
+    "CREATE TABLE IF NOT EXISTS personal_os_cycle_cursor ("
+    + "k INTEGER PRIMARY KEY CHECK (k = 1), last_completed INTEGER NOT NULL, applied_count INTEGER NOT NULL)",
   );
   db.prepare("INSERT OR IGNORE INTO personal_os_cycle_cursor(k, last_completed, applied_count) VALUES (1, 0, 0)").run();
 }
