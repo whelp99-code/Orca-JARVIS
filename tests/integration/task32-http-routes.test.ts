@@ -62,7 +62,8 @@ describe("Task 32 Memory HTTP boundary", () => {
       // Then
       expect(migrations).toEqual(["052_memory_effect_content_free.sql",
         "053_memory_surface_authority.sql", "054_memory_export_lifecycle.sql",
-        "055_memory_candidate_authority_v6.sql"]);
+        "055_memory_candidate_authority_v6.sql", "056_remote_approval_v2.sql",
+        "057_memory_candidate_authority_v6.sql"]);
       expect((db.db.prepare("PRAGMA table_info(memory_outbox)").all() as Array<{ readonly name: string }>)
         .some(row => row.name === "request_json")).toBe(false);
       const names = (db.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as
