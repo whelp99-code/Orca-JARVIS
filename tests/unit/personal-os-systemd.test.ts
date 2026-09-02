@@ -1,5 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { assertIsolatedFile } from "../../src/personal-os-protected-paths.js";
 import {
   PRODUCTION_ROOTS,
   UNIT_INVENTORY,
@@ -40,7 +41,9 @@ describe("personal-OS systemd renderer", () => {
     // Then
     expect(fixture).toContain("/dev/shm/task36-run");
     expect(fixture).not.toContain("/home/jm/.local/state/orca-jarvis");
-    expect(production).toContain("/home/jm/.local/state/orca-jarvis");
+    expect(production).toContain("/home/jm/.local/state/jarvis-rehearsal/jarvis.sqlite");
+    expect(production).toContain("/home/jm/.local/state/jarvis-rehearsal/backups");
+    expect(production).not.toContain("/home/jm/.local/state/orca-jarvis/jarvis.sqlite");
     expect(production).not.toContain("/dev/shm/task36-run");
     expect(production).toContain("UMask=0077");
   });
@@ -67,5 +70,42 @@ describe("personal-OS systemd renderer", () => {
     );
     expect(readFileSync("deploy/jm-jarvis-backup.timer", "utf8")).toBe(jarvisTimer);
     expect(readFileSync("deploy/jm-second-brain-backup.timer", "utf8")).toBe(providerTimer);
+    expect(readFileSync("deploy/jm-jarvis-backup.service", "utf8")).toBe(
+      renderSystemdUnit({ id: "jm-jarvis-backup.service", mode: "production", roots: PRODUCTION_ROOTS }),
+    );
+    expect(readFileSync("deploy/jm-second-brain-backup.service", "utf8")).toBe(
+      renderSystemdUnit({ id: "jm-second-brain-backup.service", mode: "production", roots: PRODUCTION_ROOTS }),
+    );
+    expect(readFileSync("deploy/jm-second-brain-requests.service", "utf8")).toBe(
+      renderSystemdUnit({ id: "jm-second-brain-requests.service", mode: "production", roots: PRODUCTION_ROOTS }),
+    );
+  });
+
+  it("keeps rehearsal backup paths outside protected production roots", () => {
+    // Given / When / Then
+    expect(assertIsolatedFile("/home/jm/.local/state/jarvis-rehearsal/jarvis.sqlite")).toBe(
+      "/home/jm/.local/state/jarvis-rehearsal/jarvis.sqlite",
+    );
+    expect(() => assertIsolatedFile("/home/jm/.local/state/orca-jarvis/jarvis.sqlite")).toThrow("E_PROTECTED_ROOT");
+  });
+
+  it("invokes provider sb without a Node interpreter", () => {
+    // Given / When
+    const backup = renderSystemdUnit({
+      id: "jm-second-brain-backup.service",
+      mode: "production",
+      roots: PRODUCTION_ROOTS,
+    });
+    const requests = renderSystemdUnit({
+      id: "jm-second-brain-requests.service",
+      mode: "production",
+      roots: PRODUCTION_ROOTS,
+    });
+
+    // Then
+    expect(backup).not.toMatch(/bin\/node .*\/bin\/sb/);
+    expect(requests).not.toMatch(/bin\/node .*\/bin\/sb/);
+    expect(backup).toContain("/bin/sb backup --once --state /home/jm/.local/state/second-brain");
+    expect(requests).toContain("/bin/sb apply-requests --once");
   });
 });

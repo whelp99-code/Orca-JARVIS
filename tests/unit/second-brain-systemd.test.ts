@@ -39,7 +39,7 @@ describe("Second Brain Linux user scheduler", () => {
     expect(service.get("Type")).toEqual(["oneshot"]);
     expect(service.get("NoNewPrivileges")).toEqual(["true"]);
     expect(service.get("ProtectSystem")).toEqual(["strict"]);
-    expect(service.get("ReadWritePaths")).toEqual(["%h/.local/state/jm-second-brain"]);
+    expect(service.get("ReadWritePaths")).toEqual(["%h/.local/state/second-brain"]);
     expect(text).not.toContain("/home/jm");
     expect(text).not.toContain("960f1c65-7f57-47e3-88f5-80bc5964ee7e");
     expect(text).not.toMatch(/password|token|secret/i);

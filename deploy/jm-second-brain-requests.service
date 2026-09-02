@@ -4,7 +4,7 @@ Description=JM Second Brain apply-requests once
 [Service]
 Type=oneshot
 WorkingDirectory=/home/jm/.local/state/second-brain/app/current
-ExecStart=/home/jm/.nvm/versions/node/v24.19.0/bin/node /home/jm/.local/state/second-brain/app/current/bin/sb apply-requests --once
+ExecStart=/home/jm/.local/bin/sb apply-requests --once
 ReadWritePaths=/home/jm/.local/state/second-brain
 UMask=0077
 NoNewPrivileges=true
