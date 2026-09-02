@@ -10,10 +10,11 @@ type Intent = { intent_id: string; kind: "sync" | "dispatch" | "answer"; payload
 export class GjcRuntimeService {
   constructor(private readonly db: AuthorityDb, private readonly client: GjcCoordinatorClient, private readonly worker = "gjc-runtime", private readonly supervisorCycle?: () => Promise<unknown>, private readonly clock: () => Date = () => new Date()) {}
   status(): Record<string, unknown> { const config = this.db.gjcConfig(); const rows = this.db.db.prepare("SELECT state,COUNT(*) AS count FROM gjc_intents GROUP BY state ORDER BY state").all() as Array<{ state: string; count: number }>; const runtime = this.db.db.prepare("SELECT pid,last_heartbeat_at,last_error_code FROM gjc_runtime_status WHERE id=1").get() ?? null; return { connected: Boolean(config?.operational), config, runtime, intents: Object.fromEntries(rows.map(row => [row.state, Number(row.count)])) }; }
-  async once(now = new Date().toISOString()): Promise<{ processed: string | null; state: string | null }> {
-    const config = this.db.gjcConfig(); if (!config?.operational) throw new JarvisError("GJC_NOT_CONNECTED");
+  async once(now = new Date().toISOString()): Promise<{ connected?: boolean; processed: string | null; state: string | null }> {
+    const config = this.db.gjcConfig();
     const runtimeFence = this.db.claimGjcRuntimeLease(this.worker, now); if (runtimeFence === null) return { processed: null, state: "leased" }; this.db.recordGjcRuntimeStatus(null, now);
     if (this.supervisorCycle) await this.supervisorCycle();
+    if (!config?.operational) return { connected: false, processed: null, state: "disconnected" };
     const next = this.db.db.prepare("SELECT intent_id FROM gjc_intents WHERE state='pending' ORDER BY created_at,intent_id LIMIT 1").get() as { intent_id: string } | undefined; if (!next) return { processed: null, state: null };
     const claimed = this.db.claimGjcIntent(next.intent_id, this.worker, now) as Intent | null; if (!claimed) return { processed: null, state: null };
     let payload: Record<string, unknown>; try { payload = JSON.parse(claimed.payload_json) as Record<string, unknown>; } catch { this.db.settleGjcIntent(claimed.intent_id, claimed.lease_fence, { status: "failed", failure_code: "GJC_PAYLOAD_MALFORMED" }, now); return { processed: claimed.intent_id, state: "failed" }; }

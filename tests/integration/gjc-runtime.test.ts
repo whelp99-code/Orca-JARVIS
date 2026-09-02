@@ -9,6 +9,23 @@ import { execute } from "../../src/cli.js";
 import { decisionReceiptFor, initialized, policyKey, snapshot, tempDb } from "../helpers.js";
 
 describe("GJC runtime", () => {
+  it("keeps the dispatch loop idle when GJC is not operational", async () => {
+    const db = new AuthorityDb(tempDb());
+    await db.migrate();
+    const service = new GjcRuntimeService(
+      db,
+      new GjcCoordinatorClient(async () => {
+        throw new Error("coordinator must not be called");
+      }),
+      "idle-disconnected",
+    );
+    await expect(service.once("2026-08-10T00:00:00.000Z")).resolves.toMatchObject({
+      connected: false,
+      processed: null,
+      state: "disconnected",
+    });
+  });
+
   it("rejects legacy flat read and answer response fixtures without settling success", async () => {
     const envelope = (body: unknown) => ({ stdout: `${JSON.stringify({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2024-11-05", serverInfo: { name: "gjc-coordinator-mcp", version: "0.11.8" } } })}\n${JSON.stringify({ jsonrpc: "2.0", id: 2, result: { content: [{ type: "text", text: JSON.stringify(body) }] } })}\n`, exitCode: 0 });
     const db = new AuthorityDb(tempDb()); await db.migrate(); db.configureGjc(process.cwd(), "s", true); const sync = db.createGjcIntent("sync", { session_id: "s", turn_id: "t" }, "flat-read"); const read = new GjcRuntimeService(db, new GjcCoordinatorClient(async () => envelope({ status: "completed", session_id: "s", turn_id: "t" })), "flat-read", undefined, () => new Date("2026-08-10T00:00:00.000Z")); await expect(read.once("2026-08-10T00:00:00.000Z")).resolves.toMatchObject({ state: "uncertain" }); expect((db.db.prepare("SELECT state FROM gjc_intents WHERE intent_id=?").get(sync) as { state: string }).state).toBe("uncertain");
