@@ -21,7 +21,7 @@ import {
   createSecondBrainTransport,
 } from "./second-brain-transport.js";
 
-const SECOND_BRAIN_CLI = "/home/jm/.local/bin/sb";
+const SECOND_BRAIN_CLI = "/home/jm/.local/state/second-brain/app/current/bin/sb";
 const PROBE_TIMEOUT_MS = 5_000;
 const PROBE_MAX_BYTES = 2_048;
 

@@ -5,7 +5,7 @@ After=jm-second-brain-refresh.service
 [Service]
 Type=oneshot
 WorkingDirectory=/home/jm/.local/state/second-brain/app/current
-ExecStart=/home/jm/.local/bin/sb backup --once --state /home/jm/.local/state/second-brain
+ExecStart=/home/jm/.local/state/second-brain/app/current/bin/sb backup --once --state /home/jm/.local/state/second-brain
 ReadWritePaths=/home/jm/.local/state/second-brain
 UMask=0077
 NoNewPrivileges=true

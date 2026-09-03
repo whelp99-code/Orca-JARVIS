@@ -38,9 +38,7 @@ export const PRODUCTION_ROOTS: RenderRoots = {
   providerState: "/home/jm/.local/state/second-brain",
 };
 
-const REHEARSAL_DB = "/home/jm/.local/state/jarvis-rehearsal/jarvis.sqlite" as const;
-const REHEARSAL_BACKUP_ROOT = "/home/jm/.local/state/jarvis-rehearsal/backups" as const;
-const SECOND_BRAIN_CLI = "/home/jm/.local/bin/sb" as const;
+const SECOND_BRAIN_CLI = "/home/jm/.local/state/second-brain/app/current/bin/sb" as const;
 
 export type GeneratedUnitId =
   | "jm-jarvis.service"
@@ -95,9 +93,7 @@ function jarvisService(roots: RenderRoots): string {
   ].join("\n");
 }
 
-function backupService(roots: RenderRoots, mode: RenderMode): string {
-  const db = mode === "production" ? REHEARSAL_DB : roots.jarvisDb;
-  const backupRoot = mode === "production" ? REHEARSAL_BACKUP_ROOT : roots.backupRoot;
+function backupService(roots: RenderRoots): string {
   return [
     "[Unit]",
     "Description=JM JARVIS authority online backup",
@@ -106,8 +102,8 @@ function backupService(roots: RenderRoots, mode: RenderMode): string {
     serviceBlock([
       "Type=oneshot",
       `WorkingDirectory=${roots.authorityCurrent}`,
-      `ExecStart=${NODE_BIN} ${roots.authorityCurrent}/dist/src/personal-os-backup-cli.js --db ${db} --backup-root ${backupRoot}`,
-      `ReadWritePaths=${backupRoot}`,
+      `ExecStart=${NODE_BIN} ${roots.authorityCurrent}/dist/src/personal-os-backup-cli.js --db ${roots.jarvisDb} --backup-root ${roots.backupRoot}`,
+      `ReadWritePaths=${roots.jarvisDb} ${roots.backupRoot}`,
     ]),
     "",
   ].join("\n");
@@ -206,7 +202,7 @@ export function renderSystemdUnit(input: {
     case "jm-jarvis.service":
       return jarvisService(input.roots);
     case "jm-jarvis-backup.service":
-      return backupService(input.roots, input.mode);
+      return backupService(input.roots);
     case "jm-jarvis-backup.timer":
       return backupTimer();
     case "jm-second-brain-backup.service":

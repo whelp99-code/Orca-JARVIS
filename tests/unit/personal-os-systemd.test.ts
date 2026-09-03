@@ -24,7 +24,7 @@ describe("personal-OS systemd renderer", () => {
     expect(unit).not.toMatch(/Funnel|launchctl|\.plist/i);
   });
 
-  it("keeps fixture renders free of production state paths and production renders free of attempt paths", () => {
+  it("keeps fixture renders isolated and production backups bound to live authority state", () => {
     // Given
     const fixtureRoots = {
       authorityCurrent: "/dev/shm/task36-run/jarvis-releases/current",
@@ -41,9 +41,9 @@ describe("personal-OS systemd renderer", () => {
     // Then
     expect(fixture).toContain("/dev/shm/task36-run");
     expect(fixture).not.toContain("/home/jm/.local/state/orca-jarvis");
-    expect(production).toContain("/home/jm/.local/state/jarvis-rehearsal/jarvis.sqlite");
-    expect(production).toContain("/home/jm/.local/state/jarvis-rehearsal/backups");
-    expect(production).not.toContain("/home/jm/.local/state/orca-jarvis/jarvis.sqlite");
+    expect(production).toContain("/home/jm/.local/state/orca-jarvis/jarvis.sqlite");
+    expect(production).toContain("/home/jm/.local/state/orca-jarvis/backups");
+    expect(production).not.toContain("/home/jm/.local/state/jarvis-rehearsal");
     expect(production).not.toContain("/dev/shm/task36-run");
     expect(production).toContain("UMask=0077");
   });
@@ -105,7 +105,7 @@ describe("personal-OS systemd renderer", () => {
     // Then
     expect(backup).not.toMatch(/bin\/node .*\/bin\/sb/);
     expect(requests).not.toMatch(/bin\/node .*\/bin\/sb/);
-    expect(backup).toContain("/bin/sb backup --once --state /home/jm/.local/state/second-brain");
-    expect(requests).toContain("/bin/sb apply-requests --once");
+    expect(backup).toContain("/home/jm/.local/state/second-brain/app/current/bin/sb backup --once --state /home/jm/.local/state/second-brain");
+    expect(requests).toContain("/home/jm/.local/state/second-brain/app/current/bin/sb apply-requests --once");
   });
 });
