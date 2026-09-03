@@ -4,6 +4,9 @@ import { isAbsolute, join, sep } from "node:path";
 import {
   FORBIDDEN_HEADERS,
   LOOPBACK,
+  PHONE_GATEWAY_TARGET,
+  PHONE_PUBLIC_HTTPS_PORT,
+  PHONE_SERVE_HTTPS_FLAG,
   PHONE_ERROR_CODES,
   PhoneGatewayError,
   type PhoneErrorCode,
@@ -49,7 +52,7 @@ export function parsePhoneServeSpec(text: string): PhoneServeSpec {
     throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
   }
   const argv = Reflect.get(value, "command_argv");
-  if (!Array.isArray(argv) || argv.length !== 4 || argv.some(item => typeof item !== "string")) {
+  if (!Array.isArray(argv) || argv.length !== 5 || argv.some(item => typeof item !== "string")) {
     throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
   }
   const spec = {
@@ -62,17 +65,18 @@ export function parsePhoneServeSpec(text: string): PhoneServeSpec {
     command_argv: argv,
   };
   if (spec.schema_version !== 1 || spec.exposure !== "tailnet-only" || spec.protocol !== "https"
-    || spec.port !== 443 || spec.target !== "http://127.0.0.1:4174" || spec.funnel !== false
+    || spec.port !== PHONE_PUBLIC_HTTPS_PORT || spec.target !== PHONE_GATEWAY_TARGET || spec.funnel !== false
     || spec.command_argv[0] !== "tailscale" || spec.command_argv[1] !== "serve"
-    || spec.command_argv[2] !== "--https=443" || spec.command_argv[3] !== "http://127.0.0.1:4174"
+    || spec.command_argv[2] !== "--bg" || spec.command_argv[3] !== PHONE_SERVE_HTTPS_FLAG
+    || spec.command_argv[4] !== PHONE_GATEWAY_TARGET
     || spec.command_argv.join(" ").toLowerCase().includes("funnel")
     || Object.keys(value).length !== 7) {
     throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
   }
   return {
-    schema_version: 1, exposure: "tailnet-only", protocol: "https", port: 443,
-    target: "http://127.0.0.1:4174", funnel: false,
-    command_argv: ["tailscale", "serve", "--https=443", "http://127.0.0.1:4174"],
+    schema_version: 1, exposure: "tailnet-only", protocol: "https", port: PHONE_PUBLIC_HTTPS_PORT,
+    target: PHONE_GATEWAY_TARGET, funnel: false,
+    command_argv: ["tailscale", "serve", "--bg", PHONE_SERVE_HTTPS_FLAG, PHONE_GATEWAY_TARGET],
   };
 }
 
@@ -167,14 +171,16 @@ function parseHttpsOrigin(value: string): { readonly origin: string; readonly ho
     if (error instanceof TypeError) return undefined;
     throw error;
   }
-  if (url.protocol !== "https:" || url.username !== "" || url.password !== "" || url.port !== ""
+  if (url.protocol !== "https:" || url.username !== "" || url.password !== ""
+    || (url.port !== "" && url.port !== String(PHONE_PUBLIC_HTTPS_PORT))
     || url.search !== "" || url.hash !== "" || (url.pathname !== "/" && url.pathname !== "")) return undefined;
   const host = url.hostname;
   if (host.endsWith(".") || host.includes("*") || host.startsWith("[") || /^\d+\.\d+\.\d+\.\d+$/.test(host)) {
     return undefined;
   }
-  if (value !== `https://${host}` && value !== `https://${host}/`) return undefined;
-  return { origin: `https://${host}`, host };
+  const authority = url.host;
+  if (value !== `https://${authority}` && value !== `https://${authority}/`) return undefined;
+  return { origin: `https://${authority}`, host: authority };
 }
 
 function readSecretFile(path: string, uid: number, bytes?: number): Buffer {

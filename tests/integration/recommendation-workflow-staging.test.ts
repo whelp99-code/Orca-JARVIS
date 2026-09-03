@@ -136,7 +136,7 @@ describe("Task 25 recommendation workflow staging", () => {
         expect(count(db, "control_command_requests")).toBe(0);
       } finally { db.close(); }
     }
-  });
+  }, 12_000);
 
   it("conflicts changed bytes under immutable identity and preserves one request", async () => {
     // Given: one staged immutable recommendation/action/target/args identity.

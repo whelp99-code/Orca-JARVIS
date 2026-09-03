@@ -2,8 +2,8 @@
   "schema_version": 1,
   "exposure": "tailnet-only",
   "protocol": "https",
-  "port": 443,
-  "target": "http://127.0.0.1:4174",
+  "port": 8444,
+  "target": "http://127.0.0.1:4176",
   "funnel": false,
-  "command_argv": ["tailscale", "serve", "--https=443", "http://127.0.0.1:4174"]
+  "command_argv": ["tailscale", "serve", "--bg", "--https=8444", "http://127.0.0.1:4176"]
 }

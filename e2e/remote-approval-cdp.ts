@@ -64,11 +64,11 @@ export async function createResidentCredential(
   page: Page, options: Record<string, unknown>,
 ): Promise<CredentialJson> {
   return page.evaluate(async raw => {
-    const b64ToU8 = (value: string): Uint8Array => {
+    const b64ToU8 = (value: string): Uint8Array<ArrayBuffer> => {
       const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
       const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
       const binary = atob(padded);
-      const out = new Uint8Array(binary.length);
+      const out = new Uint8Array(new ArrayBuffer(binary.length));
       for (let index = 0; index < binary.length; index += 1) out[index] = binary.charCodeAt(index);
       return out;
     };
@@ -120,11 +120,11 @@ export async function getResidentAssertion(
   page: Page, options: Record<string, unknown>, allowCredentialId?: string,
 ): Promise<CredentialJson> {
   return page.evaluate(async input => {
-    const b64ToU8 = (value: string): Uint8Array => {
+    const b64ToU8 = (value: string): Uint8Array<ArrayBuffer> => {
       const normalized = value.replace(/-/g, "+").replace(/_/g, "/");
       const padded = normalized + "=".repeat((4 - (normalized.length % 4)) % 4);
       const binary = atob(padded);
-      const out = new Uint8Array(binary.length);
+      const out = new Uint8Array(new ArrayBuffer(binary.length));
       for (let index = 0; index < binary.length; index += 1) out[index] = binary.charCodeAt(index);
       return out;
     };

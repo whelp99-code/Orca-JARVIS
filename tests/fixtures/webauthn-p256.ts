@@ -1,4 +1,4 @@
-import { encodeCBOR } from "@levischuck/tiny-cbor";
+import { encodeCBOR, type CBORType } from "@levischuck/tiny-cbor";
 import { createHash, generateKeyPairSync, sign, type KeyObject } from "node:crypto";
 import { base64url } from "../../src/receipt.js";
 
@@ -72,9 +72,9 @@ export function signAttestation(input: {
   const authData = Buffer.concat([
     rpIdHash, flags, counter, aaguid, credLen, input.authenticator.credentialId, input.authenticator.coseKey,
   ]);
-  const attestationObject = Buffer.from(encodeCBOR(new Map([
+  const attestationObject = Buffer.from(encodeCBOR(new Map<string | number, CBORType>([
     ["fmt", "none"],
-    ["attStmt", new Map()],
+    ["attStmt", new Map<string | number, CBORType>()],
     ["authData", new Uint8Array(authData)],
   ])));
   return {

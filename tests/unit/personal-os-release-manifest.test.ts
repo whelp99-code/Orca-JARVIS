@@ -90,6 +90,28 @@ describe("personal-OS release manifest", () => {
     })).toThrow(PersonalOsError);
   });
 
+  it("seals a relative symlink that remains inside the release root", () => {
+    const root = stage();
+    symlinkSync("dist/src/cli.js", join(root, "cli-link"));
+
+    const manifest = buildReleaseManifest({
+      root,
+      artifact: "jarvis-authority",
+      source: SOURCE,
+      build: {
+        source_date_epoch: 0,
+        builder_command: "personal-os-rehearsal",
+        offline_cache_digest: "e".repeat(64),
+        lifecycle_command_digests: ["f".repeat(64)],
+        reproducibility_receipt: "g".repeat(64),
+      },
+    });
+
+    expect(manifest.entries).toContainEqual(expect.objectContaining({
+      path: "cli-link", type: "symlink", target: "dist/src/cli.js", sha256: null,
+    }));
+  });
+
   it("writes a sidecar that hashes the manifest bytes and keeps payload identity stable", () => {
     // Given
     const root = stage();

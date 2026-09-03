@@ -5,6 +5,7 @@ import { BoundSocket } from "node:net";
 import { createPhoneGatewaySessionStore } from "./dashboard/phone-session.js";
 import {
   LOOPBACK,
+  PHONE_GATEWAY_PORT,
   PHONE_ERROR_CODES,
   PhoneGatewayError,
   type PhoneErrorCode,
@@ -31,7 +32,7 @@ export function createPhoneGatewayServer(options: {
   readonly audit?: (line: string) => void;
 }): PhoneGatewayServer {
   if (options.host !== LOOPBACK) throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
-  if (options.port !== 0 && options.port !== 4174) throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
+  if (options.port !== 0 && options.port !== PHONE_GATEWAY_PORT) throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
   const upstreamUrl = parseUpstream(options.upstream);
   if (upstreamUrl === undefined) throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
   const staticRoot = realpathSync(options.staticRoot);

@@ -1,4 +1,15 @@
-export function electronMainSource() {
+const NATIVE_NOTIFICATION_ADAPTER = String.raw`protocol.createElectronNotificationAdapter(Notification, value => {
+    process.stdout.write("[REDACTED]\n"); void openLink(value);
+  })`;
+const TASK33_NOTIFICATION_ADAPTER = String.raw`/* TASK33_OBSERVED_NOTIFICATION_ADAPTER */ ({
+    isSupported: () => true,
+    show: async ({ signal }) => {
+      if (signal.aborted) throw new protocol.ElectronNotificationError("NOTIFICATION_SHOW_FAILED");
+      return "shown";
+    },
+  })`;
+
+function renderElectronMainSource(notificationAdapterSource) {
   return String.raw`const { app, BrowserWindow, Notification, net } = require("electron");
 const config = require("./client-config.json");
 if (process.argv.includes("--help")) {
@@ -114,9 +125,7 @@ async function createWindow() {
     }, onError: code => process.stderr.write(code + "\n") });
   const protocol = await import("./electron-notification-client.mjs");
   const metrics = { claims: 0, shows: 0, settles: 0 };
-  const nativeAdapter = protocol.createElectronNotificationAdapter(Notification, value => {
-    process.stdout.write("TASK33_NATIVE_NOTIFICATION_CLICK\n"); void openLink(value);
-  });
+  const nativeAdapter = ${notificationAdapterSource};
   observe("TASK33_OBSERVE_ADAPTER");
   const adapter = { isSupported: nativeAdapter.isSupported, show: async input => {
     const result = await nativeAdapter.show(input); metrics.shows += 1; observe("TASK33_OBSERVE_SHOW"); return result;
@@ -133,4 +142,12 @@ if (lock) app.whenReady().then(createWindow).catch(() => { process.stderr.write(
 app.on("activate", () => { if (BrowserWindow.getAllWindows().length === 0) void createWindow(); });
 app.on("window-all-closed", () => { client?.close(); if (process.platform !== "darwin") app.quit(); });
 `;
+}
+
+export function electronMainSource() {
+  return renderElectronMainSource(NATIVE_NOTIFICATION_ADAPTER);
+}
+
+export function task33ElectronMainSource() {
+  return renderElectronMainSource(TASK33_NOTIFICATION_ADAPTER);
 }

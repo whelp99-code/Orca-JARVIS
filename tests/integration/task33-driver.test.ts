@@ -8,9 +8,10 @@ describe("Task33 checked-in driver", () => {
   it("runs malformed second process through single-instance handling with measured zero effects", async () => {
     // Given
     const script = join(process.cwd(), "scripts", "task33-notification-driver.mjs");
-    const child = process.env.DISPLAY === undefined
-      ? spawn("xvfb-run", ["-a", process.execPath, script], { stdio: ["ignore", "pipe", "pipe"] })
-      : spawn(process.execPath, [script], { stdio: ["ignore", "pipe", "pipe"] });
+    const display = process.env.DISPLAY?.trim();
+    const child = display
+      ? spawn(process.execPath, [script], { stdio: ["ignore", "pipe", "pipe"], env: { ...process.env, DISPLAY: display } })
+      : spawn("xvfb-run", ["-a", process.execPath, script], { stdio: ["ignore", "pipe", "pipe"] });
     let output = ""; child.stdout.on("data", chunk => { output += chunk.toString("utf8"); });
     child.stderr.on("data", chunk => { output += chunk.toString("utf8"); });
     // When
@@ -25,6 +26,7 @@ describe("Task33 checked-in driver", () => {
     const source = readFileSync(join(process.cwd(), "scripts", "task33-notification-driver.mjs"), "utf8");
     // Then
     expect(source).toContain("createDashboardServer");
+    expect(source).toContain("packageTask33ElectronApp");
     expect(source).not.toContain("NotificationDeliveryStore");
     expect(source).toContain("claims === 2");
     expect(source).toContain("shows === 1");

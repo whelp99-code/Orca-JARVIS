@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
-import { join, relative, sep } from "node:path";
+import { lstatSync, mkdirSync, readdirSync, readFileSync, readlinkSync, writeFileSync } from "node:fs";
+import { dirname, isAbsolute, join, normalize, relative, sep } from "node:path";
 import { canonicalize } from "./canonical.js";
 import { PersonalOsError } from "./personal-os-errors.js";
 import { assertIsolatedRoot } from "./personal-os-protected-paths.js";
@@ -68,7 +68,13 @@ function walk(root: string, dir: string, entries: ManifestEntry[]): void {
       continue;
     }
     if (stat.isSymbolicLink()) {
-      throw new PersonalOsError("E_UNSAFE_SYMLINK");
+      const target = readlinkSync(full);
+      const normalized = normalize(join(dirname(rel), target));
+      if (isAbsolute(target) || normalized === ".." || normalized.startsWith(`..${sep}`)) {
+        throw new PersonalOsError("E_UNSAFE_SYMLINK");
+      }
+      entries.push({ path: rel, type: "symlink", mode, size: Buffer.byteLength(target), sha256: null, target });
+      continue;
     }
     if (!stat.isFile()) throw new PersonalOsError("E_STAGE_INVALID");
     const sha256 = createHash("sha256").update(readFileSync(full)).digest("hex");

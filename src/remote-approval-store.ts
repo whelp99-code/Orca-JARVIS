@@ -51,14 +51,28 @@ export type PrincipalRow = {
   readonly state: string;
 };
 
+type QuarantineCounts = {
+  remote_principals_count: number; webauthn_credentials_count: number;
+  webauthn_challenges_count: number; webauthn_assertions_count: number;
+};
+type TranslationRow = {
+  translation_id: string; assertion_id: string; challenge_id: string; request_id: string;
+  receipt_id: string; binding_digest: string; translated_at: string;
+};
+type CounterSignalRow = {
+  credential_digest: string; challenge_id: string; assertion_digest: string | null;
+  stored_count: number; returned_count: number; reason: string; observed_at: string;
+};
+
 export class RemoteApprovalStore {
   constructor(private readonly authority: AuthorityDb) {}
 
   get db() { return this.authority.db; }
 
-  quarantineCounts(): { remote_principals_count: number; webauthn_credentials_count: number; webauthn_challenges_count: number; webauthn_assertions_count: number } {
+  quarantineCounts(): QuarantineCounts {
     return this.db.prepare(
-      "SELECT remote_principals_count, webauthn_credentials_count, webauthn_challenges_count, webauthn_assertions_count FROM remote_auth_legacy_quarantine_v2 WHERE singleton=1",
+      "SELECT remote_principals_count, webauthn_credentials_count, webauthn_challenges_count, webauthn_assertions_count FROM " +
+        "remote_auth_legacy_quarantine_v2 WHERE singleton=1",
     ).get() as { remote_principals_count: number; webauthn_credentials_count: number; webauthn_challenges_count: number; webauthn_assertions_count: number };
   }
 
@@ -106,7 +120,8 @@ export class RemoteApprovalStore {
 
   activateCredential(id: string, requestId: string, receiptId: string, at: string): void {
     const changed = this.db.prepare(
-      "UPDATE webauthn_credentials_v2 SET state='active',activation_request_id=?,activation_receipt_id=?,activated_at=? WHERE credential_id=? AND state='pending'",
+      "UPDATE webauthn_credentials_v2 SET state='active',activation_request_id=?,activation_receipt_id=?,activated_at=? WHERE " +
+        "credential_id=? AND state='pending'",
     ).run(requestId, receiptId, at, id);
     if (changed.changes !== 1) throw new RemoteApprovalError(REMOTE_ERROR_CODES.REMOTE_APPROVAL_NOT_APPLICABLE, "activate");
   }
@@ -135,7 +150,8 @@ export class RemoteApprovalStore {
 
   liveChallenge(requestId: string, decision: string, session: string): ChallengeRow | undefined {
     return this.db.prepare(
-      "SELECT * FROM webauthn_approval_challenges_v2 WHERE request_id=? AND decision=? AND gateway_session_digest=? AND state IN ('issued','verifying')",
+      "SELECT * FROM webauthn_approval_challenges_v2 WHERE request_id=? AND decision=? AND gateway_session_digest=? AND state IN " +
+        "('issued','verifying')",
     ).get(requestId, decision, session) as ChallengeRow | undefined;
   }
 
@@ -146,10 +162,12 @@ export class RemoteApprovalStore {
 
   expireChallenges(now: string): void {
     this.db.prepare(
-      "UPDATE webauthn_approval_challenges_v2 SET state='expired',terminal_reason='expired' WHERE state IN ('issued','verifying') AND julianday(expires_at)<=julianday(?)",
+      "UPDATE webauthn_approval_challenges_v2 SET state='expired',terminal_reason='expired' WHERE state IN ('issued','verifying') " +
+        "AND julianday(expires_at)<=julianday(?)",
     ).run(now);
     this.db.prepare(
-      "UPDATE webauthn_approval_challenges_v2 SET state='rejected',terminal_reason='reservation_expired' WHERE state='verifying' AND reservation_expires_at IS NOT NULL AND julianday(reservation_expires_at)<=julianday(?)",
+      "UPDATE webauthn_approval_challenges_v2 SET state='rejected',terminal_reason='reservation_expired' WHERE state='verifying' " +
+        "AND reservation_expires_at IS NOT NULL AND julianday(reservation_expires_at)<=julianday(?)",
     ).run(now);
   }
 
@@ -181,7 +199,8 @@ export class RemoteApprovalStore {
 
   reserveChallenge(id: string, reservedAt: string, reservationExpires: string): void {
     const changed = this.db.prepare(
-      "UPDATE webauthn_approval_challenges_v2 SET state='verifying',attempts=1,reserved_at=?,reservation_expires_at=? WHERE challenge_id=? AND state='issued'",
+      "UPDATE webauthn_approval_challenges_v2 SET state='verifying',attempts=1,reserved_at=?,reservation_expires_at=? WHERE " +
+        "challenge_id=? AND state='issued'",
     ).run(reservedAt, reservationExpires, id);
     if (changed.changes !== 1) throw new RemoteApprovalError(REMOTE_ERROR_CODES.REMOTE_APPROVAL_NOT_APPLICABLE, "reserve");
   }
@@ -212,16 +231,22 @@ export class RemoteApprovalStore {
     );
   }
 
-  insertTranslation(row: { translation_id: string; assertion_id: string; challenge_id: string; request_id: string; receipt_id: string; binding_digest: string; translated_at: string }): void {
+  insertTranslation(row: TranslationRow): void {
     this.db.prepare(
-      "INSERT INTO remote_approval_translations_v2(translation_id,assertion_id,challenge_id,request_id,receipt_id,binding_digest,translated_at) VALUES(?,?,?,?,?,?,?)",
+      "INSERT INTO remote_approval_translations_v2(translation_id,assertion_id,challenge_id,request_id,receipt_id,binding_digest,translated_at) " +
+        "VALUES(?,?,?,?,?,?,?)",
     ).run(row.translation_id, row.assertion_id, row.challenge_id, row.request_id, row.receipt_id, row.binding_digest, row.translated_at);
   }
 
-  insertCounterSignal(row: { credential_digest: string; challenge_id: string; assertion_digest: string | null; stored_count: number; returned_count: number; reason: string; observed_at: string }): void {
+  insertCounterSignal(row: CounterSignalRow): void {
     this.db.prepare(
-      "INSERT INTO remote_auth_counter_signals_v2(signal_id,credential_digest,challenge_id,assertion_digest,stored_count,returned_count,reason,observed_at) VALUES(?,?,?,?,?,?,?,?)",
-    ).run(`sig:${sha256Prefixed(row.challenge_id + row.reason).slice(7, 23)}`, row.credential_digest, row.challenge_id, row.assertion_digest, row.stored_count, row.returned_count, row.reason, row.observed_at);
+      "INSERT INTO remote_auth_counter_signals_v2(signal_id,credential_digest,challenge_id,assertion_digest,stored_count,returned_count,reason,observed_at) " +
+        "VALUES(?,?,?,?,?,?,?,?)",
+    ).run(
+      `sig:${sha256Prefixed(row.challenge_id + row.reason).slice(7, 23)}`,
+      row.credential_digest, row.challenge_id, row.assertion_digest,
+      row.stored_count, row.returned_count, row.reason, row.observed_at,
+    );
   }
 
   pendingRequest(requestId: string): Record<string, unknown> | undefined {

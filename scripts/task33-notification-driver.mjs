@@ -7,7 +7,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuthorityDb } from "../dist/src/index.js";
 import { createDashboardServer } from "../dist/src/dashboard/server.js";
-import { packageElectronApp } from "./lib/package-electron-app.mjs";
+import { packageTask33ElectronApp } from "./lib/package-electron-app.mjs";
 import { parseElectronClientConfig } from "./lib/electron-shell.mjs";
 
 const NOW = "2026-08-28T12:00:00.000Z"; const EXPIRES = "2026-08-28T13:00:00.000Z";
@@ -22,11 +22,42 @@ function launchPackage(executable, args, userData) {
   child.stderr.on("data", chunk => { stderr += chunk.toString("utf8"); events.emit("output"); });
   const exited = once(child, "exit");
   const waitFor = async (expected, streamName = "stdout") => {
-    const signal = AbortSignal.timeout(20_000); const value = () => streamName === "stdout" ? stdout : stderr;
-    if (!value().includes(expected)) await once(events, "output", { signal });
-    while (!value().includes(expected)) await once(events, "output", { signal });
+    const value = () => streamName === "stdout" ? stdout : stderr;
+    const deadline = Date.now() + 20_000;
+    try {
+      while (!value().includes(expected)) {
+        const remaining = deadline - Date.now();
+        if (remaining <= 0) throw new Error("TASK33_WAIT_TIMEOUT");
+        await new Promise((resolve, reject) => {
+          let settled = false;
+          const finish = (callback, result) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            events.off("output", onOutput);
+            child.off("exit", onExit);
+            callback(result);
+          };
+          const onOutput = () => { finish(resolve); };
+          const onExit = () => { finish(reject, new Error("TASK33_CHILD_EXITED")); };
+          const timer = setTimeout(() => { finish(reject, new Error("TASK33_WAIT_TIMEOUT")); }, remaining);
+          events.once("output", onOutput);
+          child.once("exit", onExit);
+        });
+      }
+    } catch (error) {
+      const compact = text => text.slice(-4_096).replaceAll("\n", "\\n");
+      throw new Error(`TASK33_WAIT_FAILED expected=${expected} stream=${streamName} exit=${String(child.exitCode)}`
+        + ` signal=${String(child.signalCode)} stdout=${compact(stdout)} stderr=${compact(stderr)}`, { cause: error });
+    }
   };
-  return { child, exited, waitFor, stdout: () => stdout, stderr: () => stderr };
+  const stop = async () => {
+    if (child.exitCode !== null || child.signalCode !== null) { await exited; return; }
+    child.kill("SIGTERM");
+    const graceful = await Promise.race([exited.then(() => true), new Promise(resolve => setTimeout(() => resolve(false), 2_000))]);
+    if (!graceful && child.exitCode === null && child.signalCode === null) { child.kill("SIGKILL"); await exited; }
+  };
+  return { child, exited, waitFor, stop, stdout: () => stdout, stderr: () => stderr };
 }
 async function runPackage(executable, options) {
   const userData = join(root, options.expected.replaceAll(" ", "-"));
@@ -35,7 +66,7 @@ async function runPackage(executable, options) {
     await launched.waitFor(options.expected, options.streamName);
     return options.streamName === "stdout" ? launched.stdout() : launched.stderr();
   } finally {
-    if (launched.child.exitCode === null) { launched.child.kill("SIGTERM"); await launched.exited; }
+    await launched.stop();
   }
 }
 function markerCount(output, marker) { return output.split(marker).length - 1; }
@@ -110,7 +141,7 @@ try {
   const proxyAddress = proxy.address();
   if (proxyAddress === null || typeof proxyAddress === "string") throw new TypeError("proxy address required");
   const proxyUrl = `http://127.0.0.1:${proxyAddress.port}`;
-  const packaged = packageElectronApp(root, parseElectronClientConfig({ JARVIS_AUTHORITY_URL: proxyUrl }));
+  const packaged = packageTask33ElectronApp(root, parseElectronClientConfig({ JARVIS_AUTHORITY_URL: proxyUrl }));
   const main = readFileSync(join(packaged.appResources, "app", "main.cjs"), "utf8");
   if (!main.includes("requestSingleInstanceLock") || !main.includes("/api/v1/notification-deliveries/claim")) {
     throw new TypeError("package contract invalid");
@@ -169,6 +200,6 @@ try {
     + ` settle=${malformedDelta.settle}\n`);
   process.stdout.write("TASK33_NOTIFICATION_DRIVER_PASS\n");
 } finally {
-  if (firstPackage?.child.exitCode === null) { firstPackage.child.kill("SIGTERM"); await firstPackage.exited; }
+  if (firstPackage) await firstPackage.stop();
   proxy?.closeAllConnections(); proxy?.close(); server?.close(); db.close(); rmSync(root, { recursive: true, force: true });
 }

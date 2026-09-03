@@ -1,3 +1,5 @@
+import { dirname } from "node:path";
+
 export const NODE_BIN = "/home/jm/.nvm/versions/node/v24.19.0/bin/node" as const;
 
 export const UNIT_INVENTORY = {
@@ -38,8 +40,6 @@ export const PRODUCTION_ROOTS: RenderRoots = {
   providerState: "/home/jm/.local/state/second-brain",
 };
 
-const SECOND_BRAIN_CLI = "/home/jm/.local/state/second-brain/app/current/bin/sb" as const;
-
 export type GeneratedUnitId =
   | "jm-jarvis.service"
   | "jm-jarvis-backup.service"
@@ -78,10 +78,11 @@ function jarvisService(roots: RenderRoots): string {
       `WorkingDirectory=${roots.authorityCurrent}`,
       `Environment=PATH=/home/jm/.nvm/versions/node/v24.19.0/bin:/home/jm/.local/bin:/usr/bin:/bin`,
       "Environment=NODE_ENV=production",
+      `ExecStartPre=${NODE_BIN} ${roots.authorityCurrent}/dist/src/cli.js db migrate --db ${roots.jarvisDb}`,
       `ExecStart=${NODE_BIN} ${roots.authorityCurrent}/dist/src/cli.js service run --db ${roots.jarvisDb}`,
       "Restart=always",
       "RestartSec=5",
-      `ReadWritePaths=${roots.authorityCurrent} ${roots.jarvisDb} ${roots.backupRoot}`,
+      `ReadWritePaths=${dirname(roots.jarvisDb)}`,
       "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
       "IPAddressDeny=any",
       "IPAddressAllow=localhost",
@@ -103,7 +104,7 @@ function backupService(roots: RenderRoots): string {
       "Type=oneshot",
       `WorkingDirectory=${roots.authorityCurrent}`,
       `ExecStart=${NODE_BIN} ${roots.authorityCurrent}/dist/src/personal-os-backup-cli.js --db ${roots.jarvisDb} --backup-root ${roots.backupRoot}`,
-      `ReadWritePaths=${roots.jarvisDb} ${roots.backupRoot}`,
+      `ReadWritePaths=${dirname(roots.jarvisDb)}`,
     ]),
     "",
   ].join("\n");
@@ -137,7 +138,7 @@ function providerBackupService(roots: RenderRoots): string {
     serviceBlock([
       "Type=oneshot",
       `WorkingDirectory=${roots.providerCurrent}`,
-      `ExecStart=${SECOND_BRAIN_CLI} backup --once --state ${roots.providerState}`,
+      `ExecStart=${roots.providerCurrent}/bin/sb backup --once --state ${roots.providerState}`,
       `ReadWritePaths=${roots.providerState}`,
     ]),
     "",
@@ -171,7 +172,7 @@ function requestsService(roots: RenderRoots): string {
     serviceBlock([
       "Type=oneshot",
       `WorkingDirectory=${roots.providerCurrent}`,
-      `ExecStart=${SECOND_BRAIN_CLI} apply-requests --once`,
+      `ExecStart=${roots.providerCurrent}/bin/sb apply-requests --once`,
       `ReadWritePaths=${roots.providerState}`,
     ]),
     "",

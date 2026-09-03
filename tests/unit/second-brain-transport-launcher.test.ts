@@ -57,10 +57,10 @@ const transports: Array<{ close(): Promise<void> }> = []; afterEach(async () => 
       // Then: a fresh child completes initialize and tools/list before serving the call.
       await expect(transport.call("sb_search", { query: "second" })).resolves.toMatchObject({ kind: "data" }); expect(launches).toBe(2);
       expect(transport.diagnostics().filter((item) => item.code === "SECOND_BRAIN_STARTED")).toHaveLength(1); } });
-  it("loads only the digest-verified shipped contract independent of cwd", async () => { const cwd = process.cwd(); process.chdir(tmpdir()); try {
-      const transport = createSecondBrainTransport(); transports.push(transport);
+  it("loads only the digest-verified shipped contract independent of cwd", async () => { const cwd = process.cwd(); const missingRoot = mkdtempSync(join(tmpdir(), "sb-missing-launcher-")); process.chdir(tmpdir()); try {
+      const transport = createSecondBrainTransport({ launcherPath: join(missingRoot, "second-brain-mcp") }); transports.push(transport);
       await expect(transport.call("sb_search", { query: "x" })).rejects.toMatchObject({ code: "SECOND_BRAIN_DISCOVERY_FAILED" }); } finally {
-      process.chdir(cwd); } const root = mkdtempSync(join(tmpdir(), "second-brain-contract-tamper-")); const contract = join(root, "contract.json");
+      process.chdir(cwd); rmSync(missingRoot, { recursive: true, force: true }); } const root = mkdtempSync(join(tmpdir(), "second-brain-contract-tamper-")); const contract = join(root, "contract.json");
     copyFileSync("contracts/second-brain-mcp-v1.json", contract); copyFileSync("contracts/second-brain-mcp-v1.json.sha256", `${contract}.sha256`);
     const bytes = readFileSync(contract); bytes[0] = bytes[0] === 123 ? 91 : 123; writeFileSync(contract, bytes);
     expect(() => createSecondBrainTransport({ contractPath: contract })).toThrowError("SECOND_BRAIN_CONTRACT_MISMATCH");

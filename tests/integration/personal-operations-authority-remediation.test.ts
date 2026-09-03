@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { AuthorityDb } from "../../src/index.js";
-import { closePersonalDb, digest, insertApproval, personalDb, T0, T1, T2, T3, T5, type ApprovalFixture, type StoredApproval } from "./personal-operations-test-helpers.js";
+import { closePersonalDb, digest, insertApproval, legacyRemoteAuthDb as personalDb, T0, T1, T2, T3, T5, type ApprovalFixture, type StoredApproval } from "./personal-operations-test-helpers.js";
 
 const deletionIdentity = {
   deletionId: "del:bound",

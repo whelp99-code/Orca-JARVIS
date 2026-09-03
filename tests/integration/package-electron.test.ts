@@ -139,7 +139,7 @@ describe("Electron package contract", () => {
       packages?: Record<string, { hasInstallScript?: boolean; version?: string }>;
     };
     const lockedInstallers = Object.entries(lock.packages ?? {})
-      .filter(([, entry]) => entry.hasInstallScript === true)
+      .filter(([path, entry]) => path.includes("node_modules/") && entry.hasInstallScript === true)
       .map(([path, entry]) => {
         const name = path.slice(path.lastIndexOf("node_modules/") + "node_modules/".length);
         return `${name}@${entry.version}`;

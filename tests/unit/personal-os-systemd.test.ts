@@ -16,6 +16,9 @@ describe("personal-OS systemd renderer", () => {
     expect(unit).toContain("WorkingDirectory=/home/jm/.local/state/orca-jarvis/authority/current");
     expect(unit).toContain("/home/jm/.nvm/versions/node/v24.19.0/bin/node");
     expect(unit).toContain("dist/src/cli.js service run");
+    expect(unit).toContain("dist/src/cli.js db migrate --db /home/jm/.local/state/orca-jarvis/jarvis.sqlite");
+    expect(unit).toContain("ReadWritePaths=/home/jm/.local/state/orca-jarvis");
+    expect(unit).not.toContain("ReadWritePaths=/home/jm/.local/state/orca-jarvis/jarvis.sqlite");
     expect(unit).toContain("UMask=0077");
     expect(unit).toContain("NoNewPrivileges=true");
     expect(unit).toContain("IPAddressAllow=localhost");
@@ -43,6 +46,7 @@ describe("personal-OS systemd renderer", () => {
     expect(fixture).not.toContain("/home/jm/.local/state/orca-jarvis");
     expect(production).toContain("/home/jm/.local/state/orca-jarvis/jarvis.sqlite");
     expect(production).toContain("/home/jm/.local/state/orca-jarvis/backups");
+    expect(production).toContain("ReadWritePaths=/home/jm/.local/state/orca-jarvis");
     expect(production).not.toContain("/home/jm/.local/state/jarvis-rehearsal");
     expect(production).not.toContain("/dev/shm/task36-run");
     expect(production).toContain("UMask=0077");

@@ -9,13 +9,13 @@ describe("phone gateway systemd and serve artifacts", () => {
   it("pins a loopback Node 24 gateway behind the dashboard unit", () => {
     expect(existsSync(UNIT), `missing ${UNIT}`).toBe(true);
     const text = readFileSync(UNIT, "utf8");
-    expect(text).toContain("Description=JM JARVIS phone gateway (tailnet Serve backend, loopback 4174)");
+    expect(text).toContain("Description=JM JARVIS phone gateway (tailnet Serve backend, loopback 4176)");
     expect(text).toContain("After=jm-jarvis-dashboard.service");
     expect(text).toContain("Requires=jm-jarvis-dashboard.service");
     expect(text).toContain("/home/jm/.nvm/versions/node/v24.19.0/bin/node");
     expect(text).toContain("dist/src/phone-gateway-main.js");
     expect(text).toContain("--host 127.0.0.1");
-    expect(text).toContain("--port 4174");
+    expect(text).toContain("--port 4176");
     expect(text).toContain("--upstream http://127.0.0.1:4173");
     expect(text).toContain("EnvironmentFile=%h/.config/orca-jarvis/phone-gateway.env");
     expect(text).toContain("--env-file %h/.config/orca-jarvis/phone-gateway.env");
@@ -61,10 +61,10 @@ describe("phone gateway systemd and serve artifacts", () => {
       schema_version: 1,
       exposure: "tailnet-only",
       protocol: "https",
-      port: 443,
-      target: "http://127.0.0.1:4174",
+      port: 8444,
+      target: "http://127.0.0.1:4176",
       funnel: false,
-      command_argv: ["tailscale", "serve", "--https=443", "http://127.0.0.1:4174"],
+      command_argv: ["tailscale", "serve", "--bg", "--https=8444", "http://127.0.0.1:4176"],
     });
     expect(parsed.funnel).toBe(false);
     expect(parsed.command_argv.join(" ").toLowerCase()).not.toContain("funnel");

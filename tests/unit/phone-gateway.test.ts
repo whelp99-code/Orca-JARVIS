@@ -31,6 +31,15 @@ describe("phone gateway config", () => {
     expect(parsed.sessionKey.byteLength).toBe(32);
   });
 
+  it("accepts the collision-free Tailnet HTTPS port and binds Host with the port", () => {
+    const files = makePhoneHome();
+    writeFileSync(files.envFile, `JARVIS_PHONE_PUBLIC_ORIGIN=https://${FIXTURE_HOST}:8444\nJARVIS_PHONE_OWNER_LOGIN=${FIXTURE_LOGIN}\nJARVIS_PHONE_SESSION_KEY_FILE=${files.keyFile}\n`);
+    chmodSync(files.envFile, 0o600);
+    const parsed = parsePhoneGatewayConfig({ home: files.home, envFile: files.envFile, uid: processUid() });
+    expect(parsed.publicOrigin).toBe(`https://${FIXTURE_HOST}:8444`);
+    expect(parsed.publicHost).toBe(`${FIXTURE_HOST}:8444`);
+  });
+
   it.each([
     ["http origin", (files: ReturnType<typeof makePhoneHome>) => {
       writeFileSync(files.envFile, `JARVIS_PHONE_PUBLIC_ORIGIN=http://${FIXTURE_HOST}\nJARVIS_PHONE_OWNER_LOGIN=${FIXTURE_LOGIN}\nJARVIS_PHONE_SESSION_KEY_FILE=${files.keyFile}\n`);
@@ -81,16 +90,16 @@ describe("phone gateway config", () => {
 });
 
 describe("phone gateway CLI bind contract", () => {
-  it("accepts only 127.0.0.1:4174 and the loopback authority upstream", () => {
+  it("accepts only 127.0.0.1:4176 and the loopback authority upstream", () => {
     const parsed = parsePhoneGatewayCli([
-      "--host", "127.0.0.1", "--port", "4174",
+      "--host", "127.0.0.1", "--port", "4176",
       "--upstream", "http://127.0.0.1:4173",
       "--static-root", "/tmp/static",
       "--env-file", "/tmp/phone-gateway.env",
     ]);
     expect(parsed).toEqual({
       host: "127.0.0.1",
-      port: 4174,
+      port: 4176,
       upstream: "http://127.0.0.1:4173",
       staticRoot: "/tmp/static",
       envFile: "/tmp/phone-gateway.env",
@@ -98,10 +107,10 @@ describe("phone gateway CLI bind contract", () => {
   });
 
   it.each([
-    ["0.0.0.0", "4174", "http://127.0.0.1:4173"],
+    ["0.0.0.0", "4176", "http://127.0.0.1:4173"],
     ["127.0.0.1", "4173", "http://127.0.0.1:4173"],
-    ["127.0.0.1", "4174", "http://127.0.0.1:80"],
-    ["::1", "4174", "http://127.0.0.1:4173"],
+    ["127.0.0.1", "4176", "http://127.0.0.1:80"],
+    ["::1", "4176", "http://127.0.0.1:4173"],
   ])("rejects host=%s port=%s upstream=%s", (host, port, upstream) => {
     expect(() => parsePhoneGatewayCli([
       "--host", host, "--port", port, "--upstream", upstream,

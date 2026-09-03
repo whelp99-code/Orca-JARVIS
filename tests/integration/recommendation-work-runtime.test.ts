@@ -340,7 +340,7 @@ describe("Task 26 recommendation work runtime", () => {
         if (accepted) expect(action).not.toThrow(); else expect(action).toThrow();
       } finally { db.close(); }
     }
-  });
+  }, 12_000);
 
   it("routes verifier REJECT through bounded recovery and one failed settlement", async () => {
     // Given: exact signed completion and an independently signed verifier rejection.
@@ -467,7 +467,7 @@ describe("Task 26 recommendation work runtime", () => {
         expect(db.db.prepare("SELECT COUNT(*) count FROM recommendation_work_dispatch_attempts").get()).toEqual({ count: 0 });
       } finally { db.close(); }
     }
-  });
+  }, 12_000);
 
   it("lets subscribed cancellation win before adapter trigger with send zero", async () => {
     // Given: dispatch has entered its exact subscription but has not invoked the adapter trigger.

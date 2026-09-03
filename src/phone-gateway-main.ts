@@ -4,6 +4,7 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import {
   createPhoneGatewayServer,
+  PHONE_GATEWAY_PORT,
   parsePhoneGatewayConfig,
   PhoneGatewayError,
   PHONE_ERROR_CODES,
@@ -11,7 +12,6 @@ import {
 } from "./phone-gateway.js";
 
 const LOOPBACK = "127.0.0.1" as const;
-const GATEWAY_PORT = 4174;
 const UPSTREAM = "http://127.0.0.1:4173" as const;
 
 export type PhoneGatewayCliOptions = {
@@ -35,7 +35,7 @@ export function parsePhoneGatewayCli(argv: readonly string[]): PhoneGatewayCliOp
     strict: true,
   });
   if (values.host !== LOOPBACK) throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
-  if (values.port !== String(GATEWAY_PORT)) throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
+  if (values.port !== String(PHONE_GATEWAY_PORT)) throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
   if (values.upstream !== UPSTREAM) throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
   if (typeof values["static-root"] !== "string" || values["static-root"].length === 0) {
     throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
@@ -45,7 +45,7 @@ export function parsePhoneGatewayCli(argv: readonly string[]): PhoneGatewayCliOp
   }
   return {
     host: LOOPBACK,
-    port: GATEWAY_PORT,
+    port: PHONE_GATEWAY_PORT,
     upstream: UPSTREAM,
     staticRoot: resolve(values["static-root"]),
     envFile: resolve(values["env-file"]),

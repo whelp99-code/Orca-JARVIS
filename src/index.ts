@@ -238,17 +238,10 @@ export {
 export { buildCurrentState, type CurrentStateProjection } from "./recommendation-state-projection.js";
 export { ApprovedCommandExecutor, type ApprovedExecutionResult } from "./approved-executor.js";
 export {
-	DEFAULT_AGENTOPS_LOOP,
-	type LoopNodeKind,
-	type LoopNode,
-	type LoopSpec,
-	type WorkflowRunInput,
-	type WorkflowAdvanceInput,
-	type StoredWorkflowRun,
+	DEFAULT_AGENTOPS_LOOP, type LoopNodeKind, type LoopNode, type LoopSpec,
+	type WorkflowRunInput, type WorkflowAdvanceInput, type StoredWorkflowRun,
 } from "./loopgraph.js";
 export { BUILTIN_RUNBOOKS, type RunbookSpec, type RunbookResult, type HostOperations } from "./runbook.js";
 export { type MicroLoopName, type MicroLoopHandler, type MicroLoopOutcome } from "./microloops.js";
-export { PersonalOsRuntime } from "./personal-os-runtime.js";
-export { evaluateSlo, SLO_CATALOG } from "./personal-os-slo.js";
-export { decideRollback, migrationVectorDigest } from "./personal-os-compatibility.js";
-export { runPersonalOsRehearsal } from "./personal-os-rehearsal.js";
+export { PersonalOsRuntime } from "./personal-os-runtime.js"; export { evaluateSlo, SLO_CATALOG } from "./personal-os-slo.js";
+export { decideRollback, migrationVectorDigest } from "./personal-os-compatibility.js"; export { runPersonalOsRehearsal } from "./personal-os-rehearsal.js";

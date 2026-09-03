@@ -21,3 +21,9 @@ playwright-report/
 test-results/
 blob-report/
 .tmp-e2e/
+
+# Local verification and agent work products
+.runtime-tmp/
+.shipping/
+.omo/drafts/
+.omo/senpi-task/

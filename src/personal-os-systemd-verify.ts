@@ -123,9 +123,10 @@ export function runNativeSystemdVerify(input: {
     const productionPath = join(input.worktree, "deploy", id);
     const productionText = readFileSync(productionPath, "utf8");
     production_attempt_paths += countMarkers(productionText, ATTEMPT_MARKERS);
-    const rendered = isGeneratedUnitId(id)
+    const generated = isGeneratedUnitId(id)
       ? renderSystemdUnit({ id, mode: "fixture", roots: fixtureRoots })
       : fixtureText(productionText, fixturePathRoot);
+    const rendered = generated.replaceAll(`${fixtureRoots.providerCurrent}/bin/sb`, "/bin/true");
     fixture_production_paths += countMarkers(rendered, PRODUCTION_MARKERS);
     const fixturePath = join(unitsDir, id);
     writeFileSync(fixturePath, rendered);

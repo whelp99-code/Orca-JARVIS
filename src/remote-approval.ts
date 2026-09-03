@@ -168,7 +168,12 @@ export class RemoteApprovalService {
     };
   }
 
-  async verify(challengeId: string, rawBody: Buffer, ingress: RemoteIngressContextV1, now: Date): Promise<{ receipt_id: string; request_id: string; decision: "approve" | "reject" }> {
+  async verify(
+    challengeId: string,
+    rawBody: Buffer,
+    ingress: RemoteIngressContextV1,
+    now: Date,
+  ): Promise<{ receipt_id: string; request_id: string; decision: "approve" | "reject" }> {
     this.requireReady(now);
     this.requireIngress(ingress, `/api/v1/remote-approvals/${challengeId}/verify`, "POST");
     const at = this.nowIso(now);

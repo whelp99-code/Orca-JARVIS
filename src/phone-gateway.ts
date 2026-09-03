@@ -1,7 +1,11 @@
 export {
   PHONE_CORE_ROUTES,
   PHONE_ERROR_CODES,
+  PHONE_GATEWAY_PORT,
+  PHONE_GATEWAY_TARGET,
   PHONE_GATEWAY_LIMITS,
+  PHONE_PUBLIC_HTTPS_PORT,
+  PHONE_SERVE_HTTPS_FLAG,
   PhoneGatewayError,
   type PhoneErrorCode,
   type PhoneGatewayConfig,

@@ -26,6 +26,30 @@ export async function personalDb(migrationsPath = process.env.PERSONAL_OPERATION
   }
 }
 
+/**
+ * Opens the final pre-v2 remote-auth schema for retained legacy trigger tests.
+ * Migration 056 intentionally quarantines direct writes to these tables;
+ * current v2 behavior is covered by the remote-approval suites.
+ */
+export async function legacyRemoteAuthDb(): Promise<AuthorityDb> {
+  const root = mkdtempSync(join(tmpdir(), "jarvis-legacy-remote-auth-"));
+  const directory = join(root, "migrations");
+  cpSync(join(process.cwd(), "migrations"), directory, { recursive: true });
+  for (const file of readdirSync(directory)) {
+    const prefix = /^(\d{3})_.*\.sql$/.exec(file)?.[1];
+    if (prefix !== undefined && Number(prefix) >= 56) rmSync(join(directory, file));
+  }
+  const db = new AuthorityDb(join(root, "authority.sqlite"), directory);
+  try {
+    await db.migrate();
+    return db;
+  } catch (error) {
+    db.close();
+    rmSync(root, { recursive: true, force: true });
+    throw error;
+  }
+}
+
 export function insertDailyRun(db: AuthorityDb, input: { readonly runId: string; readonly correlation: string; readonly idempotency: string; readonly createdAt?: string; readonly expiresAt?: string; readonly loopDate?: string; readonly state?: string; readonly steps?: readonly { readonly key: string; readonly sequence: number }[] }): void {
   const createdAt = input.createdAt ?? T0;
   const expiresAt = input.expiresAt ?? T5;

@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import type { AuthorityDb } from "../../src/index.js";
-import { closePersonalDb, digest, insertApproval, personalDb, T0, T1, T2, T3, T4, T5 } from "./personal-operations-test-helpers.js";
+import { closePersonalDb, digest, insertApproval, legacyRemoteAuthDb as personalDb, T0, T1, T2, T3, T4, T5 } from "./personal-operations-test-helpers.js";
 
 function enroll(db: AuthorityDb, suffix: string): void {
   const principalId = `rpr:${suffix}`; const publicKeyDigest = `sha256:${createHash("sha256").update(`credential:${suffix}`).digest("hex")}`;

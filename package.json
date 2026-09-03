@@ -17,7 +17,7 @@
     "postinstall": "install-electron",
     "lint": "eslint src tests dashboard e2e playwright.config.ts playwright.remote.config.ts --max-warnings=0",
     "pretest": "npm run build",
-    "test": "vitest run --no-file-parallelism --exclude \"dashboard/**\" --exclude \"e2e/**\" --exclude \".omo/**\" && vitest run --config dashboard/vite.config.ts --no-file-parallelism",
+    "test": "vitest run --no-file-parallelism --exclude \"dashboard/**\" --exclude \"e2e/**\" --exclude \".omo/**\" --exclude \".chatgpt2codex/**\" --exclude \".runtime-tmp/**\" && vitest run --config dashboard/vite.config.ts --no-file-parallelism",
     "acceptance:pre-gjc": "node scripts/pre-gjc-acceptance.mjs",
     "personal-os:eval": "npm run build:backend --silent && node scripts/personal-os-eval.mjs",
     "verify": "npm run runtime:check && npm run lint && npm run typecheck && npm test && npm run acceptance:pre-gjc -- --fixture test/fixtures/pre-gjc-e2e.json --clock 2026-08-09T00:00:00.000Z && npm run build && node scripts/cli-smoke.mjs",
