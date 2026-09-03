@@ -45,7 +45,8 @@ describe("personal-OS systemd renderer", () => {
     expect(fixture).toContain("/dev/shm/task36-run");
     expect(fixture).not.toContain("/home/jm/.local/state/orca-jarvis");
     expect(production).toContain("/home/jm/.local/state/orca-jarvis/jarvis.sqlite");
-    expect(production).toContain("/home/jm/.local/state/orca-jarvis/backups");
+    expect(production).toContain("/home/jm/.local/state/orca-jarvis/backups --production");
+    expect(fixture).not.toContain("--production");
     expect(production).toContain("ReadWritePaths=/home/jm/.local/state/orca-jarvis");
     expect(production).not.toContain("/home/jm/.local/state/jarvis-rehearsal");
     expect(production).not.toContain("/dev/shm/task36-run");

@@ -94,7 +94,10 @@ function jarvisService(roots: RenderRoots): string {
   ].join("\n");
 }
 
-function backupService(roots: RenderRoots): string {
+function backupService(roots: RenderRoots, mode: RenderMode): string {
+  const executable = `${NODE_BIN} ${roots.authorityCurrent}/dist/src/personal-os-backup-cli.js`;
+  const argumentsText = `--db ${roots.jarvisDb} --backup-root ${roots.backupRoot}`;
+  const productionFlag = mode === "production" ? " --production" : "";
   return [
     "[Unit]",
     "Description=JM JARVIS authority online backup",
@@ -103,7 +106,7 @@ function backupService(roots: RenderRoots): string {
     serviceBlock([
       "Type=oneshot",
       `WorkingDirectory=${roots.authorityCurrent}`,
-      `ExecStart=${NODE_BIN} ${roots.authorityCurrent}/dist/src/personal-os-backup-cli.js --db ${roots.jarvisDb} --backup-root ${roots.backupRoot}`,
+      `ExecStart=${executable} ${argumentsText}${productionFlag}`,
       `ReadWritePaths=${dirname(roots.jarvisDb)}`,
     ]),
     "",
@@ -203,7 +206,7 @@ export function renderSystemdUnit(input: {
     case "jm-jarvis.service":
       return jarvisService(input.roots);
     case "jm-jarvis-backup.service":
-      return backupService(input.roots);
+      return backupService(input.roots, input.mode);
     case "jm-jarvis-backup.timer":
       return backupTimer();
     case "jm-second-brain-backup.service":

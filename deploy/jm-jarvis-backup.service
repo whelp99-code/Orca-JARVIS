@@ -4,7 +4,7 @@ Description=JM JARVIS authority online backup
 [Service]
 Type=oneshot
 WorkingDirectory=/home/jm/.local/state/orca-jarvis/authority/current
-ExecStart=/home/jm/.nvm/versions/node/v24.19.0/bin/node /home/jm/.local/state/orca-jarvis/authority/current/dist/src/personal-os-backup-cli.js --db /home/jm/.local/state/orca-jarvis/jarvis.sqlite --backup-root /home/jm/.local/state/orca-jarvis/backups
+ExecStart=/home/jm/.nvm/versions/node/v24.19.0/bin/node /home/jm/.local/state/orca-jarvis/authority/current/dist/src/personal-os-backup-cli.js --db /home/jm/.local/state/orca-jarvis/jarvis.sqlite --backup-root /home/jm/.local/state/orca-jarvis/backups --production
 ReadWritePaths=/home/jm/.local/state/orca-jarvis
 UMask=0077
 NoNewPrivileges=true
