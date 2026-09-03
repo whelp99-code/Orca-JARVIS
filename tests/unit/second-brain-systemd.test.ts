@@ -44,4 +44,23 @@ describe("Second Brain Linux user scheduler", () => {
     expect(text).not.toContain("960f1c65-7f57-47e3-88f5-80bc5964ee7e");
     expect(text).not.toMatch(/password|token|secret/i);
   });
+
+  it("keeps the request executor fail-closed until signing keys are explicitly enabled", () => {
+    const service = parse("deploy/jm-second-brain-requests.service");
+    const path = parse("deploy/jm-second-brain-requests.path");
+
+    expect(service.get("Environment")).toEqual([
+      "SB_CONFIG=/home/jm/.config/second-brain/config.toml",
+    ]);
+    expect(service.get("ExecStart")).toEqual([
+      "/home/jm/.local/state/second-brain/app/current/bin/sb apply-requests --once",
+    ]);
+    expect(path.get("ConditionPathExists")).toEqual([
+      "/home/jm/.config/second-brain/request-executor.enabled",
+    ]);
+    expect(path.get("DirectoryNotEmpty")).toEqual([
+      "/home/jm/.local/state/second-brain/requests/pending",
+    ]);
+    expect(path.has("PathExists")).toBe(false);
+  });
 });

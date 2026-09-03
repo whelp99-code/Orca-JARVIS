@@ -8,6 +8,9 @@ describe("verified Authority release entrypoint", () => {
   it("requires approval, seals the artifact, and atomically changes only the current symlink", () => {
     const source = readFileSync(ENTRYPOINT, "utf8");
     execFileSync("bash", ["-n", ENTRYPOINT]);
+    const cleanup = /cleanup\(\) \{[\s\S]*?\n\}/.exec(source)?.[0];
+    expect(cleanup).toBeDefined();
+    execFileSync("bash", ["-c", `set -euo pipefail\nstage=""\n${cleanup ?? ""}\ncleanup\n`]);
     expect(source).toContain("JARVIS_PRODUCTION_ACTIVATION_APPROVAL");
     expect(source).toContain("JARVIS_AUTHORITY_RUNTIME_ROOT");
     expect(source).toContain("JARVIS_CONTROL_CENTER_RUNTIME_ROOT");

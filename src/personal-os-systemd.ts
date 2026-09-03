@@ -166,7 +166,19 @@ function providerBackupTimer(): string {
   ].join("\n");
 }
 
-function requestsService(roots: RenderRoots): string {
+function requestsConfig(mode: RenderMode, roots: RenderRoots): string {
+  return mode === "production"
+    ? "/home/jm/.config/second-brain/config.toml"
+    : `${roots.providerState}/config.toml`;
+}
+
+function requestsMarker(mode: RenderMode, roots: RenderRoots): string {
+  return mode === "production"
+    ? "/home/jm/.config/second-brain/request-executor.enabled"
+    : `${roots.providerState}/request-executor.enabled`;
+}
+
+function requestsService(roots: RenderRoots, mode: RenderMode): string {
   return [
     "[Unit]",
     "Description=JM Second Brain apply-requests once",
@@ -175,6 +187,7 @@ function requestsService(roots: RenderRoots): string {
     serviceBlock([
       "Type=oneshot",
       `WorkingDirectory=${roots.providerCurrent}`,
+      `Environment=SB_CONFIG=${requestsConfig(mode, roots)}`,
       `ExecStart=${roots.providerCurrent}/bin/sb apply-requests --once`,
       `ReadWritePaths=${roots.providerState}`,
     ]),
@@ -182,13 +195,14 @@ function requestsService(roots: RenderRoots): string {
   ].join("\n");
 }
 
-function requestsPath(roots: RenderRoots): string {
+function requestsPath(roots: RenderRoots, mode: RenderMode): string {
   return [
     "[Unit]",
     "Description=JM Second Brain pending request path",
+    `ConditionPathExists=${requestsMarker(mode, roots)}`,
     "",
     "[Path]",
-    `PathExists=${roots.providerState}/requests/pending`,
+    `DirectoryNotEmpty=${roots.providerState}/requests/pending`,
     "Unit=jm-second-brain-requests.service",
     "",
     "[Install]",
@@ -214,9 +228,9 @@ export function renderSystemdUnit(input: {
     case "jm-second-brain-backup.timer":
       return providerBackupTimer();
     case "jm-second-brain-requests.service":
-      return requestsService(input.roots);
+      return requestsService(input.roots, input.mode);
     case "jm-second-brain-requests.path":
-      return requestsPath(input.roots);
+      return requestsPath(input.roots, input.mode);
     default: {
       const unreachable: never = input.id;
       return unreachable;

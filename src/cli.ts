@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { JarvisError } from "./db.js";
 import { execute } from "./cli-runtime.mjs";
@@ -9,7 +10,18 @@ function output(value: object): void {
   process.stdout.write(`${JSON.stringify({ version: 1, ...value })}\n`);
 }
 
-if (process.argv[1] === fileURLToPath(import.meta.url)) {
+function isDirectRun(): boolean {
+  const entry = process.argv[1];
+  if (entry === undefined) return false;
+  try {
+    return realpathSync(entry) === realpathSync(fileURLToPath(import.meta.url));
+  } catch (error) {
+    if (error instanceof Error) return false;
+    throw error;
+  }
+}
+
+if (isDirectRun()) {
   execute(process.argv.slice(2))
     .then(output)
     .catch((error: unknown) => {

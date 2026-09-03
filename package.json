@@ -29,6 +29,7 @@
     "build:fixtures": "npm run build:backend",
     "test:e2e": "npm run build && playwright test e2e/control-center.spec.ts",
     "test:e2e:production-smoke": "JARVIS_E2E_NO_FIXTURE=1 playwright test e2e/production-smoke.spec.ts",
+    "ops:cleanup-test-artifacts": "node ops/cleanup-test-artifacts.mjs --production --apply",
     "product:install-electron": "install-electron",
     "preproduct:package-electron": "npm run product:install-electron",
     "product:package-electron": "node scripts/package-electron.mjs",

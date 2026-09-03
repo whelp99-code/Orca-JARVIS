@@ -84,6 +84,9 @@ describe("personal-OS systemd renderer", () => {
     expect(readFileSync("deploy/jm-second-brain-requests.service", "utf8")).toBe(
       renderSystemdUnit({ id: "jm-second-brain-requests.service", mode: "production", roots: PRODUCTION_ROOTS }),
     );
+    expect(readFileSync("deploy/jm-second-brain-requests.path", "utf8")).toBe(
+      renderSystemdUnit({ id: "jm-second-brain-requests.path", mode: "production", roots: PRODUCTION_ROOTS }),
+    );
   });
 
   it("keeps rehearsal backup paths outside protected production roots", () => {

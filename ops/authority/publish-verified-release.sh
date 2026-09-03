@@ -27,7 +27,9 @@ dependency_release="$(readlink -f -- "${CONTROL_ROOT}/current")"
 mkdir -p "${WORKTREE}/.runtime-tmp" "${WORKTREE}/.runtime-tmp/authority-sidecars"
 stage="$(mktemp -d "${WORKTREE}/.runtime-tmp/authority-stage-XXXXXXXX")"
 cleanup() {
-  [[ -d "${stage}" ]] && rm -rf -- "${stage}"
+  if [[ -n "${stage}" && -d "${stage}" ]]; then
+    rm -rf -- "${stage}"
+  fi
 }
 trap cleanup EXIT
 

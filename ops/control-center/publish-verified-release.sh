@@ -29,7 +29,9 @@ dependency_release="$(readlink -f -- "${CURRENT}")"
 
 stage="$(mktemp -d "${RUNTIME_ROOT}/.stage-control-center-XXXXXXXX")"
 cleanup() {
-  [[ -d "${stage}" ]] && rm -rf -- "${stage}"
+  if [[ -n "${stage}" && -d "${stage}" ]]; then
+    rm -rf -- "${stage}"
+  fi
 }
 trap cleanup EXIT
 
