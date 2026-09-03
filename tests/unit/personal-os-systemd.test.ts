@@ -97,7 +97,7 @@ describe("personal-OS systemd renderer", () => {
     expect(() => assertIsolatedFile("/home/jm/.local/state/orca-jarvis/jarvis.sqlite")).toThrow("E_PROTECTED_ROOT");
   });
 
-  it("invokes provider sb without a Node interpreter", () => {
+  it("invokes provider-owned maintenance and requests without a Node interpreter", () => {
     // Given / When
     const backup = renderSystemdUnit({
       id: "jm-second-brain-backup.service",
@@ -113,7 +113,9 @@ describe("personal-OS systemd renderer", () => {
     // Then
     expect(backup).not.toMatch(/bin\/node .*\/bin\/sb/);
     expect(requests).not.toMatch(/bin\/node .*\/bin\/sb/);
-    expect(backup).toContain("/home/jm/.local/state/second-brain/app/current/bin/sb backup --once --state /home/jm/.local/state/second-brain");
+    expect(backup).toContain("Environment=SB_CONFIG=/home/jm/.config/second-brain/config.toml");
+    expect(backup).toContain("/home/jm/.local/state/second-brain/app/current/bin/sb maintain --once");
+    expect(backup).toContain("ReadWritePaths=/home/jm/.local/state/second-brain /home/jm/.local/share/second-brain");
     expect(requests).toContain("/home/jm/.local/state/second-brain/app/current/bin/sb apply-requests --once");
   });
 });

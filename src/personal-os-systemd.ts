@@ -131,18 +131,25 @@ function backupTimer(): string {
   ].join("\n");
 }
 
-function providerBackupService(roots: RenderRoots): string {
+function providerShare(mode: RenderMode, roots: RenderRoots): string {
+  return mode === "production"
+    ? "/home/jm/.local/share/second-brain"
+    : `${dirname(roots.providerState)}/provider-share`;
+}
+
+function providerBackupService(roots: RenderRoots, mode: RenderMode): string {
   return [
     "[Unit]",
-    "Description=JM Second Brain sealed-generation backup",
+    "Description=JM Second Brain lifecycle maintenance",
     "After=jm-second-brain-refresh.service",
     "",
     "[Service]",
     serviceBlock([
       "Type=oneshot",
       `WorkingDirectory=${roots.providerCurrent}`,
-      `ExecStart=${roots.providerCurrent}/bin/sb backup --once --state ${roots.providerState}`,
-      `ReadWritePaths=${roots.providerState}`,
+      `Environment=SB_CONFIG=${requestsConfig(mode, roots)}`,
+      `ExecStart=${roots.providerCurrent}/bin/sb maintain --once`,
+      `ReadWritePaths=${roots.providerState} ${providerShare(mode, roots)}`,
     ]),
     "",
   ].join("\n");
@@ -151,7 +158,7 @@ function providerBackupService(roots: RenderRoots): string {
 function providerBackupTimer(): string {
   return [
     "[Unit]",
-    "Description=JM Second Brain backup after daily refresh",
+    "Description=JM Second Brain lifecycle maintenance after daily refresh",
     "",
     "[Timer]",
     "OnCalendar=*-*-* 07:30:00 Asia/Seoul",
@@ -224,7 +231,7 @@ export function renderSystemdUnit(input: {
     case "jm-jarvis-backup.timer":
       return backupTimer();
     case "jm-second-brain-backup.service":
-      return providerBackupService(input.roots);
+      return providerBackupService(input.roots, input.mode);
     case "jm-second-brain-backup.timer":
       return providerBackupTimer();
     case "jm-second-brain-requests.service":

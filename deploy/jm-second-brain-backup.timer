@@ -1,5 +1,5 @@
 [Unit]
-Description=JM Second Brain backup after daily refresh
+Description=JM Second Brain lifecycle maintenance after daily refresh
 
 [Timer]
 OnCalendar=*-*-* 07:30:00 Asia/Seoul

@@ -63,4 +63,20 @@ describe("Second Brain Linux user scheduler", () => {
     ]);
     expect(path.has("PathExists")).toBe(false);
   });
+
+  it("runs the provider-owned lifecycle maintenance entrypoint with its real config and writable roots", () => {
+    const service = parse("deploy/jm-second-brain-backup.service");
+    const timer = parse("deploy/jm-second-brain-backup.timer");
+
+    expect(service.get("Environment")).toEqual([
+      "SB_CONFIG=/home/jm/.config/second-brain/config.toml",
+    ]);
+    expect(service.get("ExecStart")).toEqual([
+      "/home/jm/.local/state/second-brain/app/current/bin/sb maintain --once",
+    ]);
+    expect(service.get("ReadWritePaths")).toEqual([
+      "/home/jm/.local/state/second-brain /home/jm/.local/share/second-brain",
+    ]);
+    expect(timer.get("Unit")).toEqual(["jm-second-brain-backup.service"]);
+  });
 });

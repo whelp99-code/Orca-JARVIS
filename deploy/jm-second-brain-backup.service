@@ -1,12 +1,13 @@
 [Unit]
-Description=JM Second Brain sealed-generation backup
+Description=JM Second Brain lifecycle maintenance
 After=jm-second-brain-refresh.service
 
 [Service]
 Type=oneshot
 WorkingDirectory=/home/jm/.local/state/second-brain/app/current
-ExecStart=/home/jm/.local/state/second-brain/app/current/bin/sb backup --once --state /home/jm/.local/state/second-brain
-ReadWritePaths=/home/jm/.local/state/second-brain
+Environment=SB_CONFIG=/home/jm/.config/second-brain/config.toml
+ExecStart=/home/jm/.local/state/second-brain/app/current/bin/sb maintain --once
+ReadWritePaths=/home/jm/.local/state/second-brain /home/jm/.local/share/second-brain
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
