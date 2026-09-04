@@ -66,6 +66,33 @@ describe("doctor", () => {
     expect(report.capabilities.schema_version).toBe(1);
     db.close();
   });
+  it("does not flag MIGRATIONS_PENDING when the journal keeps an extra historical id", async () => {
+    // Given a fully migrated database plus a retired journal row that is not a current file
+    const db = new AuthorityDb(tempDb());
+    await db.migrate();
+    db.db.prepare(
+      "INSERT INTO schema_migrations(id,checksum,applied_at) VALUES(?,?,?)",
+    ).run("028_budgeted_evolution_memory.sql", "0".repeat(64), "2026-08-18T12:00:00.000Z");
+    const journalCount = Number(
+      (db.db.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get() as { count: number }).count,
+    );
+
+    // When doctor compares required files to the journal
+    const report = await runDoctor(
+      db,
+      now,
+      runtimeCapabilityProbe(async () => ({ stdout: "", exitCode: 127 })),
+      passiveSecondBrainReadinessProbe(),
+    );
+    const migrationCheck = report.checks.find(check => check.name === "database.migration_count");
+
+    // Then extra historical rows are not pending migrations
+    expect(journalCount).toBeGreaterThan(report.database.expected_migrations);
+    expect(migrationCheck).toMatchObject({ ok: true, actual: report.database.expected_migrations });
+    expect(migrationCheck?.code).toBeUndefined();
+    expect(report.database.applied_migrations).toBe(report.database.expected_migrations);
+    db.close();
+  });
   it("attaches a schema_version 1 capability matrix from injected probes without writes", async () => {
     const db = new AuthorityDb(tempDb()); await db.migrate();
     db.configureGjc("/tmp/gjc", "session-1", true);

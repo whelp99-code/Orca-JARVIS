@@ -105,10 +105,14 @@ export async function runDoctor(
 		expected: "ok",
 		code: quickCheck === "ok" ? undefined : "DATABASE_INTEGRITY_FAILED",
 	});
-	const expected = (await readdir(migrationDirectory())).filter((file) => file.endsWith(".sql")).length;
-	const applied = hasTable(db, "schema_migrations")
-		? Number((db.db.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get() as { count: number }).count)
-		: 0;
+	const files = (await readdir(migrationDirectory())).filter((file) => file.endsWith(".sql"));
+	const expected = files.length;
+	const appliedIds = new Set(
+		hasTable(db, "schema_migrations")
+			? (db.db.prepare("SELECT id FROM schema_migrations").all() as Array<{ id: string }>).map((row) => row.id)
+			: [],
+	);
+	const applied = files.filter((file) => appliedIds.has(file)).length;
 	checks.push({
 		name: "database.migration_count",
 		ok: applied === expected,
