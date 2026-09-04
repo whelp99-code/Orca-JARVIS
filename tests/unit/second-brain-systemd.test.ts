@@ -45,6 +45,20 @@ describe("Second Brain Linux user scheduler", () => {
     expect(text).not.toMatch(/password|token|secret/i);
   });
 
+  it("does not set user-systemd capability drops that fail with 218/CAPABILITIES", () => {
+    // Given / When the refresh unit is rendered for a user instance
+    const text = readFileSync("deploy/jm-second-brain-refresh.service", "utf8");
+    const service = parse("deploy/jm-second-brain-refresh.service");
+
+    // Then PrivateDevices and ProtectKernelModules stay off (they fail spawning /usr/bin/env)
+    expect(service.has("PrivateDevices")).toBe(false);
+    expect(service.has("ProtectKernelModules")).toBe(false);
+    expect(text).not.toMatch(/^PrivateDevices=/m);
+    expect(text).not.toMatch(/^ProtectKernelModules=/m);
+    expect(service.get("MemoryDenyWriteExecute")).toEqual(["true"]);
+    expect(service.get("ProtectHome")).toEqual(["read-only"]);
+  });
+
   it("keeps the request executor fail-closed until signing keys are explicitly enabled", () => {
     const service = parse("deploy/jm-second-brain-requests.service");
     const path = parse("deploy/jm-second-brain-requests.path");
