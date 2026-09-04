@@ -78,16 +78,23 @@ async function collectHost(input: PortfolioCollectorInput): Promise<PortfolioHos
   ]);
   const worktrees = parseWorktrees(worktreeOutput);
   const dirtyPaths = await Promise.all(
-    worktrees.map((entry) =>
-      input.gitRunner(["-C", entry.cwd, "status", "--porcelain=v1"]).then((output) => splitLines(output).length)),
+    worktrees.map(async (entry) => {
+      try {
+        const output = await input.gitRunner(["-C", entry.cwd, "status", "--porcelain=v1"]);
+        return splitLines(output).length;
+      } catch (error) {
+        if (error instanceof Error) return null;
+        throw error;
+      }
+    }),
   );
-  const cleanCount = dirtyPaths.reduce((total, count) => total + (count === 0 ? 1 : 0), 0);
+  const cleanCount = dirtyPaths.reduce<number>((total, count) => total + (count === 0 ? 1 : 0), 0);
   return {
     worktree_count: worktrees.length,
     terminal_count: parseTerminalCount(terminalOutput),
     clean_count: cleanCount,
     dirty_count: worktrees.length - cleanCount,
-    dirty_path_count: dirtyPaths.reduce((total, count) => total + count, 0),
+    dirty_path_count: dirtyPaths.reduce<number>((total, count) => total + (count ?? 0), 0),
     active_task_count: worktrees.reduce((total, entry) => total + entry.workingCount, 0),
   };
 }

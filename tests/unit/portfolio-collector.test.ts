@@ -136,6 +136,34 @@ describe("portfolio collector", () => {
     expect("github" in report).toBe(false);
   });
 
+  it("keeps a JM-SERVER host report when one listed worktree is not a git checkout", async () => {
+    // Given Orca lists a directory that git status cannot measure
+    const git: CollectorCommandRunner = async (args) => {
+      const path = args[1];
+      if (path === "/repo/two") throw new Error("fatal: not a git repository");
+      if (path === "/repo/one") return " M src/a.ts\n?? new.txt\n";
+      if (path === "/repo/three") return " M b.ts\n";
+      throw new Error(`unexpected git path ${String(path)}`);
+    };
+    const { input } = options({ source: "jm-server", gitRunner: git });
+
+    // When the collector measures the host
+    const envelope = await collectPortfolioEnvelope(input, KEY);
+    const report = envelope.report;
+
+    // Then one git failure does not collapse the signed report into COLLECTOR_FAILED
+    if ("collector_status" in report) throw new Error("expected report, not error");
+    if (report.source !== "jm-server") throw new Error("expected jm-server report");
+    expect(report.host).toEqual({
+      worktree_count: 3,
+      terminal_count: 3,
+      clean_count: 0,
+      dirty_count: 3,
+      dirty_path_count: 3,
+      active_task_count: 2,
+    });
+  });
+
   it("signs a generic COLLECTOR_FAILED error envelope without leaking command output", async () => {
     const failing: CollectorCommandRunner = async () => {
       throw new Error("secret stdout: ghp_abcdefghijklmnopqrstuvwxyz0123456789");
