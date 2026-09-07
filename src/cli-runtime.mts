@@ -19,6 +19,7 @@ const CLI_HELP =
   + "observe, pre-gjc, capabilities, team, portfolio, status\n"
   + "control plan-task <plan.json>: stage a task execution plan for separate approval (execution unavailable)\n"
   + "control check-task <plan.json>: check repository baseline and declared files without executing an agent\n"
+  + "memory classify <input.json> <policy.json>: classify a bounded candidate; does not store memory\n"
   + "memory stage-dispatch <candidate-id>: stage an approved memory candidate for control approval\n"
   + "memory outbox --once [--limit N]: dispatch queued writes and reconcile their stored results\n"
   + "memory outbox list [--limit N]: inspect bounded memory delivery state";

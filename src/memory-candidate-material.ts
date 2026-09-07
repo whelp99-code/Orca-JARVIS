@@ -125,7 +125,10 @@ export function computeMemoryCandidate(
     Date.parse(policyOutcome.source_expires_at),
   );
   const confirmationExpiresAt = disposition.required_confirmation
-    ? new Date(confirmationExpiryMs).toISOString() : null;
+    // Terminal audit rows still obey the existing candidate table's future timestamp
+    // constraint. This placeholder grants no confirmation: terminal states cannot be approved.
+    ? new Date(disposition.state === "rejected" || disposition.state === "expired"
+      ? Math.max(context.now.getTime() + 1, confirmationExpiryMs) : confirmationExpiryMs).toISOString() : null;
   const candidateDigest = memoryHash(MEMORY_CANDIDATE_DIGEST_DOMAINS.candidate, {
     candidate_id: identity.candidate_id,
     correlation_id: identity.correlation_id,

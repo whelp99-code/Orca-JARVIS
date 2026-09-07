@@ -1,3 +1,4 @@
+import { recoverUncommittedCandidateReview } from "./memory-candidate-review-recovery.js";
 import { claimMemoryCandidateAuthority, requireMemoryCandidateAuthority } from "./memory-candidate-authority.js";
 import type { MemoryAuthorityResolution } from "./memory-candidate-authority-types.js";
 import { parseMemoryCandidateInput } from "./memory-candidate-input.js";
@@ -35,23 +36,19 @@ export class MemoryCandidateStore {
 
   classify(value: unknown): MemoryCandidateClassification {
     const input = parseMemoryCandidateInput(value);
-    const now = memoryDate(this.clock());
-    const authority = requireMemoryCandidateAuthority(this.authority.db, {
-      input,
-      identity: memoryCandidateIdentity(input),
-      now,
-    });
-    const computation = computeMemoryCandidate(this.policy, input, { now, authority });
-    const replay = this.replay(computation);
-    if (replay !== undefined) return replay;
-    const publication = computation.classification.required_confirmation && this.reviewSpool !== undefined
-      ? this.reviewSpool.publish(createMemoryCandidateReviewEnvelope({ input, computation,
-        classification: computation.classification }))
-      : undefined;
+    // Read-only preflight; repeat under the writer lock after any lock wait.
+    requireMemoryCandidateAuthority(this.authority.db,
+      { input, identity: memoryCandidateIdentity(input), now: memoryDate(this.clock()) });
+    let publication: MemoryCandidateReviewPublication | undefined;
     try {
-      return this.authority.db.transaction(() => this.persist(input, publication)).immediate();
+      return this.authority.db.transaction(() => this.persist(input, value => { publication = value; })).immediate();
     } catch (error) {
-      if (publication?.created === true) this.reviewSpool?.remove(publication);
+      const failedPublication = publication;
+      if (failedPublication?.created === true) this.authority.db.transaction(() => {
+        // Another writer may adopt the file after this transaction rolls back.
+        if (this.authority.db.prepare("SELECT 1 FROM memory_candidates WHERE candidate_id=?")
+          .get(failedPublication.candidate_id) === undefined) this.reviewSpool?.remove(failedPublication);
+      }).immediate();
       throw error;
     }
   }
@@ -67,14 +64,14 @@ export class MemoryCandidateStore {
       ?? memoryFail("MEMORY_CANDIDATE_INTEGRITY_FAILURE");
   }
 
-  private persist(input: ParsedMemoryCandidateInput, publication?: MemoryCandidateReviewPublication): MemoryCandidateClassification {
+  private persist(input: ParsedMemoryCandidateInput, onPublication: (value: MemoryCandidateReviewPublication) => void): MemoryCandidateClassification {
     const now = memoryDate(this.clock());
     const authority = requireMemoryCandidateAuthority(this.authority.db, {
       input,
       identity: memoryCandidateIdentity(input),
       now,
     });
-    const computation = computeMemoryCandidate(this.policy, input, { now, authority });
+    let computation = computeMemoryCandidate(this.policy, input, { now, authority });
     const replay = this.replay(computation);
     if (replay !== undefined) return replay;
     const existingValue = this.authority.db.prepare(
@@ -86,6 +83,26 @@ export class MemoryCandidateStore {
       const candidateId = persistenceText(existing["candidate_id"]);
       this.insertIdempotency({ computation, candidate_id: candidateId, created_at: persistenceText(existing["created_at"]) });
       return readMemoryCandidate(this.authority.db, candidateId) ?? memoryFail("MEMORY_CANDIDATE_INTEGRITY_FAILURE");
+    }
+    if (this.authority.db.prepare("SELECT 1 FROM memory_candidates WHERE candidate_id=?")
+      .get(computation.classification.candidate_id) !== undefined) return memoryFail("MEMORY_CANDIDATE_INTEGRITY_FAILURE");
+    let publication: MemoryCandidateReviewPublication | undefined;
+    if (computation.classification.state === "awaiting_confirmation" && this.reviewSpool !== undefined) {
+      computation = recoverUncommittedCandidateReview(this.reviewSpool, this.policy, input, authority, computation, now);
+      publication = this.reviewSpool.publish(createMemoryCandidateReviewEnvelope({ input, computation,
+        classification: computation.classification }));
+      onPublication(publication);
+      // File fsync may consume the remaining source/approval lifetime. Recheck it
+      // with the live clock without regenerating the classification already published.
+      const checkedAt = memoryDate(this.clock());
+      const checkedAuthority = requireMemoryCandidateAuthority(this.authority.db,
+        { input, identity: memoryCandidateIdentity(input), now: checkedAt });
+      const checked = computeMemoryCandidate(this.policy, input, { now: checkedAt, authority: checkedAuthority });
+      if (checkedAt < now || checked.classification.state !== "awaiting_confirmation"
+        || checkedAt.getTime() >= Date.parse(computation.classification.confirmation_expires_at!)
+        || checkedAt.getTime() >= Date.parse(computation.classification.candidate_expires_at)) {
+        return memoryFail("MEMORY_CANDIDATE_AUTHORITY_INVALID");
+      }
     }
     this.insertCandidate(computation, input, authority, publication);
     return computation.classification;
