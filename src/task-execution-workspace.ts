@@ -74,6 +74,15 @@ export async function inspectTaskExecutionRepository(value: TaskExecutionPlanV1,
   }
 }
 
+/** Internal execution input boundary; caller must verify current task authority before exposing these bytes to a provider. */
+export async function readTaskExecutionInputs(value: TaskExecutionPlanV1, git: TaskGitInspector = inspectTaskGit) {
+  try { return await capture(parseTaskExecutionPlan(value), git); }
+  catch (error) {
+    if (error instanceof JarvisError) throw error;
+    return fail("TASK_REPOSITORY_UNAVAILABLE");
+  }
+}
+
 /** Prepare candidate inputs only. Neither an OS sandbox nor authority to execute or publish changes. */
 export async function prepareTaskExecutionWorkspace(value: TaskExecutionPlanV1, parent: string,
   git: TaskGitInspector = inspectTaskGit): Promise<{ directory: string; repository: TaskRepositoryCheck }> {

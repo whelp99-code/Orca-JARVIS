@@ -4,11 +4,13 @@ import { constants } from "node:fs";
 import { open, realpath } from "node:fs/promises";
 import type { Writable } from "node:stream";
 import { JarvisError } from "./db.js";
+import { taskProcessTimeout } from "./task-process-boundary.js";
 
 export type TaskSandboxFile = { readonly path: string; readonly content: Buffer };
 export type TaskSandboxInvocation = {
   readonly argv: readonly string[]; readonly cwd: string; readonly files: readonly TaskSandboxFile[];
   readonly timeout_ms: number; readonly max_output_bytes: number;
+  readonly before_spawn?: () => number;
 };
 export type TaskSandboxResult = {
   readonly exit_code: number; readonly stdout_bytes: number; readonly stderr_bytes: number;
@@ -36,13 +38,17 @@ export function taskSandboxArguments(input: TaskSandboxInvocation): string[] {
 
 /** No host workspaces, credentials, inherited environment, network, or mutable candidate mounts. */
 export const spawnTaskSandbox: TaskSandboxRunner = async input => {
+  const deadline = performance.now() + input.timeout_ms;
   if (process.platform !== "linux") throw new JarvisError("TASK_SANDBOX_PLATFORM_UNAVAILABLE");
   const executable = await open(await realpath(process.execPath), constants.O_RDONLY | constants.O_NOFOLLOW);
   try {
+    const args = taskSandboxArguments(input);
+    const stdio = ["ignore", "pipe", "pipe", executable.fd, ...input.files.map(() => "pipe" as const)] as const;
     return await new Promise<TaskSandboxResult>((resolve, reject) => {
-      const child = spawn("/usr/bin/bwrap", taskSandboxArguments(input), {
+      const timeout = taskProcessTimeout(deadline, input.before_spawn, "TASK_SANDBOX_TIMEOUT");
+      const child = spawn("/usr/bin/bwrap", args, {
         shell: false, cwd: "/", env: {}, detached: true,
-        stdio: ["ignore", "pipe", "pipe", executable.fd, ...input.files.map(() => "pipe" as const)],
+        stdio: [...stdio],
       });
       const stdout = createHash("sha256"), stderr = createHash("sha256");
       let stdoutBytes = 0, stderrBytes = 0;
@@ -53,7 +59,7 @@ export const spawnTaskSandbox: TaskSandboxRunner = async input => {
           try { process.kill(-child.pid, "SIGKILL"); } catch { child.kill("SIGKILL"); }
         }
       };
-      const timer = setTimeout(() => stop("TASK_SANDBOX_TIMEOUT"), input.timeout_ms);
+      const timer = setTimeout(() => stop("TASK_SANDBOX_TIMEOUT"), timeout);
       child.on("error", () => { failure ??= "TASK_SANDBOX_UNAVAILABLE"; });
       child.stdout!.on("data", (bytes: Buffer) => {
         if (failure) return;

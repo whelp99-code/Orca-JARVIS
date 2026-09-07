@@ -75,3 +75,13 @@ INSERT OR REPLACE의 명시적 식별자·operation·SQLite rowid 충돌과 UPDA
 결과는 `checks_passed` 또는 `checks_failed`다. 함수 자체는 승인 서명을 검사하거나 완료 증거에 서명하지 않는다. 작업 승인, provider가 반환한 후보와의 결합, 독립 verifier 신원/키, 원본 반영 및 workflow 정산을 연결해야 최종 완료 증거가 된다. 이 함수를 호출할 수 있다는 사실은 task.execute 활성화 조건을 충족하지 않는다.
 
 실행기 조사에서는 설치된 CLI help와 [공식 Codex 설정 문서](https://learn.chatgpt.com/docs/config-file/config-reference)를 대조했다. 문서는 command network 규칙이 web search/apps/MCP에 적용되지 않는다고 명시한다. 따라서 CLI의 network 옵션 하나만으로 전체 provider의 외부 효과를 차단했다고 보지 않는다. 이번 구현·실측 범위는 독립 검증 명령의 bwrap 실행이며 provider 본체의 인증·통신·도구 격리는 후속이다.
+
+## 승인된 Claude 후보 생성과 검증 연결
+
+`executeTaskCandidate({ authority, command, provider })`는 이미 서명되어 claim된 실행계획의 후보 생성 단계를 연결한다. 현재 권한 확인→실제 Git/파일 입력 대조→TaskSpec 전체와 입력 사본 준비→영속 operation 예약/invoking→provider 호출→반환 후보 검사→원본 재검사→격리 검증을 수행한다. provider와 검증기의 실제 spawn 직전에도 동기 승인/lease 검증을 호출한다. 실행 파일을 비동기로 준비하는 동안 취소·만료됐으면 프로세스를 시작하지 않는다. 실행 파일 준비 시간도 monotonic deadline에서 차감한다. 최초 Git/파일 캡처·문맥 준비 이후, operation 예약부터 provider 호출·원본 재검사·검증까지 wall clock과 monotonic clock 중 먼저 도달하는 마감을 적용한다. 최초 입력 캡처·문맥 준비 시간은 이 공유 마감에 포함되지 않는다.
+
+Claude 구현은 설치된 CLI를 신뢰하는 도구 없는 추론 경로다. `--safe-mode`, 빈 `--tools`, `--strict-mcp-config`, MCP 도구 차단, slash command 비활성화, session 비저장, 빈 setting-sources, dontAsk를 사용한다. cwd는 `/`, 상속 환경은 HOME/PATH/LANG/TZ뿐이다. 기존 Claude CLI 인증으로 API 통신하며 provider 자체를 bwrap 안에서 실행하지 않는다. [공식 CLI 문서](https://code.claude.com/docs/en/cli-reference)의 safe-mode는 managed-policy hook을 유지하므로 모든 호스트 hook이 차단된다고 주장하지 않는다. 현재 호스트에서 해당 managed settings 파일은 없음을 확인했다. 운영 readiness에서 설치 CLI·인증·관리 정책을 다시 확인해야 한다. 계획의 network deny는 후보 검증 명령에 적용하며 모델 API 통신까지 차단한다는 뜻이 아니다.
+
+입력은 전체 TaskSpec/계획/선언 파일을 포함한 최대 512 KiB의 UTF-8 문맥이다. 이 범위를 넘거나 바이너리 입력이면 잘라 보내지 않고 거부한다. 구조화 응답은 계획 digest와 정확한 write 상대 경로/전체 파일 내용만 허용한다. 중복·누락·추가 키·읽기 전용 변경·비정상 UTF-8·크기 초과를 거부하고 read 파일은 원본 사본에서 유지한다. stdout/stderr 합산 출력 예산은 provider와 모든 검증 명령이 공유한다.
+
+반환 상태 `candidate_checked`에는 후보 바이트와 `checks_passed` 또는 `checks_failed` 측정 결과가 들어가며 `published=false`다. 성공 시 현재 원장은 invoking, 요청은 claimed로 남으며 workflow 상태를 변경하지 않는다. 호출 시작 뒤 예외는 uncertain이며 새 승인 요청으로 같은 계획을 자동 재호출하지 않는다. 후보는 현재 메모리 결과이므로 영속 artifact, 장애 복구/정산, 독립 verifier 서명, 허용 파일 반영과 workflow 완료는 후속 구현이다. Codex 후보 provider도 미구현이다. 이 단계만으로 `task.execute`를 활성화하지 않는다.

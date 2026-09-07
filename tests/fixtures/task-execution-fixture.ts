@@ -14,12 +14,12 @@ export function executionPlan(): TaskExecutionPlanV1 {
     verification: [{ id: "focused", argv: ["node", "tests/check.mjs"], cwd: ".", expected_exit: 0 }] };
 }
 
-export async function taskExecutionFixture(approvedStart = true) {
+export async function taskExecutionFixture(approvedStart = true, options: { objective?: string } = {}) {
   const db = await initialized();
   const control = new ControlPlane(db);
   const now = new Date();
   const budget = { max_steps: 10, max_attempts_per_node: 2, deadline: new Date(now.getTime() + 600_000).toISOString() };
-  const proposal = { schema_version: 1 as const, status: "ready" as const, objective: "Fix the selected module",
+  const proposal = { schema_version: 1 as const, status: "ready" as const, objective: options.objective ?? "Fix the selected module",
     proposal_digest: `sha256:${"0".repeat(64)}`,
     requirements: { work_type: "development" as const, constraints: ["no deployment"], completion_evidence: ["focused checks pass"] },
     members: [{ member_id: "builder", archetype: "builder" as const, role: "Implement changes", scope: ["implement_changes"],

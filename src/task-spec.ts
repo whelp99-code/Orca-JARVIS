@@ -9,6 +9,8 @@ export { parseTaskExecutionPlan, taskExecutionPlanDigest, type TaskExecutionPlan
 export { stageTaskExecution, assertTaskExecutionBinding, type StageTaskExecutionInput } from "./task-execution-staging.js";
 export { inspectTaskExecutionRepository, prepareTaskExecutionWorkspace, type TaskRepositoryCheck } from "./task-execution-workspace.js";
 export { verifyTaskCandidate, type TaskCandidateVerification } from "./task-candidate-verification.js";
+export { executeTaskCandidate } from "./task-candidate-execution.js";
+export { ClaudeTaskCandidateProvider } from "./claude-task-provider.js";
 
 /** Declared work requirements; member scopes do not grant filesystem or execution permissions. */
 export interface TaskSpecV1 {
