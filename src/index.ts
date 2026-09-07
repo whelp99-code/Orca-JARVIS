@@ -121,6 +121,8 @@ export * from "./second-brain-effect-authority.js";
 export * from "./memory-lifecycle-api.js";
 export { prepareMemoryRememberDispatch, stageMemoryRememberDispatch } from "./memory-remember-dispatch.js";
 export { createProductionMemoryOutbox } from "./memory-outbox-production.js";
+export { createProductionMemoryReadFence } from "./memory-read-fence-production.js";
+export type { MemoryReadFenceProductionConfig } from "./memory-read-fence-production.js";
 export { memoryRememberArtifact } from "./memory-remember-artifact.js";
 export {
 	MemoryOutboxService,

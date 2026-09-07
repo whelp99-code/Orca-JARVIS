@@ -24,6 +24,7 @@ export type DashboardCliOptions = {
 };
 
 export type DashboardMemoryDependencies = {
+  readonly memoryReadFenceConfig?: import("../memory-read-fence-production.js").MemoryReadFenceProductionConfig;
   readonly memoryAdapter?: SecondBrainReadAdapter;
   readonly memoryProjectionKey?: Buffer;
   readonly memoryEffectSpoolRoot?: string;
@@ -61,7 +62,10 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
 }, memoryLifecycle?: Pick<MemoryLifecycleService, "execute">,
   dependencies: DashboardMemoryDependencies = {}): { close: () => Promise<void> } {
   const db = new AuthorityDb(options.dbPath);
-  const bound = bindDashboardMemoryDependencies(options.dbPath, dependencies);
+  const bound = (() => {
+    try { return bindDashboardMemoryDependencies(db, dependencies); }
+    catch (error) { db.close(); throw error; }
+  })();
   const outbox = bound.outboxFor(db);
   const tick = outbox === undefined ? undefined : new MemoryOutboxTick(
     () => outbox.runOnce("dashboard-memory-outbox", 1),

@@ -133,7 +133,7 @@ describe("production memory outbox composition", () => {
   it("keeps an injected read-only adapter from gaining an implicit provider writer", async () => {
     const f = await outboxFixture();
     try {
-      const bound = bindDashboardMemoryDependencies(f.database.path, { memoryAdapter: f.reader });
+      const bound = bindDashboardMemoryDependencies(f.database.authority, { memoryAdapter: f.reader });
       expect(bound.outboxFor(f.database.authority)).toBeUndefined();
       expect(bound.ownedProviderTransport).toBeUndefined();
     } finally { closeMemoryDatabase(f.database); }

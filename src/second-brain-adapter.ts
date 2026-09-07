@@ -1,4 +1,5 @@
 import { parseSecondBrainPage } from "./second-brain-evidence-parser.js";
+import { JarvisError } from "./db.js";
 import { bindSecondBrainGenerationRead } from "./second-brain-generation-read.js";
 import { normalizeSecondBrainProviderRecord } from "./second-brain-provider-value.js";
 import { secondBrainUtf8Bytes, SecondBrainReadBudget } from "./second-brain-read-budget.js";
@@ -264,6 +265,9 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
         ? { kind: "adapter", outcome: invalid("SECOND_BRAIN_PROVIDER_VALUE_INVALID", checkedAt) }
         : { kind: "transport", outcome: { kind: "data", value: bound } };
     } catch (error) {
+      if (error instanceof JarvisError && ["MEMORY_READ_FENCE_KEY_UNAVAILABLE", "MEMORY_READ_FENCE_AUTHORITY_UNAVAILABLE"].includes(error.code)) {
+        return { kind: "adapter", outcome: invalid(error.code, checkedAt) };
+      }
       if (!(error instanceof SecondBrainTransportError)) throw error;
       const kind = OFFLINE_CODES.some(code => code === error.code) ? "offline" : error.disposition === "fatal" ? "invalid" : "unavailable";
       return { kind: "adapter", outcome: { kind, code: error.code, checked_at: checkedAt.toISOString() } };

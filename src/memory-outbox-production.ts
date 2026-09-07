@@ -7,12 +7,14 @@ import { createSecondBrainWriteRequestAdapter } from "./second-brain-write-adapt
 import { createSecondBrainTransport, type SecondBrainTransport, type SecondBrainTransportOptions } from "./second-brain-transport.js";
 import { registerMemoryCandidateSpoolRoots } from "./memory-surface-authority.js";
 import type { SecondBrainAdapterOptions } from "./second-brain-adapter-types.js";
+import { createProductionMemoryReadFence, type MemoryReadFenceProductionConfig } from "./memory-read-fence-production.js";
 
 export type MemoryOutboxProductionOptions = MemoryOutboxSpoolRoots & {
   readonly transport?: SecondBrainTransport;
   readonly transport_options?: SecondBrainTransportOptions;
   readonly clock?: () => Date;
   readonly read_fence?: SecondBrainAdapterOptions["read_fence"];
+  readonly read_fence_config?: MemoryReadFenceProductionConfig;
 };
 
 export function memoryCandidateSpoolRoots(filename: string, options: MemoryOutboxSpoolRoots = {}) {
@@ -37,8 +39,9 @@ export function bindMemoryCandidateSpools(authority: AuthorityDb, options: Memor
 export function createProductionMemoryOutbox(authority: AuthorityDb, options: MemoryOutboxProductionOptions = {}) {
   const roots = bindMemoryCandidateSpools(authority, options);
   const clock = options.clock ?? (() => new Date());
+  const readFence = options.read_fence ?? createProductionMemoryReadFence(authority, options.read_fence_config);
   const transport = options.transport ?? createSecondBrainTransport(options.transport_options);
-  const reader = createSecondBrainReadAdapter({ transport, clock, contract_profile: "schema4", read_fence: options.read_fence,
+  const reader = createSecondBrainReadAdapter({ transport, clock, contract_profile: "schema4", read_fence: readFence,
     budget_profile: "record-set-v1", budgets: { max_hits: 8, max_excerpt_bytes: 4_096,
       max_total_bytes: 262_144, max_page_bytes: 262_144 },
     max_age_ms: 7 * 86_400_000, expiry_ms: 30 * 86_400_000 });

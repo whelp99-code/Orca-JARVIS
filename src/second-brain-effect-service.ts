@@ -1,11 +1,12 @@
-import { randomUUID, type KeyObject } from "node:crypto";
+import type { KeyObject } from "node:crypto";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./db.js";
 import type { SecondBrainWriteOutcome, SecondBrainWriteRequestAdapter } from "./second-brain-adapter-types.js";
-import { createMemoryReadFence, MEMORY_TOMBSTONE_GENESIS_ROOT, parseResolvedMemoryTarget,
+import { parseResolvedMemoryTarget,
   type MemoryReadFenceV1, type ResolvedMemoryTargetV2 } from "./second-brain-effect-v2.js";
 import type { SecondBrainOutcome, SecondBrainTransport } from "./second-brain-transport.js";
 import { SecondBrainTransportError } from "./second-brain-transport.js";
+import { memoryReadHighWater, signMemoryReadFence } from "./memory-read-fence.js";
 
 export type SecondBrainEffectServiceOptions = {
   readonly authority: AuthorityDb; readonly transport: SecondBrainTransport;
@@ -41,21 +42,11 @@ export class SecondBrainEffectService {
   }
   submit(value: unknown): Promise<SecondBrainWriteOutcome> { return this.options.writer.write(value); }
   private highWater(): { readonly sequence: number; readonly set_root: string } {
-    const row = this.options.authority.db.prepare(
-      "SELECT sequence,set_root FROM memory_tombstone_chain ORDER BY sequence DESC LIMIT 1",
-    ).get() as { sequence: number; set_root: string } | undefined;
-    return row ?? { sequence: 0, set_root: MEMORY_TOMBSTONE_GENESIS_ROOT };
+    return memoryReadHighWater(this.options.authority);
   }
   private fence(purpose: "memory_read" | "memory_status" | "memory_resolve",
     high: { readonly sequence: number; readonly set_root: string }, at: Date): MemoryReadFenceV1 {
-    const milliseconds = at.getTime(); if (!Number.isFinite(milliseconds)) throw new JarvisError("MEMORY_READ_FENCE_INVALID");
-    const stamp = at.toISOString();
-    return createMemoryReadFence({ provider_instance_id: this.options.provider_instance_id, purpose,
-      operation: purpose === "memory_read" ? "read" : purpose === "memory_status" ? "status" : "resolve",
-      tombstone_sequence: high.sequence, tombstone_set_root: high.set_root, issued_at: stamp, not_before: stamp,
-      expires_at: new Date(milliseconds + this.ttl).toISOString(),
-      nonce: `memfence-nonce:${this.options.nonce?.() ?? randomUUID()}`, signing_key_id: this.options.signing_key_id },
-    this.options.private_key);
+    return signMemoryReadFence({ ...this.options, fence_ttl_ms: this.ttl }, purpose, high, at);
   }
   readFence(purpose: "memory_read" | "memory_status" | "memory_resolve", at = this.options.clock()): MemoryReadFenceV1 {
     return this.fence(purpose, this.highWater(), at);

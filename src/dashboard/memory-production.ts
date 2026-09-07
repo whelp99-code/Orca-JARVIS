@@ -14,6 +14,7 @@ import {
 } from "../second-brain-transport.js";
 import type { DashboardExecutorFactory } from "./authority-service.js";
 import type { DashboardMemoryDependencies } from "./main.js";
+import { createProductionMemoryReadFence } from "../memory-read-fence-production.js";
 
 const BUDGETS = { max_hits: 8, max_excerpt_bytes: 1_024, max_total_bytes: 65_536,
   max_page_bytes: 1_048_576 } as const;
@@ -55,10 +56,10 @@ function adapterOptions(): Omit<SecondBrainAdapterOptions, "transport"> {
 }
 
 export function bindDashboardMemoryDependencies(
-  dbPath: string,
+  authority: AuthorityDb,
   dependencies: DashboardMemoryDependencies,
 ): BoundDashboardMemory {
-  const root = dirname(dbPath);
+  const dbPath = authority.filename; const root = dirname(dbPath);
   const effect = dependencies.memoryEffectSpoolRoot ?? privateDir(join(root, "memory-effect-spool"));
   const roots = memoryCandidateSpoolRoots(dbPath, {
     candidate_review_spool_root: dependencies.memoryCandidateReviewSpoolRoot,
@@ -66,18 +67,22 @@ export function bindDashboardMemoryDependencies(
   const review = privateDir(roots.candidate_review_spool_root);
   const dispatch = privateDir(roots.candidate_dispatch_spool_root);
   const key = dependencies.memoryProjectionKey ?? projectionKey(join(root, "memory-projection.key"));
+  const originalOptions = dependencies.memoryAdapterOptions ?? adapterOptions();
+  const readFence = originalOptions.read_fence ?? (dependencies.memoryAdapter === undefined
+    ? createProductionMemoryReadFence(authority, dependencies.memoryReadFenceConfig) : undefined);
+  const options = { ...originalOptions, read_fence: readFence };
   const transportOptions: SecondBrainTransportOptions = dependencies.providerTransportOptions ?? {};
   const ownedProviderTransport = dependencies.providerTransport === undefined && dependencies.memoryAdapter === undefined
     ? createSecondBrainTransport(transportOptions) : undefined;
   const transport = dependencies.providerTransport ?? ownedProviderTransport;
-  const options = dependencies.memoryAdapterOptions ?? adapterOptions();
   const outboxes = new WeakMap<AuthorityDb, MemoryOutboxService>();
   const outboxFor = (authority: AuthorityDb): MemoryOutboxService | undefined => {
     if (transport === undefined || (dependencies.memoryAdapter?.contract_profile
       ?? options.contract_profile ?? "schema3-read-only") !== "schema4") return undefined;
     let service = outboxes.get(authority);
     if (service === undefined) {
-      service = createProductionMemoryOutbox(authority, { transport, clock: options.clock, read_fence: options.read_fence, ...roots }).service;
+      service = createProductionMemoryOutbox(authority, { transport, clock: options.clock, read_fence: originalOptions.read_fence,
+        read_fence_config: dependencies.memoryReadFenceConfig, ...roots }).service;
       outboxes.set(authority, service);
     }
     return service;
