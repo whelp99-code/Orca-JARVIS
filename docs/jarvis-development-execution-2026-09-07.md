@@ -367,3 +367,12 @@
 - 규모 표본: 격리 GJC 원장10,046행, 활성5,020/최근20. 5회 전체 집계+목록 시간은107.409/102.923/101.546/108.884/100.654ms, 중앙값102.923ms. 추천 대량 원장·운영 HTTP 부하 결과로 확대하지 않는다. probe 종료 후 임시 DB/브라우저 제거.
 - 증거 경로: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/task-count-*`; 재현 스크립트와 최종 JSON은 `task-count-live-probe.mjs/json`. 설계는 `docs/planning/adr-dashboard-task-population.md`.
 - 전체 목표는 미완료다. 기존 memory 4모듈 가독성 gate, 12 스케줄/보존, 13 관측 장애 분리 및 나머지 01–25 인수 조건을 이어간다. task 결과 자동 기억 수집은 원본 차단 전파 계약 미완성으로 기존 HOLD를 유지한다. 운영 DB/migration SQL/service/release/push 변경0.
+
+## 2026-09-08 P2-14 — 메모리 스풀 중복 제거와 가독성 gate 복구
+
+- 직전 단위는 P1-06 커밋 `ad9851856e4037dd43b3c73b805d707a4e12c4ca`와 HTTP/Chromium 실검증으로 progress였다. 현재 작업 트리를 확인한 뒤 P1-13의 콜백 경계를 대조했다.
+- 실제 supervisor 콜백에 구조화 입력 처리와 보고서 output/ack가 포함되어 있어 전체 예외 무시 방식은 HOLD다. Orca runner와 JSON envelope 단계에서 오류 코드가 ORCA_CLI_FAILED로 합쳐지는 경로도 발견했다. 읽기 경계 격리·원인 보존·회로 차단·별도 상태의 후속 조건을 `docs/planning/service-observation-isolation.md`에 기록했다. P1-13 완료로 세지 않는다.
+- 기존 전체 verify를 막던 memory 4모듈 중 dispatch spool의 remember/correct 공통 필드 조립을 한 곳으로 합쳤다. schema별 operation/body_profile/target과 receipt spread 우선순위를 유지한다. 다른 3파일은 V3 변경에서 추가된 긴 줄을 나눴다. 가독성 테스트나 상한은 변경하지 않았다.
+- 현재 nonblank/maxLine: dispatch-spool243/141, material188/125, transport232/160, write-result54/132. task12 runtime reviewability와 기존 CLI intake·V1/V2/V3 dispatch·V3 wire·transport characterization 검사는5파일21개 pass, exit0. 새 구현을 그대로 복제하는 테스트는 추가하지 않았다.
+- 실제 private spool 파일 발행·읽기·재발행으로 HEAD의 이전 구현과 작업 소스를 비교했다. V1 1,401bytes, V2 1,984bytes, V3 1,432bytes가 각 byte-for-byte 동일하며 재발행 created=false였다. 임시 파일과 fixture DB는 제거했다. 독립 정적 리뷰 필수 결함0.
+- 증거: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/memory-reviewability.log`, `memory-spool-compat-probe.mjs/json`. 전체 verify는 이 단위 커밋 후 고정된 소스로 다시 실행한다. 운영 DB/service/release/push 변경0.

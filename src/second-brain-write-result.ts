@@ -48,7 +48,8 @@ export function parseSecondBrainWriteResult(value: unknown): SecondBrainRemember
     || !/^memidem:pos:v1:[0-9a-f]{64}$/.test(idempotencyKey) || !DIGEST.test(requestDigest)
     || !DIGEST.test(fileDigest) || !instant(acceptedAt)
     || inboxPath !== `inbox/.requests/pending/${requestId}.json`) return undefined;
-  return { ...(result["schema_version"] === 3 ? { schema_version: 3 as const } : {}), kind: "accepted", state: "pending", candidate_id: candidateId, request_id: requestId,
+  return { ...(result["schema_version"] === 3 ? { schema_version: 3 as const } : {}),
+    kind: "accepted", state: "pending", candidate_id: candidateId, request_id: requestId,
     request_digest: requestDigest, idempotency_key: idempotencyKey, operation: parsedOperation,
     accepted_at: acceptedAt, inbox_path: inboxPath, request_file_digest: fileDigest, replayed } as SecondBrainRememberWriteAccepted;
 }

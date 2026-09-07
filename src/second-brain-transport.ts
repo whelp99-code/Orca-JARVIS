@@ -46,7 +46,10 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 	private readonly stopping = new WeakMap<ChildProcess, Promise<void>>(); private activeReads = 0; private activeWrites = 0; private readonly launcher: string;
 	private readonly config: string; private readonly run: SecondBrainExecFile; private readonly resolvePath: (path: string) => string;
 	private readonly timers: SecondBrainTimers; private readonly now: () => number; private readonly deadlines: Readonly<typeof SECOND_BRAIN_DEADLINES>;
-	private readonly profile: SecondBrainContractProfile; private readonly retries: 0 | 1; private readonly shutdownGrace: number; private readonly contract: unknown;
+	private readonly profile: SecondBrainContractProfile;
+	private readonly retries: 0 | 1;
+	private readonly shutdownGrace: number;
+	private readonly contract: unknown;
 	private readonly report?: (diagnostic: SecondBrainDiagnostic) => void; constructor(options: SecondBrainTransportOptions) {
 		this.launcher = options.launcherPath ?? SECOND_BRAIN_LAUNCHER; this.config = options.configPath ?? SECOND_BRAIN_CONFIG; this.run = options.execFile ??
 			((file, args, childOptions) => nodeExecFile(file, [...args], childOptions)); this.resolvePath = options.realpath ?? realpathSync;

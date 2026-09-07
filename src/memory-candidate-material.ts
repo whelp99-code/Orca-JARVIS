@@ -174,7 +174,8 @@ export function computeMemoryCandidate(
     policy_digest: policyOutcome.policy_digest,
     input: {
       schema_version: input.schema_version,
-      ...(input.schema_version === 2 ? { body_profile: input.body_profile } : {}), operation: input.operation, subject: input.subject, statement: input.statement,
+      ...(input.schema_version === 2 ? { body_profile: input.body_profile } : {}),
+      operation: input.operation, subject: input.subject, statement: input.statement,
       purpose: input.purpose, sensitivity: input.sensitivity, host: input.host, principal_id: input.principal_id,
       payload_fields: input.payload_fields, source: input.source, second_brain: input.second_brain, conflict: input.conflict,
     },
