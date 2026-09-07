@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { join } from "node:path";
+import { MemoryCandidateReviewSpool } from "../../src/memory-candidate-review-spool.js";
+import { cleanupMemoryCandidateReviews } from "../../src/memory-candidate-review-cleanup.js";
 import { memoryOutboxHash } from "../../src/memory-outbox-values.js";
 import { snapshotSecondBrainWriteArguments } from "../../src/second-brain-write-request.js";
 import { closeMemoryDatabase } from "../fixtures/memory-candidate-store.js";
@@ -17,7 +20,8 @@ describe("memory outbox V2 saga", () => {
   it("dispatches once, observes the exact artifact, and settles once", async () => {
     const digest = OUTBOX_ARTIFACT_DIGEST;
     const fixture = await outboxFixture({ reader: new FixtureReader({ kind: "current", checked_at: "2026-08-28T12:00:00.000Z", evidence: [evidence(digest)] }) }); fixtures.push(fixture);
-    const queued = fixture.service.enqueue(claimAction(fixture)); expect(queued.state).toBe("queued");
+    const command = claimAction(fixture);
+    const queued = fixture.service.enqueue(command); expect(queued.state).toBe("queued");
     expect(fixture.database.authority.db.prepare("SELECT state FROM memory_candidates WHERE candidate_id=?").get(queued.candidate_id)).toEqual({ state: "queued" });
     const result = await fixture.service.runOnce("worker-one", 1);
     expect(result).toMatchObject({ dispatched: 1, settled: 1 });
@@ -40,6 +44,13 @@ describe("memory outbox V2 saga", () => {
       event_type: "settled", outcome_code: settledEvent?.outcome_code,
       receipt_digest: settledEvent?.effect_digest, created_at: settledEvent?.created_at });
     expect(settledEvent?.event_id).toBe(`event:memory-outbox:v2:${auditDigest.slice(7)}`);
+    expect(new MemoryCandidateReviewSpool(join(fixture.database.root, "candidate-review")).paths()).toEqual([]);
+    fixture.clock.now = new Date("2026-09-02T00:00:00.000Z");
+    expect(fixture.service.enqueue(command)).toEqual(fixture.service.get(queued.outbox_id));
+    expect(() => fixture.service.enqueue({ ...command, fence: command.fence + 1 }))
+      .toThrow("MEMORY_OUTBOX_REPLAY_CONFLICT");
+    expect(() => fixture.service.enqueue({ ...command, args: { ...command.args, unexpected: true } }))
+      .toThrow("MEMORY_OUTBOX_REPLAY_CONFLICT");
     await fixture.service.runOnce("worker-two", 1); expect(fixture.writer.calls).toHaveLength(1);
   });
 
@@ -61,11 +72,39 @@ describe("memory outbox V2 saga", () => {
     ).get(queued.outbox_id)).toEqual({ n: 0 });
   });
 
+  it("reports terminal cleanup failure without changing the committed outcome and retries next cycle", async () => {
+    const fixture = await outboxFixture({ reader: new FixtureReader({ kind: "current",
+      checked_at: "2026-08-28T12:00:00.000Z", evidence: [evidence(OUTBOX_ARTIFACT_DIGEST)] }) });
+    fixtures.push(fixture);
+    const queued = fixture.service.enqueue(claimAction(fixture));
+    const remove = vi.spyOn(MemoryCandidateReviewSpool.prototype, "remove").mockImplementationOnce(() => {
+      throw new Error("injected unlink failure");
+    });
+    try {
+      await expect(fixture.service.runOnce("cleanup-fault", 1)).resolves.toMatchObject({
+        settled: 1, failed: 0, cleanup_error: "MEMORY_REVIEW_CLEANUP_FAILED",
+      });
+      expect(fixture.service.get(queued.outbox_id)?.state).toBe("settled");
+      expect(new MemoryCandidateReviewSpool(join(fixture.database.root, "candidate-review")).paths()).toHaveLength(1);
+    } finally { remove.mockRestore(); }
+    const retried = await fixture.service.runOnce("cleanup-retry", 1);
+    expect(retried).toMatchObject({ dispatched: 0, failed: 0 });
+    expect(retried.cleanup_error).toBeUndefined();
+    expect(new MemoryCandidateReviewSpool(join(fixture.database.root, "candidate-review")).paths()).toEqual([]);
+    expect(fixture.writer.calls).toHaveLength(1);
+  });
+
   it("never settles provider acceptance without an artifact", async () => {
     const fixture = await outboxFixture(); fixtures.push(fixture); const queued = fixture.service.enqueue(claimAction(fixture));
     await fixture.service.runOnce("worker-one", 1);
     expect(fixture.service.get(queued.outbox_id)).toMatchObject({ state: "reconciling", settlement_receipt_digest: null });
     expect(fixture.writer.calls).toHaveLength(1);
+    fixture.clock.now = new Date("2026-09-02T00:00:00.000Z");
+    await fixture.service.reconcileOnce("later-worker", 1);
+    expect(fixture.service.get(queued.outbox_id)).toMatchObject({ state: "reconciling", failure_code: "RECONCILE_TIMEOUT" });
+    const reviewRoot = join(fixture.database.root, "candidate-review");
+    expect(cleanupMemoryCandidateReviews(fixture.database.authority, reviewRoot)).toBe(0);
+    expect(new MemoryCandidateReviewSpool(reviewRoot).read(queued.candidate_id).statement).toBe("ExampleAlpha");
   });
 
   it.each(["null", "wrong", "stale", "current"] as const)("enforces a %s direct SQL settlement receipt", async mode => {
@@ -100,6 +139,11 @@ describe("memory outbox V2 saga", () => {
       expect(() => fixture.database.authority.db.prepare(
         "UPDATE memory_outbox SET settlement_receipt_digest=NULL WHERE outbox_id=?",
       ).run(queued.outbox_id)).toThrow("immutable memory outbox settlement");
+      const reviewRoot = join(fixture.database.root, "candidate-review");
+      expect(new MemoryCandidateReviewSpool(reviewRoot).paths()).toHaveLength(1);
+      await fixture.service.runOnce("terminal-cleanup-restart", 1);
+      expect(new MemoryCandidateReviewSpool(reviewRoot).paths()).toEqual([]);
+      expect(fixture.writer.calls).toHaveLength(1);
     } else expect(settle).toThrow("memory outbox reconciliation required");
   });
 });

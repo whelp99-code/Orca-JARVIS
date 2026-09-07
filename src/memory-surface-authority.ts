@@ -159,11 +159,8 @@ export class MemorySurfaceAuthority {
       this.authority.db.prepare(
         "UPDATE memory_candidate_decision_attempts SET state='applied',updated_at=? WHERE attempt_id=? AND state='staged'",
       ).run(now.toISOString(), attempt.attempt_id);
-      new MemoryCandidateReviewSpool(reviewRoot).remove({
-        candidate_id: review.candidate_id, path: joinReviewPath(reviewRoot, review.candidate_id),
-        review_spool_digest: review.review_envelope_digest, content_bytes: Buffer.byteLength(review.statement, "utf8"),
-        expires_at: review.confirmation_expires_at, created: false,
-      });
+      // The enclosing control transaction can still roll back. Keep the source
+      // until a later cleanup observes a committed terminal state.
     } catch (error) {
       if (dispatch?.created) new MemoryCandidateDispatchSpool(dispatchRoot).remove(dispatch);
       throw error;
@@ -191,8 +188,4 @@ function parseExpectedPrior(value: string | null): Readonly<Record<string, strin
     source_version: String(Reflect.get(parsed, "source_version")),
     source_digest: String(Reflect.get(parsed, "source_digest")),
   };
-}
-
-function joinReviewPath(root: string, candidateId: string): string {
-  return `${root}/${candidateId.replaceAll(":", "_")}.json`;
 }

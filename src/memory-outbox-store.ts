@@ -26,9 +26,28 @@ export class MemoryOutboxStore {
   }
 
   enqueue(command: Parameters<typeof parseMemoryOutboxAction>[0], now: Date): MemoryOutboxSagaV2 {
+    const replay = this.terminalReplay(command);
+    if (replay !== undefined) return replay;
     const action = parseMemoryOutboxAction(command, now, this.spoolRoots);
     requireMemoryOutboxAuthority(this.authority, action, now);
     return this.authority.db.transaction(() => this.insertOrReplay(action, now)).immediate();
+  }
+  private terminalReplay(command: Parameters<typeof parseMemoryOutboxAction>[0]): MemoryOutboxSagaV2 | undefined {
+    const row = this.authority.db.prepare(
+      `SELECT * FROM memory_outbox WHERE action_request_id=? AND state IN ('settled','conflict','failed','expired')`,
+    ).get(command.request_id);
+    if (row === undefined) return undefined;
+    const saga = parseSagaRow(row);
+    const stored = this.records.command(saga.outbox_id);
+    if (command.action !== stored.action || command.action_level !== stored.action_level
+      || command.command_digest !== stored.command_digest || command.receipt_id !== stored.receipt_id
+      || command.fence !== stored.fence || command.reversible !== stored.reversible
+      || canonicalize(command.target) !== canonicalize(stored.target)
+      || canonicalize(command.args) !== canonicalize(stored.args)) {
+      throw new JarvisError("MEMORY_OUTBOX_REPLAY_CONFLICT");
+    }
+    // This is a read-back of a committed result, never another authority redemption.
+    return saga;
   }
   private insertOrReplay(action: MemoryOutboxActionV2, now: Date): MemoryOutboxSagaV2 {
     const identity = memoryOutboxIdentity(action); const request = action.request;

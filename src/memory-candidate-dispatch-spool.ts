@@ -13,7 +13,7 @@ import {
   memoryCandidateReviewDigest,
 } from "./memory-candidate-review-spool.js";
 import { parseSecondBrainStrictJsonBytes } from "./second-brain-strict-json.js";
-import { providerWriteReceipt, receiptDigest, writeRequestDigest, writeRequestId,
+import { providerWriteReceipt, providerWriteIdempotencyKey, receiptDigest, writeRequestDigest, writeRequestId,
   type CorrectTarget, type DispatchReceipt } from "./memory-candidate-dispatch-receipts.js";
 
 const DISPATCH_DOMAIN = "orca-jarvis/memory-candidate-dispatch/v1\0";
@@ -115,7 +115,7 @@ export class MemoryCandidateDispatchSpool {
         content_digest: review.content_digest,
         review_spool_digest: review.review_envelope_digest,
         decision: receipt.decision ?? "owner_confirmed",
-        idempotency_key: review.idempotency_key,
+        idempotency_key: providerWriteIdempotencyKey(review),
         request_id: writeRequestId(review, receipt, undefined),
         request_digest: writeRequestDigest(review, receipt, undefined),
         retention_days: review.retention_days,
@@ -134,7 +134,7 @@ export class MemoryCandidateDispatchSpool {
         content_digest: review.content_digest,
         review_spool_digest: review.review_envelope_digest,
         decision: receipt.decision ?? "owner_confirmed",
-        idempotency_key: review.idempotency_key,
+        idempotency_key: providerWriteIdempotencyKey(review),
         request_id: writeRequestId(review, receipt, target),
         request_digest: writeRequestDigest(review, receipt, target),
         retention_days: review.retention_days,

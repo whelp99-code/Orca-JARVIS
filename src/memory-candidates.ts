@@ -1,5 +1,6 @@
 export { classifyMemoryCandidate } from "./memory-candidate-classifier.js";
 export { MemoryCandidateStore } from "./memory-candidate-store.js";
+export { cleanupMemoryCandidateReviews } from "./memory-candidate-review-cleanup.js";
 export {
   MemoryCandidateReviewSpool,
   createMemoryCandidateReviewEnvelope,

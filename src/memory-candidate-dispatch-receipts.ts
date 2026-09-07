@@ -22,6 +22,16 @@ export type CorrectTarget = {
   readonly expected_prior: Readonly<Record<string, string>>;
 };
 
+/** Provider idempotency is scoped to the immutable classified write, not the UI input key. */
+export function providerWriteIdempotencyKey(
+  review: Pick<MemoryCandidateReviewEnvelope, "candidate_id" | "candidate_digest" | "classification_digest" | "operation">,
+): string {
+  const identity = { candidate_id: review.candidate_id, candidate_digest: review.candidate_digest,
+    classification_digest: review.classification_digest, operation: review.operation };
+  return `memidem:pos:v1:${createHash("sha256").update("orca-jarvis/memory-write-idempotency/v1\0")
+    .update(canonicalize(identity)).digest("hex")}`;
+}
+
 export function providerWriteReceipt(
   review: Pick<MemoryCandidateReviewEnvelope, "candidate_id" | "candidate_digest" | "classification_digest"> & {
     readonly operation: "remember" | "correct";
@@ -45,7 +55,7 @@ function writeRequestBase(
   const providerReceipt = providerWriteReceipt(review, receipt);
   return {
     schema_version: 1, candidate_id: review.candidate_id, candidate_digest: review.candidate_digest,
-    classification_digest: review.classification_digest, idempotency_key: review.idempotency_key,
+    classification_digest: review.classification_digest, idempotency_key: providerWriteIdempotencyKey(review),
     operation: review.operation, subject: review.subject,
     purpose: "personal_memory", sensitivity: review.sensitivity, retention_days: review.retention_days,
     created_at: review.created_at, expires_at: receipt.expires_at,
