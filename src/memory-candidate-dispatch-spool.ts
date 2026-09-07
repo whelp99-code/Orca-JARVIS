@@ -169,6 +169,8 @@ export class MemoryCandidateDispatchSpool {
     return readDispatchFile(this.spool, this.filePath(candidateId));
   }
 
+  pathFor(candidateId: string): string { return this.filePath(candidateId); }
+
   remove(publication: MemoryCandidateDispatchPublication): void {
     const current = readDispatchFile(this.spool, publication.path);
     if (current.candidate_id !== publication.candidate_id

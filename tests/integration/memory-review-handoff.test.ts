@@ -20,6 +20,8 @@ import { localKey } from "../helpers.js";
 import { MemoryOutboxService } from "../../src/memory-outbox.js";
 import { missingReader } from "../fixtures/memory-outbox-fixture.js";
 import { hasOwnerConfirmedMemoryWriteAuthority } from "../../src/second-brain-write-confirmation.js";
+import { recoverMemoryCandidateDispatch } from "../../src/memory-candidate-dispatch-recovery.js";
+import { memoryCandidateDispatchDigest } from "../../src/memory-candidate-dispatch-spool.js";
 
 const now = new Date(MEMORY_NOW);
 async function fixture(decision: "confirm" | "reject", decidedAt = now) {
@@ -111,6 +113,47 @@ describe("review source handoff after real owner confirmation", () => {
       expect(cleanupMemoryCandidateReviews(f.database.authority, f.reviewRoot)).toBe(0);
     } finally { closeMemoryDatabase(f.database); }
   });
+  it.each(["event", "outer"] as const)("recovers a rolled-back %s publication with a fresh signed receipt", async failure => {
+    const f = await fixture("confirm");
+    try {
+      const control = new ControlPlane(f.database.authority);
+      if (failure === "event") {
+        f.database.authority.db.exec(`CREATE TRIGGER fail_handoff_event BEFORE INSERT ON control_events
+          WHEN NEW.event_type='control.command.approved' BEGIN SELECT RAISE(ABORT,'handoff rollback'); END`);
+        expect(() => control.decide(f.receipt, now)).toThrow("handoff rollback");
+        f.database.authority.db.exec("DROP TRIGGER fail_handoff_event");
+      } else {
+        expect(() => f.database.authority.db.transaction(() => {
+          control.decide(f.receipt, now);
+          throw new Error("outer rollback");
+        })()).toThrow("outer rollback");
+      }
+      const spool = new MemoryCandidateDispatchSpool(f.dispatchRoot);
+      const orphan = spool.read(f.candidate.candidate_id);
+      expect(f.database.authority.db.prepare("SELECT 1 FROM memory_candidate_dispatch_publications").get()).toBeUndefined();
+      expect(f.database.authority.db.prepare("SELECT 1 FROM control_command_receipts WHERE receipt_id=?")
+        .get(f.receipt.receipt_id)).toBeUndefined();
+      const { signature: _signature, ...unsigned } = f.receipt;
+      void _signature;
+      const retry = signCommandApproval({ ...unsigned, receipt_id: "handoff-retry", nonce: "handoff-retry" },
+        localKey(f.database.authority));
+      // Recreate the service as after a restart; the authority DB and private spools persist.
+      new ControlPlane(f.database.authority).decide(retry, now);
+      const replacement = spool.read(f.candidate.candidate_id);
+      expect(replacement.dispatch_spool_digest).not.toBe(orphan.dispatch_spool_digest);
+      expect(replacement.control_receipt_id).toBe(retry.receipt_id);
+      const request = resolveSpooledDispatch({ candidate_id: f.candidate.candidate_id,
+        dispatch_spool_digest: replacement.dispatch_spool_digest, roots: { review: f.reviewRoot, dispatch: f.dispatchRoot }, now });
+      expect(request.payload.content).toBe(f.input.statement);
+      expect(hasOwnerConfirmedMemoryWriteAuthority(f.database.authority, request, now)).toBe(true);
+      expect(() => resolveSpooledDispatch({ candidate_id: f.candidate.candidate_id,
+        dispatch_spool_digest: orphan.dispatch_spool_digest, roots: { review: f.reviewRoot, dispatch: f.dispatchRoot }, now })).toThrow();
+      expect(() => control.decide(retry, now)).toThrow("CONTROL_APPROVAL_NOT_APPLICABLE");
+      expect(spool.read(f.candidate.candidate_id)).toEqual(replacement);
+      expect(f.database.authority.db.prepare("SELECT COUNT(*) AS count FROM memory_candidate_owner_decisions").get())
+        .toEqual({ count: 1 });
+    } finally { closeMemoryDatabase(f.database); }
+  });
   it("passes an owner-confirmed candidate through the real outbox fence before a provider call", async () => {
     const f = await fixture("confirm");
     try {
@@ -142,6 +185,56 @@ describe("review source handoff after real owner confirmation", () => {
       expect(service.get(queued.outbox_id)?.state).toBe("reconciling");
       // A transport without an acceptance artifact must not produce settlement.
       expect(result.settled).toBe(0);
+    } finally { closeMemoryDatabase(f.database); }
+  });
+  it("reuses the identical receipt's orphan and never removes committed publication bytes", async () => {
+    const f = await fixture("confirm");
+    try {
+      const control = new ControlPlane(f.database.authority);
+      expect(() => f.database.authority.db.transaction(() => {
+        control.decide(f.receipt, now);
+        throw new Error("outer rollback");
+      })()).toThrow("outer rollback");
+      const spool = new MemoryCandidateDispatchSpool(f.dispatchRoot);
+      const before = readFileSync(spool.pathFor(f.candidate.candidate_id));
+      control.decide(f.receipt, now);
+      const review = new MemoryCandidateReviewSpool(f.reviewRoot).read(f.candidate.candidate_id);
+      expect(() => recoverMemoryCandidateDispatch(f.database.authority, f.dispatchRoot, review))
+        .toThrow("MEMORY_DISPATCH_RECOVERY_TRANSACTION_REQUIRED");
+      f.database.authority.db.transaction(() => recoverMemoryCandidateDispatch(f.database.authority, f.dispatchRoot, review)).immediate();
+      expect(readFileSync(spool.pathFor(f.candidate.candidate_id))).toEqual(before);
+    } finally { closeMemoryDatabase(f.database); }
+  });
+  it.each(["published", "changed", "corrupt"] as const)("preserves %s dispatch bytes when a different receipt retries", async mode => {
+    const f = await fixture("confirm");
+    try {
+      const control = new ControlPlane(f.database.authority);
+      expect(() => f.database.authority.db.transaction(() => {
+        control.decide(f.receipt, now);
+        throw new Error("outer rollback");
+      })()).toThrow("outer rollback");
+      const spool = new MemoryCandidateDispatchSpool(f.dispatchRoot);
+      const orphan = spool.read(f.candidate.candidate_id);
+      if (mode === "published") {
+        f.database.authority.db.prepare(`INSERT INTO memory_candidate_dispatch_publications(
+          candidate_id,schema_version,operation,dispatch_spool_digest,state,published_at)
+          VALUES(?,1,'remember',?,'published',?)`).run(f.candidate.candidate_id, orphan.dispatch_spool_digest, now.toISOString());
+      } else {
+        const changed = { ...orphan, content_digest: `sha256:${"9".repeat(64)}` };
+        if (mode === "changed") changed.dispatch_spool_digest = memoryCandidateDispatchDigest(changed);
+        writeFileSync(spool.pathFor(f.candidate.candidate_id), canonicalize(changed));
+      }
+      const before = readFileSync(spool.pathFor(f.candidate.candidate_id));
+      const { signature: _signature, ...unsigned } = f.receipt;
+      void _signature;
+      const retry = signCommandApproval({ ...unsigned, receipt_id: "handoff-retry", nonce: "handoff-retry" }, localKey(f.database.authority));
+      expect(() => control.decide(retry, now)).toThrow(mode === "published" ? "MEMORY_DISPATCH_REPLAY_CONFLICT"
+        : mode === "changed" ? "MEMORY_DISPATCH_RECOVERY_CONFLICT" : "MEMORY_DISPATCH_INTEGRITY_FAILURE");
+      expect(readFileSync(spool.pathFor(f.candidate.candidate_id))).toEqual(before);
+      expect(new MemoryCandidateReviewSpool(f.reviewRoot).read(f.candidate.candidate_id).statement).toBe(f.input.statement);
+      expect(f.database.authority.db.prepare("SELECT state FROM memory_candidates WHERE candidate_id=?")
+        .get(f.candidate.candidate_id)).toEqual({ state: "awaiting_confirmation" });
+      expect(f.database.authority.db.prepare("SELECT 1 FROM control_command_receipts WHERE receipt_id=?").get(retry.receipt_id)).toBeUndefined();
     } finally { closeMemoryDatabase(f.database); }
   });
   it("cleans committed rejection on restart and refuses cleanup inside an outer transaction", async () => {

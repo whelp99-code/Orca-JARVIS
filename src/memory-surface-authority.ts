@@ -7,6 +7,7 @@ import {
   type MemoryCandidateDispatchPublication,
 } from "./memory-candidate-dispatch-spool.js";
 import { MemoryCandidateReviewSpool } from "./memory-candidate-review-spool.js";
+import { recoverMemoryCandidateDispatch } from "./memory-candidate-dispatch-recovery.js";
 
 const hash = (domain: string, value: unknown): string => `sha256:${createHash("sha256")
   .update(domain).update(canonicalize(value)).digest("hex")}`;
@@ -111,6 +112,7 @@ export class MemorySurfaceAuthority {
     const receiptDigest = hash("orca-jarvis/memory-confirmation-receipt/v1\0", receipt);
     let dispatch: MemoryCandidateDispatchPublication | undefined;
     try {
+      if (attempt.decision === "confirm") recoverMemoryCandidateDispatch(this.authority, dispatchRoot, review);
       const decisionId = `memdecision:pos:v1:${hash("orca-jarvis/memory-candidate-decision/v1\0", {
         candidate_id: attempt.candidate_id, attempt_id: attempt.attempt_id,
         receipt_id: receipt.receipt_id, command_digest: receipt.command_digest,
