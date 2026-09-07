@@ -117,4 +117,17 @@ Migration 062의 task_candidate_certifications는 artifact별 예약 1개, 검�
 
 별도 entry는 `node dist/src/task-verifier-main.js <absolute-db-path> <absolute-private-key-path>`이고 stdin은 command와 verification_id만 받는다. 외부에서 준비한 Ed25519 verifier 키를 읽으며 런타임이 새 신뢰 키를 생성하지 않는다. 키 파일은 현재 UID 소유 일반 파일·0600 이하·단일 링크·16 KiB 이하·직접 절대 경로만 허용한다. 이 검사는 별도 OS 사용자 격리가 아니다. 검증 entry는 호스트의 신뢰 프로세스이며 bwrap 검사 자식에게 DB나 키를 전달하지 않는다. 실제 운영 연결에는 신뢰 가능한 verifier 프로세스 실행/키 배포 및 출력 수집이 필요하다.
 
-예약 후 시작 전 중단은 reserved, 시작 후 프로세스 강제 종료는 running과 proof 없음으로 남는다. 자동 재실행은 허용하지 않는다. entry가 잡은 오류는 uncertain으로 기록하며 lease 만료 후에도 그 사실을 보존할 수 있다. 서명 후 부모 저장 전 중단도 증거가 없을 수 있다. 이 단계는 종료된 프로세스 식별·운영 복구·최종 command 정산을 제공하지 않는다. 별도 부모 프로세스 adapter, 원본 파일 반영, 증거에 따른 workflow 완료, UI 동선 및 Codex provider는 후속이다. `task.execute`의 executable=false를 유지한다.
+예약 후 시작 전 중단은 reserved, 시작 후 프로세스 강제 종료는 running과 proof 없음으로 남는다. 자동 재실행은 허용하지 않는다. entry가 잡은 오류는 uncertain으로 기록하며 lease 만료 후에도 그 사실을 보존할 수 있다. 서명 후 부모 저장 전 중단도 증거가 없을 수 있다. 이 단계는 종료된 프로세스 식별·운영 복구·최종 command 정산을 제공하지 않는다. 원본 파일 반영, 증거에 따른 workflow 완료, UI 동선 및 Codex provider는 후속이다. 부모 프로세스 연결은 아래 통합 호출이 담당한다. `task.execute`의 executable=false를 유지한다.
+
+
+## 후보 생성부터 독립 검증 증거 저장까지의 통합 호출
+
+`executeCertifiedTaskCandidate`는 현재 서명/등록 verifier 키와 실제 공유 DB 경로를 확인하고, 검증 실행 파일·키 파일의 메타데이터를 검사한 뒤 기존 후보 생성과 `certifyTaskCandidate`를 연결한다. 상대경로로 AuthorityDb를 열어도 `PRAGMA database_list`의 실제 main 파일 절대경로를 사용한다. 메모리 DB는 별도 프로세스가 공유할 수 없으므로 모델 호출 전에 거부한다.
+
+`NodeTaskVerifierProcess`는 현재 Node 실행 파일과 배포된 task-verifier-main.js만 사용하며 작업 인수로 실행 파일을 선택하지 않는다. cwd `/`, 빈 환경, shell=false, 독립 프로세스 그룹으로 실행한다. 부모는 private key 바이트를 읽지 않고 경로만 전달한다. 파일 경로 준비 후 실제 spawn 직전에도 reserved 상태·승인·lease·영속 마감의 남은 시간을 확인한다. 프로세스의 monotonic 타이머와 이 마감 중 먼저 만료되는 제한을 적용한다.
+
+stdin은 최대 4 MiB, stdout/stderr 합계는 proof 메타데이터 512 KiB와 진단 4 KiB로 제한한다. 이 프로토콜 한도는 실제 검사 stdout/stderr에 적용하는 승인된 공유 출력 예산과 별개다. 검사 출력 예산은 후보 provider·로컬 검사·독립 검사를 모두 합산한다. 시간/출력/입력 전달 실패에서는 프로세스 그룹을 종료하고 close 이벤트를 기다린 뒤 고정 오류 코드만 반환한다. 원문 stderr와 private key 내용은 결과에 포함하지 않는다.
+
+부모는 받은 JSON의 invocation을 현재 예약과 대조하고 기존 proof 검증기로 서명·후보·명령·시간·철회를 재검증하여 저장한다. 자신이 새 예약을 만든 이후 실패한 경우 operation을 uncertain으로 보존하고 자동 재생성을 막는다. 기존 예약과의 충돌은 그 예약의 상태를 변경하지 않는다. 반환 `candidate_certified`는 서명된 측정의 저장이며 `checks_passed`는 로컬 검사와 독립 검사가 모두 통과해야 true다. `published=false`와 workflow running은 유지한다.
+
+실행파일 검사는 직접 확인한 파일이 일반 파일이고 그룹/다른 사용자 쓰기 권한이 없는지 검사한다. 일반 개발 build가 umask에 따라 664 파일을 만들면 TASK_VERIFIER_UNAVAILABLE로 중단한다. 배포 패키지는 entry뿐 아니라 전체 코드·의존성과 상위 디렉터리를 신뢰 가능한 권한으로 준비해야 한다. 현재 사전 검사는 전체 의존성 트리의 무결성 증명이나 개인 키/공개키 짝의 사전 인증 검사가 아니다. 등록 키와 private key 일치는 실제 verifier entry에서 확인한다. 운영 패키징/readiness의 완결과 자동 실행 활성화는 별도 후속 범위다.

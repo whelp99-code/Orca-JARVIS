@@ -14,7 +14,7 @@ const publicBytes = (pem: string) => {
   if (key.asymmetricKeyType !== "ed25519") return certificationInvalid();
   return key.export({ type: "spki", format: "der" });
 };
-function verifierKey(authority: AuthorityDb, keyId: string): string {
+export function taskCertificationVerifierKey(authority: AuthorityDb, keyId: string): string {
   const key = authority.db.prepare(`SELECT k.public_key_pem,k.principal_id,k.algorithm FROM trusted_authority_keys k
     JOIN authority_key_purposes p ON p.key_id=k.key_id WHERE k.key_id=? AND p.purpose='verifier'`)
     .get(keyId) as { public_key_pem: string; principal_id: string; algorithm: string } | undefined;
@@ -43,7 +43,7 @@ export function taskCertificationContext(authority: AuthorityDb, command: Claime
   if (!attempt) return certificationInvalid();
   const budget = { clock_id: attempt.task_clock_id, deadline_uptime_ms: attempt.task_deadline_uptime_ms };
   const remaining = remainingTaskExecutionBudget(budget);
-  const publicKey = verifierKey(authority, keyId);
+  const publicKey = taskCertificationVerifierKey(authority, keyId);
   const priorBytes = artifact.verification?.checks.reduce((n, check) => n + check.stdout_bytes + check.stderr_bytes, 0) ?? 0;
   const outputBytes = plan.limits.max_output_bytes - artifact.provider_output_bytes - priorBytes;
   if (outputBytes < 0 || remaining > plan.limits.timeout_ms || artifact.plan.task_spec_digest !== plan.task_spec_digest) {

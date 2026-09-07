@@ -14,6 +14,8 @@ export { ClaudeTaskCandidateProvider } from "./claude-task-provider.js";
 export { TaskCandidateArtifacts } from "./task-candidate-artifacts.js";
 export { TaskCandidateCertifications } from "./task-candidate-certifications.js";
 export type { TaskCertificationRequest, TaskCertificationProof } from "./task-certification-proof.js";
+export { executeCertifiedTaskCandidate, certifyTaskCandidate, type TaskCertificationDriver } from "./task-certified-execution.js";
+export { NodeTaskVerifierProcess, type TaskVerifierProcess } from "./task-verifier-process.js";
 
 /** Declared work requirements; member scopes do not grant filesystem or execution permissions. */
 export interface TaskSpecV1 {

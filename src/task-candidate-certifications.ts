@@ -12,6 +12,10 @@ type CertificationRow = { attempt_id: string; verification_id: string; request_j
 export class TaskCandidateCertifications {
   constructor(private readonly authority: AuthorityDb) {}
 
+  pending(command: ClaimedControlCommand, verificationId: string, clock: () => Date = () => new Date()) {
+    return this.authority.db.transaction(() => this.context(command, verificationId, clock, ["reserved"])).immediate();
+  }
+
   prepare(command: ClaimedControlCommand, keyId: string, clock: () => Date = () => new Date()): TaskCertificationRequest {
     return this.authority.db.transaction(() => {
       const now = clock();

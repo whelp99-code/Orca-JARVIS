@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { mkdtemp, mkdir, writeFile, readFile, rm, realpath } from "node:fs/promises";
-import { join } from "node:path";
+import { join, relative } from "node:path";
 import { tmpdir } from "node:os";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { executeTaskCandidate } from "../../src/task-candidate-execution.js";
@@ -10,6 +10,12 @@ import { taskExecutionFixture } from "../fixtures/task-execution-fixture.js";
 import type { TaskProviderRequest } from "../../src/task-candidate-provider.js";
 import type { TaskSandboxInvocation } from "../../src/task-sandbox.js";
 import { TaskCandidateArtifacts } from "../../src/task-candidate-artifacts.js";
+import { executeCertifiedTaskCandidate } from "../../src/task-certified-execution.js";
+import { TaskCandidateCertifications } from "../../src/task-candidate-certifications.js";
+import { signTaskCertification } from "../../src/task-certification-proof.js";
+import type { TaskVerifierInvocation } from "../../src/task-verifier-process.js";
+import { verifierKey } from "../helpers.js";
+import { AuthorityDb } from "../../src/db.js";
 
 const digest = (value: string) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 const cleanup: Array<() => Promise<void>> = [];
@@ -41,6 +47,88 @@ async function fixture() {
 }
 
 describe("approved task candidate execution", () => {
+  function certification(f: Awaited<ReturnType<typeof fixture>>) {
+    return { key_id: "verifier-test", process: { checkReady: vi.fn(async () => {}), verify: vi.fn(async (input: TaskVerifierInvocation) => {
+      input.before_spawn();
+      const started = new TaskCandidateCertifications(f.db).begin(input.command, input.verification_id, () => f.now);
+      return signTaskCertification({ schema_version: 1, request: started.request, invocation_id: started.invocation_id,
+        measurement: started.artifact.verification!, principal_id: "independent-verifier", algorithm: "Ed25519",
+        issued_at: f.now.toISOString() }, verifierKey(f.db));
+    }) } };
+  }
+
+  it("uses the actual opened database path when the authority was constructed with a relative filename", async () => {
+    const f = await fixture(); const certifier = certification(f);
+    const relativeAuthority = new AuthorityDb(relative(process.cwd(), f.db.filename));
+    const original = certifier.process.verify.getMockImplementation()!;
+    certifier.process.verify.mockImplementation(async invocation => {
+      expect(invocation.database).toBe(f.db.filename);
+      return original(invocation);
+    });
+    try {
+      const result = await executeCertifiedTaskCandidate({ ...f.input, authority: relativeAuthority, certification: certifier });
+      expect(result.checks_passed).toBe(true);
+    } finally { relativeAuthority.close(); }
+  });
+
+  it("rejects an in-memory database before calling the candidate provider", async () => {
+    const f = await fixture(); const authority = new AuthorityDb(":memory:");
+    try {
+      await expect(executeCertifiedTaskCandidate({ ...f.input, authority, certification: certification(f) }))
+        .rejects.toThrow("TASK_VERIFIER_DATABASE_UNAVAILABLE");
+      expect(f.provider.generate).not.toHaveBeenCalled();
+    } finally { authority.close(); }
+  });
+
+  it.each(["pass", "failed_check"])("connects generation and independent %s evidence in one call", async scenario => {
+    const f = await fixture(); const certifier = certification(f);
+    if (scenario === "failed_check") f.verifier.mockResolvedValue({ exit_code: 1, stdout_bytes: 0, stderr_bytes: 0,
+      stdout_digest: digest(""), stderr_digest: digest("") });
+    const result = await executeCertifiedTaskCandidate({ ...f.input, certification: certifier });
+    expect(result.state).toBe("candidate_certified"); expect(result.published).toBe(false);
+    expect(result.checks_passed).toBe(scenario === "pass");
+    expect(result.certification.request.artifact_id).toBe(result.artifact_id);
+    expect(new TaskCandidateCertifications(f.db).requireProof(f.command, result.verification_id, () => f.now)).toEqual(result.certification);
+    expect(certifier.process.checkReady).toHaveBeenCalledOnce(); expect(certifier.process.verify).toHaveBeenCalledOnce();
+    expect(f.provider.generate).toHaveBeenCalledOnce();
+    expect(await readFile(join(f.root, "src/fix.ts"), "utf8")).toBe("original");
+    expect(f.state()).toEqual([{ state: "invoking" }]);
+    expect(new LoopGraph(f.db).get("run").state).toBe("running");
+  });
+
+  it.each(["unavailable", "unknown_key", "cancelled_during_preflight"])("rejects verifier %s before model invocation", async scenario => {
+    const f = await fixture(); const certifier = certification(f);
+    if (scenario === "unavailable") certifier.process.checkReady.mockRejectedValue(new Error("not installed"));
+    if (scenario === "unknown_key") certifier.key_id = "missing";
+    if (scenario === "cancelled_during_preflight") certifier.process.checkReady.mockImplementation(async () => {
+      f.control.cancel({ request_id: "execute", actor: "operator", reason: "cancel", revoked_at: f.now.toISOString() }, f.now);
+    });
+    await expect(executeCertifiedTaskCandidate({ ...f.input, certification: certifier })).rejects.toThrow();
+    expect(f.provider.generate).not.toHaveBeenCalled(); expect(certifier.process.verify).not.toHaveBeenCalled();
+    expect(f.state()).toEqual([]);
+  });
+
+  it.each(["missing_result", "forged_result", "cancelled_before_spawn", "cancelled_after_signing"])(
+    "preserves the candidate and prevents replay after verifier %s", async scenario => {
+      const f = await fixture(); const certifier = certification(f);
+      const original = certifier.process.verify.getMockImplementation()!;
+      const cancel = () => f.control.cancel({ request_id: "execute", actor: "operator", reason: "cancel",
+        revoked_at: f.now.toISOString() }, f.now);
+      certifier.process.verify.mockImplementation(async invocation => {
+        if (scenario === "missing_result") throw new Error("private error");
+        if (scenario === "cancelled_before_spawn") cancel();
+        const proof = await original(invocation);
+        if (scenario === "cancelled_after_signing") cancel();
+        return scenario === "forged_result" ? { ...proof, signature: "invalid" } : proof;
+      });
+      await expect(executeCertifiedTaskCandidate({ ...f.input, certification: certifier })).rejects.toThrow();
+      expect(new TaskCandidateArtifacts(f.db).read("execute")!.files[0]!.content.toString()).toBe("changed");
+      expect(f.state()).toEqual([{ state: "uncertain" }]);
+      expect(f.db.db.prepare("SELECT proof_json FROM task_candidate_certifications").get()).toEqual({ proof_json: null });
+      await expect(executeCertifiedTaskCandidate({ ...f.input, certification: certifier })).rejects.toThrow();
+      expect(f.provider.generate).toHaveBeenCalledOnce();
+    });
+
   it("preserves the provider candidate when the verifier fails, without recording a successful measurement", async () => {
     const f = await fixture();
     f.verifier.mockRejectedValue(new Error("verifier unavailable"));
