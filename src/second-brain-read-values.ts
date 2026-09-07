@@ -118,18 +118,22 @@ export function combineSecondBrainEvidence(
 }
 
 export function boundSecondBrainEvidence(input: {
-  readonly pageId: string; readonly checkedAt: Date; readonly maxAgeMs: number;
+  readonly pageId: string; readonly checkedAt: Date; readonly maxAgeMs: number; readonly expiryMs: number;
   readonly generation: SecondBrainGenerationBinding; readonly row: BoundRecordProjection;
 }): SecondBrainEvidence {
   const from = Date.parse(input.row.validFrom); const until = Date.parse(input.row.validUntil);
-  const freshUntil = Math.min(from + input.maxAgeMs, until);
+  const checked = input.checkedAt.getTime();
+  const applicable = from <= checked && checked < until;
+  // Freshness describes this provider read, not renewed verification of the assertion.
+  const freshUntil = applicable ? Math.min(checked + input.maxAgeMs, until) : checked;
+  const expiresAt = applicable ? Math.min(checked + input.expiryMs, until) : checked;
   const redacted = input.row.tier === "sensitive" || input.row.tier === "restricted";
   return { kind: "memory", page_id: input.pageId, sid: input.row.sid, source_ref: input.row.origin,
     source_id: SECOND_BRAIN_SOURCE_ID, source_version: input.row.version, sensitivity: input.row.tier,
     observed_at: input.checkedAt.toISOString(), valid_at: input.row.validFrom,
-    freshness: { state: input.checkedAt.getTime() >= freshUntil ? "stale" : "fresh",
+    freshness: { state: applicable ? "fresh" : "stale",
       checked_at: input.checkedAt.toISOString(), fresh_until: new Date(freshUntil).toISOString() },
-    expires_at: input.row.validUntil, trust: SECOND_BRAIN_TRUST, authority: "none",
+    expires_at: new Date(expiresAt).toISOString(), trust: SECOND_BRAIN_TRUST, authority: "none",
     excerpt: redacted ? null : input.row.text, content_digest: input.row.textDigest,
     omission: redacted ? "policy_redacted" : null,
     record: { record_id: input.row.recordId, record_digest: input.row.recordDigest,

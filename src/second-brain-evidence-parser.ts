@@ -90,8 +90,8 @@ export function parseSecondBrainPage(input: PageParseInput): ParsedPage {
   const checkedMs = input.checkedAt.getTime();
   if (!Number.isFinite(validAt.getTime()) || validAt.toISOString().slice(0, 10) !== updated
     || validAt.getTime() > checkedMs) return invalid("SECOND_BRAIN_TIME_INVALID");
-  if (checkedMs >= validAt.getTime() + input.expiryMs) return invalid("SECOND_BRAIN_EVIDENCE_EXPIRED");
   if (bound) return parseBoundRecords(input, frontmatter, tier);
+  if (checkedMs >= validAt.getTime() + input.expiryMs) return invalid("SECOND_BRAIN_EVIDENCE_EXPIRED");
   return parseCitations(input, body, {
     pageId,
     version,
@@ -148,11 +148,16 @@ function parseBoundRecords(
     if (recordDigest !== expected || recordId !== `sbrecord:v1:${expected.slice(7)}`
       || textDigest !== digest(text) || content !== textDigest.slice(7)
       || !Number.isFinite(from) || !Number.isFinite(until) || from >= until
-      || input.checkedAt.getTime() >= until) return invalid("SECOND_BRAIN_RECORD_IDENTITY_INVALID");
+      || validFrom.length !== 24 || validUntil.length !== 24
+      || validFrom.startsWith("0000-") || validUntil.startsWith("0000-")
+      || new Date(from).toISOString() !== validFrom || new Date(until).toISOString() !== validUntil) {
+      return invalid("SECOND_BRAIN_RECORD_IDENTITY_INVALID");
+    }
     const projection: BoundRecordProjection = { recordId, recordDigest, sid, text, textDigest,
       source, content, citation, owner, ownerDigest, origin, validFrom, validUntil, tier, version };
     evidence.push(boundSecondBrainEvidence({ pageId: input.requestedPageId,
-      checkedAt: input.checkedAt, maxAgeMs: input.maxAgeMs, generation, row: projection }));
+      checkedAt: input.checkedAt, maxAgeMs: input.maxAgeMs, expiryMs: input.expiryMs,
+      generation, row: projection }));
   }
   return resolveDuplicates(evidence);
 }

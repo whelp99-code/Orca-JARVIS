@@ -9,13 +9,15 @@ const hash = (text: string) => createHash("sha256").update(text).digest("hex");
 const generation = { provider_instance_id: "provider:fixture", generation_id: `sbgen:v1:${"a".repeat(64)}`,
   generation_manifest_digest: `sha256:${"b".repeat(64)}`, vault_head: "c".repeat(40), vault_tree: "d".repeat(40),
   tombstone_sequence: 0, tombstone_set_root: `sha256:${"e".repeat(64)}` };
-function record(text: string, start: number) {
+function record(text: string, start: number, validity = {
+  valid_from: "2026-08-31T00:00:00.000Z", valid_until: "2026-09-01T00:00:00.000Z",
+}) {
   const core = { schema_version: 1, sid: "aaaaaaaa", record_text: text,
     record_text_digest: `sha256:${hash(text)}`, citation_span_start: start,
     citation_span_end: start + Buffer.byteLength(text), source_identity_full: hash("shared source"),
     content_identity_full: hash(text), citation_identity_full: hash(`span:${start}`), sensitivity: "personal",
     source_owner_class: "provider_owned", source_owner_id_digest: `sha256:${hash("owner")}`,
-    origin_label: "Second Brain", valid_from: "2026-08-31T00:00:00.000Z", valid_until: "2026-09-01T00:00:00.000Z" };
+    origin_label: "Second Brain", ...validity };
   const digest = hash(`second-brain/memory-record/v1\0${canonicalize(core)}`);
   return { ...core, record_id: `sbrecord:v1:${digest}`, record_digest: `sha256:${digest}` };
 }
@@ -23,8 +25,8 @@ const records = [record("공통 기억의 첫 번째 결정", 200), record("공�
 const page = () => ({ kind: "data" as const, value: { ...generation,
   frontmatter: { id: "wiki/shared", title: "Shared", compiled_by: "sb/1.0.0|v1|test", updated: "2026-08-31",
     sources: "", status: "active" }, body: "Two cited statements.", records } });
-const reader = (transport: QueuedTransport) => createSecondBrainReadAdapter({ transport, contract_profile: "schema4",
-  clock: () => now, max_age_ms: 86_400_000, expiry_ms: 172_800_000,
+const reader = (transport: QueuedTransport, checkedAt = now) => createSecondBrainReadAdapter({ transport, contract_profile: "schema4",
+  clock: () => checkedAt, max_age_ms: 86_400_000, expiry_ms: 172_800_000,
   budgets: { max_hits: 4, max_excerpt_bytes: 4096, max_page_bytes: 32768, max_total_bytes: 65536 } });
 
 describe("shared-source schema4 memory records", () => {
@@ -52,5 +54,50 @@ describe("shared-source schema4 memory records", () => {
     const result = await reader(new QueuedTransport([{ kind: "data", value: { ...generation, results: selections } }, page()]))
       .search("공통 기억");
     expect(result).toMatchObject({ kind: "invalid", code: "SECOND_BRAIN_RECORD_SELECTION_INVALID" });
+  });
+});
+
+describe("record validity and bounded read freshness", () => {
+  const checkedAt = new Date("2026-11-01T12:00:00.000Z");
+  it.each([
+    ["unknown start", "0001-01-01T00:00:00.000Z", "9999-12-31T23:59:59.000Z",
+      "current", "2026-11-02T12:00:00.000Z", "2026-11-03T12:00:00.000Z"],
+    ["durable historical assertion", "2026-08-31T00:00:00.000Z", "9999-12-31T23:59:59.000Z",
+      "current", "2026-11-02T12:00:00.000Z", "2026-11-03T12:00:00.000Z"],
+    ["finite current assertion", "2026-08-31T00:00:00.000Z", "2026-11-01T13:00:00.000Z",
+      "current", "2026-11-01T13:00:00.000Z", "2026-11-01T13:00:00.000Z"],
+    ["exact end boundary", "2026-08-31T00:00:00.000Z", checkedAt.toISOString(),
+      "stale", checkedAt.toISOString(), checkedAt.toISOString()],
+    ["expired assertion", "2026-08-31T00:00:00.000Z", "2026-09-01T00:00:00.000Z",
+      "stale", checkedAt.toISOString(), checkedAt.toISOString()],
+    ["future assertion", "2026-11-02T00:00:00.000Z", "2026-11-03T00:00:00.000Z",
+      "stale", checkedAt.toISOString(), checkedAt.toISOString()],
+  ])("separates %s from response lifetime", async (_label, validFrom, validUntil, kind, freshUntil, expiresAt) => {
+    const response = page();
+    response.value.records = [record("A dated assertion", 200, { valid_from: validFrom, valid_until: validUntil })];
+    const result = await reader(new QueuedTransport([response]), checkedAt).readPage("wiki/shared");
+    expect(result.kind).toBe(kind);
+    if (result.kind !== "current" && result.kind !== "stale") throw new Error("expected evidence");
+    expect(result.evidence[0]).toMatchObject({ valid_at: validFrom, observed_at: checkedAt.toISOString(),
+      freshness: { state: kind === "current" ? "fresh" : "stale", fresh_until: freshUntil },
+      expires_at: expiresAt, trust: "untrusted", authority: "none" });
+  });
+  it("still rejects a changed interval without a matching digest", async () => {
+    const response = page();
+    response.value.records = records.map(row => ({ ...row, valid_until: "9999-12-31T23:59:59.000Z" }));
+    const result = await reader(new QueuedTransport([response]), checkedAt).readPage("wiki/shared");
+    expect(result).toMatchObject({ kind: "invalid", code: "SECOND_BRAIN_RECORD_IDENTITY_INVALID" });
+  });
+  it.each([
+    ["2026-08-31T00:00:00Z", "9999-12-31T23:59:59.000Z"],
+    ["2026-08-31T00:00:00.000Z", "+010000-01-01T00:00:00.000Z"],
+    ["0000-01-01T00:00:00.000Z", "9999-12-31T23:59:59.000Z"],
+  ])("rejects an unsupported interval %s to %s even with a matching digest", async (validFrom, validUntil) => {
+    const response = page();
+    response.value.records = [record("A dated assertion", 200, {
+      valid_from: validFrom, valid_until: validUntil,
+    })];
+    const result = await reader(new QueuedTransport([response]), checkedAt).readPage("wiki/shared");
+    expect(result).toMatchObject({ kind: "invalid", code: "SECOND_BRAIN_RECORD_IDENTITY_INVALID" });
   });
 });
