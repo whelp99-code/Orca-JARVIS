@@ -13,7 +13,8 @@
 | 02 | runtime 소유권 | 구현·독립 리뷰 완료; 관련 자동 41개와 실제 프로세스/CLI 2개 시나리오 통과 |
 | 03 | 만료 정산 | 구현·독립 정적 리뷰 완료; 만료/rollback 10개 및 기존 관련 25개 통과 |
 | 04 | 작업 제약·완료 기준을 승인부터 결과까지 보존 | 제안→승인→workflow 저장 구현; 실제 dispatch·검증 연결은 10–11과 함께 후속 |
-| 05–09 | 상태·집계·retention·읽기 부작용·재시도 | 대기 |
+| 05–06, 08–09 | 상태·집계·읽기 부작용·재시도 | 대기 |
+| 07 | retention 결과 정합성 | 어댑터 미설정 실패, policy 전달, 원자적 처리 구현; 실제 정책별 어댑터·스케줄은 12 후속 |
 | 10–11, 21 최소 | 실제 준비 상태와 승인된 작업 한 건의 실행 완결 | 대기; 실사용 인수 필수 |
 | 12–13 | 스케줄·관찰 장애와 실행 장애 분리 | 대기 |
 | 14–19 | 구조·설치·조회·SSE·테스트·운영 정보 | 대기; 의미 있는 도메인 단위로 변경 |
@@ -82,3 +83,13 @@
 - 브라우저 첫 시도는 기존 4176 리스너와 충돌했다. 별도 포트 55609/39877의 fixture를 사용했다. 다음 시도에서 과거 영문 제목/SSE 라벨 기대를 발견하고 현재 한국어 화면 값으로 E2E helper를 수정했다. 기존 리스너는 종료하지 않았다.
 - backend 관련 7파일 50개, dashboard 전체 25파일 136개 통과. `npm run typecheck && npm run lint && npm run build`: exit 0. 독립 정적 리뷰 필수 지적 0건.
 - 다음 경계: TaskSpec assignment 구조의 실행 시 검증, 실제 허용 경로·금지 작업 강제, dispatch 및 독립 완료 증거에 동일 digest 연결. Legacy 입력의 읽기/기존 workflow 실행은 유지하며 그 호환성을 새 TaskSpec 실행 보장으로 취급하지 않는다.
+
+## 2026-09-07 P1-07 보존 작업 결과 정합성
+
+- 미등록 adapter의 허위 completed를 재현한 뒤 `failed / E_RETENTION_ADAPTER`로 바꿨다. 실제 등록 adapter의 빈 스캔은 completed와 0개 집계로 구분한다.
+- adapter에 job ID·실행 시각·data class·cutoff·policy digest를 전달한다. policy digest는 cutoff까지 포함하는 v2 입력을 해시하며, receipt는 기존 필드 모양을 유지한다.
+- retention 실행기별 owner를 구분하고, 실행 전후 현재 owner/fence/만료를 검사한다. SQLite 변경과 완료 정산을 IMMEDIATE 트랜잭션으로 묶고, 예외·오류 집계·정산 실패·처리 중 만료 시 삭제를 rollback한다.
+- 독립 리뷰 1건: 쓰기 잠금 대기 동안 만료될 수 있어 transaction 진입 후 시각을 다시 읽도록 수정했다. 재리뷰 미해결 지적 0건.
+- retention 10개, composition 1개, reviewability 2개, 기존 jobs/reclaim/expiry 23개 — 중복 제외 관련 36개 통과. 잠금 획득 전후 시각 검증은 주입 clock이며 실제 프로세스 잠금 대기 부하 시험은 아니다.
+- export 추가로 발생한 index barrel 252행 gate 실패는 해당 모듈의 public export를 한 re-export로 정리해 250행으로 조치했고 reviewability 2개를 재실행했다. 이 기계적 상한 정책의 개선은 항목14로 유지한다.
+- `npm run typecheck && npm run lint && npm run build:backend`: exit 0. 실제 데이터 클래스별 삭제 정책 구현과 일일 운영 연결은 아직 활성화하지 않았다. SQLite 밖 외부 효과를 내는 retention adapter는 이 원자성 계약에 포함되지 않는다.

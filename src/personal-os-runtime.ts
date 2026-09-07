@@ -17,7 +17,7 @@ export class PersonalOsRuntime {
     readonly gjcService?: GjcRuntimeService;
   }) {
     this.now = input.now;
-    this.retention = new RetentionRuntime(input.db, this.owner, input.adapters ?? {});
+    this.retention = new RetentionRuntime(input.db, this.owner, input.adapters ?? {}, input.now);
     this.gjcService = input.gjcService;
   }
 

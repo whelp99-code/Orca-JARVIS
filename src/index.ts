@@ -246,4 +246,5 @@ export {
 export { BUILTIN_RUNBOOKS, type RunbookSpec, type RunbookResult, type HostOperations } from "./runbook.js";
 export { type MicroLoopName, type MicroLoopHandler, type MicroLoopOutcome } from "./microloops.js";
 export { PersonalOsRuntime } from "./personal-os-runtime.js"; export { evaluateSlo, SLO_CATALOG } from "./personal-os-slo.js";
+export * from "./personal-os-retention.js";
 export { decideRollback, migrationVectorDigest } from "./personal-os-compatibility.js"; export { runPersonalOsRehearsal } from "./personal-os-rehearsal.js";

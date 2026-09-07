@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import type { Database } from "better-sqlite3";
 import { canonicalize } from "./canonical.js";
 import { PersonalOsError } from "./personal-os-errors.js";
@@ -15,7 +15,19 @@ export type RetentionCounts = {
   readonly error_count: number;
 };
 
-export type RetentionAdapter = (db: Database) => RetentionCounts;
+export type RetentionPolicy = {
+  readonly schema_version: 1;
+  readonly data_class: RetentionDataClass;
+  readonly cutoff: string;
+};
+export type RetentionAdapterContext = {
+  readonly job_id: string;
+  readonly now: string;
+  readonly policy: RetentionPolicy;
+  readonly policy_digest: string;
+};
+/** Adapters perform synchronous changes on this SQLite connection only. */
+export type RetentionAdapter = (db: Database, context: RetentionAdapterContext) => RetentionCounts;
 export type RetentionAdapterMap = Partial<Record<RetentionDataClass, RetentionAdapter>>;
 
 export type RetentionReceipt = RetentionCounts & {
@@ -35,14 +47,14 @@ export type RetentionJobInput = {
   readonly createdAt: string;
 };
 
-const EMPTY: RetentionCounts = { scanned: 0, eligible: 0, deleted: 0, retained: 0, error_count: 0 };
-
 export class RetentionRuntime {
+  private readonly owner: string;
   constructor(
     private readonly db: Database,
-    private readonly owner: string,
+    owner: string,
     private readonly adapters: RetentionAdapterMap,
-  ) {}
+    private readonly clock: () => Date = () => new Date(),
+  ) { this.owner = `${owner}:${process.pid}:${randomUUID()}`; }
 
   createJob(input: RetentionJobInput): void {
     this.db
@@ -84,31 +96,70 @@ export class RetentionRuntime {
   }
 
   executeClaimed(input: { readonly jobId: string; readonly now: string; readonly cutoff: string }): RetentionReceipt {
-    const job = this.db
-      .prepare("SELECT data_class,lease_fence FROM retention_jobs WHERE job_id=? AND state='claimed' AND lease_owner=?")
-      .get(input.jobId, this.owner) as { readonly data_class: RetentionDataClass; readonly lease_fence: number } | undefined;
-    if (!job) throw new PersonalOsError("E_RETENTION_CLAIM");
-    const adapter = this.adapters[job.data_class];
-    const counts = adapter === undefined ? EMPTY : adapter(this.db);
-    const policy_digest = `sha256:${createHash("sha256").update("orca-jarvis/retention-policy/v1\0").update(job.data_class).digest("hex")}`;
-    const body = {
-      scanned: counts.scanned,
-      eligible: counts.eligible,
-      deleted: counts.deleted,
-      retained: counts.retained,
-      error_count: counts.error_count,
-      cutoff: input.cutoff,
-      policy_digest,
-      fence: job.lease_fence,
-    };
-    const result_digest = `sha256:${createHash("sha256").update("orca-jarvis/retention-receipt/v1\0").update(canonicalize(body)).digest("hex")}`;
-    const settled = this.db
-      .prepare(
-        "UPDATE retention_jobs SET state='completed',result_digest=?,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE " +
-          "job_id=? AND state='claimed' AND lease_owner=? AND lease_fence=?",
-      )
-      .run(result_digest, input.now, input.jobId, this.owner, job.lease_fence);
-    if (settled.changes !== 1) throw new PersonalOsError("E_RETENTION_CLAIM");
-    return { ...body, result_digest };
+    let started = this.now();
+    if (!validTimestamp(input.now) || !validTimestamp(input.cutoff)
+      || input.now > started || input.cutoff > started) throw new PersonalOsError("E_CLOCK_INVALID");
+    let fence: number | undefined;
+    try {
+      return this.db.transaction(() => {
+        started = this.now();
+        const job = this.currentLease(input.jobId, started);
+        fence = job.lease_fence;
+        const adapter = this.adapters[job.data_class];
+        if (adapter === undefined) throw new PersonalOsError("E_RETENTION_ADAPTER");
+        const policy: RetentionPolicy = { schema_version: 1, data_class: job.data_class, cutoff: input.cutoff };
+        const policy_digest = digest("retention-policy/v2", policy);
+        const counts = adapter(this.db, { job_id: input.jobId, now: started, policy, policy_digest });
+        validateCounts(counts);
+        const completedAt = this.now();
+        const current = this.currentLease(input.jobId, completedAt);
+        if (current.lease_fence !== fence) throw new PersonalOsError("E_RETENTION_CLAIM");
+        const body = { ...counts, cutoff: input.cutoff, policy_digest, fence };
+        const result_digest = digest("retention-receipt/v1", body);
+        const settled = this.db.prepare(
+          "UPDATE retention_jobs SET state='completed',result_digest=?,lease_owner=NULL,lease_expires_at=NULL,updated_at=? WHERE " +
+            "job_id=? AND state='claimed' AND lease_owner=? AND lease_fence=?",
+        ).run(result_digest, completedAt, input.jobId, this.owner, fence);
+        if (settled.changes !== 1) throw new PersonalOsError("E_RETENTION_CLAIM");
+        return { ...body, result_digest };
+      }).immediate();
+    } catch (error) {
+      const failure = error instanceof PersonalOsError ? error : new PersonalOsError("E_RETENTION_ADAPTER");
+      // The transaction already rolled back adapter changes and any partial completion.
+      if (fence !== undefined) this.db.prepare(
+        "UPDATE retention_jobs SET state='failed',failure_code=?,lease_owner=NULL,lease_expires_at=NULL,updated_at=? " +
+          "WHERE job_id=? AND state='claimed' AND lease_owner=? AND lease_fence=?",
+      ).run(failure.code, started, input.jobId, this.owner, fence);
+      throw failure;
+    }
   }
+
+  private now(): string {
+    const now = this.clock();
+    if (!Number.isFinite(now.getTime())) throw new PersonalOsError("E_CLOCK_INVALID");
+    return now.toISOString();
+  }
+
+  private currentLease(jobId: string, now: string): { data_class: RetentionDataClass; lease_fence: number } {
+    const row = this.db.prepare(
+      "SELECT data_class,lease_fence FROM retention_jobs WHERE job_id=? AND state='claimed' AND lease_owner=? " +
+        "AND lease_expires_at>? AND expires_at>?",
+    ).get(jobId, this.owner, now, now) as { data_class: RetentionDataClass; lease_fence: number } | undefined;
+    if (!row) throw new PersonalOsError("E_RETENTION_CLAIM");
+    return row;
+  }
+}
+
+function digest(domain: string, value: unknown): string {
+  return `sha256:${createHash("sha256").update(`orca-jarvis/${domain}\0`).update(canonicalize(value)).digest("hex")}`;
+}
+function validTimestamp(value: string): boolean {
+  return Number.isFinite(Date.parse(value)) && new Date(value).toISOString() === value;
+}
+function validateCounts(counts: RetentionCounts): void {
+  const keys = ["scanned", "eligible", "deleted", "retained", "error_count"] as const;
+  if (!counts || Object.keys(counts).sort().join(",") !== [...keys].sort().join(",")
+    || keys.some(key => !Number.isSafeInteger(counts[key]) || counts[key] < 0)
+    || counts.error_count !== 0 || counts.eligible > counts.scanned || counts.deleted > counts.eligible
+    || counts.deleted + counts.retained !== counts.scanned) throw new PersonalOsError("E_RETENTION_ADAPTER");
 }
