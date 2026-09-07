@@ -155,6 +155,7 @@ describe("Electron package contract", () => {
     expect(metadata.allowScripts).toEqual(Object.fromEntries(lockedInstallers.map((key) => [key, true])));
     expect(metadata.scripts?.["product:install-electron"]).toBe("install-electron");
     expect(metadata.scripts?.["preproduct:package-electron"]).toBe("npm run product:install-electron");
+    expect(metadata.scripts?.postinstall).toBeUndefined();
   });
 
   it("describes a sandboxed remote-only CLI-JAW shell", () => {
