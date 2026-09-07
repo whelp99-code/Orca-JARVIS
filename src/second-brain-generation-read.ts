@@ -24,11 +24,11 @@ const GENERATION_BOUND_METHODS: readonly SecondBrainReadMethod[] = [
   "sb_recent_changes",
   "sb_open_conflicts",
 ];
-/** Per-provider-session read context: the fence, the method, and that session's
- *  first-seen unbound generation identity per method. */
+/** One public read operation, including its dependent page fetches. */
 export type SecondBrainGenerationReadContext = {
   readonly fence: MemoryReadFenceV1 | undefined;
   readonly method: SecondBrainReadMethod;
+  readonly contract_profile?: "schema3-read-only" | "schema4";
   readonly unbound_generations: Map<SecondBrainReadMethod, string>;
 };
 
@@ -73,7 +73,7 @@ export function bindSecondBrainGenerationRead(
   );
   const results = value["results"];
   const conflicts = value["conflicts"];
-  const schema4 = Object.hasOwn(value, "records")
+  const schema4 = context.contract_profile === "schema4" || Object.hasOwn(value, "records")
     || (Array.isArray(results) && results.some(item => typeof item === "object" && item !== null
       && Object.hasOwn(item, "record_id")))
     || (Array.isArray(conflicts) && conflicts.some(item => typeof item === "object" && item !== null

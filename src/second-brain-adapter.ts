@@ -251,7 +251,8 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
       const value = normalizeSecondBrainProviderRecord(outcome.value);
       const bound = value === undefined
         ? undefined
-        : bindSecondBrainGenerationRead(value, { fence: readFence, method, unbound_generations: this.unboundGenerations });
+        : bindSecondBrainGenerationRead(value, { fence: readFence, method,
+          contract_profile: this.contract_profile, unbound_generations: this.unboundGenerations });
       return bound === undefined
         ? { kind: "adapter", outcome: invalid("SECOND_BRAIN_PROVIDER_VALUE_INVALID", checkedAt) }
         : { kind: "transport", outcome: { kind: "data", value: bound } };
@@ -264,5 +265,14 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
 }
 
 export function createSecondBrainReadAdapter(options: SecondBrainAdapterOptions): SecondBrainReadAdapter {
-  return new BoundedSecondBrainReadAdapter(options);
+  const validated = new BoundedSecondBrainReadAdapter(options);
+  // Each public read owns its generation comparisons. Later or concurrent reads
+  // may observe another committed generation without sharing mutable pin state.
+  return {
+    contract_profile: validated.contract_profile,
+    search: query => new BoundedSecondBrainReadAdapter(options).search(query),
+    readPage: pageId => new BoundedSecondBrainReadAdapter(options).readPage(pageId),
+    recentChanges: days => new BoundedSecondBrainReadAdapter(options).recentChanges(days),
+    openConflicts: () => new BoundedSecondBrainReadAdapter(options).openConflicts(),
+  };
 }

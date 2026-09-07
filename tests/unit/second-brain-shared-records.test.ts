@@ -30,6 +30,34 @@ const reader = (transport: QueuedTransport, checkedAt = now) => createSecondBrai
   budgets: { max_hits: 4, max_excerpt_bytes: 4096, max_page_bytes: 32768, max_total_bytes: 65536 } });
 
 describe("shared-source schema4 memory records", () => {
+  it("accepts a new generation in a subsequent read on the same adapter", async () => {
+    const next = page();
+    next.value.generation_id = `sbgen:v1:${"f".repeat(64)}`;
+    next.value.generation_manifest_digest = `sha256:${"9".repeat(64)}`;
+    const adapter = reader(new QueuedTransport([page(), next]));
+    expect((await adapter.readPage("wiki/shared")).kind).toBe("current");
+    expect((await adapter.readPage("wiki/shared")).kind).toBe("current");
+  });
+  it("still rejects mixed generations inside one search", async () => {
+    const next = page();
+    next.value.generation_id = `sbgen:v1:${"f".repeat(64)}`;
+    const results = records.map(row => ({ page_id: "wiki/shared", section: "", snippet: row.record_text,
+      score: 1, record_id: row.record_id, record_digest: row.record_digest }));
+    const result = await reader(new QueuedTransport([
+      { kind: "data", value: { ...generation, results } }, next,
+    ])).search("공통 기억");
+    expect(result).toMatchObject({ kind: "invalid", code: "SECOND_BRAIN_GENERATION_CHANGED" });
+  });
+  it("keeps generation metadata on schema4 recent changes", async () => {
+    const result = await reader(new QueuedTransport([
+      { kind: "data", value: { ...generation, changes: [
+        { page_id: "wiki/shared", change: "added", date: "2026-08-31" },
+      ] } }, page(),
+    ])).recentChanges(1);
+    expect(result.kind).toBe("current");
+    if (result.kind !== "current") throw new Error("expected current evidence");
+    expect(result.evidence).toHaveLength(2);
+  });
   it("keeps different statements from one citation as separate evidence", async () => {
     const result = await reader(new QueuedTransport([page()])).readPage("wiki/shared");
     expect(result.kind).toBe("current");
