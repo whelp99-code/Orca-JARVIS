@@ -101,3 +101,20 @@ Migration 059는 operation별 attempt_id를 PK/FK로 사용하고 WITHOUT ROWID�
 `read(requestId)`는 SQL에서 BLOB·측정·계획 크기를 먼저 제한한 뒤 정규 base64, 디코딩 크기, 원본/후보 manifest와 각 digest를 검사한다. 별도 SQLite 연결이나 프로세스 재시작 후에도 읽을 수 있고 lease 만료·uncertain 상태에서도 원장을 수정하지 않는다. 반환 artifact_id는 payload와 실행 시도에 결합된 로컬 식별자이며 실행 허가나 독립 검증 서명이 아니다.
 
 복구 보장은 후보 INSERT의 COMMIT 이후부터다. 모델 응답 수신과 COMMIT 사이 종료되면 후보가 없을 수 있으며 기존 invoking 기록으로 재호출을 계속 차단한다. 검증 전 중단됐거나 측정이 없는 artifact의 자동 검증 재개, 최종 정산, 보존/삭제 정책과 운영 데이터 용량 관리는 후속이다. 현재 저장은 운영 DB에 적용하지 않았으며 task.execute 활성화 조건은 여전히 충족하지 않았다.
+
+## 독립 검증 증거와 프로세스 간 공유 마감
+
+독립 검증은 기존 verifier 공개키/목적/주체 레지스트리를 재사용하고 decision 공개키와 정규화한 공개키 바이트가 같은 키를 거부한다. task artifact에 결합된 검증 예약을 만들고 별도 verifier 프로세스가 reserved→running을 1회 CAS로 획득한다. 검증 invocation nonce를 각 실행과 서명에 결합한다. 마지막 서명 저장의 멱등성만으로 실제 검증 실행 중복을 방지했다고 보지 않는다.
+
+프로세스가 바뀌어도 실행 시간 예산이 늘어나지 않도록 provider 호출 전에 부팅 ID·time namespace와 Linux uptime 기준 마감을 기존 operation에 고정한다. 읽기 시 10ms 출력 정밀도를 보수적으로 차감하고 부팅 또는 time namespace가 바뀌면 재개를 거부한다. 기존 deadline 없는 operation을 소급해 새 예산으로 채우지 않는다. wall clock 승인/lease 만료와 각 프로세스의 monotonic 타이머도 함께 적용한다. provider·기존 측정·독립 검사 출력은 같은 예산을 공유한다.
+
+별도 verifier는 저장 후보와 현재 승인/검증 invocation을 직접 확인하고 bwrap으로 실제 명령을 실행한 후 결과에 서명한다. 검증 private key는 이 프로세스가 읽고 검사 sandbox에 전달하지 않는다. 서명은 attempt/request/receipt/fence, artifact/payload/plan/TaskSpec, 검증 예약과 invocation, key/시각/측정을 결합한다. 부모는 현재 권한·키 철회·서명·예산·파일/명령 결합을 다시 검사해 단일 증거로 저장한다. 서명 기록과 전체 검사 PASS를 구분하며, 원본 반영과 workflow 완료는 별도 후속 경계다.
+
+
+Migration 061은 기존 operation에 clock_id와 deadline_uptime_ms를 prepared→invoking 시 한 번만 기록한다. 마감은 Linux `/proc/uptime`의 boot-time 값으로 계산하고 `/proc/self/ns/time` 식별자를 포함한다. Linux 구현의 기준은 [proc uptime](https://github.com/torvalds/linux/blob/master/fs/proc/uptime.c)이다. migration 이전 invoking 기록에는 새 마감을 부여하지 않는다. 입력 캡처 이전부터의 전체 요청 시간을 제한하는 기능은 별도 후속이다.
+
+Migration 062의 task_candidate_certifications는 artifact별 예약 1개, 검증 invocation 1개, 증거 1개를 보존한다. `TaskCandidateCertifications.prepare/begin/record/requireProof`가 기존 command/receipt/fence와 현재 TaskSpec·workflow를 대조한다. `recorded`는 서명된 측정의 기록이며 checks_failed도 보존한다. 최종 PASS 소비자는 measurement.state와 전체 계획의 검사 통과를 요구해야 한다. 서명 domain은 `orca-jarvis/task-candidate-verification/v1` 뒤 NUL이다.
+
+별도 entry는 `node dist/src/task-verifier-main.js <absolute-db-path> <absolute-private-key-path>`이고 stdin은 command와 verification_id만 받는다. 외부에서 준비한 Ed25519 verifier 키를 읽으며 런타임이 새 신뢰 키를 생성하지 않는다. 키 파일은 현재 UID 소유 일반 파일·0600 이하·단일 링크·16 KiB 이하·직접 절대 경로만 허용한다. 이 검사는 별도 OS 사용자 격리가 아니다. 검증 entry는 호스트의 신뢰 프로세스이며 bwrap 검사 자식에게 DB나 키를 전달하지 않는다. 실제 운영 연결에는 신뢰 가능한 verifier 프로세스 실행/키 배포 및 출력 수집이 필요하다.
+
+예약 후 시작 전 중단은 reserved, 시작 후 프로세스 강제 종료는 running과 proof 없음으로 남는다. 자동 재실행은 허용하지 않는다. entry가 잡은 오류는 uncertain으로 기록하며 lease 만료 후에도 그 사실을 보존할 수 있다. 서명 후 부모 저장 전 중단도 증거가 없을 수 있다. 이 단계는 종료된 프로세스 식별·운영 복구·최종 command 정산을 제공하지 않는다. 별도 부모 프로세스 adapter, 원본 파일 반영, 증거에 따른 workflow 완료, UI 동선 및 Codex provider는 후속이다. `task.execute`의 executable=false를 유지한다.

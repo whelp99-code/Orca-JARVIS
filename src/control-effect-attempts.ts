@@ -5,6 +5,7 @@ import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./db.js";
 import { assertTaskExecutionAuthority } from "./task-execution-authority.js";
 import { taskExecutionPlanDigest } from "./task-execution-plan.js";
+import { remainingTaskExecutionBudget, taskExecutionClockBudget, type TaskExecutionClockBudget } from "./task-execution-clock.js";
 
 export type ExternalEffectContext = {
   readonly request_id: string;
@@ -64,14 +65,23 @@ export class ControlEffectAttempts {
     }).immediate();
   }
 
-  beginTaskInvocation(command: ClaimedControlCommand, clock: () => Date = () => new Date()): ExternalEffectContext {
+  beginTaskInvocation(command: ClaimedControlCommand, clock: () => Date = () => new Date(),
+    budget?: TaskExecutionClockBudget): ExternalEffectContext {
     return this.authority.db.transaction(() => {
       const now = clock();
       const plan = assertTaskExecutionAuthority(this.authority, command, now);
       const effect = context(command);
-      const changed = this.authority.db.prepare(`UPDATE control_effect_attempts SET state='invoking',updated_at=?
+      const maximum = taskExecutionClockBudget(plan.limits.timeout_ms);
+      const selected = budget ?? maximum;
+      if (selected.clock_id !== maximum.clock_id || selected.deadline_uptime_ms > maximum.deadline_uptime_ms) {
+        throw new JarvisError("TASK_EXECUTION_CLOCK_INVALID");
+      }
+      remainingTaskExecutionBudget(selected);
+      const changed = this.authority.db.prepare(`UPDATE control_effect_attempts
+        SET state='invoking',updated_at=?,task_clock_id=?,task_deadline_uptime_ms=?
         WHERE request_id=? AND receipt_id=? AND lease_fence=? AND idempotency_key=? AND task_run_id=?
-          AND task_plan_digest=? AND state='prepared'`).run(now.toISOString(), command.request_id,
+          AND task_plan_digest=? AND state='prepared'`).run(now.toISOString(), selected.clock_id, selected.deadline_uptime_ms,
+        command.request_id,
         command.receipt_id, command.fence, effect.idempotency_key, plan.run_id, taskExecutionPlanDigest(plan));
       if (changed.changes !== 1) throw new JarvisError("TASK_EXECUTION_INVOCATION_CONFLICT");
       return effect;

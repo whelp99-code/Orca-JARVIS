@@ -10,6 +10,7 @@ import { spawnTaskSandbox, type TaskSandboxRunner } from "./task-sandbox.js";
 import type { TaskSpecV1 } from "./task-spec.js";
 import { canonicalize } from "./canonical.js";
 import { TaskCandidateArtifacts } from "./task-candidate-artifacts.js";
+import { remainingTaskExecutionBudget, taskExecutionClockBudget } from "./task-execution-clock.js";
 
 /** Candidate phase only: consumes an existing signed claim, but never publishes or settles a workflow as completed. */
 export async function executeTaskCandidate(input: {
@@ -30,8 +31,10 @@ export async function executeTaskCandidate(input: {
   const started = clock().getTime();
   const deadline = Math.min(started + plan.limits.timeout_ms, Date.parse(command.lease_expires_at));
   const monotonicDeadline = performance.now() + plan.limits.timeout_ms;
+  const sharedBudget = taskExecutionClockBudget(plan.limits.timeout_ms);
   const remaining = () => {
-    const value = Math.floor(Math.min(deadline - clock().getTime(), monotonicDeadline - performance.now()));
+    const value = Math.floor(Math.min(deadline - clock().getTime(), monotonicDeadline - performance.now(),
+      remainingTaskExecutionBudget(sharedBudget)));
     if (!Number.isFinite(value) || value <= 0) throw new JarvisError("TASK_CANDIDATE_DEADLINE_EXCEEDED");
     return value;
   };
@@ -41,7 +44,7 @@ export async function executeTaskCandidate(input: {
   effects.prepareTask(command, clock);
   let invoking = false;
   try {
-    effects.beginTaskInvocation(command, clock);
+    effects.beginTaskInvocation(command, clock, sharedBudget);
     invoking = true;
     const generated = await provider.generate({ ...prepared.request, timeout_ms: remaining(), before_spawn: beforeSpawn });
     currentPlan(); remaining();
