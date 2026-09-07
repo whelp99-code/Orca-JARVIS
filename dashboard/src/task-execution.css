@@ -1,0 +1,19 @@
+.task-execution { margin-block: 1.25rem; min-width: 0; }
+.task-execution .panel-header { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .75rem; }
+.task-execution fieldset { min-width: 0; margin: 0; padding: .9rem; border: 1px solid var(--border, #394153); border-radius: .5rem; }
+.task-execution .form-field { margin-block: .65rem; }
+.task-execution input, .task-execution select, .task-execution textarea { width: 100%; max-width: 100%; box-sizing: border-box; }
+.task-execution input { min-block-size: var(--size-control); padding: var(--space-2) var(--space-3);
+  border: var(--border-width) solid var(--color-border-strong); border-radius: var(--radius);
+  background: var(--color-surface-raised); color: var(--color-text); font: inherit; }
+.execution-file-input { display: grid; grid-template-columns: minmax(0, 2fr) minmax(9rem, 1fr) auto; gap: .65rem; align-items: end; margin-block: .5rem; }
+.execution-file-input > button { margin-bottom: .65rem; }
+.execution-check-input { margin-block: .8rem !important; }
+.execution-request { padding-block: 1rem; border-top: 1px solid var(--border, #394153); }
+.execution-request details { margin-block: .85rem; }
+.execution-request summary { cursor: pointer; font-weight: 600; }
+.execution-plan-view, .execution-result { overflow-wrap: anywhere; }
+.task-execution .identity-list dd, .task-execution code, .task-execution p { overflow-wrap: anywhere; min-width: 0; }
+.execution-file-list { padding-left: 1.25rem; }
+.task-execution button { max-width: 100%; white-space: normal; }
+@media (max-width: 650px) { .execution-file-input { grid-template-columns: minmax(0, 1fr); gap: 0; } }

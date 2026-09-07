@@ -7,6 +7,7 @@ import { prepareDashboardTaskExecution, stageDashboardTaskExecution } from "../.
 import { readDashboardTaskExecution } from "../../src/dashboard/task-execution-read.js";
 import { TaskPublicationGit } from "../../src/task-publication-git.js";
 import { PinnedDirectory } from "../../src/task-workspace-directory.js";
+import { JarvisError } from "../../src/db.js";
 import { approvedTaskFixture } from "../fixtures/approved-task-fixture.js";
 
 type Fixture = Awaited<ReturnType<typeof approvedTaskFixture>>;
@@ -188,6 +189,28 @@ describe("dashboard task plan preparation", () => {
 });
 
 describe("task execution HTTP journey", () => {
+  it("blocks cloning a failed task execution from the generic retry endpoint", async () => {
+    const f = await approvedTaskFixture(false);
+    const server = createDashboardServer({ db: f.db, staticRoot: resolve("dist/dashboard"), host: "127.0.0.1", port: 0,
+      clock: f.clock, executorFactory: () => f.executor });
+    const origin = `http://${server.address.host}:${server.address.port}`;
+    try {
+      expect((await f.executor.execute("execute", "fixture", f.clock())).state).toBe("failed");
+      const session = await request(`${origin}/api/v1/session`);
+      const csrf = (await session.body.json() as { csrf_token: string }).csrf_token;
+      const approvals = await request(`${origin}/api/v1/control/requests`);
+      expect((await approvals.body.json() as { items: unknown[] }).items).toContainEqual(expect.objectContaining({
+        request_id: "execute", task_id: "task", state: "failed", retry_status: "not_allowed" }));
+      const before = changes(f);
+      const retry = await request(`${origin}/api/v1/control/requests/execute/retry`, { method: "POST",
+        headers: { origin, "content-type": "application/json", "x-jarvis-csrf": csrf },
+        body: JSON.stringify({ schema_version: 1, request_id: "duplicate", nonce: "duplicate-nonce" }) });
+      expect(retry.statusCode).toBe(409);
+      expect(await retry.body.json()).toMatchObject({ error: { code: "RETRY_NOT_ALLOWED" } });
+      expect(changes(f)).toEqual(before); expect(f.generate).toHaveBeenCalledTimes(1);
+    } finally { await server.drain(); server.close(); await f.cleanup(); }
+  });
+
   it("requires Origin/CSRF, prepares and stages, executes only after approval, restores durable completion", async () => {
     const f = await approvedTaskFixture(true, { stage: false });
     const server = createDashboardServer({ db: f.db, staticRoot: resolve("dist/dashboard"), host: "127.0.0.1", port: 0,
@@ -208,12 +231,30 @@ describe("task execution HTTP journey", () => {
       const denied = await request(`${origin}${path}`); expect(denied.statusCode).toBe(403); await denied.body.dump();
       expect(changes(f)).toEqual(before);
       const prepared = await post(`${path}/prepare`, preparation(f)); expect(prepared.status).toBe(200);
+      const previousProviderPath = process.env.JARVIS_TASK_CLAUDE_PATH;
+      try {
+        process.env.JARVIS_TASK_CLAUDE_PATH = "";
+        const checked = await post(`${path}/check`, { schema_version: 1, plan: prepared.body.plan });
+        expect(checked).toMatchObject({ status: 200, body: { execution_available: false,
+          readiness: { authentication: "not_probed", reason_code: "TASK_EXECUTION_NOT_CONFIGURED" } } });
+        expect(changes(f)).toEqual(before);
+        expect((await post("/api/v1/tasks/wrong/execution/check", { schema_version: 1, plan: prepared.body.plan })).status).toBe(400);
+      } finally {
+        if (previousProviderPath === undefined) delete process.env.JARVIS_TASK_CLAUDE_PATH;
+        else process.env.JARVIS_TASK_CLAUDE_PATH = previousProviderPath;
+      }
       const staged = await post(`${path}/stage`, { schema_version: 1, request_id: "ui-execute", nonce: "ui-nonce", plan: prepared.body.plan });
       expect(staged.status).toBe(202); expect(staged.body.request.state).toBe("pending");
+      const approvals = await request(`${origin}/api/v1/control/requests`);
+      expect((await approvals.body.json() as { items: unknown[] }).items)
+        .toContainEqual(expect.objectContaining({ request_id: "ui-execute", task_id: "task", action: "task.execute" }));
       const execute = "/api/v1/control/requests/ui-execute/execute";
       expect((await post(execute, { schema_version: 1 })).status).toBe(403);
       expect(f.generate).not.toHaveBeenCalled();
       f.approve(staged.body.request);
+      f.runtime.checkReady.mockRejectedValueOnce(new JarvisError("TASK_SANDBOX_UNAVAILABLE"));
+      expect(await post(execute, { schema_version: 1 })).toMatchObject({ status: 409, body: { error: { code: "TASK_SANDBOX_UNAVAILABLE" } } });
+      expect(f.generate).not.toHaveBeenCalled(); expect(f.control.get("ui-execute")?.state).toBe("approved");
       const result = await post(execute, { schema_version: 1 });
       expect(result).toMatchObject({ status: 200, body: { execution: { request_id: "ui-execute", state: "completed" } } });
       const writes = changes(f);

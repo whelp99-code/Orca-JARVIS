@@ -24,7 +24,8 @@ export function useDetailResource<T>(
 
   useEffect(() => {
     let active = true;
-    setRequest({ id, state: { status: "loading" } });
+    setRequest(previous => previous.id === id && ["success", "empty"].includes(previous.state.status)
+      ? previous : { id, state: { status: "loading" } });
     void load(id).then(
       (data) => {
         if (!active) return;

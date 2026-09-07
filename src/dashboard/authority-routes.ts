@@ -171,9 +171,13 @@ function writeRetry(input: AuthorityRouteInput, sourceRequestId: string): boolea
 
 function writeCaught(input: AuthorityRouteInput, error: unknown): boolean {
   const mapped = mappedAuthorityError(error);
-  if (mapped === undefined) throw error;
-  writeMappedError(input, mapped);
-  return true;
+  if (mapped !== undefined) { writeMappedError(input, mapped); return true; }
+  if (error instanceof JarvisError && error.code.startsWith("TASK_")) {
+    writeDashboardJson(input.response, { status: 409, requestId: input.requestId,
+      body: { schema_version: 1, error: { code: error.code, message: "Task execution unavailable", request_id: input.requestId } } });
+    return true;
+  }
+  throw error;
 }
 
 function writeMappedError(input: AuthorityRouteInput, code: AuthorityErrorCode): void {

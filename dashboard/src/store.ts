@@ -1,6 +1,8 @@
 import type { OverviewResponse } from "../../src/dashboard/read-model.js";
 import { classifyDashboardError } from "./api.js";
 import { PortfolioFreshnessTimer } from "./portfolio-freshness.js";
+import { createTaskExecutionResource } from "./task-execution-resource.js";
+import { createTaskExecutionOperations } from "./task-execution-operations.js";
 import type { PortfolioOverview } from "../../src/dashboard/portfolio-contracts.js";
 import type { ConnectionState, DashboardState, DashboardStoreOptions, EventSourceLike, ResourceState } from "./store-types.js";
 
@@ -23,6 +25,14 @@ export function createDashboardStore(options: DashboardStoreOptions) {
   let source: EventSourceLike | undefined;
   const freshnessTimer = new PortfolioFreshnessTimer();
   const listeners = new Set<() => void>();
+  const executionOperations = createTaskExecutionOperations(value => assign({ taskExecutionOperations: value }));
+  const execution = createTaskExecutionResource(value => {
+    // Publish fresh authority before releasing delivery guards.
+    assign({ taskExecution: value });
+    if (!value?.refreshing && (value?.resource.status === "success" || value?.resource.status === "empty")) {
+      executionOperations.observe(value.resource.data);
+    }
+  });
 
   function getSnapshot(): DashboardState {
     return state;
@@ -43,6 +53,7 @@ export function createDashboardStore(options: DashboardStoreOptions) {
     running = false;
     freshnessTimer.clear();
     source?.close(); source = undefined;
+    execution.stop(false);
   }
 
   async function refreshOverview(): Promise<void> { await refetch(generation, ["overview"]); }
@@ -109,6 +120,7 @@ export function createDashboardStore(options: DashboardStoreOptions) {
     const pending = pendingPatch(wanted);
     if (pending !== undefined) assign(pending);
     const jobs: Array<Promise<void>> = [];
+    jobs.push(execution.reconcile(topics));
     if (wanted.overview) jobs.push(loadOverview(token));
     if (wanted.tasks) jobs.push(loadTasks(token));
     if (wanted.agents) jobs.push(loadAgents(token));
@@ -201,7 +213,9 @@ export function createDashboardStore(options: DashboardStoreOptions) {
     });
   }
 
-  return { getSnapshot, subscribe, start, stop, refreshOverview, refreshTasks, refreshAgents, refreshApprovals };
+  return { getSnapshot, subscribe, start, stop, refreshOverview, refreshTasks, refreshAgents, refreshApprovals,
+    runTaskExecutionOperation: executionOperations.run,
+    watchTaskExecution: execution.watch, refreshTaskExecution: execution.refresh };
 }
 
 function toPending<T>(current: ResourceState<T>): ResourceState<T> | undefined {

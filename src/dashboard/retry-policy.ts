@@ -9,7 +9,7 @@ export function dashboardRetryStatus(
   source: StoredControlCommand | undefined,
   now: Date,
 ): NonNullable<OverviewApproval["retry_status"]> {
-  if (source?.state !== "failed" || controlActionDescriptor(source.action)?.executable !== true
+  if (source?.state !== "failed" || source.action === "task.execute" || controlActionDescriptor(source.action)?.executable !== true
     || !Number.isFinite(now.getTime())) return "not_allowed";
   if (source.action !== "workflow.start") return "allowed";
   try {

@@ -4,6 +4,7 @@ import { TaskGraph } from "../components/task-graph.js";
 import { TimelinePanel } from "../components/timeline-panel.js";
 import type { ResourceState } from "../store.js";
 import { TaskControl } from "../task-control.js";
+import type { ReactNode } from "react";
 
 type TaskDetailPageProps = (
   | TaskDetailResponse
@@ -14,6 +15,7 @@ type TaskDetailPageProps = (
 ) & Readonly<{
   client?: Pick<AuthorityMutationClient, "cancelTask">;
   idFactory?: AuthorityIdFactory;
+  execution?: ReactNode;
 }>;
 
 export function TaskDetailPage(props: TaskDetailPageProps) {
@@ -93,6 +95,7 @@ export function TaskDetailPage(props: TaskDetailPageProps) {
       {props.client === undefined ? null : (
         <TaskControl detail={response} client={props.client} idFactory={props.idFactory} />
       )}
+      {props.execution}
 
       <TimelinePanel
         state={events.length === 0

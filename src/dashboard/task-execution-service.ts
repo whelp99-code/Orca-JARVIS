@@ -7,6 +7,7 @@ import { parseTaskExecutionPlan, taskExecutionPlanDigest, type TaskExecutionPlan
 import { assertTaskExecutionBinding, stageTaskExecution } from "../task-execution-staging.js";
 import { inspectTaskExecutionRepository } from "../task-execution-workspace.js";
 import { TaskPublicationGit } from "../task-publication-git.js";
+import { taskExecutionReadiness } from "../task-execution-runtime.js";
 
 export interface PrepareTaskExecutionRequest {
   readonly schema_version: 1;
@@ -133,3 +134,15 @@ export async function stageDashboardTaskExecution(db: AuthorityDb, taskId: strin
 }
 
 export type PreparedDashboardTaskExecution = Awaited<ReturnType<typeof prepareDashboardTaskExecution>>;
+
+export async function checkDashboardTaskExecution(db: AuthorityDb, taskId: string, body: unknown, clock: () => Date) {
+  const value = exact(body, ["schema_version", "plan"]);
+  const plan = parseTaskExecutionPlan(value.plan);
+  if (value.schema_version !== 1 || plan.schema_version !== 2 || plan.task_id !== taskId) return invalid();
+  assertTaskExecutionBinding(db, plan, clock());
+  const readiness = await taskExecutionReadiness(db, plan, clock);
+  assertTaskExecutionBinding(db, plan, clock());
+  return { schema_version: 1 as const, task_id: taskId, run_id: plan.run_id,
+    execution_plan_digest: taskExecutionPlanDigest(plan), ...readiness };
+}
+export type DashboardTaskReadiness = Awaited<ReturnType<typeof checkDashboardTaskExecution>>;

@@ -16,14 +16,14 @@ import {
 import { fingerprintFor, signedReceiptFor } from "./fixture-access.js";
 
 export async function overviewFlow(page: Page, testInfo: TestInfo): Promise<void> {
-  await page.goto("/");
+  await page.goto("/overview");
   await waitLive(page);
-  await expect(page.getByRole("heading", { level: 1, name: "JARVIS Control Center" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "Active work" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 2, name: "Pending approvals" })).toBeVisible();
-  await expect(page.getByRole("article", { name: "Risks" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 3, name: "Recent" })).toBeVisible();
-  await expect(page.getByRole("heading", { level: 3, name: "Approvals" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 1, name: "JARVIS 현황판" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "지금 하는 일" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 2, name: "승인 대기" })).toBeVisible();
+  await expect(page.getByRole("article", { name: "위험" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 3, name: "최근 일" })).toBeVisible();
+  await expect(page.getByRole("heading", { level: 3, name: "승인 대기" })).toBeVisible();
   await expect(page.getByText("service.heartbeat_age_ms")).toBeVisible();
   await expect(page.getByText("workflow.start").first()).toBeVisible();
   await capture(page, testInfo, "overview");
@@ -70,12 +70,12 @@ export async function agentLogsFlow(page: Page, testInfo: TestInfo): Promise<voi
 }
 
 export async function emptyDbFlow(page: Page, testInfo: TestInfo): Promise<void> {
-  await page.goto(`${emptyOrigin()}/`);
+  await page.goto(`${emptyOrigin()}/overview`);
   await waitLive(page);
-  await expect(page.getByText("No recent activity")).toBeVisible();
-  await expect(page.getByText("No pending approvals")).toBeVisible();
-  await expect(page.getByText("No open risks")).toBeVisible();
-  await expect(page.getByText("No agents connected")).toBeVisible();
+  await expect(page.getByText("최근 기록이 없습니다")).toBeVisible();
+  await expect(page.getByText("대기 중인 승인이 없습니다")).toBeVisible();
+  await expect(page.getByText("열린 위험이 없습니다")).toBeVisible();
+  await expect(page.getByText("연결된 에이전트가 없습니다")).toBeVisible();
   await capture(page, testInfo, "empty");
   await assertNoHorizontalOverflow(page);
 }
@@ -129,8 +129,13 @@ export async function approveExecuteFlow(page: Page, baseURL: string): Promise<v
   await card.getByLabel("Signed receipt JSON").fill(signedReceiptFor(baseURL, IDS.pendingApprove, "approve"));
   await card.getByRole("button", { name: "Submit signed receipt" }).click();
   await expect(card.getByText("approved", { exact: true })).toBeVisible();
+  const executed = page.waitForResponse(response => response.request().method() === "POST"
+    && response.url().endsWith(`/api/v1/control/requests/${IDS.pendingApprove}/execute`));
   await card.getByRole("button", { name: "Execute approved request" }).click();
-  await expect(card.getByText("completed", { exact: true })).toBeVisible();
+  const response = await executed;
+  expect(response.status()).toBe(200);
+  expect(await response.json()).toMatchObject({ execution: { request_id: IDS.pendingApprove, state: "completed" } });
+  await expect(card).toHaveCount(0);
 }
 
 export async function rejectFlow(page: Page, baseURL: string): Promise<void> {
@@ -138,8 +143,13 @@ export async function rejectFlow(page: Page, baseURL: string): Promise<void> {
   await waitLive(page);
   const card = page.locator("article.authority-controls").filter({ hasText: IDS.pendingReject });
   await card.getByLabel("Signed receipt JSON").fill(signedReceiptFor(baseURL, IDS.pendingReject, "reject"));
+  const rejected = page.waitForResponse(response => response.request().method() === "POST"
+    && response.url().endsWith(`/api/v1/control/requests/${IDS.pendingReject}/decision`));
   await card.getByRole("button", { name: "Submit signed receipt" }).click();
-  await expect(card.getByText("rejected", { exact: true })).toBeVisible();
+  const response = await rejected;
+  expect(response.status()).toBe(200);
+  expect(await response.json()).toMatchObject({ request_id: IDS.pendingReject, state: "rejected" });
+  await expect(card).toHaveCount(0);
 }
 
 export async function cancelFlow(page: Page): Promise<void> {
@@ -169,7 +179,7 @@ export async function retryFlow(page: Page): Promise<void> {
 }
 
 export async function qualityFlow(page: Page, errors: readonly string[]): Promise<void> {
-  await page.goto("/");
+  await page.goto("/overview");
   await waitLive(page);
   await assertAxeClean(page);
   await assertNoHorizontalOverflow(page);

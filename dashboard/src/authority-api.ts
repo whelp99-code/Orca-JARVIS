@@ -1,4 +1,8 @@
 import type { StoredControlCommand } from "../../src/control-plane.js";
+import type { DashboardTaskExecution } from "../../src/dashboard/task-execution-read.js";
+import type { PrepareTaskExecutionRequest, PreparedDashboardTaskExecution, StageDashboardTaskExecutionRequest, DashboardTaskReadiness } from "../../src/dashboard/task-execution-service.js";
+import type { TaskExecutionPlanV2 } from "../../src/task-execution-plan.js";
+import { parsePreparedExecution, parseTaskExecution } from "./task-execution-guard.js";
 import type {
   CancelRequest,
   ReceiptDecisionRequest,
@@ -21,6 +25,13 @@ export type AuthorityMutationClient = Readonly<{
   executeRequest: (requestId: string) => Promise<DashboardExecution>;
   cancelTask: (taskId: string, request: CancelRequest) => Promise<StoredControlCommand>;
   retryRequest: (sourceRequestId: string, request: RetryRequest) => Promise<StoredControlCommand>;
+  taskExecution?: TaskExecutionClient;
+}>;
+export type TaskExecutionClient = Readonly<{
+  read: (taskId: string) => Promise<DashboardTaskExecution>;
+  prepare: (taskId: string, request: PrepareTaskExecutionRequest) => Promise<PreparedDashboardTaskExecution>;
+  stage: (taskId: string, request: StageDashboardTaskExecutionRequest) => Promise<StoredControlCommand>;
+  check: (taskId: string, plan: TaskExecutionPlanV2) => Promise<DashboardTaskReadiness>;
 }>;
 
 const ACTION_LEVELS = [0, 1, 2, 3, 4, 5] as const;
@@ -43,7 +54,7 @@ export const SYSTEM_AUTHORITY_ID_FACTORY: AuthorityIdFactory = (kind) => (
 
 type SessionLoader = () => Promise<SessionResponse>;
 type Parser<T> = (value: unknown) => T | undefined;
-type Mutation<T> = Readonly<{ path: string; body: unknown; parse: Parser<T> }>;
+type Mutation<T> = Readonly<{ path: string; body: unknown; parse: Parser<T>; timeout?: number }>;
 
 export function createAuthorityMutationClient(
   loadSession: SessionLoader = fetchSession,
@@ -73,6 +84,7 @@ export function createAuthorityMutationClient(
     executeRequest: async (requestId) => await mutate({
       path: `/api/v1/control/requests/${encodeURIComponent(requestId)}/execute`,
       body: { schema_version: 1 },
+      timeout: 660_000,
       parse: (value) => {
         const parsed = parseExecution(value);
         return parsed?.execution.request_id === requestId ? parsed : undefined;
@@ -94,6 +106,36 @@ export function createAuthorityMutationClient(
         return parsed?.request_id === body.request_id ? parsed : undefined;
       },
     }),
+    taskExecution: {
+      check: async (taskId, plan) => await mutate({ path: `/api/v1/tasks/${encodeURIComponent(taskId)}/execution/check`,
+        body: { schema_version: 1, plan }, timeout: 45_000,
+        parse: value => {
+          if (!isRecord(value) || value.schema_version !== 1 || value.task_id !== taskId || value.run_id !== plan.run_id
+            || typeof value.execution_plan_digest !== "string" || !isRecord(value.readiness)
+            || value.readiness.provider !== plan.provider || value.readiness.authentication !== "not_probed"
+            || !["ready", "unavailable"].includes(String(value.readiness.state))
+            || value.execution_available !== (value.readiness.state === "ready")
+            || (value.readiness.state === "unavailable" && typeof value.readiness.reason_code !== "string")) return undefined;
+          return value as DashboardTaskReadiness;
+        } }),
+      read: async taskId => {
+        const response = await request(`/api/v1/tasks/${encodeURIComponent(taskId)}/execution`,
+          { headers: { Accept: "application/json", [CSRF_HEADER]: await csrfToken() } });
+        const body = await responseBody(response);
+        if (!response.ok) throw errorFromResponse(response, body);
+        const parsed = parseTaskExecution(body, taskId);
+        if (!parsed) throw validationError(requestId(response));
+        return parsed;
+      },
+      prepare: async (taskId, body) => await mutate({ path: `/api/v1/tasks/${encodeURIComponent(taskId)}/execution/prepare`,
+        body, timeout: 45_000, parse: value => parsePreparedExecution(value, taskId, body.run_id) }),
+      stage: async (taskId, body) => await mutate({ path: `/api/v1/tasks/${encodeURIComponent(taskId)}/execution/stage`, body, timeout: 45_000,
+        parse: value => {
+          const parsed = parseCommandEnvelope(value);
+          return parsed?.request_id === body.request_id && parsed.action === "task.execute" && parsed.target.task_id === taskId
+            && parsed.target.run_id === body.plan.run_id ? parsed : undefined;
+        } }),
+    },
   };
 }
 
@@ -134,7 +176,7 @@ async function postJson<T>(input: Mutation<T>, csrfToken: string): Promise<T> {
       [CSRF_HEADER]: csrfToken,
     },
     body: JSON.stringify(input.body),
-  });
+  }, input.timeout);
   const body = await responseBody(response);
   if (!response.ok) throw errorFromResponse(response, body);
   const parsed = input.parse(body);
@@ -142,12 +184,12 @@ async function postJson<T>(input: Mutation<T>, csrfToken: string): Promise<T> {
   return parsed;
 }
 
-async function request(path: string, init: RequestInit): Promise<Response> {
+async function request(path: string, init: RequestInit, timeout = REQUEST_TIMEOUT_MS): Promise<Response> {
   try {
     return await fetch(path, {
       ...init,
       credentials: "same-origin",
-      signal: AbortSignal.timeout(REQUEST_TIMEOUT_MS),
+      signal: AbortSignal.timeout(timeout),
     });
   } catch (error: unknown) {
     if (error instanceof TypeError || error instanceof DOMException) {

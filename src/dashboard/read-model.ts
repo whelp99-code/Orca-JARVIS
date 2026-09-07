@@ -201,6 +201,8 @@ function isActionableControl(command: StoredControlCommand): boolean {
 
 function toOverviewApproval(command: StoredControlCommand, now: Date): OverviewApproval {
   return {
+    ...(command.action === "task.execute" && typeof command.target.task_id === "string"
+      ? { task_id: command.target.task_id } : {}),
     request_id: command.request_id,
     action: command.action,
     action_level: command.action_level,

@@ -1,6 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
+import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CommandApprovalReceipt, StoredControlCommand } from "../../src/control-plane.js";
 import type { ReceiptDecisionRequest, RetryRequest } from "../../src/dashboard/contracts.js";
@@ -87,6 +88,17 @@ function renderControls(request: OverviewApproval, client: AuthorityMutationClie
 afterEach(cleanup);
 
 describe("receipt-bound authority controls", () => {
+  it.each(["pending", "approved", "failed"])("routes %s task execution from general approval screens to its reviewed detail", (state) => {
+    const current = createClient();
+    render(<MemoryRouter><AuthorityControls request={{ ...BASE_REQUEST, action: "task.execute", state, task_id: "task/a" }}
+      client={current.client} /></MemoryRouter>);
+    expect(screen.getByRole("link", { name: "작업 실행 상세 열기" })).toHaveAttribute("href", "/tasks/task%2Fa");
+    expect(screen.queryByRole("button", { name: "Execute approved request" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("Signed receipt JSON")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Retry failed request" })).not.toBeInTheDocument();
+    expect(current.executeRequest).not.toHaveBeenCalled(); expect(current.decideRequest).not.toHaveBeenCalled();
+  });
+
   it("shows pending request evidence and accessible receipt controls", () => {
     // Given / When
     const current = createClient();

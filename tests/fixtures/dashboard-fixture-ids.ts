@@ -1,6 +1,7 @@
 export const FIXTURE_HOST = "127.0.0.1" as const;
 export const SEEDED_PORT_1440 = 4174 as const;
-export const SEEDED_PORT_1024 = 4176 as const;
+// 4176 is reserved for the running phone gateway, including on development hosts.
+export const SEEDED_PORT_1024 = 4186 as const;
 export const EMPTY_PORT = 4175 as const;
 export const PRODUCTION_PORT = 4173 as const;
 

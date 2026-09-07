@@ -205,6 +205,7 @@ function isTask(value: unknown): value is OverviewTask {
 
 function isApproval(value: unknown): value is OverviewApproval {
   return isRecord(value) && typeof value.request_id === "string" && typeof value.action === "string"
+    && (value.task_id === undefined || typeof value.task_id === "string")
     && isActionLevel(value.action_level) && typeof value.requested_at === "string"
     && typeof value.requested_by === "string" && typeof value.summary === "string"
     && typeof value.state === "string"

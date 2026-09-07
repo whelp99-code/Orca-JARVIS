@@ -5,6 +5,8 @@ import type {
   TaskListResponse,
 } from "../../src/dashboard/read-model.js";
 import type { ApiError, ApiErrorKind, DashboardClient } from "./api.js";
+import type { TaskExecutionResource } from "./task-execution-resource.js";
+import type { TaskExecutionOperation } from "./task-execution-operations.js";
 
 export type ConnectionState = "live" | "reconnecting" | "offline";
 export type ResourceState<T> =
@@ -18,6 +20,8 @@ export type DashboardState = {
   readonly tasks: ResourceState<TaskListResponse>;
   readonly agents: ResourceState<AgentListResponse>;
   readonly approvals: ResourceState<ControlRequestListResponse>;
+  readonly taskExecution?: TaskExecutionResource;
+  readonly taskExecutionOperations?: readonly TaskExecutionOperation[];
 };
 export type EventSourceLike = {
   addEventListener(type: string, listener: (event: Event) => void): void;

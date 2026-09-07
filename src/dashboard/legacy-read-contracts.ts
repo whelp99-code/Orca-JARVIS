@@ -19,6 +19,7 @@ export type OverviewTask = {
   readonly source_ids: readonly string[];
 };
 export type OverviewApproval = {
+  readonly task_id?: string;
   readonly request_id: string;
   readonly action: string;
   readonly action_level: ActionLevel;

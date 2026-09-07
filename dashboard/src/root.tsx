@@ -22,6 +22,7 @@ import { ProposalPage } from "./proposal-page.js";
 import { TodayRoute, type PersonalRuntime } from "./today-route.js";
 import type { createDashboardStore, DashboardState, ResourceState } from "./store.js";
 import { useDetailResource } from "./use-detail-resource.js";
+import { TaskExecutionPanel } from "./task-execution-panel.js";
 
 type DashboardStore = ReturnType<typeof createDashboardStore>;
 type RootClient = Omit<DashboardClient, "agentLogs"> & Readonly<{
@@ -105,6 +106,7 @@ function ControlCenter({
           path="/tasks/:taskId"
           element={(
             <TaskDetailRoute
+              store={store}
               client={client}
               tasks={state.tasks}
               authorityClient={liveAuthorityClient}
@@ -169,11 +171,13 @@ function OverviewRoute({ state, store }: Readonly<{ state: DashboardState; store
 }
 
 function TaskDetailRoute({
+  store,
   client,
   tasks,
   authorityClient,
   authorityIdFactory,
 }: Readonly<{
+  store: DashboardStore;
   client: RootClient;
   tasks: ResourceState<TaskListResponse>;
   authorityClient: AuthorityMutationClient;
@@ -184,6 +188,7 @@ function TaskDetailRoute({
   if (taskId === undefined) return <NotFoundPage />;
   return (
     <TaskDetailContent
+      store={store}
       key={taskId}
       taskId={taskId}
       loadTask={loadTask}
@@ -195,23 +200,29 @@ function TaskDetailRoute({
 }
 
 function TaskDetailContent({
+  store,
   taskId,
   loadTask,
   revision,
   authorityClient,
   authorityIdFactory,
 }: Readonly<{
+  store: DashboardStore;
   taskId: string;
   loadTask: (id: string) => Promise<TaskDetailResponse>;
   revision?: string;
   authorityClient: AuthorityMutationClient;
   authorityIdFactory?: AuthorityIdFactory;
 }>) {
+  const execution = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot).taskExecution;
+  const executionData = execution?.task_id === taskId && execution.resource.status === "success" ? execution.resource.data : undefined;
+  const authorityRevision = executionData?.requests.map(item => `${item.request.request_id}:${item.request.state}`).join("|") ?? "";
   return (
     <TaskDetailPage
-      state={useDetailResource(taskId, loadTask, undefined, revision)}
+      state={useDetailResource(taskId, loadTask, undefined, `${revision ?? ""}:${authorityRevision}`)}
       client={authorityClient}
       idFactory={authorityIdFactory}
+      execution={<TaskExecutionPanel taskId={taskId} store={store} client={authorityClient} idFactory={authorityIdFactory} />}
     />
   );
 }

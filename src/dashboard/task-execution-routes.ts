@@ -3,7 +3,7 @@ import { JarvisError, type AuthorityDb } from "../db.js";
 import type { ReconcileHub } from "./events.js";
 import { writeDashboardJson } from "./http.js";
 import { sessionMatchesCsrf, type DashboardSessionStore } from "./session.js";
-import { prepareDashboardTaskExecution, stageDashboardTaskExecution } from "./task-execution-service.js";
+import { checkDashboardTaskExecution, prepareDashboardTaskExecution, stageDashboardTaskExecution } from "./task-execution-service.js";
 import { readDashboardTaskExecution } from "./task-execution-read.js";
 
 type Input = { db: AuthorityDb; path: string; request: IncomingMessage; response: ServerResponse;
@@ -11,7 +11,7 @@ type Input = { db: AuthorityDb; path: string; request: IncomingMessage; response
 
 // Server has already decoded the path. A second decode could change the task identity.
 function route(path: string) {
-  const match = /^\/api\/v1\/tasks\/([^/]+)\/execution(?:\/(prepare|stage))?$/.exec(path);
+  const match = /^\/api\/v1\/tasks\/([^/]+)\/execution(?:\/(prepare|stage|check))?$/.exec(path);
   return match ? { taskId: match[1]!, action: match[2] } : undefined;
 }
 export async function tryHandleTaskExecution(input: Input): Promise<boolean> {
@@ -28,6 +28,8 @@ export async function tryHandleTaskExecution(input: Input): Promise<boolean> {
     if (!matched.action) write(input, 200, readDashboardTaskExecution(input.db, matched.taskId));
     else if (matched.action === "prepare") write(input, 200,
       await prepareDashboardTaskExecution(input.db, matched.taskId, input.body, input.clock));
+    else if (matched.action === "check") write(input, 200,
+      await checkDashboardTaskExecution(input.db, matched.taskId, input.body, input.clock));
     else {
       const request = await stageDashboardTaskExecution(input.db, matched.taskId, input.body, input.clock);
       input.hub.publish(["overview", "tasks", `task:${matched.taskId}`, "approvals"]);

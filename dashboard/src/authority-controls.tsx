@@ -1,8 +1,10 @@
 import { useState, type SyntheticEvent } from "react";
+import { Link } from "react-router-dom";
 import type { CommandApprovalReceipt, StoredControlCommand } from "../../src/control-plane.js";
 import "./authority-controls.css";
 import type { OverviewApproval } from "../../src/dashboard/read-model.js";
 import { DashboardApiError } from "./api.js";
+import { taskExecutionMessage } from "./task-execution-message.js";
 import {
   SYSTEM_AUTHORITY_ID_FACTORY,
   type AuthorityIdFactory,
@@ -14,13 +16,16 @@ export type AuthorityControlsProps = Readonly<{
   client: Pick<AuthorityMutationClient, "decideRequest" | "executeRequest" | "retryRequest">;
   idFactory?: AuthorityIdFactory;
   enabled?: boolean;
+  onRefresh?: () => Promise<void>;
+  taskExecutionContext?: boolean;
 }>;
 
 type Action = "decision" | "execution" | "retry";
 type Operation =
   | { readonly kind: "idle" }
   | { readonly kind: "loading"; readonly action: Action }
-  | { readonly kind: "error"; readonly action: "receipt" | Action }
+  | { readonly kind: "error"; readonly action: "receipt" | Action; readonly message?: string }
+  | { readonly kind: "unknown_execution" }
   | { readonly kind: "decided"; readonly state: "approved" | "rejected" }
   | { readonly kind: "executed"; readonly state: "completed" | "failed" | "uncertain" }
   | { readonly kind: "retried"; readonly command: StoredControlCommand }
@@ -40,10 +45,13 @@ export function AuthorityControls({
   client,
   idFactory = SYSTEM_AUTHORITY_ID_FACTORY,
   enabled = true,
+  onRefresh,
+  taskExecutionContext = false,
 }: AuthorityControlsProps) {
   const [receiptJson, setReceiptJson] = useState("");
   const [operation, setOperation] = useState<Operation>({ kind: "idle" });
-  const busy = operation.kind === "loading" || !enabled;
+  const busy = operation.kind === "loading" || operation.kind === "unknown_execution" || !enabled;
+  const taskDetailRequired = request.action === "task.execute" && !taskExecutionContext;
 
   async function decide(): Promise<void> {
     const parsed = parseReceiptJson(receiptJson);
@@ -66,13 +74,18 @@ export function AuthorityControls({
   }
 
   async function execute(): Promise<void> {
+    if (busy || taskDetailRequired) return;
     setOperation({ kind: "loading", action: "execution" });
     try {
       const result = await client.executeRequest(request.request_id);
       setOperation({ kind: "executed", state: result.execution.state });
     } catch (error: unknown) {
       if (!isMutationError(error)) throw error;
-      setOperation({ kind: "error", action: "execution" });
+      const task = request.action === "task.execute";
+      const unknown = !(error instanceof DashboardApiError) || error.kind === "offline"
+        || ["VALIDATION_ERROR", "INTERNAL_ERROR"].includes(error.code);
+      setOperation(task && unknown ? { kind: "unknown_execution" }
+        : { kind: "error", action: "execution", ...(task ? { message: taskExecutionMessage(error) } : {}) });
     }
   }
 
@@ -110,7 +123,9 @@ export function AuthorityControls({
         <div><dt>Level</dt><dd>Level {request.action_level}</dd></div>
         <div><dt>State</dt><dd>{request.state}</dd></div>
       </dl>
-      {request.state === "pending" && !decisionComplete ? (
+      {taskDetailRequired ? <p>파일·검사·전송 상태를 확인하고 작업 상세에서 승인·실행하세요. <Link
+        to={request.task_id ? `/tasks/${encodeURIComponent(request.task_id)}` : "/tasks"}>작업 실행 상세 열기</Link></p> : null}
+      {request.state === "pending" && !decisionComplete && !taskDetailRequired ? (
         <form className="control-form" onSubmit={submitReceipt}>
           <label className="form-field">
             <span>Signed receipt JSON</span>
@@ -124,12 +139,12 @@ export function AuthorityControls({
           <button type="submit" disabled={busy}>Submit signed receipt</button>
         </form>
       ) : null}
-      {request.state === "approved" && !executionComplete ? (
+      {request.state === "approved" && !executionComplete && !taskDetailRequired ? (
         <button type="button" disabled={busy} onClick={() => { void execute(); }}>
           Execute approved request
         </button>
       ) : null}
-      {request.state === "failed" && !retryComplete && !replanRequired && request.retry_status !== "not_allowed" ? (
+      {request.state === "failed" && request.action !== "task.execute" && !retryComplete && !replanRequired && request.retry_status !== "not_allowed" ? (
         <button type="button" disabled={busy} onClick={() => { void retry(); }}>
           Retry failed request
         </button>
@@ -141,6 +156,9 @@ export function AuthorityControls({
         </div>
       ) : null}
       <OperationMessage operation={operation} />
+      {operation.kind === "unknown_execution" && onRefresh ? <button type="button" onClick={() => { void onRefresh(); }}>
+        상태 다시 확인
+      </button> : null}
       {operation.kind === "retried" ? <PendingRequest command={operation.command} /> : null}
     </article>
   );
@@ -154,7 +172,11 @@ function OperationMessage({ operation }: Readonly<{ operation: Operation }>) {
       return null;
     case "loading":
       return <p className="control-status" role="status">Submitting request</p>;
+    case "unknown_execution":
+      return <p className="control-error" role="alert">실행 응답을 확인하지 못했습니다. 서버에서 계속 실행 중일 수 있습니다.
+        상태를 다시 조회하세요. 실행을 자동 재전송하지 않습니다.</p>;
     case "error": {
+      if (operation.message) return <p className="control-error" role="alert">{operation.message}</p>;
       const action = operation.action;
       switch (action) {
         case "receipt":
