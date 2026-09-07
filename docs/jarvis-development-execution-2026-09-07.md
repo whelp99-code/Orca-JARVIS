@@ -9,7 +9,7 @@
 | 목록 ID | 작업 | 상태 / 완료 증거 |
 |---|---|---|
 | 선행 수정 | 만료 intent 복구, 단건 명령 조회, 준비 상태 표시, 중복 build 제거 | 독립 리뷰 신규 결함 0; 관련 3파일 9테스트 pass; lint/typecheck/build exit 0 |
-| 01 | GJC 오류의 비밀정보 제거 | 진행 |
+| 01 | GJC 오류의 비밀정보 제거 | 구현·독립 리뷰 완료; 자동 32개 및 실제 자식 프로세스 3개 검증 통과; 실제 coordinator 인수는 후속 |
 | 02–03 | runtime 소유권·만료 정산 | 대기; 동시 프로세스와 늦은 응답 검증 필요 |
 | 04 | 작업 제약·완료 기준을 승인부터 결과까지 보존 | 대기 |
 | 05–09 | 상태·집계·retention·읽기 부작용·재시도 | 대기 |
@@ -40,3 +40,12 @@
 - `npm run lint && npm run typecheck && npm run build`: exit 0.
 - 독립 리뷰는 기존 diff 범위의 새 필수 수정 0건. ready fixture의 조회 검증이며, 생성자 rebuild 부작용 제거(08)는 아직 미완료다.
 - 전체 suite 및 실제 coordinator를 통한 업무 실행 검증은 후속이다. 운영 배포하지 않았다.
+
+## 2026-09-07 P0-01 오류 경계
+
+- 키 이름 정규식으로 임의 오류를 완전히 가릴 수 없어 비정형 stderr와 runner 예외 문구를 외부 오류에 싣지 않는다. 구조화된 고정 오류 코드로 진단한다.
+- 알려진 timeout/spawn/output-limit 오류 코드는 보존하며, 알 수 없는 runner 예외는 `GJC_MCP_RUNNER_FAILED`로 제한한다.
+- 출력 상한을 nonzero 판정보다 먼저 검사한다. 기존 압축 소스는 동작을 유지하며 읽기 가능한 줄로 펼쳤다.
+- 신규 회귀 10개: 수정 전 10 fail → 수정 후 10 pass. 기존 coordinator 2개, reviewability 2개, runtime 18개 통과.
+- 실제 Node 자식 프로세스의 stderr 비밀 표식·성공 프로토콜·출력 상한 3개 통과. 이는 실제 GJC/에이전트 업무 인수 검증과 별개다.
+- `npm run lint && npm run typecheck && npm run build:backend`: exit 0. 독립 정적 리뷰 필수 지적 0건.
