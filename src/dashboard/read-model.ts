@@ -46,7 +46,6 @@ export type {
 
 const RECENT_TASK_LIMIT = 20;
 const TASK_EVENT_LIMIT = 500;
-const SETTLED_STATES = new Set(["completed", "failed", "cancelled", "rejected"]);
 
 export class DashboardReadModel {
   readonly personal: PersonalDashboardReadModel;
@@ -70,19 +69,19 @@ export class DashboardReadModel {
     const secondBrain = doctor.second_brain;
     const before = changeCount(this.db);
     const projection = currentStateFromDoctor(this.db, doctor, now);
-    const tasks = new TaskTimeline(this.db).list(RECENT_TASK_LIMIT);
+    const tasks = new TaskTimeline(this.db).overview(RECENT_TASK_LIMIT);
     const commands = new ControlPlane(this.db).list();
     const agents = listedAgents(this.db, now);
     const portfolio = new PortfolioProjection(this.db).overview(now);
     if (changeCount(this.db) !== before) throw new JarvisError("DASHBOARD_READ_MUTATED");
-    const recent_tasks = tasks.map(toOverviewTask);
+    const recent_tasks = tasks.recent.map(toOverviewTask);
     const pending_approvals = commands.filter(isPending).map(command => toOverviewApproval(command, now));
     const risks = projection.risks.flatMap(toOverviewRisk);
     const overview = redactDashboardValue({
       schema_version: DASHBOARD_SCHEMA_VERSION,
       generated_at: projection.generated_at,
       cards: overviewCards({
-        activeWork: recent_tasks.filter((task) => !SETTLED_STATES.has(task.state)).length,
+        activeWork: tasks.activeCount,
         agents: agents.filter(agent => agent.status === "live").length,
         pending: pending_approvals.length,
         risks: risks.length,

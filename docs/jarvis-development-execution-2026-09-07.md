@@ -354,3 +354,16 @@
 - 신규 7개 회귀: 세 비준비 상태의 읽기 무변경, populated HTTP/CLI 복구, 재구축 중간 실패 rollback·quarantine 보존·반복 무쓰기, singleton/clock 오류, 계보 쓰기·알림 외부 호출 차단. 관련 검사 5파일18개, 경계 확장 8파일46개, 기존 memory UI/HTTP 2파일13개 모두 pass. 신규 7개를 두 번 실행했으므로 중복 제외 14파일70개다. 각 로그는 projection-regression/projection-boundaries/projection-route-regression.log.
 - 실제 격리 HTTP 서버와 별도 CLI subprocess로 pending/failed/rebuilding 각각 첫 GET 503·DB 쓰기0→명시 관리 명령 성공→같은 서버 GET200을 확인했다. 명령 재호출 후 singleton 기록 불변, 격리 DB 제거를 확인했다. 재현 스크립트·JSON은 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/projection-live-probe.*`.
 - backend build·typecheck·lint는 exit 0. 설계·관리 명령·복구 제한은 `docs/planning/adr-memory-projection-initialization.md`. 운영 DB/서비스/release/push는 변경하지 않았다. 전체 verify와 06/12/13 및 나머지 01–25 완료 인수는 남는다. 전체 gate의 기존 memory 4모듈 가독성 실패는 이 단위와 별도로 해결해야 한다.
+
+## 2026-09-08 P1-06 — 전체 활성 작업 집계
+
+- 직전 인계 확인 턴은 수신 계획 반영의 증거를 확인했지만 자비스 제품 개발에는 no progress였다. 현재 main `36f00f2`와 미커밋 집계 변경을 다시 확인하고 기능 개발을 이어갔다.
+- 공통 SQL population에서 work/workflow/command/GJC를 canonical task로 합성한다. 상태는 work→workflow→command→GJC 우선이며 같은 우선순위의 활성 기록을 먼저 선택한다. 최근 시각은 연결 기록의 최대 시각이다. 조회 시 실행 성공/만료 전이를 새로 쓰지 않는다.
+- 전체 active COUNT와 최근 LIMIT는 하나의 SQLite 읽기 snapshot을 사용한다. 카드가 서버의 전체 집계 값을 사용하도록 변경했다. 전체 기본 원장 payload를 JS 배열로 가져오지 않는다. 추천은 기존 canonical/event 검증을 거쳐 한 건씩 합성하며 결과 배열만 LIMIT 이내로 유지한다. 일부 추천 순위가 종료되어도 남은 활성 순위가 있으면 진행 상태를 유지한다.
+- 독립 리뷰의 별칭 P2 3건과 정렬 P2 1건을 수정했다. GJC가 아직 없는 continuation, workflow input와 다른 correlation, 추천에 연결된 intent의 상세도 같은 정본을 사용한다. 모호한 correlation은 임의 병합/조회하지 않으며 숨김은 연결된 모든 작업에 전파한다. SQL과 추천 병합 모두 UTF-8 BINARY 정렬을 사용한다. 최종 정적 리뷰 필수 결함0.
+- 신규 회귀9개: 활성21/최근완료20, 숨김 후 목록 보충, work와 최신GJC 완료 분리, run/correlation 연결, GJC 없는 continuation 조회·숨김, 같은 snapshot의 동시 writer, 추천 일부/전체 종료 및 alias 상세, 최근 밖 증거 변조 차단, 모호한 alias, 동일 시각 혼합 정렬(일부 시나리오는 한 테스트에서 함께 검증).
+- 관련 백엔드 중복 제외 9파일43개 pass. 실행 로그는 task-count-regression(8파일33), task-count-alias-regression(5파일23), task-count-final-regression(6파일34), task-count-accepted(최종 신규9)이며 겹치는 검사는 중복 집계하지 않았다. dashboard 29파일162개 pass. 최종 lint/typecheck/backend build 및 frontend build exit0, git diff --check exit0. 전체 verify를 이 단위에서 재실행한 것은 아니다.
+- 실제 빌드 서버/Chromium: 격리 DB의 활성21/최근완료20을 API와 화면에서 확인, 활성 한 건 quarantine 후20/20, 각 조회 DB 쓰기0, page error0. 최초 probe는 목록이 링크라는 잘못된 DOM 선택자로 실패했으며 실제 p.record-title에 맞춰 수정하고 최종 exit0을 확인했다. 운영 데이터/서비스는 사용하지 않았다.
+- 규모 표본: 격리 GJC 원장10,046행, 활성5,020/최근20. 5회 전체 집계+목록 시간은107.409/102.923/101.546/108.884/100.654ms, 중앙값102.923ms. 추천 대량 원장·운영 HTTP 부하 결과로 확대하지 않는다. probe 종료 후 임시 DB/브라우저 제거.
+- 증거 경로: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/task-count-*`; 재현 스크립트와 최종 JSON은 `task-count-live-probe.mjs/json`. 설계는 `docs/planning/adr-dashboard-task-population.md`.
+- 전체 목표는 미완료다. 기존 memory 4모듈 가독성 gate, 12 스케줄/보존, 13 관측 장애 분리 및 나머지 01–25 인수 조건을 이어간다. task 결과 자동 기억 수집은 원본 차단 전파 계약 미완성으로 기존 HOLD를 유지한다. 운영 DB/migration SQL/service/release/push 변경0.

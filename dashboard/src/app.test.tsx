@@ -64,6 +64,15 @@ const emptyOverview: OverviewResponse = {
 };
 
 describe("JARVIS Control Center overview", () => {
+  it("renders the full active count even when the recent twenty tasks are completed", () => {
+    render(<App overview={{ ...populatedOverview,
+      cards: populatedOverview.cards.map(card => card.id === "active-work" ? { ...card, value: 21 } : card),
+      recent_tasks: Array.from({ length: 20 }, (_, index) => ({ ...populatedOverview.recent_tasks[0]!,
+        task_id: `recent:${index}`, title: `Completed task ${index}`, state: "completed" })),
+    }} />);
+    expect(within(screen.getByRole("article", { name: "지금 하는 일" })).getByText("21")).toBeInTheDocument();
+    expect(screen.getAllByText(/^Completed task /)).toHaveLength(20);
+  });
   it("counts only recently connected agents while keeping the other registrations visible", () => {
     render(<App overview={{ ...populatedOverview, agents: ["live", "offline", "stale", "unknown"].map(status => ({
       ...populatedOverview.agents[0]!, agent_id: status, terminal_id: status, status,

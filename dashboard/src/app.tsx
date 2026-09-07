@@ -13,10 +13,8 @@ type PanelProps = Readonly<{
   children: ReactNode;
 }>;
 
-const SETTLED_TASK_STATES: ReadonlySet<string> = new Set(["completed", "failed", "cancelled", "rejected"]);
-
 export default function App({ overview }: AppProps) {
-  const activeWorkCount = overview.recent_tasks.filter((task) => !SETTLED_TASK_STATES.has(task.state)).length;
+  const activeWorkCount = overview.cards.find(card => card.id === "active-work")?.value ?? 0;
   const statusCards = [
     {
       id: "active-work",

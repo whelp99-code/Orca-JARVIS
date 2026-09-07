@@ -4,6 +4,7 @@ import { persistenceRow, persistenceText } from "./personal-persistence-values.j
 import { projectRecommendations } from "./recommendation-projection.js";
 import { storedRecommendationIdentity } from "./recommendation-identity.js";
 import { validateStoredRecommendationEvents } from "./recommendation-transition-identity.js";
+import { TaskTimelinePopulation, activeTaskState } from "./task-timeline-population.js";
 import {
   TaskTimeline as BaseTaskTimeline,
   type TaskTimelineContext as BaseContext,
@@ -27,6 +28,7 @@ export type TaskTimelineContext = Omit<BaseContext, "task" | "events"> & {
   readonly events: readonly TaskTimelineEvent[];
 };
 type Row = Readonly<Record<string, unknown>>;
+const compareText = (left: string, right: string): number => Buffer.compare(Buffer.from(left), Buffer.from(right));
 function ownerRanks(row: Row): ReadonlySet<number> {
   const identity = storedRecommendationIdentity(row["canonical_digest"], row["evidence_digest"], row["canonical_envelope_json"]);
   if (typeof identity.provenance !== "object" || identity.provenance === null || Array.isArray(identity.provenance)) return new Set();
@@ -48,9 +50,13 @@ function recommendationSummary(row: Row): TaskTimelineSummary {
   const states: unknown = JSON.parse(persistenceText(row["states_json"]));
   const pending = Array.isArray(states) && states.some(item => typeof item === "object" && item !== null
     && ranks.has(Number(Reflect.get(item, "rank"))) && Reflect.get(item, "state") === "pending");
+  const latestState = persistenceText(row["latest_state"]);
+  const remaining = Array.isArray(states) ? states.map(item => persistenceText(persistenceRow(item)["state"]))
+    .find(activeTaskState) : undefined;
+  const state = activeTaskState(latestState) ? latestState : remaining ?? latestState;
   return {
     task_id: persistenceText(row["recommendation_id"]), title: persistenceText(row["title"]), kind: "recommendation",
-    state: persistenceText(row["latest_state"]), updated_at: persistenceText(row["updated_at"]),
+    state, updated_at: persistenceText(row["updated_at"]),
     pending_approval: pending, source_ids: [persistenceText(row["recommendation_id"])],
   };
 }
@@ -71,30 +77,41 @@ export class TaskTimeline {
   constructor(private readonly authority: AuthorityDb) { this.base = new BaseTaskTimeline(authority); }
 
   list(limit = 100): TaskTimelineSummary[] {
+    return this.overview(limit).recent;
+  }
+
+  overview(limit = 20): { recent: TaskTimelineSummary[]; activeCount: number } {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) throw new JarvisError("TASK_TIMELINE_INVALID");
-    const projections = new MemoryProjectionAuthority(this.authority);
-    const rows = projections.visible(
-      this.authority.db.prepare(`${SUMMARY_SQL} ORDER BY r.created_at DESC,r.recommendation_id DESC LIMIT ?`)
-        .all(limit).map(persistenceRow),
-      row => ({ kind: "recommendation", id: persistenceText(row["recommendation_id"]),
-        component_id: persistenceText(row["recommendation_id"]) }),
-    );
-    for (const row of rows) validateEvents(this.authority.db, row);
-    const recommendations = rows.map(recommendationSummary);
-    const base = this.base.list(limit)
-      .filter(item => !projections.isProjectionIdSuppressed(item.task_id));
-    return [...base, ...recommendations].sort((left, right) => right.updated_at.localeCompare(left.updated_at)
-      || left.task_id.localeCompare(right.task_id)).slice(0, limit);
+    return this.authority.db.transaction(() => {
+      const projections = new MemoryProjectionAuthority(this.authority);
+      projections.assertReady();
+      const population = new TaskTimelinePopulation(this.authority);
+      const recent: TaskTimelineSummary[] = population.list(limit, true);
+      let activeCount = population.activeCount(true);
+      const rows = population.recommendationRows(SUMMARY_SQL);
+      for (const value of rows) {
+        const row = persistenceRow(value);
+        validateEvents(this.authority.db, row);
+        const recommendation = recommendationSummary(row);
+        if (activeTaskState(recommendation.state)) activeCount++;
+        recent.push(recommendation);
+        recent.sort((left, right) => compareText(right.updated_at, left.updated_at) || compareText(left.task_id, right.task_id));
+        if (recent.length > limit) recent.pop();
+      }
+      return { recent, activeCount };
+    }).deferred();
   }
 
   timeline(taskId: string, limit = 200): TaskTimelineEvent[] {
-    if (new MemoryProjectionAuthority(this.authority).isProjectionIdSuppressed(taskId)) {
+    if (new TaskTimelinePopulation(this.authority).isSuppressed(taskId)) {
       throw new JarvisError("TASK_TIMELINE_NOT_FOUND");
     }
+    const canonicalId = new TaskTimelinePopulation(this.authority).find(taskId)?.task_id ?? taskId;
     const exists = this.authority.db.prepare(
       "SELECT canonical_digest,evidence_digest,canonical_envelope_json FROM personal_recommendations WHERE recommendation_id=?",
-    ).get(taskId);
+    ).get(canonicalId);
     if (exists === undefined) return this.base.timeline(taskId, limit);
+    taskId = canonicalId;
     validateEvents(this.authority.db, persistenceRow(exists));
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw new JarvisError("TASK_TIMELINE_INVALID");
     return this.authority.db.prepare(
@@ -122,11 +139,13 @@ export class TaskTimeline {
   }
 
   context(taskId: string, limit = 100, maxBytes = 128 * 1024, now = new Date()): TaskTimelineContext {
-    if (new MemoryProjectionAuthority(this.authority).isProjectionIdSuppressed(taskId)) {
+    if (new TaskTimelinePopulation(this.authority).isSuppressed(taskId)) {
       throw new JarvisError("TASK_TIMELINE_NOT_FOUND");
     }
-    const value = this.authority.db.prepare(`${SUMMARY_SQL} WHERE r.recommendation_id=?`).get(taskId);
+    const canonicalId = new TaskTimelinePopulation(this.authority).find(taskId)?.task_id ?? taskId;
+    const value = this.authority.db.prepare(`${SUMMARY_SQL} WHERE r.recommendation_id=?`).get(canonicalId);
     if (value === undefined) return this.base.context(taskId, limit, maxBytes, now);
+    taskId = canonicalId;
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000 || !Number.isSafeInteger(maxBytes) || maxBytes < 1024) {
       throw new JarvisError("TASK_TIMELINE_INVALID");
     }
