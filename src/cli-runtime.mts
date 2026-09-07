@@ -18,7 +18,10 @@ const CLI_HELP =
   + "Commands: init, db migrate, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, "
   + "observe, pre-gjc, capabilities, team, portfolio, status\n"
   + "control plan-task <plan.json>: stage a task execution plan for separate approval (execution unavailable)\n"
-  + "control check-task <plan.json>: check repository baseline and declared files without executing an agent";
+  + "control check-task <plan.json>: check repository baseline and declared files without executing an agent\n"
+  + "memory stage-dispatch <candidate-id>: stage an approved memory candidate for control approval\n"
+  + "memory outbox --once [--limit N]: dispatch queued writes and reconcile their stored results\n"
+  + "memory outbox list [--limit N]: inspect bounded memory delivery state";
 
 const COMMAND_HANDLERS: readonly CliCommandHandler[] = [
   executeCoreCommand,

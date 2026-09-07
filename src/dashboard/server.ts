@@ -55,6 +55,7 @@ export type DashboardServer = {
   publish(topics: readonly string[]): void;
   publishPersonal(kind: PersonalEventKind): void;
   close(): void;
+  drain(): Promise<void>;
 };
 
 export type DashboardServerOptions = {
@@ -75,6 +76,7 @@ export type DashboardServerOptions = {
   readonly memoryEffectSpoolRoot?: string;
   readonly memoryCandidateReviewSpoolRoot?: string;
   readonly memoryCandidateDispatchSpoolRoot?: string;
+  readonly memoryReconcileTick?: () => void;
   readonly remoteApproval?: RemoteApprovalService;
 };
 
@@ -108,7 +110,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
   realpathSync(options.staticRoot);
   const model = new DashboardReadModel(options.db, options.secondBrainProbe, options.capabilityProbe);
   const terminals = new DashboardTerminalReader(model, options.orcaRunner);
-  const events = createDashboardEvents(options.db);
+  const events = createDashboardEvents(options.db, options.memoryReconcileTick);
   const session = options.sessionStore ?? createDashboardSession();
   const clock = options.clock ?? (() => new Date());
   const memoryRuntime = createMemoryRuntime({ authority: options.db, session, clock,
@@ -118,8 +120,9 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
     candidate_dispatch_spool_root: options.memoryCandidateDispatchSpoolRoot });
   const bind = { origin: `http://${LOOPBACK_HOST}:0` };
   const bound = new BoundSocket({ host: LOOPBACK_HOST, port: options.port });
+  const requests = new Set<Promise<void>>();
   const httpServer = createServer((request, response) => {
-    void handleRequest({
+    const pending = handleRequest({
       db: options.db,
       model,
       terminals,
@@ -138,6 +141,8 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
       memoryRuntime,
       remoteApproval: options.remoteApproval ?? composeRemoteApproval(options.db),
     });
+    requests.add(pending);
+    void pending.then(() => requests.delete(pending), () => requests.delete(pending));
   });
   httpServer.listen(bound);
   const boundAddress = httpServer.address();
@@ -153,6 +158,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
     publish(topics: readonly string[]): void { events.hub.publish(topics); },
     publishPersonal(kind: PersonalEventKind): void { events.hub.publishPersonal(kind); },
     close(): void { events.close(); httpServer.closeAllConnections(); httpServer.close(); },
+    async drain(): Promise<void> { await Promise.allSettled([...requests]); },
   };
 }
 

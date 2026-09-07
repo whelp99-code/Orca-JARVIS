@@ -2,7 +2,9 @@ import { randomBytes } from "node:crypto";
 import { chmodSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { ApprovedCommandExecutor } from "../approved-executor.js";
-import { JarvisError } from "../db.js";
+import { JarvisError, type AuthorityDb } from "../db.js";
+import { createProductionMemoryOutbox, memoryCandidateSpoolRoots } from "../memory-outbox-production.js";
+import type { MemoryOutboxService } from "../memory-outbox.js";
 import { createSecondBrainReadAdapter } from "../second-brain-adapter.js";
 import type { SecondBrainAdapterOptions } from "../second-brain-adapter-types.js";
 import {
@@ -24,6 +26,7 @@ export type BoundDashboardMemory = {
   readonly memoryCandidateDispatchSpoolRoot: string;
   readonly executorFactory: DashboardExecutorFactory;
   readonly ownedProviderTransport: SecondBrainTransport | undefined;
+  readonly outboxFor: (authority: AuthorityDb) => MemoryOutboxService | undefined;
 };
 
 function privateDir(path: string): string {
@@ -57,36 +60,35 @@ export function bindDashboardMemoryDependencies(
 ): BoundDashboardMemory {
   const root = dirname(dbPath);
   const effect = dependencies.memoryEffectSpoolRoot ?? privateDir(join(root, "memory-effect-spool"));
-  const review = dependencies.memoryCandidateReviewSpoolRoot
-    ?? privateDir(join(root, "memory-review-spool"));
-  const dispatch = dependencies.memoryCandidateDispatchSpoolRoot
-    ?? privateDir(join(root, "memory-dispatch-spool"));
+  const roots = memoryCandidateSpoolRoots(dbPath, {
+    candidate_review_spool_root: dependencies.memoryCandidateReviewSpoolRoot,
+    candidate_dispatch_spool_root: dependencies.memoryCandidateDispatchSpoolRoot });
+  const review = privateDir(roots.candidate_review_spool_root);
+  const dispatch = privateDir(roots.candidate_dispatch_spool_root);
   const key = dependencies.memoryProjectionKey ?? projectionKey(join(root, "memory-projection.key"));
+  const transportOptions: SecondBrainTransportOptions = dependencies.providerTransportOptions ?? {};
+  const ownedProviderTransport = dependencies.providerTransport === undefined && dependencies.memoryAdapter === undefined
+    ? createSecondBrainTransport(transportOptions) : undefined;
+  const transport = dependencies.providerTransport ?? ownedProviderTransport;
+  const options = dependencies.memoryAdapterOptions ?? adapterOptions();
+  const outboxes = new WeakMap<AuthorityDb, MemoryOutboxService>();
+  const outboxFor = (authority: AuthorityDb): MemoryOutboxService | undefined => {
+    if (transport === undefined || (dependencies.memoryAdapter?.contract_profile
+      ?? options.contract_profile ?? "schema3-read-only") !== "schema4") return undefined;
+    let service = outboxes.get(authority);
+    if (service === undefined) {
+      service = createProductionMemoryOutbox(authority, { transport, clock: options.clock, read_fence: options.read_fence, ...roots }).service;
+      outboxes.set(authority, service);
+    }
+    return service;
+  };
   const executorFactory = dependencies.executorFactory ?? ((input): ApprovedCommandExecutor =>
     new ApprovedCommandExecutor(input.db, resolve(".jarvis-backups"), resolve("state"), {},
-      () => input.now, undefined, undefined, input.memoryLifecycle));
-  if (dependencies.memoryAdapter !== undefined) {
-    return { memoryAdapter: dependencies.memoryAdapter, memoryProjectionKey: key,
-      memoryEffectSpoolRoot: effect, memoryCandidateReviewSpoolRoot: review,
-      memoryCandidateDispatchSpoolRoot: dispatch, executorFactory, ownedProviderTransport: undefined };
-  }
-  const transportOptions: SecondBrainTransportOptions = dependencies.providerTransportOptions ?? {};
-  if (dependencies.providerTransport !== undefined) {
-    return {
-      memoryAdapter: createSecondBrainReadAdapter({
-        ...(dependencies.memoryAdapterOptions ?? adapterOptions()),
-        transport: dependencies.providerTransport,
-      }),
-      memoryProjectionKey: key, memoryEffectSpoolRoot: effect, memoryCandidateReviewSpoolRoot: review,
-      memoryCandidateDispatchSpoolRoot: dispatch, executorFactory, ownedProviderTransport: undefined,
-    };
-  }
-  const ownedProviderTransport = createSecondBrainTransport(transportOptions);
+      options.clock, outboxFor(input.db), undefined, input.memoryLifecycle));
   return {
-    memoryAdapter: createSecondBrainReadAdapter({
-      ...(dependencies.memoryAdapterOptions ?? adapterOptions()), transport: ownedProviderTransport,
-    }),
+    memoryAdapter: dependencies.memoryAdapter ?? (transport === undefined ? undefined
+      : createSecondBrainReadAdapter({ ...options, transport })),
     memoryProjectionKey: key, memoryEffectSpoolRoot: effect, memoryCandidateReviewSpoolRoot: review,
-    memoryCandidateDispatchSpoolRoot: dispatch, executorFactory, ownedProviderTransport,
+    memoryCandidateDispatchSpoolRoot: dispatch, executorFactory, ownedProviderTransport, outboxFor,
   };
 }

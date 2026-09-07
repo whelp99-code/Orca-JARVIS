@@ -119,7 +119,8 @@ export * from "./second-brain-adapter.js";
 export * from "./second-brain-effect-v2.js";
 export * from "./second-brain-effect-authority.js";
 export * from "./memory-lifecycle-api.js";
-export { prepareMemoryRememberDispatch } from "./memory-remember-dispatch.js";
+export { prepareMemoryRememberDispatch, stageMemoryRememberDispatch } from "./memory-remember-dispatch.js";
+export { createProductionMemoryOutbox } from "./memory-outbox-production.js";
 export { memoryRememberArtifact } from "./memory-remember-artifact.js";
 export {
 	MemoryOutboxService,

@@ -100,7 +100,7 @@ describe("dashboard CLI", () => {
       expect(Reflect.get(record, "contract_schema")).toBe(4);
       expect(Reflect.get(record, "mutations_enabled")).toBe(true);
     } finally {
-      runtime.close();
+      await runtime.close();
     }
   });
 });

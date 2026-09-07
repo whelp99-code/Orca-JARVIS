@@ -5,6 +5,7 @@ import type { OrcaRunner } from "./orca.js";
 import type { OrcaCommand } from "./orca-resume.js";
 import type { MemoryLifecycleService } from "./memory-lifecycle-service-types.js";
 import type { SecondBrainReadinessProbe } from "./second-brain-readiness.js";
+import type { MemoryOutboxProductionOptions } from "./memory-outbox-production.js";
 
 export type CliDependencies = {
   readonly orcaRunner?: OrcaRunner;
@@ -16,6 +17,7 @@ export type CliDependencies = {
   readonly secondBrainProbe?: SecondBrainReadinessProbe;
   readonly readStdin?: () => Promise<Buffer>;
   readonly memoryLifecycle?: MemoryLifecycleService;
+  readonly memoryOutboxOptions?: MemoryOutboxProductionOptions;
 };
 
 export type CliValues = {

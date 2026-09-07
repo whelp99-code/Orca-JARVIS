@@ -13,11 +13,28 @@ import { stageTaskExecution, type StageTaskExecutionInput } from "./task-executi
 import { inspectTaskExecutionRepository } from "./task-execution-workspace.js";
 import { assertTaskExecutionBinding } from "./task-execution-staging.js";
 import { parseTaskExecutionPlan } from "./task-execution-plan.js";
+import { bindMemoryCandidateSpools, createProductionMemoryOutbox } from "./memory-outbox-production.js";
+import { stageMemoryRememberDispatch } from "./memory-remember-dispatch.js";
 
 export async function executeControlCommand(
   context: CliCommandContext,
 ): Promise<Record<string, unknown> | undefined> {
   const { command, subcommand, argument, values, db } = context;
+  if (command === "memory" && subcommand === "stage-dispatch" && argument) {
+    const roots = bindMemoryCandidateSpools(db, context.dependencies.memoryOutboxOptions);
+    return { ok: true, command: "memory.stage-dispatch",
+      request: stageMemoryRememberDispatch(db, argument, commandNow(context), roots) };
+  }
+  if (command === "memory" && subcommand === "outbox" && (values.once === true || argument === "list")) {
+    const runtime = createProductionMemoryOutbox(db, { ...context.dependencies.memoryOutboxOptions,
+      clock: () => commandNow(context) });
+    try {
+      const limit = values.limit === undefined ? 16 : integer(values.limit);
+      if (argument === "list") return { ok: true, command: "memory.outbox.list", items: runtime.service.list({ limit }) };
+      const cycle = await runtime.service.runOnce(values.worker ?? "cli-memory-outbox", limit);
+      return { ok: cycle.failed === 0 && cycle.cleanup_error === undefined, command: "memory.outbox", cycle };
+    } finally { await runtime.close(); }
+  }
   if (command === "memory" && subcommand === "lifecycle" && values.once === true) {
     const lifecycle = context.dependencies.memoryLifecycle;
     if (lifecycle === undefined) throw new JarvisError("MEMORY_LIFECYCLE_SERVICE_UNAVAILABLE");
@@ -43,6 +60,9 @@ export async function executeControlCommand(
     }
     if (subcommand === "decide" && argument) {
       const receipt = typedObject(await jsonFile<CommandApprovalReceipt>(argument));
+      if (control.get(receipt.request_id)?.action === "memory.confirm") {
+        bindMemoryCandidateSpools(db, context.dependencies.memoryOutboxOptions);
+      }
       control.decide(receipt, commandNow(context));
       return { ok: true, command: "control.decide", request_id: receipt.request_id, decision: receipt.decision };
     }
@@ -53,14 +73,20 @@ export async function executeControlCommand(
     }
     if (subcommand === "list") return { ok: true, command: "control.list", requests: control.list() };
     if (subcommand === "execute" && argument) {
+      const request = control.get(argument);
+      const runtime = request?.action === "memory.outbox.dispatch" && request.args.schema_version !== 3
+        ? createProductionMemoryOutbox(db, { ...context.dependencies.memoryOutboxOptions, clock: () => commandNow(context) })
+        : undefined;
+      try {
       const execution = await new ApprovedCommandExecutor(db, undefined, undefined, {},
-        () => commandNow(context), undefined, undefined,
+        () => commandNow(context), runtime?.service, undefined,
         context.dependencies.memoryLifecycle).execute(
         argument,
         values.worker ?? "cli-approved-executor",
         commandNow(context),
       );
       return { ok: true, command: "control.execute", execution };
+      } finally { await runtime?.close(); }
     }
   }
   if (command !== "timeline") return undefined;

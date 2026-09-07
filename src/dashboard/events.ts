@@ -96,9 +96,9 @@ export class DataVersionObserver {
     return true;
   }
 
-  start(intervalMs: number): void {
+  start(intervalMs: number, onTick?: () => void): void {
     if (this.timer !== undefined) return;
-    this.timer = setInterval(() => { this.check(); }, intervalMs);
+    this.timer = setInterval(() => { this.check(); onTick?.(); }, intervalMs);
     this.timer.unref();
   }
 
@@ -109,13 +109,13 @@ export class DataVersionObserver {
   }
 }
 
-export function createDashboardEvents(db: AuthorityDb): { readonly hub: ReconcileHub; close(): void } {
+export function createDashboardEvents(db: AuthorityDb, onTick?: () => void): { readonly hub: ReconcileHub; close(): void } {
   const hub = new ReconcileHub();
   const observer = new DataVersionObserver(db, (topics) => { hub.publish(topics); });
   const unsubscribeSuppression = subscribeMemorySuppression(db, () => {
     hub.publish(["memory.privacy.v1", "memory.records.v1", "memory.conflicts.v1", "memory.effects.v1"]);
   });
-  observer.start(DATA_VERSION_INTERVAL_MS);
+  observer.start(DATA_VERSION_INTERVAL_MS, onTick);
   return { hub, close(): void { unsubscribeSuppression(); observer.close(); hub.close(); } };
 }
 

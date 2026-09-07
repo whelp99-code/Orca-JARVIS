@@ -96,7 +96,7 @@ describe("remote approval production CLI composition", () => {
       });
       expect(verify.statusCode).toBeGreaterThanOrEqual(400);
     } finally {
-      runtime.close();
+      await runtime.close();
     }
   });
 });

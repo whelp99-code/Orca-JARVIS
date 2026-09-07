@@ -12,6 +12,7 @@ import { defaultRunner } from "../orca.js";
 import { bindDashboardMemoryDependencies } from "./memory-production.js";
 import { composeRemoteApproval } from "../remote-approval-compose.js";
 import { createDashboardServer } from "./server.js";
+import { MemoryOutboxTick } from "../memory-outbox-tick.js";
 
 const LOOPBACK = "127.0.0.1";
 
@@ -58,9 +59,14 @@ export function parseDashboardCli(argv: readonly string[]): DashboardCliOptions 
 export function startDashboardCli(options: DashboardCliOptions, write: (line: string) => void = line => {
   process.stdout.write(`${line}\n`);
 }, memoryLifecycle?: Pick<MemoryLifecycleService, "execute">,
-  dependencies: DashboardMemoryDependencies = {}): { close: () => void } {
+  dependencies: DashboardMemoryDependencies = {}): { close: () => Promise<void> } {
   const db = new AuthorityDb(options.dbPath);
   const bound = bindDashboardMemoryDependencies(options.dbPath, dependencies);
+  const outbox = bound.outboxFor(db);
+  const tick = outbox === undefined ? undefined : new MemoryOutboxTick(
+    () => outbox.runOnce("dashboard-memory-outbox", 1),
+    code => process.stderr.write(`${JSON.stringify({ component: "memory.outbox", error_code: code })}\n`),
+    () => server.publish(["memory.effects.v1", "memory.records.v1", "memory.candidates.v1"]));
   const server = createDashboardServer({
     db,
     staticRoot: options.staticRoot,
@@ -75,13 +81,21 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
     memoryCandidateReviewSpoolRoot: bound.memoryCandidateReviewSpoolRoot,
     memoryCandidateDispatchSpoolRoot: bound.memoryCandidateDispatchSpoolRoot,
     executorFactory: bound.executorFactory,
+    clock: dependencies.memoryAdapterOptions?.clock,
+    memoryReconcileTick: tick === undefined ? undefined : () => tick.tick(),
     remoteApproval: composeRemoteApproval(db),
   });
   write(`http://${server.address.host}:${String(server.address.port)}`);
-  const close = (): void => {
+  let closing: Promise<void> | undefined;
+  const close = (): Promise<void> => {
+    if (closing !== undefined) return closing;
     server.close();
-    if (bound.ownedProviderTransport !== undefined) void bound.ownedProviderTransport.close();
-    db.close();
+    closing = (async () => {
+      await Promise.all([tick?.close(), server.drain()]);
+      if (bound.ownedProviderTransport !== undefined) await bound.ownedProviderTransport.close();
+      db.close();
+    })();
+    return closing;
   };
   return { close };
 }
@@ -100,8 +114,7 @@ if (isDirectRun()) {
   try {
     const runtime = startDashboardCli(parseDashboardCli(process.argv.slice(2)));
     const shutdown = (): void => {
-      runtime.close();
-      process.exit(0);
+      void runtime.close().then(() => process.exit(0), () => process.exit(2));
     };
     process.on("SIGTERM", shutdown);
     process.on("SIGINT", shutdown);
