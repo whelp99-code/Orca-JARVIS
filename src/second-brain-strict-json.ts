@@ -168,7 +168,10 @@ function immutableJsonValue(value: unknown): unknown {
   for (const [key, item] of Object.entries(value)) {
     const parsedKey = immutableJsonValue(key);
     if (typeof parsedKey !== "string") throw new StrictJsonError();
-    result[parsedKey] = immutableJsonValue(item);
+    // Define an own data property: assignment would invoke the legacy __proto__ setter.
+    Object.defineProperty(result, parsedKey, {
+      value: immutableJsonValue(item), enumerable: true, configurable: true, writable: true,
+    });
   }
   return Object.freeze(result);
 }

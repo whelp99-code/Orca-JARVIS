@@ -376,3 +376,13 @@
 - 현재 nonblank/maxLine: dispatch-spool243/141, material188/125, transport232/160, write-result54/132. task12 runtime reviewability와 기존 CLI intake·V1/V2/V3 dispatch·V3 wire·transport characterization 검사는5파일21개 pass, exit0. 새 구현을 그대로 복제하는 테스트는 추가하지 않았다.
 - 실제 private spool 파일 발행·읽기·재발행으로 HEAD의 이전 구현과 작업 소스를 비교했다. V1 1,401bytes, V2 1,984bytes, V3 1,432bytes가 각 byte-for-byte 동일하며 재발행 created=false였다. 임시 파일과 fixture DB는 제거했다. 독립 정적 리뷰 필수 결함0.
 - 증거: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/memory-reviewability.log`, `memory-spool-compat-probe.mjs/json`. 전체 verify는 이 단위 커밋 후 고정된 소스로 다시 실행한다. 운영 DB/service/release/push 변경0.
+
+## 2026-09-08 고정 소스 전체 검증 및 strict JSON 경계 수정
+
+- 직전 인계 확인 턴은 자비스 개발 기준 no progress였다. 기존 전체 검증 handle61865를 재확인해 계속 실행 중임을 확인했고 재시작하지 않았다. 고정 커밋 `ef46a2255d5225aa69a8a0deb98a1ac8c614fa31`의 `npm run verify`는 exit0: backend381파일2396개(1056.36초), dashboard29파일162개(27.22초), runtime/lint/typecheck/build/고정시계 acceptance/CLI smoke 통과. 로그 `verify-ef46a22.log`.
+- Orca 읽기 경계 초안 검토 중 공통 strict JSON 파서의 특수 키 유실을 실제 dist에서 재현했다. `__proto__` 대입이 반환 객체 prototype을 바꾸고 키를 누락시켰다. 기존 MCP stdio에서도 extra-key 응답 두 종이 거부되지 않고 검색 data로 진행했다. 운영 제공자에 변조 응답을 주입한 것은 아니다.
+- own data property 정의 후 기존 재귀 freeze를 유지하도록 수정했다. 정상 JSON의 키/중첩/직렬화가 보존되고 상위 schema가 예기치 않은 키를 거부한다. 기존에 왜곡되던 특수 키 입력의 직렬화/digest만 달라지며 계약 파일·해시·한도를 완화하지 않았다.
+- 신규 parser4개/실제 stdio2개 회귀를 추가했다. 최초 red 실행은 MCP2개가 정상 결과로 진행하여 실패했고 parser 비교 실패 중 Vitest 오류 표시도 inherited readonly error에 걸렸다. 후속 검사에서 성공 초기화 진단의 기대값을0으로 바로잡고 constructor 특수 키 비교는 Node deepStrictEqual로 바꿨다. 최종 관련12파일84개 pass(18.21초): source/transport/profile/readiness/intake/V3/remote approval 포함. 로그 `strict-json-accepted.log`.
+- 빌드된 자비스 transport와 실제 격리 MCP subprocess3개로 정상 응답의 도구 호출1, malformed null/object 응답의 호출각0, 시작각1, 자식 종료3을 확인했다. 임시 fixture 제거. 재현 및 결과 `strict-json-live-probe.mjs/json`. lint/typecheck/backend build exit0, 독립 정적 리뷰 필수 결함0.
+- 증거 루트 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/`. 전체 verify 결과는 수정 전 고정 SHA에 귀속되며 파서 수정 후 전체 suite 재실행 결과로 확대하지 않는다. 파서 단위는 위 관련 검사와 빌드 실행으로 검증했다.
+- P1-13 제품 경계는 아직 미반영: 중복 ok 성공 분기 우회와 wrapper 자손 파이프 종료 상한을 해결해야 한다. 상세 `docs/planning/service-observation-isolation.md`. 전체01–25 개발 목표와 자동 기억 수집 HOLD는 유지한다. 운영 DB/service/release/push 변경0.

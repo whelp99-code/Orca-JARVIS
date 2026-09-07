@@ -129,6 +129,7 @@ process.stdin.on("data", chunk => {
       if (config.mode === "partial") { process.stdout.write(frame.slice(0, 12)); queueMicrotask(() => process.stdout.write(`${frame.slice(12)}\n`)); }
       else if (config.mode === "partial-eof") { process.stdout.write(frame.slice(0, 20)); process.exit(0); }
       else if (config.mode === "malformed") process.stdout.write("{broken}\n");
+      else if (config.mode === "prototype-envelope") process.stdout.write(`${frame.slice(0, -1)},"__proto__":${JSON.stringify(config.prototypeValue)}}\n`);
       else if (config.mode === "invalid-utf8") process.stdout.write(Buffer.from([0xff, 0x0a]));
       else if (config.mode === "exact-max" || config.mode === "max-plus-one") { const size = 1024 * 1024 + Number(config.mode === "max-plus-one"); process.stdout.write(`${frame}${" ".repeat(size - Buffer.byteLength(frame))}\n`); }
       else if (config.mode === "crlf") process.stdout.write(`${frame}\r\n`);
