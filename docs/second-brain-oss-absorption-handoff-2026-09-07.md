@@ -2,7 +2,7 @@
 title: 세컨드브레인 기반 오픈소스 장점 흡수 — 작업 인계
 type: handoff
 sensitivity: T1
-updated: 2026-09-07
+updated: 2026-09-08
 status: user-direction-confirmed-implementation-plan-proposed
 ---
 
@@ -17,6 +17,7 @@ status: user-direction-confirmed-implementation-plan-proposed
 - 대상 작업의 기존 목적: 세컨드브레인을 완성하여 자비스와 기타 프로젝트의 메인 기억 저장소를 동작시키는 것.
 - 이번 전달 준비 시 대상 작업은 `active`, 최근 턴은 `inProgress`로 조회됐다. 최근 2개 턴의 본문은 반환되지 않았다. 그곳에서 이미 수행한 수정·검증을 먼저 확인하고 본 문서의 제안을 병합한다. 기존 작업을 되돌리거나 처음부터 반복하지 않는다.
 - 전달 상태: 문서 준비 완료, 대상 작업에 메시지 전송은 미실행. 현재 도구 목록에는 `send_message_to_thread`와 `handoff_thread`가 없고 읽기 도구로 대상 경로·제목·상태만 확인했다.
+- 2026-09-08 재확인: 대상 작업의 경로는 `/home/jm/orca/projects/second-brain-app`, 상태는 `active`, 최근 턴은 `inProgress`이며 본문 항목은 반환되지 않았다. 앱 직접 전달을 위해 `computer-use` 스킬과 설치된 CLI 안내를 읽고 확인했다. `orca-ide status --json`은 성공했으나 `computer capabilities --json`은 `runtime_error: Unknown system error -122: Unknown system error -122, write`로 실패했다. 대체 임시 경로를 지정한 1회 재시도도 같은 오류로 실패하여 메시지 입력·전송을 수행하지 않았다. 아래 11절 전달문으로 인계를 이어갈 수 있다.
 
 이 문서는 대화에서 확정한 방향, 조사한 근거, 구현 제안을 구분한 인계 자료다. 새 ADR 채택이나 배포 완료를 의미하지 않는다. 발신 작업에서는 세컨드브레인 소스를 수정하지 않았고 오픈소스 설치·서비스 재시작·데이터 이전도 하지 않았다.
 
