@@ -101,6 +101,15 @@ export abstract class GjcIntentAuthorityDb extends GjcConfigurationAuthorityDb {
 			return { ...row, lease_fence: fence, lease_expires_at: expires };
 		});
 	}
+	requireGjcIntentLease(intentId: string, fence: number, now = timestamp()): Row {
+		const row = this.db.prepare("SELECT * FROM gjc_intents WHERE intent_id=?").get(intentId) as Row | undefined;
+		const at = Date.parse(now);
+		const expires = typeof row?.lease_expires_at === "string" ? Date.parse(row.lease_expires_at) : NaN;
+		if (!row || row.state !== "claimed" || Number(row.lease_fence) !== fence ||
+			!Number.isFinite(at) || !Number.isFinite(expires) || expires <= at)
+			throw new JarvisError("GJC_STALE_LEASE");
+		return row;
+	}
 	settleGjcIntent(
 		intentId: string,
 		fence: number,
@@ -110,9 +119,7 @@ export abstract class GjcIntentAuthorityDb extends GjcConfigurationAuthorityDb {
 		const valid = new Set(["accepted", "completed", "failed", "uncertain"]);
 		if (!valid.has(result.status)) throw new JarvisError("GJC_STATUS_INVALID");
 		this.atomic(() => {
-			const row = this.db.prepare("SELECT * FROM gjc_intents WHERE intent_id=?").get(intentId) as Row | undefined;
-			if (!row || row.state !== "claimed" || Number(row.lease_fence) !== fence)
-				throw new JarvisError("GJC_STALE_LEASE");
+			const row = this.requireGjcIntentLease(intentId, fence, now);
 			const receipt = result.receipt === undefined ? null : json(result.receipt);
 			const acceptedAt = result.status === "accepted" || result.status === "completed" ? now : null;
 			const completedAt = result.status === "completed" || result.status === "failed" ? now : null;

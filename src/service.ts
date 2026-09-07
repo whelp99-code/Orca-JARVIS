@@ -53,7 +53,7 @@ export class GjcRuntimeService {
       },
     };
   }
-  async once(now = new Date().toISOString()): Promise<{ connected?: boolean; processed: string | null; state: string | null }> {
+  async once(now = this.clock().toISOString()): Promise<{ connected?: boolean; processed: string | null; state: string | null }> {
     const config = this.db.gjcConfig();
     const runtimeFence = this.db.claimGjcRuntimeLease(this.worker, now);
     if (runtimeFence === null) return { processed: null, state: "leased" };
@@ -80,7 +80,9 @@ export class GjcRuntimeService {
         mutation = false,
         idempotencyKey?: string,
       ): Promise<Record<string, unknown>> => {
-        this.db.heartbeatGjcRuntimeLease(this.worker, runtimeFence, this.clock().toISOString());
+        now = this.clock().toISOString();
+        this.db.requireGjcIntentLease(claimed.intent_id, claimed.lease_fence, now);
+        this.db.heartbeatGjcRuntimeLease(this.worker, runtimeFence, now);
         const reply = await this.client.call(String(config.canonical_cwd), {
           tool,
           arguments: arguments_,
@@ -88,7 +90,9 @@ export class GjcRuntimeService {
           allow_mutation: mutation,
           idempotency_key: idempotencyKey,
         });
-        this.db.heartbeatGjcRuntimeLease(this.worker, runtimeFence, this.clock().toISOString());
+        now = this.clock().toISOString();
+        this.db.requireGjcIntentLease(claimed.intent_id, claimed.lease_fence, now);
+        this.db.heartbeatGjcRuntimeLease(this.worker, runtimeFence, now);
         return reply;
       };
       const tool =
@@ -127,111 +131,95 @@ export class GjcRuntimeService {
           return { processed: claimed.intent_id, state: "uncertain" };
         }
       }
-      if (claimed.kind === "sync") {
-        const turn = effectiveReply.turn_id;
-        if (typeof turn !== "string" || !turn) {
-          this.db.settleGjcIntent(
-            claimed.intent_id,
-            claimed.lease_fence,
-            { status: "uncertain", receipt: effectiveReply, failure_code: "GJC_TURN_RECEIPT_INVALID" },
-            now,
-          );
-          return { processed: claimed.intent_id, state: "uncertain" };
-        }
-        const questions = await coordinatorCall("gjc_coordinator_list_questions", { session_id: config.session_id, turn_id: turn });
-        if (Array.isArray(questions.questions))
+      const questions = claimed.kind === "sync"
+        ? await coordinatorCall("gjc_coordinator_list_questions", { session_id: config.session_id, turn_id: effectiveReply.turn_id })
+        : null;
+      let settledReply = effectiveReply;
+      return this.db.db.transaction(() => {
+        now = this.clock().toISOString();
+        this.db.requireGjcIntentLease(claimed.intent_id, claimed.lease_fence, now);
+        if (Array.isArray(questions?.questions))
           for (const question of questions.questions) {
             if (question && typeof question === "object" && typeof (question as Record<string, unknown>).question_id === "string")
               this.db.bindGjcQuestion(claimed.intent_id, String((question as Record<string, unknown>).question_id), question, now);
           }
-      }
-      // Status prose is never authority: only this enumerated structured set is actionable.
-      if (claimed.kind === "answer") {
-        const question = record(reply.question);
-        const turn = record(reply.turn);
-        if (
-          reply.ok !== true ||
-          !question ||
-          !turn ||
-          question.question_id !== payload.question_id ||
-          question.session_id !== payload.session_id ||
-          question.turn_id !== payload.turn_id ||
-          turn.session_id !== payload.session_id ||
-          turn.turn_id !== payload.turn_id ||
-          canonicalize(question.answer) !== canonicalize(payload.answer)
-        ) {
+        // Status prose is never authority: only this enumerated structured set is actionable.
+        if (claimed.kind === "answer") {
+          const question = record(reply.question);
+          const turn = record(reply.turn);
+          if (
+            reply.ok !== true ||
+            !question ||
+            !turn ||
+            question.question_id !== payload.question_id ||
+            question.session_id !== payload.session_id ||
+            question.turn_id !== payload.turn_id ||
+            turn.session_id !== payload.session_id ||
+            turn.turn_id !== payload.turn_id ||
+            canonicalize(question.answer) !== canonicalize(payload.answer)
+          ) {
+            this.db.settleGjcIntent(
+              claimed.intent_id,
+              claimed.lease_fence,
+              { status: "uncertain", receipt: reply, failure_code: "GJC_ANSWER_RECEIPT_INVALID" },
+              now,
+            );
+            return { processed: claimed.intent_id, state: "uncertain" };
+          }
+          settledReply = {
+            status: question.status,
+            session_id: question.session_id,
+            turn_id: question.turn_id,
+            question_id: question.question_id,
+            raw: reply,
+          };
+        }
+        const status = settledReply.status;
+        if (status === "accepted" || status === "completed") {
+          if (claimed.kind === "answer" && status === "completed") {
+            const binding = payload.answer_binding;
+            const questionId = payload.question_id;
+            if (typeof questionId !== "string" || !binding || typeof binding !== "object") throw new JarvisError("GJC_ANSWER_SCHEMA_INVALID");
+            this.db.db
+              .prepare(
+                "INSERT INTO gjc_answer_receipts(intent_id,session_id,turn_id,question_id,answer_binding_json,receipt_json,completed_at) VALUES(?,?,?,?,?,?,?)",
+              )
+              .run(claimed.intent_id, payload.session_id, payload.turn_id, questionId, canonicalize(binding), canonicalize(reply), now);
+          }
+          this.db.settleGjcIntent(claimed.intent_id, claimed.lease_fence, { status, receipt: settledReply }, now);
+          if (claimed.kind === "answer" && status === "completed")
+            this.db.answerGjcQuestion(
+              String(payload.question_id),
+              { answer_binding: payload.answer_binding, answer: payload.answer },
+              claimed.idempotency_key,
+              settledReply,
+              now,
+            );
+          return { processed: claimed.intent_id, state: status };
+        }
+        if (status === "failed" || status === "cancelled" || status === "superseded") {
           this.db.settleGjcIntent(
             claimed.intent_id,
             claimed.lease_fence,
-            { status: "uncertain", receipt: reply, failure_code: "GJC_ANSWER_RECEIPT_INVALID" },
+            {
+              status: "failed",
+              receipt: settledReply,
+              failure_code: typeof settledReply.code === "string" ? settledReply.code : `GJC_${String(status).toUpperCase()}`,
+            },
             now,
           );
-          return { processed: claimed.intent_id, state: "uncertain" };
+          return { processed: claimed.intent_id, state: "failed" };
         }
-        effectiveReply = {
-          status: question.status,
-          session_id: question.session_id,
-          turn_id: question.turn_id,
-          question_id: question.question_id,
-          raw: reply,
-        };
-      }
-      const status = effectiveReply.status;
-      if (status === "accepted" || status === "completed") {
-        if (
-          claimed.kind === "dispatch" &&
-          (effectiveReply.session_id !== config.session_id || typeof effectiveReply.turn_id !== "string" || !effectiveReply.turn_id)
-        ) {
-          this.db.settleGjcIntent(
-            claimed.intent_id,
-            claimed.lease_fence,
-            { status: "uncertain", receipt: effectiveReply, failure_code: "GJC_DISPATCH_RECEIPT_INVALID" },
-            now,
-          );
-          return { processed: claimed.intent_id, state: "uncertain" };
-        }
-        if (claimed.kind === "answer" && status === "completed") {
-          const binding = payload.answer_binding;
-          const questionId = payload.question_id;
-          if (typeof questionId !== "string" || !binding || typeof binding !== "object") throw new JarvisError("GJC_ANSWER_SCHEMA_INVALID");
-          this.db.db
-            .prepare(
-              "INSERT INTO gjc_answer_receipts(intent_id,session_id,turn_id,question_id,answer_binding_json,receipt_json,completed_at) VALUES(?,?,?,?,?,?,?)",
-            )
-            .run(claimed.intent_id, payload.session_id, payload.turn_id, questionId, canonicalize(binding), canonicalize(reply), now);
-        }
-        this.db.settleGjcIntent(claimed.intent_id, claimed.lease_fence, { status, receipt: effectiveReply }, now);
-        if (claimed.kind === "answer" && status === "completed")
-          this.db.answerGjcQuestion(
-            String(payload.question_id),
-            { answer_binding: payload.answer_binding, answer: payload.answer },
-            claimed.idempotency_key,
-            effectiveReply,
-            now,
-          );
-        return { processed: claimed.intent_id, state: status };
-      }
-      if (status === "failed" || status === "cancelled" || status === "superseded") {
         this.db.settleGjcIntent(
           claimed.intent_id,
           claimed.lease_fence,
-          {
-            status: "failed",
-            receipt: effectiveReply,
-            failure_code: typeof effectiveReply.code === "string" ? effectiveReply.code : `GJC_${String(status).toUpperCase()}`,
-          },
+          { status: "uncertain", receipt: settledReply, failure_code: "GJC_UNKNOWN_STATUS" },
           now,
         );
-        return { processed: claimed.intent_id, state: "failed" };
-      }
-      this.db.settleGjcIntent(
-        claimed.intent_id,
-        claimed.lease_fence,
-        { status: "uncertain", receipt: effectiveReply, failure_code: "GJC_UNKNOWN_STATUS" },
-        now,
-      );
-      return { processed: claimed.intent_id, state: "uncertain" };
+        return { processed: claimed.intent_id, state: "uncertain" };
+      }).immediate();
     } catch (error) {
+      now = this.clock().toISOString();
       const code = error instanceof JarvisError ? error.code : "GJC_RUNTIME_ERROR";
       this.db.recordGjcRuntimeStatus(code, now);
       if (code === "GJC_STALE_LEASE") throw error;
@@ -239,7 +227,7 @@ export class GjcRuntimeService {
       return { processed: claimed.intent_id, state: "uncertain" };
     }
   }
-  async cycle(now = new Date().toISOString()): Promise<{ processed: string | null; state: string | null }> {
+  async cycle(now = this.clock().toISOString()): Promise<{ processed: string | null; state: string | null }> {
     return this.once(now);
   }
   async run(intervalMs = 10_000, stop: () => boolean = () => false): Promise<void> {

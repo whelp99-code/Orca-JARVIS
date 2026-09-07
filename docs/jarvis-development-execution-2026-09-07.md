@@ -10,7 +10,8 @@
 |---|---|---|
 | 선행 수정 | 만료 intent 복구, 단건 명령 조회, 준비 상태 표시, 중복 build 제거 | 독립 리뷰 신규 결함 0; 관련 3파일 9테스트 pass; lint/typecheck/build exit 0 |
 | 01 | GJC 오류의 비밀정보 제거 | 구현·독립 리뷰 완료; 자동 32개 및 실제 자식 프로세스 3개 검증 통과; 실제 coordinator 인수는 후속 |
-| 02–03 | runtime 소유권·만료 정산 | 대기; 동시 프로세스와 늦은 응답 검증 필요 |
+| 02 | runtime 소유권 | 대기; 동시 프로세스 검증 필요 |
+| 03 | 만료 정산 | 구현·독립 정적 리뷰 완료; 만료/rollback 10개 및 기존 관련 25개 통과 |
 | 04 | 작업 제약·완료 기준을 승인부터 결과까지 보존 | 대기 |
 | 05–09 | 상태·집계·retention·읽기 부작용·재시도 | 대기 |
 | 10–11, 21 최소 | 실제 준비 상태와 승인된 작업 한 건의 실행 완결 | 대기; 실사용 인수 필수 |
@@ -49,3 +50,13 @@
 - 신규 회귀 10개: 수정 전 10 fail → 수정 후 10 pass. 기존 coordinator 2개, reviewability 2개, runtime 18개 통과.
 - 실제 Node 자식 프로세스의 stderr 비밀 표식·성공 프로토콜·출력 상한 3개 통과. 이는 실제 GJC/에이전트 업무 인수 검증과 별개다.
 - `npm run lint && npm run typecheck && npm run build:backend`: exit 0. 독립 정적 리뷰 필수 지적 0건.
+
+## 2026-09-07 P0-03 만료 정산과 영수증 원자성
+
+- 최초 회귀 5개 중 4개 실패로 만료 시각·만료 후·잘못된 시각·늦은 응답의 완료 수용을 재현했다.
+- 저장소가 claimed 상태, fence, 유효한 만료 시각을 확인한다. 서비스는 coordinator 호출 전후 및 최종 기록 시 현재 시각을 확인하고, 오류 정산에도 시작 시각을 재사용하지 않는다.
+- 질문 binding, 답변 영수증, 완료 이벤트, 질문 answered 변경을 하나의 SQLite IMMEDIATE 트랜잭션으로 기록한다. 실패를 주입해 부분 완료 기록이 rollback되는지 확인했다.
+- 만료 sync는 복구 후 pending, 만료 dispatch/answer는 uncertain으로 남아 자동 재전송되지 않는다.
+- 최종 관련 검증: `gjc-settlement-expiry` 10, `gjc-runtime` 18, `gjc-lease-recovery` 5, `task12-runtime-reviewability` 2 — 4파일 35개 pass.
+- `npm run typecheck && npm run lint && npm run build:backend`: exit 0. 독립 정적 리뷰 필수 지적 0건, 권고한 rollback 검증 추가.
+- 이 검증은 격리 DB와 주입 coordinator 경로다. 실제 에이전트 업무 인수·다중 프로세스 소유권·운영 배포는 아직 완료하지 않았다.
