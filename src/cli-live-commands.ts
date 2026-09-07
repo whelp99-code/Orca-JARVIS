@@ -26,20 +26,23 @@ export async function observeBound(binding: LiveBinding, runner?: OrcaRunner): P
   const decoded = decodeEnvWorktree(binding.canonical_path);
   const envRunner = createOrcaRunner(decoded.environment, runner ?? defaultRunner);
   const adapter = new OrcaReadonlyAdapter(envRunner);
-  let terminals: OrcaTerminal[];
   try {
-    terminals = await adapter.list(decoded.listSelector);
+    const terminals: OrcaTerminal[] = await adapter.list(decoded.listSelector);
+    const terminal = terminals.find(item => item.handle === binding.terminal_id
+      && item.incarnationId === binding.incarnation_id
+      && item.ptyId === binding.pty_id
+      && item.worktreeId === binding.worktree_id);
+    if (!terminal) return [unknownObservation(binding)];
+    if (!terminal.connected) return [{ ...unknownObservation(binding), connected: false }];
+    const read = await adapter.read(binding.terminal_id, binding.cursor, 1);
+    if (read.handle !== binding.terminal_id || !["ok", "running"].includes(read.status)) return [unknownObservation(binding)];
+    return [{ ...unknownObservation(binding), cursor: read.nextCursor, connected: true }];
   } catch (error) {
-    if (error instanceof JarvisError && error.code === "ORCA_CLI_FAILED") return [unknownObservation(binding)];
+    if (error instanceof JarvisError && error.code === "ORCA_CLI_FAILED") {
+      return [unknownObservation(binding)];
+    }
     throw error;
   }
-  const terminal = terminals.find(item => item.handle === binding.terminal_id
-    && item.incarnationId === binding.incarnation_id
-    && item.ptyId === binding.pty_id
-    && item.worktreeId === binding.worktree_id);
-  if (!terminal || !terminal.connected) return [unknownObservation(binding)];
-  const read = await adapter.read(binding.terminal_id, binding.cursor, 1);
-  return [{ ...unknownObservation(binding), cursor: read.nextCursor }];
 }
 
 function unknownObservation(binding: LiveBinding): LiveObservation {

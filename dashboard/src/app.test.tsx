@@ -64,6 +64,15 @@ const emptyOverview: OverviewResponse = {
 };
 
 describe("JARVIS Control Center overview", () => {
+  it("counts only recently connected agents while keeping the other registrations visible", () => {
+    render(<App overview={{ ...populatedOverview, agents: ["live", "offline", "stale", "unknown"].map(status => ({
+      ...populatedOverview.agents[0]!, agent_id: status, terminal_id: status, status,
+    })) }} />);
+    expect(within(screen.getByRole("article", { name: "에이전트" })).getByText("1")).toBeInTheDocument();
+    expect(screen.getAllByText("offline").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("stale").length).toBeGreaterThan(0);
+    expect(screen.getAllByText("unknown").length).toBeGreaterThan(0);
+  });
   it("renders the shipped title", () => {
     render(<App {...liveProps(emptyOverview)} />);
 

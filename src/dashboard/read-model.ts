@@ -1,8 +1,5 @@
-import { createHash } from "node:crypto";
-import { canonicalize } from "../canonical.js";
 import { ControlPlane, type StoredControlCommand } from "../control-plane.js";
 import { JarvisError, type AuthorityDb } from "../db.js";
-import { LiveSupervisor, type LiveBinding } from "../live-supervisor.js";
 import { currentStateFromDoctor } from "../state-projection.js";
 import { passiveCapabilityProbe, runDoctor } from "../doctor.js";
 import { TaskTimeline, type TaskTimelineSummary } from "../recommendation-timeline.js";
@@ -15,7 +12,6 @@ import type {
   AgentListResponse,
   ControlRequestListResponse,
   DashboardLookup,
-  OverviewAgent,
   OverviewApproval,
   OverviewResponse,
   OverviewRisk,
@@ -30,6 +26,7 @@ import { dashboardRetryStatus } from "./retry-policy.js";
 import { buildSecondBrainReadiness, type SecondBrainReadinessProbe } from "../second-brain-readiness.js";
 import { runtimeSecondBrainReadinessProbe } from "../second-brain-readiness-runtime.js";
 import type { CapabilityProbe } from "../capabilities.js";
+import { listedAgents } from "./agent-read-model.js";
 
 export type {
   AgentDetailResponse,
@@ -75,19 +72,18 @@ export class DashboardReadModel {
     const projection = currentStateFromDoctor(this.db, doctor, now);
     const tasks = new TaskTimeline(this.db).list(RECENT_TASK_LIMIT);
     const commands = new ControlPlane(this.db).list();
-    const bindings = new LiveSupervisor(this.db).list();
+    const agents = listedAgents(this.db, now);
     const portfolio = new PortfolioProjection(this.db).overview(now);
     if (changeCount(this.db) !== before) throw new JarvisError("DASHBOARD_READ_MUTATED");
     const recent_tasks = tasks.map(toOverviewTask);
     const pending_approvals = commands.filter(isPending).map(command => toOverviewApproval(command, now));
     const risks = projection.risks.flatMap(toOverviewRisk);
-    const agents = bindings.map(toOverviewAgent);
     const overview = redactDashboardValue({
       schema_version: DASHBOARD_SCHEMA_VERSION,
       generated_at: projection.generated_at,
       cards: overviewCards({
         activeWork: recent_tasks.filter((task) => !SETTLED_STATES.has(task.state)).length,
-        agents: agents.length,
+        agents: agents.filter(agent => agent.status === "live").length,
         pending: pending_approvals.length,
         risks: risks.length,
       }),
@@ -127,16 +123,16 @@ export class DashboardReadModel {
     });
   }
 
-  listAgents(): AgentListResponse {
+  listAgents(now = new Date()): AgentListResponse {
     return readSnapshot(this.db, () => redactDashboardValue({
       schema_version: DASHBOARD_SCHEMA_VERSION,
-      items: listedAgents(this.db),
+      items: listedAgents(this.db, now),
     }));
   }
 
-  agentDetail(agentId: string): DashboardLookup<AgentDetailResponse> {
+  agentDetail(agentId: string, now = new Date()): DashboardLookup<AgentDetailResponse> {
     return readSnapshot(this.db, () => {
-      const agent = listedAgents(this.db).find((item) => item.agent_id === agentId);
+      const agent = listedAgents(this.db, now).find((item) => item.agent_id === agentId);
       if (agent === undefined) return { kind: "not_found" };
       return { kind: "found", value: redactDashboardValue({ schema_version: DASHBOARD_SCHEMA_VERSION, agent }) };
     });
@@ -158,17 +154,6 @@ function readSnapshot<T>(db: AuthorityDb, fn: () => T): T {
   const result = fn();
   if (changeCount(db) !== before) throw new JarvisError("DASHBOARD_READ_MUTATED");
   return result;
-}
-
-function listedAgents(db: AuthorityDb): readonly OverviewAgent[] {
-  return new LiveSupervisor(db).list()
-    .slice()
-    .sort((left, right) =>
-      left.canonical_path.localeCompare(right.canonical_path)
-      || left.provider.localeCompare(right.provider)
-      || left.terminal_id.localeCompare(right.terminal_id)
-      || left.incarnation_id.localeCompare(right.incarnation_id))
-    .map(toOverviewAgent);
 }
 
 function changeCount(db: AuthorityDb): number {
@@ -220,24 +205,4 @@ function toOverviewRisk(value: unknown): readonly OverviewRisk[] {
   if (name === undefined) return [];
   const code = "code" in value && typeof value.code === "string" ? value.code : name;
   return [{ id: code, severity: "high", message: name }];
-}
-
-function toOverviewAgent(binding: LiveBinding): OverviewAgent {
-  return {
-    agent_id: agentIdentity(binding),
-    provider: binding.provider,
-    terminal_id: binding.terminal_id,
-    incarnation_id: binding.incarnation_id,
-    canonical_path: binding.canonical_path,
-    status: "live",
-  };
-}
-
-function agentIdentity(binding: LiveBinding): string {
-  return `sha256:${createHash("sha256").update(canonicalize({
-    canonical_path: binding.canonical_path,
-    provider: binding.provider,
-    terminal_id: binding.terminal_id,
-    incarnation_id: binding.incarnation_id,
-  })).digest("hex")}`;
 }

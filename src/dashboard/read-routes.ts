@@ -45,10 +45,10 @@ export function tryHandleDashboardRead(input: DashboardReadRouteInput): boolean 
       writeLookup(input, input.model.taskDetail(route.taskId), READ_ERROR.TASK_NOT_FOUND);
       return true;
     case "agents":
-      writeDashboardJson(input.response, { status: 200, body: input.model.listAgents(), requestId: input.requestId });
+      writeDashboardJson(input.response, { status: 200, body: input.model.listAgents(input.now), requestId: input.requestId });
       return true;
     case "agent":
-      writeLookup(input, input.model.agentDetail(route.agentId), READ_ERROR.AGENT_NOT_FOUND);
+      writeLookup(input, input.model.agentDetail(route.agentId, input.now), READ_ERROR.AGENT_NOT_FOUND);
       return true;
     case "control_requests":
       writeDashboardJson(input.response, {

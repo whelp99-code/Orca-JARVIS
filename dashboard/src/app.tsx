@@ -28,8 +28,8 @@ export default function App({ overview }: AppProps) {
     {
       id: "agents",
       label: copy.cards.agents,
-      value: overview.agents.length,
-      detail: "지금 붙어 있는 에이전트",
+      value: overview.agents.filter(agent => agent.status === "live").length,
+      detail: "최근 연결이 확인된 에이전트",
       tone: "success",
     },
     {

@@ -13,12 +13,13 @@
 | 02 | runtime 소유권 | 구현·독립 리뷰 완료; 관련 자동 41개와 실제 프로세스/CLI 2개 시나리오 통과 |
 | 03 | 만료 정산 | 구현·독립 정적 리뷰 완료; 만료/rollback 10개 및 기존 관련 25개 통과 |
 | 04 | 작업 제약·완료 기준을 승인부터 결과까지 보존 | TaskSpec·실행계획 승인, 실제 입력 검사, 단일 operation 원장 구현; 실제 dispatch·검증 연결은 후속 |
-| 05–06, 08 | 상태·집계·읽기 부작용 | 대기 |
+| 05 | 에이전트 연결 상태 | 구조화 관측·120초 TTL·신원 대조 및 live-only 카드 구현. 관련 backend 47개, dashboard 161개 및 실제 Orca→격리 HTTP 검증. 아래 2026-09-08 기록 참조 |
+| 06, 08 | 작업 수 집계·읽기 부작용 | 대기 |
 | 09 | 만료된 workflow 시작 재시도 | 원래 마감/예산 재검증, 재계획·재승인 안내 구현; HTTP 및 브라우저 검증 완료 |
 | 07 | retention 결과 정합성 | 어댑터 미설정 실패, policy 전달, 원자적 처리 구현; 실제 정책별 어댑터·스케줄은 12 후속 |
 | 10–11, 21 최소 | 실제 준비 상태와 승인된 작업 한 건의 실행 완결 | GJC 전송 형식·현재 승인 재검증 구현; 일반 작업 연결과 실제 에이전트 인수는 미완료 |
 | 12–13 | 스케줄·관찰 장애와 실행 장애 분리 | 대기 |
-| 14–19 | 구조·설치·조회·SSE·테스트·운영 정보 | 대기; 의미 있는 도메인 단위로 변경 |
+| 14–19 | 구조·설치·조회·SSE·테스트·운영 정보 | 부분 진행: 14 supervisor 도메인 분리, 15/18 서버·GUI 설치/검증 및 프로세스 정리 구현. 전체 gate·조회/SSE/운영 정보는 후속 |
 | 20–25 | 라우팅·실행자·기억 연동·커넥터·템플릿·지표 | 범위 유지; 아래 의존성/보류 항목 참조 |
 
 ## 보류 판정과 재개 조건
@@ -329,3 +330,16 @@
 - 실패는 Task32 migration 기대값 1개, staged-execstart 스트레스의 Unix socket ECONNREFUSED 1개, 변경 모듈 가독성 2개, acceptance npm stdout 계약 1개다. migration은 `d6cfdd1`과 15개 후속 회귀로 해결했다. socket 실패는 현재 빌드로 재현 여부와 자식 종료/접속 준비를 후속 확인한다. 가독성은 현재 supervisor 변경 및 병행 memory 모듈들에 해당하며 최종 변경 후 다시 검사한다.
 - 공통 실행기의 프로필 안내문이 acceptance/smoke stdout의 JSON 계약을 바꾸는 회귀를 수정했다. 두 machine-readable 프로필에서 안내를 생략하고 원래 stdout/stderr를 그대로 전달한다. 기존 골든·잘못된 입력 및 실제 npm subprocess 검증을 포함한 pre-GJC acceptance 4개 pass, Node 구문 검사 exit 0. 골든 기대값이나 실패 코드를 완화하지 않았다.
 - 전체 목표는 활성 상태다. 현재 05 연결 상태 구현·독립 검토, 이후 06 집계·08 읽기 초기화·13 장애 분리·12 스케줄/보존과 나머지 인수 조건을 계속 진행한다.
+
+## 2026-09-08 P1-05 — 구조화된 에이전트 연결 상태
+
+- 직전 인계 턴은 수신 계획의 반영과 앱 패널 queued를 확인했지만 자비스 제품 개발에는 no progress였다. 현재 소스·기존 실행 handle을 다시 확인하고 연결 상태 단위를 이어갔다. 이전 build/typecheck/lint는 exit 0, 연결 회귀의 UNIQUE 충돌은 실제 실패였다.
+- binding 등록만으로 live를 만들던 projection을 제거했다. 새 migration 067의 connected 0/1/NULL과 session/incarnation·관측 시각을 대조하여 live/offline/stale/unknown을 결정한다. TTL은 120초이며 카드 수는 live만 포함한다. HTTP list/detail의 같은 clock과 읽기 무변경을 유지한다.
+- list/read 양쪽의 일시적 CLI 실패는 unknown, 신원 불일치·비정상 read는 cursor 보존 및 unknown이다. 기존 GJC 회귀에서 schema 오류까지 삼키면 서비스 실패 계약이 깨지는 것을 확인해 ORCA_CLI_FAILED만 허용했다. JSON/schema/권한 오류는 전파한다.
+- 실제 Orca 1.4.197의 read status가 running임을 발견했다. 기존 fixture의 ok와 running을 정상 읽기로 허용하고 회귀를 추가했다. terminal prose는 저장/판정에 사용하지 않는다.
+- 연결→해제→재연결 시 report_id만 달리해도 payload_digest UNIQUE가 충돌했다. 새 v3 payload에 previous_report_id를 포함하고 transaction 안에서 선행 occurrence를 선택한다. 기존 v2 미전달 보고서의 원문 recovery/ack는 유지한다. migration 001–066은 변경하지 않고 067 checksum을 고정했다.
+- LiveSupervisor 공개 facade를 유지하며 binding/observation/report/resume 경계로 분리했다. 독립 정적 검토의 필수 결함은 최종 0건이다. 자동 resume·권한 검증을 현재 연결 상태로 대체하지 않는다.
+- 최종 backend 관련 8파일 47개 pass(42.05초), dashboard 29파일 161개 pass(28.16초). typecheck/lint와 backend build exit 0. 실제 10,000회 staged-execstart·SIGKILL 재시작 테스트도 pass(2.03초); 앞선 전체 gate의 ECONNREFUSED는 이번 재실행에서 재현되지 않았으며 별도 socket 수정은 하지 않았다.
+- 실제 읽기 전용 Orca list 2회/read 1회→격리 DB/HTTP에서 unknown→live→stale→unknown. stale은 120초 진행한 시계, 마지막 unknown은 주입 CLI 실패다. 각 list/detail의 쓰기 0, 터미널 변경 0, 실패 후 live 수 0, 격리 DB 제거를 확인했다. provider/session은 fixture 메타데이터이며 실제 모델 인증·업무 실행 인수와 구분한다.
+- 증거: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/agent-accepted-regression.log`, `agent-dashboard-final.log`, `agent-live-probe.json`, `agent-stress-final.log`. 설계·호환·한계: `docs/planning/adr-agent-connection-observations.md`.
+- 전체 verify의 가독성 실패에는 병행 memory 변경 4모듈이 남아 있다. 이 단위의 관련 검사 통과를 전체 gate 통과로 보고하지 않는다. 06 전체 활성 수, 08 생성자 쓰기, 12/13 운영 루프와 전체 01–25 인수는 남는다. 운영 DB/서비스/release/push는 변경하지 않았다.

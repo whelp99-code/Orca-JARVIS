@@ -37,6 +37,7 @@ export type OverviewAgent = {
   readonly incarnation_id: string;
   readonly canonical_path: string;
   readonly status: string;
+  readonly observed_at?: string | null;
 };
 export type OverviewResponse = {
   readonly schema_version: 1;
