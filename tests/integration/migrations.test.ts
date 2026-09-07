@@ -71,7 +71,8 @@ import { AuthorityDb } from "../../src/index.js"; import { tempDb } from "../hel
       ["059_task_candidate_artifacts.sql", "ffe66538d59f89fd59d538e24bac442ced17d17f979875b1822423eb31a487fe"],
       ["061_task_execution_clock.sql", "008e8c1fcf87ac0baf43f661213450161d7a9cfd8d8cb8e598f4a59b7ec526c4"],
       ["062_task_candidate_certifications.sql", "ac6f864e5035e3a23454d474519f73eea2818c3ca5ce96ab3dc754ac24ab2f00"],
-      ["063_task_git_publications.sql", "15c8b870f3672428c6b9b6fa0461f2f71923f5be08e0eda9af6788a642a4fe87"], ]); expect(expected.size).toBe(48);
+      ["063_task_git_publications.sql", "15c8b870f3672428c6b9b6fa0461f2f71923f5be08e0eda9af6788a642a4fe87"],
+      ["064_task_completions.sql", "9529ba06a9d5c0d8d5ee54e4bd753710bd5c361ffc5bf4313258178f534063d9"], ]); expect(expected.size).toBe(49);
     for (const [name, checksum] of expected) { const source = readFileSync(join(process.cwd(), "migrations", name));
       expect(createHash("sha256").update(source).digest("hex"), name).toBe(checksum); } });
   it("applies every immutable forward migration repeatedly", async () => { const db = new AuthorityDb(tempDb()); await db.migrate(); await db.migrate();
@@ -101,7 +102,8 @@ import { AuthorityDb } from "../../src/index.js"; import { tempDb } from "../hel
           "053_memory_surface_authority.sql", "054_memory_export_lifecycle.sql",
           "055_memory_candidate_authority_v6.sql", "056_remote_approval_v2.sql",
           "057_memory_candidate_authority_v6.sql", "058_task_execution_binding.sql", "059_task_candidate_artifacts.sql",
-          "060_memory_outbox_control_cursor.sql", "061_task_execution_clock.sql", "062_task_candidate_certifications.sql", "063_task_git_publications.sql", ]);
+          "060_memory_outbox_control_cursor.sql", "061_task_execution_clock.sql", "062_task_candidate_certifications.sql", "063_task_git_publications.sql",
+          "064_task_completions.sql", ]);
         expect(new Set(rows.map((row) => row.checksum)).size).toBe(rows.length); } } finally { empty.close(); upgraded.close();
       rmSync(join(full, ".."), { recursive: true, force: true }); rmSync(join(prior, ".."), { recursive: true, force: true }); } });
   it("fails closed when migration is pending or its raw SQL bytes change", async () => { const pending = new AuthorityDb(tempDb());

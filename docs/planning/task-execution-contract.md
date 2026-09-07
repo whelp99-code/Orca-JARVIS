@@ -172,6 +172,38 @@ ref 재생성은 수행하지 않는다. SIGKILL 직전/직후의 prepared 기�
 되지는 않는다. 생성 후 회수되지 않은 객체, 강제 종료 후 private index의 안전한 보존/정리는 후속 운영 범위다.
 
 통합 반환은 `candidate_published`, `published=true`, publication/ref/commit/tree와 서명된 검증 결과다.
-현재 operation은 invoking, request는 claimed, workflow는 running이다. 다음 필수 구현은 이 증거에 기반한
-명령·workflow 정산, 중단/취소 복구와 결과 UI다. Codex provider·배포 준비 및 운영 인수도 남아 있으므로
-`task.execute`의 executable=false는 유지한다.
+이 게시 API만 호출하면 operation은 invoking, request는 claimed, workflow는 running이다.
+아래 통합 완료 API가 명령·workflow 정산을 담당한다. 중단/취소 복구와 결과 UI,
+Codex provider·배포 준비 및 운영 인수는 남아 있으므로 `task.execute`의 executable=false는 유지한다.
+
+## 검증된 게시 결과와 workflow 완료의 원자적 정산
+
+`executeTaskWorkflow`는 v2 승인과 현재 TaskSpec, 정확한 기본 agentops loop ID·canonical 정의·digest,
+step/node 예산과 deadline을 확인한 뒤 후보 생성→독립 인증→Git 게시→정산을 연결한다.
+v1 후보 전용 승인은 모델 호출 전에 거부한다. 검사 실패는 `candidate_certified`, `published=false`로
+반환하며 완료로 승격하지 않는다. 사용자 정의 loop의 추가 gate를 건너뛰는 용도로 사용할 수 없다.
+
+`settleTaskExecution`은 이미 published인 현재 요청의 승인·fence·서명·마감을 재검사하고
+저장소 identity와 실제 direct ref의 commit을 확인한다. Git ref 관측과 SQLite COMMIT은 원자적이지 않다.
+영수증의 `observed_at`은 관측 시각이며, immutable commit/tree가 산출물이다. 이후 ref 이동·삭제가
+과거 성공 기록을 자동 취소하지 않으며, 과거 기록 조회가 현재 ref 존재를 보장하지도 않는다.
+
+Migration 064의 run별 단일 immutable completion receipt를 한 IMMEDIATE transaction에서 기록하고
+operation confirmed, command completed/effect, workflow step·transition·완료·event를 함께 확정한다.
+기존 observe/assess/approval 단계를 실행한 것처럼 이벤트를 만들지 않는다. 현재 node에서 complete로
+`task_verified` 한 전환을 기록하고 전체 step와 현재 node 시도 예산을 각각 1회 소비한다.
+완료는 승인된 검사와 게시 산출물의 충족이며, 자연어 목표 전체·merge·push·배포의 성공 증명은 아니다.
+
+일반 ControlPlane 정산이나 직접 SQL로 영수증 없이 task를 완료할 수 없다. INSERT OR REPLACE가
+기존 task를 비-task 내용으로 위장하거나 rowid/_rowid_/oid 충돌로 원장을 교체하는 경로도 차단한다.
+정산 도중 실패와 마지막 만료·철회 검사는 전체 정산을 rollback한다. 이미 생성된 Git ref는 유지된다.
+
+COMMIT 전 실제 SIGKILL에서는 완료 기록이 없고 기존 published/invoking/claimed/running이 남는다.
+COMMIT 후 종료에서는 receipt/confirmed/completed가 함께 남는다. 동일한 아직 유효한 published 요청은
+정산만 다시 시도할 수 있으나 provider·verifier·Git 게시를 자동 반복하지 않는다. 완료 전 만료·취소·
+철회된 요청의 새로운 권한 부여나 uncertain publication 복구는 이 API 범위 밖이다.
+
+`readTaskCompletion`은 publication/artifact/명령·operation·workflow·effect·step·transition을 대조해
+기록된 완료 사실을 반환한다. 현재 실행 권한을 새로 부여하지 않으며 현재 ref를 조회하지 않는다.
+완료된 동일 요청의 통합 재호출도 읽기만 수행하고 인수가 다른 요청의 결과를 재사용하지 못하게 한다.
+Approved executor·CLI/UI의 정산 호출 연결, 실패·중단 운영 복구와 task.execute 활성화는 후속이다.

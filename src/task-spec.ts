@@ -19,6 +19,8 @@ export { executeCertifiedTaskCandidate, certifyTaskCandidate, executeTaskPlan, t
 export { NodeTaskVerifierProcess, type TaskVerifierProcess } from "./task-verifier-process.js";
 export { publishTaskGitCandidate, inspectTaskGitPublication } from "./task-git-publication.js";
 export { inspectTaskPublicationIdentity } from "./task-publication-git.js";
+export { executeTaskWorkflow, settleTaskExecution } from "./task-completion.js";
+export { readTaskCompletion, type TaskCompletion } from "./task-completion-record.js";
 
 /** Declared work requirements; member scopes do not grant filesystem or execution permissions. */
 export interface TaskSpecV1 {
