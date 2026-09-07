@@ -22,6 +22,7 @@ import { tryHandlePersonalRead } from "./personal-routes.js";
 import type { TeamProposalPlanner } from "./proposal-service.js";
 import type { DashboardReadModel } from "./read-model.js";
 import { tryHandleDashboardRead } from "./read-routes.js";
+import { tryHandleTaskExecution } from "./task-execution-routes.js";
 import { tryHandleDashboardSession, type DashboardSessionStore } from "./session.js";
 import { tryHandleDashboardSse } from "./sse-route.js";
 import type { DashboardTerminalReader, TerminalLogResult } from "./terminal-reader.js";
@@ -73,6 +74,7 @@ export async function tryHandleDashboardApi(input: DashboardApiInput): Promise<b
     if (await tryHandleRemoteAuthRoutes(remote)) return true;
   }
   if (input.request.method === "POST") return tryHandleDashboardPost(input);
+  if (await tryHandleTaskExecution(input)) return true;
   if (tryHandleDashboardSession(input)) return true;
   if (tryHandleDashboardSse(input)) return true;
   if (input.path === "/api/v1/health") {

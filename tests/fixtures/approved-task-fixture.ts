@@ -8,10 +8,12 @@ import type { TaskProviderRequest } from "../../src/task-candidate-provider.js";
 import type { TaskVerifierInvocation } from "../../src/task-verifier-process.js";
 import { verifierKey } from "../helpers.js";
 
-export async function approvedTaskFixture(passed = true) {
-  const f = await taskPublicationFixture(); let now = f.now;
+export async function approvedTaskFixture(passed = true, options: { stage?: boolean; approvedStart?: boolean } = {}) {
+  const f = await taskPublicationFixture(options.approvedStart); let now = f.now;
   const plan = { ...f.plan, provider: "claude" as const };
-  const request = stageTaskExecution(f.db, { ...f.request, plan }, now); f.approve(request);
+  if (options.stage !== false) {
+    const request = stageTaskExecution(f.db, { ...f.request, plan }, now); f.approve(request);
+  }
   const generate = vi.fn(async (input: TaskProviderRequest) => {
     input.before_spawn?.();
     const output = { execution_plan_digest: input.execution_plan_digest,

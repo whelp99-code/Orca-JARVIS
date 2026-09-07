@@ -15,6 +15,7 @@ import type { TeamProposalPlanner } from "./proposal-service.js";
 import { readJsonPost, writePostBoundaryError } from "./request-boundary.js";
 import type { DashboardSessionStore } from "./session.js";
 import { tryHandleTaskCreate } from "./task-routes.js";
+import { tryHandleTaskExecution } from "./task-execution-routes.js";
 
 export type DashboardPostInput = {
   readonly db: AuthorityDb;
@@ -53,6 +54,7 @@ export async function tryHandleDashboardPost(input: DashboardPostInput): Promise
   if (await tryHandleMemoryMutation({ path: input.path, body: parsed.value,
     response: input.response, requestId: input.requestId, runtime: input.memoryRuntime,
     hub: input.hub })) return true;
+  if (await tryHandleTaskExecution({ ...input, body: parsed.value })) return true;
   if (await tryHandleProposalPreview({
     db: input.db,
     path: input.path,

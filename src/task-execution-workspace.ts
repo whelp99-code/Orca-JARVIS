@@ -14,6 +14,10 @@ const TOTAL_LIMIT = 16 * 1024 * 1024;
 const hash = (bytes: Uint8Array | string) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 const fail = (code: string): never => { throw new JarvisError(code); };
 export type TaskGitInspector = (root: string) => Promise<{ root: string; commit: string }>;
+export interface TaskRepositoryInspection {
+  readonly identity?: (root: string) => Promise<string>;
+  readonly check?: () => void;
+}
 
 export interface TaskRepositoryCheck {
   readonly state: "checked";
@@ -38,11 +42,14 @@ export const inspectTaskGit: TaskGitInspector = async root => {
 };
 
 
-async function capture(plan: TaskExecutionPlan, git: TaskGitInspector) {
+async function capture(plan: TaskExecutionPlan, git: TaskGitInspector, inspection: TaskRepositoryInspection = {}) {
+  inspection.check?.();
   const root = await PinnedDirectory.open(plan.repository.root);
   try {
     const checkGit = async () => {
-      if (plan.schema_version === 2 && await inspectTaskPublicationIdentity(plan.repository.root) !== plan.publication.repository_identity) {
+      inspection.check?.();
+      if (plan.schema_version === 2
+        && await (inspection.identity ?? inspectTaskPublicationIdentity)(plan.repository.root) !== plan.publication.repository_identity) {
         return fail("TASK_PUBLICATION_GIT_IDENTITY_CHANGED");
       }
       const observed = await git(root.anchored);
@@ -55,7 +62,9 @@ async function capture(plan: TaskExecutionPlan, git: TaskGitInspector) {
     const files: CapturedFile[] = [];
     let total = 0;
     for (const file of plan.files) {
+      inspection.check?.();
       const captured = await root.read(file);
+      inspection.check?.();
       total += captured.bytes;
       if (total > TOTAL_LIMIT) return fail("TASK_REPOSITORY_INPUT_OVERSIZE");
       files.push(captured);
@@ -70,8 +79,8 @@ async function capture(plan: TaskExecutionPlan, git: TaskGitInspector) {
 }
 
 export async function inspectTaskExecutionRepository(value: TaskExecutionPlan,
-  git: TaskGitInspector = inspectTaskGit): Promise<TaskRepositoryCheck> {
-  try { return (await capture(parseTaskExecutionPlan(value), git)).check; }
+  git: TaskGitInspector = inspectTaskGit, inspection: TaskRepositoryInspection = {}): Promise<TaskRepositoryCheck> {
+  try { return (await capture(parseTaskExecutionPlan(value), git, inspection)).check; }
   catch (error) {
     if (error instanceof JarvisError) throw error;
     return fail("TASK_REPOSITORY_UNAVAILABLE");

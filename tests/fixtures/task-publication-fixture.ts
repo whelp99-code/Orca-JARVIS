@@ -15,8 +15,8 @@ import { signTaskCertification } from "../../src/task-certification-proof.js";
 import { verifyTaskCandidate } from "../../src/task-candidate-verification.js";
 import { inspectTaskPublicationIdentity } from "../../src/task-publication-git.js";
 
-export async function taskPublicationFixture() {
-  const f = await taskExecutionFixture();
+export async function taskPublicationFixture(approvedStart = true) {
+  const f = await taskExecutionFixture(approvedStart);
   const root = await mkdtemp(join(tmpdir(), "jarvis-publication-fixture-"));
   const git = (args: string[], input?: string) => execFileSync("/usr/bin/git", ["-c", "core.hooksPath=/dev/null", "-C", root, ...args], {
     encoding: "utf8", input, env: { PATH: "/usr/bin:/bin", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null",

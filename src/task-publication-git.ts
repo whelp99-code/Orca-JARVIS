@@ -19,6 +19,15 @@ const environment = (): NodeJS.ProcessEnv => ({ PATH: "/usr/bin:/bin", GIT_CONFI
   GIT_AUTHOR_NAME: "JARVIS", GIT_AUTHOR_EMAIL: "jarvis@example.invalid",
   GIT_COMMITTER_NAME: "JARVIS", GIT_COMMITTER_EMAIL: "jarvis@example.invalid" });
 
+function readOnlyCommand(args: readonly string[]): boolean {
+  const oid = (value: string | undefined) => /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(value ?? "");
+  if (args.join("\0") === "rev-parse\0--verify\0HEAD") return true;
+  if (args.length === 3 && args[0] === "cat-file" && args[1] === "blob" && oid(args[2])) return true;
+  if (args.length >= 5 && args[0] === "ls-tree" && args[1] === "-z" && oid(args[2]) && args[3] === "--") return true;
+  return args.length === 3 && ((args[0] === "for-each-ref" && args[1] === "--format=%(refname)%00%(objectname)%00%(symref)")
+    || (args[0] === "symbolic-ref" && args[1] === "-q")) && args[2]!.startsWith("refs/heads/codex/");
+}
+
 async function git(root: string, args: string[], env: NodeJS.ProcessEnv, check: () => number,
   input: Buffer = Buffer.alloc(0), limit = 262144, exits: readonly number[] = [0], mounts?: readonly PublicationMount[]): Promise<Buffer> {
   return await new Promise<Buffer>((resolve, reject) => {
@@ -97,9 +106,12 @@ export class TaskPublicationGit {
     try {
       const root = await PinnedDirectory.open(rootPath); handles.push(root);
       const gitPointer = join(root.anchored, ".git"); const first = await locator(gitPointer);
-      const discovered = (await git(root.anchored, ["rev-parse", "--absolute-git-dir", "--path-format=absolute", "--git-common-dir"],
+      const discovery = ["rev-parse", "--absolute-git-dir", "--path-format=absolute", "--git-common-dir", "--show-toplevel"];
+      const discovered = (await git(root.anchored, discovery,
         environment(), check)).toString("utf8").trimEnd().split("\n");
-      if (discovered.length !== 2 || !discovered[0] || !discovered[1]) throw new JarvisError("TASK_PUBLICATION_GIT_IDENTITY_INVALID");
+      if (discovered.length !== 3 || !discovered[0] || !discovered[1] || discovered[2] !== rootPath) {
+        throw new JarvisError("TASK_PUBLICATION_GIT_IDENTITY_INVALID");
+      }
       const gitDir = await PinnedDirectory.open(discovered[0]); handles.push(gitDir);
       const commonPointer = join(gitDir.anchored, "commondir"); const second = await locator(commonPointer);
       const common = await PinnedDirectory.open(discovered[1]); handles.push(common);
@@ -116,7 +128,7 @@ export class TaskPublicationGit {
       const result = new TaskPublicationGit(root, gitDir, common, index, [[gitPointer, first], [commonPointer, second]],
         check, createdAt, identity, writes);
       await result.check();
-      const confirmed = (await git(root.anchored, ["rev-parse", "--absolute-git-dir", "--path-format=absolute", "--git-common-dir"],
+      const confirmed = (await git(root.anchored, discovery,
         environment(), check)).toString("utf8").trimEnd().split("\n");
       if (confirmed.join("\n") !== discovered.join("\n")) throw new JarvisError("TASK_PUBLICATION_GIT_IDENTITY_CHANGED");
       return result;
@@ -135,8 +147,7 @@ export class TaskPublicationGit {
   }
 
   async run(args: string[], input: Buffer = Buffer.alloc(0), outputLimit?: number, exits?: readonly number[]): Promise<Buffer> {
-    if (!this.index && !(args.length === 3 && ((args[0] === "for-each-ref" && args[1] === "--format=%(refname)%00%(objectname)%00%(symref)")
-      || (args[0] === "symbolic-ref" && args[1] === "-q")) && args[2]!.startsWith("refs/heads/codex/") && input.length === 0)) {
+    if (!this.index && (!readOnlyCommand(args) || input.length !== 0)) {
       throw new JarvisError("TASK_PUBLICATION_READ_ONLY");
     }
     await this.check();
