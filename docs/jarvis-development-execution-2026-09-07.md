@@ -12,7 +12,7 @@
 | 01 | GJC 오류의 비밀정보 제거 | 구현·독립 리뷰 완료; 자동 32개 및 실제 자식 프로세스 3개 검증 통과; 실제 coordinator 인수는 후속 |
 | 02 | runtime 소유권 | 구현·독립 리뷰 완료; 관련 자동 41개와 실제 프로세스/CLI 2개 시나리오 통과 |
 | 03 | 만료 정산 | 구현·독립 정적 리뷰 완료; 만료/rollback 10개 및 기존 관련 25개 통과 |
-| 04 | 작업 제약·완료 기준을 승인부터 결과까지 보존 | 대기 |
+| 04 | 작업 제약·완료 기준을 승인부터 결과까지 보존 | 제안→승인→workflow 저장 구현; 실제 dispatch·검증 연결은 10–11과 함께 후속 |
 | 05–09 | 상태·집계·retention·읽기 부작용·재시도 | 대기 |
 | 10–11, 21 최소 | 실제 준비 상태와 승인된 작업 한 건의 실행 완결 | 대기; 실사용 인수 필수 |
 | 12–13 | 스케줄·관찰 장애와 실행 장애 분리 | 대기 |
@@ -71,3 +71,14 @@
 - 관련 7파일 42개 통과 후 CLI 실프로세스 시나리오 1개를 추가했고, 실프로세스 파일 최종 2개 통과. 중복 실행을 제외한 시나리오는 총 43개(자동 41개, 실프로세스/CLI 2개)다.
 - 최종 `npm run typecheck && npm run lint`: exit 0; 제품 변경 후 `npm run build:backend`: exit 0. 독립 정적 리뷰 새 필수 지적 0건.
 - 전체 suite와 실제 업무 입력→승인→실행→검증 인수는 후속이다. 운영 서비스는 교체하지 않았다.
+
+## 2026-09-07 P0-04 작업 명세 보존 — 승인·workflow 구간
+
+- 최초 회귀: 제약 변경, 완료 기준 변경, 해석된 요구사항 누락 3개 실패를 재현했다.
+- 제안의 해석된 work type·constraints·completion evidence를 결과와 digest에 포함한다. 직접 입력과 질의 답변이 모순되면 거부한다. 이전 미리보기 digest로 바뀐 요구사항을 제출하면 HTTP 409다.
+- TaskSpec v1은 목표·요구사항·팀별 scope/exclusions/verification·예산을 보존한다. TaskSpec digest를 승인 command args에 포함하고 실행 경계에서 objective/members/budget과의 일치를 검사한다.
+- 실제 loopback HTTP의 작업 생성→외부 테스트 키로 서명한 승인→workflow start에서 동일 명세가 workflow DB까지 보존됨을 확인했다. 이는 워크플로 시작 검증이며 에이전트 업무 완료가 아니다.
+- 대시보드 미리보기에 해석된 제약과 완료 기준을 표시한다. Chromium 1440/1024에서 해당 내용 표시, 미리보기 무저장, pending 작업 생성, serious/critical 접근성 위반 0, 가로 넘침 없음 — 2개 시나리오 통과.
+- 브라우저 첫 시도는 기존 4176 리스너와 충돌했다. 별도 포트 55609/39877의 fixture를 사용했다. 다음 시도에서 과거 영문 제목/SSE 라벨 기대를 발견하고 현재 한국어 화면 값으로 E2E helper를 수정했다. 기존 리스너는 종료하지 않았다.
+- backend 관련 7파일 50개, dashboard 전체 25파일 136개 통과. `npm run typecheck && npm run lint && npm run build`: exit 0. 독립 정적 리뷰 필수 지적 0건.
+- 다음 경계: TaskSpec assignment 구조의 실행 시 검증, 실제 허용 경로·금지 작업 강제, dispatch 및 독립 완료 증거에 동일 digest 연결. Legacy 입력의 읽기/기존 workflow 실행은 유지하며 그 호환성을 새 TaskSpec 실행 보장으로 취급하지 않는다.

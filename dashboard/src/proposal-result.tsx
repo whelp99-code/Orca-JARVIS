@@ -118,6 +118,16 @@ function ReadyProposal({ result, stage, onStage }: Readonly<{
           <div><dt>Objective</dt><dd>{result.objective}</dd></div>
           <div><dt>Digest</dt><dd>{result.proposal_digest}</dd></div>
         </dl>
+        <section aria-label="Work requirements">
+          <h3>Work requirements</h3>
+          <p>{result.requirements.work_type}</p>
+          <h4>Constraints</h4>
+          {result.requirements.constraints.length === 0 ? <p>No additional constraints supplied</p> : (
+            <ul>{result.requirements.constraints.map((constraint, index) => <li key={index}>{constraint}</li>)}</ul>
+          )}
+          <h4>Completion evidence</h4>
+          <ul>{result.requirements.completion_evidence.map((evidence, index) => <li key={index}>{evidence}</li>)}</ul>
+        </section>
         <section aria-label="Selected members">
           <h3>Selected members</h3>
           <ul className="record-list proposal-members">

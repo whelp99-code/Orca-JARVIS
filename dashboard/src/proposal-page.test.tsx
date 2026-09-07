@@ -36,6 +36,11 @@ const READY = {
   status: "ready",
   proposal_digest: DIGEST,
   objective: NORMALIZED_REQUEST.objective,
+  requirements: {
+    work_type: NORMALIZED_REQUEST.work_type,
+    constraints: NORMALIZED_REQUEST.constraints,
+    completion_evidence: NORMALIZED_REQUEST.completion_evidence,
+  },
   members: [
     {
       member_id: "member_leader",
@@ -146,6 +151,10 @@ describe("proposal interview and receipt-bound task staging", () => {
     expect(screen.getByRole("status", { name: "Proposal status" })).toHaveTextContent("Ready");
     const preview = screen.getByRole("region", { name: "Proposal preview" });
     expect(within(preview).getByText(DIGEST)).toBeInTheDocument();
+    const requirements = within(preview).getByRole("region", { name: "Work requirements" });
+    for (const item of [...NORMALIZED_REQUEST.constraints, ...NORMALIZED_REQUEST.completion_evidence]) {
+      expect(within(requirements).getByText(item)).toBeInTheDocument();
+    }
     const members = within(preview).getByRole("region", { name: "Selected members" });
     expect(within(members).getByText("member_leader")).toBeInTheDocument();
     expect(within(members).getByText("Lead and integrate")).toBeInTheDocument();

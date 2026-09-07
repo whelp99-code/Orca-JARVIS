@@ -4,12 +4,12 @@ import { dirname, join } from "node:path";
 import { request } from "undici";
 import { afterAll, describe, expect, it } from "vitest";
 import {
-  AuthorityDb, ControlPlane, buildCapabilityMatrix, planTeamProposal,
+  AuthorityDb, ControlPlane, buildCapabilityMatrix, planTeamProposal, signCommandApproval, taskSpecDigest, type TaskSpecV1,
   type CapabilityFact, type CapabilityProbe, type TeamProposalRequestV1,
 } from "../../src/index.js";
 import type { CreateTaskRequest, Sha256Digest } from "../../src/dashboard/contracts.js";
 import { createDashboardServer, type DashboardServer } from "../../src/dashboard/server.js";
-import { tempDb } from "../helpers.js";
+import { initialized, localKey, tempDb } from "../helpers.js";
 
 const TASKS = "/api/v1/tasks";
 const CSRF = "X-JARVIS-CSRF";
@@ -153,7 +153,10 @@ describe("dashboard receipt-bound task request staging", () => {
         request_id: input.request_id, nonce: input.nonce,
         args: {
           run_id: input.run_id, loop_id: "agentops-default", correlation_id: input.task_id, budget: input.budget,
-          input: { task_id: input.task_id, objective: requestBody.objective, proposal_digest: digest, members: planned.members },
+          input: {
+            task_id: input.task_id, objective: requestBody.objective, proposal_digest: digest, members: planned.members,
+            task_spec: { requirements: planned.requirements, assignments: planned.members, budget: input.budget },
+          },
         },
       });
       expect(parseJson(fingerprint(db))).toMatchObject({
@@ -163,6 +166,61 @@ describe("dashboard receipt-bound task request staging", () => {
       server.close();
       db.close();
     }
+  });
+
+  it("preserves the same task specification through HTTP staging, signed approval, and workflow start", async () => {
+    const db = await initialized();
+    dirs.add(dirname(db.filename));
+    const capabilityProbe = probe();
+    const server = startServer(db, capabilityProbe);
+    try {
+      const csrf = await csrfToken(server);
+      const input = taskBody(await readyDigest(db, capabilityProbe));
+      expect((await post(server, TASKS, { csrf, type: JSON_TYPE, body: JSON.stringify(input) })).status).toBe(202);
+      const staged = new ControlPlane(db).get(input.request_id)!;
+      const workflowInput = staged.args.input as { task_spec: TaskSpecV1; task_spec_digest: string };
+      expect(workflowInput.task_spec_digest).toBe(taskSpecDigest(workflowInput.task_spec));
+      expect(workflowInput.task_spec.requirements).toEqual({
+        work_type: "development", constraints: ["no persistence"], completion_evidence: ["passing focused vitest"],
+      });
+      const receipt = signCommandApproval({
+        schema_version: 1, receipt_id: "approve-task-spec", request_id: staged.request_id, decision: "approve",
+        command_digest: staged.command_digest, signer_principal_id: "test-operator", authenticated_session_id: "task-spec-session",
+        key_id: "decision-test", algorithm: "Ed25519", issued_at: NOW.toISOString(), not_before: NOW.toISOString(),
+        expires_at: staged.expires_at, nonce: "approve-task-spec", max_uses: 1, status: "issued",
+      }, localKey(db));
+      const path = `/api/v1/control/requests/${staged.request_id}`;
+      expect((await post(server, `${path}/decision`, {
+        csrf, type: JSON_TYPE, body: JSON.stringify({ schema_version: 1, receipt }),
+      })).status).toBe(200);
+      const executed = await post(server, `${path}/execute`, { csrf, type: JSON_TYPE, body: '{"schema_version":1}' });
+      expect(executed.status).toBe(200);
+      expect(executed.body).toMatchObject({ execution: { state: "completed" } });
+      const row = db.db.prepare("SELECT input_json,budget_json FROM workflow_runs WHERE run_id=?").get(input.run_id) as {
+        input_json: string; budget_json: string;
+      };
+      expect(JSON.parse(row.input_json)).toEqual(workflowInput);
+      expect(JSON.parse(row.budget_json)).toEqual(workflowInput.task_spec.budget);
+      expect(db.db.prepare("SELECT command_digest FROM control_command_receipts WHERE request_id=?").get(input.request_id))
+        .toEqual({ command_digest: staged.command_digest });
+    } finally { server.close(); db.close(); }
+  });
+
+  it.each(["constraints", "completion_evidence"] as const)("rejects a preview digest after %s changes", async field => {
+    const db = await migratedDb();
+    const capabilityProbe = probe();
+    const server = startServer(db, capabilityProbe);
+    try {
+      const digest = await readyDigest(db, capabilityProbe);
+      const input = taskBody(digest, { ...proposal(), [field]: ["changed after preview"] });
+      const before = fingerprint(db);
+      const posted = await post(server, TASKS, {
+        csrf: await csrfToken(server), type: JSON_TYPE, body: JSON.stringify(input),
+      });
+      expect(posted.status).toBe(409);
+      expect(errorCode(posted.body)).toBe("PROPOSAL_STALE");
+      expect(fingerprint(db)).toBe(before);
+    } finally { server.close(); db.close(); }
   });
 
   it("rejects stale, blocked, and needs_input proposals with typed 400/409 and identical fingerprints", async () => {

@@ -4,6 +4,7 @@ import { JarvisError, type AuthorityDb } from "../db.js";
 import type { TeamProposalResultV1 } from "../team-proposal.js";
 import type { CreateTaskRequest } from "./contracts.js";
 import type { TeamProposalPlanner } from "./proposal-service.js";
+import { createTaskSpec, taskSpecDigest } from "../task-spec.js";
 
 const PROPOSAL_STALE = "PROPOSAL_STALE" as const;
 const REQUESTED_BY = "jarvis-control-center" as const;
@@ -60,6 +61,7 @@ function workflowStartCommand(
   planned: Extract<TeamProposalResultV1, { readonly status: "ready" }>,
   now: Date,
 ): ControlCommandRequestInput {
+  const spec = createTaskSpec(request.task_id, planned, request.budget);
   const target: Record<string, unknown> = {
     environment: "local",
     run_id: request.run_id,
@@ -74,9 +76,11 @@ function workflowStartCommand(
     budget: request.budget,
     input: {
       task_id: request.task_id,
-      objective: request.proposal_request.objective,
+      objective: planned.objective,
       proposal_digest: planned.proposal_digest,
       members: planned.members,
+      task_spec: spec,
+      task_spec_digest: taskSpecDigest(spec),
     },
   };
   return {

@@ -87,9 +87,15 @@ export async function proposalStageFlow(page: Page, testInfo: TestInfo, baseURL:
   await page.getByLabel("Objective").fill("Ship a bounded e2e proposal");
   await page.getByLabel("Work type").selectOption("development");
   await page.getByLabel("Completion evidence").fill("passing playwright suite");
+  await page.getByLabel("Constraints").fill("no deployment");
   await page.getByRole("button", { name: "Preview" }).click();
   await expect(page.getByRole("status", { name: "Proposal status" })).toHaveText("Ready");
   expect(fingerprintFor(baseURL)).toBe(before);
+  const requirements = page.getByRole("region", { name: "Work requirements" });
+  await expect(requirements.getByText("no deployment", { exact: true })).toBeVisible();
+  await expect(requirements.getByText("passing playwright suite", { exact: true })).toBeVisible();
+  await assertAxeClean(page);
+  await assertNoHorizontalOverflow(page);
   await page.getByRole("button", { name: "Stage task" }).click();
   await expect(page.getByRole("heading", { name: "Pending request" })).toBeVisible();
   await expect(page.getByText("workflow.start")).toBeVisible();

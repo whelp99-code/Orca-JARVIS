@@ -19,8 +19,8 @@ export function attachConsole(page: Page): ConsoleBag {
 }
 
 export async function waitLive(page: Page): Promise<void> {
-  await expect(page).toHaveTitle("JARVIS Control Center");
-  await expect(page.getByRole("status", { name: "Live updates" })).toHaveText("Connected");
+  await expect(page).toHaveTitle("JARVIS 현황판");
+  await expect(page.getByRole("status", { name: "실시간" })).toHaveText("연결됨");
 }
 
 export async function assertNoHorizontalOverflow(page: Page): Promise<void> {

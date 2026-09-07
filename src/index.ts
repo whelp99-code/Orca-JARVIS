@@ -222,6 +222,8 @@ export {
 	type TeamProposalResultV1,
 	type TeamMemberProposal,
 } from "./team-proposal.js";
+export { createTaskSpec, taskSpecDigest, assertWorkflowTaskSpec, type TaskSpecV1 } from "./task-spec.js";
+export type { TeamTaskRequirements } from "./team-proposal.js";
 export {
 	ControlPlane,
 	controlCommandDigest,

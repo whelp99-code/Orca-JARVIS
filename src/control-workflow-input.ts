@@ -1,5 +1,6 @@
 import { JarvisError } from "./db.js";
 import type { WorkflowAdvanceInput, WorkflowRunInput } from "./loopgraph.js";
+import { assertWorkflowTaskSpec } from "./task-spec.js";
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -18,7 +19,7 @@ function integer(value: unknown): number {
 }
 export function controlWorkflowRunInput(args: Readonly<Record<string, unknown>>): WorkflowRunInput {
   const budget = record(args.budget);
-  return {
+  const workflow = {
     run_id: text(args.run_id), loop_id: text(args.loop_id), correlation_id: text(args.correlation_id),
     input: args.input,
     budget: {
@@ -27,6 +28,8 @@ export function controlWorkflowRunInput(args: Readonly<Record<string, unknown>>)
       deadline: text(budget.deadline),
     },
   };
+  assertWorkflowTaskSpec(workflow);
+  return workflow;
 }
 export function controlWorkflowAdvanceInput(
   args: Readonly<Record<string, unknown>>,

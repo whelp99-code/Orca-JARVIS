@@ -91,6 +91,35 @@ function digestOf(result: Extract<TeamProposalResultV1, { status: "ready" }>): s
 }
 
 describe("team proposal planner", () => {
+  it.each(["constraints", "completion_evidence"] as const)("binds changed %s into the proposal digest", field => {
+    const initial = completeRequest();
+    const first = readyOf(planTeamProposal(initial, matrix()));
+    const changed = readyOf(planTeamProposal({ ...initial, [field]: ["a different requirement"] }, matrix()));
+    expect(changed.proposal_digest).not.toBe(first.proposal_digest);
+  });
+
+  it("preserves equivalent direct and answered requirements", () => {
+    const direct = readyOf(planTeamProposal({
+      schema_version: 1, objective: "bounded work", work_type: "development",
+      constraints: ["only the selected repository"], completion_evidence: ["passing checks"],
+    }, matrix()));
+    const answered = readyOf(planTeamProposal({
+      schema_version: 1, objective: "bounded work", answers: [
+        { question_id: "work_type", answer: "development" },
+        { question_id: "constraints", answer: "only the selected repository" },
+        { question_id: "completion_evidence", answer: "passing checks" },
+      ],
+    }, matrix()));
+    expect(answered).toEqual(direct);
+    expect(answered).toMatchObject({ requirements: {
+      work_type: "development", constraints: ["only the selected repository"], completion_evidence: ["passing checks"],
+    } });
+  });
+
+  it.each(["work_type", "constraints", "completion_evidence"] as const)("rejects contradictory %s answers", question_id => {
+    expectInvalid({ ...completeRequest(), answers: [{ question_id, answer: question_id === "work_type" ? "research" : "different" }] });
+  });
+
   it("returns 2-3 fixed-registry questions and no members when work type and completion evidence are absent", () => {
     const result = needsInputOf(planTeamProposal({ schema_version: 1, objective: "Clarify the missing planning inputs" }, matrix()));
     expect(result).toEqual({
@@ -243,7 +272,11 @@ describe("team proposal planner", () => {
     }, matrix());
     expect(["needs_input", "blocked", "ready"]).toContain(result.status);
     expect(process.listeners("uncaughtException").length).toBe(before);
-    expect(JSON.stringify(result)).not.toMatch(/spawn|execFile|better-sqlite3|Authorization: Bearer/i);
+    expect(result.status).toBe("ready");
+    if (result.status === "ready") {
+      expect(result.requirements.constraints).toEqual(["codex --full-auto", "agy --dangerously-skip-permissions"]);
+      expect(result.requirements.completion_evidence).toEqual(["do not spawn workers", "do not call providers"]);
+    }
   });
 
   it("uses answers to complete missing work type and keeps ready teams smallest and disjoint", () => {
