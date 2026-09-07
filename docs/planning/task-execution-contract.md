@@ -49,3 +49,15 @@ jarvis control check-task plan.json --db /absolute/path/to/authority.sqlite
 `prepareTaskExecutionWorkspace(plan, privateParent)`는 같은 검사를 거친 바이트만 별도 후보 디렉터리에 복사한다. parent는 기존 사용자 소유 private 디렉터리여야 하고 원본 저장소 내부에는 사본을 만들지 않는다. 후보 및 하위 디렉터리도 FD로 고정하고 파일을 exclusive/no-follow로 생성한다. 반환된 snapshot digest는 계획과 입력 파일 메타데이터를 결합한다. 이 함수는 승인/agent 실행/원본 반영을 수행하지 않는다.
 
 실패한 private 후보는 자동 재귀 삭제하지 않는다. 경로가 동시 교체됐을 때 관계없는 디렉터리가 지워지는 것을 피하기 위한 보존이며, 완료된 실행 원장과 결합한 안전한 보존·정리 정책은 후속 작업이다. 사본의 파일 mode는 초기 접근 권한일 뿐 같은 UID의 실행자를 격리하는 보안 경계가 아니다. 실제 provider의 OS sandbox, 읽기 전용 입력 강제, 승인·원본 재검증과 검증 후 반영 경계는 여전히 필요하다.
+
+## 실행 시도 영속 결합
+
+Migration `058_task_execution_binding.sql`은 기존 `control_effect_attempts`에 `task_run_id`와 `task_plan_digest`를 추가한다. 두 값의 unique index는 요청/영수증/lease fence가 바뀌어도 같은 계획의 operation을 하나로 제한한다. 기존 migration 파일은 수정하지 않는다.
+
+`ControlEffectAttempts.prepareTask(command, clock)`은 IMMEDIATE 트랜잭션 진입 후 현재 시각을 읽고 원본 요청 digest, 전체 인수, 현재 claim/redemption/fence, 요청·승인·lease 만료, Ed25519 서명과 현재 decision key, 철회, workflow/TaskSpec/예산을 확인한다. 같은 operation이 있으면 상태와 무관하게 `TASK_EXECUTION_ALREADY_BOUND`로 거부한다.
+
+`beginTaskInvocation(command, clock)`은 같은 권한을 다시 확인하고 prepared→invoking을 CAS로 한 번만 기록한다. 이후 결과 불명확 시 `markTaskUncertain`은 만료·취소 뒤에도 해당 요청/영수증/fence의 uncertain 기록을 허용한다. 일반 `update`는 task 행의 성공 처리를 허용하지 않는다. 원장의 invoking은 호출 직전 기록이며 실제 provider 호출 성공이나 업무 완료 증거가 아니다.
+
+INSERT OR REPLACE의 명시적 식별자·operation·SQLite rowid 충돌과 UPDATE OR REPLACE의 rowid/별칭 충돌도 DB trigger로 차단한다. prepared/uncertain을 포함한 기존 operation의 자동 초기화·재예약은 제공하지 않는다. 호출 전 중단된 prepared 기록의 재개, invoking 중 종료된 프로세스의 조정, 검증 증거와 최종 정산은 후속 구현이 필요하다.
+
+이 원장은 아직 ApprovedCommandExecutor의 일반 task 실행 경로에 연결되지 않았다. provider 격리·독립 검증·원본 반영이 완성될 때까지 `task.execute`는 executable=false를 유지한다.

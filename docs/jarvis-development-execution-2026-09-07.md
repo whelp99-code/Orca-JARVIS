@@ -12,7 +12,7 @@
 | 01 | GJC 오류의 비밀정보 제거 | 구현·독립 리뷰 완료; 자동 32개 및 실제 자식 프로세스 3개 검증 통과; 실제 coordinator 인수는 후속 |
 | 02 | runtime 소유권 | 구현·독립 리뷰 완료; 관련 자동 41개와 실제 프로세스/CLI 2개 시나리오 통과 |
 | 03 | 만료 정산 | 구현·독립 정적 리뷰 완료; 만료/rollback 10개 및 기존 관련 25개 통과 |
-| 04 | 작업 제약·완료 기준을 승인부터 결과까지 보존 | TaskSpec 보존 및 기계적 실행계획의 별도 승인 요청 구현; 실제 dispatch·검증 연결은 후속 |
+| 04 | 작업 제약·완료 기준을 승인부터 결과까지 보존 | TaskSpec·실행계획 승인, 실제 입력 검사, 단일 operation 원장 구현; 실제 dispatch·검증 연결은 후속 |
 | 05–06, 08 | 상태·집계·읽기 부작용 | 대기 |
 | 09 | 만료된 workflow 시작 재시도 | 원래 마감/예산 재검증, 재계획·재승인 안내 구현; HTTP 및 브라우저 검증 완료 |
 | 07 | retention 결과 정합성 | 어댑터 미설정 실패, policy 전달, 원자적 처리 구현; 실제 정책별 어댑터·스케줄은 12 후속 |
@@ -147,3 +147,14 @@
 - 실제 Git/빌드 CLI smoke는 격리 Git 저장소의 선언 파일 1개·26바이트로 수행했다. 후보 변경 후 원본 동일, 후보 Node syntax exit 0, CLI 검사 전후 SQLite data_version 동일, 이후 원본 변경 시 TASK_REPOSITORY_FILE_CHANGED 거부를 확인했다. 최종 fixture commit은 `6036ecbbe53a2227b98fa2b7a2577d471d5784a7`, 결과는 `.runtime-tmp/task-repository-smoke.json`이다. actual agent 호출 0회이며 실제 업무 완료 증거로 사용하지 않는다.
 - 공통 reviewability의 기존 두 memory 모듈 행 수 초과는 별도 실패로 남아 있다. 동시 작업 파일을 덮어쓰거나 이번 커밋에 섞지 않는다. 전체 gate 통과/운영 적용을 주장하지 않는다.
 - 남은 필수 구현은 실제 provider OS 격리·인증/준비 상태, 단일 영속 operation binding, 승인된 실행 호출과 현재 권한 확인, 독립 verifier와 원본 반영, 증거 기반 workflow 완료, 대시보드 동선이다. 실패 후보의 안전한 정리도 실행 원장과 연계해야 한다. `task.execute`는 계속 비활성 상태이며 전체 목표를 유지한다.
+
+## 2026-09-08 P0-04/11 — 요청을 넘는 실행 시도 결합
+
+- 입력 검사/후보 사본 단위는 `5b127b0`으로 커밋했다. 재개 시 파일시스템 16개를 재실행해 통과했다. 이전 인계 턴에서는 인계 문서 갱신과 앱 전달 실패 증거를 기록했고, 이번 턴은 자비스 개발을 재개했다.
+- 새 migration 058은 기존 외부 효과 원장에 run/plan digest와 unique index를 추가한다. 별도 큐나 추천 전용 테이블을 만들지 않는다. prepareTask와 beginTaskInvocation은 IMMEDIATE 트랜잭션 안에서 현재 시각, 원본 요청·인수·digest, 서명·decision key·철회, claim/redemption/fence와 만료, workflow/TaskSpec/예산을 검사한다.
+- prepared→invoking은 한 번만 가능하다. 같은 plan의 새 서명 요청도 기존 operation이 있으면 거부한다. 만료 뒤에도 uncertain 기록은 가능하며 일반 외부 효과 update로 task를 confirmed 처리할 수 없다. 승인 상태만 위조하고 서명 바이트를 재사용한 DB fixture도 효과 0개로 거부했다.
+- 독립 리뷰 P1: INSERT OR REPLACE의 동일/새 요청 우회를 회귀 2개로 실패 재현했다. 보강 후 rowid non-task 교체 우회 1개를 추가로 재현했다. INSERT 충돌과 UPDATE rowid/별칭 충돌을 trigger에서 차단했고 최종 재리뷰 추가 필수 지적 0건이다.
+- 최종 task 원장 18개와 실제 프로세스 1개 통과. 관련 migration 7개, runbook 5개, staging/CLI 8개, memory HTTP 7개, migration compatibility 1개를 합쳐 중복 제외 7파일 47개 통과했다. 최초 키 철회 fixture의 잘못된 revoked_at 컬럼은 실제 created_at으로 수정했다.
+- 실제 Node 자식 프로세스 2개가 같은 WAL DB에서 서로 다른 승인 요청으로 경쟁하여 invoking 1개/rejected 1개를 확인했다. 두 프로세스를 SIGKILL한 뒤 DB를 다시 열어 세 번째 승인 요청도 거부되며 원장 1개가 유지됨을 확인했다. 실제 agent 호출은 0회다.
+- 최종 제품 변경 후 typecheck/lint/build:backend exit 0. 공통 reviewability는 2개 중 1개 실패했다: 병행 작업의 index.ts 252 nonblank, memory-outbox-store.ts 270 nonblank, memory-remember-artifact.ts 최대 줄 길이 202, second-brain-adapter.ts 267 nonblank. 이 관측의 다른 작업 변경은 이번 커밋에 포함하지 않는다.
+- 보류/후속: 원장만으로 provider를 활성화하지 않는다. prepared 중단의 안전한 재개, invoking 종료의 조정, OS 격리·인증, 실제 agent 실행, 독립 검증·원본 반영, workflow 완료 증거와 UI 동선은 계속 미완료다. task.execute는 executable=false이고 전체 01–25 목표와 실사용 인수는 유지한다. 운영 migration/서비스 교체는 수행하지 않았다.
