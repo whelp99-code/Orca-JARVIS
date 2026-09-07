@@ -2,6 +2,11 @@
 
 상태: 개발 중. 개선 항목04/10/11/21의 구현 설계. 운영 실행 활성화 완료가 아니다.
 
+2026-09-08 현재: 승인된 v2 Claude 작업은 호스트 런타임 구성이 있으면 기존 CLI/dashboard 승인 실행기를
+통해 생성·독립 검증·Git 게시·완료 정산까지 실행할 수 있다. `task.execute.executable=true`는 handler
+존재를 뜻하며 호스트 설정·인증·운영 인수 완료를 뜻하지 않는다. 아래 단계별 미연결/false 표기는 해당
+구현 당시의 경계이며 최신 연결·보류 범위는 마지막 「승인 실행기와 호스트 런타임」 절을 따른다.
+
 `workflow.start`는 기존처럼 workflow를 생성한다. 실제 실행은 별도 `task.execute` ControlPlane 요청에 서명한다. 요청은 원래 TaskSpec digest와 실행계획 전체의 digest를 포함한다. 자연어 scope를 파일 권한으로 해석하지 않는다.
 
 실행계획 v1은 provider, 격리 후보 작업 모드, 정본 저장소 경로와 기준 commit, 읽기/변경할 파일의 기준 digest, 네트워크 금지, 시간/출력 상한, 검증 argv/cwd/예상 종료 코드를 명시한다. 새 파일은 기준 digest null이며 읽기 전용 파일에는 null을 허용하지 않는다. 경로는 상대 파일명이며 glob, 상위 이동, Git 관리 경로를 허용하지 않는다. 정적 경로 검증은 실제 filesystem의 symlink/하드링크/경합 검증을 대체하지 않는다.
@@ -207,3 +212,36 @@ COMMIT 후 종료에서는 receipt/confirmed/completed가 함께 남는다. 동�
 기록된 완료 사실을 반환한다. 현재 실행 권한을 새로 부여하지 않으며 현재 ref를 조회하지 않는다.
 완료된 동일 요청의 통합 재호출도 읽기만 수행하고 인수가 다른 요청의 결과를 재사용하지 못하게 한다.
 Approved executor·CLI/UI의 정산 호출 연결, 실패·중단 운영 복구와 task.execute 활성화는 후속이다.
+
+## 승인 실행기와 호스트 런타임
+
+`ApprovedCommandExecutor.execute`는 task 요청을 claim 전에 `executeApprovedTaskRequest`로 보낸다.
+완료된 요청은 기존 영수증을 읽기 전용으로 반환한다. 새 실행은 approved 상태, v2 Claude 계획,
+정확한 기본 graph와 현재 workflow binding, 공유 DB, 등록 verifier key, 로컬 런타임 준비를 요구한다.
+미설정·미지원·준비 실패는 승인 영수증과 approved 상태를 소비하지 않는다.
+
+운영자가 신뢰한 호스트 환경 변수 `JARVIS_TASK_CLAUDE_PATH`, `JARVIS_TASK_VERIFIER_KEY_PATH`,
+`JARVIS_TASK_VERIFIER_KEY_ID`를 모두 지정해야 production runtime을 구성한다. 요청 args에서 실행파일이나
+키를 고를 수 없으며 기본 경로·새 키를 자동 생성하지 않는다. provider 실행 권한과 그룹/기타 쓰기 권한,
+검증 entry/개인 키 metadata, verifier 등록 키를 확인하고 기존 bwrap에서 고정 Node exit-0 probe를 수행한다.
+이 probe는 모델·작업 파일·인증·네트워크를 사용하지 않으며 실제 provider 인증은 검사하지 않는다.
+
+`control check-task <plan.json>`은 저장소/계획 검사 뒤 `execution_available`, `readiness.state`,
+`reason_code`, `authentication: not_probed`를 반환한다. true는 그 시점의 로컬 준비이며 실행 승인이 아니다.
+설정·키·경로는 실행 직전 다시 검사한다. `control plan-task`와 외부 서명 승인 뒤
+`control execute <request-id>`가 같은 실행기를 사용하며 완료 결과에는 commit/tree/ref와 영수증 ID가 있다.
+
+비동기 준비가 끝난 뒤 현재 시각으로 계획 timeout만큼의 lease를 claim하되 기존 요청·승인 만료를 넘지
+않는다. dashboard 기본 executor도 요청 접수 시각을 고정하지 않고 clock callback을 전달한다.
+`executeTaskWorkflow`의 공유 uptime·현재 권한·최종 완료 트랜잭션을 그대로 소비한다.
+
+검사 실패는 request failed/TASK_CHECKS_FAILED로 기록한다. 실행이 시작된 뒤 provider·검증기·게시·완료
+기록의 불명확 오류는 request/operation uncertain으로 남긴다. 미생성 operation이면 실행 전 실패로
+정산할 수 있고, 이미 uncertain인 operation을 다시 변경하지 않는다. 실패 정산은 IMMEDIATE 잠금 획득
+뒤 현재 시각을 읽으며 만료/취소로 기록된 uncertain을 존중한다. 실패 정산 자체의 오류는 자동 재시도하지
+않고 TASK_EXECUTION_SETTLEMENT_FAILED를 반환한다. 원문 provider/SQL 오류는 노출하지 않는다.
+
+현재 자동 microloop의 순차 승인 큐는 task.execute를 제외한다. 준비되지 않은 요청의 반복 선택과
+최대 10분 호출이 관찰/GJC/복구를 차단하지 않도록 하는 명시적 보류다. CLI/dashboard 명시 실행과
+후속 비차단 자동 스케줄링을 구분한다. Codex provider, UI의 계획 작성·결과 상세, 중단 후 운영 복구,
+패키징·용량/보존 정책, 운영 배포와 실제 업무 인수는 계속 남아 있다.

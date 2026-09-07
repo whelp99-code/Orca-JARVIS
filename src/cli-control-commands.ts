@@ -16,6 +16,7 @@ import { parseTaskExecutionPlan } from "./task-execution-plan.js";
 import { bindMemoryCandidateSpools, createProductionMemoryOutbox } from "./memory-outbox-production.js";
 import { executeMemoryIntake } from "./cli-memory-intake.js";
 import { stageMemoryRememberDispatch } from "./memory-remember-dispatch.js";
+import { taskExecutionReadiness } from "./task-execution-runtime.js";
 
 export async function executeControlCommand(
   context: CliCommandContext,
@@ -51,7 +52,9 @@ export async function executeControlCommand(
       assertTaskExecutionBinding(db, plan, commandNow(context));
       const repository = await inspectTaskExecutionRepository(plan);
       assertTaskExecutionBinding(db, plan, commandNow(context));
-      return { ok: true, command: "control.check-task", repository, execution_available: false };
+      const readiness = await taskExecutionReadiness(db, plan, () => commandNow(context));
+      assertTaskExecutionBinding(db, plan, commandNow(context));
+      return { ok: true, command: "control.check-task", repository, ...readiness };
     }
     if (subcommand === "plan-task" && argument) {
       const input = typedObject(await jsonFile<StageTaskExecutionInput>(argument));

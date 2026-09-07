@@ -99,7 +99,8 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
          WHERE r.state='claimed' ORDER BY r.requested_at,r.request_id`,
       ) .all() as Array<Record<string, unknown>>; for (const row of rows) { const loss = this.authorityLossCode(row, nowMs);
       if (loss && this.recoverClaimedAuthorityLoss(String(row.request_id), Number(row.lease_fence), at, loss)) recovered++; } return recovered; }
-  nextApproved(now = new Date()): string | null { const nowMs = finiteDate(now, "CONTROL_QUEUE_INVALID"); const rows = this.authority.db .prepare(
+  nextApproved(now = new Date(), excludedActions: readonly string[] = []): string | null {
+    const nowMs = finiteDate(now, "CONTROL_QUEUE_INVALID"); const rows = this.authority.db .prepare(
         `SELECT r.request_id,r.command_digest,r.expires_at,a.receipt_id,
            a.expires_at AS approval_expires
          FROM control_command_requests r
@@ -107,8 +108,9 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
            ON a.request_id=r.request_id AND a.decision='approve'
          LEFT JOIN control_command_redemptions x ON x.request_id=r.request_id
          WHERE r.state='approved' AND x.request_id IS NULL
+           AND r.action NOT IN (SELECT value FROM json_each(?))
          ORDER BY r.requested_at,r.request_id`,
-      ) .all() as Array<Record<string, unknown>>; for (const row of rows) {
+      ) .all(JSON.stringify(excludedActions)) as Array<Record<string, unknown>>; for (const row of rows) {
       if (Date.parse(String(row.expires_at)) <= nowMs || Date.parse(String(row.approval_expires)) <= nowMs) continue;
       if (this.commandRevoked(String(row.request_id), String(row.command_digest), String(row.receipt_id))) continue; return String(row.request_id); }
     return null; } private expireStaleClaims(now: string): void { this.recoverExpired(new Date(now)); }

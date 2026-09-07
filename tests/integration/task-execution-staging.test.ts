@@ -22,10 +22,11 @@ describe("execution plan staging after approved workflow start", () => {
       expect(stageTaskExecution(fixture.db, fixture.request, new Date(fixture.now.getTime() + 1))).toEqual(result);
       expect(fixture.db.db.prepare("SELECT total_changes() AS n").get()).toEqual(changes);
       expect(fixture.db.db.prepare("SELECT COUNT(*) AS n FROM control_effect_attempts").get()).toEqual({ n: 0 });
-      expect(controlActionDescriptor("task.execute")).toMatchObject({ executable: false });
+      expect(controlActionDescriptor("task.execute")).toMatchObject({ executable: true });
       fixture.approve(result);
       await expect(new ApprovedCommandExecutor(fixture.db, undefined, undefined, {}, () => fixture.now)
-        .execute(result.request_id)).resolves.toMatchObject({ state: "failed", failure_code: "APPROVED_ACTION_UNKNOWN" });
+        .execute(result.request_id)).rejects.toThrow("TASK_COMPLETION_MODE_UNSUPPORTED");
+      expect(fixture.control.get(result.request_id)?.state).toBe("approved");
       expect(fixture.db.db.prepare("SELECT COUNT(*) AS n FROM control_effect_attempts").get()).toEqual({ n: 0 });
     } finally { close(fixture); }
   });

@@ -116,6 +116,7 @@ async function writeExecute(input: AuthorityRouteInput, requestId: string): Prom
       now: input.clock(),
       memoryLifecycle: input.memoryLifecycle,
       executorFactory: input.executorFactory,
+      clock: input.clock,
     });
     input.hub.publish(["overview", "tasks", "approvals"]);
     writeDashboardJson(input.response, { status: 200, requestId: input.requestId, body });

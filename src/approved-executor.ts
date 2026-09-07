@@ -1,5 +1,7 @@
 import { resolve } from "node:path";
 import { executeApprovedMemoryCommand } from "./approved-memory-execution.js";
+import { executeApprovedTaskRequest } from "./approved-task-execution.js";
+import type { TaskExecutionRuntime } from "./task-execution-runtime.js";
 import { AuthorityDb, JarvisError } from "./db.js";
 import { validateControlAction } from "./control-actions.js";
 import { ControlEffectAttempts, type ExternalEffectContext } from "./control-effect-attempts.js";
@@ -7,7 +9,7 @@ import { ControlPlane, type ClaimedControlCommand } from "./control-plane.js";
 import { controlWorkflowAdvanceInput, controlWorkflowRunInput } from "./control-workflow-input.js";
 import { writeCurrentState } from "./state-projection.js";
 import { LoopGraph, type LoopSpec } from "./loopgraph.js";
-import { RunbookEngine, type HostOperations } from "./runbook.js";
+import { RunbookEngine, isUncertainRunbookError, type HostOperations } from "./runbook.js";
 import { appendSettledNegativeEvidence } from "./negative-evidence.js";
 import { executeApprovedWorkflowStage, type ExecuteWorkflowStageInput } from "./approved-workflow-stage.js";
 import type { ApprovedExecutionResult } from "./approved-executor-types.js";
@@ -33,6 +35,7 @@ export class ApprovedCommandExecutor {
     private readonly memoryOutbox?: MemoryOutboxService,
     private readonly memoryEffects?: SecondBrainEffectService,
     private readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">,
+    private readonly taskRuntime?: TaskExecutionRuntime,
   ) {
     this.control = new ControlPlane(authority);
     this.effects = new ControlEffectAttempts(authority);
@@ -134,20 +137,13 @@ export class ApprovedCommandExecutor {
     throw new JarvisError("APPROVED_ACTION_UNKNOWN");
   }
 
-  private uncertainOnError(command: ClaimedControlCommand, code: string): boolean {
-    return command.action === "runbook.execute"
-      && command.args.runbook_id === "daemon-dead"
-      && command.action_level >= 3
-      && !new Set([
-        "RUNBOOK_INPUT_INVALID", "RUNBOOK_ACTION_LEVEL_TOO_LOW", "RUNBOOK_NOT_FOUND",
-      ]).has(code);
-  }
-
   executeWorkflowStage(input: ExecuteWorkflowStageInput): Promise<ApprovedExecutionResult> {
     return executeApprovedWorkflowStage({ authority: this.authority, control: this.control, input });
   }
 
   async execute(requestId: string, worker = "approved-command-executor", now = this.clock()): Promise<ApprovedExecutionResult> {
+    if (this.control.get(requestId)?.action === "task.execute") return executeApprovedTaskRequest({
+      authority: this.authority, request_id: requestId, worker, clock: this.clock, runtime: this.taskRuntime });
     const command = this.control.claim(requestId, worker, now);
     const externalRunbook = command.action === "runbook.execute"
       && command.args.runbook_id === "daemon-dead"
@@ -241,7 +237,7 @@ export class ApprovedCommandExecutor {
       const externalUncertain = externalContext !== undefined;
       const code = externalUncertain ? "EXTERNAL_EFFECT_UNCERTAIN" : error instanceof JarvisError ? error.code : "APPROVED_COMMAND_FAILED";
       const payload = { error: error instanceof Error ? error.message : "unknown" };
-      const state = this.uncertainOnError(command, code) ? "uncertain" : "failed";
+      const state = isUncertainRunbookError(command, code) ? "uncertain" : "failed";
       const completedAt = this.clock();
       if (externalContext) this.effects.update(requestId, "uncertain", completedAt,
         undefined, "EXTERNAL_EFFECT_UNCERTAIN");

@@ -1,5 +1,6 @@
 import { spawn } from "node:child_process";
-import { realpath, stat } from "node:fs/promises";
+import { access, realpath, stat } from "node:fs/promises";
+import { constants } from "node:fs";
 import { isAbsolute } from "node:path";
 import { JarvisError } from "./db.js";
 import { taskProcessTimeout } from "./task-process-boundary.js";
@@ -16,18 +17,25 @@ export class ClaudeTaskCandidateProvider implements TaskCandidateProvider {
   readonly provider = "claude" as const;
   constructor(private readonly executable: string) {}
 
+  private async path(): Promise<string> {
+    try {
+      if (!isAbsolute(this.executable)) throw new Error("absolute path required");
+      const executable = await realpath(this.executable); const info = await stat(executable);
+      if (!info.isFile() || (info.mode & 0o022) !== 0) throw new Error("invalid executable");
+      await access(executable, constants.X_OK);
+      return executable;
+    } catch { throw new JarvisError("TASK_PROVIDER_UNAVAILABLE"); }
+  }
+
+  async checkReady(): Promise<void> { await this.path(); }
+
   async generate(input: TaskProviderRequest): Promise<{ output: unknown; output_bytes: number }> {
     const deadline = performance.now() + input.timeout_ms;
     if (input.provider !== this.provider || !isAbsolute(this.executable)) throw new JarvisError("TASK_PROVIDER_UNAVAILABLE");
     if (!Number.isSafeInteger(input.timeout_ms) || input.timeout_ms < 1 || input.timeout_ms > 600_000
       || !Number.isSafeInteger(input.max_output_bytes) || input.max_output_bytes < 1 || input.max_output_bytes > 1_048_576
       || Buffer.byteLength(input.prompt) > 512 * 1024) throw new JarvisError("TASK_PROVIDER_INPUT_INVALID");
-    let executable: string;
-    try {
-      executable = await realpath(this.executable);
-      const info = await stat(executable);
-      if (!info.isFile() || (info.mode & 0o022) !== 0) throw new Error("invalid executable");
-    } catch { throw new JarvisError("TASK_PROVIDER_UNAVAILABLE"); }
+    const executable = await this.path();
     const env: NodeJS.ProcessEnv = {};
     for (const key of ["HOME", "PATH", "LANG", "TZ"]) if (process.env[key] !== undefined) env[key] = process.env[key];
     const args = claudeTaskArguments(input);

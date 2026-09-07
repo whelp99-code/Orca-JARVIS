@@ -55,6 +55,7 @@ export type ExecuteInput = {
   readonly requestId: string;
   readonly body: unknown;
   readonly now: Date;
+  readonly clock?: () => Date;
   readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
   readonly executorFactory?: DashboardExecutorFactory;
 };
@@ -96,7 +97,7 @@ export async function executeDashboardRequest(input: ExecuteInput): Promise<Dash
     resolve(".jarvis-backups"),
     resolve("state"),
     {},
-    () => input.now,
+    input.clock ?? (() => new Date()),
     undefined,
     undefined,
     input.memoryLifecycle,

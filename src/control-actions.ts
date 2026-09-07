@@ -174,7 +174,7 @@ function evidenceNegativeRecord(input: RuntimeControlActionInput): void {
 }
 
 const descriptors: Record<string, Descriptor> = {
-  "task.execute": { action: "task.execute", minimum_level: 3, executable: false, validate: validateTaskExecutionAction },
+  "task.execute": { action: "task.execute", minimum_level: 3, executable: true, validate: validateTaskExecutionAction },
   "database.backup": { action: "database.backup", minimum_level: 2, executable: true, validate: databaseBackup },
   "database.restore_drill": { action: "database.restore_drill", minimum_level: 1, executable: true, validate: databaseRestoreDrill },
   "state.project": { action: "state.project", minimum_level: 1, executable: true, validate: stateProject },

@@ -21,6 +21,7 @@ export { publishTaskGitCandidate, inspectTaskGitPublication } from "./task-git-p
 export { inspectTaskPublicationIdentity } from "./task-publication-git.js";
 export { executeTaskWorkflow, settleTaskExecution } from "./task-completion.js";
 export { readTaskCompletion, type TaskCompletion } from "./task-completion-record.js";
+export { productionTaskExecutionRuntime, type TaskExecutionRuntime } from "./task-execution-runtime.js";
 
 /** Declared work requirements; member scopes do not grant filesystem or execution permissions. */
 export interface TaskSpecV1 {
