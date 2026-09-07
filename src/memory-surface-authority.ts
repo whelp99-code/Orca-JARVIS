@@ -139,7 +139,8 @@ export class MemorySurfaceAuthority {
           control_request_id: requestId, control_receipt_id: receipt.receipt_id,
           command_digest: receipt.command_digest, issued_at: receipt.issued_at,
           principal_id: "principal:owner",
-          expires_at: attempt.confirmation_expires_at ?? attempt.expires_at,
+          expires_at: new Date(Math.min(Date.parse(receipt.expires_at), Date.parse(attempt.expires_at),
+            Date.parse(attempt.confirmation_expires_at ?? attempt.expires_at))).toISOString(),
         }, target);
         this.authority.db.prepare(
           `INSERT INTO memory_candidate_dispatch_publications(

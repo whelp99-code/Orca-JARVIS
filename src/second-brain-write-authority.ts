@@ -1,6 +1,8 @@
 import type { AuthorityDb } from "./db.js";
 import type { SecondBrainWriteRequestV1 } from "./second-brain-adapter-types.js";
 import { persistenceRow } from "./personal-persistence-values.js";
+import { memoryHash } from "./memory-candidate-values.js";
+import { hasOwnerConfirmedMemoryWriteAuthority } from "./second-brain-write-confirmation.js";
 
 function terminalAuthorityValid(
   row: Readonly<Record<string, unknown>>,
@@ -32,7 +34,8 @@ export function hasSecondBrainWriteAuthority(
   now: Date,
 ): boolean {
   const value = authority.db.prepare(
-    `SELECT c.candidate_id,c.state,c.operation,c.required_confirmation,m.candidate_digest,
+    `SELECT c.candidate_id,c.state,c.operation,c.required_confirmation,c.content_digest,c.subject_digest,c.purpose,
+      c.expires_at,m.policy_sensitivity,m.retention_days,m.candidate_digest,
       m.classification_digest,m.owner_principal,m.authority_expires_at,m.control_receipt_id,
       m.verification_evidence_id,m.created_at,m.control_command_digest,a.authority_id,a.authority_kind,
       r.state AS control_state,r.command_digest AS control_request_digest,r.expires_at AS control_expires_at,
@@ -48,7 +51,7 @@ export function hasSecondBrainWriteAuthority(
       END AS verification_revoked
      FROM memory_candidates c
      JOIN memory_candidate_classifications m ON m.candidate_id=c.candidate_id
-     JOIN memory_candidate_authority_claims a ON a.candidate_id=c.candidate_id
+     LEFT JOIN memory_candidate_authority_claims a ON a.candidate_id=c.candidate_id
        AND a.classification_digest=m.classification_digest
      LEFT JOIN control_command_requests r ON r.request_id=m.control_request_id
      LEFT JOIN control_command_receipts cr ON cr.request_id=r.request_id
@@ -73,15 +76,22 @@ export function hasSecondBrainWriteAuthority(
     && Date.parse(row["outbox_lease_expires_at"]) > now.getTime()
     && typeof row["action_request_id"] === "string" && typeof row["action_receipt_id"] === "string"
   );
-  return candidateStateValid
+  const identityValid = candidateStateValid
     && row["operation"] === request.operation
     && row["candidate_digest"] === request.candidate_digest
     && row["classification_digest"] === request.classification_digest
     && row["owner_principal"] === request.receipt["principal_id"]
+    && request.created_at === row["created_at"]
+    && request.purpose === row["purpose"] && request.sensitivity === row["policy_sensitivity"]
+    && request.retention_days === row["retention_days"]
+    && memoryHash("orca-jarvis/memory-content/v1\0", request.payload["content"]) === row["content_digest"]
+    && memoryHash("orca-jarvis/memory-subject/v1\0", request.subject) === row["subject_digest"]
+    && typeof row["expires_at"] === "string" && Date.parse(row["expires_at"]) > now.getTime();
+  if (!identityValid) return false;
+  if (row["required_confirmation"] === 1) return hasOwnerConfirmedMemoryWriteAuthority(authority, request, now);
+  return request.receipt["decision"] === "auto_staged"
     && request.receipt["issued_at"] === row["created_at"]
     && request.receipt["expires_at"] === row["authority_expires_at"]
-    && request.receipt["decision"] === (row["required_confirmation"] === 1
-      ? "owner_confirmed" : "auto_staged")
     && typeof terminalReceipt === "string" && terminalReceipt.length > 0
     && typeof row["authority_id"] === "string" && row["authority_id"].length > 0
     && typeof row["authority_expires_at"] === "string"

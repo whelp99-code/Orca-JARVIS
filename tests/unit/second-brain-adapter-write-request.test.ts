@@ -49,7 +49,7 @@ async function authorizedRequest(): Promise<{
   readonly request: Readonly<Record<string, unknown>>;
 }> {
   const database = await memoryDatabase(); databases.push(database);
-  const input = explicitMemoryInput();
+  const input = explicitMemoryInput({ subject: "wiki/example-alpha", statement: "ExampleAlpha" });
   seedMemoryAuthority(database.authority, input);
   const classification = memoryCandidateStore(database.authority).classify(input);
   const receipt = {
@@ -166,6 +166,9 @@ describe("Second Brain write-request authority adapter", () => {
       { ...request, extra: true },
       rederive({ ...request, subject: "wiki/e\u0301" }),
       rederive({ ...request, retention_days: 0 }),
+      rederive({ ...request, subject: "Different owner subject" }),
+      rederive({ ...request, payload: { content: "Different owner content" } }),
+      rederive({ ...request, retention_days: Number(request["retention_days"]) - 1 }),
       rederive({ ...request, expected_prior: { source_id: "wiki/x", source_version: `git:${"1".repeat(40)}`,
         source_digest: `sha256:${"2".repeat(64)}` } }),
       rederive({ ...request, payload: { content: "x", extra: "y" } }),
