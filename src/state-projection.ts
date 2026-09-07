@@ -3,7 +3,7 @@ import { mkdir, rename, rm, symlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { canonicalize } from "./canonical.js";
 import { AuthorityDb } from "./db.js";
-import { passiveCapabilityProbe, runDoctor } from "./doctor.js";
+import { passiveCapabilityProbe, runDoctor, type DoctorReport } from "./doctor.js";
 import type { CapabilityProbe } from "./capabilities.js";
 import { TaskTimeline } from "./recommendation-timeline.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
@@ -34,6 +34,12 @@ export async function buildCurrentState(
   options: CurrentStateOptions = {},
 ): Promise<CurrentStateProjection> {
   const doctor = await runDoctor(db, now, options.capabilityProbe ?? passiveCapabilityProbe());
+  return currentStateFromDoctor(db, doctor, now, options);
+}
+
+/** Synchronous DB projection after asynchronous health observations have completed. */
+export function currentStateFromDoctor(db: AuthorityDb, doctor: DoctorReport,
+  now: Date, options: CurrentStateOptions = {}): CurrentStateProjection {
   const stateCounts = table(db, "work_projection")
     ? db.db.prepare(
       "SELECT state,COUNT(*) AS count FROM work_projection GROUP BY state ORDER BY state",

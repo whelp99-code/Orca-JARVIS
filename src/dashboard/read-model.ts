@@ -3,7 +3,8 @@ import { canonicalize } from "../canonical.js";
 import { ControlPlane, type StoredControlCommand } from "../control-plane.js";
 import { JarvisError, type AuthorityDb } from "../db.js";
 import { LiveSupervisor, type LiveBinding } from "../live-supervisor.js";
-import { buildCurrentState } from "../state-projection.js";
+import { currentStateFromDoctor } from "../state-projection.js";
+import { passiveCapabilityProbe, runDoctor } from "../doctor.js";
 import { TaskTimeline, type TaskTimelineSummary } from "../recommendation-timeline.js";
 import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
 import { invalidClockOverview } from "./invalid-clock-overview.js";
@@ -66,13 +67,16 @@ export class DashboardReadModel {
     if (!Number.isFinite(now.getTime())) {
       return invalidClockOverview(await buildSecondBrainReadiness(this.secondBrainProbe, now));
     }
+    // An unrelated approval may commit while health probes await I/O. Guard only
+    // the synchronous DB projection, and share one provider observation with doctor.
+    const doctor = await runDoctor(this.db, now, passiveCapabilityProbe(), this.secondBrainProbe);
+    const secondBrain = doctor.second_brain;
     const before = changeCount(this.db);
-    const projection = await buildCurrentState(this.db, now);
+    const projection = currentStateFromDoctor(this.db, doctor, now);
     const tasks = new TaskTimeline(this.db).list(RECENT_TASK_LIMIT);
     const commands = new ControlPlane(this.db).list();
     const bindings = new LiveSupervisor(this.db).list();
     const portfolio = new PortfolioProjection(this.db).overview(now);
-    const secondBrain = await buildSecondBrainReadiness(this.secondBrainProbe, now);
     if (changeCount(this.db) !== before) throw new JarvisError("DASHBOARD_READ_MUTATED");
     const recent_tasks = tasks.map(toOverviewTask);
     const pending_approvals = commands.filter(isPending).map(command => toOverviewApproval(command, now));

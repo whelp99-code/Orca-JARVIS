@@ -14,6 +14,7 @@ import type { ApprovedExecutionResult } from "./approved-executor-types.js";
 import type { MemoryOutboxService } from "./memory-outbox.js";
 import type { MemoryLifecycleService } from "./memory-lifecycle-service-types.js";
 import { confirmMemoryCorrectionCandidate } from "./memory-correction-saga.js";
+import { completeMemoryRememberDecision } from "./memory-remember-confirmation.js";
 import type { SecondBrainEffectService } from "./second-brain-effect-service.js";
 import { copyPinnedRegularFile, privatePath, publishFile, removeSqliteCopy, secureBasename, secureRoot } from "./secure-filesystem.js";
 
@@ -164,6 +165,10 @@ export class ApprovedCommandExecutor {
         return { request_id: requestId, action: command.action, state: "completed", result: payload };
       }
       if (command.action === "memory.confirm") {
+        if (command.args.operation === "remember") {
+          const result = completeMemoryRememberDecision(this.authority, command, now);
+          return { request_id: requestId, action: command.action, state: "completed", result };
+        }
         confirmMemoryCorrectionCandidate(this.authority, command, now);
         return { request_id: requestId, action: command.action, state: "completed",
           result: { candidate_id: command.target.candidate_id, state: "approved" } };

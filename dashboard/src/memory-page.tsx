@@ -30,6 +30,11 @@ export function MemoryPage({ store, client }: Readonly<{ store: MemoryStore; cli
       onSelect={setSelected} /><MemoryDetail record={selected} client={client} onSettled={message => {
         setAnnouncement(message); setSelected(undefined); void store.load(); }} /></div>
     <MemoryConflicts value={snapshot.conflicts} />
-    <div className="memory-secondary"><MemoryCandidates value={snapshot.candidates} />
-      <MemoryEffects value={snapshot.effects} /></div></div>;
+    <div className="memory-secondary"><MemoryCandidates
+      key={`${snapshot.status?.privacy_epoch ?? 0}:${snapshot.candidates === undefined ? "cleared" : "loaded"}`}
+      value={snapshot.candidates} review={snapshot.review}
+      reviewMessage={snapshot.reviewMessage} client={client} enabled={snapshot.status?.mutations_enabled === true}
+      onReview={store.review} onChanged={() => {
+        if (store.getSnapshot().candidates === snapshot.candidates) void store.load(); }} />
+      <MemoryEffects value={snapshot.effects} progress={snapshot.progress} /></div></div>;
 }

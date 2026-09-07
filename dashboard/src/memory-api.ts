@@ -1,5 +1,6 @@
 import type { SessionResponse } from "./api.js";
 import { MemoryCandidatesSchema, MemoryConflictsSchema, MemoryEffectsSchema,
+  MemoryCandidateReviewSchema, MemoryCommandSchema, MemoryRememberProgressSchema,
   MemorySearchSchema, MemoryStatusSchema } from "./memory-types.js";
 
 type SessionLoader = () => Promise<SessionResponse>;
@@ -23,8 +24,24 @@ export function createMemoryClient(loadSession: SessionLoader) {
     status: async () => MemoryStatusSchema.parse(await request("/api/v1/memory/status")),
     conflicts: async (signal?: AbortSignal) => MemoryConflictsSchema.parse(await request(
       "/api/v1/memory/conflicts?state=unresolved&limit=20", { signal })),
-    candidates: async () => MemoryCandidatesSchema.parse(await request(
-      "/api/v1/memory/candidates?state=awaiting_confirmation&limit=20")),
+    candidates: async () => {
+      const pages = await Promise.all(["awaiting_confirmation", "approved"].map(async state =>
+        MemoryCandidatesSchema.parse(await request(`/api/v1/memory/candidates?state=${state}&limit=20`))));
+      const first = pages[0]; if (first === undefined) throw new Error("MEMORY_REQUEST_FAILED");
+      const items = pages.flatMap(page => page.items);
+      return { ...first, items, page: { limit: 40, returned: items.length,
+        has_more: pages.some(page => page.page.has_more), next_cursor: null } };
+    },
+    candidate: async (id: string, signal?: AbortSignal) => MemoryCandidateReviewSchema.parse(await request(
+      `/api/v1/memory/candidates/${encodeURIComponent(id)}`, { signal })),
+    candidateDecision: async (id: string, review_digest: string, decision: "confirm" | "reject") =>
+      MemoryCommandSchema.parse(await post(`/api/v1/memory/candidates/${encodeURIComponent(id)}/actions/stage-decision`,
+        { schema_version: 2, intent_id: intentId(), operation: "remember", decision, review_digest })),
+    candidateDispatch: async (id: string) => MemoryCommandSchema.parse(await post(
+      `/api/v1/memory/candidates/${encodeURIComponent(id)}/actions/stage-dispatch`,
+      { schema_version: 1, intent_id: intentId() })),
+    rememberProgress: async () => MemoryRememberProgressSchema.parse(await request(
+      "/api/v1/memory/remember-progress?limit=20")),
     effects: async () => {
       const states = ["pending_approval", "applying", "completed", "available"] as const;
       const pages = await Promise.all(states.map(async state => MemoryEffectsSchema.parse(

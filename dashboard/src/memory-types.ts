@@ -36,7 +36,20 @@ export type MemoryRecord = z.infer<typeof record>;
 export type MemoryConflicts = z.infer<typeof MemoryConflictsSchema>;
 export type MemoryCandidates = z.infer<typeof MemoryCandidatesSchema>;
 export type MemoryEffects = z.infer<typeof MemoryEffectsSchema>;
+export const MemoryCandidateReviewSchema = z.object({ schema_version: z.literal(1),
+  resource: z.literal("memory-candidate-review"), candidate_id: z.string(), operation: z.enum(["remember", "correct"]),
+  review_digest: z.string(), subject: z.string(), statement: z.string(), source_id: z.string(),
+  source_version: z.string(), sensitivity: z.string(), retention_days: z.number(), expires_at: z.string() }).strict();
+export const MemoryCommandSchema = z.object({ schema_version: z.literal(1), state: z.string(),
+  request_id: z.string(), action: z.string(), message: z.string() }).strict();
+export const MemoryRememberProgressSchema = z.object({ schema_version: z.literal(1),
+  resource: z.literal("memory-remember-progress"), generated_at: z.string(), has_more: z.boolean(),
+  items: z.array(z.object({ request_id: z.string(), state: z.string(), outbox_state: z.string().nullable(),
+    failure_code: z.string().nullable(), stored: z.boolean() }).strict()).max(100) }).strict();
+export type MemoryCandidateReview = z.infer<typeof MemoryCandidateReviewSchema>;
+export type MemoryRememberProgress = z.infer<typeof MemoryRememberProgressSchema>;
 export type MemorySnapshot = { readonly state: "loading" | "ready" | "error"; readonly status?: MemoryStatus;
   readonly search?: MemorySearch; readonly conflicts?: MemoryConflicts;
   readonly candidates?: MemoryCandidates; readonly effects?: MemoryEffects;
-  readonly message?: string };
+  readonly review?: MemoryCandidateReview; readonly progress?: MemoryRememberProgress;
+  readonly reviewMessage?: string; readonly message?: string };

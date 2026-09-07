@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { canonicalize } from "./canonical.js";
 import {
   assertPrivateSpoolRoot,
+  inspectPrivateSpoolRoot,
   openPrivateSpoolRoot,
   readPrivateSpoolFile,
   removePrivateSpoolFile,
@@ -58,6 +59,11 @@ export type MemoryCandidateReviewPublication = {
 };
 
 type SpoolRecord = MemoryCandidateReviewEnvelope;
+
+export function readExistingCandidateReview(root: string, candidateId: string): MemoryCandidateReviewEnvelope {
+  if (!CANDIDATE_ID.test(candidateId)) throw new Error("MEMORY_REVIEW_CANDIDATE_INVALID");
+  return readReviewFile(inspectPrivateSpoolRoot(root), join(root, `${candidateId.replaceAll(":", "_")}.json`));
+}
 
 const digest = (value: Omit<MemoryCandidateReviewEnvelope, "review_envelope_digest">): string =>
   `sha256:${createHash("sha256").update(REVIEW_DOMAIN).update(canonicalize(value)).digest("hex")}`;
@@ -210,4 +216,3 @@ function isReviewRecord(value: unknown): value is MemoryCandidateReviewEnvelope 
     && typeof record.confirmation_expires_at === "string"
     && typeof record.review_envelope_digest === "string" && DIGEST.test(record.review_envelope_digest);
 }
-

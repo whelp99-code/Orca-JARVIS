@@ -6,6 +6,10 @@ const utf8 = (maximum: number) => z.string().trim().min(1).refine(value => Buffe
 export const MemorySearchSchema = z.object({ schema_version: z.literal(1), query: utf8(512),
   limit: z.number().int().min(1).max(20) }).strict();
 export const MemoryDetailSchema = z.object({ schema_version: z.literal(1), record_token: token }).strict();
+export const MemoryCandidateDispatchSchema = z.object({ schema_version: z.literal(1), intent_id: intent }).strict();
+export const MemoryReviewedCandidateDecisionSchema = z.object({ schema_version: z.literal(2),
+  intent_id: intent, operation: z.literal("remember"), decision: z.enum(["confirm", "reject"]),
+  review_digest: z.string().regex(/^sha256:[0-9a-f]{64}$/) }).strict();
 export const MemoryCandidateDecisionSchema = z.discriminatedUnion("operation", [
   z.object({ schema_version: z.literal(1), intent_id: intent, operation: z.literal("remember"),
     decision: z.enum(["confirm", "reject"]) }).strict(),

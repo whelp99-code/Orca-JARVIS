@@ -5,6 +5,8 @@ import { JarvisError, type AuthorityDb } from "../db.js";
 import { MemoryCorrectionSpool, type MemoryCorrectionPublication } from "../memory-correction-spool.js";
 import { MemoryCandidateReviewSpool } from "../memory-candidate-review-spool.js";
 import { registerMemoryCandidateSpoolRoots } from "../memory-surface-authority.js";
+import { stageMemoryRememberDispatch } from "../memory-remember-dispatch.js";
+import { readCandidateReview } from "./memory-candidate-review.js";
 import type { DashboardSessionStore } from "./session.js";
 import { MemoryTokenCache, type MemoryTokenAuthority, type MemoryTokenSelection } from "./memory-token-cache.js";
 import { stageMemoryCandidateDecision,
@@ -104,6 +106,19 @@ export class MemoryMutationService {
       review: this.candidateReview, correctionSelection: (selection, epoch) =>
         this.correctionSelection(selection, epoch),
       insertTarget: (selection, target) => { this.insertTarget(selection, target); } }, input);
+  }
+  stageReviewedCandidateDecision(input: MemoryCandidateDecisionInput, reviewDigest: string) {
+    const review = readCandidateReview(this.options.authority, this.options.candidate_review_spool_root,
+      input.candidate_id, this.options.clock());
+    if (review === undefined || review.review_digest !== reviewDigest) {
+      throw new JarvisError("MEMORY_SELECTION_STALE");
+    }
+    return this.stageCandidateDecision(input);
+  }
+  stageCandidateDispatch(candidateId: string) {
+    return stageMemoryRememberDispatch(this.options.authority, candidateId, this.options.clock(), {
+      candidate_review_spool_root: this.options.candidate_review_spool_root,
+      candidate_dispatch_spool_root: this.options.candidate_dispatch_spool_root });
   }
   correctionSelection(
     input: { readonly token?: string; readonly record_revision?: string },

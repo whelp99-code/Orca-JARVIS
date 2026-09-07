@@ -19,6 +19,7 @@ export function createMemoryRuntime(options: MemoryRuntimeOptions): MemoryRuntim
     spool_root: options.effect_spool_root, candidate_review_spool_root: options.candidate_review_spool_root,
     candidate_dispatch_spool_root: options.candidate_dispatch_spool_root });
   return { read: new MemoryReadService({ authority: options.authority, adapter: options.adapter,
-    tokens, session: options.session, clock: options.clock }), mutation,
+    tokens, session: options.session, clock: options.clock,
+    candidate_review_spool_root: options.candidate_review_spool_root }), mutation,
     mutations_enabled: mutation !== undefined };
 }

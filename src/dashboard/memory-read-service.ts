@@ -1,4 +1,6 @@
 import type { AuthorityDb } from "../db.js";
+import { readCandidateReview } from "./memory-candidate-review.js";
+import { memoryRememberProgress } from "./memory-remember-progress.js";
 import { MEMORY_TOMBSTONE_GENESIS_ROOT } from "../second-brain-effect-v2.js";
 import type { SecondBrainEvidence, SecondBrainReadAdapter } from "../second-brain-adapter-types.js";
 import type { DashboardSessionStore } from "./session.js";
@@ -9,7 +11,8 @@ import { listMemoryEffects, outcomeOmissions, outcomeState, privateSensitivity, 
 
 export type MemoryReadServiceOptions = { readonly authority: AuthorityDb;
   readonly adapter: SecondBrainReadAdapter | undefined; readonly tokens: MemoryTokenCache;
-  readonly session: DashboardSessionStore; readonly clock: () => Date };
+  readonly session: DashboardSessionStore; readonly clock: () => Date;
+  readonly candidate_review_spool_root?: string };
 type SurfaceAuthoritySnapshot = MemoryTokenAuthority & {
   readonly privacy_epoch: number;
   readonly suppression_sequence: number;
@@ -22,7 +25,7 @@ export class MemoryReadService {
   private readonly authority: AuthorityDb; private readonly adapter: SecondBrainReadAdapter | undefined;
   private readonly tokens: MemoryTokenCache; private readonly session: DashboardSessionStore;
   private readonly clock: () => Date;
-  constructor(options: MemoryReadServiceOptions) {
+  constructor(private readonly options: MemoryReadServiceOptions) {
     this.authority = options.authority; this.adapter = options.adapter; this.tokens = options.tokens;
     this.session = options.session; this.clock = options.clock;
   }
@@ -142,27 +145,43 @@ export class MemoryReadService {
   candidates(state: string, limit: number) {
     const rows = this.authority.db.prepare(
       `SELECT c.candidate_id,c.candidate_kind,c.operation,c.sensitivity,c.state,c.expires_at,c.created_at,
-       m.confidence,m.retention_days,m.classification_reason,m.conflict_state
+       m.confidence,m.retention_days,m.classification_reason,m.conflict_state,m.policy_sensitivity,
+       EXISTS(SELECT 1 FROM memory_candidate_dispatch_publications p
+         WHERE p.candidate_id=c.candidate_id AND p.state='published') AS published,
+       EXISTS(SELECT 1 FROM control_command_requests r WHERE r.action='memory.outbox.dispatch'
+         AND json_extract(r.target_json,'$.candidate_id')=c.candidate_id) AS dispatched
        FROM memory_candidates c JOIN memory_candidate_classifications m ON m.candidate_id=c.candidate_id
-       WHERE c.state=? ORDER BY c.created_at,c.candidate_id LIMIT ?`,
-    ).all(state, limit) as Array<Record<string, unknown>>;
+       WHERE c.state=? AND c.expires_at>?
+         AND (c.state<>'awaiting_confirmation' OR c.confirmation_expires_at>?)
+         AND (c.state<>'approved' OR (
+           EXISTS(SELECT 1 FROM memory_candidate_dispatch_publications p
+             WHERE p.candidate_id=c.candidate_id AND p.state='published')
+           AND NOT EXISTS(SELECT 1 FROM control_command_requests r WHERE r.action='memory.outbox.dispatch'
+             AND json_extract(r.target_json,'$.candidate_id')=c.candidate_id)))
+       ORDER BY c.created_at,c.candidate_id LIMIT ?`,
+    ).all(state, this.clock().toISOString(), this.clock().toISOString(), limit) as Array<Record<string, unknown>>;
     return { schema_version: 1, resource: "memory-candidates", generated_at: this.clock().toISOString(),
       state: "ready", items: rows.map(row => ({ candidate_id: String(row["candidate_id"]),
         candidate_revision: this.tokens.revision("candidate", this.session.authenticatedSessionId(),
           String(row["candidate_id"])), kind: String(row["candidate_kind"]), operation: String(row["operation"]),
-        confidence: String(row["confidence"]), sensitivity: String(row["sensitivity"]),
+        confidence: String(row["confidence"]), sensitivity: String(row["policy_sensitivity"]),
         retention: { source: "policy", days: Number(row["retention_days"]) },
         expires_at: String(row["expires_at"]), reason: String(row["classification_reason"]),
-        conflict: String(row["conflict_state"]), provenance: "Verified JARVIS authority",
-        review_state: "unavailable", actions: [] })), page: { limit, returned: rows.length,
+        conflict: String(row["conflict_state"]), provenance: "JARVIS candidate source",
+        review_state: "unavailable", actions: row["operation"] !== "remember" ? []
+          : state === "awaiting_confirmation" && !privateSensitivity(String(row["sensitivity"]))
+            && this.options.candidate_review_spool_root !== undefined ? ["inspect"]
+            : state === "approved" && row["published"] === 1 && row["dispatched"] === 0
+              ? ["stage_dispatch"] : [] })), page: { limit, returned: rows.length,
         has_more: rows.length === limit, next_cursor: null } };
   }
   effects(operation: string, state: string, limit: number) {
     return listMemoryEffects(this.authority, this.clock, { operation, state, limit });
   }
+  rememberProgress(limit: number) { return memoryRememberProgress(this.authority, this.clock(), limit); }
   candidate(candidateId: string) {
-    const page = this.candidates("awaiting_confirmation", 100);
-    return page.items.find(item => item.candidate_id === candidateId);
+    return readCandidateReview(this.authority, this.options.candidate_review_spool_root,
+      candidateId, this.clock());
   }
   effect(requestId: string) {
     for (const operation of ["correct", "forget", "export"] as const) {

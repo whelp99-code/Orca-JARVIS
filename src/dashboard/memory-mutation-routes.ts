@@ -5,6 +5,7 @@ import type { ReconcileHub } from "./events.js";
 import { writeDashboardJson } from "./http.js";
 import type { MemoryRuntime } from "./memory-runtime.js";
 import { MemoryCandidateDecisionSchema, MemoryCorrectSchema, MemoryDetailSchema,
+  MemoryCandidateDispatchSchema, MemoryReviewedCandidateDecisionSchema,
   MemoryExportSchema, MemoryForgetSchema, MemorySearchSchema } from "./memory-validation.js";
 
 type Input = { readonly path: string; readonly body: unknown; readonly response: ServerResponse;
@@ -23,17 +24,21 @@ export async function tryHandleMemoryMutation(input: Input): Promise<boolean> {
   }
   const candidate = candidateRoute(input.path);
   if (candidate !== undefined) {
-    const parsed = MemoryCandidateDecisionSchema.safeParse(input.body); if (!parsed.success) return invalid(input);
+    const parsed = MemoryCandidateDecisionSchema.or(MemoryReviewedCandidateDecisionSchema).safeParse(input.body);
+    if (!parsed.success) return invalid(input);
     if (input.runtime.mutation === undefined) return unavailable(input);
     try {
-      const staged = input.runtime.mutation.stageCandidateDecision({
+      const decision = {
         candidate_id: candidate,
         operation: parsed.data.operation,
         decision: parsed.data.decision,
         intent_id: parsed.data.intent_id,
         token: "record_token" in parsed.data ? parsed.data.record_token : undefined,
         record_revision: "record_revision" in parsed.data ? parsed.data.record_revision : undefined,
-      });
+      };
+      const staged = parsed.data.schema_version === 2
+        ? input.runtime.mutation.stageReviewedCandidateDecision(decision, parsed.data.review_digest)
+        : input.runtime.mutation.stageCandidateDecision(decision);
       if (staged === undefined) {
         write(input, 404, error(input, "MEMORY_RESOURCE_NOT_FOUND")); return true;
       }
@@ -46,6 +51,20 @@ export async function tryHandleMemoryMutation(input: Input): Promise<boolean> {
       const status = errorValue.code === "MEMORY_CANDIDATE_EXPIRED" ? 410
         : errorValue.code === "MEMORY_REVIEW_UNAVAILABLE" ? 503 : 409;
       write(input, status, error(input, errorValue.code)); return true;
+    }
+  }
+  const dispatch = /^\/api\/v1\/memory\/candidates\/([^/]+)\/actions\/stage-dispatch$/u.exec(input.path);
+  if (dispatch?.[1] !== undefined) {
+    if (!MemoryCandidateDispatchSchema.safeParse(input.body).success) return invalid(input);
+    if (input.runtime.mutation === undefined) return unavailable(input);
+    try {
+      const staged = input.runtime.mutation.stageCandidateDispatch(decodeURIComponent(dispatch[1]));
+      input.hub.publish(["approvals", "memory.candidates.v1", "memory.effects.v1"]);
+      write(input, 202, { schema_version: 1, state: staged.state, request_id: staged.request_id,
+        action: staged.action, message: "Memory command prepared" }); return true;
+    } catch (errorValue) {
+      if (!(errorValue instanceof JarvisError)) throw errorValue;
+      write(input, 409, error(input, errorValue.code)); return true;
     }
   }
   const operation = effectRoute(input.path);

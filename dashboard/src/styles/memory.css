@@ -11,6 +11,9 @@
 .memory-detail { display: grid; gap: var(--space-4); }
 .memory-detail form, .memory-detail fieldset { display: grid; gap: var(--space-2); }
 .memory-detail textarea { min-block-size: var(--size-textarea); }
+.memory-review-text { white-space: pre-wrap; }
+.memory-secondary .record, .memory-secondary [role="status"] { overflow-wrap: anywhere; min-inline-size: 0; }
+.memory-secondary .record { display: grid; gap: var(--space-2); padding: var(--space-3); }
 .conflict-list, .conflict-list ol { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
 .conflict-list > li { display: grid; gap: var(--space-2); }
 .conflict-list ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }

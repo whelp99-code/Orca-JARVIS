@@ -23,6 +23,11 @@ export type PrivateSpoolRoot = { readonly path: string; readonly identity: Priva
 export function openPrivateSpoolRoot(path: string): PrivateSpoolRoot {
   mkdirSync(path, { recursive: true, mode: ROOT_MODE });
   chmodSync(path, ROOT_MODE);
+  return inspectPrivateSpoolRoot(path);
+}
+
+/** Bind an existing private directory without creating it or repairing its permissions. */
+export function inspectPrivateSpoolRoot(path: string): PrivateSpoolRoot {
   const stat = lstatSync(path);
   if (!stat.isDirectory() || (stat.mode & 0o077) !== 0 || !ownedByCurrentUser(stat.uid)) {
     throw new Error("MEMORY_SPOOL_ROOT_INVALID");
@@ -74,10 +79,10 @@ export function readPrivateSpoolFile(root: PrivateSpoolRoot, path: string): Buff
     const stat = fstatSync(descriptor);
     if (!stat.isFile() || stat.nlink !== 1 || (stat.mode & 0o077) !== 0
       || !ownedByCurrentUser(stat.uid)) throw new Error("MEMORY_SPOOL_FILE_INVALID");
+    return readFileSync(descriptor);
   } finally {
     closeSync(descriptor);
   }
-  return readFileSync(path);
 }
 
 export function removePrivateSpoolFile(root: PrivateSpoolRoot, path: string): void {

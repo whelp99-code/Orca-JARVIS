@@ -64,7 +64,9 @@ describe("Task 32 Memory HTTP boundary", () => {
         "053_memory_surface_authority.sql", "054_memory_export_lifecycle.sql",
         "055_memory_candidate_authority_v6.sql", "056_remote_approval_v2.sql",
         "057_memory_candidate_authority_v6.sql", "058_task_execution_binding.sql",
-        "059_task_candidate_artifacts.sql", "060_memory_outbox_control_cursor.sql"]);
+        "059_task_candidate_artifacts.sql", "060_memory_outbox_control_cursor.sql",
+        "061_task_execution_clock.sql", "062_task_candidate_certifications.sql",
+        "063_task_git_publications.sql"]);
       expect((db.db.prepare("PRAGMA table_info(memory_outbox)").all() as Array<{ readonly name: string }>)
         .some(row => row.name === "request_json")).toBe(false);
       const names = (db.db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as

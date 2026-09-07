@@ -1,4 +1,5 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
+import { JarvisError } from "../db.js";
 import { writeDashboardJson } from "./http.js";
 import type { MemoryRuntime } from "./memory-runtime.js";
 import { sessionMatchesCsrf, type DashboardSessionStore } from "./session.js";
@@ -22,6 +23,10 @@ export async function tryHandleMemoryRead(input: Input): Promise<boolean> {
     if (limit === undefined || state === undefined) return invalid(input);
     write(input, 200, input.runtime.read.candidates(state, limit)); return true;
   }
+  if (input.path === "/api/v1/memory/remember-progress") {
+    const limit = query(input.url, "limit", 20, 100); if (limit === undefined) return invalid(input);
+    write(input, 200, input.runtime.read.rememberProgress(limit)); return true;
+  }
   if (input.path === "/api/v1/memory/effects") {
     const limit = query(input.url, "limit", 20, 100); const operation = textQuery(input.url, "operation");
     const state = textQuery(input.url, "state");
@@ -30,7 +35,15 @@ export async function tryHandleMemoryRead(input: Input): Promise<boolean> {
     write(input, 200, input.runtime.read.effects(operation, state, limit)); return true;
   }
   const candidate = segment(input.path, "/api/v1/memory/candidates/");
-  if (candidate !== undefined) return resource(input, input.runtime.read.candidate(candidate));
+  if (candidate !== undefined) {
+    try { return resource(input, input.runtime.read.candidate(candidate)); }
+    catch (error) {
+      if (!(error instanceof JarvisError)) throw error;
+      write(input, error.code === "MEMORY_CANDIDATE_EXPIRED" ? 410 : 409,
+        { schema_version: 1, error: { code: error.code, message: "Candidate review unavailable",
+          request_id: input.requestId } }); return true;
+    }
+  }
   const effect = segment(input.path, "/api/v1/memory/effects/");
   if (effect !== undefined) return resource(input, input.runtime.read.effect(effect));
   return false;
