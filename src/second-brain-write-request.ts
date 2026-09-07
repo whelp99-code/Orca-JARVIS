@@ -1,7 +1,8 @@
+import { parseMemoryPlainText } from "./memory-plain-text.js";
 import { createHash } from "node:crypto";
 import type {
   SecondBrainWriteOperation,
-  SecondBrainWriteRequestV1,
+  SecondBrainRememberWriteRequest,
 } from "./second-brain-adapter-types.js";
 import { canonicalize } from "./canonical.js";
 import { snapshotMemoryEffectWriteArguments } from "./second-brain-effect-v2.js";
@@ -113,7 +114,14 @@ function parsePrior(value: unknown): Readonly<Record<string, string>> | undefine
 function parsePayload(
   value: unknown,
   operation: SecondBrainWriteOperation,
+  multiline = false,
 ): Readonly<Record<string, string>> | undefined {
+  if (multiline) {
+    const parsed = record(value);
+    const content = parseMemoryPlainText(parsed?.["content"]);
+    return operation === "remember" && parsed !== undefined && exact(parsed, ["content"]) && content !== undefined
+      ? Object.freeze({ content }) : undefined;
+  }
   switch (operation) {
     case "remember": {
       const parsed = stringRecord(value, ["content"], 4_096);
@@ -161,9 +169,12 @@ function operationMatches(
 export function parseSecondBrainWriteRequest(
   value: unknown,
   now = new Date(),
-): SecondBrainWriteRequestV1 | undefined {
+): SecondBrainRememberWriteRequest | undefined {
   const input = record(value);
-  if (input === undefined || !exact(input, ROOT_KEYS) || input["schema_version"] !== 1) return undefined;
+  const schema = input?.["schema_version"];
+  if (input === undefined || (schema !== 1 && schema !== 3)
+    || !exact(input, schema === 3 ? [...ROOT_KEYS, "body_profile"] : ROOT_KEYS)
+    || (schema === 3 && (input["body_profile"] !== "plain-text-v1" || input["operation"] !== "remember"))) return undefined;
   if (Buffer.byteLength(canonicalize(input), "utf8") > 16_384) return undefined;
   const operation = member(input["operation"], OPERATIONS);
   const sensitivity = member(input["sensitivity"], SENSITIVITIES);
@@ -175,7 +186,7 @@ export function parseSecondBrainWriteRequest(
     ? null : parsePrior(input["expected_prior"]);
   if (prior === undefined || !operationMatches(operation, purpose, retention, prior)) return undefined;
   const receipt = parseReceipt(input["receipt"], operation);
-  const payload = parsePayload(input["payload"], operation);
+  const payload = parsePayload(input["payload"], operation, schema === 3);
   const candidateId = text(input["candidate_id"], 79);
   const candidateDigest = text(input["candidate_digest"], 71);
   const classificationDigest = text(input["classification_digest"], 71);
@@ -192,7 +203,7 @@ export function parseSecondBrainWriteRequest(
     || expiresAt === undefined || receiptDigest === undefined) return undefined;
   if (!/^memcand:pos:v1:[0-9a-f]{64}$/.test(candidateId) || !DIGEST.test(candidateDigest)
     || !DIGEST.test(classificationDigest) || !/^memidem:pos:v1:[0-9a-f]{64}$/.test(idempotencyKey)
-    || !/^memreq:pos:v1:[0-9a-f]{64}$/.test(requestId) || !DIGEST.test(requestDigest)
+    || !new RegExp(`^memreq:pos:v${schema}:[0-9a-f]{64}$`).test(requestId) || !DIGEST.test(requestDigest)
     || !DIGEST.test(receiptDigest)
     || !/^receipt:memory:[0-9a-f]{64}$/.test(String(receipt["receipt_id"]))) return undefined;
   const receiptIssued = instant(receipt["issued_at"]);
@@ -212,15 +223,16 @@ export function parseSecondBrainWriteRequest(
   const base = Object.fromEntries(Object.entries(input).filter(
     ([key]) => key !== "request_id" && key !== "request_digest",
   ));
-  const expectedRequest = digest(DIGEST_DOMAINS.request, base);
-  if (requestDigest !== expectedRequest || requestId !== `memreq:pos:v1:${expectedRequest.slice(7)}`) {
+  const expectedRequest = digest(schema === 3 ? "orca-jarvis/memory-write-request/v3\0" : DIGEST_DOMAINS.request, base);
+  if (requestDigest !== expectedRequest || requestId !== `memreq:pos:v${schema}:${expectedRequest.slice(7)}`) {
     return undefined;
   }
-  return Object.freeze({ schema_version: 1, candidate_id: candidateId, candidate_digest: candidateDigest,
+  return Object.freeze({ ...(schema === 3 ? { schema_version: 3 as const, body_profile: "plain-text-v1" as const }
+    : { schema_version: 1 as const }), candidate_id: candidateId, candidate_digest: candidateDigest,
     classification_digest: classificationDigest, idempotency_key: idempotencyKey, request_id: requestId,
     request_digest: requestDigest, operation, subject, purpose, sensitivity, retention_days: retention,
     created_at: createdAt, expires_at: expiresAt, expected_prior: prior, receipt,
-    receipt_digest: receiptDigest, payload });
+    receipt_digest: receiptDigest, payload }) as SecondBrainRememberWriteRequest;
 }
 
 export function snapshotSecondBrainWriteArguments(

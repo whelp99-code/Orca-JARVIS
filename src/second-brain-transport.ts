@@ -8,7 +8,7 @@ import {
 	SECOND_BRAIN_PROTOCOL_VERSION, SECOND_BRAIN_READ_METHODS as READ_METHODS,
 	SECOND_BRAIN_WRITE_METHOD as WRITE_METHOD, SecondBrainTransportError,
 	isSecondBrainReadMethod as isRead, loadSecondBrainContract, normalizeSecondBrainOutcome,
-	type SecondBrainCallOptions, type SecondBrainDiagnostic, type SecondBrainDisposition,
+	type SecondBrainCallOptions, type SecondBrainContractProfile, type SecondBrainDiagnostic, type SecondBrainDisposition,
 	type SecondBrainExecFile, type SecondBrainMethod, type SecondBrainOutcome,
 	type SecondBrainTimerHandle, type SecondBrainTimers, type SecondBrainTransport,
 	type SecondBrainTransportOptions,
@@ -27,7 +27,7 @@ export {
 	normalizeSecondBrainToolSchemas,
 } from "./second-brain-transport-contract.js";
 export type {
-	SecondBrainCallOptions, SecondBrainDiagnostic, SecondBrainDisposition, SecondBrainExecFile,
+	SecondBrainCallOptions, SecondBrainContractProfile, SecondBrainDiagnostic, SecondBrainDisposition, SecondBrainExecFile,
 	SecondBrainExecFileOptions, SecondBrainMethod, SecondBrainOutcome, SecondBrainReadMethod,
 	SecondBrainTimerHandle, SecondBrainTimers, SecondBrainTransport, SecondBrainTransportOptions,
 } from "./second-brain-transport-contract.js";
@@ -46,20 +46,24 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 	private readonly stopping = new WeakMap<ChildProcess, Promise<void>>(); private activeReads = 0; private activeWrites = 0; private readonly launcher: string;
 	private readonly config: string; private readonly run: SecondBrainExecFile; private readonly resolvePath: (path: string) => string;
 	private readonly timers: SecondBrainTimers; private readonly now: () => number; private readonly deadlines: Readonly<typeof SECOND_BRAIN_DEADLINES>;
-	private readonly retries: 0 | 1; private readonly shutdownGrace: number; private readonly contract: unknown;
+	private readonly profile: SecondBrainContractProfile; private readonly retries: 0 | 1; private readonly shutdownGrace: number; private readonly contract: unknown;
 	private readonly report?: (diagnostic: SecondBrainDiagnostic) => void; constructor(options: SecondBrainTransportOptions) {
 		this.launcher = options.launcherPath ?? SECOND_BRAIN_LAUNCHER; this.config = options.configPath ?? SECOND_BRAIN_CONFIG; this.run = options.execFile ??
 			((file, args, childOptions) => nodeExecFile(file, [...args], childOptions)); this.resolvePath = options.realpath ?? realpathSync;
 		this.timers = options.timers ?? { set: (callback, delay) => setTimeout(callback, delay), clear: (handle) => clearTimeout(handle), };
 		this.now = options.clock ?? Date.now; this.deadlines = options.deadlines ?? SECOND_BRAIN_DEADLINES; this.retries = options.safeReadRetries ?? 1;
-		this.shutdownGrace = options.shutdownGraceMs ?? SECOND_BRAIN_SHUTDOWN_GRACE_MS; this.contract = loadSecondBrainContract(options.contractPath);
+		this.shutdownGrace = options.shutdownGraceMs ?? SECOND_BRAIN_SHUTDOWN_GRACE_MS; this.profile = options.contractProfile ?? SECOND_BRAIN_CONTRACT_PROFILE;
+		this.contract = loadSecondBrainContract(options.contractPath, this.profile);
 		this.report = options.onDiagnostic; } diagnostics(): readonly SecondBrainDiagnostic[] { return this.events.map((item) => ({ ...item })); } call(
 		method: SecondBrainMethod, arguments_: Readonly<Record<string, unknown>>, options: SecondBrainCallOptions = {}, ): Promise<SecondBrainOutcome> {
 		if (this.terminalFailure) return Promise.reject(this.terminalFailure); if (![...READ_METHODS, WRITE_METHOD].includes(method))
 			return Promise.reject(this.error("SECOND_BRAIN_METHOD_DENIED", "fatal"));
 		const snapshot = method === WRITE_METHOD
 			? snapshotMemoryWriteArguments(arguments_) : snapshotArguments(arguments_); if (!snapshot)
-			return Promise.reject( this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }), ); let argumentBytes: number; try {
+			return Promise.reject( this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }), );
+		if (method === WRITE_METHOD && isRecord(snapshot.request) && snapshot.request.schema_version === 3
+			&& this.profile !== "remember-schema5") return Promise.reject(this.error("SECOND_BRAIN_CONTRACT_PROFILE_REQUIRED", "fatal", { method }));
+		let argumentBytes: number; try {
 			argumentBytes = Buffer.byteLength(JSON.stringify(snapshot), "utf8"); } catch { return Promise.reject(
 				this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }), ); }
 		if (argumentBytes > SECOND_BRAIN_LIMITS.argument_bytes || (this.localArguments && isRead(method) &&
@@ -101,7 +105,7 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 		this.sequence = 0; this.buffer = Buffer.alloc(0); this.stderrBuffer = Buffer.alloc(0); this.stderrBytes = 0; this.stderrEvents = 0; this.state = "starting";
 		this.localArguments = false; this.seen.clear(); this.retired.clear(); if (this.child) throw this.error("SECOND_BRAIN_SHUTDOWN_FAILED", "fatal");
 		const child = this.run(target, [], { encoding: "buffer", shell: false,
-			env: { SB_CONFIG: this.config, SB_MCP_CONTRACT_PROFILE: SECOND_BRAIN_CONTRACT_PROFILE },
+			env: { SB_CONFIG: this.config, SB_MCP_CONTRACT_PROFILE: this.profile },
 			windowsHide: true, }); this.child = child;
 		child.stdout?.removeAllListeners("data"); child.stderr?.removeAllListeners("data"); child.stdout?.on("data", this.onData);
 		child.stderr?.on("data", this.onStderr); child.once("error", this.onStartError); child.once("close", this.onClose); try {
@@ -219,4 +223,10 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 					queued_count: 0, listener_count: 0, timer_count: 0, }); } if (failure) throw failure; } }
 
 export function createSecondBrainTransport( options: SecondBrainTransportOptions = {}, ): SecondBrainTransport {
-	return new SupervisedSecondBrainTransport(options); }
+	const profile = options.contractProfile ?? process.env["JARVIS_SECOND_BRAIN_CONTRACT_PROFILE"]
+		?? SECOND_BRAIN_CONTRACT_PROFILE;
+	if (profile !== "task32-schema4" && profile !== "remember-schema5") {
+		throw new SecondBrainTransportError("SECOND_BRAIN_CONTRACT_PROFILE_INVALID", "fatal", { generation: 0 });
+	}
+	return new SupervisedSecondBrainTransport({ ...options, contractProfile: profile });
+}

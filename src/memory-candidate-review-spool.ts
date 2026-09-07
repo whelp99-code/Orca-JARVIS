@@ -1,3 +1,4 @@
+import { parseMemoryPlainText } from "./memory-plain-text.js";
 import { createHash } from "node:crypto";
 import { readdirSync } from "node:fs";
 import { join } from "node:path";
@@ -24,7 +25,8 @@ const DIGEST = /^sha256:[0-9a-f]{64}$/u;
 const MAX_CONTENT_BYTES = 4096;
 
 export type MemoryCandidateReviewEnvelope = {
-  readonly schema_version: 1;
+  readonly schema_version: 1 | 2;
+  readonly body_profile?: "plain-text-v1";
   readonly candidate_id: string;
   readonly candidate_digest: string;
   readonly classification_digest: string;
@@ -83,7 +85,8 @@ export function createMemoryCandidateReviewEnvelope(
     throw new Error("MEMORY_REVIEW_NOT_ELIGIBLE");
   }
   const core: Omit<MemoryCandidateReviewEnvelope, "review_envelope_digest"> = {
-    schema_version: 1,
+    schema_version: input.schema_version,
+    ...(input.schema_version === 2 ? { body_profile: "plain-text-v1" as const } : {}),
     candidate_id: classification.candidate_id,
     candidate_digest: classification.candidate_digest,
     classification_digest: classification.classification_digest,
@@ -193,8 +196,10 @@ function isReviewRecord(value: unknown): value is MemoryCandidateReviewEnvelope 
     "retention_days", "created_at", "candidate_expires_at", "confirmation_expires_at",
     "review_envelope_digest",
   ];
+  if (record.schema_version === 2) keys.push("body_profile");
   if (Object.keys(record).length !== keys.length || keys.some(key => !(key in record))) return false;
-  return record.schema_version === 1
+  return (record.schema_version === 1 || (record.schema_version === 2 && record.body_profile === "plain-text-v1"
+      && record.operation === "remember" && parseMemoryPlainText(record.statement) !== undefined))
     && typeof record.candidate_id === "string" && CANDIDATE_ID.test(record.candidate_id)
     && typeof record.candidate_digest === "string" && DIGEST.test(record.candidate_digest)
     && typeof record.classification_digest === "string" && DIGEST.test(record.classification_digest)

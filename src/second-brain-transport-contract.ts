@@ -9,6 +9,7 @@ export const SECOND_BRAIN_LAUNCHER = "/home/jm/.local/state/second-brain/app/cur
 export const SECOND_BRAIN_CONFIG = "/home/jm/.config/second-brain/config.toml";
 export const SECOND_BRAIN_PROTOCOL_VERSION = "2025-11-25";
 export const SECOND_BRAIN_CONTRACT_PROFILE = "task32-schema4" as const;
+export type SecondBrainContractProfile = "task32-schema4" | "remember-schema5";
 export const SECOND_BRAIN_FRAME_BYTES = 1_048_576;
 export const SECOND_BRAIN_DEADLINES = { startup: 5_000, read: 10_000, write: 30_000 } as const;
 export const SECOND_BRAIN_LIMITS = {
@@ -68,7 +69,7 @@ export type SecondBrainExecFileOptions = {
   readonly shell: false;
   readonly env: {
     readonly SB_CONFIG: string;
-    readonly SB_MCP_CONTRACT_PROFILE: typeof SECOND_BRAIN_CONTRACT_PROFILE;
+    readonly SB_MCP_CONTRACT_PROFILE: SecondBrainContractProfile;
   };
   readonly windowsHide: true;
 };
@@ -81,6 +82,7 @@ export type SecondBrainTransportOptions = {
   readonly launcherPath?: string;
   readonly configPath?: string;
   readonly contractPath?: string;
+  readonly contractProfile?: SecondBrainContractProfile;
   readonly execFile?: SecondBrainExecFile;
   readonly realpath?: (path: string) => string;
   readonly timers?: SecondBrainTimers;
@@ -135,10 +137,15 @@ function record(value: unknown): Record<string, unknown> {
   return value;
 }
 
-export function loadSecondBrainContract(path?: string): unknown {
-  const contractPath = path ?? fileURLToPath(new URL("../contracts/second-brain-mcp-v1.json", import.meta.url));
+export function loadSecondBrainContract(
+  path?: string, profile: SecondBrainContractProfile = SECOND_BRAIN_CONTRACT_PROFILE,
+): unknown {
+  const filename = profile === "remember-schema5" ? "second-brain-mcp-v3.json" : "second-brain-mcp-v1.json";
+  const contractPath = path ?? fileURLToPath(new URL(`../contracts/${filename}`, import.meta.url));
   try {
-    consumeSecondBrainContract(contractPath);
+    if (profile !== "task32-schema4" && profile !== "remember-schema5") throw new Error("unknown profile");
+    const summary = consumeSecondBrainContract(contractPath);
+    if (summary.schemaVersion !== (profile === "remember-schema5" ? 5 : 4)) throw new Error("profile mismatch");
     return JSON.parse(readFileSync(contractPath, "utf8"));
   } catch {
     throw new SecondBrainTransportError("SECOND_BRAIN_CONTRACT_MISMATCH", "fatal", { generation: 0 });

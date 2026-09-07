@@ -192,7 +192,14 @@ export const MemoryEffectWriteRequestV2Schema = z.object({
   payload: z.union([MemoryCorrectionPayloadSchema, MemoryDeletionPayloadSchema, MemoryExportPayloadSchema]),
 }).strict();
 
+export const MemoryWriteRequestV3Schema = MemoryWriteRequestV1Schema.extend({
+  schema_version: z.literal(3), body_profile: z.literal("plain-text-v1"), operation: z.literal("remember"),
+  purpose: z.literal("personal_memory"), expected_prior: z.null(),
+  payload: z.object({ content: z.string().min(1).max(4_096) }).strict(),
+}).strict();
+
 export const MemoryWriteRequestSchema = z.discriminatedUnion("schema_version", [
   MemoryWriteRequestV1Schema,
   MemoryEffectWriteRequestV2Schema,
+  MemoryWriteRequestV3Schema,
 ]);

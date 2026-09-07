@@ -39,6 +39,10 @@ export type {
   SecondBrainWriteRequestAdapter,
   SecondBrainWriteRequestV1,
   SecondBrainWriteRequestV2,
+  SecondBrainWriteRequestV3,
+  SecondBrainRememberWriteRequest,
+  SecondBrainWriteAcceptedV3,
+  SecondBrainRememberWriteAccepted,
 } from "./second-brain-adapter-types.js";
 export { SECOND_BRAIN_SENSITIVITIES, SECOND_BRAIN_SOURCE_ID, SECOND_BRAIN_TRUST } from "./second-brain-adapter-types.js";
 

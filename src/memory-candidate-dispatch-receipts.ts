@@ -54,7 +54,9 @@ function writeRequestBase(
 ): Readonly<Record<string, unknown>> {
   const providerReceipt = providerWriteReceipt(review, receipt);
   return {
-    schema_version: 1, candidate_id: review.candidate_id, candidate_digest: review.candidate_digest,
+    schema_version: review.schema_version === 2 ? 3 : 1,
+    ...(review.schema_version === 2 ? { body_profile: "plain-text-v1" } : {}),
+    candidate_id: review.candidate_id, candidate_digest: review.candidate_digest,
     classification_digest: review.classification_digest, idempotency_key: providerWriteIdempotencyKey(review),
     operation: review.operation, subject: review.subject,
     purpose: "personal_memory", sensitivity: review.sensitivity, retention_days: review.retention_days,
@@ -72,7 +74,7 @@ export function writeRequestDigest(
   target: CorrectTarget | undefined,
 ): string {
   const base = writeRequestBase(review, receipt, target);
-  return `sha256:${createHash("sha256").update("orca-jarvis/memory-write-request/v1\0")
+  return `sha256:${createHash("sha256").update(`orca-jarvis/memory-write-request/v${review.schema_version === 2 ? 3 : 1}\0`)
     .update(canonicalize(base)).digest("hex")}`;
 }
 
@@ -81,7 +83,7 @@ export function writeRequestId(
   receipt: DispatchReceipt,
   target: CorrectTarget | undefined,
 ): string {
-  return `memreq:pos:v1:${writeRequestDigest(review, receipt, target).slice(7)}`;
+  return `memreq:pos:v${review.schema_version === 2 ? 3 : 1}:${writeRequestDigest(review, receipt, target).slice(7)}`;
 }
 
 export function receiptDigest(

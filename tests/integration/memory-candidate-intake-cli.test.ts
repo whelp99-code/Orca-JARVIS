@@ -1,6 +1,16 @@
+import { createHash } from "node:crypto";
+import { memoryRememberArtifact } from "../../src/memory-remember-artifact.js";
+import { MemoryOutboxService } from "../../src/memory-outbox.js";
+import { createSecondBrainWriteRequestAdapter } from "../../src/second-brain-write-adapter.js";
+import type { SecondBrainRememberWriteRequest, SecondBrainEvidence } from "../../src/second-brain-adapter-types.js";
+import { evidence, FixtureReader } from "../fixtures/memory-outbox-fixture.js";
 import { join } from "node:path";
 import { readFileSync, writeFileSync, readdirSync, symlinkSync } from "node:fs";
 import { describe, expect, it } from "vitest";
+import { MemoryCandidateDispatchSpool } from "../../src/memory-candidate-dispatch-spool.js";
+import { resolveSpooledDispatch } from "../../src/memory-outbox-dispatch-request.js";
+import { parseSecondBrainWriteRequest } from "../../src/second-brain-write-request.js";
+import { snapshotMemoryWriteArguments } from "../../src/memory-effect-write-request.js";
 import { MemoryCandidateStore } from "../../src/memory-candidate-store.js";
 import { execute } from "../../src/cli.js";
 import { readCandidateReview } from "../../src/dashboard/memory-candidate-review.js";
@@ -12,12 +22,13 @@ import { inferredMemoryInput, memoryPolicy, MEMORY_NOW, verifiedMemoryInput } fr
 import { closeMemoryDatabase, memoryDatabase } from "../fixtures/memory-candidate-store.js";
 import { localKey } from "../helpers.js";
 
-async function fixture() {
+async function fixture(statement?: string) {
   const database = await memoryDatabase(); const now = new Date(MEMORY_NOW);
   const file = join(database.root, "input.json"), policy = join(database.root, "policy.json");
   const roots = { candidate_review_spool_root: join(database.root, "review"),
     candidate_dispatch_spool_root: join(database.root, "dispatch") };
-  const input = inferredMemoryInput({ statement: "검토할 업무 기억입니다." });
+  const input = statement === undefined ? inferredMemoryInput({ statement: "검토할 업무 기억입니다." })
+    : { ...inferredMemoryInput(), schema_version: 2, body_profile: "plain-text-v1", statement };
   writeFileSync(file, JSON.stringify(input), { mode: 0o600 });
   writeFileSync(policy, JSON.stringify(memoryPolicy()), { mode: 0o600 });
   const run = (args = ["memory", "classify", file, policy]) => execute([...args, "--db", database.path],
@@ -25,9 +36,55 @@ async function fixture() {
   return { database, now, file, policy, roots, input, run };
 }
 
+async function proveUncertainCompletion(f: Awaited<ReturnType<typeof fixture>>, request: SecondBrainRememberWriteRequest,
+  staged: Awaited<ReturnType<ControlPlane["stage"]>>) {
+  const control = new ControlPlane(f.database.authority);
+  const approval = signCommandApproval({ schema_version: 1, receipt_id: "multiline-dispatch-approval",
+    request_id: staged.request_id, decision: "approve", command_digest: staged.command_digest,
+    signer_principal_id: "principal:owner", authenticated_session_id: "intake-session", key_id: "decision-test",
+    algorithm: "Ed25519", issued_at: f.now.toISOString(), not_before: f.now.toISOString(), expires_at: staged.expires_at,
+    nonce: "multiline-dispatch-approval", max_uses: 1, status: "issued" }, localKey(f.database.authority));
+  control.decide(approval, f.now);
+  const calls: unknown[] = [];
+  const transport = { call: async (_method: unknown, args: unknown) => { calls.push(args);
+    throw new Error("provider accepted but connection closed"); }, close: async () => {}, restart: async () => {}, diagnostics: () => [] };
+  const reader = new FixtureReader({ kind: "no_data", checked_at: f.now.toISOString(), fresh_until: staged.expires_at });
+  let current = f.now;
+  const service = new MemoryOutboxService({ authority: f.database.authority,
+    writer: createSecondBrainWriteRequestAdapter(transport, f.database.authority, () => current), reader,
+    clock: () => current, ...f.roots });
+  const command = control.claim(staged.request_id, "multiline-executor", current);
+  const saga = service.enqueue(command);
+  expect(await service.runOnce("multiline-dispatch", 1)).toMatchObject({ dispatched: 1, settled: 0 });
+  expect(calls).toEqual([{ request }]);
+  control.settle(command.request_id, command.fence, { state: "uncertain", effect_type: "memory.outbox.reconciling",
+    payload: {}, failure_code: "MEMORY_OUTBOX_RECONCILING" }, current);
+  const plan = memoryRememberArtifact(request);
+  const hash = (value: string) => createHash("sha256").update(value).digest("hex");
+  const rows: SecondBrainEvidence[] = plan.record_texts.map((text, index) => {
+    const start = 200 + index * 5000, end = start + Buffer.byteLength(text);
+    return { ...evidence(`sha256:${hash(text)}`, plan.artifact.sid), page_id: plan.artifact.page_id, excerpt: text,
+      sensitivity: request.sensitivity,
+      record: { record_id: `sbrecord:v1:${hash(String(index))}`, record_digest: `sha256:${hash(String(index))}`,
+        source_identity_full: plan.source_identity_full, content_identity_full: hash(text),
+        citation_identity_full: hash(`${plan.artifact.page_id}\0${plan.artifact.sid}\0${start}:${end}`),
+        citation_span_start: start, citation_span_end: end, source_owner_class: "provider_owned",
+        source_owner_id_digest: `sha256:${"6".repeat(64)}`, origin_label: "Second Brain", generation: {
+          provider_instance_id: "provider:test", generation_id: "generation:test", generation_manifest_digest: `sha256:${"2".repeat(64)}`,
+          vault_head: "3".repeat(40), vault_tree: "4".repeat(40), tombstone_sequence: 0, tombstone_set_root: `sha256:${"5".repeat(64)}` } } };
+  });
+  reader.readPage = async () => ({ kind: "current", checked_at: current.toISOString(), evidence: rows });
+  current = new Date(current.getTime() + 20 * 60_000);
+  expect(await service.runOnce("multiline-recovery", 1)).toMatchObject({ dispatched: 0, settled: 1, commands_reconciled: 1 });
+  expect(service.get(saga.outbox_id)?.state).toBe("settled");
+  expect(control.get(command.request_id)?.state).toBe("completed");
+  expect(calls).toHaveLength(1);
+  expect(readdirSync(f.roots.candidate_review_spool_root)).toEqual([]);
+}
+
 describe("memory candidate CLI intake", () => {
-  it("publishes exact input for review, replays without duplication, and feeds the existing owner/storage path", async () => {
-    const f = await fixture();
+  it.each([undefined, "첫 줄\n둘째 줄", "첫 줄\r\n둘째 줄", "첫 줄\r둘째 줄", "\t 앞\n\n뒤 \t"])("publishes exact input for review and feeds the owner/storage path: %j", async statement => {
+    const f = await fixture(statement);
     try {
       const bytes = readFileSync(f.file);
       const first = await f.run();
@@ -56,9 +113,39 @@ describe("memory candidate CLI intake", () => {
       expect(staged).toMatchObject({ request: { state: "pending", action: "memory.outbox.dispatch" } });
       expect(await f.run(["memory", "stage-dispatch", id])).toEqual(staged);
       expect(new ControlPlane(f.database.authority).list()).toHaveLength(2);
+      const dispatch = new MemoryCandidateDispatchSpool(f.roots.candidate_dispatch_spool_root).read(id);
+      const request = resolveSpooledDispatch({ candidate_id: id, dispatch_spool_digest: dispatch.dispatch_spool_digest,
+        roots: { review: f.roots.candidate_review_spool_root, dispatch: f.roots.candidate_dispatch_spool_root }, now: f.now });
+      expect(request.schema_version).toBe(statement === undefined ? 1 : 3);
+      expect(request.payload.content).toBe(f.input.statement);
+      expect(snapshotMemoryWriteArguments({ request })).toEqual({ request });
+      expect(parseSecondBrainWriteRequest({ ...request, payload: { content: `${request.payload.content} changed` } }, f.now)).toBeUndefined();
+      expect(parseSecondBrainWriteRequest({ ...request, schema_version: statement === undefined ? 3 : 1 }, f.now)).toBeUndefined();
       expect(readFileSync(f.file)).toEqual(bytes);
+      if (statement !== undefined) {
+        const command = new ControlPlane(f.database.authority).get((staged.request as { request_id: string }).request_id)!;
+        await proveUncertainCompletion(f, request, command);
+      }
       writeFileSync(f.file, JSON.stringify({ ...f.input, statement: "다른 내용" }));
       await expect(f.run()).rejects.toMatchObject({ code: "MEMORY_CANDIDATE_REPLAY_CONFLICT" });
+    } finally { closeMemoryDatabase(f.database); }
+  });
+
+  it.each([1, 2])("rejects reclassification across profiles after schema%s without replacing the original candidate", async firstSchema => {
+    const f = await fixture();
+    try {
+      const plain = f.input;
+      const profiled = { ...plain, schema_version: 2, body_profile: "plain-text-v1" };
+      writeFileSync(f.file, JSON.stringify(firstSchema === 1 ? plain : profiled));
+      const first = await f.run();
+      const path = join(f.roots.candidate_review_spool_root, readdirSync(f.roots.candidate_review_spool_root)[0]!);
+      const original = readFileSync(path);
+      writeFileSync(f.file, JSON.stringify({ ...(firstSchema === 1 ? profiled : plain), idempotency_key: "another-intake-key" }));
+      await expect(f.run()).rejects.toMatchObject({ code: "MEMORY_CANDIDATE_REPLAY_CONFLICT" });
+      expect(f.database.authority.db.prepare("SELECT count(*) AS n FROM memory_candidates").get()).toEqual({ n: 1 });
+      expect(readFileSync(path)).toEqual(original);
+      expect(new MemoryCandidateStore(f.database.authority, memoryPolicy(), () => f.now)
+        .classify(firstSchema === 1 ? plain : profiled).candidate_id).toBe((first.candidate as { candidate_id: string }).candidate_id);
     } finally { closeMemoryDatabase(f.database); }
   });
 

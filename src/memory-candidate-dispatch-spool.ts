@@ -22,7 +22,8 @@ const DIGEST = /^sha256:[0-9a-f]{64}$/u;
 
 export type MemoryCandidateDispatchEnvelope =
   | {
-    readonly schema_version: 1;
+    readonly schema_version: 1 | 3;
+    readonly body_profile?: "plain-text-v1";
     readonly operation: "remember";
     readonly candidate_id: string;
     readonly candidate_digest: string;
@@ -82,7 +83,7 @@ export type MemoryCandidateDispatchPublication = {
   readonly path: string;
   readonly dispatch_spool_digest: string;
   readonly operation: "remember" | "correct";
-  readonly schema_version: 1 | 2;
+  readonly schema_version: 1 | 2 | 3;
   readonly created: boolean;
 };
 
@@ -107,7 +108,8 @@ export class MemoryCandidateDispatchSpool {
     }
     const core = target === undefined
       ? {
-        schema_version: 1 as const,
+        schema_version: review.schema_version === 2 ? 3 as const : 1 as const,
+        ...(review.schema_version === 2 ? { body_profile: "plain-text-v1" as const } : {}),
         operation: "remember" as const,
         candidate_id: review.candidate_id,
         candidate_digest: review.candidate_digest,
@@ -220,11 +222,13 @@ function isDispatchRecord(value: unknown): value is MemoryCandidateDispatchEnvel
     ...base, "target_version_digest", "expected_prior_digest", "target_manifest_digest", "scope_digest",
     "expected_prior",
   ];
+  if (record.schema_version === 3) base.push("body_profile");
   const expected = record.operation === "remember" ? base : record.operation === "correct" ? correct : [];
   if (expected.length === 0 || Object.keys(record).length !== expected.length + 2
     || expected.some(key => !(key in record))) return false;
-  const schema = record.operation === "remember" ? 1 : 2;
+  const schema = record.operation === "remember" ? (record.schema_version === 3 ? 3 : 1) : 2;
   return record.schema_version === schema
+    && (schema !== 3 || record.body_profile === "plain-text-v1")
     && typeof record.candidate_id === "string" && CANDIDATE_ID.test(record.candidate_id)
     && typeof record.candidate_digest === "string" && DIGEST.test(record.candidate_digest)
     && typeof record.classification_digest === "string" && DIGEST.test(record.classification_digest)
@@ -235,7 +239,7 @@ function isDispatchRecord(value: unknown): value is MemoryCandidateDispatchEnvel
     && typeof record.control_receipt_id === "string" && record.control_receipt_id.length > 0
     && typeof record.command_digest === "string" && DIGEST.test(record.command_digest)
     && typeof record.idempotency_key === "string" && /^memidem:pos:v1:[0-9a-f]{64}$/u.test(record.idempotency_key)
-    && typeof record.request_id === "string" && /^memreq:pos:v1:[0-9a-f]{64}$/u.test(record.request_id)
+    && typeof record.request_id === "string" && new RegExp(`^memreq:pos:v${schema === 3 ? 3 : 1}:[0-9a-f]{64}$`, "u").test(record.request_id)
     && typeof record.request_digest === "string" && DIGEST.test(record.request_digest)
     && typeof record.retention_days === "number" && Number.isSafeInteger(record.retention_days)
     && typeof record.created_at === "string" && record.purpose === "personal_memory"

@@ -1,5 +1,5 @@
 import type { AuthorityDb } from "./db.js";
-import type { SecondBrainWriteRequestV1 } from "./second-brain-adapter-types.js";
+import type { SecondBrainRememberWriteRequest } from "./second-brain-adapter-types.js";
 import { persistenceRow } from "./personal-persistence-values.js";
 import { memoryHash } from "./memory-candidate-values.js";
 import { hasOwnerConfirmedMemoryWriteAuthority } from "./second-brain-write-confirmation.js";
@@ -30,7 +30,7 @@ function terminalAuthorityValid(
 
 export function hasSecondBrainWriteAuthority(
   authority: AuthorityDb,
-  request: SecondBrainWriteRequestV1,
+  request: SecondBrainRememberWriteRequest,
   now: Date,
 ): boolean {
   const value = authority.db.prepare(

@@ -71,7 +71,7 @@ describe("review source handoff after real owner confirmation", () => {
       expect(request.expires_at).toBe(f.receipt.expires_at);
       expect(request.receipt["issued_at"]).toBe(decidedAt.toISOString());
       expect(request.created_at).toBe(now.toISOString());
-      expect(hasOwnerConfirmedMemoryWriteAuthority(f.database.authority, { ...request, operation: "correct",
+      expect(hasOwnerConfirmedMemoryWriteAuthority(f.database.authority, { ...request, schema_version: 1, operation: "correct",
         expected_prior: { source_id: "wiki/other", source_version: `git:${"3".repeat(40)}`,
           source_digest: `sha256:${"4".repeat(64)}` } }, decidedAt)).toBe(false);
       const call = vi.fn<SecondBrainTransport["call"]>(async () => ({ kind: "data", value: {

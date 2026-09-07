@@ -4,11 +4,11 @@ import type { ClaimedControlCommand } from "./control-plane.js";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./db.js";
 import { parseSagaRow, parseMemoryOutboxAction, type MemoryOutboxSpoolRoots } from "./memory-outbox-values.js";
-import type { SecondBrainWriteRequestV1 } from "./second-brain-adapter-types.js";
+import type { SecondBrainRememberWriteRequest } from "./second-brain-adapter-types.js";
 
 export class MemoryOutboxRecordReader {
   constructor(private readonly authority: AuthorityDb, private readonly roots: MemoryOutboxSpoolRoots = {}) {}
-  request(outboxId: string, now: Date): SecondBrainWriteRequestV1 {
+  request(outboxId: string, now: Date): SecondBrainRememberWriteRequest {
     const row = this.authority.db.prepare(
       "SELECT candidate_id,request_id,request_digest,operation FROM memory_outbox WHERE outbox_id=?",
     ).get(outboxId) as { candidate_id: string; request_id: string; request_digest: string;

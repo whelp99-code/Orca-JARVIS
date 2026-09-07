@@ -10,12 +10,13 @@ import type {
   MemoryTombstoneHighWaterV2,
   ResolvedMemoryTargetV2,
 } from "./second-brain-effect-v2.js";
-import type { SecondBrainWriteRequestV1 } from "./second-brain-adapter-types.js";
+import type { SecondBrainWriteRequestV1, SecondBrainWriteRequestV3 } from "./second-brain-adapter-types.js";
 import type { MemoryWriteRequestSchema } from "./memory-effect-write-zod.js";
 
 export type MemoryWriteRequestV1 = SecondBrainWriteRequestV1;
 export type MemoryEffectWriteRequest = MemoryEffectWriteRequestV2;
-export type MemoryWriteRequest = MemoryWriteRequestV1 | MemoryEffectWriteRequest;
+export type MemoryWriteRequestV3 = SecondBrainWriteRequestV3;
+export type MemoryWriteRequest = MemoryWriteRequestV1 | MemoryEffectWriteRequest | MemoryWriteRequestV3;
 export type MemoryWriteRequestWire = z.infer<typeof MemoryWriteRequestSchema>;
 export type MemoryEffectAccepted = MemoryEffectAcceptedV2;
 export type MemoryEffectDelegationV1 = MemoryEffectDelegationV2;

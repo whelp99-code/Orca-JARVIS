@@ -134,21 +134,24 @@ function withoutTitles(value: unknown): unknown {
   return result;
 }
 function canonical(value: unknown): string { return JSON.stringify(withoutTitles(value)); }
-function writeInputCanonical(value: unknown): string {
+function writeInputCanonical(value: unknown, schema5 = false): string {
   const normalized = withoutTitles(value);
   if (isRecord(normalized) && (normalized.additionalProperties === false
     || normalized.additionalProperties === undefined)) delete normalized.additionalProperties;
   if (isRecord(normalized) && isRecord(normalized.$defs)) {
-    const union = normalized.$defs["MemoryWriteRequest"];
-    if (isRecord(union) && isRecord(normalized.properties)) {
+    const alias = schema5 ? "MemoryRememberWriteRequest" : "MemoryWriteRequest";
+    const union = normalized.$defs[alias];
+    if (isRecord(union) && isRecord(normalized.properties)
+      && (!schema5 || canonical(normalized.properties.request) === canonical({ $ref: `#/$defs/${alias}` }))) {
       const discriminator = union["discriminator"];
       if (isRecord(discriminator) && canonical(discriminator["mapping"]) === canonical({
         "1": "#/$defs/MemoryWriteRequestModel", "2": "#/$defs/MemoryEffectWriteRequestV2",
+        ...(schema5 ? { "3": "#/$defs/MemoryRememberRequestV3Model" } : {}),
       })) delete discriminator["mapping"];
       normalized.properties["request"] = union;
-      delete normalized.$defs["MemoryWriteRequest"];
+      delete normalized.$defs[alias];
     }
-    delete normalized.$defs["MemoryWriteRequestModel"];
+    if (!schema5) delete normalized.$defs["MemoryWriteRequestModel"];
   }
   return JSON.stringify(normalized);
 }
@@ -186,7 +189,8 @@ export function inspectFrozenSchemas(observed: unknown, contract: unknown): Sche
       || Buffer.byteLength(value.description, "utf8") > DESCRIPTION_BYTES)) return mismatch();
     const tool = contract.tools[value.name]; if (!isRecord(tool)) return mismatch();
     const inputMatches = value.name === "sb_write_request"
-      ? writeInputCanonical(value.inputSchema) === writeInputCanonical(tool.arguments)
+      ? writeInputCanonical(value.inputSchema, contract.schema_version === 5)
+        === writeInputCanonical(tool.arguments, contract.schema_version === 5)
       : inputSchemaMatches(value.inputSchema, tool.arguments);
     if (!inputMatches) return mismatch();
     const expectedOutput = outputSchema(value.name, tool);

@@ -24,7 +24,8 @@ export type MemoryClassificationContext = {
 
 function policyInputIdentityDigest(input: ParsedMemoryCandidateInput): string {
   return memoryHash(MEMORY_CANDIDATE_DIGEST_DOMAINS.policyInputIdentity, {
-    schema_version: input.schema_version,
+    // Body profiles change the request contract, never the identity of the same raw memory.
+    schema_version: 1,
     operation: input.operation,
     subject: input.subject,
     statement: input.statement,
@@ -172,7 +173,8 @@ export function computeMemoryCandidate(
   const inputDigest = memoryHash(MEMORY_CANDIDATE_DIGEST_DOMAINS.input, {
     policy_digest: policyOutcome.policy_digest,
     input: {
-      schema_version: input.schema_version, operation: input.operation, subject: input.subject, statement: input.statement,
+      schema_version: input.schema_version,
+      ...(input.schema_version === 2 ? { body_profile: input.body_profile } : {}), operation: input.operation, subject: input.subject, statement: input.statement,
       purpose: input.purpose, sensitivity: input.sensitivity, host: input.host, principal_id: input.principal_id,
       payload_fields: input.payload_fields, source: input.source, second_brain: input.second_brain, conflict: input.conflict,
     },

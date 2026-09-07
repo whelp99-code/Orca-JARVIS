@@ -99,16 +99,24 @@ export type SecondBrainWriteRequestV1 = {
   readonly receipt: Readonly<Record<string, string | number>>; readonly receipt_digest: string;
   readonly payload: Readonly<Record<string, string>>;
 };
+export type SecondBrainWriteRequestV3 = Omit<SecondBrainWriteRequestV1, "schema_version" | "operation"> & {
+  readonly schema_version: 3; readonly body_profile: "plain-text-v1"; readonly operation: "remember";
+};
+export type SecondBrainRememberWriteRequest = SecondBrainWriteRequestV1 | SecondBrainWriteRequestV3;
 export type SecondBrainWriteRequestV2 = import("./second-brain-effect-v2.js").MemoryEffectWriteRequestV2;
-export type SecondBrainWriteRequest = SecondBrainWriteRequestV1 | SecondBrainWriteRequestV2;
+export type SecondBrainWriteRequest = SecondBrainRememberWriteRequest | SecondBrainWriteRequestV2;
 export type SecondBrainWriteAcceptedV1 = {
   readonly schema_version?: 1; readonly kind: "accepted"; readonly state: "pending"; readonly candidate_id: string;
   readonly request_id: string; readonly request_digest: string; readonly idempotency_key: string;
   readonly operation: SecondBrainWriteOperation; readonly accepted_at: string; readonly inbox_path: string;
   readonly request_file_digest: string; readonly replayed: boolean;
 };
+export type SecondBrainWriteAcceptedV3 = Omit<SecondBrainWriteAcceptedV1, "schema_version" | "operation"> & {
+  readonly schema_version: 3; readonly operation: "remember";
+};
+export type SecondBrainRememberWriteAccepted = SecondBrainWriteAcceptedV1 | SecondBrainWriteAcceptedV3;
 export type SecondBrainWriteOutcome =
-  | SecondBrainWriteAcceptedV1
+  | SecondBrainRememberWriteAccepted
   | import("./second-brain-effect-v2.js").MemoryEffectAcceptedV2
   | { readonly kind: "invalid" | "unavailable" | "uncertain"; readonly code: string };
 export interface SecondBrainWriteRequestAdapter { write(value: unknown): Promise<SecondBrainWriteOutcome>; }

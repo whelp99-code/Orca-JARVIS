@@ -2,7 +2,7 @@ import type { AuthorityDb } from "./db.js";
 import type {
   SecondBrainWriteOutcome,
   SecondBrainWriteRequestAdapter,
-  SecondBrainWriteRequestV1,
+  SecondBrainRememberWriteRequest,
 } from "./second-brain-adapter-types.js";
 import { memoryEffectValidationOptions } from "./second-brain-effect-authority.js";
 import { parseMemoryEffectRequest } from "./memory-effect-write-request.js";
@@ -20,13 +20,13 @@ class BoundedSecondBrainWriteRequestAdapter implements SecondBrainWriteRequestAd
     private readonly clock: () => Date,
   ) {}
 
-  private async writeV1(request: SecondBrainWriteRequestV1): Promise<SecondBrainWriteOutcome> {
+  private async writeV1(request: SecondBrainRememberWriteRequest): Promise<SecondBrainWriteOutcome> {
     try {
       const outcome = await this.transport.call("sb_write_request", { request });
       switch (outcome.kind) {
         case "data": {
           const result = parseSecondBrainWriteResult(outcome.value);
-          if (result?.kind !== "accepted" || result.candidate_id !== request.candidate_id
+          if (result?.kind !== "accepted" || (result.schema_version ?? 1) !== request.schema_version || result.candidate_id !== request.candidate_id
             || result.request_id !== request.request_id || result.request_digest !== request.request_digest
             || result.idempotency_key !== request.idempotency_key || result.operation !== request.operation) {
             return { kind: "invalid", code: "SECOND_BRAIN_WRITE_RESULT_INVALID" };

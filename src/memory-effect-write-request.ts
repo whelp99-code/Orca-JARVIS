@@ -21,7 +21,8 @@ export function parseMemoryWriteRequestV1(
 ): MemoryWriteRequestV1 | undefined {
   const shape = MemoryWriteRequestV1Schema.safeParse(value);
   if (!shape.success) return undefined;
-  return parseSecondBrainWriteRequest(shape.data, now);
+  const parsed = parseSecondBrainWriteRequest(shape.data, now);
+  return parsed?.schema_version === 1 ? parsed : undefined;
 }
 
 export function parseMemoryEffectRequest(
@@ -41,6 +42,7 @@ export function parseMemoryWriteRequest(
   const shape = MemoryWriteRequestSchema.safeParse(value);
   if (!shape.success) return undefined;
   if (shape.data.schema_version === 1) return parseMemoryWriteRequestV1(shape.data, now);
+  if (shape.data.schema_version === 3) return parseSecondBrainWriteRequest(shape.data, now);
   return parseMemoryEffectRequest(shape.data, options);
 }
 
@@ -60,6 +62,7 @@ export function snapshotMemoryWriteArguments(
     ? (request as Record<string, unknown>).created_at
     : undefined;
   if (typeof createdAt !== "string") return undefined;
-  const parsed = parseMemoryWriteRequestV1(request, new Date(createdAt));
+  const parsed = schema === 3 ? parseSecondBrainWriteRequest(request, new Date(createdAt))
+    : parseMemoryWriteRequestV1(request, new Date(createdAt));
   return parsed === undefined ? undefined : Object.freeze({ request: parsed });
 }

@@ -3,7 +3,7 @@ import type {
   SecondBrainReadAdapter,
   SecondBrainWriteOutcome,
   SecondBrainWriteRequestAdapter,
-  SecondBrainWriteRequestV1,
+  SecondBrainRememberWriteRequest,
 } from "./second-brain-adapter-types.js";
 
 export const MEMORY_OUTBOX_STATES_V2 = [
@@ -17,7 +17,7 @@ export type MemoryExpectedArtifactV2 = {
 };
 export type MemoryOutboxActionV2 = {
   readonly command: ClaimedControlCommand;
-  readonly request: SecondBrainWriteRequestV1;
+  readonly request: SecondBrainRememberWriteRequest;
   readonly dispatch_spool_digest?: string;
   readonly expected_artifact: MemoryExpectedArtifactV2;
 };
@@ -66,7 +66,7 @@ export type MemoryOutboxServiceOptions = {
 };
 export type MemoryDispatch = {
   readonly saga: MemoryOutboxSagaV2;
-  readonly request: SecondBrainWriteRequestV1;
+  readonly request: SecondBrainRememberWriteRequest;
   readonly attempt_id: string;
   readonly invocation_digest: string;
 };

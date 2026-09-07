@@ -1,5 +1,5 @@
 import type {
-  SecondBrainWriteAcceptedV1,
+  SecondBrainRememberWriteAccepted,
   SecondBrainWriteOperation,
 } from "./second-brain-adapter-types.js";
 
@@ -30,9 +30,9 @@ function instant(value: string): boolean {
   return INSTANT.test(value) && Number.isFinite(milliseconds)
     && new Date(milliseconds).toISOString() === value;
 }
-export function parseSecondBrainWriteResult(value: unknown): SecondBrainWriteAcceptedV1 | undefined {
+export function parseSecondBrainWriteResult(value: unknown): SecondBrainRememberWriteAccepted | undefined {
   const result = record(value); const replayed = result?.["replayed"];
-  if (result === undefined || !exact(result) || result["schema_version"] !== 1
+  if (result === undefined || !exact(result) || (result["schema_version"] !== 1 && result["schema_version"] !== 3)
     || result["kind"] !== "accepted" || result["state"] !== "pending"
     || typeof replayed !== "boolean") return undefined;
   const parsedOperation = operation(result["operation"]);
@@ -43,12 +43,12 @@ export function parseSecondBrainWriteResult(value: unknown): SecondBrainWriteAcc
   if (parsedOperation === undefined || candidateId === undefined || requestId === undefined
     || requestDigest === undefined || idempotencyKey === undefined || acceptedAt === undefined
     || inboxPath === undefined || fileDigest === undefined) return undefined;
-  if (!/^memcand:pos:v1:[0-9a-f]{64}$/.test(candidateId)
-    || !/^memreq:pos:v1:[0-9a-f]{64}$/.test(requestId)
+  if ((result["schema_version"] === 3 && parsedOperation !== "remember") || !/^memcand:pos:v1:[0-9a-f]{64}$/.test(candidateId)
+    || !new RegExp(`^memreq:pos:v${result["schema_version"]}:[0-9a-f]{64}$`).test(requestId)
     || !/^memidem:pos:v1:[0-9a-f]{64}$/.test(idempotencyKey) || !DIGEST.test(requestDigest)
     || !DIGEST.test(fileDigest) || !instant(acceptedAt)
     || inboxPath !== `inbox/.requests/pending/${requestId}.json`) return undefined;
-  return { kind: "accepted", state: "pending", candidate_id: candidateId, request_id: requestId,
+  return { ...(result["schema_version"] === 3 ? { schema_version: 3 as const } : {}), kind: "accepted", state: "pending", candidate_id: candidateId, request_id: requestId,
     request_digest: requestDigest, idempotency_key: idempotencyKey, operation: parsedOperation,
-    accepted_at: acceptedAt, inbox_path: inboxPath, request_file_digest: fileDigest, replayed };
+    accepted_at: acceptedAt, inbox_path: inboxPath, request_file_digest: fileDigest, replayed } as SecondBrainRememberWriteAccepted;
 }

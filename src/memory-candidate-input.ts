@@ -1,3 +1,4 @@
+import { parseMemoryPlainText } from "./memory-plain-text.js";
 import { canonicalize } from "./canonical.js";
 import { containsMemorySecret } from "./memory-candidate-private.js";
 import { parseMemoryCandidateSource, parseMemoryReferences } from "./memory-candidate-source.js";
@@ -70,14 +71,18 @@ function conflictState(value: unknown): ParsedMemoryConflict {
 }
 
 export function parseMemoryCandidateInput(value: unknown): ParsedMemoryCandidateInput {
-  const input = memoryRecord(value, INPUT_KEYS);
-  if (input["schema_version"] !== 1) return memoryFail();
+  const raw = memoryRecord(value);
+  const multiline = raw["schema_version"] === 2;
+  const input = memoryRecord(raw, multiline ? [...INPUT_KEYS, "body_profile"] : INPUT_KEYS);
+  if (multiline ? input["body_profile"] !== "plain-text-v1" || input["operation"] !== "remember"
+    : input["schema_version"] !== 1) return memoryFail();
   const parsed: ParsedMemoryCandidateInput = {
-    schema_version: 1,
+    schema_version: multiline ? 2 : 1,
+    ...(multiline ? { body_profile: "plain-text-v1" as const } : {}),
     idempotency_key: memoryText(input["idempotency_key"], 256),
     operation: memoryMember(input["operation"], MEMORY_CANDIDATE_OPERATIONS),
     subject: memoryText(input["subject"]),
-    statement: memoryText(input["statement"], 4_096),
+    statement: multiline ? parseMemoryPlainText(input["statement"]) ?? memoryFail() : memoryText(input["statement"], 4_096),
     purpose: memoryMember(input["purpose"], PURPOSES),
     sensitivity: memoryMember(input["sensitivity"], MEMORY_CANDIDATE_POLICY_SENSITIVITIES),
     host: memoryMember(input["host"], HOSTS),

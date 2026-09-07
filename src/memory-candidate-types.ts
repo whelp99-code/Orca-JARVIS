@@ -132,7 +132,7 @@ export type ParsedSecondBrainState = { readonly state: "available" }
   | { readonly state: "no_data"; readonly checked_at: string; readonly fresh_until: string };
 export type ParsedMemoryConflict = { readonly state: MemoryCandidateConflictState; readonly references: readonly ParsedMemoryReference[] };
 export type ParsedMemoryCandidateInput = {
-  readonly schema_version: 1; readonly idempotency_key: string; readonly operation: MemoryCandidateOperation;
+  readonly schema_version: 1 | 2; readonly body_profile?: "plain-text-v1"; readonly idempotency_key: string; readonly operation: MemoryCandidateOperation;
   readonly subject: string; readonly statement: string; readonly purpose: string;
   readonly sensitivity: MemoryCandidatePolicySensitivity; readonly host: "linux-control-plane" | "linux-second-brain";
   readonly principal_id: string; readonly payload_fields: readonly string[]; readonly source: ParsedMemorySource;

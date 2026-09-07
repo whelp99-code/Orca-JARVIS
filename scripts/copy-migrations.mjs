@@ -6,3 +6,5 @@ await rm("dist/contracts", { recursive: true, force: true });
 await mkdir("dist/contracts", { recursive: true });
 await cp("contracts/second-brain-mcp-v1.json", "dist/contracts/second-brain-mcp-v1.json");
 await cp("contracts/second-brain-mcp-v1.json.sha256", "dist/contracts/second-brain-mcp-v1.json.sha256");
+await cp("contracts/second-brain-mcp-v3.json", "dist/contracts/second-brain-mcp-v3.json");
+await cp("contracts/second-brain-mcp-v3.json.sha256", "dist/contracts/second-brain-mcp-v3.json.sha256");

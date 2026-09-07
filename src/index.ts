@@ -91,6 +91,7 @@ export {
 	SecondBrainTransportError,
 	SECOND_BRAIN_PROTOCOL_VERSION,
 	type SecondBrainCallOptions,
+	type SecondBrainContractProfile,
 	type SecondBrainDiagnostic,
 	type SecondBrainDisposition,
 	type SecondBrainMethod,

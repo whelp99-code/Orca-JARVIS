@@ -3,11 +3,11 @@ import { verifyCommandApproval, type CommandApprovalReceipt } from "./control-pl
 import type { AuthorityDb } from "./db.js";
 import { providerWriteReceipt } from "./memory-candidate-dispatch-receipts.js";
 import { memoryHash } from "./memory-candidate-values.js";
-import type { SecondBrainWriteRequestV1 } from "./second-brain-adapter-types.js";
+import type { SecondBrainRememberWriteRequest } from "./second-brain-adapter-types.js";
 
 /** Consume the already committed owner decision without relabeling the source as verified. */
 export function hasOwnerConfirmedMemoryWriteAuthority(
-  authority: AuthorityDb, request: SecondBrainWriteRequestV1, now: Date,
+  authority: AuthorityDb, request: SecondBrainRememberWriteRequest, now: Date,
 ): boolean {
   // V1 confirmation does not sign the correction target. Corrections must use
   // the existing V2 target/delegation contract, never this remember authority.
