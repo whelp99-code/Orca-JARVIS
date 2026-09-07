@@ -409,3 +409,12 @@
 - 실제 빌드 CLI subprocess와 격리 Orca/GJC 프로토콜 실행 파일에서 실제 시계로9,531ms 대기 후 복구했다. 재시도 전 Orca 호출0·건강 상태 쓰기0, 별도 CLI status의 DB 커밋0, fatal 후 coordinator 호출0·intent 보존을 확인했다. 전체 fixture Orca호출10/GJC호출5, 임시 데이터 제거. 운영 제공자 인수 완료로 보고하지 않는다.
 - 증거 루트 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/`: `observation-health-accepted.log`, `observation-health-expiry.log`, `observation-health-live-probe.mjs/json`, build/lint/typecheck 로그. 상세 계약은 `docs/planning/service-observation-isolation.md`.
 - 단위 커밋 후 고정 소스 전체 verify를 실행한다. 운영 DB/서비스/release/push 변경0. P1-13 운영 인수와 전체01–25 목표는 미완료이며 자동 기억 수집 원본 차단 HOLD는 유지한다.
+
+## 2026-09-08 전체 gate 재검증과 관측 계약 회귀 정리
+
+- 직전 단위는 `bf533eb8e018a359d3bac365d41e60881da59b18` 커밋과 격리 CLI 검증으로 progress였다. 기존 전체 verify handle85154를 재사용했고 고정 소스를 유지했다. runtime/lint/typecheck/build 이후 backend의 파일 결과303개(실패5개 포함)를 출력하고 20분 TEST_RUN_TIMEOUT/exit2로 종료됐다. 나머지 backend·dashboard·acceptance·smoke는 이 실행에서 완료되지 않았다.
+- 실제 회귀1개: Orca의 새 1MB 출력 제한 오류가 개인 커넥터의 수집 예산 초과로 매핑되지 않았다. 정확한 ORCA_CLI_OUTPUT_LIMIT만 기존 collection cap과 같은 PersonalSourceBudgetError로 변환한다. 다른 오류·출력 한도는 유지했다.
+- 기존 기대값2개를 새 관측 계약에 맞게 구체화했다. 등록만 된 agent는 live0과 OBSERVATION_NOT_HEALTHY 위험을 표시하고 GET 쓰기는0이다. TIMEOUT의 unknown 처리와 일반 ORCA_CLI_FAILED의 fatal 거부를 각각 검증한다.
+- 5초를 초과한 GJC8상태/기억 권한9만료 경계는 it.each로 독립 사례화했다. 모든 기존 assertion·독립 DB·finally 정리를 유지하며 timeout 상한은 변경하지 않았다. 개인 커넥터는33/10000/150000 각각을 검사한다.
+- 최종 관련7파일68개 pass(55.61초), backend build/lint/typecheck exit0, 독립 정적 리뷰 필수 결함0. 실제 빌드 커넥터와 별도 CLI 실행 파일의33개/10000개 응답은 모두 PERSONAL_SOURCE_BUDGET_EXCEEDED(37.73/48.78ms)였다. 수정 전10000개 응답은 ORCA_CLI_OUTPUT_LIMIT이 그대로 전파돼 probe exit1로 재현됐고 수정 후 exit0이다. 임시 데이터 제거.
+- 증거: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/verify-bf533eb.log`, `observation-gate-regression.log`, `orca-connector-budget-red.log`, `orca-connector-budget-live-probe.mjs/json`. 전체 gate 통과로 보고하지 않는다. 다음은 전체 backend 실행 예산을 넘지 않는 분할 경로와 SSE 단위다. 운영 DB/서비스/release/push 변경0.

@@ -69,7 +69,7 @@ describe("dashboard HTTP overview walking skeleton", () => {
     
   });
 
-  it("serves an empty schema-versioned overview plus existing agents without mutating the database", async () => {
+  it("shows an unobserved registration as a risk with zero live agents without mutating the database", async () => {
     const db = await migratedDb();
     await registerAgent(db);
     const root = mkdtempSync(join(tmpdir(), "jarvis-dashboard-static-"));
@@ -82,12 +82,15 @@ describe("dashboard HTTP overview walking skeleton", () => {
       expect(response.statusCode).toBe(200);
       const body = parseJson(await response.body.text()) as OverviewResponse;
       expect(body.schema_version).toBe(1);
-      expect(body.cards).toEqual([]);
+      expect(body.cards.map(({ id, value }) => ({ id, value }))).toEqual([
+        { id: "active-work", value: 0 }, { id: "agents", value: 0 },
+        { id: "pending-approvals", value: 0 }, { id: "risks", value: 1 },
+      ]);
       expect(body.recent_tasks).toEqual([]);
       expect(body.pending_approvals).toEqual([]);
-      expect(body.risks).toEqual([]);
+      expect(body.risks).toEqual([{ id: "OBSERVATION_NOT_HEALTHY", severity: "high", message: "service.observation_health" }]);
       expect(body.agents).toHaveLength(1);
-      expect(body.agents[0]).toMatchObject({ provider: "codex", terminal_id: "terminal-1", incarnation_id: "incarnation-1" });
+      expect(body.agents[0]).toMatchObject({ provider: "codex", terminal_id: "terminal-1", incarnation_id: "incarnation-1", status: "unknown" });
       expect(totalChanges(db)).toBe(before);
       expect(response.headers["x-request-id"]).toBeTruthy();
     } finally {

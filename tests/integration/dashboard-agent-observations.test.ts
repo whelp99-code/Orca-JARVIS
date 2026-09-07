@@ -122,7 +122,9 @@ describe("agent connection observations", () => {
       expect((await observeBound(f.binding, async () => result({ terminals: [{ ...terminal, connected: false }] })))[0]?.connected).toBe(false);
       expect((await observeBound(f.binding, async () => result({ terminals: [{ ...terminal, incarnationId: "replacement" }] })))[0]?.connected).toBeUndefined();
       expect((await observeBound(f.binding, async () => result({ terminals: [], truncated: true })))[0]?.connected).toBeUndefined();
-      expect((await observeBound(f.binding, async () => { throw new JarvisError("ORCA_CLI_FAILED"); }))[0]?.connected).toBeUndefined();
+      expect((await observeBound(f.binding, async () => { throw new JarvisError("ORCA_CLI_TIMEOUT"); }))[0]?.connected).toBeUndefined();
+      await expect(observeBound(f.binding, async () => { throw new JarvisError("ORCA_CLI_FAILED"); }))
+        .rejects.toMatchObject({ code: "ORCA_CLI_FAILED" });
       const wrongRead = await observeBound(f.binding, async args => result(args[1] === "list"
         ? { terminals: [terminal] } : { terminal: { ...read.terminal, handle: "another-terminal" } }));
       expect(wrongRead[0]).toMatchObject({ cursor: f.binding.cursor, state: "unknown" });
@@ -132,7 +134,7 @@ describe("agent connection observations", () => {
       expect(unavailableRead[0]?.connected).toBeUndefined();
       const failedRead = await observeBound(f.binding, async args => {
         if (args[1] === "list") return result({ terminals: [terminal] });
-        throw new JarvisError("ORCA_CLI_FAILED");
+        throw new JarvisError("ORCA_CLI_TIMEOUT");
       });
       expect(failedRead[0]?.connected).toBeUndefined();
       await expect(observeBound(f.binding, async () => result({ terminals: [{}] })))

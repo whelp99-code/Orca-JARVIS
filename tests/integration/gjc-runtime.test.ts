@@ -52,10 +52,9 @@ describe("GJC runtime", () => {
     expect(dispatches[0]).toMatchObject({ continuation_id: continuation.id, kind: "dispatch", state: "pending" });
     expect(JSON.parse(dispatches[0]!.payload_json)).toMatchObject({ continuation_id: continuation.id, session_id: "policy-session" }); db.close();
   });
-  it("reconciles only structured terminal coordinator states and never creates a mock acknowledgement", async () => {
-    const nonterminal = ["queued", "delivering", "active", "waiting_for_answer", "completing"];
+  it.each(["queued", "delivering", "active", "waiting_for_answer", "completing", "failed", "cancelled", "superseded"])(
+    "reconciles structured coordinator state %s without creating a mock acknowledgement", async status => {
     const terminal = ["failed", "cancelled", "superseded"];
-    for (const status of [...nonterminal, ...terminal]) {
       const db = await initialized(); db.configureGjc(process.cwd(), "s", true);
       const intent = seedGjcDispatch(db).intent_id;
       const now = new Date(); let calls = 0;
@@ -77,7 +76,6 @@ describe("GJC runtime", () => {
         expect(calls).toBe(1);
         expect(db.db.prepare("SELECT COUNT(*) AS n FROM outbox WHERE acked_at IS NOT NULL").get()).toEqual({ n: 0 });
       } finally { service.close(); db.close(); }
-    }
   });
   it("exposes CLI service status and once lifecycle without a live Orca binding", async () => { const root = mkdtempSync(`${tmpdir()}/gjc-service-`); const db = join(root, "db.sqlite"); await execute(["db", "migrate", "--db", db]); await expect(execute(["service", "status", "--db", db])).resolves.toMatchObject({ command: "service.status", connected: false }); });
   it("service run consumes one recovered live supervisor report and resumes observation", async () => {

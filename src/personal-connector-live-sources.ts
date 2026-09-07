@@ -1,4 +1,5 @@
 import { OrcaCollectionLimitError, type OrcaReadonlyAdapter } from "./orca.js";
+import { JarvisError } from "./db.js";
 import type { TaskTimeline } from "./task-timeline.js";
 import { verifyPortfolioAuthenticatedReport } from "./dashboard/portfolio-auth.js";
 import type { PortfolioEnvironment } from "./dashboard/portfolio-contracts.js";
@@ -35,7 +36,9 @@ export class OrcaPersonalConnectorSource {
     let terminals;
     try { terminals = await this.options.adapter.list(this.options.worktree, MAX_ORCA_TERMINALS); }
     catch (error) {
-      if (error instanceof OrcaCollectionLimitError) throw new PersonalSourceBudgetError();
+      if (error instanceof OrcaCollectionLimitError || error instanceof JarvisError && error.code === "ORCA_CLI_OUTPUT_LIMIT") {
+        throw new PersonalSourceBudgetError();
+      }
       throw error;
     }
     if (terminals.length === 0) return this.empty(now, "no_data");

@@ -175,19 +175,16 @@ describe("Task 27 immutable authority provenance", () => {
     }
   });
 
-  it("enforces owner and verifier expiry at minus-one, equality, and plus-one milliseconds", async () => {
-    const classes = [
+  describe.each([
       { kind: "verified", input: () => verifiedMemoryInput({ authority_id: "boundary-verified" }), seed: seedMemoryVerification },
       { kind: "instruction", input: () => explicitMemoryInput({ authority_id: "boundary-instruction" }), seed: seedMemoryInstruction },
       { kind: "decision", input: () => approvedDecisionMemoryInput({ authority_id: "boundary-decision" }), seed: seedMemoryDecision },
-    ] as const;
-    const boundaries = [
+    ] as const)("$kind authority expiry boundaries", sourceClass => {
+    it.each([
       ["2026-08-28T12:04:59.999Z", true],
       ["2026-08-28T12:05:00.000Z", false],
       ["2026-08-28T12:05:00.001Z", false],
-    ] as const;
-    for (const sourceClass of classes) {
-      for (const [now, valid] of boundaries) {
+    ] as const)("enforces expiry at %s (valid=%s)", async (now, valid) => {
         const database = await memoryDatabase();
         try {
           const input = sourceClass.input();
@@ -200,8 +197,7 @@ describe("Task 27 immutable authority provenance", () => {
         } finally {
           closeMemoryDatabase(database);
         }
-      }
-    }
+    });
   });
 
   it("fails closed at authority expiry and revocation, and seals immutable records", async () => {

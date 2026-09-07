@@ -44,8 +44,7 @@ describe("Task 13 third remediation required contract B", () => {
     } finally { harness.db.close(); }
   });
 
-  it("rejects 10000 and 150000 Orca terminals before source traversal or spread", async () => {
-    for (const size of [10_000, 150_000]) {
+  it.each([33, 10_000, 150_000])("rejects %i Orca terminals before source traversal or spread", async size => {
       const harness = await connectorHarness();
       const payload = JSON.stringify({ ok: true, result: { terminals: Array.from({ length: size }, (_, index) => terminal(index)) } });
       const registry = createPersonalConnectorRegistry({
@@ -56,7 +55,6 @@ describe("Task 13 third remediation required contract B", () => {
         const result = await registry.inspect(connectorRequest("orca"));
         expect(result).toMatchObject({ state: "unavailable", reason: "source_budget_exceeded", values: {}, evidence_refs: [] });
       } finally { harness.db.close(); }
-    }
   });
 
   it("enforces global timeline task event evidence decision and call bounds", async () => {
