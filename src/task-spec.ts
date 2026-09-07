@@ -8,6 +8,7 @@ import { parseRequest } from "./team-proposal-input.js";
 export { parseTaskExecutionPlan, taskExecutionPlanDigest, type TaskExecutionPlanV1 } from "./task-execution-plan.js";
 export { stageTaskExecution, assertTaskExecutionBinding, type StageTaskExecutionInput } from "./task-execution-staging.js";
 export { inspectTaskExecutionRepository, prepareTaskExecutionWorkspace, type TaskRepositoryCheck } from "./task-execution-workspace.js";
+export { verifyTaskCandidate, type TaskCandidateVerification } from "./task-candidate-verification.js";
 
 /** Declared work requirements; member scopes do not grant filesystem or execution permissions. */
 export interface TaskSpecV1 {

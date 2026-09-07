@@ -61,3 +61,17 @@ Migration `058_task_execution_binding.sql`은 기존 `control_effect_attempts`�
 INSERT OR REPLACE의 명시적 식별자·operation·SQLite rowid 충돌과 UPDATE OR REPLACE의 rowid/별칭 충돌도 DB trigger로 차단한다. prepared/uncertain을 포함한 기존 operation의 자동 초기화·재예약은 제공하지 않는다. 호출 전 중단된 prepared 기록의 재개, invoking 중 종료된 프로세스의 조정, 검증 증거와 최종 정산은 후속 구현이 필요하다.
 
 이 원장은 아직 ApprovedCommandExecutor의 일반 task 실행 경로에 연결되지 않았다. provider 격리·독립 검증·원본 반영이 완성될 때까지 `task.execute`는 executable=false를 유지한다.
+
+## 후보 바이트 검증기
+
+`verifyTaskCandidate(plan, files)`는 계획에 선언된 파일과 정확히 같은 집합의 후보 바이트를 받는다. 읽기 전용 파일은 원래 digest와 일치해야 하며 파일당 4 MiB/전체 16 MiB를 넘으면 실행 전에 거부한다. 후보를 복사해 고정하고 계획 digest·파일 digest·바이트 수를 포함한 candidate digest를 만든다. 각 검증 명령은 별도 사본을 사용한다.
+
+기본 runner는 Linux `/usr/bin/bwrap`이다. `--unshare-all --unshare-user --disable-userns`로 namespace를 분리하고, 환경변수를 비우며, 현재 Node 실행 파일과 시스템 `/usr/bin`, `/usr/lib`, 선택적 `/usr/lib64`만 읽기 전용으로 제공한다. 후보 데이터는 별도 pipe에서 `--ro-bind-data`로 복사한다. 호스트 후보/원본 디렉터리·홈·인증 파일·AuthorityDb를 mount하지 않는다. `/workspace`와 root는 읽기 전용이고 `/tmp`는 64 MiB의 별도 tmpfs다. 네트워크 namespace도 분리한다.
+
+계획의 argv/cwd를 직접 실행하며 shell 문자열로 재해석하지 않는다. Node는 `/runtime/node`에 있어 `node` 명령으로 접근한다. 다른 도구는 제공된 시스템 경로 안에 있어야 한다. 후보 파일 mode는 0400이므로 스크립트는 명시적 인터프리터로 실행한다. 의존성 다운로드·호스트 node_modules 공유는 제공하지 않는다.
+
+모든 검증 명령에 하나의 시간/출력 예산을 적용한다. stdout/stderr 원문을 결과에 포함하지 않고 각각의 digest와 바이트 수만 반환한다. 시간/출력 초과 시 bwrap 프로세스 그룹에 SIGKILL을 보내고 stdio close 뒤 반환한다. PID namespace와 die-with-parent는 세션을 분리한 자손 종료에 사용한다. 실제 시험에서 자손 1개가 종료 후 Z로 관측됐으므로 호스트의 즉시 reap은 보장하지 않는다.
+
+결과는 `checks_passed` 또는 `checks_failed`다. 함수 자체는 승인 서명을 검사하거나 완료 증거에 서명하지 않는다. 작업 승인, provider가 반환한 후보와의 결합, 독립 verifier 신원/키, 원본 반영 및 workflow 정산을 연결해야 최종 완료 증거가 된다. 이 함수를 호출할 수 있다는 사실은 task.execute 활성화 조건을 충족하지 않는다.
+
+실행기 조사에서는 설치된 CLI help와 [공식 Codex 설정 문서](https://learn.chatgpt.com/docs/config-file/config-reference)를 대조했다. 문서는 command network 규칙이 web search/apps/MCP에 적용되지 않는다고 명시한다. 따라서 CLI의 network 옵션 하나만으로 전체 provider의 외부 효과를 차단했다고 보지 않는다. 이번 구현·실측 범위는 독립 검증 명령의 bwrap 실행이며 provider 본체의 인증·통신·도구 격리는 후속이다.

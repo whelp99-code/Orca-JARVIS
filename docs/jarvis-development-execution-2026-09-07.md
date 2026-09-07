@@ -158,3 +158,14 @@
 - 실제 Node 자식 프로세스 2개가 같은 WAL DB에서 서로 다른 승인 요청으로 경쟁하여 invoking 1개/rejected 1개를 확인했다. 두 프로세스를 SIGKILL한 뒤 DB를 다시 열어 세 번째 승인 요청도 거부되며 원장 1개가 유지됨을 확인했다. 실제 agent 호출은 0회다.
 - 최종 제품 변경 후 typecheck/lint/build:backend exit 0. 공통 reviewability는 2개 중 1개 실패했다: 병행 작업의 index.ts 252 nonblank, memory-outbox-store.ts 270 nonblank, memory-remember-artifact.ts 최대 줄 길이 202, second-brain-adapter.ts 267 nonblank. 이 관측의 다른 작업 변경은 이번 커밋에 포함하지 않는다.
 - 보류/후속: 원장만으로 provider를 활성화하지 않는다. prepared 중단의 안전한 재개, invoking 종료의 조정, OS 격리·인증, 실제 agent 실행, 독립 검증·원본 반영, workflow 완료 증거와 UI 동선은 계속 미완료다. task.execute는 executable=false이고 전체 01–25 목표와 실사용 인수는 유지한다. 운영 migration/서비스 교체는 수행하지 않았다.
+
+## 2026-09-08 P0-10/11 — 실제 Linux 후보 검증 명령
+
+- 이전 목표 턴은 입력 검사·영속 operation 구현 커밋으로 진행했다. 이번 재개에서 HEAD/dirty 상태를 확인하고 실제 provider/검증 격리 경로를 조사했다. `codex exec --help`, `claude --help`, `bwrap --help`를 확인했다. 예전 형식의 `codex sandbox linux --help`는 exit 101이었고 현재 `codex sandbox --help`에서 linux 하위 명령이 없는 형식을 확인했다. 실제 provider 호출은 하지 않았다.
+- 설치된 bubblewrap 0.11.1의 namespace 실행 `/bin/true`는 exit 0이었다. 새 검증기는 읽기 전용 런타임과 후보 바이트의 ro-bind-data 사본만 제공하며 네트워크/홈/호스트 작업공간/인증·DB 접근을 분리한다. 후보 입력 집합/read digest를 검사하고 각 명령에 별도 Buffer를 전달한다. 결과에 plan/candidate digest와 exit/stdout/stderr digest·바이트 수를 결합한다.
+- 모든 명령에 시간·stdout+stderr 합산 출력 예산을 적용한다. 늦은 성공·음수/비정상 결과·과도한 출력을 거부하며 runner의 임의 오류 문구는 고정 코드로 바꾼다. checks_passed는 해당 후보의 명령 결과이고 서명된 작업 완료가 아니다.
+- 자동 검증은 새 후보 검증 13개, 기존 계획 25개, 파일시스템 16개 — 중복 제외 3파일 54개 통과. 최초 typecheck는 readonly fixture 변경 6개 오류였으며 새 mutable 사본을 구성해 수정했다. 최종 typecheck/lint exit 0, 제품 변경 후 build:backend exit 0. 독립 정적 리뷰 필수 지적 0건이다.
+- 실제 첫 후보 실행에서 TASK_SANDBOX_INPUT_FAILED를 관측했다. 합성 입력으로 stderr를 별도 조사해 `--disable-userns requires --unshare-user`를 확인하고 명시적 --unshare-user를 추가했다. 다음 smoke는 합성 argv 안의 줄바꿈을 계획 계약이 거부했다. 같은 코드를 한 줄 argv로 바꿨으며 계획 검증은 완화하지 않았다.
+- 최종 실제 smoke 6개: 정상 Node syntax, 중첩 두 파일·상대 cwd 검증, syntax 실패 exit 1, 호스트 sentinel/proc/env/loopback 접근 및 workspace 변경 차단, 1초 timeout, 출력 상한. 6개 모두 예상 결과와 일치했다. 별도 detached 손자 시험은 stdio 닫기·세션 분리 후 실제 1개를 /proc에서 확인했고, timeout 뒤 Z를 관측했다. 실행 종료 증거이며 즉시 reap 완료는 아니다. 결과는 `.runtime-tmp/task-sandbox-smoke.json`, `.runtime-tmp/task-sandbox-descendant-smoke.json`이다. 고유 실제 시나리오 7개, agent 호출 0회다.
+- 병행 작업 커밋 c7c5182 이후 공통 reviewability 재실행은 2개 중 1개 실패: index.ts 252 nonblank, memory-outbox-store.ts 270 nonblank, memory-remember-artifact.ts 최대 줄 202, second-brain-adapter.ts 274 nonblank. 해당 memory 코드 변경은 이번 작업에 섞지 않았다. 전체 gate나 운영 적용 완료를 주장하지 않는다.
+- 남은 경계: provider 인증·통신·도구 격리, 승인 재검증과 실제 호출 연결, 후보 파일 수집과 독립 verifier 신원/서명, 원본 반영·workflow 완료, UI 동선. 호스트에서 종료된 자손의 회수 및 배포 런타임 준비 상태도 운영 연결 시 검증한다. task.execute는 비활성이며 전체 01–25 목표를 계속 유지한다.
