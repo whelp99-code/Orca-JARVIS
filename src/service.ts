@@ -21,7 +21,6 @@ function coordinatorTurn(reply: Record<string, unknown>, sessionId: unknown, tur
 }
 
 type Intent = { intent_id: string; kind: "sync" | "dispatch" | "answer"; payload_json: string; idempotency_key: string; lease_fence: number };
-/** Small in-process supervisor. It is deliberately not a launchd/launchctl integration. */
 export class GjcRuntimeService {
   constructor(
     private readonly db: AuthorityDb,
@@ -37,17 +36,28 @@ export class GjcRuntimeService {
       count: number;
     }>;
     const runtime = this.db.db.prepare("SELECT pid,last_heartbeat_at,last_error_code FROM gjc_runtime_status WHERE id=1").get() ?? null;
+    const intents = Object.fromEntries(rows.map((row) => [row.state, Number(row.count)]));
+    const bindings = this.db.db.prepare("SELECT COUNT(*) AS count FROM live_supervisor_bindings")
+      .get() as { count: number };
     return {
       connected: Boolean(config?.operational),
       config,
       runtime,
-      intents: Object.fromEntries(rows.map((row) => [row.state, Number(row.count)])),
+      intents,
+      work_readiness: {
+        coordinator_configured: config !== null,
+        coordinator_operational: Boolean(config?.operational),
+        observation_bindings: bindings.count,
+        pending_intents: intents.pending ?? 0,
+        uncertain_intents: intents.uncertain ?? 0,
+      },
     };
   }
   async once(now = new Date().toISOString()): Promise<{ connected?: boolean; processed: string | null; state: string | null }> {
     const config = this.db.gjcConfig();
     const runtimeFence = this.db.claimGjcRuntimeLease(this.worker, now);
     if (runtimeFence === null) return { processed: null, state: "leased" };
+    this.db.recoverExpiredGjcIntents(now);
     this.db.recordGjcRuntimeStatus(null, now);
     if (this.supervisorCycle) await this.supervisorCycle();
     if (!config?.operational) return { connected: false, processed: null, state: "disconnected" };

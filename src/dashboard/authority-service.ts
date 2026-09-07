@@ -117,7 +117,7 @@ export function stageDashboardCancel(input: CancelInput): StoredControlCommand {
 
 export function stageDashboardRetry(input: RetryInput): StoredControlCommand {
   const parsed = parseRetryRequest(input.body);
-  const source = new ControlPlane(input.db).list().find((item) => item.request_id === input.sourceRequestId);
+  const source = new ControlPlane(input.db).get(input.sourceRequestId);
   if (source === undefined || source.state !== "failed" || controlActionDescriptor(source.action)?.executable !== true) {
     throw new JarvisError("RETRY_NOT_ALLOWED");
   }

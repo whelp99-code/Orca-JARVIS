@@ -53,6 +53,28 @@ export abstract class GjcIntentAuthorityDb extends GjcConfigurationAuthorityDb {
 		});
 		return intentId;
 	}
+	recoverExpiredGjcIntents(now = timestamp()): number {
+		if (!Number.isFinite(Date.parse(now))) throw new JarvisError("GJC_LEASE_INVALID");
+		return this.atomic(() => {
+			const expired = this.db.prepare(
+				"SELECT intent_id,kind,lease_fence FROM gjc_intents WHERE state='claimed' AND lease_expires_at<=?",
+			).all(now) as Row[];
+			for (const row of expired) {
+				// Reads can be repeated. A lost mutation acknowledgement cannot prove non-delivery.
+				const state = row.kind === "sync" ? "pending" : "uncertain";
+				const failureCode = state === "uncertain" ? "GJC_CLAIM_EXPIRED_UNCERTAIN" : null;
+				this.db.prepare(
+					"UPDATE gjc_intents SET state=?,failure_code=?,lease_owner=NULL,lease_expires_at=NULL WHERE intent_id=?",
+				).run(state, failureCode, row.intent_id);
+				this.db.prepare(
+					"INSERT INTO gjc_intent_events(intent_id,event_type,payload_json,created_at) VALUES(?,?,?,?)",
+				).run(row.intent_id, "lease_expired", json({
+					state, fence: row.lease_fence, failure_code: failureCode,
+				}), now);
+			}
+			return expired.length;
+		});
+	}
 	claimGjcIntent(
 		intentId: string,
 		worker: string,
@@ -61,11 +83,7 @@ export abstract class GjcIntentAuthorityDb extends GjcConfigurationAuthorityDb {
 	): Record<string, unknown> | null {
 		if (!worker || leaseMs < 1) throw new JarvisError("GJC_LEASE_INVALID");
 		return this.atomic(() => {
-			this.db
-				.prepare(
-					"UPDATE gjc_intents SET state='pending',lease_owner=NULL,lease_expires_at=NULL WHERE state='claimed' AND lease_expires_at<=?",
-				)
-				.run(now);
+			this.recoverExpiredGjcIntents(now);
 			const row = this.db.prepare("SELECT * FROM gjc_intents WHERE intent_id=?").get(intentId) as Row | undefined;
 			if (!row) throw new JarvisError("GJC_INTENT_NOT_FOUND");
 			if (row.state !== "pending") return null;

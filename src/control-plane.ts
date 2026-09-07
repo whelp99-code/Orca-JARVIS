@@ -8,7 +8,8 @@ import { MemoryProjectionAuthority } from "./memory-projection-authority.js"; im
 } from "./control-plane-contract.js"; const validOutcomeStates = new Set(["completed", "failed", "uncertain"]);
 function finiteDate(date: Date, code: string): number { const time = date.getTime(); if (!Number.isFinite(time)) throw new JarvisError(code); return time; }
 function finiteIso(value: string): number { const time = Date.parse(value); return Number.isFinite(time) ? time : Number.NaN; } export class ControlPlane {
-  constructor(private readonly authority: AuthorityDb) {} private event(input: ControlEventInput): void {
+  constructor(private readonly authority: AuthorityDb) {}
+  private event(input: ControlEventInput): void {
     const created = input.created_at ?? new Date().toISOString(); const payloadJson = canonicalize(input.payload); this.authority.db .prepare(
         `INSERT INTO control_events(
           event_id,schema_version,event_type,source,subject,correlation_id,causation_id,
@@ -196,12 +197,36 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
         event_type: previous === "claimed" ? "control.command.cancelled_uncertain" : "control.command.cancelled", source: actor, subject: input.request_id,
         correlation_id: input.request_id, causation_id: causation,
         payload: { revocation_id: revocationId, receipt_id: receipt?.receipt_id ?? null, previous_state: previous, state: next, reason: input.reason },
-        created_at: input.revoked_at, }); }); tx(); } list(): StoredControlCommand[] {
+        created_at: input.revoked_at, }); }); tx(); }
+  get(requestId: string): StoredControlCommand | undefined {
+    const row = this.authority.db.prepare("SELECT * FROM control_command_requests WHERE request_id=?")
+      .get(requestId) as Record<string, unknown> | undefined;
+    if (row === undefined || !this.visibleCommand(row, new MemoryProjectionAuthority(this.authority))) return undefined;
+    return this.storedCommand(row);
+  }
+
+  list(): StoredControlCommand[] {
     const projections = new MemoryProjectionAuthority(this.authority);
-    return (this.authority.db.prepare("SELECT * FROM control_command_requests ORDER BY requested_at,request_id").all() as Array<Record<string, unknown>>)
-      .filter(row => !projections.isSuppressed({ kind: "control_payload", id: String(row.request_id), component_id: String(row.request_id) })).map(
-      (row) => ({ schema_version: 1, request_id: String(row.request_id), action: String(row.action), action_level: Number(row.action_level) as ActionLevel,
-        target: JSON.parse(String(row.target_json)) as Record<string, unknown>, args: JSON.parse(String(row.args_json)) as Record<string, unknown>,
-        command_digest: String(row.command_digest), reversible: Boolean(row.reversible), requested_by: String(row.requested_by),
-        requested_at: String(row.requested_at), expires_at: String(row.expires_at), nonce: String(row.nonce), state: String(row.state) as ControlCommandState,
-      }), ); } }
+    return (this.authority.db.prepare("SELECT * FROM control_command_requests ORDER BY requested_at,request_id")
+      .all() as Array<Record<string, unknown>>)
+      .filter(row => this.visibleCommand(row, projections)).map(row => this.storedCommand(row));
+  }
+
+  private visibleCommand(row: Record<string, unknown>, projections: MemoryProjectionAuthority): boolean {
+    return !projections.isSuppressed({
+      kind: "control_payload", id: String(row.request_id), component_id: String(row.request_id),
+    });
+  }
+
+  private storedCommand(row: Record<string, unknown>): StoredControlCommand {
+    return {
+      schema_version: 1, request_id: String(row.request_id), action: String(row.action),
+      action_level: Number(row.action_level) as ActionLevel,
+      target: JSON.parse(String(row.target_json)) as Record<string, unknown>,
+      args: JSON.parse(String(row.args_json)) as Record<string, unknown>,
+      command_digest: String(row.command_digest), reversible: Boolean(row.reversible),
+      requested_by: String(row.requested_by), requested_at: String(row.requested_at),
+      expires_at: String(row.expires_at), nonce: String(row.nonce), state: String(row.state) as ControlCommandState,
+    };
+  }
+}

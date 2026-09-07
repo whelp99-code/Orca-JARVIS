@@ -117,7 +117,7 @@ export async function executeApprovedWorkflowStage(context: Context): Promise<Ap
   if (ACTIVE_WORKFLOW_STAGES.has(context.input.requestId)) {
     throw new JarvisError("RECOMMENDATION_WORKFLOW_EXECUTOR_CONFLICT");
   }
-  const stored = context.control.list().find(item => item.request_id === context.input.requestId);
+  const stored = context.control.get(context.input.requestId);
   if (stored === undefined || stored.action !== "workflow.start") {
     throw new JarvisError("RECOMMENDATION_WORKFLOW_EXECUTOR_INVALID");
   }

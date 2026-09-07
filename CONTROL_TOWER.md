@@ -831,3 +831,17 @@ U076 하드닝 9개 경로를 이미 보존하고 있었다. 워커는 중복 �
 - 2026-07-28 — `task_0a6b263891e4` (R14 AI review honesty QA, 2026-07-13 생성) `failed` 종결.
   사유: Antigravity 쿼터로 미실행, `retryAfter` 15일 경과, 대상 리포가 그 사이 다른 브랜치로 이동해 픽스처 전제가 무효
 - 2026-07-28 — `JARVIS Morning Brief` 자동화 재활성화. RRULE 재적용으로 `nextRunAt` 을 과거(07-27 09:00)에서 **2026-07-29 09:00 KST** 로 정정
+
+## 2026-09-07 — 실행 복구 및 조회 최적화 (로컬 수정)
+
+- 사용자 요청: 코드 정리·최적화 및 자비스 업무 수행 개선.
+- 운영 읽기 실측: service/dashboard `active/running`; GJC 설정·관찰 바인딩·work_items·
+  control requests·workflow runs·GJC intents 각각 0행.
+- 변경: 만료 GJC sync 재개, 만료 dispatch/answer 자동 재전송 차단 및 복구 이벤트 기록;
+  ControlPlane 단건 조회 4개 호출 경로 교체; service readiness 필드; verify 중복 build 1회 제거.
+- 단건 조회 합성 표본: 메모리 DB 1,000행, 25회 중앙값 12.027ms → 0.030ms.
+- backend 전체 실행: 1,815 pass / 2 fail. 실패 2건 조치 후 신규 회귀 포함 12/12 pass.
+  최종 dashboard 136/136 pass, lint/typecheck/build/acceptance/CLI smoke exit 0.
+- 독립 정적 리뷰 finding 0건. 전체 backend 재실행은 하지 않음.
+- 운영 반영·외부 작업 전송 없음. 대시보드 작업→GJC 전달 연결은 미구현 상태.
+- 상세: `docs/runtime-maintenance.md`; 결정: `../dev-wiki/decisions/2026-09-07-jarvis-runtime-recovery-and-query.md`.

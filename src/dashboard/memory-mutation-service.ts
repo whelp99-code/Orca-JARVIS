@@ -53,7 +53,7 @@ export class MemoryMutationService {
     ).get(family) as { readonly attempt_id: string; readonly attempt_generation: number;
       readonly control_request_id: string; readonly state: string } | undefined;
     if (prior !== undefined && ["staged", "approved", "claimed", "reconciling"].includes(prior.state)) {
-      return this.control.list().find(item => item.request_id === prior.control_request_id);
+      return this.control.get(prior.control_request_id);
     }
     if (prior !== undefined && prior.state !== "receipt_rejected" && prior.state !== "expired") return undefined;
     const at = this.options.clock(); const expires = new Date(at.getTime() + 15 * 60_000);

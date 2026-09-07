@@ -97,8 +97,8 @@ input: MemoryCandidateDecisionInput,
     `SELECT attempt_id,attempt_generation,state FROM memory_candidate_decision_attempts
      WHERE family_digest=? ORDER BY attempt_generation DESC LIMIT 1`,
   ).get(family) as { readonly attempt_id: string; readonly attempt_generation: number; readonly state: string } | undefined;
-  if (prior !== undefined && ["staged", "approved"].includes(prior.state)) {
-    const existing = host.control.list().find(item => item.request_id === active?.control_request_id);
+  if (active !== undefined && prior !== undefined && ["staged", "approved"].includes(prior.state)) {
+    const existing = host.control.get(active.control_request_id);
     if (existing !== undefined) return existing;
   }
   const generation = (prior?.attempt_generation ?? 0) + 1;
