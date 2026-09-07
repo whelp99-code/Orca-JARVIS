@@ -2,6 +2,7 @@ import { JarvisError } from "./db.js";
 import { memoryAuthority, memoryConfirm, memoryDedicatedEffect,
   memoryGenerationRollback, memoryOutboxDispatch } from "./memory-control-actions.js";
 import { REMOTE_LIFECYCLE_ACTIONS } from "./remote-approval-actions.js";
+import { validateTaskExecutionAction } from "./task-execution-plan.js";
 
 export interface RuntimeControlActionInput {
   action: string;
@@ -173,6 +174,7 @@ function evidenceNegativeRecord(input: RuntimeControlActionInput): void {
 }
 
 const descriptors: Record<string, Descriptor> = {
+  "task.execute": { action: "task.execute", minimum_level: 3, executable: false, validate: validateTaskExecutionAction },
   "database.backup": { action: "database.backup", minimum_level: 2, executable: true, validate: databaseBackup },
   "database.restore_drill": { action: "database.restore_drill", minimum_level: 1, executable: true, validate: databaseRestoreDrill },
   "state.project": { action: "state.project", minimum_level: 1, executable: true, validate: stateProject },

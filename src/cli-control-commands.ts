@@ -9,6 +9,7 @@ import {
   type ControlCommandRequestInput,
 } from "./control-plane.js";
 import { TaskTimeline } from "./task-timeline.js";
+import { stageTaskExecution, type StageTaskExecutionInput } from "./task-execution-staging.js";
 
 export async function executeControlCommand(
   context: CliCommandContext,
@@ -21,6 +22,10 @@ export async function executeControlCommand(
   }
   if (command === "control") {
     const control = new ControlPlane(db);
+    if (subcommand === "plan-task" && argument) {
+      const input = typedObject(await jsonFile<StageTaskExecutionInput>(argument));
+      return { ok: true, command: "control.plan-task", request: stageTaskExecution(db, input, commandNow(context)) };
+    }
     if (subcommand === "request" && argument) {
       const input = typedObject(await jsonFile<ControlCommandRequestInput>(argument));
       return { ok: true, command: "control.request", request: control.stage(input) };

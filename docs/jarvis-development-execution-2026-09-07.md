@@ -12,7 +12,7 @@
 | 01 | GJC 오류의 비밀정보 제거 | 구현·독립 리뷰 완료; 자동 32개 및 실제 자식 프로세스 3개 검증 통과; 실제 coordinator 인수는 후속 |
 | 02 | runtime 소유권 | 구현·독립 리뷰 완료; 관련 자동 41개와 실제 프로세스/CLI 2개 시나리오 통과 |
 | 03 | 만료 정산 | 구현·독립 정적 리뷰 완료; 만료/rollback 10개 및 기존 관련 25개 통과 |
-| 04 | 작업 제약·완료 기준을 승인부터 결과까지 보존 | 제안→승인→workflow 저장 구현; 실제 dispatch·검증 연결은 10–11과 함께 후속 |
+| 04 | 작업 제약·완료 기준을 승인부터 결과까지 보존 | TaskSpec 보존 및 기계적 실행계획의 별도 승인 요청 구현; 실제 dispatch·검증 연결은 후속 |
 | 05–06, 08 | 상태·집계·읽기 부작용 | 대기 |
 | 09 | 만료된 workflow 시작 재시도 | 원래 마감/예산 재검증, 재계획·재승인 안내 구현; HTTP 및 브라우저 검증 완료 |
 | 07 | retention 결과 정합성 | 어댑터 미설정 실패, policy 전달, 원자적 처리 구현; 실제 정책별 어댑터·스케줄은 12 후속 |
@@ -124,3 +124,15 @@
 - 함께 실행한 공통 reviewability는 2개 중 1개 실패: 동시 작업의 `src/second-brain-adapter.ts`가 267 nonblank 행으로 상한 250을 초과했다. 전체 실행 결과는 55개 중 54 pass/1 fail이며 이 실패를 GJC 검증 통과로 덮지 않는다. 해당 어댑터와 generation/read 테스트의 동시 변경을 보존한다.
 - 제품 변경 후 `npm run typecheck && npm run lint && npm run build:backend`: exit 0. 테스트 추가 후 typecheck는 통과했고 fixture의 process import 누락으로 lint가 3개 오류를 보고했다. 명시적 `node:process` import 추가 후 `npm run lint`: exit 0.
 - 보류/후속: dashboard TaskSpec에는 일반 실행자의 세션·허용 파일 경로를 강제할 계약과 독립 완료 증거 연결이 아직 없다. 자연어 prompt 전달만으로 실행 범위를 강제했다고 주장하지 않는다. 실제 에이전트 파일 변경 1건의 입력→승인→실행→검증 인수와 운영 활성화는 미완료다. 이 선행 수정은 전체 목표04/10/11/21 완료 판정이 아니다.
+
+## 2026-09-07 P0-04/11 — 일반 작업의 기계적 실행계획과 별도 승인
+
+- 정적 설계 검토 결과, 일반 작업은 ControlPlane/ApprovedCommandExecutor/ControlEffectAttempts에 연결한다. recommendation-work의 추천 전용 identity·provider scope·원장에 가짜 추천을 넣는 방식을 보류했다. 설계와 후속 활성화 조건은 `docs/planning/task-execution-contract.md`에 기록했다.
+- TaskExecutionPlan v1은 TaskSpec digest, run/task ID, provider, isolated_candidate 모드, 저장소 절대 root/기준 commit, read/write 파일과 기준 digest, network deny, 시간/출력 상한, 검증 argv/cwd/expected_exit를 서명 대상에 포함한다. glob·상위 이동·Git 관리 경로·파일 중복/부모 충돌·무제한 값·예상 밖 필드를 거부한다.
+- `control plan-task <plan.json>`은 이미 승인되어 시작된 workflow의 입력/TaskSpec/예산과 대조하고 별도 `task.execute` level 3 pending 요청을 만든다. 이전 workflow.start 승인의 의미를 바꾸지 않는다. 동일 요청 재전송은 total_changes 불변이며 달라진 계획/요청자는 충돌로 거부한다.
+- 실행 adapter와 독립 검증이 준비되지 않아 `task.execute`는 executable=false다. 실제 CLI로 계획 생성 시 외부 효과 원장 0개를 확인했다. 승인 후 강제 execute 호출도 failed/APPROVED_ACTION_UNKNOWN이며 외부 효과 0개다. 요청 저장이나 승인 자체를 agent 실행/완료라고 표시하지 않는다.
+- 관련 고유 검증: 계획 25개, 기존 TaskSpec 7개, control-action 3개, staging/실제 CLI 8개, 기존 승인 실행기 10개, CLI help 6개 — 6파일 59개 통과. 실제 CLI는 빌드된 Node entry와 격리 SQLite를 사용했으며 실제 agent 호출은 하지 않았다.
+- staging 최초 시험 1개는 immutable workflow identity 트리거 때문에 변조 fixture 구성 자체가 거부됐다. 제품 trigger를 완화하지 않고 요청의 다른 task_id 대입 사례로 바꿨으며 해당 파일 최종 8개 통과했다.
+- 타입 검사에서 fixture import/리터럴 타입 2개를 수정했고 재실행 통과했다. lint가 제어문자 정규식/불필요 escape 3개를 보고해 문자 코드 검사로 바꿨다. 최종 `npm run lint && npm run build:backend`: exit 0. 독립 구현 리뷰 필수 지적 0건.
+- 공통 reviewability는 2개 중 1개 실패: 동시 작업 파일 `src/memory-outbox-store.ts` 266행, `src/second-brain-adapter.ts` 267행이 250행 상한을 초과했다. 이번 소유 변경과 분리해 보존하며 전체 gate 완료를 주장하지 않는다.
+- 남은 필수 구현: 실제 repository/commit/파일/symlink preflight, provider 격리 및 준비 상태, 영속 operation binding, 현재 승인 재검증, agent 후보 변경과 독립 verifier, 허용 파일 반영, 증거 없는 LoopGraph 완료 차단, 대시보드 실행계획 동선. 전체04/10/11/21과 나머지 개선 목표는 계속 미완료다.
