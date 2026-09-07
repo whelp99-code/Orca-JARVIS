@@ -154,7 +154,7 @@ function parseBoundRecords(
       return invalid("SECOND_BRAIN_RECORD_IDENTITY_INVALID");
     }
     const projection: BoundRecordProjection = { recordId, recordDigest, sid, text, textDigest,
-      source, content, citation, owner, ownerDigest, origin, validFrom, validUntil, tier, version };
+      source, content, citation, owner, ownerDigest, origin, validFrom, validUntil, tier, version, start, end };
     evidence.push(boundSecondBrainEvidence({ pageId: input.requestedPageId,
       checkedAt: input.checkedAt, maxAgeMs: input.maxAgeMs, expiryMs: input.expiryMs,
       generation, row: projection }));

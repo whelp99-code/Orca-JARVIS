@@ -80,6 +80,10 @@ export class MemoryOutboxStore {
     const row = this.authority.db.prepare("SELECT * FROM memory_outbox WHERE outbox_id=?").get(id);
     return row === undefined ? undefined : parseSagaRow(row);
   }
+  observationRequest(saga: MemoryOutboxSagaV2) {
+    // Historical reconstruction for observation only; never renew write authority.
+    return this.records.request(saga.outbox_id, new Date(saga.created_at));
+  }
   list(state: string | undefined, limit: number): readonly MemoryOutboxSagaV2[] {
     const rows = state === undefined
       ? this.authority.db.prepare(

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { JarvisError } from "./db.js";
 import { cleanupMemoryCandidateReviews } from "./memory-candidate-review-cleanup.js";
+import { memoryRememberArtifact, observeRememberArtifact } from "./memory-remember-artifact.js";
 import { MemoryOutboxStore } from "./memory-outbox-store.js";
 import type {
   MemoryObservation,
@@ -92,6 +93,20 @@ export class MemoryOutboxService {
     if (root !== undefined) cleanupMemoryCandidateReviews(this.options.authority, root);
   }
   private async observe(saga: MemoryOutboxSagaV2): Promise<MemoryObservation> {
+    if (saga.operation === "remember" && /^wiki\/memory-[0-9a-f]{64}$/.test(saga.expected_artifact.page_id)) {
+      let expectation;
+      try { expectation = memoryRememberArtifact(this.store.observationRequest(saga)); }
+      catch { return { kind: "missing", code: "MEMORY_OUTBOX_SOURCE_UNAVAILABLE" }; }
+      const expected = saga.expected_artifact;
+      if (expected.page_id !== expectation.artifact.page_id || expected.sid !== expectation.artifact.sid
+        || expected.source_digest !== expectation.artifact.source_digest) {
+        return { kind: "conflict", code: "ARTIFACT_DIGEST_MISMATCH", page_id: expected.page_id, sid: expected.sid };
+      }
+      const page = await this.options.reader.readPage(expected.page_id);
+      if (page.kind === "conflicts") return this.conflictFrom(page, expected.page_id);
+      if (page.kind !== "current" && page.kind !== "stale") return { kind: "missing", code: this.readCode(page, "ARTIFACT_SELECTOR_MISSING") };
+      return observeRememberArtifact(expectation, page.evidence);
+    }
     const dispatched = Date.parse(saga.dispatched_at ?? saga.created_at);
     const elapsed = Math.max(0, this.options.clock().getTime() - dispatched);
     const days = Math.min(365, Math.max(1, Math.ceil(elapsed / 86_400_000) + 1));

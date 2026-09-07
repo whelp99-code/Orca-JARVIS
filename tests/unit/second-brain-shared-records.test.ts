@@ -30,6 +30,37 @@ const reader = (transport: QueuedTransport, checkedAt = now) => createSecondBrai
   budgets: { max_hits: 4, max_excerpt_bytes: 4096, max_page_bytes: 32768, max_total_bytes: 65536 } });
 
 describe("shared-source schema4 memory records", () => {
+  it("keeps larger record-set budgets explicit and unavailable to schema3", () => {
+    const options = { transport: new QueuedTransport([]), clock: () => now,
+      max_age_ms: 86_400_000, expiry_ms: 172_800_000,
+      budgets: { max_hits: 4, max_excerpt_bytes: 4096, max_page_bytes: 262144, max_total_bytes: 65537 } };
+    expect(() => createSecondBrainReadAdapter({ ...options, contract_profile: "schema4" })).toThrow("SECOND_BRAIN_ADAPTER_CONFIG_INVALID");
+    expect(() => createSecondBrainReadAdapter({ ...options, contract_profile: "schema3-read-only", budget_profile: "record-set-v1" }))
+      .toThrow("SECOND_BRAIN_ADAPTER_CONFIG_INVALID");
+    expect(() => createSecondBrainReadAdapter({ ...options, contract_profile: "schema4", budget_profile: "record-set-v1",
+      budgets: { ...options.budgets, max_total_bytes: 262145 } })).toThrow("SECOND_BRAIN_ADAPTER_CONFIG_INVALID");
+    expect(() => createSecondBrainReadAdapter({ ...options, contract_profile: "schema4", budget_profile: "record-set-v1",
+      budgets: { ...options.budgets, max_page_bytes: 262145 } })).toThrow("SECOND_BRAIN_ADAPTER_CONFIG_INVALID");
+  });
+  it("bounds the cumulative provider and returned evidence cost for all 64 records", async () => {
+    const large = () => ({ ...page(), value: { ...page().value, provider_instance_id: "provider:" + "p".repeat(128),
+      body: "a".repeat(60 * 64), records: Array.from({ length: 64 }, (_, index) => record("a".repeat(60), 200 + index * 80)) } });
+    const read = (total: number) => createSecondBrainReadAdapter({ transport: new QueuedTransport([large()]),
+      contract_profile: "schema4", budget_profile: "record-set-v1", clock: () => now,
+      max_age_ms: 86_400_000, expiry_ms: 172_800_000,
+      budgets: { max_hits: 4, max_excerpt_bytes: 4096, max_page_bytes: 262144, max_total_bytes: total } }).readPage("wiki/shared");
+    expect(await read(65536)).toMatchObject({ kind: "invalid", code: "SECOND_BRAIN_AGGREGATE_OVERSIZE" });
+    let failing = 65536; let passing = 262144;
+    while (passing - failing > 1) {
+      const middle = Math.floor((passing + failing) / 2);
+      if ((await read(middle)).kind === "current") passing = middle; else failing = middle;
+    }
+    expect(await read(failing)).toMatchObject({ kind: "invalid", code: "SECOND_BRAIN_AGGREGATE_OVERSIZE" });
+    const result = await read(passing);
+    expect(result.kind).toBe("current");
+    if (result.kind !== "current") throw new Error("expected all bounded records");
+    expect(result.evidence).toHaveLength(64);
+  });
   it("accepts a new generation in a subsequent read on the same adapter", async () => {
     const next = page();
     next.value.generation_id = `sbgen:v1:${"f".repeat(64)}`;

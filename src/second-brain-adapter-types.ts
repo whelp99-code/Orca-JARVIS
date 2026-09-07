@@ -19,6 +19,8 @@ export type SecondBrainAdapterOptions = {
   readonly expiry_ms: number;
   readonly read_fence?: (at: Date) => import("./second-brain-effect-v2.js").MemoryReadFenceV1;
   readonly contract_profile?: "schema3-read-only" | "schema4";
+  /** Explicit local budget selection; does not change the negotiated MCP wire contract. */
+  readonly budget_profile?: "interactive" | "record-set-v1";
 };
 export type SecondBrainGenerationBinding = {
   readonly provider_instance_id: string;
@@ -35,6 +37,8 @@ export type SecondBrainRecordBinding = {
   readonly source_identity_full: string;
   readonly content_identity_full: string;
   readonly citation_identity_full: string;
+  readonly citation_span_start?: number;
+  readonly citation_span_end?: number;
   readonly source_owner_class: "provider_owned" | "external_read_only";
   readonly source_owner_id_digest: string;
   readonly origin_label: string;

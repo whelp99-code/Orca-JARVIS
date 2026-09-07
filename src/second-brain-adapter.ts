@@ -65,11 +65,18 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
   constructor(private readonly options: SecondBrainAdapterOptions) {
     this.contract_profile = options.contract_profile ?? "schema3-read-only";
     const { budgets } = options;
+    const profile = options.budget_profile ?? "interactive";
+    const totalCap = profile === "record-set-v1" ? 262_144 : 65_536;
+    const pageCap = profile === "record-set-v1" ? 262_144 : 1_048_576;
+    if ((profile !== "interactive" && profile !== "record-set-v1")
+      || (profile === "record-set-v1" && this.contract_profile !== "schema4")) {
+      throw new TypeError("SECOND_BRAIN_ADAPTER_CONFIG_INVALID");
+    }
     if (!Number.isSafeInteger(budgets.max_hits) || budgets.max_hits < 1 || budgets.max_hits > 32
       || !Number.isSafeInteger(budgets.max_excerpt_bytes) || budgets.max_excerpt_bytes < 1 || budgets.max_excerpt_bytes > 4_096
       || !Number.isSafeInteger(budgets.max_total_bytes) || budgets.max_total_bytes < budgets.max_excerpt_bytes
-      || budgets.max_total_bytes > 65_536 || !Number.isSafeInteger(budgets.max_page_bytes)
-      || budgets.max_page_bytes < budgets.max_excerpt_bytes || budgets.max_page_bytes > 1_048_576
+      || budgets.max_total_bytes > totalCap || !Number.isSafeInteger(budgets.max_page_bytes)
+      || budgets.max_page_bytes < budgets.max_excerpt_bytes || budgets.max_page_bytes > pageCap
       || !Number.isSafeInteger(options.max_age_ms) || options.max_age_ms < 1
       || options.max_age_ms > 31 * 86_400_000 || !Number.isSafeInteger(options.expiry_ms)
       || options.expiry_ms <= options.max_age_ms || options.expiry_ms > 31 * 86_400_000) {

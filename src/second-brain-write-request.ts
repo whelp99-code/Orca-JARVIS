@@ -5,6 +5,7 @@ import type {
 } from "./second-brain-adapter-types.js";
 import { canonicalize } from "./canonical.js";
 import { snapshotMemoryEffectWriteArguments } from "./second-brain-effect-v2.js";
+import { memoryRememberRecordTexts } from "./memory-remember-artifact.js";
 
 const OPERATIONS = ["remember", "correct", "forget", "export"] as const;
 const SENSITIVITIES = ["public", "personal", "sensitive", "restricted"] as const;
@@ -114,7 +115,13 @@ function parsePayload(
   operation: SecondBrainWriteOperation,
 ): Readonly<Record<string, string>> | undefined {
   switch (operation) {
-    case "remember":
+    case "remember": {
+      const parsed = stringRecord(value, ["content"], 4_096);
+      if (parsed === undefined) return undefined;
+      try { memoryRememberRecordTexts(parsed["content"] ?? ""); }
+      catch { return undefined; }
+      return parsed;
+    }
     case "correct":
       return stringRecord(value, ["content"], 4_096);
     case "forget": {

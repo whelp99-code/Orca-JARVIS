@@ -23,6 +23,7 @@ export type BoundRecordProjection = {
   readonly citation: string; readonly owner: "provider_owned" | "external_read_only";
   readonly ownerDigest: string; readonly origin: string; readonly validFrom: string;
   readonly validUntil: string; readonly tier: SecondBrainSensitivity; readonly version: string;
+  readonly start: number; readonly end: number;
 };
 export type SecondBrainConflictRow = {
   readonly conflict_id: string;
@@ -139,6 +140,7 @@ export function boundSecondBrainEvidence(input: {
     record: { record_id: input.row.recordId, record_digest: input.row.recordDigest,
       source_identity_full: input.row.source, content_identity_full: input.row.content,
       citation_identity_full: input.row.citation, source_owner_class: input.row.owner,
+      citation_span_start: input.row.start, citation_span_end: input.row.end,
       source_owner_id_digest: input.row.ownerDigest, origin_label: input.row.origin,
       generation: input.generation } };
 }
