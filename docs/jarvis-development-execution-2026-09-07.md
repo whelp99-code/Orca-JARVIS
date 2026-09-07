@@ -136,3 +136,14 @@
 - 타입 검사에서 fixture import/리터럴 타입 2개를 수정했고 재실행 통과했다. lint가 제어문자 정규식/불필요 escape 3개를 보고해 문자 코드 검사로 바꿨다. 최종 `npm run lint && npm run build:backend`: exit 0. 독립 구현 리뷰 필수 지적 0건.
 - 공통 reviewability는 2개 중 1개 실패: 동시 작업 파일 `src/memory-outbox-store.ts` 266행, `src/second-brain-adapter.ts` 267행이 250행 상한을 초과했다. 이번 소유 변경과 분리해 보존하며 전체 gate 완료를 주장하지 않는다.
 - 남은 필수 구현: 실제 repository/commit/파일/symlink preflight, provider 격리 및 준비 상태, 영속 operation binding, 현재 승인 재검증, agent 후보 변경과 독립 verifier, 허용 파일 반영, 증거 없는 LoopGraph 완료 차단, 대시보드 실행계획 동선. 전체04/10/11/21과 나머지 개선 목표는 계속 미완료다.
+
+## 2026-09-08 P0-04/10/11 — 실제 저장소 대조와 후보 입력 사본
+
+- `control check-task`가 workflow 결합을 검사 전후에 확인하고 실제 Git root/HEAD와 선언 파일 digest를 대조한다. metadata/snapshot digest만 반환하며 실행 준비나 성공을 뜻하지 않는 checked 상태와 execution_available=false를 표시한다.
+- 입력은 Linux FD-relative/NOFOLLOW로 읽는다. source root 별칭, 부모/파일 symlink, hardlink, 일반 파일 이외 입력, 기존 파일/신규 부재 불일치, 기준 commit/root 변경을 거부한다. 입력 상한은 파일당 4 MiB/전체 16 MiB다.
+- 후보 사본은 원본 밖의 private parent에 선언된 입력만 생성한다. 후보와 하위 디렉터리를 FD로 고정하고 exclusive/no-follow 파일 생성으로 기존 파일을 덮어쓰지 않는다. 파일 mode는 OS sandbox를 대체하지 않는다.
+- 독립 리뷰 P1 1건: 후보 하위 디렉터리 symlink 교체로 외부 쓰기, 오류 후 후보 이름 교체로 관계없는 디렉터리 재귀 삭제가 가능했다. 회귀 2개를 추가해 모두 실패 재현 후 FD 고정/생성과 실패 후보 보존으로 수정했다. 부모 private 권한 검사도 FD stat으로 옮겼다. 재리뷰 필수 지적 0건.
+- 파일시스템 검증 최종 16개 통과. 기존 계획 25개, staging/CLI 8개, help 6개와 합쳐 관련 4파일 55개 통과. 최초 lint의 unused binding 1개는 명시적 metadata 선택으로 수정했다. 최종 `npm run typecheck && npm run lint && npm run build:backend`: exit 0.
+- 실제 Git/빌드 CLI smoke는 격리 Git 저장소의 선언 파일 1개·26바이트로 수행했다. 후보 변경 후 원본 동일, 후보 Node syntax exit 0, CLI 검사 전후 SQLite data_version 동일, 이후 원본 변경 시 TASK_REPOSITORY_FILE_CHANGED 거부를 확인했다. 최종 fixture commit은 `6036ecbbe53a2227b98fa2b7a2577d471d5784a7`, 결과는 `.runtime-tmp/task-repository-smoke.json`이다. actual agent 호출 0회이며 실제 업무 완료 증거로 사용하지 않는다.
+- 공통 reviewability의 기존 두 memory 모듈 행 수 초과는 별도 실패로 남아 있다. 동시 작업 파일을 덮어쓰거나 이번 커밋에 섞지 않는다. 전체 gate 통과/운영 적용을 주장하지 않는다.
+- 남은 필수 구현은 실제 provider OS 격리·인증/준비 상태, 단일 영속 operation binding, 승인된 실행 호출과 현재 권한 확인, 독립 verifier와 원본 반영, 증거 기반 workflow 완료, 대시보드 동선이다. 실패 후보의 안전한 정리도 실행 원장과 연계해야 한다. `task.execute`는 계속 비활성 상태이며 전체 목표를 유지한다.

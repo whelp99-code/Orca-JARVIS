@@ -35,3 +35,17 @@ JSON 최상위 필드는 `request_id`, `nonce`, `requested_by`, `plan`이다. `p
 응답의 `request.state=pending`은 별도 승인 요청이 저장되었다는 뜻이다. 요청 만료는 원래 workflow 마감과 15분 중 이른 시각이다. 같은 request_id/nonce/요청자/계획을 다시 제출하면 쓰기 없이 기존 요청을 반환한다. 변경된 계획에 같은 request_id를 사용하면 `TASK_EXECUTION_REPLAY_CONFLICT`다.
 
 직접 `LoopGraph.start()`로 만든 승인 이력 없는 workflow, 변경된 TaskSpec, 원래 승인과 불일치하는 workflow 입력, 취소/완료/만료된 workflow는 거부한다. 이 CLI는 저장소 파일·실제 commit 존재·provider 설치나 인증을 검사하지 않으며 agent를 실행하지 않는다. 실제 경로/원본 digest 검증과 준비 상태 표시는 후속 adapter preflight에서 수행한다. 승인 후 `control execute`를 호출해도 현재는 `APPROVED_ACTION_UNKNOWN`으로 실패하며 실행 효과 0개다.
+
+## 저장소 검사와 후보 입력 사본
+
+```sh
+jarvis control check-task plan.json --db /absolute/path/to/authority.sqlite
+```
+
+`check-task`는 계획과 workflow의 결합을 검사 전후에 확인하고, 실제 Git root/HEAD와 선언한 파일의 바이트 digest를 대조한다. Git 조회는 상속된 `GIT_*` override를 제거하고 global/system config와 fsmonitor를 비활성화한다. JSON 결과는 `repository.state=checked`, `execution_available=false`이며 파일 내용은 포함하지 않는다. 검사 시각의 입력 확인 결과이며 실행 시 다시 검사해야 한다.
+
+현재 구현은 Linux의 descriptor-relative 경로와 `O_NOFOLLOW`를 사용한다. 정규화된 정본 경로와 사용자 소유 일반 파일만 지원하며 symlink/하드링크/특수 파일을 거부한다. 기존 파일은 최대 4 MiB, 전체 선언 파일은 최대 16 MiB다. 새 파일의 null digest는 실제 부재와 일치해야 한다.
+
+`prepareTaskExecutionWorkspace(plan, privateParent)`는 같은 검사를 거친 바이트만 별도 후보 디렉터리에 복사한다. parent는 기존 사용자 소유 private 디렉터리여야 하고 원본 저장소 내부에는 사본을 만들지 않는다. 후보 및 하위 디렉터리도 FD로 고정하고 파일을 exclusive/no-follow로 생성한다. 반환된 snapshot digest는 계획과 입력 파일 메타데이터를 결합한다. 이 함수는 승인/agent 실행/원본 반영을 수행하지 않는다.
+
+실패한 private 후보는 자동 재귀 삭제하지 않는다. 경로가 동시 교체됐을 때 관계없는 디렉터리가 지워지는 것을 피하기 위한 보존이며, 완료된 실행 원장과 결합한 안전한 보존·정리 정책은 후속 작업이다. 사본의 파일 mode는 초기 접근 권한일 뿐 같은 UID의 실행자를 격리하는 보안 경계가 아니다. 실제 provider의 OS sandbox, 읽기 전용 입력 강제, 승인·원본 재검증과 검증 후 반영 경계는 여전히 필요하다.

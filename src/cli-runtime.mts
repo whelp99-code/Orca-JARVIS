@@ -17,7 +17,8 @@ const CLI_HELP =
   "JARVIS — agent-ops runtime\n"
   + "Commands: init, db migrate, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, "
   + "observe, pre-gjc, capabilities, team, portfolio, status\n"
-  + "control plan-task <plan.json>: stage a task execution plan for separate approval (execution unavailable)";
+  + "control plan-task <plan.json>: stage a task execution plan for separate approval (execution unavailable)\n"
+  + "control check-task <plan.json>: check repository baseline and declared files without executing an agent";
 
 const COMMAND_HANDLERS: readonly CliCommandHandler[] = [
   executeCoreCommand,

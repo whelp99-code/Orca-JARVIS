@@ -10,6 +10,9 @@ import {
 } from "./control-plane.js";
 import { TaskTimeline } from "./task-timeline.js";
 import { stageTaskExecution, type StageTaskExecutionInput } from "./task-execution-staging.js";
+import { inspectTaskExecutionRepository } from "./task-execution-workspace.js";
+import { assertTaskExecutionBinding } from "./task-execution-staging.js";
+import { parseTaskExecutionPlan } from "./task-execution-plan.js";
 
 export async function executeControlCommand(
   context: CliCommandContext,
@@ -22,6 +25,14 @@ export async function executeControlCommand(
   }
   if (command === "control") {
     const control = new ControlPlane(db);
+    if (subcommand === "check-task" && argument) {
+      const input = typedObject(await jsonFile<StageTaskExecutionInput>(argument));
+      const plan = parseTaskExecutionPlan(input.plan);
+      assertTaskExecutionBinding(db, plan, commandNow(context));
+      const repository = await inspectTaskExecutionRepository(plan);
+      assertTaskExecutionBinding(db, plan, commandNow(context));
+      return { ok: true, command: "control.check-task", repository, execution_available: false };
+    }
     if (subcommand === "plan-task" && argument) {
       const input = typedObject(await jsonFile<StageTaskExecutionInput>(argument));
       return { ok: true, command: "control.plan-task", request: stageTaskExecution(db, input, commandNow(context)) };
