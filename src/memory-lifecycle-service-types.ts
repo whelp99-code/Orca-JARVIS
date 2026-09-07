@@ -17,6 +17,8 @@ export type MemoryLifecycleCycle = {
   readonly deletions: number;
   readonly exports: number;
   readonly expired_exports: number;
+  readonly correction_controls_reconciled?: number;
+  readonly correction_control_error?: string;
 };
 
 export interface MemoryLifecycleService {

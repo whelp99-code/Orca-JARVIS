@@ -2,7 +2,9 @@ import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./db.js";
 import type { ClaimedControlCommand, ControlCommandRequestInput } from "./control-plane.js";
-import { ControlPlane } from "./control-plane.js";
+import { captureCorrectionControlBinding, type CorrectionControlRow } from "./memory-correction-control-binding.js";
+import { correctionCompactionProof } from "./memory-correction-compaction-proof.js";
+import { reconcileCorrectionControl } from "./memory-correction-control.js";
 import { MemoryCorrectionDispatcher } from "./memory-correction-dispatcher.js";
 import { MemoryCorrectionStore, type MemoryCorrectionRecord } from "./memory-correction-store.js";
 import type { MemoryCorrectionSagaOptions, PrepareMemoryCorrectionInput } from "./memory-correction-types.js";
@@ -27,13 +29,11 @@ export class MemoryCorrectionSaga {
   private readonly store: MemoryCorrectionStore;
   private readonly spool: MemoryEffectSpool;
   private readonly dispatcher: MemoryCorrectionDispatcher;
-  private readonly control: ControlPlane;
 
   constructor(private readonly options: MemoryCorrectionSagaOptions) {
     this.store = new MemoryCorrectionStore(options.authority);
     this.spool = new MemoryEffectSpool(options.spool_root, options.authority);
     this.dispatcher = new MemoryCorrectionDispatcher(options);
-    this.control = new ControlPlane(options.authority);
   }
 
   async prepare(input: PrepareMemoryCorrectionInput): Promise<ControlCommandRequestInput> {
@@ -109,7 +109,16 @@ export class MemoryCorrectionSaga {
   async reconcile(correctionId: string): Promise<MemoryCorrectionRecord> {
     const record = this.store.get(correctionId);
     if (record === undefined) throw new JarvisError("MEMORY_CORRECTION_NOT_FOUND");
-    if (record.state === "settled" || record.state === "conflict") return record;
+    if (record.state === "conflict") return record;
+    if (record.state === "settled") {
+      reconcileCorrectionControl(this.options.authority, correctionId, this.options.clock());
+      return record;
+    }
+    captureCorrectionControlBinding(this.options.authority, record as CorrectionControlRow);
+    if (record.state === "provider_proved") {
+      const completed = correctionCompactionProof(this.options.authority, record as CorrectionControlRow, this.options.clock());
+      if (completed) return this.complete(correctionId, completed.digest);
+    }
     const observed = await this.options.observer.correction(record);
     if (observed.kind === "not_proved") return record;
     const proof = observed.proof;
@@ -123,27 +132,25 @@ export class MemoryCorrectionSaga {
     await this.options.barriers.reach({ barrier_id: "jarvis_proof_observation",
       lane_id: record.lane_id, request_id: record.request_id,
       tombstone_sequence: record.tombstone_sequence, now });
-    const compaction = await this.options.compactor.compact({ lane: "correction",
+    const priorPurge = correctionCompactionProof(this.options.authority, record as CorrectionControlRow, this.options.clock());
+    const purgeDigest = priorPurge?.digest ?? (await this.options.compactor.compact({ lane: "correction",
       lane_id: record.lane_id, target_manifest_digest: record.target_manifest_digest,
       scope_digest: record.scope_digest, tombstone: { sequence: record.tombstone_sequence,
         set_root: record.tombstone_set_root }, provider_inventory: observed.provider_inventory,
-      reingress_guards: observed.reingress_guards });
+      reingress_guards: observed.reingress_guards })).compaction_receipt_digest;
     await this.options.barriers.reach({ barrier_id: "before_settlement_commit",
       lane_id: record.lane_id, request_id: record.request_id,
-      tombstone_sequence: record.tombstone_sequence, now });
-    const settled = this.store.settle(correctionId, compaction.compaction_receipt_digest, now);
-    this.options.authority.db.prepare(
-      `UPDATE memory_effect_preparations SET state='consumed',updated_at=?
-       WHERE lane_id=? AND state='approved'`,
-    ).run(now.toISOString(), record.lane_id);
-    const control = this.options.authority.db.prepare(
-      "SELECT state,lease_fence FROM control_command_requests WHERE request_id=?",
-    ).get(record.control_request_id) as { readonly state: string; readonly lease_fence: number };
-    if (control.state === "claimed") this.control.settle(record.control_request_id,
-      control.lease_fence, { state: "completed", effect_type: "memory.correction.settled",
-        payload: { correction_id: correctionId, request_digest: record.request_digest,
-          proof_digest: proof.proof_digest,
-          purge_receipt_digest: compaction.compaction_receipt_digest } }, now);
+      tombstone_sequence: record.tombstone_sequence, now: this.options.clock() });
+    return this.complete(correctionId, purgeDigest);
+  }
+
+  private complete(correctionId: string, purgeDigest: string): MemoryCorrectionRecord {
+    const settledAt = this.options.clock();
+    const settled = this.options.authority.db.transaction(() => {
+      const result = this.store.settle(correctionId, purgeDigest, settledAt);
+      reconcileCorrectionControl(this.options.authority, correctionId, settledAt);
+      return result;
+    }).immediate();
     return settled;
   }
 }

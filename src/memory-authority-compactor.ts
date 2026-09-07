@@ -44,6 +44,7 @@ type CompactorOptions = {
   readonly runtime: AuthorityDatabaseRuntime;
   readonly scanner: MemoryManagedSurfaceScanner;
   readonly layout: MemoryRuntimeLayout;
+  readonly clock?: () => Date;
 };
 
 type SwapRequest = {
@@ -76,7 +77,7 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
       target_manifest_digest: request.target_manifest_digest, scope_digest: request.scope_digest,
       tombstone: request.tombstone });
     const purgeId = `mempurge:v2:${purgeDigest.slice(7)}`;
-    const createdAt = new Date().toISOString();
+    const createdAt = (this.options.clock?.() ?? new Date()).toISOString();
     const start: CompactionStart = { purge_id: purgeId,
       source_generation: sourceGeneration, result_generation: sourceGeneration + 1,
       source_device: sourceMetadata.dev.toString(), source_inode: sourceMetadata.ino.toString(),
@@ -205,11 +206,11 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
     authority.db.prepare(
       `UPDATE memory_compaction_runs SET state='reconciling',failure_code=?,updated_at=?
        WHERE purge_id=? AND state<>'completed'`,
-    ).run(code, new Date().toISOString(), purgeId);
+    ).run(code, (this.options.clock?.() ?? new Date()).toISOString(), purgeId);
     authority.db.prepare(
       `UPDATE memory_purge_jobs SET state='reconciling',lease_owner=NULL,
        lease_expires_at=NULL,updated_at=? WHERE purge_id=? AND state IN ('compacting','verifying')`,
-    ).run(new Date().toISOString(), purgeId);
+    ).run((this.options.clock?.() ?? new Date()).toISOString(), purgeId);
   }
 }
 

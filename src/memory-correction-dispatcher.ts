@@ -7,6 +7,7 @@ import {
   persistCorrectionTargets,
   recordCorrectionDispatchOutcome,
 } from "./memory-correction-dispatch.js";
+import { captureCorrectionControlBinding, type CorrectionControlRow } from "./memory-correction-control-binding.js";
 import { MemoryCorrectionStore, type MemoryCorrectionRecord } from "./memory-correction-store.js";
 import type { MemoryCorrectionSagaOptions } from "./memory-correction-types.js";
 import { MemoryDestructiveDispatchCursor } from "./memory-destructive-dispatch.js";
@@ -93,7 +94,7 @@ export class MemoryCorrectionDispatcher {
         persistCorrectionTargets(this.options.authority, targets, now);
         bindStructuredProjection(this.options.authority.db, { kind: "control_payload",
           id: command.request_id, component_id: command.request_id }, request, now);
-        this.store.insert({ correction_id: `memcorr:v1:${request.request_digest.slice(7)}`,
+        const record = this.store.insert({ correction_id: `memcorr:v1:${request.request_digest.slice(7)}`,
           lane_id: laneId, candidate_id: staged.candidate_id,
           control_request_id: command.request_id, control_receipt_id: command.receipt_id,
           provider_instance_id: request.provider_instance_id, request_id: request.request_id,
@@ -106,6 +107,7 @@ export class MemoryCorrectionDispatcher {
           tombstone_set_root: request.tombstone_high_water.set_root,
           spool_locator: preparation.spool_locator, spool_digest: preparation.spool_digest,
           expires_at: request.expires_at }, command.command_digest, now);
+        captureCorrectionControlBinding(this.options.authority, record as CorrectionControlRow);
       },
     });
     await this.options.barriers.reach({ barrier_id: "jarvis_suppression_tombstone_commit",

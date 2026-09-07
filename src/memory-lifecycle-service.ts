@@ -3,6 +3,7 @@ import type { ClaimedControlCommand, ControlCommandRequestInput } from "./contro
 import { JarvisError } from "./db.js";
 import type { AuthorityDatabaseRuntime } from "./authority-database-runtime.js";
 import { MemoryAuthorityCompactor } from "./memory-authority-compactor.js";
+import { reconcileCorrectionControls } from "./memory-correction-control.js";
 import { MemoryCorrectionSaga } from "./memory-correction-saga.js";
 import type { PrepareMemoryCorrectionInput } from "./memory-correction-types.js";
 import { MemoryDeletionSaga } from "./memory-deletion-saga.js";
@@ -100,6 +101,7 @@ export class ProductionMemoryLifecycleService implements MemoryLifecycleService 
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 256) {
       throw new JarvisError("MEMORY_LIFECYCLE_LIMIT_INVALID");
     }
+    const controlRecovery = reconcileCorrectionControls(this.runtime.authority, this.runtime.clock(), limit);
     let corrections = 0; let deletions = 0; let exports = 0;
     const correctionIds = this.runtime.authority.db.prepare(
       `SELECT correction_id FROM memory_correction_requests
@@ -125,7 +127,7 @@ export class ProductionMemoryLifecycleService implements MemoryLifecycleService 
       await this.exportSaga.reconcile(row.export_id); exports += 1;
     }
     const expired = this.exports.expireAvailable(this.runtime.clock());
-    return { corrections, deletions, exports, expired_exports: expired };
+    return { corrections, deletions, exports, expired_exports: expired, ...controlRecovery };
   }
 
   expireExports(now: Date): Promise<MemoryLifecycleCycle> {
@@ -159,7 +161,7 @@ export function createProductionMemoryLifecycleService(
     clock: config.clock });
   const scanner = new MemoryManagedSurfaceScanner({ authority, layout: config.layout });
   const compactor = new MemoryAuthorityCompactor({ runtime: databaseRuntime,
-    scanner, layout: config.layout });
+    scanner, layout: config.layout, clock: config.clock });
   const barriers = new MemoryLifecycleBarriers(authority,
     new NoopMemoryLifecycleBarrierSink());
   const runtime: MemorySagaRuntime = { authority, spool_root: config.layout.spool_root,
