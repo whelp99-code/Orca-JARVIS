@@ -38,7 +38,9 @@ Linux headless GUI는 bubblewrap의 private /tmp와 PID namespace에서 Xvfb를 
 
 Linux headless GUI에는 `bubblewrap`, `Xvfb`, `xauth`, `xdpyinfo`가 필요하다. namespace 실행을 허용하는 호스트여야 한다.
 기존 DISPLAY 경로는 해당 화면의 접속 권한과 `xdpyinfo`가 필요하다. GUI 시작은 15초, 전체 GUI는 180초로 제한한다.
-나머지 실행은 20분 제한이다. Windows/macOS에서 새 실행 경로를 직접 검증한 결과는 아직 없다.
+나머지 자식 실행은 각각 20분 제한이다. 필터 없는 전체 backend 호출은 아래 두 분할을
+순차 실행하므로 로컬 호출 전체 상한은 정리 시간을 제외하고 최대40분이다.
+Windows/macOS에서 새 실행 경로를 직접 검증한 결과는 아직 없다.
 CI는 서버 verify, 실제 GUI, Chromium E2E를 각각 필수 단계로 실행한다. 여기의 CI 변경은 로컬 검증이며 원격 실행 결과는 아니다.
 GUI driver의 소스 계약 검사는 `task33-driver-contract.test.ts`로 옮겨 기본 backend 검사에 유지했다.
 
@@ -66,3 +68,25 @@ GUI driver의 소스 계약 검사는 `task33-driver-contract.test.ts`로 옮겨
 - 증거: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/`의 install.json, discovery.json, gui-paths.json,
   gui-interrupt.json, e2e.log, verify.log.
   단위/GUI/전체 verify의 결과를 서로 다른 검증 수준으로 유지한다.
+
+## 전체 backend의 순차 분할
+
+`bf533eb` 전체 verify는 backend 파일 결과303개(실패5개 포함)를 출력한 뒤20분의
+단일 자식 실행 상한으로 종료됐다. 이 실행은 전체 검사 통과가 아니며 이후 단계는 실행되지 않았다.
+필터 없는 `backend` 호출은 기존 include/exclude를 그대로 쓰는 Vitest `--shard=1/2`,
+`--shard=2/2`를 순차 실행한다. 파일 내부와 파일 사이 병렬화를 추가하지 않는다.
+필터가 있거나 다른 프로필이면 기존 단일 호출을 유지한다. 단위/통합 폴더만 실행할 경우
+별도 longitudinal10파일을 빠뜨릴 수 있어 기존 전체 backend 선택을 분할한다.
+
+각 자식의20분 상한, 개별 테스트5초 기본값과 오류·취소·프로세스 정리를 유지한다.
+이는 테스트 자체를 빠르게 만드는 변경이 아니며 전체 허용 시간은 늘어난다.
+CI의 전체 job30분 상한은 변경하지 않는다. 첫 분할의 일반 테스트 실패 후에도 두 번째 분할을
+검사하고 비0 종료를 보존한다. 취소·시작 실패·실행 상한 종료는 다음 분할을 시작하지 않는다.
+분할 사이 정리 구간에 취소돼도 다음 spawn 전에 signal을 확인한다.
+
+설치된 Vitest3.2.7의 실제 수집 결과387파일과 BaseSequencer를 대조했다:
+194+193, 누락0/중복0, longitudinal10 포함. `list --filesOnly`는 shard 옵션과 무관하게
+전체를 반환하므로 그 출력만으로 분할 적용을 판정하지 않았다.
+실제 wrapper/Vitest subprocess의 격리4파일 검증에서는 첫 shard 실패 시에도4파일을
+각1회 실행하고 exit1을 보존했으며 정상 실행은4파일·exit0이었다. 임시 데이터 제거.
+증거: `shard-discovery.json`, `test-shards-live-probe.mjs/json`.

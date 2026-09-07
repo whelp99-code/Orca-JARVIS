@@ -418,3 +418,11 @@
 - 5초를 초과한 GJC8상태/기억 권한9만료 경계는 it.each로 독립 사례화했다. 모든 기존 assertion·독립 DB·finally 정리를 유지하며 timeout 상한은 변경하지 않았다. 개인 커넥터는33/10000/150000 각각을 검사한다.
 - 최종 관련7파일68개 pass(55.61초), backend build/lint/typecheck exit0, 독립 정적 리뷰 필수 결함0. 실제 빌드 커넥터와 별도 CLI 실행 파일의33개/10000개 응답은 모두 PERSONAL_SOURCE_BUDGET_EXCEEDED(37.73/48.78ms)였다. 수정 전10000개 응답은 ORCA_CLI_OUTPUT_LIMIT이 그대로 전파돼 probe exit1로 재현됐고 수정 후 exit0이다. 임시 데이터 제거.
 - 증거: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/verify-bf533eb.log`, `observation-gate-regression.log`, `orca-connector-budget-red.log`, `orca-connector-budget-live-probe.mjs/json`. 전체 gate 통과로 보고하지 않는다. 다음은 전체 backend 실행 예산을 넘지 않는 분할 경로와 SSE 단위다. 운영 DB/서비스/release/push 변경0.
+
+## 2026-09-08 P2-18 — 전체 backend의 순차 분할
+
+- 전체 단일 backend 실행이20분에서 중단된 증거에 따라 기본 backend(args0)를 Vitest1/2,2/2 순차 호출로 변경했다. 필터와 다른 프로필의 기존 경로를 유지한다. 기존 backend include/exclude를 사용하므로 별도 longitudinal10개도 포함한다.
+- 자식별20분/개별 테스트5초 기본값은 유지하지만 로컬 backend 전체 허용 시간은 최대40분(+정리)으로 늘어난다. 속도 개선이나 기존 전체20분 상한 유지로 표현하지 않는다. CI job30분 상한은 유지했다.
+- 설치된 Vitest3.2.7의 수집387파일과 실제 BaseSequencer를 대조해194+193/중복0/누락0/longitudinal10을 확인했다. list --filesOnly는 shard를 적용하지 않으므로 이 출력만으로 실행 분할을 판정하지 않았다.
+- 실제 wrapper/Vitest 격리 실행에서 첫 shard 실패 후에도4파일 각1회 실행·exit1 보존, 정상4파일 각1회·exit0을 확인했다. 기존 프로세스/취소/cleanup8개 회귀도 통과했다. 리뷰에서 분할 사이 취소에도 spawn할 수 있는 경계를 지적받아 사전 abort guard를 추가했고 실제 분할 probe와8개 회귀를 다시 통과했다. 최종 필수 결함0.
+- 증거 루트의 `shard-discovery.json`, `test-shards-live-probe.mjs/json`, `test-shards-final.log`. 새 경로의 전체 suite 완료 증거는 아직 없으며 SSE 단위 이후 고정 소스로 실행한다. 운영/배포/push 변경0.
