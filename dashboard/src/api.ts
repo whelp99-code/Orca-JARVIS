@@ -207,7 +207,8 @@ function isApproval(value: unknown): value is OverviewApproval {
   return isRecord(value) && typeof value.request_id === "string" && typeof value.action === "string"
     && isActionLevel(value.action_level) && typeof value.requested_at === "string"
     && typeof value.requested_by === "string" && typeof value.summary === "string"
-    && typeof value.state === "string";
+    && typeof value.state === "string"
+    && (value.retry_status === undefined || isMember(value.retry_status, ["allowed", "replan_required", "not_allowed"]));
 }
 
 function isRisk(value: unknown): value is OverviewRisk {

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { attachConsole, type ConsoleBag } from "./browser-qa.js";
+import { expiredRetryFlow } from "./retry-expiry-flow.js";
 import {
   agentLogsFlow,
   approveExecuteFlow,
@@ -69,6 +70,10 @@ test("cancel stages a pending workflow.cancel", async ({ page }) => {
 
 test("failed-only retry stages a fresh pending request", async ({ page }) => {
   await retryFlow(page);
+});
+
+test("expired workflow offers replanning and rejects a direct retry without writes", async ({ page }, testInfo) => {
+  await expiredRetryFlow(page, testInfo);
 });
 
 test("axe serious or critical is zero and the viewport does not overflow", async ({ page }) => {

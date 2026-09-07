@@ -1,7 +1,6 @@
 import { resolve } from "node:path";
 import { ApprovedCommandExecutor, type ApprovedExecutionResult } from "../approved-executor.js";
 import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
-import { controlActionDescriptor } from "../control-actions.js";
 import {
   ControlPlane,
   type ControlCommandRequestInput,
@@ -16,6 +15,7 @@ import {
   parseRetryRequest,
 } from "./authority-validation.js";
 import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
+import { dashboardRetryStatus } from "./retry-policy.js";
 
 const REQUESTED_BY = "jarvis-control-center" as const;
 const REQUEST_TTL_MS = 15 * 60_000;
@@ -118,7 +118,9 @@ export function stageDashboardCancel(input: CancelInput): StoredControlCommand {
 export function stageDashboardRetry(input: RetryInput): StoredControlCommand {
   const parsed = parseRetryRequest(input.body);
   const source = new ControlPlane(input.db).get(input.sourceRequestId);
-  if (source === undefined || source.state !== "failed" || controlActionDescriptor(source.action)?.executable !== true) {
+  const retryStatus = dashboardRetryStatus(source, input.now);
+  if (retryStatus === "replan_required") throw new JarvisError("RETRY_REPLAN_REQUIRED");
+  if (source === undefined || retryStatus !== "allowed") {
     throw new JarvisError("RETRY_NOT_ALLOWED");
   }
   return new ControlPlane(input.db).stage(retryCommand(source, parsed, input.now), input.now);

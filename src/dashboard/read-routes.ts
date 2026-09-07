@@ -27,6 +27,7 @@ export type DashboardReadRouteInput = {
   readonly path: string;
   readonly response: ServerResponse;
   readonly requestId: string;
+  readonly now?: Date;
 };
 
 export function tryHandleDashboardRead(input: DashboardReadRouteInput): boolean {
@@ -52,7 +53,7 @@ export function tryHandleDashboardRead(input: DashboardReadRouteInput): boolean 
     case "control_requests":
       writeDashboardJson(input.response, {
         status: 200,
-        body: input.model.listControlRequests(),
+        body: input.model.listControlRequests(input.now),
         requestId: input.requestId,
       });
       return true;

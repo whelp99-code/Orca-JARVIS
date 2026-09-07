@@ -21,6 +21,7 @@ const ERROR_STATUS = {
   CONTROL_STATE_CONFLICT: 409,
   CONTROL_COMMAND_REPLAY_CONFLICT: 409,
   RETRY_NOT_ALLOWED: 409,
+  RETRY_REPLAN_REQUIRED: 409,
   TASK_NOT_FOUND: 404,
   VALIDATION_ERROR: 400,
   RECEIPT_DECISION_INVALID: 400,
@@ -36,6 +37,7 @@ const ERROR_MESSAGE = {
   CONTROL_STATE_CONFLICT: "Control state conflict",
   CONTROL_COMMAND_REPLAY_CONFLICT: "Control command replay conflict",
   RETRY_NOT_ALLOWED: "Retry not allowed",
+  RETRY_REPLAN_REQUIRED: "Replan the task and obtain a new approval",
   TASK_NOT_FOUND: "Task not found",
   VALIDATION_ERROR: "Validation error",
   RECEIPT_DECISION_INVALID: "Receipt decision invalid",
@@ -194,6 +196,7 @@ function mappedAuthorityError(error: unknown): AuthorityErrorCode | undefined {
     case "CONTROL_STATE_CONFLICT":
     case "CONTROL_COMMAND_REPLAY_CONFLICT":
     case "RETRY_NOT_ALLOWED":
+    case "RETRY_REPLAN_REQUIRED":
     case "TASK_NOT_FOUND":
     case "VALIDATION_ERROR":
     case "RECEIPT_DECISION_INVALID":

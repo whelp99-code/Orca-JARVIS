@@ -13,7 +13,8 @@
 | 02 | runtime 소유권 | 구현·독립 리뷰 완료; 관련 자동 41개와 실제 프로세스/CLI 2개 시나리오 통과 |
 | 03 | 만료 정산 | 구현·독립 정적 리뷰 완료; 만료/rollback 10개 및 기존 관련 25개 통과 |
 | 04 | 작업 제약·완료 기준을 승인부터 결과까지 보존 | 제안→승인→workflow 저장 구현; 실제 dispatch·검증 연결은 10–11과 함께 후속 |
-| 05–06, 08–09 | 상태·집계·읽기 부작용·재시도 | 대기 |
+| 05–06, 08 | 상태·집계·읽기 부작용 | 대기 |
+| 09 | 만료된 workflow 시작 재시도 | 원래 마감/예산 재검증, 재계획·재승인 안내 구현; HTTP 및 브라우저 검증 완료 |
 | 07 | retention 결과 정합성 | 어댑터 미설정 실패, policy 전달, 원자적 처리 구현; 실제 정책별 어댑터·스케줄은 12 후속 |
 | 10–11, 21 최소 | 실제 준비 상태와 승인된 작업 한 건의 실행 완결 | 대기; 실사용 인수 필수 |
 | 12–13 | 스케줄·관찰 장애와 실행 장애 분리 | 대기 |
@@ -93,3 +94,21 @@
 - retention 10개, composition 1개, reviewability 2개, 기존 jobs/reclaim/expiry 23개 — 중복 제외 관련 36개 통과. 잠금 획득 전후 시각 검증은 주입 clock이며 실제 프로세스 잠금 대기 부하 시험은 아니다.
 - export 추가로 발생한 index barrel 252행 gate 실패는 해당 모듈의 public export를 한 re-export로 정리해 250행으로 조치했고 reviewability 2개를 재실행했다. 이 기계적 상한 정책의 개선은 항목14로 유지한다.
 - `npm run typecheck && npm run lint && npm run build:backend`: exit 0. 실제 데이터 클래스별 삭제 정책 구현과 일일 운영 연결은 아직 활성화하지 않았다. SQLite 밖 외부 효과를 내는 retention adapter는 이 원자성 계약에 포함되지 않는다.
+
+## 2026-09-07 전체 gate 관측과 동시 변경
+
+- `env TMPDIR=/home/jm/.cache/jvtest DISPLAY=:102 npm run verify`: exit 0. Backend 335파일 1,871개, dashboard 25파일 136개 통과, acceptance와 CLI smoke 완료. Backend 실행 시간 720.63초, dashboard 22.14초.
+- 실행 시작 HEAD는 `7b96326`이다. 이번 작업의 제품 수정은 gate 종료 후 적용했다. 실행 중 다른 작업이 `src/second-brain-evidence-parser.ts`, `src/second-brain-read-values.ts`를 수정한 것이 mtime 23:14:18 KST와 diff로 확인됐다. 따라서 위 결과를 `7b96326`의 정확한 단독 소스 검증으로 취급하지 않는다.
+- 해당 동시 변경과 이후 추가된 세컨드브레인 어댑터/테스트 변경은 보존하며 이번 재시도 커밋에 포함하지 않는다. 최종 전체 gate는 소스 상태를 고정할 수 있는 시점에 다시 검증한다.
+- 실제 `GjcCoordinatorClient` → 설치된 coordinator 호출로 `gjc-coordinator-mcp / 0.11.8`, sessions 3개 응답을 확인했다. 조회 연결 증거이며 실제 업무 dispatch·완료 증거는 아니다.
+
+## 2026-09-07 P1-09 만료 재시도와 재계획 안내
+
+- 회귀 HTTP에서 deadline 시각 및 직후에 만료 workflow가 새 pending 요청으로 생성되는 `202`를 재현했다. 이제 `409 / RETRY_REPLAN_REQUIRED`이며 새 요청·영수증·효과 쓰기 없이 거부한다.
+- 읽기 API는 재시도 상태를 제공하고 POST는 현재 clock으로 다시 판정한다. workflow.start의 deadline, 양수 정수 예산, 기존 TaskSpec 바인딩을 확인한다. 유효한 재시도는 기존 args·예산을 그대로 보존하고 새 pending 요청에 별도 승인을 요구한다.
+- UI는 재계획이 필요한 작업의 재시도 버튼 대신 기존 `/proposals`로 안내한다. 조회 직후 만료된 경우에도 409 응답을 받아 같은 안내로 전환한다. 구버전 읽기 응답의 optional 필드 부재는 허용하며 서버 검증은 항상 적용한다.
+- HTTP 신규 9개: 만료 1ms 전/경계/이후, 조회 후 만료, invalid deadline, steps 0/음수, fractional attempts, attempts 누락. 기존 관련 17개 및 overview/API 6개와 합쳐 32개 통과. null budget은 최초 command stage에서 `CONTROL_ARGS_MISMATCH`로 차단되어 유효한 failed-source fixture가 아니므로 재시도 경계 테스트로 가장하지 않는다.
+- dashboard 전체 25파일 139개 통과. Chromium 1440/1024 각각 유효한 재시도와 만료 재계획 동선 — 고유 시나리오 4개 통과. 만료 시나리오는 UI 표시·새 제안 화면 이동·직접 POST 409·SQLite total_changes 불변·serious/critical 접근성 위반 0·가로 넘침 없음을 확인했다. 운영 DB나 실제 에이전트 업무는 실행하지 않았다.
+- 새 브라우저 시나리오를 기존 `control-center.spec.ts`에 연결하여 `npm run test:e2e` 및 CI에서 함께 실행한다. 기존 4176 리스너를 보존하고 별도 55609/39877 fixture 및 OS 할당 loopback 포트를 사용했다.
+- 독립 정적 리뷰 필수 코드 지적 0건. 추가 예산 검증 권고를 반영했다. `npm run typecheck && npm run lint && npm run build`: exit 0, 테스트/CI 연결 추가 후 typecheck와 lint 재실행 exit 0.
+- 이 변경은 기존 개선 항목09의 workflow.start 재시도 경계다. generic workflow dispatch·완료 검증과 실행자 준비 상태(04/10/11/21)는 계속 미완료이며 단순 workflow 시작을 업무 완료로 보고하지 않는다.

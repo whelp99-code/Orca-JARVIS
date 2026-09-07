@@ -263,6 +263,33 @@ describe("receipt-bound authority controls", () => {
     expect(pending).toHaveTextContent("pending");
   });
 
+  it("guides an expired workflow to a new proposal without calling retry", () => {
+    const current = createClient();
+    renderControls({ ...requestIn("failed"), retry_status: "replan_required" }, current.client);
+    expect(screen.queryByRole("button", { name: "Retry failed request" })).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: "새 작업 제안" })).toHaveAttribute("href", "/proposals");
+    expect(screen.getByRole("status")).toHaveTextContent("새 승인을 받아주세요");
+    expect(current.retryRequest).not.toHaveBeenCalled();
+  });
+
+  it("removes retry when the server finds expiry after the displayed eligibility", async () => {
+    const current = createClient();
+    current.retryRequest.mockRejectedValue(new DashboardApiError({ kind: "server",
+      code: "RETRY_REPLAN_REQUIRED", message: "private response must not render", request_id: "api-request" }));
+    const { user } = renderControls({ ...requestIn("failed"), retry_status: "allowed" }, current.client);
+    await user.click(screen.getByRole("button", { name: "Retry failed request" }));
+    expect(await screen.findByRole("link", { name: "새 작업 제안" })).toHaveAttribute("href", "/proposals");
+    expect(screen.queryByRole("button", { name: "Retry failed request" })).not.toBeInTheDocument();
+    expect(document.body).not.toHaveTextContent("private response must not render");
+    expect(current.retryRequest).toHaveBeenCalledOnce();
+  });
+
+  it("hides retry for a nonexecutable failed command", () => {
+    const current = createClient();
+    renderControls({ ...requestIn("failed"), retry_status: "not_allowed" }, current.client);
+    expect(screen.queryByRole("button", { name: "Retry failed request" })).not.toBeInTheDocument();
+  });
+
   it.each(["pending", "approved", "rejected", "completed"])("does not retry a %s request", (state) => {
     // Given / When
     const current = createClient();

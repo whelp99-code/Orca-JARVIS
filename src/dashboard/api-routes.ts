@@ -105,6 +105,7 @@ export async function tryHandleDashboardApi(input: DashboardApiInput): Promise<b
     path: input.path,
     response: input.response,
     requestId: input.requestId,
+    now: input.clock(),
   });
 }
 

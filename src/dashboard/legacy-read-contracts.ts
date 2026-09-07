@@ -26,6 +26,7 @@ export type OverviewApproval = {
   readonly requested_by: string;
   readonly summary: string;
   readonly state: string;
+  readonly retry_status?: "allowed" | "replan_required" | "not_allowed";
 };
 export type OverviewRisk = { readonly id: string; readonly severity: string; readonly message: string };
 export type OverviewAgent = {

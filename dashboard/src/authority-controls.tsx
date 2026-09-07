@@ -23,7 +23,8 @@ type Operation =
   | { readonly kind: "error"; readonly action: "receipt" | Action }
   | { readonly kind: "decided"; readonly state: "approved" | "rejected" }
   | { readonly kind: "executed"; readonly state: "completed" | "failed" | "uncertain" }
-  | { readonly kind: "retried"; readonly command: StoredControlCommand };
+  | { readonly kind: "retried"; readonly command: StoredControlCommand }
+  | { readonly kind: "replan_required" };
 type ReceiptParse =
   | { readonly ok: true; readonly receipt: CommandApprovalReceipt }
   | { readonly ok: false };
@@ -86,7 +87,8 @@ export function AuthorityControls({
       setOperation({ kind: "retried", command });
     } catch (error: unknown) {
       if (!isMutationError(error)) throw error;
-      setOperation({ kind: "error", action: "retry" });
+      setOperation(error instanceof DashboardApiError && error.code === "RETRY_REPLAN_REQUIRED"
+        ? { kind: "replan_required" } : { kind: "error", action: "retry" });
     }
   }
 
@@ -98,6 +100,7 @@ export function AuthorityControls({
   const decisionComplete = operation.kind === "decided";
   const executionComplete = operation.kind === "executed";
   const retryComplete = operation.kind === "retried";
+  const replanRequired = request.retry_status === "replan_required" || operation.kind === "replan_required";
 
   return (
     <article className="authority-controls">
@@ -126,10 +129,16 @@ export function AuthorityControls({
           Execute approved request
         </button>
       ) : null}
-      {request.state === "failed" && !retryComplete ? (
+      {request.state === "failed" && !retryComplete && !replanRequired && request.retry_status !== "not_allowed" ? (
         <button type="button" disabled={busy} onClick={() => { void retry(); }}>
           Retry failed request
         </button>
+      ) : null}
+      {request.state === "failed" && replanRequired ? (
+        <div role="status">
+          <p>작업 명세와 실행 기한을 다시 정하고 새 승인을 받아주세요.</p>
+          <a href="/proposals">새 작업 제안</a>
+        </div>
       ) : null}
       <OperationMessage operation={operation} />
       {operation.kind === "retried" ? <PendingRequest command={operation.command} /> : null}
@@ -141,6 +150,7 @@ function OperationMessage({ operation }: Readonly<{ operation: Operation }>) {
   switch (operation.kind) {
     case "idle":
     case "retried":
+    case "replan_required":
       return null;
     case "loading":
       return <p className="control-status" role="status">Submitting request</p>;

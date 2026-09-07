@@ -25,6 +25,7 @@ import type {
 import { createPersonalCursorSession, PersonalDashboardReadModel } from "./personal-read-model.js";
 import type { PersonalCursorCodecOptions } from "./personal-cursor.js";
 import { redactDashboardValue } from "./redaction.js";
+import { dashboardRetryStatus } from "./retry-policy.js";
 import { buildSecondBrainReadiness, type SecondBrainReadinessProbe } from "../second-brain-readiness.js";
 import { runtimeSecondBrainReadinessProbe } from "../second-brain-readiness-runtime.js";
 import type { CapabilityProbe } from "../capabilities.js";
@@ -74,7 +75,7 @@ export class DashboardReadModel {
     const secondBrain = await buildSecondBrainReadiness(this.secondBrainProbe, now);
     if (changeCount(this.db) !== before) throw new JarvisError("DASHBOARD_READ_MUTATED");
     const recent_tasks = tasks.map(toOverviewTask);
-    const pending_approvals = commands.filter(isPending).map(toOverviewApproval);
+    const pending_approvals = commands.filter(isPending).map(command => toOverviewApproval(command, now));
     const risks = projection.risks.flatMap(toOverviewRisk);
     const agents = bindings.map(toOverviewAgent);
     const overview = redactDashboardValue({
@@ -137,13 +138,13 @@ export class DashboardReadModel {
     });
   }
 
-  listControlRequests(): ControlRequestListResponse {
+  listControlRequests(now = new Date()): ControlRequestListResponse {
     return readSnapshot(this.db, () => redactDashboardValue({
       schema_version: DASHBOARD_SCHEMA_VERSION,
       items: new ControlPlane(this.db).list()
         .filter(isActionableControl)
         .sort((left, right) => left.requested_at.localeCompare(right.requested_at) || left.request_id.localeCompare(right.request_id))
-        .map(toOverviewApproval),
+        .map(command => toOverviewApproval(command, now)),
     }));
   }
 }
@@ -194,7 +195,7 @@ function isActionableControl(command: StoredControlCommand): boolean {
   return command.state === "pending" || command.state === "approved" || command.state === "failed";
 }
 
-function toOverviewApproval(command: StoredControlCommand): OverviewApproval {
+function toOverviewApproval(command: StoredControlCommand, now: Date): OverviewApproval {
   return {
     request_id: command.request_id,
     action: command.action,
@@ -203,6 +204,7 @@ function toOverviewApproval(command: StoredControlCommand): OverviewApproval {
     requested_by: command.requested_by,
     summary: command.action,
     state: command.state,
+    retry_status: dashboardRetryStatus(command, now),
   };
 }
 
