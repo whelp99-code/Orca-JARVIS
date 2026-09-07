@@ -3,17 +3,17 @@ import { ControlPlane, type StoredControlCommand } from "./control-plane.js";
 import { type AuthorityDb, JarvisError } from "./db.js";
 import { LoopGraph } from "./loopgraph.js";
 import { controlWorkflowRunInput } from "./control-workflow-input.js";
-import { parseTaskExecutionPlan, taskExecutionPlanDigest, type TaskExecutionPlanV1 } from "./task-execution-plan.js";
+import { parseTaskExecutionPlan, taskExecutionPlanDigest, type TaskExecutionPlan } from "./task-execution-plan.js";
 
 export interface StageTaskExecutionInput {
   readonly request_id: string;
   readonly nonce: string;
   readonly requested_by: string;
-  readonly plan: TaskExecutionPlanV1;
+  readonly plan: TaskExecutionPlan;
 }
 
 /** Recheck this binding again at execution; staging is neither approval nor provider readiness. */
-export function assertTaskExecutionBinding(db: AuthorityDb, plan: TaskExecutionPlanV1, now: Date): void {
+export function assertTaskExecutionBinding(db: AuthorityDb, plan: TaskExecutionPlan, now: Date): void {
   const run = new LoopGraph(db).get(plan.run_id);
   if (!["running", "waiting_approval"].includes(run.state) || !Number.isFinite(now.getTime())) {
     throw new JarvisError("TASK_EXECUTION_WORKFLOW_NOT_READY");

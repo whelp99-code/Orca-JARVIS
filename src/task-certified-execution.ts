@@ -7,6 +7,8 @@ import { taskCertificationVerifierKey } from "./task-certification-context.js";
 import { TaskCandidateCertifications } from "./task-candidate-certifications.js";
 import { executeTaskCandidate } from "./task-candidate-execution.js";
 import type { TaskVerifierProcess } from "./task-verifier-process.js";
+import { parseTaskExecutionPlan } from "./task-execution-plan.js";
+import { publishTaskGitCandidate } from "./task-git-publication.js";
 
 export type TaskCertificationDriver = { readonly key_id: string; readonly process: TaskVerifierProcess };
 
@@ -62,4 +64,14 @@ export async function executeCertifiedTaskCandidate(input: Parameters<typeof exe
   return { ...candidate, state: "candidate_certified" as const, certification: certified.proof,
     verification_id: certified.verification_id,
     checks_passed: candidate.verification.state === "checks_passed" && certified.proof.measurement.state === "checks_passed" };
+}
+
+/** Execute the explicitly approved output mode; a v1 candidate never acquires Git publication authority. */
+export async function executeTaskPlan(input: Parameters<typeof executeCertifiedTaskCandidate>[0]) {
+  const command = structuredClone(input.command); const plan = parseTaskExecutionPlan(command.args.plan);
+  const certified = await executeCertifiedTaskCandidate({ ...input, command });
+  if (plan.schema_version === 1 || !certified.checks_passed) return certified;
+  const published = await publishTaskGitCandidate({ authority: input.authority, command,
+    verification_id: certified.verification_id, clock: input.clock });
+  return { ...certified, ...published };
 }

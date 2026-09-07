@@ -3,7 +3,7 @@ import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath, type FileHandle } from "node:fs/promises";
 import { join } from "node:path";
 import { JarvisError } from "./db.js";
-import type { TaskExecutionPlanV1 } from "./task-execution-plan.js";
+import type { TaskExecutionPlan } from "./task-execution-plan.js";
 
 const FILE_LIMIT = 4 * 1024 * 1024;
 const hash = (bytes: Uint8Array) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
@@ -28,14 +28,14 @@ export class PinnedDirectory {
     } catch (error) { await handle.close(); throw error; }
   }
   get anchored(): string { return `/proc/${process.pid}/fd/${this.handle.fd}`; }
-  async child(name: string, create = false): Promise<PinnedDirectory> {
+  async child(name: string, create = false, privateDirectory = true): Promise<PinnedDirectory> {
     await this.check();
     if (create) await mkdir(join(this.anchored, name), { mode: 0o700 });
     const handle = await open(join(this.anchored, name), constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
     try {
       const stat = await handle.stat();
       const path = join(this.path, name);
-      if (stat.uid !== process.getuid?.() || (stat.mode & 0o077) !== 0
+      if (stat.uid !== process.getuid?.() || (privateDirectory && (stat.mode & 0o077) !== 0)
         || await realpath(`/proc/${process.pid}/fd/${handle.fd}`) !== path) return fail("TASK_WORKSPACE_PARENT_INVALID");
       return new PinnedDirectory(path, handle, stat.dev, stat.ino);
     } catch (error) { await handle.close(); throw error; }
@@ -60,7 +60,7 @@ export class PinnedDirectory {
     if (!stat.isDirectory() || stat.isSymbolicLink() || stat.dev !== this.device || stat.ino !== this.inode
       || await realpath(this.anchored) !== this.path) return fail("TASK_REPOSITORY_CHANGED");
   }
-  async read(file: TaskExecutionPlanV1["files"][number]): Promise<CapturedFile> {
+  async read(file: TaskExecutionPlan["files"][number]): Promise<CapturedFile> {
     const parents: FileHandle[] = [];
     let current = this.handle;
     const parts = file.path.split("/");

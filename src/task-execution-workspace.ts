@@ -5,9 +5,10 @@ import { basename, dirname, join, relative, resolve, sep } from "node:path";
 import { promisify } from "node:util";
 import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./db.js";
-import { parseTaskExecutionPlan, taskExecutionPlanDigest, type TaskExecutionPlanV1 } from "./task-execution-plan.js";
+import { parseTaskExecutionPlan, taskExecutionPlanDigest, type TaskExecutionPlan } from "./task-execution-plan.js";
 
 import { PinnedDirectory, type CapturedFile } from "./task-workspace-directory.js";
+import { inspectTaskPublicationIdentity } from "./task-publication-git.js";
 
 const TOTAL_LIMIT = 16 * 1024 * 1024;
 const hash = (bytes: Uint8Array | string) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
@@ -37,10 +38,13 @@ export const inspectTaskGit: TaskGitInspector = async root => {
 };
 
 
-async function capture(plan: TaskExecutionPlanV1, git: TaskGitInspector) {
+async function capture(plan: TaskExecutionPlan, git: TaskGitInspector) {
   const root = await PinnedDirectory.open(plan.repository.root);
   try {
     const checkGit = async () => {
+      if (plan.schema_version === 2 && await inspectTaskPublicationIdentity(plan.repository.root) !== plan.publication.repository_identity) {
+        return fail("TASK_PUBLICATION_GIT_IDENTITY_CHANGED");
+      }
       const observed = await git(root.anchored);
       if (observed.root !== plan.repository.root || observed.commit !== plan.repository.baseline_commit) {
         return fail("TASK_REPOSITORY_BASELINE_CHANGED");
@@ -65,7 +69,7 @@ async function capture(plan: TaskExecutionPlanV1, git: TaskGitInspector) {
   } finally { await root.handle.close(); }
 }
 
-export async function inspectTaskExecutionRepository(value: TaskExecutionPlanV1,
+export async function inspectTaskExecutionRepository(value: TaskExecutionPlan,
   git: TaskGitInspector = inspectTaskGit): Promise<TaskRepositoryCheck> {
   try { return (await capture(parseTaskExecutionPlan(value), git)).check; }
   catch (error) {
@@ -75,7 +79,7 @@ export async function inspectTaskExecutionRepository(value: TaskExecutionPlanV1,
 }
 
 /** Internal execution input boundary; caller must verify current task authority before exposing these bytes to a provider. */
-export async function readTaskExecutionInputs(value: TaskExecutionPlanV1, git: TaskGitInspector = inspectTaskGit) {
+export async function readTaskExecutionInputs(value: TaskExecutionPlan, git: TaskGitInspector = inspectTaskGit) {
   try { return await capture(parseTaskExecutionPlan(value), git); }
   catch (error) {
     if (error instanceof JarvisError) throw error;
@@ -84,7 +88,7 @@ export async function readTaskExecutionInputs(value: TaskExecutionPlanV1, git: T
 }
 
 /** Prepare candidate inputs only. Neither an OS sandbox nor authority to execute or publish changes. */
-export async function prepareTaskExecutionWorkspace(value: TaskExecutionPlanV1, parent: string,
+export async function prepareTaskExecutionWorkspace(value: TaskExecutionPlan, parent: string,
   git: TaskGitInspector = inspectTaskGit): Promise<{ directory: string; repository: TaskRepositoryCheck }> {
   try { return await prepareWorkspace(value, parent, git); }
   catch (error) {
@@ -93,7 +97,7 @@ export async function prepareTaskExecutionWorkspace(value: TaskExecutionPlanV1, 
   }
 }
 
-async function prepareWorkspace(value: TaskExecutionPlanV1, parent: string, git: TaskGitInspector) {
+async function prepareWorkspace(value: TaskExecutionPlan, parent: string, git: TaskGitInspector) {
   const plan = parseTaskExecutionPlan(value);
   const parentPath = resolve(parent);
   const sourceRelative = relative(plan.repository.root, parentPath);

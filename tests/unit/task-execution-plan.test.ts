@@ -3,6 +3,28 @@ import { parseTaskExecutionPlan, taskExecutionPlanDigest, validateTaskExecutionA
 import { executionPlan } from "../fixtures/task-execution-fixture.js";
 
 describe("machine-readable task execution plan", () => {
+  it("binds v2 publication to an explicit new ref while keeping v1 candidate-only", () => {
+    const prior = executionPlan();
+    const next = { ...prior, schema_version: 2 as const, mode: "verified_git_commit" as const,
+      publication: { ref: "refs/heads/codex/result", repository_identity: `sha256:${"a".repeat(64)}` } };
+    expect(parseTaskExecutionPlan(next)).toEqual(next);
+    expect(taskExecutionPlanDigest(next)).not.toBe(taskExecutionPlanDigest(prior));
+    expect(taskExecutionPlanDigest({ ...next, publication: { ...next.publication, ref: "refs/heads/codex/other" } }))
+      .not.toBe(taskExecutionPlanDigest(next));
+    expect(taskExecutionPlanDigest({ ...next, publication: { ...next.publication, repository_identity: `sha256:${"b".repeat(64)}` } }))
+      .not.toBe(taskExecutionPlanDigest(next));
+    expect(() => parseTaskExecutionPlan({ ...prior, publication: next.publication })).toThrow();
+    expect(() => parseTaskExecutionPlan({ ...next, schema_version: 1 })).toThrow();
+    expect(() => parseTaskExecutionPlan({ ...next, publication: { ref: next.publication.ref } })).toThrow();
+    expect(() => parseTaskExecutionPlan({ ...next, publication: { ...next.publication, repository_identity: "invalid" } })).toThrow();
+  });
+
+  it.each(["HEAD", "refs/heads/main", "refs/tags/release", "refs/heads/codex/../main", "refs/heads/codex/a.lock",
+    "refs/heads/codex/a.", "refs/heads/codex/-x", "refs/heads/codex/a/b", "refs/heads/codex/x\ncreate other"])(
+    "rejects publication ref %j", ref => {
+      expect(() => parseTaskExecutionPlan({ ...executionPlan(), schema_version: 2, mode: "verified_git_commit",
+        publication: { ref, repository_identity: `sha256:${"a".repeat(64)}` } })).toThrow();
+    });
   it("binds every execution choice and returns an independent validated value", () => {
     const plan = executionPlan();
     const parsed = parseTaskExecutionPlan(plan);

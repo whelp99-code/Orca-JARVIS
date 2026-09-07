@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./db.js";
-import { parseTaskExecutionPlan, taskExecutionPlanDigest, type TaskExecutionPlanV1 } from "./task-execution-plan.js";
+import { parseTaskExecutionPlan, taskExecutionPlanDigest, type TaskExecutionPlan } from "./task-execution-plan.js";
 import { spawnTaskSandbox, type TaskSandboxFile, type TaskSandboxRunner, type TaskSandboxResult } from "./task-sandbox.js";
 
 const hash = (value: string | Buffer) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
@@ -12,7 +12,7 @@ export type TaskCandidateVerification = {
   readonly checks: readonly (TaskSandboxResult & { readonly id: string })[];
 };
 
-function candidateInputs(plan: TaskExecutionPlanV1, values: readonly TaskSandboxFile[]): TaskSandboxFile[] {
+function candidateInputs(plan: TaskExecutionPlan, values: readonly TaskSandboxFile[]): TaskSandboxFile[] {
   const invalid = (): never => { throw new JarvisError("TASK_CANDIDATE_INPUT_INVALID"); };
   if (!Array.isArray(values) || values.length !== plan.files.length) return invalid();
   const provided = new Map<string, Buffer>();
@@ -32,14 +32,14 @@ function candidateInputs(plan: TaskExecutionPlanV1, values: readonly TaskSandbox
 }
 
 /** Executes verifier argv on a frozen, read-only byte snapshot. Does not approve, publish, sign, or settle a workflow. */
-export async function verifyTaskCandidate(value: TaskExecutionPlanV1, values: readonly TaskSandboxFile[],
+export async function verifyTaskCandidate(value: TaskExecutionPlan, values: readonly TaskSandboxFile[],
   runner: TaskSandboxRunner = spawnTaskSandbox): Promise<TaskCandidateVerification> {
   const { plan, frozen, files, execution_plan_digest, candidate_digest } = freezeTaskCandidate(value, values);
   return await runChecks(plan, frozen, files, execution_plan_digest, candidate_digest, runner);
 }
 
 /** Pure byte validation and identity construction, shared with durable candidate storage. */
-export function freezeTaskCandidate(value: TaskExecutionPlanV1, values: readonly TaskSandboxFile[]) {
+export function freezeTaskCandidate(value: TaskExecutionPlan, values: readonly TaskSandboxFile[]) {
   const plan = parseTaskExecutionPlan(value);
   const frozen = candidateInputs(plan, values);
   const files = frozen.map(file => ({ path: file.path, digest: hash(file.content), bytes: file.content.length }));
@@ -48,7 +48,7 @@ export function freezeTaskCandidate(value: TaskExecutionPlanV1, values: readonly
   return { plan, frozen, files, execution_plan_digest, candidate_digest };
 }
 
-async function runChecks(plan: TaskExecutionPlanV1, frozen: TaskSandboxFile[], files: TaskCandidateVerification["files"],
+async function runChecks(plan: TaskExecutionPlan, frozen: TaskSandboxFile[], files: TaskCandidateVerification["files"],
   execution_plan_digest: string, candidate_digest: string, runner: TaskSandboxRunner): Promise<TaskCandidateVerification> {
   const checks: Array<TaskSandboxResult & { id: string }> = [];
   const deadline = performance.now() + plan.limits.timeout_ms;

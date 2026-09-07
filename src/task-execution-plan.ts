@@ -3,13 +3,11 @@ import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./db.js";
 
-export interface TaskExecutionPlanV1 {
-  readonly schema_version: 1;
+interface TaskExecutionPlanBase {
   readonly run_id: string;
   readonly task_id: string;
   readonly task_spec_digest: string;
   readonly provider: "codex" | "claude";
-  readonly mode: "isolated_candidate";
   readonly repository: { readonly root: string; readonly baseline_commit: string };
   readonly files: readonly { readonly path: string; readonly access: "read" | "write"; readonly before_digest: string | null }[];
   readonly network: "deny";
@@ -18,6 +16,15 @@ export interface TaskExecutionPlanV1 {
     readonly id: string; readonly argv: readonly string[]; readonly cwd: string; readonly expected_exit: 0;
   }[];
 }
+
+export interface TaskExecutionPlanV1 extends TaskExecutionPlanBase {
+  readonly schema_version: 1; readonly mode: "isolated_candidate";
+}
+export interface TaskExecutionPlanV2 extends TaskExecutionPlanBase {
+  readonly schema_version: 2; readonly mode: "verified_git_commit";
+  readonly publication: { readonly ref: string; readonly repository_identity: string };
+}
+export type TaskExecutionPlan = TaskExecutionPlanV1 | TaskExecutionPlanV2;
 
 function invalid(): never { throw new JarvisError("TASK_EXECUTION_PLAN_INVALID"); }
 function record(value: unknown, keys: readonly string[]): Record<string, unknown> {
@@ -39,12 +46,19 @@ function relativePath(value: unknown): value is string {
 }
 
 /** Validate the signed shape; this does not certify a provider or grant filesystem access. */
-export function parseTaskExecutionPlan(value: unknown): TaskExecutionPlanV1 {
+export function parseTaskExecutionPlan(value: unknown): TaskExecutionPlan {
+  const version = value && typeof value === "object" ? Reflect.get(value, "schema_version") : undefined;
   const plan = record(value, ["schema_version", "run_id", "task_id", "task_spec_digest", "provider", "mode",
-    "repository", "files", "network", "limits", "verification"]);
-  if (plan.schema_version !== 1 || !text(plan.run_id, 160) || !text(plan.task_id, 160) || !digest(plan.task_spec_digest)
-    || (plan.provider !== "codex" && plan.provider !== "claude") || plan.mode !== "isolated_candidate"
+    "repository", "files", "network", "limits", "verification", ...(version === 2 ? ["publication"] : [])]);
+  if ((version !== 1 && version !== 2) || !text(plan.run_id, 160) || !text(plan.task_id, 160) || !digest(plan.task_spec_digest)
+    || (plan.provider !== "codex" && plan.provider !== "claude") || plan.mode !== (version === 2 ? "verified_git_commit" : "isolated_candidate")
     || plan.network !== "deny") return invalid();
+  if (version === 2) {
+    const publication = record(plan.publication, ["ref", "repository_identity"]);
+    if (!digest(publication.repository_identity) || typeof publication.ref !== "string"
+      || !/^refs\/heads\/codex\/[a-z0-9][a-z0-9._-]{0,79}$/.test(publication.ref)
+      || publication.ref.includes("..") || publication.ref.endsWith(".") || publication.ref.endsWith(".lock")) return invalid();
+  } else if (version !== 1) return invalid();
   const repository = record(plan.repository, ["root", "baseline_commit"]);
   if (!text(repository.root, 4096) || !isAbsolute(repository.root) || normalize(repository.root) !== repository.root
     || repository.root === "/" || typeof repository.baseline_commit !== "string"
@@ -76,10 +90,10 @@ export function parseTaskExecutionPlan(value: unknown): TaskExecutionPlanV1 {
       || check.argv.length < 1 || check.argv.length > 64 || !check.argv.every(arg => text(arg, 4096))) return invalid();
     ids.add(check.id);
   }
-  return JSON.parse(canonicalize(plan)) as TaskExecutionPlanV1;
+  return JSON.parse(canonicalize(plan)) as TaskExecutionPlan;
 }
 
-export function taskExecutionPlanDigest(plan: TaskExecutionPlanV1): string {
+export function taskExecutionPlanDigest(plan: TaskExecutionPlan): string {
   return `sha256:${createHash("sha256").update(canonicalize(parseTaskExecutionPlan(plan))).digest("hex")}`;
 }
 

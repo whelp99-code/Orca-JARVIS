@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./db.js";
-import { parseTaskExecutionPlan, taskExecutionPlanDigest, type TaskExecutionPlanV1 } from "./task-execution-plan.js";
+import { parseTaskExecutionPlan, taskExecutionPlanDigest, type TaskExecutionPlan } from "./task-execution-plan.js";
 import { assertWorkflowTaskSpec, taskSpecDigest, type TaskSpecV1 } from "./task-spec.js";
 import type { TaskSandboxFile } from "./task-sandbox.js";
 
@@ -25,8 +25,8 @@ const text = (content: Buffer): string => {
 };
 
 /** Pure preparation: no provider call, approval claim, filesystem writes, or input truncation. */
-export function prepareTaskProviderRequest(value: TaskExecutionPlanV1, spec: TaskSpecV1,
-  sources: readonly TaskSourceFile[]): { request: TaskProviderRequest; inputs: readonly TaskSourceFile[]; plan: TaskExecutionPlanV1 } {
+export function prepareTaskProviderRequest(value: TaskExecutionPlan, spec: TaskSpecV1,
+  sources: readonly TaskSourceFile[]): { request: TaskProviderRequest; inputs: readonly TaskSourceFile[]; plan: TaskExecutionPlan } {
   const plan = parseTaskExecutionPlan(value);
   if (!spec || spec.task_id !== plan.task_id || taskSpecDigest(spec) !== plan.task_spec_digest) return fail("TASK_PROVIDER_SPEC_INVALID");
   assertWorkflowTaskSpec({ run_id: plan.run_id, loop_id: "candidate-input", correlation_id: plan.task_id, budget: spec.budget,

@@ -3,12 +3,12 @@ import { validateControlAction } from "./control-actions.js";
 import { controlCommandDigest, verifyCommandApproval, type CommandApprovalReceipt,
   type ClaimedControlCommand, type ControlCommandRequestInput } from "./control-plane-contract.js";
 import { JarvisError, type AuthorityDb } from "./db.js";
-import { parseTaskExecutionPlan, type TaskExecutionPlanV1 } from "./task-execution-plan.js";
+import { parseTaskExecutionPlan, type TaskExecutionPlan } from "./task-execution-plan.js";
 import { assertTaskExecutionBinding } from "./task-execution-staging.js";
 
 /** Read-only authority check. Caller must hold an IMMEDIATE transaction through its ledger write. */
 export function assertTaskExecutionAuthority(db: AuthorityDb, command: ClaimedControlCommand,
-  now: Date): TaskExecutionPlanV1 {
+  now: Date): TaskExecutionPlan {
   const invalid = (): never => { throw new JarvisError("TASK_EXECUTION_AUTHORITY_INVALID"); };
   const time = now.getTime();
   if (!Number.isFinite(time) || command.action !== "task.execute") return invalid();

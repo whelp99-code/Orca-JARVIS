@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./db.js";
 import { freezeTaskCandidate, type TaskCandidateVerification } from "./task-candidate-verification.js";
-import type { TaskExecutionPlanV1 } from "./task-execution-plan.js";
+import type { TaskExecutionPlan } from "./task-execution-plan.js";
 import type { TaskRepositoryCheck } from "./task-execution-workspace.js";
 import type { TaskSandboxFile } from "./task-sandbox.js";
 
@@ -38,7 +38,7 @@ function repositoryCheck(value: unknown, candidate: ReturnType<typeof freezeTask
   return value as unknown as TaskRepositoryCheck;
 }
 
-export function encodeTaskCandidate(attemptId: string, plan: TaskExecutionPlanV1, files: readonly TaskSandboxFile[],
+export function encodeTaskCandidate(attemptId: string, plan: TaskExecutionPlan, files: readonly TaskSandboxFile[],
   repository: TaskRepositoryCheck, providerBytes: number) {
   const candidate = freezeTaskCandidate(plan, files);
   const checked = repositoryCheck(repository, candidate);
@@ -50,7 +50,7 @@ export function encodeTaskCandidate(attemptId: string, plan: TaskExecutionPlanV1
   return { payload, payload_digest: candidateHash(payload), candidate, repository: checked, provider_output_bytes: providerBytes };
 }
 
-export function decodeTaskCandidate(attemptId: string, plan: TaskExecutionPlanV1, payload: Buffer) {
+export function decodeTaskCandidate(attemptId: string, plan: TaskExecutionPlan, payload: Buffer) {
   if (!Buffer.isBuffer(payload) || payload.length > CANDIDATE_PAYLOAD_LIMIT) return artifactInvalid();
   const value: unknown = JSON.parse(payload.toString("utf8"));
   if (!keys(value, "attempt_id,execution_plan_digest,files,provider_output_bytes,repository,schema_version")

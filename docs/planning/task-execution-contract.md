@@ -131,3 +131,47 @@ stdin은 최대 4 MiB, stdout/stderr 합계는 proof 메타데이터 512 KiB와 
 부모는 받은 JSON의 invocation을 현재 예약과 대조하고 기존 proof 검증기로 서명·후보·명령·시간·철회를 재검증하여 저장한다. 자신이 새 예약을 만든 이후 실패한 경우 operation을 uncertain으로 보존하고 자동 재생성을 막는다. 기존 예약과의 충돌은 그 예약의 상태를 변경하지 않는다. 반환 `candidate_certified`는 서명된 측정의 저장이며 `checks_passed`는 로컬 검사와 독립 검사가 모두 통과해야 true다. `published=false`와 workflow running은 유지한다.
 
 실행파일 검사는 직접 확인한 파일이 일반 파일이고 그룹/다른 사용자 쓰기 권한이 없는지 검사한다. 일반 개발 build가 umask에 따라 664 파일을 만들면 TASK_VERIFIER_UNAVAILABLE로 중단한다. 배포 패키지는 entry뿐 아니라 전체 코드·의존성과 상위 디렉터리를 신뢰 가능한 권한으로 준비해야 한다. 현재 사전 검사는 전체 의존성 트리의 무결성 증명이나 개인 키/공개키 짝의 사전 인증 검사가 아니다. 등록 키와 private key 일치는 실제 verifier entry에서 확인한다. 운영 패키징/readiness의 완결과 자동 실행 활성화는 별도 후속 범위다.
+
+## v2 실행계획과 검증된 Git 결과 게시
+
+v1 `isolated_candidate`의 권한과 canonical 형식은 유지한다. 새 v2는 `mode: verified_git_commit`과
+`publication: { ref, repository_identity }`를 서명에 포함한다. ref는 새 `refs/heads/codex/<name>` 한 개이며
+기존 이름의 교체, 현재 HEAD 변경, 작업 트리 덮어쓰기, push/merge/deploy 권한은 부여하지 않는다.
+설계 근거는 [게시 ADR](adr-task-git-publication.md)이다.
+
+승인 전에 `inspectTaskPublicationIdentity(root)`로 실제 root/git-dir/common-dir의 정규 경로와 device/inode
+digest를 읽는다. v2 입력 캡처 전후·게시 open·중단 후 조회가 이 값을 대조한다. `.git` 파일을 동일 commit이
+있는 다른 저장소로 바꾸거나 경로에 새 저장소를 놓아도 이전 승인으로 게시·정상 복구 판정을 하지 않는다.
+저장소를 이동하거나 복원해 identity가 달라진 경우 새 계획/승인이 필요하며 자동 재결합하지 않는다.
+
+`executeTaskPlan`은 기존 후보 생성·독립 서명 검증을 호출하고 v2의 로컬/독립 검사 모두 PASS일 때만
+`publishTaskGitCandidate`를 호출한다. 실패 측정과 v1은 기존 인증 결과로 반환하며 게시하지 않는다.
+게시기는 현재 승인/receipt/fence/키 철회/영속 마감과 전체 후보·서명 binding을 다시 확인한다.
+
+Git baseline의 선언 파일 bytes/mode를 검증 입력과 비교하고 별도 private index에 검증된 write 파일만
+반영한다. read 파일이 dirty였거나 baseline에서 symlink인 부모를 일반 디렉터리로 바꾸어야 하는 변경은
+거부한다. 최종 tree의 전체 선언 파일과 baseline 대비 changed paths를 다시 검사하며 빈 diff도 거부한다.
+최종 커밋은 baseline을 단일 부모로 갖고 후보 및 독립 증거 digest를 메시지에 기록한다. Git 커밋 자체에
+GPG 서명하지 않으며 별도 원장의 Ed25519 proof와 publication binding으로 연결한다.
+
+Git plumbing은 bwrap 안에서 고정 `/usr/bin/git`과 빈 환경으로 실행한다. Git metadata는 읽기 전용이며
+고정 FD로 연 objects·codex ref 디렉터리·private index만 쓰기 가능하다. 현재 작업 파일·홈·DB·인증은
+mount하지 않고 네트워크 namespace를 분리한다. hooks, filters, fsmonitor, 자동 GC, reflog 생성과
+commit signing을 끈다. stderr 원문은 반환하지 않으며 명령별 남은 마감/출력 상한을 지킨다.
+호스트에서 새 codex 디렉터리를 준비할 때도 common FD부터 O_NOFOLLOW로 하위 경로를 고정한다.
+이 경계는 신뢰된 호스트 publisher와 커널을 전제로 하며 동일 UID의 호스트 장악에 대한 보안 보장은 아니다.
+
+Migration 063은 단일 publication의 building→prepared→published 또는 uncertain 상태를 보존한다.
+예상 tree/commit을 SQLite에 COMMIT한 뒤 `update-ref --no-deref`의 create CAS로 새 ref만 생성한다.
+기존 direct/symbolic/dangling symbolic ref는 교체하지 않는다. journal의 identity·내용 교체/삭제·역방향
+상태 전환은 trigger가 차단한다. Git 효과와 SQL 완료는 원자적이지 않으므로 응답 유실은 미확정으로 남긴다.
+
+`inspectTaskGitPublication`은 lease 만료 뒤에도 기존 binding·저장소 identity·실제 ref를 대조하여
+ref_absent/ref_matches/ref_conflict를 반환한다. SQL 상태 변경, private index 생성, writable mount,
+ref 재생성은 수행하지 않는다. SIGKILL 직전/직후의 prepared 기록도 읽을 수 있지만 관측이 실행 재승인이
+되지는 않는다. 생성 후 회수되지 않은 객체, 강제 종료 후 private index의 안전한 보존/정리는 후속 운영 범위다.
+
+통합 반환은 `candidate_published`, `published=true`, publication/ref/commit/tree와 서명된 검증 결과다.
+현재 operation은 invoking, request는 claimed, workflow는 running이다. 다음 필수 구현은 이 증거에 기반한
+명령·workflow 정산, 중단/취소 복구와 결과 UI다. Codex provider·배포 준비 및 운영 인수도 남아 있으므로
+`task.execute`의 executable=false는 유지한다.
