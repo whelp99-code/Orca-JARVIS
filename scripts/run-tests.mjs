@@ -33,7 +33,7 @@ try {
       command = "bwrap";
     }
   }
-  process.stdout.write(`JARVIS_TEST_PROFILE ${profile}\n`);
+  if (profile !== "acceptance" && profile !== "smoke") process.stdout.write(`JARVIS_TEST_PROFILE ${profile}\n`);
   const result = await runTestProcess(command, argv, { env, signal: controller.signal, readyMarker,
     startupTimeoutMs: 15000, timeoutMs: profile === "gui" ? 180000 : 1200000 });
   if (result.timedOut) throw new Error(profile === "gui" ? "TEST_GUI_TIMEOUT" : "TEST_RUN_TIMEOUT");

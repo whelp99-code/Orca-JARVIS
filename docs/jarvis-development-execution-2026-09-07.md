@@ -322,3 +322,10 @@
 - 전체 protocol 검사는 SQL 파일 목록과 원장의 완전 일치·번호 연속성·알려진 052~064 포함을 검증한다. 세 content-free 슬롯을 검증하는 HTTP 테스트는 052~054에 한정하고 request_json 부재·필수 테이블 검사는 유지했다. 새 마지막 번호가 추가될 때마다 무관한 HTTP 기대값을 수정하지 않는다.
 - 실제 SQLite migration·업그레이드·바이트 변경 거부·HTTP 검증 3파일 15개 pass, 해당 파일 ESLint exit 0. 독립 정적 리뷰 필수 지적 0건. 제품 소스·SQL·운영 DB는 수정하지 않았다. 066/V3 변경은 병행 작업 소유이며 이번 단위에 포함하지 않는다.
 - 전체 verify는 실행 중이다. 이번 관련 검사 통과를 전체 gate 통과로 표현하지 않는다. 05/06 상태 정확성, 08 조회 초기화 부작용, 12/13 운영 루프와 후속 01–25 완료 인수는 남아 있다.
+
+## 2026-09-08 P2-18 — 전체 검사 결과와 acceptance 출력 복구
+
+- 전체 verify handle 70723이 exit 1로 종료됐다. backend 378파일에서 2,367 pass/5 fail, 1,045.66초다. 실행 중 공유 작업 트리의 V3 기억 변경과 후속 05 연결 변경이 진행되어 고정 소스 SHA 전체 인수로 취급하지 않는다. dashboard/acceptance/smoke 단계에는 도달하지 않았다.
+- 실패는 Task32 migration 기대값 1개, staged-execstart 스트레스의 Unix socket ECONNREFUSED 1개, 변경 모듈 가독성 2개, acceptance npm stdout 계약 1개다. migration은 `d6cfdd1`과 15개 후속 회귀로 해결했다. socket 실패는 현재 빌드로 재현 여부와 자식 종료/접속 준비를 후속 확인한다. 가독성은 현재 supervisor 변경 및 병행 memory 모듈들에 해당하며 최종 변경 후 다시 검사한다.
+- 공통 실행기의 프로필 안내문이 acceptance/smoke stdout의 JSON 계약을 바꾸는 회귀를 수정했다. 두 machine-readable 프로필에서 안내를 생략하고 원래 stdout/stderr를 그대로 전달한다. 기존 골든·잘못된 입력 및 실제 npm subprocess 검증을 포함한 pre-GJC acceptance 4개 pass, Node 구문 검사 exit 0. 골든 기대값이나 실패 코드를 완화하지 않았다.
+- 전체 목표는 활성 상태다. 현재 05 연결 상태 구현·독립 검토, 이후 06 집계·08 읽기 초기화·13 장애 분리·12 스케줄/보존과 나머지 인수 조건을 계속 진행한다.
