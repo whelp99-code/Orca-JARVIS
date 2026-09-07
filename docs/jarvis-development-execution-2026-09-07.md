@@ -10,7 +10,7 @@
 |---|---|---|
 | 선행 수정 | 만료 intent 복구, 단건 명령 조회, 준비 상태 표시, 중복 build 제거 | 독립 리뷰 신규 결함 0; 관련 3파일 9테스트 pass; lint/typecheck/build exit 0 |
 | 01 | GJC 오류의 비밀정보 제거 | 구현·독립 리뷰 완료; 자동 32개 및 실제 자식 프로세스 3개 검증 통과; 실제 coordinator 인수는 후속 |
-| 02 | runtime 소유권 | 대기; 동시 프로세스 검증 필요 |
+| 02 | runtime 소유권 | 구현·독립 리뷰 완료; 관련 자동 41개와 실제 프로세스/CLI 2개 시나리오 통과 |
 | 03 | 만료 정산 | 구현·독립 정적 리뷰 완료; 만료/rollback 10개 및 기존 관련 25개 통과 |
 | 04 | 작업 제약·완료 기준을 승인부터 결과까지 보존 | 대기 |
 | 05–09 | 상태·집계·retention·읽기 부작용·재시도 | 대기 |
@@ -60,3 +60,14 @@
 - 최종 관련 검증: `gjc-settlement-expiry` 10, `gjc-runtime` 18, `gjc-lease-recovery` 5, `task12-runtime-reviewability` 2 — 4파일 35개 pass.
 - `npm run typecheck && npm run lint && npm run build:backend`: exit 0. 독립 정적 리뷰 필수 지적 0건, 권고한 rollback 검증 추가.
 - 이 검증은 격리 DB와 주입 coordinator 경로다. 실제 에이전트 업무 인수·다중 프로세스 소유권·운영 배포는 아직 완료하지 않았다.
+
+## 2026-09-07 P0-02 실행기 소유권
+
+- owner는 worker 이름·PID·인스턴스 UUID로 구분한다. 유효한 lease는 같은 owner 문자열로도 재claim할 수 없으며 현재 fence를 제시한 heartbeat만 갱신한다.
+- 동일 인스턴스의 cycle 중첩과 실행 중 close를 차단한다. 만료 뒤 재획득은 새 fence를 사용한다.
+- 단발성 CLI의 `service once`, `service run --once`, `gjc run --once`, `runtime once/batch`는 finally에서 자신의 lease만 해제한다. 후속 owner의 lease는 이전 fence로 해제되지 않는다.
+- 실제 Node 프로세스 2개가 같은 WAL DB에 접근하는 시험에서 첫 응답을 IPC barrier로 보류했다. 두 번째 실행기는 leased, claimed intent 1개, 기존 owner/fence 유지. 첫 실행 완료·명시 해제 후 두 번째 실행이 완료되어 completed intent 2개를 확인했다.
+- 실제 CLI `service once`를 두 번 실행하여 매번 disconnected 결과와 lease 해제, 서로 다른 owner 및 증가한 fence를 확인했다. 이는 미연결 상태의 CLI 수명주기 검증이며 실제 GJC 업무 완료가 아니다.
+- 관련 7파일 42개 통과 후 CLI 실프로세스 시나리오 1개를 추가했고, 실프로세스 파일 최종 2개 통과. 중복 실행을 제외한 시나리오는 총 43개(자동 41개, 실프로세스/CLI 2개)다.
+- 최종 `npm run typecheck && npm run lint`: exit 0; 제품 변경 후 `npm run build:backend`: exit 0. 독립 정적 리뷰 새 필수 지적 0건.
+- 전체 suite와 실제 업무 입력→승인→실행→검증 인수는 후속이다. 운영 서비스는 교체하지 않았다.

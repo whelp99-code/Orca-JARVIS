@@ -146,15 +146,19 @@ export async function executeLiveCommand(
       now.toISOString(),
     );
   });
-  if (subcommand === "once" && argument) {
-    const handler = loops.handlers().find(item => item.name === argument);
-    if (!handler) throw new JarvisError("MICROLOOP_UNKNOWN");
-    return { ok: true, command: "runtime.once", outcome: await runtime.once(handler) };
+  try {
+    if (subcommand === "once" && argument) {
+      const handler = loops.handlers().find(item => item.name === argument);
+      if (!handler) throw new JarvisError("MICROLOOP_UNKNOWN");
+      return { ok: true, command: "runtime.once", outcome: await runtime.once(handler) };
+    }
+    if (subcommand === "batch") {
+      return { ok: true, command: "runtime.batch", outcomes: await runtime.batch(loops.handlers()) };
+    }
+    return undefined;
+  } finally {
+    service.close();
   }
-  if (subcommand === "batch") {
-    return { ok: true, command: "runtime.batch", outcomes: await runtime.batch(loops.handlers()) };
-  }
-  return undefined;
 }
 
 type ReportDelivery = {

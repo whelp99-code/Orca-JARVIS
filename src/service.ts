@@ -1,6 +1,7 @@
 import { AuthorityDb, JarvisError } from "./db.js";
 import { GjcCoordinatorClient } from "./gjc.js";
 import { canonicalize } from "./canonical.js";
+import { GjcRuntimeLease } from "./gjc-runtime-lease.js";
 
 const record = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
@@ -22,13 +23,14 @@ function coordinatorTurn(reply: Record<string, unknown>, sessionId: unknown, tur
 
 type Intent = { intent_id: string; kind: "sync" | "dispatch" | "answer"; payload_json: string; idempotency_key: string; lease_fence: number };
 export class GjcRuntimeService {
+  private readonly lease: GjcRuntimeLease;
   constructor(
     private readonly db: AuthorityDb,
     private readonly client: GjcCoordinatorClient,
-    private readonly worker = "gjc-runtime",
+    worker = "gjc-runtime",
     private readonly supervisorCycle?: () => Promise<unknown>,
     private readonly clock: () => Date = () => new Date(),
-  ) {}
+  ) { this.lease = new GjcRuntimeLease(db, worker); }
   status(): Record<string, unknown> {
     const config = this.db.gjcConfig();
     const rows = this.db.db.prepare("SELECT state,COUNT(*) AS count FROM gjc_intents GROUP BY state ORDER BY state").all() as Array<{
@@ -54,9 +56,11 @@ export class GjcRuntimeService {
     };
   }
   async once(now = this.clock().toISOString()): Promise<{ connected?: boolean; processed: string | null; state: string | null }> {
+    return this.lease.run(now, (owner, fence) => this.processOnce(now, owner, fence));
+  }
+  close(): void { this.lease.release(this.clock().toISOString()); }
+  private async processOnce(now: string, owner: string, runtimeFence: number) {
     const config = this.db.gjcConfig();
-    const runtimeFence = this.db.claimGjcRuntimeLease(this.worker, now);
-    if (runtimeFence === null) return { processed: null, state: "leased" };
     this.db.recoverExpiredGjcIntents(now);
     this.db.recordGjcRuntimeStatus(null, now);
     if (this.supervisorCycle) await this.supervisorCycle();
@@ -64,7 +68,7 @@ export class GjcRuntimeService {
     const next = this.db.db.prepare("SELECT intent_id FROM gjc_intents WHERE state='pending' ORDER BY created_at,intent_id LIMIT 1").get() as
       { intent_id: string } | undefined;
     if (!next) return { processed: null, state: null };
-    const claimed = this.db.claimGjcIntent(next.intent_id, this.worker, now) as Intent | null;
+    const claimed = this.db.claimGjcIntent(next.intent_id, owner, now) as Intent | null;
     if (!claimed) return { processed: null, state: null };
     let payload: Record<string, unknown>;
     try {
@@ -82,7 +86,7 @@ export class GjcRuntimeService {
       ): Promise<Record<string, unknown>> => {
         now = this.clock().toISOString();
         this.db.requireGjcIntentLease(claimed.intent_id, claimed.lease_fence, now);
-        this.db.heartbeatGjcRuntimeLease(this.worker, runtimeFence, now);
+        this.db.heartbeatGjcRuntimeLease(owner, runtimeFence, now);
         const reply = await this.client.call(String(config.canonical_cwd), {
           tool,
           arguments: arguments_,
@@ -92,7 +96,7 @@ export class GjcRuntimeService {
         });
         now = this.clock().toISOString();
         this.db.requireGjcIntentLease(claimed.intent_id, claimed.lease_fence, now);
-        this.db.heartbeatGjcRuntimeLease(this.worker, runtimeFence, now);
+        this.db.heartbeatGjcRuntimeLease(owner, runtimeFence, now);
         return reply;
       };
       const tool =

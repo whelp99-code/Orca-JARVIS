@@ -82,7 +82,7 @@ export abstract class GjcConfigurationAuthorityDb extends AuthorityDbBase {
 		if (!owner || leaseMs < 1) throw new JarvisError("GJC_LEASE_INVALID");
 		return this.atomic(() => {
 			const row = this.db.prepare("SELECT * FROM gjc_runtime_leases WHERE id=1").get() as Row | undefined;
-			if (row && String(row.expires_at) > now && row.owner !== owner) return null;
+			if (row && String(row.expires_at) > now) return null;
 			const fence = Number(row?.fence ?? 0) + 1;
 			const expires = new Date(Date.parse(now) + leaseMs).toISOString();
 			this.db
@@ -103,6 +103,12 @@ export abstract class GjcConfigurationAuthorityDb extends AuthorityDbBase {
 			)
 			.run(expires, now, owner, fence, now);
 		if (changed.changes !== 1) throw new JarvisError("GJC_STALE_LEASE");
+	}
+	releaseGjcRuntimeLease(owner: string, fence: number, now = timestamp()): void {
+		if (!Number.isFinite(Date.parse(now))) throw new JarvisError("GJC_LEASE_INVALID");
+		this.db.prepare(
+			"UPDATE gjc_runtime_leases SET expires_at=MIN(expires_at,?) WHERE id=1 AND owner=? AND fence=?",
+		).run(now, owner, fence);
 	}
 	recordGjcRuntimeStatus(errorCode: string | null, now = timestamp()): void {
 		this.db
