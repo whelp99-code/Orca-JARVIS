@@ -7,6 +7,7 @@ import { GjcCoordinatorClient } from "../../src/gjc.js";
 import { type OrcaRunner } from "../../src/orca.js";
 import { execute } from "../../src/cli.js";
 import { decisionReceiptFor, initialized, policyKey, snapshot, tempDb } from "../helpers.js";
+import { seedGjcDispatch } from "../fixtures/gjc-dispatch-fixture.js";
 
 describe("GJC runtime", () => {
   it("keeps the dispatch loop idle when GJC is not operational", async () => {
@@ -52,8 +53,31 @@ describe("GJC runtime", () => {
     expect(JSON.parse(dispatches[0]!.payload_json)).toMatchObject({ continuation_id: continuation.id, session_id: "policy-session" }); db.close();
   });
   it("reconciles only structured terminal coordinator states and never creates a mock acknowledgement", async () => {
-    const nonterminal = ["queued", "delivering", "active", "waiting_for_answer", "completing"]; const terminal = ["failed", "cancelled", "superseded"];
-    for (const status of [...nonterminal, ...terminal]) { const db = new AuthorityDb(tempDb()); await db.migrate(); db.configureGjc(process.cwd(), "s", true); const intent = db.createGjcIntent("dispatch", { cwd: process.cwd(), session_id: "s", prompt: status }, `state-${status}`); const reply = (value: unknown) => ({ stdout: `${JSON.stringify({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2024-11-05", serverInfo: { name: "gjc-coordinator-mcp", version: "0.11.8" } } })}\n${JSON.stringify({ jsonrpc: "2.0", id: 2, result: { content: [{ type: "text", text: JSON.stringify(value) }] } })}\n`, exitCode: 0 }); const client = new GjcCoordinatorClient(async () => reply({ ok: true, turn: { status, turn_id: "t", session_id: "s" } }), true); const service = new GjcRuntimeService(db, client, `worker-${status}`, undefined, () => new Date("2026-08-10T00:00:00.000Z")); const outcome = await service.once("2026-08-10T00:00:00.000Z"); expect(outcome.processed).toBe(intent); expect(outcome.state).toBe(terminal.includes(status) ? "failed" : "uncertain"); expect((db.db.prepare("SELECT COUNT(*) AS n FROM outbox").get() as { n: number }).n).toBe(0); }
+    const nonterminal = ["queued", "delivering", "active", "waiting_for_answer", "completing"];
+    const terminal = ["failed", "cancelled", "superseded"];
+    for (const status of [...nonterminal, ...terminal]) {
+      const db = await initialized(); db.configureGjc(process.cwd(), "s", true);
+      const intent = seedGjcDispatch(db).intent_id;
+      const now = new Date(); let calls = 0;
+      const client = new GjcCoordinatorClient(async () => {
+        calls++;
+        return { exitCode: 0, stdout: [
+          { jsonrpc: "2.0", id: 1, result: { protocolVersion: "2024-11-05",
+            serverInfo: { name: "gjc-coordinator-mcp", version: "0.11.8" } } },
+          { jsonrpc: "2.0", id: 2, result: { content: [{ type: "text", text: JSON.stringify({
+            ok: true, turn: { status, turn_id: "t", session_id: "s" },
+          }) }] } },
+        ].map(frame => JSON.stringify(frame)).join("\n") };
+      }, true);
+      const service = new GjcRuntimeService(db, client, `worker-${status}`, undefined, () => now);
+      try {
+        const outcome = await service.once();
+        expect(outcome.processed).toBe(intent);
+        expect(outcome.state).toBe(terminal.includes(status) ? "failed" : "uncertain");
+        expect(calls).toBe(1);
+        expect(db.db.prepare("SELECT COUNT(*) AS n FROM outbox WHERE acked_at IS NOT NULL").get()).toEqual({ n: 0 });
+      } finally { service.close(); db.close(); }
+    }
   });
   it("exposes CLI service status and once lifecycle without a live Orca binding", async () => { const root = mkdtempSync(`${tmpdir()}/gjc-service-`); const db = join(root, "db.sqlite"); await execute(["db", "migrate", "--db", db]); await expect(execute(["service", "status", "--db", db])).resolves.toMatchObject({ command: "service.status", connected: false }); });
   it("service run consumes one recovered live supervisor report and resumes observation", async () => {
@@ -81,10 +105,20 @@ describe("GJC runtime", () => {
     const runner = async (run: { stdin: string }) => { request = JSON.parse(run.stdin.trim().split("\n")[2]!) as Record<string, unknown>; return { stdout: `${JSON.stringify({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2024-11-05", serverInfo: { name: "gjc-coordinator-mcp", version: "0.11.8" } } })}\n${JSON.stringify({ jsonrpc: "2.0", id: 2, result: { content: [{ type: "text", text: JSON.stringify({ session_id: "s-1", status: "accepted" }) }] } })}\n`, exitCode: 0 }; };
     await expect(execute(["gjc", "connect", config, "--db", db], { gjcRunner: runner })).resolves.toMatchObject({ command: "gjc.connect", connected: true }); expect(request).toMatchObject({ params: { name: "gjc_coordinator_register_session", arguments: { session_id: "s-1", allow_mutation: true, idempotency_key: "register:s-1" } } }); expect((request?.params as { arguments: Record<string, unknown> }).arguments.profile).toBeUndefined(); const opened = new AuthorityDb(db); opened.createGjcIntent("sync", { session_id: "s-1", turn_id: "t" }, "cli-sync"); opened.close(); const lifecycle = async (run: { stdin: string }) => { const name = JSON.parse(run.stdin.trim().split("\n")[2]!).params.name; return { stdout: `${JSON.stringify({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2024-11-05", serverInfo: { name: "gjc-coordinator-mcp", version: "0.11.8" } } })}\n${JSON.stringify({ jsonrpc: "2.0", id: 2, result: { content: [{ type: "text", text: JSON.stringify(name === "gjc_coordinator_read_turn" ? { ok: true, turn: { status: "completed", turn_id: "t", session_id: "s-1" } } : { questions: [] }) }] } })}\n`, exitCode: 0 }; }; await expect(execute(["service", "once", "--db", db], { gjcRunner: lifecycle })).resolves.toMatchObject({ command: "service.once", state: "completed" }); await expect(execute(["service", "run", "--once", "--interval-ms", "1", "--db", db], { gjcRunner: lifecycle })).resolves.toMatchObject({ command: "service.run", interval_ms: 1 });
   });
-  it("binds exact config, keeps unauthorised dispatch at zero, and never replays uncertainty", async () => {
-    const db = new AuthorityDb(tempDb()); await db.migrate(); expect(() => db.createGjcIntent("dispatch", {}, "k")).toThrow("GJC_NOT_CONNECTED");
-    db.configureGjc(process.cwd(), "session", true, "2026-08-10T00:00:00.000Z"); const id = db.createGjcIntent("dispatch", { x: 1 }, "stable", undefined, "2026-08-10T00:00:01.000Z"); expect(db.createGjcIntent("dispatch", { x: 1 }, "stable")).toBe(id);
-    const client = new GjcCoordinatorClient(async () => ({ stdout: `${JSON.stringify({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2024-11-05", serverInfo: { name: "gjc-coordinator-mcp", version: "0.11.8" } } })}\n${JSON.stringify({ jsonrpc: "2.0", id: 2, result: { content: [{ type: "text", text: JSON.stringify({ status: "mystery" }) }] } })}\n`, exitCode: 0 })); const service = new GjcRuntimeService(db, client, "gjc-runtime", undefined, () => new Date("2026-08-10T00:00:02.000Z")); await expect(service.once("2026-08-10T00:00:02.000Z")).resolves.toMatchObject({ state: "uncertain" }); expect(await service.once("2026-08-10T00:00:03.000Z")).toEqual({ processed: null, state: null });
+  it("keeps unauthorized raw dispatch at zero and never retries its rejection", async () => {
+    const db = new AuthorityDb(tempDb()); await db.migrate();
+    expect(() => db.createGjcIntent("dispatch", {}, "k")).toThrow("GJC_NOT_CONNECTED");
+    db.configureGjc(process.cwd(), "session", true);
+    const id = db.createGjcIntent("dispatch", { x: 1 }, "stable");
+    expect(db.createGjcIntent("dispatch", { x: 1 }, "stable")).toBe(id);
+    let calls = 0;
+    const client = new GjcCoordinatorClient(async () => { calls++; throw new Error("must not send"); }, true);
+    const service = new GjcRuntimeService(db, client);
+    try {
+      await expect(service.once()).resolves.toMatchObject({ processed: id, state: "failed" });
+      await expect(service.once()).resolves.toEqual({ processed: null, state: null });
+      expect(calls).toBe(0);
+    } finally { service.close(); db.close(); }
   });
   it("rejects conflicting question-answer replays", async () => { const db = new AuthorityDb(tempDb()); await db.migrate(); db.configureGjc(process.cwd(), "s", true); const intent = db.createGjcIntent("sync", { session_id: "s", turn_id: "t" }, "sync"); db.bindGjcQuestion(intent, "q", { prompt: "ok" }); db.answerGjcQuestion("q", { answer: "yes" }, "a"); expect(() => db.answerGjcQuestion("q", { answer: "no" }, "a")).toThrow("GJC_ANSWER_REPLAY_CONFLICT"); });
   it("queues only schema-bound question submissions and rejects missing or mismatched bindings", async () => { const db = new AuthorityDb(tempDb()); await db.migrate(); db.configureGjc(process.cwd(), "s", true); const intent = db.createGjcIntent("sync", { session_id: "s", turn_id: "t" }, "sync"); db.bindGjcQuestion(intent, "q", { session_id: "s", turn_id: "t", question_id: "q", prompt: "ok" }); expect(db.createGjcQuestionAnswerIntent("q", { session_id: "s", turn_id: "t", answer_binding: { choice: "a" }, answer: "yes" }, "answer-1")).toMatch(/^gjc_/); expect(() => db.createGjcQuestionAnswerIntent("q", { session_id: "s", turn_id: "wrong", answer_binding: {}, answer: "yes" }, "answer-2")).toThrow("GJC_QUESTION_BINDING_CONFLICT"); expect(() => db.createGjcQuestionAnswerIntent("q", { session_id: "s", turn_id: "t", answer: "yes" }, "answer-3")).toThrow("GJC_ANSWER_SCHEMA_INVALID"); });

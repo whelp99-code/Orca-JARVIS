@@ -1,6 +1,10 @@
-import { afterEach, beforeEach, describe, expect, it } from "vitest";
+import { rmSync } from "node:fs";
+import { dirname } from "node:path";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { AuthorityDb, GjcRuntimeService } from "../../src/index.js";
 import { GjcCoordinatorClient } from "../../src/gjc.js";
+import { initialized } from "../helpers.js";
+import { seedGjcDispatch } from "../fixtures/gjc-dispatch-fixture.js";
 
 const started = "2026-09-07T00:00:00.000Z";
 const expires = "2026-09-07T00:01:00.000Z";
@@ -8,11 +12,12 @@ const late = "2026-09-07T00:02:00.000Z";
 let db: AuthorityDb;
 
 beforeEach(async () => {
-  db = new AuthorityDb(":memory:");
-  await db.migrate();
+  vi.useFakeTimers({ toFake: ["Date"] });
+  vi.setSystemTime(new Date(started));
+  db = await initialized();
   db.configureGjc(process.cwd(), "s", true);
 });
-afterEach(() => db.close());
+afterEach(() => { db.close(); rmSync(dirname(db.filename), { recursive: true, force: true }); vi.useRealTimers(); });
 
 function envelope(body: unknown) {
   return { exitCode: 0, stdout: [
@@ -55,7 +60,7 @@ describe("GJC settlement at the lease boundary", () => {
   });
 
   it("does not settle an exception using the operation start time", async () => {
-    const id = db.createGjcIntent("dispatch", {}, "late-error", undefined, started);
+    const id = seedGjcDispatch(db).intent_id;
     let now = started;
     const service = new GjcRuntimeService(db, new GjcCoordinatorClient(async () => {
       now = late;
@@ -90,7 +95,8 @@ describe("GJC settlement at the lease boundary", () => {
   });
 
   it.each(["sync", "dispatch", "answer"] as const)("rejects a late %s response even with a valid runtime heartbeat", async kind => {
-    const id = db.createGjcIntent(kind, { session_id: "s", turn_id: "t" }, "late", undefined, started);
+    const id = kind === "dispatch" ? seedGjcDispatch(db).intent_id
+      : db.createGjcIntent(kind, { session_id: "s", turn_id: "t" }, "late", undefined, started);
     let now = started;
     let calls = 0;
     const service = new GjcRuntimeService(db, new GjcCoordinatorClient(async () => {

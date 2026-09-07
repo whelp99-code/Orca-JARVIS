@@ -77,6 +77,7 @@ export class GjcRuntimeService {
       this.db.settleGjcIntent(claimed.intent_id, claimed.lease_fence, { status: "failed", failure_code: "GJC_PAYLOAD_MALFORMED" }, now);
       return { processed: claimed.intent_id, state: "failed" };
     }
+    let coordinatorInvoked = false;
     try {
       const coordinatorCall = async (
         tool: string,
@@ -87,9 +88,12 @@ export class GjcRuntimeService {
         now = this.clock().toISOString();
         this.db.requireGjcIntentLease(claimed.intent_id, claimed.lease_fence, now);
         this.db.heartbeatGjcRuntimeLease(owner, runtimeFence, now);
+        const outgoing = claimed.kind === "dispatch"
+          ? this.db.gjcDispatchArguments(claimed.intent_id, claimed.lease_fence, config, now) : arguments_;
+        coordinatorInvoked = true;
         const reply = await this.client.call(String(config.canonical_cwd), {
           tool,
-          arguments: arguments_,
+          arguments: outgoing,
           mutation,
           allow_mutation: mutation,
           idempotency_key: idempotencyKey,
@@ -227,8 +231,9 @@ export class GjcRuntimeService {
       const code = error instanceof JarvisError ? error.code : "GJC_RUNTIME_ERROR";
       this.db.recordGjcRuntimeStatus(code, now);
       if (code === "GJC_STALE_LEASE") throw error;
-      this.db.settleGjcIntent(claimed.intent_id, claimed.lease_fence, { status: "uncertain", failure_code: code }, now);
-      return { processed: claimed.intent_id, state: "uncertain" };
+      const state = claimed.kind === "dispatch" && !coordinatorInvoked ? "failed" : "uncertain";
+      this.db.settleGjcIntent(claimed.intent_id, claimed.lease_fence, { status: state, failure_code: code }, now);
+      return { processed: claimed.intent_id, state };
     }
   }
   async cycle(now = this.clock().toISOString()): Promise<{ processed: string | null; state: string | null }> {

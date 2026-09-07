@@ -1,7 +1,7 @@
 import { JarvisError, deterministic, json, sha, timestamp, type Row } from "./authority-db-base.js";
-import { GjcConfigurationAuthorityDb } from "./gjc-configuration-store.js";
+import { GjcDispatchAuthorityDb } from "./gjc-dispatch-store.js";
 
-export abstract class GjcIntentAuthorityDb extends GjcConfigurationAuthorityDb {
+export abstract class GjcIntentAuthorityDb extends GjcDispatchAuthorityDb {
 	createGjcIntent(
 		kind: "sync" | "dispatch" | "answer",
 		payload: unknown,

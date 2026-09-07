@@ -16,7 +16,7 @@
 | 05–06, 08 | 상태·집계·읽기 부작용 | 대기 |
 | 09 | 만료된 workflow 시작 재시도 | 원래 마감/예산 재검증, 재계획·재승인 안내 구현; HTTP 및 브라우저 검증 완료 |
 | 07 | retention 결과 정합성 | 어댑터 미설정 실패, policy 전달, 원자적 처리 구현; 실제 정책별 어댑터·스케줄은 12 후속 |
-| 10–11, 21 최소 | 실제 준비 상태와 승인된 작업 한 건의 실행 완결 | 대기; 실사용 인수 필수 |
+| 10–11, 21 최소 | 실제 준비 상태와 승인된 작업 한 건의 실행 완결 | GJC 전송 형식·현재 승인 재검증 구현; 일반 작업 연결과 실제 에이전트 인수는 미완료 |
 | 12–13 | 스케줄·관찰 장애와 실행 장애 분리 | 대기 |
 | 14–19 | 구조·설치·조회·SSE·테스트·운영 정보 | 대기; 의미 있는 도메인 단위로 변경 |
 | 20–25 | 라우팅·실행자·기억 연동·커넥터·템플릿·지표 | 범위 유지; 아래 의존성/보류 항목 참조 |
@@ -112,3 +112,15 @@
 - 새 브라우저 시나리오를 기존 `control-center.spec.ts`에 연결하여 `npm run test:e2e` 및 CI에서 함께 실행한다. 기존 4176 리스너를 보존하고 별도 55609/39877 fixture 및 OS 할당 loopback 포트를 사용했다.
 - 독립 정적 리뷰 필수 코드 지적 0건. 추가 예산 검증 권고를 반영했다. `npm run typecheck && npm run lint && npm run build`: exit 0, 테스트/CI 연결 추가 후 typecheck와 lint 재실행 exit 0.
 - 이 변경은 기존 개선 항목09의 workflow.start 재시도 경계다. generic workflow dispatch·완료 검증과 실행자 준비 상태(04/10/11/21)는 계속 미완료이며 단순 workflow 시작을 업무 완료로 보고하지 않는다.
+
+## 2026-09-07 P0-04/10/11 선행 — 승인된 GJC 전송 경계
+
+- 설치된 `gjc-coordinator-mcp / 0.11.8`의 `tools/list` 조회에서 `send_prompt` 필수 입력이 session_id/prompt/idempotency_key/allow_mutation임을 확인했다. 기존 durable payload는 권한 메타데이터만 보내 prompt가 없었다. 실제 세션에 send_prompt를 호출하지 않았다.
+- 전송 직전에 현재 설정, intent lease, 원문/intent digest, continuation의 scope/budget/fence, census 유효성, 단일 사용 redemption, Ed25519 서명, 승인/키 철회와 만료를 확인한다. 승인된 census의 전체 작업 명세를 prompt 안에 보존하고 MCP 바깥 인수는 공개된 형식으로 제한한다.
+- 승인 거부는 외부 호출 0회인 failed로 기록한다. coordinator 호출 이후 응답이 유실되면 uncertain을 유지한다. 같은 continuation의 다른 claimed/accepted/completed/uncertain 또는 receipt가 있는 intent가 있으면 새 CLI idempotency key로도 전송을 허용하지 않는다.
+- 독립 리뷰에서 자동 전송 뒤 CLI 새 키로 동일 승인을 재사용할 수 있는 P1 1건을 발견해 수정했다. 재리뷰 필수 지적 0건. 전송 후 failed이면서 receipt도 없는 정산 경로를 추가하지 않는 것이 불변 조건이다. 동시에 두 intent가 claim되면 두 요청 모두 거부될 수 있어 이는 중복 전송 방지와 별도의 가용성 한계다.
+- 전송 경계 18개, 기존 runtime 18개, settlement expiry 10개, lease recovery 5개, 실제 CLI 프로세스 2개 — GJC 관련 5파일 53개 통과.
+- CLI 검증은 빌드된 `dist/src/cli.js service once`를 별도 Node 프로세스로 실행하고 격리 DB 및 엄격한 로컬 MCP fixture 프로세스를 사용했다. 유효 승인에서는 전송 1회→read_turn→질문 조회→다음 cycle idle, 철회된 승인에서는 coordinator 실행 0회를 확인했다. 두 경우 모두 업무 상태 continued, outbox ACK 0개로, coordinator fixture의 completed를 실제 업무 성공으로 승격하지 않는다.
+- 함께 실행한 공통 reviewability는 2개 중 1개 실패: 동시 작업의 `src/second-brain-adapter.ts`가 267 nonblank 행으로 상한 250을 초과했다. 전체 실행 결과는 55개 중 54 pass/1 fail이며 이 실패를 GJC 검증 통과로 덮지 않는다. 해당 어댑터와 generation/read 테스트의 동시 변경을 보존한다.
+- 제품 변경 후 `npm run typecheck && npm run lint && npm run build:backend`: exit 0. 테스트 추가 후 typecheck는 통과했고 fixture의 process import 누락으로 lint가 3개 오류를 보고했다. 명시적 `node:process` import 추가 후 `npm run lint`: exit 0.
+- 보류/후속: dashboard TaskSpec에는 일반 실행자의 세션·허용 파일 경로를 강제할 계약과 독립 완료 증거 연결이 아직 없다. 자연어 prompt 전달만으로 실행 범위를 강제했다고 주장하지 않는다. 실제 에이전트 파일 변경 1건의 입력→승인→실행→검증 인수와 운영 활성화는 미완료다. 이 선행 수정은 전체 목표04/10/11/21 완료 판정이 아니다.
