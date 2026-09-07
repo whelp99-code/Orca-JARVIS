@@ -1,3 +1,5 @@
+import { readdirSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { AuthorityDb } from "../../src/db.js";
 import { tempDb } from "../helpers.js";
@@ -9,7 +11,9 @@ describe("Task 32 migration protocol compatibility", () => {
     try {
       const idRows = db.db.prepare("SELECT id FROM schema_migrations ORDER BY id").all() as Array<{ readonly id: string }>;
       const ids = idRows.map(row => row.id);
-      expect(ids.at(-1)).toBe("064_task_completions.sql");
+      const shipped = readdirSync(join(process.cwd(), "migrations")).filter(file => file.endsWith(".sql")).sort();
+      expect(ids).toEqual(shipped);
+      expect(ids.map(id => Number(id.slice(0, 3)))).toEqual(Array.from({ length: ids.length }, (_, index) => index + 1));
       expect(ids).toEqual(expect.arrayContaining([
         "052_memory_effect_content_free.sql",
         "053_memory_surface_authority.sql",

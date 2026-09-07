@@ -88,22 +88,15 @@ import { AuthorityDb } from "../../src/index.js"; import { tempDb } from "../hel
       // When the exact 032 and later migrations become available
       for (const file of readdirSync(full)) if (file >= "032_personal_context.sql") cpSync(join(full, file), join(prior, file)); await empty.migrate();
       await upgraded.migrate();
-      // Then both journals preserve unique checksummed order through the allocated Task 32 slots.
+      // Then both journals match every migration byte in the isolated source snapshot, including later additions.
       for (const db of [empty, upgraded]) {
         const rows = db.db.prepare("SELECT id,checksum FROM schema_migrations WHERE id>='031_' ORDER BY id").all() as Array<{ id: string; checksum: string }>;
-        expect(rows.map((row) => row.id)).toEqual([ "031_control_ingress_idempotency.sql", "032_personal_context.sql", "033_personal_operations.sql",
-          "034_recommendation_transition_identity.sql", "035_daily_loop_durable_guards.sql", "036_notification_intent_immutable_delete.sql",
-          "037_recommendation_work_runtime.sql", "038_memory_candidate_classification.sql", "039_memory_outbox_saga.sql", "040_memory_tombstone_authority.sql",
-          "041_memory_correction_saga.sql", "042_memory_deletion_proof.sql", "043_memory_export_saga.sql", "044_memory_content_propagation.sql",
-          "045_task30_schema_compatibility.sql", "046_task30_legacy_guards.sql",
-          "047_task30_confirmation_compatibility.sql", "048_task30_atomic_effect_runtime.sql",
-          "049_task30_projection_authority.sql", "050_task30_compaction_inventory.sql",
-          "051_task30_observed_inventory.sql", "052_memory_effect_content_free.sql",
-          "053_memory_surface_authority.sql", "054_memory_export_lifecycle.sql",
-          "055_memory_candidate_authority_v6.sql", "056_remote_approval_v2.sql",
-          "057_memory_candidate_authority_v6.sql", "058_task_execution_binding.sql", "059_task_candidate_artifacts.sql",
-          "060_memory_outbox_control_cursor.sql", "061_task_execution_clock.sql", "062_task_candidate_certifications.sql", "063_task_git_publications.sql",
-          "064_task_completions.sql", ]);
+        const expectedRows = readdirSync(full).filter(file => file.endsWith(".sql") && file >= "031_").sort()
+          .map(id => ({ id, checksum: createHash("sha256").update(readFileSync(join(full, id))).digest("hex") }));
+        expect(rows).toEqual(expectedRows);
+        expect(rows.slice(0, 3).map(row => row.id)).toEqual([
+          "031_control_ingress_idempotency.sql", "032_personal_context.sql", "033_personal_operations.sql",
+        ]);
         expect(new Set(rows.map((row) => row.checksum)).size).toBe(rows.length); } } finally { empty.close(); upgraded.close();
       rmSync(join(full, ".."), { recursive: true, force: true }); rmSync(join(prior, ".."), { recursive: true, force: true }); } });
   it("fails closed when migration is pending or its raw SQL bytes change", async () => { const pending = new AuthorityDb(tempDb());
