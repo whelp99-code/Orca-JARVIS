@@ -6,6 +6,7 @@ import { MemoryProjectionAuthority } from "./memory-projection-authority.js"; im
   COMMAND_APPROVAL_DOMAIN, controlCommandDigest, signCommandApproval, verifyCommandApproval, } from "./control-plane-contract.js"; export type { ActionLevel,
   ClaimedControlCommand, CommandApprovalReceipt, ControlCancelInput, ControlCommandRequestInput, ControlCommandState, ControlEventInput, StoredControlCommand,
 } from "./control-plane-contract.js"; const validOutcomeStates = new Set(["completed", "failed", "uncertain"]);
+import { memoryOutboxControlProof } from "./memory-outbox-control-proof.js";
 function finiteDate(date: Date, code: string): number { const time = date.getTime(); if (!Number.isFinite(time)) throw new JarvisError(code); return time; }
 function finiteIso(value: string): number { const time = Date.parse(value); return Number.isFinite(time) ? time : Number.NaN; } export class ControlPlane {
   constructor(private readonly authority: AuthorityDb) {}
@@ -198,6 +199,42 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
         correlation_id: input.request_id, causation_id: causation,
         payload: { revocation_id: revocationId, receipt_id: receipt?.receipt_id ?? null, previous_state: previous, state: next, reason: input.reason },
         created_at: input.revoked_at, }); }); tx(); }
+  /** Project a proven past memory outcome. No lease, approval or write is issued. */
+  reconcileMemoryOutbox(outboxId: string, now = new Date()): boolean {
+    const nowMs = finiteDate(now, "CONTROL_SETTLE_INVALID");
+    return this.authority.db.transaction(() => {
+      const row = this.authority.db.prepare(
+        `SELECT r.*,o.action_receipt_id FROM control_command_requests r
+         JOIN memory_outbox o ON o.action_request_id=r.request_id WHERE o.outbox_id=?`,
+      ).get(outboxId) as Record<string, unknown> | undefined;
+      if (row === undefined || !["claimed", "uncertain"].includes(String(row.state))) return false;
+      // The initial executor owns a live claim and will settle it itself.
+      if (row.state === "claimed" && (!Number.isFinite(Date.parse(String(row.lease_expires_at)))
+        || Date.parse(String(row.lease_expires_at)) > nowMs)) return false;
+      const command = this.storedCommand(row); const fence = Number(row.lease_fence);
+      if (this.commandRevoked(command.request_id, command.command_digest, String(row.action_receipt_id))) return false;
+      const proof = memoryOutboxControlProof(this.authority, outboxId, command, fence);
+      if (Date.parse(proof.observed_at) > nowMs) throw new JarvisError("MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID");
+      const payload = { ...proof.payload, receipt_id: proof.receipt_id, fence, observed_at: proof.observed_at };
+      const payloadJson = canonicalize(payload); const at = now.toISOString();
+      const effectId = `effect:${hash({ requestId: command.request_id, fence, outcome: proof.outcome, payload }).slice(7)}`;
+      this.authority.db.prepare(
+        "INSERT INTO control_command_effects(effect_id,request_id,effect_type,payload_json,payload_digest,created_at) VALUES(?,?,?,?,?,?)",
+      ).run(effectId, command.request_id, "memory.outbox.reconciled", payloadJson, hash(payloadJson), at);
+      const changed = this.authority.db.prepare(
+        `UPDATE control_command_requests SET state=?,completed_at=?,failure_code=?,lease_owner=NULL,lease_expires_at=NULL
+         WHERE request_id=? AND state=? AND lease_fence=?`,
+      ).run(proof.outcome, at, proof.failure_code, command.request_id, row.state, fence);
+      if (changed.changes !== 1) throw new JarvisError("CONTROL_STALE_FENCE");
+      this.event({ event_id: `evt:${command.request_id}:${proof.outcome}:${fence}`,
+        event_type: `control.command.${proof.outcome}`, source: "jarvis-memory-outbox",
+        subject: command.request_id, correlation_id: command.request_id,
+        causation_id: proof.payload.terminal_event_id,
+        payload: { effect_id: effectId, failure_code: proof.failure_code }, created_at: at });
+      return true;
+    }).immediate();
+  }
+
   get(requestId: string): StoredControlCommand | undefined {
     const row = this.authority.db.prepare("SELECT * FROM control_command_requests WHERE request_id=?")
       .get(requestId) as Record<string, unknown> | undefined;

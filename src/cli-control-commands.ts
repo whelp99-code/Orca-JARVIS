@@ -32,7 +32,8 @@ export async function executeControlCommand(
       const limit = values.limit === undefined ? 16 : integer(values.limit);
       if (argument === "list") return { ok: true, command: "memory.outbox.list", items: runtime.service.list({ limit }) };
       const cycle = await runtime.service.runOnce(values.worker ?? "cli-memory-outbox", limit);
-      return { ok: cycle.failed === 0 && cycle.cleanup_error === undefined, command: "memory.outbox", cycle };
+      return { ok: cycle.failed === 0 && cycle.cleanup_error === undefined && cycle.control_error === undefined,
+        command: "memory.outbox", cycle };
     } finally { await runtime.close(); }
   }
   if (command === "memory" && subcommand === "lifecycle" && values.once === true) {

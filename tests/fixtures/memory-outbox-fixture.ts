@@ -62,9 +62,12 @@ export function evidence(digest: string, sid = "12345678"): SecondBrainEvidence 
 }
 export type OutboxFixture = { database: MemoryDatabase; service: MemoryOutboxService; writer: FixtureWriter;
   reader: FixtureReader; request: SecondBrainWriteRequestV1; commandId: string; digest: string; clock: { now: Date } };
-export async function outboxFixture(options: { writer?: FixtureWriter; reader?: FixtureReader; deadline?: number } = {}): Promise<OutboxFixture> {
-  const database = await memoryDatabase();
-  const input = verifiedMemoryInput({ subject: "wiki/example-alpha", statement: "ExampleAlpha" });
+export async function outboxFixture(options: { writer?: FixtureWriter; reader?: FixtureReader; deadline?: number;
+  database?: MemoryDatabase; suffix?: string } = {}): Promise<OutboxFixture> {
+  const database = options.database ?? await memoryDatabase(); const suffix = options.suffix ?? "";
+  const subject = `wiki/example-alpha${suffix}`;
+  const input = verifiedMemoryInput({ subject, statement: "ExampleAlpha", authority_id: `task27${suffix}`,
+    idempotency_key: `candidate:task27:verified${suffix}` });
   insertMemoryVerification(database.authority, memoryVerificationPayload(input, {
     issued_at: OUTBOX_NOW.toISOString(), not_before: OUTBOX_NOW.toISOString(), expires_at: OUTBOX_EXPIRES,
   }));
@@ -73,7 +76,7 @@ export async function outboxFixture(options: { writer?: FixtureWriter; reader?: 
     schema_version: 1, candidate_id: classification.candidate_id,
     candidate_digest: classification.candidate_digest, classification_digest: classification.classification_digest,
     subject_digest: classification.subject_digest, content_digest: classification.content_digest,
-    operation: "remember", subject: "wiki/example-alpha", statement: "ExampleAlpha",
+    operation: "remember", subject, statement: "ExampleAlpha",
     purpose: "personal_memory", sensitivity: classification.policy_sensitivity,
     source_class: "verified_outcome", source_id: "verified-source-outbox", source_version: "v1",
     policy_digest: classification.policy_digest,
@@ -109,20 +112,20 @@ export async function outboxFixture(options: { writer?: FixtureWriter; reader?: 
     receipt: providerReceipt, receipt_digest: dispatch.receipt_digest, payload: { content: review.statement } };
   const request: SecondBrainWriteRequestV1 = { ...requestBase, request_id: dispatch.request_id,
     request_digest: dispatch.request_digest };
-  const sourceDigest = OUTBOX_ARTIFACT_DIGEST; const commandId = "memory-outbox-action";
+  const sourceDigest = OUTBOX_ARTIFACT_DIGEST; const commandId = `memory-outbox-action${suffix}`;
   const action: ControlCommandRequestInput = { schema_version: 1, request_id: commandId, action: "memory.outbox.dispatch",
     action_level: 3, target: { candidate_id: classification.candidate_id, candidate_digest: classification.candidate_digest,
       classification_digest: classification.classification_digest }, args: { schema_version: 2,
       dispatch_spool_digest: dispatch.dispatch_spool_digest,
       expected_artifact: { page_id: "wiki/example-alpha", sid: "12345678", source_digest: sourceDigest } },
     reversible: false, requested_by: "principal:owner", requested_at: OUTBOX_NOW.toISOString(),
-    expires_at: OUTBOX_ACTION_EXPIRES, nonce: "memory-outbox-action-nonce" };
+    expires_at: OUTBOX_ACTION_EXPIRES, nonce: `memory-outbox-action-nonce${suffix}` };
   const control = new ControlPlane(database.authority); const staged = control.stage(action, OUTBOX_NOW);
-  const unsigned: Omit<CommandApprovalReceipt, "signature"> = { schema_version: 1, receipt_id: "memory-outbox-approval",
+  const unsigned: Omit<CommandApprovalReceipt, "signature"> = { schema_version: 1, receipt_id: `memory-outbox-approval${suffix}`,
     request_id: commandId, decision: "approve", command_digest: staged.command_digest,
     signer_principal_id: "principal:owner", authenticated_session_id: "owner-session", key_id: "decision-test",
     algorithm: "Ed25519", issued_at: OUTBOX_NOW.toISOString(), not_before: OUTBOX_NOW.toISOString(), expires_at: action.expires_at,
-    nonce: "memory-outbox-action-receipt-nonce", max_uses: 1, status: "issued" };
+    nonce: `memory-outbox-action-receipt-nonce${suffix}`, max_uses: 1, status: "issued" };
   control.decide(signCommandApproval(unsigned, localKey(database.authority)), OUTBOX_NOW);
   const writer = options.writer ?? new FixtureWriter(); const reader = options.reader ?? missingReader(); const clock = { now: OUTBOX_NOW };
   const service = new MemoryOutboxService({ authority: database.authority, writer, reader, clock: () => clock.now,

@@ -67,7 +67,8 @@ describe("production memory outbox composition", () => {
         .toMatchObject({ execution: { state: "uncertain", failure_code: "MEMORY_OUTBOX_RECONCILING" } });
       ready = true;
       expect(await execute(["memory", "outbox", "--once", "--limit", "1", "--db", f.database.path], deps))
-        .toMatchObject({ ok: true, cycle: { dispatched: 0, settled: 1 } });
+        .toMatchObject({ ok: true, cycle: { dispatched: 0, settled: 1, commands_reconciled: 1 } });
+      expect(new ControlPlane(f.database.authority).get(staged.request_id)?.state).toBe("completed");
       expect(await execute(["memory", "outbox", "list", "--db", f.database.path], deps))
         .toMatchObject({ items: [{ state: "settled" }] });
       expect(writes.calls).toHaveLength(1); expect(transport.close).not.toHaveBeenCalled();
@@ -156,7 +157,7 @@ describe("production memory outbox composition", () => {
       expect(writer.calls).toHaveLength(0);
       await vi.advanceTimersByTimeAsync(1_000);
       expect(writer.calls).toHaveLength(1);
-      expect(publish).toHaveBeenCalledWith(["memory.effects.v1", "memory.records.v1", "memory.candidates.v1"]);
+      expect(publish).toHaveBeenCalledWith(["memory.effects.v1", "memory.records.v1", "memory.candidates.v1", "approvals", "overview"]);
       await vi.advanceTimersByTimeAsync(1_000);
       expect(writer.calls).toHaveLength(1);
     } finally { await runtime.close(); publish.mockRestore(); vi.useRealTimers(); closeMemoryDatabase(f.database); }

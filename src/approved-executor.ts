@@ -182,16 +182,26 @@ export class ApprovedCommandExecutor {
         const saga = this.memoryOutbox.get(queued.outbox_id) ?? queued;
         const completedAt = this.clock();
         const completed = saga.state === "settled";
+        const failed = ["failed", "expired", "conflict"].includes(saga.state);
+        const state = completed ? "completed" : failed ? "failed" : "uncertain";
+        const failure = completed ? {} : { failure_code: failed
+          ? saga.failure_code ?? "MEMORY_OUTBOX_FAILED" : "MEMORY_OUTBOX_RECONCILING" };
+        // A slow observation may outlive our lease. The recovery cycle can
+        // already have recorded its terminal proof before returning here.
+        const recorded = this.control.get(requestId);
+        if (recorded?.state === state && (state === "completed" || state === "failed")) {
+          return { request_id: requestId, action: command.action, state,
+            result: { outbox_id: saga.outbox_id, state: saga.state }, ...failure };
+        }
         this.control.settle(requestId, command.fence, {
-          state: completed ? "completed" : "uncertain",
-          effect_type: completed ? "memory.outbox.settled" : "memory.outbox.reconciling",
+          state, effect_type: completed ? "memory.outbox.settled" : failed ? "memory.outbox.failed" : "memory.outbox.reconciling",
           payload: { outbox_id: saga.outbox_id, state: saga.state, request_digest: saga.request_digest,
             settlement_receipt_digest: saga.settlement_receipt_digest },
-          ...(completed ? {} : { failure_code: "MEMORY_OUTBOX_RECONCILING" }),
+          ...failure,
         }, completedAt);
-        return { request_id: requestId, action: command.action, state: completed ? "completed" : "uncertain",
+        return { request_id: requestId, action: command.action, state,
           result: { outbox_id: saga.outbox_id, state: saga.state },
-          ...(completed ? {} : { failure_code: "MEMORY_OUTBOX_RECONCILING" }) };
+          ...failure };
       }
       if (command.action === "memory.delete" || command.action === "memory.export") {
         validateControlAction(command, { enforceMinimumLevel: true,

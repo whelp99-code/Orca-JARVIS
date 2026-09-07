@@ -4,6 +4,16 @@ import type { MemoryOutboxCycleResult } from "../../src/memory-outbox-types.js";
 
 const empty = { claimed: 0, dispatched: 0, reconciling: 0, settled: 0, conflicts: 0, failed: 0 };
 describe("bounded memory outbox tick", () => {
+  it("publishes recovered command changes and reports control proof errors", async () => {
+    const report = vi.fn(); const changes = vi.fn();
+    const cycle = vi.fn<() => Promise<MemoryOutboxCycleResult>>()
+      .mockResolvedValueOnce({ ...empty, control_error: "MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID" })
+      .mockResolvedValueOnce({ ...empty, commands_reconciled: 1 });
+    const tick = new MemoryOutboxTick(cycle, report, changes);
+    tick.tick(); await tick.drain(); tick.tick(); await tick.close();
+    expect(report.mock.calls).toEqual([["MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID"], [null]]);
+    expect(changes).toHaveBeenCalledTimes(1);
+  });
   it("coalesces overlapping ticks and drains a cycle before close returns", async () => {
     const deferred = Promise.withResolvers<MemoryOutboxCycleResult>();
     const cycle = vi.fn(() => deferred.promise); const changes = vi.fn();

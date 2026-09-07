@@ -3,6 +3,7 @@ import { JarvisError } from "./db.js";
 import { cleanupMemoryCandidateReviews } from "./memory-candidate-review-cleanup.js";
 import { memoryRememberArtifact, observeRememberArtifact } from "./memory-remember-artifact.js";
 import { MemoryOutboxStore } from "./memory-outbox-store.js";
+import { reconcileMemoryOutboxCommands } from "./memory-outbox-control.js";
 import type {
   MemoryObservation,
   MemoryOutboxCycleResult,
@@ -65,6 +66,8 @@ export class MemoryOutboxService {
     return { claimed: result.claimed, dispatched: result.dispatched,
       reconciling: result.reconciling + reconciled.reconciling, settled: reconciled.settled,
       conflicts: reconciled.conflicts, failed: result.failed + reconciled.failed,
+      commands_reconciled: reconciled.commands_reconciled ?? 0,
+      ...(reconciled.control_error === undefined ? {} : { control_error: reconciled.control_error }),
       ...(reconciled.cleanup_error === undefined ? {} : { cleanup_error: reconciled.cleanup_error }) };
   }
   async reconcileOnce(workerId: string, limit = 16): Promise<MemoryOutboxCycleResult> {
@@ -80,13 +83,14 @@ export class MemoryOutboxService {
       else if (updated.state === "reconciling") result.reconciling += 1;
       else result.failed += 1;
     }
+    const commands = reconcileMemoryOutboxCommands(this.options.authority, this.options.clock(), bound);
     try { this.cleanupReviews(); }
     catch {
       // Cleanup is retryable on the next cycle. A committed settlement must not
       // become a failed control command merely because local cleanup failed.
-      return { ...result, cleanup_error: "MEMORY_REVIEW_CLEANUP_FAILED" };
+      return { ...result, ...commands, cleanup_error: "MEMORY_REVIEW_CLEANUP_FAILED" };
     }
-    return result;
+    return { ...result, ...commands };
   }
   private cleanupReviews(): void {
     const root = this.options.candidate_review_spool_root ?? process.env["JARVIS_MEMORY_REVIEW_SPOOL_ROOT"];

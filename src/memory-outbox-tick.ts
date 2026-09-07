@@ -12,8 +12,8 @@ export class MemoryOutboxTick {
   tick(): void {
     if (this.stopped || this.pending !== undefined) return;
     this.pending = Promise.resolve().then(() => this.cycle()).then(result => {
-      this.report(result.cleanup_error ?? (result.failed > 0 ? "MEMORY_OUTBOX_CYCLE_FAILED" : undefined));
-      if (result.dispatched + result.settled + result.conflicts + result.failed > 0) this.onChange();
+      this.report(result.control_error ?? result.cleanup_error ?? (result.failed > 0 ? "MEMORY_OUTBOX_CYCLE_FAILED" : undefined));
+      if (result.dispatched + result.settled + result.conflicts + result.failed + (result.commands_reconciled ?? 0) > 0) this.onChange();
     }, () => { this.report("MEMORY_OUTBOX_CYCLE_FAILED"); }).finally(() => { this.pending = undefined; });
   }
 

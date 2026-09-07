@@ -151,6 +151,7 @@ function deleteStatements(projection: SuppressedProjection): readonly DeleteStat
        args_json='{"purged":true}' WHERE request_id=?`, projection.id,
     )];
     case "outbox": return [
+      statement("DELETE FROM memory_outbox_control_cursor WHERE last_outbox_id=?", projection.id),
       statement("DELETE FROM memory_reconciliation_events WHERE outbox_id=?", projection.id),
       statement("DELETE FROM memory_outbox_attempts WHERE outbox_id=?", projection.id),
       statement("DELETE FROM memory_outbox WHERE outbox_id=?", projection.id),

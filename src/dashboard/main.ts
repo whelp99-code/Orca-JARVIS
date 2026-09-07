@@ -66,7 +66,7 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
   const tick = outbox === undefined ? undefined : new MemoryOutboxTick(
     () => outbox.runOnce("dashboard-memory-outbox", 1),
     code => process.stderr.write(`${JSON.stringify({ component: "memory.outbox", error_code: code })}\n`),
-    () => server.publish(["memory.effects.v1", "memory.records.v1", "memory.candidates.v1"]));
+    () => server.publish(["memory.effects.v1", "memory.records.v1", "memory.candidates.v1", "approvals", "overview"]));
   const server = createDashboardServer({
     db,
     staticRoot: options.staticRoot,

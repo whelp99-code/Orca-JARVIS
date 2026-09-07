@@ -51,6 +51,8 @@ export type MemoryOutboxCycleResult = {
   readonly conflicts: number;
   readonly failed: number;
   readonly cleanup_error?: "MEMORY_REVIEW_CLEANUP_FAILED";
+  readonly commands_reconciled?: number;
+  readonly control_error?: "MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID" | "MEMORY_OUTBOX_CONTROL_RECONCILE_FAILED";
 };
 export type MemoryOutboxServiceOptions = {
   readonly authority: import("./db.js").AuthorityDb;
