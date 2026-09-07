@@ -4,6 +4,7 @@ import { type CliCommandContext, commandNow } from "./cli-command-context.js";
 import { teamProposalFile } from "./cli-command-input.js";
 import { tryExecuteReadinessCommand } from "./cli-readiness-commands.js";
 import { JarvisError } from "./db.js";
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { readPortfolioHmacKey, verifyPortfolioAuthenticatedReport } from "./dashboard/portfolio-auth.js";
 import { PortfolioProjection } from "./dashboard/portfolio-projection.js";
 import { readPortfolioStdin } from "./dashboard/portfolio-stdin.js";
@@ -45,6 +46,11 @@ export async function executeBootstrapCommand(
   if (command === "db" && subcommand === "migrate") {
     await db.migrate();
     return { ok: true, command: "db.migrate" };
+  }
+  if (command === "db" && subcommand === "rebuild-projections") {
+    await db.assertMigrationsReady();
+    new MemoryProjectionAuthority(db).initialize(commandNow(context));
+    return { ok: true, command: "db.rebuild-projections" };
   }
   if (command === "portfolio" && subcommand === "ingest") {
     await db.assertMigrationsReady();

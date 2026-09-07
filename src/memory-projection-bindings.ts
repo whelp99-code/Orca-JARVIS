@@ -24,7 +24,7 @@ export function bindContextMemoryProjection(
   memoryRefs: readonly string[],
   now: Date,
 ): void {
-  if (memoryRefs.length === 0 || !projectionAuthorityReady(database)) return;
+  if (!projectionAuthorityReady(database) || memoryRefs.length === 0) return;
   const authority = new MemoryProjectionAuthority({ db: database });
   const ref = contextRef(contextId);
   const targets = memoryRefs.flatMap(memoryRef => targetsForRef(database, memoryRef));
@@ -185,9 +185,11 @@ function collectKey(
 }
 
 function projectionAuthorityReady(database: Database.Database): boolean {
-  return database.prepare(
+  const installed = database.prepare(
     "SELECT 1 FROM sqlite_master WHERE type='table' AND name='memory_projection_authority'",
   ).get() !== undefined;
+  if (installed) new MemoryProjectionAuthority({ db: database }).assertReady();
+  return installed;
 }
 
 function targetsForRef(database: Database.Database, memoryRef: string): readonly TargetRow[] {

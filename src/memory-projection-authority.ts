@@ -21,23 +21,33 @@ export class MemoryProjectionAuthority {
     this.lineage = new MemoryProjectionLineage(authority);
   }
 
+  initialize(now: Date): void {
+    this.lineage.initialize(now);
+  }
+
+  private write<T>(action: () => T): T {
+    return this.authority.db.transaction(() => { this.assertReady(); return action(); }).immediate();
+  }
+
   bind(ref: MemoryProjectionRef, identities: readonly MemoryProjectionDependency[], now: Date): void {
-    this.lineage.bind(ref, identities, now);
+    this.write(() => this.lineage.bind(ref, identities, now));
   }
 
   inherit(ref: MemoryProjectionRef, parents: readonly MemoryProjectionRef[], now: Date): void {
-    this.lineage.inherit(ref, parents, now);
+    this.write(() => this.lineage.inherit(ref, parents, now));
   }
 
   hasLineage(ref: MemoryProjectionRef): boolean {
+    this.assertReady();
     return this.lineage.hasLineage(ref);
   }
 
   quarantineUnresolved(ref: MemoryProjectionRef, now: Date): void {
-    this.lineage.quarantineUnresolved(ref, now);
+    this.write(() => this.lineage.quarantineUnresolved(ref, now));
   }
 
   isSuppressed(ref: MemoryProjectionRef): boolean {
+    this.assertReady();
     if (this.lineage.isQuarantined(ref)) return true;
     return this.authority.db.prepare(
       `SELECT 1 FROM memory_projection_suppressions
@@ -46,6 +56,7 @@ export class MemoryProjectionAuthority {
   }
 
   isProjectionIdSuppressed(id: string): boolean {
+    this.assertReady();
     if (id.length === 0) return true;
     return this.authority.db.prepare(
       `SELECT 1 FROM memory_projection_suppressions WHERE projection_id=?
@@ -63,6 +74,7 @@ export class MemoryProjectionAuthority {
       throw new JarvisError("MEMORY_PROJECTION_SEQUENCE_INVALID");
     }
     return this.authority.db.transaction(() => {
+      this.assertReady();
       const existing = this.event(sequence);
       if (existing !== undefined) return existing;
       const createdAt = this.tombstoneTime(sequence);

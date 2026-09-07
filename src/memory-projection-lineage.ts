@@ -24,9 +24,7 @@ type TargetRow = {
 };
 
 export class MemoryProjectionLineage {
-  constructor(private readonly authority: MemoryProjectionDatabase) {
-    this.rebuild();
-  }
+  constructor(private readonly authority: MemoryProjectionDatabase) {}
 
   bind(ref: MemoryProjectionRef, identities: readonly MemoryProjectionDependency[], now: Date): void {
     this.assertRef(ref);
@@ -130,15 +128,20 @@ export class MemoryProjectionLineage {
     if (row?.rebuild_state !== "ready") throw new JarvisError("MEMORY_PROJECTION_AUTHORITY_NOT_READY");
   }
 
-  private rebuild(): void {
+  initialize(now: Date): void {
+    if (!Number.isFinite(now.getTime())) throw new JarvisError("MEMORY_PROJECTION_REBUILD_CLOCK_INVALID");
+    this.authority.db.transaction(() => this.rebuild(now)).immediate();
+  }
+
+  private rebuild(now: Date): void {
     const state = this.authority.db.prepare(
       "SELECT rebuild_state FROM memory_projection_authority WHERE singleton_id=1",
     ).get() as { readonly rebuild_state: string } | undefined;
     if (state?.rebuild_state === "ready") return;
-    const now = new Date();
+    if (state === undefined) throw new JarvisError("MEMORY_PROJECTION_AUTHORITY_NOT_READY");
     this.authority.db.prepare(
       `UPDATE memory_projection_authority SET rebuild_state='rebuilding',failure_code=NULL
-       WHERE singleton_id=1 AND rebuild_state IN ('pending','failed')`,
+       WHERE singleton_id=1 AND rebuild_state IN ('pending','failed','rebuilding')`,
     ).run();
     const contexts = this.authority.db.prepare(
       "SELECT context_id,memory_ref FROM personal_context_memory_evidence ORDER BY context_id,memory_ref",

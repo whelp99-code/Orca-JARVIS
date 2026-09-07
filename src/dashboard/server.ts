@@ -226,10 +226,11 @@ async function handleRequest(input: RequestContext): Promise<void> {
       input.response.destroy();
       return;
     }
-    if (error instanceof JarvisError && error.code === "AUTHORITY_NOT_READY") {
+    if (error instanceof JarvisError && (error.code === "AUTHORITY_NOT_READY"
+      || error.code === "MEMORY_PROJECTION_AUTHORITY_NOT_READY")) {
       writeDashboardError(input.response, {
         status: 503,
-        code: DASHBOARD_ERROR_CODES.AUTHORITY_NOT_READY,
+        code: error.code,
         requestId,
       });
       return;

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { projectMacNotificationPayload } from "./notification-delivery-payload.js";
 import { bindNotificationDeliveryProjection } from "./memory-projection-bindings.js";
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { NotificationDeliveryError, type NotificationClaim, type NotificationSettleInput,
   type NotificationSettlement } from "./notification-delivery-types.js";
 import type { NotificationStoreAuthority } from "./notification-intent-types.js";
@@ -67,6 +68,7 @@ export class NotificationDeliveryStore {
     const epoch = validInstant(now);
     if (sessionId.length === 0) throw new NotificationDeliveryError("NOTIFICATION_DELIVERY_INVALID");
     return this.options.authority.db.transaction(() => {
+      new MemoryProjectionAuthority(this.options.authority).assertReady();
       let changed = this.reconcile(epoch, now);
       for (;;) {
         const value = this.options.authority.db.prepare(
@@ -125,6 +127,7 @@ export class NotificationDeliveryStore {
     const { deliveryId, input, now, sessionId } = request;
     const epoch = validInstant(now);
     return this.options.authority.db.transaction(() => {
+      new MemoryProjectionAuthority(this.options.authority).assertReady();
       const reconciled = this.reconcile(epoch, now);
       const row = deliveryRow(this.options.authority.db.prepare(
         `SELECT delivery_id,intent_id,state,lease_owner,lease_expires_at,attempt_digest,updated_at

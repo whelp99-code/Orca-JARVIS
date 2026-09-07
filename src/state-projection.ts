@@ -40,6 +40,8 @@ export async function buildCurrentState(
 /** Synchronous DB projection after asynchronous health observations have completed. */
 export function currentStateFromDoctor(db: AuthorityDb, doctor: DoctorReport,
   now: Date, options: CurrentStateOptions = {}): CurrentStateProjection {
+  const projections = new MemoryProjectionAuthority(db);
+  projections.assertReady();
   const stateCounts = table(db, "work_projection")
     ? db.db.prepare(
       "SELECT state,COUNT(*) AS count FROM work_projection GROUP BY state ORDER BY state",
@@ -66,7 +68,6 @@ export function currentStateFromDoctor(db: AuthorityDb, doctor: DoctorReport,
       `SELECT evidence_id,task_id,attempt_id,reason_code,evidence_digest,created_at
        FROM negative_evidence ORDER BY created_at DESC,evidence_id DESC LIMIT 3`,
     ).all() : [];
-  const projections = new MemoryProjectionAuthority(db);
   const blocked = visibleRows(projections, [...blockedWork, ...blockedEvidence]);
   const workDecisions = table(db, "work_items")
     ? db.db.prepare(

@@ -100,7 +100,7 @@ function accept(input: Input, route: Extract<Route, { readonly kind: "accept" }>
     });
     return true;
   } catch (error: unknown) {
-    if (!(error instanceof JarvisError)) throw error;
+    if (!(error instanceof JarvisError) || error.code === "MEMORY_PROJECTION_AUTHORITY_NOT_READY") throw error;
     writeError(input, 409, "RECOMMENDATION_ACTION_REJECTED");
     return true;
   }

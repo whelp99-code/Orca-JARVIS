@@ -148,6 +148,7 @@ export class TaskTimelineSummaryReader {
   }
 
   list(limit: number): TaskTimelineSummary[] {
+    new MemoryProjectionAuthority(this.authority).assertReady();
     const tasks = new Map<string, TaskTimelineSummary>();
     const upsert = (candidate: TaskTimelineSummary): void => {
       const prior = tasks.get(candidate.task_id);

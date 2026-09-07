@@ -38,7 +38,7 @@ export async function tryHandleMemoryRead(input: Input): Promise<boolean> {
   if (candidate !== undefined) {
     try { return resource(input, input.runtime.read.candidate(candidate)); }
     catch (error) {
-      if (!(error instanceof JarvisError)) throw error;
+      if (!(error instanceof JarvisError) || error.code === "MEMORY_PROJECTION_AUTHORITY_NOT_READY") throw error;
       write(input, error.code === "MEMORY_CANDIDATE_EXPIRED" ? 410 : 409,
         { schema_version: 1, error: { code: error.code, message: "Candidate review unavailable",
           request_id: input.requestId } }); return true;

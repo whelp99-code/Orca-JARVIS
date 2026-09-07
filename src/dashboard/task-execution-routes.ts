@@ -36,7 +36,7 @@ export async function tryHandleTaskExecution(input: Input): Promise<boolean> {
       write(input, 202, { schema_version: 1, request });
     }
   } catch (error) {
-    if (!(error instanceof JarvisError)) throw error;
+    if (!(error instanceof JarvisError) || error.code === "MEMORY_PROJECTION_AUTHORITY_NOT_READY") throw error;
     const code = error.code;
     if (!/^(TASK_|WORKFLOW_NOT_FOUND$|CONTROL_)/.test(code)) throw error;
     const status = ["TASK_NOT_FOUND", "WORKFLOW_NOT_FOUND"].includes(code) ? 404

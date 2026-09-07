@@ -14,7 +14,8 @@
 | 03 | 만료 정산 | 구현·독립 정적 리뷰 완료; 만료/rollback 10개 및 기존 관련 25개 통과 |
 | 04 | 작업 제약·완료 기준을 승인부터 결과까지 보존 | TaskSpec·실행계획 승인, 실제 입력 검사, 단일 operation 원장 구현; 실제 dispatch·검증 연결은 후속 |
 | 05 | 에이전트 연결 상태 | 구조화 관측·120초 TTL·신원 대조 및 live-only 카드 구현. 관련 backend 47개, dashboard 161개 및 실제 Orca→격리 HTTP 검증. 아래 2026-09-08 기록 참조 |
-| 06, 08 | 작업 수 집계·읽기 부작용 | 대기 |
+| 06 | 전체 활성 작업 수 집계 | 대기 |
+| 08 | 읽기 경로의 초기화 부작용 | 명시적 db rebuild-projections로 분리. pending/failed/rebuilding 조회 쓰기 0, 실제 CLI 후 HTTP 503→200 검증. 아래 2026-09-08 기록 참조 |
 | 09 | 만료된 workflow 시작 재시도 | 원래 마감/예산 재검증, 재계획·재승인 안내 구현; HTTP 및 브라우저 검증 완료 |
 | 07 | retention 결과 정합성 | 어댑터 미설정 실패, policy 전달, 원자적 처리 구현; 실제 정책별 어댑터·스케줄은 12 후속 |
 | 10–11, 21 최소 | 실제 준비 상태와 승인된 작업 한 건의 실행 완결 | GJC 전송 형식·현재 승인 재검증 구현; 일반 작업 연결과 실제 에이전트 인수는 미완료 |
@@ -343,3 +344,13 @@
 - 실제 읽기 전용 Orca list 2회/read 1회→격리 DB/HTTP에서 unknown→live→stale→unknown. stale은 120초 진행한 시계, 마지막 unknown은 주입 CLI 실패다. 각 list/detail의 쓰기 0, 터미널 변경 0, 실패 후 live 수 0, 격리 DB 제거를 확인했다. provider/session은 fixture 메타데이터이며 실제 모델 인증·업무 실행 인수와 구분한다.
 - 증거: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/agent-accepted-regression.log`, `agent-dashboard-final.log`, `agent-live-probe.json`, `agent-stress-final.log`. 설계·호환·한계: `docs/planning/adr-agent-connection-observations.md`.
 - 전체 verify의 가독성 실패에는 병행 memory 변경 4모듈이 남아 있다. 이 단위의 관련 검사 통과를 전체 gate 통과로 보고하지 않는다. 06 전체 활성 수, 08 생성자 쓰기, 12/13 운영 루프와 전체 01–25 인수는 남는다. 운영 DB/서비스/release/push는 변경하지 않았다.
+
+## 2026-09-08 P1-08 — 조회 초기화 부작용 제거
+
+- 직전 단위는 `e3871e5` 커밋과 실제 연결 검증으로 progress였다. 현재 HEAD와 작업 트리를 다시 확인하고 06/08의 공통 suppression 조회를 대조했다. MemoryProjectionLineage 생성자의 rebuild가 pending/failed/rebuilding을 조회 중 ready로 바꾸는 것을 첫 조회 회귀 4개 실패로 재현했다. 06 집계 구현 전에 이 공통 읽기 경계를 수정했다.
+- 생성자는 재구축하지 않는다. `MemoryProjectionAuthority.initialize(now)`와 `db rebuild-projections --db <path>`가 명시적으로 수행한다. 기존 migration 검증 후 IMMEDIATE transaction 안에서 상태 확인→기존 계보 보충/quarantine→ready를 수행한다. 실패 시 원자 rollback, ready 재호출은 쓰기 0이다. 기존 SQL 바이트와 append-only 기록을 유지한다.
+- 빈 command/task 목록·없는 ID를 포함해 suppression 준비 상태를 확인하고, HTTP의 NOT_READY는 고정 메시지의 503이다. 내부 409 변환부에서도 이 오류는 상위 503 처리부로 전달한다. 정상 조회가 DB 초기화·복구를 실행하지 않는다.
+- 독립 검토에서 부모가 없을 때 binding을 생략하는 경로와 알림 SQL의 별도 전달 경계를 확인했다. 공개 bind/inherit·suppression activation의 transaction, hasLineage, 공통 binding helper, state 생성과 notification claim/settle에 준비 상태 검사를 추가했다. 구버전 테이블 부재 fallback과 실제 pending을 구분한다. 최종 독립 정적 검토 필수 결함 0건.
+- 신규 7개 회귀: 세 비준비 상태의 읽기 무변경, populated HTTP/CLI 복구, 재구축 중간 실패 rollback·quarantine 보존·반복 무쓰기, singleton/clock 오류, 계보 쓰기·알림 외부 호출 차단. 관련 검사 5파일18개, 경계 확장 8파일46개, 기존 memory UI/HTTP 2파일13개 모두 pass. 신규 7개를 두 번 실행했으므로 중복 제외 14파일70개다. 각 로그는 projection-regression/projection-boundaries/projection-route-regression.log.
+- 실제 격리 HTTP 서버와 별도 CLI subprocess로 pending/failed/rebuilding 각각 첫 GET 503·DB 쓰기0→명시 관리 명령 성공→같은 서버 GET200을 확인했다. 명령 재호출 후 singleton 기록 불변, 격리 DB 제거를 확인했다. 재현 스크립트·JSON은 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/projection-live-probe.*`.
+- backend build·typecheck·lint는 exit 0. 설계·관리 명령·복구 제한은 `docs/planning/adr-memory-projection-initialization.md`. 운영 DB/서비스/release/push는 변경하지 않았다. 전체 verify와 06/12/13 및 나머지 01–25 완료 인수는 남는다. 전체 gate의 기존 memory 4모듈 가독성 실패는 이 단위와 별도로 해결해야 한다.

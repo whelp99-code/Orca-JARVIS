@@ -4,14 +4,17 @@ import type { ActionLevel, ControlCommandState, StoredControlCommand } from "./c
 
 /** Reads never initialize projections or renew command authority. */
 export function readControlCommand(authority: AuthorityDb, requestId: string): StoredControlCommand | undefined {
+  const projections = new MemoryProjectionAuthority(authority);
+  projections.assertReady();
   const row = authority.db.prepare("SELECT * FROM control_command_requests WHERE request_id=?")
     .get(requestId) as Record<string, unknown> | undefined;
-  if (row === undefined || !visibleCommand(row, new MemoryProjectionAuthority(authority))) return undefined;
+  if (row === undefined || !visibleCommand(row, projections)) return undefined;
   return decodeStoredControlCommand(row);
 }
 
 export function listControlCommands(authority: AuthorityDb): StoredControlCommand[] {
   const projections = new MemoryProjectionAuthority(authority);
+  projections.assertReady();
   return (authority.db.prepare("SELECT * FROM control_command_requests ORDER BY requested_at,request_id")
     .all() as Array<Record<string, unknown>>)
     .filter(row => visibleCommand(row, projections)).map(row => decodeStoredControlCommand(row));

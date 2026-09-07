@@ -47,7 +47,7 @@ export async function tryHandleMemoryMutation(input: Input): Promise<boolean> {
         request_id: staged.request_id, action: staged.action, message: "Pending owner approval" });
       return true;
     } catch (errorValue) {
-      if (!(errorValue instanceof JarvisError)) throw errorValue;
+      if (!(errorValue instanceof JarvisError) || errorValue.code === "MEMORY_PROJECTION_AUTHORITY_NOT_READY") throw errorValue;
       const status = errorValue.code === "MEMORY_CANDIDATE_EXPIRED" ? 410
         : errorValue.code === "MEMORY_REVIEW_UNAVAILABLE" ? 503 : 409;
       write(input, status, error(input, errorValue.code)); return true;
@@ -63,7 +63,7 @@ export async function tryHandleMemoryMutation(input: Input): Promise<boolean> {
       write(input, 202, { schema_version: 1, state: staged.state, request_id: staged.request_id,
         action: staged.action, message: "Memory command prepared" }); return true;
     } catch (errorValue) {
-      if (!(errorValue instanceof JarvisError)) throw errorValue;
+      if (!(errorValue instanceof JarvisError) || errorValue.code === "MEMORY_PROJECTION_AUTHORITY_NOT_READY") throw errorValue;
       write(input, 409, error(input, errorValue.code)); return true;
     }
   }
@@ -110,7 +110,7 @@ async function stageEffect(input: Input, request: EffectStage): Promise<true> {
     write(input, 202, { schema_version: 1, state: "pending_approval", request_id: staged.request_id,
       action: staged.action, message: "Pending owner approval" }); return true;
   } catch (errorValue) {
-    if (!(errorValue instanceof JarvisError)) throw errorValue;
+    if (!(errorValue instanceof JarvisError) || errorValue.code === "MEMORY_PROJECTION_AUTHORITY_NOT_READY") throw errorValue;
     const status = errorValue.code === "MEMORY_INTENT_EXPIRED" || errorValue.code === "MEMORY_SELECTION_EXPIRED"
       ? 410 : errorValue.code === "MEMORY_SELECTION_STALE" ? 409 : 409;
     write(input, status, error(input, errorValue.code)); return true;
