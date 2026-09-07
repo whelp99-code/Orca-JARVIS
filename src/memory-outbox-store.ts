@@ -26,28 +26,11 @@ export class MemoryOutboxStore {
   }
 
   enqueue(command: Parameters<typeof parseMemoryOutboxAction>[0], now: Date): MemoryOutboxSagaV2 {
-    const replay = this.terminalReplay(command);
+    const replay = this.records.terminalReplay(command);
     if (replay !== undefined) return replay;
     const action = parseMemoryOutboxAction(command, now, this.spoolRoots);
     requireMemoryOutboxAuthority(this.authority, action, now);
     return this.authority.db.transaction(() => this.insertOrReplay(action, now)).immediate();
-  }
-  private terminalReplay(command: Parameters<typeof parseMemoryOutboxAction>[0]): MemoryOutboxSagaV2 | undefined {
-    const row = this.authority.db.prepare(
-      `SELECT * FROM memory_outbox WHERE action_request_id=? AND state IN ('settled','conflict','failed','expired')`,
-    ).get(command.request_id);
-    if (row === undefined) return undefined;
-    const saga = parseSagaRow(row);
-    const stored = this.records.command(saga.outbox_id);
-    if (command.action !== stored.action || command.action_level !== stored.action_level
-      || command.command_digest !== stored.command_digest || command.receipt_id !== stored.receipt_id
-      || command.fence !== stored.fence || command.reversible !== stored.reversible
-      || canonicalize(command.target) !== canonicalize(stored.target)
-      || canonicalize(command.args) !== canonicalize(stored.args)) {
-      throw new JarvisError("MEMORY_OUTBOX_REPLAY_CONFLICT");
-    }
-    // This is a read-back of a committed result, never another authority redemption.
-    return saga;
   }
   private insertOrReplay(action: MemoryOutboxActionV2, now: Date): MemoryOutboxSagaV2 {
     const identity = memoryOutboxIdentity(action); const request = action.request;
@@ -76,24 +59,13 @@ export class MemoryOutboxStore {
     this.audit(identity.outbox_id, "queued", null, "queued", 0, action.command.request_id, identity.digest, at);
     return this.getRequired(identity.outbox_id);
   }
-  get(id: string): MemoryOutboxSagaV2 | undefined {
-    const row = this.authority.db.prepare("SELECT * FROM memory_outbox WHERE outbox_id=?").get(id);
-    return row === undefined ? undefined : parseSagaRow(row);
-  }
+  get(id: string): MemoryOutboxSagaV2 | undefined { return this.records.get(id); }
   observationRequest(saga: MemoryOutboxSagaV2) {
     // Historical reconstruction for observation only; never renew write authority.
     return this.records.request(saga.outbox_id, new Date(saga.created_at));
   }
   list(state: string | undefined, limit: number): readonly MemoryOutboxSagaV2[] {
-    const rows = state === undefined
-      ? this.authority.db.prepare(
-        "SELECT * FROM memory_outbox WHERE action_request_id IS NOT NULL ORDER BY created_at,outbox_id LIMIT ?",
-      ).all(limit)
-      : this.authority.db.prepare(
-        `SELECT * FROM memory_outbox WHERE action_request_id IS NOT NULL AND state=?
-         ORDER BY created_at,outbox_id LIMIT ?`,
-      ).all(state, limit);
-    return rows.map(parseSagaRow);
+    return this.records.list(state, limit);
   }
   recoverDispatching(now: Date): number {
     const at = iso(now); const rows = this.authority.db.prepare(

@@ -6,8 +6,8 @@ import type { SecondBrainEvidence, SecondBrainWriteRequestV1 } from "./second-br
 
 const hash = (value: string) => createHash("sha256").update(value).digest("hex");
 // Match Python str.splitlines/strip, including NEL and excluding BOM from strip.
-// eslint-disable-next-line no-control-regex -- Python whitespace includes these explicit control code points.
-const edges = /^[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+|[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]+$/gu;
+const pythonWhitespace = String.raw`[\u0009-\u000d\u001c-\u0020\u0085\u00a0\u1680\u2000-\u200a\u2028\u2029\u202f\u205f\u3000]`;
+const edges = new RegExp(`^${pythonWhitespace}+|${pythonWhitespace}+$`, "gu");
 export function memoryRememberRecordTexts(content: string): readonly string[] {
   // eslint-disable-next-line no-control-regex -- Match the provider's Python splitlines boundaries exactly.
   const texts = content.replaceAll("[^", "\\[\\^").split(/\r\n|[\n\r\v\f\u001c-\u001e\u0085\u2028\u2029]/u)

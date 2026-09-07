@@ -1,7 +1,5 @@
+import { callSecondBrainRead } from "./second-brain-adapter-call.js";
 import { parseSecondBrainPage } from "./second-brain-evidence-parser.js";
-import { JarvisError } from "./db.js";
-import { bindSecondBrainGenerationRead } from "./second-brain-generation-read.js";
-import { normalizeSecondBrainProviderRecord } from "./second-brain-provider-value.js";
 import { secondBrainUtf8Bytes, SecondBrainReadBudget } from "./second-brain-read-budget.js";
 import {
   boundSecondBrainOutcome,
@@ -24,11 +22,7 @@ import {
 } from "./second-brain-adapter-types.js";
 import { SECOND_BRAIN_GENERATION_BINDING_KEY, secondBrainEvidenceGenerationMatches,
   secondBrainGenerationBinding } from "./second-brain-generation-read.js";
-import {
-  SecondBrainTransportError,
-  type SecondBrainOutcome,
-  type SecondBrainReadMethod,
-} from "./second-brain-transport.js";
+import type { SecondBrainReadMethod } from "./second-brain-transport.js";
 
 export { createSecondBrainWriteRequestAdapter } from "./second-brain-write-adapter.js";
 export type {
@@ -48,14 +42,10 @@ export type {
 } from "./second-brain-adapter-types.js";
 export { SECOND_BRAIN_SENSITIVITIES, SECOND_BRAIN_SOURCE_ID, SECOND_BRAIN_TRUST } from "./second-brain-adapter-types.js";
 
-const OFFLINE_CODES = ["SECOND_BRAIN_CHILD_EXIT", "SECOND_BRAIN_DISCOVERY_FAILED",
-  "SECOND_BRAIN_START_FAILED"] as const;
 type PageSelection = Pick<SecondBrainSearchRow, "page_id" | "record_id" | "record_digest">;
 type PageBatch = { readonly selections: readonly PageSelection[]; readonly checkedAt: Date;
   readonly requestBudget: SecondBrainReadBudget; readonly generation: SecondBrainGenerationBinding | undefined };
-type CallResult =
-  | { readonly kind: "transport"; readonly outcome: SecondBrainOutcome }
-  | { readonly kind: "adapter"; readonly outcome: SecondBrainReadOutcome };
+
 
 function invalid(code: string, checkedAt: Date): SecondBrainReadOutcome {
   return { kind: "invalid", code, checked_at: checkedAt.toISOString() };
@@ -246,33 +236,10 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
     }
   }
 
-  private async call(
-    method: SecondBrainReadMethod,
-    arguments_: Readonly<Record<string, unknown>>,
-    checkedAt: Date,
-  ): Promise<CallResult> {
-    try {
-      const readFence = this.options.read_fence?.(checkedAt);
-      const outcome = await this.options.transport.call(method,
-        readFence === undefined ? arguments_ : { ...arguments_, read_fence: readFence });
-      if (outcome.kind !== "data") return { kind: "transport", outcome };
-      const value = normalizeSecondBrainProviderRecord(outcome.value);
-      const bound = value === undefined
-        ? undefined
-        : bindSecondBrainGenerationRead(value, { fence: readFence, method,
-          contract_profile: this.contract_profile, unbound_generations: this.unboundGenerations });
-      return bound === undefined
-        ? { kind: "adapter", outcome: invalid("SECOND_BRAIN_PROVIDER_VALUE_INVALID", checkedAt) }
-        : { kind: "transport", outcome: { kind: "data", value: bound } };
-    } catch (error) {
-      if (error instanceof JarvisError && ["MEMORY_READ_FENCE_KEY_UNAVAILABLE", "MEMORY_READ_FENCE_AUTHORITY_UNAVAILABLE"].includes(error.code)) {
-        return { kind: "adapter", outcome: invalid(error.code, checkedAt) };
-      }
-      if (!(error instanceof SecondBrainTransportError)) throw error;
-      const kind = OFFLINE_CODES.some(code => code === error.code) ? "offline" : error.disposition === "fatal" ? "invalid" : "unavailable";
-      return { kind: "adapter", outcome: { kind, code: error.code, checked_at: checkedAt.toISOString() } };
-    }
+  private call(method: SecondBrainReadMethod, arguments_: Readonly<Record<string, unknown>>, checkedAt: Date) {
+    return callSecondBrainRead(this.options, this.contract_profile, this.unboundGenerations, method, arguments_, checkedAt);
   }
+
 }
 
 export function createSecondBrainReadAdapter(options: SecondBrainAdapterOptions): SecondBrainReadAdapter {

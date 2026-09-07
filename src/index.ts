@@ -1,27 +1,8 @@
+export * from "./orca-public-api.js";
 export * from "./core-api.js"; export * from "./daily-loop.js"; export * from "./morning-brief.js"; export * from "./memory-candidates.js";
 export * from "./notification-intents.js"; export * from "./notification-delivery-types.js"; export * from "./recommendation-workflow-public.js";
 export * from "./notification-delivery-input.js"; export * from "./notification-delivery-payload.js"; export * from "./notification-delivery-store.js";
-export {
-	OrcaReadonlyAdapter,
-	classifyOrcaTerminal,
-	defaultRunner,
-	discoverOrcaBindings,
-	observeOrca,
-	parseOrcaBindings,
-	type DiscoveredOrcaBinding,
-	type DiscoverOrcaOptions,
-	type OrcaObserveOptions,
-	type OrcaRunner,
-} from "./orca.js";
-export {
-	createOrcaRunner,
-	decodeEnvWorktree,
-	encodeEnvWorktree,
-	LOCAL_ORCA_ENVIRONMENT,
-	ORCA_ENV_PATH_PREFIX,
-	parseOrcaEnvironments,
-	withOrcaEnvironment,
-} from "./orca-env.js";
+
 export * from "./personal-os-evaluation.js"; export * from "./priority-engine.js"; export * from "./personal-contracts.js";
 export {
 	Recommendations, RecommendationError, RECOMMENDATION_ERROR_CODES,
@@ -86,35 +67,7 @@ export type {
 	ContextMemoryEvidenceBinding, ContextPersistenceInput, ReconstructedRecommendation, RecommendationActionTransition,
 	RecommendationPersistenceInput, StoredContext, StoredObservation, StoredRecommendation,
 } from "./personal-context-persistence.js";
-export { parseProgressBatch, serializeProgressReport } from "./progress.js";
-export {
-	classifyProgressEvidence,
-	parseProgressSignal,
-	progressSignalPayload,
-	verifyProgressSignal,
-} from "./progress-signal.js";
-export { ingestCodexAppServerEvent, ingestClaudeHookEvent } from "./adapters.js";
-export { evaluatePreGjcFixture, runPreGjcFixture, preGjcEvidenceId, REQUIRED_PRE_GJC_EVIDENCE } from "./pre-gjc.js";
-export { PreGjcShadow, type OrcaResumeAdapter, type ShadowKey, type AuthorityReceipt } from "./pre-gjc-shadow.js";
-export { OrcaTerminalResumeAdapter, type OrcaCommand, type LiveResumeIntent } from "./orca-resume.js";
-export {
-	LiveSupervisor,
-	type LiveBinding,
-	type LiveObservation,
-	type LiveObservationReader,
-	type LiveSupervisorCycle,
-} from "./live-supervisor.js";
-export {
-	GjcCoordinatorClient,
-	spawnGjc,
-	GJC_ENV,
-	GJC_PROTOCOL_VERSION,
-	type GjcCall,
-	type GjcRun,
-	type GjcRunResult,
-	type GjcRunner,
-} from "./gjc.js";
-export { GjcRuntimeService } from "./service.js";
+
 export * from "./second-brain-adapter.js";
 export * from "./second-brain-effect-v2.js";
 export * from "./second-brain-effect-authority.js";
@@ -187,7 +140,7 @@ export type {
 	ProgressClassification,
 	ProgressReasonCode,
 } from "./types.js";
-export type { PreGjcEvidence, PreGjcFixture, PreGjcKeyRevocation, PreGjcTarget } from "./pre-gjc.js";
+
 export { runDoctor, type DoctorCheck, type DoctorReport } from "./doctor.js";
 export {
 	boundedSecondBrainReadinessRunner,

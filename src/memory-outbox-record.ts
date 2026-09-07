@@ -1,7 +1,9 @@
+import { canonicalize } from "./canonical.js";
+import type { MemoryOutboxSagaV2 } from "./memory-outbox-types.js";
 import type { ClaimedControlCommand } from "./control-plane.js";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./db.js";
-import { parseMemoryOutboxAction, type MemoryOutboxSpoolRoots } from "./memory-outbox-values.js";
+import { parseSagaRow, parseMemoryOutboxAction, type MemoryOutboxSpoolRoots } from "./memory-outbox-values.js";
 import type { SecondBrainWriteRequestV1 } from "./second-brain-adapter-types.js";
 
 export class MemoryOutboxRecordReader {
@@ -44,4 +46,37 @@ export class MemoryOutboxRecordReader {
       command_digest: String(row["command_digest"]), reversible: Boolean(row["reversible"]),
       fence: Number(row["lease_fence"]), lease_expires_at: String(row["lease_expires_at"]) };
   }
+  get(id: string): MemoryOutboxSagaV2 | undefined {
+    const row = this.authority.db.prepare("SELECT * FROM memory_outbox WHERE outbox_id=?").get(id);
+    return row === undefined ? undefined : parseSagaRow(row);
+  }
+  list(state: string | undefined, limit: number): readonly MemoryOutboxSagaV2[] {
+    const rows = state === undefined
+      ? this.authority.db.prepare(
+        "SELECT * FROM memory_outbox WHERE action_request_id IS NOT NULL ORDER BY created_at,outbox_id LIMIT ?",
+      ).all(limit)
+      : this.authority.db.prepare(
+        `SELECT * FROM memory_outbox WHERE action_request_id IS NOT NULL AND state=?
+         ORDER BY created_at,outbox_id LIMIT ?`,
+      ).all(state, limit);
+    return rows.map(parseSagaRow);
+  }
+  terminalReplay(command: Parameters<typeof parseMemoryOutboxAction>[0]): MemoryOutboxSagaV2 | undefined {
+    const row = this.authority.db.prepare(
+      `SELECT * FROM memory_outbox WHERE action_request_id=? AND state IN ('settled','conflict','failed','expired')`,
+    ).get(command.request_id);
+    if (row === undefined) return undefined;
+    const saga = parseSagaRow(row);
+    const stored = this.command(saga.outbox_id);
+    if (command.action !== stored.action || command.action_level !== stored.action_level
+      || command.command_digest !== stored.command_digest || command.receipt_id !== stored.receipt_id
+      || command.fence !== stored.fence || command.reversible !== stored.reversible
+      || canonicalize(command.target) !== canonicalize(stored.target)
+      || canonicalize(command.args) !== canonicalize(stored.args)) {
+      throw new JarvisError("MEMORY_OUTBOX_REPLAY_CONFLICT");
+    }
+    // This is a read-back of a committed result, never another authority redemption.
+    return saga;
+  }
+
 }

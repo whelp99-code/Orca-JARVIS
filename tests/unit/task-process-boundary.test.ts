@@ -9,6 +9,7 @@ vi.mock("node:child_process", () => ({ spawn: io.spawn }));
 vi.mock("node:fs/promises", async importOriginal => ({
   ...await importOriginal<typeof import("node:fs/promises")>(),
   realpath: async (path: string) => path,
+  access: async () => undefined,
   stat: async () => { await io.prepare(); return { isFile: () => true, mode: 0o700 }; },
   open: async () => { await io.prepare(); return { fd: 3, close: io.close }; },
 }));

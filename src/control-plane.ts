@@ -1,8 +1,9 @@
+import { readControlCommand, listControlCommands, decodeStoredControlCommand } from "./control-command-read.js";
 import { canonicalize } from "./canonical.js"; import { validateControlAction } from "./control-actions.js"; import { controlCommandDigest,
   controlValueDigest as hash, isControlRecord as isRecord, isNonemptyControlValue as nonempty, verifyCommandApproval, } from "./control-plane-contract.js";
 import type { ActionLevel, ClaimedControlCommand, CommandApprovalReceipt, ControlCancelInput, ControlCommandRequestInput, ControlCommandState,
   ControlEventInput, StoredControlCommand, } from "./control-plane-contract.js"; import { AuthorityDb, JarvisError } from "./db.js";
-import { MemoryProjectionAuthority } from "./memory-projection-authority.js"; import { MemorySurfaceAuthority } from "./memory-surface-authority.js"; export {
+import { MemorySurfaceAuthority } from "./memory-surface-authority.js"; export {
   COMMAND_APPROVAL_DOMAIN, controlCommandDigest, signCommandApproval, verifyCommandApproval, } from "./control-plane-contract.js"; export type { ActionLevel,
   ClaimedControlCommand, CommandApprovalReceipt, ControlCancelInput, ControlCommandRequestInput, ControlCommandState, ControlEventInput, StoredControlCommand,
 } from "./control-plane-contract.js"; const validOutcomeStates = new Set(["completed", "failed", "uncertain"]);
@@ -213,7 +214,7 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
       // The initial executor owns a live claim and will settle it itself.
       if (row.state === "claimed" && (!Number.isFinite(Date.parse(String(row.lease_expires_at)))
         || Date.parse(String(row.lease_expires_at)) > nowMs)) return false;
-      const command = this.storedCommand(row); const fence = Number(row.lease_fence);
+      const command = decodeStoredControlCommand(row); const fence = Number(row.lease_fence);
       if (this.commandRevoked(command.request_id, command.command_digest, String(row.action_receipt_id))) return false;
       const proof = memoryOutboxControlProof(this.authority, outboxId, command, fence);
       if (Date.parse(proof.observed_at) > nowMs) throw new JarvisError("MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID");
@@ -238,34 +239,11 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
   }
 
   get(requestId: string): StoredControlCommand | undefined {
-    const row = this.authority.db.prepare("SELECT * FROM control_command_requests WHERE request_id=?")
-      .get(requestId) as Record<string, unknown> | undefined;
-    if (row === undefined || !this.visibleCommand(row, new MemoryProjectionAuthority(this.authority))) return undefined;
-    return this.storedCommand(row);
+    return readControlCommand(this.authority, requestId);
   }
 
   list(): StoredControlCommand[] {
-    const projections = new MemoryProjectionAuthority(this.authority);
-    return (this.authority.db.prepare("SELECT * FROM control_command_requests ORDER BY requested_at,request_id")
-      .all() as Array<Record<string, unknown>>)
-      .filter(row => this.visibleCommand(row, projections)).map(row => this.storedCommand(row));
+    return listControlCommands(this.authority);
   }
 
-  private visibleCommand(row: Record<string, unknown>, projections: MemoryProjectionAuthority): boolean {
-    return !projections.isSuppressed({
-      kind: "control_payload", id: String(row.request_id), component_id: String(row.request_id),
-    });
-  }
-
-  private storedCommand(row: Record<string, unknown>): StoredControlCommand {
-    return {
-      schema_version: 1, request_id: String(row.request_id), action: String(row.action),
-      action_level: Number(row.action_level) as ActionLevel,
-      target: JSON.parse(String(row.target_json)) as Record<string, unknown>,
-      args: JSON.parse(String(row.args_json)) as Record<string, unknown>,
-      command_digest: String(row.command_digest), reversible: Boolean(row.reversible),
-      requested_by: String(row.requested_by), requested_at: String(row.requested_at),
-      expires_at: String(row.expires_at), nonce: String(row.nonce), state: String(row.state) as ControlCommandState,
-    };
-  }
 }

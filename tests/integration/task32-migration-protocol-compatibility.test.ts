@@ -9,7 +9,7 @@ describe("Task 32 migration protocol compatibility", () => {
     try {
       const idRows = db.db.prepare("SELECT id FROM schema_migrations ORDER BY id").all() as Array<{ readonly id: string }>;
       const ids = idRows.map(row => row.id);
-      expect(ids.at(-1)).toBe("060_memory_outbox_control_cursor.sql");
+      expect(ids.at(-1)).toBe("064_task_completions.sql");
       expect(ids).toEqual(expect.arrayContaining([
         "052_memory_effect_content_free.sql",
         "053_memory_surface_authority.sql",
@@ -20,6 +20,10 @@ describe("Task 32 migration protocol compatibility", () => {
         "058_task_execution_binding.sql",
         "059_task_candidate_artifacts.sql",
         "060_memory_outbox_control_cursor.sql",
+        "061_task_execution_clock.sql",
+        "062_task_candidate_certifications.sql",
+        "063_task_git_publications.sql",
+        "064_task_completions.sql",
       ]));
       const columnRows = db.db.prepare("PRAGMA table_info(memory_outbox)").all() as Array<{ readonly name: string }>;
       expect(columnRows.map(row => row.name)).not.toContain("request_json");
