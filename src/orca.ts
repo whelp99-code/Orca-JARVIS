@@ -1,9 +1,11 @@
-import { createHash } from "node:crypto"; import { execFile as execFileCallback } from "node:child_process"; import { promisify } from "node:util";
+import { createHash } from "node:crypto";
+import { createOrcaReadRunner } from "./orca-read-runner.js";
+import { isTransientOrcaReadFailure, parseOrcaReadPayload } from "./orca-read-envelope.js";
 import { AuthorityDb, JarvisError } from "./db.js";
 import { createOrcaRunner, encodeEnvWorktree, LOCAL_ORCA_ENVIRONMENT, parseOrcaEnvironments } from "./orca-env.js";
 import type { OrcaObservationDelta, OrcaProvider } from "./types.js";
 
-const execFile = promisify(execFileCallback); const DEFAULT_MAX_PAGES = 3; const MAX_MAX_PAGES = 10; const MAX_LIMIT = 1_000;
+const DEFAULT_MAX_PAGES = 3; const MAX_MAX_PAGES = 10; const MAX_LIMIT = 1_000;
 export type OrcaRunner = (args: readonly string[]) => Promise<string>; export interface OrcaTerminal { handle: string;
 tabId?: string; leafId?: string; ptyId: string; incarnationId: string; worktreeId: string | null;
 worktreePath: string | null; title: string | null; connected: boolean; writable: boolean; lastOutputAt: number | null; preview: unknown; }
@@ -29,19 +31,16 @@ function identity(worktree: string, terminalHandle: string,
 incarnationId: string, cursorBefore: string | null): string { return `orca_${createHash("sha256").update(JSON.stringify([worktree,
 terminalHandle, incarnationId, cursorBefore])).digest("hex")}`; }
 
+let configuredReadRunner: OrcaRunner | undefined;
 export const defaultRunner: OrcaRunner = async args => {
-  try { return (await execFile("orca", [...args], { encoding: "utf8", maxBuffer: 1_000_000, windowsHide: true })).stdout; }
-  catch { throw new JarvisError("ORCA_CLI_FAILED"); } };
-
-function parsePayload(text: string): Record<string, unknown> {   let payload: unknown;
-  try { payload = JSON.parse(text); } catch { throw new JarvisError("ORCA_CLI_JSON_INVALID"); }
-  if (!isRecord(payload)) throw new JarvisError("ORCA_CLI_SCHEMA_INVALID");   if (payload.ok !== true) throw new JarvisError("ORCA_CLI_FAILED");
-  if (("version" in payload && payload.version !== 1) || !isRecord(payload.result)) throw new JarvisError("ORCA_CLI_SCHEMA_INVALID");   return payload.result; }
+  configuredReadRunner ??= createOrcaReadRunner();
+  return configuredReadRunner(args);
+};
 
 export class OrcaReadonlyAdapter {   constructor(private readonly runner: OrcaRunner = defaultRunner) {}
   private async call(args: string[]): Promise<Record<string, unknown>> {     let output: string;
     try { output = await this.runner(args); } catch (error) { if (error instanceof JarvisError) throw error; throw new JarvisError("ORCA_CLI_FAILED"); }
-    return parsePayload(output);   }   async list(worktree: string, maximum?: number): Promise<OrcaTerminal[]> {
+    return parseOrcaReadPayload(output);   }   async list(worktree: string, maximum?: number): Promise<OrcaTerminal[]> {
     if (!worktree || maximum !== undefined && (!Number.isSafeInteger(maximum) || maximum < 0)) {       throw new JarvisError("ORCA_WORKTREE_INVALID");     }
     const result = await this.call(["terminal", "list", "--worktree", worktree, "--json"]); const terminals = result.terminals;
     if (!Array.isArray(terminals)) return invalidSchema();     if (maximum !== undefined && terminals.length > maximum) throw new OrcaCollectionLimitError();
@@ -68,7 +67,7 @@ nextCursor: nullableString(terminal.nextCursor), latestCursor: nullableString(te
 
 export interface DiscoverOrcaOptions {   runner?: OrcaRunner;   /** Single Orca environment name (`local` or a saved remote such as `jm-server`). */
   environment?: string;   /** Discover across multiple environments (default: ORCA_JARVIS_ENVIRONMENTS). */   environments?: string[];   maxBindings?: number;
-  /** When true, a remote environment failure is skipped instead of aborting discovery. */   tolerateRemoteFailure?: boolean; }
+  /** When true, an explicit remote transport outage is skipped instead of aborting discovery. */   tolerateRemoteFailure?: boolean; }
 
 /**  * Finds bindings only from structured worktree/agent metadata and structured  * terminal fields.  paneKey is a protocol identity, never a title or preview.
  * Remote Orca hosts use encoded worktree paths (`/orca-env/<env>/...`).  */
@@ -81,7 +80,9 @@ maybeOptions?: DiscoverOrcaOptions): Promise<DiscoveredOrcaBinding[]> {   const 
   for (const environment of environments) {     if (collected.length >= globalMaxBindings) break;     const runner = options.runner && environments.length === 1
       ? options.runner       : createOrcaRunner(environment, options.runner ?? defaultRunner);     try {
       const found = await discoverOrcaBindingsInEnvironment(runner, environment, Math.min(perEnvironmentMaxBindings, globalMaxBindings - collected.length));
-      collected.push(...found);     } catch (error) {       if (environment === LOCAL_ORCA_ENVIRONMENT || !tolerateRemoteFailure) throw error;
+      collected.push(...found);
+    } catch (error) {
+      if (environment === LOCAL_ORCA_ENVIRONMENT || !tolerateRemoteFailure || !isTransientOrcaReadFailure(error)) throw error;
       // Remote hosts may be offline; local discovery must still succeed.
     }   }   const identities = new Set<string>();   for (const binding of collected) {     const key = `${binding.worktree}\0${binding.terminal_id}`;
     if (identities.has(key)) throw new JarvisError("ORCA_PANE_BINDING_AMBIGUOUS");     identities.add(key);   }   return collected; }
@@ -108,7 +109,10 @@ b.last_activity_at - a.last_activity_at || a.worktree.localeCompare(b.worktree) 
   const byWorktree = new Map<string, OrcaTerminal[]>(); const failedWorktrees = new Set<string>();   const bindings: DiscoveredOrcaBinding[] = [];
   for (const item of candidates) {     const agentType = item.raw.agentType as OrcaProvider;
 const paneKey = string(item.raw.paneKey); if (!byWorktree.has(item.worktree) && !failedWorktrees.has(item.worktree)) { try { byWorktree.set(item.worktree,
-await adapter.list(item.listSelector));         } catch (error) {           failedWorktrees.add(item.worktree);           if (item.working) throw error;
+await adapter.list(item.listSelector));
+        } catch (error) {
+          failedWorktrees.add(item.worktree);
+          if (item.working || !isTransientOrcaReadFailure(error)) throw error;
           continue;         }       }       if (failedWorktrees.has(item.worktree)) {
         if (item.working) throw new JarvisError("ORCA_PANE_BINDING_UNMATCHED");         continue;       }
       const terminals = byWorktree.get(item.worktree) ?? [];

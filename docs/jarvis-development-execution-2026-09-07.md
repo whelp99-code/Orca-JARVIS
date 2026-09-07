@@ -386,3 +386,15 @@
 - 빌드된 자비스 transport와 실제 격리 MCP subprocess3개로 정상 응답의 도구 호출1, malformed null/object 응답의 호출각0, 시작각1, 자식 종료3을 확인했다. 임시 fixture 제거. 재현 및 결과 `strict-json-live-probe.mjs/json`. lint/typecheck/backend build exit0, 독립 정적 리뷰 필수 결함0.
 - 증거 루트 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/`. 전체 verify 결과는 수정 전 고정 SHA에 귀속되며 파서 수정 후 전체 suite 재실행 결과로 확대하지 않는다. 파서 단위는 위 관련 검사와 빌드 실행으로 검증했다.
 - P1-13 제품 경계는 아직 미반영: 중복 ok 성공 분기 우회와 wrapper 자손 파이프 종료 상한을 해결해야 한다. 상세 `docs/planning/service-observation-isolation.md`. 전체01–25 개발 목표와 자동 기억 수집 HOLD는 유지한다. 운영 DB/service/release/push 변경0.
+
+## 2026-09-08 P1-13 선행 단위 — Orca 읽기 오류와 프로세스 경계
+
+- 직전 턴은 `1a4b9d0` 파서 수정/검증/커밋으로 progress였다. 현재 작업 트리와 기존 경계 초안을 대조하고 중복 ok 분기 우회 및 자손 프로세스 종료 문제를 구현에서 해결했다.
+- 공통 strict JSON 구현을 `strict-json.ts`로 분리했다. Second Brain 기존 제한/반환 규칙은 유지하며 Orca는 byte cap 내 큰 terminal list를 허용하는 별도 node/work budget을 사용한다. 전체 응답 중복 키 검사→형식 검사→성공/실패 분류 순서다.
+- Linux 기본 실행 파일 `orca-ide`, 개발 `orca-dev`, 명시적 경로는 ORCA_CLI_COMMAND. 첫 사용 시 설정 고정, shell false. 1회5초/출력합계1MB/종료확인추가250ms이며 자동 재시도0. POSIX 소유 group을 성공과 실패에서 종료하고 close/kill 확인 실패는 runner 재사용을 차단한다. stderr prose·unknown 오류·권한·stale·설치·스키마를 transient로 바꾸지 않는다.
+- 독립 리뷰에서 별도 stdio 자손이 정상/구조화 오류 종료 뒤 남는 P2를 추가 발견하여 close에도 group 종료를 적용했다. /proc 확인/읽기 경쟁은 ENOENT를 종료로 취급하도록 수정했다. 최종 필수 결함0. Windows 자손 정리/실측은 미완료이며 Linux 운영 결과로 확대하지 않는다.
+- observeBound 및 remote/idle discovery가 명시적 runtime_unavailable/runtime_timeout만 격리한다. service에 pending sync를 둔 list/read 실패 검사에서 일시적 장애는 cursor 보존·unknown·sync completed, 권한/stale/schema/unknown 오류는 coordinator호출0·intent pending을 확인했다. 전체 supervisor 콜백 예외 무시는 계속 HOLD다.
+- 최종 중복 제외 관련14파일132개 pass. 첫 실행은7파일 기능 회귀가 통과했으나 orca.ts의 긴 두 줄로 reviewability1개 실패했고 줄을 나눠 기존 gate를 통과했다. 신규18 envelope/15 process/8 observation 검사를 포함한다. 로그 `orca-read-first.log`, `orca-read-second.log`, `orca-read-final.log`. lint/typecheck/backend build exit0, git diff --check exit0. 이 변경 후 전체 suite를 재실행한 결과는 아니다.
+- 실제 built runner: timeout507.16ms, wrapper 종료 후 stdout을 붙잡은 자손505.10ms, 별도 stdio 정상/오류 자손31.92/27.89ms, 그룹 밖 자손의 close 실패752.55ms. 부모5/자손4 종료를 확인했다. 그룹 밖 fixture는 runner 재사용 차단을 확인한 뒤 probe가 직접 종료했으며 자동 정리 성공으로 세지 않는다. 실제 설치된 Orca status 전후 성공, default adapter의 없는 handle 조회 ORCA_TERMINAL_STALE. 임시 fixture 제거.
+- 증거 루트 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/`, 실제 재현 `orca-read-live-probe.mjs/json`. 운영 DB/terminal send/service/release/push 변경0. 상세 현재 계약과 미완료 조건은 `docs/planning/service-observation-isolation.md`.
+- 다음 작업은 다음 시도 시각/backoff, incarnation 격리, 관측·coordinator 건강 상태 분리 및 실제 service 경로 검증이다. P1-13 전체와 나머지01–25 목표는 미완료이며 자동 기억 수집 원본 차단 HOLD도 유지한다.

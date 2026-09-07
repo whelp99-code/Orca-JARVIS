@@ -3,6 +3,7 @@ import { ApprovedCommandExecutor } from "./approved-executor.js";
 import { type CliCommandContext, commandNow } from "./cli-command-context.js";
 import { integer, jsonFile, objectValue, providerValue } from "./cli-command-input.js";
 import { JarvisError } from "./db.js";
+import { isTransientOrcaReadFailure } from "./orca-read-envelope.js";
 import { GjcCoordinatorClient } from "./gjc.js";
 import { LiveSupervisor, type LiveBinding, type LiveObservation, type LiveSupervisorCycle } from "./live-supervisor.js";
 import { AgentOpsMicroLoops, DurableMicroLoopRuntime } from "./microloops.js";
@@ -38,7 +39,7 @@ export async function observeBound(binding: LiveBinding, runner?: OrcaRunner): P
     if (read.handle !== binding.terminal_id || !["ok", "running"].includes(read.status)) return [unknownObservation(binding)];
     return [{ ...unknownObservation(binding), cursor: read.nextCursor, connected: true }];
   } catch (error) {
-    if (error instanceof JarvisError && error.code === "ORCA_CLI_FAILED") {
+    if (isTransientOrcaReadFailure(error)) {
       return [unknownObservation(binding)];
     }
     throw error;

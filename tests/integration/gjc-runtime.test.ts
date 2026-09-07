@@ -122,11 +122,11 @@ describe("GJC runtime", () => {
   });
   it("rejects conflicting question-answer replays", async () => { const db = new AuthorityDb(tempDb()); await db.migrate(); db.configureGjc(process.cwd(), "s", true); const intent = db.createGjcIntent("sync", { session_id: "s", turn_id: "t" }, "sync"); db.bindGjcQuestion(intent, "q", { prompt: "ok" }); db.answerGjcQuestion("q", { answer: "yes" }, "a"); expect(() => db.answerGjcQuestion("q", { answer: "no" }, "a")).toThrow("GJC_ANSWER_REPLAY_CONFLICT"); });
   it("queues only schema-bound question submissions and rejects missing or mismatched bindings", async () => { const db = new AuthorityDb(tempDb()); await db.migrate(); db.configureGjc(process.cwd(), "s", true); const intent = db.createGjcIntent("sync", { session_id: "s", turn_id: "t" }, "sync"); db.bindGjcQuestion(intent, "q", { session_id: "s", turn_id: "t", question_id: "q", prompt: "ok" }); expect(db.createGjcQuestionAnswerIntent("q", { session_id: "s", turn_id: "t", answer_binding: { choice: "a" }, answer: "yes" }, "answer-1")).toMatch(/^gjc_/); expect(() => db.createGjcQuestionAnswerIntent("q", { session_id: "s", turn_id: "wrong", answer_binding: {}, answer: "yes" }, "answer-2")).toThrow("GJC_QUESTION_BINDING_CONFLICT"); expect(() => db.createGjcQuestionAnswerIntent("q", { session_id: "s", turn_id: "t", answer: "yes" }, "answer-3")).toThrow("GJC_ANSWER_SCHEMA_INVALID"); });
-  it("projects a stale persisted live binding as unknown when its Orca terminal list fails", async () => {
+  it("projects a persisted live binding as unknown during an explicit Orca transport outage", async () => {
     const root = mkdtempSync(`${tmpdir()}/gjc-stale-selector-`); const worktree = join(root, "worktree"); mkdirSync(worktree); const db = join(root, "authority.sqlite"); const binding = join(root, "binding.json"); writeFileSync(binding, JSON.stringify({ worktree, provider: "codex", terminal_id: "terminal", session_id: "session", incarnation_id: "incarnation", pty_id: "pty", worktree_id: "worktree", project_id: "project" }));
     const runner: OrcaRunner = async args => {
-      if (args[0] === "terminal" && args[1] === "list") throw new JarvisError("ORCA_CLI_FAILED");
-      throw new JarvisError("ORCA_CLI_FAILED");
+      if (args[0] === "terminal" && args[1] === "list") throw new JarvisError("ORCA_CLI_UNAVAILABLE");
+      throw new JarvisError("ORCA_CLI_UNAVAILABLE");
     };
     try {
       await execute(["db", "migrate", "--db", db]); const direct = new AuthorityDb(db); direct.configureGjc(root, "s", true); direct.close();
@@ -155,10 +155,9 @@ describe("GJC runtime", () => {
         throw new JarvisError("ORCA_CLI_FAILED");
       };
       await expect(execute(["service", "once", "--db", db], { orcaRunner: bindingRunner })).rejects.toMatchObject({ code: "ORCA_PANE_BINDING_INVALID" });
-      // A plain runner exception becomes ORCA_CLI_FAILED at the adapter boundary:
-      // it is the expected "cannot read Orca right now" failure and is tolerated.
+      // Opaque exceptions cannot prove a transient transport outage.
       const opaqueRunner: OrcaRunner = async () => { throw new Error("boom"); };
-      await expect(execute(["service", "once", "--db", db], { orcaRunner: opaqueRunner })).resolves.toMatchObject({ command: "service.once", state: null });
+      await expect(execute(["service", "once", "--db", db], { orcaRunner: opaqueRunner })).rejects.toMatchObject({ code: "ORCA_CLI_FAILED" });
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
   it("does not replay a lost acknowledgement and fences a second runtime service", async () => { const db = new AuthorityDb(tempDb()); await db.migrate(); db.configureGjc(process.cwd(), "s", true); db.createGjcIntent("sync", { session_id: "s", turn_id: "t" }, "lost-ack"); let calls = 0; const failing = new GjcCoordinatorClient(async () => { calls++; throw new Error("lost ack"); }); const first = new GjcRuntimeService(db, failing, "one", undefined, () => new Date("2026-08-10T00:00:00.000Z")); await expect(first.once("2026-08-10T00:00:00.000Z")).resolves.toMatchObject({ state: "uncertain" }); await expect(first.once("2026-08-10T00:00:01.000Z")).resolves.toEqual({ processed: null, state: null }); expect(calls).toBe(1); db.createGjcIntent("sync", { session_id: "s", turn_id: "t2" }, "leased"); const second = new GjcRuntimeService(db, failing, "two"); await expect(second.once("2026-08-10T00:00:30.000Z")).resolves.toEqual({ processed: null, state: "leased" }); expect(calls).toBe(1); });

@@ -50,3 +50,6 @@ export {
 } from "./gjc.js";
 export { GjcRuntimeService } from "./service.js";
 export type { PreGjcEvidence, PreGjcFixture, PreGjcKeyRevocation, PreGjcTarget } from "./pre-gjc.js";
+
+export { createOrcaReadRunner, resolveOrcaReadExecutable } from "./orca-read-runner.js";
+export { isTransientOrcaReadFailure } from "./orca-read-envelope.js";

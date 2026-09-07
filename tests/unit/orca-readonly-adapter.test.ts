@@ -38,6 +38,6 @@ describe("Orca read-only adapter", () => {
     const db = await database(); const result = await observeOrca(db, { runner: async args => args[1] === "list" ? list([terminal({ title: null, lastOutputAt: 1_723_215_678_901 })]) : read() }); db.close(); expect(result).toMatchObject({ classified: [], unclassified: [{ handle: "terminal-1", title: null }] });
   });
   it("rejects bad production envelopes", async () => {
-    const db = await database(); await expect(observeOrca(db, { runner: async () => envelope({ terminals: [] }, false) })).rejects.toMatchObject({ code: "ORCA_CLI_FAILED" }); await expect(observeOrca(db, { runner: async () => JSON.stringify({ id: "orca-response", ok: true, version: 2, result: { terminals: [] }, _meta: {} }) })).rejects.toMatchObject({ code: "ORCA_CLI_SCHEMA_INVALID" }); db.close();
+    const db = await database(); await expect(observeOrca(db, { runner: async () => envelope({ terminals: [] }, false) })).rejects.toMatchObject({ code: "ORCA_CLI_SCHEMA_INVALID" }); await expect(observeOrca(db, { runner: async () => JSON.stringify({ id: "orca-response", ok: true, version: 2, result: { terminals: [] }, _meta: {} }) })).rejects.toMatchObject({ code: "ORCA_CLI_SCHEMA_INVALID" }); db.close();
   });
 });
