@@ -9,6 +9,7 @@ import { verifyTaskCandidate } from "./task-candidate-verification.js";
 import { spawnTaskSandbox, type TaskSandboxRunner } from "./task-sandbox.js";
 import type { TaskSpecV1 } from "./task-spec.js";
 import { canonicalize } from "./canonical.js";
+import { TaskCandidateArtifacts } from "./task-candidate-artifacts.js";
 
 /** Candidate phase only: consumes an existing signed claim, but never publishes or settles a workflow as completed. */
 export async function executeTaskCandidate(input: {
@@ -49,6 +50,8 @@ export async function executeTaskCandidate(input: {
     let outputBudget = plan.limits.max_output_bytes - generated.output_bytes;
     if (outputBudget < 0) throw new JarvisError("TASK_PROVIDER_OUTPUT_LIMIT");
     const files = parseTaskProviderCandidate(prepared, generated.output);
+    const artifacts = new TaskCandidateArtifacts(authority);
+    artifacts.save(command, { files, repository: source.check, provider_output_bytes: generated.output_bytes }, clock, remaining);
     await inspectTaskExecutionRepository(plan, input.git);
     currentPlan(); remaining();
     const verification = await verifyTaskCandidate(plan, files, async invocation => {
@@ -62,8 +65,9 @@ export async function executeTaskCandidate(input: {
       return result;
     });
     currentPlan(); remaining();
+    const artifact = artifacts.recordVerification(command, verification, clock, remaining);
     return { state: "candidate_checked" as const, request_id: command.request_id,
-      repository: source.check, files, verification, published: false as const };
+      repository: source.check, files, verification, artifact_id: artifact.artifact_id, published: false as const };
   } catch (error) {
     // Never reset a reservation or resend automatically after a possibly delivered provider call.
     if (invoking) effects.markTaskUncertain(command, clock());

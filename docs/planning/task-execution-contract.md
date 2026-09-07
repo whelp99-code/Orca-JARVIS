@@ -84,4 +84,20 @@ Claude 구현은 설치된 CLI를 신뢰하는 도구 없는 추론 경로다. `
 
 입력은 전체 TaskSpec/계획/선언 파일을 포함한 최대 512 KiB의 UTF-8 문맥이다. 이 범위를 넘거나 바이너리 입력이면 잘라 보내지 않고 거부한다. 구조화 응답은 계획 digest와 정확한 write 상대 경로/전체 파일 내용만 허용한다. 중복·누락·추가 키·읽기 전용 변경·비정상 UTF-8·크기 초과를 거부하고 read 파일은 원본 사본에서 유지한다. stdout/stderr 합산 출력 예산은 provider와 모든 검증 명령이 공유한다.
 
-반환 상태 `candidate_checked`에는 후보 바이트와 `checks_passed` 또는 `checks_failed` 측정 결과가 들어가며 `published=false`다. 성공 시 현재 원장은 invoking, 요청은 claimed로 남으며 workflow 상태를 변경하지 않는다. 호출 시작 뒤 예외는 uncertain이며 새 승인 요청으로 같은 계획을 자동 재호출하지 않는다. 후보는 현재 메모리 결과이므로 영속 artifact, 장애 복구/정산, 독립 verifier 서명, 허용 파일 반영과 workflow 완료는 후속 구현이다. Codex 후보 provider도 미구현이다. 이 단계만으로 `task.execute`를 활성화하지 않는다.
+반환 상태 `candidate_checked`에는 후보 바이트와 `checks_passed` 또는 `checks_failed` 측정 결과가 들어가며 `published=false`다. 성공 시 현재 원장은 invoking, 요청은 claimed로 남으며 workflow 상태를 변경하지 않는다. 호출 시작 뒤 예외는 uncertain이며 새 승인 요청으로 같은 계획을 자동 재호출하지 않는다. 후보는 아래 영속 artifact에 결합한다. 실행 재개/정산, 독립 verifier 서명, 허용 파일 반영과 workflow 완료는 후속 구현이다. Codex 후보 provider도 미구현이다. 이 단계만으로 `task.execute`를 활성화하지 않는다.
+
+## 후보 영속 저장과 읽기 전용 회수
+
+기존 control_effect_attempts의 operation 하나에 후보 artifact 하나를 연결한다. 별도 실행 큐나 파일 저장 서비스를 만들지 않고 SQLite의 제한된 BLOB으로 바이트를 원자적으로 기록한다. provider 출력 형식·경로 검증 뒤, verifier 실행 전에 현재 서명·claim을 다시 확인하여 저장한다. 후보 identity/내용은 변경·삭제·교체할 수 없고 로컬 검증 결과만 별도 단일 기록으로 결합한다. 후보 저장 뒤 종료되면 검증되지 않은 후보를 회수할 수 있지만 provider를 재호출하거나 업무 완료로 정산하지 않는다.
+
+읽기는 현재 실행 권한을 부여하지 않는 이력 조회다. lease 만료 뒤에도 저장된 바이트와 결합 digest를 검사해 회수하며 조회가 원장 상태를 변경하지 않는다. 저장 크기/파일 집합/계획·후보·payload digest, 검증 명령 순서와 결과를 확인한다. 실제 디스크 중단·재개와 동시 저장은 별도 프로세스로 검증한다. 이 기록은 독립 verifier 서명·원본 반영·workflow 정산을 대신하지 않는다.
+
+`TaskCandidateArtifacts.save()`는 invoking 상태의 정확한 request/receipt/fence/run/plan 결합을 확인한다. 후보 파일은 파일당 4 MiB/전체 16 MiB이며 base64를 담은 canonical JSON BLOB은 24 MiB 이하로 제한한다. source snapshot은 선언된 원본 digest·바이트 크기·실행 비트의 manifest를 재계산해 검사한다. 후보의 read 파일은 원래 digest와 같아야 한다. 이는 로컬 입력 관측의 일관성 검사이며 원본 관측에 대한 외부 서명이 아니다.
+
+Migration 059는 operation별 attempt_id를 PK/FK로 사용하고 WITHOUT ROWID와 INSERT/UPDATE/DELETE trigger로 교체·삭제·내용 변경을 차단한다. 저장은 현재 권한을 transaction 진입 후, 실제 INSERT/UPDATE 직전, read-back 뒤 COMMIT 직전에 확인한다. 같은 바이트/같은 측정의 재저장은 SQL 쓰기 없이 기존 결과를 반환하고 다른 바이트/측정은 충돌로 거부한다. 기존 058과 이전 migration 바이트는 수정하지 않는다.
+
+`recordVerification()`은 저장된 candidate digest와 파일 manifest, 계획의 체크 ID/순서/종료 코드, provider와 검사들의 합산 출력 예산을 대조한다. 모든 검사가 없는 PASS, 중간 실패 뒤 추가 결과, 상태와 종료 코드의 불일치를 거부한다. 검증 JSON은 최대 허용 파일 목록을 수용하도록 256 KiB로 제한하며 JSON/digest/기록 시각은 함께 한 번만 기록한다. 후보 artifact와 검증 기록은 별도 COMMIT이므로 검증 결과가 없다는 사실을 보존한다.
+
+`read(requestId)`는 SQL에서 BLOB·측정·계획 크기를 먼저 제한한 뒤 정규 base64, 디코딩 크기, 원본/후보 manifest와 각 digest를 검사한다. 별도 SQLite 연결이나 프로세스 재시작 후에도 읽을 수 있고 lease 만료·uncertain 상태에서도 원장을 수정하지 않는다. 반환 artifact_id는 payload와 실행 시도에 결합된 로컬 식별자이며 실행 허가나 독립 검증 서명이 아니다.
+
+복구 보장은 후보 INSERT의 COMMIT 이후부터다. 모델 응답 수신과 COMMIT 사이 종료되면 후보가 없을 수 있으며 기존 invoking 기록으로 재호출을 계속 차단한다. 검증 전 중단됐거나 측정이 없는 artifact의 자동 검증 재개, 최종 정산, 보존/삭제 정책과 운영 데이터 용량 관리는 후속이다. 현재 저장은 운영 DB에 적용하지 않았으며 task.execute 활성화 조건은 여전히 충족하지 않았다.

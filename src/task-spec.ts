@@ -11,6 +11,7 @@ export { inspectTaskExecutionRepository, prepareTaskExecutionWorkspace, type Tas
 export { verifyTaskCandidate, type TaskCandidateVerification } from "./task-candidate-verification.js";
 export { executeTaskCandidate } from "./task-candidate-execution.js";
 export { ClaudeTaskCandidateProvider } from "./claude-task-provider.js";
+export { TaskCandidateArtifacts } from "./task-candidate-artifacts.js";
 
 /** Declared work requirements; member scopes do not grant filesystem or execution permissions. */
 export interface TaskSpecV1 {

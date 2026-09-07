@@ -9,6 +9,7 @@ import { LoopGraph } from "../../src/loopgraph.js";
 import { taskExecutionFixture } from "../fixtures/task-execution-fixture.js";
 import type { TaskProviderRequest } from "../../src/task-candidate-provider.js";
 import type { TaskSandboxInvocation } from "../../src/task-sandbox.js";
+import { TaskCandidateArtifacts } from "../../src/task-candidate-artifacts.js";
 
 const digest = (value: string) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 const cleanup: Array<() => Promise<void>> = [];
@@ -40,6 +41,16 @@ async function fixture() {
 }
 
 describe("approved task candidate execution", () => {
+  it("preserves the provider candidate when the verifier fails, without recording a successful measurement", async () => {
+    const f = await fixture();
+    f.verifier.mockRejectedValue(new Error("verifier unavailable"));
+    await expect(executeTaskCandidate(f.input)).rejects.toThrow("TASK_SANDBOX_FAILED");
+    const saved = new TaskCandidateArtifacts(f.db).read("execute")!;
+    expect(saved.files[0]!.content.toString()).toBe("changed");
+    expect(saved.verification).toBeNull();
+    expect(f.state()).toEqual([{ state: "uncertain" }]);
+    expect(f.provider.generate).toHaveBeenCalledTimes(1);
+  });
   it("does not extend the shared deadline when wall-clock time stops advancing", async () => {
     const f = await fixture();
     const actualNow = performance.now.bind(performance);
@@ -86,6 +97,9 @@ describe("approved task candidate execution", () => {
     expect(result).toMatchObject({ state: "candidate_checked", published: false, verification: { state: "checks_passed" } });
     expect(result.files.map(file => [file.path, file.content.toString()]))
       .toEqual([["src/fix.ts", "changed"], ["tests/check.mjs", "check"]]);
+    const stored = new TaskCandidateArtifacts(f.db).read("execute")!;
+    expect(stored.artifact_id).toBe(result.artifact_id);
+    expect(stored.verification).toEqual(result.verification);
     const prompt = JSON.parse(f.provider.generate.mock.calls[0]![0].prompt);
     expect(prompt.task_spec).toEqual((f.workflow.input as { task_spec: unknown }).task_spec);
     expect(f.provider.generate).toHaveBeenCalledTimes(1);

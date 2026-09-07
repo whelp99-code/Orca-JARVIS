@@ -34,11 +34,22 @@ function candidateInputs(plan: TaskExecutionPlanV1, values: readonly TaskSandbox
 /** Executes verifier argv on a frozen, read-only byte snapshot. Does not approve, publish, sign, or settle a workflow. */
 export async function verifyTaskCandidate(value: TaskExecutionPlanV1, values: readonly TaskSandboxFile[],
   runner: TaskSandboxRunner = spawnTaskSandbox): Promise<TaskCandidateVerification> {
+  const { plan, frozen, files, execution_plan_digest, candidate_digest } = freezeTaskCandidate(value, values);
+  return await runChecks(plan, frozen, files, execution_plan_digest, candidate_digest, runner);
+}
+
+/** Pure byte validation and identity construction, shared with durable candidate storage. */
+export function freezeTaskCandidate(value: TaskExecutionPlanV1, values: readonly TaskSandboxFile[]) {
   const plan = parseTaskExecutionPlan(value);
   const frozen = candidateInputs(plan, values);
   const files = frozen.map(file => ({ path: file.path, digest: hash(file.content), bytes: file.content.length }));
   const execution_plan_digest = taskExecutionPlanDigest(plan);
   const candidate_digest = hash(canonicalize({ execution_plan_digest, files }));
+  return { plan, frozen, files, execution_plan_digest, candidate_digest };
+}
+
+async function runChecks(plan: TaskExecutionPlanV1, frozen: TaskSandboxFile[], files: TaskCandidateVerification["files"],
+  execution_plan_digest: string, candidate_digest: string, runner: TaskSandboxRunner): Promise<TaskCandidateVerification> {
   const checks: Array<TaskSandboxResult & { id: string }> = [];
   const deadline = performance.now() + plan.limits.timeout_ms;
   let remainingBytes = plan.limits.max_output_bytes;
