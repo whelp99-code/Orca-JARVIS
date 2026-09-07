@@ -188,19 +188,26 @@ class BoundedSecondBrainReadAdapter implements SecondBrainReadAdapter {
 
   private async readPages(input: PageBatch): Promise<SecondBrainReadOutcome> {
     const evidence: SecondBrainEvidence[] = [];
-    const unique = new Map(input.selections.map(selection => [selection.page_id, selection]));
-    for (const selection of unique.values()) {
-      const result = await this.readPageAt(selection.page_id, input.checkedAt, input.requestBudget);
+    const pages = new Map<string, PageSelection[]>();
+    for (const selection of input.selections) {
+      const selections = pages.get(selection.page_id) ?? [];
+      selections.push(selection);
+      pages.set(selection.page_id, selections);
+    }
+    for (const [pageId, selections] of pages) {
+      const result = await this.readPageAt(pageId, input.checkedAt, input.requestBudget);
       if (result.kind !== "current" && result.kind !== "stale") return result;
       if (!secondBrainEvidenceGenerationMatches(result, input.generation)) {
         return invalid("SECOND_BRAIN_GENERATION_CHANGED", input.checkedAt);
       }
-      const selected = selection.record_id === null ? result.evidence : result.evidence.filter(item =>
-        item.record?.record_id === selection.record_id && item.record.record_digest === selection.record_digest);
-      if (selection.record_id !== null && selected.length !== 1) {
-        return invalid("SECOND_BRAIN_RECORD_SELECTION_INVALID", input.checkedAt);
+      for (const selection of selections) {
+        const selected = selection.record_id === null ? result.evidence : result.evidence.filter(item =>
+          item.record?.record_id === selection.record_id && item.record.record_digest === selection.record_digest);
+        if (selection.record_id !== null && selected.length !== 1) {
+          return invalid("SECOND_BRAIN_RECORD_SELECTION_INVALID", input.checkedAt);
+        }
+        evidence.push(...selected);
       }
-      evidence.push(...selected);
     }
     return boundSecondBrainOutcome(combineSecondBrainEvidence(evidence, input.checkedAt), input.checkedAt, input.requestBudget);
   }

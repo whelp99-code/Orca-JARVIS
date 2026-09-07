@@ -235,7 +235,8 @@ function buildEvidence(
 function resolveDuplicates(rows: readonly SecondBrainEvidence[]): ParsedPage {
   const unique = new Map<string, SecondBrainEvidence>();
   for (const row of rows) {
-    const key = `${row.page_id}\0${row.sid}`;
+    const key = row.record === null ? `legacy:${row.page_id}\0${row.sid}`
+      : `record:${row.record.record_id}\0${row.record.record_digest}`;
     const prior = unique.get(key);
     if (prior !== undefined && prior.content_digest !== row.content_digest) {
       return {
