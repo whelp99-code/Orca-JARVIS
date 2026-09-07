@@ -3,58 +3,21 @@ import { ApprovedCommandExecutor } from "./approved-executor.js";
 import { type CliCommandContext, commandNow } from "./cli-command-context.js";
 import { integer, jsonFile, objectValue, providerValue } from "./cli-command-input.js";
 import { JarvisError } from "./db.js";
-import { isTransientOrcaReadFailure } from "./orca-read-envelope.js";
+import { observePersistedBinding } from "./persisted-orca-observer.js";
+export { observeBound } from "./orca-bound-observation.js";
 import { GjcCoordinatorClient } from "./gjc.js";
-import { LiveSupervisor, type LiveBinding, type LiveObservation, type LiveSupervisorCycle } from "./live-supervisor.js";
+import { LiveSupervisor, type LiveSupervisorCycle } from "./live-supervisor.js";
 import { AgentOpsMicroLoops, DurableMicroLoopRuntime } from "./microloops.js";
 import {
-  defaultRunner,
   discoverOrcaBindings,
-  OrcaReadonlyAdapter,
-  type OrcaRunner,
-  type OrcaTerminal,
 } from "./orca.js";
-import { createOrcaRunner, decodeEnvWorktree, parseOrcaEnvironments } from "./orca-env.js";
+import { parseOrcaEnvironments } from "./orca-env.js";
 import { OrcaTerminalResumeAdapter } from "./orca-resume.js";
 import { PreGjcShadow } from "./pre-gjc-shadow.js";
 import { GjcRuntimeService } from "./service.js";
 
 function outputSync(value: object): void {
   writeSync(process.stdout.fd, `${JSON.stringify({ version: 1, ...value })}\n`);
-}
-
-export async function observeBound(binding: LiveBinding, runner?: OrcaRunner): Promise<readonly LiveObservation[]> {
-  const decoded = decodeEnvWorktree(binding.canonical_path);
-  const envRunner = createOrcaRunner(decoded.environment, runner ?? defaultRunner);
-  const adapter = new OrcaReadonlyAdapter(envRunner);
-  try {
-    const terminals: OrcaTerminal[] = await adapter.list(decoded.listSelector);
-    const terminal = terminals.find(item => item.handle === binding.terminal_id
-      && item.incarnationId === binding.incarnation_id
-      && item.ptyId === binding.pty_id
-      && item.worktreeId === binding.worktree_id);
-    if (!terminal) return [unknownObservation(binding)];
-    if (!terminal.connected) return [{ ...unknownObservation(binding), connected: false }];
-    const read = await adapter.read(binding.terminal_id, binding.cursor, 1);
-    if (read.handle !== binding.terminal_id || !["ok", "running"].includes(read.status)) return [unknownObservation(binding)];
-    return [{ ...unknownObservation(binding), cursor: read.nextCursor, connected: true }];
-  } catch (error) {
-    if (isTransientOrcaReadFailure(error)) {
-      return [unknownObservation(binding)];
-    }
-    throw error;
-  }
-}
-
-function unknownObservation(binding: LiveBinding): LiveObservation {
-  return {
-    provider: binding.provider,
-    terminal_id: binding.terminal_id,
-    session_id: binding.session_id,
-    incarnation_id: binding.incarnation_id,
-    cursor: binding.cursor,
-    state: "unknown",
-  };
 }
 
 export async function executeLiveCommand(
@@ -103,7 +66,7 @@ export async function executeLiveCommand(
     const now = commandNow(context);
     const result = await supervisor.cycleWithShadow(
       shadow,
-      binding => observeBound(binding, dependencies.orcaRunner),
+      binding => observePersistedBinding(db, binding, dependencies.orcaRunner, () => commandNow(context)),
       now.toISOString(),
     );
     if (supervisor.liveResumeConfigured()) {
@@ -146,7 +109,7 @@ export async function executeLiveCommand(
   const loops = new AgentOpsMicroLoops(db, new ApprovedCommandExecutor(db), service, async now => {
     return supervisor.cycleWithShadow(
       shadow,
-      binding => observeBound(binding, dependencies.orcaRunner),
+      binding => observePersistedBinding(db, binding, dependencies.orcaRunner, () => commandNow(context)),
       now.toISOString(),
     );
   });

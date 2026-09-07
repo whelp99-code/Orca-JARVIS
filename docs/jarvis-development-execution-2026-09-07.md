@@ -398,3 +398,14 @@
 - 실제 built runner: timeout507.16ms, wrapper 종료 후 stdout을 붙잡은 자손505.10ms, 별도 stdio 정상/오류 자손31.92/27.89ms, 그룹 밖 자손의 close 실패752.55ms. 부모5/자손4 종료를 확인했다. 그룹 밖 fixture는 runner 재사용 차단을 확인한 뒤 probe가 직접 종료했으며 자동 정리 성공으로 세지 않는다. 실제 설치된 Orca status 전후 성공, default adapter의 없는 handle 조회 ORCA_TERMINAL_STALE. 임시 fixture 제거.
 - 증거 루트 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/`, 실제 재현 `orca-read-live-probe.mjs/json`. 운영 DB/terminal send/service/release/push 변경0. 상세 현재 계약과 미완료 조건은 `docs/planning/service-observation-isolation.md`.
 - 다음 작업은 다음 시도 시각/backoff, incarnation 격리, 관측·coordinator 건강 상태 분리 및 실제 service 경로 검증이다. P1-13 전체와 나머지01–25 목표는 미완료이며 자동 기억 수집 원본 차단 HOLD도 유지한다.
+
+## 2026-09-08 P1-13 — 영속 관측 재시도와 독립 건강 상태
+
+- 직전 인계 확인 턴은 수신 계획 반영을 확인했으나 자비스 개발 기준 no progress였다. main `703d727`의 현재 변경분, 실제 probe JSON, 관련 검사 로그를 재확인하고 기존 handle85997의 exit0을 회수했다. 실행 중인 검사를 중복 시작하지 않았다.
+- 새 migration068에 binding별 시도 토큰/시작 cursor/15초 만료/다음 시도/관측 성공 시각을 저장한다. 일시적 실패는 완료 시각부터10/20/40/60초, 상한60초 backoff이며 정상 관측에서 초기화한다. 건너뛴 시도는 외부 읽기·관측 쓰기0이다. 기존 migration 바이트는 유지했다.
+- 시작/완료/최종 cursor·보고서 트랜잭션에서 신원과 cursor를 재검증하여 이전 시도 결과의 덮어쓰기를 거부한다. 만료·시계 역행도 거부한다. binding 자동 교체를 추가하지 않고 명시 교체된 신원은 이전 backoff를 상속하지 않는다. allSettled로 진행 중 reader 종료 후 오류를 전파한다.
+- service status/doctor에 관측 건강 상태를 연결하고 coordinator 시도/성공 시각을 분리했다. heartbeat나 정상 관측이 coordinator 오류를 지우지 않는다. runtime lease 확인과 건강 상태 갱신을 하나의 IMMEDIATE 트랜잭션으로 묶었다. 보고서 recovery가 저장된 fatal을 우회하지 못하며 출력 실패는 ack0/coordinator0을 유지한다.
+- 관련8파일55개 통과(48.52초), 마지막 만료 assertion 추가 후7개 재확인 통과(6.55초). build/typecheck/lint exit0. 독립 리뷰에서 최종 cursor 경쟁과 lease 확인/쓰기 사이 경쟁까지 수정했으며 최종 필수 결함0이다. 전체 verify 재실행 전의 관련 검사 결과다.
+- 실제 빌드 CLI subprocess와 격리 Orca/GJC 프로토콜 실행 파일에서 실제 시계로9,531ms 대기 후 복구했다. 재시도 전 Orca 호출0·건강 상태 쓰기0, 별도 CLI status의 DB 커밋0, fatal 후 coordinator 호출0·intent 보존을 확인했다. 전체 fixture Orca호출10/GJC호출5, 임시 데이터 제거. 운영 제공자 인수 완료로 보고하지 않는다.
+- 증거 루트 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/`: `observation-health-accepted.log`, `observation-health-expiry.log`, `observation-health-live-probe.mjs/json`, build/lint/typecheck 로그. 상세 계약은 `docs/planning/service-observation-isolation.md`.
+- 단위 커밋 후 고정 소스 전체 verify를 실행한다. 운영 DB/서비스/release/push 변경0. P1-13 운영 인수와 전체01–25 목표는 미완료이며 자동 기억 수집 원본 차단 HOLD는 유지한다.

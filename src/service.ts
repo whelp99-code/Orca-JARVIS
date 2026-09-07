@@ -1,3 +1,7 @@
+import {
+  readServiceHealth, requireNoFatalObservations, recordRuntimeHeartbeat,
+  recordCoordinatorAttempt, recordCoordinatorOutcome, withRuntimeHealthFence,
+} from "./runtime-health.js";
 import { AuthorityDb, JarvisError } from "./db.js";
 import { GjcCoordinatorClient } from "./gjc.js";
 import { canonicalize } from "./canonical.js";
@@ -31,40 +35,26 @@ export class GjcRuntimeService {
     private readonly supervisorCycle?: () => Promise<unknown>,
     private readonly clock: () => Date = () => new Date(),
   ) { this.lease = new GjcRuntimeLease(db, worker); }
-  status(): Record<string, unknown> {
-    const config = this.db.gjcConfig();
-    const rows = this.db.db.prepare("SELECT state,COUNT(*) AS count FROM gjc_intents GROUP BY state ORDER BY state").all() as Array<{
-      state: string;
-      count: number;
-    }>;
-    const runtime = this.db.db.prepare("SELECT pid,last_heartbeat_at,last_error_code FROM gjc_runtime_status WHERE id=1").get() ?? null;
-    const intents = Object.fromEntries(rows.map((row) => [row.state, Number(row.count)]));
-    const bindings = this.db.db.prepare("SELECT COUNT(*) AS count FROM live_supervisor_bindings")
-      .get() as { count: number };
-    return {
-      connected: Boolean(config?.operational),
-      config,
-      runtime,
-      intents,
-      work_readiness: {
-        coordinator_configured: config !== null,
-        coordinator_operational: Boolean(config?.operational),
-        observation_bindings: bindings.count,
-        pending_intents: intents.pending ?? 0,
-        uncertain_intents: intents.uncertain ?? 0,
-      },
-    };
-  }
+  status(): Record<string, unknown> { return readServiceHealth(this.db, this.clock()); }
   async once(now = this.clock().toISOString()): Promise<{ connected?: boolean; processed: string | null; state: string | null }> {
-    return this.lease.run(now, (owner, fence) => this.processOnce(now, owner, fence));
+    return this.lease.run(now, async (owner, fence) => {
+      const result = await this.processOnce(now, owner, fence);
+      if (result.processed !== null && result.state !== null) {
+        const finished = this.clock().toISOString();
+        withRuntimeHealthFence(this.db, owner, fence, finished,
+          () => recordCoordinatorOutcome(this.db, result.processed!, result.state!, finished));
+      }
+      return result;
+    });
   }
   close(): void { this.lease.release(this.clock().toISOString()); }
   private async processOnce(now: string, owner: string, runtimeFence: number) {
     const config = this.db.gjcConfig();
     this.db.recoverExpiredGjcIntents(now);
-    this.db.recordGjcRuntimeStatus(null, now);
+    withRuntimeHealthFence(this.db, owner, runtimeFence, now, () => recordRuntimeHeartbeat(this.db, now));
     if (this.supervisorCycle) await this.supervisorCycle();
     if (!config?.operational) return { connected: false, processed: null, state: "disconnected" };
+    requireNoFatalObservations(this.db, this.clock());
     const next = this.db.db.prepare("SELECT intent_id FROM gjc_intents WHERE state='pending' ORDER BY created_at,intent_id LIMIT 1").get() as
       { intent_id: string } | undefined;
     if (!next) return { processed: null, state: null };
@@ -90,6 +80,7 @@ export class GjcRuntimeService {
         this.db.heartbeatGjcRuntimeLease(owner, runtimeFence, now);
         const outgoing = claimed.kind === "dispatch"
           ? this.db.gjcDispatchArguments(claimed.intent_id, claimed.lease_fence, config, now) : arguments_;
+        withRuntimeHealthFence(this.db, owner, runtimeFence, now, () => recordCoordinatorAttempt(this.db, now));
         coordinatorInvoked = true;
         const reply = await this.client.call(String(config.canonical_cwd), {
           tool,
@@ -229,8 +220,8 @@ export class GjcRuntimeService {
     } catch (error) {
       now = this.clock().toISOString();
       const code = error instanceof JarvisError ? error.code : "GJC_RUNTIME_ERROR";
-      this.db.recordGjcRuntimeStatus(code, now);
       if (code === "GJC_STALE_LEASE") throw error;
+      withRuntimeHealthFence(this.db, owner, runtimeFence, now, () => this.db.recordGjcRuntimeStatus(code, now));
       const state = claimed.kind === "dispatch" && !coordinatorInvoked ? "failed" : "uncertain";
       this.db.settleGjcIntent(claimed.intent_id, claimed.lease_fence, { status: state, failure_code: code }, now);
       return { processed: claimed.intent_id, state };

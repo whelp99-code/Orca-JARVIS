@@ -17,6 +17,7 @@ export interface LiveBinding {
   project_id?: string;
 }
 export interface LiveObservation {
+  observation_attempt_id?: string;
   provider: OrcaProvider;
   terminal_id: string;
   session_id: string;

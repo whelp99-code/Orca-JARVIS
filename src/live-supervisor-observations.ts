@@ -1,4 +1,5 @@
 import { type AuthorityDb, JarvisError } from "./db.js";
+import { requireObservationAttempt } from "./observation-health-store.js";
 import { canonicalize } from "./canonical.js";
 import type { ProgressState } from "./types.js";
 import type { LiveObservationReader, LiveSupervisorCycle } from "./live-supervisor.js";
@@ -19,17 +20,21 @@ export async function cycleLiveObservations(
     )
     .get() as Row | undefined;
   if (recovered) return { report: null, authority_items: [], resume_candidates: [], recovered_report: liveSupervisorReport(recovered) };
-  const bindings = listLiveBindings(authority);
+  const bindings = listLiveBindings(authority).map(binding => Object.freeze({ ...binding }));
   if (bindings.length === 0) throw new JarvisError("LIVE_WORKTREE_UNREGISTERED");
-  const observed = (await Promise.all(bindings.map(async (binding) => ({ binding, values: await observe(binding) })))).flatMap((item) =>
-    item.values.map((value) => ({ binding: item.binding, value })),
-  );
+  const settled = await Promise.allSettled(bindings.map(async binding => ({ binding, values: await observe(binding) })));
+  const failure = settled.find(result => result.status === "rejected");
+  if (failure?.status === "rejected") throw failure.reason;
+  const observed = settled.flatMap(result => result.status === "fulfilled"
+    ? result.value.values.map(value => ({ binding: result.value.binding, value })) : []);
   return liveSupervisorTransaction(authority, () => {
     const changes: Array<Record<string, unknown>> = [];
     const authority_items: string[] = [];
     const resume_candidates: string[] = [];
     const seen = new Set<string>();
     for (const { binding, value } of observed) {
+      const observedAt = value.observation_attempt_id === undefined ? now
+        : requireObservationAttempt(authority, binding, value.observation_attempt_id);
       const key = `${binding.canonical_path}\0${binding.provider}\0${binding.terminal_id}`;
       if (seen.has(key)) throw new JarvisError("LIVE_OBSERVATION_DUPLICATE");
       seen.add(key);
@@ -99,7 +104,7 @@ export async function cycleLiveObservations(
           value.session_id,
           value.incarnation_id,
           value.cursor,
-          now,
+          observedAt,
           state,
           observation_digest,
         );

@@ -1,3 +1,4 @@
+import { readObservationHealth } from "./runtime-health.js";
 import { readdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -132,6 +133,12 @@ export async function runDoctor(
 			code: "MIGRATION_CHECKSUM_FAILED",
 		});
 	}
+	if (validClock && hasTable(db, "live_observation_health")) {
+    const health = readObservationHealth(db, now);
+    const actual = { total: health.total, healthy: health.healthy, unavailable: health.unavailable, fatal: health.fatal, pending: health.pending };
+    checks.push({ name: "service.observation_health", ok: health.healthy === health.total, actual,
+      code: health.healthy === health.total ? undefined : "OBSERVATION_NOT_HEALTHY" });
+  }
 	if (hasTable(db, "gjc_runtime_status")) {
 		const runtime = db.db.prepare("SELECT last_heartbeat_at,last_error_code FROM gjc_runtime_status WHERE id=1").get() as
 			| { last_heartbeat_at?: string; last_error_code?: string | null }

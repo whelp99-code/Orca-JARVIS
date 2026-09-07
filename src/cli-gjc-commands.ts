@@ -1,7 +1,7 @@
 import { realpathSync, writeSync } from "node:fs";
 import { type CliCommandContext, commandNow } from "./cli-command-context.js";
 import { integer, jsonFile, objectValue } from "./cli-command-input.js";
-import { observeBound } from "./cli-live-commands.js";
+import { observePersistedBinding } from "./persisted-orca-observer.js";
 import { JarvisError } from "./db.js";
 import { GjcCoordinatorClient } from "./gjc.js";
 import { LiveSupervisor, type LiveSupervisorCycle } from "./live-supervisor.js";
@@ -31,7 +31,7 @@ export async function executeGjcCommand(
       try {
         const result = await supervisor.cycleWithShadow(
           shadow,
-          binding => observeBound(binding, dependencies.orcaRunner),
+          binding => observePersistedBinding(db, binding, dependencies.orcaRunner, () => commandNow(context)),
           commandNow(context).toISOString(),
         );
         deliverReport({ context, supervisor, result, interval: serviceRunInterval });
