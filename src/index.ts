@@ -1,5 +1,6 @@
 export * from "./orca-public-api.js";
 export * from "./memory-reference-context.js";
+export { MemoryReferenceDeliveries, type MemoryReferenceSession, type MemoryReferenceAttempt } from "./memory-reference-deliveries.js";
 export { MemoryReferenceReader, type MemoryReferenceReaderOptions, type CheckedMemoryReference } from "./memory-reference-reader.js";
 export { createProductionMemoryReference, type MemoryReferenceProductionOptions } from "./memory-reference-production.js";
 export * from "./core-api.js"; export * from "./daily-loop.js"; export * from "./morning-brief.js"; export * from "./memory-candidates.js";

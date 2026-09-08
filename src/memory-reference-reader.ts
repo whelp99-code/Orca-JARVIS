@@ -1,4 +1,5 @@
 import { canonicalize } from "./canonical.js";
+import { MemoryReferenceDeliveries, type MemoryReferenceSession } from "./memory-reference-deliveries.js";
 import { JarvisError, type AuthorityDb } from "./db.js";
 import { memoryReadPrivacyState, isMemoryReadSuppressed, type MemoryMembership } from "./memory-read-privacy.js";
 import { prepareMemoryReference, MemoryReferenceError, type MemoryReferenceBudgets, type PreparedMemoryReference } from "./memory-reference-context.js";
@@ -30,6 +31,18 @@ export class MemoryReferenceReader {
   /** One local submission attempt of a reader-issued reference. This is not a
    * durable/native client receipt and cannot retract bytes already submitted. */
   async submit<T>(reference: CheckedMemoryReference, send: (serialized: string) => Promise<T>): Promise<T> {
+    return this.submitChecked(reference, send);
+  }
+
+  /** Durable session claim. The adapter must provide observed session/epoch identity. */
+  async submitInSession<T>(reference: CheckedMemoryReference, send: (serialized: string) => Promise<T>,
+    session: MemoryReferenceSession): Promise<T> {
+    if (session === undefined || session === null) throw new JarvisError("MEMORY_REFERENCE_SESSION_INVALID");
+    return this.submitChecked(reference, send, session);
+  }
+
+  private async submitChecked<T>(reference: CheckedMemoryReference, send: (serialized: string) => Promise<T>,
+    session?: MemoryReferenceSession): Promise<T> {
     const submission = this.submissions.get(reference);
     if (submission === undefined || submission.attempted || typeof send !== "function") {
       throw new JarvisError("MEMORY_REFERENCE_SUBMISSION_INVALID");
@@ -38,11 +51,31 @@ export class MemoryReferenceReader {
     submission.attempted = true;
     const before = await this.submissionStatus();
     this.validateSubmission(reference, submission, before);
+    const journal = new MemoryReferenceDeliveries(this.options.authority, this.options.membership);
+    const frozenPayload = JSON.parse(submission.serialized) as CheckedMemoryReference["payload"];
+    const attempt = session === undefined ? null : journal.claim(session,
+      canonicalize({ generation: submission.generation, privacy: submission.privacy }),
+      canonicalize(frozenPayload.records.map(row => [row.record.record_id, row.record.record_digest]).sort()),
+      submission.serialized, this.options.clock(), submission.privacy,
+      () => this.validateSubmissionState(submission, before));
     let result: T;
     try { result = await send(submission.serialized); }
-    catch { throw new JarvisError("MEMORY_REFERENCE_SUBMISSION_UNCONFIRMED"); }
-    const after = await this.submissionStatus();
-    this.validateSubmission(reference, submission, after);
+    catch {
+      if (attempt !== null && journal.status(attempt)?.state !== "invalidated") {
+        try { journal.finish(attempt, "unconfirmed", this.options.clock()); }
+        catch { if (journal.status(attempt)?.state !== "invalidated") throw new JarvisError("MEMORY_REFERENCE_JOURNAL_UNAVAILABLE"); }
+      }
+      throw new JarvisError("MEMORY_REFERENCE_SUBMISSION_UNCONFIRMED");
+    }
+    try {
+      const after = await this.submissionStatus();
+      this.validateSubmission(reference, submission, after);
+      if (attempt !== null) journal.finish(attempt, "callback_completed", this.options.clock(),
+        () => this.validateSubmissionState(submission, after));
+    } catch (error) {
+      if (attempt !== null) journal.invalidate(attempt, this.options.clock());
+      throw error;
+    }
     return result;
   }
 
@@ -56,12 +89,21 @@ export class MemoryReferenceReader {
 
   private validateSubmission(reference: CheckedMemoryReference, submission: Submission,
     status: SecondBrainOutcome): void {
-    const { authority, clock } = this.options;
+    const { authority } = this.options;
     // Caller-owned objects may contain cycles/getters. Never run those inside a DB transaction.
     try {
       if (canonicalize(reference) !== submission.fingerprint) throw new Error();
     } catch { throw new JarvisError("MEMORY_REFERENCE_SUBMISSION_INVALID"); }
     try { authority.db.transaction(() => {
+      this.validateSubmissionState(submission, status);
+    })(); } catch (error) {
+      if (error instanceof JarvisError) throw error;
+      throw new JarvisError("MEMORY_REFERENCE_PRIVACY_UNAVAILABLE");
+    }
+  }
+
+  private validateSubmissionState(submission: Submission, status: SecondBrainOutcome): void {
+    const { authority, clock } = this.options;
       const privacy = memoryReadPrivacyState(authority);
       if (canonicalize(privacy) !== submission.privacy) throw new JarvisError("MEMORY_REFERENCE_PRIVACY_CHANGED");
       const now = clock();
@@ -74,10 +116,6 @@ export class MemoryReferenceReader {
       if (!matchesStatus(status, submission.generation, privacy.tombstone_sequence, privacy.tombstone_set_root)) {
         throw new JarvisError("MEMORY_REFERENCE_GENERATION_CHANGED");
       }
-    })(); } catch (error) {
-      if (error instanceof JarvisError) throw error;
-      throw new JarvisError("MEMORY_REFERENCE_PRIVACY_UNAVAILABLE");
-    }
   }
 
   async read(query: string, budgets: MemoryReferenceBudgets,
