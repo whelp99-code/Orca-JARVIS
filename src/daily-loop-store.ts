@@ -7,7 +7,7 @@ import { DailyLoopReadStore } from "./daily-loop-read.js";
 import { assertDailyLoopIntegrity } from "./daily-loop-integrity.js";
 import { parseFailure, parseStoreCheckpoint, parseStoreCompleteStep, parseStorePrepare, parseUncertain }
   from "./daily-loop-store-input.js";
-import { DailyLoopError, type DailyLoopClaim, type DailyLoopStep } from "./daily-loop-types.js";
+import { DailyLoopError, type DailyLoopClaim, type DailyLoopPhase, type DailyLoopStep } from "./daily-loop-types.js";
 import { bindDailyLoopProjection } from "./memory-projection-bindings.js";
 import { canonicalDailyLoopKey } from "./daily-loop-time.js";
 
@@ -112,8 +112,8 @@ export class DailyLoopStore {
   claim(value: unknown, recoveryWindowMs?: number): DailyLoopClaim {
     return claimDailyLoop(this.authority, value, recoveryWindowMs);
   }
-  due(atValue: unknown): readonly string[] {
-    return this.reads.due(atValue);
+  due(atValue: unknown, phase?: DailyLoopPhase, date?: string): readonly string[] {
+    return this.reads.due(atValue, phase, date);
   }
   steps(runIdValue: unknown): readonly DailyLoopStep[] {
     return this.reads.steps(runIdValue);

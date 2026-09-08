@@ -9,6 +9,7 @@ import {
 import { executeControlCommand } from "./cli-control-commands.js";
 import { executeBootstrapCommand, executeCoreCommand } from "./cli-core-commands.js";
 import { executeGjcCommand } from "./cli-gjc-commands.js";
+import { executeDailyCommand } from "./cli-daily-commands.js";
 import { executeLiveCommand } from "./cli-live-commands.js";
 import { executePreGjcCommand } from "./cli-pre-gjc-commands.js";
 import { executeStateCommand } from "./cli-state-commands.js";
@@ -17,7 +18,8 @@ import { AuthorityDb, JarvisError } from "./db.js";
 const CLI_HELP =
   "JARVIS — agent-ops runtime\n"
   + "Commands: init, db migrate/rebuild-projections, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, "
-  + "observe, pre-gjc, capabilities, team, portfolio, status\n"
+  + "observe, pre-gjc, capabilities, team, portfolio, status, daily\n"
+  + "daily morning --once --db PATH --input CONFIG: run stored-source morning recovery; provider refresh unavailable\n"
   + "runtime identity [--db PATH]: observe this CLI build and persisted daemon identity without migrating the DB\n"
   + "control plan-task <plan.json>: stage a task execution plan for separate approval (execution unavailable)\n"
   + "control check-task <plan.json>: check repository baseline and declared files without executing an agent\n"
@@ -32,6 +34,7 @@ const COMMAND_HANDLERS: readonly CliCommandHandler[] = [
   executeControlCommand,
   executeLiveCommand,
   executeGjcCommand,
+  executeDailyCommand,
   executePreGjcCommand,
   executeStateCommand,
 ];
@@ -88,6 +91,11 @@ export async function execute(
       throw new JarvisError("UNKNOWN_COMMAND");
     }
     return inspectRuntimeIdentity(values.db, dependencies.clock?.() ?? new Date());
+  }
+  if (command === "daily" && (subcommand !== "morning" || parsed.positionals.length !== 2
+    || values.once !== true || !values.db || !values.input
+    || Object.keys(parsed.values).some(key => !["db", "input", "once", "json"].includes(key)))) {
+    throw new JarvisError("DAILY_LOOP_CONFIG_INVALID");
   }
   const db = new AuthorityDb(values.db);
   const context: CliCommandContext = {

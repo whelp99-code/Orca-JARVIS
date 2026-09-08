@@ -23,7 +23,7 @@ export function createStoredMorningDailyLoop(authority: AuthorityDb, optionsValu
     lastAt = at; return at;
   } };
   const store = new DailyLoopStore(authority);
-  return new DailyControlLoop(store, options, new StoredMorningSteps(authority, store, options));
+  return new DailyControlLoop(store, options, new StoredMorningSteps(authority, store, options), "morning", true);
 }
 
 class StoredMorningSteps implements DailyLoopStepExecutor {

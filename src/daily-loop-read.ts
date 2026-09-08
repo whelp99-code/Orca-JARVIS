@@ -1,7 +1,7 @@
 import type { AuthorityDb } from "./db.js";
 import { assertDailyLoopIntegrity } from "./daily-loop-integrity.js";
-import { parseDailyLoopInstant, parseDailyLoopRunId } from "./daily-loop-input.js";
-import { DailyLoopError, type DailyLoopStep } from "./daily-loop-types.js";
+import { parseDailyLoopDate, parseDailyLoopInstant, parseDailyLoopRunId } from "./daily-loop-input.js";
+import { DAILY_LOOP_PHASES, DailyLoopError, type DailyLoopPhase, type DailyLoopStep } from "./daily-loop-types.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 
 type Row = Readonly<Record<string, unknown>>;
@@ -9,14 +9,16 @@ type Row = Readonly<Record<string, unknown>>;
 export class DailyLoopReadStore {
   constructor(private readonly authority: AuthorityDb) {}
 
-  due(atValue: unknown): readonly string[] {
+  due(atValue: unknown, phase?: DailyLoopPhase, dateValue?: string): readonly string[] {
     const at = parseDailyLoopInstant(atValue);
+    const date = dateValue === undefined ? null : parseDailyLoopDate(dateValue);
+    if (phase !== undefined && !DAILY_LOOP_PHASES.includes(phase)) throw new DailyLoopError("DAILY_LOOP_CONFIG_INVALID");
     const rows = this.authority.db.prepare(
       `SELECT run_id FROM daily_loop_runs WHERE (state='pending'
          OR (state IN ('claimed','running','verifying') AND lease_owner IS NOT NULL AND lease_expires_at<=?))
        AND ((record_version=1 AND not_before<=?) OR (record_version=0 AND created_at<=?))
-       AND ?<expires_at ORDER BY not_before,run_id`,
-    ).all(at.toISOString(), at.toISOString(), at.toISOString(), at.toISOString()) as Row[];
+       AND ?<expires_at AND (? IS NULL OR phase=?) AND (? IS NULL OR loop_date=?) ORDER BY not_before,run_id`,
+    ).all(at.toISOString(), at.toISOString(), at.toISOString(), at.toISOString(), phase ?? null, phase ?? null, date, date) as Row[];
     const candidates = rows.map(row => String(row["run_id"]));
     const runIds = projectionAuthorityReady(this.authority)
       ? new MemoryProjectionAuthority(this.authority).visible(candidates, runId => ({

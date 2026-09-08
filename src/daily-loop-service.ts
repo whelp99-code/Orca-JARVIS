@@ -4,19 +4,15 @@ import {
 } from "./daily-loop-input.js";
 import { DailyLoopStore } from "./daily-loop-store.js";
 import { classifyDailyLoopInstant, evaluateRefreshContext, kstLocalDate } from "./daily-loop-time.js";
-import { dailyLoopSchedules } from "./daily-loop-schedules.js";
+import { dailyLoopSchedules, dailyLoopSteps } from "./daily-loop-schedules.js";
 import {
-  DailyLoopError, type DailyLoopClaim, type DailyLoopCycleResult, type DailyLoopDue, type DailyLoopFailureCode,
+  DAILY_LOOP_PHASES, DailyLoopError, type DailyLoopClaim, type DailyLoopCycleResult, type DailyLoopDue, type DailyLoopFailureCode,
+  type DailyLoopPhase,
   type DailyLoopOptions, type DailyLoopPreparation, type DailyLoopStep, type DailyLoopStepExecutor,
 } from "./daily-loop-types.js";
 
 type Used = { items: number; work: number; bytes: number };
 type Cost = Readonly<Used>;
-const morningSteps = [
-	{ key: "refresh_context", sequence: 1 },
-	{ key: "morning_reconcile", sequence: 2 },
-] as const;
-const eveningSteps = [{ key: "evening_summary", sequence: 1 }] as const;
 const MAX_DATE = 8_640_000_000_000_000;
 
 export class DailyControlLoop {
@@ -26,8 +22,12 @@ export class DailyControlLoop {
 		private readonly store: DailyLoopStore,
 		options: DailyLoopOptions,
 		private readonly stepExecutor?: DailyLoopStepExecutor,
+		private readonly executionPhase?: DailyLoopPhase,
+		private readonly currentDayOnly = false,
 	) {
 		this.options = parseDailyLoopOptions(options);
+		if (executionPhase !== undefined && !DAILY_LOOP_PHASES.includes(executionPhase)) throw new DailyLoopError("DAILY_LOOP_CONFIG_INVALID");
+		if (typeof currentDayOnly !== "boolean") throw new DailyLoopError("DAILY_LOOP_CONFIG_INVALID");
 	}
 	private now(): Date {
 		return this.options.clock();
@@ -69,7 +69,7 @@ export class DailyControlLoop {
 		const notBefore = new Date(due.not_before ?? due.scheduled_at);
 		const lifetime = due.phase === "in_day" ? Math.max(1, this.options.deadline_ms) : this.options.recovery_window_ms + Math.max(1, this.options.deadline_ms);
 		const deadline = this.checkedDate(notBefore, lifetime);
-		const steps = due.phase === "morning" ? morningSteps : due.phase === "evening" ? eveningSteps : [this.eventStep(due)];
+		const steps = dailyLoopSteps(due);
 		const runId = this.store.prepare({
 			due,
 			created_at: createdAt,
@@ -81,18 +81,6 @@ export class DailyControlLoop {
 			run_id: runId,
 			phase: due.phase,
 			local_date: due.local_date,
-		};
-	}
-	private eventStep(due: DailyLoopDue): {
-		readonly key: string;
-		readonly sequence: 1;
-	} {
-		const eventId = due.event_id ?? "event";
-		const cost = due.event_cost ?? { items: 1, work: 1, bytes: 1 };
-		const policy = due.bypass_reason === undefined ? "ordinary" : `${due.bypass_reason}:${due.critical_reason ?? "missing"}`;
-		return {
-			key: `event:${eventId}:items=${cost.items}:work=${cost.work}:bytes=${cost.bytes}:${policy}`,
-			sequence: 1,
 		};
 	}
 	claim(runIdValue: unknown): DailyLoopClaim {
@@ -197,18 +185,25 @@ export class DailyControlLoop {
 			throw error;
 		}
 	}
+	private due(): readonly string[] {
+		const at = this.now();
+		return this.store.due(at, this.executionPhase, this.currentDayOnly ? kstLocalDate(at) : undefined);
+	}
 	async cycle(): Promise<DailyLoopCycleResult> {
 		const now = this.now();
 		const completed: string[] = [];
 		const scheduled = classifyDailyLoopInstant(now, { kind: "scheduled" });
 		const prepared: DailyLoopPreparation[] = this.observedAt === null ? [] : this.recover(now, this.observedAt).prepared;
-		if (scheduled.kind !== "due") prepared.unshift({ kind: "not_due" });
+		if (scheduled.kind !== "due" || (this.executionPhase !== undefined && scheduled.phase !== this.executionPhase)) {
+			prepared.unshift({ kind: "not_due" });
+		}
 		else if (!prepared.some(item => item.kind === "prepared" && item.phase === scheduled.phase && item.local_date === scheduled.local_date)) {
 			prepared.push(this.prepareDue(scheduled, now));
 		}
-		const events = parseDailyLoopEvents(this.options.event_source.drain());
+		const events = this.executionPhase === undefined || this.executionPhase === "in_day"
+			? parseDailyLoopEvents(this.options.event_source.drain()) : [];
 		for (const event of events) prepared.push(this.prepare(event));
-		for (const runId of this.store.due(this.now())) this.processRun(runId, completed);
+		for (const runId of this.due()) this.processRun(runId, completed);
 		this.observe(now);
 		return { prepared, completed_run_ids: completed };
 	}
@@ -219,9 +214,11 @@ export class DailyControlLoop {
 		const { from, through, schedules } = dailyLoopSchedules(now, this.options.recovery_lookback_days, after);
 		const prepared: DailyLoopPreparation[] = [];
 		for (const due of schedules) {
+			if (this.executionPhase !== undefined && due.phase !== this.executionPhase) continue;
 			const scheduled = new Date(due.scheduled_at);
 			const item = this.prepareDue(due, scheduled); prepared.push(item);
-			if (item.kind === "prepared" && now.getTime() - scheduled.getTime() > this.options.recovery_window_ms) {
+			if (item.kind === "prepared" && ((this.currentDayOnly && due.local_date !== kstLocalDate(now))
+				|| now.getTime() - scheduled.getTime() > this.options.recovery_window_ms)) {
 				this.store.omit(item.run_id, "MISSED_RECOVERY_WINDOW", now);
 			}
 		}
@@ -231,7 +228,7 @@ export class DailyControlLoop {
 		const now = this.now();
 		const { from, through, prepared } = this.recover(now, null);
 		const completed: string[] = [];
-		for (const runId of this.store.due(this.now())) this.processRun(runId, completed);
+		for (const runId of this.due()) this.processRun(runId, completed);
 		this.observe(now);
 		return {
 			prepared,

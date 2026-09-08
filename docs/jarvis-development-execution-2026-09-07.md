@@ -650,3 +650,40 @@
 - 증거 /home/jm/.cache/jarvis-test-runtime-qa-20260908/daily-morning-complete-*.log,
   correction-old-fd-diagnostic.mjs/json/log, verify-morning-publication-after.json.
   개발단위커밋만수행하며 운영DB·서비스·release·push변경0.
+
+## 2026-09-08 P1-12 — 아침 실행 CLI와 권한 기반 완료 응답
+
+- 직전465ec00은 아침실행기커밋과실프로세스검증으로 progress였다. 해당트리의전체검증
+  handle61181은실행중임을확인했으며소스를고정했다. 종료된이전검증트리
+  codex/priority-deadline-evidence를465ec00으로ff해이후변경을격리했다.
+- 이전465ec00의전체npm run verify는exit0: backend1434+1450통과/dashboard248통과,
+  runtime/lint/typecheck/build/고정시각acceptance/CLI smoke통과. 전후HEAD/추적바이트동일.
+  이전b2e11a9의oldFD실패기록은유지하며재현원인을확정했다고표시하지않는다.
+- `daily morning --once --db PATH --input CONFIG`가기존startup/claim/finish를호출한다.
+  명시적DB·닫힌8192byte설정·프로세스UUIDowner·실제사용량응답을연결했다. 새로운스케줄러나
+  타에이전트실행경로는추가하지않았다. GJC coordinator 경로와운영서비스는변경하지않는다.
+- 아침조립은morning/현재KST날짜만자동생성·복구·claim하며타phase event_source를drain하지않는다.
+  자정넘는복구창에서전날브리핑claim→STALE_LEASE를1fail/8pass로재현후과거pending일정을
+  missed로기록하도록수정했다. 일반루프의전체phase/날짜복구는보존한다.
+- 초기예정시각/생성시각충돌가설은분류기의정확시각조건으로성립하지않아변경을철회했다.
+  초기7파일123통과뒤lint미사용변수3건을수정했다. 모듈255행제한위반은일정/단계정의를
+  기존daily-loop-schedules로옮겨서비스238행으로정리했다. 이후7파일124통과.
+- 첫fresh검토 /root/daily_morning_cli_review는fix-first/2건: suppression된완료와
+  active/uncertain/expired run을ok=true로보고했다. 추가6red/9pass후정확run/step/brief의
+  privacy projection·무결성·완료·유효시각을한읽기snapshot에서검사하도록수정했다.
+  실패는각typederror/exit2이며삭제된사용량의환불은하지않는다. 수정후7파일130통과.
+- 응답중자정변경과저장완료전으로의시계역행도각1red로재현해날짜/updated_at검사추가.
+  최종집중3파일32통과/21.31초, lint/typecheck/backend build/acceptance/CLI smoke exit0.
+  넓은회귀와최종집중검증은중복이있어합산하지않는다.
+- 최종실제CLI PID3743573/3743584/3743596/3743648/3743831/3743896/3743897:
+  refresh commit후SIGKILL→새CLI완료1/재실행추가완료0/refresh행동일,
+  저장추천브리핑항목1/사용량2·2·3440. 동시CLI완료run1/단계2. stale/hidden각exit2.
+  별도예산실패CLI PID3744011/exit2/BUDGET_WORK_EXHAUSTED, refresh완료/morning미게시.
+  고정시각preload/crash관측기가있는합성DB의실제실행파일검증이며운영인수증거가아니다.
+- 현재refresh완료원본과provider fence는미연결이다. 출력provider_refresh=unavailable,
+  automatic_operation=hold를유지한다. 서명저녁/event/retention/timer·서비스활성화 및
+  전체01–25목표는계속미완료다. 기존guard·migration bytes를완화하지않았다.
+- 증거 /home/jm/.cache/jarvis-test-runtime-qa-20260908/daily-morning-cli-final-*.log,
+  daily-morning-cli-live.mjs/json, daily-morning-cli-failure-live.mjs/json,
+  verify-morning-execution-after.json. 최종fresh검토 /root/daily_morning_cli_final_review: ship, findings 0.
+  요청 gpt-5.6-terra/high, 실제 모델·effort는 도구에서 미노출.
