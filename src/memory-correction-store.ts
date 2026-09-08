@@ -1,3 +1,4 @@
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import type { AuthorityDb } from "./db.js";
@@ -89,6 +90,9 @@ export class MemoryCorrectionStore {
       const row = this.required(correctionId);
       if (row.state === "dispatching" || row.state === "reconciling"
         || row.state === "provider_proved" || row.state === "settled") return row;
+      if (new MemoryProjectionAuthority(this.authority).isProjectionIdSuppressed(row.candidate_id)) {
+        throw new JarvisError("MEMORY_CANDIDATE_SUPPRESSED");
+      }
       if (row.state !== "queued" || row.dispatch_fence !== 0) {
         throw new JarvisError("MEMORY_CORRECTION_TRANSITION_INVALID");
       }

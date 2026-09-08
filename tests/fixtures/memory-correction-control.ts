@@ -121,7 +121,7 @@ class AcceptedWriter implements SecondBrainWriteRequestAdapter {
   }
 }
 
-export async function correctionControlFixture() {
+export async function correctionPreparedFixture() {
   const database = await memoryDatabase(); const db = database.authority;
   const root = mkdtempSync(join(tmpdir(), "jarvis-correction-control-"));
   let current = NOW; let observation: CorrectionLifecycleObservation | undefined;
@@ -171,11 +171,15 @@ export async function correctionControlFixture() {
     requested_at: NOW, expires_at: new Date(EXPIRES), nonce: "nonce:correction-dispatch" });
   approve(control, action, localKey(db));
   const claim = control.claim(action.request_id, "fixture", NOW);
-  const record = await saga.dispatch(claim);
-  return { database, db, root, control, action, record, writer, saga, runtime, databaseRuntime,
+  return { database, db, root, control, action, claim, candidate, writer, saga, runtime, databaseRuntime,
     setTime: (now: Date) => { current = now; },
     setObservation: (value: CorrectionLifecycleObservation) => { observation = value; },
     close: async () => { await databaseRuntime.close(); closeMemoryDatabase(database); rmSync(root,{recursive:true,force:true}); } };
+}
+export async function correctionControlFixture() {
+  const fixture = await correctionPreparedFixture();
+  try { return { ...fixture, record: await fixture.saga.dispatch(fixture.claim) }; }
+  catch (error) { await fixture.close(); throw error; }
 }
 export function correctionObservation(fixture: Awaited<ReturnType<typeof correctionControlFixture>>): CorrectionLifecycleObservation {
   const request = fixture.writer.calls[0];

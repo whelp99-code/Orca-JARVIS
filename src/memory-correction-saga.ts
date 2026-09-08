@@ -1,4 +1,5 @@
-import { createHash } from "node:crypto";
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
+import { createHash, randomUUID } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./db.js";
 import type { ClaimedControlCommand, ControlCommandRequestInput } from "./control-plane.js";
@@ -46,6 +47,12 @@ export class MemoryCorrectionSaga {
       || input.expires_at.getTime() - now.getTime() > 15 * 60_000) {
       throw new JarvisError("MEMORY_CORRECTION_INPUT_INVALID");
     }
+    const requireVisible = () => {
+      if (new MemoryProjectionAuthority(this.options.authority).isProjectionIdSuppressed(input.candidate_id)) {
+        throw new JarvisError("MEMORY_CANDIDATE_SUPPRESSED");
+      }
+    };
+    requireVisible();
     const candidate = this.options.authority.db.prepare(
       `SELECT m.candidate_digest,m.classification_digest,c.state,c.operation,c.required_confirmation,
        c.confirmation_receipt_id FROM memory_candidates c
@@ -69,20 +76,29 @@ export class MemoryCorrectionSaga {
       scope_digest: scopeDigest, payload_digest: payloadDigest, expires_at: input.expires_at.toISOString(),
     });
     const laneId = `memcorr:req:v1:${laneDigest.slice(7)}`;
-    const spool = await this.spool.write(laneId, {
+    const spool = await this.spool.write(`${laneId}-${randomUUID()}`, {
       schema_version: 1, lane_id: laneId, candidate_id: input.candidate_id,
       provider_instance_id: input.provider_instance_id, targets: input.targets, scope: input.scope,
       content: input.content, created_at: now.toISOString(), expires_at: input.expires_at.toISOString(),
       nonce: input.nonce,
     });
-    this.options.authority.db.prepare(
-      `INSERT INTO memory_effect_preparations(
-        lane_id,lane,operation,provider_instance_id,candidate_id,target_manifest_digest,scope_digest,
-        payload_digest,spool_locator,spool_digest,state,expires_at,created_at,updated_at
-       ) VALUES(?,'correction','correct',?,?,?,?,?,?,?,'staged',?,?,?)`,
-    ).run(laneId, input.provider_instance_id, input.candidate_id, targetManifestDigest,
-      scopeDigest, payloadDigest, spool.locator, spool.digest, input.expires_at.toISOString(),
-      now.toISOString(), now.toISOString());
+    try {
+      this.options.authority.db.transaction(() => {
+        requireVisible();
+        this.options.authority.db.prepare(
+          `INSERT INTO memory_effect_preparations(
+            lane_id,lane,operation,provider_instance_id,candidate_id,target_manifest_digest,scope_digest,
+            payload_digest,spool_locator,spool_digest,state,expires_at,created_at,updated_at
+           ) VALUES(?,'correction','correct',?,?,?,?,?,?,?,'staged',?,?,?)`,
+        ).run(laneId, input.provider_instance_id, input.candidate_id, targetManifestDigest,
+          scopeDigest, payloadDigest, spool.locator, spool.digest, input.expires_at.toISOString(),
+          now.toISOString(), now.toISOString());
+      }).immediate();
+    } catch (error) {
+      // This publication has a unique locator; compensation cannot erase a prior lane's spool.
+      await this.spool.remove(laneId, spool.locator, spool.digest, "terminal_failure", this.options.clock());
+      throw error;
+    }
     return {
       schema_version: 1,
       request_id: input.control_request_id,

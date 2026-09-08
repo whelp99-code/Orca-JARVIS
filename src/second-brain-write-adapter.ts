@@ -1,3 +1,4 @@
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import type { AuthorityDb } from "./db.js";
 import type {
   SecondBrainWriteOutcome,
@@ -50,11 +51,15 @@ class BoundedSecondBrainWriteRequestAdapter implements SecondBrainWriteRequestAd
       request.idempotency_key, request.delegation.delegation_id,
       request.delegation.delegation_digest, request.lane_id];
     switch (request.operation) {
-      case "correct": return this.authority.db.prepare(
-        `SELECT 1 FROM memory_correction_requests WHERE request_id=? AND request_digest=?
-         AND envelope_digest=? AND idempotency_key=? AND delegation_id=? AND delegation_digest=?
-         AND lane_id=? AND state='dispatching' AND dispatch_fence=1`,
-      ).get(...identity) !== undefined;
+      case "correct": {
+        const row = this.authority.db.prepare(
+          `SELECT candidate_id FROM memory_correction_requests WHERE request_id=? AND request_digest=?
+           AND envelope_digest=? AND idempotency_key=? AND delegation_id=? AND delegation_digest=?
+           AND lane_id=? AND state='dispatching' AND dispatch_fence=1`,
+        ).get(...identity) as { candidate_id: string } | undefined;
+        return row !== undefined
+          && !new MemoryProjectionAuthority(this.authority).isProjectionIdSuppressed(row.candidate_id);
+      }
       case "forget": return this.authority.db.prepare(
         `SELECT 1 FROM memory_deletion_effect_requests WHERE request_id=? AND request_digest=?
          AND envelope_digest=? AND provider_idempotency_key=? AND delegation_id=? AND delegation_digest=?
