@@ -10,6 +10,7 @@ import { phoneHtml, retryAfter, writeAsset, writeHtml, writeJson, writePhoneGate
 import { readPostBody, validateMemoryBody } from "./phone-gateway-body.js";
 import type { DispatchUpdate, PhoneGatewayRequestCtx } from "./phone-gateway-request-ctx.js";
 import { createPhoneMemorySessionSource } from "./dashboard/memory-session-source.js";
+import { phoneMemoryContextError } from "./phone-memory-context-error.js";
 
 export async function handleOwnerRequest(
   ctx: PhoneGatewayRequestCtx,
@@ -193,7 +194,17 @@ async function serveMatchedRoute(
     }
     const session = createPhoneMemorySessionSource({ sessions: ctx.sessions, cookieHeader: () => cookieHeader,
       currentOwnerDigest: () => ctx.config.ownerDigest, agentId: ctx.memoryAgentId, now: ctx.now });
-    const result = await ctx.memoryContext(body, session);
+    let result;
+    try { result = await ctx.memoryContext(body, session); }
+    catch (error) {
+      // Distinguish a lost login from a still-authenticated session with no grant.
+      if (!stillAuthenticated()) return;
+      const code = phoneMemoryContextError(error);
+      if (code === undefined) throw error;
+      if (code === PHONE_ERROR_CODES.PHONE_CAPACITY_EXCEEDED) retryAfter(ctx.response, 1);
+      writePhoneGatewayError(ctx.response, { code, requestId });
+      update({ code, status: ERROR_STATUS[code], outcome: "rejected" }); return;
+    }
     if (!stillAuthenticated()) return;
     refreshCookie(); writeJson(ctx.response, 200, requestId, result, true);
     update({ outcome: "allowed", code: "ok", status: 200 }); return;
