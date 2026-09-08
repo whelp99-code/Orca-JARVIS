@@ -1,6 +1,6 @@
 import { spawn, type ChildProcess } from "node:child_process";
-import { existsSync, mkdirSync, unlinkSync, watch } from "node:fs";
-import { dirname, join } from "node:path";
+import { existsSync, unlinkSync } from "node:fs";
+import { join } from "node:path";
 import Database from "better-sqlite3";
 import { AuthorityDb } from "./db.js";
 import {
@@ -13,6 +13,7 @@ import {
 import { PersonalOsError } from "./personal-os-errors.js";
 import { assertIsolatedRoot } from "./personal-os-protected-paths.js";
 import { renderSystemdUnit } from "./personal-os-systemd.js";
+import { waitForCycleReady } from "./personal-os-cycle-ready.js";
 
 export type ProcessStressInput = {
   readonly isolatedRoot: string;
@@ -88,29 +89,6 @@ function waitExit(child: ChildProcess, timeoutMs: number): Promise<void> {
   );
 }
 
-function waitForPath(path: string, timeoutMs: number): Promise<void> {
-  return new Promise((resolve, reject) => {
-    mkdirSync(dirname(path), { recursive: true });
-    const watcher = watch(dirname(path));
-    let settled = false;
-    const finish = (error?: PersonalOsError): void => {
-      if (settled) return;
-      settled = true;
-      clearTimeout(timer);
-      watcher.close();
-      if (error !== undefined) reject(error);
-      else resolve();
-    };
-    const timer = setTimeout(() => finish(new PersonalOsError("E_PROCESS_STRESS")), timeoutMs);
-    const check = (): void => {
-      if (existsSync(path)) finish();
-    };
-    watcher.on("change", check);
-    watcher.on("rename", check);
-    check();
-  });
-}
-
 function startChild(input: {
   readonly argv: readonly [string, ...string[]];
   readonly cwd: string;
@@ -119,7 +97,7 @@ function startChild(input: {
 }): ChildProcess {
   unlinkIfExists(input.socketPath);
   const [binary, ...args] = input.argv;
-  return spawn(binary, args, {
+  const child = spawn(binary, args, {
     cwd: input.cwd,
     env: {
       ...process.env,
@@ -127,8 +105,10 @@ function startChild(input: {
       JARVIS_DB: input.dbPath,
     },
     detached: true,
-    stdio: ["ignore", "pipe", "pipe"],
+    stdio: ["ignore", "pipe", "pipe", "ipc"],
   });
+  child.stdout?.resume(); child.stderr?.resume();
+  return child;
 }
 
 export async function runPersonalOsProcessStress(input: ProcessStressInput): Promise<ProcessStressReceipt> {
@@ -155,11 +135,11 @@ export async function runPersonalOsProcessStress(input: ProcessStressInput): Pro
   authority.close();
   const childPids: number[] = [];
   let child = startChild({ argv, cwd: input.worktree, dbPath, socketPath });
-  if (child.pid === undefined) throw new PersonalOsError("E_PROCESS_STRESS");
-  childPids.push(child.pid);
   let client: PersonalOsCycleClient | undefined;
   try {
-    await waitForPath(socketPath, 30_000);
+    await waitForCycleReady(child, socketPath, 30_000);
+    if (child.pid === undefined) throw new PersonalOsError("E_PROCESS_STRESS");
+    childPids.push(child.pid);
     client = await connectCycleClient(socketPath);
     const requested = new Set<number>();
     const completed = new Set<number>();
@@ -178,10 +158,10 @@ export async function runPersonalOsProcessStress(input: ProcessStressInput): Pro
         client.close();
         await inflight;
         child = startChild({ argv, cwd: input.worktree, dbPath, socketPath });
+        restart_count += 1;
+        await waitForCycleReady(child, socketPath, 30_000);
         if (child.pid === undefined) throw new PersonalOsError("E_PROCESS_STRESS");
         childPids.push(child.pid);
-        restart_count += 1;
-        await waitForPath(socketPath, 30_000);
         client = await connectCycleClient(socketPath);
         await client.request(id, 5_000);
         completed.add(id);
