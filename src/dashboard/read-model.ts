@@ -1,4 +1,3 @@
-import { ControlPlane, type StoredControlCommand } from "../control-plane.js";
 import { JarvisError, type AuthorityDb } from "../db.js";
 import { currentStateFromDoctor } from "../state-projection.js";
 import { passiveCapabilityProbe, runDoctor } from "../doctor.js";
@@ -12,7 +11,6 @@ import type {
   AgentListResponse,
   ControlRequestListResponse,
   DashboardLookup,
-  OverviewApproval,
   OverviewResponse,
   OverviewRisk,
   OverviewTask,
@@ -22,7 +20,7 @@ import type {
 import { createPersonalCursorSession, PersonalDashboardReadModel } from "./personal-read-model.js";
 import type { PersonalCursorCodecOptions } from "./personal-cursor.js";
 import { redactDashboardValue } from "./redaction.js";
-import { dashboardRetryStatus } from "./retry-policy.js";
+import { controlRequestPage, pendingControlSummary, type ControlPageInput } from "./control-request-read.js";
 import { buildSecondBrainReadiness, type SecondBrainReadinessProbe } from "../second-brain-readiness.js";
 import { runtimeSecondBrainReadinessProbe } from "../second-brain-readiness-runtime.js";
 import type { CapabilityProbe } from "../capabilities.js";
@@ -70,12 +68,12 @@ export class DashboardReadModel {
     const before = changeCount(this.db);
     const projection = currentStateFromDoctor(this.db, doctor, now);
     const tasks = new TaskTimeline(this.db).overview(RECENT_TASK_LIMIT);
-    const commands = new ControlPlane(this.db).list();
+    const approvals = pendingControlSummary(this.db, now);
     const agents = listedAgents(this.db, now);
     const portfolio = new PortfolioProjection(this.db).overview(now);
     if (changeCount(this.db) !== before) throw new JarvisError("DASHBOARD_READ_MUTATED");
     const recent_tasks = tasks.recent.map(toOverviewTask);
-    const pending_approvals = commands.filter(isPending).map(command => toOverviewApproval(command, now));
+    const pending_approvals = approvals.items;
     const risks = projection.risks.flatMap(toOverviewRisk);
     const overview = redactDashboardValue({
       schema_version: DASHBOARD_SCHEMA_VERSION,
@@ -83,7 +81,7 @@ export class DashboardReadModel {
       cards: overviewCards({
         activeWork: tasks.activeCount,
         agents: agents.filter(agent => agent.status === "live").length,
-        pending: pending_approvals.length,
+        pending: approvals.total,
         risks: risks.length,
       }),
       recent_tasks,
@@ -137,14 +135,8 @@ export class DashboardReadModel {
     });
   }
 
-  listControlRequests(now = new Date()): ControlRequestListResponse {
-    return readSnapshot(this.db, () => redactDashboardValue({
-      schema_version: DASHBOARD_SCHEMA_VERSION,
-      items: new ControlPlane(this.db).list()
-        .filter(isActionableControl)
-        .sort((left, right) => left.requested_at.localeCompare(right.requested_at) || left.request_id.localeCompare(right.request_id))
-        .map(command => toOverviewApproval(command, now)),
-    }));
+  listControlRequests(now = new Date(), page?: ControlPageInput): ControlRequestListResponse {
+    return readSnapshot(this.db, () => redactDashboardValue(controlRequestPage(this.db, now, page)));
   }
 }
 
@@ -172,29 +164,6 @@ function toOverviewTask(task: TaskTimelineSummary): OverviewTask {
     updated_at: task.updated_at,
     pending_approval: task.pending_approval,
     source_ids: [...task.source_ids],
-  };
-}
-
-function isPending(command: StoredControlCommand): boolean {
-  return command.state === "pending";
-}
-
-function isActionableControl(command: StoredControlCommand): boolean {
-  return command.state === "pending" || command.state === "approved" || command.state === "failed";
-}
-
-function toOverviewApproval(command: StoredControlCommand, now: Date): OverviewApproval {
-  return {
-    ...(command.action === "task.execute" && typeof command.target.task_id === "string"
-      ? { task_id: command.target.task_id } : {}),
-    request_id: command.request_id,
-    action: command.action,
-    action_level: command.action_level,
-    requested_at: command.requested_at,
-    requested_by: command.requested_by,
-    summary: command.action,
-    state: command.state,
-    retry_status: dashboardRetryStatus(command, now),
   };
 }
 

@@ -160,6 +160,7 @@ function createHarness(initialPath: string, failures: ResourceFailure = {}): Har
     watchTaskExecution: inner.watchTaskExecution, refreshTaskExecution: inner.refreshTaskExecution,
     runTaskExecutionOperation: inner.runTaskExecutionOperation,
     refreshTasks, refreshAgents, refreshApprovals,
+    firstApprovals: inner.firstApprovals, nextApprovals: inner.nextApprovals,
     start() { lifecycle.started += 1; inner.start(); },
     stop() { lifecycle.stopped += 1; inner.stop(); },
   };

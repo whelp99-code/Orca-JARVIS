@@ -33,7 +33,7 @@ export default function App({ overview }: AppProps) {
     {
       id: "pending-approvals",
       label: copy.cards.approvals,
-      value: overview.pending_approvals.length,
+      value: overview.cards.find(card => card.id === "pending-approvals")?.value ?? overview.pending_approvals.length,
       detail: "내가 봐줘야 하는 요청",
       tone: "warning",
     },
@@ -93,6 +93,7 @@ export default function App({ overview }: AppProps) {
           </Panel>
 
           <Panel id="approvals-title" title={copy.cards.approvals}>
+            <a href="/approvals">승인 목록 전체 보기</a>
             {overview.pending_approvals.length === 0 ? (
               <EmptyState>{copy.noApprovals}</EmptyState>
             ) : (

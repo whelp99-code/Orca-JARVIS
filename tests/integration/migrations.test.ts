@@ -74,7 +74,8 @@ import { AuthorityDb } from "../../src/index.js"; import { tempDb } from "../hel
       ["063_task_git_publications.sql", "15c8b870f3672428c6b9b6fa0461f2f71923f5be08e0eda9af6788a642a4fe87"],
       ["064_task_completions.sql", "9529ba06a9d5c0d8d5ee54e4bd753710bd5c361ffc5bf4313258178f534063d9"],
       ["067_live_connection_observations.sql", "fc4a61c2206ffefcc19898a1bd85e1d6034196f2bbd4244ce16a262cc4ddb684"],
-      ["068_observation_health.sql", "3a2c79befcbcfcd0648f24aec94668eb0c5ad12f3443a0912196fbb171fdc88d"], ]); expect(expected.size).toBe(51);
+      ["068_observation_health.sql", "3a2c79befcbcfcd0648f24aec94668eb0c5ad12f3443a0912196fbb171fdc88d"],
+      ["069_dashboard_control_page.sql", "410d05a2e5a2e913c965f9ba7a681384466b10a552054d1525d7986cb048e331"], ]); expect(expected.size).toBe(52);
     for (const [name, checksum] of expected) { const source = readFileSync(join(process.cwd(), "migrations", name));
       expect(createHash("sha256").update(source).digest("hex"), name).toBe(checksum); } });
   it("applies every immutable forward migration repeatedly", async () => { const db = new AuthorityDb(tempDb()); await db.migrate(); await db.migrate();

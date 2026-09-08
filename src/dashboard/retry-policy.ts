@@ -6,7 +6,7 @@ import type { OverviewApproval } from "./legacy-read-contracts.js";
 
 /** Read-time guidance only; the POST boundary must evaluate it again. */
 export function dashboardRetryStatus(
-  source: StoredControlCommand | undefined,
+  source: Pick<StoredControlCommand, "action" | "state" | "args"> | undefined,
   now: Date,
 ): NonNullable<OverviewApproval["retry_status"]> {
   if (source?.state !== "failed" || source.action === "task.execute" || controlActionDescriptor(source.action)?.executable !== true

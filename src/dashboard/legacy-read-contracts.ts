@@ -58,5 +58,10 @@ export type TaskDetailResponse = {
 };
 export type AgentListResponse = { readonly schema_version: 1; readonly items: readonly OverviewAgent[] };
 export type AgentDetailResponse = { readonly schema_version: 1; readonly agent: OverviewAgent };
-export type ControlRequestListResponse = { readonly schema_version: 1; readonly items: readonly OverviewApproval[] };
+export type ControlRequestListResponse = {
+  readonly schema_version: 1;
+  readonly items: readonly OverviewApproval[];
+  readonly page?: { readonly limit: number; readonly total: number; readonly returned: number;
+    readonly has_more: boolean; readonly next_cursor: string | null };
+};
 export type DashboardLookup<T> = { readonly kind: "found"; readonly value: T } | { readonly kind: "not_found" };

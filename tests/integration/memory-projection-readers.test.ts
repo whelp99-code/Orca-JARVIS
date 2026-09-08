@@ -13,6 +13,7 @@ import {
   buildCurrentState,
 } from "../../src/index.js";
 import { sourceHealth } from "../../src/dashboard/personal-lists.js";
+import { controlRequestPage, pendingControlSummary } from "../../src/dashboard/control-request-read.js";
 import { PersonalCursorCodec } from "../../src/dashboard/personal-cursor.js";
 import { PersonalPagination } from "../../src/dashboard/personal-page.js";
 import { todayProjection } from "../../src/dashboard/personal-today.js";
@@ -134,6 +135,7 @@ describe("memory projection source readers", () => {
       new Date(RECOMMENDATION_NOW));
       projections.bind({ kind: "control_payload", id: controlId, component_id: controlId },
         [{ target_digest: target.target_digest }], new Date(RECOMMENDATION_NOW));
+      expect(controlRequestPage(db, new Date(RECOMMENDATION_NOW), { limit: 20 }).items.map(item => item.request_id)).toContain(controlId);
 
       // When: the JARVIS authority appends the tombstone; no provider adapter is constructed or called.
       new MemoryTombstoneChain(db, Buffer.alloc(32, 21)).append({ operation: "correct",
@@ -143,6 +145,8 @@ describe("memory projection source readers", () => {
         authority_receipt_digest: delta.authority_receipt_digest,
         payload_digest: correction.delegation.payload_digest,
         effective_at: correction.created_at });
+      expect(controlRequestPage(db, new Date(RECOMMENDATION_NOW), { limit: 20 }).items).toEqual([]);
+      expect(pendingControlSummary(db, new Date(RECOMMENDATION_NOW))).toEqual({ total: 0, items: [] });
 
       const pagination = new PersonalPagination(new PersonalCursorCodec({ key: Buffer.alloc(32, 7),
         sessionId: "memory-projection-readers", keyEpoch: 1 }));

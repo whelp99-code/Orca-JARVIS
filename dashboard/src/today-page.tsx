@@ -95,6 +95,7 @@ function TodayContent({
           </ul>
         </Section>
         <Section id="today-decisions" title="DECISIONS" tone="info">
+          <a href="/approvals">승인 목록 전체 보기</a>
           {decisions.items.length === 0 && approvals.length === 0 ? <p className="empty-state">No owner decisions</p> : null}
           <ul className="record-list">
             {decisions.items.map((decision) => (

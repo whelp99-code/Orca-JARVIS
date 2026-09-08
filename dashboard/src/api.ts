@@ -28,7 +28,7 @@ export type DashboardClient = {
   readonly overview: (signal?: AbortSignal) => Promise<OverviewResponse>;
   readonly tasks: (signal?: AbortSignal) => Promise<TaskListResponse>;
   readonly agents: (signal?: AbortSignal) => Promise<AgentListResponse>;
-  readonly controlRequests: (signal?: AbortSignal) => Promise<ControlRequestListResponse>;
+  readonly controlRequests: (signal?: AbortSignal, cursor?: string) => Promise<ControlRequestListResponse>;
   readonly task: (taskId: string) => Promise<TaskDetailResponse>;
   readonly agentLogs: (agentId: string) => Promise<TerminalLogResponse>;
 };
@@ -58,7 +58,8 @@ export function createDashboardClient(): DashboardClient {
     overview: (signal) => readJson("/api/v1/overview", isOverview, signal),
     tasks: (signal) => readJson(`/api/v1/tasks?limit=${String(LIST_LIMIT)}`, isTaskList, signal),
     agents: (signal) => readJson("/api/v1/agents", isAgentList, signal),
-    controlRequests: (signal) => readJson("/api/v1/control/requests", isApprovalList, signal),
+    controlRequests: (signal, cursor) => readJson(`/api/v1/control/requests?limit=50${cursor === undefined
+      ? "" : `&cursor=${encodeURIComponent(cursor)}`}`, isApprovalList, signal),
     task: (taskId) => readJson(`/api/v1/tasks/${encodeURIComponent(taskId)}`, isTaskDetail),
     agentLogs: (agentId) => readJson(
       `/api/v1/agents/${encodeURIComponent(agentId)}/logs?limit=${String(LIST_LIMIT)}`,
@@ -175,7 +176,15 @@ function isAgentList(value: unknown): value is AgentListResponse {
 }
 
 function isApprovalList(value: unknown): value is ControlRequestListResponse {
-  return isItemList(value, isApproval);
+  if (!isItemList(value, isApproval)) return false;
+  const page: unknown = Reflect.get(value, "page");
+  if (page === undefined) return true;
+  return isRecord(page) && Number.isSafeInteger(page.limit) && Number(page.limit) >= 1 && Number(page.limit) <= 100
+    && Number.isSafeInteger(page.total) && Number(page.total) >= value.items.length
+    && page.returned === value.items.length && value.items.length <= Number(page.limit)
+    && typeof page.has_more === "boolean" && (page.has_more
+      ? typeof page.next_cursor === "string" && page.next_cursor.length > 0 && page.next_cursor.length <= 2048
+      : page.next_cursor === null);
 }
 
 function isItemList<T>(value: unknown, item: (entry: unknown) => entry is T): value is { readonly schema_version: 1; readonly items: readonly T[] } {

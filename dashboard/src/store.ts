@@ -26,6 +26,8 @@ export function createDashboardStore(options: DashboardStoreOptions) {
   let source: EventSourceLike | undefined;
   let connectionVersion = 0;
   let snapshotConnectionVersion = 0;
+  let approvalCursor: string | undefined;
+  let approvalVersion = 0;
   const freshnessTimer = new PortfolioFreshnessTimer();
   const listeners = new Set<() => void>();
   const executionOperations = createTaskExecutionOperations(value => assign({ taskExecutionOperations: value }));
@@ -98,6 +100,19 @@ export function createDashboardStore(options: DashboardStoreOptions) {
     await refetch(token, ["approvals"]);
   }
 
+  async function firstApprovals(): Promise<void> {
+    approvalCursor = undefined;
+    await refreshApprovals();
+  }
+
+  async function nextApprovals(): Promise<void> {
+    if (state.approvals.status !== "success" && state.approvals.status !== "empty") return;
+    const cursor = state.approvals.data.page?.next_cursor;
+    if (cursor === undefined || cursor === null) return;
+    approvalCursor = cursor;
+    await refreshApprovals();
+  }
+
   async function begin(token: number): Promise<void> {
     try {
       await options.client.session();
@@ -152,7 +167,7 @@ export function createDashboardStore(options: DashboardStoreOptions) {
     if (wanted.overview) jobs.push(reads.overview.request());
     if (wanted.tasks) jobs.push(reads.tasks.request());
     if (wanted.agents) jobs.push(reads.agents.request());
-    if (wanted.approvals) jobs.push(reads.approvals.request());
+    if (wanted.approvals) { approvalVersion++; jobs.push(reads.approvals.request()); }
     return jobs;
   }
 
@@ -179,11 +194,12 @@ export function createDashboardStore(options: DashboardStoreOptions) {
     } catch (error: unknown) { failResource(token, "agents", error); }
   }
   async function loadApprovals(token: number, signal: AbortSignal): Promise<void> {
+    const version = approvalVersion;
     try {
-      const data = await options.client.controlRequests(signal);
-      if (token !== generation) return;
+      const data = await options.client.controlRequests(signal, approvalCursor);
+      if (token !== generation || version !== approvalVersion) return;
       assign({ approvals: collectionState(data, isListEmpty) });
-    } catch (error: unknown) { failResource(token, "approvals", error); }
+    } catch (error: unknown) { if (version === approvalVersion) failResource(token, "approvals", error); }
   }
 
   function failResource(token: number, key: "overview" | "tasks" | "agents" | "approvals", error: unknown): void {
@@ -231,6 +247,7 @@ export function createDashboardStore(options: DashboardStoreOptions) {
   }
 
   return { getSnapshot, subscribe, start, stop, refreshOverview, refreshTasks, refreshAgents, refreshApprovals,
+    firstApprovals, nextApprovals,
     runTaskExecutionOperation: executionOperations.run,
     watchTaskExecution: execution.watch, refreshTaskExecution: execution.refresh };
 }

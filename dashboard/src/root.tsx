@@ -137,6 +137,8 @@ function ControlCenter({
               client={liveAuthorityClient}
               idFactory={authorityIdFactory}
               onRetry={() => { void store.refreshApprovals(); }}
+              onFirst={() => { void store.firstApprovals(); }}
+              onNext={() => { void store.nextApprovals(); }}
             />
           )}
         />

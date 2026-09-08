@@ -480,3 +480,16 @@
 - 실제 built Today는 초과gzip2응답/연결닫힘2회 후 SSE 재조회로 no_data 화면 복구, GET DB쓰기0/pageErrors0, 임시 DB/서버/브라우저 제거. 최초 probe의 Today 문구 selector 오류는 수정하고 최종 exit0을 확인했다. 화면도 직접 확인했다.
 - 증거 루트 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/`: `response-budget-red.log`, `response-budget-{tests,lint,types,build}.log`, `response-budget-live.mjs/json/log`, `response-budget-live-selector.log`, `response-budget-recovered-browser.png`. 설계는 `docs/planning/adr-dashboard-sse-delivery.md` 후속 절.
 - P2-16의 approval 전체 SQL 조회·keyset pagination·1만/10만 측정은 남는다. memory-store의 privacy 순서 검증 전 큐 적용 및 작업→자동 기억 수집 원본 차단 HOLD를 유지한다. 전체01–25/운영 인수 미완료이며 운영DB/서비스/release/push 변경0.
+
+## 2026-09-08 P2-16 — 승인 목록 SQL·페이지·전체 pending 수
+
+- 직전 b553634는 커밋과 실제 HTTP/브라우저 인수를 완료한 progress였다. 현재 HEAD와 변경 파일을 다시 확인하고 승인 read-model의 전수 control payload/행별 차단 조회를 SQL로 옮겼다. 별도 진행 중 기억 reference/CLI 변경은 보존했다.
+- actionable 상태와 정확한 control_payload 차단을 SQL에서 평가하며 표시 메타데이터와 failed workflow의 retry 입력만 읽는다. 새 immutable069 부분 인덱스와 bounded keyset GET을 추가했다. 기존 무쿼리 v1 전체 목록·locale 정렬은 유지한다. 그 호환 경로는 결과 개수에 비례한다.
+- React는50건 한 페이지와 처음/다음/현재페이지 refresh를 지원하며 요청 version으로 이전 성공/실패를 무효화한다. overview는 pending 전체 수/20개 미리보기, 카드도 전체 수, Today/overview는 전체 목록 링크를 사용한다.
+- 독립 리뷰의 긴 ID cursor 지적1개를 수정했다. rowid+정렬 키/명령 digest 해시로 위치를 제한하고 실제 긴 키는 서버에서만 복원한다.4096byte ID 왕복, anchor 차단 후 다음 조회, anchor 이동의409/첫 페이지 복구, 현재 원본 차단·준비 상태·retry 계약을 검증했다. 최종 정적 리뷰 필수 결함0.
+- dashboard32파일187개/33.73초, 마지막 mock 타입 정리 후4개/1.64초 pass. 관련 backend5파일26개는 기존4파일22개와 최종 page4개 pass로 확인했다. 마지막 HTTP409 assertion 포함4개/6.34초 재통과. typecheck/build/lint exit0. 첫 새 fixture의 args 형식과 immutable identity를 바꾸려던 검사는 정상 계약/rowid 이동으로 수정했다.
+- 추가 task execution/migration/reviewability33개 중 기존 memory-reference-context190자 행1개 때문에32pass/1fail이었다. 해당 파일이 미변경인 것을 확인하고 instruction170bytes 동일성을 검증한 뒤 줄만 나눠 별도7fe1251 커밋했다. migration/reviewability9개/6.61초 재통과. 전체 verify 최신 완료 SHA704f238 이후의 단위 결과이며 새 전체 gate 완료로 확대하지 않는다.
+- 실제1만/10만 합성 명령(90%completed/10%pending, args1024자padding): 이전 전체조회5표본 p95=246.421/2877.637ms, 새50개조회20표본 p95=0.487/2.489ms, HTTP20표본 p95=3.218/4.840ms. 반환bytes227030/2270030→11559/11560. SQL prepare호출30002/300002→5이며 SQLite내부상관탐색까지 센 실행횟수는 아니다. COUNT는 대상수에 비례한다.
+- 대상1000/10000개를100개 페이지로 순회해 중복0/누락0, EXPLAIN 부분 인덱스·tuple seek·ORDER BY임시B-tree0, cursor 이후 차단 즉시반영/GET쓰기0을 확인했다. 실제 built Chromium은105개를50→50→5로 이동/첫페이지복귀, overview카드105/미리보기20/pageErrors0. 임시 데이터 제거. 첫 규모 probe의 두번째 DB 교체 후 이전model 참조 오류는 수정하고 최종 exit0이다.
+- 증거 루트 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/`의 `control-page-live.mjs/json/log`, `control-page-live-closed-fixture.log`, `control-page-overview-browser.png`, `control-page-*.log`. 설계와 측정 조건은 `docs/planning/adr-dashboard-control-pagination.md`.
+- P2-16의 전체overview state projection/timeline 비용과 다른 목록 범위/페이지 처리는 남는다. memory-store 큐 보류/자동기억 원본차단 HOLD, 전체01–25/운영 인수 미완료를 유지한다. 운영DB/서비스/release/push 변경0.

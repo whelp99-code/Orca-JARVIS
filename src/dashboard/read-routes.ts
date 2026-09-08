@@ -2,6 +2,8 @@ import type { ServerResponse } from "node:http";
 import { DASHBOARD_SCHEMA_VERSION, ID_LIMIT } from "./contracts.js";
 import { writeDashboardJson } from "./http.js";
 import type { DashboardLookup, DashboardReadModel } from "./read-model.js";
+import { parseControlPage, type ControlPageInput } from "./control-request-read.js";
+import { JarvisError } from "../db.js";
 
 const TASK_LIMIT_MIN = 1;
 const TASK_LIMIT_MAX = 500;
@@ -10,6 +12,7 @@ const READ_ERROR = {
   VALIDATION_ERROR: { status: 400, code: "VALIDATION_ERROR", message: "Validation error" },
   TASK_NOT_FOUND: { status: 404, code: "TASK_NOT_FOUND", message: "Task not found" },
   AGENT_NOT_FOUND: { status: 404, code: "AGENT_NOT_FOUND", message: "Agent not found" },
+  CONTROL_PAGE_STALE: { status: 409, code: "CONTROL_PAGE_STALE", message: "Approval list changed. Return to the first page." },
 } as const;
 
 type ReadRoute =
@@ -17,7 +20,7 @@ type ReadRoute =
   | { readonly kind: "task"; readonly taskId: string }
   | { readonly kind: "agents" }
   | { readonly kind: "agent"; readonly agentId: string }
-  | { readonly kind: "control_requests" }
+  | { readonly kind: "control_requests"; readonly page?: ControlPageInput }
   | { readonly kind: "invalid" }
   | { readonly kind: "unhandled" };
 
@@ -51,11 +54,13 @@ export function tryHandleDashboardRead(input: DashboardReadRouteInput): boolean 
       writeLookup(input, input.model.agentDetail(route.agentId, input.now), READ_ERROR.AGENT_NOT_FOUND);
       return true;
     case "control_requests":
-      writeDashboardJson(input.response, {
-        status: 200,
-        body: input.model.listControlRequests(input.now),
-        requestId: input.requestId,
-      });
+      try {
+        writeDashboardJson(input.response, { status: 200,
+          body: input.model.listControlRequests(input.now, route.page), requestId: input.requestId });
+      } catch (error) {
+        if (!(error instanceof JarvisError) || error.code !== "CONTROL_PAGE_STALE") throw error;
+        writeReadError(input, READ_ERROR.CONTROL_PAGE_STALE);
+      }
       return true;
     default:
       return assertNever(route);
@@ -68,7 +73,11 @@ function matchReadRoute(path: string, url: string | undefined): ReadRoute {
     return limit === undefined ? { kind: "invalid" } : { kind: "tasks", limit };
   }
   if (path === "/api/v1/agents") return { kind: "agents" };
-  if (path === "/api/v1/control/requests") return { kind: "control_requests" };
+  if (path === "/api/v1/control/requests") {
+    const page = parseControlPage(url);
+    return page === "invalid" ? { kind: "invalid" }
+      : page === "legacy" ? { kind: "control_requests" } : { kind: "control_requests", page };
+  }
   const taskId = singleSegment(path, "/api/v1/tasks/");
   if (taskId !== undefined) {
     const parsed = parseResourceId(taskId);
