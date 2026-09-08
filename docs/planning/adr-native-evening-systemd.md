@@ -73,3 +73,42 @@ the host's unrelated `/usr/lib/systemd/user/spice-vdagent.service:23` emitted an
 unknown `StandardError` key warning in its Install section. Calendar verification
 exited 0 and returned both expected dates/times above. `git diff --cached --check`
 exited 0. These checks parse files only; the candidate service was not executed.
+
+## Follow-up: transient user-manager execution
+
+At 2026-09-09 00:15 KST, `systemd-run --user --wait --pipe --collect` ran the
+compiled evening CLI with the candidate's Type, NODE_ENV, timeout, umask and all
+seven hardening settings. WorkingDirectory/ExecStart pointed at the development
+build; DB/config/key/ReadWritePaths pointed at an isolated cache directory. These
+were transient `jarvis-qa-*` units, not the installed candidate or production DB.
+
+The three units `jarvis-qa-evening-769886-{valid,bad-permissions,replay}` returned:
+
+| Case | Process exit | Observed result |
+| --- | --- | --- |
+| Key mode 0600 | 0 | Current-day report null; completed run count 0; usage 0/0/0 |
+| Key mode 0644 | 2 | `DAILY_LOOP_CONFIG_INVALID` on stderr |
+| Restored 0600, repeat | 0 | Same prior-day run identity; current-day report null; usage 0/0/0 |
+
+The real clock was before today's evening. A separate read-only SQLite connection
+found exactly one prior-day evening row in failed state and zero native
+publications. No current-day report is expected from this startup, and exit 0 is
+not a daily completion claim. `systemctl --user show` returned `LoadState=not-found`
+for all three collected transient units after execution.
+
+Evidence: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/evening-systemd-48Awfc/receipt.json`;
+reproduction harness: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/native-evening-systemd-live.mjs`.
+The first harness run incorrectly expected the invalid-key error on stdout; the
+actual CLI correctly rejected it on stderr with exit 2. Correcting only the
+external harness yielded the three outcomes above. No product fix was needed.
+
+A preliminary `unshare --user --map-root-user --mount --fork /usr/bin/true` was
+rejected with `Operation not permitted`, while a transient user service with the
+hardening settings did execute successfully. Thus unshare failure alone is not
+evidence that the existing user manager cannot apply these settings.
+
+Remaining HOLD: loading the exact unit files with production-equivalent paths,
+timer firing/persistence, timeout recovery, actual native provenance, and a signed
+publication through systemd at the eligible time. This experiment establishes
+CLI startup and key rejection under the transient sandbox, not those remaining
+acceptance conditions. No existing production service was changed or restarted.
