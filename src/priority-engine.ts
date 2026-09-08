@@ -2,8 +2,10 @@ import { canonicalize } from "./canonical.js";
 import {
   PRIORITY_LEXICOGRAPHIC_ORDER,
   type PriorityEngineResult,
+  type PriorityEngineResultV1,
+  type PriorityEngineResultV2,
 } from "./priority-engine-contracts.js";
-import { evaluatePriorityEvidence } from "./priority-engine-evidence.js";
+import { evaluatePriorityEvidence, type PriorityEvidenceEvaluation } from "./priority-engine-evidence.js";
 import { rankPriorityCandidates } from "./priority-engine-ranking.js";
 
 export {
@@ -28,6 +30,9 @@ export {
   type PriorityDependencyBlocking,
   type PriorityEffortCost,
   type PriorityEngineResult,
+  type PriorityEngineResultV1,
+  type PriorityEngineResultV2,
+  type PriorityActionDeadlineEvidence,
   type PriorityImportGate,
   type PriorityIrreversibleRisk,
   type PriorityLexicographicField,
@@ -41,8 +46,7 @@ export {
   type PriorityStableIdentity,
 } from "./priority-engine-contracts.js";
 
-export function rankPriorityActions(policyValue: unknown, inputValue: unknown): PriorityEngineResult {
-  const evaluation = evaluatePriorityEvidence(policyValue, inputValue);
+function result(evaluation: PriorityEvidenceEvaluation): PriorityEngineResultV1 {
   const ranking = rankPriorityCandidates(evaluation);
   return {
     schema_version: 1,
@@ -57,6 +61,19 @@ export function rankPriorityActions(policyValue: unknown, inputValue: unknown): 
     reason_codes: ranking.reasons,
     actions: ranking.actions,
   };
+}
+
+export function rankPriorityActions(policyValue: unknown, inputValue: unknown): PriorityEngineResultV1 {
+  return result(evaluatePriorityEvidence(policyValue, inputValue));
+}
+
+export function rankPriorityActionsWithDeadlineEvidence(policyValue: unknown, inputValue: unknown): PriorityEngineResultV2 {
+  const evaluation = evaluatePriorityEvidence(policyValue, inputValue);
+  const ranked = result(evaluation);
+  const candidates = new Map(evaluation.input.candidates.map(candidate => [candidate.action_id, candidate]));
+  const deadlineEvidence = ranked.actions.map(action => ({ action_id: action.action_id,
+    deadline: candidates.get(action.action_id)?.deadline ?? null }));
+  return { ...ranked, schema_version: 2, deadline_evidence: deadlineEvidence };
 }
 
 export function canonicalPriorityResultJson(value: PriorityEngineResult): string {

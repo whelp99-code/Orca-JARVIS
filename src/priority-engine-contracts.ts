@@ -145,7 +145,7 @@ export type PriorityActionDecision = {
   readonly reason_codes: readonly PriorityReasonCode[];
   readonly rationale: PriorityRationale;
 };
-export type PriorityEngineResult = {
+export type PriorityEngineResultV1 = {
   readonly schema_version: 1;
   readonly generated_at: string;
   readonly status: "ranked" | "abstained";
@@ -158,3 +158,12 @@ export type PriorityEngineResult = {
   readonly reason_codes: readonly PriorityReasonCode[];
   readonly actions: readonly PriorityActionDecision[];
 };
+export type PriorityActionDeadlineEvidence = {
+  readonly action_id: string;
+  readonly deadline: PriorityDeadline | null;
+};
+export type PriorityEngineResultV2 = Omit<PriorityEngineResultV1, "schema_version"> & {
+  readonly schema_version: 2;
+  readonly deadline_evidence: readonly PriorityActionDeadlineEvidence[];
+};
+export type PriorityEngineResult = PriorityEngineResultV1 | PriorityEngineResultV2;

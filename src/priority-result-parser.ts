@@ -1,4 +1,6 @@
 import { CONTEXT_POLICY_REASON_CODES } from "./context-policy.js";
+import { types } from "node:util";
+import { classifyPriorityDeadline } from "./priority-engine-ranking.js";
 import {
   PRIORITY_LEXICOGRAPHIC_ORDER,
   PRIORITY_LEXICOGRAPHIC_POLICY,
@@ -6,6 +8,7 @@ import {
   type PriorityActionDecision,
   type PriorityCitations,
   type PriorityEngineResult,
+  type PriorityDeadline,
   type PriorityLexicographicFields,
   type PriorityRationale,
 } from "./priority-engine-contracts.js";
@@ -18,7 +21,7 @@ export class PriorityResultContractError extends Error {
 const fail = (): never => { throw new PriorityResultContractError(); };
 type Input = Readonly<Record<string, unknown>>;
 function object(value: unknown, keys: readonly string[]): Input {
-  if (typeof value !== "object" || value === null || Array.isArray(value)
+  if (typeof value !== "object" || value === null || types.isProxy(value) || Array.isArray(value)
     || Object.getPrototypeOf(value) !== Object.prototype) return fail();
   const descriptors = Object.getOwnPropertyDescriptors(value);
   const own = Reflect.ownKeys(value);
@@ -30,7 +33,8 @@ function object(value: unknown, keys: readonly string[]): Input {
   return Object.fromEntries(keys.map(key => [key, descriptors[key]?.value]));
 }
 function array(value: unknown, maximum = 64): readonly unknown[] {
-  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype || value.length > maximum) return fail();
+  if (typeof value !== "object" || value === null || types.isProxy(value)
+    || !Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype || value.length > maximum) return fail();
   const descriptors = Object.getOwnPropertyDescriptors(value);
   const own = Reflect.ownKeys(value);
   if (own.length !== value.length + 1 || !own.includes("length")) return fail();
@@ -130,8 +134,10 @@ function action(value: unknown): PriorityActionDecision {
 export function parsePriorityEngineResult(value: unknown): PriorityEngineResult {
   const keys = ["schema_version", "generated_at", "status", "authority", "effect", "policy_id",
     "linux_policy_decision_ref", "context_policy_reason_codes", "lexicographic_order", "reason_codes", "actions"] as const;
-  const input = object(value, keys);
-  if (input["schema_version"] !== 1) return fail();
+  if (typeof value !== "object" || value === null || types.isProxy(value)) return fail();
+  const version = Object.getOwnPropertyDescriptor(value, "schema_version")?.value;
+  if (version !== 1 && version !== 2) return fail();
+  const input = object(value, version === 2 ? [...keys, "deadline_evidence"] : keys);
   const order = strings(input["lexicographic_order"], PRIORITY_LEXICOGRAPHIC_ORDER);
   if (order.length !== PRIORITY_LEXICOGRAPHIC_ORDER.length
     || order.some((field, index) => field !== PRIORITY_LEXICOGRAPHIC_ORDER[index])) return fail();
@@ -153,5 +159,29 @@ export function parsePriorityEngineResult(value: unknown): PriorityEngineResult 
     actions,
   };
   if ((result.status === "ranked") !== (ranked.length > 0)) return fail();
-  return result;
+  if (version === 1) return result;
+  const deadlines = array(input["deadline_evidence"], 32).map(value => {
+    const entry = object(value, ["action_id", "deadline"]);
+    return { action_id: string(entry["action_id"]), deadline: deadline(entry["deadline"], result.generated_at) };
+  });
+  if (deadlines.length !== actions.length) return fail();
+  for (const [index, entry] of deadlines.entries()) {
+    const item = actions[index];
+    if (item === undefined || item.action_id !== entry.action_id
+      || classifyPriorityDeadline(entry.deadline, result.generated_at) !== item.rationale.lexicographic_fields.deadline_bucket) return fail();
+    const ref = item.rationale.citations.deadline_evidence_ref;
+    if (ref !== null && ref !== entry.deadline?.evidence_ref) return fail();
+    if (item.rank !== null && entry.deadline !== null
+      && (ref === null || entry.deadline.fresh_until <= result.generated_at)) return fail();
+  }
+  return { ...result, schema_version: 2, deadline_evidence: deadlines };
+}
+
+function deadline(value: unknown, generatedAt: string): PriorityDeadline | null {
+  if (value === null) return null;
+  const input = object(value, ["due_at", "evidence_ref", "observed_at", "fresh_until"]);
+  const parsed = { due_at: instant(input["due_at"]), evidence_ref: nullableString(input["evidence_ref"]),
+    observed_at: instant(input["observed_at"]), fresh_until: instant(input["fresh_until"]) };
+  if (parsed.observed_at > generatedAt || parsed.fresh_until <= parsed.observed_at) return fail();
+  return parsed;
 }

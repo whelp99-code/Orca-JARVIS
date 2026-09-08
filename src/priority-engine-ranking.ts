@@ -6,6 +6,7 @@ import {
   type PriorityActionDecision,
   type PriorityCandidateAction,
   type PriorityCitations,
+  type PriorityDeadline,
   type PriorityDeadlineBucket,
   type PriorityLexicographicField,
   type PriorityLexicographicFields,
@@ -35,9 +36,9 @@ type DecisionPlacement = {
 };
 
 const compareText = (left: string, right: string): number => left < right ? -1 : left > right ? 1 : 0;
-function deadlineBucket(candidate: PriorityCandidateAction, clock: string): PriorityDeadlineBucket {
-  if (candidate.deadline === null) return "none";
-  const due = Date.parse(candidate.deadline.due_at);
+export function classifyPriorityDeadline(deadline: PriorityDeadline | null, clock: string): PriorityDeadlineBucket {
+  if (deadline === null) return "none";
+  const due = Date.parse(deadline.due_at);
   const now = Date.parse(clock);
   if (due < now) return "overdue";
   if (kstLocalDate(new Date(due)) === kstLocalDate(new Date(now))) return "today";
@@ -48,7 +49,7 @@ function lexicographicFields(candidate: PriorityCandidateAction, clock: string):
   return {
     owner_safety_gate: candidate.owner_safety_gate,
     customer_impact: candidate.customer_impact,
-    deadline_bucket: deadlineBucket(candidate, clock),
+    deadline_bucket: classifyPriorityDeadline(candidate.deadline, clock),
     dependency_blocking: candidate.dependency.kind,
     irreversible_risk: candidate.irreversible_risk,
     effort_cost: candidate.effort_cost,
