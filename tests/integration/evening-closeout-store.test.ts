@@ -28,13 +28,13 @@ function prepare(loop: DailyLoopStore): string {
     steps: [{ key: "evening_summary", sequence: 1 }],
   });
 }
-function artifact(runId: string, correlationId: string, sourceOmissions: readonly string[] = []) {
+function artifact(runId: string, correlationId: string, sourceOmissions: readonly string[] = [], generatedAt = T1) {
   const input = closeoutInput();
   return generateEveningCloseout(parseEveningCloseoutInput({
     ...input,
     run_id: runId,
     correlation_id: correlationId,
-    generated_at: T1.toISOString(),
+    generated_at: generatedAt.toISOString(),
     source_readiness: "no_data",
     source_omissions: sourceOmissions,
     records: [],
@@ -42,7 +42,7 @@ function artifact(runId: string, correlationId: string, sourceOmissions: readonl
     memory_candidates: [],
     tomorrow_actions: [],
     risks: [],
-  }), signer(T1.toISOString()));
+  }), signer(generatedAt.toISOString()));
 }
 function correlation(db: AuthorityDb, runId: string): string {
   const value: unknown = db.db.prepare(
@@ -54,6 +54,25 @@ function correlation(db: AuthorityDb, runId: string): string {
   return String(value.correlation_id);
 }
 describe("evening closeout persistence", () => {
+  it("rejects a validly signed future artifact without changing the run or step", async () => {
+    const db = await initialized();
+    try {
+      const loop = new DailyLoopStore(db);
+      const runId = prepare(loop);
+      const claim = loop.claim({ run_id: runId, owner_id: "owner", at: T1, lease_ms: 600_000 });
+      const store = new EveningCloseoutStore(db, trustedCloseoutKey);
+      const value = artifact(runId, correlation(db, runId), [], new Date(T1.getTime() + 1));
+      const before = db.db.prepare("SELECT total_changes() AS changes").get();
+      expect(() => store.settle({ claim, artifact: value, at: T1 })).toThrow("EVENING_CLOSEOUT_INPUT_INVALID");
+      expect(db.db.prepare("SELECT total_changes() AS changes").get()).toEqual(before);
+      expect(loop.steps(runId)[0]?.state).toBe("pending");
+      expect(store.settle({ claim, artifact: value, at: new Date(T1.getTime() + 1) })).toBe(true);
+      const completed = db.db.prepare("SELECT total_changes() AS changes").get();
+      expect(() => store.settle({ claim, artifact: value, at: T1 })).toThrow("EVENING_CLOSEOUT_INPUT_INVALID");
+      expect(db.db.prepare("SELECT total_changes() AS changes").get()).toEqual(completed);
+    } finally { db.close(); }
+  });
+
   it("Given a current fence When settled twice Then exact lifecycle is idempotent", async () => {
     const db = await initialized();
     const loop = new DailyLoopStore(db);

@@ -24,6 +24,9 @@ export class EveningCloseoutStore {
     const claim = parseDailyLoopClaim(input.claim);
     const at = parseDailyLoopInstant(input.at);
     const artifact = verifyEveningCloseoutArtifact(input.artifact, this.verifier);
+    if (Date.parse(artifact.generated_at) > at.getTime()) {
+      throw new EveningCloseoutError("EVENING_CLOSEOUT_INPUT_INVALID");
+    }
     assertDailyLoopIntegrity(this.authority, claim.run_id);
     const rowValue = this.authority.db.prepare(
       "SELECT r.loop_date,r.correlation_id,r.phase,r.state AS run_state,s.state,s.detail_json " +
