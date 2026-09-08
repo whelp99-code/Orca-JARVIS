@@ -538,3 +538,12 @@
 - 실제 compiled 비교: 이전 유효 입력21개 산출물 byte 동일. 실제 추천DB1개/행동3개·공유source1개·인용13회/고유7개를 그대로 유지한 fixture 입력은 이전parser 거부→새parser 수락, owner 브리핑1개 생성. 명시적 daily store저장2700bytes/재개방 동일, TodayHTTP200/degraded/item_count1/GET쓰기0, 임시자원 제거. 시험용 변환과 직접 저장이며 자동업무생산/예약handler 인수가 아니다.
 - 설계/증거 `docs/planning/adr-morning-brief-shared-provenance.md`, 증거루트 `brief-provenance-*`. 우선순위 생산자·브리핑 parser/generator의 UTC today판정3곳을 확인했다. KST변경은 함께 구현·검증할 후속 범위이며 자동일일운영 HOLD는 실제handler/서명마감/출처차단/예약복구 연결 전까지 유지한다.
 - 전체01–25와 운영 인수는 미완료다. 최신 전체gate는a4a2ebc이며 이번 결과는 단위 검증이다. 기존 자동기억 원본차단 HOLD와 memory-store 큐 보류 유지. 운영DB/서비스/release/push 변경0.
+
+## 2026-09-08 P1-12 선행 — 서울 날짜의 우선순위·브리핑
+
+- 직전cf4e9c8은 커밋·DB/HTTP 인수까지 완료한 progress였다. 재개 시 HEAD와 미커밋 상태를 확인했다. 일일루프는KST지만 우선순위/브리핑 두 소비자 총3곳이UTC날짜로 today를 판정하는 문제를15개 경계 중10fail로 재현했다.
+- 세 지점에 기존 kstLocalDate를 재사용했다. overdue 우선·기한equality·경과시간7일 상한·UTC저장형식은 유지한다. KST/UTC자정, 월말/연말/윤일 및0000/0099/9999년 브리핑 날짜 비교를 검사했다. 새 결과는 경계에서 달라지며 과거 산출물의 재작성이나 승인 권한 변경은 없다.
+- 관련6파일56개/3.63초, 추가13파일61개/40.70초: 고유19파일117개 pass. backend build/typecheck/lint exit0, 독립 리뷰 필수결함0.
+- 실제 이전 compiled 추천1개/행동3개의 원본·조회·정확재시도 쓰기0 확인 후 probe의 미파싱 JSON context 오류로 중단됐다. 고정cf4e9c8의 engine/ranking2모듈로 동일 요청을 재생성하고 최초 요청과 deepEqual 검사, 다른프로세스 저장→현재코드 재개방으로 최종 인수를 완료했다. 기존추천byte/digest·행동3개보존/정확재시도쓰기0/새결과동일ID거부/TodayHTTP200/조회쓰기0.
+- UTC/서울/Los_Angeles/Kiritimati4개 실제Node프로세스×4시나리오에서 ranking+brief canonical bytes 동일, 임시자원 제거. 설계·최초 probe실패·증거는 `docs/planning/adr-seoul-deadline-calendar.md`, 증거루트 `seoul-deadline-*`.
+- 저장된 추천에는 원래 마감시각 전체가 없으므로 과거UTCbucket을 새브리핑에 그대로 연결하는 변환은 보류한다. 실제handler는 검증된 현재근거에서 기한을 확인해야 한다. 브리핑/서명마감의 처리기·출처차단·예약복구 연결 전 자동일일운영 HOLD 유지. 전체01–25 및 운영 인수 미완료, 최신전체gate a4a2ebc, 운영DB/서비스/release/push 변경0.

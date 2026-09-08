@@ -49,3 +49,6 @@ brief.state=degraded/item_count=1, GET DB쓰기0, 임시 DB/서버 제거를 확
 `brief-provenance-live.mjs/json/log`. 최초 HTTP probe는 brief summary에 없는
 canonical_digest를 기대하여 실패했다(`brief-provenance-live-wrong-field.log`). 실제 summary
 계약을 대조해4필드 검증으로 고친 뒤 최종 exit0이며 제품 수정은 없었다.
+
+2026-09-08 후속: 위 UTC today 판정3곳은 [서울 날짜 변경](adr-seoul-deadline-calendar.md)에서
+생산자와 소비자를 함께 수정·검증했다. 실제 handler와 자동운영 연결의 미완료 범위는 유지한다.

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
+import { kstLocalDate } from "./daily-loop-time.js";
 import {
   MORNING_BRIEF_OMISSION_REASONS,
   type MorningBriefCitation,
@@ -120,7 +121,7 @@ function omissionReason(value: MorningBriefRecord, clock: string): MorningBriefO
   const invalidInformation = value.state === "information" && (value.kind !== "information" || value.owner_decision_required);
   const invalidAction = value.state === "actionable" && (value.kind !== "action"
     || (value.priority.deadline_bucket === "today"
-      && (value.deadline === null || value.deadline.slice(0, 10) !== clock.slice(0, 10))));
+      && (value.deadline === null || kstLocalDate(new Date(value.deadline)) !== kstLocalDate(new Date(clock)))));
   if (!hasCitationCoverage(value) || (waiting && value.owner_decision_required) || invalidInformation || invalidAction) {
     return "insufficient_citation";
   }

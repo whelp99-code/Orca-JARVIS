@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { types } from "node:util";
 import { canonicalize } from "./canonical.js";
+import { kstLocalDate } from "./daily-loop-time.js";
 import {
   MORNING_BRIEF_EXTERNAL_STATES,
   type MorningBriefCitation,
@@ -200,7 +201,8 @@ export function parseMorningBriefInput(value: unknown): MorningBriefInput {
     if ((waiting && item.owner_decision_required) || (item.state === "actionable" && item.kind !== "action")
       || (item.state === "information" && (item.kind !== "information" || item.owner_decision_required))
       || (item.state === "actionable" && item.priority.deadline_bucket === "today"
-        && (item.deadline === null || item.deadline.slice(0, 10) !== generatedAt.slice(0, 10)))) return fail();
+        && (item.deadline === null
+          || kstLocalDate(new Date(item.deadline)) !== kstLocalDate(new Date(generatedAt))))) return fail();
   }
   if (!validIdentities(items)) return fail();
   return { schema_version: 1, generated_at: generatedAt,

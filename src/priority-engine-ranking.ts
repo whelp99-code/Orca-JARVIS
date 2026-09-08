@@ -1,4 +1,5 @@
 import { canonicalize } from "./canonical.js";
+import { kstLocalDate } from "./daily-loop-time.js";
 import {
   PRIORITY_LEXICOGRAPHIC_ORDER,
   PRIORITY_LEXICOGRAPHIC_POLICY,
@@ -39,7 +40,7 @@ function deadlineBucket(candidate: PriorityCandidateAction, clock: string): Prio
   const due = Date.parse(candidate.deadline.due_at);
   const now = Date.parse(clock);
   if (due < now) return "overdue";
-  if (candidate.deadline.due_at.slice(0, 10) === clock.slice(0, 10)) return "today";
+  if (kstLocalDate(new Date(due)) === kstLocalDate(new Date(now))) return "today";
   if (due <= now + 7 * 86_400_000) return "within_seven_days";
   return "later";
 }

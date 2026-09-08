@@ -58,7 +58,7 @@ describe("Task 17 deterministic priority ranking", () => {
     expect(customer.rationale.lexicographic_fields).toEqual({
       owner_safety_gate: "pass",
       customer_impact: "customer_critical",
-      deadline_bucket: "today",
+      deadline_bucket: "within_seven_days", // 17:00Z is 02:00 on the next Seoul day.
       dependency_blocking: "blocks_customer",
       irreversible_risk: "medium",
       effort_cost: "high",
