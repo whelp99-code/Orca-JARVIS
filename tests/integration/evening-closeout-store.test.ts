@@ -14,6 +14,9 @@ import {
   trustedCloseoutKey,
 } from "../fixtures/evening-closeout.js";
 import { initialized } from "../helpers.js";
+import { generateNativeEveningEnvelope } from "../../src/evening-native-envelope.js";
+import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
+import { closeoutHash, closeoutSigningBytes } from "../../src/evening-closeout-crypto.js";
 
 const T0 = new Date("2026-08-30T12:00:00.000Z");
 const T1 = new Date("2026-08-30T12:01:00.000Z");
@@ -56,6 +59,38 @@ function correlation(db: AuthorityDb, runId: string): string {
   return String(value.correlation_id);
 }
 describe("evening closeout persistence", () => {
+  it.each([false, true])("counts native v2 durable output after suppression (populated=%s)", async populated => {
+    const db = await initialized();
+    try {
+      const loop = new DailyLoopStore(db); const runId = prepare(loop);
+      const claim = loop.claim({ run_id: runId, owner_id: "native-owner", at: T1, lease_ms: 600_000 });
+      let value = generateNativeEveningEnvelope(db, { run_id: runId, correlation_id: correlation(db, runId),
+        local_date: "2026-08-30", observed_at: T1, repository_identities: [], max_records: 10, max_bytes: 1048576 }, signer(T1.toISOString()));
+      if (populated) {
+        // Opaque signed record tests durable accounting, not proof admission or live validity.
+        const record = { fixture: "signed-cost-only" };
+        const source = { ...JSON.parse(value.source_json), state: "ready", records: [record], evidence_bytes: Buffer.byteLength(canonicalize(record)) };
+        const { artifact_id, canonical_digest, envelope, ...base } = value;
+        void artifact_id; void canonical_digest; void envelope;
+        const core = { ...base, native_completion_count: 1, source_json: canonicalize(source), source_digest: closeoutHash(source) };
+        const digest = closeoutHash(core); const handle = signer(T1.toISOString());
+        const unsigned = { ...core, artifact_id: `evening-closeout:v2:${digest.slice(7)}`, canonical_digest: digest, envelope: handle.identity };
+        value = { ...unsigned, envelope: { ...handle.identity,
+          signature: Buffer.from(handle.sign(closeoutSigningBytes("orca-jarvis/evening-closeout-native/v2\0", unsigned))).toString("base64url") } };
+      }
+      // Exercise accounting of a completed ledger; this is not native publication admission.
+      loop.completeStep({ claim, step: loop.steps(runId)[0]!, detail: value, at: T1 });
+      loop.complete(claim!, T1);
+      const expected = { items: populated ? 1 : 0, work: 1, bytes: Buffer.byteLength(canonicalize(value)) };
+      expect(dailyLoopUsage(db, "2026-08-30", trustedCloseoutKey)).toEqual(expected);
+      new MemoryProjectionAuthority(db).quarantineUnresolved({ kind: "daily_run", id: runId, component_id: runId }, T1);
+      expect(dailyLoopUsage(db, "2026-08-30", trustedCloseoutKey)).toEqual(expected);
+      expect(() => dailyLoopUsage(db, "2026-08-30")).toThrow("DAILY_LOOP_INTEGRITY_FAILURE");
+      expect(() => dailyLoopUsage(db, "2026-08-30", { ...trustedCloseoutKey, key_id: "wrong" }))
+        .toThrow("DAILY_LOOP_INTEGRITY_FAILURE");
+    } finally { db.close(); }
+  });
+
   it("includes earlier morning work and rolls back an interruption after evening step persistence", async () => {
     const db = await initialized();
     try {

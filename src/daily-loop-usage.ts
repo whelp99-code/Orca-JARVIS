@@ -7,6 +7,7 @@ import { kstLocalDate } from "./daily-loop-time.js";
 import { verifyMorningBriefResult } from "./morning-brief-artifact.js";
 import { verifyEveningCloseoutArtifact } from "./evening-closeout-artifact.js";
 import type { TrustedCloseoutKey } from "./evening-closeout-types.js";
+import { verifyNativeEveningEnvelope } from "./evening-native-envelope.js";
 
 type UsageRun = { run_id: string; record_version: number; correlation_id: string; phase: string };
 
@@ -47,6 +48,11 @@ function completedDailyStepCost(key: string, json: string, date: string, run: Us
   if (key === "evening_summary") {
     if (closeoutKey === undefined || run.phase !== "evening") return invalid();
     try {
+      if (typeof detail === "object" && detail !== null && "schema_version" in detail && detail.schema_version === 2) {
+        const artifact = verifyNativeEveningEnvelope(detail, closeoutKey);
+        if (artifact.run_id !== run.run_id || artifact.correlation_id !== run.correlation_id || artifact.local_date !== date) return invalid();
+        return { items: artifact.native_completion_count, work: 1, bytes };
+      }
       const artifact = verifyEveningCloseoutArtifact(detail, closeoutKey);
       if (artifact.run_id !== run.run_id || artifact.correlation_id !== run.correlation_id || artifact.local_date !== date) return invalid();
       const items = artifact.verified_completions.length + artifact.open_or_failed.length
