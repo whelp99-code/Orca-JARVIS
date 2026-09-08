@@ -1,3 +1,4 @@
+import { TaskProviderFailure } from "../../src/task-provider-failure.js";
 import { expect, it } from "vitest";
 import { approvedTaskFixture } from "../fixtures/approved-task-fixture.js";
 import { readClaudeTaskUsage } from "../../src/claude-task-usage.js";
@@ -105,3 +106,23 @@ it("fails closed on mismatched event metadata even when its JSON digest is intac
       estimated_usd_per_verified_completion: null, status: "incomplete_observations" });
   } finally { await f.cleanup(); }
 });
+
+it.each(["error_max_turns", "error_during_execution", "error_max_budget_usd"])(
+  "persists %s usage while preventing verification, publication and a repeated provider call", async subtype => {
+    const f = await approvedTaskFixture();
+    try {
+      const metadata = readClaudeTaskUsage({ subtype, usage: { input_tokens: 4, output_tokens: 8,
+        cache_read_input_tokens: 10, cache_creation_input_tokens: 12 }, total_cost_usd: subtype === "error_during_execution" ? 0 : .25 });
+      f.generate.mockRejectedValue(new TaskProviderFailure("TASK_PROVIDER_FAILED", metadata));
+      expect((await f.executor.execute("execute", "failed-result", f.now)).state).not.toBe("completed");
+      expect(f.verify).not.toHaveBeenCalled();
+      expect(readTaskProviderUsage(f.db, attempt(f), f.now)).toEqual({ status: "observed", usage: metadata });
+      const r = report(f).provider_cost_estimate;
+      expect(r.verified_completions).toBe(0); expect(r.estimated_usd_per_verified_completion).toBeNull();
+      expect(r.observed_estimated_usd).toBe(subtype === "error_during_execution" ? null : .25);
+      expect(r.invalid_estimates).toBe(subtype === "error_during_execution" ? 1 : 0);
+      await expect(f.executor.execute("execute", "failed-replay", f.now)).rejects.toThrow("CONTROL_APPROVAL_REQUIRED");
+      expect(f.generate).toHaveBeenCalledTimes(1); expect(f.verify).not.toHaveBeenCalled();
+      expect(report(f).provider_cost_estimate).toEqual(r);
+    } finally { await f.cleanup(); }
+  });

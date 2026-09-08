@@ -1,3 +1,4 @@
+import { TaskProviderFailure } from "./task-provider-failure.js";
 import { recordTaskProviderUsage } from "./task-provider-usage.js";
 import { JarvisError, type AuthorityDb } from "./db.js";
 import type { ClaimedControlCommand } from "./control-plane.js";
@@ -78,7 +79,10 @@ export async function executeTaskCandidate(input: {
   } catch (error) {
     // Never reset a reservation or resend automatically after a possibly delivered provider call.
     if (invoking) {
-      if (!usageAttempted) recordTaskProviderUsage(authority, command, undefined, false, clock());
+      if (!usageAttempted) {
+        recordTaskProviderUsage(authority, command, error instanceof TaskProviderFailure ? error.usage : undefined,
+          error instanceof TaskProviderFailure, clock());
+      }
       effects.markTaskUncertain(command, clock());
     }
     if (error instanceof JarvisError) throw error;

@@ -77,3 +77,46 @@ envelopes. Such attempts retain unavailable coverage. Control events have their
 existing append-only retention policy; no new cleanup bypass was introduced.
 Rework, external duplicate observations, shadow comparison and full01–25 remain
 open. No operational service/DB/configuration was changed by this acceptance.
+
+## Failed result observations
+
+The Claude adapter now parses bounded UTF-8 JSON before rejecting a nonzero exit.
+Only coherent known result envelopes can attach normalized usage to a
+TaskProviderFailure. Exit errors, error subtypes and absent structured candidate
+output still fail execution; telemetry grants no approval or success. Malformed,
+unknown, signalled, timed-out and output-limited results remain unavailable.
+Only normalized counters/statuses and the CLI estimate cross the error boundary;
+raw errors, prompts, session IDs and candidate data are excluded.
+
+The executor records this telemetry against the same invocation before marking
+uncertain. A replay requires fresh approval and cannot send the provider again.
+No migration or historical event rewrite is needed. Existing metadata validation
+and replay conflict rules still apply.
+
+Official cost-tracking documentation, read 2026-09-09, states that crash results
+(error_during_execution) may zero every counter and that error_max_budget_usd
+omits the crossing response from usage but includes it in total_cost_usd.
+Crash tokens and cost are therefore invalid for aggregation, even if numerically
+nonnegative. Budget-error tokens are invalid while a valid cost estimate remains
+reported. Unknown/crashed usage is never a measured zero-cost invocation.
+Source: https://code.claude.com/docs/en/agent-sdk/cost-tracking#track-costs-on-failed-conversations
+
+Targeted verification:79 tests/6files,34.02s, including executable transport
+fixtures and durable failure/replay coverage. Build, lint and three type checks
+passed. Actual compiled runtime with an isolated CLI wrapper adding
+--max-budget-usd 0.000001 returned TASK_PROVIDER_FAILED/uncertain in2753ms:
+provider1, verifier0, completion absent, replay rejected, original HEAD/status
+and replay refs preserved. A separate CLI read reported the persisted estimated
+USD0.002148, reported1/missing0/invalid0; verified completions0 and per-success
+estimate null. Tokens remained invalid for the budget-error scope. Receipt:
+/home/jm/.cache/jarvis-test-runtime-qa-20260908/failure-usage-real-bB9OuL/receipt.json.
+The wrapper is acceptance-only, not an operational budget guarantee. The actual
+estimate exceeded its configured cap; no financial enforcement is claimed.
+
+Earlier acceptance attempts are not counted as failed-result validation:
+F1zSFo stopped at an incorrectly expected replay response; heFeFV observed an
+initial schema rejection without telemetry; 5Q4nxk completed despite a one-turn
+limit (fixture estimate USD0.09681799999999999). Those scripts exited1 and did not
+change production. Only bB9OuL passed the failed-result acceptance assertions.
+Process-death recovery, authoritative billing, other providers, business rework,
+external duplicate observations and shadow comparison remain open.

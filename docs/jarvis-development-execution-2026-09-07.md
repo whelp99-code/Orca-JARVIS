@@ -1194,3 +1194,31 @@
 - 독립 task_usage_ledger_review ship/지적0. 요청terra/high, 실제모델/effort미노출.
   리뷰대상7파일바이트동일 확인 후 인수기록만 추가하고 사용량원장·집계단위를 커밋한다.
   fixture 결과commit은 격리리포정리후 현재작업트리에 없으며 보존receipt로 확인한다.
+
+
+### Failed Claude result usage and full baseline verification — 2026-09-09
+
+- Previous goal turn made progress: full verify27988 terminated exit0 at
+  a3dfbe902e4040505d7e4b6808b6fef46921c0e3. Backend1642/237files760.10s
+  +1673/236files732.17s; dashboard252/36files33.03s =3567tests/509files.
+  Runtime/lint/three type checks/build/fixed-clock acceptance/CLI smoke passed.
+  usage-full-before.json/usage-full-after.json proved1629 tracked files unchanged.
+- Current unit preserves normalized failed CLI result usage without promoting
+  failed execution. Crash values remain invalid; budget-error tokens are invalid
+  separately from the reported estimate. Existing event schema/migrations unchanged.
+- First tests96074 exit1:3 replay assertions wrongly expected a returned result;
+  actual CONTROL_APPROVAL_REQUIRED is the required rejection. Corrected assertions
+  and final73232 exit0:79tests/6files34.02s. Build97821 and lint/types76770 exit0.
+- Actual19839 exit0: failure-usage-real-bB9OuL/receipt.json, provider1/verifier0,
+  uncertain/TASK_PROVIDER_FAILED, no completion, replay rejected, estimate0.002148
+  USD persisted and read by separate CLI, per-success null, elapsed2753ms.
+  Isolated signed fixture approval/DB/Git and acceptance-only low-budget wrapper;
+  no operational restart/deploy/configuration change. Earlier acceptance attempts
+  and their limits are documented in task-provider-usage-observation.md.
+- Parent implementation/verification completed; independent acceptance pending.
+  All cache receipts are under /home/jm/.cache/jarvis-test-runtime-qa-20260908/.
+  Full01–25 remains incomplete; billing/process-loss/shadow/rework items remain.
+- Independent failure_usage_review returned ship/findings0; all8 reviewed file
+  hashes matched. Requested terra/high; runtime model/effort unobservable.
+  Final build/lint/three type checks26572 exit0. Parent accepted the bounded unit
+  after review; only this acceptance record was appended before commit.

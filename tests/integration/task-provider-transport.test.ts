@@ -2,15 +2,16 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
+import { TaskProviderFailure } from "../../src/task-provider-failure.js";
 import { ClaudeTaskCandidateProvider } from "../../src/claude-task-provider.js";
 
 const roots: string[] = [];
 afterEach(async () => { for (const root of roots.splice(0)) await rm(root, { recursive: true, force: true }); });
-async function response(bytes: Buffer) {
+async function response(bytes: Buffer, exitCode = 0) {
   const root = await mkdtemp(join(tmpdir(), "jarvis-provider-transport-")); roots.push(root);
   const path = join(root, "provider");
   await writeFile(path, `#!${process.execPath}\nprocess.stdin.resume(); process.stdin.on('end', () => {
-    process.stdout.write(Buffer.from('${bytes.toString("base64")}', 'base64'));
+    process.stdout.write(Buffer.from('${bytes.toString("base64")}', 'base64')); process.exitCode = ${exitCode};
   });\n`, { mode: 0o700 });
   return new ClaudeTaskCandidateProvider(path).generate({ provider: "claude", execution_plan_digest: "fixture",
     prompt: "fixture", output_schema: {}, timeout_ms: 5000, max_output_bytes: 4096 });
@@ -48,4 +49,40 @@ it("does not turn invalid telemetry into zero or reject a valid candidate", asyn
   const result = await response(bytes);
   expect(result.output).toEqual({ text: "candidate" });
   expect(result.usage).toMatchObject({ tokens: { status: "invalid" }, estimated_cost: { status: "invalid" } });
+});
+
+const reported = { usage: { input_tokens: 4, output_tokens: 8, cache_read_input_tokens: 10,
+  cache_creation_input_tokens: 12 }, total_cost_usd: .25 };
+it.each([0, 1])("keeps error results failed with their usage at exit %s", async exitCode => {
+  const error = await response(Buffer.from(JSON.stringify({ type: "result", subtype: "error_max_turns", is_error: true,
+    ...reported, errors: ["private diagnostics"], session_id: "private session" })), exitCode).catch(error => error);
+  expect(error).toBeInstanceOf(TaskProviderFailure);
+  expect(error.code).toBe(exitCode === 0 ? "TASK_PROVIDER_RESULT_INVALID" : "TASK_PROVIDER_FAILED");
+  expect(error.usage.estimated_cost).toEqual({ status: "reported", usd: .25 });
+  expect(JSON.stringify(error)).not.toContain("private");
+});
+it.each(["error_during_execution", "error_max_budget_usd"])("marks incomplete %s telemetry explicitly", async subtype => {
+  const error = await response(Buffer.from(JSON.stringify({ type: "result", subtype, is_error: true,
+    ...reported, total_cost_usd: 0 })), 1).catch(error => error);
+  expect(error).toBeInstanceOf(TaskProviderFailure);
+  expect(error.usage.tokens).toEqual({ status: "invalid" });
+  expect(error.usage.estimated_cost).toEqual(subtype === "error_during_execution"
+    ? { status: "invalid" } : { status: "reported", usd: 0 });
+});
+it.each([
+  { type: "result", subtype: "unknown_error", is_error: true },
+  { type: "result", subtype: "error_max_turns", is_error: false },
+  { type: "result", subtype: "success", is_error: true },
+  { type: "other", subtype: "error_max_turns", is_error: true },
+])("does not accept telemetry from an incoherent result $subtype", async envelope => {
+  const error = await response(Buffer.from(JSON.stringify({ ...envelope, ...reported })), 1).catch(error => error);
+  expect(error.code).toBe("TASK_PROVIDER_FAILED");
+  expect(error).not.toBeInstanceOf(TaskProviderFailure);
+});
+it("preserves observed usage when a success envelope lacks required candidate output", async () => {
+  const error = await response(Buffer.from(JSON.stringify({ type: "result", subtype: "success", is_error: false,
+    ...reported }))).catch(error => error);
+  expect(error).toBeInstanceOf(TaskProviderFailure);
+  expect(error.code).toBe("TASK_PROVIDER_RESULT_INVALID");
+  expect(error.usage.estimated_cost).toEqual({ status: "reported", usd: .25 });
 });

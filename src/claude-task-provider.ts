@@ -1,3 +1,4 @@
+import { TaskProviderFailure } from "./task-provider-failure.js";
 import { readClaudeTaskUsage } from "./claude-task-usage.js";
 import { TASK_PROVIDER_LIMITS } from "./task-execution-limits.js";
 import { spawn } from "node:child_process";
@@ -58,15 +59,22 @@ export class ClaudeTaskCandidateProvider implements TaskCandidateProvider {
       child.on("close", code => {
         clearTimeout(timer);
         if (failure) { reject(new JarvisError(failure)); return; }
-        if (code !== 0) { reject(new JarvisError("TASK_PROVIDER_FAILED")); return; }
+        if (code === null) { reject(new JarvisError("TASK_PROVIDER_FAILED")); return; }
         try {
           const raw = Buffer.concat(stdout), text = raw.toString("utf8");
           if (!Buffer.from(text, "utf8").equals(raw)) throw new Error("invalid UTF-8");
           const result = JSON.parse(text) as Record<string, unknown>;
-          if (!result || result.type !== "result" || result.subtype !== "success" || result.is_error !== false
-            || result.structured_output === undefined) throw new Error("invalid result");
-          resolve({ output: result.structured_output, output_bytes: bytes, usage: readClaudeTaskUsage(result) });
-        } catch { reject(new JarvisError("TASK_PROVIDER_RESULT_INVALID")); }
+          const success = result?.subtype === "success" && result.is_error === false;
+          const failed = result?.is_error === true && ["error_during_execution", "error_max_turns",
+            "error_max_budget_usd", "error_max_structured_output_retries"].includes(result.subtype as string);
+          if (!result || Array.isArray(result) || result.type !== "result" || (!success && !failed)) throw new Error("invalid result");
+          const usage = readClaudeTaskUsage(result);
+          if (code !== 0 || !success || result.structured_output === undefined) {
+            reject(new TaskProviderFailure(code !== 0 ? "TASK_PROVIDER_FAILED" : "TASK_PROVIDER_RESULT_INVALID", usage));
+            return;
+          }
+          resolve({ output: result.structured_output, output_bytes: bytes, usage });
+        } catch { reject(new JarvisError(code !== 0 ? "TASK_PROVIDER_FAILED" : "TASK_PROVIDER_RESULT_INVALID")); }
       });
       child.stdin.end(input.prompt);
     });

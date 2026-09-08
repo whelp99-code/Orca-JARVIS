@@ -18,7 +18,9 @@ export interface ClaudeTaskUsage {
  * The task adapter disables tools/subagents and starts a fresh, non-streaming call.
  * Do not sum modelUsage or message usage into this result-level observation. */
 export function readClaudeTaskUsage(result: Record<string, unknown>): ClaudeTaskUsage {
-  const usage = result.usage;
+  // A crash result can reset all counters; budget errors omit the crossing response from tokens.
+  const crashed = result.subtype === "error_during_execution";
+  const usage = crashed || result.subtype === "error_max_budget_usd" ? null : result.usage;
   const keys = ["input_tokens", "output_tokens", "cache_read_input_tokens", "cache_creation_input_tokens"] as const;
   let tokens: Tokens | Unavailable;
   if (usage === undefined) tokens = { status: "missing" };
@@ -31,7 +33,7 @@ export function readClaudeTaskUsage(result: Record<string, unknown>): ClaudeTask
       output_tokens: values.output_tokens as number, cache_read_input_tokens: values.cache_read_input_tokens as number,
       cache_creation_input_tokens: values.cache_creation_input_tokens as number };
   }
-  const cost = result.total_cost_usd;
+  const cost = crashed ? null : result.total_cost_usd;
   const estimatedCost: ClaudeTaskUsage["estimated_cost"] = cost === undefined ? { status: "missing" }
     : typeof cost === "number" && Number.isFinite(cost) && cost >= 0 && cost <= Number.MAX_SAFE_INTEGER
       ? { status: "reported", usd: cost } : { status: "invalid" };
