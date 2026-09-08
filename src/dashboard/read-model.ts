@@ -1,3 +1,4 @@
+import type { TrustedCloseoutKey } from "../evening-closeout-types.js";
 import { JarvisError, type AuthorityDb } from "../db.js";
 import { passiveCapabilityProbe, runDoctor } from "../doctor.js";
 import { TaskTimeline, type TaskTimelineSummary } from "../recommendation-timeline.js";
@@ -55,8 +56,9 @@ export class DashboardReadModel {
     capabilityProbe?: CapabilityProbe,
     cursorSession: PersonalCursorCodecOptions = createPersonalCursorSession(),
     private readonly runtimeIdentity: RuntimeIdentityReader = createRuntimeIdentityReader(() => db.db),
+    closeoutKey?: TrustedCloseoutKey,
   ) {
-    this.personal = new PersonalDashboardReadModel(db, capabilityProbe, cursorSession);
+    this.personal = new PersonalDashboardReadModel(db, capabilityProbe, cursorSession, closeoutKey);
   }
 
   async overview(now = new Date()): Promise<OverviewResponse> {

@@ -1,3 +1,5 @@
+import { todayProjection } from "../../src/dashboard/personal-today.js";
+import type { TrustedCloseoutKey } from "../../src/evening-closeout-types.js";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
@@ -19,7 +21,7 @@ import { persistTask18Context, RECOMMENDATION_ID, RECOMMENDATION_NOW, task18Requ
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
-async function fixture(): Promise<{ readonly db: AuthorityDb; readonly server: DashboardServer; readonly contextId: string }> {
+async function fixture(closeoutKey: TrustedCloseoutKey | null = trustedCloseoutKey): Promise<{ readonly db: AuthorityDb; readonly server: DashboardServer; readonly contextId: string }> {
   const db = new AuthorityDb(tempDb());
   await db.migrate();
   roots.push(dirname(db.filename));
@@ -29,7 +31,7 @@ async function fixture(): Promise<{ readonly db: AuthorityDb; readonly server: D
   roots.push(root);
   writeFileSync(join(root, "index.html"), "<!doctype html>", "utf8");
   const server = createDashboardServer({ db, staticRoot: root, host: "127.0.0.1", port: 0,
-    clock: () => new Date(RECOMMENDATION_NOW) });
+    clock: () => new Date(RECOMMENDATION_NOW), ...(closeoutKey === null ? {} : { trustedCloseoutKey: closeoutKey }) });
   return { db, server, contextId: context.id };
 }
 
@@ -104,6 +106,36 @@ describe("personal persisted projection integrity", () => {
       expectSafeFailure(response);
       expect(response.body).not.toContain(RECOMMENDATION_ID);
       expect(changes(db)).toBe(before);
+    } finally { server.close(); db.close(); }
+  });
+
+  it.each([null, { ...trustedCloseoutKey, key_id: "different-trusted-key" }, trustedCloseoutKey])("does not trust a closeout's own public key (%j)", async key => {
+    const { db, server } = await fixture(key);
+    const at = new Date("2026-08-28T12:00:00.000Z");
+    const loop = new DailyLoopStore(db);
+    const runId = loop.prepare({ due: { kind: "due", local_date: "2026-08-28", phase: "evening",
+      scheduled_at: at.toISOString() }, created_at: at, deadline_at: new Date("2026-08-28T13:00:00.000Z"),
+    steps: [{ key: "evening_summary", sequence: 1 }] });
+    const claim = loop.claim({ run_id: runId, owner_id: "integrity-owner", at, lease_ms: 600_000 });
+    const correlation = db.db.prepare("SELECT correlation_id FROM daily_loop_runs WHERE run_id=?").get(runId);
+    if (typeof correlation !== "object" || correlation === null || !("correlation_id" in correlation)) {
+      throw new Error("correlation expected");
+    }
+    const input = closeoutInput();
+    const artifact = generateEveningCloseout(parseEveningCloseoutInput({ ...input, local_date: "2026-08-28", run_id: runId,
+      correlation_id: String(correlation.correlation_id), generated_at: at.toISOString(), records: [], decisions: [],
+      memory_candidates: [], tomorrow_actions: [], risks: [] }), signer(at.toISOString()));
+    new EveningCloseoutStore(db, trustedCloseoutKey).settle({ claim, artifact, at });
+    try {
+      const response = await get(server, "/api/v1/today");
+      if (key === null) {
+        expect(response.status).toBe(200);
+        expect(JSON.parse(response.body).latest_verified_closeout).toBeNull();
+      } else if (key.key_id === trustedCloseoutKey.key_id) {
+        expect(response.status).toBe(200);
+        expect(JSON.parse(response.body).latest_verified_closeout).toMatchObject({ artifact_id: artifact.artifact_id, verified_completion_count: 0 });
+        expect(todayProjection(db, new Date(at.getTime() - 1), key)["latest_verified_closeout"]).toBeNull();
+      } else expectSafeFailure(response);
     } finally { server.close(); db.close(); }
   });
 

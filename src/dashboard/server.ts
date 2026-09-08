@@ -1,3 +1,4 @@
+import type { TrustedCloseoutKey } from "../evening-closeout-types.js";
 import { realpathSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { BoundSocket } from "node:net";
@@ -65,6 +66,7 @@ export type DashboardServerOptions = {
   readonly port: number;
   readonly orcaRunner?: OrcaRunner;
   readonly capabilityProbe?: CapabilityProbe;
+  readonly trustedCloseoutKey?: TrustedCloseoutKey;
   readonly secondBrainProbe?: SecondBrainReadinessProbe;
   readonly planner?: TeamProposalPlanner;
   readonly clock?: () => Date;
@@ -111,7 +113,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
   realpathSync(options.staticRoot);
   const remoteApproval = options.remoteApproval ?? composeRemoteApproval(options.db,
     { policyPath: options.remoteApprovalPolicyPath });
-  const model = new DashboardReadModel(options.db, options.secondBrainProbe, options.capabilityProbe);
+  const model = new DashboardReadModel(options.db, options.secondBrainProbe, options.capabilityProbe, undefined, undefined, options.trustedCloseoutKey);
   const terminals = new DashboardTerminalReader(model, options.orcaRunner);
   const events = createDashboardEvents(options.db, options.memoryReconcileTick);
   const session = options.sessionStore ?? createDashboardSession();

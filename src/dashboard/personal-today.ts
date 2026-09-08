@@ -1,3 +1,4 @@
+import type { TrustedCloseoutKey } from "../evening-closeout-types.js";
 import type { AuthorityDb } from "../db.js";
 import { assertDailyLoopIntegrity } from "../daily-loop-integrity.js";
 import { kstLocalDate } from "../daily-loop-time.js";
@@ -10,7 +11,7 @@ import { dbRow, dbRows, nullableText, readOnlySnapshot, text } from "./personal-
 
 type BriefSummary = { readonly state: string; readonly brief_id: string | null; readonly generated_at: string | null; readonly item_count: number };
 
-export function todayProjection(db: AuthorityDb, now: Date): Readonly<Record<string, unknown>> {
+export function todayProjection(db: AuthorityDb, now: Date, closeoutKey?: TrustedCloseoutKey): Readonly<Record<string, unknown>> {
   return readOnlySnapshot(db, () => {
     const recommendation = new Recommendations(db).project(now.toISOString(), 500);
     const projections = new MemoryProjectionAuthority(db);
@@ -32,7 +33,7 @@ export function todayProjection(db: AuthorityDb, now: Date): Readonly<Record<str
       .map(([state, count]) => ({ state, count }));
     const context = latestContext(db, now);
     const brief = latestBrief(db, now);
-    const closeout = latestCloseout(db);
+    const closeout = latestCloseout(db, now, closeoutKey);
     const current = runs[0];
     return {
       schema_version: 1, resource: "today", generated_at: now.toISOString(),
@@ -109,9 +110,10 @@ function latestBrief(db: AuthorityDb, now: Date): BriefSummary {
     generated_at: brief.generated_at, item_count: currentItems.length };
 }
 
-function latestCloseout(db: AuthorityDb): Readonly<Record<string, unknown>> | null {
+function latestCloseout(db: AuthorityDb, now: Date, trusted?: TrustedCloseoutKey): Readonly<Record<string, unknown>> | null {
+  if (trusted === undefined) return null;
   const raw = db.db.prepare(
-    `SELECT s.step_id,s.run_id,s.detail_json FROM daily_loop_steps s
+    `SELECT s.step_id,s.run_id,s.detail_json,r.loop_date,r.correlation_id,r.phase,r.state AS run_state,r.updated_at FROM daily_loop_steps s
      JOIN daily_loop_runs r ON r.run_id=s.run_id
      WHERE s.step_key='evening_summary' AND s.state='completed'
      ORDER BY r.loop_date DESC,r.run_id DESC LIMIT 1`,
@@ -122,11 +124,14 @@ function latestCloseout(db: AuthorityDb): Readonly<Record<string, unknown>> | nu
   if (projections.isProjectionIdSuppressed(text(row, "step_id"))
     || projections.isProjectionIdSuppressed(text(row, "run_id"))) return null;
   const parsed: unknown = JSON.parse(text(row, "detail_json"));
-  if (!record(parsed) || !record(parsed["envelope"]) || typeof parsed["envelope"]["key_id"] !== "string"
-    || typeof parsed["envelope"]["public_key_spki"] !== "string") throw new PersonalTodayIntegrityError();
-  const artifact = verifyEveningCloseoutArtifact(parsed, {
-    key_id: parsed["envelope"]["key_id"], public_key_spki: parsed["envelope"]["public_key_spki"],
-  });
+  const artifact = verifyEveningCloseoutArtifact(parsed, trusted);
+  assertDailyLoopIntegrity(db, text(row, "run_id"));
+  if (artifact.run_id !== text(row, "run_id") || artifact.local_date !== text(row, "loop_date")
+    || artifact.correlation_id !== text(row, "correlation_id") || text(row, "phase") !== "evening") {
+    throw new PersonalTodayIntegrityError();
+  }
+  if (text(row, "run_state") !== "completed" || artifact.generated_at > now.toISOString()
+    || text(row, "updated_at") > now.toISOString() || projections.isProjectionIdSuppressed(artifact.artifact_id)) return null;
   return { artifact_id: artifact.artifact_id, run_id: artifact.run_id, local_date: artifact.local_date,
     generated_at: artifact.generated_at, canonical_digest: artifact.canonical_digest,
     verified_completion_count: artifact.verified_completions.length, source_readiness: artifact.source_readiness };

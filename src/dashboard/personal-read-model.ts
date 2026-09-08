@@ -1,3 +1,4 @@
+import type { TrustedCloseoutKey } from "../evening-closeout-types.js";
 import { randomBytes, randomUUID } from "node:crypto";
 import type { CapabilityProbe } from "../capabilities.js";
 import type { AuthorityDb } from "../db.js";
@@ -18,12 +19,13 @@ export class PersonalDashboardReadModel {
     private readonly db: AuthorityDb,
     private readonly capabilityProbe: CapabilityProbe | undefined,
     cursorSession: PersonalCursorCodecOptions,
+    private readonly closeoutKey?: TrustedCloseoutKey,
   ) {
     this.pagination = new PersonalPagination(new PersonalCursorCodec(cursorSession));
   }
 
   today(now: Date): unknown {
-    return bounded(todayProjection(this.db, now));
+    return bounded(todayProjection(this.db, now, this.closeoutKey));
   }
 
   recommendation(id: string, now: Date): PersonalLookup<unknown> {
