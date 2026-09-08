@@ -217,3 +217,6 @@ export { createCorrectionCancellationIntent, requireCorrectionCancellationIntent
   CORRECTION_CANCELLATION_INTENT_DOMAIN, MAX_CORRECTION_CANCELLATION_INTENT_BYTES,
   type CorrectionCancellationIntentV1, type CorrectionCancellationEvidence,
   type CorrectionCancellationIntentOptions } from "./memory-correction-cancellation-intent.js";
+
+export { requireCorrectionCancellationResult, CORRECTION_CANCELLATION_RESULT_DOMAIN,
+  type CorrectionCancellationResultV1 } from "./memory-correction-cancellation-result.js";
