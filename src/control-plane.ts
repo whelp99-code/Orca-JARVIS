@@ -123,6 +123,7 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
            ON a.request_id=r.request_id AND a.decision='approve'
          LEFT JOIN control_command_redemptions x ON x.request_id=r.request_id
          WHERE r.state='approved' AND x.request_id IS NULL
+           AND r.action <> 'memory.scope.review'
            AND r.action NOT IN (SELECT value FROM json_each(?))
          ORDER BY r.requested_at,r.request_id`,
       ) .all(JSON.stringify(excludedActions)) as Array<Record<string, unknown>>; for (const row of rows) {
@@ -142,6 +143,7 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
         ) .get(requestId) as Record<string, unknown> | undefined;
       if (!row || row.state !== "approved" || Date.parse(String(row.expires_at)) <= nowMs || Date.parse(String(row.approval_expires)) <= nowMs)
         throw new JarvisError("CONTROL_APPROVAL_REQUIRED");
+      if (row.action === "memory.scope.review") throw new JarvisError("CONTROL_ACTION_REVIEW_ONLY");
       if (this.commandRevoked(requestId, String(row.command_digest), String(row.receipt_id))) throw new JarvisError("CONTROL_APPROVAL_REVOKED");
       const action = this.parseStoredAction(row); validateControlAction(action); const fence = Number(row.lease_fence) + 1;
       const leaseUntil = Math.min(nowMs + leaseMs, Date.parse(String(row.expires_at)), Date.parse(String(row.approval_expires)));

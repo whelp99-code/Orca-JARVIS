@@ -31,6 +31,9 @@ it("binds an existing signed owner approval to the exact scope and denies pendin
     expect(() => readApprovedMemoryScopeReview(f.authority, proposal, command.request_id, now)).toThrow("MEMORY_SCOPE_REVIEW_INVALID");
     const control = new ControlPlane(f.authority); control.decide(receipt(f.authority, command, now), now);
     const approvedCounts = memoryTableCounts(f.authority);
+    expect(control.nextApproved(now)).not.toBe(command.request_id);
+    expect(() => control.claim(command.request_id, "generic-worker", now)).toThrow("CONTROL_ACTION_REVIEW_ONLY");
+    expect(memoryTableCounts(f.authority)).toEqual(approvedCounts);
     expect(readApprovedMemoryScopeReview(f.authority, proposal, command.request_id, now))
       .toMatchObject({ writes_authorized: false, proposal, control_request_id: command.request_id });
     expect(memoryTableCounts(f.authority)).toEqual(approvedCounts);
