@@ -9,12 +9,8 @@ import {
   type DailyLoopOptions, type DailyLoopPreparation, type DailyLoopStep,
 } from "./daily-loop-types.js";
 
-type Cost = {
-	readonly items: number;
-	readonly work: number;
-	readonly bytes: number;
-};
 type Used = { items: number; work: number; bytes: number };
+type Cost = Readonly<Used>;
 const morningSteps = [
 	{ key: "refresh_context", sequence: 1 },
 	{ key: "morning_reconcile", sequence: 2 },
@@ -106,11 +102,13 @@ export class DailyControlLoop {
 		});
 	}
 	runNext(claimValue: unknown): boolean {
-		const claim = parseDailyLoopClaim(claimValue);
+		return this.advance(parseDailyLoopClaim(claimValue)) === "step_completed";
+	}
+	private advance(claim: DailyLoopClaim): "step_completed" | "all_completed" | "failed" {
 		const at = this.now();
 		if (this.options.deadline_ms === 0 || at.getTime() >= Date.parse(claim.deadline_at)) {
 			this.store.fail(claim, "DEADLINE_EXHAUSTED", at);
-			return false;
+			return "failed";
 		}
 		this.store.start(claim, at);
 		const steps = this.store.steps(claim.run_id);
@@ -124,25 +122,26 @@ export class DailyControlLoop {
 			const exhausted = this.exhausted(used, cost);
 			if (exhausted !== null) {
 				this.store.fail(claim, exhausted, at);
-				return false;
+				return "failed";
 			}
 			this.store.completeStep({
 				claim,
 				step,
 				detail: this.detail(step, at),
-				at,
+				at: this.now(),
 			});
 			this.add(used, cost);
-			return true;
+			return "step_completed";
 		}
-		return false;
+		return "all_completed";
 	}
-	finish(claimValue: unknown): void {
+	finish(claimValue: unknown): boolean {
 		const claim = parseDailyLoopClaim(claimValue);
-		while (this.runNext(claim)) {
-			/* one durable logical step */
-		}
-		if (this.store.steps(claim.run_id).every((step) => step.state === "completed")) this.store.complete(claim, this.now());
+		let outcome: ReturnType<DailyControlLoop["advance"]>;
+		do { outcome = this.advance(claim); } while (outcome === "step_completed");
+		if (outcome === "failed") return false;
+		this.store.complete(claim, this.now());
+		return true;
 	}
 	markUncertain(claimValue: unknown, reasonValue: unknown): void {
 		const claim = parseDailyLoopClaim(claimValue);
@@ -150,7 +149,10 @@ export class DailyControlLoop {
 		this.store.uncertain(claim, reason, this.now());
 	}
 	private detail(step: DailyLoopStep, at: Date): unknown {
-		if (step.step_key === "refresh_context") return evaluateRefreshContext(this.options.refresh_reader.read(at), at, this.options.refresh_freshness_ms);
+		if (step.step_key === "refresh_context") {
+			const refresh = this.options.refresh_reader.read(at);
+			return evaluateRefreshContext(refresh, this.now(), this.options.refresh_freshness_ms);
+		}
 		if (step.step_key.startsWith("event:")) return { event: step.step_key, boundary: "no_external_effect" };
 		return { step_key: step.step_key, boundary: "no_external_effect" };
 	}
@@ -182,8 +184,7 @@ export class DailyControlLoop {
 		if (completed.includes(runId)) return;
 		try {
 			const claim = this.claim(runId);
-			this.finish(claim);
-			completed.push(runId);
+			if (this.finish(claim)) completed.push(runId);
 		} catch (error) {
 			if (error instanceof DailyLoopError && (error.code === "DAILY_LOOP_LEASE_ACTIVE" || error.code === "DAILY_LOOP_TERMINAL")) return;
 			throw error;

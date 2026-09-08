@@ -19,9 +19,9 @@
 | 09 | 만료된 workflow 시작 재시도 | 원래 마감/예산 재검증, 재계획·재승인 안내 구현; HTTP 및 브라우저 검증 완료 |
 | 07 | retention 결과 정합성 | 어댑터 미설정 실패, policy 전달, 원자적 처리 구현; 실제 정책별 어댑터·스케줄은 12 후속 |
 | 10–11, 21 최소 | 실제 준비 상태와 승인된 작업 한 건의 실행 완결 | Claude CLI·독립 검증·서명·Git·완료 영수증·실제 UI 인수 완료. readiness 인증은 not_probed, Codex 실행자는 unsupported, 운영 대상 등록·인수는 후속 |
-| 12 | 일일 스케줄과 실제 retention 어댑터 | 미완료. 서비스 연결과 재시작·누락 시간·중복 실행 인수 필요 |
+| 12 | 일일 스케줄과 실제 retention 어댑터 | 완료 보고·lease/deadline·freshness 결함 수정 및 격리 프로세스 재개 검증. 실제 단계 처리·일정·retention 연결은 미완료/HOLD |
 | 13 | 관찰 장애와 실행 장애 분리 | 영속 backoff·건강 상태 및 실제 격리 CLI 검증 완료. 운영 활성화는 후속 |
-| 14–19 | 구조·설치·조회·SSE·테스트·운영 정보 | 도메인 일부 분리, Linux 설치/검증 분리, 순차 test shard, SQL/승인 페이지, SSE·HTTP 병합·본문 상한 구현. 최신 전체 gate SHA704f238 이후 단위 검증 진행. 구조 부채·일부 목록·운영 SHA/스키마 화면은 미완료 |
+| 14–19 | 구조·설치·조회·SSE·테스트·운영 정보 | 도메인 일부 분리, Linux 설치/검증 분리, 순차 test shard, SQL/승인 페이지, SSE·HTTP 병합·본문 상한 구현. 최신 전체 gate SHAa4a2ebc. 구조 부채·일부 목록·운영 SHA/스키마 화면은 미완료 |
 | 20–25 | 라우팅·실행자·기억 연동·커넥터·템플릿·지표 | 범위 유지; 아래 의존성/보류 항목 참조 |
 
 ## 보류 판정과 재개 조건
@@ -513,3 +513,19 @@
 - 같은 built Chromium10만 건에서 최초표시10842→3151ms, 초기+SSE 두 묶음11860→4060ms(각1회). 원본차단후카드10000→9999/목록500개에서차단source0/pageErrors0. 화면 확인/임시자원 제거 완료. 최초8API 재조회와 전체population비용은 남는다.
 - 실제 probe 첫 import 실패와 Node callback시간의 부정확한 계측은 보존하고 수정했다. 최종은 브라우저 request.timing을 사용했다. 증거 `task-source-live.mjs/json/log`, query probe와 ADR 후속 인수 절 참조. 실행 범위표의 오래된04/06/10–13/14–19 상태도 기존 인수 원장에 맞게 갱신했다.
 - 전체01–25 목표와 미완료 범위는 유지한다. 최신 전체gate는704f238이며 누적 변경의 새 전체검증이 필요하다. 자동기억 원본차단 HOLD와 memory-store 큐 보류 유지. 운영DB/서비스/release/push 변경0.
+
+## 2026-09-08 전체 gate 확정 — a4a2ebc
+
+- 기존 verify handle95258을 재사용하여 종료코드0을 확인했다. 시작·종료 HEAD는 `a4a2ebce785154193e685b97525f2e030ad5c5a2`, 모든 추적 파일의 실행 전후 byte hash 변경0이었다. 시작부터 있던 AGENTS.md/인계문서 수정2개는 별도로 기록됐고 제품 소스는 해당HEAD 상태였다.
+- backend1분할196파일1271개/600.99초,2분할195파일1264개/644.09초: 합계391파일2535개 pass. dashboard32파일187개/30.81초 pass. runtime/lint/typecheck/build/fixed-clock acceptance/CLI smoke 모두 verify exit0으로 완료했다.
+- 증거 `verify-a4a2ebc.log`, `verify-a4a2ebc-before.json`, `verify-a4a2ebc-after.json`, 실행기 `verify-current-source.mjs`. 일일 루프 초안과 검사는 캐시에서 준비했고 이 gate 종료 이후에 제품을 변경했다.
+
+## 2026-09-08 P1-12 선행 — 일일 루프 결과·관측 종료 시각
+
+- 이전 목표 턴은 새로운 red/green·실제 격리 재현을 만든 progress였다. 이번 재개에서도 전체gate의 동일 live handle을 재사용했고 소스를 보존했다. 캐시 초안 타입검사0/신규12pass/독립리뷰0을 확인하고 전체gate 종료 후 제품에 반영했다.
+- cycle의 예산실패1개/startup의 실패3개가 completed_run_ids에도 들어가던 결함을 수정했다. 내부 advance결과를 step_completed/all_completed/failed로 구분하고 finish는 실제 store.complete성공후true를 반환한다. public runNext boolean/wire결과 구조는 유지한다.
+- 느린 refresh_reader가 lease 만료 후 과거 시각으로 단계1개를 완료하던 경로에서 저장 직전 시각을 재조회한다. freshness평가도 reader완료 시각을 사용한다. 모든 단계 후 deadline실패를 정산한 다음 complete를 재시도하던 경로도 제거했다.
+- 관련11파일147개/74.15초 pass. 테스트의 prefer-const2건 수정 후 신규12개/9.91초 재통과. backend build/typecheck/lint exit0, 제품 독립리뷰 필수결함0. 중복 비용 타입을 공유하여 pure248행/최대156자와 reviewability를 유지했다.
+- 실제 compiled 제품5시나리오와 별도 Node4프로세스 인수를 완료했다. reader80.126ms/lease40ms에서 단계완료0, 다른PID의fence2 재획득→완료·digest재개방 일치; freshness5ms/reader80.115ms는stale. 예산실패의 허위완료ID0, 정상완료ID1. 주입reader·격리DB의 논리단계 검증이며 실제SB/업무일정운영이 아니다. 임시자원 제거 확인.
+- 자동운영 연결 HOLD를 실제HTTP로 보강했다. 기존논리아침 완료 뒤 Today200/brief.no_data, 논리저녁 완료 뒤 Today500/INTERNAL_ERROR, GET DB쓰기0. 기존 generateMorningBrief·generateEveningCloseout/EveningCloseoutStore를 연결해야 하며 no_external_effect를 검증artifact로 받아들이는 우회는 하지 않는다.
+- 근거/재개조건 `docs/planning/adr-daily-loop-runtime-results.md`. 증거루트의 daily-loop-product-*.log, daily-loop-process-product.json/log, daily-loop-result-product.log, daily-loop-activation-gap.mjs/json/log. 전체01–25/운영 인수 미완료, 기존 자동기억 원본차단 HOLD와 memory-store 큐 보류 유지. 운영DB/서비스/release/push 변경0.
