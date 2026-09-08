@@ -76,6 +76,26 @@ function decode(row: SummaryRow): TaskTimelineSummary {
 export class TaskTimelinePopulation {
   constructor(private readonly authority: AuthorityDb) {}
 
+  overview(limit: number, excludeRecommendations = false): { recent: TaskTimelineSummary[]; activeCount: number } {
+    new MemoryProjectionAuthority(this.authority).assertReady();
+    const included = excludeRecommendations
+      ? "NOT EXISTS (SELECT 1 FROM personal_recommendations r WHERE r.recommendation_id=v.task_id)" : "1";
+    // Both consumers share one visible population, including aliases and current suppression.
+    const rows = this.authority.db.prepare(`${POPULATION}, recent AS MATERIALIZED (
+      SELECT task_id,title,kind,state,latest_at,pending_approval FROM visible v
+      WHERE ${included} ORDER BY latest_at DESC,task_id LIMIT ?
+    ), counted AS (
+      SELECT COUNT(*) AS active_count FROM visible v WHERE state NOT IN (${settledSql}) AND ${included}
+    ) SELECT counted.active_count,recent.*,
+      (SELECT json_group_array(source_id) FROM
+        (SELECT DISTINCT source_id FROM normalized n WHERE n.task_id=recent.task_id ORDER BY source_id)) AS source_ids
+      FROM counted LEFT JOIN recent ON 1=1
+      ORDER BY recent.latest_at DESC,recent.task_id`).all(limit) as Array<
+        { active_count: number } & (SummaryRow | { task_id: null })>;
+    return { activeCount: rows[0]?.active_count ?? 0,
+      recent: rows.flatMap(row => row.task_id === null ? [] : [decode(row)]) };
+  }
+
   list(limit: number, excludeRecommendations = false): TaskTimelineSummary[] {
     new MemoryProjectionAuthority(this.authority).assertReady();
     const rows = this.authority.db.prepare(`${POPULATION} ${summarySelect}

@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { DashboardReadModel } from "../../src/dashboard/read-model.js";
 import { ControlPlane } from "../../src/control-plane.js";
+import { TaskTimeline } from "../../src/recommendation-timeline.js";
 import type { AuthorityDb } from "../../src/db.js";
 import type { SecondBrainReadinessObservation } from "../../src/second-brain-readiness.js";
 import { closeMemoryDatabase, memoryDatabase } from "../fixtures/memory-candidate-store.js";
@@ -37,12 +38,25 @@ describe("overview while a memory UI command commits", () => {
   it("still detects writes inside the synchronous projection", async () => {
     const database = await memoryDatabase();
     try {
-      const original = ControlPlane.prototype.list;
-      vi.spyOn(ControlPlane.prototype, "list").mockImplementationOnce(function(this: ControlPlane) {
-        stage(database.authority); return original.call(this);
+      const original = TaskTimeline.prototype.overview;
+      vi.spyOn(TaskTimeline.prototype, "overview").mockImplementationOnce(function(this: TaskTimeline, limit?: number) {
+        stage(database.authority); return original.call(this, limit);
       });
       await expect(new DashboardReadModel(database.authority, { inspect: async () => observation }).overview(now))
         .rejects.toThrow("DASHBOARD_READ_MUTATED");
+      expect(database.authority.db.prepare("SELECT request_id FROM control_command_requests WHERE request_id='overview-concurrent-command'").get())
+        .toBeUndefined();
+    } finally { closeMemoryDatabase(database); }
+  });
+  it("computes only one bounded timeline while retaining current pending counts", async () => {
+    const database = await memoryDatabase();
+    const timeline = vi.spyOn(TaskTimeline.prototype, "overview");
+    try {
+      stage(database.authority);
+      const result = await new DashboardReadModel(database.authority, { inspect: async () => observation }).overview(now);
+      expect(timeline.mock.calls).toEqual([[20]]);
+      expect(result.cards.find(card => card.id === "pending-approvals")?.value).toBe(1);
+      expect(result.generated_at).toBe(now.toISOString());
     } finally { closeMemoryDatabase(database); }
   });
 });

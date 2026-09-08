@@ -1,5 +1,4 @@
 import { JarvisError, type AuthorityDb } from "../db.js";
-import { currentStateFromDoctor } from "../state-projection.js";
 import { passiveCapabilityProbe, runDoctor } from "../doctor.js";
 import { TaskTimeline, type TaskTimelineSummary } from "../recommendation-timeline.js";
 import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
@@ -65,31 +64,32 @@ export class DashboardReadModel {
     // the synchronous DB projection, and share one provider observation with doctor.
     const doctor = await runDoctor(this.db, now, passiveCapabilityProbe(), this.secondBrainProbe);
     const secondBrain = doctor.second_brain;
-    const before = changeCount(this.db);
-    const projection = currentStateFromDoctor(this.db, doctor, now);
-    const tasks = new TaskTimeline(this.db).overview(RECENT_TASK_LIMIT);
-    const approvals = pendingControlSummary(this.db, now);
-    const agents = listedAgents(this.db, now);
-    const portfolio = new PortfolioProjection(this.db).overview(now);
-    if (changeCount(this.db) !== before) throw new JarvisError("DASHBOARD_READ_MUTATED");
-    const recent_tasks = tasks.recent.map(toOverviewTask);
-    const pending_approvals = approvals.items;
-    const risks = projection.risks.flatMap(toOverviewRisk);
-    const overview = redactDashboardValue({
-      schema_version: DASHBOARD_SCHEMA_VERSION,
-      generated_at: projection.generated_at,
-      cards: overviewCards({
-        activeWork: tasks.activeCount,
-        agents: agents.filter(agent => agent.status === "live").length,
-        pending: approvals.total,
-        risks: risks.length,
-      }),
-      recent_tasks,
-      pending_approvals,
-      risks,
-      agents,
-    });
-    return { ...overview, portfolio: redactDashboardValue(portfolio), second_brain: redactDashboardValue(secondBrain) };
+    return this.db.db.transaction(() => {
+      const before = changeCount(this.db);
+      const tasks = new TaskTimeline(this.db).overview(RECENT_TASK_LIMIT);
+      const approvals = pendingControlSummary(this.db, now);
+      const agents = listedAgents(this.db, now);
+      const portfolio = new PortfolioProjection(this.db).overview(now);
+      if (changeCount(this.db) !== before) throw new JarvisError("DASHBOARD_READ_MUTATED");
+      const risks: OverviewRisk[] = doctor.checks.filter(check => !check.ok).map(check => ({
+        id: check.code ?? "CHECK_FAILED", severity: "high", message: check.name,
+      }));
+      const overview = redactDashboardValue({
+        schema_version: DASHBOARD_SCHEMA_VERSION,
+        generated_at: now.toISOString(),
+        cards: overviewCards({
+          activeWork: tasks.activeCount,
+          agents: agents.filter(agent => agent.status === "live").length,
+          pending: approvals.total,
+          risks: risks.length,
+        }),
+        recent_tasks: tasks.recent.map(toOverviewTask),
+        pending_approvals: approvals.items,
+        risks,
+        agents,
+      });
+      return { ...overview, portfolio: redactDashboardValue(portfolio), second_brain: redactDashboardValue(secondBrain) };
+    }).deferred();
   }
 
   listTasks(limit: number): TaskListResponse {
@@ -165,12 +165,4 @@ function toOverviewTask(task: TaskTimelineSummary): OverviewTask {
     pending_approval: task.pending_approval,
     source_ids: [...task.source_ids],
   };
-}
-
-function toOverviewRisk(value: unknown): readonly OverviewRisk[] {
-  if (typeof value !== "object" || value === null) return [];
-  const name = "name" in value && typeof value.name === "string" ? value.name : undefined;
-  if (name === undefined) return [];
-  const code = "code" in value && typeof value.code === "string" ? value.code : name;
-  return [{ id: code, severity: "high", message: name }];
 }

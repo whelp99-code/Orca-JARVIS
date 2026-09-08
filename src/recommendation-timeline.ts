@@ -86,8 +86,9 @@ export class TaskTimeline {
       const projections = new MemoryProjectionAuthority(this.authority);
       projections.assertReady();
       const population = new TaskTimelinePopulation(this.authority);
-      const recent: TaskTimelineSummary[] = population.list(limit, true);
-      let activeCount = population.activeCount(true);
+      const base = population.overview(limit, true);
+      const recent: TaskTimelineSummary[] = base.recent;
+      let activeCount = base.activeCount;
       const rows = population.recommendationRows(SUMMARY_SQL);
       for (const value of rows) {
         const row = persistenceRow(value);

@@ -90,12 +90,12 @@ describe("complete active task population", () => {
     expect(timeline.overview()).toEqual({ activeCount: 0, recent: [] });
   });
 
-  it("uses one snapshot when another connection commits between page and count", async () => {
+  it("uses one snapshot when another connection commits between base population and recommendation reads", async () => {
     const db = await database(); intent(db, "before");
     const writer = new AuthorityDb(db.filename);
     try {
-      const original = TaskTimelinePopulation.prototype.list;
-      vi.spyOn(TaskTimelinePopulation.prototype, "list").mockImplementationOnce(function(this: TaskTimelinePopulation, ...args) {
+      const original = TaskTimelinePopulation.prototype.overview;
+      vi.spyOn(TaskTimelinePopulation.prototype, "overview").mockImplementationOnce(function(this: TaskTimelinePopulation, ...args) {
         const result = original.apply(this, args); intent(writer, "during"); return result;
       });
       expect(new TaskTimeline(db).overview()).toMatchObject({ activeCount: 1, recent: [{ task_id: "before" }] });

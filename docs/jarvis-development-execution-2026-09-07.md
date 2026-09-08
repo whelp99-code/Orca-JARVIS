@@ -493,3 +493,13 @@
 - 대상1000/10000개를100개 페이지로 순회해 중복0/누락0, EXPLAIN 부분 인덱스·tuple seek·ORDER BY임시B-tree0, cursor 이후 차단 즉시반영/GET쓰기0을 확인했다. 실제 built Chromium은105개를50→50→5로 이동/첫페이지복귀, overview카드105/미리보기20/pageErrors0. 임시 데이터 제거. 첫 규모 probe의 두번째 DB 교체 후 이전model 참조 오류는 수정하고 최종 exit0이다.
 - 증거 루트 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/`의 `control-page-live.mjs/json/log`, `control-page-live-closed-fixture.log`, `control-page-overview-browser.png`, `control-page-*.log`. 설계와 측정 조건은 `docs/planning/adr-dashboard-control-pagination.md`.
 - P2-16의 전체overview state projection/timeline 비용과 다른 목록 범위/페이지 처리는 남는다. memory-store 큐 보류/자동기억 원본차단 HOLD, 전체01–25/운영 인수 미완료를 유지한다. 운영DB/서비스/release/push 변경0.
+
+## 2026-09-08 P2-16 — overview 중복 projection과 population 조회
+
+- 직전 인계 확인 턴은 자비스 개발 기준 no progress였다. 재개 시 HEAD63bdd02, 남은 소스/검사5파일과 실제 측정 산출물을 대조했다. 별도 memory CLI 커밋은 보존하고 이 단위를 마무리한다.
+- overview에서 사용하지 않는 CURRENT_STATE 전체 계산과500개 timeline을 제거했다. 기존 doctor 검사와 provider 관측 이후 동기 조회를 하나의 snapshot으로 묶고 쓰기 감지 실패 시 rollback한다. 기존 응답/redaction 깊이와 추천 전체 identity/event 검증을 유지한다.
+- 기본 visible population의 최근20개와 전체 활성 수를 한 SQL로 읽는다. 최초 초안은 LIMIT 전 source_ids 집계로1만 건6.9~7.2초 회귀가 발생하여 실행 중단/EXPLAIN 대조 후 폐기했다. bounded MATERIALIZED recent를 확정한 뒤 source_ids를 집계하는 최종안으로 재검증했다.
+- 관련 backend10고유파일49개 통과, 최종 SQL 수정 후4파일20개/29.74초 및 reviewability2개 통과. build/typecheck/lint 통과, 마지막 SQL 이후 backend build/lint 재통과. 독립 리뷰 최종 필수 결함0. 새 전체 verify 통과를 의미하지 않는다(최신 전체 gate SHA704f238).
+- 실제1만/10만 합성 명령 overview 이전5표본 p95=774.761/7400.408ms→이후10표본164.486/1338.501ms. HTTP5표본148.131/1251.268ms. prepare6137/60137→104, population statement6→2. SQLite내부 연산 수나 일정 시간 복잡도로 확대하지 않는다.
+- 두 규모에서 전체 응답 및 원본 quarantine 이후 응답이 이전본과 일치하고 GET DB쓰기0이었다. 실제 built Chromium10만 건 최초표시10871ms, 카드9999/미리보기20→추가차단후카드9998, pageErrors0. 임시 자원 제거 확인. 최초표시 지연과500건 작업 목록/초기 재조회 비용은 후속 실측 대상이다.
+- 근거와 한계는 `docs/planning/adr-dashboard-overview-query.md`, 증거 루트의 `overview-projection-live.mjs/json/log` 및 해당 ADR의 검사/실패 로그 목록에 기록했다. 전체01–25/운영 인수 미완료, 자동기억 원본차단 HOLD와 memory-store 큐 보류 유지. 운영/배포/push 변경0.
