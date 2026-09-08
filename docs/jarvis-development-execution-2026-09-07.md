@@ -1067,3 +1067,19 @@
 - 부모가 전체diff를 검토했다. 동종 morning/evening 문자열 검사에는 이미
   문자열끝 검사가 있어 추가 제품변경은 없다. 전체01–25 목표는 유지한다.
   고정c9062b2 전체verify61099 실행 중이며 이번 변경은 해당gate에서 제외된다.
+
+## 2026-09-09 — 항목18 커넥터 fixture 초기화 비용 축소
+
+- 커넥터 전용 fixture에서 실제 migrate()로 만든 빈 스키마 이미지 한 개를
+  모듈내 재사용한다. 테스트마다 별도0600 DB파일과 새 AuthorityDb를 만들고
+  현재migration checksum을 재검사한다. 제품·일반helper·migration테스트 변경0.
+- 기존63tests/6files45.57s→기존63+신규2tests/7files11.77s. 단일실행 실측이며
+  전체suite 속도 개선 수치가 아니다. final build/lint/3types도 exit0(96391).
+- 신규검증은 전체schema/기본데이터, 설치시각2필드의 형식, integrity/FK,
+  동시복제·쓰기격리·checksum손상격리다. 초기1실패는 quarantine 설치시각
+  차이였으며 허용되는 시간필드를 명시한 후 통과했다.
+- 실제 컴파일fixture5표본: fresh513.4–545.5ms, 최초seed442.1ms,
+  복제+검사13.8–29.9ms(56080 exit0). 실험DB제거·모델0·운영0.
+- docs/planning/adr-connector-schema-fixture.md에 근거/제한 기록. 설치시각이나
+  마이그레이션 적용 자체를 시험하는 fixture로 확장하지 않는다.
+  고정c9062b2 verify61099와 전체01–25 목표는 계속 진행 중이다.

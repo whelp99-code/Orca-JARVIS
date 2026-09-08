@@ -1,5 +1,4 @@
 import {
-  AuthorityDb,
   SECOND_BRAIN_FROZEN_DIGEST,
   SECOND_BRAIN_PROTOCOL_VERSION,
   SECOND_BRAIN_REQUIRED_TOOLS,
@@ -11,7 +10,7 @@ import { signPortfolioEnvelope } from "../../src/dashboard/portfolio-auth.js";
 import { SecondBrainTransportError, type SecondBrainReadMethod } from "../../src/second-brain-transport.js";
 import { page } from "./second-brain-adapter-fixtures.js";
 import { localReport } from "./portfolio-report.js";
-import { tempDb } from "../helpers.js";
+import { migratedConnectorDb } from "./migrated-connector-db.js";
 
 export const CONNECTOR_NOW = new Date("2026-08-28T12:00:00.000Z");
 const DIGEST = `sha256:${"a".repeat(64)}`;
@@ -78,8 +77,7 @@ function transportCall(options: HarnessOptions) {
 }
 
 export async function connectorHarness(options: HarnessOptions = {}) {
-  const db = new AuthorityDb(tempDb());
-  await db.migrate();
+  const db = await migratedConnectorDb();
   const key = options.portfolio_key ?? Buffer.alloc(32, 7);
   const envelope = options.portfolio_envelope ?? Buffer.from(JSON.stringify(signPortfolioEnvelope(localReport({
     reported_at: options.portfolio_reported_at ?? CONNECTOR_NOW.toISOString(),
