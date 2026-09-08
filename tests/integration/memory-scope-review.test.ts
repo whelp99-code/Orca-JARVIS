@@ -8,6 +8,7 @@ import { verifiedMemoryInput, MEMORY_NOW } from "../fixtures/memory-candidate-fi
 import { memoryDatabase, closeMemoryDatabase, seedMemoryAuthority, memoryCandidateStore, memoryTableCounts } from "../fixtures/memory-candidate-store.js";
 import type { AuthorityDb } from "../../src/db.js";
 import { prepareMemoryScopedWriteIdentity } from "../../src/memory-scoped-write-identity.js";
+import { prepareMemoryScopedWritePayload } from "../../src/memory-scoped-write-payload.js";
 
 function receipt(authority: AuthorityDb, command: StoredControlCommand, now: Date) {
   return signCommandApproval({ schema_version: 1, receipt_id: `receipt:${command.request_id}`, request_id: command.request_id,
@@ -33,6 +34,15 @@ it("binds an existing signed owner approval to the exact scope and denies pendin
     const control = new ControlPlane(f.authority); control.decide(receipt(f.authority, command, now), now);
     const approvedCounts = memoryTableCounts(f.authority);
     const identity = prepareMemoryScopedWriteIdentity(f.authority, proposal, command.request_id, now);
+    const prepared = prepareMemoryScopedWritePayload(f.authority, proposal, command.request_id, input.subject, input.statement, now);
+    expect(prepared.payload.content).toBe(input.statement);
+    expect(prepared.binding).toEqual(identity);
+    expect(prepared.writes_authorized).toBe(false);
+    for (const [subject, content] of [[input.subject, "changed outcome"], ["changed subject", input.statement], [input.subject, "\0"]]) {
+      expect(() => prepareMemoryScopedWritePayload(f.authority, proposal, command.request_id, subject, content, now))
+        .toThrow("MEMORY_SCOPED_PAYLOAD_INVALID");
+    }
+    expect(memoryTableCounts(f.authority)).toEqual(approvedCounts);
     expect(identity.writes_authorized).toBe(false);
     const later = new Date(now.getTime() + 1);
     const repeated = proposeMemoryCandidateScope(f.authority, candidate.candidate_id, scope, later);
