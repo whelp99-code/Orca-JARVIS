@@ -1,3 +1,5 @@
+import { spawnSync } from "node:child_process";
+import { randomUUID } from "node:crypto";
 import { chmodSync, linkSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -65,4 +67,26 @@ it("does not silently normalize a UTF-8 BOM or malformed encoding", () => {
     writeFileSync(published.path, Buffer.concat([prefix, Buffer.from(canonicalize(request))]));
     expect(() => spool.read(request.idempotency_key, now)).toThrow();
   }
+});
+
+it("recovers only the exact hardlink left by a terminated publisher", () => {
+  const { root, spool } = fixture(); const raw = canonicalize(request);
+  const published = spool.publish(raw, now); const inode = statSync(published.path).ino;
+  const child = spawnSync(process.execPath, ["-e", `
+    const fs=require('node:fs'),crypto=require('node:crypto');
+    const path=process.argv[2]+'/.scoped-write-'+process.pid+'-'+crypto.randomUUID()+'.tmp';
+    fs.linkSync(process.argv[1],path);process.exit(73);
+  `, published.path, root], { timeout: 5000 });
+  expect(child.status).toBe(73); expect(statSync(published.path).nlink).toBe(2);
+  expect(() => spool.read(request.idempotency_key, now)).toThrow("MEMORY_SPOOL_FILE_INVALID");
+  expect(spool.publish(raw, now).created).toBe(false);
+  expect(statSync(published.path).nlink).toBe(1); expect(statSync(published.path).ino).toBe(inode);
+  expect(spool.read(request.idempotency_key, now)).toEqual(request);
+});
+it.each(["live", "unknown"])("preserves a %s publisher link instead of guessing ownership", mode => {
+  const { root, spool } = fixture(); const raw = canonicalize(request); const published = spool.publish(raw, now);
+  const temp = join(root, mode === "live" ? `.scoped-write-${process.pid}-${randomUUID()}.tmp` : "unknown.tmp");
+  linkSync(published.path, temp);
+  expect(() => spool.publish(raw, now)).toThrow(mode === "live" ? "MEMORY_SPOOL_PUBLISHER_ACTIVE" : "MEMORY_SPOOL_RECOVERY_UNPROVED");
+  expect(statSync(temp).nlink).toBe(2); expect(readFileSync(published.path, "utf8")).toBe(raw);
 });

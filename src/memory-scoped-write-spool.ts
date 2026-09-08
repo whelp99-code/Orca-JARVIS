@@ -1,5 +1,5 @@
 import { join } from "node:path";
-import { inspectPrivateSpoolRoot, readPrivateSpoolFile, writePrivateSpoolFile, type PrivateSpoolRoot } from "./memory-private-spool-files.js";
+import { inspectPrivateSpoolRoot, recoverPrivateSpoolPublication, readPrivateSpoolFile, writePrivateSpoolFile, type PrivateSpoolRoot } from "./memory-private-spool-files.js";
 import { parseMemoryScopedWriteRequestJson } from "./memory-scoped-write-codec.js";
 import { JarvisError } from "./db.js";
 
@@ -27,6 +27,7 @@ export class MemoryScopedWriteSpool {
     const request = parseMemoryScopedWriteRequestJson(raw, this.provider, now);
     const path = this.path(request.idempotency_key);
     const created = writePrivateSpoolFile(this.root, path, Buffer.from(raw), "scoped-write");
+    recoverPrivateSpoolPublication(this.root, path, Buffer.from(raw), "scoped-write");
     const bytes = readPrivateSpoolFile(this.root, path, 32768);
     if (!bytes.equals(Buffer.from(raw))) throw new JarvisError("SCOPED_WRITE_SPOOL_CONFLICT");
     return Object.freeze({ path, created, request_id: request.request_id, request_digest: request.request_digest,

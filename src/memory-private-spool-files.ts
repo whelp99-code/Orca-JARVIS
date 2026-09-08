@@ -9,6 +9,7 @@ import {
   linkSync,
   mkdirSync,
   openSync,
+  opendirSync,
   readSync,
   rmSync,
   writeSync,
@@ -73,12 +74,16 @@ export function writePrivateSpoolFile(root: PrivateSpoolRoot, path: string, byte
 }
 
 export function readPrivateSpoolFile(root: PrivateSpoolRoot, path: string, maximum = 4_194_304): Buffer {
+  return readPrivateSpoolLinks(root, path, maximum, 1);
+}
+
+function readPrivateSpoolLinks(root: PrivateSpoolRoot, path: string, maximum: number, links: number): Buffer {
   if (!Number.isSafeInteger(maximum) || maximum < 1 || maximum > 4_194_304) throw new Error("MEMORY_SPOOL_LIMIT_INVALID");
   assertPrivateSpoolRoot(root);
   const descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const stat = fstatSync(descriptor);
-    if (!stat.isFile() || stat.nlink !== 1 || (stat.mode & 0o077) !== 0
+    if (!stat.isFile() || stat.nlink !== links || (stat.mode & 0o077) !== 0
       || !ownedByCurrentUser(stat.uid) || stat.size > maximum) throw new Error("MEMORY_SPOOL_FILE_INVALID");
     const bytes = Buffer.alloc(stat.size + 1);
     let offset = 0;
@@ -92,7 +97,7 @@ export function readPrivateSpoolFile(root: PrivateSpoolRoot, path: string, maxim
     assertPrivateSpoolRoot(root);
     if (offset !== stat.size || [after, named].some(value => !value.isFile()
       || value.dev !== stat.dev || value.ino !== stat.ino || value.size !== stat.size
-      || value.nlink !== 1 || value.mode !== stat.mode || value.uid !== stat.uid
+      || value.nlink !== links || value.mode !== stat.mode || value.uid !== stat.uid
       || value.mtimeMs !== stat.mtimeMs || value.ctimeMs !== stat.ctimeMs)) {
       throw new Error("MEMORY_SPOOL_FILE_CHANGED");
     }
@@ -100,6 +105,54 @@ export function readPrivateSpoolFile(root: PrivateSpoolRoot, path: string, maxim
   } finally {
     closeSync(descriptor);
   }
+}
+
+/** Recover only a dead publisher's exact final+temporary hardlink pair.
+ * Unknown links and live/reused PIDs remain untouched. Ordinary readers require
+ * one link; this bounded exception is used only by explicit publication retry. */
+export function recoverPrivateSpoolPublication(root: PrivateSpoolRoot, path: string, expected: Buffer, prefix: string): boolean {
+  assertPrivateSpoolRoot(root);
+  const final = lstatSync(path);
+  if (final.nlink === 1) return false;
+  if (!/^[a-z][a-z-]{0,63}$/.test(prefix) || !final.isFile() || final.nlink !== 2) {
+    throw new Error("MEMORY_SPOOL_FILE_INVALID");
+  }
+  const bytes = readPrivateSpoolLinks(root, path, expected.length, 2);
+  if (!bytes.equals(expected)) throw new Error("MEMORY_SPOOL_RECOVERY_CONFLICT");
+  const pattern = new RegExp(`^\\.${prefix}-([1-9][0-9]*)-([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\\.tmp$`);
+  const directory = opendirSync(root.path);
+  let temporary: string | undefined;
+  let pid: number | undefined;
+  let count = 0;
+  try {
+    for (let entry = directory.readSync(); entry !== null; entry = directory.readSync()) {
+      if (++count > 4096) throw new Error("MEMORY_SPOOL_RECOVERY_LIMIT");
+      const match = pattern.exec(entry.name);
+      if (!match) continue;
+      const candidate = `${root.path}/${entry.name}`;
+      const stat = lstatSync(candidate);
+      if (stat.dev !== final.dev || stat.ino !== final.ino) continue;
+      if (temporary !== undefined || !stat.isFile()) throw new Error("MEMORY_SPOOL_FILE_INVALID");
+      temporary = candidate; pid = Number(match[1]);
+    }
+  } finally { directory.closeSync(); }
+  if (temporary === undefined || pid === undefined || !Number.isSafeInteger(pid) || pid > 2_147_483_647) {
+    throw new Error("MEMORY_SPOOL_RECOVERY_UNPROVED");
+  }
+  try { process.kill(pid, 0); throw new Error("MEMORY_SPOOL_PUBLISHER_ACTIVE"); }
+  catch (error) { if (!isErrno(error, "ESRCH")) throw error; }
+  // Recheck both names and contents before unlinking only the recognized temp.
+  const retry = readPrivateSpoolLinks(root, path, expected.length, 2);
+  const named = lstatSync(temporary);
+  const current = lstatSync(path);
+  assertPrivateSpoolRoot(root);
+  if (!retry.equals(expected) || !named.isFile() || named.nlink !== 2
+    || named.dev !== final.dev || named.ino !== final.ino
+    || current.dev !== final.dev || current.ino !== final.ino) throw new Error("MEMORY_SPOOL_FILE_CHANGED");
+  rmSync(temporary);
+  syncPrivateSpoolDirectory(root);
+  if (!readPrivateSpoolFile(root, path, expected.length).equals(expected)) throw new Error("MEMORY_SPOOL_FILE_CHANGED");
+  return true;
 }
 
 export function removePrivateSpoolFile(root: PrivateSpoolRoot, path: string): void {
