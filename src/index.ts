@@ -237,3 +237,5 @@ export type { JarvisLocalSurfaceObservation } from "./memory-managed-surface-sca
 export type { CancellationLocalCompaction } from "./memory-cancellation-compaction.js";
 
 export type { CancellationSettlement } from "./memory-cancellation-settlement.js";
+
+export { createMemoryScopedClient, type MemoryScopedClientOptions } from "./memory-scoped-client.js";
