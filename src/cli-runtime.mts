@@ -11,7 +11,7 @@ import { executeBootstrapCommand, executeCoreCommand } from "./cli-core-commands
 import { executeGjcCommand } from "./cli-gjc-commands.js";
 import { executeDailyCommand } from "./cli-daily-commands.js";
 import { executeWorkRouting, executeExecutorPlanValidation } from "./cli-work-routing.js";
-import { inspectTaskExecutor, inspectTaskExecutors } from "./task-executor-registry.js";
+import { inspectTaskExecutor, inspectTaskExecutors, probeTaskExecutor } from "./task-executor-registry.js";
 import { executeLiveCommand } from "./cli-live-commands.js";
 import { executePreGjcCommand } from "./cli-pre-gjc-commands.js";
 import { executeStateCommand } from "./cli-state-commands.js";
@@ -24,6 +24,7 @@ const CLI_HELP =
   + "routing classify REQUEST.json POLICY.json: preview literal routing rules; no database or agent execution\n"
   + "routing executors | routing executor ID: inspect compiled registrations and configuration presence; no readiness probe\n"
   + "routing validate-plan ID PLAN.json: validate registered input structure; no approval, repository or readiness checks\n"
+  + "routing probe-executor ID: query local CLI login status; no model call or execution authority\n"
   + "daily morning --once --db PATH --input CONFIG: run stored-source morning recovery; provider refresh unavailable\n"
   + "daily evening --once --db PATH --input CONFIG --key-file PATH: publish stored native completions; automatic operation held\n"
   + "runtime identity [--db PATH]: observe this CLI build and persisted daemon identity without migrating the DB\n"
@@ -95,6 +96,9 @@ export async function execute(
     }
     if (subcommand === "executor" && parsed.positionals.length === 3 && argument) {
       return { ok: true, command: "routing.executor", executor: inspectTaskExecutor(argument) };
+    }
+    if (subcommand === "probe-executor" && parsed.positionals.length === 3 && argument) {
+      return { ok: true, command: "routing.probe-executor", executor: await probeTaskExecutor(argument) };
     }
     if (subcommand === "validate-plan" && parsed.positionals.length === 4 && argument && fourth) {
       return executeExecutorPlanValidation(argument, fourth);

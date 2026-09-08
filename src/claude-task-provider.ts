@@ -1,11 +1,10 @@
 import { TASK_PROVIDER_LIMITS } from "./task-execution-limits.js";
 import { spawn } from "node:child_process";
-import { access, realpath, stat } from "node:fs/promises";
-import { constants } from "node:fs";
 import { isAbsolute } from "node:path";
 import { JarvisError } from "./db.js";
 import { taskProcessTimeout } from "./task-process-boundary.js";
 import type { TaskCandidateProvider, TaskProviderRequest } from "./task-candidate-provider.js";
+import { resolveClaudeTaskExecutable, claudeTaskEnvironment } from "./claude-task-host.js";
 
 export function claudeTaskArguments(input: TaskProviderRequest): string[] {
   return ["-p", "--safe-mode", "--tools", "", "--strict-mcp-config", "--disallowedTools", "mcp__*",
@@ -18,17 +17,7 @@ export class ClaudeTaskCandidateProvider implements TaskCandidateProvider {
   readonly provider = "claude" as const;
   constructor(private readonly executable: string) {}
 
-  private async path(): Promise<string> {
-    try {
-      if (!isAbsolute(this.executable)) throw new Error("absolute path required");
-      const executable = await realpath(this.executable); const info = await stat(executable);
-      if (!info.isFile() || (info.mode & 0o022) !== 0) throw new Error("invalid executable");
-      await access(executable, constants.X_OK);
-      return executable;
-    } catch { throw new JarvisError("TASK_PROVIDER_UNAVAILABLE"); }
-  }
-
-  async checkReady(): Promise<void> { await this.path(); }
+  async checkReady(): Promise<void> { await resolveClaudeTaskExecutable(this.executable); }
 
   async generate(input: TaskProviderRequest): Promise<{ output: unknown; output_bytes: number }> {
     const deadline = performance.now() + input.timeout_ms;
@@ -37,9 +26,8 @@ export class ClaudeTaskCandidateProvider implements TaskCandidateProvider {
       || input.timeout_ms > TASK_PROVIDER_LIMITS.max_timeout_ms || !Number.isSafeInteger(input.max_output_bytes)
       || input.max_output_bytes < TASK_PROVIDER_LIMITS.min_output_bytes || input.max_output_bytes > TASK_PROVIDER_LIMITS.max_output_bytes
       || Buffer.byteLength(input.prompt) > TASK_PROVIDER_LIMITS.max_prompt_bytes) throw new JarvisError("TASK_PROVIDER_INPUT_INVALID");
-    const executable = await this.path();
-    const env: NodeJS.ProcessEnv = {};
-    for (const key of ["HOME", "PATH", "LANG", "TZ"]) if (process.env[key] !== undefined) env[key] = process.env[key];
+    const executable = await resolveClaudeTaskExecutable(this.executable);
+    const env = claudeTaskEnvironment(process.env);
     const args = claudeTaskArguments(input);
     return await new Promise<{ output: unknown; output_bytes: number }>((resolve, reject) => {
       const timeout = taskProcessTimeout(deadline, input.before_spawn, "TASK_PROVIDER_TIMEOUT");

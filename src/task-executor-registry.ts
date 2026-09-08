@@ -7,6 +7,7 @@ import type { TaskExecutionRuntime } from "./task-execution-runtime.js";
 import { TASK_EXECUTION_LIMITS } from "./task-execution-limits.js";
 import type { TaskExecutionPlanV2 } from "./task-execution-plan.js";
 import type { TaskCompletion } from "./task-completion-record.js";
+import { probeClaudeTaskAuthentication, CLAUDE_AUTH_PROBE_LIMITS } from "./claude-task-authentication.js";
 
 const CONFIGURATION = Object.freeze(["JARVIS_TASK_CLAUDE_PATH", "JARVIS_TASK_VERIFIER_KEY_PATH", "JARVIS_TASK_VERIFIER_KEY_ID"]);
 const CLAUDE = Object.freeze({
@@ -17,6 +18,7 @@ const CLAUDE = Object.freeze({
   result_contract: Object.freeze({ schema: "TaskCompletion", version: 1 satisfies TaskCompletion["schema_version"],
     authority: "persisted_completion_bindings", candidate_is_completion: false }),
   idempotency: "completed_request_replay_without_reexecution",
+  authentication_probe_limits: CLAUDE_AUTH_PROBE_LIMITS,
 } as const);
 
 function createClaudeRuntime(env: NodeJS.ProcessEnv): TaskExecutionRuntime | undefined {
@@ -33,7 +35,8 @@ function createClaudeRuntime(env: NodeJS.ProcessEnv): TaskExecutionRuntime | und
 }
 
 // Factories are compiled host code. No request or policy payload can register a new executor.
-const REGISTRATIONS = Object.freeze([Object.freeze({ descriptor: CLAUDE, create: createClaudeRuntime })]);
+const REGISTRATIONS = Object.freeze([Object.freeze({ descriptor: CLAUDE, create: createClaudeRuntime,
+  probeAuthentication: probeClaudeTaskAuthentication })]);
 
 export function registeredTaskExecutor(provider: string) {
   return REGISTRATIONS.find(entry => entry.descriptor.provider === provider)?.descriptor;
@@ -55,4 +58,12 @@ export function inspectTaskExecutor(id: string, env: NodeJS.ProcessEnv = process
 
 export function inspectTaskExecutors(env: NodeJS.ProcessEnv = process.env) {
   return REGISTRATIONS.map(entry => inspectTaskExecutor(entry.descriptor.id, env));
+}
+
+export async function probeTaskExecutor(id: string, env: NodeJS.ProcessEnv = process.env) {
+  const inspection = inspectTaskExecutor(id, env);
+  const entry = REGISTRATIONS.find(value => value.descriptor.id === id);
+  const authentication = entry ? await entry.probeAuthentication(env)
+    : { state: "not_probed", remote_verification: "not_performed", reason_code: "TASK_EXECUTOR_UNREGISTERED" };
+  return { ...inspection, authentication, checked_at: new Date().toISOString() };
 }
