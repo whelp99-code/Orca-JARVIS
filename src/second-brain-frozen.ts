@@ -198,7 +198,9 @@ export function inspectFrozenSchemas(observed: unknown, contract: unknown): Sche
     if (keys !== "inputSchema\0name" && (!producer || typeof value.description !== "string"
       || Buffer.byteLength(value.description, "utf8") > DESCRIPTION_BYTES)) return mismatch();
     const tool = contract.tools[value.name]; if (!isRecord(tool)) return mismatch();
-    const inputMatches = value.name === "sb_write_request"
+    const inputMatches = contract.profile === "scoped-record-read-v1"
+      ? cancellationInputCanonical(value.inputSchema) === cancellationInputCanonical(tool.arguments)
+      : value.name === "sb_write_request"
       ? writeInputCanonical(value.inputSchema, contract.schema_version === 5 || contract.schema_version === 6 || contract.schema_version === 7)
         === writeInputCanonical(tool.arguments, contract.schema_version === 5 || contract.schema_version === 6 || contract.schema_version === 7)
       : value.name === "sb_submit_cancellation"

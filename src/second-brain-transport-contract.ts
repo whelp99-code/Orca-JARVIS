@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import type { ChildProcess } from "node:child_process";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
@@ -9,7 +10,7 @@ export const SECOND_BRAIN_LAUNCHER = "/home/jm/.local/state/second-brain/app/cur
 export const SECOND_BRAIN_CONFIG = "/home/jm/.config/second-brain/config.toml";
 export const SECOND_BRAIN_PROTOCOL_VERSION = "2025-11-25";
 export const SECOND_BRAIN_CONTRACT_PROFILE = "task32-schema4" as const;
-export type SecondBrainContractProfile = "task32-schema4" | "remember-schema5" | "cancellation-schema6" | "cancellation-submit-schema7";
+export type SecondBrainContractProfile = "scoped-record-read-v1" | "task32-schema4" | "remember-schema5" | "cancellation-schema6" | "cancellation-submit-schema7";
 export const SECOND_BRAIN_FRAME_BYTES = 1_048_576;
 export const SECOND_BRAIN_DEADLINES = { startup: 5_000, read: 10_000, write: 30_000 } as const;
 export const SECOND_BRAIN_LIMITS = {
@@ -141,11 +142,17 @@ function record(value: unknown): Record<string, unknown> {
 export function loadSecondBrainContract(
   path?: string, profile: SecondBrainContractProfile = SECOND_BRAIN_CONTRACT_PROFILE,
 ): unknown {
-  const filename = profile === "cancellation-submit-schema7" ? "second-brain-mcp-v5.json"
+  const filename = profile === "scoped-record-read-v1" ? "second-brain-scoped-read-v1.json" : profile === "cancellation-submit-schema7" ? "second-brain-mcp-v5.json"
     : profile === "cancellation-schema6" ? "second-brain-mcp-v4.json"
     : profile === "remember-schema5" ? "second-brain-mcp-v3.json" : "second-brain-mcp-v1.json";
   const contractPath = path ?? fileURLToPath(new URL(`../contracts/${filename}`, import.meta.url));
   try {
+    if (profile === "scoped-record-read-v1") {
+      const bytes = readFileSync(contractPath);
+      const digest = createHash("sha256").update(bytes).digest("hex");
+      if (digest !== "2c0bc8a467cb3f89f7c8cdb7df0a4eceb9790250b05d3fecffc13fb485417a7b" || readFileSync(`${contractPath}.sha256`, "ascii") !== `${digest}\n`) throw new Error("profile mismatch");
+      return JSON.parse(bytes.toString("utf8"));
+    }
     if (profile !== "task32-schema4" && profile !== "remember-schema5" && profile !== "cancellation-schema6" && profile !== "cancellation-submit-schema7") throw new Error("unknown profile");
     const summary = consumeSecondBrainContract(contractPath);
     if (summary.schemaVersion !== (profile === "cancellation-submit-schema7" ? 7 : profile === "cancellation-schema6" ? 6 : profile === "remember-schema5" ? 5 : 4)) throw new Error("profile mismatch");

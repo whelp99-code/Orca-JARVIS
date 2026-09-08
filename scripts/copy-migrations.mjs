@@ -10,6 +10,9 @@ await cp("migrations", join(output, "migrations"), { recursive: true });
 await rm(join(output, "contracts"), { recursive: true, force: true });
 await mkdir(join(output, "contracts"), { recursive: true });
 for (const name of ["second-brain-mcp-v1.json", "second-brain-mcp-v1.json.sha256",
-  "second-brain-mcp-v3.json", "second-brain-mcp-v3.json.sha256"]) {
+  "second-brain-mcp-v3.json", "second-brain-mcp-v3.json.sha256",
+  "second-brain-mcp-v4.json", "second-brain-mcp-v4.json.sha256",
+  "second-brain-mcp-v5.json", "second-brain-mcp-v5.json.sha256",
+  "second-brain-scoped-read-v1.json", "second-brain-scoped-read-v1.json.sha256"]) {
   await cp(join("contracts", name), join(output, "contracts", name));
 }
