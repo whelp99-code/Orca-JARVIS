@@ -48,13 +48,17 @@ function proof() {
 }
 
 describe("provider disposition proof", () => {
-  it("requires an exact release-pinned signature and transport binding", async () => {
+  it.each([
+    ["2026-08-31T00:00:00.000Z", true],
+    ["2026-08-31T00:00:03.000Z", true],
+    ["2026-08-31T00:00:03.001Z", false],
+  ] as const)("binds proof completion to key validity beginning %s", async (validFrom, allowed) => {
     const db = new AuthorityDb(tempDb()); await db.migrate();
     try {
       registerMemoryProviderProofKey(db, { key_id: "provider:key", provider_instance_id: request.provider_instance_id,
         provider_release_sha: "a".repeat(40), public_key_pem: createPublicKey(providerKey)
           .export({ format: "pem", type: "spki" }).toString(),
-        valid_from: "2026-08-31T00:00:00.000Z", valid_until: "2026-09-01T00:00:00.000Z" },
+        valid_from: validFrom, valid_until: "2026-09-01T00:00:00.000Z" },
       new Date("2026-08-31T00:00:00.000Z"));
       const expected = { provider_instance_id: request.provider_instance_id, request_id: request.request_id,
         request_digest: request.request_digest, envelope_digest: request.envelope_digest,
@@ -64,8 +68,10 @@ describe("provider disposition proof", () => {
         target_manifest_digest: request.target_manifest_digest, scope_digest: request.scope_digest,
         tombstone_sequence: request.tombstone_high_water.sequence,
         tombstone_set_root: request.tombstone_high_water.set_root };
-      expect(verifyMemoryDispositionProof(db, proof(), expected,
-        new Date("2026-08-31T00:00:04.000Z")).proof_type).toBe("correction");
+      const verify = () => verifyMemoryDispositionProof(db, proof(), expected,
+        new Date("2026-08-31T00:00:04.000Z"));
+      if (allowed) expect(verify().proof_type).toBe("correction");
+      else expect(verify).toThrow("MEMORY_PROVIDER_PROOF_KEY_INVALID");
       expect(() => verifyMemoryDispositionProof(db, { ...proof(), envelope_digest: `sha256:${"0".repeat(64)}` },
         expected, new Date("2026-08-31T00:00:04.000Z"))).toThrow("MEMORY_PROVIDER_PROOF_BINDING_INVALID");
     } finally { db.close(); }

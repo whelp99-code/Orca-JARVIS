@@ -110,9 +110,11 @@ export function verifyMemoryDispositionProof(
   const key = authority.db.prepare(
     `SELECT public_key_pem FROM memory_provider_proof_keys
      WHERE key_id=? AND provider_instance_id=? AND provider_release_sha=? AND state='active'
+       AND valid_from<=? AND valid_until>?
        AND valid_from<=? AND valid_until>?`,
   ).get(proof.provider_signing_key_id, proof.provider_instance_id,
-    proof.provider_release_sha, now.toISOString(), now.toISOString()) as
+    proof.provider_release_sha, now.toISOString(), now.toISOString(),
+    proof.completed_at, proof.completed_at) as
     { readonly public_key_pem: string } | undefined;
   if (key === undefined) throw new JarvisError("MEMORY_PROVIDER_PROOF_KEY_INVALID");
   const signed = Object.fromEntries(Object.entries(complete).filter(([name]) => name !== "signature"));
