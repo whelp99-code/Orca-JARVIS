@@ -99,7 +99,7 @@ describe("dashboard store SSE refetch", () => {
     const before = { ...current.client.calls };
     const refreshed = onceState(
       current.store,
-      () => current.client.calls.tasks === before.tasks + 1 && current.client.calls.task === before.task + 1,
+      () => current.client.calls.tasks === before.tasks + 1 && current.client.calls.task === before.task,
     );
     current.source.emit("reconcile", frame("reconcile", ["tasks", "task:task-1"], "inst:2"));
     await refreshed;

@@ -28,7 +28,7 @@ export type AuthorityMutationClient = Readonly<{
   taskExecution?: TaskExecutionClient;
 }>;
 export type TaskExecutionClient = Readonly<{
-  read: (taskId: string) => Promise<DashboardTaskExecution>;
+  read: (taskId: string, signal?: AbortSignal) => Promise<DashboardTaskExecution>;
   prepare: (taskId: string, request: PrepareTaskExecutionRequest) => Promise<PreparedDashboardTaskExecution>;
   stage: (taskId: string, request: StageDashboardTaskExecutionRequest) => Promise<StoredControlCommand>;
   check: (taskId: string, plan: TaskExecutionPlanV2) => Promise<DashboardTaskReadiness>;
@@ -118,9 +118,9 @@ export function createAuthorityMutationClient(
             || (value.readiness.state === "unavailable" && typeof value.readiness.reason_code !== "string")) return undefined;
           return value as DashboardTaskReadiness;
         } }),
-      read: async taskId => {
+      read: async (taskId, signal) => {
         const response = await request(`/api/v1/tasks/${encodeURIComponent(taskId)}/execution`,
-          { headers: { Accept: "application/json", [CSRF_HEADER]: await csrfToken() } });
+          { headers: { Accept: "application/json", [CSRF_HEADER]: await csrfToken() }, signal });
         const body = await responseBody(response);
         if (!response.ok) throw errorFromResponse(response, body);
         const parsed = parseTaskExecution(body, taskId);
@@ -189,7 +189,7 @@ async function request(path: string, init: RequestInit, timeout = REQUEST_TIMEOU
     return await fetch(path, {
       ...init,
       credentials: "same-origin",
-      signal: AbortSignal.timeout(timeout),
+      signal: init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(timeout)]) : AbortSignal.timeout(timeout),
     });
   } catch (error: unknown) {
     if (error instanceof TypeError || error instanceof DOMException) {

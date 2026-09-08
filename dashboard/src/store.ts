@@ -1,3 +1,4 @@
+import { createCoalescedRefresh } from "./coalesced-refresh.js";
 import type { OverviewResponse } from "../../src/dashboard/read-model.js";
 import { classifyDashboardError } from "./api.js";
 import { PortfolioFreshnessTimer } from "./portfolio-freshness.js";
@@ -23,6 +24,8 @@ export function createDashboardStore(options: DashboardStoreOptions) {
   let generation = 0;
   let running = false;
   let source: EventSourceLike | undefined;
+  let connectionVersion = 0;
+  let snapshotConnectionVersion = 0;
   const freshnessTimer = new PortfolioFreshnessTimer();
   const listeners = new Set<() => void>();
   const executionOperations = createTaskExecutionOperations(value => assign({ taskExecutionOperations: value }));
@@ -33,6 +36,26 @@ export function createDashboardStore(options: DashboardStoreOptions) {
       executionOperations.observe(value.resource.data);
     }
   });
+
+  let reads = createReads(generation);
+  let snapshotRefresh = createSnapshotRefresh(generation);
+
+  function createReads(token: number) {
+    return {
+      overview: createCoalescedRefresh(signal => loadOverview(token, signal)),
+      tasks: createCoalescedRefresh(signal => loadTasks(token, signal)),
+      agents: createCoalescedRefresh(signal => loadAgents(token, signal)),
+      approvals: createCoalescedRefresh(signal => loadApprovals(token, signal)),
+    };
+  }
+
+  function createSnapshotRefresh(token: number) {
+    return createCoalescedRefresh(async () => {
+      const version = snapshotConnectionVersion;
+      await refetch(token, SNAPSHOT_TOPICS);
+      if (token === generation && version === connectionVersion) assign({ connectionState: "live" });
+    });
+  }
 
   function getSnapshot(): DashboardState {
     return state;
@@ -50,6 +73,11 @@ export function createDashboardStore(options: DashboardStoreOptions) {
 
   function stop(): void {
     generation += 1;
+    connectionVersion += 1;
+    snapshotRefresh.close();
+    for (const read of Object.values(reads)) read.close();
+    reads = createReads(generation);
+    snapshotRefresh = createSnapshotRefresh(generation);
     running = false;
     freshnessTimer.clear();
     source?.close(); source = undefined;
@@ -59,15 +87,15 @@ export function createDashboardStore(options: DashboardStoreOptions) {
   async function refreshOverview(): Promise<void> { await refetch(generation, ["overview"]); }
   async function refreshTasks(): Promise<void> {
     const token = generation; assign({ tasks: { status: "retrying" } });
-    await loadTasks(token);
+    await refetch(token, ["tasks"]);
   }
   async function refreshAgents(): Promise<void> {
     const token = generation; assign({ agents: { status: "retrying" } });
-    await loadAgents(token);
+    await refetch(token, ["agents"]);
   }
   async function refreshApprovals(): Promise<void> {
     const token = generation; assign({ approvals: { status: "retrying" } });
-    await loadApprovals(token);
+    await refetch(token, ["approvals"]);
   }
 
   async function begin(token: number): Promise<void> {
@@ -84,89 +112,78 @@ export function createDashboardStore(options: DashboardStoreOptions) {
     if (token !== generation) return;
     const next = options.eventSourceFactory(EVENTS_PATH);
     source = next;
-    next.addEventListener("snapshot", (event) => { void onFrame(token, "snapshot", event); });
-    next.addEventListener("reconcile", (event) => { void onFrame(token, "reconcile", event); });
+    next.addEventListener("snapshot", (event) => { onFrame(token, "snapshot", event); });
+    next.addEventListener("reconcile", (event) => { onFrame(token, "reconcile", event); });
     next.onopen = () => {
       if (token !== generation) return;
+      connectionVersion += 1;
       assign({ connectionState: "live" });
     };
     next.onerror = () => {
       if (token !== generation) return;
+      connectionVersion += 1;
       assign({ connectionState: "reconnecting" });
     };
   }
 
-  async function onFrame(token: number, type: "snapshot" | "reconcile", event: Event): Promise<void> {
+  function onFrame(token: number, type: "snapshot" | "reconcile", event: Event): void {
     if (token !== generation) return;
     const topics = parseTopics(event);
     if (topics === undefined) return;
-    switch (type) {
-      case "snapshot":
-        await refetch(token, SNAPSHOT_TOPICS);
-        if (token !== generation) return;
-        assign({ connectionState: "live" });
-        return;
-      case "reconcile":
-        await refetch(token, topics);
-        return;
-      default:
-        return assertNever(type);
+    if (type === "snapshot") {
+      snapshotConnectionVersion = connectionVersion;
+      void snapshotRefresh.request();
+    } else {
+      // No Promise.all/awaiter per event: each read owns one shared pending batch.
+      requestTopics(token, topics);
     }
   }
 
   async function refetch(token: number, topics: readonly string[]): Promise<void> {
-    if (token !== generation) return;
+    await Promise.all(requestTopics(token, topics));
+  }
+
+  function requestTopics(token: number, topics: readonly string[]): Promise<void>[] {
+    if (token !== generation) return [];
     const wanted = wantedTopics(topics);
     const pending = pendingPatch(wanted);
     if (pending !== undefined) assign(pending);
-    const jobs: Array<Promise<void>> = [];
-    jobs.push(execution.reconcile(topics));
-    if (wanted.overview) jobs.push(loadOverview(token));
-    if (wanted.tasks) jobs.push(loadTasks(token));
-    if (wanted.agents) jobs.push(loadAgents(token));
-    if (wanted.approvals) jobs.push(loadApprovals(token));
-    for (const taskId of wanted.taskIds) jobs.push(loadTask(token, taskId));
-    await Promise.all(jobs);
+    const jobs = [execution.reconcile(topics)];
+    if (wanted.overview) jobs.push(reads.overview.request());
+    if (wanted.tasks) jobs.push(reads.tasks.request());
+    if (wanted.agents) jobs.push(reads.agents.request());
+    if (wanted.approvals) jobs.push(reads.approvals.request());
+    return jobs;
   }
 
-  async function loadOverview(token: number): Promise<void> {
+  async function loadOverview(token: number, signal: AbortSignal): Promise<void> {
     try {
-      const data = await options.client.overview();
+      const data = await options.client.overview(signal);
       if (token !== generation) return;
       assign({ overview: collectionState(data, isOverviewEmpty) });
       scheduleFreshnessRefresh(token, data.portfolio);
     } catch (error: unknown) { failResource(token, "overview", error); }
   }
-  async function loadTasks(token: number): Promise<void> {
+  async function loadTasks(token: number, signal: AbortSignal): Promise<void> {
     try {
-      const data = await options.client.tasks();
+      const data = await options.client.tasks(signal);
       if (token !== generation) return;
       assign({ tasks: collectionState(data, isListEmpty) });
     } catch (error: unknown) { failResource(token, "tasks", error); }
   }
-  async function loadAgents(token: number): Promise<void> {
+  async function loadAgents(token: number, signal: AbortSignal): Promise<void> {
     try {
-      const data = await options.client.agents();
+      const data = await options.client.agents(signal);
       if (token !== generation) return;
       assign({ agents: collectionState(data, isListEmpty) });
     } catch (error: unknown) { failResource(token, "agents", error); }
   }
-  async function loadApprovals(token: number): Promise<void> {
+  async function loadApprovals(token: number, signal: AbortSignal): Promise<void> {
     try {
-      const data = await options.client.controlRequests();
+      const data = await options.client.controlRequests(signal);
       if (token !== generation) return;
       assign({ approvals: collectionState(data, isListEmpty) });
     } catch (error: unknown) { failResource(token, "approvals", error); }
-  }
-
-  async function loadTask(token: number, taskId: string): Promise<void> {
-    try {
-      await options.client.task(taskId);
-    } catch (error: unknown) {
-      if (token !== generation) return;
-      if (error instanceof Error) return;
-      throw error;
-    }
   }
 
   function failResource(token: number, key: "overview" | "tasks" | "agents" | "approvals", error: unknown): void {
@@ -249,9 +266,8 @@ function isListEmpty(value: { readonly items: readonly unknown[] }): boolean {
 
 function wantedTopics(topics: readonly string[]): {
   readonly overview: boolean; readonly tasks: boolean; readonly agents: boolean;
-  readonly approvals: boolean; readonly taskIds: readonly string[];
+  readonly approvals: boolean;
 } {
-  const taskIds: string[] = [];
   let overview = false;
   let tasks = false;
   let agents = false;
@@ -262,11 +278,11 @@ function wantedTopics(topics: readonly string[]): {
     else if (topic === "agents") agents = true;
     else if (topic === "approvals") approvals = true;
     else if (topic.startsWith("task:")) {
-      const taskId = topic.slice("task:".length);
-      if (taskId.length > 0) taskIds.push(taskId);
+      // The detail page watches canonical task revisions. Discarded detail GETs never updated it.
+      if (topic.length > "task:".length) tasks = true;
     }
   }
-  return { overview, tasks, agents, approvals, taskIds };
+  return { overview, tasks, agents, approvals };
 }
 
 function parseTopics(event: Event): readonly string[] | undefined {

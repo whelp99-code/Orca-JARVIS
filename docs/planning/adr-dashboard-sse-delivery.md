@@ -49,4 +49,37 @@ true인 동안 추가 write0회, 최대 writable 버퍼65,706bytes였다. 첫20,
 
 이 단위는 전체 테스트 완료나 운영 배포를 뜻하지 않는다. 정상 수신 클라이언트에서 짧은 시간에
 여러 알림이 올 때의 HTTP 재조회 중복 병합과 조회 규모 최적화는 별도 후속 범위다.
+
+## 기본 대시보드 HTTP 갱신 — 2026-09-08 후속
+
+기존 store에서 동기 알림1,000회와 수동 refresh1회가 tasks GET1,001회를 만들었고,
+두 수동 조회의 응답 순서를 바꾸면 이전 결과가 최신 화면을 덮어썼다.
+
+- overview/tasks/agents/approvals별 진행 중 읽기1개와 공유 후속 읽기1개를 둔다.
+  알림마다 대기 Promise 체인을 누적하지 않으며 서로 다른 리소스는 독립 진행한다.
+  수동 refresh는 자신이 요청한 후속 읽기의 완료를 기다린다.
+- snapshot도 완료 대기1개와 후속1개로 병합한다. 시작 시 연결 버전을 고정하여
+  조회 중 발생한 disconnect를 뒤늦게 live로 변경하지 않는다.
+- 사용하지 않고 버리던 task 상세 GET을 없앤다. task:<id>는 canonical tasks를 갱신하며
+  상세 화면의 기존 task revision과 선택한 execution 조회로 전달한다.
+- 선택한 execution 읽기도 진행1개/후속1개로 제한한다. 무효화 시 sequence를 먼저
+  올려 이전 결과가 refreshing/실행 보호 상태를 해제하지 못하게 한다.
+- 일반 GET은15초 AbortSignal deadline으로 fetch와 body를 함께 중단한다. store 종료는
+  현재 요청을 abort하고 대기 batch를 해제한다. execution은 기존 transport deadline과
+  종료 signal을 합성한다. 종료된 요청의 결과는 generation/selection fence로 거부한다.
+  단순 timeout Promise.race로 슬롯만 비우고 실제 요청을 남기지 않는다.
+
+적용 범위는 기본 대시보드와 선택한 작업 실행 조회다. 개인 대시보드의 공통 snapshot
+조회 병합과 memory 화면은 후속으로 남긴다. memory의 즉시 개인정보 철회·검색 취소·
+정정 완료 순서를 검증하기 전에는 동일 큐를 적용하지 않는다. 기존 기능은 유지한다.
+
+검증: 제품 frontend30파일168개 통과(31.07초), 마지막 테스트 정리 후 해당2파일8개
+재통과(1.82초), lint/typecheck/dashboard build exit0, 독립 리뷰 잔여 필수 결함0.
+실제 Chromium에서reconcile1,002회/snapshot1회를 수신했고, 지연시킨 tasks 읽기는
+진행1회+후속1회였다. 같은 시간 agents/approvals 각각1회 완료, 화면 task1→2,
+재조회DB쓰기0/pageErrors0을 확인했다. 이는 격리 합성 DB의 실제 브라우저 검증이다.
+실제 HTTP 부분 JSON 응답은15,007ms에 abort됐고 대기 알림10,000회는 후속 요청1회로
+이어졌다(총 요청2/완료1/중단 body 연결닫힘). 증거는
+`/home/jm/.cache/jarvis-test-runtime-qa-20260908/client-live-probe.mjs` 및 `.json`,
+`client-coalescing-browser.png`, `client-coalescing-*.log`에 있다.
 기존1초 DB 변경 관찰 주기는 유지한다. 운영 서비스 변경0.

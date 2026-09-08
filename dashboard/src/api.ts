@@ -25,10 +25,10 @@ export type ApiError = {
 export type SessionResponse = { readonly schema_version: 1; readonly csrf_token: string };
 export type DashboardClient = {
   readonly session: () => Promise<SessionResponse>;
-  readonly overview: () => Promise<OverviewResponse>;
-  readonly tasks: () => Promise<TaskListResponse>;
-  readonly agents: () => Promise<AgentListResponse>;
-  readonly controlRequests: () => Promise<ControlRequestListResponse>;
+  readonly overview: (signal?: AbortSignal) => Promise<OverviewResponse>;
+  readonly tasks: (signal?: AbortSignal) => Promise<TaskListResponse>;
+  readonly agents: (signal?: AbortSignal) => Promise<AgentListResponse>;
+  readonly controlRequests: (signal?: AbortSignal) => Promise<ControlRequestListResponse>;
   readonly task: (taskId: string) => Promise<TaskDetailResponse>;
   readonly agentLogs: (agentId: string) => Promise<TerminalLogResponse>;
 };
@@ -55,10 +55,10 @@ const LIST_LIMIT = 500;
 export function createDashboardClient(): DashboardClient {
   return {
     session: () => readJson("/api/v1/session", isSession),
-    overview: () => readJson("/api/v1/overview", isOverview),
-    tasks: () => readJson(`/api/v1/tasks?limit=${String(LIST_LIMIT)}`, isTaskList),
-    agents: () => readJson("/api/v1/agents", isAgentList),
-    controlRequests: () => readJson("/api/v1/control/requests", isApprovalList),
+    overview: (signal) => readJson("/api/v1/overview", isOverview, signal),
+    tasks: (signal) => readJson(`/api/v1/tasks?limit=${String(LIST_LIMIT)}`, isTaskList, signal),
+    agents: (signal) => readJson("/api/v1/agents", isAgentList, signal),
+    controlRequests: (signal) => readJson("/api/v1/control/requests", isApprovalList, signal),
     task: (taskId) => readJson(`/api/v1/tasks/${encodeURIComponent(taskId)}`, isTaskDetail),
     agentLogs: (agentId) => readJson(
       `/api/v1/agents/${encodeURIComponent(agentId)}/logs?limit=${String(LIST_LIMIT)}`,
@@ -81,8 +81,8 @@ export function classifyDashboardError(error: unknown): ApiError {
   return { kind: "server", code: "INTERNAL_ERROR", message: "Internal error", request_id: "" };
 }
 
-async function readJson<T>(path: string, parse: (value: unknown) => value is T): Promise<T> {
-  const body = await requestJson(path);
+async function readJson<T>(path: string, parse: (value: unknown) => value is T, signal?: AbortSignal): Promise<T> {
+  const body = await requestJson(path, signal);
   if (!parse(body)) {
     throw new DashboardApiError({
       kind: "server",
@@ -94,10 +94,13 @@ async function readJson<T>(path: string, parse: (value: unknown) => value is T):
   return body;
 }
 
-async function requestJson(path: string): Promise<unknown> {
+async function requestJson(path: string, signal?: AbortSignal): Promise<unknown> {
   let response: Response;
   try {
-    response = await fetch(path, { headers: { Accept: "application/json" } });
+    response = await fetch(path, {
+      headers: { Accept: "application/json" },
+      signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
+    });
   } catch (error: unknown) {
     throw new DashboardApiError(classifyDashboardError(error));
   }

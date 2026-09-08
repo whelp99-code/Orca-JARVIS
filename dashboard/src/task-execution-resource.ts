@@ -1,40 +1,70 @@
 import type { DashboardTaskExecution } from "../../src/dashboard/task-execution-read.js";
 import { classifyDashboardError } from "./api.js";
+import { createCoalescedRefresh } from "./coalesced-refresh.js";
 import type { ResourceState } from "./store-types.js";
 
 export type TaskExecutionResource = Readonly<{ task_id: string; resource: ResourceState<DashboardTaskExecution>; refreshing: boolean }>;
+type Selection = {
+  taskId: string;
+  value: TaskExecutionResource;
+  reads: ReturnType<typeof createCoalescedRefresh>;
+};
 
-/** One watched task in the dashboard store. Sequence fences prevent late responses from replacing a newer read. */
+/** One watched task, one running read, and one follow-up. Invalidated reads cannot release action guards. */
 export function createTaskExecutionResource(publish: (value: TaskExecutionResource | undefined) => void) {
-  let active: { taskId: string; load: (id: string) => Promise<DashboardTaskExecution>; value: TaskExecutionResource } | undefined;
+  let active: Selection | undefined;
   let sequence = 0;
-  const stop = (clear = true) => { sequence++; const previous = active; active = undefined; if (previous && clear) publish(undefined); };
-  async function refresh() {
-    if (!active) return;
-    const selected = active; const request = ++sequence;
-    selected.value = { ...selected.value, refreshing: true };
-    publish(selected.value);
-    try {
-      const data = await selected.load(selected.taskId);
-      if (selected !== active || request !== sequence) return;
-      selected.value = { task_id: selected.taskId, refreshing: false, resource: { status: "success", data } };
-    } catch (error) {
-      if (selected !== active || request !== sequence) return;
-      const classified = classifyDashboardError(error);
-      selected.value = { task_id: selected.taskId, refreshing: false,
-        resource: { status: "error", kind: classified.kind, error: classified } };
-    }
-    publish(selected.value);
-  }
-  function watch(taskId: string, load: (id: string) => Promise<DashboardTaskExecution>) {
+
+  function stop(clear = true): void {
     sequence++;
-    const selected = { taskId, load, value: { task_id: taskId, refreshing: false,
-      resource: { status: "loading" as const } } as TaskExecutionResource };
-    active = selected; void refresh();
+    const previous = active;
+    active = undefined;
+    previous?.reads.close();
+    if (previous && clear) publish(undefined);
+  }
+
+  function refresh(): Promise<void> {
+    if (!active) return Promise.resolve();
+    sequence++;
+    const selected = active;
+    if (!selected.value.refreshing) {
+      selected.value = { ...selected.value, refreshing: true };
+      publish(selected.value);
+    }
+    return selected.reads.request();
+  }
+
+  function watch(taskId: string, load: (id: string, signal?: AbortSignal) => Promise<DashboardTaskExecution>) {
+    stop(false);
+    const selected: Selection = {
+      taskId,
+      value: { task_id: taskId, refreshing: false, resource: { status: "loading" } },
+      reads: createCoalescedRefresh(async signal => {
+        const request = sequence;
+        try {
+          const data = await load(taskId, signal);
+          if (selected !== active || request !== sequence) return;
+          selected.value = { task_id: taskId, refreshing: false, resource: { status: "success", data } };
+        } catch (error: unknown) {
+          if (selected !== active || request !== sequence) return;
+          const classified = classifyDashboardError(error);
+          selected.value = { task_id: taskId, refreshing: false,
+            resource: { status: "error", kind: classified.kind, error: classified } };
+        }
+        publish(selected.value);
+      }),
+    };
+    active = selected;
+    void refresh();
     return () => { if (active === selected) stop(); };
   }
-  async function reconcile(topics: readonly string[]) {
-    if (active && topics.some(topic => ["tasks", "approvals", `task:${active!.taskId}`].includes(topic))) await refresh();
+
+  function reconcile(topics: readonly string[]): Promise<void> {
+    if (active && topics.some(topic => topic === "tasks" || topic === "approvals" || topic === `task:${active!.taskId}`)) {
+      return refresh();
+    }
+    return Promise.resolve();
   }
+
   return { watch, refresh, stop, reconcile };
 }

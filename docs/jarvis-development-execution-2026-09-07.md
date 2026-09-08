@@ -436,3 +436,18 @@
 - 실제 built dashboard/paused TCP에140,000개 발행: write11,571/false41/막힌상태쓰기0/최대writable65,706bytes/첫20,000 burst65,616bytes/미복구종료5,002ms. 이는 writable 버퍼 측정이며 RSS·커널 메모리 상한으로 확대하지 않는다. 최초 probe의 수동blocked플래그는 drain listener 순서로 정상 재개쓰기를 오인해 실패했으며 최종은 Node writableNeedDrain을 직접 검사했다.
 - 실제 Chromium에서 연결 종료 중 작업 추가·replay ID퇴출→자동재접속open2/snapshot2→카드1에서2로 갱신을 확인했다. 재조회DB쓰기0/pageErrors0. 임시 DB/브라우저 제거. 증거 `sse-live-probe.mjs/json`, `sse-live-probe-first.log`, `sse-regression.log`, `sse-dashboard.log`, `sse-cleanup-final.log`.
 - 설계와 한계 `docs/planning/adr-dashboard-sse-delivery.md`. 정상 빠른 클라이언트의 동시 HTTP 재조회 중복 병합·조회 규모 개선은 후속이다. 전체01–25 인수, 최신 전체gate, 자동 기억 수집 원본 차단 HOLD는 유지한다. 운영 DB/서비스/release/push 변경0.
+
+## 2026-09-08 전체 gate 확정 — 704f238
+
+- 고정 SHA `704f238158513584ac9a763a638c738e18e27310`의 verify handle5972를 재사용하여 최종 exit0을 확인했다. 분할1:194파일1,243개/595.78초, 분할2:194파일1,236개/618.96초. 합계388파일2,479개로 사전 분할 대조와 일치한다.
+- dashboard29파일162개/27.70초, runtime/lint/typecheck/build, fixed-clock acceptance와 마지막 CLI smoke 모두 verify의 순차 gate를 통과했다. 로그 `verify-704f238.log`. 앞선 bf533eb의 timeout/미완료 기록은 보존한다.
+
+## 2026-09-08 P2-17 — 기본 대시보드·선택 작업 HTTP 조회 병합
+
+- 전체 gate가 제품을 읽는 동안 캐시 사본에서 red2개를 재현했다: tasks 알림1,000+수동1→GET1,001회, 오래된 수동 응답이 새 데이터를 덮어씀. 사본에서 개선안을 검증하고 전체 gate 종료 후 제품에 반영했다.
+- canonical4종과 선택 execution별 진행1/공유 후속1, event별 대기 체인 제거, 수동 refresh 후속 완료 대기, snapshot 연결 version fence를 적용했다. 버리던 task detail GET은 제거하고 canonical tasks revision 갱신을 사용한다.
+- 리뷰의 무기한 대기 지적1개를 수정했다. 일반 GET에15초 실제 fetch/body deadline, helper 종료 AbortController, execution 기존 deadline과 caller signal 합성을 적용했다. 미완료 네트워크를 남기는 Promise.race는 사용하지 않는다. 최종 독립 리뷰 필수 결함0.
+- 제품 dashboard30파일168개/31.07초 pass, lint/typecheck/dashboard build exit0. 테스트의 이전 응답 순서 재현을 정리한 뒤2파일8개/1.82초 재통과했다. 백엔드는 변경하지 않았으며 위 전체 gate 이후 frontend만 검증했다.
+- 실제 built Chromium: reconcile1,002/snapshot1, held tasks GET1+후속1, agents/approvals 각1, 화면task1→2, 재조회DB쓰기0/pageErrors0. 실제 부분 JSON HTTP는15,007ms에 abort; 대기10,000알림 뒤 요청총2/완료1/중단연결닫힘을 확인했다. 임시 DB·서버·브라우저 제거.
+- 증거 루트 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/`: `store-coalescing-red.log`, `client-coalescing-{tests,final-tests,types,lint,build}.log`, `client-live-probe.mjs/json/log`, `client-coalescing-browser.png`.
+- 개인 dashboard snapshot 병합은 후속이다. memory 화면의 즉시 privacy 철회/검색 취소 순서를 보장하기 전 공통 큐 적용은 보류한다(기존 기능 유지). 작업→자동 기억 수집은 원본 차단 전파 부재로 기존 HOLD 유지. 전체01–25와 운영 인수는 미완료이며 운영 DB/서비스/release/push 변경0.
