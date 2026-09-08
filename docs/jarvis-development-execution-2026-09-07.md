@@ -623,3 +623,30 @@
 - 자동 identity충돌 병합, generic lineage전면교체, provider fence, 실제일일총량장부,
   아침/저녁/retention서비스활성화는미완료·HOLD다. 임의본문게시HOLD는검증된원본을
   이게시API로처리하는로컬경로에한해해소한다. 전체01–25와운영인수목표유지.
+
+## 2026-09-08 P1-12 — 기존 일일 루프의 실제 아침 실행기
+
+- 직전 인계 확인 턴은 자비스 개발 기준 no progress였다. 재개 시 codex/morning-source의
+  HEAD b2e11a9와 미커밋7파일을 확인했다. 종료된 검증 handle36912/11907을 회수했다.
+- createStoredMorningDailyLoop가 기존 prepare/claim/recover/finish에 refresh reader와
+  MorningBriefPublisher를 연결한다. 같은 날짜의 완료 원장으로 items/work/bytes를 집계하고
+  예산 초과 시 해당 게시와 계보를 원자 rollback한다. 삭제·격리로 사용량을 환불하지 않는다.
+- 앞선 리뷰의 최종 완료 시계 역행을 실행기 complete와 공통 monotonic clock으로 보강했다.
+  새 event 이력 테스트의 잘못된 준비 입력은 공개 prepare 경로로 수정했다.
+  임시경로 write -122로 최초0개 실행 후 별도 TMPDIR에서 최종3파일24개/16.08초통과.
+  lint/typecheck/backend build/fixed-clock acceptance/CLI smoke exit0.
+- 실제 compiled3프로세스 PID3508902/3508909/3508932: refresh 저장 후 SIGKILL,
+  다음PID의cycle에서 완료1·refresh1·재실행쓰기0·조회쓰기0·사용량2/2/3440.
+  KST07:15 전후 빈DB cycle은 완료1·no_data·refresh1·재실행쓰기0·사용량1/2/754.
+  고정시각 시험DB의 실제 프로세스 검증이며 운영daemon 실행 증거는 아니다.
+- 독립검토 /root/daily_morning_final_review: 운영 caller가 없는 전체 목표 기준 fix-first,
+  중간 개발 단위 범위 재확인 후 ship/추가 코드 결함0건. 요청terra/high, 실제 설정미노출.
+  전체일일운영완료로표시하지않고 서비스caller·실제event·서명저녁·retention·provider fence와
+  사용량/운영정책 연결을 필수 다음 단계로 유지한다. 자동운영 HOLD와 전체01–25 유지.
+- 이전 b2e11a9 전체verify:1420pass/1fail +1450pass, exit1, 전후HEAD/추적바이트동일.
+  실패는 정정 proof_signature fixture 준비 중 MEMORY_OLD_DATABASE_FD_ACTIVE다.
+  같은 테스트 단독11통과 및 compiled8회 진단 모두 old fd_count0/예정INTERRUPTED에
+  도달했으나 원인미확정이다. guard완화0. 반복진단/집중시험을 전체gate통과로대체하지않는다.
+- 증거 /home/jm/.cache/jarvis-test-runtime-qa-20260908/daily-morning-complete-*.log,
+  correction-old-fd-diagnostic.mjs/json/log, verify-morning-publication-after.json.
+  개발단위커밋만수행하며 운영DB·서비스·release·push변경0.

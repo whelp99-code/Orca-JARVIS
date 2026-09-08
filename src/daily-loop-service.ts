@@ -7,7 +7,7 @@ import { classifyDailyLoopInstant, evaluateRefreshContext, kstLocalDate } from "
 import { dailyLoopSchedules } from "./daily-loop-schedules.js";
 import {
   DailyLoopError, type DailyLoopClaim, type DailyLoopCycleResult, type DailyLoopDue, type DailyLoopFailureCode,
-  type DailyLoopOptions, type DailyLoopPreparation, type DailyLoopStep,
+  type DailyLoopOptions, type DailyLoopPreparation, type DailyLoopStep, type DailyLoopStepExecutor,
 } from "./daily-loop-types.js";
 
 type Used = { items: number; work: number; bytes: number };
@@ -25,6 +25,7 @@ export class DailyControlLoop {
 	constructor(
 		private readonly store: DailyLoopStore,
 		options: DailyLoopOptions,
+		private readonly stepExecutor?: DailyLoopStepExecutor,
 	) {
 		this.options = parseDailyLoopOptions(options);
 	}
@@ -107,6 +108,7 @@ export class DailyControlLoop {
 		return this.advance(parseDailyLoopClaim(claimValue)) === "step_completed";
 	}
 	private advance(claim: DailyLoopClaim): "step_completed" | "all_completed" | "failed" {
+		if (this.stepExecutor !== undefined) return this.stepExecutor.advance(claim);
 		const at = this.now();
 		if (this.options.deadline_ms === 0 || at.getTime() >= Date.parse(claim.deadline_at)) {
 			this.store.fail(claim, "DEADLINE_EXHAUSTED", at);
@@ -142,7 +144,8 @@ export class DailyControlLoop {
 		let outcome: ReturnType<DailyControlLoop["advance"]>;
 		do { outcome = this.advance(claim); } while (outcome === "step_completed");
 		if (outcome === "failed") return false;
-		this.store.complete(claim, this.now());
+		if (this.stepExecutor !== undefined) this.stepExecutor.complete(claim);
+		else this.store.complete(claim, this.now());
 		return true;
 	}
 	markUncertain(claimValue: unknown, reasonValue: unknown): void {

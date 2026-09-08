@@ -13,6 +13,8 @@ export {
 	parseRefreshCompletion,
 } from "./daily-loop-input.js";
 export { DailyControlLoop } from "./daily-loop-service.js";
+export { createStoredMorningDailyLoop } from "./daily-loop-morning-execution.js";
+export { dailyLoopUsage, type DailyLoopUsage } from "./daily-loop-usage.js";
 export { DailyLoopStore } from "./daily-loop-store.js";
 export {
 	canonicalDailyLoopKey,

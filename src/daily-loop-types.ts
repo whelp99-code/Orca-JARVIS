@@ -117,9 +117,15 @@ export type DailyLoopFailureCode =
 	| "BUDGET_ITEMS_EXHAUSTED"
 	| "BUDGET_WORK_EXHAUSTED"
 	| "BUDGET_BYTES_EXHAUSTED";
+export type DailyLoopAdvance = "step_completed" | "all_completed" | "failed";
+export interface DailyLoopStepExecutor {
+  advance(claim: DailyLoopClaim): DailyLoopAdvance;
+  complete(claim: DailyLoopClaim): void;
+}
 export type DailyLoopUncertainReason = "EXECUTION_OUTCOME_UNCERTAIN";
 export type DailyLoopErrorCode =
 	| "DAILY_LOOP_CONFIG_INVALID"
+	| "DAILY_LOOP_HANDLER_UNAVAILABLE"
 	| "DAILY_LOOP_EVENT_INVALID"
 	| "DAILY_LOOP_REFRESH_INVALID"
 	| "DAILY_LOOP_DATE_INVALID"
