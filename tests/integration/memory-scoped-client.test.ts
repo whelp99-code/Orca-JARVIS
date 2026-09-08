@@ -22,6 +22,7 @@ it("rechecks real issuer authority before send and delivery without inventing em
   let before = () => {};
   let after = () => {};
   let sent = 0;
+  let searchGeneration = "1".repeat(64);
   const transport: SecondBrainTransport = {
     async call(_method, args, options) {
       before(); options?.beforeSend?.(); sent++;
@@ -29,7 +30,7 @@ it("rechecks real issuer authority before send and delivery without inventing em
       const fence = args.read_fence as Record<string, unknown>;
       const value = { profile: 'scoped-record-read-v2', request_digest: claim.request_digest,
         access_claim_digest: 'sha256:' + createHash('sha256').update('orca-jarvis/memory-access-claim-binding/v1\0' + canonicalize(claim)).digest('hex'),
-        provider_instance_id: config.provider_instance_id, generation_id: 'sbgen:v1:' + '1'.repeat(64),
+        provider_instance_id: config.provider_instance_id, generation_id: 'sbgen:v1:' + (_method === 'sb_search' ? searchGeneration : '1'.repeat(64)),
         generation_manifest_digest: 'sha256:' + '2'.repeat(64), vault_head: '3'.repeat(40), vault_tree: '4'.repeat(40),
         tombstone_sequence: fence.tombstone_sequence, tombstone_set_root: fence.tombstone_set_root,
         ...(_method === "sb_generation_status" ? { schema_version: 1, pointer_health: "healthy", journal_health: "healthy" } : { results: [] }) };
@@ -43,6 +44,9 @@ it("rechecks real issuer authority before send and delivery without inventing em
   expect((await client.search('example')).pages).toEqual([]);
   const reader = createScopedMemoryReference(db.authority, { client, clock: () => clock,
     membership: createMemoryMembership(Buffer.alloc(32, 7)), search_limit: 10 });
+  searchGeneration = '2'.repeat(64);
+  await expect(reader.read('example', { max_records: 8, max_record_bytes: 4096, max_bytes: 16384 })).rejects.toThrow('MEMORY_REFERENCE_GENERATION_CHANGED');
+  searchGeneration = '1'.repeat(64);
   const reference = await reader.read('example', { max_records: 8, max_record_bytes: 4096, max_bytes: 16384 });
   expect(reference.payload.state).toBe('empty');
   let callbacks = 0;

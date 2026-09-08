@@ -32,7 +32,7 @@ export function createScopedMemoryReference(authority: AuthorityDb, options: {
       evidence.push(...page.parsed.evidence);
     }
     if (stale) return { kind: "stale", code: "SECOND_BRAIN_EVIDENCE_STALE", checked_at, evidence };
-    return evidence.length === 0 ? { kind: "no_data", checked_at,
+    return evidence.length === 0 ? { kind: "no_data", checked_at, generation: response.generation,
       fresh_until: new Date(Date.parse(checked_at) + 60000).toISOString() } : { kind: "current", checked_at, evidence };
   };
   return new MemoryReferenceReader({ authority, membership: options.membership, clock: options.clock,

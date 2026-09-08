@@ -76,7 +76,8 @@ export type SecondBrainConflict = {
 };
 export type SecondBrainReadOutcome =
   | { readonly kind: "current"; readonly checked_at: string; readonly evidence: readonly SecondBrainEvidence[] }
-  | { readonly kind: "no_data"; readonly checked_at: string; readonly fresh_until: string }
+  | { readonly kind: "no_data"; readonly checked_at: string; readonly fresh_until: string;
+      readonly generation?: SecondBrainGenerationBinding }
   | { readonly kind: "unavailable"; readonly code: string; readonly checked_at: string }
   | { readonly kind: "offline"; readonly code: string; readonly checked_at: string }
   | { readonly kind: "invalid"; readonly code: string; readonly checked_at: string }

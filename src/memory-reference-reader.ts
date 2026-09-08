@@ -161,6 +161,10 @@ export class MemoryReferenceReader {
       if (!matchesStatus(status, generation, final.tombstone_sequence, final.tombstone_set_root)) {
         throw new JarvisError("MEMORY_REFERENCE_GENERATION_CHANGED");
       }
+      if (outcome.kind === "no_data" && outcome.generation !== undefined
+        && !matchesStatus(status, outcome.generation, final.tombstone_sequence, final.tombstone_set_root)) {
+        throw new JarvisError("MEMORY_REFERENCE_GENERATION_CHANGED");
+      }
       if (outcome.kind === "current") {
         // The entire reference is withheld when a local suppression matches. This
         // avoids emitting blocked identities or disguising that fact as no_data.
