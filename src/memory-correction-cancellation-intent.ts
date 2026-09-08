@@ -85,7 +85,8 @@ export function requireCorrectionCancellationIntent(value: unknown,
     || canonicalize(scope.sensitivity_classes) !== canonicalize([...new Set(scope.sensitivity_classes)].sort())
     || canonicalize(scope.source_owner_classes) !== canonicalize([...new Set(scope.source_owner_classes)].sort())
     || Date.parse(scope.valid_from) >= Date.parse(scope.valid_until)
-    || Date.parse(target.valid_from) < Date.parse(scope.valid_from) || Date.parse(target.valid_until) > Date.parse(scope.valid_until)) rejectMemoryEffect(INVALID);
+    || Date.parse(target.valid_from) < Date.parse(scope.valid_from)
+    || Date.parse(target.valid_until) > Date.parse(scope.valid_until)) rejectMemoryEffect(INVALID);
   const root = memoryEffectDigest("tombstone_chain", withoutMemoryEffectFields(t, ["tombstone_id", "set_root"]));
   if (t.sequence < 1 || t.sequence !== old.tombstone_sequence || t.operation !== "correct" || t.lane_id !== old.lane_id
     || t.payload_digest !== old.payload_digest || t.target_manifest_digest !== old.target_manifest_digest || t.scope_digest !== old.scope_digest
