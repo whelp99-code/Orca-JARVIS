@@ -25,6 +25,7 @@ import { runtimeSecondBrainReadinessProbe } from "../second-brain-readiness-runt
 import type { CapabilityProbe } from "../capabilities.js";
 import { listedAgents } from "./agent-read-model.js";
 import { createRuntimeIdentityReader, type RuntimeIdentityReader } from "../runtime-identity.js";
+import { readDaemonRuntimeIdentity } from "../daemon-runtime-identity.js";
 
 export type {
   AgentDetailResponse,
@@ -60,7 +61,8 @@ export class DashboardReadModel {
 
   async overview(now = new Date()): Promise<OverviewResponse> {
     if (!Number.isFinite(now.getTime())) {
-      return { ...invalidClockOverview(await buildSecondBrainReadiness(this.secondBrainProbe, now)), runtime: this.runtimeIdentity(now) };
+      return { ...invalidClockOverview(await buildSecondBrainReadiness(this.secondBrainProbe, now)),
+        runtime: this.runtimeIdentity(now), daemon_identity: readDaemonRuntimeIdentity(this.db.db, now) };
     }
     // An unrelated approval may commit while health probes await I/O. Guard only
     // the synchronous DB projection, and share one provider observation with doctor.
@@ -73,6 +75,7 @@ export class DashboardReadModel {
       const agents = listedAgents(this.db, now);
       const portfolio = new PortfolioProjection(this.db).overview(now);
       const runtime = this.runtimeIdentity(now);
+      const daemon_identity = readDaemonRuntimeIdentity(this.db.db, now);
       if (changeCount(this.db) !== before) throw new JarvisError("DASHBOARD_READ_MUTATED");
       const risks: OverviewRisk[] = doctor.checks.filter(check => !check.ok).map(check => ({
         id: check.code ?? "CHECK_FAILED", severity: "high", message: check.name,
@@ -92,7 +95,7 @@ export class DashboardReadModel {
         agents,
       });
       return { ...overview, portfolio: redactDashboardValue(portfolio), second_brain: redactDashboardValue(secondBrain),
-        runtime };
+        runtime, daemon_identity };
     }).deferred();
   }
 

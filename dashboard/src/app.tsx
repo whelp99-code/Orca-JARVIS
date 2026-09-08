@@ -3,6 +3,7 @@ import type { OverviewResponse } from "../../src/dashboard/read-model.js";
 import { copy } from "./copy.js";
 import { PortfolioStatus } from "./portfolio-status.js";
 import { RuntimeStatus } from "./runtime-status.js";
+import { DaemonRuntimeStatus } from "./daemon-runtime-status.js";
 
 type AppProps = Readonly<{
   overview: OverviewResponse;
@@ -73,6 +74,7 @@ export default function App({ overview }: AppProps) {
 
         <PortfolioStatus portfolio={overview.portfolio} />
         <RuntimeStatus runtime={overview.runtime} />
+        <DaemonRuntimeStatus daemon={overview.daemon_identity} />
 
         <div className="panel-grid">
           <Panel id="recent-title" title={copy.recent}>

@@ -4,7 +4,6 @@ import { classifyDashboardError } from "./api.js";
 import { PortfolioFreshnessTimer } from "./portfolio-freshness.js";
 import { createTaskExecutionResource } from "./task-execution-resource.js";
 import { createTaskExecutionOperations } from "./task-execution-operations.js";
-import type { PortfolioOverview } from "../../src/dashboard/portfolio-contracts.js";
 import type { ConnectionState, DashboardState, DashboardStoreOptions, EventSourceLike, ResourceState } from "./store-types.js";
 
 export type { ConnectionState, DashboardState, DashboardStoreOptions, EventSourceLike, ResourceState };
@@ -176,7 +175,7 @@ export function createDashboardStore(options: DashboardStoreOptions) {
       const data = await options.client.overview(signal);
       if (token !== generation) return;
       assign({ overview: collectionState(data, isOverviewEmpty) });
-      scheduleFreshnessRefresh(token, data.portfolio);
+      scheduleFreshnessRefresh(token, data);
     } catch (error: unknown) { failResource(token, "overview", error); }
   }
   async function loadTasks(token: number, signal: AbortSignal): Promise<void> {
@@ -234,16 +233,17 @@ export function createDashboardStore(options: DashboardStoreOptions) {
     for (const listener of listeners) listener();
   }
 
-  // After every successful overview load, schedule exactly one timer for the earliest next host
-  // transition (live → stale at updated_at + 90s, stale → offline at updated_at + 300s). Offline
-  // and unseen hosts schedule nothing. A new overview clears and replaces the previous timer, and
-  // stop() clears it entirely; generation guards the callback so a stale timer can never fire a
-  // refresh for a stopped or restarted store.
-  function scheduleFreshnessRefresh(token: number, portfolio: PortfolioOverview): void {
-    freshnessTimer.schedule(portfolio, () => {
+  // One timer covers the next host transition or active daemon lease expiry. Relative daemon
+  // lifetime uses the server observation clock, so browser clock skew does not hide expiry.
+  // New observations replace it; stop() clears it and generation rejects stale callbacks.
+  function scheduleFreshnessRefresh(token: number, overview: OverviewResponse): void {
+    const daemon = overview.daemon_identity;
+    const leaseDelay = daemon?.status === "active" && daemon.lease && daemon.observed_at
+      ? Date.parse(daemon.lease.expires_at) - Date.parse(daemon.observed_at) : undefined;
+    freshnessTimer.schedule(overview.portfolio, () => {
       if (token !== generation) return;
       void refreshOverview();
-    });
+    }, leaseDelay);
   }
 
   return { getSnapshot, subscribe, start, stop, refreshOverview, refreshTasks, refreshAgents, refreshApprovals,

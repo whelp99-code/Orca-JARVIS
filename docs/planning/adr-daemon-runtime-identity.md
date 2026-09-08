@@ -1,7 +1,8 @@
 # Lease와 프로세스 기동에 묶인 데몬 빌드 관측
 
 목록19 후속 개발 단위. 대상은 GJC service의 첫 실행 관측 저장, 상태 조회 및 진단 CLI다.
-대시보드의 daemon 표시, 현재 디스크 재관측, 정상 schema 기준선 비교, 운영 전환 인수는 후속이다.
+대시보드의 daemon 표시를 기존 overview에 연결했다. 현재 디스크 재관측, 정상 schema 기준선 비교,
+운영 전환 인수는 후속이다.
 전체01–25 개발 목표를 이 단위로 축소하지 않는다.
 
 ## 구현 계약
@@ -47,6 +48,25 @@ process/lease 상태와 별개다. build.checked_at은 첫 cycle의 디스크 �
 migration을 실행하지 않는다. 오래된 schema도 진단 가능하며 실패 시 unavailable을 반환한다.
 `service status`와 `gjc status`는 `daemon_identity` 필드를 추가하고 이전 health 필드를 유지한다.
 
+## 현황판
+
+- overview의 기존 읽기 transaction에서 `daemon_identity`를 관측한다. 조회 중 DB 변경 검사를
+  유지하고 신규 쓰기·캐시·polling 경로를 만들지 않는다.
+- 현황판 서버의 runtime과 작업 데몬의 저장된 process/build를 별도 접이식 영역으로 표시한다.
+  판정 시각·근거·lease·첫 게시 빌드 관측을 함께 표시하며 업무 준비 상태로 해석하지 않는다.
+- 기존 서버가 필드를 생략하면 식별 정보 미제공을 표시한다. 잘못된 응답은 API 경계에서 거부하며,
+  active는 유효한 관측 시각·snapshot/incarnation·lease와 일관된 heartbeat/만료가 있어야 한다.
+  missing/invalid/unavailable은 이전 상세를 포함할 수 없으며 inactive/stale도 백엔드 상태별
+  snapshot·lease·시각 조건을 검증한다. 모순된 응답8개는 보강 전 통과해 회귀 검사에 실패했다.
+- 상태 갱신은 기존 overview/SSE 흐름을 사용한다. 종료 후에는 이전 실행 관측으로 바뀌고,
+  저장된 관측이 없거나 형식이 깨지면 이전 PID/빌드 상세를 남기지 않는다.
+- DB 쓰기 없이 lease만 만료되는 경우에도 기존 단일 freshness 타이머가 overview를 다시 읽는다.
+  서버의 관측→만료 간격을 사용해 브라우저 시계 차이를 피하고, 갱신·중지 시 이전 타이머를 취소한다.
+- 별도 Node 데몬과 실제 Chromium으로 펼치기→강제 종료→lease 만료→손상→구버전 응답을
+  검증했다. HTTP 조회 total_changes 차이0, 1440px/390px 가로 넘침0, axe serious/critical0,
+  console/page 오류0. 증거는 `daemon-dashboard-live.json` 및 같은 이름의 이미지들이다.
+  운영 서비스·DB는 이 격리 검증의 대상이 아니다.
+
 ## 검증과 증거
 
 증거 루트: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/`.
@@ -77,6 +97,10 @@ migration을 실행하지 않는다. 오래된 schema도 진단 가능하며 실
   전체 통과로 계산하지 않는다. 최종 전체 검증은 새 리뷰 통과 후 실행한다.
 - 종료 namespace 수정 후 `daemon-exit-namespace-regression.log`: 14파일117개 pass, 60.74초.
   lint/typecheck/backend build/고정 시각 acceptance/CLI smoke exit0. 이 수치는 이전 묶음과 중복된다.
+- 코어 커밋 `6e4b4eb59dcf5fa872689abf58bfd271001520c4`의 전체 verify exit0:
+  backend405파일2,678개, dashboard33파일205개 및 canonical gate 통과.
+  `verify-6e4b4eb-after.json`의 전후HEAD 동일, changedTrackedFiles0. 뒤에 추가한 현황판
+  변경까지 이 코어 전체 실행이 검증한 것은 아니다.
 
 기준 커밋110227e의 전체 verify는 backend401파일2,643개, dashboard33파일205개 및 lint/typecheck/
 build/고정시각 acceptance/CLI smoke를 통과했다. 전후HEAD/추적 bytes 동일. 이는 이 새 daemon 단위

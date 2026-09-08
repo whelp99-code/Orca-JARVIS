@@ -7,15 +7,17 @@ import {
 export class PortfolioFreshnessTimer {
   private timer: ReturnType<typeof setTimeout> | undefined;
 
-  schedule(portfolio: PortfolioOverview, refresh: () => void): void {
+  schedule(portfolio: PortfolioOverview, refresh: () => void, additionalDelayMs?: number): void {
     this.clear();
     const transition = nextTransition(portfolio);
-    if (transition === undefined) return;
-    const remaining = transition - Date.now();
+    const portfolioDelay = transition === undefined ? Infinity : transition - Date.now();
+    const additionalDelay = additionalDelayMs !== undefined && Number.isFinite(additionalDelayMs) ? additionalDelayMs : Infinity;
+    const remaining = Math.min(portfolioDelay, additionalDelay);
+    if (!Number.isFinite(remaining)) return;
     this.timer = setTimeout(() => {
       this.timer = undefined;
       refresh();
-    }, remaining > 0 ? remaining : 1_000);
+    }, remaining > 0 ? Math.min(remaining, 2_147_483_647) : 1_000);
   }
 
   clear(): void {

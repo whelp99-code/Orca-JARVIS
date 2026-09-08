@@ -1,4 +1,5 @@
 import type { RuntimeIdentityReport } from "../../src/runtime-identity-contracts.js";
+import type { DaemonRuntimeIdentityReport } from "../../src/daemon-runtime-identity.js";
 
 type RecordValue = Record<string, unknown>;
 const record = (v: unknown): v is RecordValue => typeof v === "object" && v !== null && !Array.isArray(v);
@@ -33,4 +34,40 @@ function databaseIdentity(v: unknown): boolean {
 export function isRuntimeIdentity(value: unknown): value is RuntimeIdentityReport {
   return record(value) && value.schema_version === 1 && processIdentity(value.process)
     && buildIdentity(value.build) && databaseIdentity(value.database);
+}
+
+export function isDaemonRuntimeIdentity(value: unknown): value is DaemonRuntimeIdentityReport {
+  if (!record(value) || value.schema_version !== 1 || !nullable(value.observed_at, timestamp)
+    || !nullable(value.recorded_at, timestamp)) return false;
+  const { lease, snapshot } = value;
+  if (lease !== null && (!record(lease) || typeof lease.fence !== "number" || !Number.isSafeInteger(lease.fence)
+    || lease.fence < 1 || !timestamp(lease.heartbeat_at) || !timestamp(lease.expires_at))) return false;
+  if (snapshot !== null) {
+    if (!record(snapshot) || snapshot.schema_version !== 1 || !processIdentity(snapshot.process) || !buildIdentity(snapshot.build)) return false;
+    const incarnation = snapshot.incarnation;
+    if (incarnation !== null && (!record(incarnation)
+      || !matches(incarnation.boot_id, /^[0-9a-f]{8}(-[0-9a-f]{4}){3}-[0-9a-f]{12}$/)
+      || !matches(incarnation.pid_namespace, /^pid:\[\d{1,58}\]$/) || !matches(incarnation.start_token, /^\d{1,32}$/))) return false;
+  }
+  const observed = Date.parse(String(value.observed_at));
+  const recorded = Date.parse(String(value.recorded_at));
+  const heartbeat = record(lease) ? Date.parse(String(lease.heartbeat_at)) : NaN;
+  const expires = record(lease) ? Date.parse(String(lease.expires_at)) : NaN;
+  const empty = snapshot === null && lease === null && value.recorded_at === null;
+  const persisted = record(snapshot) && timestamp(value.recorded_at) && timestamp(value.observed_at);
+  const bound = persisted && record(lease);
+  const coherentClock = bound && recorded <= observed && heartbeat <= observed && heartbeat >= recorded;
+  const current = coherentClock && expires > observed;
+  const incarnation = record(snapshot) && record(snapshot.incarnation);
+  if (value.status === "active") return value.reason === null && current && incarnation;
+  if (value.status === "inactive") return value.reason === "lease_missing" ? persisted && lease === null
+    : value.reason === "lease_expired" && coherentClock && expires <= observed;
+  if (value.status === "stale") return value.reason === "lease_changed" ? bound
+    : member(value.reason, ["process_missing", "process_exited", "incarnation_changed"]) && current && incarnation;
+  if (value.status !== "unknown") return false;
+  if (member(value.reason, ["missing", "invalid", "unavailable"])) return empty && timestamp(value.observed_at);
+  if (value.reason === "clock_invalid") return (empty && value.observed_at === null) || (bound && !coherentClock);
+  if (value.reason === "lease_invalid") return persisted && lease === null;
+  if (value.reason === "process_unobservable") return current;
+  return value.reason === "namespace_unobservable" && current && incarnation;
 }

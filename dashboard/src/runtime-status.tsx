@@ -11,7 +11,7 @@ export function RuntimeStatus({ runtime }: { readonly runtime?: RuntimeIdentityR
   if (runtime === undefined) return <p className="runtime-unavailable">서버 실행 식별 정보가 제공되지 않았습니다.</p>;
   const { build, database, process } = runtime;
   return <details className="runtime-status">
-    <summary>서버 실행 정보 · {buildLabels[build.status]} · DB {databaseLabels[database.status]}</summary>
+    <summary>현황판 서버 실행 정보 · {buildLabels[build.status]} · DB {databaseLabels[database.status]}</summary>
     <div className="runtime-status-body">
       <p>서버 초기화 시 확인한 백엔드 파일입니다. 이후 파일 교체 여부와 배포 승인 상태는 포함하지 않습니다.</p>
       <dl className="runtime-identity-list">

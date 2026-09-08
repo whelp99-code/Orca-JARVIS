@@ -56,7 +56,7 @@ describe("runtime identity details", () => {
     const { container } = render(<RuntimeStatus runtime={sample} />);
     const details = container.querySelector("details")!;
     expect(details.open).toBe(false);
-    await userEvent.click(screen.getByText("서버 실행 정보 · 파일 일치 · DB 기록 일치"));
+    await userEvent.click(screen.getByText("현황판 서버 실행 정보 · 파일 일치 · DB 기록 일치"));
     expect(details.open).toBe(true);
     expect(screen.getByText("a".repeat(40))).toBeVisible();
     expect(screen.getByText("변경 포함")).toBeVisible();
@@ -67,7 +67,7 @@ describe("runtime identity details", () => {
     const { rerender } = render(<RuntimeStatus runtime={sample} />);
     rerender(<RuntimeStatus runtime={{ ...sample, build: { ...sample.build, status: "mismatch", toolchain_status: "mismatch" },
       database: { ...sample.database, status: "mismatch", missing: 2, unexpected: 1, changed: 3 } }} />);
-    expect(screen.getByText("서버 실행 정보 · 파일 불일치 · DB 적용 차이 있음")).toBeVisible();
+    expect(screen.getByText("현황판 서버 실행 정보 · 파일 불일치 · DB 적용 차이 있음")).toBeVisible();
     expect(screen.getByText("누락 2 · 추가 1 · 변경 3")).toBeInTheDocument();
     rerender(<RuntimeStatus />);
     expect(screen.queryByText("a".repeat(40))).not.toBeInTheDocument();

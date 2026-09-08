@@ -3,6 +3,7 @@ import type { TaskTimelineEvent, TaskTimelineSummary } from "../recommendation-t
 import type { SecondBrainReadinessReportV1 } from "../second-brain-readiness.js";
 import type { PortfolioOverview } from "./portfolio-contracts.js";
 import type { RuntimeIdentityReport } from "../runtime-identity-contracts.js";
+import type { DaemonRuntimeIdentityReport } from "../daemon-runtime-identity.js";
 
 export type OverviewCard = {
   readonly id: string;
@@ -51,6 +52,7 @@ export type OverviewResponse = {
   readonly portfolio: PortfolioOverview;
   readonly second_brain?: SecondBrainReadinessReportV1;
   readonly runtime?: RuntimeIdentityReport;
+  readonly daemon_identity?: DaemonRuntimeIdentityReport;
 };
 export type TaskListResponse = { readonly schema_version: 1; readonly items: readonly OverviewTask[] };
 export type TaskDetailEvent = Omit<TaskTimelineEvent, "evidence_refs"> & { readonly evidence_refs: readonly string[] };
