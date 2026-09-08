@@ -179,7 +179,7 @@ it("rejects scoped write preparation for an already enqueued legacy candidate wi
     const dispatch = { dispatch_spool_digest: String(control.get(f.commandId)!.args.dispatch_spool_digest),
       roots: { review: `${f.database.root}/candidate-review`, dispatch: `${f.database.root}/candidate-dispatch` } };
     const resolve = () => ({ principal_id: "principal:owner" as const, agent_id: "agent:fixture", session_id: "session:fixture",
-      method: "sb_write_request" as const, projects: ["project:a"], policy_revision: "policy:1",
+      provider_instance_id: "provider:fixture", method: "sb_write_request" as const, projects: ["project:a"], policy_revision: "policy:1",
       valid_until: new Date(now.getTime() + 60000).toISOString() });
     expect(prepareMemoryScopedWriteWithPolicy(authority, proposal, command.request_id, dispatch, resolve, now).writes_authorized).toBe(false);
     const saga = f.service.enqueue(claimAction(f));

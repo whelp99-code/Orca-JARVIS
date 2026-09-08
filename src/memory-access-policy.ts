@@ -93,6 +93,7 @@ export function createFileMemoryAccessScopeResolver(policyPath: string, provider
 
 export type AuthorizedMemoryWriteScope = NonNullable<ReturnType<MemoryAccessScopeResolver>> & {
   readonly method: "sb_write_request";
+  readonly provider_instance_id: string;
 };
 export type MemoryWriteScopeResolver = (at: Date) => AuthorizedMemoryWriteScope | undefined;
 
@@ -103,6 +104,6 @@ export function createFileMemoryWriteScopeResolver(policyPath: string, provider:
   return at => {
     const scope = resolveFileScope(policyPath, provider, getSession, at, "sb_write_request", true);
     return scope === undefined ? undefined : Object.freeze({ ...scope,
-      projects: Object.freeze([...scope.projects]), method: "sb_write_request" as const });
+      projects: Object.freeze([...scope.projects]), provider_instance_id: provider, method: "sb_write_request" as const });
   };
 }

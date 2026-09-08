@@ -41,7 +41,7 @@ export function prepareMemoryScopedWriteWithPolicy(authority: AuthorityDb, propo
     rejectDispatched();
     const checked = prepareMemoryScopedWriteFromDispatch(authority, proposal, reviewRequestId, dispatch, new Date(at));
     if (checked.preparation_digest !== prepared.preparation_digest) return fail();
-    return Object.freeze({ preparation: checked,
+    return Object.freeze({ preparation: checked, provider_instance_id: scope.provider_instance_id,
       writer: Object.freeze({ principal_id: scope.principal_id, agent_id: scope.agent_id, session_id: scope.session_id }),
       valid_until: new Date(Math.min(expiry, Date.parse(checked.binding.expires_at))).toISOString(),
       writes_authorized: false as const });
