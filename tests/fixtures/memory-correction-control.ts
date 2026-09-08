@@ -27,6 +27,7 @@ import { MemoryCorrectionSaga } from "../../src/memory-correction-saga.js";
 import { registerMemoryEffectDelegationKey } from "../../src/memory-effect-delegation.js";
 import {
   memoryEffectDigest,
+  requireMemoryEffectWriteRequest,
   type MemoryEffectScopeV2,
   type MemoryEffectWriteRequestV2,
   type ResolvedMemoryTargetV2,
@@ -107,7 +108,8 @@ class AcceptedWriter implements SecondBrainWriteRequestAdapter {
   constructor(private readonly beforeWrite: () => void = () => undefined) {}
   write(value: unknown): Promise<SecondBrainWriteOutcome> {
     this.beforeWrite();
-    const request = value as MemoryEffectWriteRequestV2;
+    const request = requireMemoryEffectWriteRequest(value, { now: NOW, expectedProvider: "provider:fixture",
+      delegationKeys: new Map([["jarvis:fixture", createPublicKey(privateKey)]]) });
     this.calls.push(request);
     return Promise.resolve({ schema_version: 2, kind: "accepted", state: "pending",
       request_id: request.request_id, request_digest: request.request_digest,

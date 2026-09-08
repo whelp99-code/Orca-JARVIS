@@ -5,11 +5,32 @@ import { MemoryProjectionAuthority } from "../../src/memory-projection-authority
 import { MemoryEffectSpool } from "../../src/memory-effect-spool.js";
 import { createSecondBrainWriteRequestAdapter } from "../../src/second-brain-write-adapter.js";
 import { correctionPreparedFixture } from "../fixtures/memory-correction-control.js";
+import { createMemoryEffectWriteRequest, memoryEffectDigest } from "../../src/second-brain-effect-v2.js";
 
 function deny(f: Awaited<ReturnType<typeof correctionPreparedFixture>>) {
   new MemoryProjectionAuthority(f.db).quarantineUnresolved({ kind: "dashboard_projection",
     id: f.candidate.candidate_id, component_id: f.candidate.candidate_id }, f.runtime.clock());
 }
+
+it("the acceptance fixture rejects a freshly signed mixed chain before recording a provider call", async () => {
+  const f = await correctionPreparedFixture();
+  try {
+    await f.saga.dispatch(f.claim);
+    const first = f.writer.calls[0]!; const prior = first.tombstone_chain_delta[0]!;
+    const { tombstone_id, set_root, ...core } = prior; void tombstone_id; void set_root;
+    const nextCore = { ...core, sequence: 2, previous_root: prior.set_root, operation: "forget" as const,
+      lane_id: `memdel:req:v1:${"f".repeat(64)}` };
+    const root = memoryEffectDigest("tombstone_chain", nextCore);
+    const next = { ...nextCore, tombstone_id: `memtomb:v1:${root.slice(7)}`, set_root: root };
+    const { request_id, request_digest, envelope_digest, idempotency_key, delegation, ...spec } = first;
+    void request_id; void request_digest; void envelope_digest; void idempotency_key;
+    const mixed = createMemoryEffectWriteRequest({ ...spec, tombstone_chain_delta: [prior, next],
+      tombstone_high_water: { sequence: 2, set_root: root } }, { principal_id: "principal:owner",
+      not_before: delegation.not_before, nonce: "mixed-chain", signing_key_id: delegation.signing_key_id }, f.runtime.private_key);
+    expect(() => f.writer.write(mixed)).toThrow("EFFECT_TOMBSTONE_DELTA_INVALID");
+    expect(f.writer.calls).toHaveLength(1);
+  } finally { await f.close(); }
+});
 
 it.each(["before-prepare", "after-spool"] as const)("rejects %s without losing the existing preparation spool", async phase => {
   const f = await correctionPreparedFixture(); let restore: (() => void) | undefined;
