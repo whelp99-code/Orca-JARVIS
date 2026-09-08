@@ -1,23 +1,14 @@
-import { createHash } from "node:crypto";
-import { types } from "node:util";
 import { canonicalize } from "./canonical.js";
 import { kstLocalDate } from "./daily-loop-time.js";
 import {
   MORNING_BRIEF_EXTERNAL_STATES,
-  type MorningBriefCitation,
   type MorningBriefInput,
   type MorningBriefLimits,
-  type MorningBriefPriority,
   type MorningBriefRecord,
   type MorningBriefRecordState,
 } from "./morning-brief-types.js";
-import { PRIORITY_LEXICOGRAPHIC_POLICY } from "./priority-engine-contracts.js";
-import { containsPrivateMetadata } from "./private-text.js";
-
-export class MorningBriefContractError extends Error {
-  readonly name = "MorningBriefContractError";
-  constructor() { super("MORNING_BRIEF_INPUT_INVALID"); }
-}
+import { array, citation, digest, fail, hash, instant, integer, member, object, priority, privateText } from "./morning-brief-parse-values.js";
+export { MorningBriefContractError } from "./morning-brief-parse-values.js";
 
 export const DEFAULT_MORNING_BRIEF_LIMITS: MorningBriefLimits = {
   max_needs_you_first: 5, max_waiting: 5, max_fyi: 8, max_total_items: 18,
@@ -32,92 +23,6 @@ const STATES = [
   "actionable", "blocked", "deferred", "dependency_waiting", "information", "stale", "expired", "deleted", "corrupt",
   "untrusted", "conflicting", "unrelated", "insufficient_citation",
 ] as const;
-const fail = (): never => { throw new MorningBriefContractError(); };
-type Input = Readonly<Record<string, unknown>>;
-function object(value: unknown, keys: readonly string[]): Input {
-  if (typeof value !== "object" || value === null || types.isProxy(value)) return fail();
-  if (Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) return fail();
-  const descriptors = Object.getOwnPropertyDescriptors(value);
-  const own = Reflect.ownKeys(value);
-  if (own.length !== keys.length || own.some(key => typeof key !== "string" || !keys.includes(key))) return fail();
-  for (const key of keys) {
-    const descriptor = descriptors[key];
-    if (descriptor === undefined || !descriptor.enumerable || descriptor.get !== undefined || descriptor.set !== undefined) return fail();
-  }
-  return Object.fromEntries(keys.map(key => [key, descriptors[key]?.value]));
-}
-function array(value: unknown, maximum: number): readonly unknown[] {
-  if (typeof value !== "object" || value === null || types.isProxy(value)) return fail();
-  if (!Array.isArray(value) || Object.getPrototypeOf(value) !== Array.prototype || value.length > maximum) return fail();
-  const descriptors = Object.getOwnPropertyDescriptors(value);
-  if (Reflect.ownKeys(value).length !== value.length + 1) return fail();
-  return Array.from({ length: value.length }, (_, index) => {
-    const descriptor = descriptors[String(index)];
-    if (descriptor === undefined || !descriptor.enumerable || descriptor.get !== undefined || descriptor.set !== undefined) return fail();
-    return descriptor.value;
-  });
-}
-function hasUnpairedSurrogate(value: string): boolean {
-  for (let index = 0; index < value.length; index += 1) {
-    const unit = value.charCodeAt(index);
-    if (unit >= 0xd800 && unit <= 0xdbff) {
-      if (index + 1 >= value.length) return true;
-      const next = value.charCodeAt(index + 1);
-      if (next < 0xdc00 || next > 0xdfff) return true;
-      index += 1;
-    } else if (unit >= 0xdc00 && unit <= 0xdfff) return true;
-  }
-  return false;
-}
-function text(value: unknown, maximum = 512): string {
-  if (typeof value !== "string" || value.trim() !== value || value.length === 0 || hasUnpairedSurrogate(value)
-    || value !== value.normalize("NFC") || Buffer.byteLength(value, "utf8") > maximum
-    || [...value].some(character => character.charCodeAt(0) < 32 || character.charCodeAt(0) === 127)) return fail();
-  return value;
-}
-function privateText(value: unknown, maximum = 512): string {
-  const parsed = text(value, maximum);
-  return containsPrivateMetadata(parsed) ? fail() : parsed;
-}
-function instant(value: unknown): string {
-  const parsed = text(value, 32);
-  const milliseconds = Date.parse(parsed);
-  if (!/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(parsed)
-    || !Number.isFinite(milliseconds) || new Date(milliseconds).toISOString() !== parsed) return fail();
-  return parsed;
-}
-function member<const Values extends readonly string[]>(value: unknown, values: Values): Values[number] {
-  if (typeof value !== "string") return fail();
-  return values.find(candidate => candidate === value) ?? fail();
-}
-function integer(value: unknown, minimum: number, maximum: number): number {
-  if (typeof value !== "number" || !Number.isSafeInteger(value) || value < minimum || value > maximum) return fail();
-  return value;
-}
-function digest(value: unknown): string {
-  const parsed = text(value, 71);
-  if (!/^sha256:[0-9a-f]{64}$/.test(parsed)) return fail();
-  return parsed;
-}
-const hash = (value: unknown): string => `sha256:${createHash("sha256").update(canonicalize(value)).digest("hex")}`;
-function citation(value: unknown): MorningBriefCitation {
-  const input = object(value, ["link_id", "source_id", "evidence_ref"]);
-  return { link_id: privateText(input["link_id"]), source_id: privateText(input["source_id"]),
-    evidence_ref: privateText(input["evidence_ref"]) };
-}
-function priority(value: unknown): MorningBriefPriority {
-  const input = object(value, ["owner_safety_gate", "customer_impact", "deadline_bucket", "dependency_blocking",
-    "irreversible_risk", "effort_cost", "stable_identity"]);
-  return {
-    owner_safety_gate: member(input["owner_safety_gate"], PRIORITY_LEXICOGRAPHIC_POLICY.owner_safety_gate),
-    customer_impact: member(input["customer_impact"], PRIORITY_LEXICOGRAPHIC_POLICY.customer_impact),
-    deadline_bucket: member(input["deadline_bucket"], PRIORITY_LEXICOGRAPHIC_POLICY.deadline_bucket),
-    dependency_blocking: member(input["dependency_blocking"], PRIORITY_LEXICOGRAPHIC_POLICY.dependency_blocking),
-    irreversible_risk: member(input["irreversible_risk"], PRIORITY_LEXICOGRAPHIC_POLICY.irreversible_risk),
-    effort_cost: member(input["effort_cost"], PRIORITY_LEXICOGRAPHIC_POLICY.effort_cost),
-    stable_identity: privateText(input["stable_identity"]),
-  };
-}
 function record(value: unknown): MorningBriefRecord {
   const input = object(value, RECORD_KEYS);
   const itemId = privateText(input["item_id"]); const recommendationId = privateText(input["recommendation_id"]);
@@ -147,7 +52,7 @@ function record(value: unknown): MorningBriefRecord {
   if (hash(provenance) !== provenanceDigest || hash(payload) !== canonicalDigest) return fail();
   return { ...payload, provenance_digest: provenanceDigest, canonical_digest: canonicalDigest };
 }
-function limits(value: unknown): MorningBriefLimits {
+export function parseMorningBriefLimits(value: unknown): MorningBriefLimits {
   if (value === null) return DEFAULT_MORNING_BRIEF_LIMITS;
   const input = object(value, ["max_needs_you_first", "max_waiting", "max_fyi", "max_total_items", "max_sources_per_item",
     "max_copy_bytes", "max_total_bytes"]);
@@ -163,6 +68,9 @@ function limits(value: unknown): MorningBriefLimits {
 
 function validIdentities(items: readonly MorningBriefRecord[]): boolean {
   const roles = new Map<string, string>();
+  for (const semanticKey of new Set(items.map(item => item.semantic_key))) {
+    roles.set(`brief-item:v1:${hash({ semantic_key: semanticKey }).slice(7)}`, "output");
+  }
   const links = new Map<string, string>();
   const add = (value: string, role: string, shared = false): boolean => {
     const previous = roles.get(value);
@@ -196,6 +104,7 @@ export function parseMorningBriefInput(value: unknown): MorningBriefInput {
   if ((!enabled && state !== "off") || (enabled && state === "off")) return fail();
   const generatedAt = instant(input["generated_at"]);
   const items = array(input["items"], 256).map(record);
+  if (input["context_readiness"] === "no_data" && items.length > 0) return fail();
   for (const item of items) {
     const waiting = item.state === "blocked" || item.state === "deferred" || item.state === "dependency_waiting";
     if ((waiting && item.owner_decision_required) || (item.state === "actionable" && item.kind !== "action")
@@ -207,5 +116,5 @@ export function parseMorningBriefInput(value: unknown): MorningBriefInput {
   if (!validIdentities(items)) return fail();
   return { schema_version: 1, generated_at: generatedAt,
     context_readiness: member(input["context_readiness"], ["ready", "degraded", "no_data"] as const),
-    external_intelligence: { enabled, state }, limits: limits(input["limits"]), items };
+    external_intelligence: { enabled, state }, limits: parseMorningBriefLimits(input["limits"]), items };
 }

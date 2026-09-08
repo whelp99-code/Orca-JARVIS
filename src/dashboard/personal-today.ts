@@ -1,6 +1,7 @@
-import { createHash } from "node:crypto";
-import { canonicalize } from "../canonical.js";
 import type { AuthorityDb } from "../db.js";
+import { assertDailyLoopIntegrity } from "../daily-loop-integrity.js";
+import { kstLocalDate } from "../daily-loop-time.js";
+import { verifyMorningBriefResult } from "../morning-brief-artifact.js";
 import { MemoryProjectionAuthority } from "../memory-projection-authority.js";
 import { verifyEveningCloseoutArtifact } from "../evening-closeout-artifact.js";
 import { canonicalPersonalContractHash, parseContextSnapshotV1 } from "../personal-validation.js";
@@ -71,7 +72,7 @@ function latestContext(db: AuthorityDb, now: Date): { readonly state: string; re
 
 function latestBrief(db: AuthorityDb): BriefSummary {
   const raw = db.db.prepare(
-    `SELECT s.step_id,s.run_id,s.detail_json FROM daily_loop_steps s
+    `SELECT s.step_id,s.run_id,s.detail_json,r.loop_date,r.phase FROM daily_loop_steps s
      JOIN daily_loop_runs r ON r.run_id=s.run_id
      WHERE s.step_key='morning_reconcile' AND s.state='completed'
      ORDER BY r.loop_date DESC,r.run_id DESC LIMIT 1`,
@@ -84,18 +85,17 @@ function latestBrief(db: AuthorityDb): BriefSummary {
     return { state: "no_data", brief_id: null, generated_at: null, item_count: 0 };
   }
   const parsed: unknown = JSON.parse(text(row, "detail_json"));
-  if (!record(parsed) || typeof parsed["brief_id"] !== "string" || typeof parsed["generated_at"] !== "string"
-    || typeof parsed["canonical_digest"] !== "string") return { state: "no_data", brief_id: null, generated_at: null, item_count: 0 };
-  const core = Object.fromEntries(Object.entries(parsed).filter(([key]) => key !== "brief_id" && key !== "canonical_digest"));
-  const digest = `sha256:${createHash("sha256").update(canonicalize(core)).digest("hex")}`;
-  if (digest !== parsed["canonical_digest"]) throw new PersonalTodayIntegrityError();
-  const needs = parsed["needs_you_first"];
-  const waiting = parsed["waiting"];
-  const fyi = parsed["fyi"];
-  if (!Array.isArray(needs) || !Array.isArray(waiting) || !Array.isArray(fyi)) throw new PersonalTodayIntegrityError();
-  const itemCount = needs.length + waiting.length + fyi.length;
-  return { state: parsed["context_readiness"] === "ready" ? "ready" : "degraded",
-    brief_id: parsed["brief_id"], generated_at: parsed["generated_at"], item_count: itemCount };
+  assertDailyLoopIntegrity(db, text(row, "run_id"));
+  if (record(parsed) && Object.keys(parsed).sort().join(",") === "boundary,step_key"
+    && parsed["boundary"] === "no_external_effect" && parsed["step_key"] === "morning_reconcile") {
+    return { state: "no_data", brief_id: null, generated_at: null, item_count: 0 };
+  }
+  const brief = verifyMorningBriefResult(parsed);
+  if (text(row, "phase") !== "morning" || kstLocalDate(new Date(brief.generated_at)) !== text(row, "loop_date")) {
+    throw new PersonalTodayIntegrityError();
+  }
+  const itemCount = brief.needs_you_first.length + brief.waiting.length + brief.fyi.length;
+  return { state: brief.context_readiness, brief_id: brief.brief_id, generated_at: brief.generated_at, item_count: itemCount };
 }
 
 function latestCloseout(db: AuthorityDb): Readonly<Record<string, unknown>> | null {

@@ -115,6 +115,8 @@ function omissionReason(value: MorningBriefRecord, clock: string): MorningBriefO
     || value.state === "insufficient_citation") return value.state;
   if (value.state === "untrusted" || value.trust === "untrusted"
     || (value.state === "information" && value.trust !== "confirmed")) return "untrusted";
+  // A future observation cannot support a report at this generation's clock.
+  if (value.observed_at > clock || value.valid_from > clock) return "insufficient_citation";
   if (value.state === "expired" || Date.parse(value.valid_until) <= Date.parse(clock)) return "expired";
   if (value.state === "stale" || Date.parse(value.fresh_until) <= Date.parse(clock)) return "stale";
   const waiting = value.state === "blocked" || value.state === "deferred" || value.state === "dependency_waiting";
@@ -169,6 +171,10 @@ function capped(values: readonly MorningBriefItem[], maximum: number, counts: Ma
   increment(counts, "section_cap", Math.max(0, values.length - maximum));
   return values.slice(0, maximum);
 }
+function reportingClass(value: MorningBriefRecord): string {
+  if (value.state === "blocked" || value.state === "deferred" || value.state === "dependency_waiting") return "waiting";
+  return value.state === "information" ? "fyi" : "action";
+}
 
 export function generateMorningBrief(input: MorningBriefInput): MorningBriefResult {
   const counts = new Map<MorningBriefOmissionReason, number>();
@@ -179,7 +185,12 @@ export function generateMorningBrief(input: MorningBriefInput): MorningBriefResu
   }
   const groups = new Map<string, MorningBriefRecord[]>();
   for (const value of eligible) groups.set(value.semantic_key, [...(groups.get(value.semantic_key) ?? []), value]);
-  const merged = [...groups.values()].map(values => {
+  const consistentGroups = [...groups.values()].filter(values => {
+    const deadlines = new Set(values.flatMap(value => value.deadline === null ? [] : [value.deadline]));
+    if (new Set(values.map(reportingClass)).size === 1 && deadlines.size <= 1) return true;
+    increment(counts, "conflicting", values.length); return false;
+  });
+  const merged = consistentGroups.map(values => {
     const sources = uniqueSorted(values.flatMap(value => value.source_ids)).length;
     const citationCount = citations(values).length;
     const provenanceCount = Math.max(sources, citationCount);

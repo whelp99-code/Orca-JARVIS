@@ -3,6 +3,7 @@ import {
   DEFAULT_MORNING_BRIEF_LIMITS,
   generateMorningBrief,
   parseMorningBriefInput,
+  verifyMorningBriefResult,
 } from "../../src/index.js";
 
 describe("morning brief public API", () => {
@@ -11,6 +12,7 @@ describe("morning brief public API", () => {
     // When / Then: machine-consumed public symbols and values are available
     expect(typeof parseMorningBriefInput).toBe("function");
     expect(typeof generateMorningBrief).toBe("function");
+    expect(typeof verifyMorningBriefResult).toBe("function");
     expect(DEFAULT_MORNING_BRIEF_LIMITS).toEqual({
       max_needs_you_first: 5,
       max_waiting: 5,
