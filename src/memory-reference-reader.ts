@@ -7,10 +7,12 @@ import type { SecondBrainReadAdapter, SecondBrainGenerationBinding } from "./sec
 import type { SecondBrainOutcome } from "./second-brain-transport.js";
 
 export type MemoryReferenceReaderOptions = {
-  readonly authority: AuthorityDb; readonly adapter: SecondBrainReadAdapter;
+  readonly authority: AuthorityDb; readonly adapter: Pick<SecondBrainReadAdapter, "search">;
   readonly membership: MemoryMembership; readonly clock: () => Date;
   readonly generation_status: () => Promise<SecondBrainOutcome>;
   readonly assert_authorized?: (at: Date) => void;
+  /** Trusted scope identity; persisted only through the existing journal HMAC. */
+  readonly delivery_binding?: string;
 };
 export type CheckedMemoryReference = PreparedMemoryReference & {
   /** Local receipt time of the final status response, not a perpetual freshness guarantee. */
@@ -54,7 +56,8 @@ export class MemoryReferenceReader {
     const journal = new MemoryReferenceDeliveries(this.options.authority, this.options.membership);
     const frozenPayload = JSON.parse(submission.serialized) as CheckedMemoryReference["payload"];
     const attempt = session === undefined ? null : journal.claim(session,
-      canonicalize({ generation: submission.generation, privacy: submission.privacy }),
+      canonicalize({ generation: submission.generation, privacy: submission.privacy,
+        ...(this.options.delivery_binding === undefined ? {} : { authorization: this.options.delivery_binding }) }),
       canonicalize(frozenPayload.records.map(row => [row.record.record_id, row.record.record_digest]).sort()),
       submission.serialized, this.options.clock(), submission.privacy,
       () => this.validateSubmissionState(submission, before));
@@ -159,6 +162,10 @@ export class MemoryReferenceReader {
       if (canonicalize(initial) !== canonicalize(final)) throw new JarvisError("MEMORY_REFERENCE_PRIVACY_CHANGED");
       this.options.assert_authorized?.(clock());
       if (!matchesStatus(status, generation, final.tombstone_sequence, final.tombstone_set_root)) {
+        throw new JarvisError("MEMORY_REFERENCE_GENERATION_CHANGED");
+      }
+      if (outcome.kind === "no_data" && outcome.generation !== undefined
+        && !matchesStatus(status, outcome.generation, final.tombstone_sequence, final.tombstone_set_root)) {
         throw new JarvisError("MEMORY_REFERENCE_GENERATION_CHANGED");
       }
       if (outcome.kind === "current") {

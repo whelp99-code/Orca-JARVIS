@@ -1,3 +1,4 @@
+import { phoneRequestAuthentication } from "./phone-request-authentication.js";
 import { serializeCookie } from "./dashboard/phone-session.js";
 import {
   CSRF_HEADER,
@@ -9,6 +10,8 @@ import { matchPhoneRoute } from "./phone-gateway-routes.js";
 import { phoneHtml, retryAfter, writeAsset, writeHtml, writeJson, writePhoneGatewayError } from "./phone-gateway-http.js";
 import { readPostBody, validateMemoryBody } from "./phone-gateway-body.js";
 import type { DispatchUpdate, PhoneGatewayRequestCtx } from "./phone-gateway-request-ctx.js";
+import { createPhoneMemorySessionSource } from "./dashboard/memory-session-source.js";
+import { phoneMemoryContextError } from "./phone-memory-context-error.js";
 
 export async function handleOwnerRequest(
   ctx: PhoneGatewayRequestCtx,
@@ -134,6 +137,8 @@ async function serveMatchedRoute(
   requestId: string,
   update: (value: DispatchUpdate) => void,
 ): Promise<void> {
+  const { isAuthenticated, rejectAuthentication, stillAuthenticated } =
+    phoneRequestAuthentication(ctx, cookieHeader, idHmac, requestId, update);
   const refreshCookie = (): void => {
     const refreshed = ctx.sessions.touch(idHmac);
     if (refreshed !== undefined) {
@@ -171,10 +176,45 @@ async function serveMatchedRoute(
     }
     body = parsed.buffer;
   }
+  // Body intake may outlive the authenticated session. Do not start a read
+  // with stale authentication, or return its contents after expiry/revocation.
+  if (!stillAuthenticated()) return;
+  if (matched.routeClass === "memory_capabilities") {
+    writeJson(ctx.response, 200, requestId, { schema_version: 1,
+      profile: "scoped-record-read-v2", configured: ctx.memoryContext !== undefined,
+      supported_operations: ["context"], writes_supported: false,
+      authorization: "checked_per_request", readiness: "not_checked" }, true);
+    update({ outcome: "allowed", code: "ok", status: 200 }); return;
+  }
+  if (matched.routeClass === "memory_context") {
+    if (ctx.memoryContext === undefined || ctx.memoryAgentId === undefined || body === undefined) {
+      writePhoneGatewayError(ctx.response, { code: PHONE_ERROR_CODES.PHONE_NOT_READY, requestId });
+      update({ code: PHONE_ERROR_CODES.PHONE_NOT_READY, status: 503 }); return;
+    }
+    const session = createPhoneMemorySessionSource({ sessions: ctx.sessions, cookieHeader: () => cookieHeader,
+      currentOwnerDigest: () => ctx.config.ownerDigest, agentId: ctx.memoryAgentId, now: ctx.now });
+    let result;
+    try { result = await ctx.memoryContext(body, session); }
+    catch (error) {
+      // Distinguish a lost login from a still-authenticated session with no grant.
+      if (!stillAuthenticated()) return;
+      const code = phoneMemoryContextError(error);
+      if (code === undefined) throw error;
+      if (code === PHONE_ERROR_CODES.PHONE_CAPACITY_EXCEEDED) retryAfter(ctx.response, 1);
+      writePhoneGatewayError(ctx.response, { code, requestId });
+      update({ code, status: ERROR_STATUS[code], outcome: "rejected" }); return;
+    }
+    if (!stillAuthenticated()) return;
+    refreshCookie(); writeJson(ctx.response, 200, requestId, result, true);
+    update({ outcome: "allowed", code: "ok", status: 200 }); return;
+  }
   const proxied = await ctx.adapter.proxy({
+    isAuthenticated,
     method: method === "POST" ? "POST" : "GET", path: matched.path, query: matched.query,
     body, responseCap: matched.responseCap,
   });
+  if (proxied.kind === "unauthenticated") { rejectAuthentication(); return; }
+  if (!stillAuthenticated()) return;
   if (proxied.kind === "too_large") {
     writePhoneGatewayError(ctx.response, { code: PHONE_ERROR_CODES.PHONE_RESPONSE_TOO_LARGE, requestId });
     update({ code: PHONE_ERROR_CODES.PHONE_RESPONSE_TOO_LARGE, status: 413, outcome: "rejected" });

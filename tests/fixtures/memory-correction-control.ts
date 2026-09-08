@@ -123,7 +123,8 @@ class AcceptedWriter implements SecondBrainWriteRequestAdapter {
   }
 }
 
-export async function correctionPreparedFixture() {
+export async function correctionPreparedFixture(resolved?: { target: ResolvedMemoryTargetV2; scope: MemoryEffectScopeV2 }) {
+  const resolvedTarget = resolved?.target ?? target();
   const database = await memoryDatabase(); const db = database.authority;
   const root = mkdtempSync(join(tmpdir(), "jarvis-correction-control-"));
   let current = NOW; let observation: CorrectionLifecycleObservation | undefined;
@@ -148,8 +149,8 @@ export async function correctionPreparedFixture() {
   const transport: SecondBrainTransport = {
     call: async (): Promise<SecondBrainOutcome> => ({ kind: "data", value: { schema_version: 1,
       provider_instance_id: "provider:fixture", provider_release_sha: "a".repeat(40),
-      generation_id: target().generation_id, generation_manifest_digest: target().generation_manifest_digest,
-      vault_head: target().vault_head, vault_tree: target().vault_tree, tombstone_sequence: 0,
+      generation_id: resolvedTarget.generation_id, generation_manifest_digest: resolvedTarget.generation_manifest_digest,
+      vault_head: resolvedTarget.vault_head, vault_tree: resolvedTarget.vault_tree, tombstone_sequence: 0,
       tombstone_set_root: "sha256:7fb694c8abb7c9a4477aa38381c49446493bc4da1c01b50690c1db5b2c20b9d3",
       pointer_health: "healthy", journal_health: "healthy", features: ["memory_effect_write_v2"] } }),
     restart: async () => undefined, close: async () => undefined, diagnostics: () => [],
@@ -169,7 +170,7 @@ export async function correctionPreparedFixture() {
     compactor, barriers: noopMemoryBarriers(db) };
   const saga = new MemoryCorrectionSaga(runtime);
   const action = await saga.prepare({ control_request_id: "correction-dispatch", candidate_id: candidate.candidate_id,
-    provider_instance_id: "provider:fixture", targets: [target()], scope: scope(), content: "Corrected fixture memory.",
+    provider_instance_id: "provider:fixture", targets: [resolvedTarget], scope: resolved?.scope ?? scope(), content: "Corrected fixture memory.",
     requested_at: NOW, expires_at: new Date(EXPIRES), nonce: "nonce:correction-dispatch" });
   approve(control, action, localKey(db));
   const claim = control.claim(action.request_id, "fixture", NOW);

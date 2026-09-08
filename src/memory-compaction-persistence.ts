@@ -35,6 +35,24 @@ export function beginCompaction(
   start: CompactionStart,
 ): void {
   authority.db.transaction(() => {
+    beginCompactionRun(authority, request, start);
+    const providerJson = canonicalize(request.provider_inventory);
+    const guardsJson = canonicalize(request.reingress_guards);
+    const inputDigest = digest({ provider: request.provider_inventory,
+      reingress_guards: request.reingress_guards });
+    authority.db.prepare(
+      `INSERT INTO memory_compaction_inputs(
+        purge_id,provider_manifest_digest,provider_catalog_rows,provider_signature_verified,
+        reingress_guards_json,input_digest,created_at,provider_inventory_json
+       ) VALUES(?,?,40,1,?,?,?,?)`,
+    ).run(start.purge_id, request.provider_inventory.manifest_digest,
+      guardsJson, inputDigest, start.created_at, providerJson);
+  }).immediate();
+}
+
+export function beginCompactionRun(authority: AuthorityDb,
+  request: Pick<MemoryCompactionRequest, "lane" | "lane_id" | "target_manifest_digest" | "scope_digest" | "tombstone">,
+  start: CompactionStart): void {
     const prior = authority.db.prepare(
       "SELECT state FROM memory_purge_jobs WHERE purge_id=?",
     ).get(start.purge_id) as { readonly state: string } | undefined;
@@ -60,18 +78,6 @@ export function beginCompaction(
     ).run(start.purge_id, start.source_generation, start.result_generation,
       start.source_device, start.source_inode, start.source_digest,
       start.created_at, start.created_at);
-    const providerJson = canonicalize(request.provider_inventory);
-    const guardsJson = canonicalize(request.reingress_guards);
-    const inputDigest = digest({ provider: request.provider_inventory,
-      reingress_guards: request.reingress_guards });
-    authority.db.prepare(
-      `INSERT INTO memory_compaction_inputs(
-        purge_id,provider_manifest_digest,provider_catalog_rows,provider_signature_verified,
-        reingress_guards_json,input_digest,created_at,provider_inventory_json
-       ) VALUES(?,?,40,1,?,?,?,?)`,
-    ).run(start.purge_id, request.provider_inventory.manifest_digest,
-      guardsJson, inputDigest, start.created_at, providerJson);
-  }).immediate();
 }
 
 export function completeCompaction(

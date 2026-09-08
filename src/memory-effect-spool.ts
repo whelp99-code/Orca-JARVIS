@@ -76,7 +76,7 @@ export class MemoryEffectSpool {
   async read(locator: string, expectedDigest: string): Promise<unknown> {
     const root = await this.secure();
     const path = join(root.path, secureBasename(locator));
-    const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+    const file = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     try {
       const metadata = await file.stat();
       if (!metadata.isFile() || metadata.nlink !== 1 || metadata.size > MAX_SPOOL_BYTES
@@ -84,7 +84,18 @@ export class MemoryEffectSpool {
         || (typeof process.getuid === "function" && metadata.uid !== process.getuid())) {
         throw new JarvisError("MEMORY_SPOOL_UNSAFE");
       }
-      const payload = await file.readFile();
+      const bounded = Buffer.alloc(MAX_SPOOL_BYTES + 1);
+      let length = 0;
+      while (length < bounded.length) {
+        const read = await file.read(bounded, length, bounded.length - length, length);
+        if (read.bytesRead === 0) break;
+        length += read.bytesRead;
+      }
+      const after = await file.stat();
+      await assertRootIdentity(root);
+      if (length > MAX_SPOOL_BYTES || after.size !== metadata.size || after.mtimeMs !== metadata.mtimeMs
+        || after.ctimeMs !== metadata.ctimeMs || length !== metadata.size) throw new JarvisError("MEMORY_SPOOL_UNSAFE");
+      const payload = bounded.subarray(0, length);
       if (sha256(payload) !== expectedDigest) throw new JarvisError("MEMORY_SPOOL_DIGEST_MISMATCH");
       const text = payload.toString("utf8").trimEnd();
       const parsed = parseSecondBrainStrictJson(text);

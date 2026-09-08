@@ -1,3 +1,4 @@
+import { resolveDuplicates } from "./second-brain-evidence-duplicates.js";
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { secondBrainUtf8Bytes, type SecondBrainReadBudget } from "./second-brain-read-budget.js";
@@ -106,9 +107,14 @@ function parseBoundRecords(
   frontmatter: Readonly<Record<string, unknown>>,
   pageSensitivity: SecondBrainSensitivity,
 ): ParsedPage {
+  return parseSecondBrainBoundRecords(input, frontmatter["compiled_by"], pageSensitivity);
+}
+
+/** Shared record identity validation for legacy pages and scoped record responses. */
+export function parseSecondBrainBoundRecords(input: PageParseInput, version: unknown,
+  pageSensitivity?: SecondBrainSensitivity): ParsedPage {
   const generation = secondBrainGenerationBinding(input.value);
   const values = input.value["records"];
-  const version = frontmatter["compiled_by"];
   if (generation === undefined || !Array.isArray(values) || values.length > 64
     || typeof version !== "string") return invalid("SECOND_BRAIN_RECORDS_MALFORMED");
   const evidence: SecondBrainEvidence[] = [];
@@ -130,7 +136,7 @@ function parseBoundRecords(
       || typeof content !== "string" || typeof citation !== "string" || typeof ownerDigest !== "string"
       || typeof origin !== "string" || typeof validFrom !== "string" || typeof validUntil !== "string"
       || typeof start !== "number" || typeof end !== "number" || tier === undefined
-      || tier !== pageSensitivity || !/^sbrecord:v1:[0-9a-f]{64}$/.test(recordId)
+      || (pageSensitivity !== undefined && tier !== pageSensitivity) || !/^sbrecord:v1:[0-9a-f]{64}$/.test(recordId)
       || !DIGEST_PATTERN.test(recordDigest) || !DIGEST_PATTERN.test(textDigest)
       || !/^[0-9a-f]{64}$/.test(source) || !/^[0-9a-f]{64}$/.test(content)
       || !/^[0-9a-f]{64}$/.test(citation) || !DIGEST_PATTERN.test(ownerDigest)
@@ -235,24 +241,4 @@ function buildEvidence(
     omission: redacted ? "policy_redacted" : null,
     record: null,
   };
-}
-
-function resolveDuplicates(rows: readonly SecondBrainEvidence[]): ParsedPage {
-  const unique = new Map<string, SecondBrainEvidence>();
-  for (const row of rows) {
-    const key = row.record === null ? `legacy:${row.page_id}\0${row.sid}`
-      : `record:${row.record.record_id}\0${row.record.record_digest}`;
-    const prior = unique.get(key);
-    if (prior !== undefined && prior.content_digest !== row.content_digest) {
-      return {
-        kind: "conflicts",
-        conflicts: [{ conflict_id: `duplicate:${row.page_id}:${row.sid}`, page_id: row.page_id, state: "unresolved", left: prior, right: row }],
-      };
-    }
-    unique.set(key, row);
-  }
-  const sorted = [...unique.values()].sort((left, right) => left.page_id.localeCompare(right.page_id)
-    || left.sid.localeCompare(right.sid) || left.content_digest.localeCompare(right.content_digest));
-  const stale = sorted.some(row => row.freshness.state === "stale");
-  return { kind: stale ? "stale" : "current", evidence: sorted };
 }

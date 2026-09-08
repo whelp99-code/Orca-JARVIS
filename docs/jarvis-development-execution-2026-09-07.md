@@ -1083,3 +1083,50 @@
 - docs/planning/adr-connector-schema-fixture.md에 근거/제한 기록. 설치시각이나
   마이그레이션 적용 자체를 시험하는 fixture로 확장하지 않는다.
   고정c9062b2 verify61099와 전체01–25 목표는 계속 진행 중이다.
+
+
+## 2026-09-09 — main 통합 후보의 검증 결함 수정
+
+- 개발aae919a와 main9ab8293을 소유 작업공간에서 병합 중이다. main 작업공간의
+  기존 변경은 유지했다. 번호072–075가 겹치는 SQL 네 쌍의 원문/파일명은 보존한다.
+- 1차 전체 검증의 첫 묶음1604pass/15fail을 수정했다. 2차 전체30687은
+  첫 묶음1619pass, 두 번째1628pass/1fail로 종료했고 HEAD/추적파일 바이트동일.
+  마지막 실패는 별도마이그레이션 번호검사의 중복불허 가정이다. 명시된 네 쌍만
+  허용하도록 수정했다. 이 실패실행의 dashboard/acceptance/smoke는 미실행이다.
+- 명령등록/DB교체/요청인증/기억중복판정을 분리하고 기존 크기검사를 유지했다.
+  static ESM593modules/2118edges/0cycles, 공개export882(27580 exit0).
+- 직접호출 기억응답 파서의 malformed Unicode ID3종을 거부한다. 실제wire
+  decoder는 이미 거부하므로 wire우회로 보고하지 않는다. red3fail→scope/migration
+  23pass(18023), client/transport/strictJSON/reviewability13pass(96363).
+  backend build/lint/3types43685 exit0, SQL80files/산출물1208개.
+- 컴파일된 직접조회/검색에서 정상ID4건보존·비정상6건거부, provider0(8519ed).
+  격리실제Claude1/verifier1→결과commit→재실행추가호출0,42193ms(50888).
+  후자는 최종ID guard전 병합빌드이며 fixture승인/DB/Git, 운영활성화0이다.
+- 실제취소발급은5Node프로세스·commit직후exit77·동일재생·claim순서거부를
+  확인했다(46550). DB교체/제공자처리전체인수와 구분한다.
+- 상세증거/제한은 docs/planning/adr-main-integration-2026-09-09.md.
+  최종전체gate·독립리뷰·병합커밋은 남는다. 전체01–25와 운영/커넥터/출처HOLD 유지.
+
+
+## 2026-09-09 — 최종 통합 전체 검증 통과
+
+- npm run verify56886 exit0. backend1623+1629=3252/467files,
+  dashboard252/36files, 총3504tests/503files. runtime/lint/3types/build,
+  고정시각acceptance/CLI smoke 통과. 전후HEAD/추적파일 바이트동일.
+- 격리 부모SQL75/76→80 업그레이드에 미승인명령/이벤트/보존작업3행씩을 추가해
+  비journal 원문12행보존·재적용동일·승인없는실행거부·integrity ok/FK0 확인(2024).
+  현재런타임+부모SQL이며 운영DB복제/과거바이너리인수와 구분한다.
+- 읽기전용systemd조회: authority/dashboard/phone active, morning/evening timer
+  not-found. authority의 localhost 외IP차단 설정은 관측했지만 실제cgroup내
+  네트워크효과는 시험하지 않았다. 셸Claude인수와 운영서비스인수를 구분한다.
+- 독립리뷰와 병합커밋은 다음 단계다. 전체01–25/운영/커넥터/기억출처HOLD 유지.
+
+
+## 2026-09-09 — 고정 main 통합 인수
+
+- 독립 읽기전용리뷰 main_merge_review ship, 차단지적0, staged135파일 해시일치.
+  요청gpt-5.6-sol/high, 실제런타임모델/effort 미노출. 리뷰어는 테스트재실행없음.
+- 부모 browser E2E50525 exit0,1440/1024 화면26개통과/1.1m. 승인/실행/재계획/
+  재시도와 접근성심각오류0·넘침없음 확인. 전체gate후 제품/테스트소스변경0.
+- 고정aae919a+9ab8293 통합을 소스커밋 대상으로 인수한다. 이후main53c67b1의
+  7커밋/17파일은 제외한다. 전체01–25/운영/커넥터/출처·성과지표 남은범위 유지.

@@ -11,10 +11,16 @@ describe("task 35 migration allocation grammar", () => {
       expect(match, name).not.toBeNull();
       return Number(match?.groups?.id);
     });
-    expect(ids[0]).toBe(1);
-    for (let index = 1; index < ids.length; index += 1) {
-      expect(ids[index]).toBe((ids[index - 1] ?? 0) + 1);
-    }
+    const prefixes = [...new Set(ids)];
+    expect(prefixes).toEqual(Array.from({ length: prefixes.length }, (_, index) => index + 1));
+    // Preserve both immutable published histories; reject any unlisted collision.
+    expect(prefixes.map(prefix => files.filter((_, index) => ids[index] === prefix))
+      .filter(group => group.length > 1)).toEqual([
+      ["072_daemon_runtime_identity.sql", "072_memory_correction_cancellation.sql"],
+      ["073_memory_cancellation_results.sql", "073_native_evening_publications.sql"],
+      ["074_memory_cancellation_material.sql", "074_retention_policy_binding.sql"],
+      ["075_daily_event_identity.sql", "075_memory_cancellation_local_compaction.sql"],
+    ]);
     expect(files).toContain("056_remote_approval_v2.sql");
   });
 });

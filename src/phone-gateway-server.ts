@@ -16,6 +16,7 @@ import { createPhoneAuthorityReadAdapter, createPhoneRateLimiter } from "./phone
 import { loadAssetNames, writePhoneGatewayError } from "./phone-gateway-http.js";
 import { dispatchRequest } from "./phone-gateway-dispatch.js";
 import type { PhoneGatewayRequestCtx } from "./phone-gateway-request-ctx.js";
+import { createPhoneMemoryContext, type PhoneMemoryContextOptions } from "./phone-memory-context.js";
 
 export type PhoneGatewayServer = {
   readonly address: { readonly host: "127.0.0.1"; readonly port: number; readonly family: "IPv4" };
@@ -30,6 +31,7 @@ export function createPhoneGatewayServer(options: {
   readonly config: PhoneGatewayConfig;
   readonly now?: () => number;
   readonly audit?: (line: string) => void;
+  readonly memoryContext?: PhoneMemoryContextOptions;
 }): PhoneGatewayServer {
   if (options.host !== LOOPBACK) throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
   if (options.port !== 0 && options.port !== PHONE_GATEWAY_PORT) throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
@@ -38,6 +40,8 @@ export function createPhoneGatewayServer(options: {
   const staticRoot = realpathSync(options.staticRoot);
   const assets = loadAssetNames(staticRoot);
   const now = options.now ?? Date.now;
+  const memoryContext = options.memoryContext === undefined ? undefined
+    : createPhoneMemoryContext(options.memoryContext, () => new Date(now()));
   const sessions = createPhoneGatewaySessionStore({ key: options.config.sessionKey, now });
   const limiter = createPhoneRateLimiter({ now });
   const adapter = createPhoneAuthorityReadAdapter({ upstream: upstreamUrl });
@@ -48,6 +52,7 @@ export function createPhoneGatewayServer(options: {
     void handleRequest({
       request, response, config: options.config, sessions, limiter, adapter,
       staticRoot, assets, now, audit, upstream: upstreamUrl,
+      memoryContext, memoryAgentId: options.memoryContext?.agent_id,
     });
   });
   httpServer.headersTimeout = 5000;

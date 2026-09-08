@@ -13,7 +13,18 @@ describe("Task 32 migration protocol compatibility", () => {
       const ids = idRows.map(row => row.id);
       const shipped = readdirSync(join(process.cwd(), "migrations")).filter(file => file.endsWith(".sql")).sort();
       expect(ids).toEqual(shipped);
-      expect(ids.map(id => Number(id.slice(0, 3)))).toEqual(Array.from({ length: ids.length }, (_, index) => index + 1));
+      const prefixes = [...new Set(ids.map(id => Number(id.slice(0, 3))))];
+      expect(prefixes).toEqual(Array.from({ length: prefixes.length }, (_, index) => index + 1));
+      // Both published histories must retain their filenames and checksums. Only
+      // these four pinned branch collisions are permitted; new duplicates fail.
+      const duplicates = prefixes.map(prefix => ids.filter(id => Number(id.slice(0, 3)) === prefix))
+        .filter(group => group.length > 1);
+      expect(duplicates).toEqual([
+        ["072_daemon_runtime_identity.sql", "072_memory_correction_cancellation.sql"],
+        ["073_memory_cancellation_results.sql", "073_native_evening_publications.sql"],
+        ["074_memory_cancellation_material.sql", "074_retention_policy_binding.sql"],
+        ["075_daily_event_identity.sql", "075_memory_cancellation_local_compaction.sql"],
+      ]);
       expect(ids).toEqual(expect.arrayContaining([
         "052_memory_effect_content_free.sql",
         "053_memory_surface_authority.sql",

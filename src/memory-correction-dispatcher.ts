@@ -1,4 +1,5 @@
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
+import { captureCorrectionCancellationSource } from "./memory-correction-cancellation-db.js";
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import type { ClaimedControlCommand } from "./control-plane.js";
@@ -109,6 +110,7 @@ export class MemoryCorrectionDispatcher {
           spool_locator: preparation.spool_locator, spool_digest: preparation.spool_digest,
           expires_at: request.expires_at }, command.command_digest, now);
         captureCorrectionControlBinding(this.options.authority, record as CorrectionControlRow);
+        captureCorrectionCancellationSource(this.options.authority, record.correction_id, request);
       },
     });
     await this.options.barriers.reach({ barrier_id: "jarvis_suppression_tombstone_commit",

@@ -9,6 +9,9 @@ import { afterEach, describe, expect, it } from "vitest";
 import { BACKEND_OUTPUT_ROOTS, fileIdentity } from "../../scripts/lib/backend-build-identity.mjs";
 
 const roots = [];
+const contractFiles = ["second-brain-mcp-v1", "second-brain-mcp-v3", "second-brain-mcp-v4",
+  "second-brain-mcp-v5", "second-brain-scoped-read-v1", "second-brain-scoped-read-v2"]
+  .flatMap(name => [`${name}.json`, `${name}.json.sha256`]);
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "jarvis-backend-build-")); roots.push(root);
@@ -27,8 +30,7 @@ function fixture() {
   writeFileSync(join(root, "config/personal-os-policy.json"), '{"fixture":"policy"}\n');
   writeFileSync(join(root, "src/entry.mts"), "export const marker = 'esm';\n");
   writeFileSync(join(root, "migrations/001_fixture.sql"), "CREATE TABLE fixture(value TEXT);\n");
-  for (const name of ["second-brain-mcp-v1.json", "second-brain-mcp-v1.json.sha256",
-    "second-brain-mcp-v3.json", "second-brain-mcp-v3.json.sha256"]) writeFileSync(join(root, "contracts", name), "{}\n");
+  for (const name of contractFiles) cpSync(join("contracts", name), join(root, "contracts", name));
   writeFileSync(join(root, "dist/src/orphan.js"), "old output\n");
   writeFileSync(join(root, "dist/dashboard/index.html"), "independent dashboard\n");
   writeFileSync(join(root, "dist/build-metadata.json"), "old metadata\n");
@@ -53,6 +55,10 @@ describe("backend build publication", () => {
       source: { head: null, dirty: null, toolchain: { node: process.version } },
       migrations: [{ id: "001_fixture.sql" }] });
     expect(metadata.artifact).toEqual(fileIdentity(join(root, "dist"), BACKEND_OUTPUT_ROOTS));
+    expect(readdirSync(join(root, "dist/contracts")).sort()).toEqual([...contractFiles].sort());
+    for (const name of contractFiles) {
+      expect(readFileSync(join(root, "dist/contracts", name))).toEqual(readFileSync(join(root, "contracts", name)));
+    }
     expect(metadata.artifact.entries.map(item => item.path)).toEqual(expect.arrayContaining([
       "src/index.js", "src/entry.mjs", "contracts/second-brain-mcp-v3.json", "migrations/001_fixture.sql",
       "src/personal-os-policy.json",

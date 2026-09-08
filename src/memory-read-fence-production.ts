@@ -1,8 +1,9 @@
-import { createHash, createPrivateKey, createPublicKey } from "node:crypto";
+import { createHash, createPrivateKey, createPublicKey, type KeyObject } from "node:crypto";
 import { closeSync, constants, fstatSync, openSync, readSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { JarvisError, type AuthorityDb } from "./db.js";
 import { memoryReadHighWater, signMemoryReadFence } from "./memory-read-fence.js";
+import type { MemoryReadFenceV1 } from "./second-brain-effect-v2.js";
 import type { SecondBrainAdapterOptions } from "./second-brain-adapter-types.js";
 
 export type MemoryReadFenceProductionConfig = {
@@ -41,9 +42,9 @@ function privateKey(path: string) {
 
 /** Reads existing configuration and authority only. Never generates or registers keys,
  * copies a provider high-water, or grants a memory write capability. */
-export function createProductionMemoryReadFence(authority: AuthorityDb, explicit?: MemoryReadFenceProductionConfig,
+export function createProductionMemoryReadAuthorization(authority: AuthorityDb, explicit?: MemoryReadFenceProductionConfig,
   purpose: "memory_read" | "memory_status" = "memory_read"):
-  SecondBrainAdapterOptions["read_fence"] {
+  ((at: Date) => { readonly fence: MemoryReadFenceV1; readonly private_key: KeyObject }) | undefined {
   const config = configuration(explicit); if (config === undefined) return undefined;
   const key = privateKey(config.private_key_path);
   const fingerprint = `sha256:${createHash("sha256").update(createPublicKey(key)
@@ -60,12 +61,19 @@ export function createProductionMemoryReadFence(authority: AuthorityDb, explicit
         || !(Date.parse(row.valid_from) <= at.getTime() && at.getTime() < Date.parse(row.valid_until))) {
         throw new JarvisError("MEMORY_READ_FENCE_KEY_UNAVAILABLE");
       }
-      return signMemoryReadFence({ ...config, private_key: key,
+      const fence = signMemoryReadFence({ ...config, private_key: key,
         fence_ttl_ms: Math.min(60_000, Date.parse(row.valid_until) - at.getTime()) },
       purpose, memoryReadHighWater(authority), at);
+      return { fence, private_key: key };
     } catch (error) {
       if (error instanceof JarvisError && error.code === "MEMORY_READ_FENCE_KEY_UNAVAILABLE") throw error;
       throw new JarvisError("MEMORY_READ_FENCE_AUTHORITY_UNAVAILABLE");
     }
   };
+}
+
+export function createProductionMemoryReadFence(authority: AuthorityDb, explicit?: MemoryReadFenceProductionConfig,
+  purpose: "memory_read" | "memory_status" = "memory_read"): SecondBrainAdapterOptions["read_fence"] {
+  const authorize = createProductionMemoryReadAuthorization(authority, explicit, purpose);
+  return authorize === undefined ? undefined : at => authorize(at).fence;
 }

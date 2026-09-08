@@ -41,6 +41,8 @@ export const PHONE_GATEWAY_LIMITS = {
 } as const;
 
 export const PHONE_ERROR_CODES = {
+  PHONE_MEMORY_SCOPE_FORBIDDEN: "PHONE_MEMORY_SCOPE_FORBIDDEN",
+  PHONE_MEMORY_CONTEXT_CHANGED: "PHONE_MEMORY_CONTEXT_CHANGED",
   PHONE_REQUEST_INVALID: "PHONE_REQUEST_INVALID",
   PHONE_BODY_FORBIDDEN: "PHONE_BODY_FORBIDDEN",
   PHONE_IDENTITY_REQUIRED: "PHONE_IDENTITY_REQUIRED",
@@ -65,6 +67,8 @@ export const PHONE_ERROR_CODES = {
 export type PhoneErrorCode = (typeof PHONE_ERROR_CODES)[keyof typeof PHONE_ERROR_CODES];
 
 export const ERROR_STATUS: Record<PhoneErrorCode, number> = {
+  PHONE_MEMORY_SCOPE_FORBIDDEN: 403,
+  PHONE_MEMORY_CONTEXT_CHANGED: 409,
   PHONE_REQUEST_INVALID: 400,
   PHONE_BODY_FORBIDDEN: 400,
   PHONE_IDENTITY_REQUIRED: 401,
@@ -100,6 +104,8 @@ export const PHONE_CORE_ROUTES = [
   { method: "GET", path: "/api/v1/source-health", routeClass: "today", proxyBranch: "source-health" },
   { method: "GET", path: "/api/v1/recommendations/<safe-id>", routeClass: "today", proxyBranch: "recommendation" },
   { method: "GET", path: "/api/v1/contexts/<safe-id>/evidence", routeClass: "today", proxyBranch: "evidence" },
+  { method: "GET", path: "/api/v1/memory/context/capabilities", routeClass: "memory_capabilities", proxyBranch: undefined },
+  { method: "POST", path: "/api/v1/memory/context", routeClass: "memory_context", proxyBranch: undefined },
   { method: "POST", path: "/api/v1/memory/search", routeClass: "memory_search", proxyBranch: "memory_search" },
   { method: "POST", path: "/api/v1/memory/records/detail", routeClass: "memory_detail", proxyBranch: "memory_detail" },
   { method: "GET", path: "/api/v1/memory/conflicts", routeClass: "memory_conflicts", proxyBranch: "memory_conflicts" },
@@ -151,6 +157,8 @@ export type ServeRequest = {
 };
 
 export type AdapterProxy = {
+  /** Trusted request-local session check, invoked after asynchronous bootstrap. */
+  readonly isAuthenticated: () => boolean;
   readonly method: "GET" | "POST";
   readonly path: string;
   readonly query: string;
@@ -159,6 +167,7 @@ export type AdapterProxy = {
 };
 
 export type AdapterResult =
+  | { readonly kind: "unauthenticated" }
   | { readonly kind: "ok"; readonly status: number; readonly body: unknown }
   | { readonly kind: "unavailable" }
   | { readonly kind: "invalid" }

@@ -19,7 +19,7 @@ export type PhoneIssueResult =
   | { readonly kind: "capacity" };
 
 export type PhoneAuthResult =
-  | { readonly kind: "ok"; readonly idHmac: Buffer; readonly csrfHmac: Buffer }
+  | { readonly kind: "ok"; readonly idHmac: Buffer; readonly csrfHmac: Buffer; readonly expiresAt: number }
   | { readonly kind: "missing" }
   | { readonly kind: "invalid" };
 
@@ -61,6 +61,9 @@ export function createPhoneGatewaySessionStore(input: {
       const cookieId = randomBytes(TOKEN_BYTES).toString("base64url");
       const csrfToken = randomBytes(TOKEN_BYTES).toString("base64url");
       const now = input.now();
+      if (!Number.isSafeInteger(now) || now < 0 || !Number.isFinite(new Date(now + PHONE_ABSOLUTE_MS).getTime())) {
+        throw new Error("PHONE_SESSION_CLOCK_INVALID");
+      }
       const idHmac = hmac(cookieId);
       records.set(digestKey(idHmac), {
         idHmac,
@@ -90,7 +93,8 @@ export function createPhoneGatewaySessionStore(input: {
       const record = records.get(digestKey(idHmac));
       if (record === undefined || expired(record, input.now())) return { kind: "invalid" };
       if (!sameBuffer(record.ownerDigest, ownerDigest)) return { kind: "invalid" };
-      return { kind: "ok", idHmac: record.idHmac, csrfHmac: record.csrfHmac };
+      return { kind: "ok", idHmac: Buffer.from(record.idHmac), csrfHmac: Buffer.from(record.csrfHmac),
+        expiresAt: Math.min(record.absoluteExpiry, record.lastSeenAt + PHONE_IDLE_MS) };
     },
     csrfMatches(csrfHmac: Buffer, candidate: string): boolean {
       const actual = hmac(candidate);
@@ -113,7 +117,8 @@ export function createPhoneGatewaySessionStore(input: {
 }
 
 function expired(record: SessionRecord, now: number): boolean {
-  return now - record.lastSeenAt > PHONE_IDLE_MS || now >= record.absoluteExpiry;
+  return !Number.isFinite(now) || now < record.lastSeenAt
+    || now - record.lastSeenAt > PHONE_IDLE_MS || now >= record.absoluteExpiry;
 }
 
 function cookieMaxAge(now: number, absoluteExpiry: number): number {

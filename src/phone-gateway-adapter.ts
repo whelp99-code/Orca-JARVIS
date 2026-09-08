@@ -57,6 +57,9 @@ export function createPhoneAuthorityReadAdapter(input: { readonly upstream: stri
     async proxy(request: AdapterProxy): Promise<AdapterResult> {
       if (upstreamInflight >= PHONE_GATEWAY_LIMITS.concurrentUpstream) return { kind: "unavailable" };
       if (!await ensure() || csrf === undefined) return { kind: "unavailable" };
+      if (!request.isAuthenticated()) return { kind: "unauthenticated" };
+      // Other callers may have occupied the available slots while bootstrap ran.
+      if (upstreamInflight >= PHONE_GATEWAY_LIMITS.concurrentUpstream) return { kind: "unavailable" };
       const headers: Record<string, string> = {
         Accept: "application/json",
         "X-JARVIS-CSRF": csrf,

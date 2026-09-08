@@ -12,6 +12,7 @@ import {
   makePhoneHome,
   processUid,
   startFakeAuthority,
+  json,
 } from "../fixtures/phone-gateway-harness.js";
 
 const roots: string[] = [];
@@ -29,11 +30,11 @@ function staticRoot(): string {
   return root;
 }
 
-async function authed() {
+async function authed(options: { now?: () => number; handler?: Parameters<typeof startFakeAuthority>[0] } = {}) {
   const files = makePhoneHome();
   roots.push(files.home);
   const config = parsePhoneGatewayConfig({ home: files.home, envFile: files.envFile, uid: processUid() });
-  const authority = await startFakeAuthority();
+  const authority = await startFakeAuthority(options.handler);
   const audits: string[] = [];
   const gateway = createPhoneGatewayServer({
     host: "127.0.0.1",
@@ -41,6 +42,7 @@ async function authed() {
     upstream: authority.origin,
     staticRoot: staticRoot(),
     config,
+    now: options.now,
     audit: line => { audits.push(line); },
   });
   const origin = `http://127.0.0.1:${String(gateway.address.port)}`;
@@ -60,6 +62,71 @@ async function authed() {
 }
 
 describe("phone gateway Memory read adapter", () => {
+  it("keeps scoped context disabled without configuration and rejects client identity claims", async () => {
+    const value = await authed();
+    try {
+      const capabilities = await request(`${value.origin}/api/v1/memory/context/capabilities`, { headers: value.headers });
+      expect(capabilities.statusCode).toBe(200);
+      expect(await capabilities.body.json()).toEqual({ schema_version: 1, profile: "scoped-record-read-v2",
+        configured: false, supported_operations: ["context"], writes_supported: false,
+        authorization: "checked_per_request", readiness: "not_checked" });
+      const anonymous = await request(`${value.origin}/api/v1/memory/context/capabilities`, {
+        headers: { ...value.headers, Cookie: '' },
+      });
+      expect(anonymous.statusCode).toBe(401); await anonymous.body.text();
+      for (const [extra, expected] of [[{}, 503], [{ agent_id: 'agent:attacker' }, 400]] as const) {
+        const result = await request(`${value.origin}/api/v1/memory/context`, {
+          method: 'POST', headers: { ...value.headers, 'Content-Type': 'application/json; charset=utf-8' },
+          body: JSON.stringify({ schema_version: 1, query: 'Cited', limit: 2, max_bytes: 32768, ...extra }),
+        });
+        expect(result.statusCode).toBe(expected); await result.body.text();
+      }
+      expect(value.authority.captures.some(row => row.url === '/api/v1/memory/context')).toBe(false);
+      expect(value.authority.captures.some(row => row.url === '/api/v1/memory/context/capabilities')).toBe(false);
+    } finally { value.gateway.close(); await value.authority.close(); }
+  });
+
+  it("does not start a memory read if authentication expires during upstream bootstrap", async () => {
+    let now = Date.parse("2026-09-09T00:00:00.000Z");
+    let expireBootstrap = false;
+    const value = await authed({ now: () => now, handler: (req, res) => {
+      if (req.url !== "/api/v1/session" || !expireBootstrap) return false;
+      now += 16 * 60_000;
+      json(res, 200, { schema_version: 1, csrf_token: "rotated-csrf-token-bbbbbbbbbbbbbbbbbbbbbb" });
+      return true;
+    } });
+    try {
+      const normal = await request(`${value.origin}/api/v1/memory/status`, { headers: value.headers });
+      expect(normal.statusCode).toBe(200); await normal.body.text();
+      value.authority.csrf = "rotated-csrf-token-bbbbbbbbbbbbbbbbbbbbbb";
+      const rotated = await request(`${value.origin}/api/v1/memory/status`, { headers: value.headers });
+      expect(rotated.statusCode).toBe(503); await rotated.body.text();
+      const before = value.authority.captures.filter(row => row.url === "/api/v1/memory/status").length;
+      expireBootstrap = true;
+      const expired = await request(`${value.origin}/api/v1/memory/status`, { headers: value.headers });
+      expect(expired.statusCode).toBe(401); await expired.body.text();
+      expect(value.authority.captures.filter(row => row.url === "/api/v1/memory/status")).toHaveLength(before);
+    } finally { value.gateway.close(); await value.authority.close(); }
+  });
+
+  it("withholds an upstream memory response when the phone session expires in flight", async () => {
+    let now = Date.parse("2026-09-09T00:00:00.000Z");
+    const value = await authed({ now: () => now, handler: (request, response) => {
+      if (request.url !== "/api/v1/memory/status") return false;
+      now += 16 * 60_000;
+      json(response, 200, { schema_version: 1, private_memory: "must-not-return-after-expiry" });
+      return true;
+    } });
+    try {
+      const result = await request(`${value.origin}/api/v1/memory/status`, { headers: value.headers });
+      const body = await result.body.text();
+      expect(result.statusCode).toBe(401);
+      expect(body).toContain(PHONE_ERROR_CODES.PHONE_SESSION_REQUIRED);
+      expect(body).not.toContain("must-not-return-after-expiry");
+      expect(String(result.headers["set-cookie"])).toContain("Max-Age=0");
+    } finally { value.gateway.close(); await value.authority.close(); }
+  });
+
   it("proxies the four Memory routes with reconstructed headers and exact POST bodies", async () => {
     const { gateway, authority, origin, headers, csrf, audits } = await authed();
     try {

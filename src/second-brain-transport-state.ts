@@ -1,10 +1,20 @@
 import {
   SecondBrainTransportError,
   type SecondBrainCallOptions,
+  type SecondBrainContractProfile,
   type SecondBrainMethod,
   type SecondBrainOutcome,
   type SecondBrainTimerHandle,
 } from "./second-brain-transport-contract.js";
+
+export function requireSecondBrainProfile(profile: unknown): SecondBrainContractProfile {
+  if (profile !== "scoped-record-read-v2" && profile !== "scoped-record-read-v1"
+    && profile !== "task32-schema4" && profile !== "remember-schema5"
+    && profile !== "cancellation-schema6" && profile !== "cancellation-submit-schema7") {
+    throw new SecondBrainTransportError("SECOND_BRAIN_CONTRACT_PROFILE_INVALID", "fatal", { generation: 0 });
+  }
+  return profile;
+}
 
 export type SecondBrainPending = {
   readonly id: string;

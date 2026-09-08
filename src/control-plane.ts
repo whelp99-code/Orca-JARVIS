@@ -1,13 +1,15 @@
+import { stageControlCommand } from "./control-command-stage.js";
 import { readControlCommand, listControlCommands, decodeStoredControlCommand } from "./control-command-read.js";
-import { canonicalize } from "./canonical.js"; import { validateControlAction } from "./control-actions.js"; import { controlCommandDigest,
+import { canonicalize } from "./canonical.js"; import { validateControlAction } from "./control-actions.js"; import {
   controlValueDigest as hash, isControlRecord as isRecord, isNonemptyControlValue as nonempty, verifyCommandApproval, } from "./control-plane-contract.js";
-import type { ActionLevel, ClaimedControlCommand, CommandApprovalReceipt, ControlCancelInput, ControlCommandRequestInput, ControlCommandState,
+import type { ActionLevel, ClaimedControlCommand, CommandApprovalReceipt, ControlCancelInput, ControlCommandRequestInput,
   ControlEventInput, StoredControlCommand, } from "./control-plane-contract.js"; import { AuthorityDb, JarvisError } from "./db.js";
 import { MemorySurfaceAuthority } from "./memory-surface-authority.js"; export {
   COMMAND_APPROVAL_DOMAIN, controlCommandDigest, signCommandApproval, verifyCommandApproval, } from "./control-plane-contract.js"; export type { ActionLevel,
   ClaimedControlCommand, CommandApprovalReceipt, ControlCancelInput, ControlCommandRequestInput, ControlCommandState, ControlEventInput, StoredControlCommand,
 } from "./control-plane-contract.js"; const validOutcomeStates = new Set(["completed", "failed", "uncertain"]);
 import { memoryOutboxControlProof } from "./memory-outbox-control-proof.js";
+import { validateMemoryCandidateScopeProposal } from "./memory-candidate-scope.js";
 function finiteDate(date: Date, code: string): number { const time = date.getTime(); if (!Number.isFinite(time)) throw new JarvisError(code); return time; }
 function finiteIso(value: string): number { const time = Date.parse(value); return Number.isFinite(time) ? time : Number.NaN; } export class ControlPlane {
   constructor(private readonly authority: AuthorityDb) {}
@@ -30,28 +32,9 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
     args: Record<string, unknown>; } { const target: unknown = JSON.parse(String(row.target_json)); const args: unknown = JSON.parse(String(row.args_json));
     if (!isRecord(target) || !isRecord(args)) throw new JarvisError("CONTROL_COMMAND_INVALID");
     return { action: String(row.action), action_level: Number(row.action_level) as ActionLevel, target, args }; }
-  stage(input: ControlCommandRequestInput, now = new Date()): StoredControlCommand { const nowMs = finiteDate(now, "CONTROL_COMMAND_INVALID");
-    const requested = finiteIso(input.requested_at); const expires = finiteIso(input.expires_at); if ( input.schema_version !== 1 ||
-      !nonempty(input.request_id) || !nonempty(input.action) || !Number.isInteger(input.action_level) || input.action_level < 0 || input.action_level > 5 ||
-      !isRecord(input.target) || !isRecord(input.args) || typeof input.reversible !== "boolean" || !nonempty(input.requested_by) || !nonempty(input.nonce) ||
-      !Number.isFinite(requested) || !Number.isFinite(expires) || requested > nowMs || expires <= nowMs || expires <= requested ||
-      expires - requested > 24 * 60 * 60_000 ) throw new JarvisError("CONTROL_COMMAND_INVALID"); validateControlAction(input);
-    if (["memory.outbox.dispatch", "memory.delete", "memory.export", "memory.generation.rollback"].includes(input.action) && input.reversible)
-      throw new JarvisError("CONTROL_COMMAND_INVALID"); const digest = controlCommandDigest(input); const targetJson = canonicalize(input.target);
-    const argsJson = canonicalize(input.args); const at = now.toISOString();
-    const prior = this.authority.db.prepare("SELECT command_digest,state FROM control_command_requests WHERE request_id=?").get(input.request_id) as
-      | { command_digest: string; state: ControlCommandState } | undefined; if (prior) {
-      if (prior.command_digest !== digest) throw new JarvisError("CONTROL_COMMAND_REPLAY_CONFLICT");
-      return { ...input, command_digest: digest, state: prior.state }; } const tx = this.authority.db.transaction(() => { this.authority.db .prepare(
-          `INSERT INTO control_command_requests(
-            request_id,action,action_level,target_json,args_json,command_digest,reversible,
-            requested_by,requested_at,expires_at,nonce,state,created_at
-          ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
-        ) .run( input.request_id, input.action, input.action_level, targetJson, argsJson, digest, input.reversible ? 1 : 0, input.requested_by,
-          input.requested_at, input.expires_at, input.nonce, "pending", at, ); this.event({ event_id: `evt:${input.request_id}:requested`,
-        event_type: "control.command.requested", source: "jarvis-control-plane", subject: input.request_id, correlation_id: input.request_id,
-        payload: { action: input.action, action_level: input.action_level, command_digest: digest }, created_at: at, }); }); tx();
-    return { ...input, command_digest: digest, state: "pending" }; } decide(receipt: CommandApprovalReceipt, now = new Date()): void {
+  stage(input: ControlCommandRequestInput, now = new Date()): StoredControlCommand {
+    return stageControlCommand(this.authority, input, now, event => this.event(event));
+  } decide(receipt: CommandApprovalReceipt, now = new Date()): void {
     const nowMs = finiteDate(now, "CONTROL_APPROVAL_INVALID");
     const request = this.authority.db.prepare("SELECT * FROM control_command_requests WHERE request_id=?").get(receipt.request_id) as | Record<string, unknown>
       | undefined; if (!request) throw new JarvisError("CONTROL_APPROVAL_NOT_APPLICABLE");
@@ -64,7 +47,13 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
       ) .get(receipt.key_id) as { public_key_pem: string; principal_id: string } | undefined; if ( !key || key.principal_id !== receipt.signer_principal_id ||
       !verifyCommandApproval(receipt, key.public_key_pem, now) || Date.parse(receipt.expires_at) > Date.parse(String(request.expires_at)) )
       throw new JarvisError("CONTROL_APPROVAL_INVALID"); const state = receipt.decision === "approve" ? "approved" : "rejected"; const at = now.toISOString();
-    const tx = this.authority.db.transaction(() => { this.authority.db .prepare(
+    const tx = this.authority.db.transaction(() => {
+      if (request.action === "memory.scope.review" && receipt.decision === "approve") {
+        const action = this.parseStoredAction(request); validateControlAction(action);
+        validateMemoryCandidateScopeProposal(this.authority, action.args.proposal, now);
+        if (receipt.signer_principal_id !== "principal:owner") throw new JarvisError("CONTROL_APPROVAL_INVALID");
+      }
+      this.authority.db .prepare(
           `INSERT INTO control_command_receipts(
             receipt_id,request_id,decision,command_digest,signer_principal_id,
             authenticated_session_id,key_id,payload_json,signature,issued_at,expires_at,created_at
@@ -109,6 +98,7 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
            ON a.request_id=r.request_id AND a.decision='approve'
          LEFT JOIN control_command_redemptions x ON x.request_id=r.request_id
          WHERE r.state='approved' AND x.request_id IS NULL
+           AND r.action <> 'memory.scope.review'
            AND r.action NOT IN (SELECT value FROM json_each(?))
          ORDER BY r.requested_at,r.request_id`,
       ) .all(JSON.stringify(excludedActions)) as Array<Record<string, unknown>>; for (const row of rows) {
@@ -128,6 +118,7 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
         ) .get(requestId) as Record<string, unknown> | undefined;
       if (!row || row.state !== "approved" || Date.parse(String(row.expires_at)) <= nowMs || Date.parse(String(row.approval_expires)) <= nowMs)
         throw new JarvisError("CONTROL_APPROVAL_REQUIRED");
+      if (row.action === "memory.scope.review") throw new JarvisError("CONTROL_ACTION_REVIEW_ONLY");
       if (this.commandRevoked(requestId, String(row.command_digest), String(row.receipt_id))) throw new JarvisError("CONTROL_APPROVAL_REVOKED");
       const action = this.parseStoredAction(row); validateControlAction(action); const fence = Number(row.lease_fence) + 1;
       const leaseUntil = Math.min(nowMs + leaseMs, Date.parse(String(row.expires_at)), Date.parse(String(row.approval_expires)));

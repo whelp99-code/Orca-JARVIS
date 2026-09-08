@@ -70,6 +70,8 @@ class Schema4Transport implements SecondBrainTransport {
         return { kind: "data", value: { ...GENERATION, changes: [] } };
       case "sb_generation_status":
       case "sb_request_status":
+      case "sb_cancellation_status":
+      case "sb_submit_cancellation":
       case "sb_resolve_memory_target":
       case "sb_write_request":
         return { kind: "error", code: "NOT_USED" };

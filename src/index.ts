@@ -221,3 +221,36 @@ export { createCorrectionCancellationIntent, requireCorrectionCancellationIntent
   CORRECTION_CANCELLATION_INTENT_DOMAIN, MAX_CORRECTION_CANCELLATION_INTENT_BYTES,
   type CorrectionCancellationIntentV1, type CorrectionCancellationEvidence,
   type CorrectionCancellationIntentOptions } from "./memory-correction-cancellation-intent.js";
+
+export { requireCorrectionCancellationResult, CORRECTION_CANCELLATION_RESULT_DOMAIN,
+  type CorrectionCancellationResultV1 } from "./memory-correction-cancellation-result.js";
+export { requireCorrectionCancellationStatus,
+  type CorrectionCancellationStatusV1 } from "./memory-correction-cancellation-status.js";
+export { MemoryCorrectionCancellationIssuer } from "./memory-correction-cancellation-issuer.js";
+export { captureCorrectionCancellationSource } from "./memory-correction-cancellation-db.js";
+export { createCorrectionCancellationFromSource, parseCorrectionCancellationSource,
+  type CorrectionCancellationSource } from "./memory-correction-cancellation-intent.js";
+export { submitDatabaseCorrectionCancellation, requireCorrectionCancellationAccepted,
+  type CorrectionCancellationAcceptedV1 } from "./memory-correction-cancellation-submit.js";
+export { MemoryCorrectionCancellationResultStore } from "./memory-correction-cancellation-result-store.js";
+
+export { collectCancellationMaterial } from "./memory-cancellation-material.js";
+
+export type { JarvisLocalSurfaceObservation } from "./memory-managed-surface-scanner.js";
+
+export type { CancellationLocalCompaction } from "./memory-cancellation-compaction.js";
+
+export type { CancellationSettlement } from "./memory-cancellation-settlement.js";
+
+export { createMemoryScopedClient, type MemoryScopedClientOptions } from "./memory-scoped-client.js";
+export { createScopedMemoryReference } from "./memory-scoped-reference.js";
+export { createProductionScopedMemory, type ScopedMemoryProductionOptions } from "./memory-scoped-production.js";
+export { type PhoneMemoryContextOptions } from "./phone-memory-context.js";
+export { proposeMemoryCandidateScope, validateMemoryCandidateScopeProposal, MEMORY_CANDIDATE_SCOPE_DOMAIN,
+  type MemoryCandidateScopeInput, type MemoryCandidateScopeProposal } from "./memory-candidate-scope.js";
+export { stageMemoryScopeReview, readApprovedMemoryScopeReview } from "./memory-scope-review.js";
+export { prepareMemoryScopedWriteIdentity } from "./memory-scoped-write-identity.js";
+export { prepareMemoryScopedWritePayload, prepareMemoryScopedWriteFromDispatch } from "./memory-scoped-write-payload.js";
+export { publishAutomaticMemoryCandidate } from "./memory-auto-publication.js";
+export { createFileMemoryWriteScopeResolver, type MemoryWriteScopeResolver, type AuthorizedMemoryWriteScope } from "./memory-access-policy.js";
+export { prepareMemoryScopedWriteWithPolicy } from "./memory-scoped-write-policy.js";
