@@ -36,7 +36,7 @@ export function createScopedMemoryReference(authority: AuthorityDb, options: {
       fresh_until: new Date(Date.parse(checked_at) + 60000).toISOString() } : { kind: "current", checked_at, evidence };
   };
   return new MemoryReferenceReader({ authority, membership: options.membership, clock: options.clock,
-    adapter: { search }, assert_authorized: assertAuthorized,
+    adapter: { search }, assert_authorized: assertAuthorized, delivery_binding: initial,
     generation_status: async () => {
       assertAuthorized();
       const status = await options.client.status();

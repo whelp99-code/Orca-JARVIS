@@ -50,12 +50,19 @@ it("rechecks real issuer authority before send and delivery without inventing em
   const reference = await reader.read('example', { max_records: 8, max_record_bytes: 4096, max_bytes: 16384 });
   expect(reference.payload.state).toBe('empty');
   let callbacks = 0;
-  await reader.submit(reference, async payload => { callbacks++; expect(payload).toBe(reference.serialized); });
+  const nativeSession = { client_id: "client:fixture", session_id: "native:session", epoch_id: "epoch:1" };
+  await reader.submitInSession(reference, async payload => { callbacks++; expect(payload).toBe(reference.serialized); }, nativeSession);
   await expect(reader.submit(reference, async () => { callbacks++; })).rejects.toThrow('MEMORY_REFERENCE_SUBMISSION_INVALID');
   expect(callbacks).toBe(1);
   const pendingReference = await reader.read('example', { max_records: 8, max_record_bytes: 4096, max_bytes: 16384 });
   current = { ...scope, session_id: 'session:other' };
   await expect(reader.submit(pendingReference, async () => { callbacks++; })).rejects.toThrow('MEMORY_REFERENCE_SCOPE_CHANGED');
+  expect(callbacks).toBe(1);
+  const changedReader = createScopedMemoryReference(db.authority, { client, clock: () => clock,
+    membership: createMemoryMembership(Buffer.alloc(32, 7)), search_limit: 10 });
+  const changedReference = await changedReader.read('example', { max_records: 8, max_record_bytes: 4096, max_bytes: 16384 });
+  await expect(changedReader.submitInSession(changedReference, async () => { callbacks++; },
+    { ...nativeSession, epoch_id: 'epoch:2' })).rejects.toThrow('MEMORY_REFERENCE_SESSION_INVALIDATED');
   expect(callbacks).toBe(1);
   current = scope;
   const sentBeforeRevocation = sent;
