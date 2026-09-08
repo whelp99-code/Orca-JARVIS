@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import type { OverviewResponse } from "../../src/dashboard/read-model.js";
 import { copy } from "./copy.js";
 import { PortfolioStatus } from "./portfolio-status.js";
+import { RuntimeStatus } from "./runtime-status.js";
 
 type AppProps = Readonly<{
   overview: OverviewResponse;
@@ -71,6 +72,7 @@ export default function App({ overview }: AppProps) {
         </section>
 
         <PortfolioStatus portfolio={overview.portfolio} />
+        <RuntimeStatus runtime={overview.runtime} />
 
         <div className="panel-grid">
           <Panel id="recent-title" title={copy.recent}>

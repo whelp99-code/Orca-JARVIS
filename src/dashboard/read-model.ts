@@ -24,6 +24,7 @@ import { buildSecondBrainReadiness, type SecondBrainReadinessProbe } from "../se
 import { runtimeSecondBrainReadinessProbe } from "../second-brain-readiness-runtime.js";
 import type { CapabilityProbe } from "../capabilities.js";
 import { listedAgents } from "./agent-read-model.js";
+import { createRuntimeIdentityReader, type RuntimeIdentityReader } from "../runtime-identity.js";
 
 export type {
   AgentDetailResponse,
@@ -52,13 +53,14 @@ export class DashboardReadModel {
     private readonly secondBrainProbe: SecondBrainReadinessProbe = runtimeSecondBrainReadinessProbe(),
     capabilityProbe?: CapabilityProbe,
     cursorSession: PersonalCursorCodecOptions = createPersonalCursorSession(),
+    private readonly runtimeIdentity: RuntimeIdentityReader = createRuntimeIdentityReader(() => db.db),
   ) {
     this.personal = new PersonalDashboardReadModel(db, capabilityProbe, cursorSession);
   }
 
   async overview(now = new Date()): Promise<OverviewResponse> {
     if (!Number.isFinite(now.getTime())) {
-      return invalidClockOverview(await buildSecondBrainReadiness(this.secondBrainProbe, now));
+      return { ...invalidClockOverview(await buildSecondBrainReadiness(this.secondBrainProbe, now)), runtime: this.runtimeIdentity(now) };
     }
     // An unrelated approval may commit while health probes await I/O. Guard only
     // the synchronous DB projection, and share one provider observation with doctor.
@@ -70,6 +72,7 @@ export class DashboardReadModel {
       const approvals = pendingControlSummary(this.db, now);
       const agents = listedAgents(this.db, now);
       const portfolio = new PortfolioProjection(this.db).overview(now);
+      const runtime = this.runtimeIdentity(now);
       if (changeCount(this.db) !== before) throw new JarvisError("DASHBOARD_READ_MUTATED");
       const risks: OverviewRisk[] = doctor.checks.filter(check => !check.ok).map(check => ({
         id: check.code ?? "CHECK_FAILED", severity: "high", message: check.name,
@@ -88,7 +91,8 @@ export class DashboardReadModel {
         risks,
         agents,
       });
-      return { ...overview, portfolio: redactDashboardValue(portfolio), second_brain: redactDashboardValue(secondBrain) };
+      return { ...overview, portfolio: redactDashboardValue(portfolio), second_brain: redactDashboardValue(secondBrain),
+        runtime };
     }).deferred();
   }
 

@@ -21,7 +21,7 @@
 | 10–11, 21 최소 | 실제 준비 상태와 승인된 작업 한 건의 실행 완결 | Claude CLI·독립 검증·서명·Git·완료 영수증·실제 UI 인수 완료. readiness 인증은 not_probed, Codex 실행자는 unsupported, 운영 대상 등록·인수는 후속 |
 | 12 | 일일 스케줄과 실제 retention 어댑터 | 완료 보고·lease/deadline·freshness 결함 수정 및 격리 프로세스 재개 검증. 실제 단계 처리·일정·retention 연결은 미완료/HOLD |
 | 13 | 관찰 장애와 실행 장애 분리 | 영속 backoff·건강 상태 및 실제 격리 CLI 검증 완료. 운영 활성화는 후속 |
-| 14–19 | 구조·설치·조회·SSE·테스트·운영 정보 | 도메인 일부 분리, Linux 설치/검증 분리, 순차 test shard, SQL/승인 페이지, SSE·HTTP 병합·본문 상한 및 빌드 식별 생산자 구현·단위 검증. 최신 전체 gate SHA010281c. 구조 부채·일부 목록·운영 SHA/스키마 화면은 미완료 |
+| 14–19 | 구조·설치·조회·SSE·테스트·운영 정보 | 도메인 일부 분리, Linux 설치/검증 분리, 순차 test shard, SQL/승인 페이지, SSE·HTTP 병합·본문 상한, 빌드 식별 생산자 및 현황판 서버/DB 식별 API·UI 격리 검증. 최신 전체 gate SHA010281c. 구조 부채·일부 목록·별도 daemon/운영 인수는 미완료 |
 | 20–25 | 라우팅·실행자·기억 연동·커넥터·템플릿·지표 | 범위 유지; 아래 의존성/보류 항목 참조 |
 
 ## 보류 판정과 재개 조건
@@ -587,3 +587,14 @@
 - 현재 소스10개/5.52초 pass, 실제 backend build/lint/typecheck/CLI smoke/fixed-clock acceptance exit0. actual build 파일1,044개/6,002,823bytes, 별도 해시 대조 일치. 격리 compiled AuthorityDb에 적용한70개 migration journal과 manifest ID/checksum/vector 일치, dashboard4개 bytes/mode 보존, stale 시험파일 제거, staging잔여0, 시험DB디렉터리 제거 확인.
 - 소스 HEAD ba27291/dirty=true에서 artifact digest는 sha256:12ee56423236d191a635cd3be6a773937e5c94e4f8daa0c783f9c3cd018c5480이다. 입력 digest와 Git dirty는 별개이며 이 결과를 clean release로 표시하지 않는다. 증거 `build-identity-*.log`, `build-identity-live.mjs/json`, 설계 `docs/planning/adr-backend-build-identity.md`.
 - 독립 fresh review `/root/review_backend_identity`는 ship/필수 결함0건으로 완료됐다. 요청 모델/effort는 gpt-5.6-terra/high, 실제 설정·개별 token usage는 도구에 노출되지 않았다. native better-sqlite3를 빌드 lock에도 요구하며 hardkill 중 여러 디렉터리의 crash-atomic 전환을 보장하지 않는다. runtime/UI·실제 schema 대조·운영 적용·전체01–25는 미완료다. 기존 자동일일운영/자동기억 원본차단/memory-store 큐 HOLD 유지. 운영DB·서비스·release·push 변경0.
+
+## 2026-09-08 P1-19 후속 — 현황판 서버·DB 식별 표시
+
+- 직전ae23366은 빌드 생산자 구현·실제 산출물/DB 대조·커밋으로 progress였다. 현재 HEAD와 기존 비소유 변경을 확인한 뒤 ADR에 후속 조회 계약을 기록했다. 모듈 상대 root의 manifest/file 대조를 서버 초기화 시 보존하고 overview.runtime과 현황판의 펼치기 영역을 연결했다.
+- 시작 당시 파일 일치/불일치, 기록 없음/오류/읽기 실패, 소스SHA·dirty·입력/산출물digest·Node/ABI·PID/시각을 구분한다. GET에서 checkout을 조회하지 않으며 DB 재개방은 새 연결을 사용한다. DB migration ID/checksum 누락/추가/변경과 실제 sqlite_schema 객체수/digest를 각각 계산한다.
+- 중복 migration ID가 있는 재생성 원장의 matched 오판정1fail/15pass를 재현하고 unavailable로 수정했다. lint 제어문자 정규식 오류1개도 수정했다. 최종 backend6파일33개/15.57초, dashboard33파일190개/30.19초 pass, build/typecheck/lint/CLI smoke/fixed-clock acceptance exit0. 전체 verify 결과는 아니다.
+- 실제 built HTTP+Chromium127.0.0.1:37809/overview: 시작 파일1,049개/70migration 일치, PID2076416/ae23366/dirty=true. 실제 시험DB에 migration1개 추가→unexpected1/API mismatch→SSE후화면 차이 표시. 테이블1개 추가→구조1,359→1,360/hash변경, journal은별도matched. 원복 후 시작관측·구조hash 동일, GET쓰기0, 시험디렉터리 제거.
+- 1440×1000/390×844 정보 펼치기·SHA·dirty·DB 표시, 가로넘침0, component axe serious/critical0, console/pageerrors0. Browser plugin not available로 Playwright 사용. 초기axe는newContext부재로실패하여 probe 수정 후 통과했다. 스크린샷 직접 확인, 증거runtime-identity-live.mjs/json 및runtime-identity-*.png/log.
+- compiled 상태읽기30회 p50 3.527ms/p95 4.811ms·schema1,359개·쓰기0. 신규 계산비용이며 기존대비성능향상으로표현하지않는다. 운영daemon별도release·CLI연결·현재디스크재관측·정상schema기준선·운영인수는미완료다. UI는초기화시디스크관측/마이그레이션기록대조의한계를명시한다. 전체01–25활성, 기존HOLD유지, 운영DB·서비스·release·push변경0.
+- 첫 독립 리뷰 review_runtime_identity는 fix-first/필수1건(API optional runtime 검증누락)이었다. malformed14종 red14fail/4pass 이후 guard 추가, 최종 dashboard33파일205개/34.75초 및 build/typecheck/lint 통과. 실제 browser malformed200응답→기존오류화면→정상응답복구, 두viewport·쓰기0·콘솔0 재확인. 최종경로127.0.0.1:41041/PID2130213, 초기화31.897ms이며 앞선 관측과 구분한다.
+- 최종fresh review_runtime_identity_final은 ship/필수0건. 요청gpt-5.6-terra/high, 실제값native미노출·리뷰어GPT-6표기는자기보고다. 중간probe route.fetch/reload경합의 Route already handled를 고정응답fulfill/unroute대기로해결했다. 잔여소유시험디렉터리1개는열린FD사용자0 확인후제거했다. 최종시험루트잔여0. 커밋후전체canonical verify를실행하며 결과확인전완료라고표시하지않는다.

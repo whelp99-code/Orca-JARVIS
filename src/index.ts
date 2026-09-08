@@ -210,3 +210,5 @@ export { type MicroLoopName, type MicroLoopHandler, type MicroLoopOutcome } from
 export { PersonalOsRuntime } from "./personal-os-runtime.js"; export { evaluateSlo, SLO_CATALOG } from "./personal-os-slo.js";
 export * from "./personal-os-retention.js";
 export { decideRollback, migrationVectorDigest } from "./personal-os-compatibility.js"; export { runPersonalOsRehearsal } from "./personal-os-rehearsal.js";
+export { createRuntimeIdentityReader } from "./runtime-identity.js";
+export type { RuntimeIdentityReader, RuntimeIdentityReport } from "./runtime-identity.js";

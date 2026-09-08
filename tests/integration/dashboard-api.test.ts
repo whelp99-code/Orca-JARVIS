@@ -82,6 +82,8 @@ describe("dashboard HTTP overview walking skeleton", () => {
       expect(response.statusCode).toBe(200);
       const body = parseJson(await response.body.text()) as OverviewResponse;
       expect(body.schema_version).toBe(1);
+      expect(body.runtime).toMatchObject({ schema_version: 1, build: { status: "missing", source_head: null },
+        database: { status: "unverified", applied_migrations: expect.any(Number), schema_digest: expect.any(String) } });
       expect(body.cards.map(({ id, value }) => ({ id, value }))).toEqual([
         { id: "active-work", value: 0 }, { id: "agents", value: 0 },
         { id: "pending-approvals", value: 0 }, { id: "risks", value: 1 },
