@@ -246,4 +246,4 @@ export { proposeMemoryCandidateScope, validateMemoryCandidateScopeProposal, MEMO
   type MemoryCandidateScopeInput, type MemoryCandidateScopeProposal } from "./memory-candidate-scope.js";
 export { stageMemoryScopeReview, readApprovedMemoryScopeReview } from "./memory-scope-review.js";
 export { prepareMemoryScopedWriteIdentity } from "./memory-scoped-write-identity.js";
-export { prepareMemoryScopedWritePayload } from "./memory-scoped-write-payload.js";
+export { prepareMemoryScopedWritePayload, prepareMemoryScopedWriteFromDispatch } from "./memory-scoped-write-payload.js";

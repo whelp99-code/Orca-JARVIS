@@ -3,6 +3,23 @@ import { readMemoryCandidate } from "./memory-candidate-reader.js";
 import { prepareMemoryScopedWriteIdentity } from "./memory-scoped-write-identity.js";
 import { parseMemoryPlainText } from "./memory-plain-text.js";
 import { memoryHash } from "./memory-candidate-values.js";
+import { resolveSpooledDispatch, type SpooledDispatchInput } from "./memory-outbox-dispatch-request.js";
+import { hasSecondBrainWriteAuthority } from "./second-brain-write-authority.js";
+
+/** Product preparation path: recover exact bytes from the bounded private spools
+ * and recheck the original write authority before preparing scoped material. */
+export function prepareMemoryScopedWriteFromDispatch(authority: AuthorityDb, proposal: unknown,
+  reviewRequestId: string, dispatch: Omit<SpooledDispatchInput, "candidate_id" | "now">, now: Date) {
+  return authority.db.transaction(() => {
+    const binding = prepareMemoryScopedWriteIdentity(authority, proposal, reviewRequestId, now);
+    const request = resolveSpooledDispatch({ ...dispatch, candidate_id: binding.identity.candidate_id, now });
+    if (request.operation !== "remember" || !hasSecondBrainWriteAuthority(authority, request, now)) {
+      throw new JarvisError("MEMORY_SCOPED_SOURCE_AUTHORITY_INVALID");
+    }
+    return prepareMemoryScopedWritePayload(authority, proposal, reviewRequestId,
+      request.subject, request.payload.content, now);
+  })();
+}
 
 /** Prepare exact candidate bytes for a scoped request. This is not a dispatch
  * request: current source authority/policy and atomic approval consumption remain

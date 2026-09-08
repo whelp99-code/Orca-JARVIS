@@ -8,7 +8,9 @@ import { verifiedMemoryInput, MEMORY_NOW } from "../fixtures/memory-candidate-fi
 import { memoryDatabase, closeMemoryDatabase, seedMemoryAuthority, memoryCandidateStore, memoryTableCounts } from "../fixtures/memory-candidate-store.js";
 import type { AuthorityDb } from "../../src/db.js";
 import { prepareMemoryScopedWriteIdentity } from "../../src/memory-scoped-write-identity.js";
-import { prepareMemoryScopedWritePayload } from "../../src/memory-scoped-write-payload.js";
+import { prepareMemoryScopedWritePayload, prepareMemoryScopedWriteFromDispatch } from "../../src/memory-scoped-write-payload.js";
+import { outboxFixture } from "../fixtures/memory-outbox-fixture.js";
+import { readMemoryCandidate } from "../../src/memory-candidate-reader.js";
 
 function receipt(authority: AuthorityDb, command: StoredControlCommand, now: Date) {
   return signCommandApproval({ schema_version: 1, receipt_id: `receipt:${command.request_id}`, request_id: command.request_id,
@@ -66,6 +68,33 @@ it("binds an existing signed owner approval to the exact scope and denies pendin
     expect(() => readApprovedMemoryScopeReview(f.authority, proposal, command.request_id, now)).toThrow("MEMORY_SCOPE_REVIEW_INVALID");
     expect(approvedCounts.memory_outbox).toBe(counts.memory_outbox);
   } finally { closeMemoryDatabase(f); }
+});
+
+it("prepares from private dispatch bytes and refuses revoked original verification despite a valid scope review", async () => {
+  const f = await outboxFixture();
+  try {
+    const authority = f.database.authority; const now = f.clock.now;
+    const candidate = readMemoryCandidate(authority.db, f.request.candidate_id)!;
+    const proposal = proposeMemoryCandidateScope(authority, candidate.candidate_id, {
+      owner: "principal:owner", projects: ["project:a"], policy_revision: "policy:1",
+      valid_until: new Date(now.getTime() + 60000).toISOString() }, now);
+    const command = stageMemoryScopeReview(authority, proposal, now);
+    const control = new ControlPlane(authority); control.decide(receipt(authority, command, now), now);
+    const dispatch = { dispatch_spool_digest: String(control.get(f.commandId)!.args.dispatch_spool_digest),
+      roots: { review: `${f.database.root}/candidate-review`, dispatch: `${f.database.root}/candidate-dispatch` } };
+    const before = memoryTableCounts(authority);
+    expect(prepareMemoryScopedWriteFromDispatch(authority, proposal, command.request_id, dispatch, now).payload.content)
+      .toBe(f.request.payload.content);
+    expect(memoryTableCounts(authority)).toEqual(before);
+    authority.db.prepare("INSERT INTO authority_revocations(reference,reason,created_at) VALUES(?,?,?)")
+      .run(candidate.source.verification_evidence_id, "withdraw original evidence", now.toISOString());
+    const revokedCounts = memoryTableCounts(authority);
+    expect(readApprovedMemoryScopeReview(authority, proposal, command.request_id, now).writes_authorized).toBe(false);
+    expect(() => prepareMemoryScopedWriteFromDispatch(authority, proposal, command.request_id, dispatch, now))
+      .toThrow("MEMORY_SCOPED_SOURCE_AUTHORITY_INVALID");
+    expect(memoryTableCounts(authority)).toEqual(revokedCounts);
+    expect(f.writer.calls).toHaveLength(0);
+  } finally { closeMemoryDatabase(f.database); }
 });
 
 it("rechecks quarantine at approval time and rolls back the receipt", async () => {
