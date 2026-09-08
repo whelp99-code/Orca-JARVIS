@@ -764,3 +764,13 @@
   증거 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/verify-native-cli-after.json` 및 log.
 - 후속 `1beee0c`의 systemd 후보 설정과 `d403db5`의 임시 유닛 실측은 위 고정 검증 범위 밖이다.
   실제 저녁 시각의 보고 발행·timer 지속성·실제 출처 연결은 계속 HOLD다.
+
+## 2026-09-09 — 부모 계보 변경 전체 검증
+
+- 고정 `f9da7fb32aba2dd6d1756f6a2c6ea2875b38df10`의 `npm run verify`는 exit 0.
+  backend 215+215파일, 1459+1505=2964개; dashboard 35파일248개 통과.
+  전후 HEAD 동일, 추적 파일 변경 0개, 추적 바이트 동일.
+  증거 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/verify-parent-lineage-after.json` 및 log.
+- 이후 순회 제한 `738db67`과 게시 경계 `7d664b8`은 이 고정 전체 검증에 포함되지 않는다.
+  각 관련 테스트와 별도 프로세스 검증은 해당 ADR에 기록했다. 실제 출처 admission과 운영
+  자동화, 게시 후 삭제는 계속 미완료이며 합성 테스트를 운영 완료로 간주하지 않는다.
