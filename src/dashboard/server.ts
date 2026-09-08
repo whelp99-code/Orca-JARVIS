@@ -78,6 +78,7 @@ export type DashboardServerOptions = {
   readonly memoryCandidateDispatchSpoolRoot?: string;
   readonly memoryReconcileTick?: () => void;
   readonly remoteApproval?: RemoteApprovalService;
+  readonly remoteApprovalPolicyPath?: string;
 };
 
 type RequestContext = {
@@ -108,6 +109,8 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
     throw new JarvisError("VALIDATION_ERROR");
   }
   realpathSync(options.staticRoot);
+  const remoteApproval = options.remoteApproval ?? composeRemoteApproval(options.db,
+    { policyPath: options.remoteApprovalPolicyPath });
   const model = new DashboardReadModel(options.db, options.secondBrainProbe, options.capabilityProbe);
   const terminals = new DashboardTerminalReader(model, options.orcaRunner);
   const events = createDashboardEvents(options.db, options.memoryReconcileTick);
@@ -139,7 +142,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
       memoryLifecycle: options.memoryLifecycle,
       executorFactory: options.executorFactory,
       memoryRuntime,
-      remoteApproval: options.remoteApproval ?? composeRemoteApproval(options.db),
+      remoteApproval,
     });
     requests.add(pending);
     void pending.then(() => requests.delete(pending), () => requests.delete(pending));

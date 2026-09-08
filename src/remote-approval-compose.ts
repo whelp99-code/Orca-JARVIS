@@ -1,8 +1,9 @@
 import { generateKeyPairSync } from "node:crypto";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { closeSync, constants, fstatSync, openSync, readSync } from "node:fs";
+import { isAbsolute } from "node:path";
+import { fileURLToPath } from "node:url";
 import { ControlPlane } from "./control-plane.js";
-import type { AuthorityDb } from "./db.js";
+import { JarvisError, type AuthorityDb } from "./db.js";
 import { parsePersonalOsPolicy } from "./personal-os-policy.js";
 import { RemoteApprovalService } from "./remote-approval.js";
 import { ControlReceiptSigner } from "./remote-approval-signer.js";
@@ -22,8 +23,8 @@ function productionResolver(): RemoteIngressResolver {
   return () => null;
 }
 
-export function composeRemoteApproval(db: AuthorityDb): RemoteApprovalService {
-  const policy = parsePersonalOsPolicy(JSON.parse(readFileSync(resolve("config/personal-os-policy.json"), "utf8")));
+export function composeRemoteApproval(db: AuthorityDb, options: { readonly policyPath?: string } = {}): RemoteApprovalService {
+  const policy = readPolicy(options.policyPath);
   const origin = process.env.JARVIS_REMOTE_PUBLIC_ORIGIN ?? PLACEHOLDER_ORIGIN;
   let rpId = process.env.JARVIS_REMOTE_RP_ID;
   if (rpId === undefined) {
@@ -50,4 +51,31 @@ export function composeRemoteApproval(db: AuthorityDb): RemoteApprovalService {
     signer,
     resolver: productionResolver(),
   });
+}
+
+function readPolicy(explicitPath: string | undefined) {
+  let fd: number | undefined;
+  try {
+    // Source execution and emitted artifacts each have one fixed resource location.
+    // There is no cwd/parent fallback if an installed artifact is incomplete.
+    const path = explicitPath ?? fileURLToPath(new URL(import.meta.url.endsWith(".ts")
+      ? "../config/personal-os-policy.json" : "./personal-os-policy.json", import.meta.url));
+    if (!isAbsolute(path)) throw new Error();
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const before = fstatSync(fd);
+    if (!before.isFile() || before.size > 262144) throw new Error();
+    const buffer = Buffer.alloc(262145);
+    let size = 0;
+    while (size < buffer.length) {
+      const count = readSync(fd, buffer, size, buffer.length - size, size);
+      if (count === 0) break;
+      size += count;
+    }
+    const bytes = buffer.subarray(0, size);
+    const after = fstatSync(fd);
+    if (bytes.length > 262144 || bytes.length !== before.size || after.size !== before.size
+      || after.mtimeMs !== before.mtimeMs || after.ctimeMs !== before.ctimeMs) throw new Error();
+    return parsePersonalOsPolicy(JSON.parse(bytes.toString("utf8")));
+  } catch { throw new JarvisError("REMOTE_APPROVAL_POLICY_UNAVAILABLE"); }
+  finally { if (fd !== undefined) closeSync(fd); }
 }

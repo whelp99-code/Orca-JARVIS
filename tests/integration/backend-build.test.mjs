@@ -12,7 +12,7 @@ const roots = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 function fixture() {
   const root = mkdtempSync(join(tmpdir(), "jarvis-backend-build-")); roots.push(root);
-  for (const name of ["src", "contracts", "migrations", "scripts/lib", "dist/src", "dist/dashboard"]) {
+  for (const name of ["src", "contracts", "config", "migrations", "scripts/lib", "dist/src", "dist/dashboard"]) {
     mkdirSync(join(root, name), { recursive: true });
   }
   symlinkSync(resolve("node_modules"), join(root, "node_modules"), "dir");
@@ -24,6 +24,7 @@ function fixture() {
     module: "NodeNext", target: "ES2022", rootDir: ".", strict: true, types: [], skipLibCheck: true,
   }, include: ["src/**/*"] }));
   writeFileSync(join(root, "src/index.ts"), "export const answer: number = 42;\n");
+  writeFileSync(join(root, "config/personal-os-policy.json"), '{"fixture":"policy"}\n');
   writeFileSync(join(root, "src/entry.mts"), "export const marker = 'esm';\n");
   writeFileSync(join(root, "migrations/001_fixture.sql"), "CREATE TABLE fixture(value TEXT);\n");
   for (const name of ["second-brain-mcp-v1.json", "second-brain-mcp-v1.json.sha256",
@@ -54,7 +55,10 @@ describe("backend build publication", () => {
     expect(metadata.artifact).toEqual(fileIdentity(join(root, "dist"), BACKEND_OUTPUT_ROOTS));
     expect(metadata.artifact.entries.map(item => item.path)).toEqual(expect.arrayContaining([
       "src/index.js", "src/entry.mjs", "contracts/second-brain-mcp-v3.json", "migrations/001_fixture.sql",
+      "src/personal-os-policy.json",
     ]));
+    expect(readFileSync(join(root, "dist/src/personal-os-policy.json"), "utf8"))
+      .toBe(readFileSync(join(root, "config/personal-os-policy.json"), "utf8"));
     expect(existsSync(join(root, "dist/src/orphan.js"))).toBe(false);
     expect(readFileSync(join(root, "dist/dashboard/index.html"), "utf8")).toBe("independent dashboard\n");
     expect(execFileSync(process.execPath, ["--input-type=module", "-e",
