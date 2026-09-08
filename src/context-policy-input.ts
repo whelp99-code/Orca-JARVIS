@@ -1,9 +1,12 @@
 import { parsePersonalOsPolicy, PersonalPolicyError } from "./personal-os-policy.js";
-import {
-  CONTEXT_POLICY_CONFIG_INVALID,
-  CONTEXT_POLICY_INPUT_INVALID,
-  ContextPolicyError,
-} from "./context-policy.js";
+export const CONTEXT_POLICY_INPUT_INVALID = "CONTEXT_POLICY_INPUT_INVALID" as const;
+export const CONTEXT_POLICY_CONFIG_INVALID = "CONTEXT_POLICY_CONFIG_INVALID" as const;
+export type ContextPolicyErrorCode = typeof CONTEXT_POLICY_INPUT_INVALID | typeof CONTEXT_POLICY_CONFIG_INVALID;
+
+export class ContextPolicyError extends Error {
+  readonly name = "ContextPolicyError";
+  constructor(readonly code: ContextPolicyErrorCode) { super(code); }
+}
 
 const CLASSES = ["linux_live_fact", "user_confirmed_principle", "owner_decision"] as const;
 const HOSTS = ["linux-control-plane", "linux-second-brain", "mac-client", "phone-client"] as const;

@@ -1,5 +1,24 @@
 # ADR — 런타임 읽기·통신·공개 API 경계 정리
 
+## 2026-09-09 — 문맥 정책 입력 경계의 순환 제거
+
+`context-policy.ts` 평가기는 입력 parser를 사용하고, parser는 평가기에서 오류
+클래스와 코드를 가져온다. 오류는 입력 경계가 소유하도록 기존 `context-policy-input.ts`로
+옮긴다. `context-policy.ts`는 같은 클래스·코드·타입을 re-export하여 기존 소비자의
+import와 instanceof를 보존한다. 새 파일이나 별도 오류 클래스는 추가하지 않는다.
+정책 판단·입력 검증·권한 조건은 변경하지 않는다. 정적 ESM import/re-export 그래프와
+공개 TypeScript export 이름의 전후 대조, 기존 정책 회귀, compiled ESM의 두 진입 순서로 검증한다.
+정적 그래프는 동적 import/require와 전체 런타임 호출 관계를 포함하지 않는다.
+
+검증: backend build, 관련12파일106테스트(7.50s), lint, 3typechecks exit0(handle5360).
+정적 모듈562개 유지·순환3→2·나머지 순환 그룹 동일·공개 export843개 이름 변경0.
+compiled Node ESM을 입력 모듈 먼저/평가기 먼저 불러온 실제 프로세스1767181/1767195
+모두 exit0: parser/evaluator/package의 오류 클래스 동일, 잘못된 입력·설정의 오류 코드와
+instanceof 유지, 정상 eligible·untrusted abstain 확인. DB나 모델 호출은 하지 않았다.
+증거는 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/context-cycle-{before,after}.json`,
+`context-cycle-{input,policy}-receipt.json`이며 같은 경로의 `runtime-import-graph.mjs`,
+`context-cycle-live.mjs`로 측정했다. 남은 authority/memory25모듈·task21모듈 순환은 후속이다.
+
 2026-09-08. 개선 항목 14의 첫 구조 정리 단위다. 기존 250 nonblank/160자 검사는 유지하며
 상한을 피하기 위한 문장 압축이나 파일별 예외는 추가하지 않는다. 전체 디렉터리 이동과
 모든 기존 압축 코드 재작성은 이 단위의 완료 조건으로 대체하지 않고 후속으로 유지한다.

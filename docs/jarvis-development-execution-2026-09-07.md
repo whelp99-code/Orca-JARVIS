@@ -914,3 +914,15 @@
   최종 actual/CLI33812는 commit `f9891579131171417f86e61fc86be51f8c2ac352`,
   성공1/1·승인1ms·완료37474ms·테이블 내용 전후 동일. 이 단위 실제 모델 시험은
   도우미 시각 수정과 제품 보강 재검증을 포함해 총3회이며 각각 모델1/verifier1이다.
+
+
+## 2026-09-09 — 항목14 문맥 정책 순환 의존 제거
+
+- 오류 정의를 기존 입력 경계 모듈로 이동하고 공개 평가기에서 같은 클래스·코드를
+  re-export한다. 새 파일0, 정책 판단 변경0.
+- 정적 ESM 그래프562모듈에서 순환3→2, 나머지2그룹 동일; 공개 export843개 이름 변경0.
+- backendbuild+106tests/12files7.50s+lint+3types exit0(handle5360).
+- compiled Node 프로세스1767181/1767195에서 import순서2종·오류 클래스 동일성·
+  오류코드2종·정상/불신 정책 판단 통과. DB/모델 호출 없음.
+- 상세 `docs/planning/adr-runtime-module-boundaries.md`; authority/memory 및 task 순환과
+  전체01–25 개발 목표는 남아 있다.

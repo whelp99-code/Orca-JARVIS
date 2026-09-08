@@ -7,14 +7,8 @@ import {
   type ParsedContextPolicyInput,
 } from "./context-policy-input.js";
 
-export const CONTEXT_POLICY_INPUT_INVALID = "CONTEXT_POLICY_INPUT_INVALID" as const;
-export const CONTEXT_POLICY_CONFIG_INVALID = "CONTEXT_POLICY_CONFIG_INVALID" as const;
-export type ContextPolicyErrorCode = typeof CONTEXT_POLICY_INPUT_INVALID | typeof CONTEXT_POLICY_CONFIG_INVALID;
-
-export class ContextPolicyError extends Error {
-  readonly name = "ContextPolicyError";
-  constructor(readonly code: ContextPolicyErrorCode) { super(code); }
-}
+export { CONTEXT_POLICY_INPUT_INVALID, CONTEXT_POLICY_CONFIG_INVALID, ContextPolicyError,
+  type ContextPolicyErrorCode } from "./context-policy-input.js";
 
 export const CONTEXT_POLICY_REASON_CODES = [
   "POLICY_SATISFIED", "POLICY_NOT_EFFECTIVE", "POLICY_EXPIRED", "NO_DATA", "STALE_EVIDENCE",
