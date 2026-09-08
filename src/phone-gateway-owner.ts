@@ -9,6 +9,7 @@ import { matchPhoneRoute } from "./phone-gateway-routes.js";
 import { phoneHtml, retryAfter, writeAsset, writeHtml, writeJson, writePhoneGatewayError } from "./phone-gateway-http.js";
 import { readPostBody, validateMemoryBody } from "./phone-gateway-body.js";
 import type { DispatchUpdate, PhoneGatewayRequestCtx } from "./phone-gateway-request-ctx.js";
+import { createPhoneMemorySessionSource } from "./dashboard/memory-session-source.js";
 
 export async function handleOwnerRequest(
   ctx: PhoneGatewayRequestCtx,
@@ -185,6 +186,18 @@ async function serveMatchedRoute(
   // Body intake may outlive the authenticated session. Do not start a read
   // with stale authentication, or return its contents after expiry/revocation.
   if (!stillAuthenticated()) return;
+  if (matched.routeClass === "memory_context") {
+    if (ctx.memoryContext === undefined || ctx.memoryAgentId === undefined || body === undefined) {
+      writePhoneGatewayError(ctx.response, { code: PHONE_ERROR_CODES.PHONE_NOT_READY, requestId });
+      update({ code: PHONE_ERROR_CODES.PHONE_NOT_READY, status: 503 }); return;
+    }
+    const session = createPhoneMemorySessionSource({ sessions: ctx.sessions, cookieHeader: () => cookieHeader,
+      currentOwnerDigest: () => ctx.config.ownerDigest, agentId: ctx.memoryAgentId, now: ctx.now });
+    const result = await ctx.memoryContext(body, session);
+    if (!stillAuthenticated()) return;
+    refreshCookie(); writeJson(ctx.response, 200, requestId, result, true);
+    update({ outcome: "allowed", code: "ok", status: 200 }); return;
+  }
   const proxied = await ctx.adapter.proxy({
     isAuthenticated,
     method: method === "POST" ? "POST" : "GET", path: matched.path, query: matched.query,

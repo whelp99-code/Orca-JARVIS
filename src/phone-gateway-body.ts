@@ -58,6 +58,15 @@ export function validateMemoryBody(path: string, buffer: Buffer): boolean {
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return false;
   if (keys.some(key => key === "__proto__" || key === "constructor" || key === "prototype")) return false;
   if (Reflect.get(parsed, "schema_version") !== 1) return false;
+  if (path === "/api/v1/memory/context") {
+    if (keys.length !== 4 || !["schema_version", "query", "limit", "max_bytes"].every(key => keys.includes(key))) return false;
+    const query = Reflect.get(parsed, "query"); const limit = Reflect.get(parsed, "limit");
+    const bytes = Reflect.get(parsed, "max_bytes");
+    return typeof query === "string" && query === query.trim() && query === query.normalize("NFC")
+      && Buffer.byteLength(query) >= 1 && Buffer.byteLength(query) <= 512
+      && typeof limit === "number" && Number.isInteger(limit) && limit >= 1 && limit <= 32
+      && typeof bytes === "number" && Number.isInteger(bytes) && bytes >= 1024 && bytes <= 65536;
+  }
   if (path === "/api/v1/memory/search") {
     if (keys.length !== 3 || !keys.includes("schema_version") || !keys.includes("query") || !keys.includes("limit")) {
       return false;

@@ -57,6 +57,9 @@ export function matchPhoneRoute(input: {
     }
   }
   if (method === "POST" && query === "") {
+    if (input.path === "/api/v1/memory/context") {
+      return route("memory_context", method, input.path, "", PHONE_GATEWAY_LIMITS.jsonResponse, true, true, false);
+    }
     if (input.path === "/api/v1/memory/search") {
       return route("memory_search", method, input.path, "", PHONE_GATEWAY_LIMITS.jsonResponse, true, true, true);
     }

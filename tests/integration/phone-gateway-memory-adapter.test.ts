@@ -62,6 +62,20 @@ async function authed(options: { now?: () => number; handler?: Parameters<typeof
 }
 
 describe("phone gateway Memory read adapter", () => {
+  it("keeps scoped context disabled without configuration and rejects client identity claims", async () => {
+    const value = await authed();
+    try {
+      for (const [extra, expected] of [[{}, 503], [{ agent_id: 'agent:attacker' }, 400]] as const) {
+        const result = await request(`${value.origin}/api/v1/memory/context`, {
+          method: 'POST', headers: { ...value.headers, 'Content-Type': 'application/json; charset=utf-8' },
+          body: JSON.stringify({ schema_version: 1, query: 'Cited', limit: 2, max_bytes: 32768, ...extra }),
+        });
+        expect(result.statusCode).toBe(expected); await result.body.text();
+      }
+      expect(value.authority.captures.some(row => row.url === '/api/v1/memory/context')).toBe(false);
+    } finally { value.gateway.close(); await value.authority.close(); }
+  });
+
   it("does not start a memory read if authentication expires during upstream bootstrap", async () => {
     let now = Date.parse("2026-09-09T00:00:00.000Z");
     let expireBootstrap = false;

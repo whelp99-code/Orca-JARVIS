@@ -241,3 +241,4 @@ export type { CancellationSettlement } from "./memory-cancellation-settlement.js
 export { createMemoryScopedClient, type MemoryScopedClientOptions } from "./memory-scoped-client.js";
 export { createScopedMemoryReference } from "./memory-scoped-reference.js";
 export { createProductionScopedMemory, type ScopedMemoryProductionOptions } from "./memory-scoped-production.js";
+export { type PhoneMemoryContextOptions } from "./phone-memory-context.js";

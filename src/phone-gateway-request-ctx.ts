@@ -2,6 +2,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import type { PhoneGatewaySessionStore } from "./dashboard/phone-session.js";
 import type { PhoneAuthorityReadAdapter, PhoneErrorCode, PhoneGatewayConfig } from "./phone-gateway-protocol.js";
 import type { createPhoneRateLimiter } from "./phone-gateway-adapter.js";
+import type { createPhoneMemoryContext } from "./phone-memory-context.js";
 
 export type PhoneGatewayRequestCtx = {
   readonly request: IncomingMessage;
@@ -15,6 +16,8 @@ export type PhoneGatewayRequestCtx = {
   readonly now: () => number;
   readonly audit: (line: string) => void;
   readonly upstream: string;
+  readonly memoryContext?: ReturnType<typeof createPhoneMemoryContext>;
+  readonly memoryAgentId?: string;
 };
 
 export type DispatchUpdate = {

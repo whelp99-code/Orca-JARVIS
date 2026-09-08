@@ -100,6 +100,7 @@ export const PHONE_CORE_ROUTES = [
   { method: "GET", path: "/api/v1/source-health", routeClass: "today", proxyBranch: "source-health" },
   { method: "GET", path: "/api/v1/recommendations/<safe-id>", routeClass: "today", proxyBranch: "recommendation" },
   { method: "GET", path: "/api/v1/contexts/<safe-id>/evidence", routeClass: "today", proxyBranch: "evidence" },
+  { method: "POST", path: "/api/v1/memory/context", routeClass: "memory_context", proxyBranch: undefined },
   { method: "POST", path: "/api/v1/memory/search", routeClass: "memory_search", proxyBranch: "memory_search" },
   { method: "POST", path: "/api/v1/memory/records/detail", routeClass: "memory_detail", proxyBranch: "memory_detail" },
   { method: "GET", path: "/api/v1/memory/conflicts", routeClass: "memory_conflicts", proxyBranch: "memory_conflicts" },
