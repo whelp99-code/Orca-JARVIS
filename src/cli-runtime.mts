@@ -1,4 +1,6 @@
 import { parseArgs } from "node:util";
+import { statSync } from "node:fs";
+import { readTaskPerformance, taskPerformanceWindow } from "./task-performance.js";
 import { inspectRuntimeIdentity } from "./cli-runtime-identity.js";
 import {
   type CliCommandContext,
@@ -30,6 +32,7 @@ const CLI_HELP =
   + "daily morning --once --db PATH --input CONFIG: run stored-source morning recovery; provider refresh unavailable\n"
   + "daily evening --once --db PATH --input CONFIG --key-file PATH: publish stored native completions; automatic operation held\n"
   + "runtime identity [--db PATH]: observe this CLI build and persisted daemon identity without migrating the DB\n"
+  + "report task-performance FROM TO --db PATH: current-state execution cohort metrics; no policy promotion\n"
   + "control plan-task <plan.json>: stage a task execution plan for separate approval (execution unavailable)\n"
   + "control check-task <plan.json>: check repository baseline and declared files without executing an agent\n"
   + "memory classify <input.json> <policy.json>: classify a bounded candidate; does not store memory\n"
@@ -133,6 +136,16 @@ export async function execute(
       ...(subcommand === "evening" ? ["key-file"] : [])].includes(key)))) {
     throw new JarvisError("DAILY_LOOP_CONFIG_INVALID");
   }
+  const performanceReport = command === "report" && subcommand === "task-performance";
+  const performanceAt = performanceReport ? dependencies.clock?.() ?? new Date() : undefined;
+  if (performanceReport) {
+    if (parsed.positionals.length !== 4 || !values.db || Object.keys(parsed.values).some(key => !["db", "json"].includes(key))) {
+      throw new JarvisError("TASK_PERFORMANCE_INPUT_INVALID");
+    }
+    taskPerformanceWindow(argument, fourth, performanceAt!);
+    try { if (!statSync(values.db).isFile()) throw new Error(); }
+    catch { throw new JarvisError("TASK_PERFORMANCE_DATABASE_UNAVAILABLE"); }
+  }
   const db = new AuthorityDb(values.db);
   const context: CliCommandContext = {
     args,
@@ -151,6 +164,8 @@ export async function execute(
     const bootstrap = await executeBootstrapCommand(context);
     if (bootstrap !== undefined) return bootstrap;
     await db.assertMigrationsReady();
+    if (performanceReport) return { ok: true, command: "report.task-performance",
+      report: readTaskPerformance(db, argument, fourth, performanceAt) };
     for (const handler of COMMAND_HANDLERS) {
       const result = await handler(context);
       if (result !== undefined) return result;

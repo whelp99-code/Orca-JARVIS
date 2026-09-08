@@ -891,3 +891,26 @@
   dashboard248/35files, acceptance/smoke 통과. 전후 HEAD 동일·추적 변경0·바이트 동일.
   현재 UI diff를 포함한 전체 gate라고 해석하지 않는다. 증거는
   `/home/jm/.cache/jarvis-test-runtime-qa-20260908/verify-task-templates-after.json`과 같은 이름 log.
+
+
+## 2026-09-09 — 항목25 실제 실행 원장 성과 조회
+
+- `report task-performance FROM TO --db PATH`: 실행 요청 생성 구간의 현재 상태,
+  서명된 완료 증거 기반 성공률, 승인 접수 대기·완료 지연·열린 승인 나이 p95 조회.
+  workflow 시작만으로 성공 집계하지 않고, 폐기된 증거는 별도 집계하며 비율은 null.
+- 읽기 snapshot·최대1000요청·초과 시 거부. 빈 표본 null, 원문/경로/ID 출력 없음.
+  실제 비용·업무 재작업 계보·외부 중복 효과·shadow 비교 기록은 미구현/unavailable.
+  정책 자동 승격은 HOLD이며 이 변경은 항목25 전체 완료가 아니다.
+- backendbuild+27tests/3files30.22s+lint+3types exit0(handle18627).
+  최초 시험의 미래 구간·가짜 완료 삽입은 기존 검증에서 거부되어 시험 구성을 수정했다.
+- 최종 실제 Claude1/독립verifier1→결과commit `2477a11b05f68b52eb549620e746fcce2fa29c9a`
+  →별도 compiled CLI에서 성공1/1·승인대기2ms·완료지연34211ms(samples1/invalid0).
+  첫 실사용 시험의 fixture 승인시각 역전도 invalid1/null로 구분했다.
+- 격리DB/시험서명/Git이며 운영배포 없음. 증거·의미·남은 범위는
+  `docs/planning/adr-task-performance.md`. 기존01–25 전체 목표를 유지한다.
+
+- 독립 리뷰 시간 역전 지적을 수정했다. 요청보다 이른 완료는 성공수에도 포함하지
+  않는다. 최종 gate79747 build+27tests/3files32.08s+lint+3types exit0.
+  최종 actual/CLI33812는 commit `f9891579131171417f86e61fc86be51f8c2ac352`,
+  성공1/1·승인1ms·완료37474ms·테이블 내용 전후 동일. 이 단위 실제 모델 시험은
+  도우미 시각 수정과 제품 보강 재검증을 포함해 총3회이며 각각 모델1/verifier1이다.
