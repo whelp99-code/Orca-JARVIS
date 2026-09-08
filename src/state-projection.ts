@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
-import { mkdir, rename, rm, symlink, writeFile } from "node:fs/promises";
+import { renameSync } from "node:fs";
+import { mkdir, rm, symlink, writeFile } from "node:fs/promises";
 import { basename, join } from "node:path";
 import { canonicalize } from "./canonical.js";
-import { AuthorityDb } from "./db.js";
+import { AuthorityDb, JarvisError } from "./db.js";
 import { passiveCapabilityProbe, runDoctor, type DoctorReport } from "./doctor.js";
 import type { CapabilityProbe } from "./capabilities.js";
 import { TaskTimeline } from "./recommendation-timeline.js";
@@ -146,10 +147,14 @@ export async function writeCurrentState(
   const projection = await buildCurrentState(db, now, options);
   const root = await secureRoot(directory);
   const generationsRoot = join(root.path, ".current-state");
-  await mkdir(generationsRoot, { mode: 0o700 });
+  const generationsIdentity = await secureRoot(generationsRoot);
   const generation = `generation-${now.getTime()}-${randomUUID()}`;
-  bindStructuredProjection(db.db, { kind: "state_generation", id: generation,
-    component_id: generation }, projection, now);
+  const ref = { kind: "state_generation" as const, id: generation, component_id: generation };
+  bindStructuredProjection(db.db, ref, projection, now);
+  const assertVisible = () => {
+    if (new MemoryProjectionAuthority(db).isSuppressed(ref)) throw new JarvisError("STATE_PROJECTION_SUPPRESSED");
+  };
+  assertVisible();
   const generationDirectory = join(generationsRoot, generation);
   await mkdir(generationDirectory, { mode: 0o700 });
   const jsonPath = join(generationDirectory, "CURRENT_STATE.json");
@@ -165,6 +170,8 @@ export async function writeCurrentState(
     section("WORKERS", projection.workers),
     section("RISKS", projection.risks),
   ].join("\n");
+  const temporaryPointer = join(generationsRoot, `.current.${randomUUID()}`);
+  let published = false;
   try {
     await writeFile(jsonPath, `${canonicalize(projection)}\n`, { mode: 0o600, flag: "wx" });
     await writeFile(markdownPath, markdown, { mode: 0o600, flag: "wx" });
@@ -172,14 +179,20 @@ export async function writeCurrentState(
     await syncFile(markdownPath);
     await syncDirectory(generationDirectory);
     await assertRootIdentity(root);
+    await assertRootIdentity(generationsIdentity);
     const pointer = join(generationsRoot, "current");
-    const temporaryPointer = join(generationsRoot, `.current.${randomUUID()}`);
     await symlink(basename(generationDirectory), temporaryPointer);
-    await rename(temporaryPointer, pointer);
+    db.db.transaction(() => {
+      assertVisible();
+      renameSync(temporaryPointer, pointer);
+      published = true;
+    }).immediate();
     await syncDirectory(generationsRoot);
     return { generation, directory: generationDirectory, json: jsonPath, markdown: markdownPath, projection };
   } catch (error) {
-    await rm(generationDirectory, { recursive: true, force: true });
+    if (published) throw new JarvisError("STATE_PROJECTION_OUTCOME_UNCERTAIN");
+    await rm(temporaryPointer, { force: true });
+    if (!published) await rm(generationDirectory, { recursive: true, force: true });
     throw error;
   }
 }

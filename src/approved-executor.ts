@@ -237,7 +237,8 @@ export class ApprovedCommandExecutor {
       const externalUncertain = externalContext !== undefined;
       const code = externalUncertain ? "EXTERNAL_EFFECT_UNCERTAIN" : error instanceof JarvisError ? error.code : "APPROVED_COMMAND_FAILED";
       const payload = { error: error instanceof Error ? error.message : "unknown" };
-      const state = isUncertainRunbookError(command, code) ? "uncertain" : "failed";
+      const state = isUncertainRunbookError(command, code)
+        || (command.action === "state.project" && code === "STATE_PROJECTION_OUTCOME_UNCERTAIN") ? "uncertain" : "failed";
       const completedAt = this.clock();
       if (externalContext) this.effects.update(requestId, "uncertain", completedAt,
         undefined, "EXTERNAL_EFFECT_UNCERTAIN");

@@ -1,7 +1,8 @@
 import { existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as secureFilesystem from "../../src/secure-filesystem.js";
 import { ApprovedCommandExecutor, ControlPlane, signCommandApproval, type CommandApprovalReceipt, type ControlCommandRequestInput } from "../../src/index.js";
 import { future, initialized, localKey } from "../helpers.js";
 import { closeMemoryDatabase } from "../fixtures/memory-candidate-store.js";
@@ -12,6 +13,23 @@ const approve = (db: Awaited<ReturnType<typeof initialized>>, control: ControlPl
 const dispose = (db: Awaited<ReturnType<typeof initialized>>, root: string): void => { db.close(); rmSync(root, { recursive: true, force: true }); rmSync(dirname(db.filename), { recursive: true, force: true }); };
 
 describe("approved built-in executor", () => {
+  it("records uncertain after a state pointer was published but directory sync fails", async () => {
+    const root = mkdtempSync(join(tmpdir(), "jarvis-state-uncertain-"));
+    const db = await initialized(); const control = new ControlPlane(db); const stateRoot = join(root, "state");
+    const original = secureFilesystem.syncDirectory;
+    try {
+      vi.spyOn(secureFilesystem, "syncDirectory").mockImplementation(async path => {
+        if (path === join(stateRoot, ".current-state")) throw new Error("TEST_SYNC_FAILED");
+        await original(path);
+      });
+      const id = approve(db, control, request("state-uncertain", "state.project", 1, {}));
+      await expect(new ApprovedCommandExecutor(db, join(root, "backups"), stateRoot).execute(id))
+        .resolves.toMatchObject({ state: "uncertain", failure_code: "STATE_PROJECTION_OUTCOME_UNCERTAIN" });
+      expect(control.get(id)).toMatchObject({ state: "uncertain" });
+      expect(existsSync(join(stateRoot, ".current-state/current/CURRENT_STATE.json"))).toBe(true);
+    } finally { vi.restoreAllMocks(); dispose(db, root); }
+  });
+
   it("maps an exact approved memory outbox action to observed settlement", async () => {
     const digest = OUTBOX_ARTIFACT_DIGEST;
     const fixture = await outboxFixture({ reader: new FixtureReader({ kind: "current", checked_at: "2026-08-28T12:00:00.000Z", evidence: [evidence(digest)] }) });
