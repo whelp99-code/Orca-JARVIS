@@ -708,3 +708,19 @@
   고정시각acceptance와CLI smoke exit0(handle83756 종료). 전체 gate의 timeout 실패는 유지한다.
   증거 morning-cli-downstream-{dashboard,acceptance,smoke}.log.
 - 저녁 사용량 최종독립검토 /root/evening_usage_review: ship, 지적0. 요청luna/high, 실제설정미노출.
+
+## 2026-09-08 P1-12 — 저녁 집계 전체 검증 및 후속 경계
+
+- 고정 HEAD `12c424feed4ec560e68954c78e75ccca5a79aa0c`의 `npm run verify`가 exit 0으로 종료했다.
+  backend 213+213파일, 1435+1473=2908개 통과; dashboard 35파일 248개 통과.
+  전후 HEAD 동일, 변경 추적 파일 0개, 추적 파일 바이트 동일이다.
+  증거: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/verify-evening-usage.log`와
+  `verify-evening-usage-after.json`. 이전 `2f54516` timeout 원인 해소까지 증명하지는 않는다.
+- 후속 커밋 `aef39a2`는 저녁 게시와 일일 예산 검사를 한 트랜잭션으로 묶었다.
+  `6272f3a`는 Today 저녁 완료 표시에서 산출물 자체 공개키를 신뢰하던 경로를 제거했다.
+  각 단위 검증과 독립 검토 결과는 `adr-evening-budget-settlement.md` 및
+  `adr-closeout-dashboard-trust.md`를 따른다. 위 전체 검증에는 두 후속 커밋이 포함되지 않는다.
+- 실행 진입점 `src/dashboard/main.ts`를 확인했다. `createDashboardServer`에 추가된
+  `trustedCloseoutKey`를 CLI에서 구성하는 경로는 아직 없다. 미설정은 완료 표시를 숨기는
+  현재 계약을 유지하며, 실제 공개키 공급과 실제 저녁 원본·실행기 연결을 후속 개발한다.
+- 운영 배포·재시작은 수행하지 않았다. 합성 자료의 프로세스 검증과 실제 운영 인수는 구분한다.
