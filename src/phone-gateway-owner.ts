@@ -134,6 +134,14 @@ async function serveMatchedRoute(
   requestId: string,
   update: (value: DispatchUpdate) => void,
 ): Promise<void> {
+  const stillAuthenticated = (): boolean => {
+    const current = ctx.sessions.authenticate(cookieHeader, ctx.config.ownerDigest);
+    if (current.kind === "ok" && current.idHmac.equals(idHmac)) return true;
+    ctx.response.setHeader("Set-Cookie", ctx.sessions.expireCookie());
+    writePhoneGatewayError(ctx.response, { code: PHONE_ERROR_CODES.PHONE_SESSION_REQUIRED, requestId });
+    update({ code: PHONE_ERROR_CODES.PHONE_SESSION_REQUIRED, status: 401, outcome: "rejected" });
+    return false;
+  };
   const refreshCookie = (): void => {
     const refreshed = ctx.sessions.touch(idHmac);
     if (refreshed !== undefined) {
@@ -171,10 +179,14 @@ async function serveMatchedRoute(
     }
     body = parsed.buffer;
   }
+  // Body intake may outlive the authenticated session. Do not start a read
+  // with stale authentication, or return its contents after expiry/revocation.
+  if (!stillAuthenticated()) return;
   const proxied = await ctx.adapter.proxy({
     method: method === "POST" ? "POST" : "GET", path: matched.path, query: matched.query,
     body, responseCap: matched.responseCap,
   });
+  if (!stillAuthenticated()) return;
   if (proxied.kind === "too_large") {
     writePhoneGatewayError(ctx.response, { code: PHONE_ERROR_CODES.PHONE_RESPONSE_TOO_LARGE, requestId });
     update({ code: PHONE_ERROR_CODES.PHONE_RESPONSE_TOO_LARGE, status: 413, outcome: "rejected" });

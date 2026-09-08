@@ -12,6 +12,7 @@ import {
   makePhoneHome,
   processUid,
   startFakeAuthority,
+  json,
 } from "../fixtures/phone-gateway-harness.js";
 
 const roots: string[] = [];
@@ -29,11 +30,11 @@ function staticRoot(): string {
   return root;
 }
 
-async function authed() {
+async function authed(options: { now?: () => number; handler?: Parameters<typeof startFakeAuthority>[0] } = {}) {
   const files = makePhoneHome();
   roots.push(files.home);
   const config = parsePhoneGatewayConfig({ home: files.home, envFile: files.envFile, uid: processUid() });
-  const authority = await startFakeAuthority();
+  const authority = await startFakeAuthority(options.handler);
   const audits: string[] = [];
   const gateway = createPhoneGatewayServer({
     host: "127.0.0.1",
@@ -41,6 +42,7 @@ async function authed() {
     upstream: authority.origin,
     staticRoot: staticRoot(),
     config,
+    now: options.now,
     audit: line => { audits.push(line); },
   });
   const origin = `http://127.0.0.1:${String(gateway.address.port)}`;
@@ -60,6 +62,24 @@ async function authed() {
 }
 
 describe("phone gateway Memory read adapter", () => {
+  it("withholds an upstream memory response when the phone session expires in flight", async () => {
+    let now = Date.parse("2026-09-09T00:00:00.000Z");
+    const value = await authed({ now: () => now, handler: (request, response) => {
+      if (request.url !== "/api/v1/memory/status") return false;
+      now += 16 * 60_000;
+      json(response, 200, { schema_version: 1, private_memory: "must-not-return-after-expiry" });
+      return true;
+    } });
+    try {
+      const result = await request(`${value.origin}/api/v1/memory/status`, { headers: value.headers });
+      const body = await result.body.text();
+      expect(result.statusCode).toBe(401);
+      expect(body).toContain(PHONE_ERROR_CODES.PHONE_SESSION_REQUIRED);
+      expect(body).not.toContain("must-not-return-after-expiry");
+      expect(String(result.headers["set-cookie"])).toContain("Max-Age=0");
+    } finally { value.gateway.close(); await value.authority.close(); }
+  });
+
   it("proxies the four Memory routes with reconstructed headers and exact POST bodies", async () => {
     const { gateway, authority, origin, headers, csrf, audits } = await authed();
     try {
