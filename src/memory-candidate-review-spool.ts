@@ -80,8 +80,10 @@ export function createMemoryCandidateReviewEnvelope(
   value: MemoryCandidateReviewEnvelopeInput,
 ): MemoryCandidateReviewEnvelope {
   const { input, computation, classification } = value;
-  if (!classification.required_confirmation || classification.state !== "awaiting_confirmation"
-    || classification.confirmation_expires_at === null) {
+  const automatic = classification.state === "approved" && !classification.required_confirmation
+    && classification.operation === "remember";
+  if (!automatic && (!classification.required_confirmation || classification.state !== "awaiting_confirmation"
+    || classification.confirmation_expires_at === null)) {
     throw new Error("MEMORY_REVIEW_NOT_ELIGIBLE");
   }
   const core: Omit<MemoryCandidateReviewEnvelope, "review_envelope_digest"> = {
@@ -107,7 +109,7 @@ export function createMemoryCandidateReviewEnvelope(
     retention_days: classification.retention_days,
     created_at: classification.created_at,
     candidate_expires_at: classification.candidate_expires_at,
-    confirmation_expires_at: classification.confirmation_expires_at,
+    confirmation_expires_at: classification.confirmation_expires_at ?? classification.candidate_expires_at,
   };
   return { ...core, review_envelope_digest: digest(core) };
 }

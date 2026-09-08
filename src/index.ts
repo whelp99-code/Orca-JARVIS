@@ -247,3 +247,4 @@ export { proposeMemoryCandidateScope, validateMemoryCandidateScopeProposal, MEMO
 export { stageMemoryScopeReview, readApprovedMemoryScopeReview } from "./memory-scope-review.js";
 export { prepareMemoryScopedWriteIdentity } from "./memory-scoped-write-identity.js";
 export { prepareMemoryScopedWritePayload, prepareMemoryScopedWriteFromDispatch } from "./memory-scoped-write-payload.js";
+export { publishAutomaticMemoryCandidate } from "./memory-auto-publication.js";

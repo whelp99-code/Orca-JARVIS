@@ -6,6 +6,7 @@ import { MemoryCandidateStore } from "./memory-candidate-store.js";
 import { MemoryCandidateError } from "./memory-candidate-types.js";
 import { memoryCandidateSpoolRoots, bindMemoryCandidateSpools } from "./memory-outbox-production.js";
 import { parseSecondBrainStrictJsonBytes } from "./second-brain-strict-json.js";
+import { publishAutomaticMemoryCandidate } from "./memory-auto-publication.js";
 
 const MAX_BYTES = 32_768;
 
@@ -46,6 +47,7 @@ export async function executeMemoryIntake(context: CliCommandContext): Promise<R
     const roots = memoryCandidateSpoolRoots(context.db.filename, context.dependencies.memoryOutboxOptions);
     store.attachReviewSpool(roots.candidate_review_spool_root);
     const candidate = store.classify(input);
+    publishAutomaticMemoryCandidate(context.db, input, policy, roots, () => commandNow(context));
     // Register the same roots used by owner confirmation and the existing outbox.
     bindMemoryCandidateSpools(context.db, roots);
     return { ok: true, command: "memory.classify", candidate: {
