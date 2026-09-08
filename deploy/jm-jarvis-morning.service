@@ -1,0 +1,18 @@
+[Unit]
+Description=JM JARVIS stored-source morning brief (candidate; operator activation required)
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/jm/.local/state/orca-jarvis/authority/current
+Environment=NODE_ENV=production
+ExecStart=/home/jm/.nvm/versions/node/v24.19.0/bin/node /home/jm/.local/state/orca-jarvis/authority/current/dist/src/cli.js daily morning --once --db /home/jm/.local/state/orca-jarvis/jarvis.sqlite --input /home/jm/.config/orca-jarvis/morning.json
+TimeoutStartSec=660
+ReadWritePaths=/home/jm/.local/state/orca-jarvis
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
