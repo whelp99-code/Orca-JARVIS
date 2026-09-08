@@ -1,20 +1,21 @@
 import { join } from "node:path";
 import { writeFileSync } from "node:fs";
-import { memoryDatabase, closeMemoryDatabase, seedMemoryAuthority } from "./memory-candidate-store.js";
+import { memoryDatabase, closeMemoryDatabase, insertMemoryVerification, memoryVerificationPayload } from "./memory-candidate-store.js";
 import { verifiedMemoryInput, memoryPolicy, MEMORY_NOW } from "./memory-candidate-fixture.js";
 import { execute } from "../../src/cli.js";
 import { readMemoryCandidate } from "../../src/memory-candidate-reader.js";
 import { resolveSpooledDispatch } from "../../src/memory-outbox-dispatch-request.js";
 
 /** Uses the production CLI to publish both spools, not hand-built review data. */
-export async function scopedV3DispatchFixture() {
+export async function scopedV3DispatchFixture(at?: Date) {
   const database = await memoryDatabase();
   try {
-    const now = new Date(MEMORY_NOW);
+    const now = at ?? new Date(MEMORY_NOW);
     const statement = "첫 결정\r\n두 번째 결정\n반복\n반복 [^user]";
     const input = { ...verifiedMemoryInput({ statement }), schema_version: 2, body_profile: "plain-text-v1" };
-    seedMemoryAuthority(database.authority, input);
-    const roots = { review: join(database.root, "review"), dispatch: join(database.root, "dispatch") };
+    insertMemoryVerification(database.authority, memoryVerificationPayload(input, {
+      issued_at: now.toISOString(), not_before: now.toISOString(), expires_at: new Date(now.getTime() + 86400000).toISOString() }));
+    const roots = { review: join(database.root, "candidate-review"), dispatch: join(database.root, "candidate-dispatch") };
     const inputFile = join(database.root, "input.json"), policyFile = join(database.root, "policy.json");
     writeFileSync(inputFile, JSON.stringify(input), { mode: 0o600 });
     writeFileSync(policyFile, JSON.stringify(memoryPolicy()), { mode: 0o600 });
