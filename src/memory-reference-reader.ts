@@ -7,7 +7,7 @@ import type { SecondBrainReadAdapter, SecondBrainGenerationBinding } from "./sec
 import type { SecondBrainOutcome } from "./second-brain-transport.js";
 
 export type MemoryReferenceReaderOptions = {
-  readonly authority: AuthorityDb; readonly adapter: SecondBrainReadAdapter;
+  readonly authority: AuthorityDb; readonly adapter: Pick<SecondBrainReadAdapter, "search">;
   readonly membership: MemoryMembership; readonly clock: () => Date;
   readonly generation_status: () => Promise<SecondBrainOutcome>;
   readonly assert_authorized?: (at: Date) => void;

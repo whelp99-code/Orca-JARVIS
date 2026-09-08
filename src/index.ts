@@ -239,3 +239,4 @@ export type { CancellationLocalCompaction } from "./memory-cancellation-compacti
 export type { CancellationSettlement } from "./memory-cancellation-settlement.js";
 
 export { createMemoryScopedClient, type MemoryScopedClientOptions } from "./memory-scoped-client.js";
+export { createScopedMemoryReference } from "./memory-scoped-reference.js";

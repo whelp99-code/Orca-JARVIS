@@ -61,6 +61,10 @@ export function createMemoryScopedClient(options: MemoryScopedClientOptions) {
     return parsed;
   }
   return {
+    authorizationIdentity: () => {
+      if (options.profile !== "scoped-record-read-v2" || options.status_issue === undefined) return denied();
+      return identity(options.status_issue({ method: "sb_generation_status", arguments: {} }, new Date(options.now().getTime())));
+    },
     status: (signal?: AbortSignal) => read("sb_generation_status", {}, signal),
     readPage: (id: string, signal?: AbortSignal) => read("sb_read_page", { id }, signal),
     search: (query: string, limit = 10, signal?: AbortSignal) => read("sb_search", { query, limit }, signal),
