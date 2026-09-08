@@ -69,7 +69,9 @@ export class ClaudeTaskCandidateProvider implements TaskCandidateProvider {
         if (failure) { reject(new JarvisError(failure)); return; }
         if (code !== 0) { reject(new JarvisError("TASK_PROVIDER_FAILED")); return; }
         try {
-          const result = JSON.parse(Buffer.concat(stdout).toString("utf8")) as Record<string, unknown>;
+          const raw = Buffer.concat(stdout), text = raw.toString("utf8");
+          if (!Buffer.from(text, "utf8").equals(raw)) throw new Error("invalid UTF-8");
+          const result = JSON.parse(text) as Record<string, unknown>;
           if (!result || result.type !== "result" || result.subtype !== "success" || result.is_error !== false
             || result.structured_output === undefined) throw new Error("invalid result");
           resolve({ output: result.structured_output, output_bytes: bytes });

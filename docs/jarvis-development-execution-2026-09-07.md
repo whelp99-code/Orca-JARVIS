@@ -808,3 +808,24 @@
   시계 주입·빈 시험DB·경로 재지정을 사용했다. 운영 설치·실제 출처·지속복구는 HOLD다.
 - 현재 라우팅 preview 작업은 이 고정 전체 검증 밖이며, 분류 자체를 실행자 준비나
   업무 완료로 취급하지 않는다. 전체 01–25의 미완료 범위는 유지한다.
+
+## 2026-09-09 — 실행자 등록부 및 응답 바이트 보존
+
+- `0878e0d`는 기존 Claude 실행자를 컴파일 등록부에 연결했다. 준비 상태와 승인 실행은
+  계획의 provider를 정확히 조회하며 미등록 provider로 대체하지 않는다. CLI 등록부 조회는
+  DB 생성·모델 호출 없이 설정 존재 여부만 반환한다. 30개 테스트, 빌드/lint/typecheck exit 0.
+  상세 범위 및 읽기 전용 리뷰 ship은 `docs/planning/adr-task-executor-registry.md` 참조.
+- 후속 계약 조사에서 Claude stdout의 손상된 UTF-8이 대체 문자로 변환되어 반환되는 결함을
+  실제 로컬 하위 프로세스로 재현했다. ff/overlong/surrogate/truncated 4종이 수정 전 반환되어
+  거부 테스트 4개 실패, 정상 Unicode 1개 통과였다. JSON 파싱 전 UTF-8 왕복 바이트 비교를
+  추가해 원본과 불일치하면 TASK_PROVIDER_RESULT_INVALID로 거부한다.
+- 수정 후 5개 파일 41개 테스트 통과(14.09초), backend build/lint/3개 typecheck exit 0.
+  중간 빌드는 bytes 변수 충돌 TS2322로 실패했고 raw로 변경 후 위 검증을 재실행했다.
+- 별도 컴파일된 전송 경로의 로컬 fixture 실행 PID1273195/exit0: 손상 응답 거부,
+  정상 `한글 🧠 �` 원문 보존, 출력 바이트 101. 영수증:
+  `/home/jm/.cache/jarvis-test-runtime-qa-20260908/provider-utf8-zcFGQn/receipt.json`.
+  실제 모델 인증·호출 또는 운영 적용 검증은 아니다.
+- 실행자 입력/결과 형식 및 제한값 공통화, 인증 상태, 승인에 연결된 라우팅은 미완료다.
+  동시 실행 중인 e70d113 고정 전체 검증은 위 두 후속 변경을 포함하지 않는다.
+- 읽기 전용 `/root/provider_utf8_review`: ship, 지적 0개. 요청 luna/high,
+  실제 모델/추론 수준 메타데이터 미노출. 비교용 추가 버퍼는 기존 출력 상한 1MiB 이내다.
