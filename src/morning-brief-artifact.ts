@@ -13,7 +13,7 @@ function parseArtifact(value: unknown): MorningBriefResult {
   const input = object(value, ["schema_version", "brief_id", "generated_at", "context_readiness", "needs_you_first",
     "waiting", "fyi", "omissions", "omitted_count", "degradation_reasons", "abstention_reasons",
     "external_intelligence", "limits", "canonical_digest"]);
-  if (input["schema_version"] !== 1 || input["limits"] === null) return fail();
+  if (input["schema_version"] !== 2 || input["limits"] === null) return fail();
   const limits = parseMorningBriefLimits(input["limits"]);
   const external = object(input["external_intelligence"], ["enabled", "skip_reason"]);
   const enabled = external["enabled"] === true ? true : external["enabled"] === false ? false : fail();
@@ -22,7 +22,7 @@ function parseArtifact(value: unknown): MorningBriefResult {
     .map(state => `external_intelligence_${state}`);
   if (enabled ? skip !== null && !allowed.includes(skip) : skip !== "external_intelligence_disabled") return fail();
   const artifact: MorningBriefResult = {
-    schema_version: 1, brief_id: privateText(input["brief_id"]), generated_at: instant(input["generated_at"]),
+    schema_version: 2, brief_id: privateText(input["brief_id"]), generated_at: instant(input["generated_at"]),
     context_readiness: member(input["context_readiness"], ["ready", "degraded", "no_data"] as const),
     needs_you_first: array(input["needs_you_first"], limits.max_needs_you_first).map(value => parseMorningBriefItem(value, limits)),
     waiting: array(input["waiting"], limits.max_waiting).map(value => parseMorningBriefItem(value, limits)),
@@ -38,7 +38,7 @@ function parseArtifact(value: unknown): MorningBriefResult {
   };
   const core = Object.fromEntries(Object.entries(artifact).filter(([key]) => !["brief_id", "canonical_digest"].includes(key)));
   const id = hash({ generated_at: artifact.generated_at, canonical_digest: artifact.canonical_digest });
-  if (hash(core) !== artifact.canonical_digest || artifact.brief_id !== `morning-brief:v1:${id.slice(7)}`
+  if (hash(core) !== artifact.canonical_digest || artifact.brief_id !== `morning-brief:v2:${id.slice(7)}`
     || Buffer.byteLength(canonicalize(artifact), "utf8") > limits.max_total_bytes) return fail();
   return artifact;
 }

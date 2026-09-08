@@ -72,6 +72,7 @@ export type MorningBriefInput = {
 };
 export type MorningBriefItem = {
   readonly item_id: string;
+  readonly reporting_class: "action" | "waiting" | "fyi";
   readonly recommendation_id: string;
   readonly action_id: string;
   readonly contributing_item_ids: readonly string[];
@@ -94,7 +95,7 @@ export type MorningBriefItem = {
 };
 export type MorningBriefOmission = { readonly reason: MorningBriefOmissionReason; readonly count: number };
 export type MorningBriefResult = {
-  readonly schema_version: 1;
+  readonly schema_version: 2;
   readonly brief_id: string;
   readonly generated_at: string;
   readonly context_readiness: "ready" | "degraded" | "no_data";

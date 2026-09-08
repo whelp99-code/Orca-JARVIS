@@ -11,7 +11,7 @@ function rehash(value: any) {
   const core = Object.fromEntries(Object.entries(value).filter(([key]) => !["brief_id", "canonical_digest"].includes(key)));
   const canonical_digest = hash(core);
   return { ...core, canonical_digest,
-    brief_id: `morning-brief:v1:${hash({ generated_at: value.generated_at, canonical_digest }).slice(7)}` };
+    brief_id: `morning-brief:v2:${hash({ generated_at: value.generated_at, canonical_digest }).slice(7)}` };
 }
 function rehashItem(value: any) {
   const core = Object.fromEntries(Object.entries(value).filter(([key]) => !["provenance_digest", "canonical_digest"].includes(key)));
@@ -123,12 +123,36 @@ describe("morning brief artifact integrity", () => {
       Object.assign(Object.create({}), brief()), { ...brief(), extra: true }, null]) rejects(value);
     expect(calls).toBe(0);
   });
+  it("binds FYI, waiting and action section membership into the item digest", () => {
+    for (const source of [
+      morningRecord({ kind: "information", state: "information", owner_decision_required: false }),
+      morningRecord({ state: "blocked", owner_decision_required: false }),
+      morningRecord({ owner_decision_required: false, deadline: "2026-08-28T13:00:00.000Z",
+        priority: { ...morningRecord().priority, deadline_bucket: "today" } }),
+    ]) {
+      const generated = generateMorningBrief(parseMorningBriefInput(morningInput([source])));
+      const sections = ["needs_you_first", "waiting", "fyi"] as const;
+      const from = sections.find(section => generated[section].length > 0)!;
+      const item = generated[from][0]!;
+      for (const to of sections.filter(section => section !== from)) {
+        rejects(rehash({ ...generated, [from]: [], [to]: [item] }));
+        rejects(rehash({ ...generated, [from]: [], [to]: [{ ...item,
+          reporting_class: to === "needs_you_first" ? "action" : to }] }));
+      }
+    }
+  });
+  it("rejects the unbound v1 format rather than inferring a missing reporting class", () => {
+    const generated = brief();
+    const oldItem = Object.fromEntries(Object.entries(generated.needs_you_first[0]!).filter(([key]) => key !== "reporting_class"));
+    const legacy = rehash({ ...generated, schema_version: 1, needs_you_first: [rehashItem(oldItem)] });
+    rejects({ ...legacy, brief_id: legacy.brief_id.replace("morning-brief:v2:", "morning-brief:v1:") });
+  });
   it.each([
-    ["brief identity", (value: any) => ({ ...value, brief_id: "morning-brief:v1:" + "0".repeat(64) })],
+    ["brief identity", (value: any) => ({ ...value, brief_id: "morning-brief:v2:" + "0".repeat(64) })],
     ["top digest", (value: any) => ({ ...value, canonical_digest: "sha256:" + "0".repeat(64) })],
     ["nested digest", (value: any) => rehash({ ...value, needs_you_first: [{ ...value.needs_you_first[0], copy: "Changed" }] })],
     ["missing fields", (value: any) => rehash({ ...value, needs_you_first: [{ copy: "Claim" }] })],
-    ["wrong version", (value: any) => rehash({ ...value, schema_version: 2 })],
+    ["wrong version", (value: any) => rehash({ ...value, schema_version: 3 })],
     ["default limits substitution", (value: any) => rehash({ ...value, limits: null })],
     ["omitted count", (value: any) => rehash({ ...value, omitted_count: 1 })],
     ["empty unaccounted abstention", (value: any) => rehash({ ...value, needs_you_first: [] })],

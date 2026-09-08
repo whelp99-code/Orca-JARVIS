@@ -10,11 +10,12 @@ export function briefStrings(value: unknown, maximum: number): readonly string[]
   return strings;
 }
 export function parseMorningBriefItem(value: unknown, limits: MorningBriefLimits): MorningBriefItem {
-  const input = object(value, ["item_id", "recommendation_id", "action_id", "contributing_item_ids",
+  const input = object(value, ["item_id", "reporting_class", "recommendation_id", "action_id", "contributing_item_ids",
     "contributing_recommendation_ids", "contributing_action_ids", "source_ids", "citations", "copy",
     "observed_at", "valid_from", "valid_until", "fresh_until", "trust", "confidence", "owner_decision_required",
     "deadline", "priority", "provenance_digest", "canonical_digest"]);
   const item: MorningBriefItem = {
+    reporting_class: member(input["reporting_class"], ["action", "waiting", "fyi"] as const),
     item_id: privateText(input["item_id"]), recommendation_id: privateText(input["recommendation_id"]),
     action_id: privateText(input["action_id"]), contributing_item_ids: briefStrings(input["contributing_item_ids"], 256),
     contributing_recommendation_ids: briefStrings(input["contributing_recommendation_ids"], 256),
@@ -49,6 +50,7 @@ export function parseMorningBriefItem(value: unknown, limits: MorningBriefLimits
 }
 
 export function assertMorningItemSection(item: MorningBriefItem, section: MorningSection, generatedAt: string): void {
+  if (item.reporting_class !== (section === "needs_you_first" ? "action" : section)) return fail();
   if (item.valid_from > item.observed_at || item.observed_at > generatedAt || item.valid_until <= generatedAt
     || item.fresh_until <= generatedAt || item.valid_until <= item.valid_from || item.fresh_until <= item.observed_at) return fail();
   if (section === "fyi" && (item.trust !== "confirmed" || item.owner_decision_required)) return fail();

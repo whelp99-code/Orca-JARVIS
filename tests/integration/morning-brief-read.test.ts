@@ -28,7 +28,7 @@ function rehash(value: Record<string, unknown>) {
   const core = Object.fromEntries(Object.entries(value).filter(([key]) => !["brief_id", "canonical_digest"].includes(key)));
   const canonical_digest = hash(core);
   return { ...core, canonical_digest,
-    brief_id: `morning-brief:v1:${hash({ generated_at: value["generated_at"], canonical_digest }).slice(7)}` };
+    brief_id: `morning-brief:v2:${hash({ generated_at: value["generated_at"], canonical_digest }).slice(7)}` };
 }
 
 describe("persisted morning brief read boundary", () => {

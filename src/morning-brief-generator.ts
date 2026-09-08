@@ -87,6 +87,7 @@ function item(values: readonly MorningBriefRecord[], maximumCopyBytes: number, m
   const sourceIds = bounded.sourceIds;
   const selectedCitations = bounded.citations;
   const core = {
+    reporting_class: reportingClass(representative),
     recommendation_id: representative.recommendation_id, action_id: representative.action_id,
     contributing_item_ids: uniqueSorted(sorted.map(value => value.item_id)),
     contributing_recommendation_ids: uniqueSorted(sorted.map(value => value.recommendation_id)),
@@ -150,7 +151,7 @@ function result(input: MorningBriefInput, sections: Sections, counts: ReadonlyMa
   const noData = input.context_readiness === "no_data" && input.items.length === 0;
   const noAuthoritativeData = !noData && itemCount === 0;
   const core = {
-    schema_version: 1 as const, generated_at: input.generated_at, context_readiness: input.context_readiness,
+    schema_version: 2 as const, generated_at: input.generated_at, context_readiness: input.context_readiness,
     needs_you_first: sections.needs, waiting: sections.waiting, fyi: sections.fyi, omissions,
     omitted_count: omissions.reduce((sum, value) => sum + value.count, 0),
     degradation_reasons: uniqueSorted([
@@ -161,7 +162,7 @@ function result(input: MorningBriefInput, sections: Sections, counts: ReadonlyMa
     external_intelligence: { enabled: input.external_intelligence.enabled, skip_reason: externalReason(input) }, limits: input.limits,
   };
   const canonicalDigest = `sha256:${hash(core)}`;
-  return { ...core, brief_id: `morning-brief:v1:${hash({ generated_at: input.generated_at, canonical_digest: canonicalDigest })}`,
+  return { ...core, brief_id: `morning-brief:v2:${hash({ generated_at: input.generated_at, canonical_digest: canonicalDigest })}`,
     canonical_digest: canonicalDigest };
 }
 function increment(counts: Map<MorningBriefOmissionReason, number>, reason: MorningBriefOmissionReason, amount: number): void {
@@ -171,7 +172,7 @@ function capped(values: readonly MorningBriefItem[], maximum: number, counts: Ma
   increment(counts, "section_cap", Math.max(0, values.length - maximum));
   return values.slice(0, maximum);
 }
-function reportingClass(value: MorningBriefRecord): string {
+function reportingClass(value: MorningBriefRecord): MorningBriefItem["reporting_class"] {
   if (value.state === "blocked" || value.state === "deferred" || value.state === "dependency_waiting") return "waiting";
   return value.state === "information" ? "fyi" : "action";
 }
