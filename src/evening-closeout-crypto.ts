@@ -38,6 +38,10 @@ function keyId(value: unknown): string {
   const parsed = closeoutText(value, 64);
   return /^[a-z][a-z0-9-]{2,63}$/.test(parsed) ? parsed : invalidCloseout();
 }
+export function parseTrustedCloseoutKey(value: unknown): TrustedCloseoutKey {
+  const input = closedObject(value, ["key_id", "public_key_spki"]);
+  return { key_id: keyId(input["key_id"]), public_key_spki: canonicalSpki(input["public_key_spki"]) };
+}
 export function parseCloseoutSigningIdentity(value: unknown): CloseoutSigningIdentity {
   const input = closedObject(value, [
     "schema_version", "algorithm", "key_id", "public_key_spki", "public_key_fingerprint",

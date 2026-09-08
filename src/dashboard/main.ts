@@ -13,6 +13,8 @@ import { bindDashboardMemoryDependencies } from "./memory-production.js";
 import { composeRemoteApproval } from "../remote-approval-compose.js";
 import { createDashboardServer } from "./server.js";
 import { MemoryOutboxTick } from "../memory-outbox-tick.js";
+import { parseTrustedCloseoutKey } from "../evening-closeout-crypto.js";
+import type { TrustedCloseoutKey } from "../evening-closeout-types.js";
 
 const LOOPBACK = "127.0.0.1";
 
@@ -22,7 +24,14 @@ export type DashboardCliOptions = {
   readonly dbPath: string;
   readonly staticRoot: string;
   readonly policyPath?: string;
+  readonly trustedCloseoutKey?: TrustedCloseoutKey;
 };
+
+function configuredCloseoutKey(value: unknown): TrustedCloseoutKey | undefined {
+  if (value === undefined) return undefined;
+  try { return parseTrustedCloseoutKey(value); }
+  catch { throw new JarvisError("VALIDATION_ERROR"); }
+}
 
 export type DashboardMemoryDependencies = {
   readonly memoryReadFenceConfig?: import("../memory-read-fence-production.js").MemoryReadFenceProductionConfig;
@@ -46,6 +55,8 @@ export function parseDashboardCli(argv: readonly string[]): DashboardCliOptions 
       db: { type: "string" },
       "static-root": { type: "string" },
       policy: { type: "string" },
+      "closeout-key-id": { type: "string" },
+      "closeout-public-key-spki": { type: "string" },
     },
     strict: true,
   });
@@ -57,7 +68,11 @@ export function parseDashboardCli(argv: readonly string[]): DashboardCliOptions 
     throw new JarvisError("VALIDATION_ERROR");
   }
   if (values.policy !== undefined && values.policy.length === 0) throw new JarvisError("VALIDATION_ERROR");
+  const trustedCloseoutKey = configuredCloseoutKey(
+    values["closeout-key-id"] === undefined && values["closeout-public-key-spki"] === undefined
+      ? undefined : { key_id: values["closeout-key-id"], public_key_spki: values["closeout-public-key-spki"] });
   return { host: LOOPBACK, port, dbPath: resolve(values.db), staticRoot: resolve(values["static-root"]),
+    ...(trustedCloseoutKey === undefined ? {} : { trustedCloseoutKey }),
     ...(values.policy === undefined ? {} : { policyPath: resolve(values.policy) }) };
 }
 
@@ -65,6 +80,7 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
   process.stdout.write(`${line}\n`);
 }, memoryLifecycle?: Pick<MemoryLifecycleService, "execute">,
   dependencies: DashboardMemoryDependencies = {}): { close: () => Promise<void> } {
+  const trustedCloseoutKey = configuredCloseoutKey(options.trustedCloseoutKey);
   const db = new AuthorityDb(options.dbPath);
   const remoteApproval = (() => {
     try { return composeRemoteApproval(db, { policyPath: options.policyPath }); }
@@ -81,6 +97,7 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
     () => server.publish(["memory.effects.v1", "memory.records.v1", "memory.candidates.v1", "approvals", "overview"]));
   const server = createDashboardServer({
     db,
+    trustedCloseoutKey,
     staticRoot: options.staticRoot,
     host: options.host,
     port: options.port,

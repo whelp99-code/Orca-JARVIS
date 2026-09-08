@@ -1,12 +1,13 @@
-import { spawn } from "node:child_process";
-import { mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { spawn, spawnSync } from "node:child_process";
+import { existsSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { request } from "undici";
 import { afterAll, describe, expect, it } from "vitest";
-import { AuthorityDb } from "../../src/index.js";
+import { AuthorityDb, DailyLoopStore, EveningCloseoutStore, generateEveningCloseout, parseEveningCloseoutInput } from "../../src/index.js";
 import { parseDashboardCli, startDashboardCli } from "../../src/dashboard/main.js";
+import { closeoutInput, signer, trustedCloseoutKey } from "../fixtures/evening-closeout.js";
 
 const roots = new Set<string>();
 const MAIN = join(process.cwd(), "dist/src/dashboard/main.js");
@@ -46,6 +47,25 @@ async function migratedDb(): Promise<string> {
 }
 
 describe("dashboard CLI", () => {
+  it("validates paired closeout trust options before database creation", () => {
+    const root = mkdtempSync(join(tmpdir(), "jarvis-closeout-key-"));
+    roots.add(root);
+    const dbPath = join(root, "must-not-exist.sqlite");
+    const base = ["--host", "127.0.0.1", "--port", "0", "--db", dbPath, "--static-root", root];
+    const valid = ["--closeout-key-id", trustedCloseoutKey.key_id,
+      "--closeout-public-key-spki", trustedCloseoutKey.public_key_spki];
+    expect(parseDashboardCli([...base, ...valid]).trustedCloseoutKey).toEqual(trustedCloseoutKey);
+    for (const flags of [valid.slice(0, 2), valid.slice(2),
+      ["--closeout-key-id", "bad", "--closeout-public-key-spki", "private-or-invalid"]]) {
+      const child = spawnSync(process.execPath, [MAIN, ...base, ...flags], { encoding: "utf8", timeout: 10000 });
+      expect(child.status).toBe(2);
+      expect(child.stderr.trim()).toBe("VALIDATION_ERROR");
+      expect(existsSync(dbPath)).toBe(false);
+    }
+    expect(() => startDashboardCli({ host: "127.0.0.1", port: 0, dbPath, staticRoot: root,
+      trustedCloseoutKey: { key_id: "bad", public_key_spki: "invalid" } })).toThrow(/VALIDATION_ERROR/);
+    expect(existsSync(dbPath)).toBe(false);
+  });
   it("rejects a non-loopback host before opening the database", () => {
     expect(() => parseDashboardCli(["--host", "0.0.0.0", "--port", "4173", "--db", "x", "--static-root", "y"]))
       .toThrow(/LOCAL_SESSION_REQUIRED/);
@@ -53,6 +73,18 @@ describe("dashboard CLI", () => {
 
   it("binds loopback, prints the origin, and serves health", async () => {
     const dbPath = await migratedDb();
+    const db = new AuthorityDb(dbPath);
+    const at = new Date("2026-08-30T12:00:00.000Z");
+    const loop = new DailyLoopStore(db);
+    const runId = loop.prepare({ due: { kind: "due", local_date: "2026-08-30", phase: "evening",
+      scheduled_at: at.toISOString() }, created_at: at, deadline_at: new Date("2026-08-30T13:00:00.000Z"),
+    steps: [{ key: "evening_summary", sequence: 1 }] });
+    const claim = loop.claim({ run_id: runId, owner_id: "cli-test-owner", at, lease_ms: 600_000 });
+    const correlation = db.db.prepare("SELECT correlation_id FROM daily_loop_runs WHERE run_id=?").get(runId) as { correlation_id: string };
+    const artifact = generateEveningCloseout(parseEveningCloseoutInput({ ...closeoutInput(),
+      run_id: runId, correlation_id: correlation.correlation_id }), signer(at.toISOString()));
+    new EveningCloseoutStore(db, trustedCloseoutKey).settle({ claim, artifact, at });
+    db.close();
     const port = await freePort();
     const alias = join(dirname(dbPath), "current-main.js");
     symlinkSync(MAIN, alias);
@@ -62,6 +94,8 @@ describe("dashboard CLI", () => {
       "--port", String(port),
       "--db", dbPath,
       "--static-root", STATIC,
+      "--closeout-key-id", trustedCloseoutKey.key_id,
+      "--closeout-public-key-spki", trustedCloseoutKey.public_key_spki,
     ], { stdio: ["ignore", "pipe", "pipe"] });
     const origin = await new Promise<string>((resolve, reject) => {
       child.once("exit", code => reject(new Error(`cli exited ${String(code)}`)));
@@ -73,6 +107,11 @@ describe("dashboard CLI", () => {
       expect(response.statusCode).toBe(200);
       const body = JSON.parse(await response.body.text()) as { schema_version: number };
       expect(body.schema_version).toBe(1);
+      const today = await request(`${origin}/api/v1/today`);
+      expect(today.statusCode).toBe(200);
+      expect(JSON.parse(await today.body.text()).latest_verified_closeout).toMatchObject({
+        artifact_id: artifact.artifact_id, verified_completion_count: 1,
+      });
     } finally {
       child.kill("SIGTERM");
       await new Promise<void>(resolve => child.once("close", () => resolve()));
