@@ -42,6 +42,130 @@ const INCARNATION_B = "22222222-2222-4222-8222-222222222222";
 const revision = (incarnation: string, sequence: number): string => `${incarnation}:${sequence}`;
 
 describe("Task31 personal resource store", () => {
+  it("waits for every sibling request after a failure before starting the follow-up", async () => {
+    const source = new Source(); let todayCalls = 0; let healthCalls = 0;
+    let releaseHealth!: (value: typeof page) => void;
+    const api: PersonalClient = {
+      ...client(async () => { if (++todayCalls === 1) throw new Error("server"); return today; }),
+      health: async () => ++healthCalls === 1 ? await new Promise(resolve => { releaseHealth = resolve; }) : page,
+    };
+    const store = createPersonalStore({ client: api, eventSourceFactory: () => source });
+    try {
+      store.start();
+      const next = store.refresh();
+      await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+      expect(todayCalls).toBe(1); expect(healthCalls).toBe(1);
+      releaseHealth(page); await next;
+      expect(todayCalls).toBe(2); expect(healthCalls).toBe(2);
+      expect(store.getSnapshot()).toMatchObject({ status: "success" });
+    } finally { store.stop(); }
+  });
+
+  it("aborts all four reads on stop and rejects old-source callbacks after restart", async () => {
+    const sources: Source[] = []; let hold = true; let aborted = 0;
+    const captured: AbortSignal[] = [];
+    const read = async <T,>(value: T, signal?: AbortSignal): Promise<T> => {
+      if (!hold) return value;
+      captured.push(signal!);
+      return await new Promise((_resolve, reject) => {
+        signal!.addEventListener("abort", () => { aborted++; reject(signal!.reason); }, { once: true });
+      });
+    };
+    const api: PersonalClient = { ...client(async () => today),
+      today: signal => read(today, signal), decisions: signal => read(page, signal),
+      notifications: signal => read(page, signal), health: signal => read(page, signal) };
+    const store = createPersonalStore({ client: api, eventSourceFactory: () => {
+      const source = new Source(); sources.push(source); return source;
+    } });
+    try {
+      store.start(); const pending = store.refresh();
+      expect(captured).toHaveLength(4);
+      store.stop(); await pending;
+      expect(aborted).toBe(4); expect(captured.every(signal => signal.aborted)).toBe(true);
+      hold = false; const ready = settled(store); store.start(); await ready;
+      const retained = store.getSnapshot();
+      sources[0]!.emit("snapshot", ["memory.privacy.v1"], revision(INCARNATION_A, 1));
+      sources[0]!.onerror?.(new Event("error"));
+      expect(store.getSnapshot()).toBe(retained);
+    } finally { store.stop(); }
+  });
+
+  it("keeps malformed-stream authority disabled through queued reads until a valid frame refreshes it", async () => {
+    const source = new Source(); let calls = 0;
+    let release!: (value: TodayResponse) => void;
+    const store = createPersonalStore({ client: client(async () => ++calls === 2
+      ? await new Promise(resolve => { release = resolve; }) : today), eventSourceFactory: () => source });
+    try {
+      const ready = settled(store); store.start(); await ready;
+      source.onopen?.(new Event("open"));
+      const current = store.refresh();
+      await Promise.resolve(); await Promise.resolve();
+      const next = store.refresh();
+      source.raw("reconcile", { schema_version: 999 });
+      release(today); await Promise.all([current, next]);
+      source.onopen?.(new Event("open"));
+      expect(store.getSnapshot()).toMatchObject({ status: "stale", connectionState: "reconnecting",
+        error: { code: "VALIDATION_ERROR" } });
+      const recovered = settled(store);
+      source.emit("snapshot", ["personal.today.v1"], revision(INCARNATION_A, 1));
+      await recovered;
+      expect(store.getSnapshot()).toMatchObject({ status: "success", connectionState: "live" });
+    } finally { store.stop(); }
+  });
+
+  it("coalesces a held personal burst into one current and one follow-up snapshot", async () => {
+    const source = new Source(); let calls = 0;
+    let release!: (value: TodayResponse) => void;
+    const newest = { ...today, active_decision_count: 2 };
+    const store = createPersonalStore({ client: client(async () => {
+      calls++;
+      return calls === 1 ? await new Promise(resolve => { release = resolve; }) : newest;
+    }), eventSourceFactory: () => source });
+    try {
+      store.start();
+      source.emit("snapshot", ["personal.today.v1"], revision(INCARNATION_A, 1));
+      for (let i = 2; i <= 1001; i++) source.emit("reconcile", ["personal.today.v1"], revision(INCARNATION_A, i));
+      const latest = store.refresh();
+      expect(calls).toBe(1);
+      release(today); await latest;
+      expect(calls).toBe(2);
+      expect(store.getSnapshot()).toMatchObject({ status: "success", data: { today: newest } });
+    } finally { store.stop(); }
+  });
+
+  it("keeps a disconnect stale when an older HTTP snapshot settles", async () => {
+    const source = new Source(); let calls = 0;
+    let release!: (value: TodayResponse) => void;
+    const store = createPersonalStore({ client: client(async () => ++calls === 1 ? today
+      : await new Promise(resolve => { release = resolve; })), eventSourceFactory: () => source });
+    try {
+      const ready = settled(store); store.start(); await ready;
+      source.onopen?.(new Event("open"));
+      const current = store.refresh();
+      // The completed hydration may still be releasing its queue slot.
+      await Promise.resolve(); await Promise.resolve();
+      source.onerror?.(new Event("error"));
+      release(today); await current;
+      expect(store.getSnapshot()).toMatchObject({ status: "stale", connectionState: "reconnecting" });
+    } finally { store.stop(); }
+  });
+
+  it("hides cached personal content immediately when a privacy event arrives during a read", async () => {
+    const source = new Source(); let calls = 0;
+    let release!: (value: TodayResponse) => void;
+    const store = createPersonalStore({ client: client(async () => ++calls === 1 ? today
+      : await new Promise(resolve => { release = resolve; })), eventSourceFactory: () => source });
+    try {
+      const ready = settled(store); store.start(); await ready;
+      const current = store.refresh();
+      await Promise.resolve(); await Promise.resolve();
+      source.emit("snapshot", ["memory.privacy.v1"], revision(INCARNATION_A, 1));
+      expect(store.getSnapshot()).not.toHaveProperty("data");
+      release(today); await current;
+      expect(store.getSnapshot()).not.toHaveProperty("data");
+    } finally { store.stop(); }
+  });
+
   it("subscribes before hydration and refetches personal topics", async () => {
     // Given: a source factory and observable load ordering.
     const order: string[] = []; const source = new Source(); let calls = 0;
@@ -121,7 +245,7 @@ describe("Task31 personal resource store", () => {
   });
 
   it("prevents an older overlapping load from replacing the newest SSE settlement", async () => {
-    // Given: hydration is held while a newer personal invalidation starts another load.
+    // Given: hydration is held while a newer personal invalidation requests a follow-up.
     const source = new Source();
     const releases: Array<(value: TodayResponse) => void> = [];
     const store = createPersonalStore({
@@ -130,15 +254,17 @@ describe("Task31 personal resource store", () => {
     });
     store.start();
     source.emit("snapshot", ["personal.today.v1"], revision(INCARNATION_A, 1));
-    expect(releases).toHaveLength(2);
+    expect(releases).toHaveLength(1);
     const newest = { ...today, generated_at: "2026-08-28T12:20:00.000Z" };
 
-    // When: the newer load settles before the older hydration response.
+    // When: the invalidated hydration settles and the one follow-up reads the latest snapshot.
+    const followup = store.refresh();
+    releases[0]?.(today);
+    await Promise.resolve(); await Promise.resolve(); await Promise.resolve(); await Promise.resolve();
+    expect(releases).toHaveLength(2);
     const current = settled(store);
     releases[1]?.(newest);
-    await current;
-    releases[0]?.(today);
-    await Promise.resolve();
+    await current; await followup;
 
     // Then: the older bytes cannot restore stale authority.
     expect(store.getSnapshot()).toMatchObject({ status: "success", data: { today: newest } });

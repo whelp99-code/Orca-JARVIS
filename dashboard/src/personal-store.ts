@@ -1,4 +1,5 @@
 import { classifyDashboardError, type ApiError } from "./api.js";
+import { createCoalescedRefresh } from "./coalesced-refresh.js";
 import type {
   DecisionItem,
   HealthItem,
@@ -48,9 +49,15 @@ export function createPersonalStore(options: Options) {
   let loadSequence = 0;
   let running = false;
   let sourceOpen = false;
+  let connectionFailure: ApiError | undefined;
   let serverRevision: PersonalSseRevision | undefined;
   let source: EventSourceLike | undefined;
   const listeners = new Set<() => void>();
+  let reads = createReads(generation);
+
+  function createReads(token: number) {
+    return createCoalescedRefresh(signal => load(token, signal));
+  }
 
   function getSnapshot(): PersonalSnapshot { return snapshot; }
   function subscribe(listener: () => void): () => void { listeners.add(listener); return () => { listeners.delete(listener); }; }
@@ -60,44 +67,61 @@ export function createPersonalStore(options: Options) {
     if (running) return;
     running = true;
     const token = generation;
+    sourceOpen = false;
+    connectionFailure = undefined;
+    if (snapshot.status === "success" || snapshot.status === "stale") {
+      assign({ status: "stale", connectionState: "reconnecting", data: snapshot.data,
+        error: classifyDashboardError(new TypeError("offline")) });
+    }
     source = options.eventSourceFactory("/api/v1/events");
     serverRevision = undefined;
-    source.addEventListener("snapshot", (event) => { void frame(token, "snapshot", event); });
-    source.addEventListener("reconcile", (event) => { void frame(token, "reconcile", event); });
+    source.addEventListener("snapshot", (event) => { frame(token, "snapshot", event); });
+    source.addEventListener("reconcile", (event) => { frame(token, "reconcile", event); });
     source.onopen = () => {
       if (token !== generation) return;
       sourceOpen = true;
-      if (snapshot.status === "success") assign({ ...snapshot, connectionState: "live" });
+      if (snapshot.status === "success" && connectionFailure === undefined) assign({ ...snapshot, connectionState: "live" });
     };
     source.onerror = () => {
       if (token !== generation) return;
       sourceOpen = false;
+      loadSequence += 1;
       const error = classifyDashboardError(new TypeError("offline"));
+      connectionFailure = error;
       if (snapshot.status === "success" || snapshot.status === "stale") {
         assign({ status: "stale", connectionState: "reconnecting", data: snapshot.data, error });
       } else {
         assign({ status: "error", connectionState: "reconnecting", error });
       }
     };
-    void load(token);
+    void refresh();
   }
 
   function stop(): void {
     generation += 1;
+    loadSequence += 1;
+    reads.close();
+    reads = createReads(generation);
     running = false;
     source?.close();
     source = undefined;
     sourceOpen = false;
+    connectionFailure = undefined;
     serverRevision = undefined;
   }
 
-  async function refresh(): Promise<void> { await load(generation); }
+  function refresh(): Promise<void> {
+    loadSequence += 1;
+    return reads.request();
+  }
 
-  async function frame(token: number, eventType: PersonalSseType, event: Event): Promise<void> {
+  function frame(token: number, eventType: PersonalSseType, event: Event): void {
     if (token !== generation) return;
     const parsed = parsePersonalSseFrame(eventType, event);
     if (parsed === undefined) {
+      loadSequence += 1;
       const error = { kind: "server", code: "VALIDATION_ERROR", message: "Validation error", request_id: "" } as const;
+      connectionFailure = error;
       if (snapshot.status === "success" || snapshot.status === "stale") {
         assign({ status: "stale", connectionState: "reconnecting", data: snapshot.data, error });
       } else {
@@ -107,29 +131,41 @@ export function createPersonalStore(options: Options) {
     }
     if (!advancesPersonalRevision(serverRevision, parsed)) return;
     serverRevision = parsed.revision;
-    if (parsed.topics.some((topic) => PERSONAL_TOPICS.has(topic))) await load(token);
+    if (parsed.topics.some((topic) => PERSONAL_TOPICS.has(topic))) {
+      connectionFailure = undefined;
+      if (parsed.topics.includes("memory.privacy.v1")) {
+        // Remove cached text immediately; the running snapshot is invalidated before its continuation.
+        assign({ status: "loading", connectionState: sourceOpen ? "live" : "reconnecting" });
+      }
+      void refresh();
+    }
   }
 
-  async function load(token: number): Promise<void> {
+  async function load(token: number, signal: AbortSignal): Promise<void> {
     if (token !== generation) return;
-    loadSequence += 1;
     const sequence = loadSequence;
     const prior = snapshot;
     if (prior.status !== "success" && prior.status !== "stale") {
       assign({ status: "loading", connectionState: prior.connectionState });
     }
     try {
-      const [today, decisions, notifications, health] = await Promise.all([
-        options.client.today(),
-        options.client.decisions(),
-        options.client.notifications(),
-        options.client.health(),
+      const [today, decisions, notifications, health] = await Promise.allSettled([
+        options.client.today(signal),
+        options.client.decisions(signal),
+        options.client.notifications(signal),
+        options.client.health(signal),
       ]);
       if (token !== generation || sequence !== loadSequence) return;
+      const data = { today: readResult(today), decisions: readResult(decisions),
+        notifications: readResult(notifications), health: readResult(health) };
+      if (connectionFailure !== undefined) {
+        assign({ status: "stale", connectionState: "reconnecting", data, error: connectionFailure });
+        return;
+      }
       assign({
         status: "success",
         connectionState: source === undefined ? "offline" : sourceOpen ? "live" : "reconnecting",
-        data: { today, decisions, notifications, health },
+        data,
       });
     } catch (error: unknown) {
       if (token !== generation || sequence !== loadSequence) return;
@@ -144,4 +180,9 @@ export function createPersonalStore(options: Options) {
   }
 
   return { getSnapshot, subscribe, start, stop, refresh };
+}
+
+function readResult<T>(result: PromiseSettledResult<T>): T {
+  if (result.status === "rejected") throw result.reason;
+  return result.value;
 }

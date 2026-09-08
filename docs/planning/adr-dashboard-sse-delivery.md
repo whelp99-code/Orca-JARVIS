@@ -82,4 +82,25 @@ true인 동안 추가 write0회, 최대 writable 버퍼65,706bytes였다. 첫20,
 이어졌다(총 요청2/완료1/중단 body 연결닫힘). 증거는
 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/client-live-probe.mjs` 및 `.json`,
 `client-coalescing-browser.png`, `client-coalescing-*.log`에 있다.
+
+## 개인 대시보드 snapshot 갱신 — 2026-09-08 후속
+
+today/decisions/notifications/health는 기존처럼 한 snapshot으로 공개한다. 공통 queue를
+재사용해 진행 중 snapshot1개와 공유 후속1개로 제한하고, 네 HTTP 요청이 모두 끝난 뒤
+슬롯을 반환한다. 하나의 실패가 나머지 요청을 남긴 채 새 묶음을 시작하지 못하게 한다.
+각 요청은 기존10초 transport deadline과 store 종료 signal을 함께 사용한다.
+
+요청 접수 시 sequence를 올려 무효화된 이전 snapshot이 최신 결과를 덮어쓰지 못하게 한다.
+disconnect/잘못된 SSE envelope 이후에는 진행 중 HTTP가 stale 표시를 해제하지 못한다.
+memory.privacy.v1 수신 시 개인 화면의 캐시 data를 동기적으로 제거하고, 최신 요청으로
+확인한 결과만 다시 공개한다. memory-store의 검색·검토·철회 상태기계는 별도 범위로 유지한다.
+
+제품 frontend30파일174개/32.16초, lint/typecheck/build exit0, 독립 리뷰 필수 결함0.
+실제 Today 브라우저에서 개인 SSE1,001개 수신 중 네 API 각각 진행1+후속1로 제한,
+새 추천0→3개 표시, privacy 알림 직후0개·fresh read 후3개를 확인했다. 이 privacy
+검사는 합성 무효화 이벤트이며 서버 원본 삭제 인수가 아니다. 재조회DB쓰기0/pageErrors0.
+실제 partial HTTP4개를 store stop으로 모두 닫았고, 한 API500·다른 API partial body의
+동시 실패에서는10,009ms에 지연 요청을 종료한 뒤 후속4개가 완료됐다(총8요청).
+증거 루트의 `personal-live-probe.mjs/json/log`, `personal-coalescing-*.log`,
+`personal-privacy-refresh.png`, `personal-coalescing-browser.png`를 참조한다.
 기존1초 DB 변경 관찰 주기는 유지한다. 운영 서비스 변경0.

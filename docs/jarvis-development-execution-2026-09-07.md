@@ -451,3 +451,13 @@
 - 실제 built Chromium: reconcile1,002/snapshot1, held tasks GET1+후속1, agents/approvals 각1, 화면task1→2, 재조회DB쓰기0/pageErrors0. 실제 부분 JSON HTTP는15,007ms에 abort; 대기10,000알림 뒤 요청총2/완료1/중단연결닫힘을 확인했다. 임시 DB·서버·브라우저 제거.
 - 증거 루트 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/`: `store-coalescing-red.log`, `client-coalescing-{tests,final-tests,types,lint,build}.log`, `client-live-probe.mjs/json/log`, `client-coalescing-browser.png`.
 - 개인 dashboard snapshot 병합은 후속이다. memory 화면의 즉시 privacy 철회/검색 취소 순서를 보장하기 전 공통 큐 적용은 보류한다(기존 기능 유지). 작업→자동 기억 수집은 원본 차단 전파 부재로 기존 HOLD 유지. 전체01–25와 운영 인수는 미완료이며 운영 DB/서비스/release/push 변경0.
+
+## 2026-09-08 P2-17 — 개인 대시보드 snapshot 병합
+
+- 직전 bccdd91은 커밋·실제 브라우저/HTTP 인수를 완료한 progress였다. 현재 제품을 다시 확인하고 개인 store의 동기 burst/지연 disconnect 응답/철회 직후 캐시 세 경계를 red3개로 재현했다.
+- 기존 네 API의 합성 snapshot을 진행1+공유 후속1로 병합했다. allSettled로 형제 요청이 남은 상태에서 다음 묶음이 시작되지 않게 하고, caller signal을 기존10초 transport deadline과 결합한다. 종료는 진행4개 취소 및 대기 해제다.
+- 새 요청·disconnect·잘못된 SSE에서 sequence를 무효화하고 연결 실패를 보존한다. 철회 알림은 cached data를 동기 제거하며 이전 성공·실패 결과로 복원하지 못한다. 기존 memory-store는 수정하지 않았다.
+- 제품 dashboard30파일174개/32.16초, lint/typecheck/dashboard build exit0. 독립 리뷰 필수 결함0. 실제 Today 개인SSE1,001회에 API각1+1, 추천0→3개, 철회 알림 후0개·최신 조회 후3개, DB쓰기0/pageErrors0. 원본 삭제가 없는 합성 알림 검사임을 명시한다.
+- 실제 HTTP 중단: stop으로4요청/4body 닫힘. 오늘 API500과 health partial response를 함께 만든 후10,009ms에 timeout·후속snapshot 성공, 요청총8개. 임시 DB/서버/브라우저 제거.
+- 브라우저 probe 첫 경로 /today 및 두 번째 h2 내부 selector는 probe 오류로 각각 timeout됐다. 실제 루트 /와 section selector로 수정해 최종 exit0을 확인했다. 제품 실패로 보고하지 않는다. 증거 `personal-live-probe-first.log`, `personal-live-probe-selector.log`, 최종 `personal-live-probe.mjs/json/log`, `personal-coalescing-*.log`.
+- 별도 새 결함: 실제 빈 DB의 todayProjection을 실제 parseToday에 전달하면 freshness.checked_at 누락으로 VALIDATION_ERROR가 발생한다(`today-empty-contract-red.log`). 병합 기능의 완료와 구분해 바로 후속 수정한다. 전체01–25/운영 인수, memory-store 큐 보류 및 원본 차단 자동 수집 HOLD 유지. 운영/배포/push 변경0.

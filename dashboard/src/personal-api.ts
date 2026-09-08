@@ -40,10 +40,10 @@ type SessionLoader = () => Promise<SessionResponse>;
 
 export function createPersonalClient(loadSession: SessionLoader): PersonalClient {
   return {
-    today: async () => parseToday(await get("/api/v1/today")),
-    decisions: async () => parsePage(await get("/api/v1/decision-inbox?limit=100"), "decision-inbox", parseDecision),
-    notifications: async () => parsePage(await get("/api/v1/notification-intents?limit=100"), "notification-intents", parseNotification),
-    health: async () => parsePage(await get("/api/v1/source-health?limit=100"), "source-health", parseHealthItem),
+    today: async (signal) => parseToday(await get("/api/v1/today", signal)),
+    decisions: async (signal) => parsePage(await get("/api/v1/decision-inbox?limit=100", signal), "decision-inbox", parseDecision),
+    notifications: async (signal) => parsePage(await get("/api/v1/notification-intents?limit=100", signal), "notification-intents", parseNotification),
+    health: async (signal) => parsePage(await get("/api/v1/source-health?limit=100", signal), "source-health", parseHealthItem),
     recommendation: async (id) => parseRecommendation(await get(`/api/v1/recommendations/${encodeURIComponent(id)}`)),
     evidence: async (link) => parseEvidence(await get(safeLink(link))),
     accept: async (id, rank) => {
@@ -57,8 +57,8 @@ export function createPersonalClient(loadSession: SessionLoader): PersonalClient
   };
 }
 
-async function get(path: string): Promise<unknown> {
-  return await requestPersonalJson(path, { headers: { Accept: "application/json" } });
+async function get(path: string, signal?: AbortSignal): Promise<unknown> {
+  return await requestPersonalJson(path, { headers: { Accept: "application/json" }, signal });
 }
 
 export function parseToday(value: unknown): TodayResponse {

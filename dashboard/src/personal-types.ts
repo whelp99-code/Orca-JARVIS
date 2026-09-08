@@ -114,10 +114,10 @@ export type AcceptedAction = Readonly<{
   state: "pending";
 }>;
 export type PersonalClient = Readonly<{
-  today: () => Promise<TodayResponse>;
-  decisions: () => Promise<PersonalPage<DecisionItem>>;
-  notifications: () => Promise<PersonalPage<NotificationItem>>;
-  health: () => Promise<PersonalPage<HealthItem>>;
+  today: (signal?: AbortSignal) => Promise<TodayResponse>;
+  decisions: (signal?: AbortSignal) => Promise<PersonalPage<DecisionItem>>;
+  notifications: (signal?: AbortSignal) => Promise<PersonalPage<NotificationItem>>;
+  health: (signal?: AbortSignal) => Promise<PersonalPage<HealthItem>>;
   recommendation: (id: string) => Promise<RecommendationDetail>;
   evidence: (link: string) => Promise<ContextEvidence>;
   accept: (id: string, rank: number) => Promise<AcceptedAction>;

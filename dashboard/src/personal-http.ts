@@ -8,7 +8,7 @@ export async function requestPersonalJson(path: string, init: RequestInit): Prom
     response = await fetch(path, {
       ...init,
       credentials: "same-origin",
-      signal: AbortSignal.timeout(10_000),
+      signal: init.signal ? AbortSignal.any([init.signal, AbortSignal.timeout(10_000)]) : AbortSignal.timeout(10_000),
     });
   } catch (error: unknown) {
     if (error instanceof TypeError || error instanceof DOMException) throw apiError("offline", "OFFLINE");
