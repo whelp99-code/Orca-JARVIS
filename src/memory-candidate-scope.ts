@@ -3,6 +3,7 @@ import { readMemoryCandidate } from "./memory-candidate-reader.js";
 import { memoryHash } from "./memory-candidate-values.js";
 import { canonicalize } from "./canonical.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
+import type { RuntimeControlActionInput } from "./control-actions.js";
 
 export const MEMORY_CANDIDATE_SCOPE_DOMAIN = "orca-jarvis/memory-candidate-scope-proposal/v1\0";
 export type MemoryCandidateScopeInput = {
@@ -25,6 +26,16 @@ export type MemoryCandidateScopeProposal = {
 };
 const id = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const fail = (): never => { throw new JarvisError("MEMORY_CANDIDATE_SCOPE_INVALID"); };
+
+export function validateMemoryScopeReviewAction(input: RuntimeControlActionInput): void {
+  const proposal = input.args.proposal;
+  if (Object.keys(input.args).sort().join(",") !== "proposal,schema_version" || input.args.schema_version !== 1
+    || Object.keys(input.target).sort().join(",") !== "candidate_id,proposal_digest"
+    || typeof proposal !== "object" || proposal === null || Array.isArray(proposal)) return fail();
+  const value = proposal as Record<string, unknown>;
+  if (value.candidate_id !== input.target.candidate_id || value.proposal_digest !== input.target.proposal_digest
+    || value.authorization !== "not_granted" || value.schema_version !== 1) return fail();
+}
 
 /** Read-only proposal bound to a verified persisted candidate snapshot. The caller
  * proposes a scope; neither its existence nor the digest grants write authority. */

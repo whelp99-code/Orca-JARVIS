@@ -1,4 +1,5 @@
 import { JarvisError } from "./db.js";
+import { validateMemoryScopeReviewAction } from "./memory-candidate-scope.js";
 import { memoryAuthority, memoryConfirm, memoryDedicatedEffect,
   memoryGenerationRollback, memoryOutboxDispatch } from "./memory-control-actions.js";
 import { REMOTE_LIFECYCLE_ACTIONS } from "./remote-approval-actions.js";
@@ -187,6 +188,7 @@ const descriptors: Record<string, Descriptor> = {
   "collaboration.room.create": { action: "collaboration.room.create", minimum_level: 3, executable: false, validate: retiredCollaborationRoomCreate },
   "evidence.negative.record": { action: "evidence.negative.record", minimum_level: 2, executable: true, validate: evidenceNegativeRecord },
   "memory.confirm": { action: "memory.confirm", minimum_level: 3, executable: false, validate: memoryConfirm },
+  "memory.scope.review": { action: "memory.scope.review", minimum_level: 3, executable: false, validate: validateMemoryScopeReviewAction },
   "memory.outbox.dispatch": { action: "memory.outbox.dispatch", minimum_level: 3, executable: true, validate: memoryOutboxDispatch },
   "memory.delete": { action: "memory.delete", minimum_level: 3, executable: true, validate: input => memoryDedicatedEffect(input, "deletion") },
   "memory.export": { action: "memory.export", minimum_level: 3, executable: true, validate: input => memoryDedicatedEffect(input, "export") },

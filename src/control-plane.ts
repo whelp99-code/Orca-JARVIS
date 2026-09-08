@@ -8,6 +8,7 @@ import { MemorySurfaceAuthority } from "./memory-surface-authority.js"; export {
   ClaimedControlCommand, CommandApprovalReceipt, ControlCancelInput, ControlCommandRequestInput, ControlCommandState, ControlEventInput, StoredControlCommand,
 } from "./control-plane-contract.js"; const validOutcomeStates = new Set(["completed", "failed", "uncertain"]);
 import { memoryOutboxControlProof } from "./memory-outbox-control-proof.js";
+import { validateMemoryCandidateScopeProposal } from "./memory-candidate-scope.js";
 function finiteDate(date: Date, code: string): number { const time = date.getTime(); if (!Number.isFinite(time)) throw new JarvisError(code); return time; }
 function finiteIso(value: string): number { const time = Date.parse(value); return Number.isFinite(time) ? time : Number.NaN; } export class ControlPlane {
   constructor(private readonly authority: AuthorityDb) {}
@@ -39,10 +40,17 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
     if (["memory.outbox.dispatch", "memory.delete", "memory.export", "memory.generation.rollback"].includes(input.action) && input.reversible)
       throw new JarvisError("CONTROL_COMMAND_INVALID"); const digest = controlCommandDigest(input); const targetJson = canonicalize(input.target);
     const argsJson = canonicalize(input.args); const at = now.toISOString();
+    if (input.action === "memory.scope.review") {
+      const proposal = validateMemoryCandidateScopeProposal(this.authority, input.args.proposal, now);
+      if (input.requested_by !== "principal:owner" || input.action_level !== 3 || input.reversible
+        || expires > Date.parse(proposal.expires_at)) throw new JarvisError("MEMORY_CANDIDATE_SCOPE_INVALID");
+    }
     const prior = this.authority.db.prepare("SELECT command_digest,state FROM control_command_requests WHERE request_id=?").get(input.request_id) as
       | { command_digest: string; state: ControlCommandState } | undefined; if (prior) {
       if (prior.command_digest !== digest) throw new JarvisError("CONTROL_COMMAND_REPLAY_CONFLICT");
-      return { ...input, command_digest: digest, state: prior.state }; } const tx = this.authority.db.transaction(() => { this.authority.db .prepare(
+      return { ...input, command_digest: digest, state: prior.state }; } const tx = this.authority.db.transaction(() => {
+      if (input.action === "memory.scope.review") validateMemoryCandidateScopeProposal(this.authority, input.args.proposal, now);
+      this.authority.db .prepare(
           `INSERT INTO control_command_requests(
             request_id,action,action_level,target_json,args_json,command_digest,reversible,
             requested_by,requested_at,expires_at,nonce,state,created_at
@@ -64,7 +72,13 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
       ) .get(receipt.key_id) as { public_key_pem: string; principal_id: string } | undefined; if ( !key || key.principal_id !== receipt.signer_principal_id ||
       !verifyCommandApproval(receipt, key.public_key_pem, now) || Date.parse(receipt.expires_at) > Date.parse(String(request.expires_at)) )
       throw new JarvisError("CONTROL_APPROVAL_INVALID"); const state = receipt.decision === "approve" ? "approved" : "rejected"; const at = now.toISOString();
-    const tx = this.authority.db.transaction(() => { this.authority.db .prepare(
+    const tx = this.authority.db.transaction(() => {
+      if (request.action === "memory.scope.review" && receipt.decision === "approve") {
+        const action = this.parseStoredAction(request); validateControlAction(action);
+        validateMemoryCandidateScopeProposal(this.authority, action.args.proposal, now);
+        if (receipt.signer_principal_id !== "principal:owner") throw new JarvisError("CONTROL_APPROVAL_INVALID");
+      }
+      this.authority.db .prepare(
           `INSERT INTO control_command_receipts(
             receipt_id,request_id,decision,command_digest,signer_principal_id,
             authenticated_session_id,key_id,payload_json,signature,issued_at,expires_at,created_at
