@@ -10,6 +10,7 @@ import { describe, expect, it } from "vitest";
 import { AuthorityDb } from "../../src/db.js";
 const cli = resolve("dist/src/cli.js");
 const fixture = resolve("tests/fixtures/daemon-runtime-worker.mjs");
+const migrationCount = readdirSync(resolve("migrations")).filter(file => file.endsWith(".sql")).length;
 function command(filename, args = ["runtime", "identity"]) {
   return JSON.parse(execFileSync(process.execPath, [cli, ...args, "--db", filename], {
     cwd: tmpdir(), encoding: "utf8", timeout: 10_000 }));
@@ -53,7 +54,7 @@ describe("built CLI daemon identity", () => {
     try {
       await db.migrate(); expect(command(filename, ["service", "once"]).ok).toBe(true);
       const row = stored(db); const result = command(filename);
-      expect(result.observer.database).toMatchObject({ status: "matched", applied_migrations: 71 });
+      expect(result.observer.database).toMatchObject({ status: "matched", applied_migrations: migrationCount });
       expect(result.daemon).toMatchObject({ status: "inactive", reason: "lease_expired", snapshot: { build: { status: "matched" } } });
       expect(result.daemon.snapshot.process.pid).not.toBe(result.observer.process.pid);
       expect(command(filename, ["service", "status"]).daemon_identity).toMatchObject({ status: "inactive", snapshot: result.daemon.snapshot });

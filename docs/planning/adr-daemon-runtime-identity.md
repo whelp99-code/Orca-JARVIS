@@ -7,7 +7,7 @@
 
 ## 구현 계약
 
-- `071_daemon_runtime_identity.sql`은 singleton 관측 테이블을 추가한다. 이전 SQL bytes는 유지한다.
+- `072_daemon_runtime_identity.sql`은 singleton 관측 테이블을 추가한다. 이전 SQL bytes는 유지한다.
 - `GjcRuntimeService`는 실제 lease를 획득한 첫 cycle에서 모듈 경로 기준 process/build를 관측한다.
   `service.status`의 객체 생성이나 경쟁자의 lease 거부는 관측을 게시하지 않는다.
 - 처음 게시한 transaction이 성공한 snapshot은 서비스 객체 안에 고정하고 owner/fence가 바뀔 때 다시 게시한다. 같은 lease의
@@ -107,6 +107,12 @@ build/고정시각 acceptance/CLI smoke를 통과했다. 전후HEAD/추적 bytes
 이전의 전체 검증이며 이 단위의 전체 통과를 뜻하지 않는다.
 
 ## 운영 관측과 HOLD
+
+메인 `6e101fc`가 기억 전달 원장에071을 먼저 확정하여, 통합 시 미배포 데몬 SQL 파일명을
+071에서072로 배정했다. SQL SHA-256 `a57de8116e6cead4d4fdf88f6345f98b1b0da0c358f797fd2e8525aa87428fd0`
+및 메인의 이전 SQL bytes는 보존한다. 아래71개 기준의 운영 관측은 이전 개발판의 기록이다.
+그때 데몬071을 적용한 격리 사본은 통합판 검증에 재사용하지 않으며, journal을 바꾸지 않고
+원본에서 새 격리 사본을 만들어야 한다. 운영 원본에는 데몬071/072를 적용하지 않았다.
 
 2026-09-08T05:45:52Z 실제 운영 DB를 새 built CLI로 readonly 조회했다.
 operator PID2347512, Node24.19.0/ABI137, 개발 source110227e/dirty=true다.

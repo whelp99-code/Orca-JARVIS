@@ -3,7 +3,7 @@ title: 세컨드브레인 기반 오픈소스 장점 흡수 — 작업 인계
 type: handoff
 sensitivity: T1
 updated: 2026-09-08
-status: user-direction-confirmed-implementation-plan-proposed
+status: direction-merged-in-recipient-plan-observed
 ---
 
 # 세컨드브레인 기반 오픈소스 장점 흡수
@@ -16,12 +16,21 @@ status: user-direction-confirmed-implementation-plan-proposed
 - 발신 작업공간: `/home/jm/orca/projects/Orca-JARVIS`
 - 대상 작업의 기존 목적: 세컨드브레인을 완성하여 자비스와 기타 프로젝트의 메인 기억 저장소를 동작시키는 것.
 - 이번 전달 준비 시 대상 작업은 `active`, 최근 턴은 `inProgress`로 조회됐다. 최근 2개 턴의 본문은 반환되지 않았다. 그곳에서 이미 수행한 수정·검증을 먼저 확인하고 본 문서의 제안을 병합한다. 기존 작업을 되돌리거나 처음부터 반복하지 않는다.
-- 전달 상태: 문서 준비 완료, 대상 작업에 메시지 전송은 미실행. 현재 도구 목록에는 `send_message_to_thread`와 `handoff_thread`가 없고 읽기 도구로 대상 경로·제목·상태만 확인했다.
+- 현재 인계 상태: **수신 작업공간의 계획 반영을 파일로 확인했다.** `/home/jm/orca/projects/second-brain-app/OSS-ABSORPTION-INTEGRATION-PLAN-2026-09-07.md`는 본 인계서를 직접 참조하며 사용자 확정 방향, 네 OSS 선별 흡수, 기존 구현 대조, 에이전트별 지원 범위, 구현 순서와 검증 조건을 병합했다. `IMPLEMENTATION-STATUS.md`도 해당 통합 계획을 정본 계획으로 참조한다. 이는 계획 반영의 증거이며 전체 구현·운영 인수 완료의 증거는 아니다.
+- 이번 확인에서 대상 작업에 새 메시지를 전송하지 않았다. 현재 도구 목록에는 `send_message_to_thread`와 `handoff_thread`가 없다. 아래의 전송 미실행 기록은 과거 전달 시도 이력이며, 현재 수신 계획 반영 여부와 구분한다.
 - 2026-09-08 재확인: 대상 작업의 경로는 `/home/jm/orca/projects/second-brain-app`, 상태는 `active`, 최근 턴은 `inProgress`이며 본문 항목은 반환되지 않았다. 앱 직접 전달을 위해 `computer-use` 스킬과 설치된 CLI 안내를 읽고 확인했다. `orca-ide status --json`은 성공했으나 `computer capabilities --json`은 `runtime_error: Unknown system error -122: Unknown system error -122, write`로 실패했다. 대체 임시 경로를 지정한 1회 재시도도 같은 오류로 실패하여 메시지 입력·전송을 수행하지 않았다. 아래 11절 전달문으로 인계를 이어갈 수 있다.
 
 이 문서는 대화에서 확정한 방향, 조사한 근거, 구현 제안을 구분한 인계 자료다. 새 ADR 채택이나 배포 완료를 의미하지 않는다. 발신 작업에서는 세컨드브레인 소스를 수정하지 않았고 오픈소스 설치·서비스 재시작·데이터 이전도 하지 않았다.
 
 ## 2. 사용자가 확정한 방향
+
+### 2026-09-08 최신 인수 대조
+
+- 대상 작업 `01a07b30-3b47-7552-879e-adae5ab6ec33`을 다시 읽었다. 작업공간은 `/home/jm/orca/projects/second-brain-app`, 상태는 `active`, 최신 턴은 `inProgress`다. 이번에는 직전 완료 턴의 본문이 반환됐으며 검색 모델 초기화 비용 개선과 자비스 세션 연동의 미완료 조건을 유지하는 진행 메시지를 확인했다.
+- 수신 통합 계획 1절은 세컨드브레인 정본, 자비스 실행·검증, dev-wiki/Git 개발 결정 원문, 네 OSS 선별 흡수, 여러 에이전트 공통 기억이라는 방향을 명시한다. 같은 계획 45절은 이 인계 문서의 현재판을 다시 읽었음을 기록한다. 따라서 **방향의 수신·계획 반영은 확인됐고, 새 메시지 발송 여부와는 별개다.**
+- 수신 `IMPLEMENTATION-STATUS.md`의 최신 기록은 제품 `701e966`, 전체 931 passed/2 skipped, 실제 모델 129개 출력 일치 및 단일 배치 28.75→16.81초다. 이는 수신 작업의 기록을 읽은 결과이며 발신 작업이 테스트를 재실행한 수치가 아니다.
+- 이어갈 과제는 자비스 세션의 실제 전달·compaction·삭제 수명, 검증된 프로젝트/사용자 범위, 에이전트별 수집·주입 지원, 근거 부족 응답, 실제 사용자 질문 및 GUI·운영·복구 인수다. 기존 구현을 처음부터 반복하지 않는다.
+- 이번 직접 전송 경로 재확인: `send_message_to_thread`/`handoff_thread`는 제공되지 않았다. 이전 오류와 달리 `orca-ide computer capabilities --json`은 성공했다. 로컬 앱 목록은 gnome-shell, orca-ide, ptyxis, update-notifier의 4개였고 Codex 앱은 없었다. Orca 접근성 트리에는 프레임 1개만 반환되어 지정 Codex 작업의 입력창을 확인할 수 없었다. **새 메시지 입력·전송은 수행하지 않았다.**
 
 최근 사용자 지시가 앞선 후보 추천보다 우선한다.
 
@@ -193,7 +202,9 @@ status: user-direction-confirmed-implementation-plan-proposed
 
 발신 작업에서 추가 세컨드브레인 구현은 하지 않는다. 수신 작업은 이 방향을 기존 목적에 병합해 작업을 이어간다.
 
-## 11. 대상 작업에 붙여 넣을 전달문
+## 11. 필요 시 대상 작업에 붙여 넣을 전달문
+
+수신 통합 계획에 이미 병합된 방향이다. 아래 문구는 재개 시 참조용이며, 기존 구현을 처음부터 반복하라는 요청이 아니다.
 
 ```text
 자비스 작업공간에서 논의한 방향을 이 세컨드브레인 작업에 병합해 진행해줘.
