@@ -5,6 +5,7 @@ import { createProductionScopedMemory } from "../../src/memory-scoped-production
 import { closeMemoryDatabase, memoryDatabase, type MemoryDatabase } from "../fixtures/memory-candidate-store.js";
 import { memoryReadFenceFixture } from "../fixtures/memory-read-fence.js";
 import { OUTBOX_NOW } from "../fixtures/memory-outbox-fixture.js";
+import { execute } from "../../src/cli-runtime.mjs";
 const databases: MemoryDatabase[] = [];
 afterEach(() => { for (const db of databases.splice(0)) closeMemoryDatabase(db); });
 it('requires existing keys and a current explicit session grant without creating either', async () => {
@@ -27,6 +28,13 @@ it('requires existing keys and a current explicit session grant without creating
       methods: ['sb_generation_status', 'sb_read_page', 'sb_search'] }] };
   writeFileSync(policy, JSON.stringify(grant), { mode: 0o600 });
   active = false; expect(() => createProductionScopedMemory(db.authority, options)).toThrow('MEMORY_ACCESS_SCOPE_UNAVAILABLE');
+  await expect(execute(['memory', 'context', 'example', '--db', db.path], {
+    clock: () => OUTBOX_NOW, scopedMemoryReferenceOptions: options,
+  })).rejects.toMatchObject({ code: 'MEMORY_ACCESS_SCOPE_UNAVAILABLE' });
+  await expect(execute(['memory', 'context', 'example', '--db', db.path], {
+    clock: () => OUTBOX_NOW, scopedMemoryReferenceOptions: options, memoryReferenceOptions: {},
+  })).rejects.toMatchObject({ code: 'MEMORY_REFERENCE_CONFIG_AMBIGUOUS' });
+  expect(starts).toBe(0);
   active = true;
   const runtime = createProductionScopedMemory(db.authority, options);
   expect(runtime.reader).toBeDefined(); expect(starts).toBe(0);

@@ -7,6 +7,7 @@ import type { MemoryLifecycleService } from "./memory-lifecycle-service-types.js
 import type { SecondBrainReadinessProbe } from "./second-brain-readiness.js";
 import type { MemoryOutboxProductionOptions } from "./memory-outbox-production.js";
 import type { MemoryReferenceProductionOptions } from "./memory-reference-production.js";
+import type { ScopedMemoryProductionOptions } from "./memory-scoped-production.js";
 
 export type CliDependencies = {
   readonly orcaRunner?: OrcaRunner;
@@ -20,6 +21,8 @@ export type CliDependencies = {
   readonly memoryLifecycle?: MemoryLifecycleService;
   readonly memoryOutboxOptions?: MemoryOutboxProductionOptions;
   readonly memoryReferenceOptions?: MemoryReferenceProductionOptions;
+  /** Host-authenticated session and explicit policy; never derived from CLI claims. */
+  readonly scopedMemoryReferenceOptions?: ScopedMemoryProductionOptions;
 };
 
 export type CliValues = {

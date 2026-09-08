@@ -2,6 +2,7 @@ import { JarvisError } from "./db.js";
 import { commandNow, type CliCommandContext } from "./cli-command-context.js";
 import { MemoryReferenceError } from "./memory-reference-context.js";
 import { createProductionMemoryReference } from "./memory-reference-production.js";
+import { createProductionScopedMemory } from "./memory-scoped-production.js";
 
 function limit(raw: string | undefined, fallback: number, maximum: number): number {
   if (raw === undefined) return fallback;
@@ -20,8 +21,14 @@ export async function executeMemoryReference(context: CliCommandContext): Promis
   // including the CLI version and final newline. The context itself is not copied.
   const overhead = Buffer.byteLength(`${JSON.stringify(envelope)}\n`) - 4;
   if (maximum <= overhead) throw new JarvisError("MEMORY_REFERENCE_BUDGET_IMPOSSIBLE");
-  const runtime = createProductionMemoryReference(context.db, { ...context.dependencies.memoryReferenceOptions,
-    clock: () => commandNow(context) });
+  const scoped = context.dependencies.scopedMemoryReferenceOptions;
+  if (scoped !== undefined && context.dependencies.memoryReferenceOptions !== undefined) {
+    throw new JarvisError("MEMORY_REFERENCE_CONFIG_AMBIGUOUS");
+  }
+  const runtime = scoped === undefined
+    ? createProductionMemoryReference(context.db, { ...context.dependencies.memoryReferenceOptions,
+      clock: () => commandNow(context) })
+    : createProductionScopedMemory(context.db, { ...scoped, clock: () => commandNow(context) });
   try {
     const prepared = await runtime.reader.read(context.argument,
       { max_records: count, max_record_bytes: 4096, max_bytes: maximum - overhead }, runtime.close);
