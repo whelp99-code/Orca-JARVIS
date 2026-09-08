@@ -106,9 +106,14 @@ function parseBoundRecords(
   frontmatter: Readonly<Record<string, unknown>>,
   pageSensitivity: SecondBrainSensitivity,
 ): ParsedPage {
+  return parseSecondBrainBoundRecords(input, frontmatter["compiled_by"], pageSensitivity);
+}
+
+/** Shared record identity validation for legacy pages and scoped record responses. */
+export function parseSecondBrainBoundRecords(input: PageParseInput, version: unknown,
+  pageSensitivity?: SecondBrainSensitivity): ParsedPage {
   const generation = secondBrainGenerationBinding(input.value);
   const values = input.value["records"];
-  const version = frontmatter["compiled_by"];
   if (generation === undefined || !Array.isArray(values) || values.length > 64
     || typeof version !== "string") return invalid("SECOND_BRAIN_RECORDS_MALFORMED");
   const evidence: SecondBrainEvidence[] = [];
@@ -130,7 +135,7 @@ function parseBoundRecords(
       || typeof content !== "string" || typeof citation !== "string" || typeof ownerDigest !== "string"
       || typeof origin !== "string" || typeof validFrom !== "string" || typeof validUntil !== "string"
       || typeof start !== "number" || typeof end !== "number" || tier === undefined
-      || tier !== pageSensitivity || !/^sbrecord:v1:[0-9a-f]{64}$/.test(recordId)
+      || (pageSensitivity !== undefined && tier !== pageSensitivity) || !/^sbrecord:v1:[0-9a-f]{64}$/.test(recordId)
       || !DIGEST_PATTERN.test(recordDigest) || !DIGEST_PATTERN.test(textDigest)
       || !/^[0-9a-f]{64}$/.test(source) || !/^[0-9a-f]{64}$/.test(content)
       || !/^[0-9a-f]{64}$/.test(citation) || !DIGEST_PATTERN.test(ownerDigest)
