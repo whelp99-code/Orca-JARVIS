@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { execFileSync } from "node:child_process";
-import { lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
+import { chmodSync, lstatSync, readdirSync, readFileSync, realpathSync } from "node:fs";
 import { join, relative, resolve } from "node:path";
 
 export const BACKEND_OUTPUT_ROOTS = ["src", "tests", "migrations", "contracts"];
@@ -59,4 +59,14 @@ export function backendSourceIdentity(root) {
   return { head, dirty, input_digest: files.digest, input_file_count: files.file_count,
     toolchain: { node: process.version, modules: process.versions.modules, platform: process.platform,
       arch: process.arch, typescript: compiler } };
+}
+
+/** Seal only generated staging files, then identify their final on-disk modes. */
+export function sealBackendArtifacts(root) {
+  const before = fileIdentity(root, BACKEND_OUTPUT_ROOTS);
+  for (const entry of before.entries) {
+    const mode = entry.mode & ~0o022;
+    if (mode !== entry.mode) chmodSync(join(root, entry.path), mode);
+  }
+  return fileIdentity(root, BACKEND_OUTPUT_ROOTS);
 }

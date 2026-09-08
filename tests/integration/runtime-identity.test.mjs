@@ -1,10 +1,10 @@
-import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, statSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import process from "node:process";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
-import { fileIdentity, buildDigest, BACKEND_OUTPUT_ROOTS } from "../../scripts/lib/backend-build-identity.mjs";
+import { fileIdentity, sealBackendArtifacts, buildDigest, BACKEND_OUTPUT_ROOTS } from "../../scripts/lib/backend-build-identity.mjs";
 import { createRuntimeIdentityReader } from "../../src/runtime-identity.js";
 
 const cleanup = [];
@@ -117,4 +117,26 @@ describe("backend runtime identity", () => {
     rmSync(join(root, "src/index.js")); writeFileSync(join(root, "src/index.js"), bytes, { mode: 0o700 });
     expect(createRuntimeIdentityReader(db, root)(now).build.status).toBe("mismatch");
   });
+});
+
+it("seals generated artifacts without changing contents or widening restrictive permissions", () => {
+  const { root } = fixture();
+  const code = join(root, "src/index.js"), migration = join(root, "migrations/001_test.sql");
+  chmodSync(code, 0o775); chmodSync(migration, 0o600);
+  const before = fileIdentity(root, BACKEND_OUTPUT_ROOTS);
+  const sealed = sealBackendArtifacts(root);
+  expect(statSync(code).mode & 0o777).toBe(0o755);
+  expect(statSync(migration).mode & 0o777).toBe(0o600);
+  expect(sealed.entries.map(e => [e.path, e.sha256, e.bytes]))
+    .toEqual(before.entries.map(e => [e.path, e.sha256, e.bytes]));
+  expect(sealed).toEqual(fileIdentity(root, BACKEND_OUTPUT_ROOTS));
+  expect(sealBackendArtifacts(root)).toEqual(sealed);
+});
+
+it("rejects a staging symlink before changing any generated file mode", () => {
+  const { root } = fixture();
+  const code = join(root, "src/index.js"); chmodSync(code, 0o666);
+  symlinkSync(code, join(root, "src/linked.js"));
+  expect(() => sealBackendArtifacts(root)).toThrow("BACKEND_BUILD_SYMLINK");
+  expect(statSync(code).mode & 0o777).toBe(0o666);
 });

@@ -2,8 +2,10 @@ import { spawnSync } from "node:child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import Database from "better-sqlite3";
-import { BACKEND_OUTPUT_ROOTS, backendSourceIdentity, buildDigest, fileIdentity } from "./lib/backend-build-identity.mjs";
+import { BACKEND_OUTPUT_ROOTS, backendSourceIdentity, buildDigest, fileIdentity, sealBackendArtifacts } from "./lib/backend-build-identity.mjs";
 
+// Child compiler and fresh staging directories must not inherit group/other write.
+process.umask(process.umask() | 0o022);
 const root = process.cwd();
 const output = resolve(root, "dist");
 const metadata = join(output, "build-metadata.json");
@@ -30,7 +32,7 @@ try {
   run(join(root, "scripts/copy-migrations.mjs"), [compiled]);
   if (JSON.stringify(source) !== JSON.stringify(backendSourceIdentity(root))) throw new Error("BACKEND_BUILD_SOURCE_CHANGED");
   if (readdirSync(compiled).some(name => !BACKEND_OUTPUT_ROOTS.includes(name))) throw new Error("BACKEND_BUILD_OUTPUT_UNEXPECTED");
-  const artifact = fileIdentity(compiled, BACKEND_OUTPUT_ROOTS);
+  const artifact = sealBackendArtifacts(compiled);
   const migrations = artifact.entries.filter(entry => entry.path.startsWith("migrations/") && entry.path.endsWith(".sql"))
     .map(entry => ({ id: entry.path.slice("migrations/".length), checksum: entry.sha256.slice("sha256:".length) }));
   const manifest = { schema_version: 1, kind: "jarvis-backend-build", source,

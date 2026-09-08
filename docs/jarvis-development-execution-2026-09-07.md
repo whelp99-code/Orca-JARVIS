@@ -1018,3 +1018,17 @@
 - 상세/재현/영수증: docs/planning/adr-daily-event-identity.md.
   실 커넥터/이벤트처리/운영 활성화HOLD와 전체01–25 목표를 유지한다.
   고정6d8031d 전체verify37465는 별도로 진행 중이며 이번 수정은 제외된다.
+
+## 2026-09-09 — 항목15/19/21 verifier 빌드 권한 정규화
+
+- 실제 현재산출물 task-verifier-main.js mode664와 checkReady exit2
+  TASK_VERIFIER_UNAVAILABLE을 확인했다. build의 umask에022를 추가하고
+  복사된 산출물까지 그룹/기타 쓰기권한을 제거한 후 최종모드 digest를 기록한다.
+- build+55tests/5files17.32s+lint+3types exit0(handle48867).
+- 실제 umask000 자식build→새Node readiness/격리DB identity 인수50995 exit0:
+  산출물1138개 중 그룹/기타 쓰기가능0개, verifier644·준비성공, 키640 거부,
+  build/DB matched. 수동산출물chmod0·모델0·운영변경0.
+- 첫 인수harness는 reader에 SQLite handle 대신 AuthorityDb를 전달해 실패했다.
+  harness수정 후 동일제품으로 재인수했으며 키/DB는 제거했다.
+- docs/planning/adr-backend-artifact-permissions.md에 재현/영수증/제한 기록.
+  설치의 전체 의존성·상위경로 권한/운영release 인수와 전체01–25 목표는 남는다.
