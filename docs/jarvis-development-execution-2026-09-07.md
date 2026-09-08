@@ -774,3 +774,15 @@
 - 이후 순회 제한 `738db67`과 게시 경계 `7d664b8`은 이 고정 전체 검증에 포함되지 않는다.
   각 관련 테스트와 별도 프로세스 검증은 해당 ADR에 기록했다. 실제 출처 admission과 운영
   자동화, 게시 후 삭제는 계속 미완료이며 합성 테스트를 운영 완료로 간주하지 않는다.
+
+## 2026-09-09 — retention 운영 연결의 잔여 계약
+
+- `src/personal-os-runtime.ts`의 `forServiceRun`은 GJC 서비스와 retention 객체를 생성하지만
+  retention 어댑터를 전달하거나 작업 생성·claim·실행을 호출하지 않는다. 일일 운영 연결(12)은 미완료다.
+- migration 036은 notification_intents 삭제를 금지한다. migration 032는 personal_observations의
+  수정·삭제를 금지하며 personal_source_checkpoints와 personal_context_observations가 관측 행을
+  참조한다. 두 데이터 클래스를 단순 DELETE 어댑터로 연결하는 변경은 HOLD다.
+- 후속 구현은 보존할 최소 증거와 지울 내용의 경계, 참조 및 체크포인트 처리, 정정·삭제 계보,
+  재수집 멱등성, 운영 정책 승인을 함께 해결해야 한다. 기존 migration bytes를 바꾸거나 트리거만
+  제거해서 운영 완료로 처리하지 않는다. privacy-security 문서의 30일 관측/7일 알림 보존 규정 자체는
+  현재 스키마에 대한 삭제 실행 경로를 제공하지 않는다.
