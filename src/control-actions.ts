@@ -3,6 +3,7 @@ import { memoryAuthority, memoryConfirm, memoryDedicatedEffect,
   memoryGenerationRollback, memoryOutboxDispatch } from "./memory-control-actions.js";
 import { REMOTE_LIFECYCLE_ACTIONS } from "./remote-approval-actions.js";
 import { validateTaskExecutionAction } from "./task-execution-plan.js";
+import { controlWorkflowRunInput } from "./control-workflow-input.js";
 
 export interface RuntimeControlActionInput {
   action: string;
@@ -123,6 +124,8 @@ function workflowStart(input: RuntimeControlActionInput): void {
   bindTarget(input.target, "loop_id", loopId);
   bindTarget(input.target, "correlation_id", correlationId);
   bindTaskTarget(input.target, workflowTaskCandidates(input.args));
+  if (input.args.input && typeof input.args.input === "object" && !Array.isArray(input.args.input)
+    && Object.hasOwn(input.args.input, "task_template")) controlWorkflowRunInput(input.args);
 }
 
 function workflowAdvance(input: RuntimeControlActionInput): void {

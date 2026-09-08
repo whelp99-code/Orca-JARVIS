@@ -3,6 +3,7 @@ import { open } from "node:fs/promises";
 import { JarvisError } from "./db.js";
 import { classifyWorkRouting } from "./work-routing.js";
 import { inspectTaskExecutorPlan } from "./task-executor-plan.js";
+import { compileTaskTemplate } from "./task-templates.js";
 
 async function readJson(path: string, maximum: number): Promise<unknown> {
   try {
@@ -32,4 +33,8 @@ export async function executeWorkRouting(requestPath: string, policyPath: string
 export async function executeExecutorPlanValidation(id: string, path: string): Promise<Record<string, unknown>> {
   const plan = await readJson(path, 4 * 1024 * 1024);
   return { ok: true, command: "routing.validate-plan", validation: inspectTaskExecutorPlan(id, plan) };
+}
+
+export async function executeTaskTemplateCompilation(path: string): Promise<Record<string, unknown>> {
+  return { ok: true, command: "routing.compile-template", ...compileTaskTemplate(await readJson(path, 65536)) };
 }

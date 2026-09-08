@@ -5,6 +5,9 @@ import type { TeamProposalResultV1 } from "../team-proposal.js";
 import type { CreateTaskRequest } from "./contracts.js";
 import type { TeamProposalPlanner } from "./proposal-service.js";
 import { createTaskSpec, taskSpecDigest } from "../task-spec.js";
+import type { TaskTemplateBinding } from "../task-templates.js";
+
+type TemplateTaskRequest = CreateTaskRequest & { readonly task_template?: TaskTemplateBinding };
 
 const PROPOSAL_STALE = "PROPOSAL_STALE" as const;
 const REQUESTED_BY = "jarvis-control-center" as const;
@@ -19,7 +22,7 @@ export type StageDashboardTaskInput = {
   readonly capabilityProbe: CapabilityProbe;
   readonly planner: TeamProposalPlanner;
   readonly now: Date;
-  readonly request: CreateTaskRequest;
+  readonly request: TemplateTaskRequest;
 };
 
 export async function stageDashboardTask(input: StageDashboardTaskInput): Promise<StoredControlCommand> {
@@ -57,7 +60,7 @@ async function planReadyProposal(
 }
 
 function workflowStartCommand(
-  request: CreateTaskRequest,
+  request: TemplateTaskRequest,
   planned: Extract<TeamProposalResultV1, { readonly status: "ready" }>,
   now: Date,
 ): ControlCommandRequestInput {
@@ -81,6 +84,7 @@ function workflowStartCommand(
       members: planned.members,
       task_spec: spec,
       task_spec_digest: taskSpecDigest(spec),
+      ...(request.task_template === undefined ? {} : { task_template: request.task_template }),
     },
   };
   return {

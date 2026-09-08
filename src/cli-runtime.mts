@@ -10,7 +10,8 @@ import { executeControlCommand } from "./cli-control-commands.js";
 import { executeBootstrapCommand, executeCoreCommand } from "./cli-core-commands.js";
 import { executeGjcCommand } from "./cli-gjc-commands.js";
 import { executeDailyCommand } from "./cli-daily-commands.js";
-import { executeWorkRouting, executeExecutorPlanValidation } from "./cli-work-routing.js";
+import { executeWorkRouting, executeExecutorPlanValidation, executeTaskTemplateCompilation } from "./cli-work-routing.js";
+import { taskTemplateCatalog } from "./task-templates.js";
 import { inspectTaskExecutor, inspectTaskExecutors, probeTaskExecutor } from "./task-executor-registry.js";
 import { executeLiveCommand } from "./cli-live-commands.js";
 import { executePreGjcCommand } from "./cli-pre-gjc-commands.js";
@@ -25,6 +26,7 @@ const CLI_HELP =
   + "routing executors | routing executor ID: inspect compiled registrations and configuration presence; no readiness probe\n"
   + "routing validate-plan ID PLAN.json: validate registered input structure; no approval, repository or readiness checks\n"
   + "routing probe-executor ID: query local CLI login status; no model call or execution authority\n"
+  + "routing templates | routing compile-template INPUT.json: inspect or compile versioned task templates before approval\n"
   + "daily morning --once --db PATH --input CONFIG: run stored-source morning recovery; provider refresh unavailable\n"
   + "daily evening --once --db PATH --input CONFIG --key-file PATH: publish stored native completions; automatic operation held\n"
   + "runtime identity [--db PATH]: observe this CLI build and persisted daemon identity without migrating the DB\n"
@@ -91,6 +93,12 @@ export async function execute(
   const values = normalizeCliValues(parsed.values);
   if (command === "routing") {
     if (Object.keys(parsed.values).some(key => key !== "json")) throw new JarvisError("WORK_ROUTING_INPUT_INVALID");
+    if (subcommand === "templates" && parsed.positionals.length === 2) {
+      return { ok: true, command: "routing.templates", templates: taskTemplateCatalog() };
+    }
+    if (subcommand === "compile-template" && parsed.positionals.length === 3 && argument) {
+      return executeTaskTemplateCompilation(argument);
+    }
     if (subcommand === "executors" && parsed.positionals.length === 2) {
       return { ok: true, command: "routing.executors", executors: inspectTaskExecutors() };
     }

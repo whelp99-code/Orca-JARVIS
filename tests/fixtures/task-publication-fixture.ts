@@ -15,8 +15,8 @@ import { signTaskCertification } from "../../src/task-certification-proof.js";
 import { verifyTaskCandidate } from "../../src/task-candidate-verification.js";
 import { inspectTaskPublicationIdentity } from "../../src/task-publication-git.js";
 
-export async function taskPublicationFixture(approvedStart = true) {
-  const f = await taskExecutionFixture(approvedStart);
+export async function taskPublicationFixture(approvedStart = true, options: Parameters<typeof taskExecutionFixture>[1] = {}) {
+  const f = await taskExecutionFixture(approvedStart, options);
   const root = await mkdtemp(join(tmpdir(), "jarvis-publication-fixture-"));
   const git = (args: string[], input?: string) => execFileSync("/usr/bin/git", ["-c", "core.hooksPath=/dev/null", "-C", root, ...args], {
     encoding: "utf8", input, env: { PATH: "/usr/bin:/bin", GIT_CONFIG_NOSYSTEM: "1", GIT_CONFIG_GLOBAL: "/dev/null",
@@ -35,6 +35,11 @@ export async function taskPublicationFixture(approvedStart = true) {
     files: [{ path: "answer.mjs", access: "write", before_digest: candidateHash(source) },
       { path: "check.mjs", access: "read", before_digest: candidateHash(check) }],
     verification: [{ id: "answer", argv: ["node", "check.mjs"], cwd: ".", expected_exit: 0 }] };
+  if (options.template) {
+    Object.assign(plan, { files: options.template.task_template.files.map(file => ({ ...file,
+      before_digest: file.path === "answer.mjs" ? candidateHash(source) : file.path === "check.mjs" ? candidateHash(check) : null })),
+    verification: options.template.task_template.verification });
+  }
   async function certify(value: TaskExecutionPlanV2 | typeof f.plan = plan, failed = false) {
     f.approve(stageTaskExecution(f.db, { ...f.request, plan: value }, f.now));
     const command = f.control.claim("execute", "publication-fixture", f.now);

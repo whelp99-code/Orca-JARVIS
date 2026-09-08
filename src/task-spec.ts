@@ -4,6 +4,7 @@ import { JarvisError } from "./db.js";
 import type { WorkflowRunInput } from "./loopgraph.js";
 import type { TeamMemberProposal, TeamProposalResultV1, TeamTaskRequirements } from "./team-proposal.js";
 import { parseRequest } from "./team-proposal-input.js";
+import { assertTaskTemplateRequirements } from "./task-templates.js";
 
 export { parseTaskExecutionPlan, taskExecutionPlanDigest,
   type TaskExecutionPlanV1, type TaskExecutionPlanV2, type TaskExecutionPlan } from "./task-execution-plan.js";
@@ -53,7 +54,8 @@ export function assertWorkflowTaskSpec(workflow: WorkflowRunInput): void {
   const input = workflow.input;
   if (typeof input !== "object" || input === null || Array.isArray(input)) return;
   const fields = input as Record<string, unknown>;
-  if (!Object.hasOwn(fields, "task_spec") && !Object.hasOwn(fields, "task_spec_digest")) return;
+  if (!Object.hasOwn(fields, "task_spec") && !Object.hasOwn(fields, "task_spec_digest")
+    && !Object.hasOwn(fields, "task_template")) return;
   try { assertBinding(fields, workflow.budget); }
   catch { throw new JarvisError("TASK_SPEC_BINDING_INVALID"); }
 }
@@ -75,4 +77,5 @@ function assertBinding(fields: Record<string, unknown>, budget: WorkflowRunInput
     throw new JarvisError("TASK_SPEC_BINDING_INVALID");
   }
   parseRequest({ schema_version: 1, objective: spec.objective, ...spec.requirements });
+  assertTaskTemplateRequirements(fields, spec.requirements);
 }

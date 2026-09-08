@@ -4,6 +4,7 @@ import type { StoredControlCommand } from "../../src/control-plane.js";
 import { createTaskSpec, taskSpecDigest } from "../../src/task-spec.js";
 import type { TaskExecutionPlanV1 } from "../../src/task-execution-plan.js";
 import { initialized, localKey } from "../helpers.js";
+import type { compileTaskTemplate } from "../../src/task-templates.js";
 
 export function executionPlan(): TaskExecutionPlanV1 {
   return { schema_version: 1, run_id: "run", task_id: "task", task_spec_digest: `sha256:${"a".repeat(64)}`,
@@ -14,7 +15,8 @@ export function executionPlan(): TaskExecutionPlanV1 {
     verification: [{ id: "focused", argv: ["node", "tests/check.mjs"], cwd: ".", expected_exit: 0 }] };
 }
 
-export async function taskExecutionFixture(approvedStart = true, options: { objective?: string } = {}) {
+export async function taskExecutionFixture(approvedStart = true,
+  options: { objective?: string; template?: ReturnType<typeof compileTaskTemplate> } = {}) {
   const db = await initialized();
   const control = new ControlPlane(db);
   const now = new Date();
@@ -25,9 +27,14 @@ export async function taskExecutionFixture(approvedStart = true, options: { obje
     members: [{ member_id: "builder", archetype: "builder" as const, role: "Implement changes", scope: ["implement_changes"],
       exclusions: ["grant_authority"], verification: ["run_required_checks"], preferred_capability_ids: ["codex" as const] }] };
   const spec = createTaskSpec("task", proposal, budget);
+  if (options.template) {
+    const request = options.template.proposal_request;
+    Object.assign(spec, { objective: request.objective, requirements: { work_type: request.work_type,
+      constraints: request.constraints, completion_evidence: request.completion_evidence } });
+  }
   const workflow = { run_id: "run", loop_id: "agentops-default", correlation_id: "task", budget,
     input: { task_id: "task", objective: spec.objective, members: proposal.members, task_spec: spec,
-      task_spec_digest: taskSpecDigest(spec) } };
+      task_spec_digest: taskSpecDigest(spec), ...(options.template ? { task_template: options.template.task_template } : {}) } };
   const graph = new LoopGraph(db);
   graph.ensureDefaults(now);
   const approve = (request: StoredControlCommand) => {

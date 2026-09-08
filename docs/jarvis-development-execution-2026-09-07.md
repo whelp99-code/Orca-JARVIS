@@ -852,3 +852,21 @@
 - 이후 입력 계약 검사 `69782a7`, 로그인 상태 조회 `653ea36`, 대시보드 준비 경계
   공통화는 이 고정 실행에 포함되지 않는다. 업무 템플릿 3종의 설계와 남은 수용 조건은
   `docs/planning/adr-approved-task-templates.md`에 기록했다. 원래 01–25 목표는 미완료다.
+
+## 2026-09-09 — 승인 기반 업무 템플릿 3종
+
+- code-fix / incident-report / technical-review v1을 기존 workflow.start 및 task.execute에 연결했다.
+  CLI catalog/compile 결과의 템플릿 정의 digest·파일 범위·검증 명령을 최초 승인 입력에 저장한다.
+  템플릿이 있는 workflow는 staging부터 TaskSpec 요구사항을 검사하며, generic execution 경로도
+  파일 범위 변경·필수 검사 삭제를 거부한다. 승인 후 입력 변경은 기존 immutable trigger가 차단한다.
+- 보고서는 원본 읽기 전용·출력 1개다. 고정 sandbox 검사로 JSON 구조와 원문 인용을 확인한다.
+  보고서 판단의 사실성이나 장애 해결을 인증하는 기능은 아니다. 자동 조치·기억 승격은 보류다.
+- 최종 backend build + 55 tests/5files(29.88s) + lint + 3typechecks exit0(handle44584).
+  세 템플릿 모두 fixture 생성→실제 sandbox→인증→Git 결과→완료 및 replay를 통과했다.
+  옵션 형태 출력 경로의 Node --help 우회를 exit0/24861bytes로 재현하고 -- 구분자로 수정했다.
+- 최종 실제 Claude1/별도 Node verifier1, 36614ms, 격리 결과 commit
+  `b0ca897e9b8a5c4669c17fd960a5df91d6e18aff`; 준비 DB 변경0, 원본 HEAD/status/source 보존,
+  완료 재호출의 추가 모델/검증기 호출0·ref 변화0. 시험용 서명 승인 키와 DB를 사용했다.
+- 별도 built HTTP: preview200/create202 pending/잘못된 revision400, 거부 DB 변경0.
+  전체 증거·인터페이스·검증 한계는 `docs/planning/adr-approved-task-templates.md` 참조.
+  대시보드 선택/결과 표시, 실제 운영 입력·승인, 보고서 판단 평가 및 전체 01–25 목표는 남아 있다.

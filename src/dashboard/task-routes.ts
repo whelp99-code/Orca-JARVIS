@@ -13,6 +13,8 @@ const TASKS_PATH = "/api/v1/tasks";
 
 const ERROR_STATUS = {
   TASK_INPUT_INVALID: 400,
+  TASK_TEMPLATE_INVALID: 400,
+  TASK_SPEC_BINDING_INVALID: 400,
   TEAM_PROPOSAL_INPUT_INVALID: 400,
   VALIDATION_ERROR: 400,
   CONTROL_COMMAND_INVALID: 400,
@@ -22,6 +24,8 @@ const ERROR_STATUS = {
 
 const ERROR_MESSAGE = {
   TASK_INPUT_INVALID: "Invalid task input",
+  TASK_TEMPLATE_INVALID: "Invalid task template",
+  TASK_SPEC_BINDING_INVALID: "Invalid task specification binding",
   TEAM_PROPOSAL_INPUT_INVALID: "Invalid team proposal input",
   VALIDATION_ERROR: "Validation error",
   CONTROL_COMMAND_INVALID: "Invalid control command",
@@ -91,6 +95,8 @@ function mappedTaskError(error: unknown): MappedTaskError | undefined {
   if (!(error instanceof JarvisError)) return undefined;
   switch (error.code) {
     case "TASK_INPUT_INVALID":
+    case "TASK_TEMPLATE_INVALID":
+    case "TASK_SPEC_BINDING_INVALID":
     case "TEAM_PROPOSAL_INPUT_INVALID":
     case "VALIDATION_ERROR":
     case "CONTROL_COMMAND_INVALID":

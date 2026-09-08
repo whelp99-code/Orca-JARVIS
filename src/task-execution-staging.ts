@@ -4,6 +4,7 @@ import { type AuthorityDb, JarvisError } from "./db.js";
 import { LoopGraph } from "./loopgraph.js";
 import { controlWorkflowRunInput } from "./control-workflow-input.js";
 import { parseTaskExecutionPlan, taskExecutionPlanDigest, type TaskExecutionPlan } from "./task-execution-plan.js";
+import { assertTaskTemplatePlan } from "./task-templates.js";
 
 export interface StageTaskExecutionInput {
   readonly request_id: string;
@@ -38,6 +39,7 @@ export function assertTaskExecutionBinding(db: AuthorityDb, plan: TaskExecutionP
       && canonicalize(approved.budget) === canonicalize(workflow.budget);
   });
   if (!matches) throw new JarvisError("TASK_EXECUTION_START_APPROVAL_REQUIRED");
+  assertTaskTemplatePlan(input, plan);
 }
 
 export function stageTaskExecution(db: AuthorityDb, value: StageTaskExecutionInput, now = new Date()): StoredControlCommand {
