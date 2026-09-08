@@ -22,6 +22,9 @@ export function matchPhoneRoute(input: {
     if (input.path === "/readyz" && query === "") return route("readiness", method, input.path, "", 64, false, false, false);
   }
   if (method === "GET") {
+    if (input.path === "/api/v1/memory/context/capabilities" && query === "") {
+      return route("memory_capabilities", method, input.path, "", 1024, true, true, false);
+    }
     if (input.path === "/api/v1/phone/session" && query === "") {
       return route("session", method, input.path, "", 1024, false, false, false);
     }
@@ -94,6 +97,7 @@ function route(
 
 function knownMethods(path: string): readonly string[] | undefined {
   const exact = new Map<string, readonly string[]>([
+    ["/api/v1/memory/context/capabilities", ["GET"]],
     ["/healthz", ["GET", "HEAD"]], ["/readyz", ["GET", "HEAD"]],
     ["/api/v1/phone/session", ["GET"]], ["/", ["GET"]], ["/memory", ["GET"]],
     ["/NOTICE-ARGO.txt", ["GET", "HEAD"]], ["/api/v1/today", ["GET"]],

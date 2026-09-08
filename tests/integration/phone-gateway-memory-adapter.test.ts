@@ -65,6 +65,15 @@ describe("phone gateway Memory read adapter", () => {
   it("keeps scoped context disabled without configuration and rejects client identity claims", async () => {
     const value = await authed();
     try {
+      const capabilities = await request(`${value.origin}/api/v1/memory/context/capabilities`, { headers: value.headers });
+      expect(capabilities.statusCode).toBe(200);
+      expect(await capabilities.body.json()).toEqual({ schema_version: 1, profile: "scoped-record-read-v2",
+        configured: false, supported_operations: ["context"], writes_supported: false,
+        authorization: "checked_per_request", readiness: "not_checked" });
+      const anonymous = await request(`${value.origin}/api/v1/memory/context/capabilities`, {
+        headers: { ...value.headers, Cookie: '' },
+      });
+      expect(anonymous.statusCode).toBe(401); await anonymous.body.text();
       for (const [extra, expected] of [[{}, 503], [{ agent_id: 'agent:attacker' }, 400]] as const) {
         const result = await request(`${value.origin}/api/v1/memory/context`, {
           method: 'POST', headers: { ...value.headers, 'Content-Type': 'application/json; charset=utf-8' },
@@ -73,6 +82,7 @@ describe("phone gateway Memory read adapter", () => {
         expect(result.statusCode).toBe(expected); await result.body.text();
       }
       expect(value.authority.captures.some(row => row.url === '/api/v1/memory/context')).toBe(false);
+      expect(value.authority.captures.some(row => row.url === '/api/v1/memory/context/capabilities')).toBe(false);
     } finally { value.gateway.close(); await value.authority.close(); }
   });
 

@@ -187,6 +187,13 @@ async function serveMatchedRoute(
   // Body intake may outlive the authenticated session. Do not start a read
   // with stale authentication, or return its contents after expiry/revocation.
   if (!stillAuthenticated()) return;
+  if (matched.routeClass === "memory_capabilities") {
+    writeJson(ctx.response, 200, requestId, { schema_version: 1,
+      profile: "scoped-record-read-v2", configured: ctx.memoryContext !== undefined,
+      supported_operations: ["context"], writes_supported: false,
+      authorization: "checked_per_request", readiness: "not_checked" }, true);
+    update({ outcome: "allowed", code: "ok", status: 200 }); return;
+  }
   if (matched.routeClass === "memory_context") {
     if (ctx.memoryContext === undefined || ctx.memoryAgentId === undefined || body === undefined) {
       writePhoneGatewayError(ctx.response, { code: PHONE_ERROR_CODES.PHONE_NOT_READY, requestId });
