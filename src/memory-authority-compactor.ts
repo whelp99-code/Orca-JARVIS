@@ -1,3 +1,5 @@
+import { cancellationCompactionRequest, beginCancellationCompaction, completeCancellationCompaction,
+  type CancellationCompactionRequest, type CancellationLocalCompaction } from "./memory-cancellation-compaction.js";
 import { createHash } from "node:crypto";
 import {
   closeSync,
@@ -73,7 +75,47 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
     return this.options.runtime.quiesce("memory_compaction", () => this.compactQuiesced(request));
   }
 
-  private async compactQuiesced(request: MemoryCompactionRequest): Promise<MemoryCompactionObservation> {
+  compactCancellation(correctionId: string): Promise<CancellationLocalCompaction> {
+    return this.options.runtime.quiesce("memory_compaction", () => this.compactQuiesced(
+      cancellationCompactionRequest(this.options.runtime.authorityDb(), correctionId, this.options.clock ?? (() => new Date()))));
+  }
+
+  recoverCancellation(correctionId: string): Promise<CancellationLocalCompaction> {
+    return this.options.runtime.quiesce("memory_compaction", async () => {
+      const authority = this.options.runtime.authorityDb();
+      const request = cancellationCompactionRequest(authority, correctionId, this.options.clock ?? (() => new Date()));
+      const row = authority.db.prepare(`SELECT i.purge_id,r.source_device,r.source_inode,r.result_device,r.result_inode,
+        r.result_generation,r.physical_scan_digest,r.reader_drain_digest FROM memory_cancellation_compaction_inputs i
+        JOIN memory_compaction_runs r ON r.purge_id=i.purge_id WHERE i.correction_id=?`).get(correctionId) as
+        { purge_id: string; source_device: string; source_inode: string; result_device: string | null; result_inode: string | null;
+          result_generation: number; physical_scan_digest: string; reader_drain_digest: string | null } | undefined;
+      const active = statSync(authority.filename, { bigint: true });
+      if (!row || row.result_device !== active.dev.toString() || row.result_inode !== active.ino.toString()
+        || row.result_generation !== this.options.runtime.activeGeneration().generation)
+        throw new AuthorityError("MEMORY_CANCELLATION_COMPACTION_NOT_SWAPPED");
+      const drain = digest({ purge_id: row.purge_id, source_device: row.source_device, source_inode: row.source_inode,
+        old_fd_count: 0, holders: [], acknowledged_generation: row.result_generation });
+      if (row.reader_drain_digest !== drain) {
+        const old = this.options.runtime.observeOldInode(BigInt(row.source_device), BigInt(row.source_inode));
+        if (old.fd_count !== 0) throw new AuthorityError("MEMORY_OLD_DATABASE_FD_ACTIVE");
+        if (old.holders.length !== 0) throw new AuthorityError("MEMORY_OLD_DATABASE_FD_ACTIVE");
+      }
+      const bytes = await collectCancellationMaterial(authority, this.options.layout.spool_root, row.purge_id,
+        this.options.clock?.() ?? new Date());
+      try { if (bytes.length !== 0) throw new AuthorityError("MEMORY_CANCELLATION_SPOOL_REAPPEARED"); }
+      finally { bytes.forEach(value => value.fill(0)); }
+      const local = this.options.scanner.scanLocal();
+      return completeCancellationCompaction(authority, request, this.options.layout, {
+        purge_id: row.purge_id, result_generation: row.result_generation, result_device: row.result_device,
+        result_inode: row.result_inode, reader_drain_digest: drain, physical_scan_digest: row.physical_scan_digest,
+        local, observed_at: (this.options.clock?.() ?? new Date()).toISOString(),
+      }, this.options.clock ?? (() => new Date()));
+    });
+  }
+
+  private compactQuiesced(request: MemoryCompactionRequest): Promise<MemoryCompactionObservation>;
+  private compactQuiesced(request: CancellationCompactionRequest): Promise<CancellationLocalCompaction>;
+  private async compactQuiesced(request: MemoryCompactionRequest | CancellationCompactionRequest): Promise<MemoryCompactionObservation | CancellationLocalCompaction> {
     this.assertRequest(request);
     const authority = this.options.runtime.authorityDb();
     const sourceMetadata = statSync(authority.filename, { bigint: true });
@@ -87,7 +129,8 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
       source_generation: sourceGeneration, result_generation: sourceGeneration + 1,
       source_device: sourceMetadata.dev.toString(), source_inode: sourceMetadata.ino.toString(),
       source_digest: digest(readFileSync(authority.filename)), created_at: createdAt };
-    beginCompaction(authority, request, start);
+    if ("cancellation" in request) beginCancellationCompaction(authority, request, start, this.options.layout);
+    else beginCompaction(authority, request, start);
     const freshPath = join(dirname(authority.filename),
       `.${basename(authority.filename)}.${purgeDigest.slice(7, 23)}.fresh`);
     let sensitive: readonly Buffer[] = [];
@@ -114,6 +157,15 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
         result_generation: build.result_generation,
         logical_result_digest: build.logical_result_digest,
         physical_scan_digest: build.result_digest, observed_at: createdAt });
+      if ("cancellation" in request) {
+        const local = this.options.scanner.scanLocal();
+        return completeCancellationCompaction(authority, request, this.options.layout, {
+          purge_id: purgeId, result_generation: build.result_generation,
+          result_device: swap.result_device, result_inode: swap.result_inode,
+          reader_drain_digest: swap.reader_drain_digest, physical_scan_digest: build.result_digest,
+          local, observed_at: (this.options.clock?.() ?? new Date()).toISOString(),
+        }, this.options.clock ?? (() => new Date()));
+      }
       const inventory = await this.options.scanner.scan({
         provider: request.provider_inventory, guards: request.reingress_guards,
       });
@@ -185,12 +237,14 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
         input.old_device.toString(), input.old_inode.toString(), oldFdCount,
         input.result_generation, input.observed_at);
     }
+    authority.db.prepare("UPDATE memory_compaction_runs SET reader_drain_digest=? WHERE purge_id=?")
+      .run(drainDigest, input.purge_id);
     return { result_device: active.dev.toString(), result_inode: active.ino.toString(),
       old_fd_count: 0, reader_drain_digest: drainDigest };
   }
 
 
-  private assertRequest(request: MemoryCompactionRequest): void {
+  private assertRequest(request: MemoryCompactionRequest | CancellationCompactionRequest): void {
     const authority = this.options.runtime.authorityDb();
     const row = authority.db.prepare(
       `SELECT operation,target_manifest_digest,scope_digest,set_root

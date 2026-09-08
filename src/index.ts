@@ -233,3 +233,5 @@ export { MemoryCorrectionCancellationResultStore } from "./memory-correction-can
 export { collectCancellationMaterial } from "./memory-cancellation-material.js";
 
 export type { JarvisLocalSurfaceObservation } from "./memory-managed-surface-scanner.js";
+
+export type { CancellationLocalCompaction } from "./memory-cancellation-compaction.js";

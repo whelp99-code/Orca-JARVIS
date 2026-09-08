@@ -30,7 +30,7 @@ type RuntimeOptions = {
 export class AuthorityDatabaseRuntime {
   /** Active lease count is mutable runtime ownership state. */
   private activeLeases = 0;
-  private generation = 1;
+  private generation: number;
   private quiescing = false;
   private readonly waiters = new Set<() => void>();
   private readonly processes = new Map<number, RegisteredAuthorityProcess>();
@@ -42,6 +42,12 @@ export class AuthorityDatabaseRuntime {
   ) {
     if (!Number.isSafeInteger(options.watchdog_ms) || options.watchdog_ms < 100
       || options.watchdog_ms > 60_000) throw new JarvisError("AUTHORITY_RUNTIME_CONFIG_INVALID");
+    const generations = database.db.prepare("SELECT generation FROM memory_database_generations WHERE state='active'")
+      .all() as Array<{ generation: number }>;
+    const generation = generations[0]?.generation;
+    if (generations.length !== 1 || !Number.isSafeInteger(generation) || generation! < 1)
+      throw new JarvisError("AUTHORITY_DATABASE_GENERATION_INVALID");
+    this.generation = generation!;
     this.registry = new AuthorityProcessRegistry(options.registry_root, database.filename);
     this.registerProcess(process.pid);
     this.persistRegistry();

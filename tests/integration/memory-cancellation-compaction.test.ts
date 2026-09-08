@@ -1,7 +1,10 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
+import { AuthorityDb } from "../../src/db.js";
+import { AuthorityDatabaseRuntime } from "../../src/authority-database-runtime.js";
 import { MemoryManagedSurfaceScanner } from "../../src/memory-managed-surface-scanner.js";
+import * as cancellationPersistence from "../../src/memory-cancellation-compaction.js";
 import * as freshBuilder from "../../src/memory-authority-fresh-builder.js";
 import { collectCancellationMaterial } from "../../src/memory-cancellation-material.js";
 import { MemoryCorrectionCancellationResultStore } from "../../src/memory-correction-cancellation-result-store.js";
@@ -93,4 +96,63 @@ it("drains an existing runtime writer before copying its committed state", async
     await Promise.all([writer, compaction]);
     expect(f.db.db.prepare("SELECT state FROM memory_provider_proof_keys").all()).toEqual([{ state: "revoked" }]);
   } finally { release(); await writer; await f.close(); }
+});
+
+it("compacts a cancelled correction with its signed result and actual local scans, without provider inventory", async () => {
+  const f = await cancellationResultFixture();
+  try {
+    const store = new MemoryCorrectionCancellationResultStore(f.db, f.runtime.clock);
+    store.record(f.record.correction_id, f.result);
+    const inode = statSync(f.db.filename).ino;
+    const result = await f.runtime.compactor.compactCancellation(f.record.correction_id);
+    expect(result).toMatchObject({ scope: "jarvis_cancellation_local_compaction", result_digest: f.result.result_digest,
+      local: { observed_surface_count: 20 } });
+    expect(statSync(f.db.filename).ino).not.toBe(inode);
+    expect(existsSync(f.spoolPath)).toBe(false);
+    expect(await f.runtime.compactor.recoverCancellation(f.record.correction_id)).toEqual(result);
+    const reopened = new AuthorityDatabaseRuntime(new AuthorityDb(f.db.filename), {
+      registry_root: join(f.root, "reopened-registry"), watchdog_ms: 5000,
+    });
+    try { expect(reopened.activeGeneration().generation).toBe(result.result_generation); }
+    finally { await reopened.close(); }
+    f.db.db.prepare("UPDATE memory_provider_proof_keys SET state='revoked'").run();
+    await expect(f.runtime.compactor.recoverCancellation(f.record.correction_id)).rejects.toThrow();
+    f.db.db.prepare("UPDATE memory_provider_proof_keys SET state='active'").run();
+    expect(store.get(f.record.correction_id)).toEqual(f.result);
+    expect(f.db.db.prepare("SELECT count(*) AS n FROM memory_compaction_inputs").get()).toEqual({ n: 0 });
+    expect(f.db.db.prepare("SELECT count(*) AS n FROM memory_compaction_receipts").get()).toEqual({ n: 0 });
+    expect(f.db.db.prepare("SELECT state FROM memory_purge_jobs").get()).toEqual({ state: "verifying" });
+    expect(f.db.db.prepare("SELECT accepted_through_sequence FROM memory_effect_dispatch_cursor").get()).toEqual({ accepted_through_sequence: 0 });
+  } finally { await f.close(); }
+});
+
+
+it("recovers after physical replacement but before local receipt persistence", async () => {
+  const f = await cancellationResultFixture();
+  const original = cancellationPersistence.completeCancellationCompaction;
+  const spy = vi.spyOn(cancellationPersistence, "completeCancellationCompaction").mockImplementationOnce(() => {
+    throw new Error("STOP_AFTER_LOCAL_SCAN");
+  }).mockImplementation(original);
+  try {
+    new MemoryCorrectionCancellationResultStore(f.db, f.runtime.clock).record(f.record.correction_id, f.result);
+    await expect(f.runtime.compactor.compactCancellation(f.record.correction_id)).rejects.toThrow("STOP_AFTER_LOCAL_SCAN");
+    expect(existsSync(f.spoolPath)).toBe(false);
+    const receipt = await f.runtime.compactor.recoverCancellation(f.record.correction_id);
+    expect(await f.runtime.compactor.recoverCancellation(f.record.correction_id)).toEqual(receipt);
+    expect(f.db.db.prepare("SELECT count(*) AS n FROM memory_cancellation_compaction_receipts").get()).toEqual({ n: 1 });
+    expect(() => f.db.db.exec("DELETE FROM memory_cancellation_compaction_receipts")).toThrow("immutable");
+    expect(() => f.db.db.exec("UPDATE memory_cancellation_compaction_inputs SET result_digest='bad'")).toThrow("immutable");
+  } finally { spy.mockRestore(); await f.close(); }
+});
+
+it("rejects absent or currently revoked provider results before starting local compaction", async () => {
+  const f = await cancellationResultFixture();
+  try {
+    await expect(f.runtime.compactor.compactCancellation(f.record.correction_id)).rejects.toThrow("MEMORY_CANCELLATION_RESULT_REQUIRED");
+    new MemoryCorrectionCancellationResultStore(f.db, f.runtime.clock).record(f.record.correction_id, f.result);
+    f.db.db.prepare("UPDATE memory_provider_proof_keys SET state='revoked'").run();
+    await expect(f.runtime.compactor.compactCancellation(f.record.correction_id)).rejects.toThrow();
+    expect(f.db.db.prepare("SELECT count(*) AS n FROM memory_purge_jobs").get()).toEqual({ n: 0 });
+    expect(existsSync(f.spoolPath)).toBe(true);
+  } finally { await f.close(); }
 });
