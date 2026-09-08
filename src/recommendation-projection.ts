@@ -117,6 +117,7 @@ function readRecommendations(database: Database.Database, now: string, limit: nu
        SELECT r.recommendation_id,r.context_id,r.context_digest,r.canonical_digest,r.evidence_digest,
               r.evidence_digest AS base_evidence_digest,r.approval_requirement,r.confidence_class,r.expires_at,
               r.canonical_envelope_json,c.expires_at AS context_expires_at,c.fresh_until AS context_fresh_until,
+              c.created_at AS context_created_at,c.observed_at AS context_observed_at,c.valid_at AS context_valid_at,
               a.rank,a.title,a.operation,a.target_digest,
               (SELECT state FROM personal_recommendation_action_events e WHERE e.recommendation_id=a.recommendation_id
                AND e.rank=a.rank ORDER BY event_sequence DESC LIMIT 1) AS state,
@@ -171,9 +172,14 @@ function readRecommendations(database: Database.Database, now: string, limit: nu
     const deadline = [persistenceText(row["expires_at"]), persistenceText(row["context_expires_at"]),
       persistenceText(row["context_fresh_until"]), details.identity.recommendation.freshness.fresh_until].sort()[0];
     if (deadline === undefined) throw new RecommendationError("RECOMMENDATION_INPUT_INVALID");
-    const current = (state === "pending" || state === "accepted") && now < deadline;
     const approval = persistenceText(row["approval_requirement"]); const confidence = persistenceText(row["confidence_class"]);
     const occurredAt = nullableText(row["transition_occurred_at"]) ?? persistenceText(row["recorded_at"]);
+    const recommendation = details.identity.recommendation;
+    const started = [recommendation.created_at, recommendation.observed_at, recommendation.valid_at,
+      recommendation.freshness.checked_at, persistenceText(row["context_created_at"]),
+      persistenceText(row["context_observed_at"]), persistenceText(row["context_valid_at"]),
+      occurredAt, persistenceText(row["recorded_at"])].every(timestamp => timestamp <= now);
+    const current = (state === "pending" || state === "accepted") && started && now < deadline;
     return {
       recommendation_id: id, context_id: persistenceText(row["context_id"]), context_digest: persistenceText(row["context_digest"]),
       canonical_digest: persistenceText(row["canonical_digest"]), context_evidence_digest: persistenceText(row["evidence_digest"]),
