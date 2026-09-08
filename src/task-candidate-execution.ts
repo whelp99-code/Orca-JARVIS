@@ -1,3 +1,4 @@
+import { recordTaskProviderUsage } from "./task-provider-usage.js";
 import { JarvisError, type AuthorityDb } from "./db.js";
 import type { ClaimedControlCommand } from "./control-plane.js";
 import { ControlEffectAttempts } from "./control-effect-attempts.js";
@@ -43,10 +44,13 @@ export async function executeTaskCandidate(input: {
   const effects = new ControlEffectAttempts(authority);
   effects.prepareTask(command, clock);
   let invoking = false;
+  let usageAttempted = false;
   try {
     effects.beginTaskInvocation(command, clock, sharedBudget);
     invoking = true;
     const generated = await provider.generate({ ...prepared.request, timeout_ms: remaining(), before_spawn: beforeSpawn });
+    usageAttempted = true;
+    recordTaskProviderUsage(authority, command, generated?.usage, true, clock());
     currentPlan(); remaining();
     if (!generated || !Number.isSafeInteger(generated.output_bytes) || generated.output_bytes < 0
       || generated.output_bytes < Buffer.byteLength(canonicalize(generated.output))) throw new JarvisError("TASK_PROVIDER_RESULT_INVALID");
@@ -73,7 +77,10 @@ export async function executeTaskCandidate(input: {
       repository: source.check, files, verification, artifact_id: artifact.artifact_id, published: false as const };
   } catch (error) {
     // Never reset a reservation or resend automatically after a possibly delivered provider call.
-    if (invoking) effects.markTaskUncertain(command, clock());
+    if (invoking) {
+      if (!usageAttempted) recordTaskProviderUsage(authority, command, undefined, false, clock());
+      effects.markTaskUncertain(command, clock());
+    }
     if (error instanceof JarvisError) throw error;
     throw new JarvisError("TASK_CANDIDATE_EXECUTION_FAILED");
   }

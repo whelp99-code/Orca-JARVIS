@@ -1178,3 +1178,19 @@
 - 독립 task_usage_review ship/수정지적0, 요청terra/medium, 실제모델/effort미노출.
   검증후7파일바이트동일 확인 후 인수결과문서만 추가. 수집단위를 커밋하며
   DB저장·실패coverage·집계와 전체01–25는 완료로 처리하지 않는다.
+
+## 2026-09-09 — 항목25 호출 원장 사용량 및 비용 추정 집계
+
+- 기존control_events에 호출ID당1개관측을 기록한다. 요청/승인/fence/run/plan결합,
+  canonical/digest/시각검사와 재생충돌거부. 취소/만료후관측은 실행권한이 아니다.
+- 같은요청cohort의 전체시도비용추정 합계와 검증성공당추정을 추가한다.
+  누락/비정상/성공근거무효/성공0은 비율null. 청구확정액은 여전히 unavailable.
+- build/lint/3types exit0, 관련40tests/4files33.16s. 실제Claude1/verifier1
+  완료43906ms, 독립CLI가 DB관측1건·USD0.18251399999999998추정을 동일회수.
+  재시도추가호출0, 조회원장불변. 격리승인/DB/Git이며 운영변경0.
+- 상세근거/종료시관측유실·CLI오류응답비용복구·청구·보존정책제한은
+  docs/planning/task-provider-usage-observation.md. 전체01–25는 미완료다.
+
+- 독립 task_usage_ledger_review ship/지적0. 요청terra/high, 실제모델/effort미노출.
+  리뷰대상7파일바이트동일 확인 후 인수기록만 추가하고 사용량원장·집계단위를 커밋한다.
+  fixture 결과commit은 격리리포정리후 현재작업트리에 없으며 보존receipt로 확인한다.

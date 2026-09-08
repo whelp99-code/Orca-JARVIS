@@ -1,3 +1,4 @@
+import { readTaskUsagePerformance } from "./task-usage-performance.js";
 import { JarvisError, type AuthorityDb } from "./db.js";
 import { candidateInstant } from "./task-candidate-artifact-codec.js";
 import { readTaskCompletionEvidence } from "./task-completion-evidence.js";
@@ -62,6 +63,7 @@ export function readTaskPerformance(authority: AuthorityDb, from: unknown, to: u
         status: invalidEvidence ? "invalid_completion_evidence" : terminal ? "measured" : "no_terminal_requests" },
       approval_wait: distribution(waits, invalidWaits), open_approval_age: distribution(openAges, 0),
       completion_latency: distribution(completions, invalidCompletions),
+      provider_cost_estimate: readTaskUsagePerformance(authority, window.from, window.to, observedAt, verified, invalidEvidence),
       unavailable: { cost_per_success: "billing_usage_not_recorded", rework: "business_task_lineage_not_recorded",
         duplicate_external_effects: "external_effect_observation_not_recorded", shadow_comparison: "comparison_contract_not_recorded" },
       policy_promoted: false };
