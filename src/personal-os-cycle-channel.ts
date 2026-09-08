@@ -82,6 +82,7 @@ function consumeLines(buffer: string, chunk: string, onLine: (line: string) => v
 export async function servePersonalOsCycleChannel(input: {
   readonly db: Database;
   readonly socketPath: string;
+  readonly onReady?: () => void;
 }): Promise<void> {
   ensureCycleCursor(input.db);
   try {
@@ -125,6 +126,7 @@ export async function servePersonalOsCycleChannel(input: {
       });
       socket.on("error", reject);
     });
+    input.onReady?.();
   });
   try {
     unlinkSync(input.socketPath);

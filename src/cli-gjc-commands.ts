@@ -8,6 +8,7 @@ import { LiveSupervisor, type LiveSupervisorCycle } from "./live-supervisor.js";
 import { PreGjcShadow } from "./pre-gjc-shadow.js";
 import { PERSONAL_OS_CONTROL_CHANNEL_ENV, servePersonalOsCycleChannel } from "./personal-os-cycle-channel.js";
 import { PersonalOsRuntime } from "./personal-os-runtime.js";
+import { CYCLE_READY_TYPE } from "./personal-os-cycle-ready.js";
 
 function outputSync(value: object): void {
   writeSync(process.stdout.fd, `${JSON.stringify({ version: 1, ...value })}\n`);
@@ -122,7 +123,8 @@ export async function executeGjcCommand(
     if (command === "service" && subcommand === "run") {
       const control = process.env[PERSONAL_OS_CONTROL_CHANNEL_ENV];
       if (control !== undefined && control.length > 0) {
-        await servePersonalOsCycleChannel({ db: db.db, socketPath: control });
+        await servePersonalOsCycleChannel({ db: db.db, socketPath: control,
+          onReady: () => { process.send?.({ type: CYCLE_READY_TYPE, socket_path: control }); } });
         return { ok: true, command: "service.run", runtime_surface: "staged-execstart" };
       }
       const raw = values["interval-ms"] ?? values.interval_ms;
