@@ -31,7 +31,7 @@ export function todayProjection(db: AuthorityDb, now: Date): Readonly<Record<str
     const notifications = [...notificationCounts].sort(([left], [right]) => left.localeCompare(right))
       .map(([state, count]) => ({ state, count }));
     const context = latestContext(db, now);
-    const brief = latestBrief(db);
+    const brief = latestBrief(db, now);
     const closeout = latestCloseout(db);
     const current = runs[0];
     return {
@@ -66,11 +66,15 @@ function latestContext(db: AuthorityDb, now: Date): { readonly state: string; re
     omissions: ["memory_suppressed"] };
   const context = parseContextSnapshotV1(JSON.parse(text(row, "canonical_envelope_json")));
   if (canonicalPersonalContractHash(context) !== text(row, "canonical_digest")) throw new PersonalTodayIntegrityError();
-  const state = context.freshness.state === "fresh" && now.toISOString() >= context.freshness.fresh_until ? "stale" : context.freshness.state;
-  return { state: state === "fresh" ? "ready" : state, freshness: context.freshness, omissions: context.payload.omissions };
+  const timestamp = now.toISOString();
+  const future = context.created_at > timestamp || context.valid_at > timestamp || context.freshness.checked_at > timestamp;
+  const state = future ? "no_data" : timestamp >= context.expires_at ? "expired"
+    : context.freshness.state === "fresh" && timestamp >= context.freshness.fresh_until ? "stale" : context.freshness.state;
+  return { state: state === "fresh" ? "ready" : state === "expired" ? "stale" : state,
+    freshness: { ...context.freshness, state }, omissions: context.payload.omissions };
 }
 
-function latestBrief(db: AuthorityDb): BriefSummary {
+function latestBrief(db: AuthorityDb, now: Date): BriefSummary {
   const raw = db.db.prepare(
     `SELECT s.step_id,s.run_id,s.detail_json,r.loop_date,r.phase FROM daily_loop_steps s
      JOIN daily_loop_runs r ON r.run_id=s.run_id
@@ -94,8 +98,15 @@ function latestBrief(db: AuthorityDb): BriefSummary {
   if (text(row, "phase") !== "morning" || kstLocalDate(new Date(brief.generated_at)) !== text(row, "loop_date")) {
     throw new PersonalTodayIntegrityError();
   }
-  const itemCount = brief.needs_you_first.length + brief.waiting.length + brief.fyi.length;
-  return { state: brief.context_readiness, brief_id: brief.brief_id, generated_at: brief.generated_at, item_count: itemCount };
+  const timestamp = now.toISOString(); const items = [...brief.needs_you_first, ...brief.waiting, ...brief.fyi];
+  if (brief.generated_at > timestamp || items.some(item => item.valid_from > timestamp || item.observed_at > timestamp)) {
+    return { state: "no_data", brief_id: null, generated_at: null, item_count: 0 };
+  }
+  const currentDay = kstLocalDate(now) === text(row, "loop_date");
+  const currentItems = currentDay ? items.filter(item => timestamp < item.fresh_until && timestamp < item.valid_until) : [];
+  const stale = !currentDay || currentItems.length !== items.length;
+  return { state: stale ? "stale" : brief.context_readiness, brief_id: brief.brief_id,
+    generated_at: brief.generated_at, item_count: currentItems.length };
 }
 
 function latestCloseout(db: AuthorityDb): Readonly<Record<string, unknown>> | null {

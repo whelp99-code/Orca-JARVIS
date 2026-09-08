@@ -7,6 +7,7 @@ import { todayProjection } from "../../src/dashboard/personal-today.js";
 import { generateMorningBrief, parseMorningBriefInput } from "../../src/morning-brief.js";
 import { morningInput, morningRecord } from "../fixtures/morning-brief-record.js";
 import { tempDb } from "../helpers.js";
+import { persistTask18Context } from "../fixtures/recommendation-fixture.js";
 
 const at = new Date("2026-08-28T12:00:00.000Z");
 const hash = (value: unknown) => `sha256:${createHash("sha256").update(canonicalize(value)).digest("hex")}`;
@@ -32,6 +33,23 @@ function rehash(value: Record<string, unknown>) {
 }
 
 describe("persisted morning brief read boundary", () => {
+  it("expires the brief and context at exact boundaries without changing stored bytes", async () => {
+    const db = await persisted(brief()); persistTask18Context(db); const before = writes(db);
+    expect(todayProjection(db, new Date("2026-08-28T12:59:59.998Z"))["freshness"]).toMatchObject({ state: "fresh" });
+    expect(todayProjection(db, new Date("2026-08-28T12:59:59.999Z"))["freshness"]).toMatchObject({ state: "stale" });
+    const expired = todayProjection(db, new Date("2026-08-28T13:00:00.000Z"));
+    expect(expired["brief"]).toMatchObject({ state: "stale", brief_id: brief().brief_id, item_count: 0 });
+    expect(expired["freshness"]).toMatchObject({ state: "expired" });
+    expect(expired["state"]).toBe("stale");
+    expect(todayProjection(db, new Date("2026-08-29T12:00:00.000Z"))["brief"]).toMatchObject({ state: "stale", item_count: 0 });
+    expect(writes(db)).toEqual(before);
+  });
+  it("does not present a future brief or context as current", async () => {
+    const db = await persisted(brief()); persistTask18Context(db); const before = writes(db);
+    const result = todayProjection(db, new Date("2026-08-28T11:59:59.999Z"));
+    expect(result["brief"]).toMatchObject({ state: "no_data", item_count: 0 });
+    expect(result["freshness"]).toMatchObject({ state: "no_data" }); expect(writes(db)).toEqual(before);
+  });
   it("rejects digest-valid malformed items without writing during Today reads", async () => {
     const db = await persisted(rehash({ ...brief(), needs_you_first: [{ copy: "unverified" }] }));
     const before = db.db.prepare("SELECT total_changes() AS n").get();
@@ -56,3 +74,5 @@ describe("persisted morning brief read boundary", () => {
     expect(todayProjection(legacy, at)["brief"]).toEqual({ state: "no_data", item_count: 0, brief_id: null, generated_at: null });
   });
 });
+
+function writes(db: AuthorityDb) { return db.db.prepare("SELECT total_changes() AS n").get(); }

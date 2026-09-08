@@ -46,6 +46,12 @@ const evidence = { schema_version: 1, resource: "context-evidence", context_id: 
     kind: "linux_live_fact", digest: DIGEST, observed_at: AT, fresh_until: AT }], conflicts: [], omissions: [] };
 
 describe("Task31 personal client", () => {
+  it("accepts stale briefs and expired source freshness", () => {
+    expect(parseToday({ ...today, state: "stale", brief: { ...today.brief, state: "stale", item_count: 0 },
+      freshness: { ...today.freshness, state: "expired" } })).toMatchObject({
+      state: "stale", brief: { state: "stale", item_count: 0 }, freshness: { state: "expired" },
+    });
+  });
   it("accepts explicit no-data timestamps while rejecting a missing freshness field", () => {
     const empty = { ...today, state: "no_data", next_actions: [],
       freshness: { state: "no_data", checked_at: null, fresh_until: null } };

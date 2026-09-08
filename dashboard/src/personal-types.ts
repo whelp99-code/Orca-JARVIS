@@ -26,7 +26,7 @@ export type TodayResponse = Readonly<{
   resource: "today";
   generated_at: string;
   state: ResourceQuality;
-  brief: Readonly<{ state: "ready" | "degraded" | "no_data"; brief_id: string | null; generated_at: string | null; item_count: number }>;
+  brief: Readonly<{ state: "ready" | "degraded" | "no_data" | "stale"; brief_id: string | null; generated_at: string | null; item_count: number }>;
   active_decision_count: number;
   notification_summary: Readonly<{ total: number; states: readonly Readonly<{ state: NotificationState; count: number }>[] }>;
   current_daily_run: DailyRun | null;
@@ -35,7 +35,8 @@ export type TodayResponse = Readonly<{
   next_actions: readonly TodayAction[];
   conflicts: readonly string[];
   omissions: readonly string[];
-  freshness: Readonly<{ state: "fresh" | "stale" | "no_data" | "unavailable" | "offline"; checked_at: string | null; fresh_until: string | null }>;
+  freshness: Readonly<{ state: "fresh" | "stale" | "expired" | "no_data" | "unavailable" | "offline";
+    checked_at: string | null; fresh_until: string | null }>;
   deep_links: Readonly<{ decisions: string; daily_runs: string; notifications: string; source_health: string }>;
 }>;
 export type Citation = Readonly<{

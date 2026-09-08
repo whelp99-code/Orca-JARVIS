@@ -51,6 +51,13 @@ function decisionSnapshot(state: DecisionState, expiresAt = "2026-08-28T13:00:00
 }
 
 describe("Task31 Today page", () => {
+  it("shows expired brief summaries as stale with no current items", () => {
+    const state: PersonalSnapshot = { status: "success", connectionState: "live", data: {
+      ...data, today: { ...today, brief: { ...today.brief, state: "stale", item_count: 0 } },
+    } };
+    render(<TodayPage snapshot={state} overview={overview} approvals={[]} client={client()} onRefresh={() => undefined} />);
+    expect(screen.getByText("stale / 0 items")).toBeInTheDocument();
+  });
   it("renders all six semantic sections with freshness, notification, and closeout state", () => {
     render(<TodayPage snapshot={snapshot()} overview={overview} approvals={[]} client={client()} onRefresh={() => undefined} />);
     expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent)).toEqual(["NOW", "BLOCKED", "DECISIONS", "NEXT 3", "WORKERS", "RISKS"]);

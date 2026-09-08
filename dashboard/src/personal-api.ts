@@ -73,7 +73,7 @@ export function parseToday(value: unknown): TodayResponse {
   return {
     schema_version: literal(row["schema_version"], 1), resource: literal(row["resource"], "today"),
     generated_at: time(row["generated_at"]), state: quality(row["state"]),
-    brief: { state: member(brief["state"], ["ready", "degraded", "no_data"] as const),
+    brief: { state: member(brief["state"], ["ready", "degraded", "no_data", "stale"] as const),
       brief_id: nullableText(brief["brief_id"]),
       generated_at: nullableTime(brief["generated_at"]), item_count: integer(brief["item_count"]) },
     active_decision_count: integer(row["active_decision_count"]),
@@ -84,7 +84,8 @@ export function parseToday(value: unknown): TodayResponse {
     current_daily_run: nullableRecord(row["current_daily_run"]), last_daily_run: nullableRecord(row["last_daily_run"]),
     latest_verified_closeout: closeout(row["latest_verified_closeout"]), next_actions: actions,
     conflicts: strings(row["conflicts"]), omissions: strings(row["omissions"]),
-    freshness: { state: member(freshness["state"], FRESHNESS_STATES), checked_at: nullableTime(freshness["checked_at"]),
+    freshness: { state: member(freshness["state"], [...FRESHNESS_STATES, "expired"] as const),
+      checked_at: nullableTime(freshness["checked_at"]),
       fresh_until: nullableTime(freshness["fresh_until"]) },
     deep_links: { decisions: path(links["decisions"]), daily_runs: path(links["daily_runs"]),
       notifications: path(links["notifications"]), source_health: path(links["source_health"]) },
