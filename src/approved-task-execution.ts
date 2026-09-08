@@ -21,7 +21,7 @@ export async function executeApprovedTaskRequest(input: { authority: AuthorityDb
   const check = () => { const now = clock(); assertTaskExecutionBinding(authority, plan, now);
     taskCompletionWorkflow(authority, plan.run_id, now); };
   check();
-  const runtime = await assertTaskRuntimeReady(authority, plan, input.runtime ?? productionTaskExecutionRuntime());
+  const runtime = await assertTaskRuntimeReady(authority, plan, input.runtime ?? productionTaskExecutionRuntime(process.env, plan.provider));
   check();
   const command = control.claim(requestId, input.worker, clock(), plan.limits.timeout_ms);
   let result: Awaited<ReturnType<typeof executeTaskWorkflow>>;
