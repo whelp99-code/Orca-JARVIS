@@ -470,3 +470,13 @@
 - 실제 built Chromium/HTTP: 빈 DB Today no_data 렌더 성공, fixture 권한에 연결한 context·추천3개를 실제 tombstone으로 차단 후 추천0개와 memory_suppressed 표시. 두 경로 freshness={state:no_data,checked_at:null,fresh_until:null}, Today unavailable0/pageErrors0/GET DB쓰기0. 임시 DB/서버/브라우저 제거. 이는 격리 DB의 기존 원본 차단 경로 인수이며 보류 중인 작업 자동 기억 수집의 파생 차단 완료가 아니다.
 - 증거 루트의 `today-empty-contract-{red,green}.log`, `today-empty-contract-probe.mjs/json`, `today-no-data-{backend,frontend,build,lint,types}.log`, `today-no-data-live.mjs/json/log`, `today-{empty,suppressed}-browser.png`.
 - src/index.ts 및 memory-reference-context 관련 변경은 다른 작업 소유로 확인하여 이번 커밋에서 제외했다. 전체01–25 및 운영 인수 미완료, 기존 HOLD 유지, 운영/배포/push 변경0.
+
+## 2026-09-08 P2-17 — 개인·기억 HTTP 본문 수신 제한
+
+- 직전 인계 확인은 자비스 제품 개발 기준으로 변경 없는 조회였다. 현재 HEAD3360fe7과 미커밋 파일을 다시 확인하고 진행 중이던 response byte budget 수정을 이어갔다. 기존 dashboard 검사 handle79492의 최종 exit0을 확인했으며 검사를 중복 실행하지 않았다.
+- 두 클라이언트의 response.text() 이후64KiB 검사가 EOF 없는 초과 stream을 취소하지 못하는 red2개를 재현했다. 고정 입력 버퍼65,539bytes와 수신 중 제한, 초과/중단 cancel·reader release를 적용했다. 기존64KiB decoded UTF-8 기준과 BOM/replacement/error code를 보존한다. 프로세스/브라우저 전체 메모리 상한으로 보고하지 않는다.
+- 제품 dashboard31파일183개/36.47초 pass, lint/typecheck/dashboard build exit0, 독립 정적 리뷰 필수 결함0. 초과 응답, UTF-8 분할·정확경계·BOM, replacement 확대, 취소 실패/지연, 비정상본문8개 검사가 포함됐다. 전체 verify 최신 완료 SHA는704f238이며 이후 단위 검증과 구분한다.
+- 실제 Chromium/native HTTP: 개인GET·기억GET·기억POST 각 plain/gzip6건을3~5ms에 거부, 각 요청1/연결닫힘1/자동재전송0. gzip wire118bytes→decoded70,012bytes, HTTP EOF 미전송. 실제 기억 삭제가 아닌 격리 HTTP fixture다. 정상 조회 복구2종과 정확64KiB 한글+BOM 수신도 확인했다.
+- 실제 built Today는 초과gzip2응답/연결닫힘2회 후 SSE 재조회로 no_data 화면 복구, GET DB쓰기0/pageErrors0, 임시 DB/서버/브라우저 제거. 최초 probe의 Today 문구 selector 오류는 수정하고 최종 exit0을 확인했다. 화면도 직접 확인했다.
+- 증거 루트 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/`: `response-budget-red.log`, `response-budget-{tests,lint,types,build}.log`, `response-budget-live.mjs/json/log`, `response-budget-live-selector.log`, `response-budget-recovered-browser.png`. 설계는 `docs/planning/adr-dashboard-sse-delivery.md` 후속 절.
+- P2-16의 approval 전체 SQL 조회·keyset pagination·1만/10만 측정은 남는다. memory-store의 privacy 순서 검증 전 큐 적용 및 작업→자동 기억 수집 원본 차단 HOLD를 유지한다. 전체01–25/운영 인수 미완료이며 운영DB/서비스/release/push 변경0.

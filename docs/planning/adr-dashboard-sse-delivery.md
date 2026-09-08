@@ -104,3 +104,32 @@ memory.privacy.v1 수신 시 개인 화면의 캐시 data를 동기적으로 제
 증거 루트의 `personal-live-probe.mjs/json/log`, `personal-coalescing-*.log`,
 `personal-privacy-refresh.png`, `personal-coalescing-browser.png`를 참조한다.
 기존1초 DB 변경 관찰 주기는 유지한다. 운영 서비스 변경0.
+
+## 개인·기억 HTTP 응답 수신 상한 — 2026-09-08 후속
+
+두 클라이언트의 기존64KiB 검사는 response.text() 완료 후 실행돼 EOF가 없는 초과
+응답을 중단하지 못했다. readBoundedJson으로 수신 중 제한을 적용하고, 초과 chunk를
+전체 복사하기 전에 거부한다. 앱이 할당하는 입력 버퍼는65,539bytes이며 UTF-8 BOM
+3bytes를 제외한 기존 decoded/reencoded payload 제한65,536bytes를 보존한다.
+브라우저가 전달하는 chunk·압축 해제·디코딩 문자열·JSON 객체·RSS 전체 상한은 아니다.
+잘못된 UTF-8의 replacement 확장도 마지막 바이트 검사에 포함한다.
+
+초과/중단 시 reader를 취소하고 lock을 해제한다. 주입된 stream의 취소가 실패하거나
+끝나지 않아도 원래 오류를 반환한다. personal의 VALIDATION_ERROR, memory의
+MEMORY_RESPONSE_TOO_LARGE, 기존 개인10초 deadline/caller abort, 요청/승인 계약을
+유지한다. 쓰기 요청의 응답 실패를 재전송하거나 실행 실패 확정으로 해석하지 않는다.
+memory의 별도 deadline과 privacy 상태기계/조회 병합은 이번 변경에 포함하지 않는다.
+
+frontend31파일183개/36.47초, lint/typecheck/dashboard build exit0, 독립 정적 리뷰
+필수 결함0. 실제 Chromium/native HTTP에서 개인 GET·기억 GET·기억 POST 각각 plain/gzip
+6건을3~5ms에 거부하고 각 연결1회 닫힘·요청1회(자동 재전송0)를 확인했다. gzip은
+wire118bytes/decoded70,012bytes이며 HTTP EOF를 주지 않았다. POST는 격리 HTTP
+응답 fixture만 사용했고 실제 기억 삭제를 실행하지 않았다. 정확64KiB 한글+BOM과
+이후 정상 두 클라이언트 조회도 통과했다.
+
+실제 built Today 화면은 gzip 초과 응답2건/연결닫힘2건 후 SSE 재조회로 no_data 화면에
+복구했다. GET DB쓰기0/pageErrors0, 임시 데이터 제거. 최초 probe는 제품 문구의
+"is"를 누락한 selector 때문에 timeout됐으며 실제 문구로 수정 후 exit0이다.
+증거 루트 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/`의
+`response-budget-live.mjs/json/log`, `response-budget-live-selector.log`,
+`response-budget-recovered-browser.png`, `response-budget-{tests,lint,types,build}.log`.

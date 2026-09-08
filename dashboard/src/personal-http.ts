@@ -1,4 +1,5 @@
 import { DashboardApiError } from "./api.js";
+import { readBoundedJson, ResponseBodyTooLargeError } from "./bounded-response.js";
 
 const MAX_RESPONSE_BYTES = 64 * 1024;
 
@@ -16,14 +17,10 @@ export async function requestPersonalJson(path: string, init: RequestInit): Prom
   }
   let body: unknown;
   try {
-    const raw = await response.text();
-    if (new TextEncoder().encode(raw).byteLength > MAX_RESPONSE_BYTES) {
-      throw apiError("server", "VALIDATION_ERROR");
-    }
-    body = JSON.parse(raw);
+    body = await readBoundedJson(response, MAX_RESPONSE_BYTES);
   } catch (error: unknown) {
     if (error instanceof DashboardApiError) throw error;
-    if (error instanceof SyntaxError) throw apiError("server", "VALIDATION_ERROR");
+    if (error instanceof SyntaxError || error instanceof ResponseBodyTooLargeError) throw apiError("server", "VALIDATION_ERROR");
     throw error;
   }
   if (!response.ok) {

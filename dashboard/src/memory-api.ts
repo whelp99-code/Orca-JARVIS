@@ -1,4 +1,5 @@
 import type { SessionResponse } from "./api.js";
+import { readBoundedJson, ResponseBodyTooLargeError } from "./bounded-response.js";
 import { MemoryCandidatesSchema, MemoryConflictsSchema, MemoryEffectsSchema,
   MemoryCandidateReviewSchema, MemoryCommandSchema, MemoryRememberProgressSchema,
   MemorySearchSchema, MemoryStatusSchema } from "./memory-types.js";
@@ -10,9 +11,12 @@ export function createMemoryClient(loadSession: SessionLoader) {
     const session = await loadSession();
     const response = await fetch(path, { ...init, credentials: "same-origin", signal: init.signal,
       headers: { Accept: "application/json", "X-JARVIS-CSRF": session.csrf_token, ...init.headers } });
-    const raw = await response.text();
-    if (new TextEncoder().encode(raw).byteLength > 65_536) throw new Error("MEMORY_RESPONSE_TOO_LARGE");
-    const value: unknown = JSON.parse(raw);
+    let value: unknown;
+    try { value = await readBoundedJson(response, 65_536); }
+    catch (error: unknown) {
+      if (error instanceof ResponseBodyTooLargeError) throw new Error("MEMORY_RESPONSE_TOO_LARGE");
+      throw error;
+    }
     if (!response.ok) throw new Error("MEMORY_REQUEST_FAILED");
     return value;
   }
