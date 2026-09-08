@@ -6,6 +6,9 @@ import { readTaskCompletion } from "../../src/task-completion-record.js";
 import { LoopGraph } from "../../src/loopgraph.js";
 import { candidateHash } from "../../src/task-candidate-artifact-codec.js";
 import { spawnSync } from "node:child_process";
+import { readTaskCompletionEvidence } from "../../src/task-completion-evidence.js";
+import { generateKeyPairSync } from "node:crypto";
+import { canonicalize } from "../../src/canonical.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
@@ -14,6 +17,46 @@ async function fixture() {
   const input = await f.certify(); const publication = await publishTaskGitCandidate(input);
   return { ...f, input: { ...input, publication_id: publication.publication_id }, publication };
 }
+
+it("verifies original completion evidence after the execution lease expires without writes", async () => {
+  const f = await fixture(); const completion = await settleTaskExecution(f.input);
+  const before = f.db.db.prepare("SELECT total_changes() AS n").get();
+  const evidence = readTaskCompletionEvidence(f.db, "execute", new Date(f.input.command.lease_expires_at));
+  expect(evidence?.completion).toEqual(completion);
+  expect(evidence?.proof.measurement.state).toBe("checks_passed");
+  expect(evidence?.proof.request.verification_id).toBe(completion.verification_id);
+  expect(evidence?.proof_digest).toBe(candidateHash(canonicalize(evidence?.proof)));
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import { AuthorityDb } from './dist/src/db.js';
+    import { readTaskCompletionEvidence } from './dist/src/task-completion-evidence.js';
+    const db = new AuthorityDb(process.argv[1]);
+    try { process.stdout.write(readTaskCompletionEvidence(db, 'execute', new Date(process.argv[2])).proof_digest); }
+    finally { db.close(); }
+  `, f.db.filename, f.input.command.lease_expires_at], { encoding: "utf8", timeout: 10000 });
+  expect(child.status).toBe(0);
+  expect(child.stdout).toBe(evidence?.proof_digest);
+  expect(f.db.db.prepare("SELECT total_changes() AS n").get()).toEqual(before);
+  expect(() => readTaskCompletionEvidence(f.db, "execute", new Date(Date.parse(completion.completed_at) - 1)))
+    .toThrow("TASK_COMPLETION_INVALID");
+  expect(readTaskCompletionEvidence(f.db, "absent", f.now)).toBeNull();
+});
+
+it("rejects original completion evidence when the independent verifier key no longer matches", async () => {
+  const f = await fixture(); await settleTaskExecution(f.input);
+  const key = generateKeyPairSync("ed25519").publicKey.export({ type: "spki", format: "pem" });
+  f.db.db.exec("DROP TRIGGER trusted_keys_sealed_update"); // Isolated corrupted-anchor fixture only.
+  f.db.db.prepare("UPDATE trusted_authority_keys SET public_key_pem=? WHERE key_id='verifier-test'").run(key);
+  expect(() => readTaskCompletionEvidence(f.db, "execute", f.now)).toThrow("TASK_COMPLETION_INVALID");
+});
+
+it("rejects revoked completion evidence without invoking execution", async () => {
+  const f = await fixture(); const completion = await settleTaskExecution(f.input);
+  f.db.db.prepare("INSERT INTO authority_revocations(reference,reason,created_at) VALUES(?,?,?)")
+    .run(completion.verification_id, "fixture revocation", f.now.toISOString());
+  const before = f.db.db.prepare("SELECT total_changes() AS n").get();
+  expect(() => readTaskCompletionEvidence(f.db, "execute", f.now)).toThrow("TASK_COMPLETION_INVALID");
+  expect(f.db.db.prepare("SELECT total_changes() AS n").get()).toEqual(before);
+});
 
 it("rejects a historical completion when its stored certification bytes are lost", async () => {
   const f = await fixture(); await settleTaskExecution(f.input);
