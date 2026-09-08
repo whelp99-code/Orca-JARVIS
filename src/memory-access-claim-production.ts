@@ -27,10 +27,11 @@ function requestDigest(request: MemoryAccessRequest): string {
 /** No keys or permissions are created. Re-resolves scope and checks current key
  * authority for every invocation. Not wired to legacy unscoped adapters. */
 export function createProductionMemoryAccessClaim(authority: AuthorityDb,
-  config: MemoryReadFenceProductionConfig, resolveScope: MemoryAccessScopeResolver) {
-  const authorize = createProductionMemoryReadAuthorization(authority, config);
+  config: MemoryReadFenceProductionConfig, resolveScope: MemoryAccessScopeResolver, purpose: "memory_read" | "memory_status" = "memory_read") {
+  const authorize = createProductionMemoryReadAuthorization(authority, config, purpose);
   if (authorize === undefined) return fail();
   return (request: MemoryAccessRequest, at: Date) => {
+    if ((purpose === "memory_status") !== (request.method === "sb_generation_status")) return fail();
     // A resolver must not change the exact request that will be signed.
     const observed = at.getTime();
     if (!Number.isFinite(observed)) return fail();
@@ -51,7 +52,7 @@ export function createProductionMemoryAccessClaim(authority: AuthorityDb,
     const { fence, private_key: key } = authorize(issuedAt);
     const body = { schema_version: 1, provider_instance_id: fence.provider_instance_id,
       principal_id: scope.principal_id, agent_id: scope.agent_id, session_id: scope.session_id,
-      projects: [...scope.projects], policy_revision: scope.policy_revision, purpose: "memory_read",
+      projects: [...scope.projects], policy_revision: scope.policy_revision, purpose,
       request_digest: expected, read_fence_digest: fence.fence_digest, issued_at: issuedAt.toISOString(),
       expires_at: new Date(Math.min(Date.parse(scope.valid_until), Date.parse(fence.expires_at))).toISOString(),
       nonce: `nonce:${randomUUID()}`, signing_key_id: fence.signing_key_id };

@@ -64,7 +64,7 @@ export function createFileMemoryAccessScopeResolver(policyPath: string, provider
         || typeof row.agent_id !== "string" || !id.test(row.agent_id)
         || typeof row.session_id !== "string" || !id.test(row.session_id)
         || !strings(row.projects, item => item.startsWith("project:") && id.test(item) && id.test(item.slice(8)))
-        || !strings(row.methods, item => item === "sb_read_page" || item === "sb_search")) return undefined;
+        || !strings(row.methods, item => item === "sb_read_page" || item === "sb_search" || item === "sb_generation_status")) return undefined;
       const key = `${row.agent_id}\0${row.session_id}`;
       if (seen.has(key)) return undefined;
       seen.add(key);

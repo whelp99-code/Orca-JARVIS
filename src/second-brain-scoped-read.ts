@@ -6,7 +6,8 @@ import type { MemoryReadFenceV1 } from "./second-brain-effect-v2.js";
 import { SecondBrainReadBudget } from "./second-brain-read-budget.js";
 
 type ScopedExpectation = {
-  readonly method: "sb_read_page" | "sb_search";
+  readonly method: "sb_read_page" | "sb_search" | "sb_generation_status";
+  readonly profile?: "scoped-record-read-v1" | "scoped-record-read-v2";
   readonly page_id?: string;
   readonly limit: number;
   readonly request_digest: string;
@@ -38,21 +39,27 @@ function pageId(value: unknown): value is string {
 export function parseScopedSecondBrainResponse(value: unknown, expected: ScopedExpectation) {
   const budget = new SecondBrainReadBudget(expected.budgets);
   if (budget.consumeProvider(value, expected.method === "sb_read_page") !== undefined || !object(value)
-    || value.profile !== "scoped-record-read-v1"
+    || value.profile !== (expected.profile ?? "scoped-record-read-v1")
     || !checksum.test(expected.request_digest) || value.request_digest !== expected.request_digest
     || !checksum.test(expected.access_claim_digest) || value.access_claim_digest !== expected.access_claim_digest || !Number.isSafeInteger(expected.limit) || expected.limit < 1 || expected.limit > (expected.method === "sb_search" ? 50 : 64)
     || !Number.isFinite(expected.checked_at.getTime())
     || !(expected.checked_at.getTime() < Date.parse(expected.authorized_until))
-    || expected.fence.purpose !== "memory_read" || expected.fence.operation !== "read"
+    || expected.fence.purpose !== (expected.method === "sb_generation_status" ? "memory_status" : "memory_read")
+    || expected.fence.operation !== (expected.method === "sb_generation_status" ? "status" : "read")
     || !(Date.parse(expected.fence.not_before) <= expected.checked_at.getTime()
       && expected.checked_at.getTime() < Date.parse(expected.fence.expires_at))) return fail();
-  const payloadKeys = expected.method === "sb_read_page" ? ["page_id", "content_digest", "records"] : ["results"];
+  const payloadKeys = expected.method === "sb_generation_status" ? ["schema_version", "pointer_health", "journal_health"] : expected.method === "sb_read_page" ? ["page_id", "content_digest", "records"] : ["results"];
   if (!exact(value, ["profile", "request_digest", "access_claim_digest", ...generationKeys, ...payloadKeys])) return fail();
-  const bound = bindSecondBrainGenerationRead(value, { fence: expected.fence, method: expected.method,
+  const bound = bindSecondBrainGenerationRead(value, { fence: expected.fence, method: expected.method === "sb_generation_status" ? "sb_read_page" : expected.method,
     contract_profile: "schema4", unbound_generations: new Map() });
   if (bound === undefined) return fail();
   const generation = secondBrainGenerationBinding(bound);
   if (generation === undefined) return fail();
+  if (expected.method === "sb_generation_status") {
+    if (expected.profile !== "scoped-record-read-v2" || value.schema_version !== 1
+      || value.pointer_health !== "healthy" || value.journal_health !== "healthy") return fail();
+    return { generation, pages: [] };
+  }
   const groups = new Map<string, { digest: string; records: unknown[] }>();
   function add(id: unknown, digest: unknown, records: unknown) {
     if (!pageId(id) || typeof digest !== "string" || !checksum.test(digest) || !Array.isArray(records)) return fail();

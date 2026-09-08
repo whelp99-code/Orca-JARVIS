@@ -29,3 +29,10 @@ describe('scoped transport frozen profile', () => {
     await transport.close();
   });
 });
+
+it('loads v2 with status while keeping v1 fixed at two methods', () => {
+  const v2 = loadSecondBrainContract(path.replace('-v1.json', '-v2.json'), 'scoped-record-read-v2') as typeof contract;
+  expect(Object.keys(v2.tools).sort()).toEqual(['sb_generation_status', 'sb_read_page', 'sb_search']);
+  expect(inspectFrozenSchemas(tools, v2).matches).toBe(false);
+  expect(() => loadSecondBrainContract(path, 'scoped-record-read-v2')).toThrow('SECOND_BRAIN_CONTRACT_MISMATCH');
+});

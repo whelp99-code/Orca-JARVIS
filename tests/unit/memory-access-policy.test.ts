@@ -55,3 +55,12 @@ it("does not reuse old grants after file loss, corruption or unsafe permissions"
   const link = join(f.root, "link.json"); symlinkSync(f.path, link);
   expect(createFileMemoryAccessScopeResolver(link, "provider:test", () => session)(now, request)).toBeUndefined();
 });
+
+it('requires explicit status method permission', () => {
+  const f = fixture();
+  const resolve = createFileMemoryAccessScopeResolver(f.path, 'provider:test', () => session);
+  const status = { method: 'sb_generation_status', arguments: {} };
+  expect(resolve(now, status)).toBeUndefined();
+  f.save({ ...policy, sessions: [{ ...policy.sessions[0], methods: ['sb_generation_status', 'sb_read_page', 'sb_search'] }] });
+  expect(resolve(now, status)?.session_id).toBe(session.session_id);
+});

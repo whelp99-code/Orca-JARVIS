@@ -10,6 +10,8 @@ type Issuer = ReturnType<typeof createProductionMemoryAccessClaim>;
 type Bundle = ReturnType<Issuer>;
 export type MemoryScopedClientOptions = {
   readonly issue: Issuer;
+  readonly status_issue?: Issuer;
+  readonly profile?: "scoped-record-read-v1" | "scoped-record-read-v2";
   readonly transport: SecondBrainTransport;
   readonly now: () => Date;
   readonly budgets: SecondBrainAdapterBudgets;
@@ -28,9 +30,12 @@ const denied = (): never => { throw new JarvisError("MEMORY_SCOPED_READ_UNAVAILA
 /** Connects the current authenticated scope issuer, supervised transport and record
  * consumer. Does not own sessions, cache permissions, or attest task success. */
 export function createMemoryScopedClient(options: MemoryScopedClientOptions) {
-  async function read(method: "sb_read_page" | "sb_search", arguments_: Readonly<Record<string, unknown>>, signal?: AbortSignal) {
+  async function read(method: "sb_read_page" | "sb_search" | "sb_generation_status", arguments_: Readonly<Record<string, unknown>>, signal?: AbortSignal) {
     const request: MemoryAccessRequest = Object.freeze({ method, arguments: Object.freeze({ ...arguments_ }) });
-    const bundle = options.issue(request, new Date(options.now().getTime()));
+    if (method === "sb_generation_status" && options.profile !== "scoped-record-read-v2") return denied();
+    const issue = method === "sb_generation_status" ? options.status_issue : options.issue;
+    if (issue === undefined) return denied();
+    const bundle = issue(request, new Date(options.now().getTime()));
     const original = identity(bundle);
     const recheck = () => {
       const at = new Date(options.now().getTime());
@@ -38,14 +43,14 @@ export function createMemoryScopedClient(options: MemoryScopedClientOptions) {
         || at.getTime() >= Date.parse(bundle.access_claim.expires_at)) return denied();
       // Reuses current DB-key, authenticated-session and file-policy checks. The
       // new signature is request-local and is never sent or persisted.
-      if (identity(options.issue(request, at)) !== original) return denied();
+      if (identity(issue(request, at)) !== original) return denied();
       return at;
     };
     const outcome = await options.transport.call(method, { ...request.arguments, ...bundle }, { signal, beforeSend: recheck });
     const checked = recheck();
     if (outcome.kind !== "data") return denied();
     const parsed = parseScopedSecondBrainResponse(outcome.value, {
-      method, page_id: method === "sb_read_page" ? String(request.arguments.id) : undefined,
+      method, profile: options.profile, page_id: method === "sb_read_page" ? String(request.arguments.id) : undefined,
       limit: method === "sb_search" ? Number(request.arguments.limit) : 64,
       request_digest: bundle.access_claim.request_digest,
       access_claim_digest: "sha256:" + createHash("sha256").update("orca-jarvis/memory-access-claim-binding/v1\0"
@@ -56,6 +61,7 @@ export function createMemoryScopedClient(options: MemoryScopedClientOptions) {
     return parsed;
   }
   return {
+    status: (signal?: AbortSignal) => read("sb_generation_status", {}, signal),
     readPage: (id: string, signal?: AbortSignal) => read("sb_read_page", { id }, signal),
     search: (query: string, limit = 10, signal?: AbortSignal) => read("sb_search", { query, limit }, signal),
   };

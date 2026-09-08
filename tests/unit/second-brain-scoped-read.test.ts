@@ -54,3 +54,13 @@ describe("scoped response consumer", () => {
     expect(parseScopedSecondBrainResponse({ ...base, results: [] }, { ...expected, method: "sb_search", limit: 1 }).pages).toEqual([]);
   });
 });
+
+it('accepts v2 status only with a status fence and healthy closed metadata', () => {
+  const options = { ...expected, method: 'sb_generation_status' as const, profile: 'scoped-record-read-v2' as const,
+    fence: { ...fence, purpose: 'memory_status' as const, operation: 'status' as const } };
+  const status = { ...base, profile: 'scoped-record-read-v2', schema_version: 1, pointer_health: 'healthy', journal_health: 'healthy' };
+  expect(parseScopedSecondBrainResponse(status, options)).toEqual({ generation, pages: [] });
+  expect(() => parseScopedSecondBrainResponse(status, { ...options, fence })).toThrow(invalid);
+  expect(() => parseScopedSecondBrainResponse({ ...status, pointer_health: 'tombstone_stale' }, options)).toThrow(invalid);
+  expect(() => parseScopedSecondBrainResponse({ ...status, records: [] }, options)).toThrow(invalid);
+});

@@ -51,3 +51,15 @@ it("rejects a resolver that rewinds the issuance clock to revive an expired scop
   expect(() => issue(request, at)).toThrow("MEMORY_ACCESS_SCOPE_UNAVAILABLE");
   expect(at.getTime()).toBe(OUTBOX_NOW.getTime() + 11_000);
 });
+
+it('separates explicitly authorized status claims from record-read claims', async () => {
+  const db = await memoryDatabase(); databases.push(db);
+  const { config } = memoryReadFenceFixture(db);
+  const issue = createProductionMemoryAccessClaim(db.authority, config, () => scope, 'memory_status');
+  const statusRequest = { method: 'sb_generation_status', arguments: {} };
+  const status = issue(statusRequest, OUTBOX_NOW);
+  expect(status.access_claim.purpose).toBe('memory_status');
+  expect(status.read_fence).toMatchObject({ purpose: 'memory_status', operation: 'status' });
+  expect(() => issue(request, OUTBOX_NOW)).toThrow('MEMORY_ACCESS_SCOPE_UNAVAILABLE');
+  expect(() => createProductionMemoryAccessClaim(db.authority, config, () => scope)(statusRequest, OUTBOX_NOW)).toThrow('MEMORY_ACCESS_SCOPE_UNAVAILABLE');
+});
