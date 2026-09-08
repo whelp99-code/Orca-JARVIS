@@ -42,7 +42,8 @@ export class DailyLoopStore {
     }
     return row;
   }
-  prepare(value: unknown): string {
+  prepare(value: unknown): string { return this.prepareWithIdentity(value).run_id; }
+  prepareWithIdentity(value: unknown): { run_id: string; idempotency_key: string } {
     const input = parseStorePrepare(value);
     return this.authority.db.transaction(() => this.prepareInput(input)).immediate();
   }
@@ -65,7 +66,7 @@ export class DailyLoopStore {
       || prior.run_id !== identity("dlr", prior.idempotency_key)) throw new DailyLoopError("DAILY_LOOP_IDENTITY_CONFLICT");
     return prior.idempotency_key;
   }
-  private prepareInput(input: ParsedPrepareRunInput): string {
+  private prepareInput(input: ParsedPrepareRunInput): { run_id: string; idempotency_key: string } {
     const key = this.eventKey(input);
     const runId = identity("dlr", key); const correlation = `daily:${input.due.local_date}:${digest(key).slice(7, 23)}`;
     const createdAt = input.created_at.toISOString(); const notBefore = input.due.not_before ?? input.due.scheduled_at;
@@ -116,7 +117,7 @@ export class DailyLoopStore {
         storedRow["sequence"] !== input.steps[index]?.sequence || storedRow["step_key"] !== input.steps[index]?.key)) {
         throw new DailyLoopError("DAILY_LOOP_IDENTITY_CONFLICT");
       }
-      return runId;
+      return { run_id: runId, idempotency_key: key };
     });
   }
   omit(runIdValue: unknown, codeValue: unknown, atValue: unknown): void {

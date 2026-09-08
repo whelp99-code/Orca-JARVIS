@@ -51,3 +51,25 @@ Additional compiled SQLite migration check: two synthetic historical rows with
 the same raw event ID under distinct keys cause075SQL to fail UNIQUE; both rows
 remain byte-for-byte equivalent in the subsequent SQL snapshot. This used a
 deliberately removed index in an isolated migrated DB, not production data.
+
+## Persisted deferred response identity (2026-09-09)
+
+A classifier has no persisted state and calculates v2 keys. The service must instead
+return the exact stored key when replaying a legacy deferred run. Regression85023
+failed: stored legacy key versus returned v2 key, with identical run ID.
+Store preparation returns run ID and selected key within its existing IMMEDIATE
+transaction; the string-returning prepare API remains compatible. Service internal
+preparation carries this identity, without changing normal prepared response fields.
+No migration or stored-record changes are required.
+
+Validation: build +128tests/9files60.06s +lint +3TypeScript checks exit0
+(handle58020). Actual compiled-process acceptance9925 exit0 used five fresh
+Node processes and an isolated SQLite DB. The legacy producer transpiled exact
+7dd1d4c time/store/service source into a temporary copy of the current supporting
+build with75migrations; this is not a full historical release or production upgrade.
+Its deferred response equals the new service replay, including the stored legacy
+key. New colliding-ID deferral uses v2; both replays leave run rows unchanged;
+normal daytime response retains its four fields. Final3rows, synthetic events,
+zero model calls/production changes. Temporary build and DB removed.
+Receipt: /home/jm/.cache/jarvis-test-runtime-qa-20260908/deferred-response-FCIcc2/receipt.json
+Script: /home/jm/.cache/jarvis-test-runtime-qa-20260908/daily-deferred-response-live.mjs

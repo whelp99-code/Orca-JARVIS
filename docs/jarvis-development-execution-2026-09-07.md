@@ -1004,3 +1004,17 @@
   고정시각pre-GJC acceptance도 exit0. 전후HEAD80f58a5/추적파일바이트동일.
 - 증거 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/verify-runtime-boundaries-after.json`
   및동명log. 이후3d61493·7dd1d4c·이벤트키 수정은 이전체gate에 포함되지 않는다.
+
+## 2026-09-09 — 항목12/23 구버전 유예 응답 키 일치
+
+- 회귀85023에서 저장된 legacy키와 반환된v2키 불일치1건을 재현했다.
+  같은 IMMEDIATE 준비 트랜잭션의 run ID/선택키를 응답에 사용하도록 수정했다.
+  기존 store.prepare의 string API와 일반 prepared 응답 필드를 유지한다.
+- build+128tests/9files60.06s+lint+3types exit0(handle58020).
+- 실제 Node5프로세스/격리SQLite: 구버전3모듈로 저장→신버전 동일응답,
+  충돌ID 신규v2키, 재실행 원장불변, 일반응답4필드, 최종run3개 확인(9925 exit0).
+  구버전모듈은7dd1d4c 원문을 변환했으며 지원build/75스키마는 현재판이다.
+  합성이벤트·모델0·운영변경0이며 전체구버전release 인수는 아니다.
+- 상세/재현/영수증: docs/planning/adr-daily-event-identity.md.
+  실 커넥터/이벤트처리/운영 활성화HOLD와 전체01–25 목표를 유지한다.
+  고정6d8031d 전체verify37465는 별도로 진행 중이며 이번 수정은 제외된다.

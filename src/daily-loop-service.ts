@@ -55,33 +55,32 @@ export class DailyControlLoop {
 				},
 			};
 			const prepared = this.prepareDue(due, new Date(input.occurred_at));
-			if (prepared.kind !== "prepared") throw new DailyLoopError("DAILY_LOOP_EVENT_INVALID");
-			return { ...decision, run_id: prepared.run_id };
+			return { ...decision, deferred_key: prepared.key, run_id: prepared.preparation.run_id };
 		}
 		const created = decision.phase === "in_day" ? new Date(decision.occurred_at ?? decision.scheduled_at) : new Date(decision.scheduled_at);
-		return this.prepareDue(decision, created);
+		return this.prepareDue(decision, created).preparation;
 	}
 	private checkedDate(base: Date, delta: number): Date {
 		if (!Number.isSafeInteger(delta) || base.getTime() > MAX_DATE - delta) throw new DailyLoopError("DAILY_LOOP_INSTANT_INVALID");
 		return new Date(base.getTime() + delta);
 	}
-	private prepareDue(due: DailyLoopDue, createdAt: Date): DailyLoopPreparation {
+	private prepareDue(due: DailyLoopDue, createdAt: Date): { preparation: Extract<DailyLoopPreparation, { kind: "prepared" }>; key: string } {
 		const notBefore = new Date(due.not_before ?? due.scheduled_at);
 		const lifetime = due.phase === "in_day" ? Math.max(1, this.options.deadline_ms) : this.options.recovery_window_ms + Math.max(1, this.options.deadline_ms);
 		const deadline = this.checkedDate(notBefore, lifetime);
 		const steps = dailyLoopSteps(due);
-		const runId = this.store.prepare({
+		const identity = this.store.prepareWithIdentity({
 			due,
 			created_at: createdAt,
 			deadline_at: deadline,
 			steps,
 		});
-		return {
+		return { key: identity.idempotency_key, preparation: {
 			kind: "prepared",
-			run_id: runId,
+			run_id: identity.run_id,
 			phase: due.phase,
 			local_date: due.local_date,
-		};
+		} };
 	}
 	claim(runIdValue: unknown): DailyLoopClaim {
 		const runId = parseDailyLoopRunId(runIdValue);
@@ -198,7 +197,7 @@ export class DailyControlLoop {
 			prepared.unshift({ kind: "not_due" });
 		}
 		else if (!prepared.some(item => item.kind === "prepared" && item.phase === scheduled.phase && item.local_date === scheduled.local_date)) {
-			prepared.push(this.prepareDue(scheduled, now));
+			prepared.push(this.prepareDue(scheduled, now).preparation);
 		}
 		const events = this.executionPhase === undefined || this.executionPhase === "in_day"
 			? parseDailyLoopEvents(this.options.event_source.drain()) : [];
@@ -216,7 +215,7 @@ export class DailyControlLoop {
 		for (const due of schedules) {
 			if (this.executionPhase !== undefined && due.phase !== this.executionPhase) continue;
 			const scheduled = new Date(due.scheduled_at);
-			const item = this.prepareDue(due, scheduled); prepared.push(item);
+			const item = this.prepareDue(due, scheduled).preparation; prepared.push(item);
 			if (item.kind === "prepared" && ((this.currentDayOnly && due.local_date !== kstLocalDate(now))
 				|| now.getTime() - scheduled.getTime() > this.options.recovery_window_ms)) {
 				this.store.omit(item.run_id, "MISSED_RECOVERY_WINDOW", now);

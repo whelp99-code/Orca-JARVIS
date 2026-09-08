@@ -90,3 +90,21 @@ it("preserves unknown version-zero identity on upgrade instead of creating a sec
     expect(snapshot(db)).toEqual(saved);
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
 });
+
+it("returns the stored legacy deferred key after upgrading the classifier", async () => {
+  const db = new AuthorityDb(":memory:"); await db.migrate();
+  try {
+    const loop = new DailyControlLoop(new DailyLoopStore(db), options);
+    const quiet = event("event:a", "2026-09-09T14:00:00.000Z");
+    const old = vi.spyOn(time, "canonicalDailyLoopKey").mockImplementation(time.legacyDailyLoopKey);
+    let original;
+    try { original = loop.prepare(quiet); } finally { old.mockRestore(); }
+    expect(original.kind).toBe("deferred");
+    const saved = snapshot(db);
+    const legacy = time.legacyDailyLoopKey("2026-09-10", "in_day", "event:a");
+    expect(saved[0]).toMatchObject({ idempotency_key: legacy });
+    expect(new DailyControlLoop(new DailyLoopStore(db), options).prepare(quiet))
+      .toEqual({ ...original, deferred_key: legacy });
+    expect(snapshot(db)).toEqual(saved);
+  } finally { db.close(); }
+});
