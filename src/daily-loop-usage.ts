@@ -10,6 +10,10 @@ import type { TrustedCloseoutKey } from "./evening-closeout-types.js";
 
 type UsageRun = { run_id: string; record_version: number; correlation_id: string; phase: string };
 
+export class DailyBudgetExceeded extends Error {
+  constructor(readonly code: DailyLoopFailureCode) { super(code); }
+}
+
 export type DailyLoopUsage = { readonly items: number; readonly work: number; readonly bytes: number };
 const invalid = (): never => { throw new DailyLoopError("DAILY_LOOP_INTEGRITY_FAILURE"); };
 

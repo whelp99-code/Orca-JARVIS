@@ -1,6 +1,7 @@
+import { DailyBudgetExceeded, dailyLoopUsage, dailyUsageExhausted } from "./daily-loop-usage.js";
 import type { AuthorityDb } from "./db.js";
 import { canonicalize } from "./canonical.js";
-import { parseDailyLoopClaim, parseDailyLoopInstant, parseDailyLoopRunId } from "./daily-loop-input.js";
+import { parseDailyLoopBudgets, parseDailyLoopClaim, parseDailyLoopInstant, parseDailyLoopRunId } from "./daily-loop-input.js";
 import { assertDailyLoopIntegrity } from "./daily-loop-integrity.js";
 import { DailyLoopStore } from "./daily-loop-store.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
@@ -19,6 +20,18 @@ export class EveningCloseoutStore {
     private readonly options: StoreOptions = {},
   ) {
     this.loop = new DailyLoopStore(authority);
+  }
+  settleWithinBudget(input: Settlement, budgetsValue: unknown): boolean {
+    const budgets = parseDailyLoopBudgets(budgetsValue);
+    const claim = parseDailyLoopClaim(input.claim);
+    const at = parseDailyLoopInstant(input.at);
+    const artifact = verifyEveningCloseoutArtifact(input.artifact, this.verifier);
+    return this.authority.db.transaction(() => {
+      const changed = this.settle({ claim, at, artifact });
+      const exceeded = dailyUsageExhausted(dailyLoopUsage(this.authority, artifact.local_date, this.verifier), budgets);
+      if (exceeded !== null) throw new DailyBudgetExceeded(exceeded);
+      return changed;
+    }).immediate();
   }
   settle(input: Settlement): boolean {
     const claim = parseDailyLoopClaim(input.claim);

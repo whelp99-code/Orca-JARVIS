@@ -56,6 +56,55 @@ function correlation(db: AuthorityDb, runId: string): string {
   return String(value.correlation_id);
 }
 describe("evening closeout persistence", () => {
+  it("includes earlier morning work and rolls back an interruption after evening step persistence", async () => {
+    const db = await initialized();
+    try {
+      const loop = new DailyLoopStore(db);
+      const morning = loop.prepare({ due: { kind: "due", local_date: "2026-08-30", phase: "morning", scheduled_at: T0.toISOString() },
+        created_at: T0, deadline_at: new Date("2026-08-30T13:00:00.000Z"), steps: [{ key: "refresh_context", sequence: 1 }] });
+      const morningClaim = loop.claim({ run_id: morning, owner_id: "morning", at: T1, lease_ms: 600_000 });
+      loop.completeStep({ claim: morningClaim, step: loop.steps(morning)[0]!, at: T1,
+        detail: { state: "no_data", reason: "refresh_missing", refresh_id: null } });
+      const runId = prepare(loop);
+      const claim = loop.claim({ run_id: runId, owner_id: "evening", at: T1, lease_ms: 600_000 });
+      const value = artifact(runId, correlation(db, runId));
+      const input = { claim, artifact: value, at: T1 };
+      const budgets = { max_items: 100, max_work: 2, max_bytes: 100_000 };
+      const fault = new EveningCloseoutStore(db, trustedCloseoutKey, { after_artifact_persisted: () => { throw new Error("INTERRUPTED"); } });
+      expect(() => fault.settleWithinBudget(input, budgets)).toThrow("INTERRUPTED");
+      expect(loop.steps(runId)[0]?.state).toBe("pending");
+      const store = new EveningCloseoutStore(db, trustedCloseoutKey);
+      expect(() => store.settleWithinBudget(input, { ...budgets, max_work: 1 })).toThrow("BUDGET_WORK_EXHAUSTED");
+      expect(loop.steps(runId)[0]?.state).toBe("pending");
+      expect(() => store.settleWithinBudget(input, { ...budgets, max_items: -1 })).toThrow("DAILY_LOOP_CONFIG_INVALID");
+      expect(loop.steps(runId)[0]?.state).toBe("pending");
+      expect(store.settleWithinBudget(input, budgets)).toBe(true);
+      expect(dailyLoopUsage(db, "2026-08-30", trustedCloseoutKey).work).toBe(2);
+    } finally { db.close(); }
+  });
+
+  it.each(["items", "work", "bytes"])("rolls back the whole evening publication when %s exceeds budget", async dimension => {
+    const db = await initialized();
+    try {
+      const loop = new DailyLoopStore(db); const runId = prepare(loop);
+      const claim = loop.claim({ run_id: runId, owner_id: "owner", at: T1, lease_ms: 600_000 });
+      const value = generateEveningCloseout(parseEveningCloseoutInput({
+        ...closeoutInput(), run_id: runId, correlation_id: correlation(db, runId), generated_at: T1.toISOString(),
+      }), signer(T1.toISOString()));
+      const budget = { max_items: 5, max_work: 1, max_bytes: Buffer.byteLength(canonicalize(value)) };
+      const store = new EveningCloseoutStore(db, trustedCloseoutKey);
+      const snapshot = () => ({ run: db.db.prepare("SELECT * FROM daily_loop_runs WHERE run_id=?").get(runId),
+        steps: db.db.prepare("SELECT * FROM daily_loop_steps WHERE run_id=?").all(runId) });
+      const before = snapshot();
+      const key = `max_${dimension}` as keyof typeof budget;
+      expect(() => store.settleWithinBudget({ claim, artifact: value, at: T1 }, { ...budget, [key]: budget[key] - 1 }))
+        .toThrow(`BUDGET_${dimension.toUpperCase()}_EXHAUSTED`);
+      expect(snapshot()).toEqual(before);
+      expect(store.settleWithinBudget({ claim, artifact: value, at: T1 }, budget)).toBe(true);
+      expect(store.settleWithinBudget({ claim, artifact: value, at: T1 }, budget)).toBe(false);
+    } finally { db.close(); }
+  });
+
   it.each(["run_id", "correlation_id", "local_date"])("rejects a signed artifact with foreign %s in the completed ledger", async field => {
     const db = await initialized();
     try {

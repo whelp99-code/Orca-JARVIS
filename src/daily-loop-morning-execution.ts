@@ -4,15 +4,11 @@ import { DailyLoopStore } from "./daily-loop-store.js";
 import { parseDailyLoopClaim, parseDailyLoopOptions } from "./daily-loop-input.js";
 import { assertDailyLoopIntegrity } from "./daily-loop-integrity.js";
 import { evaluateRefreshContext, kstLocalDate } from "./daily-loop-time.js";
-import { DailyLoopError, type DailyLoopAdvance, type DailyLoopClaim, type DailyLoopFailureCode,
+import { DailyLoopError, type DailyLoopAdvance, type DailyLoopClaim,
   type DailyLoopOptions, type DailyLoopStepExecutor } from "./daily-loop-types.js";
-import { dailyLoopUsage, dailyUsageExhausted } from "./daily-loop-usage.js";
+import { DailyBudgetExceeded, dailyLoopUsage, dailyUsageExhausted } from "./daily-loop-usage.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { MorningBriefPublisher } from "./morning-brief-publisher.js";
-
-class DailyBudgetExceeded extends Error {
-  constructor(readonly code: DailyLoopFailureCode) { super(code); }
-}
 
 /** Explicit morning composition. Unimplemented phases fail instead of emitting placeholder success. */
 export function createStoredMorningDailyLoop(authority: AuthorityDb, optionsValue: DailyLoopOptions): DailyControlLoop {

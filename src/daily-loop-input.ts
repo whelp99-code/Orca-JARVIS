@@ -1,6 +1,7 @@
 import {
 	DailyLoopError,
 	type DailyLoopClaim,
+	type DailyLoopBudgets,
 	type DailyLoopEvent,
 	type DailyLoopOptions,
 	type DailyLoopPhase,
@@ -195,6 +196,15 @@ export function parseRefreshCompletion(value: unknown): RefreshCompletion | null
 	});
 }
 
+export function parseDailyLoopBudgets(value: unknown): DailyLoopBudgets {
+  const budgets = closedRecord(value, ["max_items", "max_work", "max_bytes"], "DAILY_LOOP_CONFIG_INVALID");
+  return Object.freeze({
+    max_items: integer(budgets["max_items"], 0, MAX_INT, "DAILY_LOOP_CONFIG_INVALID"),
+    max_work: integer(budgets["max_work"], 0, MAX_INT, "DAILY_LOOP_CONFIG_INVALID"),
+    max_bytes: integer(budgets["max_bytes"], 0, MAX_INT, "DAILY_LOOP_CONFIG_INVALID"),
+  });
+}
+
 export function parseDailyLoopOptions(value: unknown): DailyLoopOptions & { readonly recovery_lookback_days: number } {
 	const input = closedRecord(
 		value,
@@ -213,7 +223,7 @@ export function parseDailyLoopOptions(value: unknown): DailyLoopOptions & { read
 		],
 		"DAILY_LOOP_CONFIG_INVALID",
 	);
-	const budgets = closedRecord(input["budgets"], ["max_items", "max_work", "max_bytes"], "DAILY_LOOP_CONFIG_INVALID");
+	const budgets = parseDailyLoopBudgets(input["budgets"]);
 	const source = closedRecord(input["event_source"], ["drain"], "DAILY_LOOP_CONFIG_INVALID");
 	const reader = closedRecord(input["refresh_reader"], ["read"], "DAILY_LOOP_CONFIG_INVALID");
 	if (
@@ -238,11 +248,7 @@ export function parseDailyLoopOptions(value: unknown): DailyLoopOptions & { read
 		recovery_window_ms: recoveryWindow,
 		recovery_lookback_days: lookback,
 		refresh_freshness_ms: integer(input["refresh_freshness_ms"], 0, 86_400_000, "DAILY_LOOP_CONFIG_INVALID"),
-		budgets: Object.freeze({
-			max_items: integer(budgets["max_items"], 0, MAX_INT, "DAILY_LOOP_CONFIG_INVALID"),
-			max_work: integer(budgets["max_work"], 0, MAX_INT, "DAILY_LOOP_CONFIG_INVALID"),
-			max_bytes: integer(budgets["max_bytes"], 0, MAX_INT, "DAILY_LOOP_CONFIG_INVALID"),
-		}),
+		budgets,
 		clock: () => parseDailyLoopInstant(Reflect.apply(clock, undefined, [])),
 		event_source: Object.freeze({
 			drain: () => Reflect.apply(drain, undefined, []),
