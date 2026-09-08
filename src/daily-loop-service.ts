@@ -3,7 +3,8 @@ import {
   parseDailyLoopUncertainReason,
 } from "./daily-loop-input.js";
 import { DailyLoopStore } from "./daily-loop-store.js";
-import { classifyDailyLoopInstant, evaluateRefreshContext, kstInstant, kstLocalDate, previousKstDate } from "./daily-loop-time.js";
+import { classifyDailyLoopInstant, evaluateRefreshContext, kstLocalDate } from "./daily-loop-time.js";
+import { dailyLoopSchedules } from "./daily-loop-schedules.js";
 import {
   DailyLoopError, type DailyLoopClaim, type DailyLoopCycleResult, type DailyLoopDue, type DailyLoopFailureCode,
   type DailyLoopOptions, type DailyLoopPreparation, type DailyLoopStep,
@@ -20,6 +21,7 @@ const MAX_DATE = 8_640_000_000_000_000;
 
 export class DailyControlLoop {
 	private readonly options: DailyLoopOptions;
+	private observedAt: Date | null = null;
 	constructor(
 		private readonly store: DailyLoopStore,
 		options: DailyLoopOptions,
@@ -181,65 +183,53 @@ export class DailyControlLoop {
 		used.bytes += cost.bytes;
 	}
 	private processRun(runId: string, completed: string[]): void {
-		if (completed.includes(runId)) return;
+		if (completed.includes(runId) || this.store.steps(runId).length === 0) return;
 		try {
-			const claim = this.claim(runId);
+			const claim = this.store.claim({
+				run_id: runId, owner_id: this.options.owner_id, at: this.now(), lease_ms: this.options.lease_ms,
+			}, this.options.recovery_window_ms);
 			if (this.finish(claim)) completed.push(runId);
 		} catch (error) {
 			if (error instanceof DailyLoopError && (error.code === "DAILY_LOOP_LEASE_ACTIVE" || error.code === "DAILY_LOOP_TERMINAL")) return;
 			throw error;
 		}
 	}
-	private process(preparation: DailyLoopPreparation, completed: string[]): void {
-		if (preparation.kind === "prepared") this.processRun(preparation.run_id, completed);
-	}
 	async cycle(): Promise<DailyLoopCycleResult> {
 		const now = this.now();
 		const completed: string[] = [];
-		for (const runId of this.store.due(now)) this.processRun(runId, completed);
-		const prepared: DailyLoopPreparation[] = [this.prepare({ kind: "scheduled" })];
+		const scheduled = classifyDailyLoopInstant(now, { kind: "scheduled" });
+		const prepared: DailyLoopPreparation[] = this.observedAt === null ? [] : this.recover(now, this.observedAt).prepared;
+		if (scheduled.kind !== "due") prepared.unshift({ kind: "not_due" });
+		else if (!prepared.some(item => item.kind === "prepared" && item.phase === scheduled.phase && item.local_date === scheduled.local_date)) {
+			prepared.push(this.prepareDue(scheduled, now));
+		}
 		const events = parseDailyLoopEvents(this.options.event_source.drain());
 		for (const event of events) prepared.push(this.prepare(event));
-		for (const item of prepared) this.process(item, completed);
+		for (const runId of this.store.due(this.now())) this.processRun(runId, completed);
+		this.observe(now);
 		return { prepared, completed_run_ids: completed };
+	}
+	private observe(at: Date): void {
+		if (this.observedAt === null || at > this.observedAt) this.observedAt = at;
+	}
+	private recover(now: Date, after: Date | null) {
+		const { from, through, schedules } = dailyLoopSchedules(now, this.options.recovery_lookback_days, after);
+		const prepared: DailyLoopPreparation[] = [];
+		for (const due of schedules) {
+			const scheduled = new Date(due.scheduled_at);
+			const item = this.prepareDue(due, scheduled); prepared.push(item);
+			if (item.kind === "prepared" && now.getTime() - scheduled.getTime() > this.options.recovery_window_ms) {
+				this.store.omit(item.run_id, "MISSED_RECOVERY_WINDOW", now);
+			}
+		}
+		return { from, through, prepared };
 	}
 	async startup(): Promise<DailyLoopCycleResult> {
 		const now = this.now();
-		const through = kstLocalDate(now);
-		let from = through;
-		for (let index = 1; index < this.options.recovery_lookback_days; index++) from = previousKstDate(from);
-		const dates: string[] = [];
-		for (let date = from; ; date = new Date(Date.parse(`${date}T00:00:00.000Z`) + 86_400_000).toISOString().slice(0, 10)) {
-			dates.push(date);
-			if (date === through) break;
-		}
-		const prepared: DailyLoopPreparation[] = [];
-		const eligible: string[] = [];
-		for (const date of dates)
-			for (const schedule of [
-				{ phase: "morning", hour: 7, minute: 15 },
-				{ phase: "evening", hour: 21, minute: 30 },
-			] as const) {
-				const scheduled = kstInstant(date, schedule.hour, schedule.minute);
-				const elapsed = now.getTime() - scheduled.getTime();
-				if (elapsed < 0) continue;
-				const item = this.prepareDue(
-					{
-						kind: "due",
-						local_date: date,
-						phase: schedule.phase,
-						scheduled_at: scheduled.toISOString(),
-					},
-					scheduled,
-				);
-				prepared.push(item);
-				if (item.kind !== "prepared") continue;
-				if (elapsed > this.options.recovery_window_ms) this.store.omit(item.run_id, "MISSED_RECOVERY_WINDOW", now);
-				else eligible.push(item.run_id);
-			}
+		const { from, through, prepared } = this.recover(now, null);
 		const completed: string[] = [];
-		for (const runId of this.store.due(now)) this.processRun(runId, completed);
-		for (const runId of eligible) this.processRun(runId, completed);
+		for (const runId of this.store.due(this.now())) this.processRun(runId, completed);
+		this.observe(now);
 		return {
 			prepared,
 			completed_run_ids: completed,

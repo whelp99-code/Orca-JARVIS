@@ -547,3 +547,14 @@
 - 실제 이전 compiled 추천1개/행동3개의 원본·조회·정확재시도 쓰기0 확인 후 probe의 미파싱 JSON context 오류로 중단됐다. 고정cf4e9c8의 engine/ranking2모듈로 동일 요청을 재생성하고 최초 요청과 deepEqual 검사, 다른프로세스 저장→현재코드 재개방으로 최종 인수를 완료했다. 기존추천byte/digest·행동3개보존/정확재시도쓰기0/새결과동일ID거부/TodayHTTP200/조회쓰기0.
 - UTC/서울/Los_Angeles/Kiritimati4개 실제Node프로세스×4시나리오에서 ranking+brief canonical bytes 동일, 임시자원 제거. 설계·최초 probe실패·증거는 `docs/planning/adr-seoul-deadline-calendar.md`, 증거루트 `seoul-deadline-*`.
 - 저장된 추천에는 원래 마감시각 전체가 없으므로 과거UTCbucket을 새브리핑에 그대로 연결하는 변환은 보류한다. 실제handler는 검증된 현재근거에서 기한을 확인해야 한다. 브리핑/서명마감의 처리기·출처차단·예약복구 연결 전 자동일일운영 HOLD 유지. 전체01–25 및 운영 인수 미완료, 최신전체gate a4a2ebc, 운영DB/서비스/release/push 변경0.
+
+## 2026-09-08 P1-12 선행 — 일일 폴링과 중단 실행 복구
+
+- 직전 인계 확인 턴은 자비스 제품 기준 no progress였다. HEAD `6e340c0`과 작업 트리, 기존 테스트 handle의 exit0 및 9개 통과를 확인하고 미커밋 복구 변경을 이어갔다. 다른 작업의 AGENTS·인계 문서와 미추적 산출물은 이번 커밋 대상에서 제외한다.
+- 성공한 startup/cycle의 관측 시작 시각부터 다음 poll 사이의 아침·저녁을 복구한다. 실패 시 커서 유지, 시계 역행 시 최대 시각 유지, 설정된 최대31일 lookback을 적용한다. 활성 lease·기한 만료·차단된 실행은 due에서 제외하고 만료 lease의 미완료 실행을 발견한다.
+- 초기 경계9개 중8fail, 리뷰 경계5개 추가 시9pass/5fail, legacy verifying 재개1fail을 재현했다. startup의 만료 실행 재진입과 drain 실패·지연 이후 복구 창 우회를 수정했다. 자동 claim에서 pending 일정의 창을 원자적으로 검사하며, 수동 claim과 실행 중 stale lease 오류 전파는 유지한다.
+- 기존 claim을 별도 모듈로 분리했다. legacy verifying은 완료 단계와 기존 tail 검사를 거쳐 completed만 추가하며 원래 checkpoint를 보존한다. 기존 다음날 poll 기대값1개는 이제 기록되는 전날 저녁의 failed/MISSED 상태를 phase·failure_code로 명시했다.
+- 최종 관련13파일163개/73.17초 pass, backend build/typecheck/lint exit0, 독립 정적 리뷰 잔여 필수 결함0건. 최초 실패와 중간 검증은 증거 루트 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/`의 `daily-poll-*.log`에 보존했다. 전체 verify 결과는 아니다.
+- compiled API와 실제 Node5프로세스 인수: 실제80.327ms 지연으로 건너뛴 일정 완료1개·반복쓰기0. 단계1개 저장 후 SQLite를 연 채 SIGKILL, 다른PID의 cycle이 fence2로 복구하여 완료1개·이전 단계/checkpoint bytes 보존·DB 재개방 일치. 별도 SIGKILL 실행은 deadline 시점 startup에서 완료0개·원래 run 보존·오류0. 임시 디렉터리 제거 확인. 근거 `daily-poll-live.mjs/json/log`.
+- 임의 MorningBriefInput을 받는 자동 저장 API는 HOLD다. 자체 digest와 알려진 추천ID만으로 본문·출처의 진위를 증명할 수 없고, quarantine도 lineage 존재로 반환될 수 있다. 검증된 추천 action·현재 근거 mapper, 모든 parent 검사, 상속 후 가용성 검사와 원자적 artifact/lineage 저장이 선행 조건이다. 상세 `docs/planning/adr-daily-poll-recovery.md`.
+- 이번 인수는 개발 API의 논리 단계다. 실제 브리핑·서명 마감 처리기, 일일 총량 예산, 예약 서비스, retention 및 전체01–25 운영 인수는 미완료다. 기존 자동기억 원본차단과 memory-store 큐 HOLD 유지. 운영DB·서비스·release·push 변경0.

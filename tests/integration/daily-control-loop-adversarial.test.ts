@@ -63,9 +63,10 @@ describe("Daily Control Loop adversaries", () => {
     await first.cycle();
 
     // Then
-    expect(db.db.prepare("SELECT loop_date,state FROM daily_loop_runs ORDER BY loop_date").all()).toEqual([
-      { loop_date: "2026-08-31", state: "completed" },
-      { loop_date: "2026-09-01", state: "completed" },
+    expect(db.db.prepare("SELECT loop_date,phase,state,failure_code FROM daily_loop_runs ORDER BY not_before").all()).toEqual([
+      { loop_date: "2026-08-31", phase: "morning", state: "completed", failure_code: null },
+      { loop_date: "2026-08-31", phase: "evening", state: "failed", failure_code: "MISSED_RECOVERY_WINDOW" },
+      { loop_date: "2026-09-01", phase: "morning", state: "completed", failure_code: null },
     ]);
     db.close();
   });

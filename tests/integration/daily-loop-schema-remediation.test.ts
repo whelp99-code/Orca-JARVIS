@@ -48,6 +48,31 @@ const loopOptions = (clock: () => Date, owner = "linux:a") => ({
 });
 
 describe("migration 035 upgrade integrity", () => {
+  it("resumes a legacy verifying run without replaying its verification checkpoint", async () => {
+    const fixture = migrationRoot(false); const db = new AuthorityDb(fixture.path, fixture.migrations);
+    try {
+      await db.migrate(); insertLegacy(db, "verifying", "running");
+      db.db.prepare("INSERT INTO daily_loop_steps(step_id,run_id,sequence,step_key,state,created_at,updated_at) VALUES('dls:done','dlr:verifying',1,'legacy-step','pending',?,?)")
+        .run(T0, T0);
+      db.db.prepare("UPDATE daily_loop_steps SET state='claimed',evidence_digest=? WHERE step_id='dls:done'").run(sha("evidence"));
+      for (const state of ["running", "verifying"]) db.db.prepare("UPDATE daily_loop_steps SET state=? WHERE step_id='dls:done'").run(state);
+      db.db.prepare("UPDATE daily_loop_steps SET state='completed',result_digest=? WHERE step_id='dls:done'").run(sha("step-result"));
+      db.db.prepare("INSERT INTO daily_loop_checkpoints(checkpoint_id,run_id,sequence,state,checkpoint_digest,lease_fence,lease_expires_at,created_at) VALUES('dlc:verified','dlr:verifying',1,'verifying',?,1,?,?)")
+        .run(sha("verified"), T4, T1);
+      db.db.prepare("UPDATE daily_loop_runs SET state='verifying',updated_at=? WHERE run_id='dlr:verifying'").run(T1);
+      cpSync(join(process.cwd(), "migrations"), fixture.migrations, { recursive: true }); await db.migrate();
+      const savedStep = db.db.prepare("SELECT * FROM daily_loop_steps").get();
+      const savedCheckpoint = db.db.prepare("SELECT * FROM daily_loop_checkpoints").get();
+      const loop = new DailyControlLoop(new DailyLoopStore(db), loopOptions(() => new Date(T4)));
+      expect((await loop.cycle()).completed_run_ids).toEqual(["dlr:verifying"]);
+      expect(db.db.prepare("SELECT state,lease_fence FROM daily_loop_runs").get()).toEqual({ state: "completed", lease_fence: 2 });
+      expect(db.db.prepare("SELECT * FROM daily_loop_steps").get()).toEqual(savedStep);
+      expect(db.db.prepare("SELECT * FROM daily_loop_checkpoints WHERE sequence=1").get()).toEqual(savedCheckpoint);
+      expect(db.db.prepare("SELECT state,lease_fence,previous_digest FROM daily_loop_checkpoints WHERE sequence=2").get())
+        .toEqual({ state: "completed", lease_fence: 2, previous_digest: sha("verified") });
+    } finally { db.close(); rmSync(fixture.root, { recursive: true, force: true }); }
+  });
+
   it("upgrades six valid legacy lifecycle shapes byte-identically and continues with version one", async () => {
     // Given
     const fixture = migrationRoot(false); const db = new AuthorityDb(fixture.path, fixture.migrations);

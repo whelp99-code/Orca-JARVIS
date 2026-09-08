@@ -2,9 +2,10 @@ import { createHash } from "node:crypto";
 import type { AuthorityDb } from "./db.js";
 import { canonicalize } from "./canonical.js";
 import { parseDailyLoopClaim, parseDailyLoopInstant, parseDailyLoopRunId } from "./daily-loop-input.js";
+import { claimDailyLoop } from "./daily-loop-claim.js";
 import { DailyLoopReadStore } from "./daily-loop-read.js";
 import { assertDailyLoopIntegrity } from "./daily-loop-integrity.js";
-import { parseFailure, parseStoreCheckpoint, parseStoreClaim, parseStoreCompleteStep, parseStorePrepare, parseUncertain }
+import { parseFailure, parseStoreCheckpoint, parseStoreCompleteStep, parseStorePrepare, parseUncertain }
   from "./daily-loop-store-input.js";
 import { DailyLoopError, type DailyLoopClaim, type DailyLoopStep } from "./daily-loop-types.js";
 import { bindDailyLoopProjection } from "./memory-projection-bindings.js";
@@ -17,7 +18,7 @@ type CheckpointInput = {
 };
 
 const digest = (value: unknown): string => `sha256:${createHash("sha256").update(canonicalize(value)).digest("hex")}`;
-const identity = (prefix: string, key: string): string => `${prefix}:${digest(key).slice(7)}`; const terminal = new Set(["completed", "failed", "uncertain"]);
+const identity = (prefix: string, key: string): string => `${prefix}:${digest(key).slice(7)}`;
 const inputDigest = (json: string): string => `sha256:${createHash("sha256")
   .update("orca-jarvis/daily-loop-input/v1\0").update(json).digest("hex")}`;
 
@@ -104,43 +105,12 @@ export class DailyLoopStore {
       ).run(code, at.toISOString(), runId);
       if (changed.changes === 0) {
         const row = this.authority.db.prepare("SELECT state,failure_code FROM daily_loop_runs WHERE run_id=?").get(runId) as Row | undefined;
-        if (row?.["state"] !== "failed" || row["failure_code"] !== code) throw new DailyLoopError("DAILY_LOOP_TERMINAL");
+        if (row === undefined) throw new DailyLoopError("DAILY_LOOP_TERMINAL");
       }
     });
   }
-  claim(value: unknown): DailyLoopClaim {
-    const input = parseStoreClaim(value); const at = input.at.toISOString();
-    return this.tx(input.run_id, () => {
-      const row = this.authority.db.prepare(
-        "SELECT state,lease_owner,lease_fence,lease_expires_at,expires_at,not_before,record_version " +
-        "FROM daily_loop_runs WHERE run_id=?",
-      ).get(input.run_id) as Row | undefined;
-      if (row === undefined || terminal.has(String(row["state"]))) throw new DailyLoopError("DAILY_LOOP_TERMINAL");
-      const deadline = Date.parse(String(row["expires_at"]));
-      if (input.at.getTime() >= deadline) throw new DailyLoopError("DAILY_LOOP_STALE_LEASE");
-      if (row["lease_owner"] !== null && Date.parse(String(row["lease_expires_at"])) > input.at.getTime()) {
-        throw new DailyLoopError("DAILY_LOOP_LEASE_ACTIVE");
-      }
-      const leaseExpires = new Date(Math.min(input.at.getTime() + input.lease_ms, deadline)).toISOString();
-      const fence = Number(row["lease_fence"]);
-      const changed = fence === 0
-        ? this.authority.db.prepare(
-          "UPDATE daily_loop_runs SET state='claimed',lease_owner=?,lease_fence=1,lease_expires_at=?,updated_at=? " +
-          "WHERE run_id=? AND state='pending' AND lease_fence=0 AND (record_version=0 OR not_before<=?) AND ?<expires_at",
-        ).run(input.owner_id, leaseExpires, at, input.run_id, at, at)
-        : this.authority.db.prepare(
-          "UPDATE daily_loop_runs SET lease_owner=?,lease_fence=lease_fence+1,lease_expires_at=?,updated_at=? " +
-          "WHERE run_id=? AND state=? AND lease_fence=? AND lease_owner IS ? AND lease_expires_at<=? AND ?<expires_at",
-        ).run(input.owner_id, leaseExpires, at, input.run_id, row["state"], fence, row["lease_owner"], at, at);
-      if (changed.changes !== 1) throw new DailyLoopError("DAILY_LOOP_LEASE_ACTIVE");
-      const claimed = this.authority.db.prepare(
-        "SELECT lease_fence,lease_expires_at,expires_at FROM daily_loop_runs WHERE run_id=? AND lease_owner=?",
-      ).get(input.run_id, input.owner_id) as Row;
-      return {
-        run_id: input.run_id, owner_id: input.owner_id, fence: Number(claimed["lease_fence"]),
-        lease_expires_at: String(claimed["lease_expires_at"]), deadline_at: String(claimed["expires_at"]),
-      };
-    });
+  claim(value: unknown, recoveryWindowMs?: number): DailyLoopClaim {
+    return claimDailyLoop(this.authority, value, recoveryWindowMs);
   }
   due(atValue: unknown): readonly string[] {
     return this.reads.due(atValue);
@@ -232,9 +202,13 @@ export class DailyLoopStore {
         this.authority.db.prepare("UPDATE daily_loop_runs SET state='running',updated_at=? WHERE run_id=?")
           .run(at.toISOString(), claim.run_id);
       }
-      this.appendInside({ claim, step_id: null, state: "verifying", detail: "run_verifying", at });
-      this.authority.db.prepare("UPDATE daily_loop_runs SET state='verifying',updated_at=? WHERE run_id=?")
-        .run(at.toISOString(), claim.run_id);
+      if (row["state"] !== "verifying") {
+        this.appendInside({ claim, step_id: null, state: "verifying", detail: "run_verifying", at });
+        this.authority.db.prepare("UPDATE daily_loop_runs SET state='verifying',updated_at=? WHERE run_id=?")
+          .run(at.toISOString(), claim.run_id);
+      } else if (this.authority.db.prepare("SELECT 1 FROM daily_loop_steps WHERE run_id=? AND state<>'completed' LIMIT 1").get(claim.run_id)) {
+        throw new DailyLoopError("DAILY_LOOP_IDENTITY_CONFLICT");
+      }
       const result = this.appendInside({ claim, step_id: null, state: "completed", detail: "run_completed", at });
       this.authority.db.prepare(
         "UPDATE daily_loop_runs SET state='completed',result_digest=?,lease_owner=NULL,lease_expires_at=NULL,updated_at=? " +

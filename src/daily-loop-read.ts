@@ -12,10 +12,11 @@ export class DailyLoopReadStore {
   due(atValue: unknown): readonly string[] {
     const at = parseDailyLoopInstant(atValue);
     const rows = this.authority.db.prepare(
-      `SELECT run_id FROM daily_loop_runs WHERE state='pending'
+      `SELECT run_id FROM daily_loop_runs WHERE (state='pending'
+         OR (state IN ('claimed','running','verifying') AND lease_owner IS NOT NULL AND lease_expires_at<=?))
        AND ((record_version=1 AND not_before<=?) OR (record_version=0 AND created_at<=?))
        AND ?<expires_at ORDER BY not_before,run_id`,
-    ).all(at.toISOString(), at.toISOString(), at.toISOString()) as Row[];
+    ).all(at.toISOString(), at.toISOString(), at.toISOString(), at.toISOString()) as Row[];
     const candidates = rows.map(row => String(row["run_id"]));
     const runIds = projectionAuthorityReady(this.authority)
       ? new MemoryProjectionAuthority(this.authority).visible(candidates, runId => ({
