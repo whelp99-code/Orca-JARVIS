@@ -24,7 +24,11 @@ export async function secureRoot(path: string): Promise<SecureRoot> {
     assertOwnedDirectory(await lstat(absolute));
   } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error;
-    await mkdir(absolute, { mode: 0o700 });
+    try { await mkdir(absolute, { mode: 0o700 }); }
+    catch (creationError) {
+      if ((creationError as NodeJS.ErrnoException).code !== "EEXIST") throw creationError;
+    }
+    assertOwnedDirectory(await lstat(absolute));
   }
   await chmod(absolute, 0o700);
   const value = await lstat(absolute);
@@ -33,7 +37,8 @@ export async function secureRoot(path: string): Promise<SecureRoot> {
 }
 
 export function secureBasename(value: unknown): string {
-  if (typeof value !== "string" || value.length === 0 || value.includes("\0") || value === "." || value === ".." || value.includes("/") || value.includes("\\")) {
+  if (typeof value !== "string" || value.length === 0 || value.includes("\0") || value === "." || value === ".."
+    || value.includes("/") || value.includes("\\")) {
     throw new JarvisError("APPROVED_PATH_INVALID");
   }
   return value;
