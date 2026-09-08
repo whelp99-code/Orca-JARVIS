@@ -48,9 +48,10 @@ export function readApprovedMemoryScopeReview(authority: AuthorityDb, value: unk
       || !verifyCommandApproval(receipt, row.public_key_pem, now)) return fail();
     const revoked = authority.db.prepare(`SELECT 1 FROM control_command_revocations WHERE request_id=? OR receipt_id=?
       UNION ALL SELECT 1 FROM authority_revocations WHERE reference IN (?,?,?,?,?,?)
-      UNION ALL SELECT 1 FROM control_command_redemptions WHERE request_id=? LIMIT 1`)
+      UNION ALL SELECT 1 FROM control_command_redemptions WHERE request_id=?
+      UNION ALL SELECT 1 FROM memory_scoped_outbox_bindings WHERE scope_review_request_id=? OR scope_review_receipt_id=? LIMIT 1`)
       .get(requestId, receipt.receipt_id, requestId, receipt.receipt_id, command.command_digest, receipt.key_id,
-        receipt.nonce, receipt.signature, requestId);
+        receipt.nonce, receipt.signature, requestId, requestId, receipt.receipt_id);
     if (revoked !== undefined) return fail();
     return Object.freeze({ schema_version: 1 as const, writes_authorized: false as const, proposal,
       control_request_id: requestId, control_receipt_id: receipt.receipt_id, command_digest: command.command_digest,
