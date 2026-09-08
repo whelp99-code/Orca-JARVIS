@@ -12,6 +12,10 @@ import { canonicalize } from "../../src/canonical.js";
 import { readEveningNativeSource } from "../../src/evening-native-source.js";
 import { kstLocalDate } from "../../src/daily-loop-time.js";
 import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
+import { generateNativeEveningEnvelope, verifyLiveNativeEveningEnvelope, verifyNativeEveningEnvelope } from "../../src/evening-native-envelope.js";
+import { signer, trustedCloseoutKey } from "../fixtures/evening-closeout.js";
+import { parseStoreDetail } from "../../src/daily-loop-store-input.js";
+import { closeoutHash, closeoutSigningBytes } from "../../src/evening-closeout-crypto.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
@@ -20,6 +24,66 @@ async function fixture() {
   const input = await f.certify(); const publication = await publishTaskGitCandidate(input);
   return { ...f, input: { ...input, publication_id: publication.publication_id }, publication };
 }
+
+it("preserves native proof bytes in a signed v2 envelope and separates live validity from durable cost evidence", async () => {
+  const f = await fixture(); await settleTaskExecution(f.input);
+  const input = { run_id: "dlr:native-evening", correlation_id: "daily:native-evening",
+    local_date: kstLocalDate(f.now), observed_at: f.now, repository_identities: [f.plan.publication.repository_identity],
+    max_records: 10, max_bytes: 1048576 };
+  const source = readEveningNativeSource(f.db, { local_date: input.local_date, observed_at: f.now,
+    repository_identities: input.repository_identities, max_records: 10, max_bytes: 1048576 });
+  const artifact = generateNativeEveningEnvelope(f.db, input, signer(f.now.toISOString()));
+  expect(artifact).toMatchObject({ schema_version: 2, source_readiness: "degraded", native_completion_count: 1 });
+  expect(artifact.source_json).toBe(canonicalize(source));
+  expect(parseStoreDetail(artifact)).toEqual(artifact);
+  // Valid deeply nested JSON must fail before recursive canonicalization or hashing.
+  const deepSource = '{"schema_version":1,"local_date":"' + input.local_date + '","observed_at":"'
+    + artifact.generated_at + '","state":"ready","records":[' + "[".repeat(10000) + '0'
+    + "]".repeat(10000) + '],"evidence_bytes":1,"hidden_count":0,"limited":false}';
+  expect(() => verifyNativeEveningEnvelope({ ...artifact, source_json: deepSource }, trustedCloseoutKey))
+    .toThrow("EVENING_CLOSEOUT_INPUT_INVALID");
+  expect(() => verifyNativeEveningEnvelope({ ...artifact, source_json: "{" }, trustedCloseoutKey))
+    .toThrow("EVENING_CLOSEOUT_INPUT_INVALID");
+  expect(() => verifyNativeEveningEnvelope({ ...artifact, source_json: '{"records":[1e999]}' }, trustedCloseoutKey))
+    .toThrow("EVENING_CLOSEOUT_INPUT_INVALID");
+  // Synthetic opaque records exercise the outer wire format, not native proof validity.
+  // Escaped quote/backslash bytes fill the legal evidence budget before source wrapping.
+  const wireBoundary = (extra: number) => {
+    const record = { text: '"\\'.repeat(262141) + "x".repeat(1 + extra) };
+    const bytes = Buffer.byteLength(canonicalize(record));
+    expect(bytes).toBe(1048576 + extra);
+    const largeSource = { ...source, records: [record], evidence_bytes: bytes };
+    const { artifact_id, canonical_digest, envelope, ...originalCore } = artifact;
+    void artifact_id; void canonical_digest; void envelope;
+    const core = { ...originalCore, source_json: canonicalize(largeSource), source_digest: closeoutHash(largeSource) };
+    const digest = closeoutHash(core); const handle = signer(f.now.toISOString());
+    const unsigned = { ...core, artifact_id: `evening-closeout:v2:${digest.slice(7)}`,
+      canonical_digest: digest, envelope: handle.identity };
+    return { ...unsigned, envelope: { ...handle.identity,
+      signature: Buffer.from(handle.sign(closeoutSigningBytes("orca-jarvis/evening-closeout-native/v2\0", unsigned))).toString("base64url") } };
+  };
+  const boundary = wireBoundary(0);
+  expect(Buffer.byteLength(boundary.source_json)).toBeGreaterThan(1048576);
+  expect(Buffer.byteLength(canonicalize(boundary))).toBeGreaterThan(Buffer.byteLength(boundary.source_json));
+  expect(verifyNativeEveningEnvelope(JSON.parse(JSON.stringify(boundary)), trustedCloseoutKey)).toEqual(boundary);
+  expect(() => verifyNativeEveningEnvelope(wireBoundary(1), trustedCloseoutKey)).toThrow();
+  expect(() => verifyLiveNativeEveningEnvelope(f.db, boundary, trustedCloseoutKey)).toThrow();
+  expect(verifyLiveNativeEveningEnvelope(f.db, artifact, trustedCloseoutKey)).toEqual(artifact);
+  expect(() => verifyLiveNativeEveningEnvelope(f.db, artifact, trustedCloseoutKey, new Date(f.now.getTime() - 1))).toThrow();
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import { AuthorityDb } from './dist/src/db.js';
+    import { verifyLiveNativeEveningEnvelope } from './dist/src/evening-native-envelope.js';
+    const db = new AuthorityDb(process.argv[1]);
+    try { const result = verifyLiveNativeEveningEnvelope(db, JSON.parse(process.argv[2]), JSON.parse(process.argv[3]));
+      process.stdout.write(result.source_digest); } finally { db.close(); }
+  `, f.db.filename, JSON.stringify(artifact), JSON.stringify(trustedCloseoutKey)], { encoding: "utf8", timeout: 10000 });
+  expect(child.status).toBe(0); expect(child.stdout).toBe(artifact.source_digest);
+  expect(() => verifyNativeEveningEnvelope({ ...artifact, native_completion_count: 2 }, trustedCloseoutKey)).toThrow();
+  expect(() => verifyNativeEveningEnvelope(artifact, { ...trustedCloseoutKey, key_id: "wrong-key" })).toThrow();
+  new MemoryProjectionAuthority(f.db).quarantineUnresolved({ kind: "control_payload", id: "execute", component_id: "execute" }, f.now);
+  expect(() => verifyLiveNativeEveningEnvelope(f.db, artifact, trustedCloseoutKey)).toThrow();
+  expect(verifyNativeEveningEnvelope(artifact, trustedCloseoutKey).native_completion_count).toBe(1);
+});
 
 it("collects native evening evidence within scope, byte limits and existing privacy filters", async () => {
   const f = await fixture(); const completion = await settleTaskExecution(f.input);
