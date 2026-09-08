@@ -101,3 +101,31 @@ describe("phone gateway session store", () => {
     expect(second.authenticate(`__Host-jarvis-phone=${issued.cookieId}`, OWNER).kind).toBe("invalid");
   });
 });
+
+it.each([999, Number.NaN, Number.NEGATIVE_INFINITY])('rejects invalid or pre-issuance authentication clocks: %s', changed => {
+  let now = 1000;
+  const store = createPhoneGatewaySessionStore({ key: KEY, now: () => now });
+  const issued = store.issue(OWNER);
+  if (issued.kind !== 'issued') throw new Error('fixture');
+  const cookie = `__Host-jarvis-phone=${issued.cookieId}`;
+  const auth = store.authenticate(cookie, OWNER);
+  if (auth.kind !== 'ok') throw new Error('fixture');
+  now = changed;
+  expect(store.touch(auth.idHmac)).toBeUndefined();
+  expect(store.authenticate(cookie, OWNER).kind).toBe('invalid');
+});
+it('rejects a clock earlier than the last successful session touch', () => {
+  let now = 1000;
+  const store = createPhoneGatewaySessionStore({ key: KEY, now: () => now });
+  const issued = store.issue(OWNER); if (issued.kind !== 'issued') throw new Error('fixture');
+  const cookie = `__Host-jarvis-phone=${issued.cookieId}`;
+  const auth = store.authenticate(cookie, OWNER); if (auth.kind !== 'ok') throw new Error('fixture');
+  now = 2000; expect(store.touch(auth.idHmac)).toBeDefined();
+  now = 1999; expect(store.authenticate(cookie, OWNER).kind).toBe('invalid');
+  now = 2000; expect(store.authenticate(cookie, OWNER).kind).toBe('invalid');
+});
+it.each([Number.NaN, Number.POSITIVE_INFINITY, -1])('does not issue a session with an invalid clock: %s', now => {
+  const store = createPhoneGatewaySessionStore({ key: KEY, now: () => now });
+  expect(() => store.issue(OWNER)).toThrow('PHONE_SESSION_CLOCK_INVALID');
+  expect(store.inspectDigests()).toEqual([]);
+});

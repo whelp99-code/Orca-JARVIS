@@ -61,6 +61,9 @@ export function createPhoneGatewaySessionStore(input: {
       const cookieId = randomBytes(TOKEN_BYTES).toString("base64url");
       const csrfToken = randomBytes(TOKEN_BYTES).toString("base64url");
       const now = input.now();
+      if (!Number.isSafeInteger(now) || now < 0 || !Number.isFinite(new Date(now + PHONE_ABSOLUTE_MS).getTime())) {
+        throw new Error("PHONE_SESSION_CLOCK_INVALID");
+      }
       const idHmac = hmac(cookieId);
       records.set(digestKey(idHmac), {
         idHmac,
@@ -114,7 +117,8 @@ export function createPhoneGatewaySessionStore(input: {
 }
 
 function expired(record: SessionRecord, now: number): boolean {
-  return now - record.lastSeenAt > PHONE_IDLE_MS || now >= record.absoluteExpiry;
+  return !Number.isFinite(now) || now < record.lastSeenAt
+    || now - record.lastSeenAt > PHONE_IDLE_MS || now >= record.absoluteExpiry;
 }
 
 function cookieMaxAge(now: number, absoluteExpiry: number): number {
