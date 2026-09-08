@@ -26,13 +26,15 @@ type ProposalResultProps = Readonly<{
   result: TeamProposalResultV1;
   stage: StageState;
   onStage: () => void;
+  stageLocked?: boolean;
 }>;
 
 const TOTAL_ATTEMPTS = 30;
 
-export function ProposalPreviewPane({ preview, stage, onRetry, onStage }: Readonly<{
+export function ProposalPreviewPane({ preview, stage, onRetry, onStage, stageLocked }: Readonly<{
   preview: PreviewState;
   stage: StageState;
+  stageLocked?: boolean;
   onRetry: (request: TeamProposalRequestV1) => void;
   onStage: (
     request: TeamProposalRequestV1,
@@ -56,6 +58,7 @@ export function ProposalPreviewPane({ preview, stage, onRetry, onStage }: Readon
         <ProposalResult
           result={preview.result}
           stage={stage}
+          stageLocked={stageLocked}
           onStage={() => {
             if (preview.result.status === "ready") onStage(preview.request, preview.result);
           }}
@@ -66,7 +69,7 @@ export function ProposalPreviewPane({ preview, stage, onRetry, onStage }: Readon
   }
 }
 
-function ProposalResult({ result, stage, onStage }: ProposalResultProps) {
+function ProposalResult({ result, stage, onStage, stageLocked }: ProposalResultProps) {
   switch (result.status) {
     case "needs_input":
       return (
@@ -93,16 +96,17 @@ function ProposalResult({ result, stage, onStage }: ProposalResultProps) {
         </section>
       );
     case "ready":
-      return <ReadyProposal result={result} stage={stage} onStage={onStage} />;
+      return <ReadyProposal result={result} stage={stage} onStage={onStage} stageLocked={stageLocked} />;
     default:
       return assertNever(result);
   }
 }
 
-function ReadyProposal({ result, stage, onStage }: Readonly<{
+function ReadyProposal({ result, stage, onStage, stageLocked }: Readonly<{
   result: Extract<TeamProposalResultV1, { readonly status: "ready" }>;
   stage: StageState;
   onStage: () => void;
+  stageLocked?: boolean;
 }>) {
   const warnings = Array.from(new Set(result.members.flatMap((member) => (
     member.exclusions.map(exclusionWarning).filter(isDefined)
@@ -150,7 +154,7 @@ function ReadyProposal({ result, stage, onStage }: Readonly<{
         <p className="proposal-budget" role="status" aria-label="Total budget">
           {TOTAL_ATTEMPTS} attempts total
         </p>
-        <button type="button" disabled={stage.kind === "loading"} onClick={onStage}>
+        <button type="button" disabled={stage.kind === "loading" || stageLocked} onClick={onStage}>
           {stage.kind === "loading" ? "Staging task" : "Stage task"}
         </button>
         {stage.kind === "error" ? <p className="proposal-error" role="alert">Unable to stage task</p> : null}

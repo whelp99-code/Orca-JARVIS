@@ -870,3 +870,24 @@
 - 별도 built HTTP: preview200/create202 pending/잘못된 revision400, 거부 DB 변경0.
   전체 증거·인터페이스·검증 한계는 `docs/planning/adr-approved-task-templates.md` 참조.
   대시보드 선택/결과 표시, 실제 운영 입력·승인, 보고서 판단 평가 및 전체 01–25 목표는 남아 있다.
+
+
+## 2026-09-09 — 항목24 템플릿 화면과 승인 연결
+
+- 세 템플릿 선택→서버 컴파일→기존 제안→시작 승인 요청을 화면에 연결했다.
+  승인된 파일·검사는 실행 준비에 자동 공급하며 실행 요청에도 범위를 표시한다.
+- 불확실한 생성 응답은 요청 ID를 유지하고 자동 재전송을 차단한다.
+  작업 전환 시 기존 출력 파일 선택을 초기화한다.
+- lint/3typechecks 통과. 기본 backend 설정으로 dashboard 테스트를 호출한 최초
+  명령은 대상 없음으로 exit1; 정식 runner 재실행은 UI21/4files, backend41/3files,
+  dashboard build exit0(handle28710).
+- compiled HTTP + Playwright1440/390에서 기술 검토 생성202→시험 서명 시작 승인/실행
+  →준비200→실행 승인 요청202. 가로 넘침0/콘솔 오류0/실제 모델 호출0(handle51860).
+- 증거·fixture 한계는 `docs/planning/adr-approved-task-templates.md`.
+  실제 운영 입력·승인과 보고서 판단 평가, 기억 출처 HOLD 및 전체01–25 목표는 남아 있다.
+
+- 기존 HEAD `15a53f699a844b4712736e5ad45ae08e1c74cbb4` 전체 verify는 별도
+  `codex-morning-source`에서 exit0(handle20869): backend 1502+1547=3049/441files,
+  dashboard248/35files, acceptance/smoke 통과. 전후 HEAD 동일·추적 변경0·바이트 동일.
+  현재 UI diff를 포함한 전체 gate라고 해석하지 않는다. 증거는
+  `/home/jm/.cache/jarvis-test-runtime-qa-20260908/verify-task-templates-after.json`과 같은 이름 log.

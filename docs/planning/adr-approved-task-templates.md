@@ -182,6 +182,45 @@ changes to a version's checker or semantics require a new revision.
   provider invocation in this check. Receipt:
   `/home/jm/.cache/jarvis-test-runtime-qa-20260908/template-http-sl0xRd/receipt.json`.
 
-Remaining operational work: template selection/result labels in the dashboard,
-real operational inputs and approvals, and evaluation of report reasoning. Existing
+Remaining operational work: real operational inputs and approvals, and evaluation of report reasoning.
+Dashboard template selection and scope labels are implemented below. Existing
 memory-source privacy HOLD and production activation boundaries remain in force.
+
+
+## Dashboard template selection — 2026-09-09
+
+- `/proposals` now offers code fix, incident report, and technical review forms.
+  POST `/api/v1/task-templates/compile` uses the existing Origin/CSRF/body boundary
+  and the server compiler. Compilation does not write a DB or invoke a provider.
+  Browser imports of backend template contracts are type-only.
+- The generated proposal and template binding travel together through the existing
+  workflow-start approval. Editing an input invalidates the preview. After a staging
+  attempt, the request identifier stays visible and staging remains locked even if
+  the response is uncertain. Approval queue and task detail have separate links.
+- Execution preparation reads the approved template from immutable workflow input.
+  File scope and mandatory checks are supplied from that binding, with an explicit
+  existing/new output choice. Switching workflow clears that output choice.
+  Request details retain template scope labels; full commands remain reviewable.
+- Report labels distinguish structure/source-quotation checks from correctness of
+  reasoning. Automatic corrective action and memory promotion remain on HOLD.
+- Validation: lint and all three typechecks passed (handle8266); that command then
+  exited 1 because the default backend test config excluded dashboard files. The
+  repository test runner was used for the corrected invocation: 21 dashboard tests
+  in 4 files (6.97s), 41 backend tests in 3 files (30.48s), and dashboard build all
+  exited 0 (handle28710). The earlier backend build included the new HTTP/read-model
+  files; subsequent changes were confined to frontend files and documentation.
+- Actual Playwright Chromium on the compiled HTTP server, 1440x1000 and 390x1000:
+  technical-review selection, compilation, task creation 202, signed workflow-start
+  approval/execution, task detail, plan preparation 200, and execution staging 202.
+  Two approved file scopes and one mandatory check matched the compiled binding.
+  Both viewports: horizontal overflow 0, console errors 0, Vite error overlays 0.
+  Final browser command handle51860 exited 0. Initial runs found incorrect approval
+  navigation and a test-driver reload before decision completion; both were fixed.
+- Evidence outside the repository:
+  `/home/jm/.cache/jarvis-test-runtime-qa-20260908/task-template-browser.mjs` and
+  `template-ui-20260909/browser-receipt.json`, `preview-{1440,390}.png`,
+  `execution-{1440,390}.png` beneath the same cache root. URL was
+  `http://127.0.0.1:33511`; DB, Git source, and signing key were isolated fixtures.
+  This UI run made 0 real model calls and did not deploy a production service.
+  The preceding backend real-Claude acceptance is recorded above; it is separate
+  evidence, not a claim that this browser run executed a model.

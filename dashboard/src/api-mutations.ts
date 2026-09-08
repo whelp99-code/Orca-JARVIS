@@ -1,5 +1,7 @@
 import type { StoredControlCommand } from "../../src/control-plane.js";
 import type { CreateTaskRequest } from "../../src/dashboard/contracts.js";
+import type { TaskTemplateBinding } from "../../src/task-templates.js";
+import { parseCompiledTemplate, type CompiledTaskTemplate } from "./task-template-contract.js";
 import type {
   TeamMemberProposal,
   TeamProposalRequestV1,
@@ -14,7 +16,8 @@ import {
 
 export type ProposalMutationClient = Readonly<{
   previewProposal: (request: TeamProposalRequestV1) => Promise<TeamProposalResultV1>;
-  createTask: (request: CreateTaskRequest) => Promise<StoredControlCommand>;
+  createTask: (request: CreateTaskRequest & { readonly task_template?: TaskTemplateBinding }) => Promise<StoredControlCommand>;
+  compileTemplate?: (request: unknown) => Promise<CompiledTaskTemplate>;
 }>;
 
 const CAPABILITY_IDS = ["codex", "claude", "orca_read", "gjc", "live_resume"] as const;
@@ -48,6 +51,8 @@ export function createProposalMutationClient(
     }
   }
   return {
+    compileTemplate: async value => await postJson({ path: "/api/v1/task-templates/compile", value,
+      parse: parseCompiledTemplate, csrfToken: await csrfToken() }),
     previewProposal: async (value) => await postJson({
       path: "/api/v1/proposals/preview",
       value,

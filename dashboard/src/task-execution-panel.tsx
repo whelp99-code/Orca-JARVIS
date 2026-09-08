@@ -9,6 +9,7 @@ import { TaskExecutionForm } from "./task-execution-form.js";
 import { taskExecutionMessage } from "./task-execution-message.js";
 import { TaskExecutionPlanView } from "./task-execution-plan-view.js";
 import "./task-execution.css";
+import { TaskTemplateSummary } from "./task-template-summary.js";
 
 type Store = ReturnType<typeof createDashboardStore>;
 export function TaskExecutionPanel({ taskId, store, client, idFactory }: Readonly<{
@@ -54,6 +55,7 @@ export function TaskExecutionPanel({ taskId, store, client, idFactory }: Readonl
       {data?.truncated.runs || data?.truncated.requests ? <p role="status">최근 20개 항목을 표시합니다. 전체 이력은 작업 타임라인에서 확인하세요.</p> : null}
       {data && eligible.length === 0 && data.requests.length === 0 ? <p>현재 실행 계획을 준비할 수 있는 작업 흐름이 없습니다.</p> : null}
       {executionClient && eligible.length > 0 ? <TaskExecutionForm taskId={taskId} runs={eligible.map(run => run.run_id)}
+        templates={Object.fromEntries(eligible.flatMap(run => run.task_template ? [[run.run_id, run.task_template]] : []))}
         client={executionClient} refresh={store.refreshTaskExecution} enabled={!value?.refreshing && pending.length === 0} idFactory={idFactory} /> : null}
       {execution && data?.requests.map(item => <ExecutionRequest key={item.request.request_id} taskId={taskId} item={item}
         client={execution} controls={controls} enabled={!value?.refreshing && !pending.some(operation =>
@@ -79,6 +81,7 @@ function ExecutionRequest({ taskId, item, client, controls, enabled, refresh }: 
   }
   return <article className="execution-request" aria-label={`실행 요청 ${item.request.request_id}`}>
     <h3>{item.completion ? "검증된 실행 결과" : "실행 요청"}</h3>
+    {item.task_template ? <TaskTemplateSummary template={item.task_template} /> : null}
     <details open={active}><summary>승인할 파일·검사·결과 브랜치</summary><TaskExecutionPlanView plan={item.plan} /></details>
     <details><summary>승인 식별 정보</summary><dl className="identity-list">
       <div><dt>명령 해시</dt><dd>{item.command_digest}</dd></div>

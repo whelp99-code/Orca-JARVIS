@@ -7,6 +7,7 @@ import type {
   TeamWorkType,
 } from "../../src/team-proposal.js";
 import { DashboardApiError } from "./api.js";
+import { TaskTemplateProposal } from "./task-template-proposal.js";
 import {
   createProposalMutationClient,
   type ProposalMutationClient,
@@ -58,6 +59,7 @@ export function ProposalPage({
   const [capabilities, setCapabilities] = useState<readonly CapabilityFact["id"][]>([]);
   const [preview, setPreview] = useState<PreviewState>({ kind: "idle" });
   const [stage, setStage] = useState<StageState>({ kind: "idle" });
+  const [templateMode, setTemplateMode] = useState(false);
 
   function clearResult(): void {
     setPreview({ kind: "idle" });
@@ -119,11 +121,15 @@ export function ProposalPage({
     }));
   }
 
+  if (templateMode) return <TaskTemplateProposal client={client} clock={clock} idFactory={idFactory}
+    onBack={() => setTemplateMode(false)} />;
   return (
     <div className="page-frame dashboard-main proposal-page">
       <header className="proposal-heading">
         <h1>New proposal</h1>
         <p>Preview a bounded team, then stage its receipt-bound task request.</p>
+        <button type="button" disabled={!client.compileTemplate || preview.kind === "loading" || stage.kind === "loading"}
+          onClick={() => setTemplateMode(true)}>템플릿으로 시작</button>
       </header>
       <div className="proposal-layout">
         <form className="panel proposal-form" onSubmit={submit}>

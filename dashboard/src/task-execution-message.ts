@@ -1,6 +1,9 @@
 import { DashboardApiError } from "./api.js";
 
 const messages: Record<string, string> = {
+  TASK_TEMPLATE_INVALID: "템플릿 입력을 확인하세요. 파일 경로는 중복 없이, 보고서 결과 파일은 하나만 지정하세요.",
+  TASK_TEMPLATE_PLAN_MISMATCH: "승인된 템플릿의 파일 범위와 필수 검사를 유지해야 합니다. 범위 변경은 새 업무 승인이 필요합니다.",
+  TASK_SPEC_BINDING_INVALID: "업무 명세와 템플릿 요구사항이 일치하지 않습니다. 제안을 다시 확인하세요.",
   TASK_REPOSITORY_FILE_CHANGED: "선택한 작업 파일이 기준 커밋과 다릅니다. 변경을 커밋한 뒤 계획을 다시 준비하세요.",
   TASK_REPOSITORY_BASELINE_CHANGED: "파일 또는 기준 커밋이 바뀌었습니다. 파일 선택을 확인하고 계획을 다시 준비하세요.",
   TASK_EXECUTION_PREVIEW_STALE: "검토 후 저장소가 바뀌었습니다. 최신 기준으로 계획을 다시 준비하세요.",

@@ -4,12 +4,15 @@ import type { AuthorityIdFactory, TaskExecutionClient } from "./authority-api.js
 import { SYSTEM_AUTHORITY_ID_FACTORY } from "./authority-api.js";
 import { isTaskExecutionRejection, taskExecutionMessage } from "./task-execution-message.js";
 import { TaskExecutionPlanView } from "./task-execution-plan-view.js";
+import type { TaskTemplateBinding } from "../../src/task-templates.js";
+import { TaskTemplateSummary } from "./task-template-summary.js";
 
 type FileInput = { id: number; path: string; access: "read" | "write"; exists: boolean };
 type CheckInput = { id: number; executable: string; args: string; cwd: string };
-export function TaskExecutionForm({ taskId, runs, client, refresh, enabled, idFactory = SYSTEM_AUTHORITY_ID_FACTORY }: Readonly<{
+export function TaskExecutionForm({ taskId, runs, client, refresh, enabled, templates, idFactory = SYSTEM_AUTHORITY_ID_FACTORY }: Readonly<{
   taskId: string; runs: readonly string[]; client: TaskExecutionClient; refresh: () => Promise<void>;
   enabled: boolean; idFactory?: AuthorityIdFactory;
+  templates?: Readonly<Record<string, TaskTemplateBinding>>;
 }>) {
   const [run, setRun] = useState(runs.length === 1 ? runs[0]! : "");
   const [root, setRoot] = useState(""); const [branch, setBranch] = useState("");
@@ -19,6 +22,8 @@ export function TaskExecutionForm({ taskId, runs, client, refresh, enabled, idFa
   const [preview, setPreview] = useState<PreparedDashboardTaskExecution>();
   const [busy, setBusy] = useState(false); const [error, setError] = useState("");
   const [submitted, setSubmitted] = useState<string>();
+  const [existing, setExisting] = useState<readonly string[]>([]);
+  const template = templates?.[run];
   const available = enabled && runs.includes(run) && !busy && !submitted;
 
   function edit(change: () => void) { change(); setPreview(undefined); setError(""); }
@@ -26,10 +31,12 @@ export function TaskExecutionForm({ taskId, runs, client, refresh, enabled, idFa
     event.preventDefault(); if (!available) return;
     setBusy(true); setError(""); setPreview(undefined);
     try {
+      const selectedFiles = template ? template.files.map(file => ({ ...file,
+        exists: file.access === "read" || existing.includes(file.path) })) : files;
       setPreview(await client.prepare(taskId, { schema_version: 1, run_id: run, provider: "claude", repository_root: root,
-        publication_ref: `refs/heads/codex/${branch}`, files: files.map(({ path, access, exists }) => ({ path, access, exists })),
+        publication_ref: `refs/heads/codex/${branch}`, files: selectedFiles.map(({ path, access, exists }) => ({ path, access, exists })),
         limits: { timeout_ms: seconds * 1000, max_output_bytes: 262144 },
-        verification: checks.map(check => ({ id: `check-${check.id}`, argv: [check.executable,
+        verification: template?.verification ?? checks.map(check => ({ id: `check-${check.id}`, argv: [check.executable,
           ...check.args.split(/\r?\n/).filter(line => line.length > 0)], cwd: check.cwd, expected_exit: 0 })) }));
     } catch (caught) { setError(taskExecutionMessage(caught)); }
     finally { setBusy(false); }
@@ -51,7 +58,9 @@ export function TaskExecutionForm({ taskId, runs, client, refresh, enabled, idFa
     <p>커밋된 파일에서 작업을 시작합니다. 수정할 파일과 검사에 필요한 읽기 파일을 함께 선택하세요.</p>
     <form className="control-form" onSubmit={event => { void prepare(event); }}>
       <fieldset disabled={busy || !enabled || !!submitted}>
-        <label className="form-field"><span>작업 실행 흐름</span><select value={run} required onChange={event => edit(() => setRun(event.target.value))}>
+        <label className="form-field"><span>작업 실행 흐름</span><select value={run} required onChange={event => edit(() => {
+          setRun(event.target.value); setExisting([]);
+        })}>
           <option value="">작업 선택</option>{runs.map(id => <option key={id} value={id}>{id}</option>)}
         </select></label>
         <label className="form-field"><span>저장소 최상위 경로</span><input value={root} required placeholder="/home/.../project"
@@ -61,7 +70,13 @@ export function TaskExecutionForm({ taskId, runs, client, refresh, enabled, idFa
         <p className="muted">브랜치는 codex/ 아래에 생성됩니다. 실행 에이전트: Claude.</p>
         <label className="form-field"><span>실행 시간 제한(초)</span><input type="number" min={1} max={600} step={1}
           value={seconds} required onChange={event => edit(() => setSeconds(Number(event.target.value)))} /></label>
-        <h4>파일</h4>
+        {template ? <><TaskTemplateSummary template={template} />
+          <p>아래 결과 파일이 이미 커밋되어 있으면 표시하세요. 경로와 필수 검사를 바꾸려면 새 업무 승인이 필요합니다.</p>
+          {template.files.filter(file => file.access === "write").map(file => <label key={file.path}>
+            <input type="checkbox" checked={existing.includes(file.path)} onChange={event => edit(() => setExisting(current =>
+              event.target.checked ? [...current, file.path] : current.filter(path => path !== file.path)))} />
+            {file.path} — 기존 파일 수정
+          </label>)}</> : <><h4>파일</h4>
         {files.map((file, index) => <div className="execution-file-input" key={file.id}>
           <label className="form-field"><span>파일 경로 {index + 1}</span><input required value={file.path}
             onChange={event => edit(() => setFiles(files.map(item => item.id === file.id ? { ...item, path: event.target.value } : item)))} /></label>
@@ -86,7 +101,7 @@ export function TaskExecutionForm({ taskId, runs, client, refresh, enabled, idFa
           <button type="button" disabled={checks.length === 1} onClick={() => edit(() => setChecks(checks.filter(item => item.id !== check.id)))}>검사 {index + 1} 제거</button>
         </fieldset>)}
         <button type="button" disabled={checks.length >= 8} onClick={() => edit(() => setChecks([...checks,
-          { id: Math.max(...checks.map(check => check.id)) + 1, executable: "node", args: "", cwd: "." }]))}>검사 추가</button>
+          { id: Math.max(...checks.map(check => check.id)) + 1, executable: "node", args: "", cwd: "." }]))}>검사 추가</button></>}
       </fieldset>
       <button type="submit" disabled={!available}>계획 준비</button>
     </form>

@@ -16,6 +16,7 @@ import { readJsonPost, writePostBoundaryError } from "./request-boundary.js";
 import type { DashboardSessionStore } from "./session.js";
 import { tryHandleTaskCreate } from "./task-routes.js";
 import { tryHandleTaskExecution } from "./task-execution-routes.js";
+import { tryHandleTaskTemplateCompile } from "./task-template-routes.js";
 
 export type DashboardPostInput = {
   readonly db: AuthorityDb;
@@ -55,6 +56,7 @@ export async function tryHandleDashboardPost(input: DashboardPostInput): Promise
     response: input.response, requestId: input.requestId, runtime: input.memoryRuntime,
     hub: input.hub })) return true;
   if (await tryHandleTaskExecution({ ...input, body: parsed.value })) return true;
+  if (tryHandleTaskTemplateCompile({ ...input, body: parsed.value })) return true;
   if (await tryHandleProposalPreview({
     db: input.db,
     path: input.path,

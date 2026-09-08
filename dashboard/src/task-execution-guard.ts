@@ -1,6 +1,7 @@
 import type { DashboardTaskExecution } from "../../src/dashboard/task-execution-read.js";
 import type { PreparedDashboardTaskExecution } from "../../src/dashboard/task-execution-service.js";
 import type { TaskExecutionPlan } from "../../src/task-execution-plan.js";
+import { isTaskTemplateBinding } from "./task-template-contract.js";
 
 const object = (v: unknown): v is Record<string, any> => !!v && typeof v === "object" && !Array.isArray(v);
 const text = (v: unknown): v is string => typeof v === "string" && v.length > 0;
@@ -43,10 +44,12 @@ export function parsePreparedExecution(v: unknown, taskId: string, runId: string
 export function parseTaskExecution(v: unknown, taskId: string): DashboardTaskExecution | undefined {
   if (!object(v) || v.schema_version !== 1 || v.task_id !== taskId || !list(v.runs, 0, 20) || !list(v.requests, 0, 20)
     || !object(v.truncated) || typeof v.truncated.runs !== "boolean" || typeof v.truncated.requests !== "boolean") return undefined;
-  if (!v.runs.every(run => object(run) && text(run.run_id) && text(run.state) && text(run.updated_at))) return undefined;
+  if (!v.runs.every(run => object(run) && text(run.run_id) && text(run.state) && text(run.updated_at)
+    && (!Object.hasOwn(run, "task_template") || isTaskTemplateBinding(run.task_template)))) return undefined;
   if (!v.requests.every(item => {
     if (!object(item) || !object(item.request) || !isTaskExecutionPlan(item.plan) || item.plan.task_id !== taskId
       || !digest(item.command_digest) || !text(item.expires_at)) return false;
+    if (Object.hasOwn(item, "task_template") && !isTaskTemplateBinding(item.task_template)) return false;
     const r = item.request;
     if (!text(r.request_id) || r.action !== "task.execute" || r.action_level !== 3 || !text(r.requested_at)
       || !text(r.requested_by) || !text(r.summary) || !states.includes(r.state) || r.retry_status !== "not_allowed") return false;
