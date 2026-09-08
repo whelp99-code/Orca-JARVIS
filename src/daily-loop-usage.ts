@@ -5,16 +5,20 @@ import { parseDailyLoopDate } from "./daily-loop-input.js";
 import { DailyLoopError, type DailyLoopBudgets, type DailyLoopFailureCode } from "./daily-loop-types.js";
 import { kstLocalDate } from "./daily-loop-time.js";
 import { verifyMorningBriefResult } from "./morning-brief-artifact.js";
+import { verifyEveningCloseoutArtifact } from "./evening-closeout-artifact.js";
+import type { TrustedCloseoutKey } from "./evening-closeout-types.js";
+
+type UsageRun = { run_id: string; record_version: number; correlation_id: string; phase: string };
 
 export type DailyLoopUsage = { readonly items: number; readonly work: number; readonly bytes: number };
 const invalid = (): never => { throw new DailyLoopError("DAILY_LOOP_INTEGRITY_FAILURE"); };
 
 /** Completed output usage, including suppressed outputs. This is not token or CPU accounting. */
-export function dailyLoopUsage(authority: AuthorityDb, dateValue: unknown): DailyLoopUsage {
+export function dailyLoopUsage(authority: AuthorityDb, dateValue: unknown, closeoutKey?: TrustedCloseoutKey): DailyLoopUsage {
   const date = parseDailyLoopDate(dateValue);
   return authority.db.transaction(() => {
-    const runs = authority.db.prepare("SELECT run_id,record_version FROM daily_loop_runs WHERE loop_date=? ORDER BY run_id")
-      .all(date) as { run_id: string; record_version: number }[];
+    const runs = authority.db.prepare("SELECT run_id,record_version,correlation_id,phase FROM daily_loop_runs WHERE loop_date=? ORDER BY run_id")
+      .all(date) as UsageRun[];
     const total = { items: 0, work: 0, bytes: 0 };
     for (const run of runs) {
       assertDailyLoopIntegrity(authority, run.run_id);
@@ -23,7 +27,7 @@ export function dailyLoopUsage(authority: AuthorityDb, dateValue: unknown): Dail
       for (const step of steps) {
         if (step.state === "pending") continue;
         if (step.state !== "completed" || run.record_version !== 1 || step.detail_json === null) return invalid();
-        const cost = completedDailyStepCost(step.step_key, step.detail_json, date);
+        const cost = completedDailyStepCost(step.step_key, step.detail_json, date, run, closeoutKey);
         total.items += cost.items; total.work += cost.work; total.bytes += cost.bytes;
         if (Object.values(total).some(value => !Number.isSafeInteger(value))) return invalid();
       }
@@ -32,10 +36,21 @@ export function dailyLoopUsage(authority: AuthorityDb, dateValue: unknown): Dail
   }).deferred();
 }
 
-function completedDailyStepCost(key: string, json: string, date: string): DailyLoopUsage {
+function completedDailyStepCost(key: string, json: string, date: string, run: UsageRun, closeoutKey?: TrustedCloseoutKey): DailyLoopUsage {
   const detail: unknown = JSON.parse(json);
   if (canonicalize(detail) !== json) return invalid();
   const bytes = Buffer.byteLength(json);
+  if (key === "evening_summary") {
+    if (closeoutKey === undefined || run.phase !== "evening") return invalid();
+    try {
+      const artifact = verifyEveningCloseoutArtifact(detail, closeoutKey);
+      if (artifact.run_id !== run.run_id || artifact.correlation_id !== run.correlation_id || artifact.local_date !== date) return invalid();
+      const items = artifact.verified_completions.length + artifact.open_or_failed.length
+        + artifact.decisions_made.length + artifact.owner_decisions_required.length + artifact.unresolved_risks.length
+        + artifact.memory_candidate_support.length + (artifact.tomorrow_first_action === "none" ? 0 : 1);
+      return { items, work: 1, bytes };
+    } catch { return invalid(); }
+  }
   if (key === "morning_reconcile") {
     const brief = verifyMorningBriefResult(detail);
     if (kstLocalDate(new Date(brief.generated_at)) !== date) return invalid();

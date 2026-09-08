@@ -687,3 +687,24 @@
   daily-morning-cli-live.mjs/json, daily-morning-cli-failure-live.mjs/json,
   verify-morning-execution-after.json. 최종fresh검토 /root/daily_morning_cli_final_review: ship, findings 0.
   요청 gpt-5.6-terra/high, 실제 모델·effort는 도구에서 미노출.
+
+## 2026-09-08 P1-12 — CLI 전체 검증 종료와 저녁 집계 연결
+
+- 2f54516 아침 CLI 전체 npm run verify는 exit1로 종료했다. backend 1433+1467통과,
+  memory-correction-control의 purge_digest 증거 손실 케이스1건은5초 timeout이다.
+  해당 케이스만 같은 소스로 재실행하면3471ms/1pass10skip이었다. 원인은 미확정이며
+  전체 실패를 집중 통과로 대체하지 않는다. 후속 dashboard/acceptance/smoke는 이 gate에서 미실행.
+  전후HEAD2f54516/추적바이트동일. verify-morning-cli-after.json 및 log로 확인했다.
+- 20f8345는 legacy 상태 로그의 시작 시각을 refresh 완료로 해석하는 오류 수정이다.
+  readiness4파일86통과/정적검사/build 및 실제 합성 생산자2프로세스 인수, 독립검토ship.
+- 5c2c0f7은 미래 서명 저녁 산출물 게시 거부다. 관련3파일21통과/정적검사/build,
+  실제Node/SQLite/서명 PID3924180에서 거부쓰기0·시각경계성공, 독립검토ship.
+- 저녁 사용량 집계는 외부 신뢰 키를 받은 경우만 기존 서명 검증과 run/date/correlation을
+  확인한다. 완료 단계 실제항목/작업/UTF-8바이트를 집계하고 후보ID를 support와 중복 계수하지 않는다.
+  최종관련2파일23통과/정적검사/build, 실제PID3957933의5/1/3636 확인. 운영 원본은 합성이다.
+- 실제 저녁 원본·신뢰 키 공급·원자 예산 게시·일일 실행기·retention·timer 및 전체01–25는
+  계속 미완료다. provider refresh 완료 계약과 자동 운영은 보류한다.
+- 전체 gate 종료 뒤 고정2f54516에서 건너뛴 검사를 별도로 실행했다. dashboard35파일248통과,
+  고정시각acceptance와CLI smoke exit0(handle83756 종료). 전체 gate의 timeout 실패는 유지한다.
+  증거 morning-cli-downstream-{dashboard,acceptance,smoke}.log.
+- 저녁 사용량 최종독립검토 /root/evening_usage_review: ship, 지적0. 요청luna/high, 실제설정미노출.

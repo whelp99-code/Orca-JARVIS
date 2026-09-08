@@ -1,3 +1,5 @@
+import { dailyLoopUsage } from "../../src/daily-loop-usage.js";
+import { canonicalize } from "../../src/canonical.js";
 import { describe, expect, it } from "vitest";
 import {
   AuthorityDb,
@@ -54,6 +56,41 @@ function correlation(db: AuthorityDb, runId: string): string {
   return String(value.correlation_id);
 }
 describe("evening closeout persistence", () => {
+  it.each(["run_id", "correlation_id", "local_date"])("rejects a signed artifact with foreign %s in the completed ledger", async field => {
+    const db = await initialized();
+    try {
+      const loop = new DailyLoopStore(db); const runId = prepare(loop);
+      const claim = loop.claim({ run_id: runId, owner_id: "owner", at: T1, lease_ms: 600_000 });
+      const value = generateEveningCloseout(parseEveningCloseoutInput({
+        ...closeoutInput(), run_id: runId, correlation_id: correlation(db, runId), generated_at: T1.toISOString(),
+        [field]: field === "local_date" ? "2026-08-29" : "foreign-identity",
+      }), signer(T1.toISOString()));
+      // Generic step persistence does not verify the domain-specific artifact identity.
+      loop.completeStep({ claim, step: loop.steps(runId)[0]!, detail: value, at: T1 });
+      const before = db.db.prepare("SELECT total_changes() AS changes").get();
+      expect(() => dailyLoopUsage(db, "2026-08-30", trustedCloseoutKey)).toThrow("DAILY_LOOP_INTEGRITY_FAILURE");
+      expect(db.db.prepare("SELECT total_changes() AS changes").get()).toEqual(before);
+    } finally { db.close(); }
+  });
+
+  it.each([false, true])("counts signed evening output with external trust (populated=%s)", async populated => {
+    const db = await initialized();
+    try {
+      const loop = new DailyLoopStore(db); const runId = prepare(loop);
+      const claim = loop.claim({ run_id: runId, owner_id: "owner", at: T1, lease_ms: 600_000 });
+      const value = populated ? generateEveningCloseout(parseEveningCloseoutInput({
+        ...closeoutInput(), run_id: runId, correlation_id: correlation(db, runId), generated_at: T1.toISOString(),
+      }), signer(T1.toISOString())) : artifact(runId, correlation(db, runId));
+      new EveningCloseoutStore(db, trustedCloseoutKey).settle({ claim, artifact: value, at: T1 });
+      expect(() => dailyLoopUsage(db, "2026-08-30")).toThrow("DAILY_LOOP_INTEGRITY_FAILURE");
+      expect(dailyLoopUsage(db, "2026-08-30", trustedCloseoutKey)).toEqual({
+        items: populated ? 5 : 0, work: 1, bytes: Buffer.byteLength(canonicalize(value)),
+      });
+      expect(() => dailyLoopUsage(db, "2026-08-30", { ...trustedCloseoutKey, key_id: "untrusted" }))
+        .toThrow("DAILY_LOOP_INTEGRITY_FAILURE");
+    } finally { db.close(); }
+  });
+
   it("rejects a validly signed future artifact without changing the run or step", async () => {
     const db = await initialized();
     try {
