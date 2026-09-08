@@ -1,3 +1,4 @@
+import { prepareMemoryScopedWriteRequest } from "../../src/memory-scoped-write-request.js";
 import { writeFileSync } from "node:fs";
 import { createFileMemoryWriteScopeResolver } from "../../src/memory-access-policy.js";
 import { prepareMemoryScopedWriteWithPolicy } from "../../src/memory-scoped-write-policy.js";
@@ -96,6 +97,10 @@ it("preserves V3 Korean multiline bytes through scoped preparation", async () =>
     const resolve = createFileMemoryWriteScopeResolver(policyPath, "provider:fixture", () => session);
     const check = () => prepareMemoryScopedWriteWithPolicy(f.database.authority, proposal, command.request_id, f.dispatch, resolve, f.now);
     save(policy);
+    const request = prepareMemoryScopedWriteRequest(f.database.authority, proposal, command.request_id, f.dispatch, resolve, "provider:fixture", f.now);
+    expect(request.source_request.payload.content).toBe(f.statement);
+    expect(request.preparation).toEqual(prepared);
+    expect(memoryTableCounts(f.database.authority)).toEqual(before);
     expect(check()).toMatchObject({ preparation: prepared, writer: { agent_id: session.agent_id, session_id: session.session_id },
       valid_until: session.expires_at, writes_authorized: false });
     for (const invalid of [{ ...policy, schema_version: 2 }, { ...policy, policy_revision: "policy:2" },

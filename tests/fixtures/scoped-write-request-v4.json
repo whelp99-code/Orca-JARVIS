@@ -1,0 +1,88 @@
+{
+  "schema_version": 4,
+  "profile": "scoped-remember-v1",
+  "provider_instance_id": "provider:fixture",
+  "operation": "remember",
+  "source_request": {
+    "schema_version": 3,
+    "body_profile": "plain-text-v1",
+    "candidate_id": "memcand:pos:v1:3584d3f33f8ad1176aa85be1d157e02600bd92cbf4ddc0ca50797d4e15f65fc6",
+    "candidate_digest": "sha256:ace55b4b643f68b2df51a6342517f12242d9a881f0a54b1e212066dc2fc1d0c9",
+    "classification_digest": "sha256:c57ad2afdc2c51cda814873aacf7011ad4d73b8b72525c0eec5e37cda1f0e654",
+    "idempotency_key": "memidem:pos:v1:b823112439262f011cac8c4356ae51387cf71493a50eb9a41149abdeeef905a4",
+    "request_id": "memreq:pos:v3:fa479c896460e2af3a83ef07fdc41e28bd787204bd67a7ab029a95505648fd8f",
+    "request_digest": "sha256:fa479c896460e2af3a83ef07fdc41e28bd787204bd67a7ab029a95505648fd8f",
+    "operation": "remember",
+    "subject": "Task 27 verification",
+    "purpose": "personal_memory",
+    "sensitivity": "personal",
+    "retention_days": 3650,
+    "created_at": "2026-08-28T12:00:00.000Z",
+    "expires_at": "2026-08-29T12:00:00.000Z",
+    "expected_prior": null,
+    "receipt": {
+      "schema_version": 1,
+      "candidate_digest": "sha256:ace55b4b643f68b2df51a6342517f12242d9a881f0a54b1e212066dc2fc1d0c9",
+      "candidate_id": "memcand:pos:v1:3584d3f33f8ad1176aa85be1d157e02600bd92cbf4ddc0ca50797d4e15f65fc6",
+      "classification_digest": "sha256:c57ad2afdc2c51cda814873aacf7011ad4d73b8b72525c0eec5e37cda1f0e654",
+      "decision": "auto_staged",
+      "expires_at": "2026-08-29T12:00:00.000Z",
+      "issued_at": "2026-08-28T12:00:00.000Z",
+      "operation": "remember",
+      "principal_id": "principal:owner",
+      "receipt_id": "receipt:memory:9d496d6e3bbe8adb18d5b04d9abf683fa78db0da2e40f90bb41d90ff4e655792"
+    },
+    "receipt_digest": "sha256:8e70535e64ae2ac3b7c2e5a014d197b1cff4eee9320121c6e595e6ef8f877709",
+    "payload": {
+      "content": "첫 결정\r\n두 번째 결정\n반복\n반복 [^user]"
+    }
+  },
+  "preparation": {
+    "schema_version": 1,
+    "profile": "scoped-remember-preparation-v1",
+    "binding": {
+      "identity": {
+        "schema_version": 1,
+        "operation": "remember",
+        "candidate_id": "memcand:pos:v1:3584d3f33f8ad1176aa85be1d157e02600bd92cbf4ddc0ca50797d4e15f65fc6",
+        "candidate_digest": "sha256:ace55b4b643f68b2df51a6342517f12242d9a881f0a54b1e212066dc2fc1d0c9",
+        "classification_digest": "sha256:c57ad2afdc2c51cda814873aacf7011ad4d73b8b72525c0eec5e37cda1f0e654",
+        "source_digest": "sha256:a75294e1cce2370c5c17fe8cd3282bb08609a30851abfd9ce5b8fbe1046fde1f",
+        "owner": "principal:owner",
+        "projects": [
+          "project:shared-memory"
+        ],
+        "policy_revision": "policy:fixture"
+      },
+      "identity_digest": "sha256:5afd350ebcabbcbf83c7dfbcf98325239a3a6ace92e94d6cb9e7db932409956f",
+      "proposal_digest": "sha256:a8e0b7e7098af81b27fb1a3cf0cf529b22bbc5a440e87af1b0f9582277ce723c",
+      "idempotency_key": "memidem:scoped:v1:5afd350ebcabbcbf83c7dfbcf98325239a3a6ace92e94d6cb9e7db932409956f",
+      "control_request_id": "memory-scope-review:a8e0b7e7098af81b27fb1a3cf0cf529b22bbc5a440e87af1b0f9582277ce723c",
+      "control_receipt_id": "receipt:memory-scope-review:a8e0b7e7098af81b27fb1a3cf0cf529b22bbc5a440e87af1b0f9582277ce723c",
+      "command_digest": "sha256:934df1daaa42b5d21569eaf3df642bb34df20798b4716d90d912e3c8f5a07b69",
+      "expires_at": "2026-08-28T12:01:00.000Z",
+      "writes_authorized": false
+    },
+    "payload": {
+      "subject": "Task 27 verification",
+      "content": "첫 결정\r\n두 번째 결정\n반복\n반복 [^user]",
+      "subject_digest": "sha256:8db1697049f734b95744d2a566eb286ea9d32576002662bd385740763d605ceb",
+      "content_digest": "sha256:db16d7bc72fbac8aff908fdf51f14ca5356761bdcb5f45ddb0885e5e16caffad",
+      "purpose": "personal_memory",
+      "sensitivity": "personal",
+      "retention_days": 3650
+    },
+    "writes_authorized": false,
+    "preparation_digest": "sha256:0f600da0f707f81431e0b9aca13943db6e1d95b0f40bac5918d51b1a5cc537dd"
+  },
+  "writer": {
+    "principal_id": "principal:owner",
+    "agent_id": "agent:fixture",
+    "session_id": "session:fixture"
+  },
+  "created_at": "2026-08-28T12:00:00.000Z",
+  "expires_at": "2026-08-28T12:00:30.000Z",
+  "idempotency_key": "memidem:scoped:v4:39d170dad9f6a58395aea309cde8d6abfe442c3d85ee302fb8774e754887d90d",
+  "request_digest": "sha256:96509d7156ed7d9f614d92e22eea1ca5e701dae32c99006347aff11965b4a532",
+  "request_id": "memreq:scoped:v4:96509d7156ed7d9f614d92e22eea1ca5e701dae32c99006347aff11965b4a532"
+}

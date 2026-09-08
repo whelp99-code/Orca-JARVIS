@@ -250,4 +250,6 @@ export { prepareMemoryScopedWritePayload, prepareMemoryScopedWriteFromDispatch }
 export { publishAutomaticMemoryCandidate } from "./memory-auto-publication.js";
 export { createFileMemoryWriteScopeResolver, type MemoryWriteScopeResolver, type AuthorizedMemoryWriteScope } from "./memory-access-policy.js";
 export { prepareMemoryScopedWriteWithPolicy } from "./memory-scoped-write-policy.js";
-export { prepareMemoryScopedWriteRequest } from "./memory-scoped-write-request.js";
+export { prepareMemoryScopedWriteRequest, type MemoryScopedWriteRequestMaterial } from "./memory-scoped-write-request.js";
+
+export { parseMemoryScopedWriteRequestJson } from "./memory-scoped-write-codec.js";

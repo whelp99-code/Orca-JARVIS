@@ -1,14 +1,31 @@
+import { canonicalize } from "./canonical.js";
+import { parseMemoryScopedWriteRequestJson } from "./memory-scoped-write-codec.js";
 import { JarvisError, type AuthorityDb } from "./db.js";
 import type { MemoryWriteScopeResolver } from "./memory-access-policy.js";
 import { prepareMemoryScopedWriteWithPolicy } from "./memory-scoped-write-policy.js";
 import { resolveSpooledDispatch, type SpooledDispatchInput } from "./memory-outbox-dispatch-request.js";
 import { memoryHash } from "./memory-candidate-values.js";
 
+export interface MemoryScopedWriteRequestMaterial {
+  readonly schema_version: 4;
+  readonly profile: "scoped-remember-v1";
+  readonly provider_instance_id: string;
+  readonly operation: "remember";
+  readonly source_request: ReturnType<typeof resolveSpooledDispatch>;
+  readonly preparation: ReturnType<typeof prepareMemoryScopedWriteWithPolicy>["preparation"];
+  readonly writer: ReturnType<typeof prepareMemoryScopedWriteWithPolicy>["writer"];
+  readonly created_at: string;
+  readonly expires_at: string;
+  readonly idempotency_key: string;
+  readonly request_digest: string;
+  readonly request_id: string;
+}
+
 /** Build the additive scoped request material. This does not consume a review,
  * enqueue or call a provider. Only the versioned acceptance path may dispatch it. */
 export function prepareMemoryScopedWriteRequest(authority: AuthorityDb, proposal: unknown,
   reviewRequestId: string, dispatch: Omit<SpooledDispatchInput, "candidate_id" | "now">,
-  resolveWriteScope: MemoryWriteScopeResolver, providerInstanceId: string, now: Date) {
+  resolveWriteScope: MemoryWriteScopeResolver, providerInstanceId: string, now: Date): MemoryScopedWriteRequestMaterial {
   if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/.test(providerInstanceId)) {
     throw new JarvisError("MEMORY_SCOPED_REQUEST_INVALID");
   }
@@ -33,6 +50,8 @@ export function prepareMemoryScopedWriteRequest(authority: AuthorityDb, proposal
       expires_at: new Date(Math.min(Date.parse(checked.valid_until), Date.parse(sourceRequest.expires_at))).toISOString(),
       idempotency_key: `memidem:scoped:v4:${idempotency.slice(7)}` });
     const digest = memoryHash("orca-jarvis/memory-scoped-write-request/v4\0", base);
-    return Object.freeze({ ...base, request_digest: digest, request_id: `memreq:scoped:v4:${digest.slice(7)}` });
+    const request = Object.freeze({ ...base, request_digest: digest, request_id: `memreq:scoped:v4:${digest.slice(7)}` });
+    parseMemoryScopedWriteRequestJson(canonicalize(request), providerInstanceId, new Date(at));
+    return request;
   })();
 }
