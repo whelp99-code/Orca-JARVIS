@@ -70,6 +70,10 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
   constructor(private readonly options: CompactorOptions) {}
 
   async compact(request: MemoryCompactionRequest): Promise<MemoryCompactionObservation> {
+    return this.options.runtime.quiesce("memory_compaction", () => this.compactQuiesced(request));
+  }
+
+  private async compactQuiesced(request: MemoryCompactionRequest): Promise<MemoryCompactionObservation> {
     this.assertRequest(request);
     const authority = this.options.runtime.authorityDb();
     const sourceMetadata = statSync(authority.filename, { bigint: true });
@@ -137,54 +141,54 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
   }
 
   recover(purgeId: string): Promise<MemoryCompactionRecovery> {
-    return recoverMemoryCompaction(this.options.runtime, this.options.scanner, purgeId);
+    return this.options.runtime.quiesce("memory_compaction", () =>
+      recoverMemoryCompaction(this.options.runtime, this.options.scanner, purgeId));
   }
 
   private async swap(input: SwapRequest): Promise<SwapObservation> {
-    return this.options.runtime.quiesce("memory_compaction", async lease => {
-      const authority = lease.authority;
-      authority.db.pragma("wal_checkpoint(TRUNCATE)");
-      authority.close();
-      removeSidecars(authority.filename);
-      const oldInode = (() => {
-        try {
-          renameSync(input.fresh_path, authority.filename);
-          syncPath(dirname(authority.filename), true);
-          return this.options.runtime.observeOldInode(input.old_device, input.old_inode);
-        } catch (error) {
-          authority.reopen();
-          throw error;
-        }
-      })();
-      authority.reopen();
-      this.options.runtime.acknowledgeGeneration(input.result_generation);
-      const active = statSync(authority.filename, { bigint: true });
-      const oldFdCount = oldInode.fd_count;
-      authority.db.prepare(
-        `UPDATE memory_compaction_runs SET state='draining',result_device=?,result_inode=?,
-         logical_result_digest=?,integrity_check='ok',foreign_key_error_count=0,
-         physical_scan_digest=?,updated_at=? WHERE purge_id=?`,
-      ).run(active.dev.toString(), active.ino.toString(), input.logical_result_digest,
-        input.physical_scan_digest, input.observed_at, input.purge_id);
-      const drainDigest = digest({ purge_id: input.purge_id,
-        source_device: input.old_device.toString(), source_inode: input.old_inode.toString(),
-        old_fd_count: oldFdCount, holders: oldInode.holders,
-        acknowledged_generation: input.result_generation });
-      if (oldFdCount !== 0) throw new AuthorityError("MEMORY_OLD_DATABASE_FD_ACTIVE");
-      for (const process of this.options.runtime.registeredProcesses()) {
-        authority.db.prepare(
-          `INSERT INTO memory_reader_drain_observations(
-            purge_id,process_id,process_start_token,database_device,database_inode,
-            registered_leases,proc_fd_count,acknowledged_generation,observed_at
-           ) VALUES(?,?,?,?,?,0,?,?,?)`,
-        ).run(input.purge_id, process.pid, process.start_token,
-          input.old_device.toString(), input.old_inode.toString(), oldFdCount,
-          input.result_generation, input.observed_at);
+    const authority = this.options.runtime.authorityDb();
+    authority.db.pragma("wal_checkpoint(TRUNCATE)");
+    authority.close();
+    removeSidecars(authority.filename);
+    const oldInode = (() => {
+      try {
+        renameSync(input.fresh_path, authority.filename);
+        syncPath(dirname(authority.filename), true);
+        return this.options.runtime.observeOldInode(input.old_device, input.old_inode);
+      } catch (error) {
+        authority.reopen();
+        throw error;
       }
-      return { result_device: active.dev.toString(), result_inode: active.ino.toString(),
-        old_fd_count: 0, reader_drain_digest: drainDigest };
-    });
+    })();
+    authority.reopen();
+    this.options.runtime.acknowledgeGeneration(input.result_generation);
+    const active = statSync(authority.filename, { bigint: true });
+    const oldFdCount = oldInode.fd_count;
+    authority.db.prepare(
+      `UPDATE memory_compaction_runs SET state='draining',result_device=?,result_inode=?,
+       logical_result_digest=?,integrity_check='ok',foreign_key_error_count=0,
+       physical_scan_digest=?,updated_at=? WHERE purge_id=?`,
+    ).run(active.dev.toString(), active.ino.toString(), input.logical_result_digest,
+      input.physical_scan_digest, input.observed_at, input.purge_id);
+    const drainDigest = digest({ purge_id: input.purge_id,
+      source_device: input.old_device.toString(), source_inode: input.old_inode.toString(),
+      old_fd_count: oldFdCount, holders: oldInode.holders,
+      acknowledged_generation: input.result_generation });
+    if (oldFdCount !== 0) throw new AuthorityError("MEMORY_OLD_DATABASE_FD_ACTIVE");
+    for (const process of this.options.runtime.registeredProcesses()) {
+      authority.db.prepare(
+        `INSERT INTO memory_reader_drain_observations(
+          purge_id,process_id,process_start_token,database_device,database_inode,
+          registered_leases,proc_fd_count,acknowledged_generation,observed_at
+         ) VALUES(?,?,?,?,?,0,?,?,?)`,
+      ).run(input.purge_id, process.pid, process.start_token,
+        input.old_device.toString(), input.old_inode.toString(), oldFdCount,
+        input.result_generation, input.observed_at);
+    }
+    return { result_device: active.dev.toString(), result_inode: active.ino.toString(),
+      old_fd_count: 0, reader_drain_digest: drainDigest };
   }
+
 
   private assertRequest(request: MemoryCompactionRequest): void {
     const authority = this.options.runtime.authorityDb();

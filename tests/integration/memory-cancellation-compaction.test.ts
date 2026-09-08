@@ -1,7 +1,8 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { expect, it } from "vitest";
+import { expect, it, vi } from "vitest";
 import { MemoryManagedSurfaceScanner } from "../../src/memory-managed-surface-scanner.js";
+import * as freshBuilder from "../../src/memory-authority-fresh-builder.js";
 import { collectCancellationMaterial } from "../../src/memory-cancellation-material.js";
 import { MemoryCorrectionCancellationResultStore } from "../../src/memory-correction-cancellation-result-store.js";
 import { cancellationResultFixture } from "../fixtures/memory-cancellation-result.js";
@@ -45,4 +46,51 @@ it("preserves cancellation evidence across physical DB replacement under the exi
     expect(f.db.db.prepare("SELECT accepted_through_sequence FROM memory_effect_dispatch_cursor").get())
       .toEqual({ accepted_through_sequence: 0 });
   } finally { await f.close(); }
+});
+
+
+it("rejects a runtime writer after fresh DB construction so key revocation cannot be silently lost", async () => {
+  const f = await cancellationResultFixture();
+  const build = freshBuilder.buildFreshAuthority;
+  let observed: unknown;
+  const spy = vi.spyOn(freshBuilder, "buildFreshAuthority").mockImplementation(async (...args) => {
+    const result = await build(...args);
+    try {
+      await f.databaseRuntime.write(db => db.db.prepare("UPDATE memory_provider_proof_keys SET state='revoked'").run());
+    } catch (error) { observed = error; }
+    return result;
+  });
+  try {
+    await f.runtime.compactor.compact({ lane: "correction", lane_id: f.record.lane_id,
+      target_manifest_digest: f.intent.original_delegation.target_manifest_digest,
+      scope_digest: f.intent.original_delegation.scope_digest,
+      tombstone: { sequence: f.intent.tombstone.sequence, set_root: f.intent.tombstone.set_root },
+      provider_inventory: providerSurfaceInventory(), reingress_guards: reingressGuardObservations() });
+    expect(observed).toMatchObject({ code: "AUTHORITY_DATABASE_QUIESCING" });
+    await f.databaseRuntime.write(db => db.db.prepare("UPDATE memory_provider_proof_keys SET state='revoked'").run());
+    expect(f.db.db.prepare("SELECT state FROM memory_provider_proof_keys").all()).toEqual([{ state: "revoked" }]);
+  } finally { spy.mockRestore(); await f.close(); }
+});
+
+it("drains an existing runtime writer before copying its committed state", async () => {
+  const f = await cancellationResultFixture();
+  let release!: () => void;
+  const gate = new Promise<void>(resolve => { release = resolve; });
+  let entered!: () => void;
+  const ready = new Promise<void>(resolve => { entered = resolve; });
+  const writer = f.databaseRuntime.write(async db => {
+    entered(); await gate;
+    db.db.prepare("UPDATE memory_provider_proof_keys SET state='revoked'").run();
+  });
+  try {
+    await ready;
+    const compaction = f.runtime.compactor.compact({ lane: "correction", lane_id: f.record.lane_id,
+      target_manifest_digest: f.intent.original_delegation.target_manifest_digest,
+      scope_digest: f.intent.original_delegation.scope_digest,
+      tombstone: { sequence: f.intent.tombstone.sequence, set_root: f.intent.tombstone.set_root },
+      provider_inventory: providerSurfaceInventory(), reingress_guards: reingressGuardObservations() });
+    release();
+    await Promise.all([writer, compaction]);
+    expect(f.db.db.prepare("SELECT state FROM memory_provider_proof_keys").all()).toEqual([{ state: "revoked" }]);
+  } finally { release(); await writer; await f.close(); }
 });
