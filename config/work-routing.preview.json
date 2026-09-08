@@ -1,0 +1,31 @@
+{
+  "schema_version": 1,
+  "policy_id": "dev-wiki-routing-preview",
+  "revision": 1,
+  "rules": [
+    {
+      "id": "code",
+      "keywords": ["/home/jm/orca/projects/", "Orca-JARVIS", "second-brain-app"],
+      "executor_ids": ["claude-code", "cursor"],
+      "record_stores": ["repository", "dev-wiki-decisions"]
+    },
+    {
+      "id": "mail",
+      "keywords": ["메일", "수신", "발신", "회신", "첨부"],
+      "executor_ids": ["mail-intelligence"],
+      "record_stores": ["second-brain"]
+    },
+    {
+      "id": "sangfor",
+      "keywords": ["Sangfor", "ITAC", "HCI", "aDesk", "NGAF"],
+      "executor_ids": ["sangfor-os", "sangfor-engineer-mcp"],
+      "record_stores": ["second-brain"]
+    },
+    {
+      "id": "document",
+      "keywords": ["제안서", "견적서", "기술제안", "hwpx", "pptx", "docx"],
+      "executor_ids": ["cowork"],
+      "record_stores": ["second-brain"]
+    }
+  ]
+}
