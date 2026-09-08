@@ -32,8 +32,12 @@ export function createProductionMemoryAccessClaim(authority: AuthorityDb,
   if (authorize === undefined) return fail();
   return (request: MemoryAccessRequest, at: Date) => {
     // A resolver must not change the exact request that will be signed.
+    const observed = at.getTime();
+    if (!Number.isFinite(observed)) return fail();
+    const resolverClock = new Date(observed);
     const expected = requestDigest(request);
-    const scope = resolveScope(at, request);
+    const scope = resolveScope(resolverClock, request);
+    if (resolverClock.getTime() !== observed || at.getTime() !== observed) return fail();
     if (scope === undefined || scope.principal_id !== "principal:owner"
       || ![scope.agent_id, scope.session_id, scope.policy_revision].every(value => id.test(value))
       || scope.projects.length > 64 || new Set(scope.projects).size !== scope.projects.length
@@ -42,11 +46,13 @@ export function createProductionMemoryAccessClaim(authority: AuthorityDb,
       || !Number.isFinite(at.getTime()) || !Number.isFinite(Date.parse(scope.valid_until))
       || scope.valid_until !== new Date(scope.valid_until).toISOString() || Date.parse(scope.valid_until) <= at.getTime()
       || requestDigest(request) !== expected) return fail();
-    const { fence, private_key: key } = authorize(at);
+    if (resolverClock.getTime() !== observed || at.getTime() !== observed) return fail();
+    const issuedAt = new Date(observed);
+    const { fence, private_key: key } = authorize(issuedAt);
     const body = { schema_version: 1, provider_instance_id: fence.provider_instance_id,
       principal_id: scope.principal_id, agent_id: scope.agent_id, session_id: scope.session_id,
       projects: [...scope.projects], policy_revision: scope.policy_revision, purpose: "memory_read",
-      request_digest: expected, read_fence_digest: fence.fence_digest, issued_at: at.toISOString(),
+      request_digest: expected, read_fence_digest: fence.fence_digest, issued_at: issuedAt.toISOString(),
       expires_at: new Date(Math.min(Date.parse(scope.valid_until), Date.parse(fence.expires_at))).toISOString(),
       nonce: `nonce:${randomUUID()}`, signing_key_id: fence.signing_key_id };
     const signature = sign(null, Buffer.from("orca-jarvis/memory-access-claim/v1\0" + canonicalize(body)), key).toString("base64url");

@@ -39,3 +39,15 @@ it("refuses expired scopes, duplicate projects and resolver mutation of the requ
   const issue = createProductionMemoryAccessClaim(db.authority, config, () => { mutable.arguments.id = "wiki/other"; return scope; });
   expect(() => issue(mutable, OUTBOX_NOW)).toThrow("MEMORY_ACCESS_SCOPE_UNAVAILABLE");
 });
+
+it("rejects a resolver that rewinds the issuance clock to revive an expired scope", async () => {
+  const db = await memoryDatabase(); databases.push(db);
+  const { config } = memoryReadFenceFixture(db);
+  const at = new Date(OUTBOX_NOW.getTime() + 11_000);
+  const issue = createProductionMemoryAccessClaim(db.authority, config, clock => {
+    clock.setTime(OUTBOX_NOW.getTime());
+    return scope;
+  });
+  expect(() => issue(request, at)).toThrow("MEMORY_ACCESS_SCOPE_UNAVAILABLE");
+  expect(at.getTime()).toBe(OUTBOX_NOW.getTime() + 11_000);
+});
