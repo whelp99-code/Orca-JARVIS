@@ -261,3 +261,5 @@ export { publishMemoryScopedWriteRequest, type MemoryScopedPublicationOptions } 
 export { registerMemoryScopedOutbox } from "./memory-scoped-outbox.js";
 
 export { readCurrentMemoryScopedOutbox } from "./memory-scoped-outbox-reader.js";
+
+export { claimMemoryScopedOutbox, markMemoryScopedOutboxDispatch, recoverMemoryScopedOutboxDispatches, type MemoryScopedOutboxLease } from "./memory-scoped-outbox-worker.js";
