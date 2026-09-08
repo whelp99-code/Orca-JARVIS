@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { expect, it, vi } from "vitest";
+import { MemoryAuthorityCompactor } from "../../src/memory-authority-compactor.js";
 import { AuthorityDb } from "../../src/db.js";
 import { AuthorityDatabaseRuntime } from "../../src/authority-database-runtime.js";
 import { MemoryManagedSurfaceScanner } from "../../src/memory-managed-surface-scanner.js";
@@ -155,4 +156,45 @@ it("rejects absent or currently revoked provider results before starting local c
     expect(f.db.db.prepare("SELECT count(*) AS n FROM memory_purge_jobs").get()).toEqual({ n: 0 });
     expect(existsSync(f.spoolPath)).toBe(true);
   } finally { await f.close(); }
+});
+
+it.each(["before_build", "after_disposal"] as const)("rebuilds the same cancellation after %s interruption", async point => {
+  const f = await cancellationResultFixture();
+  const spy = point === "before_build"
+    ? vi.spyOn(freshBuilder, "buildFreshAuthority").mockRejectedValueOnce(new Error("STOP_BEFORE_SWAP"))
+    : vi.spyOn(f.runtime.compactor as any, "swap").mockRejectedValueOnce(new Error("STOP_BEFORE_SWAP"));
+  try {
+    new MemoryCorrectionCancellationResultStore(f.db, f.runtime.clock).record(f.record.correction_id, f.result);
+    const inode = statSync(f.db.filename).ino;
+    await expect(f.runtime.compactor.compactCancellation(f.record.correction_id)).rejects.toThrow("STOP_BEFORE_SWAP");
+    expect(statSync(f.db.filename).ino).toBe(inode);
+    expect(existsSync(f.spoolPath)).toBe(point === "before_build");
+    const result = await f.runtime.compactor.recoverCancellation(f.record.correction_id);
+    expect(statSync(f.db.filename).ino).not.toBe(inode);
+    expect(await f.runtime.compactor.recoverCancellation(f.record.correction_id)).toEqual(result);
+    expect(f.db.db.prepare("SELECT count(*) AS n FROM memory_purge_jobs").get()).toEqual({ n: 1 });
+    expect(f.db.db.prepare("SELECT count(*) AS n FROM memory_cancellation_compaction_inputs").get()).toEqual({ n: 1 });
+    expect(f.db.db.prepare("SELECT count(*) AS n FROM memory_cancellation_compaction_receipts").get()).toEqual({ n: 1 });
+    expect(f.db.db.prepare("SELECT accepted_through_sequence FROM memory_effect_dispatch_cursor").get()).toEqual({ accepted_through_sequence: 0 });
+  } finally { spy.mockRestore(); await f.close(); }
+});
+
+
+it("rejects a changed recovery layout before rebuilding and preserves the original input", async () => {
+  const f = await cancellationResultFixture();
+  const spy = vi.spyOn(freshBuilder, "buildFreshAuthority").mockRejectedValueOnce(new Error("STOP_BEFORE_SWAP"));
+  try {
+    new MemoryCorrectionCancellationResultStore(f.db, f.runtime.clock).record(f.record.correction_id, f.result);
+    await expect(f.runtime.compactor.compactCancellation(f.record.correction_id)).rejects.toThrow("STOP_BEFORE_SWAP");
+    const before = f.db.db.prepare("SELECT * FROM memory_cancellation_compaction_inputs").all();
+    const layout = { spool_root: f.runtime.spool_root, state_root: join(f.root, "different-state"),
+      dist_root: join(f.root, "dist"), backup_root: join(f.root, "backups"), restore_root: join(f.root, "restore") };
+    const changed = new MemoryAuthorityCompactor({ runtime: f.databaseRuntime, layout, clock: f.runtime.clock,
+      scanner: new MemoryManagedSurfaceScanner({ authority: f.db, layout }) });
+    await expect(changed.recoverCancellation(f.record.correction_id)).rejects.toThrow("MEMORY_CANCELLATION_REBUILD_BINDING_INVALID");
+    expect(f.db.db.prepare("SELECT * FROM memory_cancellation_compaction_inputs").all()).toEqual(before);
+    expect(spy).toHaveBeenCalledTimes(1);
+    expect(existsSync(f.spoolPath)).toBe(true);
+    await f.runtime.compactor.recoverCancellation(f.record.correction_id);
+  } finally { spy.mockRestore(); await f.close(); }
 });

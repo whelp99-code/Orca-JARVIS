@@ -38,8 +38,34 @@ export function cancellationCompactionRequest(authority: AuthorityDb, correction
 }
 
 export function beginCancellationCompaction(authority: AuthorityDb, request: CancellationCompactionRequest,
-  start: CompactionStart, layout: MemoryRuntimeLayout): void {
+  start: CompactionStart, layout: MemoryRuntimeLayout, resume = false): void {
   authority.db.transaction(() => {
+    if (resume) {
+      const prior = authority.db.prepare(`SELECT i.*,r.source_generation,r.result_generation,r.source_device,r.source_inode,
+        r.result_device,r.result_inode,r.state AS run_state,p.state AS job_state,p.lane,p.lane_id,
+        p.target_manifest_digest,p.scope_digest,p.tombstone_sequence,p.tombstone_set_root
+        FROM memory_cancellation_compaction_inputs i JOIN memory_compaction_runs r ON r.purge_id=i.purge_id
+        JOIN memory_purge_jobs p ON p.purge_id=i.purge_id WHERE i.purge_id=?`).get(start.purge_id) as
+        Record<string, unknown> | undefined;
+      if (!prior || prior.correction_id !== request.cancellation.correction_id
+        || prior.result_digest !== request.cancellation.result_digest || prior.layout_json !== canonicalize(layout)
+        || prior.source_generation !== start.source_generation || prior.result_generation !== start.result_generation
+        || prior.source_device !== start.source_device || prior.source_inode !== start.source_inode
+        || prior.result_device !== null || prior.result_inode !== null
+        || !["building", "reconciling"].includes(String(prior.run_state))
+        || !["compacting", "reconciling"].includes(String(prior.job_state))
+        || prior.lane !== request.lane || prior.lane_id !== request.lane_id
+        || prior.target_manifest_digest !== request.target_manifest_digest || prior.scope_digest !== request.scope_digest
+        || prior.tombstone_sequence !== request.tombstone.sequence || prior.tombstone_set_root !== request.tombstone.set_root
+        || authority.db.prepare("SELECT 1 FROM memory_cancellation_compaction_receipts WHERE purge_id=?").get(start.purge_id))
+        throw new JarvisError("MEMORY_CANCELLATION_REBUILD_BINDING_INVALID");
+      authority.db.prepare(`UPDATE memory_purge_jobs SET state='compacting',lease_owner='memory-authority-compactor',
+        lease_fence=lease_fence+1,lease_expires_at=?,updated_at=? WHERE purge_id=?`)
+        .run(new Date(Date.parse(start.created_at) + 60_000).toISOString(), start.created_at, start.purge_id);
+      authority.db.prepare(`UPDATE memory_compaction_runs SET state='building',failure_code=NULL,
+        logical_source_digest=?,updated_at=? WHERE purge_id=?`).run(start.source_digest, start.created_at, start.purge_id);
+      return;
+    }
     beginCompactionRun(authority, request, start);
     authority.db.prepare("INSERT INTO memory_cancellation_compaction_inputs VALUES(?,?,?,?,?)")
       .run(start.purge_id, request.cancellation.correction_id, request.cancellation.result_digest,

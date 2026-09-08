@@ -85,11 +85,15 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
       const authority = this.options.runtime.authorityDb();
       const request = cancellationCompactionRequest(authority, correctionId, this.options.clock ?? (() => new Date()));
       const row = authority.db.prepare(`SELECT i.purge_id,r.source_device,r.source_inode,r.result_device,r.result_inode,
-        r.result_generation,r.physical_scan_digest,r.reader_drain_digest FROM memory_cancellation_compaction_inputs i
+        r.source_generation,r.result_generation,r.physical_scan_digest,r.reader_drain_digest FROM memory_cancellation_compaction_inputs i
         JOIN memory_compaction_runs r ON r.purge_id=i.purge_id WHERE i.correction_id=?`).get(correctionId) as
         { purge_id: string; source_device: string; source_inode: string; result_device: string | null; result_inode: string | null;
-          result_generation: number; physical_scan_digest: string; reader_drain_digest: string | null } | undefined;
+          source_generation: number; result_generation: number; physical_scan_digest: string; reader_drain_digest: string | null } | undefined;
       const active = statSync(authority.filename, { bigint: true });
+      if (row && row.result_device === null && row.result_inode === null
+        && row.source_device === active.dev.toString() && row.source_inode === active.ino.toString()
+        && row.source_generation === this.options.runtime.activeGeneration().generation)
+        return this.compactQuiesced(request, true);
       if (!row || row.result_device !== active.dev.toString() || row.result_inode !== active.ino.toString()
         || row.result_generation !== this.options.runtime.activeGeneration().generation)
         throw new AuthorityError("MEMORY_CANCELLATION_COMPACTION_NOT_SWAPPED");
@@ -114,8 +118,8 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
   }
 
   private compactQuiesced(request: MemoryCompactionRequest): Promise<MemoryCompactionObservation>;
-  private compactQuiesced(request: CancellationCompactionRequest): Promise<CancellationLocalCompaction>;
-  private async compactQuiesced(request: MemoryCompactionRequest | CancellationCompactionRequest): Promise<MemoryCompactionObservation | CancellationLocalCompaction> {
+  private compactQuiesced(request: CancellationCompactionRequest, resume?: boolean): Promise<CancellationLocalCompaction>;
+  private async compactQuiesced(request: MemoryCompactionRequest | CancellationCompactionRequest, resume = false): Promise<MemoryCompactionObservation | CancellationLocalCompaction> {
     this.assertRequest(request);
     const authority = this.options.runtime.authorityDb();
     const sourceMetadata = statSync(authority.filename, { bigint: true });
@@ -129,7 +133,7 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
       source_generation: sourceGeneration, result_generation: sourceGeneration + 1,
       source_device: sourceMetadata.dev.toString(), source_inode: sourceMetadata.ino.toString(),
       source_digest: digest(readFileSync(authority.filename)), created_at: createdAt };
-    if ("cancellation" in request) beginCancellationCompaction(authority, request, start, this.options.layout);
+    if ("cancellation" in request) beginCancellationCompaction(authority, request, start, this.options.layout, resume);
     else beginCompaction(authority, request, start);
     const freshPath = join(dirname(authority.filename),
       `.${basename(authority.filename)}.${purgeDigest.slice(7, 23)}.fresh`);
