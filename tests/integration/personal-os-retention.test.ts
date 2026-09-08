@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it } from "vitest";
 import { PersonalOsRuntime } from "../../src/personal-os-runtime.js";
-import { closePersonalDb, personalDb, T0, T1, T2, T5 } from "./personal-operations-test-helpers.js";
+import { closePersonalDb, personalDb, T0, T1, T2, T3, T5 } from "./personal-operations-test-helpers.js";
 import type { AuthorityDb } from "../../src/index.js";
 import type { RetentionAdapterContext } from "../../src/personal-os-retention.js";
 
@@ -11,6 +11,49 @@ afterEach(() => {
 });
 
 describe("PersonalOsRuntime retention owner", () => {
+  it("bounds claims and caps leases at job expiry without accepting a future clock", async () => {
+    const db = await personalDb(); open.push(db);
+    const runtime = new PersonalOsRuntime({ db: db.db, now: () => new Date(T1) });
+    for (let i = 0; i < 101; i++) runtime.retention.createJob({ jobId: `batch-${i}`, jobKey: `batch-${i}`,
+      idempotencyKey: `batch-${i}`, dataClass: "notification", notBefore: T0, expiresAt: T2, createdAt: T0 });
+    expect(() => runtime.retention.claimDue({ now: T2, leaseExpiresAt: T3 })).toThrow("E_CLOCK_INVALID");
+    expect(runtime.retention.claimDue({ now: T1, leaseExpiresAt: T3 })).toHaveLength(100);
+    expect(db.db.prepare("SELECT DISTINCT lease_expires_at FROM retention_jobs WHERE state='claimed'").all())
+      .toEqual([{ lease_expires_at: T2 }]);
+    expect(runtime.retention.claimDue({ now: T1, leaseExpiresAt: T3 })).toHaveLength(1);
+  });
+
+  it("rolls all claims back when one job update fails", async () => {
+    const db = await personalDb(); open.push(db);
+    const runtime = new PersonalOsRuntime({ db: db.db, now: () => new Date(T1) });
+    for (const id of ["a", "b"]) runtime.retention.createJob({ jobId: id, jobKey: id, idempotencyKey: id,
+      dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T0 });
+    db.db.exec("CREATE TRIGGER retention_test_abort BEFORE UPDATE ON retention_jobs WHEN NEW.job_id='b' " +
+      "BEGIN SELECT RAISE(ABORT,'claim test failure'); END");
+    expect(() => runtime.retention.claimDue({ now: T1, leaseExpiresAt: T2 })).toThrow("claim test failure");
+    expect(db.db.prepare("SELECT DISTINCT state,lease_fence FROM retention_jobs").all())
+      .toEqual([{ state: "pending", lease_fence: 0 }]);
+  });
+
+  it("reclaims an expired process lease with a higher fence and rejects the old executor", async () => {
+    const db = await personalDb(); open.push(db);
+    let now = T1; let calls = 0;
+    const adapters = { notification: () => {
+      calls++; return { scanned: 0, eligible: 0, deleted: 0, retained: 0, error_count: 0 };
+    } };
+    const first = new PersonalOsRuntime({ db: db.db, now: () => new Date(now), adapters });
+    first.retention.createJob({ jobId: "restart", jobKey: "restart", idempotencyKey: "restart",
+      dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T0 });
+    expect(first.retention.claimDue({ now: T1, leaseExpiresAt: T2 })).toEqual(["restart"]);
+    const second = new PersonalOsRuntime({ db: db.db, now: () => new Date(now), adapters });
+    expect(second.retention.claimDue({ now: T1, leaseExpiresAt: T2 })).toEqual([]);
+    now = T2;
+    expect(second.retention.claimDue({ now: T2, leaseExpiresAt: T3 })).toEqual(["restart"]);
+    expect(() => first.retention.executeClaimed({ jobId: "restart", now: T2, cutoff: T0 })).toThrow("E_RETENTION_CLAIM");
+    expect(second.retention.executeClaimed({ jobId: "restart", now: T2, cutoff: T0 }).fence).toBe(2);
+    expect(calls).toBe(1);
+  });
+
   it("does not report completion when the data class has no adapter", async () => {
     const db = await personalDb();
     open.push(db);
@@ -159,6 +202,7 @@ describe("PersonalOsRuntime retention owner", () => {
     runtime.retention.createJob({ jobId: "waited", jobKey: "waited", idempotencyKey: "waited",
       dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T0 });
     runtime.retention.claimDue({ now: T1, leaseExpiresAt: T2 });
+    reads = 0;
     expect(() => runtime.retention.executeClaimed({ jobId: "waited", now: T1, cutoff: T0 })).toThrow("E_RETENTION_CLAIM");
     expect(calls).toBe(0);
   });

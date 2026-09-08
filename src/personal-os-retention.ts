@@ -77,22 +77,30 @@ export class RetentionRuntime {
   }
 
   claimDue(input: { readonly now: string; readonly leaseExpiresAt: string }): readonly string[] {
-    const rows = this.db
-      .prepare(
-        "SELECT job_id FROM retention_jobs WHERE state='pending' AND julianday(?)>=julianday(not_before) AND " +
-          "julianday(?)<julianday(expires_at) ORDER BY job_id",
-      )
-      .all(input.now, input.now) as readonly { readonly job_id: string }[];
-    const claimed: string[] = [];
-    for (const row of rows) {
-      const result = this.db
-        .prepare(
-          "UPDATE retention_jobs SET state='claimed',lease_owner=?,lease_fence=1,lease_expires_at=?,updated_at=? WHERE job_id=? AND state='pending'",
-        )
-        .run(this.owner, input.leaseExpiresAt, input.now, row.job_id);
-      if (result.changes === 1) claimed.push(row.job_id);
-    }
-    return claimed;
+    return this.db.transaction(() => {
+      const now = this.now();
+      if (!validTimestamp(input.now) || !validTimestamp(input.leaseExpiresAt) || input.now > now
+        || input.leaseExpiresAt <= now || Date.parse(input.leaseExpiresAt) - Date.parse(now) > 900000) {
+        throw new PersonalOsError("E_CLOCK_INVALID");
+      }
+      const rows = this.db.prepare(
+        "SELECT job_id,state,lease_fence,expires_at FROM retention_jobs WHERE not_before<=? AND expires_at>? AND updated_at<=? " +
+        "AND (state='pending' OR (state='claimed' AND lease_expires_at<=? AND lease_owner<>?)) " +
+        "ORDER BY not_before,job_id LIMIT 100",
+      ).all(now, now, now, now, this.owner) as Array<{
+        job_id: string; state: string; lease_fence: number; expires_at: string;
+      }>;
+      const claimed: string[] = [];
+      for (const row of rows) {
+        const result = this.db.prepare(
+          "UPDATE retention_jobs SET state='claimed',lease_owner=?,lease_fence=lease_fence+1,lease_expires_at=?,updated_at=? " +
+          "WHERE job_id=? AND state=? AND lease_fence=?",
+        ).run(this.owner, input.leaseExpiresAt < row.expires_at ? input.leaseExpiresAt : row.expires_at,
+          now, row.job_id, row.state, row.lease_fence);
+        if (result.changes === 1) claimed.push(row.job_id);
+      }
+      return claimed;
+    }).immediate();
   }
 
   executeClaimed(input: { readonly jobId: string; readonly now: string; readonly cutoff: string }): RetentionReceipt {
