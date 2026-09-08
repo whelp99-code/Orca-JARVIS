@@ -259,3 +259,5 @@ export { MemoryScopedWriteSpool } from "./memory-scoped-write-spool.js";
 export { publishMemoryScopedWriteRequest, type MemoryScopedPublicationOptions } from "./memory-scoped-write-publication.js";
 
 export { registerMemoryScopedOutbox } from "./memory-scoped-outbox.js";
+
+export { readCurrentMemoryScopedOutbox } from "./memory-scoped-outbox-reader.js";

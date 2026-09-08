@@ -26,6 +26,18 @@ export function stageMemoryScopeReview(authority: AuthorityDb, value: unknown, n
 /** Read a current signed scope review. It does not redeem a receipt or authorize
  * dispatch; the later versioned write path must consume the same review once. */
 export function readApprovedMemoryScopeReview(authority: AuthorityDb, value: unknown, requestId: string, now: Date) {
+  return readCurrentMemoryScopeReview(authority, value, requestId, now);
+}
+
+/** Revalidate a review consumed by this exact registered outbox. Never permits
+ * reuse by the preparation API or consumes another receipt. */
+export function readRegisteredMemoryScopeReview(authority: AuthorityDb, value: unknown,
+  requestId: string, outboxId: string, now: Date) {
+  return readCurrentMemoryScopeReview(authority, value, requestId, now, outboxId);
+}
+
+function readCurrentMemoryScopeReview(authority: AuthorityDb, value: unknown,
+  requestId: string, now: Date, outboxId?: string) {
   return authority.db.transaction(() => {
     const proposal = validateMemoryCandidateScopeProposal(authority, value, now);
     const command = new ControlPlane(authority).get(requestId);
@@ -48,11 +60,18 @@ export function readApprovedMemoryScopeReview(authority: AuthorityDb, value: unk
       || !verifyCommandApproval(receipt, row.public_key_pem, now)) return fail();
     const revoked = authority.db.prepare(`SELECT 1 FROM control_command_revocations WHERE request_id=? OR receipt_id=?
       UNION ALL SELECT 1 FROM authority_revocations WHERE reference IN (?,?,?,?,?,?)
-      UNION ALL SELECT 1 FROM control_command_redemptions WHERE request_id=?
-      UNION ALL SELECT 1 FROM memory_scoped_outbox_bindings WHERE scope_review_request_id=? OR scope_review_receipt_id=? LIMIT 1`)
+      UNION ALL SELECT 1 FROM control_command_redemptions WHERE request_id=? LIMIT 1`)
       .get(requestId, receipt.receipt_id, requestId, receipt.receipt_id, command.command_digest, receipt.key_id,
-        receipt.nonce, receipt.signature, requestId, requestId, receipt.receipt_id);
+        receipt.nonce, receipt.signature, requestId);
     if (revoked !== undefined) return fail();
+    const consumed = authority.db.prepare(`SELECT b.outbox_id,b.candidate_id,b.scope_command_digest,b.scope_review_request_id,b.scope_review_receipt_id,o.request_profile
+      FROM memory_scoped_outbox_bindings b JOIN memory_outbox o ON o.outbox_id=b.outbox_id
+      WHERE b.scope_review_request_id=? OR b.scope_review_receipt_id=?`).get(requestId, receipt.receipt_id) as
+      { outbox_id: string; candidate_id: string; scope_command_digest: string; scope_review_request_id: string; scope_review_receipt_id: string; request_profile: string } | undefined;
+    if (outboxId === undefined ? consumed !== undefined : consumed === undefined
+      || consumed.outbox_id !== outboxId || consumed.candidate_id !== proposal.candidate_id
+      || consumed.scope_review_request_id !== requestId || consumed.scope_review_receipt_id !== receipt.receipt_id
+      || consumed.scope_command_digest !== command.command_digest || consumed.request_profile !== "scoped-v4") return fail();
     return Object.freeze({ schema_version: 1 as const, writes_authorized: false as const, proposal,
       control_request_id: requestId, control_receipt_id: receipt.receipt_id, command_digest: command.command_digest,
       expires_at: receipt.expires_at });

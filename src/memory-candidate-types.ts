@@ -5,7 +5,8 @@ export const MEMORY_CANDIDATE_INPUT_CLASSES = [
 export const MEMORY_CANDIDATE_OPERATIONS = ["remember", "correct"] as const;
 export const MEMORY_CANDIDATE_POLICY_SENSITIVITIES = ["public", "personal", "sensitive", "restricted"] as const;
 export const MEMORY_CANDIDATE_STORAGE_SENSITIVITIES = ["normal", "sensitive", "restricted"] as const;
-export const MEMORY_CANDIDATE_STATES = ["classified", "awaiting_confirmation", "approved", "rejected", "expired"] as const;
+export const MEMORY_CANDIDATE_STATES = ["classified", "awaiting_confirmation", "approved", "queued",
+  "delivering", "accepted_unsettled", "settled", "uncertain", "rejected", "expired"] as const;
 export const MEMORY_CANDIDATE_CONFLICT_STATES = ["none", "same", "conflict", "supersede"] as const;
 export const MEMORY_CANDIDATE_REF_KINDS = [
   "verification", "artifact", "owner_instruction", "owner_session", "inference_evidence",
