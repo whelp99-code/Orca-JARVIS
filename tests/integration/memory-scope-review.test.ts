@@ -12,7 +12,7 @@ import { memoryDatabase, closeMemoryDatabase, seedMemoryAuthority, memoryCandida
 import type { AuthorityDb } from "../../src/db.js";
 import { prepareMemoryScopedWriteIdentity } from "../../src/memory-scoped-write-identity.js";
 import { prepareMemoryScopedWritePayload, prepareMemoryScopedWriteFromDispatch } from "../../src/memory-scoped-write-payload.js";
-import { outboxFixture } from "../fixtures/memory-outbox-fixture.js";
+import { outboxFixture, claimAction } from "../fixtures/memory-outbox-fixture.js";
 import { readMemoryCandidate } from "../../src/memory-candidate-reader.js";
 import { scopedV3DispatchFixture } from "../fixtures/scoped-v3-dispatch.js";
 
@@ -163,4 +163,34 @@ it("rechecks quarantine at approval time and rolls back the receipt", async () =
     expect(memoryTableCounts(f.authority)).toEqual(counts);
     expect(new ControlPlane(f.authority).get(command.request_id)?.state).toBe("pending");
   } finally { closeMemoryDatabase(f); }
+});
+
+it("rejects scoped write preparation for an already enqueued legacy candidate without consuming its review", async () => {
+  const f = await outboxFixture();
+  try {
+    const authority = f.database.authority; const now = f.clock.now;
+    const candidate = readMemoryCandidate(authority.db, f.request.candidate_id)!;
+    const proposal = proposeMemoryCandidateScope(authority, candidate.candidate_id, {
+      owner: "principal:owner", projects: ["project:a"], policy_revision: "policy:1",
+      valid_until: new Date(now.getTime() + 60000).toISOString() }, now);
+    const command = stageMemoryScopeReview(authority, proposal, now);
+    const control = new ControlPlane(authority);
+    control.decide(receipt(authority, command, now), now);
+    const dispatch = { dispatch_spool_digest: String(control.get(f.commandId)!.args.dispatch_spool_digest),
+      roots: { review: `${f.database.root}/candidate-review`, dispatch: `${f.database.root}/candidate-dispatch` } };
+    const resolve = () => ({ principal_id: "principal:owner" as const, agent_id: "agent:fixture", session_id: "session:fixture",
+      method: "sb_write_request" as const, projects: ["project:a"], policy_revision: "policy:1",
+      valid_until: new Date(now.getTime() + 60000).toISOString() });
+    expect(prepareMemoryScopedWriteWithPolicy(authority, proposal, command.request_id, dispatch, resolve, now).writes_authorized).toBe(false);
+    const saga = f.service.enqueue(claimAction(f));
+    const before = memoryTableCounts(authority);
+    expect(() => prepareMemoryScopedWriteWithPolicy(authority, proposal, command.request_id, dispatch, resolve, now))
+      .toThrow("MEMORY_SCOPED_WRITE_ALREADY_DISPATCHED");
+    expect(memoryTableCounts(authority)).toEqual(before);
+    expect(control.get(command.request_id)?.state).toBe("approved");
+    expect(authority.db.prepare("SELECT 1 FROM control_command_redemptions WHERE request_id=?").get(command.request_id)).toBeUndefined();
+    expect(authority.db.prepare("SELECT state,request_digest FROM memory_outbox WHERE outbox_id=?").get(saga.outbox_id))
+      .toEqual({ state: "queued", request_digest: f.request.request_digest });
+    expect(f.writer.calls).toHaveLength(0);
+  } finally { closeMemoryDatabase(f.database); }
 });

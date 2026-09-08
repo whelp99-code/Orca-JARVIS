@@ -1,3 +1,4 @@
+import { ControlPlane } from "./control-plane.js";
 import { canonicalize } from "./canonical.js";
 import { JarvisError, type AuthorityDb } from "./db.js";
 import type { MemoryWriteScopeResolver } from "./memory-access-policy.js";
@@ -13,10 +14,19 @@ export function prepareMemoryScopedWriteWithPolicy(authority: AuthorityDb, propo
   const at = now.getTime();
   const fail = (): never => { throw new JarvisError("MEMORY_SCOPED_WRITE_POLICY_INVALID"); };
   if (!Number.isFinite(at)) return fail();
+  const rejectDispatched = () => {
+    // Use the persisted review target, not an unvalidated caller candidate ID.
+    const review = new ControlPlane(authority).get(reviewRequestId);
+    if (review?.action === "memory.scope.review" && typeof review.target.candidate_id === "string"
+      && authority.db.prepare("SELECT 1 FROM memory_outbox WHERE candidate_id=?").get(review.target.candidate_id) !== undefined) {
+      throw new JarvisError("MEMORY_SCOPED_WRITE_ALREADY_DISPATCHED");
+    }
+  };
   return authority.db.transaction(() => {
     const scope = resolveWriteScope(new Date(at));
     if (scope === undefined || scope.method !== "sb_write_request") return fail();
     const snapshot = canonicalize(scope);
+    rejectDispatched();
     const prepared = prepareMemoryScopedWriteFromDispatch(authority, proposal, reviewRequestId, dispatch, new Date(at));
     const identity = prepared.binding.identity;
     const expiry = Date.parse(scope.valid_until);
@@ -28,6 +38,7 @@ export function prepareMemoryScopedWriteWithPolicy(authority: AuthorityDb, propo
     if (current === undefined || canonicalize(current) !== snapshot || canonicalize(scope) !== snapshot) return fail();
     // The resolver may execute application callbacks. Recheck persisted authority
     // after the last callback instead of trusting the first database snapshot.
+    rejectDispatched();
     const checked = prepareMemoryScopedWriteFromDispatch(authority, proposal, reviewRequestId, dispatch, new Date(at));
     if (checked.preparation_digest !== prepared.preparation_digest) return fail();
     return Object.freeze({ preparation: checked,
