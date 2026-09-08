@@ -9,7 +9,7 @@ import {
   linkSync,
   mkdirSync,
   openSync,
-  readFileSync,
+  readSync,
   rmSync,
   writeSync,
 } from "node:fs";
@@ -72,14 +72,31 @@ export function writePrivateSpoolFile(root: PrivateSpoolRoot, path: string, byte
   }
 }
 
-export function readPrivateSpoolFile(root: PrivateSpoolRoot, path: string): Buffer {
+export function readPrivateSpoolFile(root: PrivateSpoolRoot, path: string, maximum = 4_194_304): Buffer {
+  if (!Number.isSafeInteger(maximum) || maximum < 1 || maximum > 4_194_304) throw new Error("MEMORY_SPOOL_LIMIT_INVALID");
   assertPrivateSpoolRoot(root);
-  const descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  const descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
   try {
     const stat = fstatSync(descriptor);
     if (!stat.isFile() || stat.nlink !== 1 || (stat.mode & 0o077) !== 0
-      || !ownedByCurrentUser(stat.uid)) throw new Error("MEMORY_SPOOL_FILE_INVALID");
-    return readFileSync(descriptor);
+      || !ownedByCurrentUser(stat.uid) || stat.size > maximum) throw new Error("MEMORY_SPOOL_FILE_INVALID");
+    const bytes = Buffer.alloc(stat.size + 1);
+    let offset = 0;
+    while (offset < bytes.length) {
+      const count = readSync(descriptor, bytes, offset, bytes.length - offset, null);
+      if (count === 0) break;
+      offset += count;
+    }
+    const after = fstatSync(descriptor);
+    const named = lstatSync(path);
+    assertPrivateSpoolRoot(root);
+    if (offset !== stat.size || [after, named].some(value => !value.isFile()
+      || value.dev !== stat.dev || value.ino !== stat.ino || value.size !== stat.size
+      || value.nlink !== 1 || value.mode !== stat.mode || value.uid !== stat.uid
+      || value.mtimeMs !== stat.mtimeMs || value.ctimeMs !== stat.ctimeMs)) {
+      throw new Error("MEMORY_SPOOL_FILE_CHANGED");
+    }
+    return bytes.subarray(0, offset);
   } finally {
     closeSync(descriptor);
   }

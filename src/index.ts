@@ -253,3 +253,5 @@ export { prepareMemoryScopedWriteWithPolicy } from "./memory-scoped-write-policy
 export { prepareMemoryScopedWriteRequest, type MemoryScopedWriteRequestMaterial } from "./memory-scoped-write-request.js";
 
 export { parseMemoryScopedWriteRequestJson } from "./memory-scoped-write-codec.js";
+
+export { MemoryScopedWriteSpool } from "./memory-scoped-write-spool.js";
