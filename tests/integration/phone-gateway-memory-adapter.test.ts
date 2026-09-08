@@ -62,6 +62,29 @@ async function authed(options: { now?: () => number; handler?: Parameters<typeof
 }
 
 describe("phone gateway Memory read adapter", () => {
+  it("does not start a memory read if authentication expires during upstream bootstrap", async () => {
+    let now = Date.parse("2026-09-09T00:00:00.000Z");
+    let expireBootstrap = false;
+    const value = await authed({ now: () => now, handler: (req, res) => {
+      if (req.url !== "/api/v1/session" || !expireBootstrap) return false;
+      now += 16 * 60_000;
+      json(res, 200, { schema_version: 1, csrf_token: "rotated-csrf-token-bbbbbbbbbbbbbbbbbbbbbb" });
+      return true;
+    } });
+    try {
+      const normal = await request(`${value.origin}/api/v1/memory/status`, { headers: value.headers });
+      expect(normal.statusCode).toBe(200); await normal.body.text();
+      value.authority.csrf = "rotated-csrf-token-bbbbbbbbbbbbbbbbbbbbbb";
+      const rotated = await request(`${value.origin}/api/v1/memory/status`, { headers: value.headers });
+      expect(rotated.statusCode).toBe(503); await rotated.body.text();
+      const before = value.authority.captures.filter(row => row.url === "/api/v1/memory/status").length;
+      expireBootstrap = true;
+      const expired = await request(`${value.origin}/api/v1/memory/status`, { headers: value.headers });
+      expect(expired.statusCode).toBe(401); await expired.body.text();
+      expect(value.authority.captures.filter(row => row.url === "/api/v1/memory/status")).toHaveLength(before);
+    } finally { value.gateway.close(); await value.authority.close(); }
+  });
+
   it("withholds an upstream memory response when the phone session expires in flight", async () => {
     let now = Date.parse("2026-09-09T00:00:00.000Z");
     const value = await authed({ now: () => now, handler: (request, response) => {

@@ -151,6 +151,8 @@ export type ServeRequest = {
 };
 
 export type AdapterProxy = {
+  /** Trusted request-local session check, invoked after asynchronous bootstrap. */
+  readonly isAuthenticated: () => boolean;
   readonly method: "GET" | "POST";
   readonly path: string;
   readonly query: string;
@@ -159,6 +161,7 @@ export type AdapterProxy = {
 };
 
 export type AdapterResult =
+  | { readonly kind: "unauthenticated" }
   | { readonly kind: "ok"; readonly status: number; readonly body: unknown }
   | { readonly kind: "unavailable" }
   | { readonly kind: "invalid" }
