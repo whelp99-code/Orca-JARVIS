@@ -1,9 +1,10 @@
 import { deflateRawSync, inflateRawSync } from "node:zlib";
 import { canonicalize } from "./canonical.js";
 import type { RecommendationV1, Sha256Digest } from "./personal-contracts.js";
-import { parseRecommendationV1 } from "./personal-validation.js";
+import { canonicalPersonalContractHash, parseRecommendationV1 } from "./personal-validation.js";
 import { persistenceHash, persistenceText } from "./personal-persistence-values.js";
 import { RecommendationError } from "./recommendation-errors.js";
+import { assertRecommendationMaterial } from "./recommendation-read-binding.js";
 import {
   parseRecommendationProvenance,
   RecommendationProvenanceContractError,
@@ -55,10 +56,9 @@ export function storedRecommendationIdentity(
   envelopeJson: unknown,
 ): RecommendationIdentity {
   try {
-    const envelopeText = persistenceText(envelopeJson);
-    if (Buffer.byteLength(envelopeText, "utf8") > MAX_RECOMMENDATION_ENVELOPE_BYTES) return invalid();
-    const recommendation = parseRecommendationV1(JSON.parse(envelopeText));
+    const recommendation = storedRecommendationEnvelope(canonicalDigest, contextEvidenceDigest, envelopeJson);
     const provenance = decode(recommendation.payload.confidence_basis);
+    assertRecommendationMaterial(recommendation, provenance);
     const provenanceDigest = persistenceHash(provenance);
     return {
       recommendation,
@@ -75,4 +75,14 @@ export function storedRecommendationIdentity(
     if (error instanceof Error) return invalid();
     return invalid();
   }
+}
+
+export function storedRecommendationEnvelope(canonicalDigest: unknown, evidenceDigest: unknown, envelopeJson: unknown): RecommendationV1 {
+  try {
+    const envelopeText = persistenceText(envelopeJson);
+    if (Buffer.byteLength(envelopeText, "utf8") > MAX_RECOMMENDATION_ENVELOPE_BYTES) return invalid();
+    const recommendation = parseRecommendationV1(JSON.parse(envelopeText));
+    if (canonicalPersonalContractHash(recommendation) !== canonicalDigest || persistenceHash(recommendation.evidence) !== evidenceDigest) return invalid();
+    return recommendation;
+  } catch { return invalid(); }
 }

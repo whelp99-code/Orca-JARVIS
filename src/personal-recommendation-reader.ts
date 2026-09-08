@@ -8,13 +8,18 @@ import {
   reconstructedMemoryEvidence,
 } from "./personal-recommendation-reconstruction.js";
 import type { ReconstructedRecommendation } from "./personal-recommendation-types.js";
-import { storedRecommendationIdentity } from "./recommendation-identity.js";
+import { storedRecommendationEnvelope, storedRecommendationIdentity } from "./recommendation-identity.js";
+import { assertRecommendationAction, assertRecommendationRow } from "./recommendation-read-binding.js";
 import { validateStoredRecommendationEvents } from "./recommendation-transition-identity.js";
 
 export class PersonalRecommendationReader {
   constructor(private readonly database: Database.Database) {}
 
   get(id: RecommendationId): ReconstructedRecommendation | undefined {
+    return this.database.transaction(() => this.read(id)).deferred();
+  }
+
+  private read(id: RecommendationId): ReconstructedRecommendation | undefined {
     const projections = new MemoryProjectionAuthority({ db: this.database });
     if (projections.isSuppressed({ kind: "recommendation", id, component_id: id })) return undefined;
     const value = this.database.prepare(
@@ -25,13 +30,15 @@ export class PersonalRecommendationReader {
     if (value === undefined) return undefined;
     const recommendation = persistenceRow(value);
     const identity = this.database.prepare(
-      "SELECT canonical_envelope_json FROM personal_recommendations WHERE recommendation_id=?",
+      "SELECT * FROM personal_recommendations WHERE recommendation_id=?",
     ).get(id);
     if (identity === undefined) return undefined;
     const envelope = persistenceRow(identity)["canonical_envelope_json"];
-    if (typeof envelope === "string" && envelope.includes('"source_version":"task18-v1"')) {
+    const parsed = storedRecommendationEnvelope(recommendation["canonical_digest"], recommendation["evidence_digest"], envelope);
+    assertRecommendationRow(persistenceRow(identity), parsed);
+    if (parsed.source.source_version === "task18-v1") {
       const source = storedRecommendationIdentity(recommendation["canonical_digest"], recommendation["evidence_digest"], envelope);
-      validateStoredRecommendationEvents(this.database, source, recommendation["evidence_digest"]);
+      validateStoredRecommendationEvents(this.database, source, recommendation["evidence_digest"], id);
     }
     const contextEvidence = this.database.prepare(
       `SELECT e.evidence_id,e.source_id,e.evidence_kind AS kind,e.evidence_digest AS digest,
@@ -73,6 +80,7 @@ export class PersonalRecommendationReader {
        FROM personal_recommendation_action_events WHERE recommendation_id=? ORDER BY event_sequence`,
     ).all(id).map(persistenceRow), row => ({ kind: "recommendation_action", id,
       component_id: String(row["rank"]) }));
+    for (const action of actions) assertRecommendationAction(action, parsed);
     return {
       recommendation,
       context_evidence: contextEvidence,

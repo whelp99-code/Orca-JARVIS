@@ -558,3 +558,13 @@
 - compiled API와 실제 Node5프로세스 인수: 실제80.327ms 지연으로 건너뛴 일정 완료1개·반복쓰기0. 단계1개 저장 후 SQLite를 연 채 SIGKILL, 다른PID의 cycle이 fence2로 복구하여 완료1개·이전 단계/checkpoint bytes 보존·DB 재개방 일치. 별도 SIGKILL 실행은 deadline 시점 startup에서 완료0개·원래 run 보존·오류0. 임시 디렉터리 제거 확인. 근거 `daily-poll-live.mjs/json/log`.
 - 임의 MorningBriefInput을 받는 자동 저장 API는 HOLD다. 자체 digest와 알려진 추천ID만으로 본문·출처의 진위를 증명할 수 없고, quarantine도 lineage 존재로 반환될 수 있다. 검증된 추천 action·현재 근거 mapper, 모든 parent 검사, 상속 후 가용성 검사와 원자적 artifact/lineage 저장이 선행 조건이다. 상세 `docs/planning/adr-daily-poll-recovery.md`.
 - 이번 인수는 개발 API의 논리 단계다. 실제 브리핑·서명 마감 처리기, 일일 총량 예산, 예약 서비스, retention 및 전체01–25 운영 인수는 미완료다. 기존 자동기억 원본차단과 memory-store 큐 HOLD 유지. 운영DB·서비스·release·push 변경0.
+
+## 2026-09-08 P1-12 선행 — 추천 읽기의 원본 결합
+
+- 직전 `67d9ccc`는 수정·검증·커밋까지 완료한 progress였다. 재개 시 해당 HEAD와 기존 소유자 변경을 확인했다. 브리핑 mapper 입력을 추적하면서 storedRecommendationIdentity의 재해시 비교 누락, 행동/metadata 원본 대조 누락, 개인 reader의 문자열 source_version 판별을 확인했다.
+- 최초16개 중11fail/5pass. 기존 canonical/evidence hash로 대조하고 추천 ID·metadata·rank별 행동을 공통 검증한다. material은 ranking rank→action ID로 결합하여 역순 제출을 보존한다. 개인 reader는 파싱된 버전으로 task18과 legacy를 구분하며 과거 ranking은 재계산하지 않는다.
+- 독립 리뷰의 두 연결 snapshot 불일치2fail을 재현했다. projection·개인 reader·timeline/context 전체를 deferred transaction으로 묶었다. 복원 fixture가 다른 rank 제목도 바꾸던 오류1개를 수정했으며 공개 API의 검증과 반환은 같은 snapshot을 사용한다.
+- 관련 계약과 workflow·승인·실행기 및 최종 신규 검사에서 고유18파일152개 pass. backend build/typecheck/lint exit0, 최종 독립 정적 리뷰 필수 결함0건. 초기 branded ID 타입 오류3개와 snapshot fixture 실패를 원장에 구분해 보존했다.
+- 실제 이전/현재 compiled 두 프로세스의 같은 DB에서 정상 조회5종 canonical bytes 동일, 읽기쓰기0. 이전에는 변조 제목을 정상 반환했으나 현재 HTTP 추천 상세는 정상200·변조500·본문 표식 노출0이다. 임시 디렉터리2개 제거 확인.
+- 검증 추가 비용을 측정했다. 추천100개/행동300개·12회·limit500의 p50 49.918→73.481ms, p95 61.547→95.119ms, 결과bytes 동일·쓰기0. 성능 개선으로 분류하지 않는다. 상세/실패/실행 증거는 `docs/planning/adr-recommendation-read-binding.md`와 증거 루트의 `recommendation-read-*`다.
+- source 생산자·정책/생성 시각의 의미 및 context evidence·실제 본문·절대 기한을 검증하는 mapper는 미완료다. 브리핑 자동 저장·일일 운영 활성화 HOLD 유지. 전체01–25/운영 인수 미완료, 운영DB·서비스·release·push 변경0. 공통 읽기 변경의 전체 소비 경로를 확인하기 위해 커밋 후 canonical verify를 실행한다.

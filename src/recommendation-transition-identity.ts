@@ -3,6 +3,7 @@ import type { RecommendationId, Sha256Digest } from "./personal-contracts.js";
 import { RecommendationError } from "./recommendation-errors.js";
 import { storedRecommendationIdentity, type RecommendationIdentity } from "./recommendation-identity.js";
 import { persistenceHash, persistenceRow, persistenceText } from "./personal-persistence-values.js";
+import { validateRecommendationReadRows } from "./recommendation-read-binding.js";
 
 export const TERMINAL_TRANSITION_STATES = [
   "accepted", "rejected", "expired", "superseded", "dismissed", "snoozed",
@@ -138,7 +139,9 @@ export function validateStoredRecommendationEvents(
   database: Database.Database,
   source: RecommendationIdentity,
   baseEvidenceDigest: unknown,
+  expectedRecommendationId: string,
 ): void {
+  validateRecommendationReadRows(database, source, expectedRecommendationId);
   const rows = database.prepare(
     `SELECT e.rank,e.state,e.evidence_digest,e.transition_occurred_at,e.transition_digest,
             e.replacement_recommendation_id,rr.context_digest AS replacement_context_digest,

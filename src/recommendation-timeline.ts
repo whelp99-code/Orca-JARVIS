@@ -43,7 +43,7 @@ function ownerRanks(row: Row): ReadonlySet<number> {
 }
 function validateEvents(database: AuthorityDb["db"], row: Row): void {
   const source = storedRecommendationIdentity(row["canonical_digest"], row["evidence_digest"], row["canonical_envelope_json"]);
-  validateStoredRecommendationEvents(database, source, row["evidence_digest"]);
+  validateStoredRecommendationEvents(database, source, row["evidence_digest"], persistenceText(row["recommendation_id"]));
 }
 function recommendationSummary(row: Row): TaskTimelineSummary {
   const ranks = ownerRanks(row);
@@ -104,12 +104,16 @@ export class TaskTimeline {
   }
 
   timeline(taskId: string, limit = 200): TaskTimelineEvent[] {
+    return this.authority.db.transaction(() => this.readTimeline(taskId, limit)).deferred();
+  }
+
+  private readTimeline(taskId: string, limit: number): TaskTimelineEvent[] {
     if (new TaskTimelinePopulation(this.authority).isSuppressed(taskId)) {
       throw new JarvisError("TASK_TIMELINE_NOT_FOUND");
     }
     const canonicalId = new TaskTimelinePopulation(this.authority).find(taskId)?.task_id ?? taskId;
     const exists = this.authority.db.prepare(
-      "SELECT canonical_digest,evidence_digest,canonical_envelope_json FROM personal_recommendations WHERE recommendation_id=?",
+      "SELECT recommendation_id,canonical_digest,evidence_digest,canonical_envelope_json FROM personal_recommendations WHERE recommendation_id=?",
     ).get(canonicalId);
     if (exists === undefined) return this.base.timeline(taskId, limit);
     taskId = canonicalId;
@@ -140,6 +144,10 @@ export class TaskTimeline {
   }
 
   context(taskId: string, limit = 100, maxBytes = 128 * 1024, now = new Date()): TaskTimelineContext {
+    return this.authority.db.transaction(() => this.readContext(taskId, limit, maxBytes, now)).deferred();
+  }
+
+  private readContext(taskId: string, limit: number, maxBytes: number, now: Date): TaskTimelineContext {
     if (new TaskTimelinePopulation(this.authority).isSuppressed(taskId)) {
       throw new JarvisError("TASK_TIMELINE_NOT_FOUND");
     }

@@ -3,7 +3,7 @@ import type { Sha256Digest } from "./personal-contracts.js";
 import { RecommendationError } from "./recommendation-errors.js";
 import { storedRecommendationIdentity, type RecommendationIdentity } from "./recommendation-identity.js";
 import { persistenceRow, persistenceText } from "./personal-persistence-values.js";
-import { validateStoredTransition } from "./recommendation-transition-identity.js";
+import { validateStoredRecommendationEvents, validateStoredTransition } from "./recommendation-transition-identity.js";
 import type { RecommendationEvidenceKind } from "./recommendation-provenance.js";
 
 export type RecommendationLifecycleState = "pending" | "accepted" | "rejected" | "expired" | "superseded";
@@ -108,6 +108,10 @@ function replacementId(row: Readonly<Record<string, unknown>>, source: EnvelopeS
 }
 
 export function projectRecommendations(database: Database.Database, now: string, limit = 100): RecommendationReadProjection {
+  return database.transaction(() => readRecommendations(database, now, limit)).deferred();
+}
+
+function readRecommendations(database: Database.Database, now: string, limit: number): RecommendationReadProjection {
   const rows = database.prepare(
     `WITH source_actions AS (
        SELECT r.recommendation_id,r.context_id,r.context_digest,r.canonical_digest,r.evidence_digest,
@@ -150,7 +154,11 @@ export function projectRecommendations(database: Database.Database, now: string,
   const replacements = new Map<string, RecommendationIdentity>();
   for (const row of rows) {
     const id = persistenceText(row["recommendation_id"]);
-    if (!summaries.has(id)) summaries.set(id, summary(row["canonical_digest"], row["evidence_digest"], row["canonical_envelope_json"]));
+    if (!summaries.has(id)) {
+      const details = summary(row["canonical_digest"], row["evidence_digest"], row["canonical_envelope_json"]);
+      validateStoredRecommendationEvents(database, details.identity, row["evidence_digest"], id);
+      summaries.set(id, details);
+    }
     const replacement = nullableText(row["replacement_recommendation_id"]);
     if (replacement !== null && !replacements.has(replacement)) {
       replacements.set(replacement, storedRecommendationIdentity(row["replacement_canonical_digest"],
