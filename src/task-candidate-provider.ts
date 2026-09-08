@@ -1,3 +1,4 @@
+import { TASK_FILE_LIMITS, TASK_PROVIDER_LIMITS } from "./task-execution-limits.js";
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./db.js";
@@ -37,11 +38,11 @@ export function prepareTaskProviderRequest(value: TaskExecutionPlan, spec: TaskS
   let total = 0;
   for (const file of sources) {
     if (!file || typeof file.path !== "string" || map.has(file.path)
-      || (file.content !== null && (!Buffer.isBuffer(file.content) || file.content.length > 4 * 1024 * 1024))) {
+      || (file.content !== null && (!Buffer.isBuffer(file.content) || file.content.length > TASK_FILE_LIMITS.max_file_bytes))) {
       return fail("TASK_PROVIDER_INPUT_INVALID");
     }
     total += file.content?.length ?? 0;
-    if (total > 16 * 1024 * 1024) return fail("TASK_PROVIDER_INPUT_INVALID");
+    if (total > TASK_FILE_LIMITS.max_total_bytes) return fail("TASK_PROVIDER_INPUT_INVALID");
     map.set(file.path, file.content === null ? null : Buffer.from(file.content));
   }
   const inputs = plan.files.map(file => {
@@ -58,7 +59,7 @@ export function prepareTaskProviderRequest(value: TaskExecutionPlan, spec: TaskS
     + "Preserve all TaskSpec requirements. You have no tools; do not claim to have run checks or changed host files.",
     execution_plan_digest, task_spec: spec, plan,
     source_files: inputs.map(file => ({ path: file.path, content: file.content === null ? null : text(file.content) })) });
-  if (Buffer.byteLength(prompt) > 512 * 1024) return fail("TASK_PROVIDER_CONTEXT_LIMIT");
+  if (Buffer.byteLength(prompt) > TASK_PROVIDER_LIMITS.max_prompt_bytes) return fail("TASK_PROVIDER_CONTEXT_LIMIT");
   const output_schema = { type: "object", additionalProperties: false,
     properties: { execution_plan_digest: { type: "string", const: execution_plan_digest },
       files: { type: "array", minItems: writable.length, maxItems: writable.length, items: {
@@ -83,7 +84,7 @@ export function parseTaskProviderCandidate(prepared: ReturnType<typeof prepareTa
     if (!file || typeof file !== "object" || Object.keys(file).sort().join(",") !== "content,path"
       || typeof file.path !== "string" || !writable.has(file.path) || changed.has(file.path) || typeof file.content !== "string") return invalid();
     const content = Buffer.from(file.content, "utf8");
-    if (content.toString("utf8") !== file.content || content.length > 4 * 1024 * 1024) return invalid();
+    if (content.toString("utf8") !== file.content || content.length > TASK_FILE_LIMITS.max_file_bytes) return invalid();
     total += content.length;
     changed.set(file.path, content);
   }
@@ -93,6 +94,6 @@ export function parseTaskProviderCandidate(prepared: ReturnType<typeof prepareTa
     if (!changed.has(file.path)) total += content.length;
     return { path: file.path, content: Buffer.from(content) };
   });
-  if (total > 16 * 1024 * 1024) return invalid();
+  if (total > TASK_FILE_LIMITS.max_total_bytes) return invalid();
   return result;
 }

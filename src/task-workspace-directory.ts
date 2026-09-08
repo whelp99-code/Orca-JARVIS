@@ -1,3 +1,4 @@
+import { TASK_FILE_LIMITS } from "./task-execution-limits.js";
 import { createHash } from "node:crypto";
 import { constants } from "node:fs";
 import { lstat, mkdir, open, realpath, type FileHandle } from "node:fs/promises";
@@ -5,7 +6,7 @@ import { join } from "node:path";
 import { JarvisError } from "./db.js";
 import type { TaskExecutionPlan } from "./task-execution-plan.js";
 
-const FILE_LIMIT = 4 * 1024 * 1024;
+const FILE_LIMIT = TASK_FILE_LIMITS.max_file_bytes;
 const hash = (bytes: Uint8Array) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 const fail = (code: string): never => { throw new JarvisError(code); };
 export type CapturedFile = { path: string; access: "read" | "write"; digest: string | null; bytes: number;

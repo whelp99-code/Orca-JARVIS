@@ -1,3 +1,4 @@
+import { TASK_FILE_LIMITS } from "./task-execution-limits.js";
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./db.js";
@@ -19,9 +20,9 @@ function candidateInputs(plan: TaskExecutionPlan, values: readonly TaskSandboxFi
   let total = 0;
   for (const value of values) {
     if (!value || typeof value.path !== "string" || !Buffer.isBuffer(value.content) || provided.has(value.path)
-      || value.content.length > 4 * 1024 * 1024) return invalid();
+      || value.content.length > TASK_FILE_LIMITS.max_file_bytes) return invalid();
     total += value.content.length;
-    if (total > 16 * 1024 * 1024) return invalid();
+    if (total > TASK_FILE_LIMITS.max_total_bytes) return invalid();
     provided.set(value.path, Buffer.from(value.content));
   }
   return plan.files.map(file => {

@@ -1,3 +1,4 @@
+import { TASK_FILE_LIMITS } from "./task-execution-limits.js";
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./db.js";
@@ -25,14 +26,14 @@ function repositoryCheck(value: unknown, candidate: ReturnType<typeof freezeTask
     const expected = candidate.plan.files[index]!;
     if (!keys(file, "access,bytes,digest,executable,path") || file.path !== expected.path || file.access !== expected.access
       || file.digest !== expected.before_digest || typeof file.executable !== "boolean"
-      || !Number.isSafeInteger(file.bytes) || file.bytes < 0 || file.bytes > 4 * 1024 * 1024
+      || !Number.isSafeInteger(file.bytes) || file.bytes < 0 || file.bytes > TASK_FILE_LIMITS.max_file_bytes
       || (file.digest === null && (file.bytes !== 0 || file.executable))
       || (file.access === "read" && file.bytes !== candidate.frozen[index]!.content.length)) return artifactInvalid();
     total += file.bytes;
   }
   const manifest = { state: value.state, execution_plan_digest: value.execution_plan_digest, baseline_commit: value.baseline_commit,
     total_bytes: value.total_bytes, files: value.files };
-  if (total > 16 * 1024 * 1024 || total !== value.total_bytes || value.snapshot_digest !== candidateHash(canonicalize(manifest))) {
+  if (total > TASK_FILE_LIMITS.max_total_bytes || total !== value.total_bytes || value.snapshot_digest !== candidateHash(canonicalize(manifest))) {
     return artifactInvalid();
   }
   return value as unknown as TaskRepositoryCheck;
@@ -58,7 +59,7 @@ export function decodeTaskCandidate(attemptId: string, plan: TaskExecutionPlan, 
     || value.files.length !== plan.files.length) return artifactInvalid();
   const files = value.files.map((file: unknown) => {
     if (!keys(file, "base64,path") || typeof file.path !== "string" || typeof file.base64 !== "string"
-      || file.base64.length > 4 * Math.ceil(4 * 1024 * 1024 / 3)) return artifactInvalid();
+      || file.base64.length > 4 * Math.ceil(TASK_FILE_LIMITS.max_file_bytes / 3)) return artifactInvalid();
     const content = Buffer.from(file.base64, "base64");
     if (content.toString("base64") !== file.base64) return artifactInvalid();
     return { path: file.path, content };

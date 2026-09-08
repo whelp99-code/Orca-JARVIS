@@ -1,3 +1,4 @@
+import { TASK_FILE_LIMITS } from "./task-execution-limits.js";
 import { JarvisError } from "./db.js";
 import type { TaskExecutionPlanV2 } from "./task-execution-plan.js";
 import type { TaskCandidateArtifacts } from "./task-candidate-artifacts.js";
@@ -34,7 +35,7 @@ export async function buildTaskPublicationCommit(git: TaskPublicationGit, plan: 
     if (file.before_digest === null) { if (original) return invalid(); }
     else {
       if (!original || (original.mode === "100755") !== captured.executable) return invalid();
-      const bytes = await git.run(["cat-file", "blob", original.oid], undefined, 4 * 1024 * 1024);
+      const bytes = await git.run(["cat-file", "blob", original.oid], undefined, TASK_FILE_LIMITS.max_file_bytes);
       if (bytes.length !== captured.bytes || candidateHash(bytes) !== file.before_digest) return invalid();
     }
   }
@@ -50,7 +51,7 @@ export async function buildTaskPublicationCommit(git: TaskPublicationGit, plan: 
   for (const [index, file] of plan.files.entries()) {
     const entry = final.get(file.path);
     if (!entry || entry.mode !== (originals.get(file.path)?.mode ?? "100644")) return invalid();
-    const bytes = await git.run(["cat-file", "blob", entry.oid], undefined, 4 * 1024 * 1024);
+    const bytes = await git.run(["cat-file", "blob", entry.oid], undefined, TASK_FILE_LIMITS.max_file_bytes);
     if (!bytes.equals(artifact.files[index]!.content)) return invalid();
   }
   const diff = (await git.run(["diff-tree", "--no-ext-diff", "--no-textconv", "--no-renames", "--name-only", "-r", "-z", baseline, tree]))

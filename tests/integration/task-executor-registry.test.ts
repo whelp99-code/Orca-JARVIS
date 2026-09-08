@@ -6,6 +6,9 @@ import { expect, it } from "vitest";
 import { execute } from "../../src/cli.js";
 import { inspectTaskExecutor, registeredTaskExecutor } from "../../src/task-executor-registry.js";
 import { productionTaskExecutionRuntime } from "../../src/task-execution-runtime.js";
+import { parseTaskExecutionPlan } from "../../src/task-execution-plan.js";
+import { executionPlan } from "../fixtures/task-execution-fixture.js";
+import { ClaudeTaskCandidateProvider } from "../../src/claude-task-provider.js";
 
 it("resolves only the exact compiled provider with no fallback or mutable registration", () => {
   const env = { JARVIS_TASK_CLAUDE_PATH: "/private/cli", JARVIS_TASK_VERIFIER_KEY_PATH: "/private/key",
@@ -29,6 +32,31 @@ it("reports missing configuration names without interpreting registration as rea
     execution_available: false, readiness: "not_probed", authentication: "not_probed" });
 });
 
+it("exposes the actual plan bounds while preserving smaller remaining provider budgets", async () => {
+  const { limits } = registeredTaskExecutor("claude")!;
+  for (const [timeout_ms, max_output_bytes] of [[limits.plan.min_timeout_ms, limits.plan.min_output_bytes],
+    [limits.plan.max_timeout_ms, limits.plan.max_output_bytes]]) {
+    expect(parseTaskExecutionPlan({ ...executionPlan(), limits: { timeout_ms, max_output_bytes } }).limits)
+      .toEqual({ timeout_ms, max_output_bytes });
+  }
+  for (const [timeout_ms, max_output_bytes] of [[limits.plan.min_timeout_ms - 1, 1024],
+    [limits.plan.max_timeout_ms + 1, 1024], [1000, limits.plan.min_output_bytes - 1], [1000, limits.plan.max_output_bytes + 1]]) {
+    expect(() => parseTaskExecutionPlan({ ...executionPlan(), limits: { timeout_ms, max_output_bytes } }))
+      .toThrow("TASK_EXECUTION_PLAN_INVALID");
+  }
+  const provider = new ClaudeTaskCandidateProvider("/nonexistent/provider");
+  const request = { provider: "claude" as const, execution_plan_digest: "fixture", output_schema: {}, prompt: "fixture",
+    timeout_ms: limits.provider.min_timeout_ms, max_output_bytes: limits.provider.min_output_bytes };
+  // A remaining 1ms/1-byte budget passes the input contract and reaches local path validation.
+  await expect(provider.generate(request)).rejects.toThrow("TASK_PROVIDER_UNAVAILABLE");
+  for (const changed of [{ timeout_ms: limits.provider.max_timeout_ms + 1 },
+    { max_output_bytes: limits.provider.max_output_bytes + 1 }, { prompt: "x".repeat(limits.provider.max_prompt_bytes + 1) }]) {
+    await expect(provider.generate({ ...request, ...changed })).rejects.toThrow("TASK_PROVIDER_INPUT_INVALID");
+  }
+  expect(Object.isFrozen(limits)).toBe(true);
+  for (const section of Object.values(limits)) expect(Object.isFrozen(section)).toBe(true);
+});
+
 it("runs compiled inspection without executing a configured provider, leaking values or creating a database", () => {
   const root = mkdtempSync(join(tmpdir(), "jarvis-executor-inspection-"));
   try {
@@ -47,7 +75,11 @@ it("runs compiled inspection without executing a configured provider, leaking va
       expect(items).toHaveLength(1);
       expect(items[0]).toMatchObject({ execution_available: false, readiness: "not_probed", authentication: "not_probed" });
       if (args[1] !== "mail-intelligence") expect(items[0]).toMatchObject({ registration: "registered",
-        configuration: "present", missing_configuration: [] });
+        configuration: "present", missing_configuration: [], descriptor: { limits: {
+          plan: { min_timeout_ms: 1000, max_timeout_ms: 600000 },
+          provider: { min_timeout_ms: 1, max_prompt_bytes: 524288 },
+          files: { max_file_bytes: 4194304, max_total_bytes: 16777216 },
+        } } });
       else expect(items[0].registration).toBe("unregistered");
     }
     expect(readdirSync(root)).toEqual(["private-provider"]);

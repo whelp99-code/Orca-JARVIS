@@ -1,3 +1,4 @@
+import { TASK_PLAN_LIMITS } from "./task-execution-limits.js";
 import { isAbsolute, normalize } from "node:path";
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
@@ -64,8 +65,9 @@ export function parseTaskExecutionPlan(value: unknown): TaskExecutionPlan {
     || repository.root === "/" || typeof repository.baseline_commit !== "string"
     || !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/.test(repository.baseline_commit)) return invalid();
   const limits = record(plan.limits, ["timeout_ms", "max_output_bytes"]);
-  if (!integer(limits.timeout_ms, 1000, 600_000) || !integer(limits.max_output_bytes, 1024, 1_048_576)) return invalid();
-  if (!Array.isArray(plan.files) || plan.files.length < 1 || plan.files.length > 128) return invalid();
+  if (!integer(limits.timeout_ms, TASK_PLAN_LIMITS.min_timeout_ms, TASK_PLAN_LIMITS.max_timeout_ms)
+    || !integer(limits.max_output_bytes, TASK_PLAN_LIMITS.min_output_bytes, TASK_PLAN_LIMITS.max_output_bytes)) return invalid();
+  if (!Array.isArray(plan.files) || plan.files.length < 1 || plan.files.length > TASK_PLAN_LIMITS.max_files) return invalid();
   const paths = new Set<string>();
   let writable = false;
   for (const value of plan.files) {
@@ -81,7 +83,8 @@ export function parseTaskExecutionPlan(value: unknown): TaskExecutionPlan {
     const parts = path.split("/");
     for (let index = 1; index < parts.length; index++) if (paths.has(parts.slice(0, index).join("/"))) return invalid();
   }
-  if (!Array.isArray(plan.verification) || plan.verification.length < 1 || plan.verification.length > 8) return invalid();
+  if (!Array.isArray(plan.verification) || plan.verification.length < 1
+    || plan.verification.length > TASK_PLAN_LIMITS.max_verification_checks) return invalid();
   const ids = new Set<string>();
   for (const value of plan.verification) {
     const check = record(value, ["id", "argv", "cwd", "expected_exit"]);

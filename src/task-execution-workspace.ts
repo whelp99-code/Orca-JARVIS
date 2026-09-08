@@ -1,3 +1,4 @@
+import { TASK_FILE_LIMITS } from "./task-execution-limits.js";
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
 import { mkdtemp } from "node:fs/promises";
@@ -10,7 +11,7 @@ import { parseTaskExecutionPlan, taskExecutionPlanDigest, type TaskExecutionPlan
 import { PinnedDirectory, type CapturedFile } from "./task-workspace-directory.js";
 import { inspectTaskPublicationIdentity } from "./task-publication-git.js";
 
-const TOTAL_LIMIT = 16 * 1024 * 1024;
+const TOTAL_LIMIT = TASK_FILE_LIMITS.max_total_bytes;
 const hash = (bytes: Uint8Array | string) => `sha256:${createHash("sha256").update(bytes).digest("hex")}`;
 const fail = (code: string): never => { throw new JarvisError(code); };
 export type TaskGitInspector = (root: string) => Promise<{ root: string; commit: string }>;

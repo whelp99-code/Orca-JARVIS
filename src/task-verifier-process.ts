@@ -5,6 +5,7 @@ import { fileURLToPath } from "node:url";
 import { JarvisError } from "./db.js";
 import type { ClaimedControlCommand } from "./control-plane.js";
 import { taskProcessTimeout } from "./task-process-boundary.js";
+import { TASK_PROVIDER_LIMITS } from "./task-execution-limits.js";
 
 export type TaskVerifierInvocation = { readonly database: string; readonly command: ClaimedControlCommand;
   readonly verification_id: string; readonly timeout_ms: number; readonly before_spawn: () => number };
@@ -38,8 +39,9 @@ export class NodeTaskVerifierProcess implements TaskVerifierProcess {
 
   async verify(input: TaskVerifierInvocation): Promise<unknown> {
     const deadline = performance.now() + input.timeout_ms;
-    if (!isAbsolute(input.database) || !Number.isSafeInteger(input.timeout_ms) || input.timeout_ms < 1
-      || input.timeout_ms > 600000 || typeof input.verification_id !== "string" || typeof input.before_spawn !== "function") {
+    if (!isAbsolute(input.database) || !Number.isSafeInteger(input.timeout_ms) || input.timeout_ms < TASK_PROVIDER_LIMITS.min_timeout_ms
+      || input.timeout_ms > TASK_PROVIDER_LIMITS.max_timeout_ms
+      || typeof input.verification_id !== "string" || typeof input.before_spawn !== "function") {
       throw new JarvisError("TASK_VERIFIER_INPUT_INVALID");
     }
     const payload = JSON.stringify({ command: input.command, verification_id: input.verification_id });

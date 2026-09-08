@@ -1,5 +1,6 @@
 import { readFileSync, readlinkSync } from "node:fs";
 import { JarvisError } from "./db.js";
+import { TASK_PLAN_LIMITS } from "./task-execution-limits.js";
 
 export type TaskExecutionClockBudget = { readonly clock_id: string; readonly deadline_uptime_ms: number };
 type Reading = { clock_id: string; uptime_ms: number };
@@ -22,7 +23,8 @@ export function readTaskExecutionClock(): Reading {
 }
 
 export function taskExecutionClockBudget(timeoutMs: number): TaskExecutionClockBudget {
-  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < 1000 || timeoutMs > 600000) return unavailable();
+  if (!Number.isSafeInteger(timeoutMs) || timeoutMs < TASK_PLAN_LIMITS.min_timeout_ms
+    || timeoutMs > TASK_PLAN_LIMITS.max_timeout_ms) return unavailable();
   const clock = readTaskExecutionClock();
   const deadline = clock.uptime_ms + timeoutMs;
   if (!Number.isSafeInteger(deadline)) return unavailable();

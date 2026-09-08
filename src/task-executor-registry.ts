@@ -4,12 +4,13 @@ import { readTaskExecutionClock } from "./task-execution-clock.js";
 import { spawnTaskSandbox } from "./task-sandbox.js";
 import { JarvisError } from "./db.js";
 import type { TaskExecutionRuntime } from "./task-execution-runtime.js";
+import { TASK_EXECUTION_LIMITS } from "./task-execution-limits.js";
 
 const CONFIGURATION = Object.freeze(["JARVIS_TASK_CLAUDE_PATH", "JARVIS_TASK_VERIFIER_KEY_PATH", "JARVIS_TASK_VERIFIER_KEY_ID"]);
 const CLAUDE = Object.freeze({
   id: "claude-code", provider: "claude", plan_schema_version: 2, mode: "verified_git_commit",
   scope: "declared_repository_files", approval: "single_use_ed25519", verification: "independent_verifier",
-  automatic_retry: false, required_configuration: CONFIGURATION,
+  automatic_retry: false, required_configuration: CONFIGURATION, limits: TASK_EXECUTION_LIMITS,
 } as const);
 
 function createClaudeRuntime(env: NodeJS.ProcessEnv): TaskExecutionRuntime | undefined {
