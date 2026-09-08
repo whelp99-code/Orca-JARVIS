@@ -242,5 +242,5 @@ export { createMemoryScopedClient, type MemoryScopedClientOptions } from "./memo
 export { createScopedMemoryReference } from "./memory-scoped-reference.js";
 export { createProductionScopedMemory, type ScopedMemoryProductionOptions } from "./memory-scoped-production.js";
 export { type PhoneMemoryContextOptions } from "./phone-memory-context.js";
-export { proposeMemoryCandidateScope, MEMORY_CANDIDATE_SCOPE_DOMAIN,
+export { proposeMemoryCandidateScope, validateMemoryCandidateScopeProposal, MEMORY_CANDIDATE_SCOPE_DOMAIN,
   type MemoryCandidateScopeInput, type MemoryCandidateScopeProposal } from "./memory-candidate-scope.js";

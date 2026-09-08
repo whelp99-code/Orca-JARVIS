@@ -1,5 +1,6 @@
 import { expect, it } from "vitest";
-import { proposeMemoryCandidateScope } from "../../src/memory-candidate-scope.js";
+import { proposeMemoryCandidateScope, validateMemoryCandidateScopeProposal } from "../../src/memory-candidate-scope.js";
+import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
 import { readMemoryCandidate } from "../../src/memory-candidate-reader.js";
 import { verifiedMemoryInput, MEMORY_NOW } from "../fixtures/memory-candidate-fixture.js";
 import { memoryDatabase, closeMemoryDatabase, seedMemoryAuthority, memoryCandidateStore, memoryTableCounts } from "../fixtures/memory-candidate-store.js";
@@ -36,5 +37,36 @@ it("binds a proposed project scope to persisted verified candidate provenance wi
     expect(() => db.authority.db.prepare("UPDATE memory_candidate_classifications SET classification_digest=? WHERE candidate_id=?")
       .run("0".repeat(64), candidate.candidate_id)).toThrow("immutable memory candidate classification");
     expect(readMemoryCandidate(db.authority.db, candidate.candidate_id)).toEqual(candidate);
+  } finally { closeMemoryDatabase(db); }
+});
+
+it("revalidates serialized proposals and refuses changed scope, expiry, future creation and later quarantine", async () => {
+  const db = await memoryDatabase();
+  try {
+    const input = verifiedMemoryInput(); seedMemoryAuthority(db.authority, input);
+    const candidate = memoryCandidateStore(db.authority).classify(input);
+    const now = new Date(MEMORY_NOW);
+    const scope = { owner: "principal:owner" as const, projects: ["project:a"], policy_revision: "policy:1",
+      valid_until: new Date(now.getTime() + 60000).toISOString() };
+    const proposal = proposeMemoryCandidateScope(db.authority, candidate.candidate_id, scope, now);
+    const counts = memoryTableCounts(db.authority);
+    expect(validateMemoryCandidateScopeProposal(db.authority, JSON.parse(JSON.stringify(proposal)), now)).toEqual(proposal);
+    for (const changed of [
+      { ...proposal, scope: { ...proposal.scope, projects: ["project:b"] } },
+      { ...proposal, authorization: "granted" }, { ...proposal, extra: true },
+      { ...proposal, scope: { ...proposal.scope, extra: true } },
+    ]) expect(() => validateMemoryCandidateScopeProposal(db.authority, changed, now)).toThrow("MEMORY_CANDIDATE_SCOPE_INVALID");
+    expect(() => validateMemoryCandidateScopeProposal(db.authority, proposal, new Date(scope.valid_until)))
+      .toThrow("MEMORY_CANDIDATE_SCOPE_INVALID");
+    expect(() => validateMemoryCandidateScopeProposal(db.authority, proposal, new Date(now.getTime() - 1)))
+      .toThrow("MEMORY_CANDIDATE_SCOPE_INVALID");
+    expect(() => proposeMemoryCandidateScope(db.authority, candidate.candidate_id, scope, new Date(now.getTime() - 1)))
+      .toThrow("MEMORY_CANDIDATE_SCOPE_INVALID");
+    expect(memoryTableCounts(db.authority)).toEqual(counts);
+    const projections = new MemoryProjectionAuthority(db.authority); projections.initialize(now);
+    projections.quarantineUnresolved({ kind: "dashboard_projection", id: candidate.candidate_id,
+      component_id: candidate.candidate_id }, now);
+    expect(() => validateMemoryCandidateScopeProposal(db.authority, proposal, now)).toThrow("MEMORY_CANDIDATE_SCOPE_INVALID");
+    expect(() => proposeMemoryCandidateScope(db.authority, candidate.candidate_id, scope, now)).toThrow("MEMORY_CANDIDATE_SCOPE_INVALID");
   } finally { closeMemoryDatabase(db); }
 });

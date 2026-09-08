@@ -1,6 +1,8 @@
 import { JarvisError, type AuthorityDb } from "./db.js";
 import { readMemoryCandidate } from "./memory-candidate-reader.js";
 import { memoryHash } from "./memory-candidate-values.js";
+import { canonicalize } from "./canonical.js";
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 
 export const MEMORY_CANDIDATE_SCOPE_DOMAIN = "orca-jarvis/memory-candidate-scope-proposal/v1\0";
 export type MemoryCandidateScopeInput = {
@@ -41,7 +43,8 @@ export function proposeMemoryCandidateScope(authority: AuthorityDb, candidateId:
   return authority.db.transaction(() => {
     const candidate = readMemoryCandidate(authority.db, candidateId);
     if (candidate === undefined || candidate.state === "rejected" || candidate.state === "expired"
-      || candidate.source.principal_id !== scope.owner) return fail();
+      || candidate.source.principal_id !== scope.owner || Date.parse(candidate.created_at) > now.getTime()
+      || new MemoryProjectionAuthority(authority).isProjectionIdSuppressed(candidateId)) return fail();
     const until = Math.min(expiry, Date.parse(candidate.candidate_expires_at));
     if (!Number.isFinite(until) || until <= now.getTime()) return fail();
     const core = { schema_version: 1 as const, authorization: "not_granted" as const,
@@ -50,4 +53,28 @@ export function proposeMemoryCandidateScope(authority: AuthorityDb, candidateId:
       scope, proposed_at: now.toISOString(), expires_at: new Date(until).toISOString() };
     return Object.freeze({ ...core, proposal_digest: memoryHash(MEMORY_CANDIDATE_SCOPE_DOMAIN, core) });
   })();
+}
+
+/** Revalidate stored proposal bytes against the current candidate before review.
+ * This is not a policy lookup or authorization check and never grants a write. */
+export function validateMemoryCandidateScopeProposal(authority: AuthorityDb, value: unknown,
+  now: Date): MemoryCandidateScopeProposal {
+  if (typeof value !== "object" || value === null || Array.isArray(value)
+    || !Number.isFinite(now.getTime())) return fail();
+  const proposal = value as Record<string, unknown>;
+  if (typeof proposal.candidate_id !== "string" || typeof proposal.proposed_at !== "string"
+    || typeof proposal.expires_at !== "string" || typeof proposal.scope !== "object"
+    || proposal.scope === null || Array.isArray(proposal.scope)) return fail();
+  const at = Date.parse(proposal.proposed_at);
+  const until = Date.parse(proposal.expires_at);
+  if (!Number.isFinite(at) || new Date(at).toISOString() !== proposal.proposed_at
+    || at > now.getTime() || !Number.isFinite(until) || until <= now.getTime()) return fail();
+  const scope = proposal.scope as Record<string, unknown>;
+  if (Object.keys(scope).sort().join(",") !== "owner,policy_revision,projects") return fail();
+  const current = proposeMemoryCandidateScope(authority, proposal.candidate_id, {
+    owner: scope.owner, projects: scope.projects, policy_revision: scope.policy_revision,
+    valid_until: proposal.expires_at,
+  } as MemoryCandidateScopeInput, new Date(at));
+  if (canonicalize(current) !== canonicalize(value)) return fail();
+  return current;
 }
