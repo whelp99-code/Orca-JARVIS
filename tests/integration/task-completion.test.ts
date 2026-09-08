@@ -5,6 +5,7 @@ import { settleTaskExecution } from "../../src/task-completion.js";
 import { readTaskCompletion } from "../../src/task-completion-record.js";
 import { LoopGraph } from "../../src/loopgraph.js";
 import { candidateHash } from "../../src/task-candidate-artifact-codec.js";
+import { spawnSync } from "node:child_process";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
@@ -13,6 +14,27 @@ async function fixture() {
   const input = await f.certify(); const publication = await publishTaskGitCandidate(input);
   return { ...f, input: { ...input, publication_id: publication.publication_id }, publication };
 }
+
+it("rejects a historical completion when its stored certification bytes are lost", async () => {
+  const f = await fixture(); await settleTaskExecution(f.input);
+  const triggers = f.db.db.prepare("SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='task_candidate_certifications'")
+    .all() as Array<{ name: string }>;
+  for (const { name } of triggers) f.db.db.exec(`DROP TRIGGER "${name.replaceAll('"', '""')}"`);
+  f.db.db.prepare("UPDATE task_candidate_certifications SET proof_json='{}'").run();
+  const before = f.db.db.prepare("SELECT total_changes() AS n").get();
+  expect(() => readTaskCompletion(f.db, "execute")).toThrow("TASK_COMPLETION_INVALID");
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import { AuthorityDb } from './dist/src/db.js';
+    import { readTaskCompletion } from './dist/src/task-completion-record.js';
+    const db = new AuthorityDb(process.argv[1]);
+    try { readTaskCompletion(db, 'execute'); process.exitCode = 1; }
+    catch (error) { process.stdout.write(error.code ?? 'unexpected'); }
+    finally { db.close(); }
+  `, f.db.filename], { encoding: "utf8", timeout: 10000 });
+  expect(child.status).toBe(0);
+  expect(child.stdout).toBe("TASK_COMPLETION_INVALID");
+  expect(f.db.db.prepare("SELECT total_changes() AS n").get()).toEqual(before);
+});
 
 it("atomically completes the verified request, operation and built-in workflow with a read-only replay", async () => {
   const f = await fixture(); const result = await settleTaskExecution(f.input);

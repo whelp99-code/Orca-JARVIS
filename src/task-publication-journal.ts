@@ -22,11 +22,14 @@ export class TaskPublicationJournal {
     if (!row) return null;
     const binding = JSON.parse(row.binding_json) as ReturnType<TaskPublicationJournal["context"]>["binding"];
     const artifact = new TaskCandidateArtifacts(this.authority).read(requestId);
-    const certification = this.authority.db.prepare(`SELECT proof_digest FROM task_candidate_certifications
-      WHERE verification_id=? AND attempt_id=? AND state='recorded'`).get(row.verification_id, row.attempt_id) as { proof_digest: string } | undefined;
+    const certification = this.authority.db.prepare(`SELECT proof_digest,proof_json FROM task_candidate_certifications
+      WHERE verification_id=? AND attempt_id=? AND state='recorded'
+      AND length(CAST(proof_json AS BLOB))<=524288`).get(row.verification_id, row.attempt_id) as
+      { proof_digest: string; proof_json: string } | undefined;
     const attempt = this.authority.db.prepare("SELECT receipt_id,lease_fence FROM control_effect_attempts WHERE attempt_id=? AND request_id=?")
       .get(row.attempt_id, requestId) as { receipt_id: string; lease_fence: number } | undefined;
     if (!artifact || artifact.attempt_id !== row.attempt_id || artifact.plan.schema_version !== 2 || !certification || !attempt) return invalid();
+    if (typeof certification.proof_json !== "string" || candidateHash(certification.proof_json) !== certification.proof_digest) return invalid();
     const expected = { receipt_id: attempt.receipt_id, fence: attempt.lease_fence,
       attempt_id: row.attempt_id, request_id: requestId, verification_id: row.verification_id,
       artifact_id: artifact.artifact_id, candidate_digest: artifact.candidate_digest, payload_digest: artifact.payload_digest,
