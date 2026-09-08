@@ -3,6 +3,7 @@ import { open } from "node:fs/promises";
 import { JarvisError } from "./db.js";
 import { classifyWorkRouting } from "./work-routing.js";
 import { inspectTaskExecutorPlan } from "./task-executor-plan.js";
+import { parseBoundedStrictJson } from "./strict-json.js";
 import { compileTaskTemplate } from "./task-templates.js";
 
 async function readJson(path: string, maximum: number): Promise<unknown> {
@@ -19,7 +20,10 @@ async function readJson(path: string, maximum: number): Promise<unknown> {
         count += read.bytesRead;
       }
       if (count > maximum) throw new Error("invalid");
-      return JSON.parse(new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, count)));
+      const text = new TextDecoder("utf-8", { fatal: true }).decode(bytes.subarray(0, count));
+      const value = parseBoundedStrictJson(text, { depth: 32, nodes: 8192, workItems: 32768, characters: maximum });
+      if (value === undefined) throw new Error("invalid");
+      return value;
     } finally { await file.close(); }
   } catch { throw new JarvisError("WORK_ROUTING_INPUT_INVALID"); }
 }
