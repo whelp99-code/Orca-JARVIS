@@ -53,7 +53,8 @@ function parseCore(value: Record<string, unknown>): Core {
   if (source.schema_version !== 1 || !["ready", "partial", "no_data"].includes(String(source.state))
     || typeof source.limited !== "boolean" || canonicalize(source) !== value.source_json
     || source.local_date !== value.local_date || source.observed_at !== value.generated_at
-    || closeoutInteger(source.evidence_bytes, 0, MAX_EVIDENCE_BYTES) !== records.reduce<number>((n, item) => n + Buffer.byteLength(canonicalize(item)), 0)) return invalidCloseout();
+    || closeoutInteger(source.evidence_bytes, 0, MAX_EVIDENCE_BYTES)
+      !== records.reduce<number>((n, item) => n + Buffer.byteLength(canonicalize(item)), 0)) return invalidCloseout();
   const core: Core = { schema_version: 2, scope: "native_task_completions",
     run_id: closeoutText(value.run_id), correlation_id: closeoutText(value.correlation_id),
     local_date: parseDailyLoopDate(value.local_date), generated_at: closeoutInstant(value.generated_at),
