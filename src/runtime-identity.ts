@@ -13,12 +13,16 @@ export type RuntimeIdentityReader = (now: Date) => RuntimeIdentityReport;
 
 // This root follows the loaded module, not cwd or the operator's current checkout.
 const moduleRoot = dirname(dirname(fileURLToPath(import.meta.url)));
-export function createRuntimeIdentityReader(db: Database.Database | (() => Database.Database), root = moduleRoot): RuntimeIdentityReader {
+export function createRuntimeIdentityReader(db: Database.Database | null | (() => Database.Database | null), root = moduleRoot): RuntimeIdentityReader {
   const processIdentity = { pid: process.pid, started_at: new Date(performance.timeOrigin).toISOString(),
     node: process.version, modules: process.versions.modules, platform: process.platform, arch: process.arch };
   const capture = captureBuild(root);
   return now => ({ schema_version: 1, process: { ...processIdentity }, build: { ...capture.build },
     database: databaseIdentity(typeof db === "function" ? db() : db, capture.expected?.migrations ?? null, now) });
+}
+
+export function captureRuntimeBuildIdentity(): RuntimeIdentityReport["build"] {
+  return captureBuild(moduleRoot).build;
 }
 
 function captureBuild(root: string): {

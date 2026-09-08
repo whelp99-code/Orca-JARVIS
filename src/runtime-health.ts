@@ -1,4 +1,5 @@
 import { AuthorityDb, JarvisError } from "./db.js";
+import { readDaemonRuntimeIdentity } from "./daemon-runtime-identity.js";
 import { observationClock } from "./observation-health-store.js";
 
 type ObservationRow = {
@@ -66,6 +67,7 @@ export function readServiceHealth(db: AuthorityDb, now: Date): Record<string, un
     connected: Boolean(config?.operational),
     config,
     runtime,
+    daemon_identity: readDaemonRuntimeIdentity(db.db, now),
     observation_health: readObservationHealth(db, now),
     intents,
     work_readiness: {

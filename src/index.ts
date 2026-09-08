@@ -212,3 +212,6 @@ export * from "./personal-os-retention.js";
 export { decideRollback, migrationVectorDigest } from "./personal-os-compatibility.js"; export { runPersonalOsRehearsal } from "./personal-os-rehearsal.js";
 export { createRuntimeIdentityReader } from "./runtime-identity.js";
 export type { RuntimeIdentityReader, RuntimeIdentityReport } from "./runtime-identity.js";
+
+export { readDaemonRuntimeIdentity } from "./daemon-runtime-identity.js";
+export type { DaemonRuntimeIdentityReport, DaemonRuntimeSnapshot } from "./daemon-runtime-identity.js";

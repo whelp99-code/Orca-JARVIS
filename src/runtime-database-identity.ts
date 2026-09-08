@@ -3,11 +3,12 @@ import { buildHash, migrationVectorHash } from "./backend-build-files.js";
 import type { BuildMigration, RuntimeIdentityReport } from "./runtime-identity-contracts.js";
 
 export function databaseIdentity(
-  db: Database.Database, expected: readonly BuildMigration[] | null, now: Date,
+  db: Database.Database | null, expected: readonly BuildMigration[] | null, now: Date,
 ): RuntimeIdentityReport["database"] {
   const observed_at = Number.isFinite(now.getTime()) ? now.toISOString() : null;
   const unavailable = { status: "unavailable" as const, observed_at, applied_migrations: null,
     migration_digest: null, missing: null, unexpected: null, changed: null, schema_objects: null, schema_digest: null };
+  if (db === null) return unavailable;
   try {
     return db.transaction(() => {
       const objects = db.prepare("SELECT type,name,tbl_name,sql FROM sqlite_schema ORDER BY type,name LIMIT 16385").all();

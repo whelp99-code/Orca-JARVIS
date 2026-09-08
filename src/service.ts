@@ -1,3 +1,4 @@
+import { performance } from "node:perf_hooks";
 import {
   readServiceHealth, requireNoFatalObservations, recordRuntimeHeartbeat,
   recordCoordinatorAttempt, recordCoordinatorOutcome, withRuntimeHealthFence,
@@ -6,6 +7,7 @@ import { AuthorityDb, JarvisError } from "./db.js";
 import { GjcCoordinatorClient } from "./gjc.js";
 import { canonicalize } from "./canonical.js";
 import { GjcRuntimeLease } from "./gjc-runtime-lease.js";
+import { captureDaemonRuntimeIdentity, publishDaemonRuntimeIdentity, type DaemonRuntimeSnapshot } from "./daemon-runtime-identity.js";
 
 const record = (value: unknown): Record<string, unknown> | null =>
   value !== null && typeof value === "object" && !Array.isArray(value) ? (value as Record<string, unknown>) : null;
@@ -28,17 +30,20 @@ function coordinatorTurn(reply: Record<string, unknown>, sessionId: unknown, tur
 type Intent = { intent_id: string; kind: "sync" | "dispatch" | "answer"; payload_json: string; idempotency_key: string; lease_fence: number };
 export class GjcRuntimeService {
   private readonly lease: GjcRuntimeLease;
+  private identity: DaemonRuntimeSnapshot | undefined;
   constructor(
     private readonly db: AuthorityDb,
     private readonly client: GjcCoordinatorClient,
     worker = "gjc-runtime",
     private readonly supervisorCycle?: () => Promise<unknown>,
     private readonly clock: () => Date = () => new Date(),
+    private readonly captureIdentity: () => DaemonRuntimeSnapshot = captureDaemonRuntimeIdentity,
   ) { this.lease = new GjcRuntimeLease(db, worker); }
   status(): Record<string, unknown> { return readServiceHealth(this.db, this.clock()); }
   async once(now = this.clock().toISOString()): Promise<{ connected?: boolean; processed: string | null; state: string | null }> {
+    const cycleStarted = performance.now();
     return this.lease.run(now, async (owner, fence) => {
-      const result = await this.processOnce(now, owner, fence);
+      const result = await this.processOnce(now, owner, fence, cycleStarted);
       if (result.processed !== null && result.state !== null) {
         const finished = this.clock().toISOString();
         withRuntimeHealthFence(this.db, owner, fence, finished,
@@ -48,10 +53,17 @@ export class GjcRuntimeService {
     });
   }
   close(): void { this.lease.release(this.clock().toISOString()); }
-  private async processOnce(now: string, owner: string, runtimeFence: number) {
+  private async processOnce(now: string, owner: string, runtimeFence: number, cycleStarted: number) {
     const config = this.db.gjcConfig();
     this.db.recoverExpiredGjcIntents(now);
-    withRuntimeHealthFence(this.db, owner, runtimeFence, now, () => recordRuntimeHeartbeat(this.db, now));
+    const identity = this.identity ?? this.captureIdentity();
+    // Account for synchronous file hashing without replacing an explicit cycle clock.
+    const heartbeatAt = new Date(Date.parse(now) + Math.floor(performance.now() - cycleStarted)).toISOString();
+    withRuntimeHealthFence(this.db, owner, runtimeFence, heartbeatAt, () => {
+      publishDaemonRuntimeIdentity(this.db.db, identity, owner, runtimeFence, heartbeatAt);
+      recordRuntimeHeartbeat(this.db, heartbeatAt);
+    });
+    this.identity ??= identity;
     if (this.supervisorCycle) await this.supervisorCycle();
     if (!config?.operational) return { connected: false, processed: null, state: "disconnected" };
     requireNoFatalObservations(this.db, this.clock());

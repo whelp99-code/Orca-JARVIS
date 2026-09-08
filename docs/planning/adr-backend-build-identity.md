@@ -1,7 +1,8 @@
 # 백엔드 빌드 산출물 식별과 실패 복구
 
 상태: 목록19의 빌드 생산자와 현황판 서버 식별/API/화면 구현·격리 인수·독립 리뷰 완료.
-authority daemon의 별도 release 식별 및 실제 운영 전환 인수는 후속 범위다.
+authority daemon의 첫 cycle 관측 저장·진단 CLI는 [후속 단위](adr-daemon-runtime-identity.md)에서 구현한다.
+대시보드 daemon 표시와 실제 운영 전환 인수는 후속 범위다.
 
 ## 문제와 변경
 

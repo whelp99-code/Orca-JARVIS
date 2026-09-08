@@ -1,4 +1,5 @@
 import { parseArgs } from "node:util";
+import { inspectRuntimeIdentity } from "./cli-runtime-identity.js";
 import {
   type CliCommandContext,
   type CliCommandHandler,
@@ -17,6 +18,7 @@ const CLI_HELP =
   "JARVIS — agent-ops runtime\n"
   + "Commands: init, db migrate/rebuild-projections, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, "
   + "observe, pre-gjc, capabilities, team, portfolio, status\n"
+  + "runtime identity [--db PATH]: observe this CLI build and persisted daemon identity without migrating the DB\n"
   + "control plan-task <plan.json>: stage a task execution plan for separate approval (execution unavailable)\n"
   + "control check-task <plan.json>: check repository baseline and declared files without executing an agent\n"
   + "memory classify <input.json> <policy.json>: classify a bounded candidate; does not store memory\n"
@@ -80,6 +82,12 @@ export async function execute(
   if (subcommand === "--help" || subcommand === "-h" || subcommand === "help") {
     console.log(CLI_HELP);
     return { ok: true, command: "help" };
+  }
+  if (command === "runtime" && subcommand === "identity") {
+    if (parsed.positionals.length !== 2 || Object.keys(parsed.values).some(key => key !== "db" && key !== "json")) {
+      throw new JarvisError("UNKNOWN_COMMAND");
+    }
+    return inspectRuntimeIdentity(values.db, dependencies.clock?.() ?? new Date());
   }
   const db = new AuthorityDb(values.db);
   const context: CliCommandContext = {
