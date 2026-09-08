@@ -24,6 +24,14 @@ status: direction-merged-in-recipient-plan-observed
 
 ## 2. 사용자가 확정한 방향
 
+### 2026-09-08 재전달 요청에 대한 추가 대조
+
+- 사용자 요청은 이 자비스 작업공간의 논의를 지정 세컨드브레인 작업에 인계하는 것이다. 본 인계서와 수신 `OSS-ABSORPTION-INTEGRATION-PLAN-2026-09-07.md`의 1~9절 및 45~54절을 대조했다. 수신 문서 5행은 본 인계서를 직접 연결하고, `IMPLEMENTATION-STATUS.md` 5행은 수신 통합 계획을 정본 계획으로 지정한다. 확정 방향과 구현·검증 조건이 수신 작업공간에 반영된 증거다.
+- 수신 계획 48·52절에도 본 인계서를 다시 대조했다는 기록이 있으며, 54절까지 후속 구현과 보류 조건이 이어진다. 따라서 기존 분석·구현을 처음부터 반복할 필요는 없다. 아래 초기 대조표의 발견 당시 상태보다 수신 작업의 최신 구현 원장과 인수 보고서를 우선한다.
+- 수신 계획의 최신 보류 사항: 정정 요청의 차단 lane을 건너뛰는 시제품을 실제 양쪽 validator가 `EFFECT_TOMBSTONE_DELTA_INVALID`로 거부했다. 관련 migration072·자동 retirement·낮은 checkpoint 예외를 철회했다는 기록을 확인했다. 이는 수신 문서 확인 결과이며 이번 인계 작업에서 재현 테스트를 실행한 결과는 아니다. 후속 복구는 양쪽 버전 계약과 원본별 처분 증거를 갖춰 조율한다.
+- 계속 남는 인수 범위는 관리형 native 세션 보존·삭제, 검증된 사용자/프로젝트 범위, 원작업→기억의 출처 계보, 에이전트별 실제 수집·주입, 검색 평가, GUI·운영·복구다. 세컨드브레인은 기억 provider 측을, 자비스는 실행·소비자 측을 담당하며 같은 수정의 중복 실행을 피한다.
+- 이번 새 메시지 전송은 미실행이다. 도구 목록에 `send_message_to_thread`/`handoff_thread`가 없었다. `computer-use` 스킬의 설치 CLI 안내를 읽고 실행한 `orca-ide status --json`과 `computer capabilities --json`은 성공했으나, `computer list-apps --json`은 exit 1, `runtime_error: Unknown system error -122: Unknown system error -122, write`로 실패했다. 대상 입력창을 확인하지 못했으므로 입력·전송하지 않았다. 기존 수신 계획 반영과 새 메시지 발송을 구분한다.
+
 ### 2026-09-08 최신 인수 대조
 
 - 대상 작업 `01a07b30-3b47-7552-879e-adae5ab6ec33`을 다시 읽었다. 작업공간은 `/home/jm/orca/projects/second-brain-app`, 상태는 `active`, 최신 턴은 `inProgress`다. 이번에는 직전 완료 턴의 본문이 반환됐으며 검색 모델 초기화 비용 개선과 자비스 세션 연동의 미완료 조건을 유지하는 진행 메시지를 확인했다.
