@@ -941,3 +941,19 @@
   공개 경로5개의 클래스 동일성, 각 프로세스의 오류3종 거부, 실제 격리 SQLite
   migration 및 ready 검사 통과. 운영DB·외부 모델 호출 없음.
 - 전체01–25 및 나머지 task 순환은 미완료. 운영 배포는 하지 않았다.
+
+
+## 2026-09-09 — 항목14 작업 명세의 실행 계층 역참조 제거
+
+- 기존 task-spec 공개 경로를 유지하고 입력 검증 구현을 task-spec-input으로 옮겼다.
+  control-workflow-input/task-candidate-provider가 검증 모듈을 직접 참조한다.
+  옮긴 interface/함수 본문은 원본과 바이트 동일; 오류는 기존 단일 leaf를 사용한다.
+- 정적 ESM 그래프564모듈/1970edges, 순환1→0. 공개 export843개 목록 동일.
+  동적 import/require 및 외부 라이브러리는 이 측정 범위에 포함되지 않는다.
+- backendbuild+100tests/10files58.79s+lint+3types exit0(handle38378).
+  템플릿3종의 승인→검증→Git발행→재생은 fixture provider/서명 경로이며,
+  compiled CLI staging 및 완료 증거·철회·rollback 검사도 포함한다.
+- 별도 compiled Node3개(PID1828610/1828618/1828627)에서 import순서3종,
+  공개/내부 함수3개의 동일성, 정상명세 수용 및 예산/제약/담당범위 변조3종 거부.
+  모델 호출·운영DB·서비스 변경 없음.
+- 전체01–25 목표는 유지하며 정적 순환 제거를 구조·운영 전체 완료로 간주하지 않는다.

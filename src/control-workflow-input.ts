@@ -1,6 +1,6 @@
 import { JarvisError } from "./db.js";
 import type { WorkflowAdvanceInput, WorkflowRunInput } from "./loopgraph.js";
-import { assertWorkflowTaskSpec } from "./task-spec.js";
+import { assertWorkflowTaskSpec } from "./task-spec-input.js";
 
 function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

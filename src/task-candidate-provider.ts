@@ -3,7 +3,7 @@ import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./db.js";
 import { parseTaskExecutionPlan, taskExecutionPlanDigest, type TaskExecutionPlan } from "./task-execution-plan.js";
-import { assertWorkflowTaskSpec, taskSpecDigest, type TaskSpecV1 } from "./task-spec.js";
+import { assertWorkflowTaskSpec, taskSpecDigest, type TaskSpecV1 } from "./task-spec-input.js";
 import type { TaskSandboxFile } from "./task-sandbox.js";
 
 export type TaskProviderRequest = {

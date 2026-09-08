@@ -1,5 +1,19 @@
 # ADR — 런타임 읽기·통신·공개 API 경계 정리
 
+## 2026-09-09 — 작업 명세 검증과 실행 재노출 분리
+
+`task-spec.ts`는 기존 공개 API를 유지한다. TaskSpecV1·digest·생성·승인 결합 검증은
+`task-spec-input.ts`로 옮기고 검증 소비자인 control-workflow-input 및
+task-candidate-provider는 입력 모듈을 직접 참조한다. 실행 계층을 다시 불러오는
+barrel 역참조를 제거하며 검증 본문·오류 코드·명세 digest는 바꾸지 않는다.
+정적 ESM 그래프와 export 대조, 명세·템플릿·승인·실행·완료 회귀 및 compiled
+프로세스에서 정상 명세와 변조된 명세 검증으로 확인한다.
+
+결과: 정적 ESM 564모듈/1970edges에서 순환1→0, 공개 export843개 동일.
+옮긴 구현 본문은 바이트 동일. backendbuild·100tests/10files·lint·3types exit0,
+별도 compiled Node3개에서 공개 함수 동일성 및 정상/변조 명세 검증 통과.
+동적 import/require·외부 의존 및 전체 운영 인수는 이 정적 측정 범위 밖이다.
+
 ## 2026-09-09 — 공통 오류와 DB 구현의 의존 분리
 
 JarvisError는 DB·저장소를 불러오지 않는 `jarvis-error.ts`에서 단일 정의한다.
