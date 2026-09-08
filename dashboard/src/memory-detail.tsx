@@ -1,14 +1,17 @@
-import { useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { MemoryClient } from "./memory-api.js";
 import type { MemoryRecord } from "./memory-types.js";
 export function MemoryDetail({ record, client, onSettled }: Readonly<{ record?: MemoryRecord;
   client: MemoryClient; onSettled: (message: string) => void }>) {
   const [replacement, setReplacement] = useState(""); const [acknowledged, setAcknowledged] = useState(false);
+  const mounted = useRef(true);
+  useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
+  const settled = (): void => { if (mounted.current) onSettled("Pending owner approval"); };
   if (record === undefined) return <section className="panel" aria-labelledby="memory-detail-heading">
     <header className="panel-header"><h2 id="memory-detail-heading">Detail</h2></header>
     <div className="panel-body"><p className="empty-state">Select a current record.</p></div></section>;
   const correct = (event: FormEvent): void => { event.preventDefault(); void client.correct(record.record_token,
-    record.record_revision, replacement).then(() => { setReplacement(""); onSettled("Pending owner approval"); }); };
+    record.record_revision, replacement).then(() => { if (mounted.current) { setReplacement(""); settled(); } }); };
   return <section className="panel" aria-labelledby="memory-detail-heading"><header className="panel-header">
     <h2 id="memory-detail-heading">Detail</h2></header><div className="panel-body memory-detail">
     <h3>{record.title}</h3><p>{record.excerpt ?? "Sensitive value remains redacted."}</p>
@@ -21,8 +24,8 @@ export function MemoryDetail({ record, client, onSettled }: Readonly<{ record?: 
     <fieldset><legend>Privacy actions</legend><label><input type="checkbox" checked={acknowledged}
       onChange={event => setAcknowledged(event.currentTarget.checked)} /> I understand forgetting is irreversible</label>
       <div className="memory-actions"><button type="button" disabled={!acknowledged}
-        onClick={() => void client.forget(record.record_token, record.record_revision).then(() => onSettled("Pending owner approval"))}>Stage forgetting</button>
+        onClick={() => void client.forget(record.record_token, record.record_revision).then(settled)}>Stage forgetting</button>
       <button type="button" onClick={() => void client.exportRecord(record.record_token,
-        record.record_revision).then(() => onSettled("Pending owner approval"))}>Stage JSON export</button></div></fieldset>
+        record.record_revision).then(settled)}>Stage JSON export</button></div></fieldset>
     </div></section>;
 }

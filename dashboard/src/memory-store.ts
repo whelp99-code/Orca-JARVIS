@@ -12,18 +12,24 @@ export type MemoryStore = ReturnType<typeof createMemoryStore>;
 export function createMemoryStore(options: Options) {
   let snapshot: MemorySnapshot = { state: "loading" };
   let epoch = 0; let lifecycle = 0; let running = false;
+  let clearRevision = 0;
   let active: AbortController | undefined; let activeLoad: AbortController | undefined;
   let activeReview: AbortController | undefined;
   let source: EventSourceLike | undefined; let serverRevision: PersonalSseRevision | undefined;
   let freshTimer: ReturnType<typeof setTimeout> | undefined;
   let reviewTimer: ReturnType<typeof setTimeout> | undefined;
+  let searchTimer: ReturnType<typeof setTimeout> | undefined;
   const listeners = new Set<() => void>(); const clock = options.clock ?? Date.now;
-  const assign = (value: MemorySnapshot): void => { snapshot = value; for (const listener of listeners) listener(); };
+  const assign = (value: MemorySnapshot): void => {
+    snapshot = { ...value, view_revision: epoch, clear_revision: clearRevision };
+    for (const listener of listeners) listener();
+  };
   function scheduleFreshness(status: MemoryStatus): void {
     if (freshTimer !== undefined) clearTimeout(freshTimer);
     const token = lifecycle; const delay = Math.max(0, Date.parse(status.fresh_until) - clock());
     freshTimer = setTimeout(() => {
       if (token !== lifecycle || snapshot.status === undefined) return;
+      clearPrivate();
       assign({ ...snapshot, state: "ready", status: { ...snapshot.status,
         state: "stale", mutations_enabled: false } });
     }, delay);
@@ -47,16 +53,32 @@ export function createMemoryStore(options: Options) {
   }
   async function search(query: string): Promise<void> {
     active?.abort(); const controller = new AbortController(); active = controller; const generation = ++epoch;
+    if (searchTimer !== undefined) clearTimeout(searchTimer); searchTimer = undefined;
+    assign({ ...snapshot, search: undefined, message: undefined });
     try {
       const search = await options.client.search(query, controller.signal);
       if (generation !== epoch || controller.signal.aborted) return;
+      const remaining = Date.parse(search.fresh_until) - clock();
+      if (snapshot.status === undefined || snapshot.status.state !== "ready"
+        || search.privacy_epoch !== snapshot.status.privacy_epoch
+        || !Number.isFinite(remaining) || remaining <= 0) {
+        clearPrivate();
+        assign({ ...snapshot, message: "Memory changed or expired. Refresh before searching again." });
+        return;
+      }
       assign({ ...snapshot, state: "ready", search });
+      searchTimer = setTimeout(() => {
+        if (snapshot.search === search) clearPrivate();
+      }, Math.min(remaining, 60_000));
     } catch (error) {
       if (controller.signal.aborted || generation !== epoch) return;
-      assign({ ...snapshot, state: "error", message: error instanceof Error ? error.message : "Search unavailable" });
+      clearPrivate();
+      assign({ state: "error", message: error instanceof Error ? error.message : "Search unavailable" });
     }
   }
   function clearPrivate(): void {
+    clearRevision += 1;
+    if (searchTimer !== undefined) clearTimeout(searchTimer); searchTimer = undefined;
     activeReview?.abort(); activeReview = undefined;
     if (reviewTimer !== undefined) clearTimeout(reviewTimer); reviewTimer = undefined;
     epoch += 1; active?.abort(); active = undefined; activeLoad?.abort(); activeLoad = undefined;

@@ -226,6 +226,10 @@ async function handleRequest(input: RequestContext): Promise<void> {
       input.response.destroy();
       return;
     }
+    if (error instanceof JarvisError && error.code === "MEMORY_SURFACE_READ_CHANGED") {
+      writeDashboardError(input.response, { status: 409, code: error.code, requestId });
+      return;
+    }
     if (error instanceof JarvisError && (error.code === "AUTHORITY_NOT_READY"
       || error.code === "MEMORY_PROJECTION_AUTHORITY_NOT_READY")) {
       writeDashboardError(input.response, {

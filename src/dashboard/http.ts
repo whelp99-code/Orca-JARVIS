@@ -8,6 +8,7 @@ export const DASHBOARD_ERROR_CODES = {
   INTERNAL_ERROR: "INTERNAL_ERROR",
   AUTHORITY_NOT_READY: "AUTHORITY_NOT_READY",
   MEMORY_PROJECTION_AUTHORITY_NOT_READY: "MEMORY_PROJECTION_AUTHORITY_NOT_READY",
+  MEMORY_SURFACE_READ_CHANGED: "MEMORY_SURFACE_READ_CHANGED",
 } as const;
 
 export type DashboardErrorCode = (typeof DASHBOARD_ERROR_CODES)[keyof typeof DASHBOARD_ERROR_CODES];
@@ -18,6 +19,7 @@ const ERROR_MESSAGES = {
   INTERNAL_ERROR: "Internal error",
   AUTHORITY_NOT_READY: "Authority is not ready",
   MEMORY_PROJECTION_AUTHORITY_NOT_READY: "Memory projections require initialization",
+  MEMORY_SURFACE_READ_CHANGED: "Memory access changed during the request. Refresh and try again.",
 } as const satisfies Record<DashboardErrorCode, string>;
 
 const LOOPBACK_HOSTS = new Set(["127.0.0.1", "localhost"]);
