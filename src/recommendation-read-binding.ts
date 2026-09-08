@@ -44,13 +44,19 @@ export function assertRecommendationAction(row: Row, recommendation: Recommendat
     || row["target_digest"] !== action.target_digest) return invalid();
 }
 
-export function validateRecommendationReadRows(database: Database.Database, source: RecommendationIdentity, expectedId: string): void {
+export function validateRecommendationReadRows(
+  database: Database.Database, source: RecommendationIdentity, expectedId: string, visibleRanks?: readonly number[],
+): void {
   if (expectedId !== source.recommendation.id) return invalid();
   const row = database.prepare("SELECT * FROM personal_recommendations WHERE recommendation_id=?").get(expectedId);
   if (row === undefined) return invalid();
   assertRecommendationRow(persistenceRow(row), source.recommendation, source.provenance);
-  const actions = database.prepare("SELECT rank,title,operation,target_digest FROM personal_recommendation_actions WHERE recommendation_id=? ORDER BY rank")
-    .all(expectedId).map(persistenceRow);
-  if (actions.length !== source.recommendation.payload.actions.length) return invalid();
+  const expectedActions = source.recommendation.payload.actions.filter(action => visibleRanks === undefined || visibleRanks.includes(action.rank));
+  if (visibleRanks !== undefined && (expectedActions.length !== visibleRanks.length || new Set(visibleRanks).size !== visibleRanks.length)) return invalid();
+  const ranks = visibleRanks === undefined ? null : JSON.stringify(visibleRanks);
+  const actions = database.prepare(`SELECT rank,title,operation,target_digest FROM personal_recommendation_actions
+    WHERE recommendation_id=? AND (? IS NULL OR rank IN (SELECT value FROM json_each(?))) ORDER BY rank`)
+    .all(expectedId, ranks, ranks).map(persistenceRow);
+  if (actions.length !== expectedActions.length) return invalid();
   for (const action of actions) assertRecommendationAction(action, source.recommendation);
 }

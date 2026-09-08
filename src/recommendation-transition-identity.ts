@@ -140,8 +140,10 @@ export function validateStoredRecommendationEvents(
   source: RecommendationIdentity,
   baseEvidenceDigest: unknown,
   expectedRecommendationId: string,
+  visibleRanks?: readonly number[],
 ): void {
-  validateRecommendationReadRows(database, source, expectedRecommendationId);
+  validateRecommendationReadRows(database, source, expectedRecommendationId, visibleRanks);
+  const ranks = visibleRanks === undefined ? null : JSON.stringify(visibleRanks);
   const rows = database.prepare(
     `SELECT e.rank,e.state,e.evidence_digest,e.transition_occurred_at,e.transition_digest,
             e.replacement_recommendation_id,rr.context_digest AS replacement_context_digest,
@@ -149,8 +151,8 @@ export function validateStoredRecommendationEvents(
             rr.canonical_envelope_json AS replacement_envelope_json
      FROM personal_recommendation_action_events e
      LEFT JOIN personal_recommendations rr ON rr.recommendation_id=e.replacement_recommendation_id
-     WHERE e.recommendation_id=? ORDER BY e.event_sequence`,
-  ).all(source.recommendation.id).map(persistenceRow);
+     WHERE e.recommendation_id=? AND (? IS NULL OR e.rank IN (SELECT value FROM json_each(?))) ORDER BY e.event_sequence`,
+  ).all(source.recommendation.id, ranks, ranks).map(persistenceRow);
   const replacements = new Map<string, StoredReplacement>();
   for (const row of rows) {
     const direct = nullableText(row["replacement_recommendation_id"]);

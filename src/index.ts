@@ -4,6 +4,7 @@ export { MemoryReferenceDeliveries, type MemoryReferenceSession, type MemoryRefe
 export { MemoryReferenceReader, type MemoryReferenceReaderOptions, type CheckedMemoryReference } from "./memory-reference-reader.js";
 export { createProductionMemoryReference, type MemoryReferenceProductionOptions } from "./memory-reference-production.js";
 export * from "./core-api.js"; export * from "./daily-loop.js"; export * from "./morning-brief.js"; export * from "./memory-candidates.js";
+export * from "./morning-recommendation-source.js";
 export * from "./notification-intents.js"; export * from "./notification-delivery-types.js"; export * from "./recommendation-workflow-public.js";
 export * from "./notification-delivery-input.js"; export * from "./notification-delivery-payload.js"; export * from "./notification-delivery-store.js";
 
