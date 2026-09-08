@@ -1,6 +1,9 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
-import { JarvisError, type AuthorityDb } from "./db.js";
+import { readFileSync, lstatSync } from "node:fs";
+import { loadForbiddenContentIdentities, countForbiddenContentMatches } from "./memory-forbidden-content.js";
+import type { FreshAuthorityBuild } from "./memory-authority-fresh-builder.js";
+import { JarvisError, AuthorityDb } from "./db.js";
 import { MemoryCorrectionCancellationResultStore } from "./memory-correction-cancellation-result-store.js";
 import { beginCompactionRun, type CompactionStart } from "./memory-compaction-persistence.js";
 import type { MemoryCompactionRequest } from "./memory-compaction-types.js";
@@ -111,4 +114,29 @@ export function completeCancellationCompaction(authority: AuthorityDb, request: 
       .run(input.observed_at, input.purge_id);
     return receipt;
   }).immediate();
+}
+
+
+/** Record the replacement identity inside the replacement file, before rename. */
+export function sealCancellationSwap(build: FreshAuthorityBuild, purgeId: string, observedAt: string): FreshAuthorityBuild {
+  const metadata = lstatSync(build.fresh_path, { bigint: true });
+  if (!metadata.isFile() || metadata.nlink !== 1n || (metadata.mode & 0o777n) !== 0o600n)
+    throw new JarvisError("MEMORY_CANCELLATION_SWAP_FILE_INVALID");
+  const fresh = new AuthorityDb(build.fresh_path);
+  try {
+    const changed = fresh.db.prepare(`UPDATE memory_compaction_runs SET state='verified',result_device=?,result_inode=?,
+      logical_result_digest=?,physical_scan_digest=?,integrity_check='ok',foreign_key_error_count=0,updated_at=?
+      WHERE purge_id=? AND state='building' AND source_generation=? AND result_generation=?
+      AND result_device IS NULL AND result_inode IS NULL
+      AND EXISTS(SELECT 1 FROM memory_cancellation_compaction_inputs WHERE purge_id=?)`)
+      .run(metadata.dev.toString(), metadata.ino.toString(), build.logical_result_digest, build.result_digest,
+        observedAt, purgeId, build.source_generation, build.result_generation, purgeId);
+    if (changed.changes !== 1) throw new JarvisError("MEMORY_CANCELLATION_SWAP_BINDING_INVALID");
+    const identities = loadForbiddenContentIdentities(fresh);
+    fresh.db.pragma("wal_checkpoint(TRUNCATE)");
+    fresh.close();
+    const bytes = readFileSync(build.fresh_path);
+    if (countForbiddenContentMatches(bytes, identities) !== 0) throw new JarvisError("MEMORY_COMPACTION_PHYSICAL_SCAN_FAILED");
+    return { ...build, result_digest: `sha256:${createHash("sha256").update(bytes).digest("hex")}` };
+  } finally { if (fresh.db.open) fresh.close(); }
 }

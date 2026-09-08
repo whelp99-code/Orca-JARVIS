@@ -1,5 +1,5 @@
-import { existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { expect, it, vi } from "vitest";
 import { MemoryAuthorityCompactor } from "../../src/memory-authority-compactor.js";
 import { AuthorityDb } from "../../src/db.js";
@@ -197,4 +197,30 @@ it("rejects a changed recovery layout before rebuilding and preserves the origin
     expect(existsSync(f.spoolPath)).toBe(true);
     await f.runtime.compactor.recoverCancellation(f.record.correction_id);
   } finally { spy.mockRestore(); await f.close(); }
+});
+
+it("recovers a replacement whose post-rename runtime metadata was never written", async () => {
+  const f = await cancellationResultFixture();
+  const spy = vi.spyOn(f.databaseRuntime, "observeOldInode").mockImplementationOnce(() => {
+    throw new Error("STOP_AFTER_RENAME");
+  });
+  let replacement: AuthorityDatabaseRuntime | undefined;
+  try {
+    new MemoryCorrectionCancellationResultStore(f.db, f.runtime.clock).record(f.record.correction_id, f.result);
+    const before = statSync(f.db.filename).ino;
+    await expect(f.runtime.compactor.compactCancellation(f.record.correction_id)).rejects.toThrow("STOP_AFTER_RENAME");
+    expect(statSync(f.db.filename).ino).not.toBe(before);
+    const retired = readdirSync(dirname(f.db.filename)).filter(name => name.endsWith(".retired"));
+    expect(retired).toHaveLength(1);
+    expect(statSync(join(dirname(f.db.filename), retired[0]!)).ino).toBe(before);
+    replacement = new AuthorityDatabaseRuntime(f.db, { registry_root: join(f.root, "replacement-registry"), watchdog_ms: 5000 });
+    const layout = { spool_root: f.runtime.spool_root, state_root: join(f.root, "state"), dist_root: join(f.root, "dist"),
+      backup_root: join(f.root, "backups"), restore_root: join(f.root, "restore") };
+    const compactor = new MemoryAuthorityCompactor({ runtime: replacement, layout, clock: f.runtime.clock,
+      scanner: new MemoryManagedSurfaceScanner({ authority: f.db, layout }) });
+    const receipt = await compactor.recoverCancellation(f.record.correction_id);
+    expect(readdirSync(dirname(f.db.filename)).filter(name => name.endsWith(".retired"))).toEqual([]);
+    expect(await compactor.recoverCancellation(f.record.correction_id)).toEqual(receipt);
+    expect(f.db.db.prepare("SELECT count(*) AS n FROM memory_cancellation_compaction_receipts").get()).toEqual({ n: 1 });
+  } finally { spy.mockRestore(); await replacement?.close(); await f.close(); }
 });

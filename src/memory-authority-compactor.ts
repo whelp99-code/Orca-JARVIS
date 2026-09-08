@@ -1,8 +1,11 @@
-import { cancellationCompactionRequest, beginCancellationCompaction, completeCancellationCompaction,
+import { cancellationCompactionRequest, beginCancellationCompaction, completeCancellationCompaction, sealCancellationSwap,
   type CancellationCompactionRequest, type CancellationLocalCompaction } from "./memory-cancellation-compaction.js";
 import { createHash } from "node:crypto";
 import {
   closeSync,
+  existsSync,
+  lstatSync,
+  linkSync,
   fsyncSync,
   openSync,
   readFileSync,
@@ -51,6 +54,7 @@ type CompactorOptions = {
 };
 
 type SwapRequest = {
+  readonly cancellation?: boolean;
   readonly fresh_path: string;
   readonly old_device: bigint;
   readonly old_inode: bigint;
@@ -92,18 +96,23 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
       const active = statSync(authority.filename, { bigint: true });
       if (row && row.result_device === null && row.result_inode === null
         && row.source_device === active.dev.toString() && row.source_inode === active.ino.toString()
-        && row.source_generation === this.options.runtime.activeGeneration().generation)
+        && row.source_generation === this.options.runtime.activeGeneration().generation) {
+        removeRetiredSource(authority.filename, row.purge_id, row.source_device, row.source_inode);
         return this.compactQuiesced(request, true);
+      }
       if (!row || row.result_device !== active.dev.toString() || row.result_inode !== active.ino.toString()
         || row.result_generation !== this.options.runtime.activeGeneration().generation)
         throw new AuthorityError("MEMORY_CANCELLATION_COMPACTION_NOT_SWAPPED");
       const drain = digest({ purge_id: row.purge_id, source_device: row.source_device, source_inode: row.source_inode,
         old_fd_count: 0, holders: [], acknowledged_generation: row.result_generation });
-      if (row.reader_drain_digest !== drain) {
+      if (row.reader_drain_digest !== drain || existsSync(retiredSourcePath(authority.filename, row.purge_id))) {
         const old = this.options.runtime.observeOldInode(BigInt(row.source_device), BigInt(row.source_inode));
         if (old.fd_count !== 0) throw new AuthorityError("MEMORY_OLD_DATABASE_FD_ACTIVE");
         if (old.holders.length !== 0) throw new AuthorityError("MEMORY_OLD_DATABASE_FD_ACTIVE");
       }
+      authority.db.prepare("UPDATE memory_compaction_runs SET reader_drain_digest=? WHERE purge_id=?")
+        .run(drain, row.purge_id);
+      removeRetiredSource(authority.filename, row.purge_id, row.source_device, row.source_inode);
       const bytes = await collectCancellationMaterial(authority, this.options.layout.spool_root, row.purge_id,
         this.options.clock?.() ?? new Date());
       try { if (bytes.length !== 0) throw new AuthorityError("MEMORY_CANCELLATION_SPOOL_REAPPEARED"); }
@@ -144,8 +153,9 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
       sensitive = [...sensitive, ...await collectCancellationMaterial(authority, this.options.layout.spool_root, purgeId, new Date(createdAt))];
       persistForbiddenContentIdentities(authority, { purge_id: purgeId,
         material: sensitive, observed_at: createdAt });
-      const build = await buildFreshAuthority(authority, freshPath,
+      let build = await buildFreshAuthority(authority, freshPath,
         { blocked_projections: blocked, sensitive_material: sensitive });
+      if ("cancellation" in request) build = sealCancellationSwap(build, purgeId, createdAt);
       syncPath(freshPath);
       syncPath(dirname(freshPath), true);
       const freshMetadata = statSync(freshPath, { bigint: true });
@@ -156,7 +166,7 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
       if (countManagedMatches(this.options.layout, sensitive) !== 0) {
         throw new AuthorityError("MEMORY_COMPACTION_MANAGED_MATCH");
       }
-      const swap = await this.swap({ fresh_path: freshPath,
+      const swap = await this.swap({ cancellation: "cancellation" in request, fresh_path: freshPath,
         old_device: sourceMetadata.dev, old_inode: sourceMetadata.ino, purge_id: purgeId,
         result_generation: build.result_generation,
         logical_result_digest: build.logical_result_digest,
@@ -206,6 +216,17 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
     authority.db.pragma("wal_checkpoint(TRUNCATE)");
     authority.close();
     removeSidecars(authority.filename);
+    if (input.cancellation) {
+      const source = lstatSync(authority.filename, { bigint: true });
+      if (!source.isFile() || source.nlink !== 1n || source.dev !== input.old_device || source.ino !== input.old_inode) {
+        authority.reopen();
+        throw new AuthorityError("MEMORY_CANCELLATION_RETIRED_SOURCE_INVALID");
+      }
+      try {
+        linkSync(authority.filename, retiredSourcePath(authority.filename, input.purge_id));
+        syncPath(dirname(authority.filename), true);
+      } catch (error) { authority.reopen(); throw error; }
+    }
     const oldInode = (() => {
       try {
         renameSync(input.fresh_path, authority.filename);
@@ -243,6 +264,8 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
     }
     authority.db.prepare("UPDATE memory_compaction_runs SET reader_drain_digest=? WHERE purge_id=?")
       .run(drainDigest, input.purge_id);
+    if (input.cancellation) removeRetiredSource(authority.filename, input.purge_id,
+      input.old_device.toString(), input.old_inode.toString());
     return { result_device: active.dev.toString(), result_inode: active.ino.toString(),
       old_fd_count: 0, reader_drain_digest: drainDigest };
   }
@@ -285,4 +308,22 @@ function removeSidecars(path: string): void {
 function syncPath(path: string, directory = false): void {
   const descriptor = openSync(path, directory ? "r" : "r");
   try { fsyncSync(descriptor); } finally { closeSync(descriptor); }
+}
+
+function retiredSourcePath(databasePath: string, purgeId: string): string {
+  return join(dirname(databasePath), `.${basename(databasePath)}.${digest(purgeId).slice(7, 31)}.retired`);
+}
+
+function removeRetiredSource(databasePath: string, purgeId: string, device: string, inode: string): void {
+  const path = retiredSourcePath(databasePath, purgeId);
+  let metadata;
+  try { metadata = lstatSync(path, { bigint: true }); }
+  catch (error) {
+    if (error instanceof Error && "code" in error && error.code === "ENOENT") return;
+    throw error;
+  }
+  if (!metadata.isFile() || metadata.dev.toString() !== device || metadata.ino.toString() !== inode
+    || metadata.nlink < 1n || metadata.nlink > 2n) throw new AuthorityError("MEMORY_CANCELLATION_RETIRED_SOURCE_INVALID");
+  rmSync(path);
+  syncPath(dirname(databasePath), true);
 }
