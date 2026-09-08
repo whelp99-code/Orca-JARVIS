@@ -1,3 +1,5 @@
+import { NativeEveningStore } from "../evening-native-store.js";
+import type { NativeEveningSourceConfig } from "../evening-native-source.js";
 import type { TrustedCloseoutKey } from "../evening-closeout-types.js";
 import type { AuthorityDb } from "../db.js";
 import { assertDailyLoopIntegrity } from "../daily-loop-integrity.js";
@@ -11,7 +13,8 @@ import { dbRow, dbRows, nullableText, readOnlySnapshot, text } from "./personal-
 
 type BriefSummary = { readonly state: string; readonly brief_id: string | null; readonly generated_at: string | null; readonly item_count: number };
 
-export function todayProjection(db: AuthorityDb, now: Date, closeoutKey?: TrustedCloseoutKey): Readonly<Record<string, unknown>> {
+export function todayProjection(db: AuthorityDb, now: Date, closeoutKey?: TrustedCloseoutKey,
+  nativeConfig?: NativeEveningSourceConfig): Readonly<Record<string, unknown>> {
   return readOnlySnapshot(db, () => {
     const recommendation = new Recommendations(db).project(now.toISOString(), 500);
     const projections = new MemoryProjectionAuthority(db);
@@ -33,7 +36,7 @@ export function todayProjection(db: AuthorityDb, now: Date, closeoutKey?: Truste
       .map(([state, count]) => ({ state, count }));
     const context = latestContext(db, now);
     const brief = latestBrief(db, now);
-    const closeout = latestCloseout(db, now, closeoutKey);
+    const closeout = latestCloseout(db, now, closeoutKey, nativeConfig);
     const current = runs[0];
     return {
       schema_version: 1, resource: "today", generated_at: now.toISOString(),
@@ -110,7 +113,8 @@ function latestBrief(db: AuthorityDb, now: Date): BriefSummary {
     generated_at: brief.generated_at, item_count: currentItems.length };
 }
 
-function latestCloseout(db: AuthorityDb, now: Date, trusted?: TrustedCloseoutKey): Readonly<Record<string, unknown>> | null {
+function latestCloseout(db: AuthorityDb, now: Date, trusted?: TrustedCloseoutKey,
+  nativeConfig?: NativeEveningSourceConfig): Readonly<Record<string, unknown>> | null {
   if (trusted === undefined) return null;
   const raw = db.db.prepare(
     `SELECT s.step_id,s.run_id,s.detail_json,r.loop_date,r.correlation_id,r.phase,r.state AS run_state,r.updated_at FROM daily_loop_steps s
@@ -124,6 +128,13 @@ function latestCloseout(db: AuthorityDb, now: Date, trusted?: TrustedCloseoutKey
   if (projections.isProjectionIdSuppressed(text(row, "step_id"))
     || projections.isProjectionIdSuppressed(text(row, "run_id"))) return null;
   const parsed: unknown = JSON.parse(text(row, "detail_json"));
+  if (record(parsed) && parsed["schema_version"] === 2) {
+    if (nativeConfig === undefined) return null;
+    const artifact = new NativeEveningStore(db, trusted, nativeConfig, () => now).read(text(row, "run_id"));
+    return { artifact_id: artifact.artifact_id, run_id: artifact.run_id, local_date: artifact.local_date,
+      generated_at: artifact.generated_at, canonical_digest: artifact.canonical_digest,
+      verified_completion_count: artifact.native_completion_count, source_readiness: artifact.source_readiness };
+  }
   const artifact = verifyEveningCloseoutArtifact(parsed, trusted);
   assertDailyLoopIntegrity(db, text(row, "run_id"));
   if (artifact.run_id !== text(row, "run_id") || artifact.local_date !== text(row, "loop_date")

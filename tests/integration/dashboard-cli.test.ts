@@ -8,6 +8,7 @@ import { afterAll, describe, expect, it } from "vitest";
 import { AuthorityDb, DailyLoopStore, EveningCloseoutStore, generateEveningCloseout, parseEveningCloseoutInput } from "../../src/index.js";
 import { parseDashboardCli, startDashboardCli } from "../../src/dashboard/main.js";
 import { closeoutInput, signer, trustedCloseoutKey } from "../fixtures/evening-closeout.js";
+import { parseNativeEveningSourceConfig } from "../../src/evening-native-source.js";
 
 const roots = new Set<string>();
 const MAIN = join(process.cwd(), "dist/src/dashboard/main.js");
@@ -55,6 +56,21 @@ describe("dashboard CLI", () => {
     const valid = ["--closeout-key-id", trustedCloseoutKey.key_id,
       "--closeout-public-key-spki", trustedCloseoutKey.public_key_spki];
     expect(parseDashboardCli([...base, ...valid]).trustedCloseoutKey).toEqual(trustedCloseoutKey);
+    const source = { repository_identities: [], max_records: 10, max_bytes: 1048576 };
+    expect(() => parseNativeEveningSourceConfig({ ...source, repository_identities: new Array(1) })).toThrow();
+    const parsedSource = parseNativeEveningSourceConfig(source);
+    source.max_records = 20;
+    expect(parsedSource.max_records).toBe(10);
+    expect(Object.isFrozen(parsedSource.repository_identities)).toBe(true);
+    expect(parseDashboardCli([...base, ...valid, "--native-closeout-source", JSON.stringify(source)]).nativeCloseoutSource).toEqual(source);
+    for (const args of [[...base, "--native-closeout-source", JSON.stringify(source)],
+      [...base, ...valid, "--native-closeout-source", "{"],
+      [...base, ...valid, "--native-closeout-source", JSON.stringify({ ...source, max_records: 101 })],
+      [...base, ...valid, "--native-closeout-source", " ".repeat(8193)]]) {
+      expect(() => parseDashboardCli(args)).toThrow("VALIDATION_ERROR");
+    }
+    expect(() => startDashboardCli({ host: "127.0.0.1", port: 0, dbPath, staticRoot: root,
+      nativeCloseoutSource: source })).toThrow("VALIDATION_ERROR");
     for (const flags of [valid.slice(0, 2), valid.slice(2),
       ["--closeout-key-id", "bad", "--closeout-public-key-spki", "private-or-invalid"]]) {
       const child = spawnSync(process.execPath, [MAIN, ...base, ...flags], { encoding: "utf8", timeout: 10000 });

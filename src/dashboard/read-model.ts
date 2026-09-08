@@ -1,3 +1,4 @@
+import type { NativeEveningSourceConfig } from "../evening-native-source.js";
 import type { TrustedCloseoutKey } from "../evening-closeout-types.js";
 import { JarvisError, type AuthorityDb } from "../db.js";
 import { passiveCapabilityProbe, runDoctor } from "../doctor.js";
@@ -57,8 +58,9 @@ export class DashboardReadModel {
     cursorSession: PersonalCursorCodecOptions = createPersonalCursorSession(),
     private readonly runtimeIdentity: RuntimeIdentityReader = createRuntimeIdentityReader(() => db.db),
     closeoutKey?: TrustedCloseoutKey,
+    nativeConfig?: NativeEveningSourceConfig,
   ) {
-    this.personal = new PersonalDashboardReadModel(db, capabilityProbe, cursorSession, closeoutKey);
+    this.personal = new PersonalDashboardReadModel(db, capabilityProbe, cursorSession, closeoutKey, nativeConfig);
   }
 
   async overview(now = new Date()): Promise<OverviewResponse> {

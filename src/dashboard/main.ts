@@ -15,6 +15,7 @@ import { createDashboardServer } from "./server.js";
 import { MemoryOutboxTick } from "../memory-outbox-tick.js";
 import { parseTrustedCloseoutKey } from "../evening-closeout-crypto.js";
 import type { TrustedCloseoutKey } from "../evening-closeout-types.js";
+import { parseNativeEveningSourceConfig, type NativeEveningSourceConfig } from "../evening-native-source.js";
 
 const LOOPBACK = "127.0.0.1";
 
@@ -25,12 +26,21 @@ export type DashboardCliOptions = {
   readonly staticRoot: string;
   readonly policyPath?: string;
   readonly trustedCloseoutKey?: TrustedCloseoutKey;
+  readonly nativeCloseoutSource?: NativeEveningSourceConfig;
 };
 
 function configuredCloseoutKey(value: unknown): TrustedCloseoutKey | undefined {
   if (value === undefined) return undefined;
   try { return parseTrustedCloseoutKey(value); }
   catch { throw new JarvisError("VALIDATION_ERROR"); }
+}
+
+function configuredNativeSource(value: unknown, key?: TrustedCloseoutKey): NativeEveningSourceConfig | undefined {
+  if (value === undefined) return undefined;
+  try {
+    if (key === undefined) throw new Error("closeout key required");
+    return parseNativeEveningSourceConfig(value);
+  } catch { throw new JarvisError("VALIDATION_ERROR"); }
 }
 
 export type DashboardMemoryDependencies = {
@@ -57,6 +67,7 @@ export function parseDashboardCli(argv: readonly string[]): DashboardCliOptions 
       policy: { type: "string" },
       "closeout-key-id": { type: "string" },
       "closeout-public-key-spki": { type: "string" },
+      "native-closeout-source": { type: "string" },
     },
     strict: true,
   });
@@ -71,8 +82,17 @@ export function parseDashboardCli(argv: readonly string[]): DashboardCliOptions 
   const trustedCloseoutKey = configuredCloseoutKey(
     values["closeout-key-id"] === undefined && values["closeout-public-key-spki"] === undefined
       ? undefined : { key_id: values["closeout-key-id"], public_key_spki: values["closeout-public-key-spki"] });
+  let source: unknown;
+  if (values["native-closeout-source"] !== undefined) {
+    try {
+      if (Buffer.byteLength(values["native-closeout-source"]) > 8192) throw new Error("config too large");
+      source = JSON.parse(values["native-closeout-source"]);
+    } catch { throw new JarvisError("VALIDATION_ERROR"); }
+  }
+  const nativeCloseoutSource = configuredNativeSource(source, trustedCloseoutKey);
   return { host: LOOPBACK, port, dbPath: resolve(values.db), staticRoot: resolve(values["static-root"]),
     ...(trustedCloseoutKey === undefined ? {} : { trustedCloseoutKey }),
+    ...(nativeCloseoutSource === undefined ? {} : { nativeCloseoutSource }),
     ...(values.policy === undefined ? {} : { policyPath: resolve(values.policy) }) };
 }
 
@@ -81,6 +101,7 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
 }, memoryLifecycle?: Pick<MemoryLifecycleService, "execute">,
   dependencies: DashboardMemoryDependencies = {}): { close: () => Promise<void> } {
   const trustedCloseoutKey = configuredCloseoutKey(options.trustedCloseoutKey);
+  const nativeCloseoutSource = configuredNativeSource(options.nativeCloseoutSource, trustedCloseoutKey);
   const db = new AuthorityDb(options.dbPath);
   const remoteApproval = (() => {
     try { return composeRemoteApproval(db, { policyPath: options.policyPath }); }
@@ -98,6 +119,7 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
   const server = createDashboardServer({
     db,
     trustedCloseoutKey,
+    nativeCloseoutSource,
     staticRoot: options.staticRoot,
     host: options.host,
     port: options.port,

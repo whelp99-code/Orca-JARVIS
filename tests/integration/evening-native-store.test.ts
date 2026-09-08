@@ -13,6 +13,8 @@ import { canonicalize } from "../../src/canonical.js";
 import { signer, trustedCloseoutKey } from "../fixtures/evening-closeout.js";
 import { forgetSecondPublicationSource, SECOND_SOURCE_TARGET } from "../fixtures/morning-publication.js";
 import { initialized } from "../helpers.js";
+import { createDashboardServer } from "../../src/dashboard/server.js";
+import { request } from "undici";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
@@ -34,6 +36,36 @@ async function fixture() {
     [{ target_digest: SECOND_SOURCE_TARGET, source_identity_digest: `sha256:${"b".repeat(64)}` }], f.now);
   return { ...f, loop, runId, claim, config, artifact, budgets, date, projections, bind };
 }
+
+it("serves native completion on Today only with configured scope and current source validity", async () => {
+  const f = await fixture(); f.bind();
+  new NativeEveningStore(f.db, trustedCloseoutKey, f.config, () => f.now)
+    .settleWithinBudget({ claim: f.claim, artifact: f.artifact }, f.budgets);
+  for (const mode of ["missing", "wrong", "configured"] as const) {
+    const server = createDashboardServer({ db: f.db, staticRoot: "dist/dashboard", host: "127.0.0.1", port: 0,
+      clock: () => f.now, trustedCloseoutKey,
+      ...(mode === "missing" ? {} : { nativeCloseoutSource: { ...f.config, repository_identities: mode === "wrong" ? [] : f.config.repository_identities } }) });
+    try {
+      const before = f.db.db.prepare("SELECT total_changes() AS n").get();
+      const response = await request(`http://127.0.0.1:${server.address.port}/api/v1/today`);
+      const body = await response.body.json() as Record<string, unknown>;
+      expect(f.db.db.prepare("SELECT total_changes() AS n").get()).toEqual(before);
+      if (mode === "wrong") expect(response.statusCode).toBeGreaterThanOrEqual(400);
+      else {
+        expect(response.statusCode).toBe(200);
+        if (mode === "missing") expect(body.latest_verified_closeout).toBeNull();
+        else expect(body.latest_verified_closeout).toMatchObject({ artifact_id: f.artifact.artifact_id,
+          verified_completion_count: 1, source_readiness: "degraded" });
+      }
+      if (mode === "configured") {
+        f.projections.quarantineUnresolved({ kind: "control_payload", id: "execute", component_id: "execute" }, f.now);
+        const hidden = await request(`http://127.0.0.1:${server.address.port}/api/v1/today`);
+        expect(hidden.statusCode).toBeGreaterThanOrEqual(400);
+        expect(await hidden.body.text()).not.toContain(f.artifact.artifact_id);
+      }
+    } finally { server.close(); }
+  }
+});
 
 it("publishes original native evidence atomically, reopens it, and preserves usage after source quarantine", async () => {
   const f = await fixture();

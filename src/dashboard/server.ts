@@ -1,3 +1,4 @@
+import { parseNativeEveningSourceConfig, type NativeEveningSourceConfig } from "../evening-native-source.js";
 import type { TrustedCloseoutKey } from "../evening-closeout-types.js";
 import { realpathSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
@@ -67,6 +68,7 @@ export type DashboardServerOptions = {
   readonly orcaRunner?: OrcaRunner;
   readonly capabilityProbe?: CapabilityProbe;
   readonly trustedCloseoutKey?: TrustedCloseoutKey;
+  readonly nativeCloseoutSource?: NativeEveningSourceConfig;
   readonly secondBrainProbe?: SecondBrainReadinessProbe;
   readonly planner?: TeamProposalPlanner;
   readonly clock?: () => Date;
@@ -110,10 +112,13 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
   if (!Number.isInteger(options.port) || options.port < 0 || options.port > 65535) {
     throw new JarvisError("VALIDATION_ERROR");
   }
+  const nativeConfig = options.nativeCloseoutSource === undefined ? undefined : parseNativeEveningSourceConfig(options.nativeCloseoutSource);
+  if (nativeConfig !== undefined && options.trustedCloseoutKey === undefined) throw new JarvisError("VALIDATION_ERROR");
   realpathSync(options.staticRoot);
   const remoteApproval = options.remoteApproval ?? composeRemoteApproval(options.db,
     { policyPath: options.remoteApprovalPolicyPath });
-  const model = new DashboardReadModel(options.db, options.secondBrainProbe, options.capabilityProbe, undefined, undefined, options.trustedCloseoutKey);
+  const model = new DashboardReadModel(options.db, options.secondBrainProbe, options.capabilityProbe,
+    undefined, undefined, options.trustedCloseoutKey, nativeConfig);
   const terminals = new DashboardTerminalReader(model, options.orcaRunner);
   const events = createDashboardEvents(options.db, options.memoryReconcileTick);
   const session = options.sessionStore ?? createDashboardSession();

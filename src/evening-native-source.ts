@@ -1,4 +1,5 @@
 import { canonicalize } from "./canonical.js";
+import { closedArray, closedObject, closeoutDigest, closeoutInteger } from "./evening-closeout-parse-values.js";
 import { JarvisError, type AuthorityDb } from "./db.js";
 import { readControlCommand } from "./control-command-read.js";
 import { parseDailyLoopDate, parseDailyLoopInstant } from "./daily-loop-input.js";
@@ -7,20 +8,28 @@ import { parseTaskExecutionPlan } from "./task-execution-plan.js";
 import { readTaskCompletionEvidence } from "./task-completion-evidence.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 
-type SourceOptions = { readonly local_date: string; readonly observed_at: Date;
-  readonly repository_identities: readonly string[]; readonly max_records: number; readonly max_bytes: number };
+export type NativeEveningSourceConfig = { readonly repository_identities: readonly string[]; readonly max_records: number; readonly max_bytes: number };
+type SourceOptions = NativeEveningSourceConfig & { readonly local_date: string; readonly observed_at: Date };
 const invalid = (): never => { throw new JarvisError("TASK_COMPLETION_INVALID"); };
+
+export function parseNativeEveningSourceConfig(value: unknown): NativeEveningSourceConfig {
+  try {
+    const config = closedObject(value, ["repository_identities", "max_records", "max_bytes"]);
+    const scopes = closedArray(config.repository_identities, 100).map(closeoutDigest);
+    if (new Set(scopes).size !== scopes.length) return invalid();
+    return Object.freeze({ repository_identities: Object.freeze(scopes),
+      max_records: closeoutInteger(config.max_records, 1, 100),
+      max_bytes: closeoutInteger(config.max_bytes, 1, 1048576) });
+  } catch { return invalid(); }
+}
 
 /** Internal configured source; callers must not treat a user-supplied allowlist as authorization. */
 export function readEveningNativeSource(authority: AuthorityDb, value: SourceOptions) {
-  if (!value || Object.keys(value).sort().join(",") !== "local_date,max_bytes,max_records,observed_at,repository_identities"
-    || !Array.isArray(value.repository_identities) || value.repository_identities.length > 100
-    || value.repository_identities.some(id => typeof id !== "string" || !/^sha256:[a-f0-9]{64}$/.test(id))
-    || new Set(value.repository_identities).size !== value.repository_identities.length
-    || !Number.isSafeInteger(value.max_records) || value.max_records < 1 || value.max_records > 100
-    || !Number.isSafeInteger(value.max_bytes) || value.max_bytes < 1 || value.max_bytes > 1048576) return invalid();
+  if (!value || Object.keys(value).sort().join(",") !== "local_date,max_bytes,max_records,observed_at,repository_identities") return invalid();
+  const config = parseNativeEveningSourceConfig({ repository_identities: value.repository_identities,
+    max_records: value.max_records, max_bytes: value.max_bytes });
   const date = parseDailyLoopDate(value.local_date); const at = parseDailyLoopInstant(value.observed_at);
-  const scopes = [...value.repository_identities]; const { max_records: maxRecords, max_bytes: maxBytes } = value;
+  const scopes = config.repository_identities; const { max_records: maxRecords, max_bytes: maxBytes } = config;
   const start = kstInstant(date, 0, 0); const end = new Date(start.getTime() + 86400000);
   if (kstLocalDate(at) < date) return invalid();
   return authority.db.transaction(() => {
