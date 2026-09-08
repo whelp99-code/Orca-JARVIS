@@ -90,7 +90,8 @@ export function parseSecondBrainLegacyStatus(text: string): SecondBrainLegacySta
   return {
     data_state: "unknown",
     latest_refresh_attempt: attempt,
-    last_successful_refresh_at: kind === "ok" ? instant.canonical : null,
+    // The legacy line contains stage started_at, not refresh finished_at.
+    last_successful_refresh_at: null,
   };
 }
 

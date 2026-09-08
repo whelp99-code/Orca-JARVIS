@@ -68,14 +68,24 @@ describe("actual Second Brain producer contracts", () => {
   });
 
   it.each([
-    ["2026-08-28T11:00:00Z run fixture ok pages=1 conflicts=0 errors=0", "success", "2026-08-28T11:00:00.000Z"],
-    ["2026-08-28T11:00:00Z run fixture ok pages=0 conflicts=0 errors=0", "success", "2026-08-28T11:00:00.000Z"],
+    ["2026-08-28T11:00:00Z run fixture ok pages=1 conflicts=0 errors=0", "missing", null],
+    ["2026-08-28T11:00:00Z run fixture ok pages=0 conflicts=0 errors=0", "missing", null],
     ["no runs", "missing", null],
   ])("keeps historical status %s out of current data state", async (status, attempt, success) => {
     const observation = await runtimeSecondBrainReadinessProbe(actualProducerRunner(status)).inspect();
     expect(observation.data_state).toBe("unknown");
     expect(observation.refresh.kind).toBe(attempt);
     expect(observation.last_successful_refresh_at).toBe(success);
+  });
+
+  it("does not treat the producer's stage start timestamp as refresh completion", async () => {
+    // pipeline._run_locked logs `started`; its ledger records a separate `finished_at`.
+    const observation = await runtimeSecondBrainReadinessProbe(actualProducerRunner()).inspect();
+    expect(observation.refresh).toEqual({ kind: "missing" });
+    expect(observation.last_successful_refresh_at).toBeNull();
+    const report = evaluateSecondBrainReadiness(observation, NOW);
+    expect(report.stages.last_successful_refresh.state).toBe("missing");
+    expect(report.stages.freshness).toMatchObject({ state: "unknown", reason: "successful_refresh_missing" });
   });
 
   it("never defaults successful processes with missing operational facts to green", () => {

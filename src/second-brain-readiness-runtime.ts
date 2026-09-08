@@ -166,7 +166,8 @@ function refreshObservation(
 ): SecondBrainRefreshObservation {
   const attempt = legacy?.latest_refresh_attempt;
   if (attempt === null || attempt === undefined) return { kind: "missing" };
-  if (attempt.kind === "success") return { kind: "success", completed_at: attempt.at };
+  // A successful stage log has no refresh completion timestamp or whole-run proof.
+  if (attempt.kind === "success") return { kind: "missing" };
   return { kind: attempt.kind, attempted_at: attempt.at };
 }
 
