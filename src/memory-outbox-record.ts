@@ -10,10 +10,11 @@ export class MemoryOutboxRecordReader {
   constructor(private readonly authority: AuthorityDb, private readonly roots: MemoryOutboxSpoolRoots = {}) {}
   request(outboxId: string, now: Date): SecondBrainRememberWriteRequest {
     const row = this.authority.db.prepare(
-      "SELECT candidate_id,request_id,request_digest,operation FROM memory_outbox WHERE outbox_id=?",
+      "SELECT candidate_id,request_id,request_digest,operation,request_profile FROM memory_outbox WHERE outbox_id=?",
     ).get(outboxId) as { candidate_id: string; request_id: string; request_digest: string;
-      operation: "remember" | "correct" } | undefined;
+      operation: "remember" | "correct"; request_profile: string } | undefined;
     if (row === undefined) throw new JarvisError("MEMORY_OUTBOX_INTEGRITY_FAILURE");
+    if (row.request_profile !== "legacy") throw new JarvisError("MEMORY_OUTBOX_PROFILE_UNSUPPORTED");
     // Content-free outbox rows recover the write request from the claimed control
     // command: spool digest for Task 32, inline request for the shipped Task 30 form.
     const parsed = parseMemoryOutboxAction(this.command(outboxId), now, this.roots).request;
@@ -53,10 +54,10 @@ export class MemoryOutboxRecordReader {
   list(state: string | undefined, limit: number): readonly MemoryOutboxSagaV2[] {
     const rows = state === undefined
       ? this.authority.db.prepare(
-        "SELECT * FROM memory_outbox WHERE action_request_id IS NOT NULL ORDER BY created_at,outbox_id LIMIT ?",
+        "SELECT * FROM memory_outbox WHERE request_profile='legacy' AND action_request_id IS NOT NULL ORDER BY created_at,outbox_id LIMIT ?",
       ).all(limit)
       : this.authority.db.prepare(
-        `SELECT * FROM memory_outbox WHERE action_request_id IS NOT NULL AND state=?
+        `SELECT * FROM memory_outbox WHERE request_profile='legacy' AND action_request_id IS NOT NULL AND state=?
          ORDER BY created_at,outbox_id LIMIT ?`,
       ).all(state, limit);
     return rows.map(parseSagaRow);

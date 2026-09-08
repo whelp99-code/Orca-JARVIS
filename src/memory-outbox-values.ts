@@ -132,6 +132,9 @@ export function requireDuration(value: number): number {
 }
 export function parseSagaRow(value: unknown): MemoryOutboxSagaV2 {
   const row = record(value); const state = row["state"];
+  if (row["request_profile"] !== undefined && row["request_profile"] !== "legacy") {
+    throw new JarvisError("MEMORY_OUTBOX_PROFILE_UNSUPPORTED");
+  }
   if (typeof state !== "string" || !STATES.has(state as MemoryOutboxStateV2)
     || typeof row["outbox_id"] !== "string" || typeof row["candidate_id"] !== "string"
     || typeof row["request_id"] !== "string" || typeof row["request_digest"] !== "string"
