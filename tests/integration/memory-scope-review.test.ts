@@ -11,6 +11,7 @@ import { prepareMemoryScopedWriteIdentity } from "../../src/memory-scoped-write-
 import { prepareMemoryScopedWritePayload, prepareMemoryScopedWriteFromDispatch } from "../../src/memory-scoped-write-payload.js";
 import { outboxFixture } from "../fixtures/memory-outbox-fixture.js";
 import { readMemoryCandidate } from "../../src/memory-candidate-reader.js";
+import { scopedV3DispatchFixture } from "../fixtures/scoped-v3-dispatch.js";
 
 function receipt(authority: AuthorityDb, command: StoredControlCommand, now: Date) {
   return signCommandApproval({ schema_version: 1, receipt_id: `receipt:${command.request_id}`, request_id: command.request_id,
@@ -68,6 +69,24 @@ it("binds an existing signed owner approval to the exact scope and denies pendin
     expect(() => readApprovedMemoryScopeReview(f.authority, proposal, command.request_id, now)).toThrow("MEMORY_SCOPE_REVIEW_INVALID");
     expect(approvedCounts.memory_outbox).toBe(counts.memory_outbox);
   } finally { closeMemoryDatabase(f); }
+});
+
+it("preserves V3 Korean multiline bytes through scoped preparation", async () => {
+  const f = await scopedV3DispatchFixture();
+  try {
+    expect(f.request.schema_version).toBe(3);
+    const proposal = proposeMemoryCandidateScope(f.database.authority, f.candidate.candidate_id, {
+      owner: "principal:owner", projects: ["project:a"], policy_revision: "policy:1",
+      valid_until: new Date(f.now.getTime() + 60000).toISOString() }, f.now);
+    const command = stageMemoryScopeReview(f.database.authority, proposal, f.now);
+    new ControlPlane(f.database.authority).decide(receipt(f.database.authority, command, f.now), f.now);
+    const before = memoryTableCounts(f.database.authority);
+    const prepared = prepareMemoryScopedWriteFromDispatch(f.database.authority, proposal, command.request_id, f.dispatch, f.now);
+    expect(Buffer.from(prepared.payload.content)).toEqual(Buffer.from(f.statement));
+    expect(() => prepareMemoryScopedWritePayload(f.database.authority, proposal, command.request_id,
+      f.request.subject, f.statement.replaceAll("\r\n", "\n"), f.now)).toThrow("MEMORY_SCOPED_PAYLOAD_INVALID");
+    expect(memoryTableCounts(f.database.authority)).toEqual(before);
+  } finally { closeMemoryDatabase(f.database); }
 });
 
 it("prepares from private dispatch bytes and refuses revoked original verification despite a valid scope review", async () => {
