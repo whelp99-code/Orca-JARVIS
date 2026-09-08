@@ -755,3 +755,12 @@
   이 후속 커밋은 위 전체 검증에 포함되지 않는다.
 - 저녁 CLI·운영 서명 키 공급과 서비스 연결, 실제 기억 출처 admission, 나머지 저녁 섹션,
   provider refresh 완료 계약, retention 및 원래 01–25 목표는 계속 진행 중이다.
+
+## 2026-09-09 — native CLI 전체 검증
+
+- 고정 `3f7b58fc4fca202f4225fec0b1f7d90c958d9076`의 전체 `npm run verify`가 exit 0으로 종료했다.
+  backend 215+214파일, 1459+1496=2955개; dashboard 35파일248개 통과.
+  전후 HEAD 동일, 변경 추적 파일 0개, 추적 파일 바이트 동일이다.
+  증거 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/verify-native-cli-after.json` 및 log.
+- 후속 `1beee0c`의 systemd 후보 설정과 `d403db5`의 임시 유닛 실측은 위 고정 검증 범위 밖이다.
+  실제 저녁 시각의 보고 발행·timer 지속성·실제 출처 연결은 계속 HOLD다.
