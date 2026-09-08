@@ -12,7 +12,8 @@ afterEach(async () => {
   cleanupFixtures();
 });
 
-const argumentsByMethod: Readonly<Record<SecondBrainReadMethod, Readonly<Record<string, unknown>>>> = {
+type Schema4ReadMethod = Exclude<SecondBrainReadMethod, "sb_cancellation_status">;
+const argumentsByMethod: Readonly<Record<Schema4ReadMethod, Readonly<Record<string, unknown>>>> = {
   sb_search: { query: "fixture" },
   sb_read_page: { id: "wiki/principle" },
   sb_recent_changes: {},
@@ -24,7 +25,7 @@ const argumentsByMethod: Readonly<Record<SecondBrainReadMethod, Readonly<Record<
   },
 };
 
-async function call(method: SecondBrainReadMethod, value: unknown): Promise<SecondBrainOutcome> {
+async function call(method: Schema4ReadMethod, value: unknown): Promise<SecondBrainOutcome> {
   const child = fixture({ emptyResponse: { method, value } });
   const transport = createSecondBrainTransport(options(child));
   transports.push(transport);

@@ -4,6 +4,12 @@ import { pathToFileURL } from "node:url";
 
 const SENTINEL = "SECOND_BRAIN_CONTRACT_MISMATCH";
 const PROFILES = {
+  schema6: {
+    schemaVersion: 6,
+    implementationCommit: "6da593e8306fc3de23a3342fe6d1480753d2ed4d",
+    implementationRole: "cancellation_status_entry_baseline",
+    digest: "8be1ca195f60cb73f05c989d3d5f3e62053020988ccd8bb028cd4d8b442063b4",
+  },
   schema3: {
     schemaVersion: 3,
     implementationCommit: "30cebe1670c0b65dc9832066a09c2c64f8371b20",
@@ -33,9 +39,9 @@ export class SecondBrainContractError extends Error {
   constructor() { super(SENTINEL); this.name = "SecondBrainContractError"; }
 }
 export type SecondBrainContractSummary = {
-  readonly schemaVersion: 3 | 4 | 5; readonly implementationCommit: string; readonly tools: readonly string[];
+  readonly schemaVersion: 3 | 4 | 5 | 6; readonly implementationCommit: string; readonly tools: readonly string[];
   readonly digest: string; readonly rememberBehavior: "non_idempotent_collision_safe_no_overwrite";
-  readonly features: readonly string[]; readonly toolCount: 9;
+  readonly features: readonly string[]; readonly toolCount: 9 | 10;
 };
 function record(value: unknown): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw new SecondBrainContractError();
@@ -51,7 +57,8 @@ export function consumeSecondBrainContract(fixturePath: string, sourcePath?: str
   const payload = readFileSync(fixturePath); const digest = createHash("sha256").update(payload).digest("hex");
   const profile = digest === PROFILES.schema3.digest ? PROFILES.schema3
     : digest === PROFILES.schema4.digest ? PROFILES.schema4
-    : digest === PROFILES.schema5.digest ? PROFILES.schema5 : undefined;
+    : digest === PROFILES.schema5.digest ? PROFILES.schema5
+    : digest === PROFILES.schema6.digest ? PROFILES.schema6 : undefined;
   if (profile === undefined || readFileSync(`${fixturePath}.sha256`, "ascii") !== `${digest}\n`
     || (sourcePath !== undefined && (!payload.equals(readFileSync(sourcePath))
       || readFileSync(`${sourcePath}.sha256`, "ascii") !== `${digest}\n`))) throw new SecondBrainContractError();
@@ -62,8 +69,10 @@ export function consumeSecondBrainContract(fixturePath: string, sourcePath?: str
   const application = record(root.application); exact(application, ["implementation_commit", "implementation_commit_role"]);
   if (application.implementation_commit !== profile.implementationCommit
     || application.implementation_commit_role !== profile.implementationRole) throw new SecondBrainContractError();
-  const tools = record(root.tools); exact(tools, TOOLS);
-  for (const name of TOOLS) {
+  const expectedTools = profile.schemaVersion === 6 ? ["sb_cancellation_status", ...TOOLS] : [...TOOLS];
+  const toolCount = profile.schemaVersion === 6 ? 10 : 9;
+  const tools = record(root.tools); exact(tools, expectedTools);
+  for (const name of expectedTools) {
     const tool = record(tools[name]);
     if (!("arguments" in tool) || !("happy" in tool) || !("no_data" in tool)) throw new SecondBrainContractError();
   }
@@ -72,13 +81,13 @@ export function consumeSecondBrainContract(fixturePath: string, sourcePath?: str
     || repeated.paths_are_distinct !== true || repeated.same_input_creates_distinct_files !== true) throw new SecondBrainContractError();
   const vectors = record(root.vectors);
   exact(vectors, ["correction", "delegation_revocation", "export", "features", "forget", "tool_count",
-    ...(profile.schemaVersion === 5 ? ["remember_v3"] : [])]);
+    ...(profile.schemaVersion >= 5 ? ["remember_v3"] : [])]);
   const correction = record(vectors.correction);
-  if (vectors.tool_count !== 9 || correction.envelope_bytes !== 6426
+  if (vectors.tool_count !== toolCount || correction.envelope_bytes !== 6426
     || correction.request_digest !== "sha256:3b785d65b826d91040d99a1f1a99f4981547bc2909c20ddda39295e4a1c10ffa"
     || correction.envelope_digest !== "sha256:3f324697dd8c0e69c3ea29f76b945282be3f16ff5935ed49c997597fa33c807e"
     || array(root.errors).length < 35) throw new SecondBrainContractError();
-  if (profile.schemaVersion === 5) {
+  if (profile.schemaVersion >= 5) {
     const rememberV3 = record(vectors.remember_v3); const request = record(rememberV3.request);
     if (request.schema_version !== 3 || request.body_profile !== "plain-text-v1" || request.operation !== "remember"
       || rememberV3.request_digest !== "sha256:516cb892108e4758f5c13312eda92b6c2c720d9fc9aefebd9f973b2fe5d7320b") {
@@ -87,8 +96,8 @@ export function consumeSecondBrainContract(fixturePath: string, sourcePath?: str
   }
   const features = array(vectors.features);
   if (!features.every(feature => typeof feature === "string")) throw new SecondBrainContractError();
-  return { schemaVersion: profile.schemaVersion, implementationCommit: profile.implementationCommit, tools: TOOLS, digest,
-    rememberBehavior: "non_idempotent_collision_safe_no_overwrite", features: features as string[], toolCount: 9 };
+  return { schemaVersion: profile.schemaVersion, implementationCommit: profile.implementationCommit, tools: expectedTools, digest,
+    rememberBehavior: "non_idempotent_collision_safe_no_overwrite", features: features as string[], toolCount };
 }
 function main(): void {
   const args = process.argv.slice(2);

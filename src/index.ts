@@ -220,3 +220,5 @@ export { createCorrectionCancellationIntent, requireCorrectionCancellationIntent
 
 export { requireCorrectionCancellationResult, CORRECTION_CANCELLATION_RESULT_DOMAIN,
   type CorrectionCancellationResultV1 } from "./memory-correction-cancellation-result.js";
+export { requireCorrectionCancellationStatus,
+  type CorrectionCancellationStatusV1 } from "./memory-correction-cancellation-status.js";

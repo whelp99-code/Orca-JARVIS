@@ -9,6 +9,7 @@ const OUTPUT_SCHEMAS = {
   sb_remember: { additionalProperties: { type: "string" }, type: "object" },
   sb_generation_status: { additionalProperties: true, type: "object" },
   sb_request_status: { additionalProperties: true, type: "object" },
+  sb_cancellation_status: { additionalProperties: true, type: "object" },
   sb_resolve_memory_target: { additionalProperties: true, type: "object" },
 } as const;
 
@@ -164,6 +165,7 @@ function outputSchema(name: string, tool: Record<string, unknown>): unknown {
     case "sb_remember": return OUTPUT_SCHEMAS.sb_remember;
     case "sb_generation_status": return OUTPUT_SCHEMAS.sb_generation_status;
     case "sb_request_status": return OUTPUT_SCHEMAS.sb_request_status;
+    case "sb_cancellation_status": return OUTPUT_SCHEMAS.sb_cancellation_status;
     case "sb_resolve_memory_target": return OUTPUT_SCHEMAS.sb_resolve_memory_target;
     case "sb_write_request": return tool["output_schema"];
     default: return undefined;
@@ -189,8 +191,8 @@ export function inspectFrozenSchemas(observed: unknown, contract: unknown): Sche
       || Buffer.byteLength(value.description, "utf8") > DESCRIPTION_BYTES)) return mismatch();
     const tool = contract.tools[value.name]; if (!isRecord(tool)) return mismatch();
     const inputMatches = value.name === "sb_write_request"
-      ? writeInputCanonical(value.inputSchema, contract.schema_version === 5)
-        === writeInputCanonical(tool.arguments, contract.schema_version === 5)
+      ? writeInputCanonical(value.inputSchema, contract.schema_version === 5 || contract.schema_version === 6)
+        === writeInputCanonical(tool.arguments, contract.schema_version === 5 || contract.schema_version === 6)
       : inputSchemaMatches(value.inputSchema, tool.arguments);
     if (!inputMatches) return mismatch();
     const expectedOutput = outputSchema(value.name, tool);

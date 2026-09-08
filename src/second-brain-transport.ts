@@ -65,7 +65,9 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 			? snapshotMemoryWriteArguments(arguments_) : snapshotArguments(arguments_); if (!snapshot)
 			return Promise.reject( this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }), );
 		if (method === WRITE_METHOD && isRecord(snapshot.request) && snapshot.request.schema_version === 3
-			&& this.profile !== "remember-schema5") return Promise.reject(this.error("SECOND_BRAIN_CONTRACT_PROFILE_REQUIRED", "fatal", { method }));
+			&& this.profile !== "remember-schema5" && this.profile !== "cancellation-schema6") return Promise.reject(this.error("SECOND_BRAIN_CONTRACT_PROFILE_REQUIRED", "fatal", { method }));
+		if (method === "sb_cancellation_status" && this.profile !== "cancellation-schema6")
+			return Promise.reject(this.error("SECOND_BRAIN_CONTRACT_PROFILE_REQUIRED", "fatal", { method }));
 		let argumentBytes: number; try {
 			argumentBytes = Buffer.byteLength(JSON.stringify(snapshot), "utf8"); } catch { return Promise.reject(
 				this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }), ); }
@@ -228,7 +230,7 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 export function createSecondBrainTransport( options: SecondBrainTransportOptions = {}, ): SecondBrainTransport {
 	const profile = options.contractProfile ?? process.env["JARVIS_SECOND_BRAIN_CONTRACT_PROFILE"]
 		?? SECOND_BRAIN_CONTRACT_PROFILE;
-	if (profile !== "task32-schema4" && profile !== "remember-schema5") {
+	if (profile !== "task32-schema4" && profile !== "remember-schema5" && profile !== "cancellation-schema6") {
 		throw new SecondBrainTransportError("SECOND_BRAIN_CONTRACT_PROFILE_INVALID", "fatal", { generation: 0 });
 	}
 	return new SupervisedSecondBrainTransport({ ...options, contractProfile: profile });
