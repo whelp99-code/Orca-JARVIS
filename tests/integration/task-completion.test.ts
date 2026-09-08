@@ -9,6 +9,9 @@ import { spawnSync } from "node:child_process";
 import { readTaskCompletionEvidence } from "../../src/task-completion-evidence.js";
 import { generateKeyPairSync } from "node:crypto";
 import { canonicalize } from "../../src/canonical.js";
+import { readEveningNativeSource } from "../../src/evening-native-source.js";
+import { kstLocalDate } from "../../src/daily-loop-time.js";
+import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
 
 const cleanups: Array<() => Promise<void>> = [];
 afterEach(async () => { for (const cleanup of cleanups.splice(0)) await cleanup(); });
@@ -17,6 +20,40 @@ async function fixture() {
   const input = await f.certify(); const publication = await publishTaskGitCandidate(input);
   return { ...f, input: { ...input, publication_id: publication.publication_id }, publication };
 }
+
+it("collects native evening evidence within scope, byte limits and existing privacy filters", async () => {
+  const f = await fixture(); const completion = await settleTaskExecution(f.input);
+  const options = { local_date: kstLocalDate(f.now), observed_at: f.now,
+    repository_identities: [f.plan.publication.repository_identity], max_records: 10, max_bytes: 1048576 };
+  const before = f.db.db.prepare("SELECT total_changes() AS n").get();
+  const source = readEveningNativeSource(f.db, options);
+  expect(source).toMatchObject({ state: "ready", records: [{ completion }], hidden_count: 0, limited: false });
+  expect(source.evidence_bytes).toBe(Buffer.byteLength(canonicalize(source.records[0])));
+  const child = spawnSync(process.execPath, ["--input-type=module", "-e", `
+    import { AuthorityDb } from './dist/src/db.js';
+    import { readEveningNativeSource } from './dist/src/evening-native-source.js';
+    const db = new AuthorityDb(process.argv[1]);
+    const options = JSON.parse(process.argv[2]); options.observed_at = new Date(options.observed_at);
+    try { const result = readEveningNativeSource(db, options);
+      process.stdout.write(JSON.stringify({ state: result.state, count: result.records.length, bytes: result.evidence_bytes })); }
+    finally { db.close(); }
+  `, f.db.filename, JSON.stringify(options)], { encoding: "utf8", timeout: 10000 });
+  expect(child.status).toBe(0);
+  expect(JSON.parse(child.stdout)).toEqual({ state: "ready", count: 1, bytes: source.evidence_bytes });
+  expect(readEveningNativeSource(f.db, { ...options, observed_at: new Date(f.now.getTime() - 1) }).records).toEqual([]);
+  expect(readEveningNativeSource(f.db, { ...options, max_bytes: source.evidence_bytes }).records).toHaveLength(1);
+  expect(readEveningNativeSource(f.db, { ...options, max_bytes: source.evidence_bytes - 1 }))
+    .toMatchObject({ state: "partial", records: [], limited: true });
+  expect(readEveningNativeSource(f.db, { ...options, repository_identities: [] }))
+    .toMatchObject({ state: "no_data", records: [] });
+  expect(readEveningNativeSource(f.db, { ...options, repository_identities: [`sha256:${"0".repeat(64)}`] }).records).toEqual([]);
+  expect(() => readEveningNativeSource(f.db, { ...options, max_records: 0 })).toThrow("TASK_COMPLETION_INVALID");
+  expect(f.db.db.prepare("SELECT total_changes() AS n").get()).toEqual(before);
+  new MemoryProjectionAuthority(f.db).quarantineUnresolved({ kind: "control_payload", id: "execute", component_id: "execute" }, f.now);
+  const hidden = readEveningNativeSource(f.db, options);
+  expect(hidden).toMatchObject({ state: "partial", records: [], hidden_count: 1 });
+  expect(JSON.stringify(hidden)).not.toContain(completion.completion_id);
+});
 
 it("verifies original completion evidence after the execution lease expires without writes", async () => {
   const f = await fixture(); const completion = await settleTaskExecution(f.input);
@@ -66,6 +103,9 @@ it("rejects a historical completion when its stored certification bytes are lost
   f.db.db.prepare("UPDATE task_candidate_certifications SET proof_json='{}'").run();
   const before = f.db.db.prepare("SELECT total_changes() AS n").get();
   expect(() => readTaskCompletion(f.db, "execute")).toThrow("TASK_COMPLETION_INVALID");
+  expect(() => readEveningNativeSource(f.db, { local_date: kstLocalDate(f.now), observed_at: f.now,
+    repository_identities: [f.plan.publication.repository_identity], max_records: 10, max_bytes: 1048576 }))
+    .toThrow("TASK_COMPLETION_INVALID");
   const child = spawnSync(process.execPath, ["--input-type=module", "-e", `
     import { AuthorityDb } from './dist/src/db.js';
     import { readTaskCompletion } from './dist/src/task-completion-record.js';
