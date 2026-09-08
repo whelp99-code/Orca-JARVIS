@@ -138,3 +138,12 @@ it("does not report a completion before its persisted completion time after cloc
   await expect(execute(f.args, { clock: () => new Date(generated) }))
     .rejects.toMatchObject({ code: "DAILY_LOOP_STALE_LEASE" });
 });
+
+
+it("rejects duplicate daily budget fields without preparing work", async () => {
+  const f = await fixture(); const before = rows(f.path);
+  const text = JSON.stringify(config).replace('"max_work":', '"max_work":0,"max_work":');
+  writeFileSync(f.input, text);
+  await expect(execute(f.args, { clock: () => at })).rejects.toMatchObject({ code: "DAILY_LOOP_CONFIG_INVALID" });
+  expect(rows(f.path)).toEqual(before);
+});

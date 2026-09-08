@@ -969,3 +969,15 @@
   추가로 중복 정책 거부와128파일/8검사/검사당64인자 정상계획 수용 확인.
 - 상세 ADR `docs/planning/adr-routing-json-boundary.md`. 승인·실행 권한 부여 없음.
   전체 검증6927은80f58a5에 고정되어 실행 중이며 이 수정은 포함하지 않는다.
+
+
+## 2026-09-09 — 항목12 아침·저녁 설정 해석 보강
+
+- 중복 max_work 설정이 아침/저녁 작업을 실행시키는2개 회귀를 재현했다.
+  기존 strict-json 및 fatal UTF-8을 적용하고 기존8/16KiB 상한·키 권한·예산을 유지했다.
+- build+49tests/5files30.20s+lint+3types exit0(handle42605).
+- compiled Node4프로세스: 중복설정2건 exit2/일일run0, 정상2건 exit0/completed.
+  격리DB·시험키·주입시계·빈원본이며 자동운영HOLD 유지, 시험파일 삭제.
+- 별도 발견: event:a/event_a의 일일 키 충돌을 compiled 함수에서 확인.
+  기존 불변원장/재생 호환 검토가 필요하여 event 활성화HOLD. 상세와 재개 조건은
+  `docs/planning/adr-daily-config-json.md`. 전체01–25 및 refresh/retention 인수는 남는다.

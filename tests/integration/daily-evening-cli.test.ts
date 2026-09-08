@@ -105,3 +105,12 @@ it("replays morning after evening with the configured verification key and whole
   await expect(execute(morningArgs, { clock: () => at })).rejects.toMatchObject({ code: "DAILY_LOOP_INTEGRITY_FAILURE" });
   expect(snapshot(f.path)).toEqual(saved);
 });
+
+
+it("rejects duplicate daily budget fields without preparing work", async () => {
+  const f = await fixture(); const before = snapshot(f.path);
+  const text = JSON.stringify(f.config).replace('"max_work":', '"max_work":0,"max_work":');
+  writeFileSync(f.input, text);
+  await expect(execute(f.args, { clock: () => at })).rejects.toMatchObject({ code: "DAILY_LOOP_CONFIG_INVALID" });
+  expect(snapshot(f.path)).toEqual(before);
+});

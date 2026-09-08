@@ -1,3 +1,4 @@
+import { parseBoundedStrictJson } from "./strict-json.js";
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
@@ -27,9 +28,9 @@ async function readConfig(path: string): Promise<{ daily: Omit<DailyLoopConfig, 
       const buffer = Buffer.alloc(8193);
       const { bytesRead } = await file.read(buffer, 0, buffer.length, 0);
       if (bytesRead > 8192) throw new Error("CONFIG_TOO_LARGE");
-      text = buffer.subarray(0, bytesRead).toString("utf8");
+      text = new TextDecoder("utf-8", { fatal: true }).decode(buffer.subarray(0, bytesRead));
     } finally { await file.close(); }
-    const value: unknown = JSON.parse(text);
+    const value = parseBoundedStrictJson(text, { depth: 32, nodes: 8192, workItems: 32768, characters: 8192 });
     if (typeof value !== "object" || value === null || Array.isArray(value)) throw new Error("CONFIG_INVALID");
     const row = value as Record<string, unknown>;
     const { trusted_closeout_key: key, ...base } = row;

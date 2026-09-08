@@ -1,3 +1,4 @@
+import { parseBoundedStrictJson } from "./strict-json.js";
 import { createHash, createPrivateKey, createPublicKey, sign } from "node:crypto";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
@@ -24,7 +25,8 @@ async function boundedFile(path: string, maximum: number, privateFile = false): 
 
 export async function readEveningCliInputs(configPath: string, keyPath: string, owner: string, clock: () => Date) {
   try {
-    const value = closedObject(JSON.parse((await boundedFile(configPath, 16384)).toString("utf8")),
+    const text = new TextDecoder("utf-8", { fatal: true }).decode(await boundedFile(configPath, 16384));
+    const value = closedObject(parseBoundedStrictJson(text, { depth: 32, nodes: 8192, workItems: 32768, characters: 16384 }),
       ["schema_version", "daily", "source", "trusted_key"]);
     if (value.schema_version !== 1) throw new Error("INVALID_VERSION");
     const daily = closedObject(value.daily, ["time_zone", "lease_ms", "deadline_ms", "recovery_window_ms",
