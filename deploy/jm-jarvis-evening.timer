@@ -1,0 +1,12 @@
+[Unit]
+Description=JM JARVIS evening report at 21:30 Asia/Seoul (candidate)
+
+[Timer]
+OnCalendar=*-*-* 21:30:00 Asia/Seoul
+Persistent=true
+AccuracySec=1s
+RandomizedDelaySec=0
+Unit=jm-jarvis-evening.service
+
+[Install]
+WantedBy=timers.target
