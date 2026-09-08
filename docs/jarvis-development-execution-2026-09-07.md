@@ -981,3 +981,26 @@
 - 별도 발견: event:a/event_a의 일일 키 충돌을 compiled 함수에서 확인.
   기존 불변원장/재생 호환 검토가 필요하여 event 활성화HOLD. 상세와 재개 조건은
   `docs/planning/adr-daily-config-json.md`. 전체01–25 및 refresh/retention 인수는 남는다.
+
+
+## 2026-09-09 — 항목12/23 일일 이벤트 키 충돌 수정
+
+- 신규 event:v2 해시 키로 치환 충돌을 제거하고 원본ID 조회/기존키 재사용을
+  IMMEDIATE transaction 안에서 수행한다. 일정키와 불변 입력 비교는 유지했다.
+- 신규 migration075의 날짜/원본ID unique index가 구/신 작성자의 중복 저장을
+  차단한다. 기존 SQL 변경0. 원본없는 version0 점유키는 자동복제 없이HOLD.
+- final build+127tests/9files59.62s+lint+3types exit0(handle60232).
+- 실제 구버전74 DB→새버전75 upgrade/같은run 재생, 충돌ID 별도run 저장,
+  IPC barrier의 새작성자2개 동일run 수렴, 구버전 중복거부 후 새버전재생 확인.
+  최종run3개(handle59971). 격리SQLite/합성이벤트이며 운영·외부효과 없음.
+- 상세 `docs/planning/adr-daily-event-identity.md`. 실 이벤트 처리기/커넥터/운영HOLD와
+  전체01–25 목표는 유지한다. 전체verify6927은80f58a5에 고정되어 실행 중이다.
+
+
+## 2026-09-09 — 고정80f58a5 누적 전체 검증 완료
+
+- 별도codex/morning-source의 npm run verify(handle6927) exit0.
+  backend1505+1548=3053/442files, dashboard252/36files, 총3305tests.
+  고정시각pre-GJC acceptance도 exit0. 전후HEAD80f58a5/추적파일바이트동일.
+- 증거 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/verify-runtime-boundaries-after.json`
+  및동명log. 이후3d61493·7dd1d4c·이벤트키 수정은 이전체gate에 포함되지 않는다.

@@ -49,12 +49,20 @@ const boundedIdentity = (identity: string): string => {
 	const safe = identity.replace(/[^A-Za-z0-9_-]/g, "_");
 	return safe.length <= 48 ? safe : `sha256_${createHash("sha256").update(identity).digest("hex")}`;
 };
-export function canonicalDailyLoopKey(dateValue: unknown, phaseValue: unknown, eventIdentity?: unknown): string {
+export function legacyDailyLoopKey(dateValue: unknown, phaseValue: unknown, eventIdentity?: unknown): string {
 	const date = parseDailyLoopDate(dateValue);
 	const phase: DailyLoopPhase = parseDailyLoopPhase(phaseValue);
 	if ((phase === "in_day") === (eventIdentity === undefined)) throw new DailyLoopError("DAILY_LOOP_EVENT_INVALID");
 	const suffix = eventIdentity === undefined ? "scheduled" : `event:${boundedIdentity(parseDailyLoopIdentity(eventIdentity))}`;
 	return `daily:${date}:${phase}:${suffix}`;
+}
+/** Current keys retain the raw event identity; legacy keys are only for stored replay. */
+export function canonicalDailyLoopKey(dateValue: unknown, phaseValue: unknown, eventIdentity?: unknown): string {
+  const legacy = legacyDailyLoopKey(dateValue, phaseValue, eventIdentity);
+  if (phaseValue !== "in_day") return legacy;
+  const hash = createHash("sha256").update("orca-jarvis/daily-event/v2\0")
+    .update(JSON.stringify(parseDailyLoopIdentity(eventIdentity)), "utf8").digest("hex");
+  return `daily:${parseDailyLoopDate(dateValue)}:in_day:event:v2:${hash}`;
 }
 export function classifyDailyLoopInstant(instantValue: unknown, inputValue: unknown): DailyLoopCalendarDecision {
 	const instant = parseDailyLoopInstant(instantValue);

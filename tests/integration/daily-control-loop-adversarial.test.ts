@@ -106,7 +106,7 @@ describe("Daily Control Loop adversaries", () => {
       kind: "deferred",
       run_id: expect.stringMatching(/^dlr:/),
       next_allowed_at: "2026-08-31T22:00:00.000Z",
-      deferred_key: "daily:2026-09-01:in_day:event:evt_quiet",
+      deferred_key: "daily:2026-09-01:in_day:event:v2:62685b1cc9f46bc2dc572dc4cebd10a535d23add61fa4227165cacabffb1e47d",
     });
     expect(result.completed_run_ids).toHaveLength(1);
     expect(db.db.prepare("SELECT step_key FROM daily_loop_steps WHERE step_key LIKE '%critical_quiet_hours_bypass%'").get()).toMatchObject({

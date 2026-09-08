@@ -5,11 +5,11 @@ import { parseDailyLoopClaim, parseDailyLoopInstant, parseDailyLoopRunId } from 
 import { claimDailyLoop } from "./daily-loop-claim.js";
 import { DailyLoopReadStore } from "./daily-loop-read.js";
 import { assertDailyLoopIntegrity } from "./daily-loop-integrity.js";
-import { parseFailure, parseStoreCheckpoint, parseStoreCompleteStep, parseStorePrepare, parseUncertain }
+import { parseFailure, parseStoreCheckpoint, parseStoreCompleteStep, parseStorePrepare, parseUncertain, type ParsedPrepareRunInput }
   from "./daily-loop-store-input.js";
 import { DailyLoopError, type DailyLoopClaim, type DailyLoopPhase, type DailyLoopStep } from "./daily-loop-types.js";
 import { bindDailyLoopProjection } from "./memory-projection-bindings.js";
-import { canonicalDailyLoopKey } from "./daily-loop-time.js";
+import { canonicalDailyLoopKey, legacyDailyLoopKey } from "./daily-loop-time.js";
 
 type Row = Record<string, unknown>;
 type CheckpointInput = {
@@ -43,7 +43,30 @@ export class DailyLoopStore {
     return row;
   }
   prepare(value: unknown): string {
-    const input = parseStorePrepare(value); const key = canonicalDailyLoopKey(input.due.local_date, input.due.phase, input.due.event_id);
+    const input = parseStorePrepare(value);
+    return this.authority.db.transaction(() => this.prepareInput(input)).immediate();
+  }
+  private eventKey(input: ParsedPrepareRunInput): string {
+    const { local_date: date, phase, event_id: event } = input.due;
+    const key = canonicalDailyLoopKey(date, phase, event);
+    if (phase !== "in_day") return key;
+    if (!this.authority.db.prepare("SELECT 1 FROM sqlite_master WHERE type='index' AND name='daily_loop_event_identity_v2'").get()) {
+      throw new DailyLoopError("DAILY_LOOP_IDENTITY_CONFLICT");
+    }
+    const legacy = legacyDailyLoopKey(date, phase, event);
+    if (this.authority.db.prepare("SELECT 1 FROM daily_loop_runs WHERE idempotency_key=? AND record_version<>1").get(legacy)) {
+      throw new DailyLoopError("DAILY_LOOP_IDENTITY_CONFLICT");
+    }
+    const prior = this.authority.db.prepare(`SELECT run_id,idempotency_key FROM daily_loop_runs
+      WHERE record_version=1 AND phase='in_day' AND loop_date=? AND json_extract(input_json,'$.event_id')=?`).get(date, event) as
+      { run_id: string; idempotency_key: string } | undefined;
+    if (!prior) return key;
+    if (![key, legacy].includes(prior.idempotency_key)
+      || prior.run_id !== identity("dlr", prior.idempotency_key)) throw new DailyLoopError("DAILY_LOOP_IDENTITY_CONFLICT");
+    return prior.idempotency_key;
+  }
+  private prepareInput(input: ParsedPrepareRunInput): string {
+    const key = this.eventKey(input);
     const runId = identity("dlr", key); const correlation = `daily:${input.due.local_date}:${digest(key).slice(7, 23)}`;
     const createdAt = input.created_at.toISOString(); const notBefore = input.due.not_before ?? input.due.scheduled_at;
     const deadlineAt = input.deadline_at.toISOString();

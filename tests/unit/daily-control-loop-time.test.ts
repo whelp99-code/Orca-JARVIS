@@ -53,7 +53,7 @@ describe("Daily Control Loop calendar", () => {
     expect(deferred).toEqual({
       kind: "deferred",
       next_allowed_at: "2026-08-31T22:00:00.000Z",
-      deferred_key: "daily:2026-09-01:in_day:event:evt_quiet",
+      deferred_key: "daily:2026-09-01:in_day:event:v2:62685b1cc9f46bc2dc572dc4cebd10a535d23add61fa4227165cacabffb1e47d",
     });
     expect(bypassed).toMatchObject({
       kind: "due",
