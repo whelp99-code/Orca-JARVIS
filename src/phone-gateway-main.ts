@@ -2,6 +2,8 @@ import { parseArgs } from "node:util";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+import { PHONE_MEMORY_CLI_FIELDS, parsePhoneMemoryContextCli } from "./phone-memory-context-cli.js";
+import type { PhoneMemoryContextOptions } from "./phone-memory-context.js";
 import {
   createPhoneGatewayServer,
   PHONE_GATEWAY_PORT,
@@ -20,12 +22,14 @@ export type PhoneGatewayCliOptions = {
   readonly upstream: string;
   readonly staticRoot: string;
   readonly envFile: string;
+  readonly memoryContext?: PhoneMemoryContextOptions;
 };
 
 export function parsePhoneGatewayCli(argv: readonly string[]): PhoneGatewayCliOptions {
   const { values } = parseArgs({
     args: [...argv],
     options: {
+      ...Object.fromEntries(PHONE_MEMORY_CLI_FIELDS.map(name => [name, { type: "string" as const }])),
       host: { type: "string" },
       port: { type: "string" },
       upstream: { type: "string" },
@@ -43,12 +47,14 @@ export function parsePhoneGatewayCli(argv: readonly string[]): PhoneGatewayCliOp
   if (typeof values["env-file"] !== "string" || values["env-file"].length === 0) {
     throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
   }
+  const memoryContext = parsePhoneMemoryContextCli(values);
   return {
     host: LOOPBACK,
     port: PHONE_GATEWAY_PORT,
     upstream: UPSTREAM,
     staticRoot: resolve(values["static-root"]),
     envFile: resolve(values["env-file"]),
+    ...(memoryContext === undefined ? {} : { memoryContext }),
   };
 }
 
@@ -69,6 +75,7 @@ export function startPhoneGatewayCli(
     upstream: options.upstream,
     staticRoot: options.staticRoot,
     config,
+    memoryContext: options.memoryContext,
   });
   write(`http://${server.address.host}:${String(server.address.port)}`);
   return { close: () => { server.close(); } };
