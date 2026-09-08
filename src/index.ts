@@ -266,3 +266,5 @@ export { claimMemoryScopedOutbox, markMemoryScopedOutboxDispatch, recoverMemoryS
 
 export { parseSecondBrainScopedWriteAccepted, type SecondBrainScopedWriteAccepted } from "./second-brain-scoped-write-result.js";
 export { recordMemoryScopedOutboxAcceptance } from "./memory-scoped-outbox-result.js";
+
+export { verifySecondBrainScopedProof } from "./second-brain-scoped-proof.js";
