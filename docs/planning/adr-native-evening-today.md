@@ -38,3 +38,28 @@ Native completion tasks without source provenance remain rejected. Automatic
 producer scheduling, runtime provenance admission, other evening sections and
 production/GUI acceptance remain open. The canonical verify run on frozen base
 fa1a46df334dc383cf32f56ea0fd76d306e74ef1 is separate and excludes this change.
+
+## Populated browser regression
+
+On 2026-09-08, `e2e/native-evening.spec.ts` passed in Chromium at 1440x1000
+and 1024x768 (2 passed, 8.2 seconds). It publishes a native completion into a
+real temporary SQLite database using the existing Git publication fixture,
+asserts the report identity/count/readiness from HTTP, loads the built dashboard
+and checks `1 verified`. After source quarantine, HTTP rejects the report and a
+browser reload shows `Today is unavailable` with no completion count.
+
+Reproduce after `npm run build`:
+`JARVIS_E2E_NO_FIXTURE=1 npx playwright test e2e/native-evening.spec.ts`.
+The test creates its own isolated HTTP server; the flag disables unrelated
+standard fixture servers. Default Playwright discovery also includes this test.
+Final lint and all three TypeScript configurations exited 0.
+
+Certification measurements and memory provenance are synthetic fixture inputs.
+This proves the browser consumption path, not an actual agent's verification,
+automatic provenance capture, deployed runtime, or suppression without reload.
+
+The earlier frozen-base verify session 56386 terminated with exit 143 and no
+after-snapshot file. The recorded first shard had 1445 passed and 2 reviewability
+failures; the second shard did not produce a final summary. The cause of termination
+is unestablished. Do not count this as a complete gate; the long-line failures were
+fixed in a0fa93b and checked locally together with the Today changes.
