@@ -1,4 +1,5 @@
-import type { AuthorityDb } from "../db.js";
+import { JarvisError, type AuthorityDb } from "../db.js";
+import { isDeepStrictEqual } from "node:util";
 import { readCandidateReview } from "./memory-candidate-review.js";
 import { memoryRememberProgress } from "./memory-remember-progress.js";
 import { memoryReadPrivacyState, isMemoryReadSuppressed } from "../memory-read-privacy.js";
@@ -49,23 +50,24 @@ export class MemoryReadService {
       privacy_epoch: initial.privacy_epoch, provider_generation: null, items: [], truncated: false,
       omissions: ["provider_unavailable"], checked_at: now.toISOString(), fresh_until: this.freshUntil(now) };
     const outcome = await this.adapter.search(query);
-    const allEvidence = readEvidence(outcome);
-    const final = this.surfaceSnapshot();
-    const visible = allEvidence.filter(item => !this.suppressed(item));
-    const evidence = visible.slice(0, limit);
-    const sessionId = this.session.authenticatedSessionId();
-    const items = evidence.map(item => projectMemoryRecord({ evidence: item, tokens: this.tokens,
-      sessionId, sessionIncarnation: final.session_incarnation, privacyEpoch: final.privacy_epoch,
-      policyDigest: final.policy_digest, now }))
-      .filter(item => item !== undefined);
-    const forgotten = visible.length === 0 && allEvidence.length > 0;
-    return { schema_version: 1, resource: "memory-search", generated_at: now.toISOString(),
-      state: forgotten ? "no_data" : outcomeState(outcome), query_revision: this.tokens.revision("query", sessionId, query),
-      resource_revision: this.tokens.revision("resource", sessionId, `search\0${String(final.privacy_epoch)}\0${final.membership_revision}`),
-      privacy_epoch: final.privacy_epoch, provider_generation: evidence[0]?.record?.generation.generation_id ?? null,
-      items, truncated: evidence.length < visible.length,
-      omissions: forgotten ? ["privacy_filtered"] : outcomeOmissions(outcome),
-      checked_at: now.toISOString(), fresh_until: this.freshUntil(now) };
+    return this.withStableSurface(initial, final => {
+      const allEvidence = readEvidence(outcome);
+      const visible = allEvidence.filter(item => !this.suppressed(item));
+      const evidence = visible.slice(0, limit);
+      const sessionId = final.owner_session_id!;
+      const items = evidence.map(item => projectMemoryRecord({ evidence: item, tokens: this.tokens,
+        sessionId, sessionIncarnation: final.session_incarnation, privacyEpoch: final.privacy_epoch,
+        policyDigest: final.policy_digest, now }))
+        .filter(item => item !== undefined);
+      const forgotten = visible.length === 0 && allEvidence.length > 0;
+      return { schema_version: 1, resource: "memory-search", generated_at: now.toISOString(),
+        state: forgotten ? "no_data" : outcomeState(outcome), query_revision: this.tokens.revision("query", sessionId, query),
+        resource_revision: this.tokens.revision("resource", sessionId, `search\0${String(final.privacy_epoch)}\0${final.membership_revision}`),
+        privacy_epoch: final.privacy_epoch, provider_generation: evidence[0]?.record?.generation.generation_id ?? null,
+        items, truncated: evidence.length < visible.length,
+        omissions: forgotten ? ["privacy_filtered"] : outcomeOmissions(outcome),
+        checked_at: now.toISOString(), fresh_until: this.freshUntil(now) };
+    });
   }
   async detail(token: string) {
     const authority = this.surfaceSnapshot(); const sessionId = this.session.authenticatedSessionId();
@@ -76,20 +78,27 @@ export class MemoryReadService {
     });
     if (selection === undefined || this.adapter === undefined) return undefined;
     const outcome = await this.adapter.readPage(selection.page_id);
-    const evidence = readEvidence(outcome).find(item => item.record?.record_id === selection.record_id
-      && item.record.record_digest === selection.record_digest
-      && sameGeneration(item, selection));
-    const final = this.surfaceSnapshot();
-    if (final.privacy_epoch !== authority.privacy_epoch
-      || final.read_revision !== authority.read_revision
-      || final.membership_revision !== authority.membership_revision
-      || final.tombstone_sequence !== selection.tombstone_sequence
-      || final.tombstone_set_root !== selection.tombstone_set_root) return undefined;
-    const item = evidence === undefined || this.suppressed(evidence) ? undefined : projectMemoryRecord({
-      evidence, tokens: this.tokens, sessionId, sessionIncarnation: final.session_incarnation,
-      privacyEpoch: final.privacy_epoch, policyDigest: final.policy_digest, now: this.clock() });
-    return item === undefined ? undefined : { schema_version: 1, resource: "memory-record-detail",
-      privacy_epoch: final.privacy_epoch, item, conflicts: [], history: [], effect_counts: { total: 0 } };
+    return this.withStableSurface(authority, final => {
+      const evidence = readEvidence(outcome).find(item => item.record?.record_id === selection.record_id
+        && item.record.record_digest === selection.record_digest
+        && sameGeneration(item, selection));
+      const item = evidence === undefined || this.suppressed(evidence) ? undefined : projectMemoryRecord({
+        evidence, tokens: this.tokens, sessionId, sessionIncarnation: final.session_incarnation,
+        privacyEpoch: final.privacy_epoch, policyDigest: final.policy_digest, now: this.clock() });
+      return item === undefined ? undefined : { schema_version: 1, resource: "memory-record-detail",
+        privacy_epoch: final.privacy_epoch, item, conflicts: [], history: [], effect_counts: { total: 0 } };
+    });
+  }
+
+  private withStableSurface<T>(initial: SurfaceAuthoritySnapshot,
+    project: (final: SurfaceAuthoritySnapshot) => T): T {
+    return this.authority.db.transaction(() => {
+      const final = this.surfaceSnapshot();
+      if (!isDeepStrictEqual(initial, final)) {
+        throw new JarvisError("MEMORY_SURFACE_READ_CHANGED");
+      }
+      return project(final);
+    })();
   }
 
   private surfaceSnapshot(): SurfaceAuthoritySnapshot {
@@ -155,19 +164,24 @@ export class MemoryReadService {
     return undefined;
   }
   async conflicts(limit: number) {
-    const status = this.status();
+    const initial = this.surfaceSnapshot();
     if (this.adapter === undefined) return { schema_version: 1, resource: "memory-conflicts",
-      generated_at: this.clock().toISOString(), state: "unavailable", privacy_epoch: status.privacy_epoch,
+      generated_at: this.clock().toISOString(), state: "unavailable", privacy_epoch: initial.privacy_epoch,
       items: [], truncated: false };
     const outcome = await this.adapter.openConflicts();
-    const conflicts = outcome.kind === "conflicts" ? outcome.conflicts.slice(0, limit) : [];
-    return { schema_version: 1, resource: "memory-conflicts", generated_at: this.clock().toISOString(),
-      state: outcomeState(outcome), privacy_epoch: status.privacy_epoch, items: conflicts.map(item => ({
-        conflict_revision: this.tokens.revision("resource", this.session.authenticatedSessionId(), item.conflict_id),
-        subject: privateSensitivity(item.left.sensitivity) || privateSensitivity(item.right.sensitivity)
-          ? "[REDACTED]" : "Unresolved memory conflict", state: item.state,
-        sides: [item.left, item.right].map(side => ({ sensitivity: side.sensitivity,
-          citation: privateSensitivity(side.sensitivity) ? "Private citation" : "Memory citation" })) })),
-      truncated: conflicts.length < (outcome.kind === "conflicts" ? outcome.conflicts.length : 0) };
+    return this.withStableSurface(initial, final => {
+      const visible = outcome.kind === "conflicts" ? outcome.conflicts.filter(item =>
+        !this.suppressed(item.left) && !this.suppressed(item.right)) : [];
+      const conflicts = visible.slice(0, limit);
+      return { schema_version: 1, resource: "memory-conflicts", generated_at: this.clock().toISOString(),
+        state: outcome.kind === "conflicts" && visible.length === 0 ? "no_data" : outcomeState(outcome),
+        privacy_epoch: initial.privacy_epoch, items: conflicts.map(item => ({
+          conflict_revision: this.tokens.revision("resource", final.owner_session_id!, item.conflict_id),
+          subject: privateSensitivity(item.left.sensitivity) || privateSensitivity(item.right.sensitivity)
+            ? "[REDACTED]" : "Unresolved memory conflict", state: item.state,
+          sides: [item.left, item.right].map(side => ({ sensitivity: side.sensitivity,
+            citation: privateSensitivity(side.sensitivity) ? "Private citation" : "Memory citation" })) })),
+        truncated: conflicts.length < visible.length };
+    });
   }
 }

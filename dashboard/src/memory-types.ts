@@ -49,6 +49,9 @@ export const MemoryRememberProgressSchema = z.object({ schema_version: z.literal
 export type MemoryCandidateReview = z.infer<typeof MemoryCandidateReviewSchema>;
 export type MemoryRememberProgress = z.infer<typeof MemoryRememberProgressSchema>;
 export type MemorySnapshot = { readonly state: "loading" | "ready" | "error"; readonly status?: MemoryStatus;
+  /** Local store generation, never a provider or authority claim. */
+  readonly view_revision?: number;
+  readonly clear_revision?: number;
   readonly search?: MemorySearch; readonly conflicts?: MemoryConflicts;
   readonly candidates?: MemoryCandidates; readonly effects?: MemoryEffects;
   readonly review?: MemoryCandidateReview; readonly progress?: MemoryRememberProgress;

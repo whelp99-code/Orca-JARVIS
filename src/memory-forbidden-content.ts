@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./db.js";
+import { withMemoryContentRepresentations } from "./memory-content-representations.js";
 
 const WINDOW_BYTES = 32;
 const ROLLING_BASE_A = 257;
@@ -24,7 +25,7 @@ export function persistForbiddenContentIdentities(
     readonly observed_at: string;
   },
 ): readonly ForbiddenContentIdentity[] {
-  const identities = deriveForbiddenContentIdentities(input.material);
+  const identities = withMemoryContentRepresentations(input.material, deriveForbiddenContentIdentities);
   const insert = authority.db.prepare(
     `INSERT OR IGNORE INTO memory_forbidden_content_identities(
       purge_id,identity_digest,content_digest,content_bytes,window_bytes,window_digest,
@@ -70,7 +71,6 @@ function deriveForbiddenContentIdentities(
 ): readonly ForbiddenContentIdentity[] {
   const identities = new Map<string, ForbiddenContentIdentity>();
   for (const value of material) {
-    if (value.byteLength === 0) continue;
     const contentDigest = sha(value);
     const length = Math.min(value.byteLength, WINDOW_BYTES);
     const maximumOffset = value.byteLength - length;

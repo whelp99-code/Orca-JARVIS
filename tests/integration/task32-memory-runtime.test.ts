@@ -120,6 +120,10 @@ describe("Task 32 bound Memory runtime", () => {
         .toEqual({ privacy_epoch: 1, suppression_sequence: 1 });
       expect(value.db.db.prepare("SELECT operation FROM memory_surface_suppressions").get())
         .toEqual({ operation: "forget" });
+      const hiddenConflicts = await call(value, "/api/v1/memory/conflicts?state=unresolved&limit=20");
+      expect(hiddenConflicts.status).toBe(200);
+      expect(hiddenConflicts.body.items).toEqual([]);
+      expect(hiddenConflicts.body.state).toBe("no_data");
       expect(() => value.db.db.prepare("UPDATE memory_surface_target_versions SET created_at=created_at").run())
         .toThrow("immutable memory target version");
       expect(() => value.db.db.prepare("DELETE FROM memory_surface_target_versions").run())
