@@ -19,6 +19,37 @@ function fixture() {
   save(policy);
   return { path, root, save };
 }
+it("applies explicit agent grants to fresh authenticated sessions without sharing their identities", () => {
+  const f = fixture(); let current: AuthenticatedMemorySession | undefined = session;
+  const base = Object.fromEntries(Object.entries(policy).filter(([key]) => key !== "sessions"));
+  const grant = { agent_id: 'agent:test', projects: ['project:a'], methods: ['sb_read_page', 'sb_search'] };
+  const v2 = { ...base, schema_version: 2, agents: [grant] };
+  f.save(v2);
+  const resolve = createFileMemoryAccessScopeResolver(f.path, 'provider:test', () => current);
+  expect(resolve(now, request)).toMatchObject({ session_id: 'session:test', projects: ['project:a'], valid_until: session.expires_at });
+  current = { ...session, session_id: 'session:new' };
+  expect(resolve(now, request)).toMatchObject({ session_id: 'session:new', projects: ['project:a'] });
+  current = { ...session, agent_id: 'agent:other' };
+  expect(resolve(now, request)).toBeUndefined();
+  current = undefined; expect(resolve(now, request)).toBeUndefined();
+  current = session; expect(resolve(new Date(session.expires_at), request)).toBeUndefined();
+  f.save({ ...v2, agents: [] }); expect(resolve(now, request)).toBeUndefined();
+  f.save({ ...v2, agents: [{ ...grant, projects: ['project:b'] }] });
+  expect(resolve(now, request)?.projects).toEqual(['project:b']);
+  f.save(policy); current = { ...session, session_id: 'session:new' };
+  expect(resolve(now, request)).toBeUndefined();
+});
+it("rejects mixed policy versions, duplicate agents and wildcard projects", () => {
+  const f = fixture(); const resolve = createFileMemoryAccessScopeResolver(f.path, 'provider:test', () => session);
+  const base = Object.fromEntries(Object.entries(policy).filter(([key]) => key !== "sessions"));
+  const grant = { agent_id: 'agent:test', projects: ['project:a'], methods: ['sb_search'] };
+  const v2 = { ...base, schema_version: 2, agents: [grant] };
+  for (const invalid of [{ ...v2, sessions: policy.sessions }, { ...v2, schema_version: 3 },
+    { ...v2, agents: [grant, grant] }, { ...v2, agents: [{ ...grant, session_id: 'session:test' }] },
+    { ...v2, agents: [{ ...grant, projects: ['*'] }] }]) {
+    f.save(invalid); expect(resolve(now, request)).toBeUndefined();
+  }
+});
 it("matches current session and explicit policy, refreshes changes, caps expiry", () => {
   const f = fixture(); let current: AuthenticatedMemorySession | undefined = session;
   const resolve = createFileMemoryAccessScopeResolver(f.path, "provider:test", () => current);

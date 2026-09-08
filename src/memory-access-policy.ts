@@ -52,23 +52,26 @@ export function createFileMemoryAccessScopeResolver(policyPath: string, provider
     const sessionExpiry = instant(session.expires_at);
     if (sessionExpiry === undefined || sessionExpiry <= now) return undefined;
     const policy = readPolicy(policyPath);
-    if (!record(policy, ["schema_version", "provider_instance_id", "principal_id", "policy_revision", "valid_from", "valid_until", "sessions"])
-      || policy.schema_version !== 1 || policy.provider_instance_id !== provider || policy.principal_id !== session.principal_id
-      || typeof policy.policy_revision !== "string" || !id.test(policy.policy_revision)
-      || !Array.isArray(policy.sessions) || policy.sessions.length > 64) return undefined;
+    const agentPolicy = typeof policy === "object" && policy !== null && Reflect.get(policy, "schema_version") === 2;
+    const entries = agentPolicy ? "agents" : "sessions";
+    if (!record(policy, ["schema_version", "provider_instance_id", "principal_id", "policy_revision", "valid_from", "valid_until", entries])
+      || policy.schema_version !== (agentPolicy ? 2 : 1) || policy.provider_instance_id !== provider || policy.principal_id !== session.principal_id
+      || typeof policy.policy_revision !== "string" || !id.test(policy.policy_revision)) return undefined;
+    const rows = policy[entries];
+    if (!Array.isArray(rows) || rows.length > 64) return undefined;
     const from = instant(policy.valid_from); const until = instant(policy.valid_until);
     if (from === undefined || until === undefined || !(from <= now && now < until)) return undefined;
     const seen = new Set<string>(); let selected: string[] | undefined;
-    for (const row of policy.sessions) {
-      if (!record(row, ["agent_id", "session_id", "projects", "methods"])
+    for (const row of rows) {
+      if (!record(row, agentPolicy ? ["agent_id", "projects", "methods"] : ["agent_id", "session_id", "projects", "methods"])
         || typeof row.agent_id !== "string" || !id.test(row.agent_id)
-        || typeof row.session_id !== "string" || !id.test(row.session_id)
+        || (!agentPolicy && (typeof row.session_id !== "string" || !id.test(row.session_id)))
         || !strings(row.projects, item => item.startsWith("project:") && id.test(item) && id.test(item.slice(8)))
         || !strings(row.methods, item => item === "sb_read_page" || item === "sb_search" || item === "sb_generation_status")) return undefined;
-      const key = `${row.agent_id}\0${row.session_id}`;
+      const key = agentPolicy ? row.agent_id : `${row.agent_id}\0${row.session_id}`;
       if (seen.has(key)) return undefined;
       seen.add(key);
-      if (row.agent_id === session.agent_id && row.session_id === session.session_id && row.methods.includes(request.method)) {
+      if (row.agent_id === session.agent_id && (agentPolicy || row.session_id === session.session_id) && row.methods.includes(request.method)) {
         selected = row.projects;
       }
     }
