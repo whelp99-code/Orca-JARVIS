@@ -45,6 +45,43 @@ const refs = [
 ] as const;
 
 describe("normalized memory projection authority", () => {
+  it("preserves dependencies from every resolved parent", async () => {
+    const db = new AuthorityDb(tempDb()); await db.migrate();
+    try {
+      const projections = new Jarvis.MemoryProjectionAuthority(db);
+      const at = new Date(correction.created_at);
+      const second = { kind: "context", id: "context:second", component_id: "context:second" } as const;
+      const secondDigest = `sha256:${"9".repeat(64)}`;
+      projections.bind(refs[0], [{ target_digest: target.target_digest }], at);
+      projections.bind(second, [{ target_digest: secondDigest }], at);
+      projections.inherit(refs[5], [refs[0], second], at);
+      expect(projections.isSuppressed(refs[5])).toBe(false);
+      expect(db.db.prepare("SELECT target_digest FROM memory_projection_dependencies WHERE projection_id=? ORDER BY target_digest")
+        .all(refs[5].id)).toEqual([target.target_digest, secondDigest].sort().map(target_digest => ({ target_digest })));
+    } finally { db.close(); }
+  });
+
+  it.each([false, true])("quarantines mixed known and missing parents, missing first=%s", async (missingFirst) => {
+    const db = new AuthorityDb(tempDb()); await db.migrate();
+    try {
+      const projections = new Jarvis.MemoryProjectionAuthority(db);
+      const at = new Date(correction.created_at);
+      const known = refs[0];
+      const missing = { kind: "context", id: "missing-parent", component_id: "missing-parent" } as const;
+      const child = refs[5];
+      projections.bind(known, [{ target_digest: target.target_digest }], at);
+      projections.inherit(child, missingFirst ? [missing, known] : [known, missing], at);
+      expect(projections.isSuppressed(child)).toBe(true);
+      expect(projections.visible([child], ref => ref)).toEqual([]);
+      expect(db.db.prepare("SELECT reason_code FROM memory_projection_quarantine WHERE projection_id=?")
+        .get(child.id)).toEqual({ reason_code: "lineage_unresolved" });
+      expect(db.db.prepare("SELECT COUNT(*) AS count FROM memory_projection_dependencies WHERE projection_id=?")
+        .get(child.id)).toEqual({ count: 0 });
+      projections.inherit(refs[8], [child, known], at);
+      expect(projections.isSuppressed(refs[8])).toBe(true);
+    } finally { db.close(); }
+  });
+
   it("suppresses all eleven transitive read contexts in the tombstone transaction", async () => {
     // Given: exact target lineage inherited through all required JARVIS projection contexts.
     const db = new AuthorityDb(tempDb()); await db.migrate();

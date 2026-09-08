@@ -62,13 +62,13 @@ export class MemoryProjectionLineage {
       this.quarantine(ref, "lineage_invalid", now);
       return;
     }
-    const dependencies = parents.flatMap(parent => this.dependencies(parent));
+    const parentDependencies = parents.map(parent => this.dependencies(parent));
     const parentQuarantined = parents.some(parent => this.isQuarantined(parent));
-    if (dependencies.length === 0 || parentQuarantined) {
+    if (parentDependencies.some(dependencies => dependencies.length === 0) || parentQuarantined) {
       this.quarantine(ref, parentQuarantined ? "lineage_ambiguous" : "lineage_unresolved", now);
       return;
     }
-    this.bind(ref, dependencies, now);
+    this.bind(ref, parentDependencies.flat(), now);
   }
 
   hasLineage(ref: MemoryProjectionRef): boolean {
