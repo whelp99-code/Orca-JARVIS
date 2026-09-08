@@ -4,6 +4,8 @@ import { pathToFileURL } from "node:url";
 
 const SENTINEL = "SECOND_BRAIN_CONTRACT_MISMATCH";
 const PROFILES = {
+  schema7: { schemaVersion: 7, implementationCommit: "df9412c2016bbf0e71e747f9c4da8ef88b3eb654",
+    implementationRole: "cancellation_submission_entry_baseline", digest: "d137a7a7b0e4a577abef04d6ecb2768630e9912cd24b8f270c320cb45d60165d" },
   schema6: {
     schemaVersion: 6,
     implementationCommit: "6da593e8306fc3de23a3342fe6d1480753d2ed4d",
@@ -39,9 +41,9 @@ export class SecondBrainContractError extends Error {
   constructor() { super(SENTINEL); this.name = "SecondBrainContractError"; }
 }
 export type SecondBrainContractSummary = {
-  readonly schemaVersion: 3 | 4 | 5 | 6; readonly implementationCommit: string; readonly tools: readonly string[];
+  readonly schemaVersion: 3 | 4 | 5 | 6 | 7; readonly implementationCommit: string; readonly tools: readonly string[];
   readonly digest: string; readonly rememberBehavior: "non_idempotent_collision_safe_no_overwrite";
-  readonly features: readonly string[]; readonly toolCount: 9 | 10;
+  readonly features: readonly string[]; readonly toolCount: 9 | 10 | 11;
 };
 function record(value: unknown): Record<string, unknown> {
   if (typeof value !== "object" || value === null || Array.isArray(value)) throw new SecondBrainContractError();
@@ -58,6 +60,7 @@ export function consumeSecondBrainContract(fixturePath: string, sourcePath?: str
   const profile = digest === PROFILES.schema3.digest ? PROFILES.schema3
     : digest === PROFILES.schema4.digest ? PROFILES.schema4
     : digest === PROFILES.schema5.digest ? PROFILES.schema5
+    : digest === PROFILES.schema7.digest ? PROFILES.schema7
     : digest === PROFILES.schema6.digest ? PROFILES.schema6 : undefined;
   if (profile === undefined || readFileSync(`${fixturePath}.sha256`, "ascii") !== `${digest}\n`
     || (sourcePath !== undefined && (!payload.equals(readFileSync(sourcePath))
@@ -69,8 +72,8 @@ export function consumeSecondBrainContract(fixturePath: string, sourcePath?: str
   const application = record(root.application); exact(application, ["implementation_commit", "implementation_commit_role"]);
   if (application.implementation_commit !== profile.implementationCommit
     || application.implementation_commit_role !== profile.implementationRole) throw new SecondBrainContractError();
-  const expectedTools = profile.schemaVersion === 6 ? ["sb_cancellation_status", ...TOOLS] : [...TOOLS];
-  const toolCount = profile.schemaVersion === 6 ? 10 : 9;
+  const expectedTools = [...TOOLS, ...(profile.schemaVersion >= 6 ? ["sb_cancellation_status"] : []), ...(profile.schemaVersion === 7 ? ["sb_submit_cancellation"] : [])];
+  const toolCount = profile.schemaVersion === 7 ? 11 : profile.schemaVersion === 6 ? 10 : 9;
   const tools = record(root.tools); exact(tools, expectedTools);
   for (const name of expectedTools) {
     const tool = record(tools[name]);

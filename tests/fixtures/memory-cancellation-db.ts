@@ -4,8 +4,9 @@ import { MemoryProjectionAuthority } from "../../src/memory-projection-authority
 import { MemoryCorrectionStore } from "../../src/memory-correction-store.js";
 import { correctionPreparedFixture } from "./memory-correction-control.js";
 
-export async function cancellationDatabaseFixture(mode: "suppressed" | "quarantine" | "unsuppressed" = "suppressed") {
-  const f = await correctionPreparedFixture();
+export async function cancellationDatabaseFixture(mode: "suppressed" | "quarantine" | "unsuppressed" = "suppressed",
+  resolved?: Parameters<typeof correctionPreparedFixture>[0]) {
+  const f = await correctionPreparedFixture(resolved);
   try {
     const path = join(f.runtime.spool_root, readdirSync(f.runtime.spool_root)[0]!);
     const staged = JSON.parse(readFileSync(path, "utf8"));

@@ -94,3 +94,22 @@ describe("Second Brain crash and uncertainty", () => {
     expect(transport.diagnostics().filter(item => item.code === "SECOND_BRAIN_CLOSED")).toHaveLength(1);
   });
 });
+
+
+it.each([false, true])("contains asynchronous stdin failure during shutdown=%s", async stopping => {
+  const child = new SignalProcess(true, true, true);
+  let dispatched: (() => void) | undefined;
+  const sent = new Promise<void>(resolve => { dispatched = resolve; });
+  const transport = createSecondBrainTransport({ launcherPath: "/fake", configPath: "/config",
+    realpath: path => path, execFile: () => child,
+    onDiagnostic: event => { if (event.code === "SECOND_BRAIN_REQUESTED") dispatched?.(); } });
+  transports.push(transport);
+  const call = transport.call("sb_write_request", writeRequest());
+  const outcome = expect(call).rejects.toMatchObject({ code: "SECOND_BRAIN_WRITE_INTERRUPTED", disposition: "uncertain" });
+  await sent;
+  const closing = stopping ? transport.close() : undefined;
+  expect(() => child.stdin.emit("error", Object.assign(new Error("write EPIPE"), { code: "EPIPE" }))).not.toThrow();
+  await outcome;
+  await (closing ?? transport.close());
+  expect(child.stdin.listenerCount("error")).toBe(0);
+});

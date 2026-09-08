@@ -9,7 +9,7 @@ export const SECOND_BRAIN_LAUNCHER = "/home/jm/.local/state/second-brain/app/cur
 export const SECOND_BRAIN_CONFIG = "/home/jm/.config/second-brain/config.toml";
 export const SECOND_BRAIN_PROTOCOL_VERSION = "2025-11-25";
 export const SECOND_BRAIN_CONTRACT_PROFILE = "task32-schema4" as const;
-export type SecondBrainContractProfile = "task32-schema4" | "remember-schema5" | "cancellation-schema6";
+export type SecondBrainContractProfile = "task32-schema4" | "remember-schema5" | "cancellation-schema6" | "cancellation-submit-schema7";
 export const SECOND_BRAIN_FRAME_BYTES = 1_048_576;
 export const SECOND_BRAIN_DEADLINES = { startup: 5_000, read: 10_000, write: 30_000 } as const;
 export const SECOND_BRAIN_LIMITS = {
@@ -34,7 +34,7 @@ export const SECOND_BRAIN_READ_METHODS = [
 export const SECOND_BRAIN_WRITE_METHOD = "sb_write_request" as const;
 
 export type SecondBrainReadMethod = (typeof SECOND_BRAIN_READ_METHODS)[number];
-export type SecondBrainMethod = SecondBrainReadMethod | typeof SECOND_BRAIN_WRITE_METHOD;
+export type SecondBrainMethod = SecondBrainReadMethod | typeof SECOND_BRAIN_WRITE_METHOD | "sb_submit_cancellation";
 export type SecondBrainDisposition = "unavailable" | "cancelled" | "uncertain" | "fatal";
 export type SecondBrainOutcome =
   | { readonly kind: "data"; readonly value: Readonly<Record<string, unknown>> }
@@ -93,7 +93,7 @@ export type SecondBrainTransportOptions = {
   readonly shutdownGraceMs?: number;
   readonly onDiagnostic?: (diagnostic: SecondBrainDiagnostic) => void;
 };
-export type SecondBrainCallOptions = { readonly signal?: AbortSignal };
+export type SecondBrainCallOptions = { readonly signal?: AbortSignal; readonly beforeSend?: () => void };
 export interface SecondBrainTransport {
   call(
     method: SecondBrainMethod,
@@ -141,13 +141,14 @@ function record(value: unknown): Record<string, unknown> {
 export function loadSecondBrainContract(
   path?: string, profile: SecondBrainContractProfile = SECOND_BRAIN_CONTRACT_PROFILE,
 ): unknown {
-  const filename = profile === "cancellation-schema6" ? "second-brain-mcp-v4.json"
+  const filename = profile === "cancellation-submit-schema7" ? "second-brain-mcp-v5.json"
+    : profile === "cancellation-schema6" ? "second-brain-mcp-v4.json"
     : profile === "remember-schema5" ? "second-brain-mcp-v3.json" : "second-brain-mcp-v1.json";
   const contractPath = path ?? fileURLToPath(new URL(`../contracts/${filename}`, import.meta.url));
   try {
-    if (profile !== "task32-schema4" && profile !== "remember-schema5" && profile !== "cancellation-schema6") throw new Error("unknown profile");
+    if (profile !== "task32-schema4" && profile !== "remember-schema5" && profile !== "cancellation-schema6" && profile !== "cancellation-submit-schema7") throw new Error("unknown profile");
     const summary = consumeSecondBrainContract(contractPath);
-    if (summary.schemaVersion !== (profile === "cancellation-schema6" ? 6 : profile === "remember-schema5" ? 5 : 4)) throw new Error("profile mismatch");
+    if (summary.schemaVersion !== (profile === "cancellation-submit-schema7" ? 7 : profile === "cancellation-schema6" ? 6 : profile === "remember-schema5" ? 5 : 4)) throw new Error("profile mismatch");
     return JSON.parse(readFileSync(contractPath, "utf8"));
   } catch {
     throw new SecondBrainTransportError("SECOND_BRAIN_CONTRACT_MISMATCH", "fatal", { generation: 0 });
@@ -159,7 +160,7 @@ export function normalizeSecondBrainToolSchemas(observed: unknown, contract: unk
 }
 
 export function isSecondBrainReadMethod(method: SecondBrainMethod): method is SecondBrainReadMethod {
-  return method !== SECOND_BRAIN_WRITE_METHOD;
+  return method !== SECOND_BRAIN_WRITE_METHOD && method !== "sb_submit_cancellation";
 }
 
 function exactEmptyResult(method: SecondBrainMethod, value: Readonly<Record<string, unknown>>): boolean {
@@ -169,7 +170,7 @@ function exactEmptyResult(method: SecondBrainMethod, value: Readonly<Record<stri
     case "sb_recent_changes": expected = "changes"; break;
     case "sb_open_conflicts": expected = "conflicts"; break;
     case "sb_read_page": case "sb_write_request": case "sb_resolve_memory_target":
-    case "sb_generation_status": case "sb_request_status": case "sb_cancellation_status": expected = undefined; break;
+    case "sb_generation_status": case "sb_request_status": case "sb_cancellation_status": case "sb_submit_cancellation": expected = undefined; break;
     default: { const exhaustive: never = method; return exhaustive; }
   }
   if (expected === undefined || Object.getPrototypeOf(value) !== Object.prototype) return false;
@@ -183,6 +184,9 @@ function exactEmptyResult(method: SecondBrainMethod, value: Readonly<Record<stri
 }
 
 const PROVIDER_ERROR_CODES = new Set([
+  "CANCELLATION_AUTHORITY_BINDING_CHANGED", "CANCELLATION_AUTHORITY_UNAVAILABLE",
+  "MEMORY_CANCELLATION_ALREADY_RECEIVED", "MEMORY_CANCELLATION_INTENT_INVALID",
+  "MEMORY_CANCELLATION_REPLAY_CONFLICT", "CANCELLATION_SUBMISSION_FAILED",
   "CANCELLATION_STATUS_UNAVAILABLE", "CANCELLATION_RESULT_CORRUPT",
   "MEMORY_CANCELLATION_IDENTITY_INVALID", "MEMORY_CANCELLATION_RESULT_INVALID",
   "WRITE_REQUEST_INVALID", "WRITE_REQUEST_OVERSIZE", "WRITE_REQUEST_OPERATION_INVALID",

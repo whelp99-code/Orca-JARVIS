@@ -59,20 +59,25 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 		this.contract = loadSecondBrainContract(options.contractPath, this.profile);
 		this.report = options.onDiagnostic; } diagnostics(): readonly SecondBrainDiagnostic[] { return this.events.map((item) => ({ ...item })); } call(
 		method: SecondBrainMethod, arguments_: Readonly<Record<string, unknown>>, options: SecondBrainCallOptions = {}, ): Promise<SecondBrainOutcome> {
-		if (this.terminalFailure) return Promise.reject(this.terminalFailure); if (![...READ_METHODS, WRITE_METHOD].includes(method))
+		if (this.terminalFailure) return Promise.reject(this.terminalFailure); if (![...READ_METHODS, WRITE_METHOD, "sb_submit_cancellation"].includes(method))
 			return Promise.reject(this.error("SECOND_BRAIN_METHOD_DENIED", "fatal"));
 		const snapshot = method === WRITE_METHOD
 			? snapshotMemoryWriteArguments(arguments_) : snapshotArguments(arguments_); if (!snapshot)
 			return Promise.reject( this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }), );
+		if (method === "sb_submit_cancellation" && (Object.keys(snapshot).length !== 1 || !isRecord(snapshot.intent)))
+			return Promise.reject(this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }));
 		if (method === WRITE_METHOD && isRecord(snapshot.request) && snapshot.request.schema_version === 3
-			&& this.profile !== "remember-schema5" && this.profile !== "cancellation-schema6") return Promise.reject(this.error("SECOND_BRAIN_CONTRACT_PROFILE_REQUIRED", "fatal", { method }));
-		if (method === "sb_cancellation_status" && this.profile !== "cancellation-schema6")
+			&& this.profile !== "remember-schema5" && this.profile !== "cancellation-schema6" && this.profile !== "cancellation-submit-schema7") return Promise.reject(this.error("SECOND_BRAIN_CONTRACT_PROFILE_REQUIRED", "fatal", { method }));
+		if (method === "sb_cancellation_status" && this.profile !== "cancellation-schema6" && this.profile !== "cancellation-submit-schema7")
+			return Promise.reject(this.error("SECOND_BRAIN_CONTRACT_PROFILE_REQUIRED", "fatal", { method }));
+		if (method === "sb_submit_cancellation" && this.profile !== "cancellation-submit-schema7")
 			return Promise.reject(this.error("SECOND_BRAIN_CONTRACT_PROFILE_REQUIRED", "fatal", { method }));
 		let argumentBytes: number; try {
 			argumentBytes = Buffer.byteLength(JSON.stringify(snapshot), "utf8"); } catch { return Promise.reject(
 				this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }), ); }
-		if (argumentBytes > SECOND_BRAIN_LIMITS.argument_bytes || (this.localArguments && isRead(method) &&
-				!frozenArgumentsMatch(method, snapshot, this.contract)) ) return Promise.reject( this.error( argumentBytes > SECOND_BRAIN_LIMITS.argument_bytes
+		const maxArgumentBytes = method === "sb_submit_cancellation" ? 16_395 : SECOND_BRAIN_LIMITS.argument_bytes;
+		if (argumentBytes > maxArgumentBytes || (this.localArguments && isRead(method) &&
+				!frozenArgumentsMatch(method, snapshot, this.contract)) ) return Promise.reject( this.error( argumentBytes > maxArgumentBytes
 						? "SECOND_BRAIN_ARGUMENTS_OVERSIZE" : "SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }, ), );
 		const queue = isRead(method) ? this.readQueue : this.writeQueue; const limit = isRead(method) ? SECOND_BRAIN_LIMITS.read_queue
 			: SECOND_BRAIN_LIMITS.write_queue; if (queue.length >= limit) return Promise.reject( this.error("SECOND_BRAIN_QUEUE_SATURATED", "unavailable", { method }),
@@ -96,6 +101,7 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 				item.options.signal.removeEventListener("abort", item.abort); if (item.cancelled || item.options.signal?.aborted)
 				throw this.error("SECOND_BRAIN_CANCELLED", "cancelled", { method: item.method, }); if ( this.localArguments && isRead(item.method) &&
 				!frozenArgumentsMatch(item.method, item.arguments_, this.contract) ) throw this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method: item.method, });
+			item.options.beforeSend?.();
 			response = this.request( item.method, item.arguments_, item.options.signal, isRead(item.method) ? this.deadlines.read : this.deadlines.write, ); } finally {
 			release(); } return response; } private async ensureCorrelationCapacity(): Promise<void> { if ( this.sequence < SECOND_BRAIN_LIMITS.correlation_ids &&
 			this.pending.size + this.seen.size + this.retired.size < SECOND_BRAIN_LIMITS.correlation_ids ) return; if (!this.terminating) { this.state = "failed";
@@ -112,6 +118,13 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 		const child = this.run(target, [], { encoding: "buffer", shell: false,
 			env: { SB_CONFIG: this.config, SB_MCP_CONTRACT_PROFILE: this.profile },
 			windowsHide: true, }); this.child = child;
+		// A pipe error is asynchronous and can arrive while the old child is stopping.
+		const onInputError = (): void => {
+			if (this.child === child && !this.closed && this.state !== "failed")
+				this.fail(this.error("SECOND_BRAIN_CHILD_EXIT", "unavailable"));
+		};
+		child.stdin?.on("error", onInputError);
+		child.once("close", () => child.stdin?.off("error", onInputError));
 		child.stdout?.removeAllListeners("data"); child.stderr?.removeAllListeners("data"); child.stdout?.on("data", this.onData);
 		child.stderr?.on("data", this.onStderr); child.once("error", this.onStartError); child.once("close", this.onClose); try {
 			const initialize = await this.request( undefined, { protocolVersion: SECOND_BRAIN_PROTOCOL_VERSION, capabilities: {},
@@ -132,7 +145,7 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 			const timer = this.timers.set(() => { const pending = this.pending.get(id); if (!pending) return; this.pending.delete(id); this.detach(pending);
 				this.retire(id); this.cancel(id); const write = pending.write && pending.dispatched; reject( this.error( write ? "SECOND_BRAIN_WRITE_TIMEOUT" : method
 								? "SECOND_BRAIN_READ_TIMEOUT" : "SECOND_BRAIN_STARTUP_TIMEOUT", write ? "uncertain" : "unavailable", { method, request_id: id }, ), ); }, timeout);
-			const pending: Pending = { id, method, write: method === WRITE_METHOD, dispatched: false, started: this.now(), resolve, reject, timer, signal, };
+			const pending: Pending = { id, method, write: method !== undefined && !isRead(method), dispatched: false, started: this.now(), resolve, reject, timer, signal, };
 			if (signal) { pending.abort = () => { if (!this.pending.delete(id)) return; this.detach(pending); this.retire(id); this.cancel(id);
 					const uncertain = pending.write && pending.dispatched; reject( this.error( uncertain ? "SECOND_BRAIN_WRITE_INTERRUPTED" : "SECOND_BRAIN_CANCELLED",
 							uncertain ? "uncertain" : "cancelled", { method, request_id: id }, ), ); }; signal.addEventListener("abort", pending.abort, { once: true }); }
@@ -230,7 +243,7 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 export function createSecondBrainTransport( options: SecondBrainTransportOptions = {}, ): SecondBrainTransport {
 	const profile = options.contractProfile ?? process.env["JARVIS_SECOND_BRAIN_CONTRACT_PROFILE"]
 		?? SECOND_BRAIN_CONTRACT_PROFILE;
-	if (profile !== "task32-schema4" && profile !== "remember-schema5" && profile !== "cancellation-schema6") {
+	if (profile !== "task32-schema4" && profile !== "remember-schema5" && profile !== "cancellation-schema6" && profile !== "cancellation-submit-schema7") {
 		throw new SecondBrainTransportError("SECOND_BRAIN_CONTRACT_PROFILE_INVALID", "fatal", { generation: 0 });
 	}
 	return new SupervisedSecondBrainTransport({ ...options, contractProfile: profile });
