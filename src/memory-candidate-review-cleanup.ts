@@ -2,9 +2,12 @@ import { basename } from "node:path";
 import type { AuthorityDb } from "./db.js";
 import { MemoryCandidateReviewSpool } from "./memory-candidate-review-spool.js";
 
-/** Remove source bytes only after committed terminal state; never inside caller transactions. */
-export function cleanupMemoryCandidateReviews(authority: AuthorityDb, root: string): number {
+/** Remove bytes after terminal state or committed expiry of an unused automatic
+ * candidate. Preserve the original classification bytes; no caller transaction. */
+export function cleanupMemoryCandidateReviews(authority: AuthorityDb, root: string, now?: Date): number {
   if (authority.db.inTransaction) throw new Error("MEMORY_REVIEW_CLEANUP_TRANSACTION_ACTIVE");
+  const at = now?.getTime();
+  if (at !== undefined && !Number.isFinite(at)) throw new Error("MEMORY_REVIEW_CLEANUP_CLOCK_INVALID");
   const spool = new MemoryCandidateReviewSpool(root);
   let removed = 0;
   for (const path of spool.paths()) {
@@ -13,17 +16,19 @@ export function cleanupMemoryCandidateReviews(authority: AuthorityDb, root: stri
     const candidateId = `memcand:pos:v1:${name.slice(15, -5)}`;
     removed += authority.db.transaction(() => {
       const row = authority.db.prepare(
-        `SELECT c.state,c.content_digest,c.subject_digest,m.candidate_digest,m.classification_digest,
+        `SELECT c.state,c.expires_at,c.required_confirmation,c.content_digest,c.subject_digest,m.candidate_digest,m.classification_digest,
            p.review_spool_digest,o.state AS outbox_state
          FROM memory_candidates c JOIN memory_candidate_classifications m ON m.candidate_id=c.candidate_id
          LEFT JOIN memory_candidate_review_publications p ON p.candidate_id=c.candidate_id
          LEFT JOIN memory_outbox o ON o.candidate_id=c.candidate_id WHERE c.candidate_id=?`,
-      ).get(candidateId) as { state: string; content_digest: string; subject_digest: string;
+      ).get(candidateId) as { state: string; expires_at: string; required_confirmation: number; content_digest: string; subject_digest: string;
         candidate_digest: string; classification_digest: string; review_spool_digest: string | null;
         outbox_state: string | null } | undefined;
       if (row === undefined || (row.outbox_state !== null
         && ["queued", "claimed", "dispatching", "reconciling"].includes(row.outbox_state))) return 0;
-      if (!["rejected", "expired", "settled"].includes(row.state)
+      const expiredUnused = at !== undefined && row.state === "approved" && row.required_confirmation === 0
+        && row.outbox_state === null && Date.parse(row.expires_at) <= at;
+      if (!expiredUnused && !["rejected", "expired", "settled"].includes(row.state)
         && !["settled", "conflict", "failed", "expired"].includes(row.outbox_state ?? "")) return 0;
       try {
         const review = spool.read(candidateId);

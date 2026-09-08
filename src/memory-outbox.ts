@@ -94,7 +94,7 @@ export class MemoryOutboxService {
   }
   private cleanupReviews(): void {
     const root = this.options.candidate_review_spool_root ?? process.env["JARVIS_MEMORY_REVIEW_SPOOL_ROOT"];
-    if (root !== undefined) cleanupMemoryCandidateReviews(this.options.authority, root);
+    if (root !== undefined) cleanupMemoryCandidateReviews(this.options.authority, root, this.options.clock());
   }
   private async observe(saga: MemoryOutboxSagaV2): Promise<MemoryObservation> {
     if (saga.operation === "remember" && /^wiki\/memory-[0-9a-f]{64}$/.test(saga.expected_artifact.page_id)) {
