@@ -529,3 +529,12 @@
 - 실제 compiled 제품5시나리오와 별도 Node4프로세스 인수를 완료했다. reader80.126ms/lease40ms에서 단계완료0, 다른PID의fence2 재획득→완료·digest재개방 일치; freshness5ms/reader80.115ms는stale. 예산실패의 허위완료ID0, 정상완료ID1. 주입reader·격리DB의 논리단계 검증이며 실제SB/업무일정운영이 아니다. 임시자원 제거 확인.
 - 자동운영 연결 HOLD를 실제HTTP로 보강했다. 기존논리아침 완료 뒤 Today200/brief.no_data, 논리저녁 완료 뒤 Today500/INTERNAL_ERROR, GET DB쓰기0. 기존 generateMorningBrief·generateEveningCloseout/EveningCloseoutStore를 연결해야 하며 no_external_effect를 검증artifact로 받아들이는 우회는 하지 않는다.
 - 근거/재개조건 `docs/planning/adr-daily-loop-runtime-results.md`. 증거루트의 daily-loop-product-*.log, daily-loop-process-product.json/log, daily-loop-result-product.log, daily-loop-activation-gap.mjs/json/log. 전체01–25/운영 인수 미완료, 기존 자동기억 원본차단 HOLD와 memory-store 큐 보류 유지. 운영DB/서비스/release/push 변경0.
+
+## 2026-09-08 P1-12 선행 — 브리핑 공유 추천·출처·인용
+
+- 직전 턴은 인계 계획 반영 확인으로 자비스 개발 기준 no progress였다. HEAD293c723과 현재 미커밋 파일을 재확인했다. 실제 브리핑 연결 대조에서 추천의 rank별 행동이 추천ID와 근거를 공유하지만 브리핑 parser가 전역 중복으로 거부하는 결함을 발견했다.
+- 유효 digest의 공유 추천/출처/인용 입력3개 실패를 재현했다. record 간 추천·출처 및 동일 결합 인용의 공유를 허용하고 item/action·교차역할 충돌, record 내부 중복과 digest 검사를 유지한다. 같은 link의 다른 source/evidence는 거부하고 semantic 병합은 고유 link 기준으로 출력·예산을 계산한다.
+- 관련6파일25개/8.30초 pass, 테스트 readonly 배열 matcher 수정 후 통합1개/reviewability2개/3.35초 pass(고유7파일27개). backend build/typecheck/lint exit0, 독립 리뷰 필수결함0. typecheck 초기 오류1개와 HTTP probe의 없는 summary 필드 오류를 보존하고 최종 재검증했다.
+- 실제 compiled 비교: 이전 유효 입력21개 산출물 byte 동일. 실제 추천DB1개/행동3개·공유source1개·인용13회/고유7개를 그대로 유지한 fixture 입력은 이전parser 거부→새parser 수락, owner 브리핑1개 생성. 명시적 daily store저장2700bytes/재개방 동일, TodayHTTP200/degraded/item_count1/GET쓰기0, 임시자원 제거. 시험용 변환과 직접 저장이며 자동업무생산/예약handler 인수가 아니다.
+- 설계/증거 `docs/planning/adr-morning-brief-shared-provenance.md`, 증거루트 `brief-provenance-*`. 우선순위 생산자·브리핑 parser/generator의 UTC today판정3곳을 확인했다. KST변경은 함께 구현·검증할 후속 범위이며 자동일일운영 HOLD는 실제handler/서명마감/출처차단/예약복구 연결 전까지 유지한다.
+- 전체01–25와 운영 인수는 미완료다. 최신 전체gate는a4a2ebc이며 이번 결과는 단위 검증이다. 기존 자동기억 원본차단 HOLD와 memory-store 큐 보류 유지. 운영DB/서비스/release/push 변경0.

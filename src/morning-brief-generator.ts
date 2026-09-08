@@ -50,7 +50,15 @@ function trust(values: readonly MorningBriefRecord[]): "confirmed" | "inferred" 
   return values.some(item => item.trust === "inferred") ? "inferred" : "confirmed";
 }
 function citations(values: readonly MorningBriefRecord[]): readonly MorningBriefCitation[] {
-  return [...values.flatMap(item => item.citations)].sort((left, right) => compareText(left.link_id, right.link_id));
+  const links = new Map<string, MorningBriefCitation>();
+  for (const value of values) for (const citation of value.citations) {
+    const previous = links.get(citation.link_id);
+    if (previous !== undefined && (previous.source_id !== citation.source_id || previous.evidence_ref !== citation.evidence_ref)) {
+      throw new MorningBriefContractInvariantError();
+    }
+    links.set(citation.link_id, citation);
+  }
+  return [...links.values()].sort((left, right) => compareText(left.link_id, right.link_id));
 }
 function hasCitationCoverage(value: MorningBriefRecord): boolean {
   return value.source_ids.length > 0 && value.citations.length > 0
@@ -172,7 +180,7 @@ export function generateMorningBrief(input: MorningBriefInput): MorningBriefResu
   for (const value of eligible) groups.set(value.semantic_key, [...(groups.get(value.semantic_key) ?? []), value]);
   const merged = [...groups.values()].map(values => {
     const sources = uniqueSorted(values.flatMap(value => value.source_ids)).length;
-    const citationCount = values.reduce((sum, value) => sum + value.citations.length, 0);
+    const citationCount = citations(values).length;
     const provenanceCount = Math.max(sources, citationCount);
     if (provenanceCount > input.limits.max_sources_per_item) {
       increment(counts, "citation_cap", provenanceCount - input.limits.max_sources_per_item);

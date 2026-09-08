@@ -160,6 +160,32 @@ function limits(value: unknown): MorningBriefLimits {
   return parsed;
 }
 
+function validIdentities(items: readonly MorningBriefRecord[]): boolean {
+  const roles = new Map<string, string>();
+  const links = new Map<string, string>();
+  const add = (value: string, role: string, shared = false): boolean => {
+    const previous = roles.get(value);
+    if (previous !== undefined && (!shared || previous !== role)) return false;
+    roles.set(value, role); return true;
+  };
+  for (const item of items) {
+    if (!add(item.item_id, "item") || !add(item.action_id, "action")
+      || !add(item.provenance_digest, "provenance") || !add(item.canonical_digest, "canonical")
+      || !add(item.recommendation_id, "recommendation", true)) return false;
+    for (const source of item.source_ids) if (!add(source, "source", true)) return false;
+    const recordLinks = new Set<string>();
+    for (const citation of item.citations) {
+      if (recordLinks.has(citation.link_id) || !add(citation.link_id, "link", true)) return false;
+      recordLinks.add(citation.link_id);
+      const binding = canonicalize(citation);
+      const previous = links.get(citation.link_id);
+      if (previous !== undefined && previous !== binding) return false;
+      links.set(citation.link_id, binding);
+    }
+  }
+  return true;
+}
+
 export function parseMorningBriefInput(value: unknown): MorningBriefInput {
   const input = object(value, ["schema_version", "generated_at", "context_readiness", "external_intelligence", "limits", "items"]);
   if (input["schema_version"] !== 1) return fail();
@@ -176,10 +202,7 @@ export function parseMorningBriefInput(value: unknown): MorningBriefInput {
       || (item.state === "actionable" && item.priority.deadline_bucket === "today"
         && (item.deadline === null || item.deadline.slice(0, 10) !== generatedAt.slice(0, 10)))) return fail();
   }
-  const identities = items.flatMap(item => [item.item_id, item.recommendation_id, item.action_id]);
-  const globalValues = [...identities, ...items.flatMap(item => item.source_ids), ...items.flatMap(item => item.citations.map(c => c.link_id)),
-    ...items.flatMap(item => [item.provenance_digest, item.canonical_digest])];
-  if (new Set(globalValues).size !== globalValues.length) return fail();
+  if (!validIdentities(items)) return fail();
   return { schema_version: 1, generated_at: generatedAt,
     context_readiness: member(input["context_readiness"], ["ready", "degraded", "no_data"] as const),
     external_intelligence: { enabled, state }, limits: limits(input["limits"]), items };
