@@ -1049,3 +1049,21 @@
   지원되는 예약run을 사용하며 기존거부/재개검사를 그대로 유지한다.
 - 제품/기존migration 수정0. build+28tests/3files12.55s+lint+3types exit0(62972).
   전체gate 재실행이 필요하며 전체01–25·운영/커넥터/기억출처HOLD는 유지한다.
+
+## 2026-09-09 — 항목12/23 커넥터 Unicode 설정 경계
+
+- 실제 소스 대조: calendar/mail/messenger configured=false, 기존registry는
+  second_brain/orca/task_timeline/portfolio를 구성한다. 외부연결 활성화HOLD 유지.
+- 설정 문자열 마지막 high surrogate의 다음 charCodeAt이NaN이라 범위비교를
+  통과하는 결함 확인. 검색어/Orca경로 회귀 총2개 실패(29092 exit1).
+  기존 검사에 문자열 끝 검사를 추가했다. 유효한 한글/이모지/NFC·argv보존은 유지.
+- 최종 build+63tests/6files45.57s+lint+3types exit0(33324).
+  잘못된 검색어/경로5종씩, provider호출0·DB변경0, 정상문자열을 검증했다.
+- 실제 별도Node/컴파일registry에서 설정10개 거부, 정상Unicode경로의 자식
+  프로세스argv 보존·빈응답no_data·DB쓰기0 확인. source응답은fixture이며
+  실제Orca0·모델0·운영0이다. 생성DB는 제거했다.
+  receipt: /home/jm/.cache/jarvis-test-runtime-qa-20260908/connector-unicode-oBsNq3/receipt.json
+  script: /home/jm/.cache/jarvis-test-runtime-qa-20260908/connector-unicode-live.mjs
+- 부모가 전체diff를 검토했다. 동종 morning/evening 문자열 검사에는 이미
+  문자열끝 검사가 있어 추가 제품변경은 없다. 전체01–25 목표는 유지한다.
+  고정c9062b2 전체verify61099 실행 중이며 이번 변경은 해당gate에서 제외된다.

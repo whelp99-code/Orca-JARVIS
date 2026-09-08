@@ -25,13 +25,13 @@ describe("Task 13 third remediation required contract B", () => {
   it("accepts natural search text and absolute space-bearing Orca argv", async () => {
     const harness = await connectorHarness();
     try {
-      for (const query of ["what should I do next", "下一步做什么", "project: alpha, beta?"]) {
+      for (const query of ["what should I do next", "下一步做什么", "project: alpha, beta?", "다음 작업 🧠"]) {
         expect(() => createPersonalConnectorRegistry({
           ...harness.factory_input,
           second_brain: { ...harness.factory_input.second_brain, operation: { kind: "search", query } },
         })).not.toThrow();
       }
-      const selector = "/home/jm/Project Alpha; opaque";
+      const selector = "/home/jm/Project Alpha; opaque 🧠";
       const calls: string[][] = [];
       const registry = createPersonalConnectorRegistry({
         ...harness.factory_input,
@@ -107,4 +107,21 @@ describe("Task 13 third remediation required contract B", () => {
     });
     expect(offenders).toEqual([]);
   });
+});
+
+it.each(["search", "worktree"])("rejects malformed Unicode in %s before connector calls", async field => {
+  const orcaCalls = { count: 0 }, memoryCalls = { methods: [] };
+  const harness = await connectorHarness({ orca_calls: orcaCalls, memory_calls: memoryCalls });
+  try {
+    const before = harness.db.db.prepare("SELECT total_changes() AS n").get();
+    for (const suffix of ["\ud800", "\udbff", "\udc00", "\udfff", "\ud800x"]) {
+      const value = `/fixture/${suffix}`;
+      const config = field === "search"
+        ? { ...harness.factory_input, second_brain: { ...harness.factory_input.second_brain, operation: { kind: "search", query: value } } }
+        : { ...harness.factory_input, orca: { ...harness.factory_input.orca, worktree: value } };
+      expect(() => createPersonalConnectorRegistry(config)).toThrow("PERSONAL_CONNECTOR_CONFIG_INVALID");
+    }
+    expect(orcaCalls.count).toBe(0); expect(memoryCalls.methods).toEqual([]);
+    expect(harness.db.db.prepare("SELECT total_changes() AS n").get()).toEqual(before);
+  } finally { harness.db.close(); }
 });

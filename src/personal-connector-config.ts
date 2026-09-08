@@ -46,6 +46,7 @@ function wellFormed(value: string): boolean {
     const unit = value.charCodeAt(index);
     if (unit <= 0x1f || unit >= 0x7f && unit <= 0x9f) return false;
     if (unit >= 0xd800 && unit <= 0xdbff) {
+      if (index + 1 >= value.length) return false;
       const next = value.charCodeAt(index + 1);
       if (next < 0xdc00 || next > 0xdfff) return false;
       index += 1;
