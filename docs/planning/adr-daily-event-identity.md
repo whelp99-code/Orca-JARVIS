@@ -73,3 +73,17 @@ normal daytime response retains its four fields. Final3rows, synthetic events,
 zero model calls/production changes. Temporary build and DB removed.
 Receipt: /home/jm/.cache/jarvis-test-runtime-qa-20260908/deferred-response-FCIcc2/receipt.json
 Script: /home/jm/.cache/jarvis-test-runtime-qa-20260908/daily-deferred-response-live.mjs
+
+## Full-suite historical fixture compatibility
+
+Frozen6d8031d full verify37465 exited1, unchanged HEAD/tracked bytes:
+shard1 1513passed/222files; shard2 1548passed/2failed/222files.
+Both failures were daily-loop-schema-remediation tests calling current in-day
+preparation on schema035 without required075. Keep all historical035 assertions.
+The lifecycle test now proves refusal leaves legacy rows unchanged, applies current
+migrations, proves those rows unchanged again, then exercises current continuation.
+The isolated035 cross-run-step guard uses a second scheduled run (supported at035),
+retaining every SQL rejection/reopen assertion without introducing newer guards.
+No product or migration change. Build28tests/3files12.55s, lint and3types exit0
+(handle62972). Full verification must rerun on the corrected commit; this focused
+pass does not turn the previous full gate green.

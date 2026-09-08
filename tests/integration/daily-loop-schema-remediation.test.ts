@@ -93,7 +93,14 @@ describe("migration 035 upgrade integrity", () => {
       expect(db.db.prepare("SELECT legacy_run_count,legacy_step_count,legacy_checkpoint_count,invalid_checkpoint_count FROM daily_loop_migration_035_evidence").get()).toEqual({ legacy_run_count: 6, legacy_step_count: 1, legacy_checkpoint_count: 1, invalid_checkpoint_count: 0 });
       expect((db.db.prepare("SELECT count(*) AS n FROM sqlite_master").get() as { n: number }).n).toBe(objects.n);
       const at = new Date("2026-08-31T03:00:00.000Z"); const loop = new DailyControlLoop(new DailyLoopStore(db), loopOptions(() => at));
-      const prepared = loop.prepare({ kind: "event", event_id: "continuation", occurred_at: at.toISOString(), critical: false, items: 1, work: 1, bytes: 1 });
+      const event = { kind: "event", event_id: "continuation", occurred_at: at.toISOString(), critical: false, items: 1, work: 1, bytes: 1 };
+      // Historical 035 assertions above stay isolated. Current event preparation requires 075.
+      const legacyRows = db.db.prepare("SELECT * FROM daily_loop_runs ORDER BY run_id").all();
+      expect(() => loop.prepare(event)).toThrow("DAILY_LOOP_IDENTITY_CONFLICT");
+      expect(db.db.prepare("SELECT * FROM daily_loop_runs ORDER BY run_id").all()).toEqual(legacyRows);
+      cpSync(join(process.cwd(), "migrations"), fixture.migrations, { recursive: true }); await db.migrate();
+      expect(db.db.prepare("SELECT * FROM daily_loop_runs ORDER BY run_id").all()).toEqual(legacyRows);
+      const prepared = loop.prepare(event);
       if (prepared.kind !== "prepared") throw new Error("continuation not prepared"); loop.finish(loop.claim(prepared.run_id));
       expect(db.db.prepare("SELECT state,record_version FROM daily_loop_runs WHERE run_id=?").get(prepared.run_id)).toEqual({ state: "completed", record_version: 1 });
     } finally { db.close(); rmSync(fixture.root, { recursive: true, force: true }); }
@@ -208,7 +215,8 @@ describe("permanent direct-SQL daily-loop guards", () => {
 
       // When / Then
       expectZero(() => insert("wrong", 2, sha("wrong"))); expectZero(() => insert("null", 2, null)); expectZero(() => insert("duplicate", 1, null)); expectZero(() => insert("stale", 2, head, 0)); expectZero(() => insert("future", 2, head, 2)); expectZero(() => insert("skipped", 2, head, 3)); expectZero(() => insert("lease", 2, head, 1, "2026-08-30T22:16:00.001Z"));
-      const other = loop.prepare({ kind: "event", event_id: "other", occurred_at: "2026-08-31T03:00:00.000Z", critical: false, items: 1, work: 1, bytes: 1 }); if (other.kind !== "prepared") throw new Error("other not prepared"); const otherStep = db.db.prepare("SELECT step_id FROM daily_loop_steps WHERE run_id=?").get(other.run_id) as { step_id: string }; expectZero(() => insert("cross", 2, head, 1, claim.lease_expires_at, otherStep.step_id));
+      const other = new DailyControlLoop(new DailyLoopStore(db), loopOptions(() => new Date("2026-08-31T22:15:00.000Z")))
+        .prepare({ kind: "scheduled" }); if (other.kind !== "prepared") throw new Error("other not prepared"); const otherStep = db.db.prepare("SELECT step_id FROM daily_loop_steps WHERE run_id=?").get(other.run_id) as { step_id: string }; expectZero(() => insert("cross", 2, head, 1, claim.lease_expires_at, otherStep.step_id));
       insert("child", 2, head); expectZero(() => insert("branch", 3, head)); const reopened = new AuthorityDb(fixture.path, fixture.migrations); expect(reopened.db.prepare("SELECT count(*) AS n FROM daily_loop_checkpoints WHERE checkpoint_id IN ('dlc:wrong','dlc:null','dlc:duplicate','dlc:stale','dlc:future','dlc:skipped','dlc:lease','dlc:cross','dlc:branch')").get()).toEqual({ n: 0 }); expect(reopened.db.prepare("SELECT count(*) AS n FROM daily_loop_checkpoints c WHERE c.sequence>1 AND NOT EXISTS(SELECT 1 FROM daily_loop_checkpoints p WHERE p.run_id=c.run_id AND p.sequence=c.sequence-1 AND p.checkpoint_digest=c.previous_digest)").get()).toEqual({ n: 0 }); reopened.close();
     } finally { db.close(); rmSync(fixture.root, { recursive: true, force: true }); }
   });

@@ -1032,3 +1032,20 @@
   harness수정 후 동일제품으로 재인수했으며 키/DB는 제거했다.
 - docs/planning/adr-backend-artifact-permissions.md에 재현/영수증/제한 기록.
   설치의 전체 의존성·상위경로 권한/운영release 인수와 전체01–25 목표는 남는다.
+
+## 2026-09-09 — 수동 권한 조정 없는 실제 실행 및 전체 검증 결함 수정
+
+- da25e6b fresh build→실제 Claude1/독립verifier1→기술검토report.json→
+  결과commit fd407510b8995a2147cd6f5f8bf5fbf22f1b091d→서명완료증거→별도성과CLI
+  exit0(handle78760). 수동artifact chmod0, 준비쓰기0, 재실행 추가호출0,
+  원본HEAD/status/source·재실행refs 보존. 성과1/1·승인1ms·완료56255ms.
+  격리fixture DB/Git/시험승인키이며 운영활성화0, 단일표본이다.
+  receipt: /home/jm/.cache/jarvis-test-runtime-qa-20260908/performance-real-D698t5/receipt.json
+- 고정6d8031d 전체verify37465 exit1: backend1513+1548=3061pass/2fail,
+  444files 중1fail. 전후HEAD/추적바이트동일. 실패2개는 schema035 fixture에서
+  최신이벤트준비가 요구하는075 index 부재로 발생했다. dashboard/후속gate 미실행.
+- 035 검증을 유지하고 최신실행 전에 현행migration을 적용한다. 적용 전 거부/
+  원장불변 및 적용 후 원장불변 검사를 추가했다. 별도035 SQL cross-run 검증은
+  지원되는 예약run을 사용하며 기존거부/재개검사를 그대로 유지한다.
+- 제품/기존migration 수정0. build+28tests/3files12.55s+lint+3types exit0(62972).
+  전체gate 재실행이 필요하며 전체01–25·운영/커넥터/기억출처HOLD는 유지한다.

@@ -33,3 +33,16 @@ unavailable-vs-matched assertion. Corrected harness passed; product was unchange
 Keys and DB removed after each probe. Source/installed dependency modes unchanged.
 Receipt: /home/jm/.cache/jarvis-test-runtime-qa-20260908/backend-permission-SghXnC/receipt.json
 Script: /home/jm/.cache/jarvis-test-runtime-qa-20260908/backend-permission-live.mjs
+
+## Actual provider/verifier execution after commit
+
+Fresh build of da25e6b, then unmodified task-performance-live.mjs, completed with
+exit0(handle78760). No artifact chmod command was used. Real Claude calls1 and
+independent verifier process calls1 produced technical-review report.json and
+commit fd407510b8995a2147cd6f5f8bf5fbf22f1b091d. Signed completion evidence was
+re-read through the separate metrics CLI: verified success1/1, approval1ms,
+completion latency56255ms. Replay invoked no additional provider/verifier and
+kept refs fixed; preparation writes0; original HEAD/status/source preserved.
+Isolated fixture DB/repository and test operator approval; no production activation.
+This single sample is execution evidence, not a reliability/quality estimate.
+Receipt: /home/jm/.cache/jarvis-test-runtime-qa-20260908/performance-real-D698t5/receipt.json
