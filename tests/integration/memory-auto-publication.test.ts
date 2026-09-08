@@ -36,6 +36,26 @@ it.each([1, 2])("CLI publishes approved schema %i candidates and replays without
   } finally { closeMemoryDatabase(f); }
 });
 
+it.each(["expiry", "rewind", "mutable-rewind"])("rejects %s during file publication before committing ledger rows", async mode => {
+  const f = await memoryDatabase();
+  try {
+    const input = verifiedMemoryInput(); seedMemoryAuthority(f.authority, input);
+    const candidate = memoryCandidateStore(f.authority).classify(input);
+    const roots = { candidate_review_spool_root: join(f.root, "review"), candidate_dispatch_spool_root: join(f.root, "dispatch") };
+    const initial = Date.parse(MEMORY_NOW) + 1000;
+    const shared = new Date(initial); let calls = 0;
+    const clock = () => {
+      calls++;
+      const value = calls === 1 ? initial : mode === "expiry" ? Date.parse(candidate.source.authority_expires_at!) : initial - 1;
+      if (mode === "mutable-rewind") { shared.setTime(value); return shared; }
+      return new Date(value);
+    };
+    const before = memoryTableCounts(f.authority);
+    expect(() => publishAutomaticMemoryCandidate(f.authority, input, memoryPolicy(), roots, clock)).toThrow();
+    expect(memoryTableCounts(f.authority)).toEqual(before);
+  } finally { closeMemoryDatabase(f); }
+});
+
 it("adopts exact files after a publication failure without regenerating candidate bytes", async () => {
   const f = await memoryDatabase();
   try {

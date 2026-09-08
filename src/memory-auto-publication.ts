@@ -19,9 +19,10 @@ export function publishAutomaticMemoryCandidate(authority: AuthorityDb, inputVal
     const candidate = readMemoryCandidate(authority.db, memoryCandidateIdentity(input).candidate_id);
     if (candidate === undefined || candidate.state !== "approved" || candidate.required_confirmation
       || candidate.operation !== "remember") return undefined;
-    const now = clock();
+    const startedAt = clock().getTime();
+    const now = new Date(startedAt);
     const check = (at: Date) => {
-      if (!Number.isFinite(at.getTime()) || at < now || at.getTime() >= Date.parse(candidate.candidate_expires_at)
+      if (!Number.isFinite(at.getTime()) || at.getTime() < startedAt || at.getTime() >= Date.parse(candidate.candidate_expires_at)
         || new MemoryProjectionAuthority(authority).isProjectionIdSuppressed(candidate.candidate_id)) {
         throw new JarvisError("MEMORY_AUTO_PUBLICATION_INVALID");
       }
