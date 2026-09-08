@@ -119,6 +119,10 @@ export function bindStructuredProjection(
 ): void {
   if (!projectionAuthorityReady(database)) return;
   const collected = collectStructuredLineage(value);
+  if (!collected.complete) {
+    new MemoryProjectionAuthority({ db: database }).quarantineUnresolved(ref, now);
+    return;
+  }
   if (collected.memoryRefs.length > 0) {
     const targets = collected.memoryRefs.flatMap(memoryRef => targetsForRef(database, memoryRef));
     const authority = new MemoryProjectionAuthority({ db: database });
@@ -132,26 +136,36 @@ export function bindStructuredProjection(
 }
 
 function collectStructuredLineage(value: unknown): {
+  readonly complete: boolean;
   readonly memoryRefs: readonly string[];
   readonly parents: readonly MemoryProjectionRef[];
 } {
   const memoryRefs = new Set<string>();
   const parents = new Map<string, MemoryProjectionRef>();
+  let complete = true;
+  let remaining = 4096;
   const visit = (candidate: unknown, depth: number): void => {
-    if (depth > 8 || candidate === null || typeof candidate !== "object") return;
+    if (!complete || candidate === null || typeof candidate !== "object") return;
+    if (depth > 8) { complete = false; return; }
     if (Array.isArray(candidate)) {
-      for (const item of candidate) visit(item, depth + 1);
+      for (const item of candidate) {
+        if (--remaining < 0) { complete = false; return; }
+        visit(item, depth + 1);
+        if (!complete) return;
+      }
       return;
     }
     for (const key of Reflect.ownKeys(candidate)) {
+      if (--remaining < 0) { complete = false; return; }
       if (typeof key !== "string") continue;
       const item = Reflect.get(candidate, key);
       if (typeof item === "string") collectKey(key, item, memoryRefs, parents);
       else visit(item, depth + 1);
+      if (!complete) return;
     }
   };
   visit(value, 0);
-  return { memoryRefs: [...memoryRefs].sort(),
+  return { complete, memoryRefs: [...memoryRefs].sort(),
     parents: [...parents.values()].sort((left, right) => left.id.localeCompare(right.id)) };
 }
 
