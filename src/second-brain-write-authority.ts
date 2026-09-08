@@ -1,3 +1,4 @@
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import type { AuthorityDb } from "./db.js";
 import type { SecondBrainRememberWriteRequest } from "./second-brain-adapter-types.js";
 import { persistenceRow } from "./personal-persistence-values.js";
@@ -33,6 +34,7 @@ export function hasSecondBrainWriteAuthority(
   request: SecondBrainRememberWriteRequest,
   now: Date,
 ): boolean {
+  if (new MemoryProjectionAuthority(authority).isProjectionIdSuppressed(request.candidate_id)) return false;
   const value = authority.db.prepare(
     `SELECT c.candidate_id,c.state,c.operation,c.required_confirmation,c.content_digest,c.subject_digest,c.purpose,
       c.expires_at,m.policy_sensitivity,m.retention_days,m.candidate_digest,

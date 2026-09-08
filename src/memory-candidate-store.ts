@@ -1,3 +1,4 @@
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { recoverUncommittedCandidateReview } from "./memory-candidate-review-recovery.js";
 import { claimMemoryCandidateAuthority, requireMemoryCandidateAuthority } from "./memory-candidate-authority.js";
 import type { MemoryAuthorityResolution } from "./memory-candidate-authority-types.js";
@@ -66,6 +67,10 @@ export class MemoryCandidateStore {
 
   private persist(input: ParsedMemoryCandidateInput, onPublication: (value: MemoryCandidateReviewPublication) => void): MemoryCandidateClassification {
     const now = memoryDate(this.clock());
+    const candidateId = memoryCandidateIdentity(input).candidate_id;
+    if (new MemoryProjectionAuthority(this.authority).isProjectionIdSuppressed(candidateId)) {
+      return memoryFail("MEMORY_CANDIDATE_SUPPRESSED");
+    }
     const authority = requireMemoryCandidateAuthority(this.authority.db, {
       input,
       identity: memoryCandidateIdentity(input),

@@ -1,3 +1,4 @@
+import { MemoryProjectionAuthority } from "../memory-projection-authority.js";
 import { createHash } from "node:crypto";
 import { canonicalize } from "../canonical.js";
 import { JarvisError } from "../db.js";
@@ -47,6 +48,13 @@ export function stageMemoryCandidateDecision(
 host: MemoryCandidateDecisionHost,
 input: MemoryCandidateDecisionInput,
 ): StoredControlCommand | undefined {
+  const requireVisible = () => {
+    if (input.decision === "confirm"
+      && new MemoryProjectionAuthority(host.options.authority).isProjectionIdSuppressed(input.candidate_id)) {
+      throw new JarvisError("MEMORY_CANDIDATE_SUPPRESSED");
+    }
+  };
+  requireVisible();
   const row = host.options.authority.db.prepare(
     `SELECT c.candidate_id,c.operation,c.state,c.expires_at,c.confirmation_expires_at,
         c.content_digest,m.candidate_digest,m.classification_digest
@@ -113,6 +121,7 @@ input: MemoryCandidateDecisionInput,
     selection: selection?.targetVersion ?? null,
   });
   return host.options.authority.db.transaction(() => {
+    requireVisible();
     host.options.authority.db.prepare(
       `INSERT OR IGNORE INTO memory_candidate_decision_families(
         family_digest,candidate_id,candidate_digest,classification_digest,decision,content_digest,created_at

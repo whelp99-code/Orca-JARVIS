@@ -1,3 +1,4 @@
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./db.js";
 import { hasSecondBrainWriteAuthority } from "./second-brain-write-authority.js";
@@ -11,6 +12,9 @@ export function requireMemoryOutboxAuthority(
   providerPreflight = true,
 ): void {
   const request = action.request;
+  if (new MemoryProjectionAuthority(authority).isProjectionIdSuppressed(request.candidate_id)) {
+    throw new JarvisError("MEMORY_OUTBOX_AUTHORITY_INVALID");
+  }
   if (providerPreflight && !hasSecondBrainWriteAuthority(authority, request, now)) {
     throw new JarvisError("MEMORY_OUTBOX_AUTHORITY_INVALID");
   }

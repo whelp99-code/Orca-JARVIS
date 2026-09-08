@@ -1,7 +1,8 @@
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import type { CommandApprovalReceipt } from "./control-plane-contract.js";
-import type { AuthorityDb } from "./db.js";
+import { JarvisError, type AuthorityDb } from "./db.js";
 import {
   MemoryCandidateDispatchSpool,
   type MemoryCandidateDispatchPublication,
@@ -99,6 +100,10 @@ export class MemorySurfaceAuthority {
         "UPDATE memory_candidate_decision_attempts SET state='receipt_rejected',updated_at=? WHERE attempt_id=? AND state='staged'",
       ).run(now.toISOString(), attempt.attempt_id);
       return true;
+    }
+    if (attempt.decision === "confirm"
+      && new MemoryProjectionAuthority(this.authority).isProjectionIdSuppressed(attempt.candidate_id)) {
+      throw new JarvisError("MEMORY_CANDIDATE_SUPPRESSED");
     }
     const roots = candidateSpoolRoots.get(this.authority);
     const reviewRoot = roots?.review_root ?? process.env.JARVIS_MEMORY_REVIEW_SPOOL_ROOT;

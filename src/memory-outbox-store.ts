@@ -1,3 +1,4 @@
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { canonicalize } from "./canonical.js";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./db.js";
@@ -33,6 +34,7 @@ export class MemoryOutboxStore {
     return this.authority.db.transaction(() => this.insertOrReplay(action, now)).immediate();
   }
   private insertOrReplay(action: MemoryOutboxActionV2, now: Date): MemoryOutboxSagaV2 {
+    requireMemoryOutboxAuthority(this.authority, action, now);
     const identity = memoryOutboxIdentity(action); const request = action.request;
     const existing = this.authority.db.prepare(
       "SELECT * FROM memory_outbox WHERE action_request_id=? OR candidate_id=? OR idempotency_key=?",
@@ -120,7 +122,11 @@ export class MemoryOutboxStore {
   markDispatch(outboxId: string, worker: string, fence: number, now: Date): MemoryDispatch {
     const at = iso(now); const deadline = new Date(now.getTime() + this.deadlineMs).toISOString();
     return this.authority.db.transaction(() => {
-      const saga = this.getRequired(outboxId); const invocation = memoryInvocation(outboxId, saga.request_digest, fence);
+      const saga = this.getRequired(outboxId);
+      if (new MemoryProjectionAuthority(this.authority).isProjectionIdSuppressed(saga.candidate_id)) {
+        throw new JarvisError("MEMORY_OUTBOX_AUTHORITY_INVALID");
+      }
+      const invocation = memoryInvocation(outboxId, saga.request_digest, fence);
       const changed = this.authority.db.prepare(
         `UPDATE memory_outbox SET state='dispatching',dispatch_fence=?,dispatched_at=?,reconcile_deadline_at=?,updated_at=?
          WHERE outbox_id=? AND state='claimed' AND lease_owner=? AND lease_fence=? AND lease_expires_at>?`,
