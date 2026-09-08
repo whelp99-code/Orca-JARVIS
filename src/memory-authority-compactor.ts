@@ -1,3 +1,4 @@
+import { persistCancellationSettlement, type CancellationSettlement } from "./memory-cancellation-settlement.js";
 import { cancellationCompactionRequest, beginCancellationCompaction, completeCancellationCompaction, sealCancellationSwap,
   type CancellationCompactionRequest, type CancellationLocalCompaction } from "./memory-cancellation-compaction.js";
 import { createHash } from "node:crypto";
@@ -85,7 +86,17 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
   }
 
   recoverCancellation(correctionId: string): Promise<CancellationLocalCompaction> {
+    return this.options.runtime.quiesce("memory_compaction", () => this.recoverCancellationQuiesced(correctionId));
+  }
+
+  settleCancellation(correctionId: string): Promise<CancellationSettlement> {
     return this.options.runtime.quiesce("memory_compaction", async () => {
+      const local = await this.recoverCancellationQuiesced(correctionId);
+      return persistCancellationSettlement(this.options.runtime.authorityDb(), local, this.options.clock ?? (() => new Date()));
+    });
+  }
+
+  private async recoverCancellationQuiesced(correctionId: string): Promise<CancellationLocalCompaction> {
       const authority = this.options.runtime.authorityDb();
       const request = cancellationCompactionRequest(authority, correctionId, this.options.clock ?? (() => new Date()));
       const row = authority.db.prepare(`SELECT i.purge_id,r.source_device,r.source_inode,r.result_device,r.result_inode,
@@ -123,7 +134,6 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
         result_inode: row.result_inode, reader_drain_digest: drain, physical_scan_digest: row.physical_scan_digest,
         local, observed_at: (this.options.clock?.() ?? new Date()).toISOString(),
       }, this.options.clock ?? (() => new Date()));
-    });
   }
 
   private compactQuiesced(request: MemoryCompactionRequest): Promise<MemoryCompactionObservation>;

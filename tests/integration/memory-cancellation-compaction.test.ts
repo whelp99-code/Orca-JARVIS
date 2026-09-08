@@ -224,3 +224,23 @@ it("recovers a replacement whose post-rename runtime metadata was never written"
     expect(f.db.db.prepare("SELECT count(*) AS n FROM memory_cancellation_compaction_receipts").get()).toEqual({ n: 1 });
   } finally { spy.mockRestore(); await replacement?.close(); await f.close(); }
 });
+
+it("atomically settles a verified cancellation and replays without advancing twice", async () => {
+  const f = await cancellationResultFixture();
+  try {
+    new MemoryCorrectionCancellationResultStore(f.db, f.runtime.clock).record(f.record.correction_id, f.result);
+    await f.runtime.compactor.compactCancellation(f.record.correction_id);
+    f.db.db.exec(`CREATE TRIGGER fail_cursor BEFORE UPDATE ON memory_effect_dispatch_cursor
+      BEGIN SELECT RAISE(ABORT,'INJECTED_CURSOR_FAILURE'); END`);
+    await expect(f.runtime.compactor.settleCancellation(f.record.correction_id)).rejects.toThrow("INJECTED_CURSOR_FAILURE");
+    expect(f.db.db.prepare("SELECT count(*) AS n FROM memory_cancellation_settlements").get()).toEqual({ n: 0 });
+    f.db.db.exec("DROP TRIGGER fail_cursor");
+    const settled = await f.runtime.compactor.settleCancellation(f.record.correction_id);
+    expect(settled.tombstone_sequence).toBe(1);
+    expect(await f.runtime.compactor.settleCancellation(f.record.correction_id)).toEqual(settled);
+    expect(f.db.db.prepare("SELECT accepted_through_sequence FROM memory_effect_dispatch_cursor").get()).toEqual({ accepted_through_sequence: 1 });
+    expect(() => f.db.db.exec("UPDATE memory_effect_dispatch_cursor SET accepted_through_sequence=3")).toThrow("settlement required");
+    f.db.db.prepare("UPDATE memory_provider_proof_keys SET state='revoked'").run();
+    await expect(f.runtime.compactor.settleCancellation(f.record.correction_id)).rejects.toThrow();
+  } finally { await f.close(); }
+});
