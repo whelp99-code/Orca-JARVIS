@@ -1,7 +1,8 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { randomUUID } from "node:crypto";
+import Database from "better-sqlite3";
 import { once } from "node:events";
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -42,7 +43,7 @@ describe("quiesced fresh-file AuthorityDb reconstruction", () => {
     // Given: one suppressed notification projection, one unrelated row, and complete fixed roots.
     const root = mkdtempSync(join(tmpdir(), "jarvis-task30-compact-"));
     const db = new AuthorityDb(tempDb()); await db.migrate();
-    const old = `old-${randomUUID()}-${randomUUID()}`;
+    const old = `old-"${randomUUID()}"\n\\${randomUUID()}`;
     const unrelated = `unrelated-${randomUUID()}`;
     let holder: ChildProcessWithoutNullStreams | undefined;
     let holderLines: Interface | undefined;
@@ -51,6 +52,16 @@ describe("quiesced fresh-file AuthorityDb reconstruction", () => {
         dist_root: join(root, "release", "dist"), backup_root: join(root, "backups"),
         restore_root: join(root, "restore") };
       for (const path of Object.values(layout)) mkdirSync(path, { recursive: true, mode: 0o700 });
+      const rollout = join(layout.state_root, "rollout.jsonl");
+      const history = join(layout.backup_root, "history.sqlite");
+      writeFileSync(rollout, JSON.stringify({ prompt: old }) + "\n", { mode: 0o600 });
+      const historyDb = new Database(history);
+      try {
+        historyDb.exec("CREATE TABLE history (prompt TEXT NOT NULL)");
+        historyDb.prepare("INSERT INTO history VALUES (?)")
+          .run(JSON.stringify({ request: JSON.stringify({ prompt: old }) }));
+      } finally { historyDb.close(); }
+      expect(readFileSync(history).includes(Buffer.from(old))).toBe(false);
       const at = "2026-08-31T00:00:00.000Z";
       db.db.prepare(
         `INSERT INTO notification_intents(
@@ -135,6 +146,7 @@ describe("quiesced fresh-file AuthorityDb reconstruction", () => {
       await Reflect.apply(Reflect.get(runtime, "close"), runtime, []);
       expect(readFileSync(db.filename).includes(Buffer.from(old))).toBe(false);
       expect(readFileSync(db.filename).includes(Buffer.from(unrelated))).toBe(true);
+      expect([rollout, history].map(existsSync)).toEqual([false, false]);
       expect(["-wal", "-shm", "-journal"].some(suffix => existsSync(`${db.filename}${suffix}`))).toBe(false);
     } finally {
       holderLines?.close();

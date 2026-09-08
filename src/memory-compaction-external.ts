@@ -2,28 +2,31 @@ import { existsSync, lstatSync, readFileSync, readdirSync, rmSync } from "node:f
 import { join } from "node:path";
 import { JarvisError } from "./db.js";
 import type { MemoryRuntimeLayout } from "./memory-managed-surface-scanner.js";
+import { withMemoryContentRepresentations } from "./memory-content-representations.js";
 
 export function disposeSensitiveManagedCopies(
   layout: MemoryRuntimeLayout,
   sensitive: readonly Buffer[],
 ): number {
-  let disposed = 0;
-  for (const root of [layout.spool_root, layout.state_root, layout.backup_root, layout.restore_root]) {
-    disposed += disposeRoot(root, sensitive);
-  }
-  if (countRootMatches(layout.dist_root, sensitive) !== 0) {
-    throw new JarvisError("MEMORY_DIST_RUNTIME_FIXTURE_MATCH");
-  }
-  return disposed;
+  return withMemoryContentRepresentations(sensitive, representations => {
+    let disposed = 0;
+    for (const root of [layout.spool_root, layout.state_root, layout.backup_root, layout.restore_root]) {
+      disposed += disposeRoot(root, representations);
+    }
+    if (countRootMatches(layout.dist_root, representations) !== 0) {
+      throw new JarvisError("MEMORY_DIST_RUNTIME_FIXTURE_MATCH");
+    }
+    return disposed;
+  });
 }
 
 export function countManagedMatches(
   layout: MemoryRuntimeLayout,
   sensitive: readonly Buffer[],
 ): number {
-  return [layout.spool_root, layout.state_root, layout.dist_root,
+  return withMemoryContentRepresentations(sensitive, representations => [layout.spool_root, layout.state_root, layout.dist_root,
     layout.backup_root, layout.restore_root]
-    .reduce((total, root) => total + countRootMatches(root, sensitive), 0);
+    .reduce((total, root) => total + countRootMatches(root, representations), 0));
 }
 
 function disposeRoot(root: string, sensitive: readonly Buffer[]): number {
