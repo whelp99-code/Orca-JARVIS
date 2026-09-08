@@ -1,5 +1,6 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ReconcileHub } from "./events.js";
+import { createBoundedSseSink } from "./sse-bounded-sink.js";
 
 const EVENTS_PATH = "/api/v1/events";
 const HEARTBEAT_MS = 15_000;
@@ -28,30 +29,26 @@ function attachSseClient(input: DashboardSseInput): void {
   response.setHeader("X-Request-Id", requestId);
   response.flushHeaders();
 
-  const sink = {
-    write(frame: string): void {
-      if (!response.writableEnded && !response.destroyed) response.write(frame);
-    },
-    close(): void {
-      if (!response.writableEnded && !response.destroyed) response.end();
-    },
-  };
-
-  const unsubscribe = hub.connect(sink, lastEventId(request));
-  const heartbeat = setInterval(() => {
-    sink.write(":\n\n");
-  }, HEARTBEAT_MS);
-  heartbeat.unref();
-
   let open = true;
+  let unsubscribe = (): void => {};
+  let heartbeat: ReturnType<typeof setInterval> | undefined;
   const cleanup = (): void => {
     if (!open) return;
     open = false;
     clearInterval(heartbeat);
+    heartbeat = undefined;
     unsubscribe();
+    request.off("close", requestClosed);
   };
-  request.on("close", cleanup);
-  response.on("close", cleanup);
+  const sink = createBoundedSseSink(response, () => hub.resync(sink), cleanup);
+  const requestClosed = (): void => { sink.close(); };
+  request.once("close", requestClosed);
+  try { unsubscribe = hub.connect(sink, lastEventId(request)); }
+  catch (error) { sink.close(); throw error; }
+  // connect writes the initial snapshot/replay synchronously and may already have closed the sink.
+  if (!open) { unsubscribe(); return; }
+  heartbeat = setInterval(() => { sink.write(":\n\n"); }, HEARTBEAT_MS);
+  heartbeat.unref();
 }
 
 function lastEventId(request: IncomingMessage): string | undefined {

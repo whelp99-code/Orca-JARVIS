@@ -1,3 +1,4 @@
+import { SSE_FRAME_MAX_BYTES } from "./sse-bounded-sink.js";
 import { createHash, randomUUID } from "node:crypto";
 import type { AuthorityDb } from "../db.js";
 import { canonicalize } from "../canonical.js";
@@ -40,10 +41,20 @@ export class ReconcileHub {
   }
 
   publish(topics: readonly string[]): void {
-    const stored = this.frame("reconcile", uniqueTopics(topics));
+    const stored = this.frame("reconcile", topics);
     this.replay.push(stored);
     if (this.replay.length > REPLAY_LIMIT) this.replay.shift();
-    for (const sink of this.clients) sink.write(stored.frame);
+    for (const sink of this.clients) {
+      try { sink.write(stored.frame); }
+      catch {
+        this.clients.delete(sink);
+        try { sink.close(); } catch { /* A failed connection cannot interrupt the remaining subscribers. */ }
+      }
+    }
+  }
+
+  resync(sink: SseSink): void {
+    if (this.clients.has(sink)) sink.write(this.frame("snapshot", snapshotTopics()).frame);
   }
 
   publishPersonal(kind: PersonalEventKind): void {
@@ -70,8 +81,17 @@ export class ReconcileHub {
   private frame(type: ReconcileEventType, topics: readonly string[]): StoredFrame {
     this.sequence += 1;
     const revision = `${this.instanceId}:${this.sequence}`;
-    const payload = { schema_version: DASHBOARD_SCHEMA_VERSION, type, revision, topics: [...topics], occurred_at: new Date().toISOString() };
-    return { id: revision, frame: `id: ${revision}\nevent: ${type}\ndata: ${JSON.stringify(payload)}\n\n` };
+    const limited = boundedTopics(topics);
+    const payload = { schema_version: DASHBOARD_SCHEMA_VERSION, type: limited === null ? "snapshot" : type,
+      revision, topics: limited ?? snapshotTopics(), occurred_at: new Date().toISOString() };
+    const encode = () => `id: ${revision}\nevent: ${payload.type}\ndata: ${JSON.stringify(payload)}\n\n`;
+    let frame = encode();
+    if (Buffer.byteLength(frame, "utf8") > SSE_FRAME_MAX_BYTES) {
+      payload.type = "snapshot";
+      payload.topics = snapshotTopics();
+      frame = encode();
+    }
+    return { id: revision, frame };
   }
 }
 
@@ -151,4 +171,15 @@ function readDataVersion(db: AuthorityDb): number {
     if (Number.isSafeInteger(asNumber)) return asNumber;
   }
   throw new JarvisError("INTERNAL_ERROR");
+}
+
+/** Keep payloads within the clients' 32-topic contract and bound the shared replay ring by bytes. */
+function boundedTopics(topics: readonly string[]): readonly string[] | null {
+  const unique = new Set<string>();
+  for (const topic of topics) {
+    if (Buffer.byteLength(topic, "utf8") > 256) return null;
+    unique.add(topic);
+    if (unique.size > 32) return null;
+  }
+  return [...unique];
 }

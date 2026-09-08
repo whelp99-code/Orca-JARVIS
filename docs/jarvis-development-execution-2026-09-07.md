@@ -426,3 +426,13 @@
 - 설치된 Vitest3.2.7의 수집387파일과 실제 BaseSequencer를 대조해194+193/중복0/누락0/longitudinal10을 확인했다. list --filesOnly는 shard를 적용하지 않으므로 이 출력만으로 실행 분할을 판정하지 않았다.
 - 실제 wrapper/Vitest 격리 실행에서 첫 shard 실패 후에도4파일 각1회 실행·exit1 보존, 정상4파일 각1회·exit0을 확인했다. 기존 프로세스/취소/cleanup8개 회귀도 통과했다. 리뷰에서 분할 사이 취소에도 spawn할 수 있는 경계를 지적받아 사전 abort guard를 추가했고 실제 분할 probe와8개 회귀를 다시 통과했다. 최종 필수 결함0.
 - 증거 루트의 `shard-discovery.json`, `test-shards-live-probe.mjs/json`, `test-shards-final.log`. 새 경로의 전체 suite 완료 증거는 아직 없으며 SSE 단위 이후 고정 소스로 실행한다. 운영/배포/push 변경0.
+
+## 2026-09-08 P2-17 — SSE 버퍼 상한·밀린 알림 병합·재접속
+
+- 전체 verify가 소스를 읽는 동안 캐시에 초안을 준비하고 별도7개 검사·HTTP 재현으로 대조했다. 전체 검사 종료와 회귀 커밋4bb5665/검증 실행기12c6b73 커밋 후 제품 소스에 반영했다.
+- 기존20,000 burst의 writable 버퍼5,296,798bytes/첫false이후쓰기19,748회를 재현했다. 새 sink는16KiB프레임/128KiBwritable 상한, writefalse 이후 쓰기 중지, 큐 대신 dirty표시1개, drain 전체snapshot1회,5초 미복구종료를 적용한다. heartbeat는 기한을 연장하거나 dirty를 만들지 않는다.
+- Hub의32토픽/UTF-8/JSONescape프레임 상한으로 공유 replay128개도 제한한다. 초과는 전체snapshot으로 축약한다. 구독자1개의 write예외는 다른 구독자를 중단하지 않는다. connect 중 종료에도 unsubscribe·타이머 정리를 수행한다. wire형식과 실행 권한 경계는 유지한다.
+- 실제 반영본 관련backend7파일19개(8.40초), dashboard29파일162개(31.79초) pass. lint의 prefer-const 지적은 cleanup에서 heartbeat참조를 비워 수정하고 신규7개를 재통과했다. 최종 build/typecheck/lint exit0, 독립 리뷰 필수 결함0.
+- 실제 built dashboard/paused TCP에140,000개 발행: write11,571/false41/막힌상태쓰기0/최대writable65,706bytes/첫20,000 burst65,616bytes/미복구종료5,002ms. 이는 writable 버퍼 측정이며 RSS·커널 메모리 상한으로 확대하지 않는다. 최초 probe의 수동blocked플래그는 drain listener 순서로 정상 재개쓰기를 오인해 실패했으며 최종은 Node writableNeedDrain을 직접 검사했다.
+- 실제 Chromium에서 연결 종료 중 작업 추가·replay ID퇴출→자동재접속open2/snapshot2→카드1에서2로 갱신을 확인했다. 재조회DB쓰기0/pageErrors0. 임시 DB/브라우저 제거. 증거 `sse-live-probe.mjs/json`, `sse-live-probe-first.log`, `sse-regression.log`, `sse-dashboard.log`, `sse-cleanup-final.log`.
+- 설계와 한계 `docs/planning/adr-dashboard-sse-delivery.md`. 정상 빠른 클라이언트의 동시 HTTP 재조회 중복 병합·조회 규모 개선은 후속이다. 전체01–25 인수, 최신 전체gate, 자동 기억 수집 원본 차단 HOLD는 유지한다. 운영 DB/서비스/release/push 변경0.
