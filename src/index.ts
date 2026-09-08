@@ -245,3 +245,4 @@ export { type PhoneMemoryContextOptions } from "./phone-memory-context.js";
 export { proposeMemoryCandidateScope, validateMemoryCandidateScopeProposal, MEMORY_CANDIDATE_SCOPE_DOMAIN,
   type MemoryCandidateScopeInput, type MemoryCandidateScopeProposal } from "./memory-candidate-scope.js";
 export { stageMemoryScopeReview, readApprovedMemoryScopeReview } from "./memory-scope-review.js";
+export { prepareMemoryScopedWriteIdentity } from "./memory-scoped-write-identity.js";

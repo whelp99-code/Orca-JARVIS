@@ -7,6 +7,7 @@ import { localKey } from "../helpers.js";
 import { verifiedMemoryInput, MEMORY_NOW } from "../fixtures/memory-candidate-fixture.js";
 import { memoryDatabase, closeMemoryDatabase, seedMemoryAuthority, memoryCandidateStore, memoryTableCounts } from "../fixtures/memory-candidate-store.js";
 import type { AuthorityDb } from "../../src/db.js";
+import { prepareMemoryScopedWriteIdentity } from "../../src/memory-scoped-write-identity.js";
 
 function receipt(authority: AuthorityDb, command: StoredControlCommand, now: Date) {
   return signCommandApproval({ schema_version: 1, receipt_id: `receipt:${command.request_id}`, request_id: command.request_id,
@@ -31,12 +32,21 @@ it("binds an existing signed owner approval to the exact scope and denies pendin
     expect(() => readApprovedMemoryScopeReview(f.authority, proposal, command.request_id, now)).toThrow("MEMORY_SCOPE_REVIEW_INVALID");
     const control = new ControlPlane(f.authority); control.decide(receipt(f.authority, command, now), now);
     const approvedCounts = memoryTableCounts(f.authority);
+    const identity = prepareMemoryScopedWriteIdentity(f.authority, proposal, command.request_id, now);
+    expect(identity.writes_authorized).toBe(false);
+    const later = new Date(now.getTime() + 1);
+    const repeated = proposeMemoryCandidateScope(f.authority, candidate.candidate_id, scope, later);
+    const repeatedCommand = stageMemoryScopeReview(f.authority, repeated, later);
+    control.decide(receipt(f.authority, repeatedCommand, later), later);
+    expect(prepareMemoryScopedWriteIdentity(f.authority, repeated, repeatedCommand.request_id, later).idempotency_key)
+      .toBe(identity.idempotency_key);
+    const afterReapproval = memoryTableCounts(f.authority);
     expect(control.nextApproved(now)).not.toBe(command.request_id);
     expect(() => control.claim(command.request_id, "generic-worker", now)).toThrow("CONTROL_ACTION_REVIEW_ONLY");
-    expect(memoryTableCounts(f.authority)).toEqual(approvedCounts);
+    expect(memoryTableCounts(f.authority)).toEqual(afterReapproval);
     expect(readApprovedMemoryScopeReview(f.authority, proposal, command.request_id, now))
       .toMatchObject({ writes_authorized: false, proposal, control_request_id: command.request_id });
-    expect(memoryTableCounts(f.authority)).toEqual(approvedCounts);
+    expect(memoryTableCounts(f.authority)).toEqual(afterReapproval);
     const other = proposeMemoryCandidateScope(f.authority, candidate.candidate_id, { ...scope, projects: ["project:b"] }, now);
     expect(stageMemoryScopeReview(f.authority, other, now).command_digest).not.toBe(command.command_digest);
     expect(() => readApprovedMemoryScopeReview(f.authority, other, command.request_id, now)).toThrow("MEMORY_SCOPE_REVIEW_INVALID");
