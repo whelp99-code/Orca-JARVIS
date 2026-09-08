@@ -598,3 +598,28 @@
 - compiled 상태읽기30회 p50 3.527ms/p95 4.811ms·schema1,359개·쓰기0. 신규 계산비용이며 기존대비성능향상으로표현하지않는다. 운영daemon별도release·CLI연결·현재디스크재관측·정상schema기준선·운영인수는미완료다. UI는초기화시디스크관측/마이그레이션기록대조의한계를명시한다. 전체01–25활성, 기존HOLD유지, 운영DB·서비스·release·push변경0.
 - 첫 독립 리뷰 review_runtime_identity는 fix-first/필수1건(API optional runtime 검증누락)이었다. malformed14종 red14fail/4pass 이후 guard 추가, 최종 dashboard33파일205개/34.75초 및 build/typecheck/lint 통과. 실제 browser malformed200응답→기존오류화면→정상응답복구, 두viewport·쓰기0·콘솔0 재확인. 최종경로127.0.0.1:41041/PID2130213, 초기화31.897ms이며 앞선 관측과 구분한다.
 - 최종fresh review_runtime_identity_final은 ship/필수0건. 요청gpt-5.6-terra/high, 실제값native미노출·리뷰어GPT-6표기는자기보고다. 중간probe route.fetch/reload경합의 Route already handled를 고정응답fulfill/unroute대기로해결했다. 잔여소유시험디렉터리1개는열린FD사용자0 확인후제거했다. 최종시험루트잔여0. 커밋후전체canonical verify를실행하며 결과확인전완료라고표시하지않는다.
+
+## 2026-09-08 P1-12 — 아침 원본 생산자와 원자적 게시
+
+- 인계 확인 턴은 자비스 개발 기준 no progress였다. 재개 시 active worktree의 HEAD4f6f35e와
+  미커밋 게시/Today 변경을 확인했다. 기존 verify handle67582는 종료 상태였으며 wrapper
+  기록은55d2e3e 전후HEAD/추적바이트 동일, exit1이다. 첫 shard1417pass/2fail,
+  둘째1435pass. 실패2건 모두 cancellation-intent의163자 줄로,4f6f35e가 줄바꿈만 수정했다.
+  이후 동일 형식 gate2파일4개 통과. 전체 verify 통과로 보고하지 않는다.
+- MorningRecommendationSource0097abb는 저장 추천·문맥·현재 절대기한 근거를 검증해
+  브리핑을 생성한다. cycle IPC readiness e96e401은 socket 파일 존재 대신 listener 준비
+  메시지를 기다린다. 두 변경은55d2e3e에 통합돼 있다.
+- 게시765565e: IMMEDIATE transaction 안에서 현재 추천을 재조회하고 lease/날짜/실제
+  선행 단계/바이트/마지막 유효시각을 검사한다. 병합된 모든 추천·문맥·행동 계보를
+  daily_run/daily_step/morning_brief와 원자적으로 저장한다. 두 번째 출처 삭제도 차단된다.
+- 최종 게시/조회/형식4파일23개 통과. lint/typecheck/build exit0. 실제2Node 재검증에서
+  정상6후보/2출처, 잠금 전 삭제경합 후3후보/1출처, 병합항목1개·읽기쓰기0을 확인했다.
+- fresh reviewer /root/morning_publisher_review는ship/지적0건. 요청sol/high,
+  실제모델·effort미노출. reviewer 테스트는infra write -122로0개 실행됐으므로 부모의
+  통과 로그를 사용한다. 별도 외부리뷰 비용/결과는 자체보고이며 native 토큰 실측으로 합산하지 않는다.
+- 증거 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/`: verify-morning-source-integrated*,
+  morning-publisher-accepted*, morning-publisher-final-live.log, morning-publisher-live.mjs/json.
+  초기검증과최종검증은중복이있어합산하지않는다. 고정시각acceptance/CLI smoke도exit0.
+- 자동 identity충돌 병합, generic lineage전면교체, provider fence, 실제일일총량장부,
+  아침/저녁/retention서비스활성화는미완료·HOLD다. 임의본문게시HOLD는검증된원본을
+  이게시API로처리하는로컬경로에한해해소한다. 전체01–25와운영인수목표유지.
