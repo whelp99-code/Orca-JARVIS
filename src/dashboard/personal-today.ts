@@ -56,12 +56,12 @@ function latestContext(db: AuthorityDb, now: Date): { readonly state: string; re
     `SELECT context_id,canonical_digest,canonical_envelope_json FROM personal_context_snapshots
      ORDER BY created_at DESC,context_id DESC LIMIT 1`,
   ).get();
-  if (raw === undefined) return { state: "no_data", freshness: { state: "no_data", fresh_until: null }, omissions: ["context_no_data"] };
+  if (raw === undefined) return { state: "no_data", freshness: { state: "no_data", checked_at: null, fresh_until: null }, omissions: ["context_no_data"] };
   const row = dbRow(raw);
   const contextId = text(row, "context_id");
   if (new MemoryProjectionAuthority(db).isSuppressed({
     kind: "context", id: contextId, component_id: contextId,
-  })) return { state: "no_data", freshness: { state: "no_data", fresh_until: null },
+  })) return { state: "no_data", freshness: { state: "no_data", checked_at: null, fresh_until: null },
     omissions: ["memory_suppressed"] };
   const context = parseContextSnapshotV1(JSON.parse(text(row, "canonical_envelope_json")));
   if (canonicalPersonalContractHash(context) !== text(row, "canonical_digest")) throw new PersonalTodayIntegrityError();

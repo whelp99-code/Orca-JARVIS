@@ -461,3 +461,12 @@
 - 실제 HTTP 중단: stop으로4요청/4body 닫힘. 오늘 API500과 health partial response를 함께 만든 후10,009ms에 timeout·후속snapshot 성공, 요청총8개. 임시 DB/서버/브라우저 제거.
 - 브라우저 probe 첫 경로 /today 및 두 번째 h2 내부 selector는 probe 오류로 각각 timeout됐다. 실제 루트 /와 section selector로 수정해 최종 exit0을 확인했다. 제품 실패로 보고하지 않는다. 증거 `personal-live-probe-first.log`, `personal-live-probe-selector.log`, 최종 `personal-live-probe.mjs/json/log`, `personal-coalescing-*.log`.
 - 별도 새 결함: 실제 빈 DB의 todayProjection을 실제 parseToday에 전달하면 freshness.checked_at 누락으로 VALIDATION_ERROR가 발생한다(`today-empty-contract-red.log`). 병합 기능의 완료와 구분해 바로 후속 수정한다. 전체01–25/운영 인수, memory-store 큐 보류 및 원본 차단 자동 수집 HOLD 유지. 운영/배포/push 변경0.
+
+## 2026-09-08 Today 최초/차단 데이터 계약 수정
+
+- 개인 조회 병합98509a9의 실사용 검증 중 빈 DB 응답과 실제 frontend parser를 직접 대조해 checked_at 누락을 재현했다. 최초 context 부재와 privacy로 context가 차단된 두 fallback에 checked_at:null을 추가한다. 원본 시각을 노출하거나 strict parser를 완화하지 않는다.
+- 실제 HTTP 빈 DB 검사와 원본 차단11읽기 경로 검사에 정확한 freshness shape를 추가했다. frontend는 null을 허용하고 필드 누락은 계속 VALIDATION_ERROR로 거부한다.
+- 관련backend3파일13개/15.65초, frontend3파일39개/3.82초 pass. backend build/lint/typecheck exit0. 독립 리뷰 필수 결함0. 현재 전체 frontend 최신 단위는 앞선174개 pass이며 이번 추가 parser1개는 집중검사에 포함했다.
+- 실제 built Chromium/HTTP: 빈 DB Today no_data 렌더 성공, fixture 권한에 연결한 context·추천3개를 실제 tombstone으로 차단 후 추천0개와 memory_suppressed 표시. 두 경로 freshness={state:no_data,checked_at:null,fresh_until:null}, Today unavailable0/pageErrors0/GET DB쓰기0. 임시 DB/서버/브라우저 제거. 이는 격리 DB의 기존 원본 차단 경로 인수이며 보류 중인 작업 자동 기억 수집의 파생 차단 완료가 아니다.
+- 증거 루트의 `today-empty-contract-{red,green}.log`, `today-empty-contract-probe.mjs/json`, `today-no-data-{backend,frontend,build,lint,types}.log`, `today-no-data-live.mjs/json/log`, `today-{empty,suppressed}-browser.png`.
+- src/index.ts 및 memory-reference-context 관련 변경은 다른 작업 소유로 확인하여 이번 커밋에서 제외했다. 전체01–25 및 운영 인수 미완료, 기존 HOLD 유지, 운영/배포/push 변경0.

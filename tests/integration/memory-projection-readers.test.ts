@@ -149,6 +149,7 @@ describe("memory projection source readers", () => {
       const health = await sourceHealth(db, { limit: 20, cursor: null,
         now: new Date(RECOMMENDATION_NOW), pagination }, undefined);
       const today = todayProjection(db, new Date(RECOMMENDATION_NOW));
+      expect(field(today, "freshness")).toEqual({ state: "no_data", checked_at: null, fresh_until: null });
       const timeline = new TaskTimeline(db);
       const state = await buildCurrentState(db, new Date(RECOMMENDATION_NOW));
       let eveningCloseoutError: string | null = null;

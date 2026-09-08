@@ -55,6 +55,7 @@ describe("personal operating dashboard reads", () => {
       // Then
       expect(responses.map((item) => item.status)).toEqual([200, 200, 200, 200, 200]);
       expect(responses.map((item) => record(item.body)["schema_version"])).toEqual([1, 1, 1, 1, 1]);
+      expect(record(responses[0]!.body)["freshness"]).toEqual({ state: "no_data", checked_at: null, fresh_until: null });
       expect(tableCounts(db)).toBe(before);
     } finally { server.close(); db.close(); }
   });

@@ -46,6 +46,14 @@ const evidence = { schema_version: 1, resource: "context-evidence", context_id: 
     kind: "linux_live_fact", digest: DIGEST, observed_at: AT, fresh_until: AT }], conflicts: [], omissions: [] };
 
 describe("Task31 personal client", () => {
+  it("accepts explicit no-data timestamps while rejecting a missing freshness field", () => {
+    const empty = { ...today, state: "no_data", next_actions: [],
+      freshness: { state: "no_data", checked_at: null, fresh_until: null } };
+    expect(parseToday(empty).freshness).toEqual(empty.freshness);
+    expect(() => parseToday({ ...empty, freshness: { state: "no_data", fresh_until: null } }))
+      .toThrowError(expect.objectContaining({ code: "VALIDATION_ERROR" }));
+  });
+
   it("parses the closed Today resource and rejects unknown fields", async () => {
     // Given: one canonical response followed by a response with an unknown field.
     globalThis.fetch = vi.fn()
