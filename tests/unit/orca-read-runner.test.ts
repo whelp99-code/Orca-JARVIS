@@ -72,9 +72,16 @@ describe("bounded Orca read processes", () => {
       expect(() => process.kill(parent, 0)).toThrow();
       if (mode === "descendant" && process.platform === "linux") {
         const pid = readFileSync(join(root, "descendant.pid"), "utf8");
-        // A reparented zombie has terminated but may await PID 1's reap.
-        try { expect(readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1]?.[0]).toBe("Z"); }
-        catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
+        // Pipe close precedes exit_notify/EXIT_ZOMBIE in Linux do_exit().
+        // PF_EXITING (0x4) also proves entry into the non-returning kernel exit path;
+        // a runnable task without that flag still fails. No timing delay or retry.
+        try {
+          const stat = readFileSync(`/proc/${pid}/stat`, "utf8");
+          const fields = stat.slice(stat.lastIndexOf(")") + 2).trim().split(/\s+/);
+          const flags = Number(fields[6]); // /proc stat field 9, after pid and comm.
+          expect(Number.isSafeInteger(flags)).toBe(true);
+          expect(fields[0] === "Z" || (flags & 0x4) !== 0).toBe(true);
+        } catch (error) { if ((error as NodeJS.ErrnoException).code !== "ENOENT") throw error; }
       }
     },
   );
