@@ -11,11 +11,45 @@ afterEach(() => {
 });
 
 describe("PersonalOsRuntime retention owner", () => {
+  it.each([T2, "2026-08-28", "invalid"])("rejects invalid creation cutoff %s without inserting a job", async cutoff => {
+    const db = await personalDb(); open.push(db);
+    const runtime = new PersonalOsRuntime({ db: db.db, now: () => new Date(T1) });
+    expect(() => runtime.retention.createJob({ jobId: "invalid", jobKey: "invalid", idempotencyKey: "invalid",
+      dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T1, cutoff })).toThrow("E_RETENTION_POLICY");
+    expect(db.db.prepare("SELECT COUNT(*) AS n FROM retention_jobs").get()).toEqual({ n: 0 });
+  });
+
+  it("rejects a changed cutoff before invoking the adapter and makes stored policy immutable", async () => {
+    const db = await personalDb(); open.push(db); let calls = 0;
+    const runtime = new PersonalOsRuntime({ db: db.db, now: () => new Date(T1), adapters: { notification: () => {
+      calls++; return { scanned: 0, eligible: 0, deleted: 0, retained: 0, error_count: 0 };
+    } } });
+    runtime.retention.createJob({ jobId: "policy", jobKey: "policy", idempotencyKey: "policy",
+      dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T1, cutoff: T0 });
+    expect(() => db.db.prepare("UPDATE retention_jobs SET policy_cutoff=? WHERE job_id='policy'").run(T1))
+      .toThrow("immutable retention policy cutoff");
+    runtime.retention.claimDue({ now: T1, leaseExpiresAt: T2 });
+    expect(() => runtime.retention.executeClaimed({ jobId: "policy", now: T1, cutoff: T1 })).toThrow("E_RETENTION_POLICY");
+    expect(calls).toBe(0);
+  });
+
+  it("does not infer a cutoff for a legacy job", async () => {
+    const db = await personalDb(); open.push(db); let calls = 0;
+    db.db.prepare("INSERT INTO retention_jobs(job_id,job_key,idempotency_key,data_class,state,not_before,expires_at,created_at,updated_at) " +
+      "VALUES('legacy','legacy','legacy','notification','pending',?,?,?,?)").run(T0,T5,T0,T0);
+    const runtime = new PersonalOsRuntime({ db: db.db, now: () => new Date(T1), adapters: { notification: () => {
+      calls++; return { scanned: 0, eligible: 0, deleted: 0, retained: 0, error_count: 0 };
+    } } });
+    runtime.retention.claimDue({ now: T1, leaseExpiresAt: T2 });
+    expect(() => runtime.retention.executeClaimed({ jobId: "legacy", now: T1, cutoff: T0 })).toThrow("E_RETENTION_POLICY");
+    expect(calls).toBe(0);
+  });
+
   it("bounds claims and caps leases at job expiry without accepting a future clock", async () => {
     const db = await personalDb(); open.push(db);
     const runtime = new PersonalOsRuntime({ db: db.db, now: () => new Date(T1) });
     for (let i = 0; i < 101; i++) runtime.retention.createJob({ jobId: `batch-${i}`, jobKey: `batch-${i}`,
-      idempotencyKey: `batch-${i}`, dataClass: "notification", notBefore: T0, expiresAt: T2, createdAt: T0 });
+      idempotencyKey: `batch-${i}`, dataClass: "notification", notBefore: T0, expiresAt: T2, createdAt: T0, cutoff: T0 });
     expect(() => runtime.retention.claimDue({ now: T2, leaseExpiresAt: T3 })).toThrow("E_CLOCK_INVALID");
     expect(runtime.retention.claimDue({ now: T1, leaseExpiresAt: T3 })).toHaveLength(100);
     expect(db.db.prepare("SELECT DISTINCT lease_expires_at FROM retention_jobs WHERE state='claimed'").all())
@@ -27,7 +61,7 @@ describe("PersonalOsRuntime retention owner", () => {
     const db = await personalDb(); open.push(db);
     const runtime = new PersonalOsRuntime({ db: db.db, now: () => new Date(T1) });
     for (const id of ["a", "b"]) runtime.retention.createJob({ jobId: id, jobKey: id, idempotencyKey: id,
-      dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T0 });
+      dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T0, cutoff: T0 });
     db.db.exec("CREATE TRIGGER retention_test_abort BEFORE UPDATE ON retention_jobs WHEN NEW.job_id='b' " +
       "BEGIN SELECT RAISE(ABORT,'claim test failure'); END");
     expect(() => runtime.retention.claimDue({ now: T1, leaseExpiresAt: T2 })).toThrow("claim test failure");
@@ -43,7 +77,7 @@ describe("PersonalOsRuntime retention owner", () => {
     } };
     const first = new PersonalOsRuntime({ db: db.db, now: () => new Date(now), adapters });
     first.retention.createJob({ jobId: "restart", jobKey: "restart", idempotencyKey: "restart",
-      dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T0 });
+      dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T0, cutoff: T0 });
     expect(first.retention.claimDue({ now: T1, leaseExpiresAt: T2 })).toEqual(["restart"]);
     const second = new PersonalOsRuntime({ db: db.db, now: () => new Date(now), adapters });
     expect(second.retention.claimDue({ now: T1, leaseExpiresAt: T2 })).toEqual([]);
@@ -59,7 +93,7 @@ describe("PersonalOsRuntime retention owner", () => {
     open.push(db);
     const runtime = new PersonalOsRuntime({ db: db.db, now: () => new Date(T1) });
     runtime.retention.createJob({ jobId: "missing", jobKey: "missing", idempotencyKey: "missing",
-      dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T0 });
+      dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T0, cutoff: T0 });
     runtime.retention.claimDue({ now: T1, leaseExpiresAt: T2 });
     expect(() => runtime.retention.executeClaimed({ jobId: "missing", now: T1, cutoff: T0 }))
       .toThrow("E_RETENTION_ADAPTER");
@@ -102,7 +136,7 @@ describe("PersonalOsRuntime retention owner", () => {
       dataClass: "notification",
       notBefore: T0,
       expiresAt: T5,
-      createdAt: T0,
+      createdAt: T0, cutoff: T0,
     });
 
     // When
@@ -134,7 +168,7 @@ describe("PersonalOsRuntime retention owner", () => {
     const digests: string[] = [];
     for (const cutoff of [T0, T1]) {
       runtime.retention.createJob({ jobId: cutoff, jobKey: cutoff, idempotencyKey: cutoff,
-        dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T0 });
+        dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T1, cutoff });
       runtime.retention.claimDue({ now: T1, leaseExpiresAt: T2 });
       const result = runtime.retention.executeClaimed({ jobId: cutoff, now: T1, cutoff });
       expect(result).toMatchObject({ scanned: 0, deleted: 0, error_count: 0 });
@@ -157,7 +191,7 @@ describe("PersonalOsRuntime retention owner", () => {
       },
     } });
     runtime.retention.createJob({ jobId: mode, jobKey: mode, idempotencyKey: mode,
-      dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T0 });
+      dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T0, cutoff: T0 });
     runtime.retention.claimDue({ now: T1, leaseExpiresAt: T2 });
     if (mode === "settlement") db.db.exec(`CREATE TRIGGER fail_completion BEFORE UPDATE OF state ON retention_jobs
       WHEN NEW.state='completed' BEGIN SELECT RAISE(ABORT,'injected settlement failure'); END`);
@@ -180,7 +214,7 @@ describe("PersonalOsRuntime retention owner", () => {
     const first = new PersonalOsRuntime({ db: db.db, now: () => new Date(now), adapters });
     const second = new PersonalOsRuntime({ db: db.db, now: () => new Date(now), adapters });
     first.retention.createJob({ jobId: "owned", jobKey: "owned", idempotencyKey: "owned",
-      dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T0 });
+      dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T0, cutoff: T0 });
     first.retention.claimDue({ now: T1, leaseExpiresAt: T2 });
     expect(() => second.retention.executeClaimed({ jobId: "owned", now: T1, cutoff: T0 })).toThrow("E_RETENTION_CLAIM");
     now = T2;
@@ -200,7 +234,7 @@ describe("PersonalOsRuntime retention owner", () => {
       },
     } });
     runtime.retention.createJob({ jobId: "waited", jobKey: "waited", idempotencyKey: "waited",
-      dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T0 });
+      dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T0, cutoff: T0 });
     runtime.retention.claimDue({ now: T1, leaseExpiresAt: T2 });
     reads = 0;
     expect(() => runtime.retention.executeClaimed({ jobId: "waited", now: T1, cutoff: T0 })).toThrow("E_RETENTION_CLAIM");
@@ -219,7 +253,7 @@ describe("PersonalOsRuntime retention owner", () => {
       dataClass: "notification",
       notBefore: T2,
       expiresAt: T5,
-      createdAt: T0,
+      createdAt: T0, cutoff: T0,
     });
 
     // When

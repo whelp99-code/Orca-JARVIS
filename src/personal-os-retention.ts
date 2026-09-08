@@ -45,6 +45,7 @@ export type RetentionJobInput = {
   readonly notBefore: string;
   readonly expiresAt: string;
   readonly createdAt: string;
+  readonly cutoff: string;
 };
 
 export class RetentionRuntime {
@@ -57,10 +58,13 @@ export class RetentionRuntime {
   ) { this.owner = `${owner}:${process.pid}:${randomUUID()}`; }
 
   createJob(input: RetentionJobInput): void {
+    if (!validTimestamp(input.cutoff) || !validTimestamp(input.createdAt) || input.cutoff > input.createdAt) {
+      throw new PersonalOsError("E_RETENTION_POLICY");
+    }
     this.db
       .prepare(
-        "INSERT INTO retention_jobs(job_id,job_key,idempotency_key,data_class,state,lease_fence,not_before,expires_at,created_at,updated_at) " +
-          "VALUES(?,?,?,?,?,?,?,?,?,?)",
+        "INSERT INTO retention_jobs(job_id,job_key,idempotency_key,data_class,state,lease_fence,not_before,expires_at," +
+          "created_at,updated_at,policy_cutoff) VALUES(?,?,?,?,?,?,?,?,?,?,?)",
       )
       .run(
         input.jobId,
@@ -73,6 +77,7 @@ export class RetentionRuntime {
         input.expiresAt,
         input.createdAt,
         input.createdAt,
+        input.cutoff,
       );
   }
 
@@ -113,6 +118,7 @@ export class RetentionRuntime {
         started = this.now();
         const job = this.currentLease(input.jobId, started);
         fence = job.lease_fence;
+        if (job.policy_cutoff === null || job.policy_cutoff !== input.cutoff) throw new PersonalOsError("E_RETENTION_POLICY");
         const adapter = this.adapters[job.data_class];
         if (adapter === undefined) throw new PersonalOsError("E_RETENTION_ADAPTER");
         const policy: RetentionPolicy = { schema_version: 1, data_class: job.data_class, cutoff: input.cutoff };
@@ -148,11 +154,13 @@ export class RetentionRuntime {
     return now.toISOString();
   }
 
-  private currentLease(jobId: string, now: string): { data_class: RetentionDataClass; lease_fence: number } {
+  private currentLease(jobId: string, now: string): { data_class: RetentionDataClass; lease_fence: number; policy_cutoff: string | null } {
     const row = this.db.prepare(
-      "SELECT data_class,lease_fence FROM retention_jobs WHERE job_id=? AND state='claimed' AND lease_owner=? " +
+      "SELECT data_class,lease_fence,policy_cutoff FROM retention_jobs WHERE job_id=? AND state='claimed' AND lease_owner=? " +
         "AND lease_expires_at>? AND expires_at>?",
-    ).get(jobId, this.owner, now, now) as { data_class: RetentionDataClass; lease_fence: number } | undefined;
+    ).get(jobId, this.owner, now, now) as {
+      data_class: RetentionDataClass; lease_fence: number; policy_cutoff: string | null;
+    } | undefined;
     if (!row) throw new PersonalOsError("E_RETENTION_CLAIM");
     return row;
   }
