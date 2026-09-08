@@ -5,17 +5,11 @@ import { MigrationStore } from "./migration-store.js";
 import { OrcaObservationStore } from "./orca-observation-store.js";
 import { PersonalContextPersistence } from "./personal-context-persistence.js";
 import type { DecisionReceipt, PolicyAuthorization, WorkState } from "./types.js";
+import { JarvisError } from "./jarvis-error.js";
+export { JarvisError } from "./jarvis-error.js";
 
 export type Row = Record<string, unknown>;
 export type Credential = { receipt?: DecisionReceipt; policy?: PolicyAuthorization };
-export class JarvisError extends Error {
-	constructor(
-		readonly code: string,
-		message = code,
-	) {
-		super(message);
-	}
-}
 export const timestamp = () => new Date().toISOString();
 export const json = (value: unknown) => canonicalize(value);
 export const sha = (value: unknown) =>

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
-import { JarvisError } from "./db.js";
+import { JarvisError } from "./jarvis-error.js";
 import { MemoryProjectionLineage } from "./memory-projection-lineage.js";
 import type {
   MemoryProjectionDatabase,

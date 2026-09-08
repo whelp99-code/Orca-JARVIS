@@ -926,3 +926,18 @@
   오류코드2종·정상/불신 정책 판단 통과. DB/모델 호출 없음.
 - 상세 `docs/planning/adr-runtime-module-boundaries.md`; authority/memory 및 task 순환과
   전체01–25 개발 목표는 남아 있다.
+
+
+## 2026-09-09 — 항목14 권한·기억 저장소 순환 제거
+
+- JarvisError 단일 정의를 의존 없는 leaf로 분리하고 기존 공개 경로의 동일 클래스를
+  유지했다. 진행 parser와 기억 투영 두 모듈의 DB 역참조를 제거했다.
+- 정적 ESM 그래프563모듈/1969edges에서 순환2→1; 남은 task 순환21모듈.
+  공개 export843개 이름 유지. progress는 import 경로를 정규화한 TS AST가 전후 동일하다.
+  단순 scanner 비교는 template literal 재스캔 부재로 실패하여 AST 비교로 교체했다.
+- build+60tests/12files37.19s+lint+3types exit0(handle50650). 처음 검증은 기존
+  progress 긴 줄 제한으로 실패했고 줄바꿈 후 재검증했다.
+- compiled Node 진입 순서3종(progress/projection/db), PID1808322/1808389/1808420:
+  공개 경로5개의 클래스 동일성, 각 프로세스의 오류3종 거부, 실제 격리 SQLite
+  migration 및 ready 검사 통과. 운영DB·외부 모델 호출 없음.
+- 전체01–25 및 나머지 task 순환은 미완료. 운영 배포는 하지 않았다.

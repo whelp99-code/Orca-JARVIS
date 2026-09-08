@@ -1,5 +1,21 @@
 # ADR — 런타임 읽기·통신·공개 API 경계 정리
 
+## 2026-09-09 — 공통 오류와 DB 구현의 의존 분리
+
+JarvisError는 DB·저장소를 불러오지 않는 `jarvis-error.ts`에서 단일 정의한다.
+기존 authority-db-base/authority-db/db/index의 공개 경로는 같은 클래스를 re-export한다.
+진행 보고 parser와 기억 투영의 두 모듈은 오류만 필요하므로 이 공통 모듈을 직접
+참조한다. 이 세 역방향 import가 만드는 권한·기억 저장소 순환을 제거하며, DB 생성자·
+migration·승인·fence·기억 억제 동작은 변경하지 않는다. 오류 복제나 코드/메시지 변경은 없다.
+검증은 정적 ESM 그래프·공개 export 대조, 기존 진행 보고·권한·기억 투영 회귀,
+compiled 모듈 진입 순서별 오류 동일성과 실제 DB의 잘못된 입력 거부로 수행한다.
+
+검증: build·관련60tests/12files·lint·3types exit0. 정적 순환2→1, 공개 export843개 유지.
+compiled Node 진입 순서3종에서 기존 공개 경로5개 오류 동일성과 격리 SQLite
+migration/ready·오류3종 거부를 확인했다. progress의 import 경로 정규화 후
+TS AST 전후 동일; 남은 task 순환21모듈은 후속 범위다.
+
+
 ## 2026-09-09 — 문맥 정책 입력 경계의 순환 제거
 
 `context-policy.ts` 평가기는 입력 parser를 사용하고, parser는 평가기에서 오류

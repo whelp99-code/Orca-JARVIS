@@ -1,4 +1,4 @@
-import { JarvisError } from "./db.js";
+import { JarvisError } from "./jarvis-error.js";
 import {
   MEMORY_PROJECTION_KINDS,
   type MemoryProjectionDatabase,
