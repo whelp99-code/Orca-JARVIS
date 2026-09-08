@@ -1,3 +1,6 @@
+import { writeFileSync } from "node:fs";
+import { createFileMemoryWriteScopeResolver } from "../../src/memory-access-policy.js";
+import { prepareMemoryScopedWriteWithPolicy } from "../../src/memory-scoped-write-policy.js";
 import { expect, it } from "vitest";
 import { stageMemoryScopeReview, readApprovedMemoryScopeReview } from "../../src/memory-scope-review.js";
 import { proposeMemoryCandidateScope } from "../../src/memory-candidate-scope.js";
@@ -83,6 +86,34 @@ it("preserves V3 Korean multiline bytes through scoped preparation", async () =>
     const before = memoryTableCounts(f.database.authority);
     const prepared = prepareMemoryScopedWriteFromDispatch(f.database.authority, proposal, command.request_id, f.dispatch, f.now);
     expect(Buffer.from(prepared.payload.content)).toEqual(Buffer.from(f.statement));
+    const policyPath = `${f.database.root}/write-policy.json`;
+    const session = { principal_id: "principal:owner" as const, agent_id: "agent:fixture", session_id: "session:fixture",
+      expires_at: new Date(f.now.getTime() + 30000).toISOString() };
+    const policy = { schema_version: 3, provider_instance_id: "provider:fixture", principal_id: "principal:owner",
+      policy_revision: "policy:1", valid_from: f.now.toISOString(), valid_until: session.expires_at,
+      agents: [{ agent_id: session.agent_id, projects: ["project:a"], methods: ["sb_write_request"] }] };
+    const save = (value: unknown) => writeFileSync(policyPath, JSON.stringify(value), { mode: 0o600 });
+    const resolve = createFileMemoryWriteScopeResolver(policyPath, "provider:fixture", () => session);
+    const check = () => prepareMemoryScopedWriteWithPolicy(f.database.authority, proposal, command.request_id, f.dispatch, resolve, f.now);
+    save(policy);
+    expect(check()).toMatchObject({ preparation: prepared, writer: { agent_id: session.agent_id, session_id: session.session_id },
+      valid_until: session.expires_at, writes_authorized: false });
+    for (const invalid of [{ ...policy, schema_version: 2 }, { ...policy, policy_revision: "policy:2" },
+      { ...policy, agents: [{ ...policy.agents[0], projects: ["project:b"] }] }]) {
+      save(invalid); expect(check).toThrow("MEMORY_SCOPED_WRITE_POLICY_INVALID");
+    }
+    save(policy); let calls = 0;
+    expect(() => prepareMemoryScopedWriteWithPolicy(f.database.authority, proposal, command.request_id, f.dispatch,
+      at => { if (++calls === 2) save({ ...policy, agents: [] }); return resolve(at); }, f.now))
+      .toThrow("MEMORY_SCOPED_WRITE_POLICY_INVALID");
+    save(policy); calls = 0;
+    expect(() => prepareMemoryScopedWriteWithPolicy(f.database.authority, proposal, command.request_id, f.dispatch,
+      at => {
+        if (++calls === 2) f.database.authority.db.prepare("INSERT INTO authority_revocations(reference,reason,created_at) VALUES(?,?,?)")
+          .run(f.candidate.source.verification_evidence_id, "revoked during policy lookup", f.now.toISOString());
+        return resolve(at);
+      }, f.now)).toThrow("MEMORY_SCOPED_SOURCE_AUTHORITY_INVALID");
+
     expect(() => prepareMemoryScopedWritePayload(f.database.authority, proposal, command.request_id,
       f.request.subject, f.statement.replaceAll("\r\n", "\n"), f.now)).toThrow("MEMORY_SCOPED_PAYLOAD_INVALID");
     expect(memoryTableCounts(f.database.authority)).toEqual(before);

@@ -43,19 +43,20 @@ function readPolicy(path: string): unknown {
 
 /** Policy is operator-managed; getSession must return authenticated server state,
  * never request-body claims. No implicit grants and no cached last-good policy. */
-export function createFileMemoryAccessScopeResolver(policyPath: string, provider: string,
-  getSession: () => AuthenticatedMemorySession | undefined): MemoryAccessScopeResolver {
-  return (at, request) => {
-    const session = getSession(); const now = at.getTime();
+function resolveFileScope(policyPath: string, provider: string,
+  getSession: () => AuthenticatedMemorySession | undefined, at: Date, method: string, write: boolean): ReturnType<MemoryAccessScopeResolver> {
+    const now = at.getTime(); const session = getSession();
     if (session === undefined || session.principal_id !== "principal:owner"
       || !id.test(session.agent_id) || !id.test(session.session_id) || !Number.isFinite(now)) return undefined;
     const sessionExpiry = instant(session.expires_at);
     if (sessionExpiry === undefined || sessionExpiry <= now) return undefined;
     const policy = readPolicy(policyPath);
-    const agentPolicy = typeof policy === "object" && policy !== null && Reflect.get(policy, "schema_version") === 2;
+    const version = typeof policy === "object" && policy !== null ? Reflect.get(policy, "schema_version") : undefined;
+    if (write && version !== 3) return undefined;
+    const agentPolicy = version === 2 || version === 3;
     const entries = agentPolicy ? "agents" : "sessions";
     if (!record(policy, ["schema_version", "provider_instance_id", "principal_id", "policy_revision", "valid_from", "valid_until", entries])
-      || policy.schema_version !== (agentPolicy ? 2 : 1) || policy.provider_instance_id !== provider || policy.principal_id !== session.principal_id
+      || policy.schema_version !== (agentPolicy ? version : 1) || policy.provider_instance_id !== provider || policy.principal_id !== session.principal_id
       || typeof policy.policy_revision !== "string" || !id.test(policy.policy_revision)) return undefined;
     const rows = policy[entries];
     if (!Array.isArray(rows) || rows.length > 64) return undefined;
@@ -67,11 +68,11 @@ export function createFileMemoryAccessScopeResolver(policyPath: string, provider
         || typeof row.agent_id !== "string" || !id.test(row.agent_id)
         || (!agentPolicy && (typeof row.session_id !== "string" || !id.test(row.session_id)))
         || !strings(row.projects, item => item.startsWith("project:") && id.test(item) && id.test(item.slice(8)))
-        || !strings(row.methods, item => item === "sb_read_page" || item === "sb_search" || item === "sb_generation_status")) return undefined;
+        || !strings(row.methods, item => item === "sb_read_page" || item === "sb_search" || item === "sb_generation_status" || (version === 3 && item === "sb_write_request"))) return undefined;
       const key = agentPolicy ? row.agent_id : `${row.agent_id}\0${row.session_id}`;
       if (seen.has(key)) return undefined;
       seen.add(key);
-      if (row.agent_id === session.agent_id && (agentPolicy || row.session_id === session.session_id) && row.methods.includes(request.method)) {
+      if (row.agent_id === session.agent_id && (agentPolicy || row.session_id === session.session_id) && row.methods.includes(method)) {
         selected = row.projects;
       }
     }
@@ -79,5 +80,29 @@ export function createFileMemoryAccessScopeResolver(policyPath: string, provider
     return { principal_id: session.principal_id, agent_id: session.agent_id, session_id: session.session_id,
       projects: [...selected], policy_revision: policy.policy_revision,
       valid_until: new Date(Math.min(until, sessionExpiry)).toISOString() };
+}
+
+
+const READ_METHODS = new Set(["sb_read_page", "sb_search", "sb_generation_status"]);
+
+export function createFileMemoryAccessScopeResolver(policyPath: string, provider: string,
+  getSession: () => AuthenticatedMemorySession | undefined): MemoryAccessScopeResolver {
+  return (at, request) => READ_METHODS.has(request.method)
+    ? resolveFileScope(policyPath, provider, getSession, at, request.method, false) : undefined;
+}
+
+export type AuthorizedMemoryWriteScope = NonNullable<ReturnType<MemoryAccessScopeResolver>> & {
+  readonly method: "sb_write_request";
+};
+export type MemoryWriteScopeResolver = (at: Date) => AuthorizedMemoryWriteScope | undefined;
+
+/** Only policy v3 with explicit sb_write_request grants a write scope. This does
+ * not issue a read claim, consume a review or authorize an unverified candidate. */
+export function createFileMemoryWriteScopeResolver(policyPath: string, provider: string,
+  getSession: () => AuthenticatedMemorySession | undefined): MemoryWriteScopeResolver {
+  return at => {
+    const scope = resolveFileScope(policyPath, provider, getSession, at, "sb_write_request", true);
+    return scope === undefined ? undefined : Object.freeze({ ...scope,
+      projects: Object.freeze([...scope.projects]), method: "sb_write_request" as const });
   };
 }

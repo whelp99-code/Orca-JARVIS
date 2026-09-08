@@ -248,3 +248,5 @@ export { stageMemoryScopeReview, readApprovedMemoryScopeReview } from "./memory-
 export { prepareMemoryScopedWriteIdentity } from "./memory-scoped-write-identity.js";
 export { prepareMemoryScopedWritePayload, prepareMemoryScopedWriteFromDispatch } from "./memory-scoped-write-payload.js";
 export { publishAutomaticMemoryCandidate } from "./memory-auto-publication.js";
+export { createFileMemoryWriteScopeResolver, type MemoryWriteScopeResolver, type AuthorizedMemoryWriteScope } from "./memory-access-policy.js";
+export { prepareMemoryScopedWriteWithPolicy } from "./memory-scoped-write-policy.js";

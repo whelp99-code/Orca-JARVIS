@@ -2,7 +2,7 @@ import { chmodSync, mkdtempSync, rmSync, symlinkSync, unlinkSync, writeFileSync 
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
-import { createFileMemoryAccessScopeResolver, type AuthenticatedMemorySession } from "../../src/memory-access-policy.js";
+import { createFileMemoryAccessScopeResolver, createFileMemoryWriteScopeResolver, type AuthenticatedMemorySession } from "../../src/memory-access-policy.js";
 const folders: string[] = [];
 afterEach(() => { for (const folder of folders.splice(0)) rmSync(folder, { recursive: true, force: true }); });
 const now = new Date("2026-09-09T00:00:00.000Z");
@@ -44,7 +44,7 @@ it("rejects mixed policy versions, duplicate agents and wildcard projects", () =
   const base = Object.fromEntries(Object.entries(policy).filter(([key]) => key !== "sessions"));
   const grant = { agent_id: 'agent:test', projects: ['project:a'], methods: ['sb_search'] };
   const v2 = { ...base, schema_version: 2, agents: [grant] };
-  for (const invalid of [{ ...v2, sessions: policy.sessions }, { ...v2, schema_version: 3 },
+  for (const invalid of [{ ...v2, sessions: policy.sessions }, { ...v2, schema_version: 4 },
     { ...v2, agents: [grant, grant] }, { ...v2, agents: [{ ...grant, session_id: 'session:test' }] },
     { ...v2, agents: [{ ...grant, projects: ['*'] }] }]) {
     f.save(invalid); expect(resolve(now, request)).toBeUndefined();
@@ -94,4 +94,26 @@ it('requires explicit status method permission', () => {
   expect(resolve(now, status)).toBeUndefined();
   f.save({ ...policy, sessions: [{ ...policy.sessions[0], methods: ['sb_generation_status', 'sb_read_page', 'sb_search'] }] });
   expect(resolve(now, status)?.session_id).toBe(session.session_id);
+});
+
+it("requires explicit v3 write grants and keeps read claims read-only", () => {
+  const f = fixture(); let current: AuthenticatedMemorySession | undefined = session;
+  const read = createFileMemoryAccessScopeResolver(f.path, "provider:test", () => current);
+  const write = createFileMemoryWriteScopeResolver(f.path, "provider:test", () => current);
+  expect(write(now)).toBeUndefined();
+  const base = Object.fromEntries(Object.entries(policy).filter(([key]) => key !== "sessions"));
+  const grant = { agent_id: "agent:test", projects: ["project:a"], methods: ["sb_search", "sb_write_request"] };
+  f.save({ ...base, schema_version: 2, agents: [grant] });
+  expect(write(now)).toBeUndefined(); expect(read(now, request)).toBeUndefined();
+  f.save({ ...base, schema_version: 3, agents: [{ ...grant, methods: ["sb_search"] }] });
+  expect(write(now)).toBeUndefined(); expect(read(now, request)).toBeDefined();
+  f.save({ ...base, schema_version: 3, agents: [grant] });
+  const scope = write(now);
+  expect(scope).toMatchObject({ method: "sb_write_request", projects: ["project:a"], session_id: session.session_id });
+  expect(Object.isFrozen(scope?.projects)).toBe(true);
+  expect(read(now, { ...request, method: "sb_write_request" })).toBeUndefined();
+  expect(read(now, request)).toBeDefined();
+  current = { ...session, agent_id: "agent:other" }; expect(write(now)).toBeUndefined();
+  current = session; expect(write(new Date(session.expires_at))).toBeUndefined();
+  f.save({ ...base, schema_version: 3, agents: [] }); expect(write(now)).toBeUndefined();
 });
