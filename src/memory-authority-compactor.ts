@@ -15,6 +15,7 @@ import { JarvisError as AuthorityError } from "./db.js";
 import { buildFreshAuthority } from "./memory-authority-fresh-builder.js";
 import { persistForbiddenContentIdentities } from "./memory-forbidden-content.js";
 import { restoreBlockedProjections } from "./memory-restore-authority.js";
+import { collectCancellationMaterial } from "./memory-cancellation-material.js";
 import { collectSuppressedContent } from "./memory-compaction-sanitize.js";
 import type {
   MemoryAuthorityCompactorPort,
@@ -89,6 +90,7 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
     try {
       const blocked = restoreBlockedProjections(authority, authority);
       sensitive = collectSuppressedContent(authority.db, blocked);
+      sensitive = [...sensitive, ...await collectCancellationMaterial(authority, this.options.layout.spool_root, purgeId, new Date(createdAt))];
       persistForbiddenContentIdentities(authority, { purge_id: purgeId,
         material: sensitive, observed_at: createdAt });
       const build = await buildFreshAuthority(authority, freshPath,

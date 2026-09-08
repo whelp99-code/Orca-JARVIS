@@ -229,3 +229,5 @@ export { createCorrectionCancellationFromSource, parseCorrectionCancellationSour
 export { submitDatabaseCorrectionCancellation, requireCorrectionCancellationAccepted,
   type CorrectionCancellationAcceptedV1 } from "./memory-correction-cancellation-submit.js";
 export { MemoryCorrectionCancellationResultStore } from "./memory-correction-cancellation-result-store.js";
+
+export { collectCancellationMaterial } from "./memory-cancellation-material.js";
