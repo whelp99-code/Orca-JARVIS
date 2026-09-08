@@ -13,7 +13,7 @@ export function cancellationDatabaseKeys(authority: AuthorityDb, at: string, his
   return new Map(rows.map(row => [row.key_id, row.public_key_pem]));
 }
 
-export function requireCancellationDatabaseBinding(authority: AuthorityDb, correctionId: string,
+export function requireCancellationRequestBinding(authority: AuthorityDb, correctionId: string,
   source: CorrectionCancellationSource): MemoryCorrectionRecord {
   const row = new MemoryCorrectionStore(authority).get(correctionId);
   if (!row) throw new JarvisError(INVALID);
@@ -26,6 +26,24 @@ export function requireCancellationDatabaseBinding(authority: AuthorityDb, corre
     tombstone_sequence: source.tombstone.sequence, tombstone_set_root: source.tombstone.set_root };
   for (const [key, value] of Object.entries(expected)) if (Reflect.get(row, key) !== value) throw new JarvisError(INVALID);
   if (row.correction_id !== `memcorr:v1:${d.request_digest.slice(7)}`) throw new JarvisError(INVALID);
+  const tomb = authority.db.prepare("SELECT * FROM memory_tombstone_chain WHERE sequence=?").get(source.tombstone.sequence) as Record<string, unknown> | undefined;
+  if (!tomb || canonicalize(Object.fromEntries(Object.keys(source.tombstone).map(key => [key, tomb[key]]))) !== canonicalize(source.tombstone)) throw new JarvisError(INVALID);
+  const link = authority.db.prepare("SELECT request_digest,delegation_digest FROM memory_tombstone_delegation_links WHERE sequence=?")
+    .get(source.tombstone.sequence) as { request_digest: string; delegation_digest: string } | undefined;
+  if (link?.request_digest !== row.request_digest || link.delegation_digest !== row.delegation_digest) throw new JarvisError(INVALID);
+  return row;
+}
+
+export function requireCancellationDatabaseBinding(authority: AuthorityDb, correctionId: string,
+  source: CorrectionCancellationSource): MemoryCorrectionRecord {
+  const row = requireCancellationRequestBinding(authority, correctionId, source);
+  const d = source.original_delegation;
+  const expected = { provider_instance_id: source.provider_instance_id, request_id: d.request_id,
+    request_digest: d.request_digest, envelope_digest: source.original_envelope_digest,
+    idempotency_key: source.original_idempotency_key, lane_id: d.lane_id, delegation_id: d.delegation_id,
+    delegation_digest: d.delegation_digest, target_manifest_digest: d.target_manifest_digest,
+    scope_digest: d.scope_digest, payload_digest: d.payload_digest,
+    tombstone_sequence: source.tombstone.sequence, tombstone_set_root: source.tombstone.set_root };
   const preparation = authority.db.prepare("SELECT * FROM memory_effect_preparations WHERE lane_id=?").get(row.lane_id) as Record<string, unknown> | undefined;
   if (!preparation || preparation.state !== "approved" || preparation.lane !== "correction" || preparation.operation !== "correct"
     || preparation.candidate_id !== row.candidate_id || preparation.spool_digest !== row.spool_digest) throw new JarvisError(INVALID);
@@ -34,11 +52,6 @@ export function requireCancellationDatabaseBinding(authority: AuthorityDb, corre
   for (const [key, value] of Object.entries(expected)) if (preparation[aliases[key] ?? key] !== value) throw new JarvisError(INVALID);
   if (preparation.provider_tombstone_sequence !== source.tombstone.sequence - 1
     || preparation.provider_tombstone_set_root !== source.tombstone.previous_root) throw new JarvisError(INVALID);
-  const tomb = authority.db.prepare("SELECT * FROM memory_tombstone_chain WHERE sequence=?").get(source.tombstone.sequence) as Record<string, unknown> | undefined;
-  if (!tomb || canonicalize(Object.fromEntries(Object.keys(source.tombstone).map(key => [key, tomb[key]]))) !== canonicalize(source.tombstone)) throw new JarvisError(INVALID);
-  const link = authority.db.prepare("SELECT request_digest,delegation_digest FROM memory_tombstone_delegation_links WHERE sequence=?")
-    .get(source.tombstone.sequence) as { request_digest: string; delegation_digest: string } | undefined;
-  if (link?.request_digest !== row.request_digest || link.delegation_digest !== row.delegation_digest) throw new JarvisError(INVALID);
   return row;
 }
 

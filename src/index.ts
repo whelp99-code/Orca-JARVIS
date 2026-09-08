@@ -228,3 +228,4 @@ export { createCorrectionCancellationFromSource, parseCorrectionCancellationSour
   type CorrectionCancellationSource } from "./memory-correction-cancellation-intent.js";
 export { submitDatabaseCorrectionCancellation, requireCorrectionCancellationAccepted,
   type CorrectionCancellationAcceptedV1 } from "./memory-correction-cancellation-submit.js";
+export { MemoryCorrectionCancellationResultStore } from "./memory-correction-cancellation-result-store.js";
