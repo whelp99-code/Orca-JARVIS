@@ -29,6 +29,12 @@ const bodySchema = z.object({ schema_version: z.literal(1), kind: z.literal("mem
 const envelopeSchema = bodySchema.extend({ intent_id: z.string().regex(/^memcancel:intent:v1:[0-9a-f]{64}$/),
   intent_digest: digest, signature: z.string().regex(/^[A-Za-z0-9_-]{86}$/) }).strict();
 export type CorrectionCancellationIntentV1 = z.infer<typeof envelopeSchema>;
+const sourceSchema = bodySchema.pick({ provider_instance_id: true, original_envelope_digest: true,
+  original_idempotency_key: true, original_delegation: true, target: true, scope: true, tombstone: true }).strict();
+export type CorrectionCancellationSource = z.infer<typeof sourceSchema>;
+export function parseCorrectionCancellationSource(value: unknown): CorrectionCancellationSource {
+  return freezeDeep(sourceSchema.parse(snapshotMemoryEffectValue(value)));
+}
 export type CorrectionCancellationEvidence = z.infer<typeof evidence>;
 export type CorrectionCancellationIntentOptions = {
   readonly provider_instance_id: string; readonly now: Date;
@@ -109,11 +115,20 @@ export function createCorrectionCancellationIntent(original: MemoryEffectWriteRe
     expectedProvider: options.provider_instance_id, delegationKeys: options.historical_delegation_keys };
   const request = requireMemoryEffectWriteRequest(original, originalOptions);
   if (request.operation !== "correct" || request.targets.length !== 1 || request.tombstone_chain_delta.length !== 1) rejectMemoryEffect(INVALID);
-  const body = bodySchema.parse({ schema_version: 1, kind: "memory_correction_cancellation_intent",
-    provider_instance_id: request.provider_instance_id, reason: "candidate_suppressed_unsent", disposition: "provider_local_suppression",
+  return createCorrectionCancellationFromSource({
+    provider_instance_id: request.provider_instance_id,
     original_envelope_digest: request.envelope_digest, original_idempotency_key: request.idempotency_key,
     original_delegation: request.delegation, target: request.targets[0], scope: request.scope,
-    tombstone: request.tombstone_chain_delta[0], unsent_evidence: attestation,
+    tombstone: request.tombstone_chain_delta[0] }, attestation, authority, privateKey, options);
+}
+
+/** The caller must bind this metadata to its durable original request before issuing. */
+export function createCorrectionCancellationFromSource(source: unknown, attestation: CorrectionCancellationEvidence,
+  authority: { readonly issued_at: string; readonly expires_at: string; readonly nonce: string; readonly signing_key_id: string },
+  privateKey: KeyObject, options: CorrectionCancellationIntentOptions): CorrectionCancellationIntentV1 {
+  const metadata = sourceSchema.parse(snapshotMemoryEffectValue(source));
+  const body = bodySchema.parse({ ...metadata, schema_version: 1, kind: "memory_correction_cancellation_intent",
+    reason: "candidate_suppressed_unsent", disposition: "provider_local_suppression", unsent_evidence: attestation,
     ...authority, not_before: authority.issued_at });
   const observed = intentDigest(body);
   const unsigned = { ...body, intent_id: `memcancel:intent:v1:${observed.slice(7)}`, intent_digest: observed };

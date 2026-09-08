@@ -40,6 +40,10 @@ export class MemoryDestructiveDispatchCursor {
       throw new JarvisError("MEMORY_DESTRUCTIVE_DISPATCH_INVALID");
     }
     return this.authority.db.transaction((): DestructiveDispatchClaim => {
+      if (this.authority.db.prepare(`SELECT 1 FROM memory_correction_cancellation_intents i
+        JOIN memory_correction_requests c ON c.correction_id=i.correction_id WHERE c.lane_id=?`).get(input.lane_id)) {
+        throw new JarvisError("MEMORY_REQUEST_CANCELLED");
+      }
       const cursor = this.cursor();
       if (cursor.active_lane_id !== null) return this.reconcileClaim(cursor, input);
       const preparation = this.authority.db.prepare(

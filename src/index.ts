@@ -222,3 +222,7 @@ export { requireCorrectionCancellationResult, CORRECTION_CANCELLATION_RESULT_DOM
   type CorrectionCancellationResultV1 } from "./memory-correction-cancellation-result.js";
 export { requireCorrectionCancellationStatus,
   type CorrectionCancellationStatusV1 } from "./memory-correction-cancellation-status.js";
+export { MemoryCorrectionCancellationIssuer } from "./memory-correction-cancellation-issuer.js";
+export { captureCorrectionCancellationSource } from "./memory-correction-cancellation-db.js";
+export { createCorrectionCancellationFromSource, parseCorrectionCancellationSource,
+  type CorrectionCancellationSource } from "./memory-correction-cancellation-intent.js";

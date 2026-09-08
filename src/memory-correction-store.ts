@@ -88,6 +88,9 @@ export class MemoryCorrectionStore {
     const at = now.toISOString();
     return this.authority.db.transaction(() => {
       const row = this.required(correctionId);
+      if (this.authority.db.prepare("SELECT 1 FROM memory_correction_cancellation_intents WHERE correction_id=?").get(correctionId)) {
+        throw new JarvisError("MEMORY_REQUEST_CANCELLED");
+      }
       if (row.state === "dispatching" || row.state === "reconciling"
         || row.state === "provider_proved" || row.state === "settled") return row;
       if (new MemoryProjectionAuthority(this.authority).isProjectionIdSuppressed(row.candidate_id)) {
