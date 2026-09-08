@@ -5,7 +5,8 @@ import type { TaskCertificationDriver } from "./task-certified-execution.js";
 import type { TaskExecutionPlan } from "./task-execution-plan.js";
 import { taskCertificationVerifierKey } from "./task-certification-context.js";
 import { taskCompletionWorkflow } from "./task-completion-workflow.js";
-import { createRegisteredTaskRuntime, registeredTaskExecutor } from "./task-executor-registry.js";
+import { createRegisteredTaskRuntime } from "./task-executor-registry.js";
+import { parseRegisteredTaskExecutionPlan } from "./task-executor-plan.js";
 
 export interface TaskExecutionRuntime {
   readonly provider: TaskCandidateProvider;
@@ -22,10 +23,7 @@ export function productionTaskExecutionRuntime(env: NodeJS.ProcessEnv = process.
 
 export async function assertTaskRuntimeReady(authority: AuthorityDb, plan: TaskExecutionPlan,
   runtime: TaskExecutionRuntime | undefined): Promise<TaskExecutionRuntime> {
-  if (plan.schema_version !== 2) throw new JarvisError("TASK_COMPLETION_MODE_UNSUPPORTED");
-  const executor = registeredTaskExecutor(plan.provider);
-  if (!executor) throw new JarvisError("TASK_PROVIDER_UNSUPPORTED");
-  if (plan.schema_version !== executor.plan_schema_version || plan.mode !== executor.mode) throw new JarvisError("TASK_COMPLETION_MODE_UNSUPPORTED");
+  plan = parseRegisteredTaskExecutionPlan(plan);
   if (!runtime) throw new JarvisError("TASK_EXECUTION_NOT_CONFIGURED");
   if (runtime.provider.provider !== plan.provider) throw new JarvisError("TASK_PROVIDER_UNAVAILABLE");
   const main = (authority.db.prepare("PRAGMA database_list").all() as Array<{ name: string; file: string }>).find(row => row.name === "main");

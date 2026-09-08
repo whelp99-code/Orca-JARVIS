@@ -90,3 +90,39 @@ cases without spawning a verifier or model:
 
 Fresh final review `/root/execution_limits_final_review`: ship, findings 0.
 Requested luna/high; actual model and effort are unavailable in tool metadata.
+
+## Input validation and result identity
+
+`jarvis routing validate-plan claude-code PLAN.json` validates a plain execution
+plan using the same `parseRegisteredTaskExecutionPlan` function as runtime
+preflight. It requires the current compiled executor's version, mode and provider
+as well as the existing closed plan shape, paths, digests and resource bounds.
+Only a plan digest and validation status are emitted; plan contents and private
+paths are not echoed. Input files are bounded to 4MiB and must be regular,
+non-symlink, valid UTF-8 JSON files, using the existing bounded routing reader.
+
+Success means structural input validity only. No database is opened, no approval
+is consumed, no source repository is inspected and no provider is called. Output
+explicitly reports execution_available=false, authority/repository=not_checked
+and readiness/authentication=not_probed. Offline inspection is not an execution
+ticket: normal workflow binding, approval, preflight and file checks still apply.
+
+Registry contract names reference source contracts, not standalone JSON Schemas:
+input `TaskExecutionPlan` version 2; successful `result` payload `TaskCompletion`
+version 1. The latter must come from persisted completion/publication/verifier
+bindings; model candidate output is never completion. Existing completed-request
+replay returns the verified historical result without another model invocation.
+These names and versions document the current adapter and do not implement a
+generic external adapter registration or an offline completion-proof verifier.
+
+Validation: 70 tests in 7 files (18.61 seconds), backend build, lint and three
+TypeScript checks exit 0. Tests cover shared plan rejection, approved execution
+and replay, cancellation/revocation, bounded-file hazards and CLI non-disclosure.
+Separate compiled CLI PIDs1348722/1348735/1348750/1348763 returned 0/2/2/2 for
+valid/unsupported/unregistered/invalid inputs, with zero database files and no
+private marker in output. Receipt:
+`/home/jm/.cache/jarvis-test-runtime-qa-20260908/executor-plan-1t2alrlb/receipt.json`.
+The concurrent full verify is frozen at 8b98cd8 and excludes this unit.
+
+Read-only review `/root/executor_plan_review`: ship, findings 0. Requested
+luna/high; actual model and effort were not exposed by tool metadata.

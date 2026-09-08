@@ -2,6 +2,7 @@ import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { JarvisError } from "./db.js";
 import { classifyWorkRouting } from "./work-routing.js";
+import { inspectTaskExecutorPlan } from "./task-executor-plan.js";
 
 async function readJson(path: string, maximum: number): Promise<unknown> {
   try {
@@ -26,4 +27,9 @@ export async function executeWorkRouting(requestPath: string, policyPath: string
   const request = await readJson(requestPath, 8192);
   const policy = await readJson(policyPath, 65536);
   return { ok: true, command: "routing.classify", routing: classifyWorkRouting(request, policy) };
+}
+
+export async function executeExecutorPlanValidation(id: string, path: string): Promise<Record<string, unknown>> {
+  const plan = await readJson(path, 4 * 1024 * 1024);
+  return { ok: true, command: "routing.validate-plan", validation: inspectTaskExecutorPlan(id, plan) };
 }
