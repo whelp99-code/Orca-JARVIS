@@ -44,8 +44,11 @@ export class MemoryReferenceDeliveries {
         "SELECT binding_key,state FROM personal_context_reference_sessions WHERE session_key=?",
       ).get(sessionKey) as { binding_key: string; state: string } | undefined;
       if (prior !== undefined && (prior.state !== "active" || prior.binding_key !== bindingKey)) {
-        this.authority.db.prepare("UPDATE personal_context_reference_sessions SET state='invalidated',binding_key=NULL,updated_at=MAX(updated_at,?) WHERE session_key=?").run(at, sessionKey);
-        this.authority.db.prepare("UPDATE personal_context_reference_attempts SET state='invalidated',epoch_key=NULL,record_set_key=NULL,payload_key=NULL,updated_at=MAX(updated_at,?) WHERE session_key=?").run(at, sessionKey);
+        this.authority.db.prepare(`UPDATE personal_context_reference_sessions
+          SET state='invalidated',binding_key=NULL,updated_at=MAX(updated_at,?) WHERE session_key=?`).run(at, sessionKey);
+        this.authority.db.prepare(`UPDATE personal_context_reference_attempts
+          SET state='invalidated',epoch_key=NULL,record_set_key=NULL,payload_key=NULL,updated_at=MAX(updated_at,?)
+          WHERE session_key=?`).run(at, sessionKey);
         return "MEMORY_REFERENCE_SESSION_INVALIDATED";
       }
       if (this.authority.db.prepare(`SELECT 1 FROM personal_context_reference_attempts
@@ -73,12 +76,12 @@ export class MemoryReferenceDeliveries {
   finish(attemptId: string, state: "callback_completed" | "unconfirmed", now: Date, assertCurrent?: () => void): void {
     const at = this.timestamp(now);
     this.authority.db.transaction(() => {
-    this.assertKey();
-    assertCurrent?.();
-    const changed = this.authority.db.prepare(`UPDATE personal_context_reference_attempts SET state=?,updated_at=MAX(updated_at,?)
-      WHERE attempt_id=? AND state='dispatching' AND session_key IN (
-        SELECT session_key FROM personal_context_reference_sessions WHERE state='active')`).run(state, at, attemptId);
-    if (changed.changes !== 1) throw new JarvisError("MEMORY_REFERENCE_SESSION_INVALIDATED");
+      this.assertKey();
+      assertCurrent?.();
+      const changed = this.authority.db.prepare(`UPDATE personal_context_reference_attempts SET state=?,updated_at=MAX(updated_at,?)
+        WHERE attempt_id=? AND state='dispatching' AND session_key IN (
+          SELECT session_key FROM personal_context_reference_sessions WHERE state='active')`).run(state, at, attemptId);
+      if (changed.changes !== 1) throw new JarvisError("MEMORY_REFERENCE_SESSION_INVALIDATED");
     }).immediate();
   }
 
@@ -95,7 +98,8 @@ export class MemoryReferenceDeliveries {
       this.authority.db.prepare(`UPDATE personal_context_reference_sessions SET state='invalidated',binding_key=NULL,updated_at=MAX(updated_at,?)
         WHERE session_key IN (SELECT session_key FROM personal_context_reference_attempts WHERE attempt_id=?)`)
         .run(at, attemptId);
-      this.authority.db.prepare(`UPDATE personal_context_reference_attempts SET state='invalidated',epoch_key=NULL,record_set_key=NULL,payload_key=NULL,updated_at=MAX(updated_at,?)
+      this.authority.db.prepare(`UPDATE personal_context_reference_attempts
+        SET state='invalidated',epoch_key=NULL,record_set_key=NULL,payload_key=NULL,updated_at=MAX(updated_at,?)
         WHERE session_key IN (SELECT session_key FROM personal_context_reference_attempts WHERE attempt_id=?)`)
         .run(at, attemptId);
     }).immediate();
