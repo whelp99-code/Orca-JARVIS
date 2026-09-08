@@ -1,5 +1,7 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import type { SecondBrainEvidence } from "../second-brain-adapter-types.js";
+import { createMemoryMembership } from "../memory-membership.js";
+import type { MemoryMembership } from "../memory-read-privacy.js";
 
 const TOKEN_TTL_MS = 300_000;
 const TOKEN_CAPACITY = 256;
@@ -25,8 +27,11 @@ export type MemoryTokenAuthority = Partial<Pick<MemoryTokenSelection,
 export class MemoryTokenCache {
   /** Insertion-order mutation is the bounded LRU cache's purpose. */
   private readonly entries = new Map<string, MemoryTokenSelection>();
+  private readonly member: MemoryMembership;
   constructor(private readonly revisionKey: Buffer, private readonly clock: () => Date) {
     if (revisionKey.byteLength !== 32) throw new TypeError("MEMORY_TOKEN_CONFIG_INVALID");
+    this.revisionKey = Buffer.from(revisionKey);
+    this.member = createMemoryMembership(revisionKey);
   }
   issue(evidence: SecondBrainEvidence, sessionId: string, privacyEpoch: number,
     policyDigest = DEFAULT_POLICY_DIGEST, sessionIncarnation = sessionId): {
@@ -76,8 +81,7 @@ export class MemoryTokenCache {
   }
   clear(): void { this.entries.clear(); }
   membership(kind: "source" | "content" | "citation" | "record", value: string): string {
-    return `hmac-sha256:${createHmac("sha256", this.revisionKey)
-      .update(`orca-jarvis/memory-membership-${kind}/v1\0`).update(value).digest("hex")}`;
+    return this.member(kind, value);
   }
   revision(kind: "query" | "record" | "origin" | "candidate" | "resource",
     sessionId: string, value: string): string {

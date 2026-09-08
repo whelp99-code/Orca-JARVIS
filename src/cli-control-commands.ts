@@ -15,6 +15,7 @@ import { assertTaskExecutionBinding } from "./task-execution-staging.js";
 import { parseTaskExecutionPlan } from "./task-execution-plan.js";
 import { bindMemoryCandidateSpools, createProductionMemoryOutbox } from "./memory-outbox-production.js";
 import { executeMemoryIntake } from "./cli-memory-intake.js";
+import { executeMemoryReference } from "./cli-memory-reference.js";
 import { stageMemoryRememberDispatch } from "./memory-remember-dispatch.js";
 import { taskExecutionReadiness } from "./task-execution-runtime.js";
 
@@ -23,6 +24,7 @@ export async function executeControlCommand(
 ): Promise<Record<string, unknown> | undefined> {
   const { command, subcommand, argument, values, db } = context;
   if (command === "memory" && subcommand === "classify") return executeMemoryIntake(context);
+  if (command === "memory" && subcommand === "context") return executeMemoryReference(context);
   if (command === "memory" && subcommand === "stage-dispatch" && argument) {
     const roots = bindMemoryCandidateSpools(db, context.dependencies.memoryOutboxOptions);
     return { ok: true, command: "memory.stage-dispatch",

@@ -1,4 +1,5 @@
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { request } from "undici";
@@ -9,6 +10,9 @@ import type { SecondBrainEvidence, SecondBrainReadAdapter,
 import { AuthorityDb } from "../../src/db.js";
 import { createDashboardServer } from "../../src/dashboard/server.js";
 import { bindExternal, externalAnchors, localKey, tempDb } from "../helpers.js";
+import { MemoryReferenceReader } from "../../src/memory-reference-reader.js";
+import { createMemoryMembership } from "../../src/memory-membership.js";
+import { memoryReadHighWater } from "../../src/memory-read-fence.js";
 
 const NOW = new Date("2026-09-01T00:00:00.000Z");
 const roots: string[] = [];
@@ -116,6 +120,47 @@ describe("Task 32 bound Memory runtime", () => {
         .toEqual({ privacy_epoch: 1, suppression_sequence: 1 });
       expect(value.db.db.prepare("SELECT operation FROM memory_surface_suppressions").get())
         .toEqual({ operation: "forget" });
+      expect(() => value.db.db.prepare("UPDATE memory_surface_target_versions SET created_at=created_at").run())
+        .toThrow("immutable memory target version");
+      expect(() => value.db.db.prepare("DELETE FROM memory_surface_target_versions").run())
+        .toThrow("immutable memory target version");
+      const original = { ...evidence("personal", "1"), content_digest:
+        `sha256:${createHash("sha256").update("Fictional record").digest("hex")}` };
+      if (original.record === null) throw new Error("bound fixture required");
+      const generation = { ...original.record.generation, tombstone_set_root: memoryReadHighWater(value.db).set_root };
+      const adapter = new RuntimeAdapter();
+      adapter.search = async () => ({ kind: "current", checked_at: NOW.toISOString(), evidence: [
+        { ...original, record: { ...original.record!, generation } },
+      ] });
+      const reference = new MemoryReferenceReader({ authority: value.db, adapter, clock: () => NOW,
+        membership: createMemoryMembership(Buffer.alloc(32, 7)),
+        generation_status: async () => ({ kind: "data", value: { schema_version: 1, ...generation,
+          pointer_health: "healthy", journal_health: "healthy" } }) });
+      await expect(reference.read("fictional", { max_records: 8, max_record_bytes: 4096, max_bytes: 16384 }))
+        .rejects.toMatchObject({ code: "MEMORY_REFERENCE_SUPPRESSED" });
+      const summary = () => value.db.db.prepare(
+        "SELECT COUNT(*) AS count,MAX(created_at) AS latest FROM memory_surface_target_versions").get();
+      const originalSummary = summary();
+      let statusCalls = 0;
+      const racing = new MemoryReferenceReader({ authority: value.db, adapter, clock: () => NOW,
+        membership: createMemoryMembership(Buffer.alloc(32, 7)), generation_status: async () => {
+          if (++statusCalls === 2) {
+            // REPLACE bypasses DELETE guards when recursive triggers are off.
+            // Revision tracking must still see this same-count replacement.
+            value.db.db.pragma("recursive_triggers = OFF");
+            const row = value.db.db.prepare("SELECT * FROM memory_surface_target_versions").get() as Record<string, string | number>;
+            for (const name of ["source_membership_hmac", "content_membership_hmac", "citation_membership_hmac", "record_membership_hmac"]) {
+              row[name] = `hmac-sha256:${"9".repeat(64)}`;
+            }
+            const names = Object.keys(row);
+            value.db.db.prepare(`INSERT OR REPLACE INTO memory_surface_target_versions(${names.join(",")}) VALUES(${names.map(() => "?").join(",")})`)
+              .run(...names.map(name => row[name]!));
+            expect(summary()).toEqual(originalSummary);
+          }
+          return { kind: "data", value: { schema_version: 1, ...generation, pointer_health: "healthy", journal_health: "healthy" } };
+        } });
+      await expect(racing.read("fictional", { max_records: 8, max_record_bytes: 4096, max_bytes: 16384 }))
+        .rejects.toMatchObject({ code: "MEMORY_REFERENCE_PRIVACY_CHANGED" });
     } finally { value.server.close(); value.db.close(); }
   });
 });

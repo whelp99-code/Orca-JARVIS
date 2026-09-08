@@ -1,7 +1,7 @@
 import type { AuthorityDb } from "../db.js";
 import { readCandidateReview } from "./memory-candidate-review.js";
 import { memoryRememberProgress } from "./memory-remember-progress.js";
-import { MEMORY_TOMBSTONE_GENESIS_ROOT } from "../second-brain-effect-v2.js";
+import { memoryReadPrivacyState, isMemoryReadSuppressed } from "../memory-read-privacy.js";
 import type { SecondBrainEvidence, SecondBrainReadAdapter } from "../second-brain-adapter-types.js";
 import type { DashboardSessionStore } from "./session.js";
 import { MemoryTokenCache, type MemoryTokenAuthority } from "./memory-token-cache.js";
@@ -20,6 +20,7 @@ type SurfaceAuthoritySnapshot = MemoryTokenAuthority & {
   readonly tombstone_sequence: number;
   readonly tombstone_set_root: string;
   readonly membership_revision: string;
+  readonly read_revision: number;
 };
 export class MemoryReadService {
   private readonly authority: AuthorityDb; private readonly adapter: SecondBrainReadAdapter | undefined;
@@ -80,6 +81,7 @@ export class MemoryReadService {
       && sameGeneration(item, selection));
     const final = this.surfaceSnapshot();
     if (final.privacy_epoch !== authority.privacy_epoch
+      || final.read_revision !== authority.read_revision
       || final.membership_revision !== authority.membership_revision
       || final.tombstone_sequence !== selection.tombstone_sequence
       || final.tombstone_set_root !== selection.tombstone_set_root) return undefined;
@@ -91,54 +93,14 @@ export class MemoryReadService {
   }
 
   private surfaceSnapshot(): SurfaceAuthoritySnapshot {
-    const authority = this.authority.db.prepare(
-      `SELECT privacy_epoch,suppression_sequence,suppression_root,policy_digest
-       FROM memory_surface_authority WHERE singleton_id=1`,
-    ).get() as { readonly privacy_epoch: number; readonly suppression_sequence: number;
-      readonly suppression_root: string; readonly policy_digest: string | null };
-    const tombstone = this.authority.db.prepare(
-      "SELECT sequence,set_root FROM memory_tombstone_chain ORDER BY sequence DESC LIMIT 1",
-    ).get() as { readonly sequence: number; readonly set_root: string } | undefined;
-    const membership = this.authority.db.prepare(
-      "SELECT COUNT(*) AS count,COALESCE(MAX(created_at),'') AS latest FROM memory_surface_target_versions",
-    ).get() as { readonly count: number; readonly latest: string };
+    const state = memoryReadPrivacyState(this.authority);
     const sessionId = this.session.authenticatedSessionId();
-    return {
-      owner_session_id: sessionId, session_incarnation: sessionId,
-      privacy_epoch: authority.privacy_epoch, policy_digest: authority.policy_digest ?? undefined,
-      tombstone_sequence: tombstone?.sequence ?? 0,
-      tombstone_set_root: tombstone?.set_root ?? MEMORY_TOMBSTONE_GENESIS_ROOT,
-      suppression_sequence: authority.suppression_sequence, suppression_root: authority.suppression_root,
-      membership_revision: `${String(membership.count)}:${membership.latest}`,
-    };
+    return { ...state, policy_digest: state.policy_digest ?? undefined,
+      owner_session_id: sessionId, session_incarnation: sessionId };
   }
 
   private suppressed(evidence: SecondBrainEvidence): boolean {
-    const record = evidence.record;
-    if (record === null) return false;
-    const recordMembership = this.tokens.membership("record", `${record.record_id}\0${record.record_digest}`);
-    const sourceMembership = this.tokens.membership("source", record.source_identity_full);
-    const contentMembership = this.tokens.membership("content", record.content_identity_full);
-    const citationMembership = this.tokens.membership("citation", record.citation_identity_full);
-    const surface = this.authority.db.prepare(
-      `SELECT 1 FROM memory_surface_suppressions s
-       JOIN memory_surface_target_versions t ON t.target_version_digest=s.target_version_digest
-       WHERE t.record_membership_hmac IN (?,?,?,?)
-          OR t.source_membership_hmac IN (?,?,?,?)
-          OR t.content_membership_hmac IN (?,?,?,?)
-          OR t.citation_membership_hmac IN (?,?,?,?) LIMIT 1`,
-    ).get(recordMembership, sourceMembership, contentMembership, citationMembership,
-      recordMembership, sourceMembership, contentMembership, citationMembership,
-      recordMembership, sourceMembership, contentMembership, citationMembership,
-      recordMembership, sourceMembership, contentMembership, citationMembership);
-    if (surface !== undefined) return true;
-    const legacy = this.authority.db.prepare(
-      `SELECT 1 FROM memory_suppressions WHERE state='active' AND (
-        target_digest IN (?,?) OR source_identity_digest IN (?,?)
-        OR content_identity_digest IN (?,?) OR citation_identity_digest IN (?,?)) LIMIT 1`,
-    ).get(record.record_digest, record.record_id, record.source_identity_full, sourceMembership,
-      record.content_identity_full, contentMembership, record.citation_identity_full, citationMembership);
-    return legacy !== undefined;
+    return isMemoryReadSuppressed(this.authority, evidence, (kind, value) => this.tokens.membership(kind, value));
   }
 
   private freshUntil(now: Date): string { return new Date(now.getTime() + 60_000).toISOString(); }

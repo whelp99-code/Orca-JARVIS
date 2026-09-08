@@ -25,7 +25,7 @@ function configuration(explicit?: MemoryReadFenceProductionConfig): MemoryReadFe
 }
 function privateKey(path: string) {
   let fd: number | undefined; const bytes = Buffer.alloc(16_385);
-  try {
+  try { try {
     fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
     const stat = fstatSync(fd);
     if (!stat.isFile() || stat.nlink !== 1 || (stat.mode & 0o077) !== 0
@@ -35,13 +35,14 @@ function privateKey(path: string) {
     const key = createPrivateKey(bytes.subarray(0, length));
     if (key.asymmetricKeyType !== "ed25519") return invalid();
     return key;
+  } finally { bytes.fill(0); if (fd !== undefined) closeSync(fd); }
   } catch { return invalid(); }
-  finally { bytes.fill(0); if (fd !== undefined) closeSync(fd); }
 }
 
 /** Reads existing configuration and authority only. Never generates or registers keys,
  * copies a provider high-water, or grants a memory write capability. */
-export function createProductionMemoryReadFence(authority: AuthorityDb, explicit?: MemoryReadFenceProductionConfig):
+export function createProductionMemoryReadFence(authority: AuthorityDb, explicit?: MemoryReadFenceProductionConfig,
+  purpose: "memory_read" | "memory_status" = "memory_read"):
   SecondBrainAdapterOptions["read_fence"] {
   const config = configuration(explicit); if (config === undefined) return undefined;
   const key = privateKey(config.private_key_path);
@@ -61,7 +62,7 @@ export function createProductionMemoryReadFence(authority: AuthorityDb, explicit
       }
       return signMemoryReadFence({ ...config, private_key: key,
         fence_ttl_ms: Math.min(60_000, Date.parse(row.valid_until) - at.getTime()) },
-      "memory_read", memoryReadHighWater(authority), at);
+      purpose, memoryReadHighWater(authority), at);
     } catch (error) {
       if (error instanceof JarvisError && error.code === "MEMORY_READ_FENCE_KEY_UNAVAILABLE") throw error;
       throw new JarvisError("MEMORY_READ_FENCE_AUTHORITY_UNAVAILABLE");
