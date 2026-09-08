@@ -21,7 +21,7 @@
 | 10–11, 21 최소 | 실제 준비 상태와 승인된 작업 한 건의 실행 완결 | Claude CLI·독립 검증·서명·Git·완료 영수증·실제 UI 인수 완료. readiness 인증은 not_probed, Codex 실행자는 unsupported, 운영 대상 등록·인수는 후속 |
 | 12 | 일일 스케줄과 실제 retention 어댑터 | 완료 보고·lease/deadline·freshness 결함 수정 및 격리 프로세스 재개 검증. 실제 단계 처리·일정·retention 연결은 미완료/HOLD |
 | 13 | 관찰 장애와 실행 장애 분리 | 영속 backoff·건강 상태 및 실제 격리 CLI 검증 완료. 운영 활성화는 후속 |
-| 14–19 | 구조·설치·조회·SSE·테스트·운영 정보 | 도메인 일부 분리, Linux 설치/검증 분리, 순차 test shard, SQL/승인 페이지, SSE·HTTP 병합·본문 상한 구현. 최신 전체 gate SHAa4a2ebc. 구조 부채·일부 목록·운영 SHA/스키마 화면은 미완료 |
+| 14–19 | 구조·설치·조회·SSE·테스트·운영 정보 | 도메인 일부 분리, Linux 설치/검증 분리, 순차 test shard, SQL/승인 페이지, SSE·HTTP 병합·본문 상한 및 빌드 식별 생산자 구현·단위 검증. 최신 전체 gate SHA010281c. 구조 부채·일부 목록·운영 SHA/스키마 화면은 미완료 |
 | 20–25 | 라우팅·실행자·기억 연동·커넥터·템플릿·지표 | 범위 유지; 아래 의존성/보류 항목 참조 |
 
 ## 보류 판정과 재개 조건
@@ -578,3 +578,12 @@
 - 실제 compiled DB 저장에서 verified만 sufficient/allow·관측1/근거2, 나머지3종은 insufficient/abstain·관측0/근거1을 확인했다. 다른 프로세스의 과거 DB 재개방은 원본 row와 정상 verified 결과 bytes 동일·정확 replay 쓰기0·새 inferred 문맥 새ID/insufficient를 확인했다. 시험 루트3개 제거/잔여0. 증거 `context-source-admission-*`, `context-source-history-*`.
 - 조립기 근거 유형과 추천의 역할별 근거 유형이 다르며 정책 ContextFact는 verified를 지원하지 않는다. reference_only 기억을 원칙/승인으로 승격하거나 과거 deadline bucket을 재사용하는 자동 연결은 HOLD다. 실제 분류·절대 기한 보존→생산자→원자적 lineage 저장→서명 마감→service/retention 순서와 근거를 `docs/planning/adr-context-source-admission.md`에 기록했다.
 - 이번 변경의 검증은42개와 compiled DB 경로다. 전체gate는 변경 전010281c이며 전체01–25와 운영 인수는 미완료다. 기존 자동기억 원본차단 및 memory-store 큐 HOLD 유지. 운영DB·서비스·release·push 변경0.
+
+## 2026-09-08 P1-19 선행 — 백엔드 빌드 식별 생산자
+
+- 직전 인계 확인 턴은 수신 문서 반영 확인이었고 자비스 개발 기준 no progress였다. 재개 시 HEAD ba27291370cb504d434b1e64882b1de180031f6f와 미커밋 빌드5파일을 확인했다. 이전 테스트 handle29895의 exit0/10pass를 회수하고 현재 소스에서 검증을 이어갔다.
+- 기존 빌드에 소유 시험파일을 넣어 삭제 소스의 JS 잔여가 남는 것을 재현했다. 새 wrapper는 별도 컴파일→입력 재대조→backend 네 디렉터리 교체→산출물 재대조→manifest 마지막 게시를 수행한다. HEAD/dirty/입력·산출물·마이그레이션 digest 및 toolchain을 기록한다.
+- 앞선 독립 리뷰에서 빌드 경합의 타 빌드 출력 손실, 복원 실패 후 backup 삭제, metadata 정리 실패로 rollback 생략의3개 결함이 지적됐다. SQLite EXCLUSIVE lock, 개별 복원 실패 시 recovery_root 보존, metadata 정리와 rollback 분리로 수정했고 실제 compiler/process·오류 주입10개로 검증했다.
+- 현재 소스10개/5.52초 pass, 실제 backend build/lint/typecheck/CLI smoke/fixed-clock acceptance exit0. actual build 파일1,044개/6,002,823bytes, 별도 해시 대조 일치. 격리 compiled AuthorityDb에 적용한70개 migration journal과 manifest ID/checksum/vector 일치, dashboard4개 bytes/mode 보존, stale 시험파일 제거, staging잔여0, 시험DB디렉터리 제거 확인.
+- 소스 HEAD ba27291/dirty=true에서 artifact digest는 sha256:12ee56423236d191a635cd3be6a773937e5c94e4f8daa0c783f9c3cd018c5480이다. 입력 digest와 Git dirty는 별개이며 이 결과를 clean release로 표시하지 않는다. 증거 `build-identity-*.log`, `build-identity-live.mjs/json`, 설계 `docs/planning/adr-backend-build-identity.md`.
+- 독립 fresh review `/root/review_backend_identity`는 ship/필수 결함0건으로 완료됐다. 요청 모델/effort는 gpt-5.6-terra/high, 실제 설정·개별 token usage는 도구에 노출되지 않았다. native better-sqlite3를 빌드 lock에도 요구하며 hardkill 중 여러 디렉터리의 crash-atomic 전환을 보장하지 않는다. runtime/UI·실제 schema 대조·운영 적용·전체01–25는 미완료다. 기존 자동일일운영/자동기억 원본차단/memory-store 큐 HOLD 유지. 운영DB·서비스·release·push 변경0.

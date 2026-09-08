@@ -22,7 +22,7 @@
     "verify": "npm run runtime:check && npm run lint && npm run typecheck && npm test && npm run acceptance:pre-gjc -- --fixture test/fixtures/pre-gjc-e2e.json --clock 2026-08-09T00:00:00.000Z && node scripts/run-tests.mjs smoke",
     "runtime:check": "node scripts/assert-runtime.mjs",
     "prebuild": "npm run runtime:check",
-    "build:backend": "tsc && node scripts/copy-migrations.mjs",
+    "build:backend": "node scripts/build-backend.mjs",
     "typecheck": "tsc --noEmit && tsc -p tsconfig.dashboard.json --noEmit && tsc -p tsconfig.e2e.json --noEmit",
     "build:dashboard": "vite build --config dashboard/vite.config.ts",
     "build:fixtures": "npm run build:backend",
