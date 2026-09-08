@@ -57,8 +57,33 @@ class CompleteInventoryRecord extends CompleteMemorySurfaceInventory {
   }
 }
 
+/** Current local observations only; not a provider or lifecycle completion receipt. */
+export type JarvisLocalSurfaceObservation = {
+  readonly schema_version: 1;
+  readonly scope: "jarvis_managed_local_observation";
+  readonly forbidden_identity_manifest_digest: string;
+  readonly catalog_digest: string;
+  readonly manifest_digest: string;
+  readonly expected_surface_count: 20;
+  readonly observed_surface_count: 20;
+  readonly entries: readonly MemoryManagedSurfaceEntry[];
+};
+
 export class MemoryManagedSurfaceScanner {
   constructor(private readonly options: ScannerOptions) {}
+
+  scanLocal(): JarvisLocalSurfaceObservation {
+    const definitions = MEMORY_MANAGED_SURFACE_CATALOG.filter(row => row.owner === "jarvis");
+    const identities = loadForbiddenContentIdentities(this.options.authority);
+    if (identities.length === 0) throw new JarvisError("MEMORY_LOCAL_SCAN_MATERIAL_UNPROVED");
+    const entries = definitions.map(definition => Object.freeze(this.scanLocalDefinition(definition, identities)));
+    if (entries.length !== 20 || entries.some(entry => !entry.readable || entry.omission_count !== 0
+      || entry.error_count !== 0 || entry.match_count !== 0)) throw new JarvisError("MEMORY_LOCAL_SURFACE_INCOMPLETE");
+    const body = { schema_version: 1 as const, scope: "jarvis_managed_local_observation" as const,
+      catalog_digest: digest(definitions), forbidden_identity_manifest_digest: digest(identities), expected_surface_count: 20 as const,
+      observed_surface_count: 20 as const, entries: Object.freeze(entries) };
+    return Object.freeze({ ...body, manifest_digest: digest(body) });
+  }
 
   async scan(input: ScanInput): Promise<CompleteMemorySurfaceInventory> {
     if (!Array.isArray(input.provider.entries) || input.provider.entries.length !== 40
@@ -88,15 +113,24 @@ export class MemoryManagedSurfaceScanner {
     switch (definition.scanner_kind) {
       case "provider_manifest":
         return this.providerEntry(definition, input.provider);
-      case "filesystem":
-        return this.filesystemEntry(definition, identities);
-      case "sqlite": case "proc_fd":
-        return scanSqliteSurface({ authority: this.options.authority, definition,
-          prefixes: SQLITE_SURFACE_PREFIXES[definition.surface_id] ?? [], identities });
+      case "filesystem": case "sqlite": case "proc_fd":
+        return this.scanLocalDefinition(definition, identities);
       case "guard":
         return this.guardEntry(definition, input.guards);
       default:
         return assertNever(definition.scanner_kind);
+    }
+  }
+
+  private scanLocalDefinition(definition: ManagedSurfaceDefinition,
+    identities: readonly ForbiddenContentIdentity[]): MemoryManagedSurfaceEntry {
+    if (definition.owner !== "jarvis") throw new JarvisError("MEMORY_SURFACE_CATALOG_INVALID");
+    switch (definition.scanner_kind) {
+      case "filesystem": return this.filesystemEntry(definition, identities);
+      case "sqlite": case "proc_fd":
+        return scanSqliteSurface({ authority: this.options.authority, definition,
+          prefixes: SQLITE_SURFACE_PREFIXES[definition.surface_id] ?? [], identities });
+      default: throw new JarvisError("MEMORY_SURFACE_CATALOG_INVALID");
     }
   }
 

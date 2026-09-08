@@ -231,3 +231,5 @@ export { submitDatabaseCorrectionCancellation, requireCorrectionCancellationAcce
 export { MemoryCorrectionCancellationResultStore } from "./memory-correction-cancellation-result-store.js";
 
 export { collectCancellationMaterial } from "./memory-cancellation-material.js";
+
+export type { JarvisLocalSurfaceObservation } from "./memory-managed-surface-scanner.js";
