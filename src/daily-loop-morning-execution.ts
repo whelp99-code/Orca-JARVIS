@@ -9,9 +9,13 @@ import { DailyLoopError, type DailyLoopAdvance, type DailyLoopClaim,
 import { DailyBudgetExceeded, dailyLoopUsage, dailyUsageExhausted } from "./daily-loop-usage.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { MorningBriefPublisher } from "./morning-brief-publisher.js";
+import { parseTrustedCloseoutKey } from "./evening-closeout-crypto.js";
+import type { TrustedCloseoutKey } from "./evening-closeout-types.js";
 
 /** Explicit morning composition. Unimplemented phases fail instead of emitting placeholder success. */
-export function createStoredMorningDailyLoop(authority: AuthorityDb, optionsValue: DailyLoopOptions): DailyControlLoop {
+export function createStoredMorningDailyLoop(authority: AuthorityDb, optionsValue: DailyLoopOptions,
+  closeoutKeyValue?: TrustedCloseoutKey): DailyControlLoop {
+  const closeoutKey = closeoutKeyValue === undefined ? undefined : parseTrustedCloseoutKey(closeoutKeyValue);
   const parsed = parseDailyLoopOptions(optionsValue); let lastAt: Date | null = null;
   const options: DailyLoopOptions = { ...parsed, clock: () => {
     const at = parsed.clock();
@@ -19,12 +23,12 @@ export function createStoredMorningDailyLoop(authority: AuthorityDb, optionsValu
     lastAt = at; return at;
   } };
   const store = new DailyLoopStore(authority);
-  return new DailyControlLoop(store, options, new StoredMorningSteps(authority, store, options), "morning", true);
+  return new DailyControlLoop(store, options, new StoredMorningSteps(authority, store, options, closeoutKey), "morning", true);
 }
 
 class StoredMorningSteps implements DailyLoopStepExecutor {
   constructor(private readonly authority: AuthorityDb, private readonly store: DailyLoopStore,
-    private readonly options: DailyLoopOptions) {}
+    private readonly options: DailyLoopOptions, private readonly closeoutKey?: TrustedCloseoutKey) {}
 
   complete(claimValue: DailyLoopClaim): void {
     const claim = parseDailyLoopClaim(claimValue);
@@ -67,7 +71,7 @@ class StoredMorningSteps implements DailyLoopStepExecutor {
       if (this.options.deadline_ms === 0 || timestamp >= claim.deadline_at) {
         this.store.fail(claim, "DEADLINE_EXHAUSTED", at); return "failed";
       }
-      const used = dailyLoopUsage(this.authority, run["loop_date"]);
+      const used = dailyLoopUsage(this.authority, run["loop_date"], this.closeoutKey);
       this.store.start(claim, at);
       const exhausted = dailyUsageExhausted(used, this.options.budgets);
       if (exhausted !== null) { this.store.fail(claim, exhausted, at); return "failed"; }
@@ -92,7 +96,7 @@ class StoredMorningSteps implements DailyLoopStepExecutor {
             const detail = evaluateRefreshContext(refresh, completedAt, this.options.refresh_freshness_ms);
             this.store.completeStep({ claim, step, detail, at: completedAt });
           }
-          const code = dailyUsageExhausted(dailyLoopUsage(this.authority, run["loop_date"]), this.options.budgets);
+          const code = dailyUsageExhausted(dailyLoopUsage(this.authority, run["loop_date"], this.closeoutKey), this.options.budgets);
           if (code !== null) throw new DailyBudgetExceeded(code);
           const finishedAt = now();
           this.store.start(claim, finishedAt);

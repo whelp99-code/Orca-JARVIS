@@ -20,6 +20,7 @@ const CLI_HELP =
   + "Commands: init, db migrate/rebuild-projections, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, "
   + "observe, pre-gjc, capabilities, team, portfolio, status, daily\n"
   + "daily morning --once --db PATH --input CONFIG: run stored-source morning recovery; provider refresh unavailable\n"
+  + "daily evening --once --db PATH --input CONFIG --key-file PATH: publish stored native completions; automatic operation held\n"
   + "runtime identity [--db PATH]: observe this CLI build and persisted daemon identity without migrating the DB\n"
   + "control plan-task <plan.json>: stage a task execution plan for separate approval (execution unavailable)\n"
   + "control check-task <plan.json>: check repository baseline and declared files without executing an agent\n"
@@ -92,9 +93,11 @@ export async function execute(
     }
     return inspectRuntimeIdentity(values.db, dependencies.clock?.() ?? new Date());
   }
-  if (command === "daily" && (subcommand !== "morning" || parsed.positionals.length !== 2
+  if (command === "daily" && (!["morning", "evening"].includes(subcommand ?? "") || parsed.positionals.length !== 2
     || values.once !== true || !values.db || !values.input
-    || Object.keys(parsed.values).some(key => !["db", "input", "once", "json"].includes(key)))) {
+    || (subcommand === "evening" && !values["key-file"])
+    || Object.keys(parsed.values).some(key => !["db", "input", "once", "json",
+      ...(subcommand === "evening" ? ["key-file"] : [])].includes(key)))) {
     throw new JarvisError("DAILY_LOOP_CONFIG_INVALID");
   }
   const db = new AuthorityDb(values.db);
