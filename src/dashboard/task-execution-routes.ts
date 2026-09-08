@@ -25,7 +25,7 @@ export async function tryHandleTaskExecution(input: Input): Promise<boolean> {
   }
   try {
     if (Buffer.byteLength(matched.taskId) > 160 || !matched.taskId.trim()) throw new JarvisError("TASK_EXECUTION_INPUT_INVALID");
-    if (!matched.action) write(input, 200, readDashboardTaskExecution(input.db, matched.taskId));
+    if (!matched.action) write(input, 200, readDashboardTaskExecution(input.db, matched.taskId, input.clock()));
     else if (matched.action === "prepare") write(input, 200,
       await prepareDashboardTaskExecution(input.db, matched.taskId, input.body, input.clock));
     else if (matched.action === "check") write(input, 200,

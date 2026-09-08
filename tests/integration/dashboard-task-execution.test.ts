@@ -9,6 +9,7 @@ import { TaskPublicationGit } from "../../src/task-publication-git.js";
 import { PinnedDirectory } from "../../src/task-workspace-directory.js";
 import { JarvisError } from "../../src/db.js";
 import { approvedTaskFixture } from "../fixtures/approved-task-fixture.js";
+import { spawnSync } from "node:child_process";
 
 type Fixture = Awaited<ReturnType<typeof approvedTaskFixture>>;
 const preparation = (f: Fixture) => ({ schema_version: 1, run_id: f.plan.run_id, provider: "claude",
@@ -266,6 +267,30 @@ describe("task execution HTTP journey", () => {
       expect(f.git(["rev-parse", "HEAD"])).toBe(f.plan.repository.baseline_commit);
       expect(f.generate).toHaveBeenCalledTimes(1); expect(changes(f)).toEqual(writes);
       expect(readDashboardTaskExecution(f.db, "task")).toEqual(detail);
+      f.db.db.prepare("INSERT INTO authority_revocations(reference,reason,created_at) VALUES(?,?,?)")
+        .run(detail.requests[0].completion.verification_id, "withdraw fixture evidence", f.clock().toISOString());
+      const afterRevocation = changes(f);
+      const revoked = await request(`${origin}${path}`, { headers: { "x-jarvis-csrf": csrf } });
+      expect(revoked.statusCode).toBe(409);
+      expect(await revoked.body.json()).toMatchObject({ error: { code: "TASK_COMPLETION_INVALID" } });
+      const child = spawnSync(process.execPath, ["--input-type=module", "-e", `
+        import { AuthorityDb } from './dist/src/db.js';
+        import { createDashboardServer } from './dist/src/dashboard/server.js';
+        const db = new AuthorityDb(process.argv[1]);
+        const server = createDashboardServer({ db, host: '127.0.0.1', port: 0, staticRoot: process.argv[2] });
+        try {
+          const origin = 'http://127.0.0.1:' + server.address.port;
+          const session = await (await fetch(origin + '/api/v1/session', { headers: { connection: 'close' } })).json();
+          const result = await fetch(origin + '/api/v1/tasks/task/execution',
+            { headers: { 'x-jarvis-csrf': session.csrf_token, connection: 'close' } });
+          const body = await result.json();
+          process.stdout.write(JSON.stringify({ status: result.status, code: body.error?.code }));
+        } finally { server.close(); await server.drain(); db.close(); }
+      `, f.db.filename, f.root], { encoding: "utf8", timeout: 10000 });
+      expect(child.status).toBe(0);
+      expect(JSON.parse(child.stdout)).toEqual({ status: 409, code: "TASK_COMPLETION_INVALID" });
+      expect(f.generate).toHaveBeenCalledTimes(1);
+      expect(changes(f)).toEqual(afterRevocation);
     } finally { await server.close(); await f.cleanup(); }
   }, 30000);
 });

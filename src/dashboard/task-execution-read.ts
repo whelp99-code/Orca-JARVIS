@@ -1,12 +1,12 @@
 import { readControlCommand } from "../control-command-read.js";
 import { JarvisError, type AuthorityDb } from "../db.js";
 import { LoopGraph } from "../loopgraph.js";
-import { readTaskCompletion } from "../task-completion-record.js";
+import { readTaskCompletionEvidence } from "../task-completion-evidence.js";
 import { parseTaskExecutionPlan } from "../task-execution-plan.js";
 import type { OverviewApproval } from "./legacy-read-contracts.js";
 
 /** Durable status only; no filesystem/provider checks or command writes during refresh. */
-export function readDashboardTaskExecution(db: AuthorityDb, taskId: string) {
+export function readDashboardTaskExecution(db: AuthorityDb, taskId: string, observedAt = new Date()) {
   return db.db.transaction(() => {
     const rows = db.db.prepare(`SELECT run_id FROM workflow_runs WHERE json_extract(input_json,'$.task_id')=?
       ORDER BY created_at DESC,run_id DESC LIMIT 21`).all(taskId) as { run_id: string }[];
@@ -28,7 +28,7 @@ export function readDashboardTaskExecution(db: AuthorityDb, taskId: string) {
         action_level: command.action_level, requested_at: command.requested_at, requested_by: command.requested_by,
         state: command.state, summary: "Execute the reviewed task plan", retry_status: "not_allowed" };
       return [{ request, plan, command_digest: command.command_digest, expires_at: command.expires_at,
-        completion: readTaskCompletion(db, command.request_id) }];
+        completion: readTaskCompletionEvidence(db, command.request_id, observedAt)?.completion ?? null }];
     });
     return { schema_version: 1 as const, task_id: taskId, runs, requests,
       truncated: { runs: rows.length > 20, requests: candidates.length > 20 } };
