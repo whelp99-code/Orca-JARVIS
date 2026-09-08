@@ -1163,3 +1163,18 @@
 - scoped 승인소비/원자적outbox등록/provider영수증/과거worker갱신준비/
   spool inventory·cleanup 및 운영활성화는 미완료. PID재사용복구는 거부한다.
   전체01–25 목표와 실제운영·커넥터·기억출처·성과지표의 남은 범위는 유지한다.
+
+
+## 2026-09-09 — 항목25 Claude 사용량 수집
+
+- provider 결과에 입력/출력/캐시읽기/캐시생성 및 CLI 비용추정 관측을 보존한다.
+  누락/비정상/보고값을 구분하고 후보본문·승인·실행권한과 분리한다.
+- build/lint/3types exit0, 관련29+34=63tests 통과. 실제Claude1/verifier1
+  완료37253ms, 재시도추가호출0. 입력4/출력2749/cache read5139/create6770,
+  CLI추정USD0.1411745. 실제청구/전체작업비용과 다르다. 격리fixture/운영0.
+- 근거·잔여범위는 docs/planning/task-provider-usage-observation.md.
+  호출식별자에묶은DB저장·실패포함coverage·성공당집계·실제청구비용은 남는다.
+
+- 독립 task_usage_review ship/수정지적0, 요청terra/medium, 실제모델/effort미노출.
+  검증후7파일바이트동일 확인 후 인수결과문서만 추가. 수집단위를 커밋하며
+  DB저장·실패coverage·집계와 전체01–25는 완료로 처리하지 않는다.

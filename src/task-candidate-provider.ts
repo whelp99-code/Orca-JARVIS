@@ -1,3 +1,4 @@
+import type { ClaudeTaskUsage } from "./claude-task-usage.js";
 import { TASK_FILE_LIMITS, TASK_PROVIDER_LIMITS } from "./task-execution-limits.js";
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
@@ -12,9 +13,14 @@ export type TaskProviderRequest = {
   readonly timeout_ms: number; readonly max_output_bytes: number;
   readonly before_spawn?: () => number;
 };
+export interface TaskProviderResult {
+  readonly output: unknown;
+  readonly output_bytes: number;
+  readonly usage?: ClaudeTaskUsage;
+}
 export interface TaskCandidateProvider {
   readonly provider: "codex" | "claude";
-  generate(input: TaskProviderRequest): Promise<{ readonly output: unknown; readonly output_bytes: number }>;
+  generate(input: TaskProviderRequest): Promise<TaskProviderResult>;
 }
 export type TaskSourceFile = { readonly path: string; readonly content: Buffer | null };
 const hash = (value: Buffer) => `sha256:${createHash("sha256").update(value).digest("hex")}`;

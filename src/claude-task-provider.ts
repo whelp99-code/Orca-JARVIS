@@ -1,9 +1,10 @@
+import { readClaudeTaskUsage } from "./claude-task-usage.js";
 import { TASK_PROVIDER_LIMITS } from "./task-execution-limits.js";
 import { spawn } from "node:child_process";
 import { isAbsolute } from "node:path";
 import { JarvisError } from "./db.js";
 import { taskProcessTimeout } from "./task-process-boundary.js";
-import type { TaskCandidateProvider, TaskProviderRequest } from "./task-candidate-provider.js";
+import type { TaskCandidateProvider, TaskProviderRequest, TaskProviderResult } from "./task-candidate-provider.js";
 import { resolveClaudeTaskExecutable, claudeTaskEnvironment } from "./claude-task-host.js";
 
 export function claudeTaskArguments(input: TaskProviderRequest): string[] {
@@ -19,7 +20,7 @@ export class ClaudeTaskCandidateProvider implements TaskCandidateProvider {
 
   async checkReady(): Promise<void> { await resolveClaudeTaskExecutable(this.executable); }
 
-  async generate(input: TaskProviderRequest): Promise<{ output: unknown; output_bytes: number }> {
+  async generate(input: TaskProviderRequest): Promise<TaskProviderResult> {
     const deadline = performance.now() + input.timeout_ms;
     if (input.provider !== this.provider || !isAbsolute(this.executable)) throw new JarvisError("TASK_PROVIDER_UNAVAILABLE");
     if (!Number.isSafeInteger(input.timeout_ms) || input.timeout_ms < TASK_PROVIDER_LIMITS.min_timeout_ms
@@ -29,7 +30,7 @@ export class ClaudeTaskCandidateProvider implements TaskCandidateProvider {
     const executable = await resolveClaudeTaskExecutable(this.executable);
     const env = claudeTaskEnvironment(process.env);
     const args = claudeTaskArguments(input);
-    return await new Promise<{ output: unknown; output_bytes: number }>((resolve, reject) => {
+    return await new Promise<TaskProviderResult>((resolve, reject) => {
       const timeout = taskProcessTimeout(deadline, input.before_spawn, "TASK_PROVIDER_TIMEOUT");
       const child = spawn(executable, args, {
         cwd: "/", env, shell: false, detached: true, stdio: ["pipe", "pipe", "pipe"],
@@ -64,7 +65,7 @@ export class ClaudeTaskCandidateProvider implements TaskCandidateProvider {
           const result = JSON.parse(text) as Record<string, unknown>;
           if (!result || result.type !== "result" || result.subtype !== "success" || result.is_error !== false
             || result.structured_output === undefined) throw new Error("invalid result");
-          resolve({ output: result.structured_output, output_bytes: bytes });
+          resolve({ output: result.structured_output, output_bytes: bytes, usage: readClaudeTaskUsage(result) });
         } catch { reject(new JarvisError("TASK_PROVIDER_RESULT_INVALID")); }
       });
       child.stdin.end(input.prompt);
