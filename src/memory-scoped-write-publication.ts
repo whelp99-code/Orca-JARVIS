@@ -40,6 +40,9 @@ export function publishMemoryScopedWriteRequest(options: MemoryScopedPublication
     if (canonicalize(spool.read(request.idempotency_key, current())) !== raw) {
       throw new JarvisError("SCOPED_PUBLICATION_FILE_CHANGED");
     }
+    // Final file I/O may overlap a policy withdrawal. Do not report current
+    // preparation based solely on the snapshot from before that read.
+    if (canonicalize(prepare(current())) !== raw) throw new JarvisError("SCOPED_PUBLICATION_AUTHORITY_CHANGED");
     parseMemoryScopedWriteRequestJson(raw, options.providerInstanceId, current());
     return Object.freeze({ schema_version: 4 as const, kind: "prepared" as const,
       writes_authorized: false as const, ...publication });

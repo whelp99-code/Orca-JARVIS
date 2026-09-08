@@ -43,7 +43,7 @@ it("publishes current approved material and retries without consuming authority 
     expect(memoryTableCounts(f.database.authority)).toEqual(counts);
   } finally { closeMemoryDatabase(f.database); }
 });
-it.each(["revoked", "expired", "rewind", "tampered", "read_expired"])("refuses success after publication when %s", async mode => {
+it.each(["revoked", "expired", "rewind", "tampered", "read_expired", "read_revoked", "read_source_revoked", "read_review_revoked"])("refuses success after publication when %s", async mode => {
   const { f, options } = await setup();
   try {
     let at = f.now; let revoked = false;
@@ -57,10 +57,18 @@ it.each(["revoked", "expired", "rewind", "tampered", "read_expired"])("refuses s
       if (mode === "tampered") writeFileSync(result.path, "{}");
       return result;
     });
-    if (mode === "read_expired") {
+    if (mode.startsWith("read_")) {
       const read = MemoryScopedWriteSpool.prototype.read;
       vi.spyOn(MemoryScopedWriteSpool.prototype, "read").mockImplementation(function (this: MemoryScopedWriteSpool, key, now) {
-        const value = read.call(this, key, now); at = new Date(f.now.getTime() + 60000); return value;
+        const value = read.call(this, key, now);
+        if (mode === "read_expired") at = new Date(f.now.getTime() + 60000);
+        else if (mode === "read_revoked") revoked = true;
+        else if (mode === "read_source_revoked") f.database.authority.db.prepare(
+          "INSERT INTO authority_revocations(reference,reason,created_at) VALUES(?,?,?)")
+          .run(f.candidate.source.verification_evidence_id, "withdraw during read", f.now.toISOString());
+        else new ControlPlane(f.database.authority).cancel({ request_id: options.reviewRequestId,
+          reason: "withdraw during read", actor: "principal:owner", revoked_at: f.now.toISOString() }, f.now);
+        return value;
       });
     }
     const counts = memoryTableCounts(f.database.authority);
