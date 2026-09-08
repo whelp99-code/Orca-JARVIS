@@ -568,3 +568,13 @@
 - 실제 이전/현재 compiled 두 프로세스의 같은 DB에서 정상 조회5종 canonical bytes 동일, 읽기쓰기0. 이전에는 변조 제목을 정상 반환했으나 현재 HTTP 추천 상세는 정상200·변조500·본문 표식 노출0이다. 임시 디렉터리2개 제거 확인.
 - 검증 추가 비용을 측정했다. 추천100개/행동300개·12회·limit500의 p50 49.918→73.481ms, p95 61.547→95.119ms, 결과bytes 동일·쓰기0. 성능 개선으로 분류하지 않는다. 상세/실패/실행 증거는 `docs/planning/adr-recommendation-read-binding.md`와 증거 루트의 `recommendation-read-*`다.
 - source 생산자·정책/생성 시각의 의미 및 context evidence·실제 본문·절대 기한을 검증하는 mapper는 미완료다. 브리핑 자동 저장·일일 운영 활성화 HOLD 유지. 전체01–25/운영 인수 미완료, 운영DB·서비스·release·push 변경0. 공통 읽기 변경의 전체 소비 경로를 확인하기 위해 커밋 후 canonical verify를 실행한다.
+
+## 2026-09-08 P1-12 선행 — 관측 신뢰도 입장 조건
+
+- 직전 턴은 실제 compiled DB의 trust4종과 근거 유형 불일치를 재현해 다음 수정을 확정한 progress였다. 이번 재개 시 verify 세션33785가 live임을 직접 확인하고 같은 handle을 종료까지 추적했다. 실행 중 tracked 소스는 유지하고 외부 cache에 회귀·과거 DB 재개방 준비를 진행했다.
+- `010281c` 전체 verify exit0: backend398파일2606개(1321/554.52초+1285/589.38초), dashboard32파일187개/28.73초. runtime/lint/typecheck/build/고정시각 acceptance/CLI smoke exit0. 실행 전후 HEAD 동일, tracked 바이트 변경0. 증거 `verify-010281c-{before,after}.json`, `verify-010281c.log`.
+- 조립기의 Linux live_task 선택에 payload.trust=verified를 요구한다. user_confirmed/inferred/untrusted는 critical UNVERIFIED_SOURCE omission으로 남기며 정상 관측과 함께 있어도 abstain한다. 기억의 user_confirmed 기준과 기존 비Linux·비task·stale 우선순위는 유지한다. 라벨 검사 자체가 원본 진위나 실행 권한을 증명하지 않는다.
+- 신규11개 red6fail/5pass 후, 관련9파일42개/17.13초 pass. 타입/lint/backend build exit0, 최종 독립 정적 리뷰 필수 결함0건. 리뷰에서 추가된 Mac host·freshness equality 반례를 포함했다. 증거 `context-source-trust-*.log`.
+- 실제 compiled DB 저장에서 verified만 sufficient/allow·관측1/근거2, 나머지3종은 insufficient/abstain·관측0/근거1을 확인했다. 다른 프로세스의 과거 DB 재개방은 원본 row와 정상 verified 결과 bytes 동일·정확 replay 쓰기0·새 inferred 문맥 새ID/insufficient를 확인했다. 시험 루트3개 제거/잔여0. 증거 `context-source-admission-*`, `context-source-history-*`.
+- 조립기 근거 유형과 추천의 역할별 근거 유형이 다르며 정책 ContextFact는 verified를 지원하지 않는다. reference_only 기억을 원칙/승인으로 승격하거나 과거 deadline bucket을 재사용하는 자동 연결은 HOLD다. 실제 분류·절대 기한 보존→생산자→원자적 lineage 저장→서명 마감→service/retention 순서와 근거를 `docs/planning/adr-context-source-admission.md`에 기록했다.
+- 이번 변경의 검증은42개와 compiled DB 경로다. 전체gate는 변경 전010281c이며 전체01–25와 운영 인수는 미완료다. 기존 자동기억 원본차단 및 memory-store 큐 HOLD 유지. 운영DB·서비스·release·push 변경0.

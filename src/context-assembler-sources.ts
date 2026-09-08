@@ -28,7 +28,10 @@ function observation(state: ClassificationState, item: ObservationEnvelopeV1, cl
       const current = item.freshness.state === "fresh"
         && Date.parse(item.freshness.fresh_until) > Date.parse(clock)
         && Date.parse(item.expires_at) > Date.parse(clock);
-      if (linuxTask && current) state.observations.push(item);
+      if (linuxTask && current) {
+        if (item.payload.trust === "verified") state.observations.push(item);
+        else omit(state, "UNVERIFIED_SOURCE", item.id);
+      }
       else omit(state, linuxTask ? "STALE_SOURCE" : "NON_LINUX_LIVE", item.id, linuxTask);
       return;
     }
