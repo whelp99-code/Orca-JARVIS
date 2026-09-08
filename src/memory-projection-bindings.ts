@@ -74,8 +74,8 @@ export function bindNotificationProjection(
   const parents = [
     ...recommendationIds.map(recommendationRef),
     ...contextIds.map(contextRef),
-  ].filter(parent => authority.hasLineage(parent));
-  if (parents.length > 0) authority.inherit({
+  ];
+  if (parents.some(parent => authority.hasLineage(parent))) authority.inherit({
     kind: "notification_intent", id: intentId, component_id: intentId,
   }, parents, now);
 }
@@ -127,8 +127,8 @@ export function bindStructuredProjection(
     return;
   }
   const authority = new MemoryProjectionAuthority({ db: database });
-  const parents = collected.parents.filter(parent => authority.hasLineage(parent));
-  if (parents.length > 0) authority.inherit(ref, parents, now);
+  const parents = collected.parents;
+  if (parents.some(parent => authority.hasLineage(parent))) authority.inherit(ref, parents, now);
 }
 
 function collectStructuredLineage(value: unknown): {
