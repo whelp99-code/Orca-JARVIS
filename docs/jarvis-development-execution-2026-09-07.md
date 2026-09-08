@@ -786,3 +786,13 @@
   재수집 멱등성, 운영 정책 승인을 함께 해결해야 한다. 기존 migration bytes를 바꾸거나 트리거만
   제거해서 운영 완료로 처리하지 않는다. privacy-security 문서의 30일 관측/7일 알림 보존 규정 자체는
   현재 스키마에 대한 삭제 실행 경로를 제공하지 않는다.
+
+## 2026-09-09 — 상태 게시 경계 전체 검증
+
+- 고정 `b491472a767dae1f09c5399837299f267e091121`의 전체 `npm run verify`는 exit 0.
+  backend 217+216파일, 1466+1510=2976개; dashboard 35파일248개 통과.
+  전후 HEAD 동일, 추적 파일 변경 0개, 추적 바이트 동일.
+  증거 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/verify-state-publication-after.json` 및 log.
+- 후속 retention 재claim `baee397`과 cutoff 고정 `379bc6d`는 위 전체 검증에 포함되지 않는다.
+  각 단위 검증 및 별도 프로세스 결과는 해당 ADR에 기록했다. 운영 활성화 및 전체 01–25
+  목표가 완료됐다는 의미는 아니다.
