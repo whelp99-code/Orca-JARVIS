@@ -246,11 +246,4 @@ export { createMemoryScopedClient, type MemoryScopedClientOptions } from "./memo
 export { createScopedMemoryReference } from "./memory-scoped-reference.js";
 export { createProductionScopedMemory, type ScopedMemoryProductionOptions } from "./memory-scoped-production.js";
 export { type PhoneMemoryContextOptions } from "./phone-memory-context.js";
-export { proposeMemoryCandidateScope, validateMemoryCandidateScopeProposal, MEMORY_CANDIDATE_SCOPE_DOMAIN,
-  type MemoryCandidateScopeInput, type MemoryCandidateScopeProposal } from "./memory-candidate-scope.js";
-export { stageMemoryScopeReview, readApprovedMemoryScopeReview } from "./memory-scope-review.js";
-export { prepareMemoryScopedWriteIdentity } from "./memory-scoped-write-identity.js";
-export { prepareMemoryScopedWritePayload, prepareMemoryScopedWriteFromDispatch } from "./memory-scoped-write-payload.js";
-export { publishAutomaticMemoryCandidate } from "./memory-auto-publication.js";
-export { createFileMemoryWriteScopeResolver, type MemoryWriteScopeResolver, type AuthorizedMemoryWriteScope } from "./memory-access-policy.js";
-export { prepareMemoryScopedWriteWithPolicy } from "./memory-scoped-write-policy.js";
+export * from "./memory-scoped-api.js";

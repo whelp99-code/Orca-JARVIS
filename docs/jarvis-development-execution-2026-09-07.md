@@ -1130,3 +1130,36 @@
   재시도와 접근성심각오류0·넘침없음 확인. 전체gate후 제품/테스트소스변경0.
 - 고정aae919a+9ab8293 통합을 소스커밋 대상으로 인수한다. 이후main53c67b1의
   7커밋/17파일은 제외한다. 전체01–25/운영/커넥터/출처·성과지표 남은범위 유지.
+
+
+## 2026-09-09 — scoped 요청 후속 통합 검증
+
+- 이전 통합 b01c9bba5fa0b196d03792402d8f0fdfafff3c5b 완료 후
+  main a4ec505bbdf1913e70701a22e7ca476225b91011의 8커밋을 소유 작업공간에서 통합한다.
+- 부모 SQL80/77파일 원문 변경0, 합계81. build/lint/3types와 관련91tests 통과.
+- 컴파일된 spool을 실제3Node에서 종료exit73→재시도exit0, 동일inode/bytes·link2→1 확인.
+  fixture자료이며 provider0/운영0. 별도2Node DB80→81에서 queued1·기존열보존,
+  profile legacy/FK0/quick_check ok. 증거는 cache scoped-followup-live.json 및
+  scoped-followup-migration-live.json이다.
+- 기존 크기 검사 실제실패: index 비공백251줄, codec196자/spool174자.
+  전체verify95070은 해당 실패 확인 후 명시중단exit130이며 전체통과가 아니다.
+  scoped export 모듈분리와 줄바꿈 후 관련24tests/3files 통과. 공개runtime export391개
+  이름/참조동일. 기존250줄/160자 기준 및 SQL변경0.
+- 수정 후 전체gate·독립리뷰·커밋은 남는다. scoped 승인소비/outbox등록/provider전송과
+  운영활성화는 미완료이며 전체01–25 목표를 유지한다.
+
+
+## 2026-09-09 — scoped 후속 통합 인수
+
+- 최종 npm run verify12178 exit0: backend1639+1647=3286/471files,
+  dashboard252/36files, 합계3538tests/507files. runtime/lint/3types/build/
+  fixed-clock acceptance/CLI smoke 통과. 전후추적1623파일·HEAD동일.
+- 독립 scoped_followup_review ship, 지적0, staged26파일 해시일치.
+  요청gpt-5.6-sol/high, 실제모델/effort/사용량미노출. 리뷰어 테스트재실행0.
+- static ESM598modules/2142edges/0cycles, 타입포함공개export888.
+  public runtime export391의 기존이름/참조동일은 별도검증이다.
+- 검증된 b01c9bb+a4ec505 통합을 소스커밋 대상으로 인수한다.
+  전체gate후 제품/테스트변경0, 이 결과기록만 추가했다.
+- scoped 승인소비/원자적outbox등록/provider영수증/과거worker갱신준비/
+  spool inventory·cleanup 및 운영활성화는 미완료. PID재사용복구는 거부한다.
+  전체01–25 목표와 실제운영·커넥터·기억출처·성과지표의 남은 범위는 유지한다.

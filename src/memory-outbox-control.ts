@@ -13,7 +13,7 @@ export function reconcileMemoryOutboxCommands(authority: AuthorityDb, now: Date,
     .get() as { last_updated_at: string; last_outbox_id: string } | undefined;
   const rows = authority.db.prepare(
     `SELECT o.outbox_id,o.updated_at FROM memory_outbox o JOIN control_command_requests r ON r.request_id=o.action_request_id
-     WHERE o.state IN ('settled','conflict','failed','expired')
+     WHERE o.request_profile='legacy' AND o.state IN ('settled','conflict','failed','expired')
        AND (r.state='uncertain' OR (r.state='claimed' AND r.lease_expires_at<=?))
        AND NOT EXISTS (SELECT 1 FROM control_command_revocations v
          WHERE v.request_id=r.request_id OR v.receipt_id=o.action_receipt_id)
