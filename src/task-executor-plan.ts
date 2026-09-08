@@ -1,17 +1,22 @@
 import { JarvisError } from "./db.js";
-import { parseTaskExecutionPlan, taskExecutionPlanDigest } from "./task-execution-plan.js";
+import { parseTaskExecutionPlan, taskExecutionPlanDigest, type TaskExecutionPlan, type TaskExecutionPlanV2 } from "./task-execution-plan.js";
 import { inspectTaskExecutor, registeredTaskExecutor } from "./task-executor-registry.js";
 
 /** The same structural contract is used by offline inspection and runtime preflight. */
 export function parseRegisteredTaskExecutionPlan(value: unknown) {
   const plan = parseTaskExecutionPlan(value);
+  assertRegisteredTaskPlan(plan);
+  return plan;
+}
+
+/** Registration check for a structurally parsed plan; safe to repeat between file reads. */
+export function assertRegisteredTaskPlan(plan: TaskExecutionPlan): asserts plan is TaskExecutionPlanV2 {
   if (plan.schema_version !== 2) throw new JarvisError("TASK_COMPLETION_MODE_UNSUPPORTED");
   const executor = registeredTaskExecutor(plan.provider);
   if (!executor) throw new JarvisError("TASK_PROVIDER_UNSUPPORTED");
   if (plan.schema_version !== executor.plan_schema_version || plan.mode !== executor.mode) {
     throw new JarvisError("TASK_COMPLETION_MODE_UNSUPPORTED");
   }
-  return plan;
 }
 
 export function inspectTaskExecutorPlan(id: string, value: unknown) {

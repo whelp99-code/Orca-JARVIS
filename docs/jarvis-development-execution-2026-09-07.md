@@ -841,3 +841,14 @@
 - 후속 등록부 `0878e0d`, UTF-8 응답 수정 `8eb9ca4`, 자원 제한값 공통화는 이 실행에
   포함되지 않는다. 각 변경의 단위/실프로세스 검증을 전체 검증으로 확장해서 주장하지 않는다.
   운영 적용 및 원래 01–25 전체 목표는 아직 완료되지 않았다.
+
+## 2026-09-09 — 실행자 등록부·바이트 검증·공통 제한까지 고정 전체 검증
+
+- 고정 HEAD `8b98cd864ef9cde99fef7828223ba5a1d8da14d7`의 `npm run verify` exit 0.
+  backend 219+219파일, 1486+1532=3018개 통과. dashboard 35파일248개 통과.
+- 검증 전후 HEAD 동일, 추적 파일 변경 0개, 추적 바이트 동일.
+  증거: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/verify-executor-contract-after.json`
+  및 `verify-executor-contract.log`, 프로세스 handle49273 종료 코드0.
+- 이후 입력 계약 검사 `69782a7`, 로그인 상태 조회 `653ea36`, 대시보드 준비 경계
+  공통화는 이 고정 실행에 포함되지 않는다. 업무 템플릿 3종의 설계와 남은 수용 조건은
+  `docs/planning/adr-approved-task-templates.md`에 기록했다. 원래 01–25 목표는 미완료다.

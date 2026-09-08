@@ -8,6 +8,8 @@ import { assertTaskExecutionBinding, stageTaskExecution } from "../task-executio
 import { inspectTaskExecutionRepository } from "../task-execution-workspace.js";
 import { TaskPublicationGit } from "../task-publication-git.js";
 import { taskExecutionReadiness } from "../task-execution-runtime.js";
+import { TASK_FILE_LIMITS } from "../task-execution-limits.js";
+import { assertRegisteredTaskPlan } from "../task-executor-plan.js";
 
 export interface PrepareTaskExecutionRequest {
   readonly schema_version: 1;
@@ -26,7 +28,6 @@ export interface StageDashboardTaskExecutionRequest {
   readonly plan: TaskExecutionPlanV2;
 }
 const ZERO = `sha256:${"0".repeat(64)}`;
-const TOTAL_BYTES = 16 * 1024 * 1024;
 const invalid = (): never => { throw new JarvisError("TASK_EXECUTION_INPUT_INVALID"); };
 function exact(value: unknown, keys: string[]): Record<string, any> {
   if (!value || typeof value !== "object" || Array.isArray(value)
@@ -54,7 +55,7 @@ function initialPlan(db: AuthorityDb, taskId: string, body: unknown): TaskExecut
 function current(db: AuthorityDb, plan: TaskExecutionPlanV2, now: Date): void {
   assertTaskExecutionBinding(db, plan, now);
   taskCompletionWorkflow(db, plan.run_id, now);
-  if (plan.provider !== "claude") throw new JarvisError("TASK_PROVIDER_UNSUPPORTED");
+  assertRegisteredTaskPlan(plan);
 }
 
 /** No command/approval writes, model invocation, or file content in the returned preview. */
@@ -93,9 +94,9 @@ export async function prepareDashboardTaskExecution(db: AuthorityDb, taskId: str
         files.push(file);
       } else {
         if (!entry) throw new JarvisError("TASK_REPOSITORY_BASELINE_CHANGED");
-        const bytes = await git.run(["cat-file", "blob", entry.oid], undefined, 4 * 1024 * 1024);
+        const bytes = await git.run(["cat-file", "blob", entry.oid], undefined, TASK_FILE_LIMITS.max_file_bytes);
         total += bytes.length;
-        if (total > TOTAL_BYTES) throw new JarvisError("TASK_REPOSITORY_INPUT_OVERSIZE");
+        if (total > TASK_FILE_LIMITS.max_total_bytes) throw new JarvisError("TASK_REPOSITORY_INPUT_OVERSIZE");
         files.push({ ...file, before_digest: candidateHash(bytes) });
       }
     }
