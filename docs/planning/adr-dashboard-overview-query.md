@@ -61,3 +61,43 @@ pageErrors 0건, 임시 DB/서버/브라우저 제거를 확인했다. 이 화�
 최신 전체 verify 완료 SHA는 704f238이다. 이후 단위 검증을 새 전체 gate 완료로 확대하지 않는다.
 전체 목록/페이지 범위와 UI 지연, 전체01–25 인수, 운영 검증은 남는다. 자동 기억 수집의
 원본 차단 전파 HOLD와 memory-store 큐 보류를 유지한다. 운영 DB/서비스/release/push 변경은 없다.
+
+## 후속 결정: 선택된 작업의 출처를 일괄 집계
+
+33f8621 이후 격리 SQL probe에서 500개 목록의 선택 행마다 normalized를 다시 조회하는 비용을
+분리했다. `task-source-query-probe.mjs/json/log`의 이전/후보 SQL을 동일 DB·limit에 실행하여
+응답을 deep equality로 대조한다. 기존 recent 집합에 normalized를 한 번 조인하고 task/source
+중복 제거·BINARY 정렬 후 task별 JSON 배열을 만든다. 이 집합을 recent에 다시 연결한다.
+전체 활성 수·추천 검증·현재 차단·페이지 순서는 유지하며 추가 영속 인덱스나 캐시는 만들지 않는다.
+다음 구현 단위에서 실제 API/브라우저 및 다중 출처·빈 목록·차단 회귀 결과를 기록한다.
+
+### 일괄 출처 집계 구현·인수
+
+`source_groups AS MATERIALIZED`를 적용하고 실제 제품 경로를 검증했다. 관련4파일21개가
+30.63초에 통과했다. 501개 task별5개 Unicode 출처의 limit1/20/500, source 차단 후
+대체 행, 서로 다른 family의 동일 source ID 중복 제거를 포함한다. build/typecheck/lint exit0,
+독립 정적 리뷰 필수 결함0건이다.
+
+실제 동일 격리DB의 수정 전33f8621 population method와 수정 후 method를 비교했다.
+다른 의존성은 공유한다. 각5표본의 전체 listTasks(500) 및 실제 HTTP 결과는 다음과 같다.
+
+| 명령 수 | 이전 목록 p95 | 이후 목록 p95 | 이후 HTTP p95 | 동일 응답 bytes |
+|---|---:|---:|---:|---:|
+| 10,000 | 468.730ms | 92.873ms | 111.149ms | 91,313 |
+| 100,000 | 4,481.160ms | 877.947ms | 970.204ms | 91,805 |
+
+두 규모에서 전체 목록·overview payload가 이전본과 일치하고 읽기 DB쓰기가0건이었다.
+실제 built Chromium10만 건 비교에서 최초표시10,842→3,151ms, 초기조회+SSE snapshot의
+두 조회 묶음 완료11,860→4,060ms를 관측했다. 브라우저는 각1회 표본이며 p95가 아니다.
+수정 후 원본 차단 알림에서 활성/승인 카드10,000→9,999, 목록500개를 유지하며 차단된
+source가 사라졌고 GET DB쓰기0/pageErrors0이었다. 화면을 직접 확인하고 임시 자원을 제거했다.
+
+증거는 `task-source-{query-probe,live}.mjs/json/log`, `task-source-before.json`,
+`task-source-{tests,build,types,lint}.log`, `task-source-browser.png`다.
+첫 실제 probe는 비교 모듈 확장자 생성 오류로 import 전에 실패했다
+(`task-source-live-missing-module.log`). 다음 probe의 Node callback 기반 API 시간은
+동기SQL로 이벤트 수신이 지연되어 채택하지 않았다(`task-source-live-callback-timing.*`).
+최종은 Playwright request.timing().responseEnd의 브라우저 시각으로 재측정했다.
+
+전역 population 비용과 초기8개 API(4개 초기조회+4개 SSE 재조회)는 남아 있다.
+목록 페이지 계약 확장·초기조회 정책 변경을 이 단위의 완료로 포함하지 않는다.

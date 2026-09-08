@@ -54,6 +54,8 @@ describe("complete active task population", () => {
     expect(new TaskTimeline(db).context(continuation.id).task.task_id).toBe("codex-work");
     intent(db, "send:1", continuation.id, "completed", "2026-12-01T00:00:00.000Z");
     intent(db, "send:2", continuation.id, "completed", "2026-12-02T00:00:00.000Z");
+    // The same source ID in another family must not duplicate the work's source list.
+    intent(db, "codex-work", continuation.id, "completed", "2026-12-01T00:00:00.000Z");
     const timeline = new TaskTimeline(db); const result = timeline.overview();
     expect(result.activeCount).toBe(1); expect(result.recent).toHaveLength(1);
     expect(result.recent[0]).toMatchObject({ task_id: "codex-work", kind: "work", state: "awaiting_verification",
@@ -88,6 +90,30 @@ describe("complete active task population", () => {
     expect(timeline.context("correlation:different").task).toEqual(result.recent[0]);
     hide(db, "correlation:different");
     expect(timeline.overview()).toEqual({ activeCount: 0, recent: [] });
+  });
+
+  it("keeps complete sorted sources for selected tasks across page limits and source suppression", async () => {
+    const db = await database();
+    const ids = Array.from({ length: 501 }, (_, i) => `task:${String(i).padStart(3, "0")}`);
+    const sources = ["中", "a", "Z", "é", "!"];
+    db.db.transaction(() => {
+      for (const id of ids) for (const source of sources) intent(db, `${id}:${source}`, id);
+    })();
+    const timeline = new TaskTimeline(db); const before = changes(db);
+    const expected = (visible: string[], limit: number) => visible.slice(0, limit).map(id => ({
+      task_id: id, source_ids: sources.map(source => `${id}:${source}`)
+        .sort((a, b) => Buffer.compare(Buffer.from(a), Buffer.from(b))),
+    }));
+    for (const limit of [1, 20, 500]) {
+      const result = timeline.overview(limit);
+      expect(result.activeCount).toBe(501);
+      expect(result.recent.map(({ task_id, source_ids }) => ({ task_id, source_ids }))).toEqual(expected(ids, limit));
+    }
+    expect(changes(db)).toEqual(before);
+    hide(db, "task:000:é");
+    const suppressed = timeline.overview(500);
+    expect(suppressed.activeCount).toBe(500);
+    expect(suppressed.recent.map(({ task_id, source_ids }) => ({ task_id, source_ids }))).toEqual(expected(ids.slice(1), 500));
   });
 
   it("uses one snapshot when another connection commits between base population and recommendation reads", async () => {

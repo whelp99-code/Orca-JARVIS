@@ -84,12 +84,15 @@ export class TaskTimelinePopulation {
     const rows = this.authority.db.prepare(`${POPULATION}, recent AS MATERIALIZED (
       SELECT task_id,title,kind,state,latest_at,pending_approval FROM visible v
       WHERE ${included} ORDER BY latest_at DESC,task_id LIMIT ?
+    ), source_groups AS MATERIALIZED (
+      SELECT task_id,json_group_array(source_id) AS source_ids FROM (
+        SELECT DISTINCT n.task_id,n.source_id FROM normalized n JOIN recent r ON r.task_id=n.task_id
+        ORDER BY n.task_id,n.source_id
+      ) GROUP BY task_id
     ), counted AS (
       SELECT COUNT(*) AS active_count FROM visible v WHERE state NOT IN (${settledSql}) AND ${included}
-    ) SELECT counted.active_count,recent.*,
-      (SELECT json_group_array(source_id) FROM
-        (SELECT DISTINCT source_id FROM normalized n WHERE n.task_id=recent.task_id ORDER BY source_id)) AS source_ids
-      FROM counted LEFT JOIN recent ON 1=1
+    ) SELECT counted.active_count,recent.*,source_groups.source_ids
+      FROM counted LEFT JOIN recent ON 1=1 LEFT JOIN source_groups ON source_groups.task_id=recent.task_id
       ORDER BY recent.latest_at DESC,recent.task_id`).all(limit) as Array<
         { active_count: number } & (SummaryRow | { task_id: null })>;
     return { activeCount: rows[0]?.active_count ?? 0,
