@@ -1,3 +1,4 @@
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { ControlPlane, type ClaimedControlCommand } from "./control-plane.js";
 import { JarvisError, type AuthorityDb } from "./db.js";
 
@@ -8,6 +9,10 @@ export function completeMemoryRememberDecision(authority: AuthorityDb, command: 
     throw new JarvisError("MEMORY_CONFIRMATION_INVALID");
   }
   return authority.db.transaction(() => {
+    if (command.args.decision === "confirm"
+      && new MemoryProjectionAuthority(authority).isProjectionIdSuppressed(String(command.target.candidate_id))) {
+      throw new JarvisError("MEMORY_CANDIDATE_SUPPRESSED");
+    }
     const row = authority.db.prepare(
       `SELECT c.state FROM memory_candidate_owner_decisions d
        JOIN memory_candidates c ON c.candidate_id=d.candidate_id

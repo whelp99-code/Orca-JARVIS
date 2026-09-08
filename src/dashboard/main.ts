@@ -21,6 +21,7 @@ export type DashboardCliOptions = {
   readonly port: number;
   readonly dbPath: string;
   readonly staticRoot: string;
+  readonly policyPath?: string;
 };
 
 export type DashboardMemoryDependencies = {
@@ -44,6 +45,7 @@ export function parseDashboardCli(argv: readonly string[]): DashboardCliOptions 
       port: { type: "string" },
       db: { type: "string" },
       "static-root": { type: "string" },
+      policy: { type: "string" },
     },
     strict: true,
   });
@@ -54,7 +56,9 @@ export function parseDashboardCli(argv: readonly string[]): DashboardCliOptions 
   if (typeof values["static-root"] !== "string" || values["static-root"].length === 0) {
     throw new JarvisError("VALIDATION_ERROR");
   }
-  return { host: LOOPBACK, port, dbPath: resolve(values.db), staticRoot: resolve(values["static-root"]) };
+  if (values.policy !== undefined && values.policy.length === 0) throw new JarvisError("VALIDATION_ERROR");
+  return { host: LOOPBACK, port, dbPath: resolve(values.db), staticRoot: resolve(values["static-root"]),
+    ...(values.policy === undefined ? {} : { policyPath: resolve(values.policy) }) };
 }
 
 export function startDashboardCli(options: DashboardCliOptions, write: (line: string) => void = line => {
@@ -62,6 +66,10 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
 }, memoryLifecycle?: Pick<MemoryLifecycleService, "execute">,
   dependencies: DashboardMemoryDependencies = {}): { close: () => Promise<void> } {
   const db = new AuthorityDb(options.dbPath);
+  const remoteApproval = (() => {
+    try { return composeRemoteApproval(db, { policyPath: options.policyPath }); }
+    catch (error) { db.close(); throw error; }
+  })();
   const bound = (() => {
     try { return bindDashboardMemoryDependencies(db, dependencies); }
     catch (error) { db.close(); throw error; }
@@ -87,7 +95,7 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
     executorFactory: bound.executorFactory,
     clock: dependencies.memoryAdapterOptions?.clock,
     memoryReconcileTick: tick === undefined ? undefined : () => tick.tick(),
-    remoteApproval: composeRemoteApproval(db),
+    remoteApproval,
   });
   write(`http://${server.address.host}:${String(server.address.port)}`);
   let closing: Promise<void> | undefined;

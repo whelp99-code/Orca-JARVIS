@@ -1,3 +1,4 @@
+import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
 import { join } from "node:path";
 import { chmodSync, existsSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { request } from "undici";
@@ -37,6 +38,44 @@ async function fixture() {
 }
 
 describe("owner candidate review and storage preparation HTTP", () => {
+
+  it.each(["before-approval", "after-approval"] as const)("blocks a quarantined candidate %s", async phase => {
+    const f = await fixture();
+    try {
+      const path = `candidates/${encodeURIComponent(f.candidate.candidate_id)}`;
+      const review = await f.call(path); expect(review.status).toBe(200);
+      const staged = await f.call(`${path}/actions/stage-decision`, { schema_version: 2,
+        intent_id: `memui:intent:v1:${"d".repeat(64)}`, operation: "remember", decision: "confirm",
+        review_digest: review.body["review_digest"] });
+      expect(staged.status).toBe(202);
+      const control = new ControlPlane(f.database.authority); const command = control.get(staged.body["request_id"]);
+      if (!command) throw new Error("missing command");
+      const receipt = signCommandApproval({ schema_version: 1, receipt_id: "quarantine-confirmation",
+        request_id: command.request_id, decision: "approve", command_digest: command.command_digest,
+        signer_principal_id: "principal:owner", authenticated_session_id: "owner-session", key_id: "decision-test",
+        algorithm: "Ed25519", issued_at: f.now.toISOString(), not_before: f.now.toISOString(),
+        expires_at: command.expires_at, nonce: "quarantine-confirmation", max_uses: 1, status: "issued" },
+      localKey(f.database.authority));
+      if (phase === "after-approval") control.decide(receipt, f.now);
+      new MemoryProjectionAuthority(f.database.authority).quarantineUnresolved({
+        kind: "dashboard_projection", id: f.candidate.candidate_id, component_id: f.candidate.candidate_id }, f.now);
+      expect((await f.call(path)).status).toBe(404);
+      if (phase === "before-approval") {
+        expect(() => control.decide(receipt, f.now)).toThrowError(expect.objectContaining({ code: "MEMORY_CANDIDATE_SUPPRESSED" }));
+        expect(f.database.authority.db.prepare("SELECT COUNT(*) AS count FROM memory_candidate_owner_decisions").get())
+          .toEqual({ count: 0 });
+        expect(f.database.authority.db.prepare("SELECT COUNT(*) AS count FROM memory_candidate_dispatch_publications").get())
+          .toEqual({ count: 0 });
+      } else {
+        const dispatch = await f.call(`${path}/actions/stage-dispatch`, { schema_version: 1,
+          intent_id: `memui:intent:v1:${"e".repeat(64)}` });
+        expect(dispatch.status).toBe(409);
+        expect(f.database.authority.db.prepare("SELECT COUNT(*) AS count FROM control_command_requests WHERE action='memory.outbox.dispatch'")
+          .get()).toEqual({ count: 0 });
+      }
+    } finally { f.close(); }
+  });
+
   it.each(["confirm", "reject"] as const)("binds review and completes %s through the actual executor", async decisionKind => {
     const f = await fixture();
     try {

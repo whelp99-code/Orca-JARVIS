@@ -1,3 +1,4 @@
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./db.js";
 import { MemoryTombstoneChain, type AppendMemoryTombstoneInput } from "./memory-tombstone-chain.js";
@@ -40,6 +41,8 @@ export type PreparedDestructiveEffect<Request extends PreparedEffectRequest> = {
 };
 
 type PreparationRow = {
+  readonly lane: string;
+  readonly candidate_id: string | null;
   readonly lane_id: string;
   readonly state: string;
   readonly provider_tombstone_sequence: number | null;
@@ -70,6 +73,10 @@ export class MemoryDestructivePreparationStore {
     }
     return this.authority.db.transaction(() => {
       const before = this.preparation(input.lane_id);
+      if (before.lane === "correction" && (before.candidate_id === null
+        || new MemoryProjectionAuthority(this.authority).isProjectionIdSuppressed(before.candidate_id))) {
+        throw new JarvisError("MEMORY_CANDIDATE_SUPPRESSED");
+      }
       const providerHighWater = before.state === "approved"
         ? this.storedProviderHighWater(before)
         : input.provider_high_water;
@@ -151,7 +158,7 @@ export class MemoryDestructivePreparationStore {
 
   private preparation(laneId: string): PreparationRow {
     const row = this.authority.db.prepare(
-      `SELECT lane_id,state,provider_tombstone_sequence,provider_tombstone_set_root,
+      `SELECT lane_id,lane,candidate_id,state,provider_tombstone_sequence,provider_tombstone_set_root,
        request_id,request_digest,envelope_digest,provider_idempotency_key,delegation_id,
        delegation_digest FROM memory_effect_preparations WHERE lane_id=?`,
     ).get(laneId) as PreparationRow | undefined;

@@ -214,6 +214,9 @@ export * from "./personal-os-retention.js";
 export { decideRollback, migrationVectorDigest } from "./personal-os-compatibility.js"; export { runPersonalOsRehearsal } from "./personal-os-rehearsal.js";
 export { createRuntimeIdentityReader } from "./runtime-identity.js";
 export type { RuntimeIdentityReader, RuntimeIdentityReport } from "./runtime-identity.js";
-
 export { readDaemonRuntimeIdentity } from "./daemon-runtime-identity.js";
 export type { DaemonRuntimeIdentityReport, DaemonRuntimeSnapshot } from "./daemon-runtime-identity.js";
+export { createCorrectionCancellationIntent, requireCorrectionCancellationIntent,
+  CORRECTION_CANCELLATION_INTENT_DOMAIN, MAX_CORRECTION_CANCELLATION_INTENT_BYTES,
+  type CorrectionCancellationIntentV1, type CorrectionCancellationEvidence,
+  type CorrectionCancellationIntentOptions } from "./memory-correction-cancellation-intent.js";

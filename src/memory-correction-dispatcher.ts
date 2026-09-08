@@ -1,3 +1,4 @@
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import type { ClaimedControlCommand } from "./control-plane.js";
@@ -118,10 +119,14 @@ export class MemoryCorrectionDispatcher {
     let record = this.store.get(correctionId);
     if (record === undefined) throw new JarvisError("MEMORY_CORRECTION_NOT_FOUND");
     if (record.state !== "queued") return record;
-    const claim = this.cursor.claim({ lane_id: laneId, lane: "correction",
-      sequence: prepared.entry.sequence, request_digest: prepared.request.request_digest }, now);
-    if (claim.kind === "reconcile") return record;
-    record = this.store.beginDispatch(correctionId, now);
+    const claimed = this.options.authority.db.transaction(() => {
+      const claim = this.cursor.claim({ lane_id: laneId, lane: "correction",
+        sequence: prepared.entry.sequence, request_digest: prepared.request.request_digest }, now);
+      if (claim.kind === "reconcile") return undefined;
+      return this.store.beginDispatch(correctionId, now);
+    }).immediate();
+    if (claimed === undefined) return record;
+    record = claimed;
     const outcome = await this.options.writer.write(prepared.request);
     await recordCorrectionDispatchOutcome(this.store, this.spool, record,
       prepared.request, outcome, now);
@@ -146,6 +151,9 @@ export class MemoryCorrectionDispatcher {
       || row.spool_digest !== command.args.spool_digest
       || Date.parse(row.expires_at) <= now.getTime()) {
       throw new JarvisError("MEMORY_CORRECTION_AUTHORITY_INVALID");
+    }
+    if (new MemoryProjectionAuthority(this.options.authority).isProjectionIdSuppressed(row.candidate_id)) {
+      throw new JarvisError("MEMORY_CANDIDATE_SUPPRESSED");
     }
     return row;
   }
