@@ -829,3 +829,15 @@
   동시 실행 중인 e70d113 고정 전체 검증은 위 두 후속 변경을 포함하지 않는다.
 - 읽기 전용 `/root/provider_utf8_review`: ship, 지적 0개. 요청 luna/high,
   실제 모델/추론 수준 메타데이터 미노출. 비교용 추가 버퍼는 기존 출력 상한 1MiB 이내다.
+
+## 2026-09-09 — 라우팅 preview까지의 고정 전체 검증
+
+- 고정 HEAD `e70d11348510fd910e8bb406ed6e4d8acc286cbb`의 `npm run verify` exit 0.
+  backend 218+218파일, 1481+1527=3008개 통과. dashboard 35파일248개 통과.
+  canonical gate의 lint/typecheck/build/acceptance/CLI smoke를 포함한다.
+- 검증 전후 HEAD 동일, 추적 파일 변경 0개, 추적 바이트 동일, 종료 시 추적 변경 없음.
+  증거: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/verify-work-routing-after.json`
+  및 `verify-work-routing.log`, 프로세스 handle56819 종료 코드0.
+- 후속 등록부 `0878e0d`, UTF-8 응답 수정 `8eb9ca4`, 자원 제한값 공통화는 이 실행에
+  포함되지 않는다. 각 변경의 단위/실프로세스 검증을 전체 검증으로 확장해서 주장하지 않는다.
+  운영 적용 및 원래 01–25 전체 목표는 아직 완료되지 않았다.
