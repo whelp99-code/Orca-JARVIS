@@ -1,6 +1,6 @@
 import { parseMemoryScopedWriteRequestJson } from "./memory-scoped-write-codec.js";
 import { parseSecondBrainScopedWriteAccepted } from "./second-brain-scoped-write-result.js";
-import { parseSecondBrainScopedRequestStatus } from "./second-brain-scoped-request-status.js";
+import { parseSecondBrainRecoveredRequestStatus, parseSecondBrainScopedRequestStatus } from "./second-brain-scoped-request-status.js";
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./db.js";
@@ -17,7 +17,7 @@ type Bundle = ReturnType<Issuer>;
 export type MemoryScopedClientOptions = {
   readonly issue: Issuer;
   readonly status_issue?: Issuer;
-  readonly profile?: "scoped-record-read-v1" | "scoped-record-read-v2" | "scoped-record-read-v3" | "scoped-record-read-v4";
+  readonly profile?: "scoped-record-read-v1" | "scoped-record-read-v2" | "scoped-record-read-v3" | "scoped-record-read-v4" | "scoped-record-read-v5";
   readonly transport: SecondBrainTransport;
   readonly now: () => Date;
   readonly budgets: SecondBrainAdapterBudgets;
@@ -36,10 +36,10 @@ const denied = (): never => { throw new JarvisError("MEMORY_SCOPED_READ_UNAVAILA
 /** Connects the current authenticated scope issuer, supervised transport and record
  * consumer. Does not own sessions, cache permissions, or attest task success. */
 export function createMemoryScopedClient(options: MemoryScopedClientOptions) {
-  async function read(method: "sb_read_page" | "sb_search" | "sb_generation_status" | "sb_request_status", arguments_: Readonly<Record<string, unknown>>, signal?: AbortSignal, artifact?: ReturnType<typeof rememberedArtifactExpectation>, historical?: { request: MemoryScopedWriteRequestMaterial; acceptance: unknown }) {
+  async function read(method: "sb_read_page" | "sb_search" | "sb_generation_status" | "sb_request_status", arguments_: Readonly<Record<string, unknown>>, signal?: AbortSignal, artifact?: Pick<ReturnType<typeof rememberedArtifactExpectation>, "provider" | "owner" | "policy" | "projects">, historical?: { request: MemoryScopedWriteRequestMaterial; acceptance?: unknown }) {
     const request: MemoryAccessRequest = Object.freeze({ method, arguments: Object.freeze({ ...arguments_ }) });
-    if (method === "sb_generation_status" && (options.profile !== "scoped-record-read-v2" && options.profile !== "scoped-record-read-v3" && options.profile !== "scoped-record-read-v4")) return denied();
-    if (method === "sb_request_status" && options.profile !== "scoped-record-read-v4") return denied();
+    if (method === "sb_generation_status" && (options.profile !== "scoped-record-read-v2" && options.profile !== "scoped-record-read-v3" && options.profile !== "scoped-record-read-v4" && options.profile !== "scoped-record-read-v5")) return denied();
+    if (method === "sb_request_status" && options.profile !== "scoped-record-read-v4" && options.profile !== "scoped-record-read-v5") return denied();
     const issue = ["sb_generation_status", "sb_request_status"].includes(method) ? options.status_issue : options.issue;
     if (issue === undefined) return denied();
     const bundle = issue(request, new Date(options.now().getTime()));
@@ -71,7 +71,9 @@ export function createMemoryScopedClient(options: MemoryScopedClientOptions) {
       budgets: options.budgets, max_age_ms: options.max_age_ms, expiry_ms: options.expiry_ms });
     if (method === "sb_request_status") {
       if (historical === undefined || !("request_status" in parsed)) return denied();
-      const status = parseSecondBrainScopedRequestStatus(parsed.request_status, historical.request, historical.acceptance, checked);
+      const status = options.profile === "scoped-record-read-v5"
+        ? parseSecondBrainRecoveredRequestStatus(parsed.request_status, historical.request, checked, historical.acceptance)
+        : parseSecondBrainScopedRequestStatus(parsed.request_status, historical.request, historical.acceptance, checked);
       recheck();
       return { generation: parsed.generation, pages: [], request_status: status };
     }
@@ -79,6 +81,19 @@ export function createMemoryScopedClient(options: MemoryScopedClientOptions) {
     return parsed;
   }
   return {
+    recoverRequestStatus: async (request: MemoryScopedWriteRequestMaterial, signal?: AbortSignal) => {
+      if (options.profile !== "scoped-record-read-v5") return denied();
+      const at = new Date(options.now().getTime());
+      const created = new Date(request.created_at);
+      if (!Number.isFinite(at.getTime()) || !Number.isFinite(created.getTime()) || created > at) return denied();
+      const snapshot = parseMemoryScopedWriteRequestJson(canonicalize(request), request.provider_instance_id, created);
+      const scope = snapshot.preparation.binding.identity;
+      const response = await read("sb_request_status", { request: snapshot }, signal,
+        { provider: snapshot.provider_instance_id, owner: scope.owner, projects: scope.projects, policy: scope.policy_revision },
+        { request: snapshot });
+      if (!("request_status" in response)) return denied();
+      return { generation: response.generation, status: response.request_status };
+    },
     requestStatus: async (request: MemoryScopedWriteRequestMaterial, acceptance: unknown, signal?: AbortSignal) => {
       const accepted = parseSecondBrainScopedWriteAccepted(acceptance, request, new Date(options.now().getTime()));
       const snapshot = parseMemoryScopedWriteRequestJson(canonicalize(request), request.provider_instance_id, new Date(accepted.accepted_at));
@@ -93,7 +108,7 @@ export function createMemoryScopedClient(options: MemoryScopedClientOptions) {
       return verifyRememberedArtifactRead(expected, response);
     },
     authorizationIdentity: () => {
-      if ((options.profile !== "scoped-record-read-v2" && options.profile !== "scoped-record-read-v3" && options.profile !== "scoped-record-read-v4") || options.status_issue === undefined) return denied();
+      if ((options.profile !== "scoped-record-read-v2" && options.profile !== "scoped-record-read-v3" && options.profile !== "scoped-record-read-v4" && options.profile !== "scoped-record-read-v5") || options.status_issue === undefined) return denied();
       return identity(options.status_issue({ method: "sb_generation_status", arguments: {} }, new Date(options.now().getTime())));
     },
     status: (signal?: AbortSignal) => read("sb_generation_status", {}, signal),

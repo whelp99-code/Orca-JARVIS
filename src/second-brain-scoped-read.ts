@@ -8,7 +8,7 @@ import { SecondBrainReadBudget } from "./second-brain-read-budget.js";
 
 type ScopedExpectation = {
   readonly method: "sb_read_page" | "sb_search" | "sb_generation_status" | "sb_request_status";
-  readonly profile?: "scoped-record-read-v1" | "scoped-record-read-v2" | "scoped-record-read-v3" | "scoped-record-read-v4";
+  readonly profile?: "scoped-record-read-v1" | "scoped-record-read-v2" | "scoped-record-read-v3" | "scoped-record-read-v4" | "scoped-record-read-v5";
   readonly scope?: PageAccessScope;
   readonly page_id?: string;
   readonly limit: number;
@@ -50,7 +50,7 @@ export function parseScopedSecondBrainResponse(value: unknown, expected: ScopedE
     || expected.fence.operation !== (["sb_generation_status", "sb_request_status"].includes(expected.method) ? "status" : "read")
     || !(Date.parse(expected.fence.not_before) <= expected.checked_at.getTime()
       && expected.checked_at.getTime() < Date.parse(expected.fence.expires_at))) return fail();
-  const classified = expected.profile === "scoped-record-read-v3" || expected.profile === "scoped-record-read-v4";
+  const classified = expected.profile === "scoped-record-read-v3" || expected.profile === "scoped-record-read-v4" || expected.profile === "scoped-record-read-v5";
   const payloadKeys = expected.method === "sb_request_status" ? ["request_status"] : expected.method === "sb_generation_status" ? ["schema_version", "pointer_health", "journal_health"] : expected.method === "sb_read_page" ? ["page_id", "content_digest", "records", ...(classified ? ["page_access"] : [])] : ["results"];
   if (!exact(value, ["profile", "request_digest", "access_claim_digest", ...generationKeys, ...payloadKeys])) return fail();
   const bound = bindSecondBrainGenerationRead(value, { fence: expected.fence, method: ["sb_generation_status", "sb_request_status"].includes(expected.method) ? "sb_read_page" : expected.method as "sb_read_page" | "sb_search",
@@ -60,7 +60,7 @@ export function parseScopedSecondBrainResponse(value: unknown, expected: ScopedE
   if (generation === undefined || (classified && (generation.tombstone_sequence < 0
     || generation.generation_id !== `sbgen:v1:${generation.generation_manifest_digest.slice(7)}`))) return fail();
   if (expected.method === "sb_request_status") {
-    if (expected.profile !== "scoped-record-read-v4") return fail();
+    if (expected.profile !== "scoped-record-read-v4" && expected.profile !== "scoped-record-read-v5") return fail();
     return { generation, pages: [], request_status: value.request_status };
   }
   if (expected.method === "sb_generation_status") {

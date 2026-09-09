@@ -73,3 +73,13 @@ it('pins v4 request status separately with exact claim and request arguments', a
     expect(starts).toBe(0);
   } finally { await transport.close(); }
 });
+
+it('pins acceptance recovery to read v5 without changing v4', () => {
+  const v5Path = path.replace('-v1.json', '-v5.json');
+  const v5 = loadSecondBrainContract(v5Path, 'scoped-record-read-v5') as typeof contract;
+  const declared = Object.entries(v5.tools).map(([name, tool]) => ({ name, inputSchema: tool.arguments }));
+  expect(inspectFrozenSchemas(declared, v5).matches).toBe(true);
+  expect(() => loadSecondBrainContract(v5Path, 'scoped-record-read-v4')).toThrow();
+  expect(() => loadSecondBrainContract(path.replace('-v1.json', '-v4.json'), 'scoped-record-read-v5')).toThrow();
+  expect(Object.keys(v5.tools).sort()).toEqual(['sb_generation_status', 'sb_read_page', 'sb_request_status', 'sb_search']);
+});

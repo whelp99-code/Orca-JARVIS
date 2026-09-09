@@ -10,7 +10,7 @@ import { createScopedMemoryReference } from "./memory-scoped-reference.js";
 import { createSecondBrainTransport, type SecondBrainTransport, type SecondBrainTransportOptions } from "./second-brain-transport.js";
 
 export type ScopedMemoryProductionOptions = {
-  readonly profile?: "scoped-record-read-v2" | "scoped-record-read-v3" | "scoped-record-read-v4";
+  readonly profile?: "scoped-record-read-v2" | "scoped-record-read-v3" | "scoped-record-read-v4" | "scoped-record-read-v5";
   readonly policy_path: string;
   readonly authenticated_session: () => AuthenticatedMemorySession | undefined;
   readonly read_fence_config: MemoryReadFenceProductionConfig;
