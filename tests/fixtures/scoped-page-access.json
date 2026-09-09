@@ -1,0 +1,18 @@
+{
+  "schema_version": 1,
+  "complete": true,
+  "sources": [
+    {
+      "source_ref_digest": "sha256:9ae70157edc31c2f149671ffc2089164a6b609008ffedce08678692e248518f4",
+      "classification": {
+        "owner": "principal:owner",
+        "policy_revision": "policy:fixture",
+        "projects": [
+          "project:shared-memory"
+        ],
+        "schema_version": 1
+      },
+      "classification_digest": "sha256:c6227da82601c6ef0c00dcd5f9bcde3e59a26b7996bdf4c40186a9f00b2d07c1"
+    }
+  ]
+}

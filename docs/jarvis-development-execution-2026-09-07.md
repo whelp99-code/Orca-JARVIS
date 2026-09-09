@@ -1589,3 +1589,51 @@
   actual runtime metadata unobservable. Reviewer's direct Vitest collection hit
   scratch error-122; that failed attempt is separate from the parent canonical
   runner21tests and compiled validation above, and is not reported as a pass.
+
+### Scoped provider branch integration — 2026-09-09
+
+- main623afa6 had16 provider-side JARVIS commits absent from development063bcfa;
+  development had105 commits absent from main. Merged the exact main commit into
+  the isolated development worktree; user main/provider checkouts were not edited.
+- Resolved6 textual conflicts by retaining the scoped API barrel and central
+  transport profile validator while adding readv3–v5/writev1. Gateway provider
+  verification now has a focused HTTP handler; cookie refresh remains in the
+  existing authentication module with the same call sites and session checks.
+- First integration run:231passed/1reviewability failure. Expanded long lines
+  and extracted domain behavior without weakening250line/160column checks.
+  Final focused suite37files/325tests passed, including gateway, scoped settlement,
+  compaction and task suppression. Full lint,3typechecks and complete build exit0.
+- Both source migration vectors preserved byte-for-byte:84files from063bcfa,
+  80files from623afa6, merged86files. Four new frozen contract files match provider.
+  Evidence scoped-merge-byte-preservation.json in shared QA cache.
+- Actual merged build→separate Python MCP→TLS/gateway current session→provider CLI
+  acceptance exit0: valid accepted→proved/HTTPS5; revoke-during-admission denied/no
+  accepted row/HTTPS2; revoke or expiry before execution failed/no active generation/
+  HTTPS3 each. Every case dispatch attempts1/FKerrors0. Fixture clock, CA and identity
+  forwarder; not operational A→B or production activation acceptance.
+  Receipt scoped-merged-mcp-acceptance.json, stderr0bytes.
+- Separate full verify7547 ended exit2/TEST_RUN_TIMEOUT on shard2. Shard1 passed
+  243files/1697tests. Before/after vectors prove HEAD063bcfa and all1677 tracked
+  files unchanged; this incomplete gate cannot certify the integration. The last
+  logged GJC suite passed independently25/25 in20.02s; the timeout cause remains
+  unproven (verify-timeout-gjc-isolated.log).
+- Review correction: historical reconciliation now checks candidate/outbox current
+  suppression before reading private spool bytes. Fresh regression6files/37tests,
+  lint/typecheck/build, CLI smoke and fixed-clock acceptance exit0. Compiled Node24
+  fixture separately blocked4 paths for each of candidate/outbox quarantine,
+  write_delta0, preserved settlement1, quick_check=ok. Evidence:
+  scoped-replay-suppression-compiled.json. This does not prove production lineage.
+- Final merged-source regression rerun after the correction:37files/327tests,
+  exit0,179.05s (tool session43559). No test paths were removed from the prior
+  37file integration selection; the two quarantine cases increase325 to327.
+- Independent review returned fix-first for migration079/080 filename collisions
+  missing from the exact allocation allowances. Parent reproduced2failed/2files
+  (allocation and protocol compatibility), then allowed only the two committed
+  immutable filename pairs:2passed/2files. Fresh lint/typecheck exit0. No SQL edited.
+  Actual compiled migration probes upgraded both original parent DB vectors84/80
+  to86, preserved every prior journal row, repeat writes0/FKerrors0/quick_checkok.
+  Receipt: scoped-migration-upgrade-qjIJ8c/receipt.json in shared QA cache. Empty
+  isolated DBs; not production upgrade acceptance.
+- Fresh independent scoped_integration_review returned ship/finding0 after its own
+  exact2file/2test pass, parent SQL byte comparison84/80 with0mismatches, and
+  unresolved-index0/diff-check0. Full gate and production holds remain unchanged.

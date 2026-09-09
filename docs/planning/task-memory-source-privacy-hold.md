@@ -57,3 +57,21 @@ working-tree 변경은 0개였다. provider 배포 상태를 뜻하지 않는다
 
 즉시 가능한 자비스 작업은 원본 식별과 로컬 관계의 설계·격리 구현이다. provider의 출처
 계약이 없는 상태에서 저장 후 삭제 전파까지 완성됐다고 표시하는 것은 보류한다.
+
+## 후속 scoped provider 통합 검증 — 2026-09-09
+
+자비스 main623afa6까지의16개 후속 커밋에는 scoped read v3–v5, 쓰기 v1,
+원래 접수 복구·현재 읽기 증거·원자적 정산·gateway의 현재 권한 검증이 추가됐다.
+별도 개발 브랜치에서 이 변경과 기존 차단/취소 수정을 병합하여 검증 중이다.
+새 계약4개의 provider 바이트 일치와 양쪽 기존 migration 바이트 보존을 확인했다.
+
+실제 병합 빌드와 별도 MCP·TLS·gateway·provider CLI를 연결한 격리 인수는
+정상 accepted→proved, 접수 중 철회 거부, 실행 전 철회/세션 만료 failed를 확인했다.
+이는 승인된 scoped 요청의 전송·처리 증거다. 운영 계정이나 task 원본 삭제 인수가 아니다.
+receipt: shared QA cache scoped-merged-mcp-acceptance.json.
+
+provider 후속 검사 HEAD07e59ec9df81dffdd4d65ed5a133ce5764958110의
+sb/scoped_write_request.py는 source_request를 기존 parse_request_v3로 검증한다.
+명시된 V4 최상위 키에도 task/run/completion 출처 관계 필드는 없다. 따라서 이
+통합만으로 본 문서의 작업 원본→파생 기억 삭제 전파 재개 조건은 충족되지 않는다.
+collect-task 보류를 유지하며 provider 작업공간의 진행 중인 구현은 변경하지 않는다.

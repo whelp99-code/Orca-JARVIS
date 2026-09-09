@@ -30,7 +30,7 @@ function staticRoot(): string {
   return root;
 }
 
-async function authed(options: { now?: () => number; handler?: Parameters<typeof startFakeAuthority>[0] } = {}) {
+async function authed(options: { memoryProfile?: "scoped-record-read-v2" | "scoped-record-read-v3"; now?: () => number; handler?: Parameters<typeof startFakeAuthority>[0] } = {}) {
   const files = makePhoneHome();
   roots.push(files.home);
   const config = parsePhoneGatewayConfig({ home: files.home, envFile: files.envFile, uid: processUid() });
@@ -43,6 +43,11 @@ async function authed(options: { now?: () => number; handler?: Parameters<typeof
     staticRoot: staticRoot(),
     config,
     now: options.now,
+    memoryContext: options.memoryProfile === undefined ? undefined : {
+      database_path: join(files.home, 'unused-memory.db'), agent_id: 'agent:fixture',
+      memory: { profile: options.memoryProfile, policy_path: join(files.home, 'unused-policy.json'),
+        read_fence_config: { provider_instance_id: 'provider:fixture', signing_key_id: 'key:fixture', private_key_path: join(files.home, 'unused-key.pem') } },
+    },
     audit: line => { audits.push(line); },
   });
   const origin = `http://127.0.0.1:${String(gateway.address.port)}`;
@@ -212,4 +217,15 @@ describe("phone gateway Memory read adapter", () => {
       await authority.close();
     }
   });
+});
+
+it('reports explicitly configured v3 while leaving provider readiness unchecked', async () => {
+  const value = await authed({ memoryProfile: 'scoped-record-read-v3' });
+  try {
+    const response = await request(
+      value.origin + '/api/v1/memory/context/capabilities', { headers: value.headers });
+    expect(response.statusCode).toBe(200);
+    expect(await response.body.json()).toMatchObject({ profile: 'scoped-record-read-v3',
+      configured: true, readiness: 'not_checked', writes_supported: false });
+  } finally { value.gateway.close(); await value.authority.close(); }
 });

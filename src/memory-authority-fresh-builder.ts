@@ -168,7 +168,8 @@ function copyFilter(table: string, columns: readonly string[]): string {
     return `WHERE NOT EXISTS (SELECT 1 FROM ${projection} p
       WHERE p.kind='candidate' AND p.id=source_row.candidate_id)`;
   }
-  if (table === "memory_outbox_attempts" || table === "memory_reconciliation_events") {
+  if (["memory_outbox_attempts", "memory_reconciliation_events", "memory_scoped_completion_observations",
+    "memory_scoped_settlements"].includes(table)) {
     return `WHERE NOT EXISTS (SELECT 1 FROM ${projection} p
       WHERE p.kind='outbox' AND p.id=source_row.outbox_id)
       AND NOT EXISTS (SELECT 1 FROM source_authority.memory_outbox o

@@ -1,3 +1,4 @@
+import { serializeCookie } from "./dashboard/phone-session.js";
 import type { PhoneGatewayRequestCtx, DispatchUpdate } from "./phone-gateway-request-ctx.js";
 import { PHONE_ERROR_CODES } from "./phone-gateway-protocol.js";
 import { writePhoneGatewayError } from "./phone-gateway-http.js";
@@ -15,5 +16,17 @@ export function phoneRequestAuthentication(ctx: PhoneGatewayRequestCtx, cookieHe
     return false;
   };
   const stillAuthenticated = (): boolean => isAuthenticated() || rejectAuthentication();
-  return { isAuthenticated, rejectAuthentication, stillAuthenticated };
+  const refreshCookie = (): void => {
+    const refreshed = ctx.sessions.touch(idHmac);
+    if (refreshed !== undefined) {
+      ctx.response.setHeader("Set-Cookie", serializeCookie(cookieId(cookieHeader), refreshed.maxAge));
+    }
+  };
+  return { isAuthenticated, rejectAuthentication, stillAuthenticated, refreshCookie };
+}
+
+function cookieId(header: string | undefined): string {
+  if (header === undefined) return "";
+  const match = /__Host-jarvis-phone=([^;]+)/.exec(header);
+  return match?.[1] ?? "";
 }

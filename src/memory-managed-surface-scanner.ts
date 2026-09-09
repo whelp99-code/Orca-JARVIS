@@ -201,7 +201,8 @@ export class MemoryManagedSurfaceScanner {
 const SQLITE_SURFACE_PREFIXES: Readonly<Record<string, readonly string[]>> = {
   control_requests_receipts_effects_revocations: ["control_"],
   candidates_classifications_claims: ["memory_candidate"],
-  outbox_attempts_events: ["memory_outbox", "memory_reconciliation"],
+  outbox_attempts_events: ["memory_outbox", "memory_reconciliation",
+    "memory_scoped_outbox", "memory_scoped_completion", "memory_scoped_settlements"],
   deletion_export_tombstone_delegation_proof: ["memory_deletion", "memory_export", "memory_tombstone", "memory_effect"],
   audit_retention: ["audit_", "retention_", "personal_operation_audit"],
   observations: ["personal_observation", "personal_source_checkpoint"],

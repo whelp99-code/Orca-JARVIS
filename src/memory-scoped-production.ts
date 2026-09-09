@@ -10,6 +10,7 @@ import { createScopedMemoryReference } from "./memory-scoped-reference.js";
 import { createSecondBrainTransport, type SecondBrainTransport, type SecondBrainTransportOptions } from "./second-brain-transport.js";
 
 export type ScopedMemoryProductionOptions = {
+  readonly profile?: "scoped-record-read-v2" | "scoped-record-read-v3" | "scoped-record-read-v4" | "scoped-record-read-v5";
   readonly policy_path: string;
   readonly authenticated_session: () => AuthenticatedMemorySession | undefined;
   readonly read_fence_config: MemoryReadFenceProductionConfig;
@@ -34,8 +35,8 @@ export function createProductionScopedMemory(authority: AuthorityDb, options: Sc
   // Validate current authenticated status permission before allocating transport.
   statusIssue({ method: "sb_generation_status", arguments: {} }, clock());
   const transport = options.transport ?? createSecondBrainTransport({ ...options.transport_options,
-    contractProfile: "scoped-record-read-v2" });
-  const client = createMemoryScopedClient({ issue, status_issue: statusIssue, profile: "scoped-record-read-v2",
+    contractProfile: options.profile ?? "scoped-record-read-v2" });
+  const client = createMemoryScopedClient({ issue, status_issue: statusIssue, profile: options.profile ?? "scoped-record-read-v2",
     transport, now: clock, budgets: { max_hits: 32, max_excerpt_bytes: 4096, max_total_bytes: 65536, max_page_bytes: 262144 },
     max_age_ms: 7 * 86400000, expiry_ms: 30 * 86400000 });
   const reader = createScopedMemoryReference(authority, { client, membership, clock, search_limit: 32 });

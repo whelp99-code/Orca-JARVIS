@@ -198,7 +198,8 @@ export function inspectFrozenSchemas(observed: unknown, contract: unknown): Sche
     if (keys !== "inputSchema\0name" && (!producer || typeof value.description !== "string"
       || Buffer.byteLength(value.description, "utf8") > DESCRIPTION_BYTES)) return mismatch();
     const tool = contract.tools[value.name]; if (!isRecord(tool)) return mismatch();
-    const inputMatches = (contract.profile === "scoped-record-read-v1" || contract.profile === "scoped-record-read-v2")
+    const inputMatches = (contract.profile === "scoped-record-read-v1" || contract.profile === "scoped-record-read-v2" ||
+      contract.profile === "scoped-record-read-v3" || contract.profile === "scoped-record-read-v4" || contract.profile === "scoped-record-read-v5")
       ? cancellationInputCanonical(value.inputSchema) === cancellationInputCanonical(tool.arguments)
       : value.name === "sb_write_request"
       ? writeInputCanonical(value.inputSchema, contract.schema_version === 5 || contract.schema_version === 6 || contract.schema_version === 7)

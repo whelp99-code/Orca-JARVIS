@@ -85,3 +85,15 @@ export function parseMemoryScopedWriteRequestJson(raw: string, expectedProvider:
     return freeze(root) as MemoryScopedWriteRequestMaterial;
   } catch { return fail(); }
 }
+
+/** Immutable transport snapshot only; historical parsing does not grant authority. */
+export function snapshotMemoryScopedWriteArguments(value: unknown): Readonly<Record<string, unknown>> | undefined {
+  try {
+    const input = object(value, "request");
+    const request = input.request;
+    if (request === null || typeof request !== "object" || Array.isArray(request)
+      || typeof request.created_at !== "string" || typeof request.provider_instance_id !== "string") return undefined;
+    return Object.freeze({ request: parseMemoryScopedWriteRequestJson(canonicalize(request),
+      request.provider_instance_id, new Date(request.created_at)) });
+  } catch { return undefined; }
+}

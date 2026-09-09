@@ -57,6 +57,9 @@ export function validateMemoryBody(path: string, buffer: Buffer): boolean {
   }
   if (typeof parsed !== "object" || parsed === null || Array.isArray(parsed)) return false;
   if (keys.some(key => key === "__proto__" || key === "constructor" || key === "prototype")) return false;
+  if (path === "/api/v1/memory/provider/verify") {
+    return buffer.byteLength <= 32768 && Reflect.get(parsed, "schema_version") === 4;
+  }
   if (Reflect.get(parsed, "schema_version") !== 1) return false;
   if (path === "/api/v1/memory/context") {
     if (keys.length !== 4 || !["schema_version", "query", "limit", "max_bytes"].every(key => keys.includes(key))) return false;

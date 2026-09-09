@@ -1,5 +1,5 @@
+import { servePhoneMemoryProviderVerification } from "./phone-memory-provider-route.js";
 import { phoneRequestAuthentication } from "./phone-request-authentication.js";
-import { serializeCookie } from "./dashboard/phone-session.js";
 import {
   CSRF_HEADER,
   ERROR_STATUS,
@@ -137,14 +137,8 @@ async function serveMatchedRoute(
   requestId: string,
   update: (value: DispatchUpdate) => void,
 ): Promise<void> {
-  const { isAuthenticated, rejectAuthentication, stillAuthenticated } =
+  const { isAuthenticated, rejectAuthentication, stillAuthenticated, refreshCookie } =
     phoneRequestAuthentication(ctx, cookieHeader, idHmac, requestId, update);
-  const refreshCookie = (): void => {
-    const refreshed = ctx.sessions.touch(idHmac);
-    if (refreshed !== undefined) {
-      ctx.response.setHeader("Set-Cookie", serializeCookie(cookieId(cookieHeader), refreshed.maxAge));
-    }
-  };
   if (matched.routeClass === "shell") {
     refreshCookie();
     writeHtml(ctx.response, requestId, phoneHtml(path === "/memory" ? "Memory" : "Today"));
@@ -181,10 +175,14 @@ async function serveMatchedRoute(
   if (!stillAuthenticated()) return;
   if (matched.routeClass === "memory_capabilities") {
     writeJson(ctx.response, 200, requestId, { schema_version: 1,
-      profile: "scoped-record-read-v2", configured: ctx.memoryContext !== undefined,
+      profile: ctx.memoryProfile ?? "scoped-record-read-v2", configured: ctx.memoryContext !== undefined,
       supported_operations: ["context"], writes_supported: false,
       authorization: "checked_per_request", readiness: "not_checked" }, true);
     update({ outcome: "allowed", code: "ok", status: 200 }); return;
+  }
+  if (matched.routeClass === "memory_provider_verify") {
+    servePhoneMemoryProviderVerification(ctx, cookieHeader, body, requestId, update, stillAuthenticated);
+    return;
   }
   if (matched.routeClass === "memory_context") {
     if (ctx.memoryContext === undefined || ctx.memoryAgentId === undefined || body === undefined) {
@@ -243,10 +241,4 @@ function readOrigin(rawHeaders: readonly string[]):
   if (values.length === 0) return { kind: "absent" };
   if (values.length !== 1 || values[0] === undefined || values[0] === "null") return { kind: "bad" };
   return { kind: "ok", value: values[0] };
-}
-
-function cookieId(header: string | undefined): string {
-  if (header === undefined) return "";
-  const match = /__Host-jarvis-phone=([^;]+)/.exec(header);
-  return match?.[1] ?? "";
 }

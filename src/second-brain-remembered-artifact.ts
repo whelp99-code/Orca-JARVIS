@@ -30,6 +30,7 @@ export function rememberedArtifactExpectation(request: MemoryScopedWriteRequestM
   return Object.freeze({ request_id: snapshot.request_id, request_digest: snapshot.request_digest,
     provider: snapshot.provider_instance_id, owner: identity.owner, projects: Object.freeze([...identity.projects]),
     policy: identity.policy_revision, page_id: `wiki/memory-${hash(`${identity.candidate_id}\0${contentHash}`)}`,
+    source_ref_digest: "sha256:" + hash("second-brain/source-access-identity/v1\0" + canonicalize(["memory-candidate", identity.candidate_id, contentHash])),
     source: hash(`memory-candidate:${identity.candidate_id}`), sid: contentHash.slice(0, 8),
     sensitivity: snapshot.preparation.payload.sensitivity, lines: Object.freeze(lines) });
 }
@@ -56,7 +57,14 @@ export function verifyRememberedArtifactRead(expected: ReturnType<typeof remembe
       || record.citation_span_end === undefined || record.citation_span_start < previousEnd) return fail();
     previousEnd = record.citation_span_end;
   }
-  return Object.freeze({ kind: "remembered_content_observed" as const, request_id: expected.request_id,
+  if (page.access !== undefined) {
+    const source = page.access.sources[0];
+    if (page.access.sources.length !== 1 || source?.source_ref_digest !== expected.source_ref_digest
+      || source.classification.owner !== expected.owner || source.classification.policy_revision !== expected.policy
+      || canonicalize(source.classification.projects) !== canonicalize(expected.projects)) return fail();
+  }
+  return Object.freeze({ kind: page.access === undefined ? "remembered_content_observed" as const : "remembered_artifact_observed" as const,
+    ...(page.access === undefined ? {} : { access: page.access }), request_id: expected.request_id,
     request_digest: expected.request_digest, page_id: expected.page_id, content_digest: page.content_digest,
     generation: Object.freeze({ ...generation }), record_ids: Object.freeze(evidence.map(row => row.record!.record_id)) });
 }

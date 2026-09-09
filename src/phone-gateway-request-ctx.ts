@@ -4,6 +4,8 @@ import type { PhoneAuthorityReadAdapter, PhoneErrorCode, PhoneGatewayConfig } fr
 import type { createPhoneRateLimiter } from "./phone-gateway-adapter.js";
 import type { createPhoneMemoryContext } from "./phone-memory-context.js";
 
+import type { createPhoneMemoryProviderVerifier } from "./phone-memory-provider-verifier.js";
+
 export type PhoneGatewayRequestCtx = {
   readonly request: IncomingMessage;
   readonly response: ServerResponse;
@@ -16,8 +18,11 @@ export type PhoneGatewayRequestCtx = {
   readonly now: () => number;
   readonly audit: (line: string) => void;
   readonly upstream: string;
+  readonly memoryProviderVerifier?: ReturnType<typeof createPhoneMemoryProviderVerifier>;
+  readonly memoryProviderAgentId?: string;
   readonly memoryContext?: ReturnType<typeof createPhoneMemoryContext>;
   readonly memoryAgentId?: string;
+  readonly memoryProfile?: "scoped-record-read-v2" | "scoped-record-read-v3" | "scoped-record-read-v4" | "scoped-record-read-v5";
 };
 
 export type DispatchUpdate = {
