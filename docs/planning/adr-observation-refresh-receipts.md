@@ -97,3 +97,22 @@ evidence, not a claim that the whole checkout had no untracked entries.
 Local QA evidence: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/`
 contains `verify-refresh-df8fa54.log`, `verify-refresh-before.json` and
 `verify-refresh-result.json`. No production activation is established by this gate.
+
+## Timeline completeness admission
+
+Admission rejects truncated task timelines, future timeline generation, and task or
+event times later than timeline generation. All timestamps checked at this boundary
+must use canonical persistence time. These checks run before the write transaction.
+They constrain local input consistency; they do not authenticate a live provider or
+prove that a previously generated timeline was recollected.
+
+The focused receipt and compaction suite passed 2 files / 10 tests. The new regression
+exercises four invalid timelines, verifies unchanged serialized DB bytes after each
+rejection, then admits the complete fixture successfully. Recurring unchanged-source
+and same-environment multi-task collection remain unresolved and activation stays held.
+
+Typecheck, zero-warning lint and backend build exited 0. A compiled file-DB probe
+rejected one truncated admission with zero serialized byte changes, admitted a
+complete timeline, closed/reopened the database and read ready with zero foreign-key
+violations. Evidence: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/timeline-admission-result.json`.
+This fixture run is not production-provider validation.

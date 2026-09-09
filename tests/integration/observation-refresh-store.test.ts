@@ -120,3 +120,27 @@ it("fits the maximum declared pair scope into the bounded manifest and rejects l
       .toThrow("OBSERVATION_REFRESH_INVALID");
   } finally { db.close(); }
 });
+
+it("rejects partial and temporally inconsistent timelines without recording a receipt", async () => {
+  const db = new AuthorityDb(":memory:", "migrations");
+  try {
+    await db.migrate(); const store = new ObservationRefreshStore(db, scope);
+    const before = db.db.serialize();
+    const base = input();
+    const task = base.observations.orca_tasks[0]!;
+    const future = "2026-08-28T12:00:01.000Z";
+    const timelines = [
+      { ...task.timeline, truncated: true },
+      { ...task.timeline, generated_at: future },
+      { ...task.timeline, task: { ...task.timeline.task, updated_at: future } },
+      { ...task.timeline, events: task.timeline.events.map(event => ({ ...event, created_at: future })) },
+    ];
+    for (const timeline of timelines) {
+      expect(() => store.admit({ ...base, observations: { ...base.observations,
+        orca_tasks: [{ ...task, timeline }, ...base.observations.orca_tasks.slice(1)] } }, at))
+        .toThrow(/OBSERVATION_REFRESH_INVALID|PERSONAL_CONTRACT_INVALID/);
+      expect(db.db.serialize().equals(before)).toBe(true);
+    }
+    expect(store.read(store.admit(base, at).refresh_id, at)).toMatchObject({ state: "ready" });
+  } finally { db.close(); }
+});

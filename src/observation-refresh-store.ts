@@ -63,6 +63,14 @@ export class ObservationRefreshStore {
           && member.worktree_id === (value as Record<string, unknown>)["worktree_id"])) return fail();
     }
     for (const task of raw.orca_tasks) {
+      // A complete receipt cannot attest a partial or temporally inconsistent timeline.
+      const timeline = task.timeline;
+      if (timeline.truncated || !isPersistenceTime(timeline.generated_at)
+        || timeline.generated_at > raw.checked_at
+        || !isPersistenceTime(timeline.task.updated_at)
+        || timeline.task.updated_at > timeline.generated_at
+        || timeline.events.some((event: { readonly created_at: string }) => !isPersistenceTime(event.created_at)
+          || event.created_at > timeline.generated_at)) return fail();
       const source = task.environment === "mac-client" ? "src:pos:v1:mac-client:orca" : `src:pos:v1:orca:${task.environment}`;
       if (!collections.some(item => item.source_id === source && item.worktree_id === task.worktree_id && item.state === "completed")) return fail();
     }
