@@ -135,3 +135,19 @@ Corrected receipt: /home/jm/.cache/jarvis-test-runtime-qa-20260908/timeline-over
 
 This fixes completeness signaling at the source. It does not resolve checkpoint
 partitioning or repeated observation freshness; real collector activation remains held.
+
+## Canonical acceptance at 602b2fe
+
+Uninterrupted npm run verify (session 60065) exited 0 at
+602b2febe3df2c7da1e003d9ea60d4eba0122403. Backend shards passed
+261 files / 1817 tests (589.45s) and 260 files / 1847 tests (528.17s);
+dashboard passed 37 files / 255 tests (33.43s): 3919 tests total.
+Runtime, lint, typecheck, build, fixed-clock acceptance and CLI smoke completed.
+Acceptance emitted pre_gjc_ready, stopped, completion_promoted=true and
+gjc_dispatched=false. Before/after comparison checked 1811 tracked file hashes:
+0 changes and identical HEAD. The untracked node_modules link remained present.
+
+Evidence directory /home/jm/.cache/jarvis-test-runtime-qa-20260908:
+verify-timeline-before.json, verify-timeline-602b2fe.log, verify-timeline-result.json.
+This gate covers timeline completeness fixes; repeated collection, checkpoint
+partitioning, collector composition and production activation remain incomplete.
