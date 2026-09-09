@@ -7,6 +7,7 @@ import { AuthorityDb, JarvisError } from "./db.js";
 import { validateMemoryCandidateScopeProposal } from "./memory-candidate-scope.js";
 import { assertTaskWorkLineage } from "./task-work-lineage-binding.js";
 import { parseTaskExecutionPlan } from "./task-execution-plan.js";
+import { readControlCommand } from "./control-command-read.js";
 function finiteDate(date: Date, code: string): number { const time = date.getTime(); if (!Number.isFinite(time)) throw new JarvisError(code); return time; }
 function finiteIso(value: string): number { const time = Date.parse(value); return Number.isFinite(time) ? time : Number.NaN; }
 
@@ -25,10 +26,14 @@ export function stageControlCommand(authority: AuthorityDb, input: ControlComman
       if (input.requested_by !== "principal:owner" || input.action_level !== 3 || input.reversible
         || expires > Date.parse(proposal.expires_at)) throw new JarvisError("MEMORY_CANDIDATE_SCOPE_INVALID");
     }
+    return authority.db.transaction((): StoredControlCommand => {
     const prior = authority.db.prepare("SELECT command_digest,state FROM control_command_requests WHERE request_id=?").get(input.request_id) as
       | { command_digest: string; state: ControlCommandState } | undefined; if (prior) {
       if (prior.command_digest !== digest) throw new JarvisError("CONTROL_COMMAND_REPLAY_CONFLICT");
-      return { ...input, command_digest: digest, state: prior.state }; } const tx = authority.db.transaction(() => {
+      if (input.action === "task.execute" && !readControlCommand(authority, input.request_id)) {
+        throw new JarvisError("CONTROL_APPROVAL_REQUIRED");
+      }
+      return { ...input, command_digest: digest, state: prior.state }; }
       if (input.action === "task.execute" && Object.hasOwn(input.args, "work_lineage")) {
         assertTaskWorkLineage(authority, input.args.work_lineage, input.request_id,
           parseTaskExecutionPlan(input.args.plan), input.requested_at);
@@ -42,5 +47,5 @@ export function stageControlCommand(authority: AuthorityDb, input: ControlComman
         ) .run( input.request_id, input.action, input.action_level, targetJson, argsJson, digest, input.reversible ? 1 : 0, input.requested_by,
           input.requested_at, input.expires_at, input.nonce, "pending", at, ); emit({ event_id: `evt:${input.request_id}:requested`,
         event_type: "control.command.requested", source: "jarvis-control-plane", subject: input.request_id, correlation_id: input.request_id,
-        payload: { action: input.action, action_level: input.action_level, command_digest: digest }, created_at: at, }); }); tx();
-    return { ...input, command_digest: digest, state: "pending" }; }
+        payload: { action: input.action, action_level: input.action_level, command_digest: digest }, created_at: at, });
+    return { ...input, command_digest: digest, state: "pending" }; }).immediate(); }

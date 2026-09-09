@@ -213,3 +213,13 @@ servers (`indexed-lineage-browser.log`); no production deployment is attested.
 Fresh read-only review `/root/indexed_lineage_review` was requested for
 `36f6814..a951729`; acceptance remains pending its verdict. Backlog01–25 is
 still the full objective and is not completed by this feature's passing gate.
+
+The independent review found generic exact staging replay returned hidden task
+requests before checking current visibility. Parent reproduced both ancestor
+payload and task quarantine cases. Prior lookup, replay visibility and insertion
+now share one immediate transaction; hidden task replay throws
+CONTROL_APPROVAL_REQUIRED without returning state or writing DB bytes.
+Lineage regression:3files12tests passed; control-plane unit tests passed11.
+Typecheck and lint exited0. Evidence: `lineage-replay-before.log`,
+`lineage-replay-after.log`, `lineage-replay-control.log` in the QA directory.
+The a951729 full gate predates this correction; fresh acceptance remains pending.

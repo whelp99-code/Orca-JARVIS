@@ -17,6 +17,9 @@ it.each(["payload", "task"])("does not consume approval or expose requests after
       id, component_id: id }, f.now);
     expect(f.control.get(child.request_id)).toBeUndefined();
     const before = f.db.db.serialize();
+    const { command_digest: _digest, state: _state, ...replay } = child;
+    void _digest; void _state;
+    expect(() => f.control.stage(replay, f.now)).toThrow("CONTROL_APPROVAL_REQUIRED");
     expect(controlRequestPage(f.db, f.now, { limit: 1 }).items).toEqual([]);
     expect(controlRequestPage(f.db, f.now, { limit: 1 }).page?.total).toBe(0);
     expect(controlRequestPage(f.db, f.now).items).toEqual([]);
