@@ -57,7 +57,9 @@ async function race(path: string, inputs: readonly [unknown, unknown]): Promise<
   }
 }
 
-describe("Task 27 two-connection candidate convergence", () => {
+// Keep the worker deadline at five seconds; allow schema setup and termination
+// to finish before Vitest tears down this file-backed authority fixture.
+describe("Task 27 two-connection candidate convergence", { timeout: 15_000 }, () => {
   it("releases two SQLite writers together and persists one candidate, metadata row, and event", async () => {
     // Given: two independent package-root workers connected to one migrated SQLite authority database.
     const database = await memoryDatabase();

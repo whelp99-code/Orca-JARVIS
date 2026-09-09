@@ -33,3 +33,9 @@ DB files removed. Synthetic fixture setup only; model0/production0. Wall times
 are local observations under concurrent full verification, not a global speed SLA.
 Receipt: /home/jm/.cache/jarvis-test-runtime-qa-20260908/connector-schema-pNpo4c/receipt.json
 Script: /home/jm/.cache/jarvis-test-runtime-qa-20260908/connector-schema-live.mjs
+
+Follow-up: the implementation now delegates to the shared test-only
+`migratedTestDatabase` helper, retaining its readiness check and the tests above.
+Generic initialized()/memoryDatabase() also opt in under the isolation and
+invalidation rules in `adr-test-schema-fixture.md`. The preceding measurements
+describe the earlier connector-only implementation.

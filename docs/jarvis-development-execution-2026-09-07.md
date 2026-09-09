@@ -1653,3 +1653,31 @@
   browser, hermetic dependencies, or production deployment acceptance.
 - Parent reviewed the two-line executable change; node --check and diff --check
   exit0. No new test duplicates the existing executable CLI smoke.
+
+### Shared test schema and race cleanup budget — 2026-09-09
+
+- Completed older063bcfa shard2 diagnostic:243files,1727passed/1failed,908.82s,
+  exit1. One memory-candidates-concurrency case exceeded the outer5000ms timeout.
+  Before/after hash comparison still shows1677files unchanged. The worker itself
+  has a5000ms deadline, leaving no outer setup/cleanup allowance. Give only this
+  suite15000ms, preserving worker deadline and every race assertion.
+- Generalized the existing connector schema image pattern into one private test
+  helper. Build a real uninitialized schema, serialize it, then create independent
+  exclusive0600 files. Bind cache to directory/filename/SQL bytes, recheck after
+  preparation, invalidate changed input, and never cache keys or test mutations.
+  initialized()/memoryDatabase() still initialize with fresh anchors and policy keys.
+  Connector fixture delegates to this helper and retains readiness validation.
+- Earlier file-copy variant passed4files42tests; broad38files329tests in103.57s
+  versus prior37files327tests179.05s. The scopes/load differ; this is not a controlled
+  full-suite speed ratio. Final serialized consolidation passed4files14tests15.93s,
+  including original full seed-data equivalence, FK/integrity and actual migration
+  tests. Lint/3typechecks/backend build exit0. Logs schema-fixture-* in shared QA.
+- Final compiled helper five calls:497.74ms initial construction, then28.32–34.94ms;
+  distinct keys5/paths5, candidates0, FKerrors0, quick_checkok. Receipt:
+  schema-fixture-final-cCAZMt/receipt.json. No production code, schema migration,
+  runtime permission or test assertions were removed. Latest full gate remains due.
+- Independent schema_fixture_cache_review returned SHIP/no fix-first findings.
+  Requested terra/high; actual runtime model metadata unavailable. It checked
+  final code and physical log/receipt evidence. Residual file changes after the
+  final synchronous identity read are outside the tested preparation window;
+  production paths do not use this fixture.

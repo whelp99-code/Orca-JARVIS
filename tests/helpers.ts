@@ -4,6 +4,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuthorityDb, signReceipt, signVerificationEvidence } from "../src/index.js";
 import type { CensusSnapshot, DecisionReceipt, VerificationEvidence } from "../src/index.js";
+import { migratedTestDatabase } from "./fixtures/migrated-database.js";
 
 export const future = (minutes = 10) => new Date(Date.now() + minutes * 60_000).toISOString();
 export function tempDb(): string { return join(mkdtempSync(join(tmpdir(), "jarvis-test-")), "authority.sqlite"); }
@@ -26,7 +27,7 @@ export function bindExternal(db: AuthorityDb, anchors: ExternalKeys): void {
   externalKeys.set(db, anchors); externalByFilename.set(db.filename, anchors);
 }
 export async function initialized(): Promise<AuthorityDb> {
-  const db = new AuthorityDb(tempDb()); const anchors = externalAnchors();
+  const db = await migratedTestDatabase(tempDb()); const anchors = externalAnchors();
   await db.initialize({ decision: { keyId: "decision-test", principal: "test-operator",
     publicKeyPath: anchors.decisionPublic }, verifier: { keyId: "verifier-test", principal: "independent-verifier",
     publicKeyPath: anchors.verifierPublic, recommendationWork: { sessionId: "verifier-session",

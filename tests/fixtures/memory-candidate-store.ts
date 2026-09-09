@@ -20,6 +20,7 @@ import { parseMemoryCandidateInput } from "../../src/memory-candidate-input.js";
 import { memoryCandidateIdentity } from "../../src/memory-candidate-material.js";
 import { base64url } from "../../src/receipt.js";
 import { bindExternal, externalAnchors, localKey, verifierKey } from "../helpers.js";
+import { migratedTestDatabase } from "./migrated-database.js";
 import {
   memoryHash,
   memoryPolicy,
@@ -38,7 +39,7 @@ export async function memoryDatabase(): Promise<MemoryDatabase> {
   const root = mkdtempSync(join(tmpdir(), "jarvis-task27-memory-"));
   const path = join(root, "authority.sqlite");
   const anchors = externalAnchors();
-  const authority = new AuthorityDb(path);
+  const authority = await migratedTestDatabase(path);
   try {
     await authority.initialize({
       decision: { keyId: "decision-test", principal: "principal:owner", publicKeyPath: anchors.decisionPublic },
