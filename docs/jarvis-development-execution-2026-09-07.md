@@ -1371,3 +1371,29 @@
   Requested terra/high; actual metadata/token usage unavailable. Parent accepts
   this local visibility fix for commit; in-flight notifications/provider lifecycle
   and the full01–25 objective remain open.
+
+### Late notification lifecycle and full gate failure — 2026-09-09
+
+- ca4fb77 completes the bounded late notification suppression correction. Canonical
+  focused suite: 48 tests / 8 files passed. Typecheck/lint/backend build, fixed-clock
+  acceptance and CLI smoke exited 0. Compiled two-process DB reopen rejected a
+  contradictory delivered acknowledgment and returned no repeated claim or receipt.
+  External provider calls 0; external recall and provider lifecycle remain HOLD.
+  Native late_notification_review returned ship/findings0; actual model/effort
+  and token usage unobservable. Details: adr-late-notification-suppression.md.
+- Full verify56591 on 8e1db4e is terminal exit1. Backend shard1:1685pass/2fail
+  in242files; shard2:1719pass in241files. Both failures are 5000ms timeouts in
+  memory-cancellation-compaction.test.ts (physical replacement5785ms and atomic
+  settle/replay5168ms). Dashboard/acceptance/smoke were not reached by this gate.
+- Before/after snapshot comparison: HEAD8e1db4e unchanged,1666 tracked hashes
+  matched,0 mismatches. This is a failed gate, not completion evidence. After its
+  terminal result, integration fast-forwarded to ca4fb77, including4c483a1.
+  Whole01–25 remains active; failure triage and final integrated gate remain open.
+- Isolated canonical reproduction29189 also failed the same2 tests (9passed),
+  confirming the default5s harness budget issue outside the full suite. Only those
+  two end-to-end compaction test budgets now use15s, matching existing interrupted
+  recovery cases. Runtime watchdog remains5000ms; product deadlines and test bodies
+  are byte-identical after removing the added comments/budget arguments.
+- Focused retry33975 exited0:11tests passed. Targeted ESLint37511 and diff check
+  exited0. This test-only correction does not assert a compaction latency SLA or
+  validate real provider deletion. A new fixed-source full gate is still required.

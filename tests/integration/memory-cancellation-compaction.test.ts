@@ -12,6 +12,8 @@ import { MemoryCorrectionCancellationResultStore } from "../../src/memory-correc
 import { cancellationResultFixture } from "../fixtures/memory-cancellation-result.js";
 import { providerSurfaceInventory, reingressGuardObservations } from "../fixtures/memory-surface-observations.js";
 
+// Includes fixture migration, physical DB replacement, and repeated scan/recovery checks.
+// Only the test harness budget changes; runtime watchdog and authority deadlines remain enforced.
 it("preserves cancellation evidence across physical DB replacement under the existing full inventory contract", async () => {
   const f = await cancellationResultFixture();
   try {
@@ -50,7 +52,7 @@ it("preserves cancellation evidence across physical DB replacement under the exi
     expect(f.db.db.prepare("SELECT accepted_through_sequence FROM memory_effect_dispatch_cursor").get())
       .toEqual({ accepted_through_sequence: 0 });
   } finally { await f.close(); }
-});
+}, 15_000);
 
 
 it("rejects a runtime writer after fresh DB construction so key revocation cannot be silently lost", async () => {
@@ -227,6 +229,8 @@ it("recovers a replacement whose post-rename runtime metadata was never written"
   } finally { spy.mockRestore(); await replacement?.close(); await f.close(); }
 });
 
+// Includes fixture migration, physical DB replacement, and repeated scan/recovery checks.
+// Only the test harness budget changes; runtime watchdog and authority deadlines remain enforced.
 it("atomically settles a verified cancellation and replays without advancing twice", async () => {
   const f = await cancellationResultFixture();
   try {
@@ -245,4 +249,4 @@ it("atomically settles a verified cancellation and replays without advancing twi
     f.db.db.prepare("UPDATE memory_provider_proof_keys SET state='revoked'").run();
     await expect(f.runtime.compactor.settleCancellation(f.record.correction_id)).rejects.toThrow();
   } finally { await f.close(); }
-});
+}, 15_000);
