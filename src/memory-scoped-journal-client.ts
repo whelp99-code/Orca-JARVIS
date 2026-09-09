@@ -25,7 +25,7 @@ function identity({ access_claim: c, read_fence: f }: Bundle): string {
 }
 /** Historical journal only. Never supplies a generation, current artifact or settlement evidence. */
 export function createMemoryScopedJournalClient(options: MemoryScopedJournalClientOptions) {
-  return Object.freeze({ recoverRequestStatus: async (input: MemoryScopedWriteRequestMaterial, signal?: AbortSignal) => {
+  async function read(input: MemoryScopedWriteRequestMaterial, signal?: AbortSignal) {
     const active = () => { if (signal?.aborted) throw new JarvisError("SECOND_BRAIN_CANCELLED"); };
     active();
     const started = options.now().getTime(), created = new Date(input.created_at);
@@ -72,7 +72,28 @@ export function createMemoryScopedJournalClient(options: MemoryScopedJournalClie
       || v.provider_instance_id !== snapshot.provider_instance_id
       || v.tombstone_sequence !== f.tombstone_sequence || v.tombstone_set_root !== f.tombstone_set_root) return fail();
     const status = parseSecondBrainRecoveredRequestStatus(v.request_status, snapshot, checked);
-    recheck();
-    return Object.freeze({ kind: "scoped_journal_status_observed" as const, status });
-  } });
+    const refresh = () => {
+      const at = recheck();
+      return Object.freeze({ kind: "scoped_journal_status_observed" as const, status,
+        checked_at: at.toISOString(), valid_until: new Date(until).toISOString() });
+    };
+    return { observation: refresh(), refresh };
+  }
+  return Object.freeze({
+    recoverRequestStatus: async (input: MemoryScopedWriteRequestMaterial, signal?: AbortSignal) => {
+      const { observation } = await read(input, signal);
+      return Object.freeze({ kind: observation.kind, status: observation.status });
+    },
+    /** Trusted synchronous transaction consumer only; refresh expires on return.
+     * Refresh checks local authority, never refetches or renews the provider snapshot. */
+    withRecoveredRequestStatus: async <T>(input: MemoryScopedWriteRequestMaterial,
+      consume: (observation: Awaited<ReturnType<typeof read>>["observation"],
+        refresh: () => Awaited<ReturnType<typeof read>>["observation"]) => T, signal?: AbortSignal): Promise<T> => {
+      const result = await read(input, signal);
+      let active = true;
+      const refresh = () => { if (!active) return fail(); return result.refresh(); };
+      try { return consume(refresh(), refresh); }
+      finally { active = false; }
+    },
+  });
 }

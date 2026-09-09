@@ -273,6 +273,7 @@ export { verifyMemoryScopedProviderWrite } from "./memory-scoped-provider-author
 
 export { parseSecondBrainRecoveredRequestStatus, parseSecondBrainScopedRequestStatus } from "./second-brain-scoped-request-status.js";
 export { createMemoryScopedJournalClient, type MemoryScopedJournalClientOptions } from "./memory-scoped-journal-client.js";
+export { recoverMemoryScopedJournalAcceptance } from "./memory-scoped-journal-recovery.js";
 
 export { claimMemoryScopedReconciliation, readMemoryScopedReconciliationRequest,
   requireMemoryScopedReconciliationLease, releaseMemoryScopedReconciliation,
