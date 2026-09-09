@@ -176,7 +176,8 @@ export async function execute(
     try { if (!statSync(values.db).isFile()) throw new Error(); }
     catch { throw new JarvisError("TASK_PERFORMANCE_DATABASE_UNAVAILABLE"); }
   }
-  const db = new AuthorityDb(values.db, undefined, auditHistory ? { fileMustExist: true, readonly: true } : undefined);
+  const readOnlyReport = auditHistory || performanceReport || routingShadow;
+  const db = new AuthorityDb(values.db, undefined, readOnlyReport ? { fileMustExist: true, readonly: true } : undefined);
   const context: CliCommandContext = {
     args,
     values,
