@@ -242,10 +242,10 @@ export class GjcRuntimeService {
   async cycle(now = this.clock().toISOString()): Promise<{ processed: string | null; state: string | null }> {
     return this.once(now);
   }
-  async run(intervalMs = 10_000, stop: () => boolean = () => false): Promise<void> {
+  async run(intervalMs = 10_000, stop: () => boolean = () => false, cycle: () => Promise<unknown> = () => this.cycle()): Promise<void> {
     if (!Number.isInteger(intervalMs) || intervalMs < 1) throw new JarvisError("GJC_INTERVAL_INVALID");
     while (!stop()) {
-      await this.cycle();
+      await cycle();
       await new Promise((resolve) => setTimeout(resolve, intervalMs));
     }
   }

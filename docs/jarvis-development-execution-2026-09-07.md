@@ -1847,3 +1847,16 @@
   396,124 KiB; raw-row and ID memory remain unbounded.
 - Details: `docs/planning/adr-timeline-retained-tail.md`. Native review ship/no findings;
   prior canonical gate does not cover this implementation.
+
+### Configured daily service execution
+
+- service run/once now composes concrete stored morning and signed native-evening
+  execution when both existing config and key are supplied. Independent phase
+  startup/cycle and errors; no overlapping cycle; staged channel rejects daily config.
+- Final executable lint/typecheck/build 0; related 6 files / 46 tests passed.
+  Final service file expanded to 6 passing regressions including staged rejection
+  and missed recovery. Native independent review ship/no findings.
+- Actual compiled 6-cycle service + 3-cycle restart: morning/evening completed once,
+  1 native publication, unchanged daily run rows after restart. Synthetic clock/key.
+- Full gate, provider refresh, retention composition and production activation
+  remain pending. See docs/planning/task-daily-service-composition.md for evidence.

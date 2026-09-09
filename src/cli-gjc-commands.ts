@@ -7,6 +7,7 @@ import { GjcCoordinatorClient } from "./gjc.js";
 import { LiveSupervisor, type LiveSupervisorCycle } from "./live-supervisor.js";
 import { PreGjcShadow } from "./pre-gjc-shadow.js";
 import { PERSONAL_OS_CONTROL_CHANNEL_ENV, servePersonalOsCycleChannel } from "./personal-os-cycle-channel.js";
+import { DailyServiceCycles } from "./daily-service-cycles.js";
 import { PersonalOsRuntime } from "./personal-os-runtime.js";
 import { CYCLE_READY_TYPE } from "./personal-os-cycle-ready.js";
 
@@ -19,6 +20,12 @@ export async function executeGjcCommand(
 ): Promise<Record<string, unknown> | undefined> {
   const { command, subcommand, argument, values, db, dependencies } = context;
   if (command !== "gjc" && command !== "service") return undefined;
+  let daily: DailyServiceCycles | undefined;
+  if (command === "service" && (values.input !== undefined || values["key-file"] !== undefined)) {
+    if (!["once", "run"].includes(subcommand ?? "") || !values.input || !values["key-file"]
+      || process.env[PERSONAL_OS_CONTROL_CHANNEL_ENV]) throw new JarvisError("DAILY_LOOP_CONFIG_INVALID");
+    daily = await DailyServiceCycles.fromFiles(db, values.input, values["key-file"], () => commandNow(context));
+  }
   const gjc = new GjcCoordinatorClient(dependencies.gjcRunner, true);
   const shadow = new PreGjcShadow(db);
   const supervisor = new LiveSupervisor(db);
@@ -41,6 +48,21 @@ export async function executeGjcCommand(
       }
     },
   });
+  let lastDailyOutput: string | undefined;
+  const once = async () => {
+    const phases = await daily?.cycle();
+    if (phases !== undefined && subcommand === "run" && !values.once) {
+      const serialized = JSON.stringify(phases);
+      if (serialized !== lastDailyOutput) {
+        outputSync({ ok: true, command: "service.daily", scope: "stored-local-sources", provider_refresh: "unavailable", phases });
+        lastDailyOutput = serialized;
+      }
+    }
+    const result = await service.once(commandNow(context).toISOString());
+    return { ...result, ...(phases === undefined ? {} : { daily: {
+      scope: "stored-local-sources", provider_refresh: "unavailable", phases,
+    } }) };
+  };
   try {
     if (command === "gjc" && subcommand === "connect") {
       if (!argument) throw new JarvisError("GJC_CONFIG_INVALID");
@@ -118,7 +140,7 @@ export async function executeGjcCommand(
       return { ok: true, command: "service.status", ...service.status() };
     }
     if (command === "service" && subcommand === "once") {
-      return { ok: true, command: "service.once", ...(await service.once(commandNow(context).toISOString())) };
+      return { ok: true, command: "service.once", ...(await once()) };
     }
     if (command === "service" && subcommand === "run") {
       const control = process.env[PERSONAL_OS_CONTROL_CHANNEL_ENV];
@@ -136,10 +158,10 @@ export async function executeGjcCommand(
           ok: true,
           command: "service.run",
           interval_ms: interval,
-          ...(await service.once(commandNow(context).toISOString())),
+          ...(await once()),
         };
       }
-      await service.run(interval);
+      await service.run(interval, () => false, once);
       return { ok: true, command: "service.run", interval_ms: interval };
     }
     return undefined;
