@@ -30,6 +30,24 @@ function stage(): string {
 }
 
 describe("personal-OS release manifest", () => {
+  it("includes nested manifest names in the payload and rejects a symlink self-exclusion", () => {
+    const root = stage();
+    const input = {
+      root, artifact: "jarvis-authority" as const, source: SOURCE,
+      build: { source_date_epoch: 0, builder_command: "test", offline_cache_digest: "e".repeat(64),
+        lifecycle_command_digests: [], reproducibility_receipt: "g".repeat(64) },
+    };
+    const nested = join(root, "dist", MANIFEST_NAME);
+    writeFileSync(nested, "first");
+    const before = buildReleaseManifest(input);
+    expect(before.entries.some(entry => entry.path === `dist/${MANIFEST_NAME}`)).toBe(true);
+    writeFileSync(nested, "changed");
+    expect(buildReleaseManifest(input).payload_digest).not.toBe(before.payload_digest);
+    symlinkSync("package.json", join(root, MANIFEST_NAME));
+    expect(() => writeReleaseManifest({ ...input, sidecarDir: join(root, "sidecar") })).toThrow(PersonalOsError);
+    expect(readFileSync(join(root, "package.json"), "utf8")).toBe('{"name":"orca-jarvis-shadow"}\n');
+  });
+
   it("hashes every payload file except the manifest itself when building a jarvis-authority artifact", () => {
     // Given
     const root = stage();
