@@ -1823,3 +1823,15 @@
   collection remains incomplete; production activation is not established.
 - Detailed method, limits and QA receipt are in
   `docs/planning/adr-timeline-event-batches.md`.
+
+### Canonical gate for timeline event batching
+
+- `npm run verify` at cfaacc6b4dbe2247d9cee436acf70268340100db exited 0.
+- Backend shards: 250 files / 1,749 tests and 250 files / 1,787 tests.
+  Dashboard: 37 files / 255 tests. Total: 3,791 passing tests.
+- Runtime check, lint, typecheck, build, fixed-clock acceptance and CLI smoke
+  completed in the canonical command. All 1,738 tracked file hashes unchanged.
+- Evidence: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/verify-timeline-batch.log`,
+  `verify-timeline-batch-before.json`, `verify-timeline-batch-result.json`.
+- This gate predates the prepared top-k collection patch; it does not validate
+  that patch or establish production activation.
