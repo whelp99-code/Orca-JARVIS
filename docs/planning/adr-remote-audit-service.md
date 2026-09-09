@@ -40,3 +40,24 @@ Continuous service emits retention output only when its serialized state changes
 The canonical full verify run recorded on d66c50c predates this change; these
 focused results are not a replacement claim for a full gate on this revision.
 Broader development backlog and production operational acceptance remain open.
+
+## Canonical gate result
+
+Session37145 completed uninterrupted `npm run verify` with exit0. Backend shard1:
+259files/1805tests,575.77s; shard2:259files/1845tests,522.97s. Dashboard:
+37files/255tests,34.09s. Total3905test executions passed. Runtime, lint, three
+TypeScript configurations, build, fixed-clock acceptance and CLI smoke finished.
+Acceptance: pre_gjc_ready/stopped, completion_promoted=true, gjc_dispatched=false.
+
+Build provenance records HEAD687b231 with dirty source, input digest
+sha256:73a3f86a2c1605994c17fccd80de0ca3f38ecca61b724a6c86d4de271ef0270d,
+artifact digest sha256:8f3ddb7a40fd3fb2c0c3ad14883ca75a8a431faf3b0a326e2bc522d2a441f891.
+The implementation was committed during the run as ece7210; subsequent commits
+through2e6527d changed only documentation. Post-run diff against ece7210 for
+src/tests/dashboard/migrations/scripts/package files returned no changes. This
+was not a clean-HEAD-at-start run and no before/after full-tree hash was captured.
+Tracked worktree changes0; untracked node_modules link remains.
+
+Log: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/remote-audit-service-verify.log`.
+This closes this implementation's canonical gate, not production activation or
+backlog01–25. Provider refresh admission remains the next implementation boundary.
