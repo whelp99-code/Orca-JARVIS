@@ -1462,3 +1462,26 @@
   payload, real source/build identity, packaged CLI startup and isolated health/
   doctor/contract checks. Fixture manifest IDs and a source-string execute check
   are not sufficient. No production service, symlink or database was changed.
+
+### Complete runtime payload experiment — 2026-09-09
+
+- Source `2e0aa3f8e17d4265076fdd11d5ebcc866fd1096c`: full backend/dashboard
+  build exit0. Copied dist, migrations, config, package.json and package-lock.json
+  into isolated QA cache `runtime-package-7htxb2nv`; 1356 payload file hashes
+  match the source build, mismatch count0.
+- In that package root, `npm ci --omit=dev --offline --no-audit --no-fund`
+  exited0 and installed69 packages. node_modules is a real directory;
+  Electron absent. This is a local cached-install result, not an offline
+  reproducibility proof or a portable native-addon guarantee.
+- Packaged `node dist/src/cli.js --help` and `npm ls --omit=dev --json` exited0.
+  Existing scripts/cli-smoke.mjs executed with the package as cwd and QA-cache
+  TMPDIR, exit0: real CLI init/status/capabilities plus prohibited-command and
+  unsupported-GJC rejection checks passed against an isolated SQLite database.
+  Runtime imports and better-sqlite3 worked without the checkout's node_modules.
+- Evidence: runtime-package-receipt.json, dependency-install.log,
+  installed-runtime-dependencies.json, packaged-help.json and packaged-cli-smoke.log
+  in that cache directory; build log runtime-package-build.log in its parent.
+- This closes the earlier missing db.js reproduction for this experimental
+  complete payload. Reusable packaging automation, sealed source/reproducibility
+  evidence and packaged dashboard/doctor/provider health gates remain unfinished.
+  deployment_ready=false; no production activation or production DB mutation.
