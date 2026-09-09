@@ -296,3 +296,5 @@ export { createPhoneMemoryProviderVerifier, type PhoneMemoryProviderVerifierOpti
 export { type PhoneMemoryReconcileOptions } from "./phone-memory-reconcile.js";
 
 export { parsePhoneMemoryProviderCli, openPhoneMemoryProviderCli, type PhoneMemoryProviderCliOptions } from "./phone-memory-provider-cli.js";
+export { readPhoneMemoryContext, PhoneMemoryClientError } from "./phone-memory-client.js";
+export { createPhoneMemoryClientMcp } from "./phone-memory-client-mcp.js";
