@@ -26,7 +26,7 @@ it("rejects partial activation instead of silently falling back to the default",
     expect(() => parsePhoneGatewayCli(args(incomplete))).toThrow("PHONE_NOT_READY");
   }
 });
-it("passes parsed scoped settings through the executable startup composition", () => {
+it("passes parsed scoped settings through the executable startup composition", async () => {
   const close = vi.fn();
   vi.spyOn(gateway, "parsePhoneGatewayConfig").mockReturnValue({ publicOrigin: "https://fixture",
     publicHost: "fixture", ownerLogin: "fixture", sessionKey: Buffer.alloc(32), ownerDigest: Buffer.alloc(32) });
@@ -34,7 +34,7 @@ it("passes parsed scoped settings through the executable startup composition", (
     address: { host: "127.0.0.1", port: 4176, family: "IPv4" }, close,
   });
   const parsed = parsePhoneGatewayCli(args(fields)); const output: string[] = [];
-  const running = startPhoneGatewayCli(parsed, line => output.push(line));
+  const running = await startPhoneGatewayCli(parsed, line => output.push(line));
   expect(create).toHaveBeenCalledWith(expect.objectContaining({ memoryReconcile: parsed.memoryReconcile }));
   expect(output).toEqual(["http://127.0.0.1:4176"]);
   running.close(); expect(close).toHaveBeenCalledOnce();

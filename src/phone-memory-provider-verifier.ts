@@ -12,8 +12,9 @@ export type PhoneMemoryProviderVerifierOptions = Omit<ScopedProviderProductionOp
  * reads the original dispatch; it neither dispatches nor accepts a memory write. */
 export function createPhoneMemoryProviderVerifier(options: PhoneMemoryProviderVerifierOptions, clock: () => Date) {
   if (!/^agent:[A-Za-z0-9][A-Za-z0-9._:-]{0,121}$/.test(options.agent_id)) throw new JarvisError("MEMORY_SCOPED_CONFIG_INVALID");
-  return (body: Buffer, session: () => AuthenticatedMemorySession | undefined) => {
+  return async (body: Buffer, session: () => AuthenticatedMemorySession | undefined) => {
     try {
+      await options.authority.assertMigrationsReady();
       const raw = new TextDecoder("utf-8", { fatal: true }).decode(body);
       const request = parseMemoryScopedWriteRequestJson(raw, options.provider_instance_id, clock());
       const verify = createProductionScopedProviderVerifier(options.authority, {

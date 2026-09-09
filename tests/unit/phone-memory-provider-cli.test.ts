@@ -1,3 +1,4 @@
+import { AuthorityDb } from "../../src/db.js";
 import { existsSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, expect, it, vi } from "vitest";
@@ -35,7 +36,7 @@ it("does not create a missing authority database", async () => {
   try {
     const path = join(f.root, "missing.sqlite");
     const parsed = parsePhoneGatewayCli(args({ ...fields, "provider-verify-db": path })).memoryProvider!;
-    expect(() => openPhoneMemoryProviderCli(parsed)).toThrow();
+    await expect(openPhoneMemoryProviderCli(parsed)).rejects.toThrow();
     expect(existsSync(path)).toBe(false);
   } finally { closeMemoryDatabase(f); }
 });
@@ -52,13 +53,33 @@ it.each(["success", "server_failure", "output_failure"])("owns and closes the co
     });
     const parsed = parsePhoneGatewayCli(args({ ...fields, "provider-verify-db": f.path }));
     const start = () => startPhoneGatewayCli(parsed, () => { if (mode === "output_failure") throw new Error("fixture output failure"); });
-    if (mode === "success") { const running = start(); running.close(); running.close(); }
-    else expect(start).toThrow("fixture");
+    if (mode === "success") { const running = await start(); running.close(); running.close(); }
+    else await expect(start()).rejects.toThrow("fixture");
     const options = create.mock.calls[0]![0].memoryProviderVerifier!;
     expect(options.authority).not.toBe(f.authority);
     expect(options.authority.db.open).toBe(false);
     expect(f.authority.db.open).toBe(true);
     expect(f.authority.db.prepare("SELECT total_changes() AS n").get()).toEqual(before);
     expect(close).toHaveBeenCalledTimes(mode === "server_failure" ? 0 : 1);
+  } finally { closeMemoryDatabase(f); }
+});
+
+
+it.each(["future", "pending", "checksum"])("rejects %s DB history before binding a server and closes its connection", async mode => {
+  const f = await memoryDatabase();
+  try {
+    if (mode === "future") f.authority.db.prepare("INSERT INTO schema_migrations VALUES (?,?,?)")
+      .run("999_future.sql", "a".repeat(64), "2026-09-09T00:00:00.000Z");
+    if (mode === "pending") f.authority.db.prepare("DELETE FROM schema_migrations WHERE id='080_memory_scoped_settlements.sql'").run();
+    if (mode === "checksum") f.authority.db.prepare("UPDATE schema_migrations SET checksum=? WHERE id='080_memory_scoped_settlements.sql'").run("b".repeat(64));
+    vi.spyOn(gateway, "parsePhoneGatewayConfig").mockReturnValue({ publicOrigin: "https://fixture",
+      publicHost: "fixture", ownerLogin: "fixture", sessionKey: Buffer.alloc(32), ownerDigest: Buffer.alloc(32) });
+    const create = vi.spyOn(gateway, "createPhoneGatewayServer");
+    const close = vi.spyOn(AuthorityDb.prototype, "close");
+    const parsed = parsePhoneGatewayCli(args({ ...fields, "provider-verify-db": f.path }));
+    await expect(startPhoneGatewayCli(parsed)).rejects.toMatchObject({ code: mode === "future"
+      ? "MIGRATION_VERSION_UNSUPPORTED" : mode === "pending" ? "MIGRATIONS_PENDING" : "MIGRATION_CHECKSUM_MISMATCH" });
+    expect(create).not.toHaveBeenCalled(); expect(close).toHaveBeenCalledOnce();
+    expect(f.authority.db.open).toBe(true);
   } finally { closeMemoryDatabase(f); }
 });

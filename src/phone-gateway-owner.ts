@@ -223,7 +223,7 @@ async function serveMatchedRoute(
     const session = createPhoneMemorySessionSource({ sessions: ctx.sessions, cookieHeader: () => cookieHeader,
       currentOwnerDigest: () => ctx.config.ownerDigest, agentId: ctx.memoryProviderAgentId, now: ctx.now });
     let result;
-    try { result = ctx.memoryProviderVerifier(body, session); }
+    try { result = await ctx.memoryProviderVerifier(body, session); }
     catch (error) {
       if (!stillAuthenticated()) return;
       const code = phoneMemoryContextError(error);

@@ -69,10 +69,10 @@ export function parsePhoneGatewayCli(argv: readonly string[]): PhoneGatewayCliOp
   };
 }
 
-export function startPhoneGatewayCli(
+export async function startPhoneGatewayCli(
   options: PhoneGatewayCliOptions,
   write: (line: string) => void = line => { process.stdout.write(`${line}\n`); },
-): { close: () => void } {
+): Promise<{ close: () => void }> {
   const getuid = process.getuid;
   const home = process.env.HOME;
   if (getuid === undefined || home === undefined || home.length === 0) {
@@ -80,7 +80,7 @@ export function startPhoneGatewayCli(
   }
   const uid = getuid();
   const config = parsePhoneGatewayConfig({ home, envFile: options.envFile, uid });
-  const provider = options.memoryProvider === undefined ? undefined : openPhoneMemoryProviderCli(options.memoryProvider);
+  const provider = options.memoryProvider === undefined ? undefined : await openPhoneMemoryProviderCli(options.memoryProvider);
   let server: PhoneGatewayServer;
   try {
     server = createPhoneGatewayServer({
@@ -114,7 +114,7 @@ function isDirectRun(): boolean {
 
 if (isDirectRun()) {
   try {
-    const runtime = startPhoneGatewayCli(parsePhoneGatewayCli(process.argv.slice(2)));
+    const runtime = await startPhoneGatewayCli(parsePhoneGatewayCli(process.argv.slice(2)));
     const shutdown = (): void => {
       runtime.close();
       process.exit(0);

@@ -32,9 +32,11 @@ export function parsePhoneMemoryProviderCli(values: Readonly<Record<string, unkn
 
 /** Own only this connection. Never initialize/migrate an authority or issue a session.
  * SQLite fileMustExist prevents a mistyped path from creating an empty authority. */
-export function openPhoneMemoryProviderCli(config: PhoneMemoryProviderCliOptions) {
+export async function openPhoneMemoryProviderCli(config: PhoneMemoryProviderCliOptions) {
   const { database_path, ...options } = config;
   const authority = new AuthorityDb(database_path, undefined, { fileMustExist: true });
+  try { await authority.assertMigrationsReady(); }
+  catch (error) { authority.close(); throw error; }
   let closed = false;
   return { options: { ...options, authority }, close: () => {
     if (closed) return; closed = true; authority.close();
