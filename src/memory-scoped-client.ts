@@ -6,6 +6,9 @@ import { parseScopedSecondBrainResponse } from "./second-brain-scoped-read.js";
 import type { SecondBrainAdapterBudgets } from "./second-brain-adapter-types.js";
 import type { SecondBrainTransport } from "./second-brain-transport.js";
 
+import type { MemoryScopedWriteRequestMaterial } from "./memory-scoped-write-request.js";
+import { rememberedArtifactExpectation, verifyRememberedArtifactRead } from "./second-brain-remembered-artifact.js";
+
 type Issuer = ReturnType<typeof createProductionMemoryAccessClaim>;
 type Bundle = ReturnType<Issuer>;
 export type MemoryScopedClientOptions = {
@@ -30,12 +33,17 @@ const denied = (): never => { throw new JarvisError("MEMORY_SCOPED_READ_UNAVAILA
 /** Connects the current authenticated scope issuer, supervised transport and record
  * consumer. Does not own sessions, cache permissions, or attest task success. */
 export function createMemoryScopedClient(options: MemoryScopedClientOptions) {
-  async function read(method: "sb_read_page" | "sb_search" | "sb_generation_status", arguments_: Readonly<Record<string, unknown>>, signal?: AbortSignal) {
+  async function read(method: "sb_read_page" | "sb_search" | "sb_generation_status",
+    arguments_: Readonly<Record<string, unknown>>, signal?: AbortSignal, artifact?: ReturnType<typeof rememberedArtifactExpectation>) {
     const request: MemoryAccessRequest = Object.freeze({ method, arguments: Object.freeze({ ...arguments_ }) });
     if (method === "sb_generation_status" && options.profile !== "scoped-record-read-v2") return denied();
     const issue = method === "sb_generation_status" ? options.status_issue : options.issue;
     if (issue === undefined) return denied();
     const bundle = issue(request, new Date(options.now().getTime()));
+    if (artifact !== undefined && (bundle.access_claim.provider_instance_id !== artifact.provider
+      || bundle.access_claim.principal_id !== artifact.owner || bundle.access_claim.policy_revision !== artifact.policy
+      || (artifact.projects.length === 0 ? bundle.access_claim.projects.length !== 0
+        : artifact.projects.some(project => !bundle.access_claim.projects.includes(project))))) return denied();
     const original = identity(bundle);
     const recheck = () => {
       const at = new Date(options.now().getTime());
@@ -61,6 +69,11 @@ export function createMemoryScopedClient(options: MemoryScopedClientOptions) {
     return parsed;
   }
   return {
+    readRememberedArtifact: async (request: MemoryScopedWriteRequestMaterial, acceptance: unknown, signal?: AbortSignal) => {
+      const expected = rememberedArtifactExpectation(request, acceptance, new Date(options.now().getTime()));
+      const response = await read("sb_read_page", { id: expected.page_id }, signal, expected);
+      return verifyRememberedArtifactRead(expected, response);
+    },
     authorizationIdentity: () => {
       if (options.profile !== "scoped-record-read-v2" || options.status_issue === undefined) return denied();
       return identity(options.status_issue({ method: "sb_generation_status", arguments: {} }, new Date(options.now().getTime())));

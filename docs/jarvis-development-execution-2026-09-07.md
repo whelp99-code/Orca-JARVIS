@@ -1222,3 +1222,57 @@
   hashes matched. Requested terra/high; runtime model/effort unobservable.
   Final build/lint/three type checks26572 exit0. Parent accepted the bounded unit
   after review; only this acceptance record was appended before commit.
+
+
+### Scoped outbox integration acceptance — 2026-09-09
+
+- Integrated six pinned commits through3034eda1eca7fefdd3c5cb7527daea3f284f4faf
+  into1a020bd3c97792a3f04b834d1120e08be856b8cf; merge commit pending review.
+  Index export conflict resolved through existing memory-scoped-api barrel.
+  Five incoming files needed line wrapping for repository reviewability limits.
+- Focused tests:66 passed with1 source-reviewability failure, then remaining two
+  line-length violations fixed and reviewability2 passed. Final full verify93066
+  exit0: backend1684/240files759.21s +1708/239files757.55s; dashboard252/36files
+  32.22s, total3644tests/515files. Runtime/lint/three typechecks/build/fixed-clock
+  acceptance/CLI smoke passed. scoped-dispatch-full-before/after.json records
+  1653 tracked files unchanged during the full gate.
+- Parent inspected production/test/fixture/docs diff. Existing SQL bytes from
+  parents81/78files preserved. Isolated populated DB upgrade81→82 with two Node
+  processes preserved one queued legacy outbox and every column; FK0/quick_checkok.
+- Compiled worker acceptance83056 exit0:13 child processes, two crash/fence
+  scenarios, attempts1 each, re-dispatch claims0, FK0, reconciling retained.
+  Compiled cross-repo result acceptance11956 exit0:Python3/Node3, acknowledgement
+  loss exit73, acceptance events1, FK0, provider proved/JARVIS reconciling.
+  Fixture authority and internal API transport; no public MCP or production grant.
+- Static runtime import graph609modules/2205edges/cycles0; TypeScript exports898
+  include types. Runtime exports399, eight added functions match original module
+  references with mismatches0. Logs/receipts: scoped-dispatch-* and
+  verify-scoped-dispatch-full.log under /home/jm/.cache/jarvis-test-runtime-qa-20260908/.
+- HOLD: generation identity/proof alone does not attest stored project access
+  classification. proof_consistent/remembered_content_observed never settle an
+  outbox or complete control. Current write transport, authenticated provider
+  receipt consumption, exact stored scope proof, original task→derived memory
+  suppression/deletion lifecycle and operational activation remain incomplete.
+  No deployment/service restart/operational DB mutation performed. Full01–25 open.
+
+- Independent scoped_dispatch_review returned fix-first with one major finding:
+  a recovered late acceptance left DISPATCH_OUTCOME_UNKNOWN after attempt accepted.
+  Parent clears only that stale code on matching scoped-v4/reconciling/fence,
+  retains reconciling and unrelated reasons, and asserts replay adds no DB writes.
+- Post-fix build98644 exit0; tests78435 exit0:18tests/4files15.52s;
+  lint/three typechecks72902 exit0. Actual2996 exit0:Python3/Node3 replay/crash
+  acceptance, events1/FK0, stale_failure_code null, reconciling retained.
+  Receipt scoped-dispatch-late-live.json; test log scoped-dispatch-late-tests.log.
+  Prior full3644 is pre-fix; the post-fix change has focused and actual coverage.
+- SB latest SCOPED-GENERATION-IDENTITY-FIX-2026-09-09.md reports provider-side
+  access classification binding repaired. Earlier P0 statements are historical.
+  JARVIS exact scoped evidence, authenticated consumption, old-reader/old-generation
+  rollout and automatic settlement remain HOLD; provider repair alone does not
+  satisfy those integration requirements. Fresh post-fix review pending.
+
+- Fresh independent scoped_late_acceptance_review returned ship/findings0.
+  Reviewer checked all31 packet hashes, acceptance transaction and replay assertions;
+  no tests rerun by reviewer. Parent revalidated31/31 hashes and both merge parents
+  before acceptance. Full3644 gate predates fix; post-fix18 and crash/replay evidence
+  remain the final verification scope. Requested terra/high; actual model/effort
+  and token usage unavailable. Parent accepts this bounded integration for commit.

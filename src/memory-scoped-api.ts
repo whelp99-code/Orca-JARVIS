@@ -14,3 +14,11 @@ export { parseMemoryScopedWriteRequestJson } from "./memory-scoped-write-codec.j
 export { MemoryScopedWriteSpool } from "./memory-scoped-write-spool.js";
 
 export { publishMemoryScopedWriteRequest, type MemoryScopedPublicationOptions } from "./memory-scoped-write-publication.js";
+
+export { registerMemoryScopedOutbox } from "./memory-scoped-outbox.js";
+export { readCurrentMemoryScopedOutbox } from "./memory-scoped-outbox-reader.js";
+export { claimMemoryScopedOutbox, markMemoryScopedOutboxDispatch, recoverMemoryScopedOutboxDispatches,
+  type MemoryScopedOutboxLease } from "./memory-scoped-outbox-worker.js";
+export { parseSecondBrainScopedWriteAccepted, type SecondBrainScopedWriteAccepted } from "./second-brain-scoped-write-result.js";
+export { recordMemoryScopedOutboxAcceptance } from "./memory-scoped-outbox-result.js";
+export { verifySecondBrainScopedProof } from "./second-brain-scoped-proof.js";

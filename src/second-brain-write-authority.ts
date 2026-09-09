@@ -34,6 +34,18 @@ export function hasSecondBrainWriteAuthority(
   request: SecondBrainRememberWriteRequest,
   now: Date,
 ): boolean {
+  return hasMemorySourceAuthority(authority, request, now);
+}
+
+/** Source authority for one queued scoped registration only. This does not grant
+ * provider dispatch: current scope and a worker lease are separate requirements. */
+export function hasRegisteredScopedSourceAuthority(authority: AuthorityDb,
+  request: SecondBrainRememberWriteRequest, outboxId: string, now: Date): boolean {
+  return hasMemorySourceAuthority(authority, request, now, outboxId);
+}
+
+function hasMemorySourceAuthority(authority: AuthorityDb, request: SecondBrainRememberWriteRequest,
+  now: Date, scopedOutboxId?: string): boolean {
   if (new MemoryProjectionAuthority(authority).isProjectionIdSuppressed(request.candidate_id)) return false;
   const value = authority.db.prepare(
     `SELECT c.candidate_id,c.state,c.operation,c.required_confirmation,c.content_digest,c.subject_digest,c.purpose,
@@ -68,7 +80,15 @@ export function hasSecondBrainWriteAuthority(
   if (value === undefined) return false;
   const row = persistenceRow(value);
   const terminalReceipt = row["control_receipt_id"] ?? row["verification_evidence_id"];
-  const candidateStateValid = row["state"] === "approved" || (
+  const scopedRegistration = scopedOutboxId === undefined ? undefined : authority.db.prepare(`
+    SELECT 1 FROM memory_scoped_outbox_bindings b JOIN memory_outbox o ON o.outbox_id=b.outbox_id
+    WHERE b.outbox_id=? AND b.candidate_id=? AND b.source_request_id=? AND b.source_request_digest=?
+    AND o.request_profile='scoped-v4' AND o.state IN ('queued','claimed')
+    AND o.candidate_id=b.candidate_id AND o.request_id=b.request_id AND o.request_digest=b.request_digest
+    AND o.idempotency_key=b.idempotency_key`).get(scopedOutboxId, request.candidate_id, request.request_id, request.request_digest);
+  const candidateStateValid = scopedOutboxId !== undefined
+    ? row["state"] === "queued" && scopedRegistration !== undefined
+    : row["state"] === "approved" || (
     row["state"] === "accepted_unsettled" && row["outbox_state"] === "dispatching"
     && row["outbox_request_id"] === request.request_id
     && row["outbox_request_digest"] === request.request_digest

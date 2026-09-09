@@ -152,10 +152,28 @@ export function readMemoryCandidate(
     retention_days: core.retention_days, policy_digest: core.policy_digest,
   });
   const classificationDigest = memoryDigest(row["classification_digest"]);
+  let classificationValid = classificationDigest === memoryHash(MEMORY_CANDIDATE_DIGEST_DOMAINS.classification, core);
+  if (!classificationValid) {
+    // Classification hashes its original state, while the candidate row follows
+    // the delivery lifecycle. Recover that state from the immutable creation
+    // audit, and verify both digests; never skip the classification hash check.
+    const audits = database.prepare(`SELECT event_id,event_type,event_digest FROM personal_operation_audit_events
+      WHERE subject_kind='memory_candidate' AND subject_id=? AND correlation_id=? AND created_at=?`)
+      .all(core.candidate_id, core.correlation_id, core.created_at) as Array<{ event_id: string; event_type: string; event_digest: string }>;
+    classificationValid = audits.some(audit => {
+      const state = audit.event_type.replace(/^memory\.candidate\./, "");
+      if (!["classified", "awaiting_confirmation", "approved", "rejected", "expired"].includes(state)) return false;
+      const digest = memoryHash(MEMORY_CANDIDATE_DIGEST_DOMAINS.audit, {
+        candidate_id: core.candidate_id, classification_digest: classificationDigest, state });
+      return audit.event_type === `memory.candidate.${state}` && audit.event_digest === digest
+        && audit.event_id === `event:memory:${digest.slice(7)}`
+        && classificationDigest === memoryHash(MEMORY_CANDIDATE_DIGEST_DOMAINS.classification, { ...core, state });
+    });
+  }
   if (row["schema_version"] !== 1 || core.source_digest !== expectedSource || core.dedup_key !== expectedDedup
     || core.candidate_id !== `memcand:pos:v1:${identityDigest.slice(7)}`
     || core.correlation_id !== `corr:memory:${identityDigest.slice(7)}` || core.candidate_digest !== expectedCandidate
-    || classificationDigest !== memoryHash(MEMORY_CANDIDATE_DIGEST_DOMAINS.classification, core)) {
+    || !classificationValid) {
     return memoryFail("MEMORY_CANDIDATE_INTEGRITY_FAILURE");
   }
   return { ...core, classification_digest: classificationDigest };
