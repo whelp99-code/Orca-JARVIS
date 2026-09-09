@@ -1699,3 +1699,25 @@
   scoped-integration-browser-1w2lwv7a/receipt.json; log scoped-integration-e2e.log.
   Full canonical verify91507 remains separate on frozen a6c6988 with1735tracked
   files captured before execution; final gate completion is still unproven.
+
+### Installed runtime dependency identity — 2026-09-09
+
+- The isolated packager now records every installed dependency file, directory,
+  mode and relative symlink target, including manifest-named files. It reuses the
+  release walker with a distinct digest domain and checks the dependency identity
+  after install and again after CLI/runtime checks. Existing release exclusions
+  and payload digests are preserved. This is an unsigned local snapshot.
+- Parent lint/typecheck and actual build/package command exit0. Focused manifest
+  and release rehearsal regression:2files9tests passed. Actual package
+  jarvis-runtime-oTABz3 contains2843dependency entries,2527files,3symlinks,
+  32691716bytes. File-content and executable-mode mutations changed the identity;
+  restoring original bytes/mode restored the digest.
+- Independent bwrap CLI smoke hides canonical source and all JARVIS workspaces
+  and unshares network:exit0. Dependency identity matched afterward. Old frozen
+  compiled release manifest and new manifest JSON matched on an isolated fixture
+  with root/nested manifest names and a relative link. Artifacts in shared QA:
+  package-dependency-{actual-acceptance,compatibility}.json and build/test logs.
+- Production activation and reproducibility remain unverified; deployment_ready
+  stays false. Full verify91507 remains separate on frozen a6c6988.
+- Fresh runtime_dependency_review returned ship,0findings; requested terra/high,
+  actual model/effort unobservable. It reviewed the implementation and QA evidence.

@@ -1,7 +1,8 @@
-import { mkdirSync, writeFileSync, symlinkSync, readFileSync } from "node:fs";
+import { chmodSync, mkdirSync, writeFileSync, symlinkSync, readFileSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
-import { buildReleaseManifest, MANIFEST_NAME, writeReleaseManifest } from "../../src/personal-os-release-manifest.js";
+import { buildReleaseManifest, MANIFEST_NAME, runtimeDependencyIdentity,
+  writeReleaseManifest } from "../../src/personal-os-release-manifest.js";
 import { PersonalOsError } from "../../src/personal-os-errors.js";
 import { personalOsScratch, removeScratch } from "../fixtures/personal-os-scratch.js";
 
@@ -30,6 +31,38 @@ function stage(): string {
 }
 
 describe("personal-OS release manifest", () => {
+  it("identifies dependency bytes, modes, symlink targets and manifest-named files without exclusions", () => {
+    const root = stage();
+    mkdirSync(join(root, ".bin"));
+    symlinkSync("../dist/src/cli.js", join(root, ".bin/tool"));
+    const original = runtimeDependencyIdentity(root);
+    expect(runtimeDependencyIdentity(root)).toEqual(original);
+    writeFileSync(join(root, "dist/src", MANIFEST_NAME), "first");
+    const withManifest = runtimeDependencyIdentity(root);
+    expect(withManifest.digest).not.toBe(original.digest);
+    writeFileSync(join(root, "dist/src", MANIFEST_NAME), "other");
+    const withChangedManifest = runtimeDependencyIdentity(root);
+    expect(withChangedManifest.digest).not.toBe(withManifest.digest);
+    chmodSync(join(root, "dist/src/cli.js"), 0o700);
+    const executable = runtimeDependencyIdentity(root);
+    expect(executable.digest).not.toBe(withChangedManifest.digest);
+    unlinkSync(join(root, ".bin/tool"));
+    symlinkSync("../package.json", join(root, ".bin/tool"));
+    const retargeted = runtimeDependencyIdentity(root);
+    expect(retargeted.digest).not.toBe(executable.digest);
+    writeFileSync(join(root, "dist/src/cli.js"), "export const changed = true;\n");
+    expect(runtimeDependencyIdentity(root).digest).not.toBe(retargeted.digest);
+  });
+
+  it("rejects an escaping dependency link or a symlink used as the dependency root", () => {
+    const root = stage();
+    symlinkSync("..", join(root, "escape"));
+    expect(() => runtimeDependencyIdentity(root)).toThrow("E_UNSAFE_SYMLINK");
+    unlinkSync(join(root, "escape"));
+    symlinkSync("dist", join(root, "linked-root"));
+    expect(() => runtimeDependencyIdentity(join(root, "linked-root"))).toThrow("E_STAGE_INVALID");
+  });
+
   it("hashes every payload file except the manifest itself when building a jarvis-authority artifact", () => {
     // Given
     const root = stage();

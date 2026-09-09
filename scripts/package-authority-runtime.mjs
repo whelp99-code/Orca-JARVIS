@@ -2,6 +2,7 @@ import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, openSync, closeSync, readFileSync, writeFileSync } from "node:fs";
 import { basename, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
+import { pathToFileURL } from "node:url";
 import { BACKEND_OUTPUT_ROOTS, backendSourceIdentity, fileIdentity } from "./lib/backend-build-identity.mjs";
 
 const { values } = parseArgs({ options: { "output-parent": { type: "string" } }, strict: true });
@@ -42,6 +43,8 @@ try {
   if (fileIdentity(output, roots).digest !== before.digest) throw new Error("RUNTIME_PACKAGE_COPY_MISMATCH");
   run("npm", ["ci", "--omit=dev", "--offline", "--no-audit", "--no-fund"], output,
     join(output, "dependency-install.log"));
+  const { runtimeDependencyIdentity } = await import(pathToFileURL(join(root, "dist/src/personal-os-release-manifest.js")));
+  const dependencies = runtimeDependencyIdentity(join(output, "node_modules"));
   mkdirSync(join(output, "smoke-state"));
   run(process.execPath, ["scripts/cli-smoke.mjs"], output, join(output, "cli-smoke.log"),
     { ...process.env, TMPDIR: join(output, "smoke-state") });
@@ -59,8 +62,12 @@ try {
   if (JSON.stringify(source) !== JSON.stringify(backendSourceIdentity(root))
     || fileIdentity(root, roots).digest !== before.digest
     || fileIdentity(output, roots).digest !== before.digest) throw new Error("RUNTIME_PACKAGE_INPUT_CHANGED");
+  if (runtimeDependencyIdentity(join(output, "node_modules")).digest !== dependencies.digest) {
+    throw new Error("RUNTIME_PACKAGE_DEPENDENCIES_CHANGED");
+  }
   const receipt = { schema_version: 1, kind: "isolated-authority-runtime-package", source,
-    payload: before, validation: { production_dependency_install: "passed", cli_smoke: "passed", runtime_identity: "passed",
+    payload: before, dependencies,
+    validation: { production_dependency_install: "passed", dependency_identity: "passed", cli_smoke: "passed", runtime_identity: "passed",
       dashboard: "not_performed", provider: "not_performed", reproducibility: "not_performed" },
     deployment_ready: false };
   writeFileSync(join(output, "runtime-package-receipt.json"), `${JSON.stringify(receipt)}\n`, { flag: "wx", mode: 0o600 });

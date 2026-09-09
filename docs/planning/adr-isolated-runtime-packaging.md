@@ -26,3 +26,11 @@ that packaged copy during packaging and permit the same entrypoint for independe
 revalidation. It imports only Node builtins and invokes the package's own CLI, so
 the source checkout is unnecessary after artifact creation. This closes the former
 source-harness dependency without copying the entire developer script tree.
+
+Installed dependencies must also have an observed identity: hash all files, modes,
+directories and relative symlink targets under node_modules after npm ci, then
+compare again after smoke and runtime identity checks. Reuse the release manifest
+walker, but exclude no filenames for dependencies (including release.manifest.json).
+Use a distinct digest domain; existing release manifest bytes and exclusions remain
+unchanged. Record this separate identity in the package receipt. This is a local
+snapshot, not a signature, reproducible build proof, or production activation gate.

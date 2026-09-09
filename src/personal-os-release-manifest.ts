@@ -55,16 +55,16 @@ export type ManifestInput = {
   readonly build: ReleaseBuild;
 };
 
-function walk(root: string, dir: string, entries: ManifestEntry[]): void {
+function walk(root: string, dir: string, entries: ManifestEntry[], excludeManifest: boolean): void {
   for (const name of readdirSync(dir).sort()) {
-    if (name === MANIFEST_NAME) continue;
+    if (excludeManifest && name === MANIFEST_NAME) continue;
     const full = join(dir, name);
     const rel = relative(root, full).split(sep).join("/");
     const stat = lstatSync(full);
     const mode = stat.mode & 0o777;
     if (stat.isDirectory()) {
       entries.push({ path: rel, type: "directory", mode, size: 0, sha256: null, target: null });
-      walk(root, full, entries);
+      walk(root, full, entries, excludeManifest);
       continue;
     }
     if (stat.isSymbolicLink()) {
@@ -82,10 +82,30 @@ function walk(root: string, dir: string, entries: ManifestEntry[]): void {
   }
 }
 
+export function runtimeDependencyIdentity(directory: string): {
+  readonly entries: readonly ManifestEntry[];
+  readonly entry_count: number;
+  readonly total_bytes: number;
+  readonly digest: string;
+} {
+  const root = assertIsolatedRoot(directory);
+  if (!lstatSync(root).isDirectory()) throw new PersonalOsError("E_STAGE_INVALID");
+  const entries: ManifestEntry[] = [];
+  walk(root, root, entries, false);
+  entries.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
+  return {
+    entries,
+    entry_count: entries.length,
+    total_bytes: entries.reduce((sum, entry) => sum + entry.size, 0),
+    digest: createHash("sha256").update("orca-jarvis/runtime-dependencies/v1\0")
+      .update(canonicalize(entries)).digest("hex"),
+  };
+}
+
 export function buildReleaseManifest(input: ManifestInput): ReleaseManifest {
   const root = assertIsolatedRoot(input.root);
   const entries: ManifestEntry[] = [];
-  walk(root, root, entries);
+  walk(root, root, entries, true);
   entries.sort((left, right) => (left.path < right.path ? -1 : left.path > right.path ? 1 : 0));
   const total_bytes = entries.reduce((sum, entry) => sum + entry.size, 0);
   const payload_digest = createHash("sha256").update(PAYLOAD_DOMAIN).update(canonicalize(entries)).digest("hex");
@@ -121,4 +141,3 @@ export function writeReleaseManifest(input: ManifestInput & { readonly sidecarDi
   writeFileSync(sidecarPath, sidecar);
   return { manifest, sidecarPath };
 }
-
