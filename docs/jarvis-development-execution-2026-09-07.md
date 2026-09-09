@@ -1880,3 +1880,26 @@
   saved in daily-refresh-integration-boundary.json in QA. No provider changes made.
 - Full backlog 01–25 remains active; refresh/retention implementation and production
   activation are not established by this canonical gate.
+
+### Integration prerequisite audit — 2026-09-09
+
+- Development HEAD: 928f1342f301c62bdf1292f175b36903b1e8392b.
+  Local main: 70d04285e59b3cc49ba523146a3497960dc22d4a.
+- `git rev-list --left-right --count main...HEAD`: 12 / 121.
+  Worktree status: 0 tracked changes, 1 untracked node_modules entry.
+- Non-checkout `git merge-tree --write-tree HEAD main` exited 1, producing
+  candidate tree 424ba325eb6a75346cc9d9a64af2ee765cf54eff and six content conflicts:
+  src/index.ts, src/phone-gateway-owner.ts, src/second-brain-frozen.ts,
+  src/second-brain-transport-contract.ts, src/second-brain-transport.ts,
+  tests/integration/memory-cancellation-db.test.ts. No merge was applied.
+- Main-only changes span 60 files, 2,592 insertions and 46 deletions relative to
+  the common ancestor, including scoped journal recovery, gateway reconciliation,
+  authenticated memory clients, migration readiness and recovered migration 028.
+- Next integration unit must preserve both branches' scoped memory contracts,
+  reconcile gateway ownership and cancellation behavior, and check recovered SQL
+  against its historical-byte evidence without rewriting shipped migrations.
+  Dependency lock and packaging changes also require runtime fixture verification.
+- The 3,799-test gate covers the development implementation before integration;
+  it is not evidence for the candidate tree. Integration, focused contract tests,
+  independent review and a subsequent canonical gate remain required. Full backlog
+  01–25 is unchanged; no production activation or completion is claimed.
