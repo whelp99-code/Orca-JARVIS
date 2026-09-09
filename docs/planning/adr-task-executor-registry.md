@@ -126,3 +126,40 @@ The concurrent full verify is frozen at 8b98cd8 and excludes this unit.
 
 Read-only review `/root/executor_plan_review`: ship, findings 0. Requested
 luna/high; actual model and effort were not exposed by tool metadata.
+
+
+## 2026-09-10 Codex adapter admission investigation
+
+At JARVIS3adb8d8, task-execution-plan.ts accepts provider=codex in the signed shape,
+but task-executor-registry.ts contains only the compiled Claude factory. Syntactic
+acceptance does not mean that a Codex runtime is available. The shared candidate
+boundary accepts declared file content plus the exact execution_plan_digest;
+it preserves read-only snapshot inputs and independently verifies publication.
+
+Local read-only CLI inspection returned codex-cli0.153.4 at
+/home/jm/.nvm/versions/node/v24.19.0/bin/codex. `codex exec --help` exited0 and
+advertised --output-schema, --json, --ephemeral, --ignore-user-config,
+--ignore-rules, --sandbox and --cd. No task prompt, authentication operation,
+model request or provider execution was performed. This local version/help result
+is not authenticated execution evidence and does not describe other installations.
+
+Admission remains held until an adapter satisfies the actual candidate-only contract:
+
+1. Verify an installed version and its supported invocation/configuration against
+   a pinned protocol; do not guess configuration keys from feature names.
+2. Demonstrate that model tools, MCP, hooks and ambient project/user instructions
+   cannot expand the declared snapshot or execute side effects. Read-only shell
+   sandbox selection alone is not evidence that external tools are disabled.
+3. Parse bounded JSONL while bounding combined stdout/stderr, enforce one remaining
+   deadline and process-tree cancellation, and reject missing/duplicate/malformed
+   terminal candidate results. Do not treat a CLI success event as TaskCompletion.
+4. Preserve execution_plan_digest and declared file scope through the existing
+   candidate parser, independent verifier, single-use approval and Git publication.
+5. Exercise a real isolated approved change, timeout, cancellation, stale approval,
+   hostile tool request, unexpected output and restart/replay before registering
+   the compiled factory. No automatic fallback from Claude to Codex.
+
+This is a concrete adapter acceptance checklist, not an implementation or claim
+that the inspected CLI lacks all possible isolation mechanisms. The installed
+binary alone is insufficient to enable the executor. Existing Claude development
+and other backlog items remain in scope.
