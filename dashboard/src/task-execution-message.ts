@@ -34,6 +34,15 @@ export function taskExecutionMessage(error: unknown): string {
   if (error instanceof DashboardApiError) return messages[error.code] ?? "요청 결과를 확인하지 못했습니다. 상태를 다시 조회하세요.";
   return "연결을 확인하고 상태를 다시 조회하세요.";
 }
+export function taskReadinessMessage(code: string): string {
+  const readinessMessages: Record<string, string> = {
+    TASK_VERIFIER_DATABASE_UNAVAILABLE: "검증기가 작업 기록 저장소에 접근할 수 없습니다. 자비스의 저장소 경로와 접근 권한을 확인하세요.",
+    TASK_EXECUTION_CLOCK_UNAVAILABLE: "실행 시간 제한을 확인할 수 없습니다. 자비스 호스트의 시간 검사 환경을 확인하세요.",
+    TASK_EXECUTION_PREFLIGHT_FAILED: "실행 준비 검사에 실패했습니다. 자비스 운영 진단을 확인한 뒤 환경 검사를 다시 실행하세요.",
+    TASK_CERTIFICATION_BINDING_INVALID: "독립 검증 권한을 확인할 수 없습니다. 검증 키의 등록·용도·철회 상태를 확인하세요.",
+  };
+  return readinessMessages[code] ?? messages[code] ?? "실행 준비 상태를 확인하지 못했습니다. 운영 진단을 확인하세요.";
+}
 export function isTaskExecutionRejection(error: unknown): boolean {
   return error instanceof DashboardApiError && (error.kind === "forbidden" || Object.hasOwn(messages, error.code));
 }

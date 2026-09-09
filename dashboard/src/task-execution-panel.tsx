@@ -1,12 +1,11 @@
 import { useEffect, useMemo, useState, useSyncExternalStore } from "react";
 import type { DashboardTaskExecution } from "../../src/dashboard/task-execution-read.js";
 import type { DashboardTaskReadiness } from "../../src/dashboard/task-execution-service.js";
-import { DashboardApiError } from "./api.js";
 import type { AuthorityIdFactory, AuthorityMutationClient, TaskExecutionClient } from "./authority-api.js";
 import { AuthorityControls } from "./authority-controls.js";
 import type { createDashboardStore } from "./store.js";
 import { TaskExecutionForm } from "./task-execution-form.js";
-import { taskExecutionMessage } from "./task-execution-message.js";
+import { taskExecutionMessage, taskReadinessMessage } from "./task-execution-message.js";
 import { TaskExecutionPlanView } from "./task-execution-plan-view.js";
 import { TaskWorkLineageView } from "./task-work-lineage-view.js";
 import "./task-execution.css";
@@ -97,8 +96,7 @@ function ExecutionRequest({ taskId, item, client, controls, enabled, refresh }: 
       {checking ? <p role="status">실행 환경 확인 중</p> : null}
       {readiness ? <p role="status">{readiness.execution_available
         ? "실행 환경 검사를 통과했습니다. 모델 로그인 상태는 실제 실행에서 확인합니다."
-        : taskExecutionMessage(new DashboardApiError({ kind: "server", code: readiness.readiness.reason_code ?? "UNKNOWN",
-          message: "", request_id: "" }))}</p> : null}
+        : taskReadinessMessage(readiness.readiness.reason_code ?? "UNKNOWN")}</p> : null}
       {error ? <p role="alert">{error}</p> : null}
     </div> : null}
     <AuthorityControls key={`${item.request.request_id}:${item.request.state}`} request={item.request} client={controls}

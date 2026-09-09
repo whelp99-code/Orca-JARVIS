@@ -35,7 +35,8 @@ function harness(initial = EMPTY) {
       execution_plan_digest: HASH, execution_available: false, readiness: { state: "unavailable", provider: "claude",
         authentication: "not_probed", reason_code: "TASK_EXECUTION_NOT_CONFIGURED" } })) } };
   const view = render(<TaskExecutionPanel taskId="task-1" store={store} client={client} idFactory={kind => kind === "nonce" ? "nonce-ui" : "request-ui"} />);
-  return { store, client, view, read, prepare, stage, decideRequest, executeRequest, setData: (next: typeof data) => { data = next; } };
+  return { store, client, view, read, prepare, stage, decideRequest, executeRequest,
+    check: vi.mocked(client.taskExecution!.check), setData: (next: typeof data) => { data = next; } };
 }
 async function fill() {
   const user = userEvent.setup();
@@ -118,10 +119,19 @@ describe("task execution screen", () => {
     expect(await screen.findByText(COMPLETION.commit)).toBeInTheDocument(); expect(h.executeRequest).toHaveBeenCalledTimes(1);
   });
 
-  it("shows local readiness without claiming model authentication or invoking a provider", async () => {
+  it.each([
+    ["TASK_EXECUTION_NOT_CONFIGURED", "실행 환경이 설정되지 않았습니다"],
+    ["TASK_VERIFIER_DATABASE_UNAVAILABLE", "검증기가 작업 기록 저장소에 접근할 수 없습니다"],
+    ["TASK_EXECUTION_CLOCK_UNAVAILABLE", "실행 시간 제한을 확인할 수 없습니다"],
+    ["TASK_CERTIFICATION_BINDING_INVALID", "독립 검증 권한을 확인할 수 없습니다"],
+    ["TASK_EXECUTION_PREFLIGHT_FAILED", "실행 준비 검사에 실패했습니다"],
+  ])("shows local readiness %s without invoking a provider", async (code, message) => {
     const h = harness({ ...EMPTY, requests: [PENDING] }); const user = userEvent.setup();
+    h.check.mockResolvedValueOnce({ schema_version: 1, task_id: "task-1", run_id: "run-1",
+      execution_plan_digest: HASH, execution_available: false, readiness: { state: "unavailable", provider: "claude",
+        authentication: "not_probed", reason_code: code } });
     await user.click(await screen.findByRole("button", { name: "실행 환경 확인" }));
-    expect(await screen.findByText(/실행 환경이 설정되지 않았습니다/)).toBeInTheDocument();
+    expect(await screen.findByText(new RegExp(message))).toBeInTheDocument();
     expect(h.executeRequest).not.toHaveBeenCalled();
   });
 
