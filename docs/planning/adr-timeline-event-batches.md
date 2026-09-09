@@ -35,7 +35,7 @@ capacity concerns rather than being claimed fixed by this GJC-heavy improvement.
 - Actual new CLI100klookup:exit0,200events,74717stdout bytes,0stderr,2546.64ms;
  independently open connection observed no data_version change.
 - QA: /home/jm/.cache/jarvis-test-runtime-qa-20260908/timeline-batch-compare-8FpTMB/
- receipt.json, populated-receipt.json, cli-receipt.json. Independent review pending.
+ receipt.json, populated-receipt.json, cli-receipt.json. Review result is recorded below.
 
 Repeated same-fixture measurements (5samples each):10000intents p50=629.51ms,
 nearest-rank sample p95=694.54ms;100000intents p50=2149.77ms, sample p95=2157.12ms.
@@ -55,3 +55,25 @@ Residual risk: raw child/control rows and grouping arrays remain live through
 collection. The100kfixture has sparse child data and does not bound dense-child
 peak RSS. Control rows may have two grouped references. Non-GJC per-record queries
 remain outside this change. No production activation is implied.
+
+## Dense child capacity measurement
+
+At commit 2700fda, a copy of the populated collision fixture received 100,000
+additional intent-event rows on intent a, each with a 1,035-byte JSON payload.
+Separate Node processes loaded the same database using the prior and current
+collectors. Both exited 0, returned the same 200-event JSON SHA-256
+(a04bb03189a33fc77b42354720576ef429dc6b079a18a610a23a46c031a05f24),
+and recorded 0 database changes. Prior: 540.19 ms, peak RSS 453,840 KiB.
+Current: 553.74 ms, peak RSS 464,096 KiB (10,256 KiB higher).
+
+These are single-process samples with one dense parent, not an upper memory
+bound or a production latency percentile. The 200-event return limit does not
+bound collection memory: all matching events are still loaded and projected
+before sorting/slicing. Batching remains accepted for query-count reduction;
+bounded-memory timeline collection remains incomplete. Multiple dense parents,
+control rows, and larger payloads are not covered by this measurement.
+
+Reproducer and receipt (local QA, synthetic data only):
+`/home/jm/.cache/jarvis-test-runtime-qa-20260908/timeline-batch-compare-8FpTMB/dense.mjs`
+and `dense-receipt.json` in the same directory. This measurement does not
+replace the full canonical verification gate for 2700fda.

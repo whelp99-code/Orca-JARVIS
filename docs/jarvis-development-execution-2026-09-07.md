@@ -1813,3 +1813,13 @@
   Non-GJC per-record queries remain. ADR:adr-timeline-event-batches.md; QA receipts
   in timeline-batch-compare-8FpTMB. Earlier3790test full gate predates this change;
   this unit has targeted acceptance and does not claim a new full gate.
+
+### Dense timeline child measurement after 2700fda
+
+- Synthetic populated fixture + 100,000 child events (1,035-byte JSON each):
+  old/new separate-process runs exited 0, identical 200-event output SHA, 0 writes.
+- Peak RSS: 453,840 -> 464,096 KiB; elapsed: 540.19 -> 553.74 ms, single samples.
+- Query batching does not bound memory before final slicing. Bounded-memory
+  collection remains incomplete; production activation is not established.
+- Detailed method, limits and QA receipt are in
+  `docs/planning/adr-timeline-event-batches.md`.
