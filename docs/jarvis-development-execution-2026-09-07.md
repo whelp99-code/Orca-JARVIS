@@ -1761,3 +1761,17 @@
   to43fc8e7 and started canonical npm run verify6691. Captured1735tracked file hashes
   in verify-runtime-dependencies-before.json; output in
   verify-runtime-dependencies-full.log. This run is pending, not a passing gate.
+
+### Canonical gate on runtime-dependency baseline — 2026-09-09
+
+- verify6691 completed exit0 at43fc8e7113cd5d1e8c595afffc8a34626b81f382.
+  Backend shard1:250files1750tests; shard2:249files1784tests; dashboard:37files255tests.
+  Total3789tests passed. Canonical runtime check, lint, typecheck, build, fixed-clock
+  acceptance and CLI smoke completed in the npm run verify command.
+- Captured1735tracked file hashes before/after with0changes and unchanged HEAD.
+  QA evidence:verify-runtime-dependencies-{before,after,result}.json and
+  verify-runtime-dependencies-full.log. This closes the earlier baseline gate
+  failure; it does not explain prior timeouts or cover later timeline edits.
+- Current timeline ID-set work is separate and uncommitted pending independent
+  review. Reviewer timeline_id_set_review failed to start due to tool-reported
+  usage limit (retry time15:25). No review verdict or product completion is claimed.
