@@ -5,6 +5,8 @@ import { controlCommandDigest, isControlRecord as isRecord, isNonemptyControlVal
   type ControlEventInput } from "./control-plane-contract.js";
 import { AuthorityDb, JarvisError } from "./db.js";
 import { validateMemoryCandidateScopeProposal } from "./memory-candidate-scope.js";
+import { assertTaskWorkLineage } from "./task-work-lineage-binding.js";
+import { parseTaskExecutionPlan } from "./task-execution-plan.js";
 function finiteDate(date: Date, code: string): number { const time = date.getTime(); if (!Number.isFinite(time)) throw new JarvisError(code); return time; }
 function finiteIso(value: string): number { const time = Date.parse(value); return Number.isFinite(time) ? time : Number.NaN; }
 
@@ -27,6 +29,10 @@ export function stageControlCommand(authority: AuthorityDb, input: ControlComman
       | { command_digest: string; state: ControlCommandState } | undefined; if (prior) {
       if (prior.command_digest !== digest) throw new JarvisError("CONTROL_COMMAND_REPLAY_CONFLICT");
       return { ...input, command_digest: digest, state: prior.state }; } const tx = authority.db.transaction(() => {
+      if (input.action === "task.execute" && Object.hasOwn(input.args, "work_lineage")) {
+        assertTaskWorkLineage(authority, input.args.work_lineage, input.request_id,
+          parseTaskExecutionPlan(input.args.plan), input.requested_at);
+      }
       if (input.action === "memory.scope.review") validateMemoryCandidateScopeProposal(authority, input.args.proposal, now);
       authority.db .prepare(
           `INSERT INTO control_command_requests(

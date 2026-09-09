@@ -102,3 +102,18 @@ retry exclusion, suppression completeness, two signed approvals and post-approva
 relabel rejection. The two lineage files passed 8 tests in 6.56 seconds and the new
 file passed zero-warning lint. These tests were added after the canonical gate;
 its 3958-test count does not include them. Independent review remains outstanding.
+
+Independent review identified two staging defects: generic `control request`
+validated relationship shape without predecessor binding, and predecessor ordering
+used lexical timestamps despite raw control requests accepting UTC offsets.
+The compiled raw-ingress regression first observed a successful invalid insertion.
+Generic insertion now checks lineage inside its transaction, and both binding and
+visibility compare finite parsed instants. Regression coverage includes the real
+compiled CLI and offset-equivalent timestamps. Three focused files passed 18 tests
+in 9.22 seconds; backend build, typecheck and zero-warning lint exited 0.
+The earlier full gate predates these corrections.
+
+Acceptance remains held: the reviewer also found that a hidden descendant can
+reach generic claim and consume its approval before failing, and noted unbounded
+total list traversal cost. Resolve the claim boundary and assess list capacity
+before obtaining a fresh independent acceptance review.

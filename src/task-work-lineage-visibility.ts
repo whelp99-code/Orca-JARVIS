@@ -20,7 +20,8 @@ export function visibleTaskWorkLineage(db: AuthorityDb, row: Record<string, unkn
     const prior = db.db.prepare("SELECT * FROM control_command_requests WHERE request_id=?")
       .get(lineage.prior_request_id) as Record<string, unknown> | undefined;
     if (!prior || prior.action !== "task.execute" || prior.command_digest !== lineage.prior_command_digest
-      || String(prior.requested_at) >= String(current.requested_at)
+      || !Number.isFinite(Date.parse(String(prior.requested_at))) || !Number.isFinite(Date.parse(String(current.requested_at)))
+      || Date.parse(String(prior.requested_at)) >= Date.parse(String(current.requested_at))
       || projections.isSuppressed({ kind: "control_payload", id: lineage.prior_request_id, component_id: lineage.prior_request_id })) return false;
     const target = JSON.parse(String(prior.target_json));
     if (typeof target?.task_id !== "string" || projections.isProjectionIdSuppressed(target.task_id)) return false;

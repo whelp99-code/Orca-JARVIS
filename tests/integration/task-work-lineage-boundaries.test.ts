@@ -5,6 +5,45 @@ import { readTaskPerformance } from "../../src/task-performance.js";
 import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
 import { signCommandApproval } from "../../src/control-plane-contract.js";
 import { localKey } from "../helpers.js";
+import { spawnSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { taskExecutionPlanDigest } from "../../src/task-execution-plan.js";
+import { assertTaskWorkLineage } from "../../src/task-work-lineage-binding.js";
+
+it("compares predecessor timestamps as instants across UTC offsets", async () => {
+  const f = await taskPublicationFixture();
+  try {
+    const prior = stageTaskExecution(f.db, { ...f.request, plan: f.plan }, f.now);
+    const relation = { schema_version: 1, kind: "rework", prior_request_id: prior.request_id,
+      prior_command_digest: prior.command_digest };
+    const shifted = new Date(f.now.getTime() - 8 * 3600000).toISOString().replace("Z", "-08:00");
+    // Same instant written with another offset is not a predecessor.
+    expect(() => assertTaskWorkLineage(f.db, relation, "offset", f.plan, shifted))
+      .toThrow("TASK_WORK_LINEAGE_BINDING_INVALID");
+    const later = new Date(f.now.getTime() - 8 * 3600000 + 1).toISOString().replace("Z", "-08:00");
+    expect(() => assertTaskWorkLineage(f.db, relation, "offset", f.plan, later)).not.toThrow();
+  } finally { await f.cleanup(); }
+});
+
+it("rejects nonexistent lineage before persistence through the generic compiled control request CLI", async () => {
+  const f = await taskPublicationFixture();
+  try {
+    const path = join(f.root, "raw-request.json");
+    writeFileSync(path, JSON.stringify({ schema_version: 1, request_id: "raw-lineage", action: "task.execute", action_level: 3,
+      target: { environment: "local", task_id: f.plan.task_id, run_id: f.plan.run_id },
+      args: { plan: f.plan, execution_plan_digest: taskExecutionPlanDigest(f.plan), work_lineage: {
+        schema_version: 1, kind: "rework", prior_request_id: "missing", prior_command_digest: `sha256:${"a".repeat(64)}` } },
+      reversible: true, requested_by: "test-operator", requested_at: f.now.toISOString(),
+      expires_at: new Date(f.now.getTime() + 60000).toISOString(), nonce: "raw-lineage" }));
+    const before = f.db.db.serialize();
+    const result = spawnSync(process.execPath, ["dist/src/cli.js", "control", "request", path, "--db", f.db.filename],
+      { encoding: "utf8", timeout: 15000 });
+    expect(result.status).toBe(2);
+    expect(result.stdout + result.stderr).toContain("TASK_WORK_LINEAGE_BINDING_INVALID");
+    expect(f.db.db.serialize().equals(before)).toBe(true);
+  } finally { await f.cleanup(); }
+});
 
 it("rejects foreign repositories and preserves out-of-window ancestry in cohort completeness", async () => {
   const a = await taskPublicationFixture();

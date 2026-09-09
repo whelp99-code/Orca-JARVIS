@@ -17,7 +17,9 @@ export function assertTaskWorkLineage(db: AuthorityDb, value: unknown, requestId
     args_json: JSON.stringify({ work_lineage: lineage }) }, new MemoryProjectionAuthority(db))) return invalid();
   const prior = readControlCommand(db, lineage.prior_request_id);
   if (!prior || prior.action !== "task.execute" || prior.command_digest !== lineage.prior_command_digest
-    || controlCommandDigest(prior) !== prior.command_digest || prior.requested_at >= requestedAt) return invalid();
+    || controlCommandDigest(prior) !== prior.command_digest
+    || !Number.isFinite(Date.parse(prior.requested_at)) || !Number.isFinite(Date.parse(requestedAt))
+    || Date.parse(prior.requested_at) >= Date.parse(requestedAt)) return invalid();
   const priorPlan = parseTaskExecutionPlan(prior.args.plan);
   if (priorPlan.schema_version !== 2 || priorPlan.publication.repository_identity !== plan.publication.repository_identity
     || new MemoryProjectionAuthority(db).isProjectionIdSuppressed(priorPlan.task_id)) return invalid();
