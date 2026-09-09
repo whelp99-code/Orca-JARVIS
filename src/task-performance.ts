@@ -2,11 +2,12 @@ import { readTaskUsagePerformance } from "./task-usage-performance.js";
 import { JarvisError, type AuthorityDb } from "./db.js";
 import { candidateInstant } from "./task-candidate-artifact-codec.js";
 import { readTaskCompletionEvidence } from "./task-completion-evidence.js";
+import { readTaskWorkLineagePerformance } from "./task-work-lineage-performance.js";
 
 const MAX_REQUESTS = 1000;
 const states = ["pending", "approved", "rejected", "claimed", "completed", "failed", "uncertain", "cancelled"] as const;
 type State = typeof states[number];
-type Row = { request_id: string; state: State; requested_at: string; decision: string | null; accepted_at: string | null };
+type Row = { request_id: string; state: State; requested_at: string; decision: string | null; accepted_at: string | null; args_json: string };
 
 export function taskPerformanceWindow(from: unknown, to: unknown, observedAt: Date) {
   if (!candidateInstant(from) || !candidateInstant(to) || !Number.isFinite(observedAt.getTime())
@@ -25,7 +26,7 @@ function distribution(samples: number[], invalid: number) {
 export function readTaskPerformance(authority: AuthorityDb, from: unknown, to: unknown, observedAt = new Date()) {
   const window = taskPerformanceWindow(from, to, observedAt);
   return authority.db.transaction(() => {
-    const rows = authority.db.prepare(`SELECT r.request_id,r.state,r.requested_at,c.decision,c.created_at AS accepted_at
+    const rows = authority.db.prepare(`SELECT r.request_id,r.state,r.requested_at,r.args_json,c.decision,c.created_at AS accepted_at
       FROM control_command_requests r LEFT JOIN control_command_receipts c ON c.request_id=r.request_id
       WHERE r.action='task.execute' AND r.requested_at>=? AND r.requested_at<?
       ORDER BY r.requested_at,r.request_id LIMIT ?`).all(window.from, window.to, MAX_REQUESTS + 1) as Row[];
@@ -63,8 +64,9 @@ export function readTaskPerformance(authority: AuthorityDb, from: unknown, to: u
         status: invalidEvidence ? "invalid_completion_evidence" : terminal ? "measured" : "no_terminal_requests" },
       approval_wait: distribution(waits, invalidWaits), open_approval_age: distribution(openAges, 0),
       completion_latency: distribution(completions, invalidCompletions),
+      work_lineage: readTaskWorkLineagePerformance(authority, rows, observedAt),
       provider_cost_estimate: readTaskUsagePerformance(authority, window.from, window.to, observedAt, verified, invalidEvidence),
-      unavailable: { cost_per_success: "billing_usage_not_recorded", rework: "business_task_lineage_not_recorded",
+      unavailable: { cost_per_success: "billing_usage_not_recorded",
         duplicate_external_effects: "external_effect_observation_not_recorded", shadow_comparison: "candidate_execution_outcomes_not_recorded" },
       policy_promoted: false };
   }).deferred();

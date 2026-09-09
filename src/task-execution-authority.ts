@@ -5,6 +5,7 @@ import { controlCommandDigest, verifyCommandApproval, type CommandApprovalReceip
 import { JarvisError, type AuthorityDb } from "./db.js";
 import { parseTaskExecutionPlan, type TaskExecutionPlan } from "./task-execution-plan.js";
 import { assertTaskExecutionBinding } from "./task-execution-staging.js";
+import { assertTaskWorkLineage } from "./task-work-lineage-binding.js";
 
 /** Read-only authority check. Caller must hold an IMMEDIATE transaction through its ledger write. */
 export function assertTaskExecutionAuthority(db: AuthorityDb, command: ClaimedControlCommand,
@@ -50,6 +51,9 @@ export function assertTaskExecutionAuthority(db: AuthorityDb, command: ClaimedCo
     return invalid();
   }
   const plan = parseTaskExecutionPlan(stored.args.plan);
+  if (Object.hasOwn(stored.args, "work_lineage")) {
+    assertTaskWorkLineage(db, stored.args.work_lineage, stored.request_id, plan, stored.requested_at);
+  }
   assertTaskExecutionBinding(db, plan, now);
   return plan;
 }

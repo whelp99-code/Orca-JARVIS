@@ -1,5 +1,5 @@
 import "@testing-library/jest-dom/vitest";
-import { act, cleanup, render, screen, waitFor } from "@testing-library/react";
+import { act, cleanup, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AuthorityMutationClient, TaskExecutionClient } from "./authority-api.js";
@@ -15,7 +15,8 @@ function harness(initial = EMPTY) {
   const read = vi.fn(async () => structuredClone(data));
   const prepare = vi.fn<TaskExecutionClient["prepare"]>(async () => structuredClone(PREVIEW));
   const stage = vi.fn<TaskExecutionClient["stage"]>(async (_task, body) => {
-    data = { ...data, requests: [{ ...structuredClone(PENDING), plan: body.plan, request: { ...PENDING.request, request_id: body.request_id } }] };
+    data = { ...data, requests: [{ ...structuredClone(PENDING), plan: body.plan,
+      ...(body.work_lineage ? { work_lineage: body.work_lineage } : {}), request: { ...PENDING.request, request_id: body.request_id } }] };
     return { schema_version: 1, request_id: body.request_id, action: "task.execute", action_level: 3,
       args: { plan: body.plan }, target: { task_id: "task-1", run_id: "run-1" }, state: "pending", command_digest: HASH,
       reversible: true, requested_by: "jarvis-control-center", requested_at: AT, expires_at: AT, nonce: body.nonce };
@@ -47,6 +48,22 @@ async function fill() {
   return user;
 }
 describe("task execution screen", () => {
+  it("invalidates the preview on relationship edits and displays the submitted lineage for approval", async () => {
+    const h = harness(); const user = await fill();
+    await user.selectOptions(screen.getByRole("combobox", { name: "업무 관계" }), "rework");
+    expect(screen.queryByRole("region", { name: "실행 계획 검토" })).not.toBeInTheDocument();
+    await user.type(screen.getByLabelText("이전 요청 ID"), "prior-request");
+    await user.type(screen.getByLabelText("이전 요청 다이제스트"), HASH);
+    await user.click(screen.getByRole("button", { name: "계획 준비" }));
+    expect(within(await screen.findByRole("region", { name: "실행 계획 검토" })).getByText("기존 업무 재작업")).toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: "검토한 계획 승인 요청" }));
+    await waitFor(() => expect(h.stage).toHaveBeenCalledOnce());
+    expect(h.stage.mock.calls[0]?.[1].work_lineage).toEqual({ schema_version: 1, kind: "rework",
+      prior_request_id: "prior-request", prior_command_digest: HASH });
+    expect(await screen.findByText("prior-request")).toBeInTheDocument();
+    expect(h.decideRequest).not.toHaveBeenCalled();
+    expect(h.executeRequest).not.toHaveBeenCalled();
+  });
   it("prepares explicit inputs, invalidates an edited preview, then follows approval to durable result", async () => {
     const h = harness(); const user = await fill();
     expect(h.prepare).toHaveBeenLastCalledWith("task-1", { schema_version: 1, run_id: "run-1", provider: "claude",

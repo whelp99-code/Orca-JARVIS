@@ -3,6 +3,7 @@ import { isAbsolute, normalize } from "node:path";
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./db.js";
+import { parseTaskWorkLineage } from "./task-work-lineage.js";
 
 interface TaskExecutionPlanBase {
   readonly run_id: string;
@@ -104,7 +105,9 @@ export function validateTaskExecutionAction(input: {
   target: Record<string, unknown>; args: Record<string, unknown>;
 }): void {
   const target = record(input.target, ["environment", "run_id", "task_id"]);
-  const args = record(input.args, ["plan", "execution_plan_digest"]);
+  const hasLineage = input.args !== null && typeof input.args === "object" && Object.hasOwn(input.args, "work_lineage");
+  const args = record(input.args, ["plan", "execution_plan_digest", ...(hasLineage ? ["work_lineage"] : [])]);
+  if (hasLineage) parseTaskWorkLineage(args.work_lineage);
   const plan = parseTaskExecutionPlan(args.plan);
   if (target.environment !== "local" || target.run_id !== plan.run_id || target.task_id !== plan.task_id
     || args.execution_plan_digest !== taskExecutionPlanDigest(plan)) return invalid();

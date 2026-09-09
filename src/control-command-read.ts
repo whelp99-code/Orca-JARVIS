@@ -1,6 +1,7 @@
 import type { AuthorityDb } from "./db.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import type { ActionLevel, ControlCommandState, StoredControlCommand } from "./control-plane-contract.js";
+import { visibleTaskWorkLineage } from "./task-work-lineage-visibility.js";
 
 /** Reads never initialize projections or renew command authority. */
 export function readControlCommand(authority: AuthorityDb, requestId: string): StoredControlCommand | undefined {
@@ -8,7 +9,7 @@ export function readControlCommand(authority: AuthorityDb, requestId: string): S
   projections.assertReady();
   const row = authority.db.prepare("SELECT * FROM control_command_requests WHERE request_id=?")
     .get(requestId) as Record<string, unknown> | undefined;
-  if (row === undefined || !visibleCommand(row, projections)) return undefined;
+  if (row === undefined || !visibleCommand(row, projections) || !visibleTaskWorkLineage(authority, row, projections)) return undefined;
   return decodeStoredControlCommand(row);
 }
 
@@ -17,7 +18,7 @@ export function listControlCommands(authority: AuthorityDb): StoredControlComman
   projections.assertReady();
   return (authority.db.prepare("SELECT * FROM control_command_requests ORDER BY requested_at,request_id")
     .all() as Array<Record<string, unknown>>)
-    .filter(row => visibleCommand(row, projections)).map(row => decodeStoredControlCommand(row));
+    .filter(row => visibleCommand(row, projections) && visibleTaskWorkLineage(authority, row, projections)).map(row => decodeStoredControlCommand(row));
 }
 
 function visibleCommand(row: Record<string, unknown>, projections: MemoryProjectionAuthority): boolean {

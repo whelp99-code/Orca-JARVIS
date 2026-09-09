@@ -8,6 +8,7 @@ import type { createDashboardStore } from "./store.js";
 import { TaskExecutionForm } from "./task-execution-form.js";
 import { taskExecutionMessage } from "./task-execution-message.js";
 import { TaskExecutionPlanView } from "./task-execution-plan-view.js";
+import { TaskWorkLineageView } from "./task-work-lineage-view.js";
 import "./task-execution.css";
 import { TaskTemplateSummary } from "./task-template-summary.js";
 import { TaskRoutingSummary } from "./task-routing-summary.js";
@@ -85,7 +86,8 @@ function ExecutionRequest({ taskId, item, client, controls, enabled, refresh }: 
     <h3>{item.completion ? "검증된 실행 결과" : "실행 요청"}</h3>
     {item.routing ? <TaskRoutingSummary routing={item.routing} /> : null}
     {item.task_template ? <TaskTemplateSummary template={item.task_template} /> : null}
-    <details open={active}><summary>승인할 파일·검사·결과 브랜치</summary><TaskExecutionPlanView plan={item.plan} /></details>
+    <details open={active}><summary>승인할 파일·검사·결과 브랜치</summary><TaskExecutionPlanView plan={item.plan} />
+      <TaskWorkLineageView value={item.work_lineage} /></details>
     <details><summary>승인 식별 정보</summary><dl className="identity-list">
       <div><dt>명령 해시</dt><dd>{item.command_digest}</dd></div>
       <div><dt>승인 기한</dt><dd>{item.expires_at}</dd></div>

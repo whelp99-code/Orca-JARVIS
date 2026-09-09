@@ -1,6 +1,8 @@
 import { DashboardApiError } from "./api.js";
 
 const messages: Record<string, string> = {
+  TASK_WORK_LINEAGE_INVALID: "업무 관계와 이전 요청 ID·다이제스트를 확인하세요.",
+  TASK_WORK_LINEAGE_BINDING_INVALID: "이전 요청을 연결할 수 없습니다. 같은 저장소의 앞선 요청인지, 조회 가능한 요청인지 확인하세요.",
   TASK_TEMPLATE_INVALID: "템플릿 입력을 확인하세요. 파일 경로는 중복 없이, 보고서 결과 파일은 하나만 지정하세요.",
   TASK_TEMPLATE_PLAN_MISMATCH: "승인된 템플릿의 파일 범위와 필수 검사를 유지해야 합니다. 범위 변경은 새 업무 승인이 필요합니다.",
   TASK_SPEC_BINDING_INVALID: "업무 명세와 템플릿 요구사항이 일치하지 않습니다. 제안을 다시 확인하세요.",

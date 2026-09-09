@@ -1,4 +1,5 @@
 import { performance } from "node:perf_hooks";
+import { parseTaskWorkLineage, type TaskWorkLineage } from "../task-work-lineage.js";
 import { JarvisError, type AuthorityDb } from "../db.js";
 import { LoopGraph } from "../loopgraph.js";
 import { candidateHash } from "../task-candidate-artifact-codec.js";
@@ -22,6 +23,7 @@ export interface PrepareTaskExecutionRequest {
   readonly verification: TaskExecutionPlanV2["verification"];
 }
 export interface StageDashboardTaskExecutionRequest {
+  readonly work_lineage?: TaskWorkLineage;
   readonly schema_version: 1;
   readonly request_id: string;
   readonly nonce: string;
@@ -117,7 +119,8 @@ export async function prepareDashboardTaskExecution(db: AuthorityDb, taskId: str
 
 export async function stageDashboardTaskExecution(db: AuthorityDb, taskId: string, body: unknown,
   clock: () => Date = () => new Date()) {
-  const value = exact(body, ["schema_version", "request_id", "nonce", "plan"]);
+  const hasLineage = body !== null && typeof body === "object" && Object.hasOwn(body, "work_lineage");
+  const value = exact(body, ["schema_version", "request_id", "nonce", "plan", ...(hasLineage ? ["work_lineage"] : [])]);
   if (value.schema_version !== 1 || ![value.request_id, value.nonce].every(item => typeof item === "string"
     && item.trim().length > 0 && item.length <= 160
     && [...item].every(character => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127))) return invalid();
@@ -131,7 +134,8 @@ export async function stageDashboardTaskExecution(db: AuthorityDb, taskId: strin
   if (preview.execution_plan_digest !== taskExecutionPlanDigest(plan)) throw new JarvisError("TASK_EXECUTION_PREVIEW_STALE");
   current(db, plan, clock());
   return stageTaskExecution(db, { request_id: value.request_id, nonce: value.nonce,
-    requested_by: "jarvis-control-center", plan }, clock());
+    requested_by: "jarvis-control-center", plan,
+    ...(hasLineage ? { work_lineage: parseTaskWorkLineage(value.work_lineage) } : {}) }, clock());
 }
 
 export type PreparedDashboardTaskExecution = Awaited<ReturnType<typeof prepareDashboardTaskExecution>>;

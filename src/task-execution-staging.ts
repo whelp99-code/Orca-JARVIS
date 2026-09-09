@@ -8,12 +8,15 @@ import { assertTaskTemplatePlan } from "./task-templates.js";
 import { registeredTaskExecutor } from "./task-executor-registry.js";
 import type { TaskSpecV1 } from "./task-spec-input.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
+import { parseTaskWorkLineage, type TaskWorkLineage } from "./task-work-lineage.js";
+import { assertTaskWorkLineage } from "./task-work-lineage-binding.js";
 
 export interface StageTaskExecutionInput {
   readonly request_id: string;
   readonly nonce: string;
   readonly requested_by: string;
   readonly plan: TaskExecutionPlan;
+  readonly work_lineage?: TaskWorkLineage;
 }
 
 /** Recheck this binding again at execution; staging is neither approval nor provider readiness. */
@@ -55,7 +58,8 @@ export function assertTaskExecutionBinding(db: AuthorityDb, plan: TaskExecutionP
 
 export function stageTaskExecution(db: AuthorityDb, value: StageTaskExecutionInput, now = new Date()): StoredControlCommand {
   if (!value || typeof value !== "object" || Array.isArray(value)
-    || Object.keys(value).sort().join(",") !== "nonce,plan,request_id,requested_by"
+    || Object.keys(value).sort().join(",") !== (Object.hasOwn(value, "work_lineage")
+      ? "nonce,plan,request_id,requested_by,work_lineage" : "nonce,plan,request_id,requested_by")
     || ![value.request_id, value.nonce, value.requested_by].every(item =>
       typeof item === "string" && item.trim().length > 0 && item.length <= 160
       && [...item].every(character => character.charCodeAt(0) >= 32 && character.charCodeAt(0) !== 127))) {
@@ -64,7 +68,9 @@ export function stageTaskExecution(db: AuthorityDb, value: StageTaskExecutionInp
   const plan = parseTaskExecutionPlan(value.plan);
   return db.db.transaction(() => {
     assertTaskExecutionBinding(db, plan, now);
-    const args = { plan, execution_plan_digest: taskExecutionPlanDigest(plan) };
+    const workLineage = Object.hasOwn(value, "work_lineage") ? { work_lineage: parseTaskWorkLineage(value.work_lineage) } : {};
+    if (workLineage.work_lineage) assertTaskWorkLineage(db, workLineage.work_lineage, value.request_id, plan, now.toISOString());
+    const args = { plan, execution_plan_digest: taskExecutionPlanDigest(plan), ...workLineage };
     const control = new ControlPlane(db);
     const prior = db.db.prepare("SELECT action,args_json,nonce,requested_by FROM control_command_requests WHERE request_id=?")
       .get(value.request_id) as Record<string, unknown> | undefined;

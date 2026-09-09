@@ -7,6 +7,7 @@ import type { OverviewApproval } from "./legacy-read-contracts.js";
 import { parseTaskTemplateBinding } from "../task-templates.js";
 import { readDashboardTaskRouting } from "./task-routing-read.js";
 import { MemoryProjectionAuthority } from "../memory-projection-authority.js";
+import { parseTaskWorkLineage } from "../task-work-lineage.js";
 
 function taskTemplate(input: unknown) {
   if (!input || typeof input !== "object" || !Object.hasOwn(input, "task_template")) return undefined;
@@ -44,6 +45,7 @@ export function readDashboardTaskExecution(db: AuthorityDb, taskId: string, obse
         action_level: command.action_level, requested_at: command.requested_at, requested_by: command.requested_by,
         state: command.state, summary: "Execute the reviewed task plan", retry_status: "not_allowed" };
       return [{ request, plan, command_digest: command.command_digest, expires_at: command.expires_at,
+        ...(Object.hasOwn(command.args, "work_lineage") ? { work_lineage: parseTaskWorkLineage(command.args.work_lineage) } : {}),
         ...(routing ? { routing } : {}),
         ...(template ? { task_template: template } : {}),
         completion: readTaskCompletionEvidence(db, command.request_id, observedAt)?.completion ?? null }];

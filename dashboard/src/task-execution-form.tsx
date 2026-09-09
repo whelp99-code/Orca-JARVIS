@@ -4,6 +4,8 @@ import type { AuthorityIdFactory, TaskExecutionClient } from "./authority-api.js
 import { SYSTEM_AUTHORITY_ID_FACTORY } from "./authority-api.js";
 import { isTaskExecutionRejection, taskExecutionMessage } from "./task-execution-message.js";
 import { TaskExecutionPlanView } from "./task-execution-plan-view.js";
+import { TaskWorkLineageView } from "./task-work-lineage-view.js";
+import type { TaskWorkLineage } from "../../src/task-work-lineage.js";
 import type { TaskTemplateBinding } from "../../src/task-templates.js";
 import { TaskTemplateSummary } from "./task-template-summary.js";
 import { TaskRoutingSummary } from "./task-routing-summary.js";
@@ -18,6 +20,10 @@ export function TaskExecutionForm({ taskId, runs, client, refresh, enabled, temp
   routing?: Readonly<Record<string, DashboardTaskRouting>>;
 }>) {
   const [run, setRun] = useState(runs.length === 1 ? runs[0]! : "");
+  const [kind, setKind] = useState<"unknown" | "original" | "rework" | "retry">("unknown");
+  const [priorId, setPriorId] = useState(""); const [priorDigest, setPriorDigest] = useState("");
+  const lineage: TaskWorkLineage | undefined = kind === "unknown" ? undefined : kind === "original"
+    ? { schema_version: 1, kind } : { schema_version: 1, kind, prior_request_id: priorId, prior_command_digest: priorDigest };
   const [root, setRoot] = useState(""); const [branch, setBranch] = useState("");
   const [seconds, setSeconds] = useState(180);
   const [files, setFiles] = useState<FileInput[]>([{ id: 1, path: "", access: "write", exists: true }]);
@@ -51,7 +57,8 @@ export function TaskExecutionForm({ taskId, runs, client, refresh, enabled, temp
     setBusy(true); setError("");
     const requestId = idFactory("request_id"); setSubmitted(requestId);
     try {
-      await client.stage(taskId, { schema_version: 1, request_id: requestId, nonce: idFactory("nonce"), plan: preview.plan });
+      await client.stage(taskId, { schema_version: 1, request_id: requestId, nonce: idFactory("nonce"), plan: preview.plan,
+        ...(lineage ? { work_lineage: lineage } : {}) });
       setPreview(undefined);
     } catch (caught) {
       setError(taskExecutionMessage(caught));
@@ -72,6 +79,17 @@ export function TaskExecutionForm({ taskId, runs, client, refresh, enabled, temp
         </select></label>
         <label className="form-field"><span>저장소 최상위 경로</span><input value={root} required placeholder="/home/.../project"
           onChange={event => edit(() => setRoot(event.target.value))} /></label>
+        <label className="form-field"><span>업무 관계</span><select value={kind}
+          onChange={event => edit(() => setKind(event.target.value as typeof kind))}>
+          <option value="unknown">미지정</option><option value="original">신규 업무</option>
+          <option value="rework">기존 업무 재작업</option><option value="retry">기술적 재시도</option>
+        </select></label>
+        {kind === "rework" || kind === "retry" ? <>
+          <label className="form-field"><span>이전 요청 ID</span><input required maxLength={160} value={priorId}
+            onChange={event => edit(() => setPriorId(event.target.value))} /></label>
+          <label className="form-field"><span>이전 요청 다이제스트</span><input required pattern="sha256:[0-9a-f]{64}" value={priorDigest}
+            onChange={event => edit(() => setPriorDigest(event.target.value))} /></label>
+        </> : null}
         <label className="form-field"><span>새 결과 브랜치 이름</span><input value={branch} required placeholder="task-result"
           pattern="[a-z0-9][a-z0-9._\-]{0,79}" onChange={event => edit(() => setBranch(event.target.value))} /></label>
         <p className="muted">브랜치는 codex/ 아래에 생성됩니다. 실행 에이전트: Claude.</p>
@@ -115,6 +133,7 @@ export function TaskExecutionForm({ taskId, runs, client, refresh, enabled, temp
     {busy ? <p role="status">계획과 저장소를 확인하는 중입니다.</p> : null}
     {error ? <p role="alert">{error}</p> : null}
     {preview ? <section aria-label="실행 계획 검토"><h3>실행 계획 검토</h3><TaskExecutionPlanView plan={preview.plan} />
+      <TaskWorkLineageView value={lineage} />
       <p>선택 파일 합계 {preview.repository.total_bytes}바이트</p>
       <button type="button" disabled={!available} onClick={() => { void stage(); }}>검토한 계획 승인 요청</button>
     </section> : null}
