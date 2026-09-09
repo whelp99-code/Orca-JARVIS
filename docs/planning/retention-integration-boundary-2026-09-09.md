@@ -106,3 +106,22 @@ handoff, outbox cleanup retry and expiry. Evidence:
 This removes the full-directory filename array from cleanup; it does not bound cycle
 execution time or implement a resumable service batch. Those remain required before
 claiming bounded scheduled retention.
+
+
+### Compiled iterator acceptance
+
+At a3facfe, build:backend exited 0. A standalone Node process used the compiled
+MemoryCandidateReviewSpool against 10000 temporary JSON files, one non-JSON file,
+one directory with a JSON suffix and one symlink with a JSON suffix.
+Exactly 10000 paths were yielded; the other 3 entries were excluded. Directory
+file descriptors measured through /proc/self/fd were 0 before, 1 during iteration,
+and 0 after early break, consumer exception and complete traversal. Complete
+traversal took 24.071809 ms in this single run; this is not a p95 or deletion-cost
+measurement. Fixture files were removed in finally. Evidence:
+/home/jm/.cache/jarvis-test-runtime-qa-20260908/retention-streaming-live-result.json.
+
+Service integration inspection: cli-gjc-commands.ts owns the repeated `once`
+callback and closes the GJC service in finally. A future resumable cleanup scanner
+must also be closed there and run independently of daily publication errors. The
+current DailyServiceCycles owns only morning/evening loops; no cleanup service
+was enabled by this verification.
