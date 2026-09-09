@@ -61,3 +61,27 @@ Tracked worktree changes0; untracked node_modules link remains.
 Log: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/remote-audit-service-verify.log`.
 This closes this implementation's canonical gate, not production activation or
 backlog01–25. Provider refresh admission remains the next implementation boundary.
+# Expired daily job recovery — 2026-09-10 KST
+
+Prior daily pending/claimed jobs were never revisited after the date changed.
+A regression test reproduced both stale states. The configured service now
+settles at most 100 expired audit jobs in its daily namespace per cycle, inside
+the same immediate transaction that validates today's policy. It ignores rows
+updated after the observed clock and leaves other retention jobs unchanged.
+
+Pending becomes failed; claimed becomes uncertain because a stale claim is not
+proof of successful completion. Both retain E_RETENTION_EXPIRED and release the
+lease. Completed/failed/uncertain records are unchanged. No old effect is replayed,
+no retention policy is extended and no additional audit payload is deleted by
+this recovery step. The existing current-day adapter remains separately invoked.
+
+Validation: original reproduction failed before the fix; existing service4tests
+and expiry2tests passed, including the 100-job batch bound and no-write replay.
+Typecheck/lint passed. The first build detected a concurrent test-file edit and
+stopped with BACKEND_BUILD_SOURCE_CHANGED; the final stable backend build passed.
+A separate compiled Node process with isolated SQLite confirmed old claimed→
+uncertain, current-day completed and recreated-service replay writes0.
+Receipt: /home/jm/.cache/jarvis-test-runtime-qa-20260908/remote-audit-expiry-compiled.json.
+Independent review /root/pagination_acceptance returned SHIP with no findings.
+Future-dated updates remain excluded until the clock catches up, and backlogs
+over100 jobs require further cycles. No production activation or full-goal completion.

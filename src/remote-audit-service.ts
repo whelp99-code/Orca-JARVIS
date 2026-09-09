@@ -27,6 +27,14 @@ export class RemoteAuditService {
         || job.policy_cutoff !== cutoff || job.not_before !== start || job.expires_at !== expires) {
         throw new PersonalOsError("E_RETENTION_POLICY");
       }
+      // Expired claims are not evidence of a completed effect. Never replay them.
+      this.db.prepare(`UPDATE retention_jobs SET
+        state=CASE WHEN state='pending' THEN 'failed' ELSE 'uncertain' END,
+        failure_code='E_RETENTION_EXPIRED',lease_owner=NULL,lease_expires_at=NULL,updated_at=?
+        WHERE job_id IN (SELECT job_id FROM retention_jobs
+          WHERE data_class='audit' AND job_id GLOB 'remote-auth:daily:v1:????-??-??'
+            AND state IN ('pending','claimed') AND expires_at<=? AND updated_at<=?
+          ORDER BY expires_at,job_id LIMIT 100)`).run(now.toISOString(), now.toISOString(), now.toISOString());
       return job;
     }).immediate();
     if (["completed", "failed", "uncertain"].includes(row.state)) return this.result(jobId, cutoff, row);
