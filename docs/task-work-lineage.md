@@ -89,3 +89,16 @@ selector to the named execution article, the focused run passed 2/2 in 17.9 seco
 at 1440 and 1024 widths, including horizontal overflow and console error checks.
 Log: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/work-lineage-browser-final.log`.
 The full canonical gate and independent implementation review are still outstanding.
+
+Canonical gate subsequently passed at `3b6ac907f6d0f71ff7bb0cd251287893cf45bfb0`:
+`npm run verify` exited 0, with backend 264 files/1832 tests and 264 files/1870
+tests, dashboard 37 files/256 tests (3958 tests total). Runtime, lint, typecheck,
+build, fixed-clock acceptance and CLI smoke passed. All 1837 tracked file hashes
+were unchanged during the run. Receipt: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/verify-work-lineage-result.json`.
+
+After that gate, `task-work-lineage-boundaries.test.ts` adds regression coverage
+for foreign repository rejection without writes, predecessors outside the cohort,
+retry exclusion, suppression completeness, two signed approvals and post-approval
+relabel rejection. The two lineage files passed 8 tests in 6.56 seconds and the new
+file passed zero-warning lint. These tests were added after the canonical gate;
+its 3958-test count does not include them. Independent review remains outstanding.
