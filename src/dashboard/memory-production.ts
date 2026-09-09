@@ -45,8 +45,15 @@ function projectionKey(path: string): Buffer {
     if (!(error instanceof Error) || !("code" in error) || error.code !== "ENOENT") throw error;
   }
   const key = randomBytes(32);
-  writeFileSync(path, key, { mode: 0o600 });
-  chmodSync(path, 0o600);
+  try {
+    writeFileSync(path, key, { mode: 0o600, flag: "wx" });
+  } catch (error) {
+    if (!(error instanceof Error) || !("code" in error) || error.code !== "EEXIST") throw error;
+    // Another startup won creation. Never overwrite its persistent identity.
+    const existing = readFileSync(path);
+    if (existing.byteLength !== 32) throw new JarvisError("VALIDATION_ERROR");
+    return existing;
+  }
   return key;
 }
 

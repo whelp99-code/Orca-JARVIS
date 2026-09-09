@@ -2265,3 +2265,25 @@ Observed reviewer model/effort and API-equivalent token cost are unavailable.
   Playwright used with explicit private TMPDIR. Parent inspected all6changed files.
   No provider execution, production change, mobile check or sustained SSE outage
   recovery is claimed by this startup-only verification. Full objective remains open.
+
+
+### 2026-09-10 — preserve projection identity during concurrent startup
+
+- Dashboard projectionKey previously read ENOENT then wrote without exclusive creation.
+  Two startups could retain different in-memory keys after overwriting one shared file.
+  Creation now uses wx; EEXIST reads the already published32-byte key. A partial/wrong-size
+  winner is rejected without replacement. Existing key bytes and mode are not rewritten.
+- Deterministic filesystem interleaving tests publish another startup's real file between
+  missing-key read and attempted creation. Complete winner32bytes is reused; empty winner
+  is preserved with VALIDATION_ERROR. Normal creation/restart retains the private key.
+  New3tests plus existing outbox5tests passed. Initial ESM spy setup failed2tests; a copied
+  module namespace fixed the test harness before the8test pass. lint/backend build passed.
+- Compiled real-process probe synchronized8children after imports/DB opens, then released
+  all startup calls.8succeeded,0partial-file rejections, all8returned keys matched disk;
+  provider calls0. QA projection-key-process-probe.mjs and projection-key-process.json
+  under /home/jm/.cache/jarvis-test-runtime-qa-20260908. No key bytes logged.
+- This change addresses concurrent creation, not key rotation, adversarial filesystem
+  replacement or power-loss durability. A startup observing an incomplete writer fails
+  rather than inventing another identity. Canonical3977test gate predates this change.
+- Final typecheck exit0; independent review SHIP with0findings. Partial-writer startup
+  rejection is the explicit residual availability limit.
