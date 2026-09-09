@@ -167,3 +167,55 @@ Concurrent directory mutation may defer entries to another pass; no hard latency
 or persistent cursor guarantee is made. Added restart regression passes: close an
 incomplete instance, reopen, delete an expired eligible file once, then scan empty.
 Targeted scanner suite: 1 file/3 tests passed; retention-scanner-restart.log.
+
+
+## Explicit service cleanup options
+
+The service accepts `--memory-review-cleanup-root ABSOLUTE_PATH` on `service once`
+and `service run`, optionally with `--memory-review-cleanup-limit N` (1–1000,
+default64). The root must already exist, be private and belong to the current user.
+Configuration binds its device/inode identity; replacement or removal becomes an
+error, without creating a replacement directory or repairing its permissions.
+No environment-variable fallback enables this service cleanup implicitly.
+
+Example using isolated operator-provided paths:
+
+```sh
+jarvis service once --db /absolute/test/authority.sqlite --memory-review-cleanup-root /absolute/test/candidate-review --memory-review-cleanup-limit 64
+```
+
+The command may also perform its normal service work: it is not a cleanup-only
+command. Combining the options with the staged control channel is rejected.
+The cleanup uses existing candidate/outbox eligibility, not a generic age policy.
+
+`memory_review_cleanup` reports processed/partial/error independently of the GJC
+result. processed means the batch ran without entry failures, not that all files
+were deleted. partial includes failed counts. scan_complete means end of this
+directory traversal only. Continuous run emits structured
+`service.memory-review-cleanup` output when the batch result changes. The service
+closes its scanner in finally. Restart begins a fresh eligibility scan.
+
+Verification before native review: integration3files12tests passed, including a
+separate process importing compiled CLI code to delete a repaired expired review,
+root deletion/replacement without recreation or chmod, staged-channel/config
+rejection, scanner regression and existing morning/evening service behavior.
+Evidence: /home/jm/.cache/jarvis-test-runtime-qa-20260908/service-cleanup-integration.log.
+No production service was deployed or restarted. This completes only the candidate
+review cleanup connection; broader retention remains open.
+
+
+Service loop follow-up: the integration test drives two actual service callbacks
+through a bounded mocked outer scheduler. Both batches scan2 entries with limit2,
+then the owning command closes the scanner once and subsequent use fails closed.
+The matching structured cleanup result is emitted once across the unchanged pair.
+Service-focused suite: 1file4tests passed; service-cleanup-loop.log. This tests
+callback composition and ownership, not operating-system signal shutdown.
+
+
+Native service_cleanup_review: ship, 0 blocking/actionable findings. Requested
+model/effort gpt-5.6-sol/high; actual runtime metadata and token usage unavailable.
+Final service suite4tests and typecheck exit0 after correcting the test receiver
+lookup from mock.instances to mock.contexts. CLI help now lists both options.
+Review limits: no real timer/signal shutdown test yet; structured-output equality
+is observed in the test log but has no direct assertion. These remain acceptance
+follow-ups, not evidence of production activation.

@@ -54,6 +54,8 @@ export type CliValues = {
   readonly worker?: string;
   readonly source?: string;
   readonly "key-file"?: string;
+  readonly "memory-review-cleanup-root"?: string;
+  readonly "memory-review-cleanup-limit"?: string;
 };
 
 export type CliCommandContext = {
@@ -100,6 +102,8 @@ export function normalizeCliValues(
     worker: stringValue(value.worker),
     source: stringValue(value.source),
     "key-file": stringValue(value["key-file"]),
+    "memory-review-cleanup-root": stringValue(value["memory-review-cleanup-root"]),
+    "memory-review-cleanup-limit": stringValue(value["memory-review-cleanup-limit"]),
   };
 }
 

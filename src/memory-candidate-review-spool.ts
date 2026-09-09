@@ -117,8 +117,10 @@ export function createMemoryCandidateReviewEnvelope(
 export class MemoryCandidateReviewSpool {
   private readonly spool: PrivateSpoolRoot;
 
-  constructor(private readonly root: string) {
-    this.spool = openPrivateSpoolRoot(root);
+  constructor(private readonly root: string, existingRoot?: PrivateSpoolRoot) {
+    if (existingRoot !== undefined && existingRoot.path !== root) throw new Error("MEMORY_SPOOL_ROOT_CHANGED");
+    this.spool = existingRoot ?? openPrivateSpoolRoot(root);
+    assertPrivateSpoolRoot(this.spool);
   }
 
   publish(envelope: MemoryCandidateReviewEnvelope): MemoryCandidateReviewPublication {

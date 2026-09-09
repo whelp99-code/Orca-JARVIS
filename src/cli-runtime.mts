@@ -33,6 +33,7 @@ const CLI_HELP =
   + "routing templates | routing compile-template INPUT.json: inspect or compile versioned task templates before approval\n"
   + "daily morning --once --db PATH --input CONFIG: run stored-source morning recovery; provider refresh unavailable\n"
   + "daily evening --once --db PATH --input CONFIG --key-file PATH: publish stored native completions; automatic operation held\n"
+  + "service once/run --memory-review-cleanup-root PATH [--memory-review-cleanup-limit N]: clean eligible review files; existing private root, limit 1-1000\n"
   + "runtime identity [--db PATH]: observe this CLI build and persisted daemon identity without migrating the DB\n"
   + "report task-performance FROM TO --db PATH: current-state execution cohort metrics; no policy promotion\n"
   + "report routing-shadow FROM TO BASELINE.json CANDIDATE.json --db PATH: compare policies on historical task inputs; no execution\n"
@@ -92,12 +93,18 @@ export async function execute(
       worker: { type: "string" },
       source: { type: "string" },
       "key-file": { type: "string" },
+      "memory-review-cleanup-root": { type: "string" },
+      "memory-review-cleanup-limit": { type: "string" },
     },
     allowPositionals: true,
     strict: false,
   });
   const [command, subcommand, argument, fourth, fifth, sixth] = parsed.positionals;
   const values = normalizeCliValues(parsed.values);
+  if ((values["memory-review-cleanup-root"] !== undefined || values["memory-review-cleanup-limit"] !== undefined)
+    && (command !== "service" || !["once", "run"].includes(subcommand ?? ""))) {
+    throw new JarvisError("MEMORY_REVIEW_CLEANUP_CONFIG_INVALID");
+  }
   if (command === "routing") {
     if (Object.keys(parsed.values).some(key => key !== "json")) throw new JarvisError("WORK_ROUTING_INPUT_INVALID");
     if (subcommand === "templates" && parsed.positionals.length === 2) {

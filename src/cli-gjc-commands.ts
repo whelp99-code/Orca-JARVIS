@@ -7,6 +7,7 @@ import { GjcCoordinatorClient } from "./gjc.js";
 import { LiveSupervisor, type LiveSupervisorCycle } from "./live-supervisor.js";
 import { PreGjcShadow } from "./pre-gjc-shadow.js";
 import { PERSONAL_OS_CONTROL_CHANNEL_ENV, servePersonalOsCycleChannel } from "./personal-os-cycle-channel.js";
+import { configuredMemoryReviewCleanup } from "./cli-memory-review-cleanup.js";
 import { DailyServiceCycles } from "./daily-service-cycles.js";
 import { PersonalOsRuntime } from "./personal-os-runtime.js";
 import { CYCLE_READY_TYPE } from "./personal-os-cycle-ready.js";
@@ -20,6 +21,7 @@ export async function executeGjcCommand(
 ): Promise<Record<string, unknown> | undefined> {
   const { command, subcommand, argument, values, db, dependencies } = context;
   if (command !== "gjc" && command !== "service") return undefined;
+  const cleanup = configuredMemoryReviewCleanup(context);
   let daily: DailyServiceCycles | undefined;
   if (command === "service" && (values.input !== undefined || values["key-file"] !== undefined)) {
     if (!["once", "run"].includes(subcommand ?? "") || !values.input || !values["key-file"]
@@ -49,7 +51,16 @@ export async function executeGjcCommand(
     },
   });
   let lastDailyOutput: string | undefined;
+  let lastCleanupOutput: string | undefined;
   const once = async () => {
+    const memory_review_cleanup = cleanup?.cycle(commandNow(context));
+    if (memory_review_cleanup !== undefined && subcommand === "run" && !values.once) {
+      const serialized = JSON.stringify(memory_review_cleanup);
+      if (serialized !== lastCleanupOutput) {
+        outputSync({ ok: memory_review_cleanup.status === "processed", command: "service.memory-review-cleanup", ...memory_review_cleanup });
+        lastCleanupOutput = serialized;
+      }
+    }
     const phases = await daily?.cycle();
     if (phases !== undefined && subcommand === "run" && !values.once) {
       const serialized = JSON.stringify(phases);
@@ -59,7 +70,7 @@ export async function executeGjcCommand(
       }
     }
     const result = await service.once(commandNow(context).toISOString());
-    return { ...result, ...(phases === undefined ? {} : { daily: {
+    return { ...result, ...(memory_review_cleanup === undefined ? {} : { memory_review_cleanup }), ...(phases === undefined ? {} : { daily: {
       scope: "stored-local-sources", provider_refresh: "unavailable", phases,
     } }) };
   };
@@ -166,7 +177,7 @@ export async function executeGjcCommand(
     }
     return undefined;
   } finally {
-    service.close();
+    try { cleanup?.close(); } finally { service.close(); }
   }
 }
 

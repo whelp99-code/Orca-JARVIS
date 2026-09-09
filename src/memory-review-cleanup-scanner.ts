@@ -1,3 +1,4 @@
+import type { PrivateSpoolRoot } from "./memory-private-spool-files.js";
 import type { AuthorityDb } from "./db.js";
 import { cleanupMemoryCandidateReviewPath } from "./memory-candidate-review-cleanup.js";
 import { MemoryCandidateReviewSpool } from "./memory-candidate-review-spool.js";
@@ -14,14 +15,14 @@ export class MemoryReviewCleanupScanner {
   private entries: Generator<string | undefined, void, undefined> | undefined;
   private spool: MemoryCandidateReviewSpool | undefined;
   private closed = false;
-  constructor(private readonly authority: AuthorityDb, private readonly root: string) {}
+  constructor(private readonly authority: AuthorityDb, private readonly root: string, private readonly existingRoot?: PrivateSpoolRoot) {}
 
   cycle(now: Date, limit = 64): MemoryReviewCleanupBatch {
     if (this.closed) throw new Error("MEMORY_REVIEW_CLEANUP_CLOSED");
     if (this.authority.db.inTransaction) throw new Error("MEMORY_REVIEW_CLEANUP_TRANSACTION_ACTIVE");
     if (!Number.isFinite(now.getTime())) throw new Error("MEMORY_REVIEW_CLEANUP_CLOCK_INVALID");
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 1000) throw new Error("MEMORY_REVIEW_CLEANUP_LIMIT_INVALID");
-    this.spool ??= new MemoryCandidateReviewSpool(this.root);
+    this.spool ??= new MemoryCandidateReviewSpool(this.root, this.existingRoot);
     this.entries ??= this.spool.iterateEntries();
     let scanned = 0; let removed = 0; let failed = 0;
     try {
