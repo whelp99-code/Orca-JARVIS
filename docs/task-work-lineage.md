@@ -200,3 +200,16 @@ Focused identity/lineage-claim/approved-execution regression: 3 files, 23 tests
 passed in 11.07s. Typecheck and lint exited 0. Evidence: `verify-own-task-result.json`,
 `lineage-settlement-fix.log`, `lineage-settlement-types.log`, `lineage-settlement-lint.log`.
 Full corrected verification and independent acceptance remain outstanding.
+
+Corrected canonical gate at `a951729` finished with exit 0:
+backend shards 266 files/1838 tests and 265 files/1871 tests; dashboard
+37 files/256 tests, totaling 568 files/3965 tests. Runtime, lint, typecheck,
+build, fixed-clock acceptance and CLI smoke completed successfully.
+Acceptance: pre_gjc_ready, aggregate stopped, completion_promoted true,
+gjc_dispatched false. All 1843 tracked file hashes remained unchanged.
+Receipt: `verify-indexed-lineage-result.json`; log: `verify-indexed-lineage.log`.
+Chromium regression also passed 28 tests in 1.3 minutes using local fixture
+servers (`indexed-lineage-browser.log`); no production deployment is attested.
+Fresh read-only review `/root/indexed_lineage_review` was requested for
+`36f6814..a951729`; acceptance remains pending its verdict. Backlog01–25 is
+still the full objective and is not completed by this feature's passing gate.
