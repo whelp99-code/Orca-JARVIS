@@ -41,6 +41,8 @@ export type CliValues = {
   readonly worktree?: string;
   readonly bindings?: string;
   readonly limit?: string;
+  readonly cursor?: string;
+  readonly all?: boolean;
   readonly max_pages?: string;
   readonly max_bytes?: string;
   readonly interval_ms?: string;
@@ -91,6 +93,8 @@ export function normalizeCliValues(
     worktree: stringValue(value.worktree),
     bindings: stringValue(value.bindings),
     limit: stringValue(value.limit),
+    cursor: stringValue(value.cursor),
+    all: booleanValue(value.all),
     max_pages: stringValue(value.max_pages),
     max_bytes: stringValue(value.max_bytes),
     interval_ms: stringValue(value.interval_ms),

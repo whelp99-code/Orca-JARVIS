@@ -4,6 +4,7 @@ import { stageTaskExecution } from "../../src/task-execution-staging.js";
 import { listControlCommands, readControlCommand } from "../../src/control-command-read.js";
 import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
 import { controlRequestPage, pendingControlSummary } from "../../src/dashboard/control-request-read.js";
+import { pageControlCommands } from "../../src/control-command-page.js";
 
 it("reuses loaded ancestors within a list snapshot and observes quarantine on the next call", async () => {
   const f = await taskPublicationFixture();
@@ -29,6 +30,9 @@ it("reuses loaded ancestors within a list snapshot and observes quarantine on th
       expect(task).toHaveBeenCalledTimes(1);
     } finally { prepare.mockRestore(); payload.mockRestore(); task.mockRestore(); }
     expect(listed).toEqual(listed.map(row => readControlCommand(f.db, row.request_id)));
+    const page = pageControlCommands(f.db);
+    expect(page.requests).toEqual(listed);
+    expect(page.page.next_cursor).toBeNull();
     expect(controlRequestPage(f.db, f.now, { limit: 10 }).page).toMatchObject({ total: 64, returned: 10, has_more: true });
     expect(pendingControlSummary(f.db, f.now).total).toBe(64);
     expect(f.db.db.serialize().equals(before)).toBe(true);
@@ -36,6 +40,7 @@ it("reuses loaded ancestors within a list snapshot and observes quarantine on th
       component_id: root.request_id }, new Date(f.now.getTime() + 64));
     const hidden = f.db.db.serialize();
     expect(listControlCommands(f.db).map(row => row.request_id)).toEqual(["start"]);
+    expect(pageControlCommands(f.db).requests.map(row => row.request_id)).toEqual(["start"]);
     expect(controlRequestPage(f.db, f.now, { limit: 10 })).toMatchObject({ items: [],
       page: { total: 0, returned: 0, has_more: false, next_cursor: null } });
     expect(controlRequestPage(f.db, f.now).items).toEqual([]);

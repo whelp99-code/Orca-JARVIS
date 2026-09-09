@@ -1,0 +1,1 @@
+CREATE INDEX control_command_requests_list_page ON control_command_requests(requested_at,request_id);

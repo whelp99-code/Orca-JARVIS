@@ -92,6 +92,8 @@ export async function execute(
           worktree: { type: "string" },
           bindings: { type: "string" },
           limit: { type: "string" },
+          cursor: { type: "string" },
+          all: { type: "boolean" },
           max_pages: { type: "string" },
           max_bytes: { type: "string" },
           interval_ms: { type: "string" },

@@ -1,7 +1,7 @@
 # Generic command list pagination boundary
 
-Inspected product baseline: a951729. This is remaining backlog16 work, not an
-implemented API. Work-lineage acceptance is under independent review.
+Discovery baseline: a951729. The discovery and requirements below describe the
+pre-change boundary; the implementation status is recorded at the end.
 
 ## Observed call path
 
@@ -40,3 +40,41 @@ Its response also omits command arguments that the generic command API returns.
 
 Do not declare backlog16 complete from projection_id indexes alone. Other overview
 and command consumers require their existing evidence to be reconciled separately.
+
+## Implemented CLI behavior
+
+`jarvis control list --db PATH --json` returns at most100 requests and a page
+object containing limit, returned, scanned, has_more and next_cursor.
+Continue with `--cursor TOKEN`; `--limit N` accepts1..100. Empty requests with
+has_more=true means a hidden span was scanned: continue using next_cursor.
+At most500 candidate commands are examined per call, plus one lookahead row.
+Current lineage reads remain bounded to64 predecessor steps per candidate.
+The limit bounds rows, not arbitrary stored payload byte sizes.
+
+`--all` preserves the original complete requests response explicitly and is
+incompatible with --limit/--cursor. Library ControlPlane.list remains unchanged.
+Consumers previously assuming an unpaged default must use --all or follow cursors.
+No total count is advertised. New requests ordered before an already consumed
+anchor require restarting pagination; this is current-state traversal, not a frozen
+snapshot spanning processes. Removed/replaced anchors produce CONTROL_PAGE_STALE.
+Each page uses one read transaction and reevaluates current suppression.
+Migration087 adds the general ordering index without changing prior SQL bytes.
+
+Five separate compiled CLI processes verified100 then5 requests, explicit all105,
+invalid option combination and malformed cursor exit2, with unchanged DB bytes.
+The new optional all flag initially defaulted to false and broke strict option
+validation in timeline commands; using the existing booleanValue parser fixed it.
+
+Exploratory five-sample measurements, half legacy task.execute / half workflow,
+all-state population, 1KiB args and1000 unrelated quarantines:
+
+| Rows | Full-list sample p95 | Page sample p95 | Full/page bytes |
+| --- | --- | --- | --- |
+| 10000 | 297.37ms | 45.68ms | 14103335 / 141230 |
+| 100000 | 2847.42ms | 4.64ms | 141033335 / 141230 |
+
+Reads made zero DB changes. The10k page median was3.86ms; its45.68ms sample
+maximum is retained, not discarded. These are synthetic observations, not a
+production SLO, full deep-lineage scale result or whole backlog16 acceptance.
+Evidence in the QA directory: control-page-cli-result.json and
+control-pagination-scale.json. Full verification and fresh review remain pending.

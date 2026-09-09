@@ -19,6 +19,7 @@ import { executeMemoryReference } from "./cli-memory-reference.js";
 import { executeMemoryScopedReconcile } from "./cli-memory-scoped-reconcile.js";
 import { stageMemoryRememberDispatch } from "./memory-remember-dispatch.js";
 import { taskExecutionReadiness } from "./task-execution-runtime.js";
+import { pageControlCommands } from "./control-command-page.js";
 
 export async function executeControlCommand(
   context: CliCommandContext,
@@ -81,7 +82,11 @@ export async function executeControlCommand(
       control.cancel(input, commandNow(context));
       return { ok: true, command: "control.cancel", request_id: input.request_id };
     }
-    if (subcommand === "list") return { ok: true, command: "control.list", requests: control.list() };
+    if (subcommand === "list") {
+      if (values.all && (values.limit !== undefined || values.cursor !== undefined)) throw new JarvisError("VALIDATION_ERROR");
+      return { ok: true, command: "control.list", ...(values.all ? { requests: control.list() }
+        : pageControlCommands(db, values.limit === undefined ? 100 : integer(values.limit), values.cursor)) };
+    }
     if (subcommand === "execute" && argument) {
       const request = control.get(argument);
       const runtime = request?.action === "memory.outbox.dispatch" && request.args.schema_version !== 3
