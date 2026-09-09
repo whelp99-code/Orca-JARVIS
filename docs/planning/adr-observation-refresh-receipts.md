@@ -79,3 +79,21 @@ fits and reads no_data;65 pairs reject with OBSERVATION_REFRESH_INVALID.
 After these fixes, receipt/compaction/reviewability3files11tests and subsequent
 Typecheck/lint/build passed. Earlier API-shaped fixture receipts predate the exact
 pair contract; current process acceptance is rerun with explicit members.
+
+## Canonical verification at df8fa54
+
+`npm run verify` completed with exit code 0 at source HEAD
+`df8fa5403c06d36641817bc69917b432059062cc`. Backend shards passed
+261 files / 1815 tests and 260 files / 1847 tests; dashboard passed
+37 files / 255 tests: 558 files / 3917 tests total. The canonical chain
+includes runtime check, lint, typecheck, build, fixed-clock acceptance and
+CLI smoke. Acceptance emitted `pre_gjc_ready`, with `gjc_dispatched=false`.
+
+Before/after SHA-256 comparison checked 1811 tracked files with 0 changes
+and identical HEAD. The untracked node_modules link remained present; build
+metadata therefore reports source_dirty=true. This is tracked-source stability
+evidence, not a claim that the whole checkout had no untracked entries.
+
+Local QA evidence: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/`
+contains `verify-refresh-df8fa54.log`, `verify-refresh-before.json` and
+`verify-refresh-result.json`. No production activation is established by this gate.
