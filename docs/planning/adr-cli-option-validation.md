@@ -40,3 +40,19 @@ An intermediate fixture edit accidentally referenced flag outside its loop; diff
 inspection found and reverted it before the successful rerun. Product code did not
 change during this compatibility correction. Logs in the local QA directory:
 cli-strict-compatibility.log and cli-strict-compatibility-fixed.log.
+
+## Canonical acceptance at 87390b2
+
+Uninterrupted npm run verify (session 97701) exited 0 at
+87390b2874365db68ade410d1f61ad0bda610dee. Backend shards passed
+261 files / 1817 tests (594.88s) and 261 files / 1848 tests (534.69s);
+dashboard passed 37 files / 255 tests (33.62s): 3920 tests total.
+Runtime, lint, typecheck, build, fixed-clock acceptance and CLI smoke completed.
+Acceptance emitted pre_gjc_ready, stopped, completion_promoted=true and
+gjc_dispatched=false. Before/after comparison checked 1814 tracked file hashes:
+0 changes and identical HEAD. The untracked node_modules link remained present.
+
+Evidence directory /home/jm/.cache/jarvis-test-runtime-qa-20260908:
+verify-cli-before.json, verify-cli-87390b2.log, verify-cli-result.json.
+This verifies CLI argument validation and its command compatibility changes;
+it does not establish collector activation or completion of backlog 01–25.
