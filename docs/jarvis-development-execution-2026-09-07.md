@@ -1564,3 +1564,28 @@
   package-after-failure-fix.json. Parent inspected complete small diff, syntax and
   diff checks pass. Full verify93446 remains live in the unchanged integration
   worktree; no service activation or production DB access performed.
+
+### Completed full gate and retention clock rollback — 2026-09-09
+
+- Full verify session93446 exited0. Backend shards243files/1697tests and
+  243files/1726tests, dashboard37files/255tests:3678 total. Fixed-clock acceptance
+  and final CLI smoke exited0 as part of canonical verify.
+- Integration worktree HEADa184fca458ce2de6e58a4ccd25fd05cd61f4beee unchanged;
+  1674 tracked file SHA256 values match the saved pre-run vector, mismatch0.
+  verify-task-identity-after.json records the comparison. This proves that gate's
+  source identity; later packaging and retention edits are not covered by that run.
+- Retention regression before fix:2failed/18passed. Execution could precede its
+  persisted claim timestamp, and adapter deletion could settle after a clock rewind.
+  Added updated_at/not_before lease guards and completedAt>=started check.
+  Related retention/migration suite now2files/21tests passed; full lint,3typechecks
+  and backend build exit0. No migration SQL changed.
+- Compiled process3982445 with file-backed fixture DB: pre-claim-time execution
+  E_RETENTION_CLAIM/calls0 and unchanged claimed row; during-adapter rewind
+  E_CLOCK_INVALID/calls1, deletion rolled back (row1 preserved), failed job/null
+  result_digest. quick_check=ok. Receipt in shared QA cache
+  retention-rewind-live-Hp2881/receipt.json. Real deletion adapters/scheduling remain
+  HOLD; test clock and fixture rows are not production deletion acceptance.
+- Native read-only retention_rewind_review returned ship. Requested luna/high;
+  actual runtime metadata unobservable. Reviewer's direct Vitest collection hit
+  scratch error-122; that failed attempt is separate from the parent canonical
+  runner21tests and compiled validation above, and is not reported as a pass.

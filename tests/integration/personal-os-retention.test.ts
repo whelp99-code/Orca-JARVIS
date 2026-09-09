@@ -177,7 +177,7 @@ describe("PersonalOsRuntime retention owner", () => {
     expect(digests[0]).not.toBe(digests[1]);
   });
 
-  it.each(["throw", "counts", "settlement", "expiry"])("rolls back deletion after %s failure", async mode => {
+  it.each(["throw", "counts", "settlement", "expiry", "rewind"])("rolls back deletion after %s failure", async mode => {
     const db = await personalDb();
     open.push(db);
     db.db.exec("CREATE TABLE retention_rollback_demo(id TEXT PRIMARY KEY); INSERT INTO retention_rollback_demo VALUES('keep-on-failure')");
@@ -187,6 +187,7 @@ describe("PersonalOsRuntime retention owner", () => {
         database.prepare("DELETE FROM retention_rollback_demo").run();
         if (mode === "throw") throw new Error("injected adapter failure");
         if (mode === "expiry") now = T2;
+        if (mode === "rewind") now = T0;
         return { scanned: 1, eligible: 1, deleted: 1, retained: 0, error_count: mode === "counts" ? 1 : 0 };
       },
     } });
@@ -195,11 +196,27 @@ describe("PersonalOsRuntime retention owner", () => {
     runtime.retention.claimDue({ now: T1, leaseExpiresAt: T2 });
     if (mode === "settlement") db.db.exec(`CREATE TRIGGER fail_completion BEFORE UPDATE OF state ON retention_jobs
       WHEN NEW.state='completed' BEGIN SELECT RAISE(ABORT,'injected settlement failure'); END`);
-    const code = mode === "expiry" ? "E_RETENTION_CLAIM" : "E_RETENTION_ADAPTER";
+    const code = mode === "rewind" ? "E_CLOCK_INVALID" : mode === "expiry" ? "E_RETENTION_CLAIM" : "E_RETENTION_ADAPTER";
     expect(() => runtime.retention.executeClaimed({ jobId: mode, now: T1, cutoff: T0 })).toThrow(code);
     expect(db.db.prepare("SELECT id FROM retention_rollback_demo").all()).toEqual([{ id: "keep-on-failure" }]);
     expect(db.db.prepare("SELECT state,failure_code,result_digest FROM retention_jobs WHERE job_id=?").get(mode))
       .toEqual({ state: "failed", failure_code: code, result_digest: null });
+  });
+
+  it("rejects execution before the persisted claim time without invoking the adapter", async () => {
+    const db = await personalDb(); open.push(db);
+    let now = T1; let calls = 0;
+    const runtime = new PersonalOsRuntime({ db: db.db, now: () => new Date(now), adapters: {
+      notification: () => { calls++; return { scanned: 0, eligible: 0, deleted: 0, retained: 0, error_count: 0 }; },
+    } });
+    runtime.retention.createJob({ jobId: "rewound-claim", jobKey: "rewound-claim", idempotencyKey: "rewound-claim",
+      dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T0, cutoff: T0 });
+    runtime.retention.claimDue({ now: T1, leaseExpiresAt: T2 });
+    const before = db.db.prepare("SELECT * FROM retention_jobs WHERE job_id='rewound-claim'").get();
+    now = T0;
+    expect(() => runtime.retention.executeClaimed({ jobId: "rewound-claim", now: T0, cutoff: T0 })).toThrow("E_RETENTION_CLAIM");
+    expect(calls).toBe(0);
+    expect(db.db.prepare("SELECT * FROM retention_jobs WHERE job_id='rewound-claim'").get()).toEqual(before);
   });
 
   it("rejects expired and foreign claims before calling an adapter", async () => {

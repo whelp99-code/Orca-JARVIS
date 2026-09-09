@@ -126,6 +126,7 @@ export class RetentionRuntime {
         const counts = adapter(this.db, { job_id: input.jobId, now: started, policy, policy_digest });
         validateCounts(counts);
         const completedAt = this.now();
+        if (completedAt < started) throw new PersonalOsError("E_CLOCK_INVALID");
         const current = this.currentLease(input.jobId, completedAt);
         if (current.lease_fence !== fence) throw new PersonalOsError("E_RETENTION_CLAIM");
         const body = { ...counts, cutoff: input.cutoff, policy_digest, fence };
@@ -157,8 +158,8 @@ export class RetentionRuntime {
   private currentLease(jobId: string, now: string): { data_class: RetentionDataClass; lease_fence: number; policy_cutoff: string | null } {
     const row = this.db.prepare(
       "SELECT data_class,lease_fence,policy_cutoff FROM retention_jobs WHERE job_id=? AND state='claimed' AND lease_owner=? " +
-        "AND lease_expires_at>? AND expires_at>?",
-    ).get(jobId, this.owner, now, now) as {
+        "AND lease_expires_at>? AND expires_at>? AND updated_at<=? AND not_before<=?",
+    ).get(jobId, this.owner, now, now, now, now) as {
       data_class: RetentionDataClass; lease_fence: number; policy_cutoff: string | null;
     } | undefined;
     if (!row) throw new PersonalOsError("E_RETENTION_CLAIM");
