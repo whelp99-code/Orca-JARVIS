@@ -194,3 +194,35 @@ Raw non-secret feature-list receipts: shared QA codex-candidate-features.txt and
 codex-unified-exec-override.txt. No user configuration or auth file was edited.
 No unsupported feature key was invented, no bypass flag was used, and the current
 Codex execution hold remains pending effective-tool evidence.
+
+
+## 2026-09-10 effective tool inventory at the local wire boundary
+
+A loopback rejecting mock Responses provider captured only tool names/counts from
+Codex0.153.4 requests. It returned HTTP400 intentionally; child exit1 is expected,
+not a successful model run. No model response or tool call was issued. Request
+input and credential contents were not persisted or printed. GET models requests
+had no JSON body and are marked parse_error in the diagnostic receipt.
+
+The invocation used an empty temporary cwd, read-only sandbox, ephemeral session,
+ignore-user-config, ignore-rules, disabled web_search, and disabled shell_tool,
+unified_exec and multi_agent. First /v1/responses advertised23tools, including
+app namespaces, MCP resource readers, user input, plugin install and view_image.
+No shell or unified exec tool appeared in that observed request. This resolves
+one ambiguity in the earlier feature listing: unified_exec=true did not alone
+prove shell tool exposure for this invocation.
+
+Adding --disable apps, apps._default.enabled=false and tools.view_image=false
+reduced the observed tool list to2: request_user_input and view_image. Thus the
+second invocation still does not establish a candidate-only tool-free boundary.
+Do not register it based merely on the reduction in count or the declared sandbox.
+The missing image-tool suppression requires version-specific implementation evidence
+or a separately enforced process/filesystem boundary and hostile-call tests.
+
+Official configuration source for custom local provider, apps and view-image
+settings: https://learn.chatgpt.com/docs/config-file/config-reference.
+No global user configuration or authentication file was modified. Diagnostic scripts
+and receipts are QA codex-tool-inventory-probe.mjs / codex-tool-inventory.json and
+codex-tool-inventory-no-apps-probe.mjs / codex-tool-inventory-no-apps.json under
+/home/jm/.cache/jarvis-test-runtime-qa-20260908. This wire probe is not a production
+adapter, remote authentication test, model-quality test or end-to-end task completion.
