@@ -167,3 +167,14 @@ The canonical run at `cea687c` (session98914) was deliberately terminated after
 these defects were confirmed, with exit143. It is incomplete and not a passing
 gate. Logs remain `verify-lineage-corrections.log`; no successful receipt was made.
 Browser/full-gate revalidation and a fresh independent verdict are still required.
+
+Task-scope quarantine regression exposed an additional root-request leak: the
+linked request was hidden but the original request remained in approval pages.
+Common command visibility and the SQL page predicate now include the current
+request's task scope, including original and legacy requests. The parameterized
+payload/task quarantine cases verify empty pages and pending totals, blocked
+claim/execution, unchanged DB bytes and zero provider calls.
+Four integration files passed 13 tests in 10.56s; typecheck and lint completed
+with exit 0 (session94372). Evidence: `lineage-page-task-fixed.log`,
+`lineage-own-task-typecheck.log`, `lineage-own-task-lint.log` in the QA directory.
+These focused checks do not replace the outstanding browser/full gate and review.

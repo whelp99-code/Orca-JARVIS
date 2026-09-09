@@ -1,5 +1,5 @@
 /** Correlated to command alias c; bounded traversal uses request primary keys.
- * Direct payload visibility is checked by the caller. This checks ancestors. */
+ * Includes the request's own task scope and all permitted ancestors. */
 export const CONTROL_LINEAGE_VISIBLE_SQL = `NOT EXISTS (
   WITH RECURSIVE ancestors(request_id,args_json,target_json,depth) AS (
     SELECT c.request_id,c.args_json,c.target_json,0 WHERE c.action='task.execute'
@@ -10,7 +10,7 @@ export const CONTROL_LINEAGE_VISIBLE_SQL = `NOT EXISTS (
     WHERE a.depth<63 AND p.action='task.execute'
       AND json_extract(a.args_json,'$.work_lineage.kind') IN ('rework','retry')
   )
-  SELECT 1 FROM ancestors a WHERE a.depth>0 AND (
+  SELECT 1 FROM ancestors a WHERE (
     EXISTS (SELECT 1 FROM memory_projection_quarantine q
       WHERE (q.projection_kind='control_payload' AND q.projection_id=a.request_id AND q.component_id=a.request_id)
         OR q.projection_id=json_extract(a.target_json,'$.task_id'))

@@ -30,6 +30,10 @@ export function visibleTaskWorkLineageRows(rows: readonly Record<string, unknown
 function visible(row: Record<string, unknown>, read: (id: string) => Record<string, unknown> | undefined,
   payloadSuppressed: (id: string) => boolean, taskSuppressed: (id: string) => boolean): boolean {
   if (row.action !== "task.execute") return true;
+  if (row.target_json !== undefined) {
+    const target = JSON.parse(String(row.target_json));
+    if (typeof target?.task_id === "string" && taskSuppressed(target.task_id)) return false;
+  }
   let current = row;
   const visited = new Set<string>();
   for (let depth = 0; depth < 64; depth++) {

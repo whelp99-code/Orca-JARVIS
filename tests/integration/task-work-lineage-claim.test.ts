@@ -4,7 +4,7 @@ import { stageTaskExecution } from "../../src/task-execution-staging.js";
 import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
 import { controlRequestPage, pendingControlSummary } from "../../src/dashboard/control-request-read.js";
 
-it("does not consume approval or change state when an ancestor is quarantined", async () => {
+it.each(["payload", "task"])("does not consume approval or expose requests after ancestor %s quarantine", async kind => {
   const f = await approvedTaskFixture(true, { stage: false });
   try {
     const prior = stageTaskExecution(f.db, { ...f.request, plan: f.plan }, new Date(f.now.getTime() - 1));
@@ -12,8 +12,9 @@ it("does not consume approval or change state when an ancestor is quarantined", 
       work_lineage: { schema_version: 1, kind: "rework", prior_request_id: prior.request_id,
         prior_command_digest: prior.command_digest } }, f.now);
     f.approve(child);
-    new MemoryProjectionAuthority(f.db).quarantineUnresolved({ kind: "control_payload", id: prior.request_id,
-      component_id: prior.request_id }, f.now);
+    const id = kind === "payload" ? prior.request_id : f.plan.task_id;
+    new MemoryProjectionAuthority(f.db).quarantineUnresolved({ kind: kind === "payload" ? "control_payload" : "task_timeline",
+      id, component_id: id }, f.now);
     expect(f.control.get(child.request_id)).toBeUndefined();
     const before = f.db.db.serialize();
     expect(controlRequestPage(f.db, f.now, { limit: 1 }).items).toEqual([]);
