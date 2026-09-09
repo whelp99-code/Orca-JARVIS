@@ -178,3 +178,10 @@ Four integration files passed 13 tests in 10.56s; typecheck and lint completed
 with exit 0 (session94372). Evidence: `lineage-page-task-fixed.log`,
 `lineage-own-task-typecheck.log`, `lineage-own-task-lint.log` in the QA directory.
 These focused checks do not replace the outstanding browser/full gate and review.
+
+At `64fdce5`, `npm run test:e2e` rebuilt backend and dashboard and exited 0:
+28 Chromium tests passed in 1.3 minutes across 1440/1024 viewports, including
+lineage preview invalidation, staging and persistence after reload. This uses
+real local HTTP fixture servers; it does not attest production deployment.
+Evidence: `lineage-own-task-browser.log` in the QA directory. Canonical verify
+started at the same code revision (session45611); its result remains pending.
