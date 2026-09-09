@@ -154,5 +154,5 @@ describe("quiesced fresh-file AuthorityDb reconstruction", () => {
       if (db.db.open) db.close();
       rmSync(root, { recursive: true, force: true });
     }
-  });
+  }, 15_000); // Multiple full-schema rebuilds plus a real child-process FD drain.
 });
