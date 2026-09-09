@@ -2300,3 +2300,21 @@ Evidence in shared QA: packaged-preview-negative.log and packaged-preview-positi
 Both retained artifacts predate current HEAD; this comparison validates the probe's
 ability to detect the previously reproduced production composition regression.
 It is not a new current-HEAD package, full gate or provider execution verification.
+
+
+### 2026-09-10 — current isolated package with proposal HTTP gate
+
+- Packaged source ea11197cbce2addb8b379e4180a7e5df16a4db05 into
+  /home/jm/.cache/jarvis-test-runtime-qa-20260908/jarvis-runtime-URsHND;
+  packager exit0. Source dirty=true retained (git status only untracked node_modules).
+  Input digest sha256:b2e55ee7ed5ddf4c443c4c8f78564f55bd1ef10de72aeb7af79c7302a323de65,
+ 1568input files,1478payload files/9085851bytes.
+- Enhanced packaged-dashboard-http-probe exit0: HTML1733bytes, JS451848bytes,
+  CSS26606bytes, health1161bytes, session79bytes, preview815bytes; all6responses200.
+  Static3files byte-identical; preview ready with exact requirements and digest shape;
+  shutdown0. Independent post-probe dependency rehash matched the package receipt.
+- Logs/receipts: shared QA package-current-http.log and packaged-current-http.json.
+  No browser/provider execution in this HTTP probe; local version capability probes
+  remain part of preview. No service configuration or production release changed.
+  deployment_ready=false. This package includes the projection-key concurrency fix
+  and connecting label, but HTTP checks alone do not re-prove those specific behaviors.
