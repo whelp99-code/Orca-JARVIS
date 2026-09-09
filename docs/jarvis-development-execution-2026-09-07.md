@@ -1442,3 +1442,23 @@
   browser acceptance41aecdc, binding lookup3cc50f1 and provider lineage gapc6e67f7.
   This failed run cannot prove those newer changes; integrate only after terminal
   snapshot verification, then start a new fixed-source full gate.
+
+### Release rehearsal scope and executable payload HOLD — 2026-09-09
+
+- Existing compiled rehearsal on an isolated cache root exited0/OK, but executing
+  its published current/dist/src/cli.js --help exited1/ERR_MODULE_NOT_FOUND for
+  dist/src/db.js. writeRehearsalPayload copies selected entry files and migrations,
+  not the runtime module/dependency closure. Reproduction receipt directory:
+  release-runtime-audit-oh62dgtp under the shared QA cache.
+- Keep this fixture payload HOLD for deployment. Rehearsal output and operator
+  handoff now explicitly report scope=fixture_backup_restore_and_release_pointer,
+  deployment_ready=false/runtime_payload=incomplete/runtime_validation=not_performed.
+  Existing backup/restore and relative release-pointer rehearsal behavior remains.
+- Parent3tests passed; types/lint/backend build exit0 after correcting an initially
+  omitted return field caught by TS2739. Actual compiled CLI47222 exit0 confirms
+  output/handoff agree, restore quick_check=ok, production open_attempts0.
+  Receipt release-scope-verified-wcm1g5pc/verified-cli-result.json in QA cache.
+- Resume executable release acceptance only with a complete module/dependency
+  payload, real source/build identity, packaged CLI startup and isolated health/
+  doctor/contract checks. Fixture manifest IDs and a source-string execute check
+  are not sufficient. No production service, symlink or database was changed.

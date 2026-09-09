@@ -80,6 +80,10 @@ function assertOkGates(input: {
 export type RehearsalResult = {
   readonly ok: true;
   readonly rehearsal: "PERSONAL_OS_REHEARSAL_OK";
+  readonly scope: "fixture_backup_restore_and_release_pointer";
+  readonly deployment_ready: false;
+  readonly runtime_payload: "incomplete";
+  readonly runtime_validation: "not_performed";
   readonly current_target: string;
   readonly payload_digest: string;
   readonly restore: { readonly destPath: string; readonly sha256: string; readonly bytes: number; readonly quick_check: string };
@@ -170,6 +174,10 @@ export async function runPersonalOsRehearsal(options: RehearsalOptions): Promise
   const handoff = {
     schema_version: 1,
     rehearsal: "PERSONAL_OS_REHEARSAL_OK",
+    scope: "fixture_backup_restore_and_release_pointer",
+    deployment_ready: false,
+    runtime_payload: "incomplete",
+    runtime_validation: "not_performed",
     linux_authority: true,
     mac_client_only: true,
     jarvis_rpo_15m: true,
@@ -189,6 +197,10 @@ export async function runPersonalOsRehearsal(options: RehearsalOptions): Promise
   return {
     ok: true,
     rehearsal: "PERSONAL_OS_REHEARSAL_OK",
+    scope: "fixture_backup_restore_and_release_pointer",
+    deployment_ready: false,
+    runtime_payload: "incomplete",
+    runtime_validation: "not_performed",
     current_target: published.currentTarget,
     payload_digest: written.manifest.payload_digest,
     restore,

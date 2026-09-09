@@ -10,6 +10,13 @@ This is the executable-procedure source for Linux JARVIS/Second Brain releases. 
 
 Rehearsal command (isolated `--release-root` only):
 
+This rehearsal validates fixture backup/restore and the release pointer mechanism.
+Its payload contains selected files, not a complete executable application. An OK
+result is not deployment readiness: output explicitly reports deployment_ready=false,
+runtime_payload=incomplete and runtime_validation=not_performed. Do not activate
+this fixture payload in production. Complete runtime packaging and execution of the
+packaged CLI/health gates are required separately.
+
 `personal-os-rehearsal` = `node scripts/personal-os-release-rehearsal.mjs --fixture test/fixtures/personal-os/full-loop.json --clock 2026-08-27T07:15:00+09:00 --release-root <isolated> --json`
 
 ## Health gates {#gates}

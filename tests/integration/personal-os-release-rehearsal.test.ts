@@ -31,6 +31,8 @@ describe("personal-OS release rehearsal", () => {
     // Then
     expect(result.ok).toBe(true);
     expect(result.rehearsal).toBe("PERSONAL_OS_REHEARSAL_OK");
+    expect(result).toMatchObject({ scope: "fixture_backup_restore_and_release_pointer",
+      deployment_ready: false, runtime_payload: "incomplete", runtime_validation: "not_performed" });
     expect(result.production_database).toEqual({
       schema_version: 1,
       lane: "production-database",
