@@ -1506,3 +1506,25 @@
   packaged-doctor.stderr reside in the artifact cache directory. No provider
   process was executed. Full integration verify session93446 was separately
   re-polled and remained live; its worktree was not modified or restarted.
+
+### Repeatable isolated runtime packaging — 2026-09-09
+
+- Added scripts/package-authority-runtime.mjs following the isolated-runtime ADR.
+  Explicit scratch parent, fresh mkdtemp output, full build, backend identity match,
+  bounded regular-file copy, offline production npm install and existing CLI smoke.
+  Input/source/copy identities are checked again before writing the success receipt.
+  Failure retains logs and no success receipt; deployment_ready remainsfalse.
+- Actual command exit0 at source HEADa030a04 with dirty=true (new script included
+  in input digest): jarvis-runtime-KiCZjY in the shared QA cache,1355files/8535984bytes,
+  payload digest sha256:9fec5fa0447b718dda76d5e67ffd6eddfdb56ad3b43330319487f413b35d386e.
+  A separate post-command receipt/payload recheck passed. Native SQLite smoke
+  passed with production dependencies; Electron and backend build lock absent.
+- Missing argument and nonexistent parent each exit1. Reused fileIdentity rejects
+  an isolated input symlink with BACKEND_BUILD_SYMLINK. Node syntax and diff checks
+  passed. Receipt runtime-package-negative-checks.json captures argument failures.
+- Fresh native read-only runtime_package_review returned ship/no blocking findings.
+  Requested terra/high; actual model/effort unobservable. Remaining limits:
+  source checkout supplies smoke harness; installed node_modules is not itself
+  hashed by this receipt; no hermetic native build or cross-host portability claim.
+- Full verify session93446 remains separate and live. First shard243files/1697tests
+  passed; later gates are pending. No operational release pointer was changed.

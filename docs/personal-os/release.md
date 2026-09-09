@@ -28,3 +28,18 @@ Before/after activation or rollback: `migration-vector` `quick-check` `foreign-k
 Rollback is allowed only when `exact-migration-vector`, `provider-contract`, and `sealed-manifest` match the target release. Otherwise emit `RELEASE_ROLLBACK_INCOMPATIBLE` and leave `current` unchanged.
 
 Owner gate for real activation: `production-activation-gate`.
+
+## Isolated complete runtime package
+
+From the development checkout, with an existing scratch parent and a populated npm
+cache, run `node scripts/package-authority-runtime.mjs --output-parent <scratch-parent>`.
+It creates a new jarvis-runtime-* directory, builds backend/dashboard, checks build
+identity, copies runtime roots, installs locked production dependencies offline and
+runs the real CLI smoke with isolated SQLite state. Required output files and modes
+are hashed and rechecked; source HEAD, dirty state and toolchain are recorded.
+
+The success receipt is runtime-package-receipt.json. Failure leaves diagnostic logs
+without that receipt. npm cache misses fail instead of switching to an online install.
+The package is a developer validation artifact with deployment_ready=false; it must
+not be activated as a release. Provider, browser, reproducibility and sealed-manifest
+gates are not established by CLI smoke. Runtime dependencies target the current host.
