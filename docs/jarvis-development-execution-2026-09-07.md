@@ -2075,3 +2075,17 @@ Observed reviewer model/effort and API-equivalent token cost are unavailable.
   This verifies the runtime lifecycle, not production deletion or a new retention adapter.
 - Parent inspected the bounded validation diff. No delegated review or production activation.
   General retention integration and the full backlog remain open.
+
+## Subjects and retention canonical acceptance — 2026-09-10 KST
+
+- Tested commit ce8df874c8f12b1c1df346bbb8384a55cd4850f8, session69028, npm run verify exit0.
+- Backend shard1:264files1832tests passed,598.45s; shard2:263files1864tests passed,542.64s.
+- Dashboard:37files255tests passed,33.89s. Total3951tests passed.
+- Runtime/lint/typecheck/test build/tests/fixed-clock acceptance/CLI smoke chain exited0.
+- Acceptance: pre_gjc_ready/stopped, completion_promoted true, gjc_dispatched false.
+- Before/after hashes:1827 tracked files, changed_files []. Finished 2026-09-09T15:09:17.680006+00:00.
+- Evidence: /home/jm/.cache/jarvis-test-runtime-qa-20260908/verify-subjects-retention.log,
+  verify-subjects-retention-before.json and verify-subjects-retention-result.json.
+- Includes read-only local collection discovery and retention schedule validation.
+  No production deployment, provider refresh promotion or general retention activation.
+  Full backlog completion remains unproven; this gate validates the tested implementation only.
