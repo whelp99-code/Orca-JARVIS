@@ -65,7 +65,7 @@ export function readTaskPerformance(authority: AuthorityDb, from: unknown, to: u
       completion_latency: distribution(completions, invalidCompletions),
       provider_cost_estimate: readTaskUsagePerformance(authority, window.from, window.to, observedAt, verified, invalidEvidence),
       unavailable: { cost_per_success: "billing_usage_not_recorded", rework: "business_task_lineage_not_recorded",
-        duplicate_external_effects: "external_effect_observation_not_recorded", shadow_comparison: "comparison_contract_not_recorded" },
+        duplicate_external_effects: "external_effect_observation_not_recorded", shadow_comparison: "candidate_execution_outcomes_not_recorded" },
       policy_promoted: false };
   }).deferred();
 }

@@ -20,9 +20,13 @@ provider-only execution latency. p95 uses nearest-rank on observed valid samples
 Open approval age uses only pending requests without an accepted receipt.
 
 The bounded report rejects cohorts exceeding 1,000 requests rather than silently
-reporting a truncated success rate. Costs, true rework, external duplicate effects,
-and policy shadow comparison remain unavailable until their source records and
-comparison contract exist. No policy promotion or dispatch is performed.
+reporting a truncated success rate. Provider-reported cost estimates are exposed
+separately with completeness checks; authoritative billing cost, true rework and
+external duplicate effects remain unavailable. `report routing-shadow` compares
+policy decisions on the same historical inputs; it does not measure candidate
+execution outcomes. The performance report therefore marks shadow outcome
+comparison as `candidate_execution_outcomes_not_recorded`. No policy promotion
+or dispatch is performed.
 
 CLI: `jarvis report task-performance FROM TO --db EXISTING_DB`. Validate dates and
 arguments before opening the database. The normal authority connection is used
@@ -74,3 +78,12 @@ path. CLI startup retains the authority connection's normal SQLite configuration
   Receipt: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/performance-real-mkY4LI/receipt.json`.
   Three separate actual-model acceptance runs occurred in this unit; the last
   includes all product corrections. Each used one model and one verifier call.
+
+## Availability wording correction
+
+Performance/routing-shadow integration: 2 files / 9 tests passed. Backend build
+exited 0. A separate compiled CLI process on a migrated fixture DB returned exit0
+and the new candidate_execution_outcomes_not_recorded status, with no obsolete
+comparison_contract_not_recorded value. Receipt:
+/home/jm/.cache/jarvis-test-runtime-qa-20260908/performance-status-result.json.
+This is a reporting correction, not newly implemented cost or outcome collection.
