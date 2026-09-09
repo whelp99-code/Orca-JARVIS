@@ -27,7 +27,9 @@ it("runs the compiled CLI without a database, agent or state directory", () => {
 it("rejects database or execution flags before opening the requested path", async () => {
   const { request, policy } = input();
   for (const flags of [["--db", "/nonexistent/database.sqlite"], ["--once"], ["--execute"]]) {
-    await expect(execute(["routing", "classify", request, policy, ...flags])).rejects.toMatchObject({ code: "WORK_ROUTING_INPUT_INVALID" });
+    await expect(execute(["routing", "classify", request, policy, ...flags])).rejects.toMatchObject({
+      code: flags[0] === "--execute" ? "CLI_ARGUMENT_INVALID" : "WORK_ROUTING_INPUT_INVALID",
+    });
   }
 });
 

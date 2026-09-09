@@ -202,7 +202,9 @@ describe("team proposal CLI", () => {
       { args: ["team", "propose", request, "--once", "--db", database], flag: "--once" },
     ];
     for (const { args, flag } of cases) {
-      await expect(execute(args, { capabilityProbe: probeFor(), clock: () => now })).rejects.toMatchObject({ code: expect.stringMatching(/^(UNKNOWN_COMMAND|TEAM_PROPOSAL_INPUT_INVALID)$/) });
+      const code = flag.startsWith("--bogus") ? "CLI_ARGUMENT_INVALID"
+        : expect.stringMatching(/^(UNKNOWN_COMMAND|TEAM_PROPOSAL_INPUT_INVALID)$/);
+      await expect(execute(args, { capabilityProbe: probeFor(), clock: () => now })).rejects.toMatchObject({ code });
       await expect(execute(args, { capabilityProbe: probeFor(), clock: () => now })).rejects.not.toMatchObject({ code: "INTERNAL_ERROR" });
       await expect(execute(args, { capabilityProbe: probeFor(), clock: () => now }).catch(error => error && { rejected: true, flag })).resolves.toEqual({ rejected: true, flag });
     }

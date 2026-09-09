@@ -27,3 +27,16 @@ required corrections. It confirmed parsing precedes AuthorityDb construction and
 registered options match normalized CLI values. Explicit -- positional handling is
 unchanged and is not covered by the invalid-option no-DB guarantee. Reviewer model,
 effort and API token usage are unobservable in runtime telemetry.
+
+## Expanded command compatibility
+
+A 13-file command integration run passed 75 tests and failed 3 of 78: daily,
+team and routing tests expected command-specific errors for globally unknown flags.
+Updated only those expectations to CLI_ARGUMENT_INVALID; registered but irrelevant
+options retain their existing command-specific errors. The corrected three files
+passed all 30 tests in 19.56s. Combined with the unchanged ten files, all 78 scenarios
+have passing evidence across these runs; this is not an uninterrupted 78-test run.
+An intermediate fixture edit accidentally referenced flag outside its loop; diff
+inspection found and reverted it before the successful rerun. Product code did not
+change during this compatibility correction. Logs in the local QA directory:
+cli-strict-compatibility.log and cli-strict-compatibility-fixed.log.

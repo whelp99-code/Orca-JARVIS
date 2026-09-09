@@ -84,7 +84,7 @@ it.each([{ unknown: true }, { lease_ms: -1 }, { budgets: { max_items: 8, max_wor
 it("rejects unsupported CLI flags before creating a database", async () => {
   const path = tempDb(); roots.push(dirname(path));
   await expect(execute(["daily", "morning", "--db", path, "--input", "missing", "--once", "--unknown"]))
-    .rejects.toMatchObject({ code: "DAILY_LOOP_CONFIG_INVALID" });
+    .rejects.toMatchObject({ code: "CLI_ARGUMENT_INVALID" });
   expect(existsSync(path)).toBe(false);
 });
 
