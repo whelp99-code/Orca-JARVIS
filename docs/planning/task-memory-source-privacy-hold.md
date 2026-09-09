@@ -86,3 +86,21 @@ source_lineage/task_lineage/completion_id 필드를 찾지 못했다.
 이 읽기 전용 소스 확인으로 기존 자동 수집 보류를 해제하지 않는다.
 제공자 호출·운영 배포 검증은 수행하지 않았다. 시각·HEAD·파일 SHA256 근거:
 `/home/jm/.cache/jarvis-test-runtime-qa-20260908/task-memory-hold-provider-recheck.json`.
+
+
+## 2026-09-10 KST 제공자 후속 변경 대조
+
+제공자 HEAD `a2861f38a82cb5ea1e00de7ed9e0c1e3982c7b37`를 확인했다. 기존 확인 뒤 제공자 커밋이 이동했으나
+sb/mcp_remember_models.py와 sb/scoped_write_request.py의 SHA256은 이전79ec701
+확인값과 각각 동일했다. 추가 확인한 sb/write_request_values.py를 포함한3파일의
+미커밋 변경0개다. parse_request_v3는 ROOT_KEYS에 body_profile을 추가한 키 집합만
+받고, scoped source_request는 여전히 이 파서를 사용한다. 기억 V3 모델도 extra=forbid다.
+
+이 증거로 본 문서의 원본 task→candidate→provider record 및 삭제 전파 재개 조건이
+충족됐다고 판단할 수 없다. 자동 collect-task 보류 유지. 제공자 검색 성능 변경을
+출처 계약 지원으로 간주하지 않는다. 제공자 소스 수정·API 호출·배포는 수행하지 않았다.
+기계적 근거: /home/jm/.cache/jarvis-test-runtime-qa-20260908/task-memory-provider-a2861f3.json.
+
+다음 제공자 연동 검증은 새 버전의 명시적 출처 관계와 삭제·복원 전파 계약이
+제시되면 수행한다. 현재 기억 저장 요청에 임의 필드를 추가하거나 요약 본문에
+출처를 숨겨 넣어 자동 수집을 우회하지 않는다. 다른 자비스 개발 범위는 유지한다.
