@@ -1528,3 +1528,23 @@
   hashed by this receipt; no hermetic native build or cross-host portability claim.
 - Full verify session93446 remains separate and live. First shard243files/1697tests
   passed; later gates are pending. No operational release pointer was changed.
+
+### Packaged runtime identity acceptance — 2026-09-09
+
+- Rebuilt from committed c3b4eb0: package jarvis-runtime-5hfTNW, CLI smoke exit0.
+  Its own runtime.identity reports that exact HEAD, artifact/toolchain matched.
+  source_dirty=true remains accurate for the checkout's untracked node_modules.
+- Isolated canonical.js comment insertion causes observed artifact mismatch;
+  restoring original bytes returns matched. Both CLI invocations exit0 because
+  runtime.identity is an observation command, so consumers must check its fields.
+  The explicitly absent DB remains absent throughout. Evidence in that artifact:
+  packaged-runtime-identity.json and packaged-identity-tamper-check.json.
+- Identity against the smoke DB: migrations84, missing0/unexpected0/changed0,
+  schema objects1454, build and database statuses matched. Receipt:
+  packaged-runtime-schema-identity.json. No operational database was accessed.
+- Packager now checks its own CLI's source/input/artifact/toolchain identity and
+  absent-DB noncreation before success receipt publication. Actual full packaging
+  rerun exit0; identity-gated-runtime-package.json locates the new artifact and
+  receipt.validation.runtime_identity=passed. Parent syntax/diff checks passed.
+  This small additional validation predicate received parent diff review; the
+  base packaging implementation's independent review remains recorded above.

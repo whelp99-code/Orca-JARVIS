@@ -37,6 +37,8 @@ It creates a new jarvis-runtime-* directory, builds backend/dashboard, checks bu
 identity, copies runtime roots, installs locked production dependencies offline and
 runs the real CLI smoke with isolated SQLite state. Required output files and modes
 are hashed and rechecked; source HEAD, dirty state and toolchain are recorded.
+The packaged runtime identity CLI must also report matching source/input/artifact
+identity and toolchain without creating the deliberately missing probe database.
 
 The success receipt is runtime-package-receipt.json. Failures after output creation
 retain diagnostic output without that receipt. Argument or parent-path errors may

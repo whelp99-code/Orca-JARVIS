@@ -1,5 +1,5 @@
 import { spawnSync } from "node:child_process";
-import { cpSync, mkdirSync, mkdtempSync, openSync, closeSync, readFileSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdirSync, mkdtempSync, openSync, closeSync, readFileSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { BACKEND_OUTPUT_ROOTS, backendSourceIdentity, fileIdentity } from "./lib/backend-build-identity.mjs";
@@ -41,11 +41,22 @@ try {
   mkdirSync(join(output, "smoke-state"));
   run(process.execPath, [join(root, "scripts/cli-smoke.mjs")], output, join(output, "cli-smoke.log"),
     { ...process.env, TMPDIR: join(output, "smoke-state") });
+  const identityDb = join(output, "identity-must-not-create.sqlite");
+  const identityLog = join(output, "runtime-identity.json");
+  run(process.execPath, ["dist/src/cli.js", "runtime", "identity", "--db", identityDb], output, identityLog);
+  const observed = JSON.parse(readFileSync(identityLog, "utf8"));
+  const build = observed.observer?.build;
+  if (observed.ok !== true || observed.command !== "runtime.identity" || build?.status !== "matched"
+    || build.toolchain_status !== "matched" || build.source_head !== source.head
+    || build.input_digest !== source.input_digest || build.artifact_digest !== metadata.artifact.digest
+    || build.observed_artifact_digest !== metadata.artifact.digest || existsSync(identityDb)) {
+    throw new Error("RUNTIME_PACKAGE_OBSERVED_IDENTITY_MISMATCH");
+  }
   if (JSON.stringify(source) !== JSON.stringify(backendSourceIdentity(root))
     || fileIdentity(root, roots).digest !== before.digest
     || fileIdentity(output, roots).digest !== before.digest) throw new Error("RUNTIME_PACKAGE_INPUT_CHANGED");
   const receipt = { schema_version: 1, kind: "isolated-authority-runtime-package", source,
-    payload: before, validation: { production_dependency_install: "passed", cli_smoke: "passed",
+    payload: before, validation: { production_dependency_install: "passed", cli_smoke: "passed", runtime_identity: "passed",
       dashboard: "not_performed", provider: "not_performed", reproducibility: "not_performed" },
     deployment_ready: false };
   writeFileSync(join(output, "runtime-package-receipt.json"), `${JSON.stringify(receipt)}\n`, { flag: "wx", mode: 0o600 });
