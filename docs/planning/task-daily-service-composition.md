@@ -41,8 +41,11 @@ is not part of a source-only implementation or a synthetic test acceptance.
 
 ## Status
 
-Source inspection complete; service composition implementation and the above
-acceptance cases remain pending. This document does not mark backlog 12 complete.
+Configured service composition is implemented; the source and acceptance evidence
+are recorded below. The initial inventory and proposed slice above describe the
+pre-implementation state at f8a1276. Provider refresh, external event input,
+retention adapters/policies and production activation remain pending. This
+document does not mark backlog 12 complete.
 
 ## Implemented configured execution path
 

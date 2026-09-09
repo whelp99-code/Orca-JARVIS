@@ -60,7 +60,21 @@ a4a2ebc 전체 verify가 종료된 후 제품에 반영했다. 중복 Cost 필�
 전체 verify 최신 완료는 수정 전 a4a2ebc(backend2535/dashboard187)이며 이번147개 관련
 검증을 새 전체 gate 완료로 확대하지 않는다. 운영DB/서비스/release/push 변경은 없다.
 
-## 실제 일일 운영 연결 보류
+## 당시 일일 운영 연결 보류 — 후속 구현 전 기록
+
+아래는 이 ADR 검증 당시의 상태와 재현 결과다. 현재 구현 상태로 해석하지 않는다.
+2026-09-10 소스 재확인 기준, `src/daily-service-cycles.ts`와
+`src/cli-gjc-commands.ts`는 명시적 설정이 있는 service run/once에서 저장된 아침
+실행기와 서명된 native 저녁 실행기를 연결한다. 상세 검증 기록은
+[service composition](task-daily-service-composition.md)을 따른다.
+`PersonalOsRuntime` 단독 생성 여부로 CLI의 전체 조립 상태를 판정하지 않는다.
+
+현재 잔여는 provider refresh·외부 event 입력·retention 정책/어댑터·운영 활성화다.
+`src/cli-evening-inputs.ts`의 refresh reader는 null, event source는 빈 배열을
+반환하며 `src/personal-os-runtime.ts`의 기본 retention adapter map은 비어 있다.
+`LocalTimelineRefreshService`의 수집 수치는 durable readiness receipt가 아니므로
+일일 refresh 성공으로 대체하지 않는다. `ObservationRefreshStore`도 로컬 admission
+계약이며 provider 인증·호출을 수행하지 않는다.
 
 현재 morning_reconcile과 evening_summary, event 단계는 no_external_effect 기록이며,
 refresh_context도 주입 reader의 완료 정보만 평가한다. PersonalOsRuntime.forServiceRun은
