@@ -1,8 +1,9 @@
 import { afterEach, expect, it } from "vitest";
-import { mkdtempSync, cpSync, readdirSync, rmSync } from "node:fs";
+import { mkdtempSync, cpSync, readdirSync, rmSync, readFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { AuthorityDb } from "../../src/db.js";
+import { readRemoteAuditHistory } from "../../src/remote-audit-history.js";
 import { RetentionRuntime } from "../../src/personal-os-retention.js";
 import { createRemoteAuditRetentionAdapter } from "../../src/remote-audit-retention.js";
 
@@ -114,4 +115,44 @@ it("retires an actual pre-056 remote audit after upgrading without inventing out
       .toEqual({ event_id: "legacy", outcome: null, reason_code: null });
     expect(db.db.pragma("foreign_key_check")).toEqual([]);
   } finally { db?.close(); rmSync(root, { recursive: true, force: true }); }
+});
+
+it("reads minimal active and retired history without writes and rejects altered authorization", async () => {
+  const db = await fixture(); seed(db, "history", "2025-09-08T00:00:00.000Z");
+  const changes = () => (db.prepare("SELECT total_changes() AS n").get() as { n: number }).n;
+  let before = changes();
+  const active = readRemoteAuditHistory(db, "history");
+  expect(active).toMatchObject({ state: "active", event: { event_id: "history", outcome: "rejected" } });
+  expect(readRemoteAuditHistory(db, "missing")).toEqual({ state: "not_found" });
+  expect(changes()).toBe(before);
+  run(db, "history-job")(); before = changes();
+  const retired = readRemoteAuditHistory(db, "history");
+  expect(retired).toMatchObject({ state: "retired", event: active.event, evidence: "verified_retirement_bindings" });
+  expect(JSON.stringify(retired)).not.toContain("private-"); expect(changes()).toBe(before);
+  db.prepare("UPDATE remote_auth_retention_authorizations_v2 SET authorization_digest='sha256:changed'").run();
+  before = changes();
+  expect(() => readRemoteAuditHistory(db, "history")).toThrow("REMOTE_AUDIT_HISTORY_INVALID");
+  expect(changes()).toBe(before);
+});
+
+it("opens and reopens non-WAL audit history read-only without converting journal mode", async () => {
+  const root = mkdtempSync(join(tmpdir(), "jarvis-audit-readonly-"));
+  const path = join(root, "authority.sqlite");
+  let db: AuthorityDb | undefined;
+  try {
+    db = new AuthorityDb(path, "migrations"); await db.migrate();
+    seed(db.db, "read-only", "2025-09-08T00:00:00.000Z");
+    db.db.pragma("journal_mode=DELETE"); db.close();
+    const before = readFileSync(path);
+    db = new AuthorityDb(path, "migrations", { readonly: true, fileMustExist: true });
+    for (let attempt = 0; attempt < 2; attempt++) {
+      if (attempt) db.reopen();
+      await db.assertMigrationsReady();
+      expect(db.db.readonly).toBe(true);
+      expect(db.db.pragma("journal_mode", { simple: true })).toBe("delete");
+      expect(readRemoteAuditHistory(db.db, "read-only")).toMatchObject({ state: "active" });
+      expect(() => db!.db.exec("CREATE TABLE forbidden_write(id TEXT)")).toThrow();
+      db.close(); expect(readFileSync(path).equals(before)).toBe(true);
+    }
+  } finally { if (db?.db.open) db.close(); rmSync(root, { recursive: true, force: true }); }
 });

@@ -20,6 +20,7 @@ import { inspectTaskExecutor, inspectTaskExecutors, probeTaskExecutor, probeTask
 import { executeLiveCommand } from "./cli-live-commands.js";
 import { executePreGjcCommand } from "./cli-pre-gjc-commands.js";
 import { executeStateCommand } from "./cli-state-commands.js";
+import { readRemoteAuditHistory } from "./remote-audit-history.js";
 import { AuthorityDb, JarvisError } from "./db.js";
 
 const CLI_HELP =
@@ -31,6 +32,7 @@ const CLI_HELP =
   + "routing validate-plan ID PLAN.json: validate registered input structure; no approval, repository or readiness checks\n"
   + "routing probe-executor ID: query local CLI login status; no model call or execution authority\n"
   + "routing probe-runtime ID: check local executor/verifier/sandbox prerequisites; no model call or execution authority\n"
+  + "report remote-audit EVENT_ID --db PATH: read minimal active or retired remote audit history\n"
   + "routing templates | routing compile-template INPUT.json: inspect or compile versioned task templates before approval\n"
   + "daily morning --once --db PATH --input CONFIG: run stored-source morning recovery; provider refresh unavailable\n"
   + "daily evening --once --db PATH --input CONFIG --key-file PATH: publish stored native completions; automatic operation held\n"
@@ -151,6 +153,15 @@ export async function execute(
       ...(subcommand === "evening" ? ["key-file"] : [])].includes(key)))) {
     throw new JarvisError("DAILY_LOOP_CONFIG_INVALID");
   }
+  const auditHistory = command === "report" && subcommand === "remote-audit";
+  if (auditHistory) {
+    if (parsed.positionals.length !== 3 || !argument || !values.db
+      || Object.keys(parsed.values).some(key => !["db", "json"].includes(key))) {
+      throw new JarvisError("REMOTE_AUDIT_HISTORY_INPUT_INVALID");
+    }
+    try { if (!statSync(values.db).isFile()) throw new Error(); }
+    catch { throw new JarvisError("REMOTE_AUDIT_HISTORY_DATABASE_UNAVAILABLE"); }
+  }
   const performanceReport = command === "report" && subcommand === "task-performance";
   const routingShadow = command === "report" && subcommand === "routing-shadow";
   const performanceAt = performanceReport || routingShadow ? dependencies.clock?.() ?? new Date() : undefined;
@@ -165,7 +176,7 @@ export async function execute(
     try { if (!statSync(values.db).isFile()) throw new Error(); }
     catch { throw new JarvisError("TASK_PERFORMANCE_DATABASE_UNAVAILABLE"); }
   }
-  const db = new AuthorityDb(values.db);
+  const db = new AuthorityDb(values.db, undefined, auditHistory ? { fileMustExist: true, readonly: true } : undefined);
   const context: CliCommandContext = {
     args,
     values,
@@ -183,6 +194,7 @@ export async function execute(
     const bootstrap = await executeBootstrapCommand(context);
     if (bootstrap !== undefined) return bootstrap;
     await db.assertMigrationsReady();
+    if (auditHistory) return { ok: true, command: "report.remote-audit", history: readRemoteAuditHistory(db.db, argument!) };
     if (routingShadow) return { ok: true, command: "report.routing-shadow",
       report: readTaskRoutingShadow(db, argument, fourth, shadowPolicies[0], shadowPolicies[1], performanceAt) };
     if (performanceReport) return { ok: true, command: "report.task-performance",

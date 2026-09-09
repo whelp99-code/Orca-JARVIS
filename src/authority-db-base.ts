@@ -50,7 +50,7 @@ export abstract class AuthorityDbBase {
 	constructor(
 		readonly filename = process.env.JARVIS_DB ?? "jarvis-authority.sqlite",
 		migrationsPath?: string,
-		private readonly openOptions: { readonly fileMustExist?: boolean } = {},
+		private readonly openOptions: { readonly fileMustExist?: boolean; readonly readonly?: boolean } = {},
 	) {
 		this.migrationsPath = migrationsPath;
 		this.db = new Database(filename, openOptions);
@@ -86,7 +86,7 @@ export abstract class AuthorityDbBase {
 		this.db.pragma("busy_timeout = 5000");
 		this.db.pragma("foreign_keys = ON");
 		this.db.pragma("synchronous = FULL");
-		if (String(this.db.pragma("journal_mode", { simple: true })).toLowerCase() !== "wal")
+		if (!this.db.readonly && String(this.db.pragma("journal_mode", { simple: true })).toLowerCase() !== "wal")
 			this.db.pragma("journal_mode = WAL");
 	}
 	protected atomic<T>(fn: () => T): T {
