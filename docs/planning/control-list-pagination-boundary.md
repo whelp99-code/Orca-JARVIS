@@ -139,7 +139,8 @@ These are separate synthetic runs, not a controlled production latency guarantee
 Focused page/lineage/claim tests passed 3 files/4 tests; the expanded lineage-list
 test also passed after adding reader-lifetime and one-observation-per-identity
 checks. Typecheck, zero-warning lint and backend build exited 0. Independent
-review is pending. Final focused run including compiled CLI lineage and signed
+review /root/pagination_acceptance returned SHIP with no concrete findings on
+the runtime/test diff preserved in 02a7056. Final focused run including compiled CLI lineage and signed
 rework execution passed 4 files/10 tests. Full canonical verification predates
 this optimization.
 
