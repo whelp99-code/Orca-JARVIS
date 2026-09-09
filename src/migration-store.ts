@@ -40,6 +40,8 @@ export class MigrationStore {
       const body = await readFile(join(this.directory(), id));
       return { id, body, digest: checksum(body) };
     }));
+    const recovery = new Task30MigrationRecovery(this.database, this.error);
+    this.assertSupportedHistory(migrations.map(migration => migration.id), recovery);
     for (const migration of migrations) {
       const prior = row(this.database.prepare(
         "SELECT checksum FROM schema_migrations WHERE id=?",
@@ -48,7 +50,6 @@ export class MigrationStore {
         throw this.error("MIGRATION_CHECKSUM_MISMATCH", migration.id);
       }
     }
-    const recovery = new Task30MigrationRecovery(this.database, this.error);
     recovery.recoverRejectedCandidate();
     for (const migration of migrations) {
       if (migration.id === "042_memory_deletion_proof.sql"
@@ -77,11 +78,26 @@ export class MigrationStore {
     if (journal === undefined) throw this.error("MIGRATIONS_PENDING");
     const recovery = new Task30MigrationRecovery(this.database, this.error);
     if (recovery.hasRecoveryResidue()) throw this.error("MIGRATIONS_PENDING");
-    for (const id of await this.files()) {
+    const files = await this.files();
+    this.assertSupportedHistory(files);
+    for (const id of files) {
       const prior = row(this.database.prepare("SELECT checksum FROM schema_migrations WHERE id=?").get(id));
       if (prior === undefined) throw this.error("MIGRATIONS_PENDING", id);
       const body = await readFile(join(this.directory(), id));
       if (prior["checksum"] !== checksum(body)) throw this.error("MIGRATION_CHECKSUM_MISMATCH", id);
     }
   }
+
+  private assertSupportedHistory(files: readonly string[], recovery?: Task30MigrationRecovery): void {
+    const known = new Set(files);
+    const applied = this.database.prepare("SELECT id FROM schema_migrations").all() as Array<{ id: string }>;
+    for (const entry of applied) {
+      // Only migrate() may enter the existing, checksum/layout/data-validated
+      // rejected Task30 recovery path. Readiness never authorizes that transition.
+      if (!known.has(entry.id) && !recovery?.recognizesRejectedMigration(entry.id)) {
+        throw this.error("MIGRATION_VERSION_UNSUPPORTED");
+      }
+    }
+  }
+
 }
