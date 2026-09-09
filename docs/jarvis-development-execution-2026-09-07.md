@@ -1946,3 +1946,23 @@
   main-integration-smoke.log, main-integration-http-summary.json,
   main-integration-prod-deps-result.json. Full backlog01–25 remains active, including
   retention/refresh composition and actual operational activation.
+
+
+## Integrated commit canonical acceptance — 2026-09-09
+
+- Tested commit: `a2e685c9c42364a7cc2caf1c971c115adf4d173b`.
+- Uninterrupted `npm run verify`: exit 0 (session 23860).
+- Backend shard 1: 256 files, 1791 tests passed, 567.97 seconds.
+- Backend shard 2: 256 files, 1828 tests passed, 525.59 seconds.
+- Dashboard: 37 files, 255 tests passed, 34.24 seconds.
+- Total: 549 test-file executions, 3874 tests passed. Runtime check, lint,
+  typecheck, build, fixed-clock acceptance and CLI smoke completed in the gate.
+- Fixed-clock acceptance: pre_gjc_ready, aggregate_status stopped,
+  completion_promoted true, gjc_dispatched false.
+- Before/after hashing: 1780 tracked files, changed_files [].
+- Evidence: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/verify-main-integrated-commit.log`,
+  `verify-main-integrated-commit-before.json`, `verify-main-integrated-commit-result.json`.
+- This completes canonical verification of the integrated development commit.
+  It does not prove production activation or completion of backlog 01–25.
+  Actual retention adapters and refresh integration remain open; the previously
+  documented unsafe file-cleanup transaction composition remains on hold.
