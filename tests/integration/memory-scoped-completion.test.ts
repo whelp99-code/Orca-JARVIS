@@ -18,10 +18,13 @@ async function fixture(mode = 'valid') {
   const db = await memoryDatabase(); databases.push(db);
   const { config } = memoryReadFenceFixture(db);
   let calls = 0, now = OUTBOX_NOW;
+  const controller = new AbortController();
+  if (mode === 'cancel_before') controller.abort();
   const scope = { principal_id: 'principal:owner' as const, agent_id: 'agent:reader', session_id: 'session:reader',
     projects: ['project:shared-memory'], policy_revision: 'policy:fixture',
     valid_until: new Date(now.getTime() + 10000).toISOString() };
   const resolve = (_at: Date, input: { method: string }) => {
+    if (mode === 'cancel_recheck' && calls === 3) controller.abort();
     if (input.method === 'sb_read_page' && mode === 'revoked_page' && calls >= 3) return undefined;
     return { ...scope, session_id: mode === 'session' && input.method === 'sb_read_page' ? 'session:other' : scope.session_id,
       valid_until: (mode === 'expired_page' || (mode === 'shortened_page' && calls >= 3)) && input.method === 'sb_read_page' ? new Date(OUTBOX_NOW.getTime() + 500).toISOString() : scope.valid_until };
@@ -52,6 +55,7 @@ async function fixture(mode = 'valid') {
         ? { page_id: artifact.page_id, content_digest: artifact.content_digest,
             records: mode === 'missing' ? [] : artifact.records, page_access: access }
         : { request_status: status };
+      if (mode === 'cancel_after_' + calls) controller.abort();
       return { kind: 'data', value: { ...generation, ...payload, profile: 'scoped-record-read-v5', request_digest: claim.request_digest,
         access_claim_digest: 'sha256:' + createHash('sha256').update('orca-jarvis/memory-access-claim-binding/v1\0' + canonicalize(claim)).digest('hex'),
         tombstone_sequence: fence.tombstone_sequence, tombstone_set_root: fence.tombstone_set_root } };
@@ -61,7 +65,7 @@ async function fixture(mode = 'valid') {
     issue: createProductionMemoryAccessClaim(db.authority, config, resolve),
     status_issue: createProductionMemoryAccessClaim(db.authority, config, resolve, 'memory_status'), now: () => now,
     budgets: { max_hits: 10, max_excerpt_bytes: 4096, max_total_bytes: 100000, max_page_bytes: 20000 }, max_age_ms: 86400000, expiry_ms: 172800000 });
-  return { client, calls: () => calls };
+  return { client, calls: () => calls, signal: controller.signal };
 }
 it.each(['valid', 'advance_before_page', 'shortened_page'])('combines durable completion and exact current artifact: %s', async mode => {
   const f = await fixture(mode);
@@ -81,4 +85,11 @@ it.each(['pending', 'missing', 'generation', 'changed_status', 'proof_changed', 
     const f = await fixture(mode);
     await expect(f.client.readRememberedCompletion(request)).rejects.toThrow();
     if (mode === 'pending') expect(f.calls()).toBe(1);
+  });
+
+it.each(['cancel_before', 'cancel_after_1', 'cancel_after_2', 'cancel_after_3', 'cancel_recheck'])(
+  'does not return completion after cancellation: %s', async mode => {
+    const f = await fixture(mode);
+    await expect(f.client.readRememberedCompletion(request, f.signal)).rejects.toMatchObject({ code: 'SECOND_BRAIN_CANCELLED' });
+    expect(f.calls()).toBe(mode === 'cancel_before' ? 0 : mode === 'cancel_recheck' ? 3 : Number(mode.slice(-1)));
   });

@@ -34,17 +34,22 @@ function identity(bundle: Bundle): string {
     purpose: claim.purpose, request: claim.request_digest, key: claim.signing_key_id,
     sequence: fence.tombstone_sequence, root: fence.tombstone_set_root });
 }
+function requireActive(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new JarvisError("SECOND_BRAIN_CANCELLED");
+}
 const denied = (): never => { throw new JarvisError("MEMORY_SCOPED_READ_UNAVAILABLE"); };
 /** Connects the current authenticated scope issuer, supervised transport and record
  * consumer. Does not own sessions, cache permissions, or attest task success. */
 export function createMemoryScopedClient(options: MemoryScopedClientOptions) {
   async function read(method: "sb_read_page" | "sb_search" | "sb_generation_status" | "sb_request_status", arguments_: Readonly<Record<string, unknown>>, signal?: AbortSignal, artifact?: Pick<ReturnType<typeof rememberedArtifactExpectation>, "provider" | "owner" | "policy" | "projects">, historical?: { request: MemoryScopedWriteRequestMaterial; acceptance?: unknown }, capture?: (check: ReadCheckpoint) => void) {
+    requireActive(signal);
     const request: MemoryAccessRequest = Object.freeze({ method, arguments: Object.freeze({ ...arguments_ }) });
     if (method === "sb_generation_status" && (options.profile !== "scoped-record-read-v2" && options.profile !== "scoped-record-read-v3" && options.profile !== "scoped-record-read-v4" && options.profile !== "scoped-record-read-v5")) return denied();
     if (method === "sb_request_status" && options.profile !== "scoped-record-read-v4" && options.profile !== "scoped-record-read-v5") return denied();
     const issue = ["sb_generation_status", "sb_request_status"].includes(method) ? options.status_issue : options.issue;
     if (issue === undefined) return denied();
     const bundle = issue(request, new Date(options.now().getTime()));
+    requireActive(signal);
     if (artifact !== undefined && (bundle.access_claim.provider_instance_id !== artifact.provider
       || bundle.access_claim.principal_id !== artifact.owner || bundle.access_claim.policy_revision !== artifact.policy
       || (artifact.projects.length === 0 ? bundle.access_claim.projects.length !== 0
@@ -52,12 +57,14 @@ export function createMemoryScopedClient(options: MemoryScopedClientOptions) {
     const original = identity(bundle);
     let authorizedUntil = Date.parse(bundle.access_claim.expires_at);
     const recheck = () => {
+      requireActive(signal);
       const at = new Date(options.now().getTime());
       if (!Number.isFinite(at.getTime()) || at.getTime() < Date.parse(bundle.access_claim.issued_at)
         || at.getTime() >= Date.parse(bundle.access_claim.expires_at)) return denied();
       // Reuses current DB-key, authenticated-session and file-policy checks. The
       // new signature is request-local and is never sent or persisted.
       const renewed = issue(request, at);
+      requireActive(signal);
       if (identity(renewed) !== original) return denied();
       authorizedUntil = Math.min(authorizedUntil, Date.parse(renewed.access_claim.expires_at));
       if (!(at.getTime() < authorizedUntil)) return denied();
@@ -127,6 +134,7 @@ export function createMemoryScopedClient(options: MemoryScopedClientOptions) {
         if (!Number.isFinite(at) || at < checked || !(at < until)) return denied();
         checked = at;
       }
+      requireActive(signal);
       return Object.freeze({ kind: "remembered_completion_observed" as const,
         request_id: snapshot.request_id, request_digest: snapshot.request_digest,
         status, artifact, checked_at: new Date(checked).toISOString(), valid_until: new Date(until).toISOString() });
