@@ -2178,3 +2178,19 @@ Observed reviewer model/effort and API-equivalent token cost are unavailable.
   Identifier indexes do not implement generic CLI pagination or close all capacity work.
 - The original backlog01–25 and earlier operational/retention/consumer holds remain
   in scope; this feature gate is not a full-goal completion claim.
+
+
+### 2026-09-10 — packaged dashboard HTTP verification
+
+- Added `scripts/packaged-dashboard-http-probe.mjs PACKAGE_ROOT [RECEIPT_PATH]`.
+  It migrates a private SQLite DB with the supplied package, launches the packaged dashboard
+  on loopback port 0 with a minimal environment, and stops the child before deleting scratch data.
+- Tested artifact: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/jarvis-runtime-GbXulG`,
+  source `4abe9c0a6e7d4e8e0c996fc5bf62cfcc14c2464d` (`dirty=true` in its receipt).
+- HTTP 200: `/` 1,733 bytes, JavaScript 451,790 bytes, CSS 26,548 bytes,
+  `/api/v1/health` 1,161 bytes. All three static responses equal packaged file bytes;
+  health reports `status=ok`, `authority=ready`; SIGTERM shutdown exits 0.
+- Evidence: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/packaged-dashboard-http.json`.
+  This is supplementary evidence; the original package receipt remains unchanged.
+- Scope excludes browser interaction, provider/model execution, and production activation.
+  `deployment_ready=false` remains applicable; the full backlog is not complete.
