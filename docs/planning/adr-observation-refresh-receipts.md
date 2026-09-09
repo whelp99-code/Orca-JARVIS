@@ -116,3 +116,22 @@ rejected one truncated admission with zero serialized byte changes, admitted a
 complete timeline, closed/reopened the database and read ready with zero foreign-key
 violations. Evidence: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/timeline-admission-result.json`.
 This fixture run is not production-provider validation.
+
+## Source timeline count truncation
+
+TaskTimeline.context previously initialized truncated=false after its bounded event
+selection. More than 1000 unique events could therefore lose events without reporting
+truncation when the byte budget was large enough. Selection now returns its truncation
+state from unique-event count versus selected count; context retains it through byte
+trimming. Public timeline() still returns the same bounded event array.
+
+Validation: timeline/refresh integration 2 files / 16 tests passed; typecheck, lint
+and backend build exited 0. A separate compiled CLI process read a fixture file DB
+with 1001 inserted events using --limit 1000 --max_bytes 1048576, returning 1000 events
+and truncated=true with zero serialized DB byte changes. The first probe used the
+unrecognized --max-bytes spelling and got 569 events under the default byte budget;
+that assertion failed and is not counted as successful count-limit validation.
+Corrected receipt: /home/jm/.cache/jarvis-test-runtime-qa-20260908/timeline-overflow-result.json.
+
+This fixes completeness signaling at the source. It does not resolve checkpoint
+partitioning or repeated observation freshness; real collector activation remains held.

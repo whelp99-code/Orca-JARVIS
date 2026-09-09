@@ -55,14 +55,14 @@ export class TaskTimeline {
     if (this.summaryReader.isSuppressed(taskId)) {
       throw new JarvisError("TASK_TIMELINE_NOT_FOUND");
     }
-    return this.readOnly(() => this.timelineUnsafe(taskId, limit));
+    return this.readOnly(() => this.timelineUnsafe(taskId, limit).events);
   }
 
   private timelineUnsafe(
     taskId: string,
     limit = 200,
     graph = this.graphReader.build(taskId),
-  ): TaskTimelineEvent[] {
+  ): { events: TaskTimelineEvent[]; truncated: boolean } {
     if (taskId.length === 0) throw new JarvisError("TASK_TIMELINE_INVALID");
     const maximum = clamp(limit, 1, 1000);
     const capacity = Math.ceil(maximum);
@@ -96,8 +96,9 @@ export class TaskTimeline {
     // Preserve the original slice conversion, including fractional limits and NaN.
     const originalStart = Math.trunc(Math.max(0, eventIds.size - maximum));
     const discarded = eventIds.size - sorted.length;
-    return sorted.slice(Math.max(0, originalStart - discarded))
+    const selected = sorted.slice(Math.max(0, originalStart - discarded))
       .map((event, index) => ({ ...event, sequence: index + 1 }));
+    return { events: selected, truncated: eventIds.size > selected.length };
   }
 
   context(
@@ -166,8 +167,9 @@ export class TaskTimeline {
           "ORDER BY signed_at,evidence_id",
         ),
       ];
-      let events = this.timelineUnsafe(taskId, clamp(Math.max(limit, 1000), 1, 1000), graph);
-      let truncated = false;
+      const selection = this.timelineUnsafe(taskId, clamp(Math.max(limit, 1000), 1, 1000), graph);
+      let events = selection.events;
+      let truncated = selection.truncated;
       const build = (): TaskTimelineContext => ({
         schema_version: 1,
         generated_at: now.toISOString(),

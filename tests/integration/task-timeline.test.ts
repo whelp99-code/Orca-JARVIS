@@ -112,6 +112,26 @@ describe("Buzz-inspired read-only task timeline", () => {
     expect(context.truncated).toBe(false); db.close();
   });
 
+  it("marks event-count truncation even when the byte budget is sufficient", async () => {
+    const db = await initialized();
+    try {
+      db.ingest(snapshot("codex", { authorization: "both" }), policyKey(db));
+      const insert = db.db.prepare("INSERT INTO event_ledger(work_id,event_type,payload_json,created_at) VALUES(?,?,?,?)");
+      db.db.transaction(() => {
+        for (let index = 0; index < 1001; index++) {
+          insert.run("codex-work", `overflow-${index}`, "{}", "2026-08-11T00:00:00.000Z");
+        }
+      })();
+      const before = db.db.serialize();
+      const timeline = new TaskTimeline(db);
+      const context = timeline.context("codex-work", 1000, 1024 * 1024, new Date("2026-08-12T00:00:00.000Z"));
+      expect(context.events).toHaveLength(1000);
+      expect(context.truncated).toBe(true);
+      expect(context.events).toEqual(timeline.timeline("codex-work", 1000));
+      expect(db.db.serialize().equals(before)).toBe(true);
+    } finally { db.close(); }
+  });
+
   it("canonically composes work, GJC, progress, verification, and binding records", async () => {
     const db = await initialized(); const source = snapshot("codex", { authorization: "code" }); db.ingest(source, policyKey(db)); db.workerOnce(); db.workerOnce(); db.recordVerification(evidenceFor(db, "codex-work"));
     const continuation = (db.db.prepare("SELECT id FROM continuation_acceptances WHERE work_id='codex-work'").get() as { id: string }).id;
