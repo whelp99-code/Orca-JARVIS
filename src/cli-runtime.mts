@@ -29,6 +29,7 @@ const CLI_HELP =
   + "Commands: init, db migrate/rebuild-projections, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, "
   + "observe, pre-gjc, capabilities, team, portfolio, status, daily, routing\n"
   + "timeline register|collect|hold|release TASK_ID --db PATH: manage local task snapshots (64 subjects maximum)\n"
+  + "timeline subjects --db PATH: list registered subjects and cached IDs; use snapshot to validate each collection\n"
   + "timeline snapshot TASK_ID COLLECTION_ID --db PATH | timeline expire --db PATH: read exact snapshot or clear expired payloads\n"
   + "routing classify REQUEST.json POLICY.json: preview literal routing rules; no database or agent execution\n"
   + "routing executors | routing executor ID: inspect compiled registrations and configuration presence; no readiness probe\n"
@@ -199,7 +200,8 @@ export async function execute(
     try { if (!statSync(values.db).isFile()) throw new Error(); }
     catch { throw new JarvisError("TASK_PERFORMANCE_DATABASE_UNAVAILABLE"); }
   }
-  const readOnlyReport = auditHistory || performanceReport || routingShadow || (localTimeline && subcommand === "snapshot");
+  const readOnlyReport = auditHistory || performanceReport || routingShadow
+    || (localTimeline && ["snapshot", "subjects"].includes(subcommand ?? ""));
   const dbOptions = readOnlyReport ? { fileMustExist: true, readonly: true }
     : localTimeline ? { fileMustExist: true } : undefined;
   const db = new AuthorityDb(values.db, undefined, dbOptions);

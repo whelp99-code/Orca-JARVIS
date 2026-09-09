@@ -2048,3 +2048,16 @@ Observed reviewer model/effort and API-equivalent token cost are unavailable.
 - Local snapshots are not verified Linux live evidence or completed provider refresh receipts.
   Their use as morning recommendation provenance remains deferred until an explicit consumer contract is implemented.
 - No production deployment or service restart. Remaining backlog01–25 completion is not established by this gate.
+
+## Local service collection discovery
+
+- Added read-only timeline subjects CLI inventory: automatic service output contains counts,
+  while snapshot requires an exact collection ID. Users can now discover that cached ID without direct SQL.
+- Inventory exposes at most64 registered subjects with hold/ID/expiry metadata, not a freshness verdict.
+  Exact snapshot reads still revalidate current source, expiry and replacement identity.
+- Typecheck, zero-warning lint and backend build exited0. CLI/service/reviewability3files7tests passed.
+- Separate compiled CLI processes: register -> service once -> subjects -> exact snapshot returned ready.
+  Four processes, one subject, database bytes unchanged across the two reads; isolated fixture database.
+- Parent inspected complete diff; this bounded read-only CLI addition did not use delegated review.
+  Prior3946-test canonical gate predates this addition. No production activation.
+- API-equivalent cost unavailable: per-call token usage and runtime pricing scope not observed.

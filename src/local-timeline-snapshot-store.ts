@@ -14,6 +14,15 @@ const validId = (id: string): boolean => typeof id === "string" && /^[A-Za-z0-9:
 export class LocalTimelineSnapshotStore {
   constructor(private readonly authority: AuthorityDb, private readonly clock: () => Date = () => new Date()) {}
 
+  /** Cache inventory only; callers must read the exact collection to validate its current source and freshness. */
+  subjects() {
+    const rows = this.authority.db.prepare(`SELECT task_id,held,collection_id,expires_at
+      FROM local_timeline_subjects ORDER BY task_id LIMIT 65`).all() as Pick<Row, "task_id" | "held" | "collection_id" | "expires_at">[];
+    if (rows.length > 64) return fail("LOCAL_COLLECTION_CAPACITY");
+    return rows.map(row => ({ task_id: row.task_id, held: row.held === 1,
+      cached_collection_id: row.collection_id, cached_expires_at: row.expires_at }));
+  }
+
   register(taskId: string): void {
     if (!validId(taskId)) return fail("LOCAL_COLLECTION_TASK_INVALID");
     this.authority.db.transaction(() => {

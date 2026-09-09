@@ -7,6 +7,7 @@ collector is activated by these commands.
 
 ```bash
 jarvis timeline register TASK_ID --db /absolute/path/to/authority.sqlite
+jarvis timeline subjects --db /absolute/path/to/authority.sqlite
 jarvis timeline collect TASK_ID --db /absolute/path/to/authority.sqlite
 jarvis timeline snapshot TASK_ID COLLECTION_ID --db /absolute/path/to/authority.sqlite
 jarvis timeline hold TASK_ID --db /absolute/path/to/authority.sqlite
@@ -19,6 +20,13 @@ only and returns ready only while that exact cached collection and current sourc
 remain valid. A successful command envelope (`ok: true`) does not mean the snapshot
 is ready: inspect result.state and result.reason. Collection state capped means the
 context was truncated and must not be treated as complete evidence.
+
+After automatic service collection, use subjects to discover cached_collection_id
+for each registered task, then pass that exact ID to snapshot. Subjects opens the
+database read only and returns at most 64 entries sorted by task ID, with held and
+cached_expires_at metadata. This inventory does not validate source freshness or
+delete expired entries. A cached ID can expire or be replaced between the two
+commands; use the snapshot result to decide whether it remains usable.
 
 Collect replaces the subject's previous cache entry. An old ID becomes
 snapshot_missing; it never resolves to new bytes. Expiry is five minutes from the
