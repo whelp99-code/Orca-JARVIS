@@ -14,7 +14,9 @@ it("settles expired daily jobs conservatively without replaying them or touching
       expiresAt: now.toISOString(), cutoff: "2025-01-01T00:00:00.000Z" });
     runtime.claimDue({ jobId: claimed, now: previous, leaseExpiresAt: "2026-09-09T12:01:00.000Z" });
     const service = new RemoteAuditService(db.db, 1, () => now);
-    expect(service.cycle()).toMatchObject({ status: "completed" });
+    const first = service.cycle();
+    expect(first).toMatchObject({ status: "completed", expiry_history: {
+      scope: "recorded_daily_job_expirations", never_started: 1, outcome_unknown: 1 } });
     const rows = db.db.prepare("SELECT job_id,state,failure_code,lease_owner FROM retention_jobs ORDER BY job_id").all();
     expect(rows).toEqual(expect.arrayContaining([
       { job_id: pending, state: "failed", failure_code: "E_RETENTION_EXPIRED", lease_owner: null },
@@ -22,7 +24,7 @@ it("settles expired daily jobs conservatively without replaying them or touching
       { job_id: "unrelated", state: "pending", failure_code: null, lease_owner: null },
     ]));
     const before = db.db.serialize();
-    service.cycle();
+    expect(service.cycle()).toEqual(first);
     expect(db.db.serialize().equals(before)).toBe(true);
   } finally { db.close(); }
 });

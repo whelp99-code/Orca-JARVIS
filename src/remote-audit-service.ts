@@ -56,8 +56,17 @@ export class RemoteAuditService {
     } | undefined;
   }
   private result(jobId: string, cutoff: string, row: NonNullable<ReturnType<RemoteAuditService["read"]>>) {
+    const expiry_history = this.db.prepare(`SELECT
+      COALESCE(SUM(state='failed'),0) AS never_started,
+      COALESCE(SUM(state='uncertain'),0) AS outcome_unknown
+      FROM retention_jobs WHERE data_class='audit'
+        AND job_id GLOB 'remote-auth:daily:v1:????-??-??'
+        AND state IN ('failed','uncertain') AND failure_code='E_RETENTION_EXPIRED'`).get() as {
+          never_started: number; outcome_unknown: number;
+        };
     return { status: row.state === "completed" ? "completed" : ["failed", "uncertain"].includes(row.state) ? "error" : "pending",
       job_id: jobId, scope: "one_utc_daily_batch", cutoff, limit: this.limit,
-      state: row.state, result_digest: row.result_digest, code: row.failure_code };
+      state: row.state, result_digest: row.result_digest, code: row.failure_code,
+      expiry_history: { scope: "recorded_daily_job_expirations", ...expiry_history } };
   }
 }

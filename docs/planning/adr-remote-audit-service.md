@@ -118,3 +118,22 @@ The existing 100-row mutation bound is not a bound on scanned rows. Production
 statistics, concurrent writes and a different matching-row distribution were
 not measured. This remaining capacity limitation is separate from the verified
 expiry state-transition fix.
+
+## Recorded expiry history in service responses
+
+The response now includes `expiry_history` with scope
+`recorded_daily_job_expirations`: `never_started` counts recorded expired pending
+jobs now failed, and `outcome_unknown` counts recorded expired claims now uncertain.
+Only audit jobs in the daily namespace with E_RETENTION_EXPIRED are included.
+These are historical record counts, not today's outcome, an execution permission,
+or the number recovered in the current cycle. Unprocessed expired jobs are not
+yet included; the existing recovery batch cap still applies. Today's status and
+receipt keep their existing meaning. Stable counts also preserve restart output
+deduplication without hiding the recorded unknown outcomes.
+
+Related 2files/6tests, typecheck, zero-warning lint and backend build passed.
+The three-process CLI probe now asserts history counts 1/1 alongside current-day
+completed and identical restart response/retention rows. Receipt:
+shared QA remote-audit-expiry-history-cli.json. Parent inspected this read-only
+reporting diff; no additional delegated review or full canonical run was made.
+No production operation was performed.

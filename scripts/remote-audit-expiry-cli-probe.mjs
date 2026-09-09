@@ -44,6 +44,8 @@ try {
   invoke(false); assert.deepEqual(readJobs(), before);
   const first = invoke(true);
   assert.equal(first.remote_audit_retention.status, "completed");
+  assert.deepEqual(first.remote_audit_retention.expiry_history,
+    { scope: "recorded_daily_job_expirations", never_started: 1, outcome_unknown: 1 });
   const settled = readJobs();
   assert.equal(settled.find(row => row.job_id === pending).state, "failed");
   assert.equal(settled.find(row => row.job_id === claimed).state, "uncertain");
