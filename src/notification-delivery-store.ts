@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { projectMacNotificationPayload } from "./notification-delivery-payload.js";
 import { bindNotificationDeliveryProjection } from "./memory-projection-bindings.js";
+import { suppressMemoryNotifications } from "./memory-notification-suppression.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { NotificationDeliveryError, type NotificationClaim, type NotificationSettleInput,
   type NotificationSettlement } from "./notification-delivery-types.js";
@@ -114,6 +115,11 @@ export class NotificationDeliveryStore {
           .run(now, intent.intent_id);
         bindNotificationDeliveryProjection(this.options.authority.db,
           deliveryId, intent.intent_id, new Date(now));
+        suppressMemoryNotifications(this.options.authority, now);
+        const current = this.options.authority.db.prepare(
+          "SELECT state FROM notification_deliveries WHERE delivery_id=?",
+        ).get(deliveryId) as { readonly state: string };
+        if (current.state !== "delivering") { changed = true; continue; }
         const claimed: NotificationClaim = { schema_version: 1, delivery_id: deliveryId, intent_id: intent.intent_id,
           expires_at: intent.expires_at, payload };
         return { value: claimed, changed: true };
@@ -167,7 +173,7 @@ export class NotificationDeliveryStore {
   }
 
   private reconcile(epoch: number, now: string): boolean {
-    let changed = false;
+    let changed = suppressMemoryNotifications(this.options.authority, now);
     const stale = this.options.authority.db.prepare(
       `SELECT d.delivery_id,d.intent_id,d.state,d.lease_owner,d.lease_expires_at,d.attempt_digest,d.updated_at
        FROM notification_deliveries d WHERE d.state='delivering' AND julianday(d.lease_expires_at)<=julianday(?)`,

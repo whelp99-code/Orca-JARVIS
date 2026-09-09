@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { AuthorityDb } from "../../src/db.js";
 import { NotificationDeliveryStore } from "../../src/notification-delivery-store.js";
+import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
+import { MemoryTombstoneChain } from "../../src/memory-tombstone-chain.js";
+import { readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { canonicalize } from "../../src/canonical.js";
+import type { MemoryEffectWriteRequestV2 } from "../../src/second-brain-effect-v2.js";
 import { DELIVERY_DEEP_LINK, DELIVERY_EXPIRES as EXPIRES, DELIVERY_NOW as NOW,
   DELIVERY_PRIVACY_CANARIES } from "../fixtures/notification-delivery-fixture.js";
 import { tempDb } from "../helpers.js";
@@ -22,6 +28,105 @@ async function fixture(options: FixtureOptions = {}) {
 }
 
 describe("notification delivery state", () => {
+  it("does not return a payload when the future delivery identity is already quarantined", async () => {
+    const { db, store } = await fixture();
+    try {
+      const identity = createHash("sha256").update(canonicalize({ schema_version: 1,
+        intent_id: "ntf:pos:v1:one", channel: "mac_native" })).digest("hex");
+      const id = `ndl:pos:v1:${identity}`;
+      new MemoryProjectionAuthority(db).quarantineUnresolved({ kind: "notification_delivery", id,
+        component_id: id }, new Date(NOW));
+      expect(store.claimEffect(NOW, "session")).toEqual({ value: null, changed: true });
+      expect(db.db.prepare("SELECT state FROM notification_deliveries").get()).toEqual({ state: "failed" });
+      expect(db.db.prepare("SELECT state FROM notification_intents").get()).toEqual({ state: "failed" });
+    } finally { db.close(); }
+  });
+
+  it.each(["bind", "inherit"] as const)("ends an in-flight delivery on late subject %s", async method => {
+    const { db, store } = await fixture();
+    try {
+      const claim = store.claim(NOW, "session"); expect(claim).not.toBeNull();
+      if (claim === null) return;
+      const correction = (JSON.parse(readFileSync("contracts/second-brain-mcp-v1.json", "utf8")) as {
+        vectors: { correction: { request: MemoryEffectWriteRequestV2 } };
+      }).vectors.correction.request;
+      const tombstone = new MemoryTombstoneChain(db, Buffer.alloc(32, 21)).append({ operation: "correct",
+        lane_id: correction.lane_id, targets: correction.targets, target_manifest_digest: correction.target_manifest_digest,
+        scope_digest: correction.scope_digest, authority_receipt_digest: correction.tombstone_chain_delta[0]!.authority_receipt_digest,
+        payload_digest: correction.delegation.payload_digest, effective_at: NOW });
+      const authority = new MemoryProjectionAuthority(db);
+      const dependency = { target_digest: `sha256:${"f".repeat(64)}`,
+        keyed_subject_digest: tombstone.entry.keyed_subject_digest };
+      const ref = { kind: "notification_intent" as const, id: claim.intent_id, component_id: claim.intent_id };
+      if (method === "bind") authority.bind(ref, [dependency], new Date(NOW));
+      else {
+        const parent = { kind: "context" as const, id: "late-parent", component_id: "late-parent" };
+        authority.bind(parent, [dependency], new Date(NOW));
+        authority.inherit(ref, [parent], new Date(NOW));
+      }
+      expect(db.db.prepare("SELECT state FROM notification_deliveries").get()).toEqual({ state: "failed" });
+      expect(db.db.prepare("SELECT state FROM notification_intents").get()).toEqual({ state: "failed" });
+      expect(() => store.settle({ deliveryId: claim.delivery_id, input: { schema_version: 1, outcome: "delivered" },
+        now: NOW, sessionId: "session" })).toThrowError(expect.objectContaining({ code: "NOTIFICATION_DELIVERY_REPLAY_CONFLICT" }));
+    } finally { db.close(); }
+  });
+
+  it("reconciles previously persisted quarantine before accepting an acknowledgment", async () => {
+    const { db, store } = await fixture();
+    try {
+      const claim = store.claim(NOW, "session"); expect(claim).not.toBeNull();
+      if (claim === null) return;
+      db.db.prepare(`INSERT INTO memory_projection_quarantine
+        (projection_kind,projection_id,component_id,reason_code,detected_at)
+        VALUES('notification_delivery',?,?,'lineage_unresolved',?)`).run(claim.delivery_id, claim.delivery_id, NOW);
+      expect(() => store.settle({ deliveryId: claim.delivery_id, input: { schema_version: 1, outcome: "delivered" },
+        now: NOW, sessionId: "session" })).toThrowError(expect.objectContaining({ code: "NOTIFICATION_DELIVERY_REPLAY_CONFLICT" }));
+      expect(store.claimEffect(NOW, "session")).toEqual({ value: null, changed: true });
+      expect(db.db.prepare("SELECT state,receipt_digest FROM notification_deliveries").get())
+        .toEqual({ state: "failed", receipt_digest: null });
+      expect(store.claimEffect(NOW, "session")).toEqual({ value: null, changed: false });
+    } finally { db.close(); }
+  });
+
+  it.each(["queued", "delivered"] as const)("quarantines %s intents without rewriting terminal receipts", async state => {
+    const { db, store } = await fixture();
+    try {
+      if (state === "delivered") {
+        const claim = store.claim(NOW, "session"); expect(claim).not.toBeNull();
+        if (claim === null) return;
+        store.settle({ deliveryId: claim.delivery_id, input: { schema_version: 1, outcome: "delivered" }, now: NOW, sessionId: "session" });
+      }
+      const before = db.db.prepare("SELECT * FROM notification_deliveries").all();
+      const authority = new MemoryProjectionAuthority(db);
+      const ref = { kind: "notification_intent" as const, id: "ntf:pos:v1:one", component_id: "other-component" };
+      authority.quarantineUnresolved(ref, new Date(NOW));
+      expect(db.db.prepare("SELECT state FROM notification_intents").get())
+        .toEqual({ state: state === "queued" ? "suppressed" : "delivered" });
+      expect(db.db.prepare("SELECT * FROM notification_deliveries").all()).toEqual(before);
+      const writes = db.db.prepare("SELECT total_changes() AS n").get();
+      authority.quarantineUnresolved(ref, new Date(NOW));
+      expect(db.db.prepare("SELECT total_changes() AS n").get()).toEqual(writes);
+    } finally { db.close(); }
+  });
+
+  it.each(["notification_intent", "notification_delivery"] as const)(
+    "fails an in-flight delivery when its %s is quarantined later", async kind => {
+      const { db, store } = await fixture();
+      try {
+        const claimed = store.claim(NOW, "dashboard-session:test");
+        expect(claimed).not.toBeNull();
+        if (claimed === null) return;
+        const id = kind === "notification_intent" ? claimed.intent_id : claimed.delivery_id;
+        new MemoryProjectionAuthority(db).quarantineUnresolved({ kind, id, component_id: id }, new Date(NOW));
+        expect(db.db.prepare("SELECT state FROM notification_deliveries").get()).toEqual({ state: "failed" });
+        expect(db.db.prepare("SELECT state FROM notification_intents").get()).toEqual({ state: "failed" });
+        expect(() => store.settle({ deliveryId: claimed.delivery_id,
+          input: { schema_version: 1, outcome: "delivered" }, now: NOW, sessionId: "dashboard-session:test" }))
+          .toThrowError(expect.objectContaining({ code: "NOTIFICATION_DELIVERY_REPLAY_CONFLICT" }));
+        expect(store.claim(NOW, "dashboard-session:test")).toBeNull();
+      } finally { db.close(); }
+    });
+
   it("claims and settles one intent with exact durable identity", async () => {
     // Given
     const { db, store } = await fixture();

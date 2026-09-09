@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./jarvis-error.js";
+import { suppressMemoryNotifications } from "./memory-notification-suppression.js";
 import { MemoryProjectionLineage } from "./memory-projection-lineage.js";
 import type {
   MemoryProjectionDatabase,
@@ -30,11 +31,21 @@ export class MemoryProjectionAuthority {
   }
 
   bind(ref: MemoryProjectionRef, identities: readonly MemoryProjectionDependency[], now: Date): void {
-    this.write(() => this.lineage.bind(ref, identities, now));
+    this.write(() => {
+      this.lineage.bind(ref, identities, now);
+      if (ref.kind === "notification_intent" || ref.kind === "notification_delivery") {
+        suppressMemoryNotifications(this.authority, now.toISOString());
+      }
+    });
   }
 
   inherit(ref: MemoryProjectionRef, parents: readonly MemoryProjectionRef[], now: Date): void {
-    this.write(() => this.lineage.inherit(ref, parents, now));
+    this.write(() => {
+      this.lineage.inherit(ref, parents, now);
+      if (ref.kind === "notification_intent" || ref.kind === "notification_delivery") {
+        suppressMemoryNotifications(this.authority, now.toISOString());
+      }
+    });
   }
 
   hasLineage(ref: MemoryProjectionRef): boolean {
@@ -43,7 +54,12 @@ export class MemoryProjectionAuthority {
   }
 
   quarantineUnresolved(ref: MemoryProjectionRef, now: Date): void {
-    this.write(() => this.lineage.quarantineUnresolved(ref, now));
+    this.write(() => {
+      this.lineage.quarantineUnresolved(ref, now);
+      if (ref.kind === "notification_intent" || ref.kind === "notification_delivery") {
+        suppressMemoryNotifications(this.authority, now.toISOString());
+      }
+    });
   }
 
   isSuppressed(ref: MemoryProjectionRef): boolean {
@@ -92,7 +108,7 @@ export class MemoryProjectionAuthority {
            OR (d.citation_identity_digest IS NOT NULL AND d.citation_identity_digest=s.citation_identity_digest)
          WHERE s.sequence=?`,
       ).run(sequence);
-      this.suppressNotifications(sequence);
+      suppressMemoryNotifications(this.authority, createdAt);
       const row = this.authority.db.prepare(
         `SELECT COUNT(DISTINCT projection_kind||char(0)||projection_id||char(0)||component_id) AS count,
                 MIN(effective_at) AS effective_at
@@ -123,31 +139,6 @@ export class MemoryProjectionAuthority {
 
   assertReady(): void {
     this.lineage.assertReady();
-  }
-
-  private suppressNotifications(sequence: number): void {
-    const effectiveAt = this.tombstoneTime(sequence);
-    this.authority.db.prepare(
-      `UPDATE notification_deliveries SET state='failed',updated_at=?
-       WHERE state='delivering' AND (delivery_id IN (
-         SELECT projection_id FROM memory_projection_suppressions
-         WHERE sequence=? AND projection_kind='notification_delivery'
-       ) OR intent_id IN (
-         SELECT projection_id FROM memory_projection_suppressions
-         WHERE sequence=? AND projection_kind='notification_intent'
-       ))`,
-    ).run(effectiveAt, sequence, sequence);
-    this.authority.db.prepare(
-      `UPDATE notification_intents SET state='failed',updated_at=? WHERE state='delivering'
-       AND intent_id IN (SELECT projection_id FROM memory_projection_suppressions
-         WHERE sequence=? AND projection_kind='notification_intent')`,
-    ).run(effectiveAt, sequence);
-    this.authority.db.prepare(
-      `UPDATE notification_intents SET state='suppressed',updated_at=?
-       WHERE intent_id IN (SELECT projection_id FROM memory_projection_suppressions
-         WHERE sequence=? AND projection_kind='notification_intent')
-       AND state IN ('created','deferred','queued')`,
-    ).run(effectiveAt, sequence);
   }
 
   private event(sequence: number): MemorySuppressionEvent | undefined {
