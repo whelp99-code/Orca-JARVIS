@@ -1,0 +1,2 @@
+CREATE INDEX memory_projection_quarantine_id ON memory_projection_quarantine(projection_id);
+CREATE INDEX memory_projection_suppression_id ON memory_projection_suppressions(projection_id);
