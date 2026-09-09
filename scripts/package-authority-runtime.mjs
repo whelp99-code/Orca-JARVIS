@@ -1,6 +1,6 @@
 import { spawnSync } from "node:child_process";
 import { cpSync, existsSync, mkdirSync, mkdtempSync, openSync, closeSync, readFileSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { basename, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { BACKEND_OUTPUT_ROOTS, backendSourceIdentity, fileIdentity } from "./lib/backend-build-identity.mjs";
 
@@ -15,7 +15,11 @@ function run(command, args, cwd, log, env = process.env) {
   const fd = openSync(log, "wx", 0o600);
   try {
     const result = spawnSync(command, args, { cwd, env, stdio: ["ignore", fd, fd] });
-    if (result.error || result.signal || result.status !== 0) throw new Error("RUNTIME_PACKAGE_COMMAND_FAILED");
+    if (result.error || result.signal || result.status !== 0) {
+      throw Object.assign(new Error("RUNTIME_PACKAGE_COMMAND_FAILED"), {
+        failed_step: basename(log), exit_code: result.status, signal: result.signal,
+      });
+    }
   } finally { closeSync(fd); }
 }
 try {
@@ -63,7 +67,8 @@ try {
   process.stdout.write(`${JSON.stringify({ ok: true, output, source_head: source.head,
     source_dirty: source.dirty, payload_files: before.file_count, deployment_ready: false })}\n`);
 } catch (error) {
-  process.stderr.write(`${JSON.stringify({ ok: false, output, code: error.message })}\n`);
+  process.stderr.write(`${JSON.stringify({ ok: false, output, code: error.message,
+    failed_step: error.failed_step, exit_code: error.exit_code, signal: error.signal })}\n`);
   process.exitCode = 1;
 }
 

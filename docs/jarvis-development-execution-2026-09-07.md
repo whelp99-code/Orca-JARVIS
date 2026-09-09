@@ -1548,3 +1548,19 @@
   receipt.validation.runtime_identity=passed. Parent syntax/diff checks passed.
   This small additional validation predicate received parent diff review; the
   base packaging implementation's independent review remains recorded above.
+
+### Runtime package failure-path execution — 2026-09-09
+
+- Actual packager with a fresh empty npm cache builds successfully then fails
+  offline dependency installation, exit1; dependency log contains ENOTCACHED once.
+  Output jarvis-runtime-ZbhsV5 retains build/install logs, no CLI smoke log and
+  no runtime-package-receipt.json. Failure does not become package success.
+- Added subprocess failed_step/log filename, exit_code and signal to the existing
+  error JSON without embedding command output. Real empty-cache rerun in
+  jarvis-runtime-YHSorv yields dependency-install.log/1/null and no success receipt.
+  Evidence package-failure-step.json plus runtime-package-empty-cache-failure.json
+  in the shared QA cache. This is a real npm failure, not an injected runner result.
+- Normal-cache packaging after the change exits0, recorded by
+  package-after-failure-fix.json. Parent inspected complete small diff, syntax and
+  diff checks pass. Full verify93446 remains live in the unchanged integration
+  worktree; no service activation or production DB access performed.

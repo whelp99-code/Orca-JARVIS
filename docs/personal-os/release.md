@@ -43,6 +43,8 @@ identity and toolchain without creating the deliberately missing probe database.
 The success receipt is runtime-package-receipt.json. Failures after output creation
 retain diagnostic output without that receipt. Argument or parent-path errors may
 fail before any output exists. npm cache misses fail instead of switching to an online install.
+Subprocess failures include failed_step (log filename), exit_code and signal in
+the error JSON; dependency/build log contents are not included in that response.
 The package is a developer validation artifact with deployment_ready=false; it must
 not be activated as a release. Provider, browser, reproducibility and sealed-manifest
 gates are not established by CLI smoke. Runtime dependencies target the current host.
