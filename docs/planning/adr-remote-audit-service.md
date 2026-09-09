@@ -97,3 +97,24 @@ The temporary database is removed on exit. All three processes returned exit0 an
 service state disconnected. This is not a live provider or production retention
 deletion test. Receipt: shared QA remote-audit-expiry-cli.json. The probe guards
 against a UTC date transition so different daily jobs are not called a replay.
+
+## Expiry query capacity investigation
+
+At ac68e03, EXPLAIN QUERY PLAN selected retention_jobs_state(state=?) and a
+temporary ORDER BY tree for the expiry candidate query. An isolated in-memory
+probe seeded 100 matching daily jobs among 10000/100000 pending audit jobs and
+ran five query samples before/after adding a candidate partial index on
+(expires_at,job_id), with the same data-class/state/daily-namespace predicate.
+
+The planner continued using the old index. Sample p95 before/after:
+10000 rows 0.685/0.677ms; 100000 rows 7.302/7.280ms. Both paths returned the
+same 100 IDs and made zero read-side DB changes. Receipt with query plans and
+all samples: shared QA remote-audit-expiry-index.json.
+
+Do not ship this candidate index based on these results: no changed access path
+or material measured benefit was demonstrated, while it would add migration and
+write maintenance cost. No new migration or forced planner hint was added.
+The existing 100-row mutation bound is not a bound on scanned rows. Production
+statistics, concurrent writes and a different matching-row distribution were
+not measured. This remaining capacity limitation is separate from the verified
+expiry state-transition fix.
