@@ -148,3 +148,21 @@ Residual: raw rows are retained for the current page, so distinct deep chains ca
 increase peak memory (at most the scanned roots and their bounded ancestors).
 Payload byte budgets and concurrent-load acceptance remain open. The unpaged
 library compatibility path is unchanged.
+
+## Canonical gate after observation reuse
+
+`npm run verify` at ed07b1cbd27b79081ec86483e24c579a54c3d60a exited 0
+on 2026-09-09T18:31:23.683693+00:00 (2026-09-10 KST).
+Backend: 266 files/1838 tests plus 266 files/1872 tests; dashboard:
+37 files/256 tests. Total 569 files/3966 tests passed. All 1848 tracked
+file hashes were unchanged. Runtime, lint, typecheck, build, fixed-clock
+acceptance and CLI smoke passed; acceptance reports pre_gjc_ready,
+aggregate stopped, completion_promoted true and gjc_dispatched false.
+
+Evidence in `/home/jm/.cache/jarvis-test-runtime-qa-20260908`:
+`verify-page-cache.log`, `verify-page-cache-before.json`,
+`verify-page-cache-result.json`. A separate static ESM graph check found
+653 modules, 2449 edges, zero cycles and 935 public exports; this excludes
+dynamic imports and external dependency graphs. Receipt: page-cache-import-graph.json.
+The gate covers this source revision, not production activation or the full
+backlog's remaining provider, operational and capacity requirements.

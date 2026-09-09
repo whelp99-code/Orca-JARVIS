@@ -75,3 +75,14 @@ sb/scoped_write_request.py는 source_request를 기존 parse_request_v3로 검�
 명시된 V4 최상위 키에도 task/run/completion 출처 관계 필드는 없다. 따라서 이
 통합만으로 본 문서의 작업 원본→파생 기억 삭제 전파 재개 조건은 충족되지 않는다.
 collect-task 보류를 유지하며 provider 작업공간의 진행 중인 구현은 변경하지 않는다.
+
+## 2026-09-10 KST 제공자 재확인
+
+제공자 HEAD `79ec701864227dc3cdff42c12eff06d849322e54`에서
+`sb/mcp_remember_models.py`와 `sb/scoped_write_request.py`의 미커밋 변경은 0개다.
+기존 기억 V3 모델은 여전히 extra=forbid이며 scoped 요청의 source_request는
+parse_request_v3로 검증한다. 확인한 두 소스와 second-brain 계약 파일에서는
+source_lineage/task_lineage/completion_id 필드를 찾지 못했다.
+이 읽기 전용 소스 확인으로 기존 자동 수집 보류를 해제하지 않는다.
+제공자 호출·운영 배포 검증은 수행하지 않았다. 시각·HEAD·파일 SHA256 근거:
+`/home/jm/.cache/jarvis-test-runtime-qa-20260908/task-memory-hold-provider-recheck.json`.
