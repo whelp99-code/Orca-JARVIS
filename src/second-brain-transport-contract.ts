@@ -10,7 +10,7 @@ export const SECOND_BRAIN_LAUNCHER = "/home/jm/.local/state/second-brain/app/cur
 export const SECOND_BRAIN_CONFIG = "/home/jm/.config/second-brain/config.toml";
 export const SECOND_BRAIN_PROTOCOL_VERSION = "2025-11-25";
 export const SECOND_BRAIN_CONTRACT_PROFILE = "task32-schema4" as const;
-export type SecondBrainContractProfile = "scoped-record-read-v5" | "scoped-record-read-v4" | "scoped-record-read-v3" | "scoped-record-read-v2" | "scoped-record-read-v1" | "task32-schema4" | "remember-schema5" | "cancellation-schema6" | "cancellation-submit-schema7";
+export type SecondBrainContractProfile = "scoped-request-write-v1" | "scoped-record-read-v5" | "scoped-record-read-v4" | "scoped-record-read-v3" | "scoped-record-read-v2" | "scoped-record-read-v1" | "task32-schema4" | "remember-schema5" | "cancellation-schema6" | "cancellation-submit-schema7";
 export const SECOND_BRAIN_FRAME_BYTES = 1_048_576;
 export const SECOND_BRAIN_DEADLINES = { startup: 5_000, read: 10_000, write: 30_000 } as const;
 export const SECOND_BRAIN_LIMITS = {
@@ -142,15 +142,15 @@ function record(value: unknown): Record<string, unknown> {
 export function loadSecondBrainContract(
   path?: string, profile: SecondBrainContractProfile = SECOND_BRAIN_CONTRACT_PROFILE,
 ): unknown {
-  const filename = profile === "scoped-record-read-v5" ? "second-brain-scoped-read-v5.json" : profile === "scoped-record-read-v4" ? "second-brain-scoped-read-v4.json" : profile === "scoped-record-read-v3" ? "second-brain-scoped-read-v3.json" : profile === "scoped-record-read-v2" ? "second-brain-scoped-read-v2.json" : profile === "scoped-record-read-v1" ? "second-brain-scoped-read-v1.json" : profile === "cancellation-submit-schema7" ? "second-brain-mcp-v5.json"
+  const filename = profile === "scoped-request-write-v1" ? "second-brain-scoped-write-v1.json" : profile === "scoped-record-read-v5" ? "second-brain-scoped-read-v5.json" : profile === "scoped-record-read-v4" ? "second-brain-scoped-read-v4.json" : profile === "scoped-record-read-v3" ? "second-brain-scoped-read-v3.json" : profile === "scoped-record-read-v2" ? "second-brain-scoped-read-v2.json" : profile === "scoped-record-read-v1" ? "second-brain-scoped-read-v1.json" : profile === "cancellation-submit-schema7" ? "second-brain-mcp-v5.json"
     : profile === "cancellation-schema6" ? "second-brain-mcp-v4.json"
     : profile === "remember-schema5" ? "second-brain-mcp-v3.json" : "second-brain-mcp-v1.json";
   const contractPath = path ?? fileURLToPath(new URL(`../contracts/${filename}`, import.meta.url));
   try {
-    if (profile === "scoped-record-read-v1" || profile === "scoped-record-read-v2" || profile === "scoped-record-read-v3" || profile === "scoped-record-read-v4" || profile === "scoped-record-read-v5") {
+    if (profile === "scoped-request-write-v1" || profile === "scoped-record-read-v1" || profile === "scoped-record-read-v2" || profile === "scoped-record-read-v3" || profile === "scoped-record-read-v4" || profile === "scoped-record-read-v5") {
       const bytes = readFileSync(contractPath);
       const digest = createHash("sha256").update(bytes).digest("hex");
-      const expected = profile === "scoped-record-read-v5" ? "4aaadbd6c5670c6f69e811567e2a93abcd746112d86697cfd391ef49aa4853c3" : profile === "scoped-record-read-v4" ? "707ea8dcbdc2aebe0aaa5c90743ebb247adde9d469dd51a0564c2cb8728d53e2" : profile === "scoped-record-read-v3" ? "c3d4b1d883d8966fcc39b5f26e999159cb60977c248683d5719da27fd5500ad8" : profile === "scoped-record-read-v2" ? "a5af30045ba19eb6e79d07f649e3049842741822d75bdb7212d2ec7eabd9cb37" : "2c0bc8a467cb3f89f7c8cdb7df0a4eceb9790250b05d3fecffc13fb485417a7b";
+      const expected = profile === "scoped-request-write-v1" ? "023cdf5bebc8b96356645a8927dda80b71e8974ce7f4f5300735e63f904aecde" : profile === "scoped-record-read-v5" ? "4aaadbd6c5670c6f69e811567e2a93abcd746112d86697cfd391ef49aa4853c3" : profile === "scoped-record-read-v4" ? "707ea8dcbdc2aebe0aaa5c90743ebb247adde9d469dd51a0564c2cb8728d53e2" : profile === "scoped-record-read-v3" ? "c3d4b1d883d8966fcc39b5f26e999159cb60977c248683d5719da27fd5500ad8" : profile === "scoped-record-read-v2" ? "a5af30045ba19eb6e79d07f649e3049842741822d75bdb7212d2ec7eabd9cb37" : "2c0bc8a467cb3f89f7c8cdb7df0a4eceb9790250b05d3fecffc13fb485417a7b";
       if (digest !== expected || readFileSync(`${contractPath}.sha256`, "ascii") !== `${digest}\n`) throw new Error("profile mismatch");
       return JSON.parse(bytes.toString("utf8"));
     }

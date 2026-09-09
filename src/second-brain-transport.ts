@@ -19,6 +19,7 @@ import {
 	type SecondBrainGenerationState as GenerationState, type SecondBrainPending as Pending,
 	type SecondBrainQueueItem as QueueItem,
 } from "./second-brain-transport-state.js";
+import { snapshotMemoryScopedWriteArguments } from "./memory-scoped-write-codec.js";
 import { snapshotMemoryWriteArguments } from "./memory-effect-write-request.js";
 export {
 	SECOND_BRAIN_CONFIG, SECOND_BRAIN_CONTRACT_PROFILE, SECOND_BRAIN_DEADLINES,
@@ -62,7 +63,7 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 		if (this.terminalFailure) return Promise.reject(this.terminalFailure); if (![...READ_METHODS, WRITE_METHOD, "sb_submit_cancellation"].includes(method))
 			return Promise.reject(this.error("SECOND_BRAIN_METHOD_DENIED", "fatal"));
 		const snapshot = method === WRITE_METHOD
-			? snapshotMemoryWriteArguments(arguments_) : snapshotArguments(arguments_); if (!snapshot)
+			? (this.profile === "scoped-request-write-v1" ? snapshotMemoryScopedWriteArguments(arguments_) : snapshotMemoryWriteArguments(arguments_)) : snapshotArguments(arguments_); if (!snapshot)
 			return Promise.reject( this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }), );
 		if (method === "sb_submit_cancellation" && (Object.keys(snapshot).length !== 1 || !isRecord(snapshot.intent)))
 			return Promise.reject(this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }));
@@ -72,12 +73,12 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 			return Promise.reject(this.error("SECOND_BRAIN_CONTRACT_PROFILE_REQUIRED", "fatal", { method }));
 		if (method === "sb_submit_cancellation" && this.profile !== "cancellation-submit-schema7")
 			return Promise.reject(this.error("SECOND_BRAIN_CONTRACT_PROFILE_REQUIRED", "fatal", { method }));
-		if ((this.profile === "scoped-record-read-v1" || this.profile === "scoped-record-read-v2" || this.profile === "scoped-record-read-v3" || this.profile === "scoped-record-read-v4" || this.profile === "scoped-record-read-v5") && !frozenArgumentsMatch(method, snapshot, this.contract))
+		if ((this.profile === "scoped-request-write-v1" || this.profile === "scoped-record-read-v1" || this.profile === "scoped-record-read-v2" || this.profile === "scoped-record-read-v3" || this.profile === "scoped-record-read-v4" || this.profile === "scoped-record-read-v5") && !frozenArgumentsMatch(method, snapshot, this.contract))
 			return Promise.reject(this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }));
 		let argumentBytes: number; try {
 			argumentBytes = Buffer.byteLength(JSON.stringify(snapshot), "utf8"); } catch { return Promise.reject(
 				this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }), ); }
-		const maxArgumentBytes = method === "sb_submit_cancellation" ? 16_395 : SECOND_BRAIN_LIMITS.argument_bytes;
+		const maxArgumentBytes = this.profile === "scoped-request-write-v1" ? 32780 : method === "sb_submit_cancellation" ? 16_395 : SECOND_BRAIN_LIMITS.argument_bytes;
 		if (argumentBytes > maxArgumentBytes || (this.localArguments && isRead(method) &&
 				!frozenArgumentsMatch(method, snapshot, this.contract)) ) return Promise.reject( this.error( argumentBytes > maxArgumentBytes
 						? "SECOND_BRAIN_ARGUMENTS_OVERSIZE" : "SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }, ), );
@@ -245,7 +246,7 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 export function createSecondBrainTransport( options: SecondBrainTransportOptions = {}, ): SecondBrainTransport {
 	const profile = options.contractProfile ?? process.env["JARVIS_SECOND_BRAIN_CONTRACT_PROFILE"]
 		?? SECOND_BRAIN_CONTRACT_PROFILE;
-	if (profile !== "scoped-record-read-v5" && profile !== "scoped-record-read-v4" && profile !== "scoped-record-read-v3" && profile !== "scoped-record-read-v2" && profile !== "scoped-record-read-v1" && profile !== "task32-schema4" && profile !== "remember-schema5" && profile !== "cancellation-schema6" && profile !== "cancellation-submit-schema7") {
+	if (profile !== "scoped-request-write-v1" && profile !== "scoped-record-read-v5" && profile !== "scoped-record-read-v4" && profile !== "scoped-record-read-v3" && profile !== "scoped-record-read-v2" && profile !== "scoped-record-read-v1" && profile !== "task32-schema4" && profile !== "remember-schema5" && profile !== "cancellation-schema6" && profile !== "cancellation-submit-schema7") {
 		throw new SecondBrainTransportError("SECOND_BRAIN_CONTRACT_PROFILE_INVALID", "fatal", { generation: 0 });
 	}
 	return new SupervisedSecondBrainTransport({ ...options, contractProfile: profile });
