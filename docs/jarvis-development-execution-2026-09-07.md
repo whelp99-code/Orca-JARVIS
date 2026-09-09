@@ -1681,3 +1681,21 @@
   final code and physical log/receipt evidence. Residual file changes after the
   final synchronous identity read are outside the tested preparation window;
   production paths do not use this fixture.
+
+### Latest merged dashboard browser acceptance — 2026-09-09
+
+- `npm run test:e2e` at a6c6988 completed exit0,26/26passed in1.2m. Both real
+  Chromium viewports1440x1000 and1024x768 exercised overview, Korean text, task
+  graph/list, secret redaction, empty DB, no-write preview, staging, invalid
+  receipts, signed approval/execution and rejection, cancel, retry, and expired
+  workflow replanning. Console-error assertions and serious/critical axe plus
+  horizontal overflow checks passed in both viewports.
+- Built backend/dashboard and launched actual isolated fixture HTTP servers with
+  reuseExistingServer=false. This run made no real model call, used seeded
+  authority data, and did not alter an operational service or production DB.
+  Viewed the1024px overview screenshot; preserve the automated layout assertions
+  as the measurable result rather than declaring overall UI quality from an image.
+- Archived16screenshots and passing last-run metadata under shared QA cache
+  scoped-integration-browser-1w2lwv7a/receipt.json; log scoped-integration-e2e.log.
+  Full canonical verify91507 remains separate on frozen a6c6988 with1735tracked
+  files captured before execution; final gate completion is still unproven.
