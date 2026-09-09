@@ -91,6 +91,7 @@ export const ERROR_STATUS: Record<PhoneErrorCode, number> = {
 };
 
 export const PHONE_CORE_ROUTES = [
+  { method: "POST", path: "/api/v1/memory/reconcile", routeClass: "memory_reconcile", proxyBranch: undefined },
   { method: "POST", path: "/api/v1/memory/provider/verify", routeClass: "memory_provider_verify", proxyBranch: undefined },
   { method: "GET", path: "/healthz", routeClass: "health", proxyBranch: undefined },
   { method: "GET", path: "/readyz", routeClass: "readiness", proxyBranch: undefined },

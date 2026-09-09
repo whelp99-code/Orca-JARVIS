@@ -1,3 +1,4 @@
+import type { createPhoneMemoryReconcile } from "./phone-memory-reconcile.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { PhoneGatewaySessionStore } from "./dashboard/phone-session.js";
 import type { PhoneAuthorityReadAdapter, PhoneErrorCode, PhoneGatewayConfig } from "./phone-gateway-protocol.js";
@@ -18,6 +19,8 @@ export type PhoneGatewayRequestCtx = {
   readonly now: () => number;
   readonly audit: (line: string) => void;
   readonly upstream: string;
+  readonly memoryReconcile?: ReturnType<typeof createPhoneMemoryReconcile>;
+  readonly memoryReconcileAgentId?: string;
   readonly memoryProviderVerifier?: ReturnType<typeof createPhoneMemoryProviderVerifier>;
   readonly memoryProviderAgentId?: string;
   readonly memoryContext?: ReturnType<typeof createPhoneMemoryContext>;

@@ -292,3 +292,5 @@ export { readMemoryScopedSettlement, settleMemoryScopedCompletion } from "./memo
 export { createProductionScopedProviderVerifier, type ScopedProviderProductionOptions } from "./memory-scoped-provider-production.js";
 
 export { createPhoneMemoryProviderVerifier, type PhoneMemoryProviderVerifierOptions } from "./phone-memory-provider-verifier.js";
+
+export { type PhoneMemoryReconcileOptions } from "./phone-memory-reconcile.js";

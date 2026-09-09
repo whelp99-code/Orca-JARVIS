@@ -61,6 +61,11 @@ export function validateMemoryBody(path: string, buffer: Buffer): boolean {
     return buffer.byteLength <= 32768 && Reflect.get(parsed, "schema_version") === 4;
   }
   if (Reflect.get(parsed, "schema_version") !== 1) return false;
+  if (path === "/api/v1/memory/reconcile") {
+    return buffer.byteLength <= 512 && keys.length === 2 && keys.includes("outbox_id")
+      && typeof Reflect.get(parsed, "outbox_id") === "string"
+      && /^memout:scoped:v4:[0-9a-f]{64}$/.test(Reflect.get(parsed, "outbox_id"));
+  }
   if (path === "/api/v1/memory/context") {
     if (keys.length !== 4 || !["schema_version", "query", "limit", "max_bytes"].every(key => keys.includes(key))) return false;
     const query = Reflect.get(parsed, "query"); const limit = Reflect.get(parsed, "limit");

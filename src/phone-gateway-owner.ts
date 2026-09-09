@@ -194,6 +194,27 @@ async function serveMatchedRoute(
       authorization: "checked_per_request", readiness: "not_checked" }, true);
     update({ outcome: "allowed", code: "ok", status: 200 }); return;
   }
+  if (matched.routeClass === "memory_reconcile") {
+    if (ctx.memoryReconcile === undefined || ctx.memoryReconcileAgentId === undefined || body === undefined) {
+      writePhoneGatewayError(ctx.response, { code: PHONE_ERROR_CODES.PHONE_NOT_READY, requestId });
+      update({ code: PHONE_ERROR_CODES.PHONE_NOT_READY, status: 503 }); return;
+    }
+    const session = createPhoneMemorySessionSource({ sessions: ctx.sessions, cookieHeader: () => cookieHeader,
+      currentOwnerDigest: () => ctx.config.ownerDigest, agentId: ctx.memoryReconcileAgentId, now: ctx.now });
+    let result;
+    try { result = await ctx.memoryReconcile(body, session); }
+    catch (error) {
+      if (!stillAuthenticated()) return;
+      const code = phoneMemoryContextError(error);
+      if (code === undefined) throw error;
+      if (code === PHONE_ERROR_CODES.PHONE_CAPACITY_EXCEEDED) retryAfter(ctx.response, 1);
+      writePhoneGatewayError(ctx.response, { code, requestId });
+      update({ code, status: ERROR_STATUS[code], outcome: "rejected" }); return;
+    }
+    if (!stillAuthenticated()) return;
+    writeJson(ctx.response, 200, requestId, result, true);
+    update({ outcome: "allowed", code: "ok", status: 200 }); return;
+  }
   if (matched.routeClass === "memory_provider_verify") {
     if (ctx.memoryProviderVerifier === undefined || ctx.memoryProviderAgentId === undefined || body === undefined) {
       writePhoneGatewayError(ctx.response, { code: PHONE_ERROR_CODES.PHONE_NOT_READY, requestId });
