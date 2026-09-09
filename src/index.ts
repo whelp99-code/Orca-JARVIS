@@ -275,6 +275,7 @@ export { parseSecondBrainRecoveredRequestStatus, parseSecondBrainScopedRequestSt
 export { createMemoryScopedJournalClient, type MemoryScopedJournalClientOptions } from "./memory-scoped-journal-client.js";
 export { recoverMemoryScopedJournalAcceptance } from "./memory-scoped-journal-recovery.js";
 export { reconcileMemoryScopedOnce, type MemoryScopedReconcileOnceOptions } from "./memory-scoped-reconcile-once.js";
+export { createProductionScopedReconciler, type ScopedReconcileProductionOptions } from "./memory-scoped-reconcile-production.js";
 
 export { claimMemoryScopedReconciliation, readMemoryScopedReconciliationRequest,
   requireMemoryScopedReconciliationLease, releaseMemoryScopedReconciliation,

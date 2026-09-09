@@ -21,6 +21,7 @@ const CLI_HELP =
   + "control check-task <plan.json>: check repository baseline and declared files without executing an agent\n"
   + "memory classify <input.json> <policy.json>: classify a bounded candidate; does not store memory\n"
   + "memory context <query> [--limit N] [--max_bytes N]: read bounded source-bound reference data; not a delivery receipt\n"
+  + "memory reconcile-scoped <outbox-id> --once [--worker ID]: reconcile one spent request using host-authenticated scoped configuration\n"
   + "memory stage-dispatch <candidate-id>: stage an approved memory candidate for control approval\n"
   + "memory outbox --once [--limit N]: dispatch queued writes and reconcile their stored results\n"
   + "memory outbox list [--limit N]: inspect bounded memory delivery state";

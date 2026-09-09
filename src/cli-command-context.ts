@@ -8,6 +8,7 @@ import type { SecondBrainReadinessProbe } from "./second-brain-readiness.js";
 import type { MemoryOutboxProductionOptions } from "./memory-outbox-production.js";
 import type { MemoryReferenceProductionOptions } from "./memory-reference-production.js";
 import type { ScopedMemoryProductionOptions } from "./memory-scoped-production.js";
+import type { ScopedReconcileProductionOptions } from "./memory-scoped-reconcile-production.js";
 
 export type CliDependencies = {
   readonly orcaRunner?: OrcaRunner;
@@ -23,6 +24,7 @@ export type CliDependencies = {
   readonly memoryReferenceOptions?: MemoryReferenceProductionOptions;
   /** Host-authenticated session and explicit policy; never derived from CLI claims. */
   readonly scopedMemoryReferenceOptions?: ScopedMemoryProductionOptions;
+  readonly scopedMemoryReconcileOptions?: ScopedReconcileProductionOptions;
 };
 
 export type CliValues = {
