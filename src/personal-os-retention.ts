@@ -81,9 +81,12 @@ export class RetentionRuntime {
       );
   }
 
-  claimDue(input: { readonly now: string; readonly leaseExpiresAt: string }): readonly string[] {
+  claimDue(input: { readonly now: string; readonly leaseExpiresAt: string; readonly jobId?: string }): readonly string[] {
     return this.db.transaction(() => {
       const now = this.now();
+      if (input.jobId !== undefined && (typeof input.jobId !== "string" || input.jobId.length === 0)) {
+        throw new PersonalOsError("E_RETENTION_CLAIM");
+      }
       if (!validTimestamp(input.now) || !validTimestamp(input.leaseExpiresAt) || input.now > now
         || input.leaseExpiresAt <= now || Date.parse(input.leaseExpiresAt) - Date.parse(now) > 900000) {
         throw new PersonalOsError("E_CLOCK_INVALID");
@@ -91,8 +94,9 @@ export class RetentionRuntime {
       const rows = this.db.prepare(
         "SELECT job_id,state,lease_fence,expires_at FROM retention_jobs WHERE not_before<=? AND expires_at>? AND updated_at<=? " +
         "AND (state='pending' OR (state='claimed' AND lease_expires_at<=? AND lease_owner<>?)) " +
+        "AND (? IS NULL OR job_id=?) " +
         "ORDER BY not_before,job_id LIMIT 100",
-      ).all(now, now, now, now, this.owner) as Array<{
+      ).all(now, now, now, now, this.owner, input.jobId ?? null, input.jobId ?? null) as Array<{
         job_id: string; state: string; lease_fence: number; expires_at: string;
       }>;
       const claimed: string[] = [];

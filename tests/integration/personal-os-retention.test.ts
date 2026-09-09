@@ -281,3 +281,17 @@ describe("PersonalOsRuntime retention owner", () => {
     expect(db.db.prepare("SELECT state FROM retention_jobs WHERE job_id=?").get("ret:early")).toEqual({ state: "pending" });
   });
 });
+
+it("claims only an explicitly selected job and never broadens invalid or missing selections", async () => {
+  const db = await personalDb(); open.push(db);
+  const runtime = new PersonalOsRuntime({ db: db.db, now: () => new Date(T1) });
+  for (const id of ["selected", "unrelated"]) runtime.retention.createJob({ jobId: id, jobKey: id,
+    idempotencyKey: id, dataClass: id === "selected" ? "audit" : "notification",
+    createdAt: T0, notBefore: T0, expiresAt: T5, cutoff: T0 });
+  expect(() => runtime.retention.claimDue({ now: T1, leaseExpiresAt: T2, jobId: "" })).toThrow("E_RETENTION_CLAIM");
+  expect(runtime.retention.claimDue({ now: T1, leaseExpiresAt: T2, jobId: "absent" })).toEqual([]);
+  expect(runtime.retention.claimDue({ now: T1, leaseExpiresAt: T2, jobId: "selected" })).toEqual(["selected"]);
+  expect(db.db.prepare("SELECT state,lease_fence,lease_owner FROM retention_jobs WHERE job_id='unrelated'").get())
+    .toEqual({ state: "pending", lease_fence: 0, lease_owner: null });
+  expect(runtime.retention.claimDue({ now: T1, leaseExpiresAt: T2, jobId: "selected" })).toEqual([]);
+});
