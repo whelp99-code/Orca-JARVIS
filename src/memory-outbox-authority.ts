@@ -1,3 +1,4 @@
+import { readMemoryScopedDispatchBinding } from "./memory-scoped-dispatch-binding.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./db.js";
@@ -10,8 +11,16 @@ export function requireMemoryOutboxAuthority(
   action: MemoryOutboxActionV2,
   now: Date,
   providerPreflight = true,
+  scopedDispatch?: { readonly outbox_id: string; readonly fence: number },
 ): void {
   const request = action.request;
+  if (scopedDispatch !== undefined) {
+    const binding = readMemoryScopedDispatchBinding(authority, scopedDispatch.outbox_id, scopedDispatch.fence, now);
+    if (providerPreflight || binding.candidate_id !== request.candidate_id
+      || binding.source_request_id !== request.request_id || binding.source_request_digest !== request.request_digest) {
+      throw new JarvisError("MEMORY_OUTBOX_AUTHORITY_INVALID");
+    }
+  }
   if (new MemoryProjectionAuthority(authority).isProjectionIdSuppressed(request.candidate_id)) {
     throw new JarvisError("MEMORY_OUTBOX_AUTHORITY_INVALID");
   }
@@ -30,7 +39,7 @@ export function requireMemoryOutboxAuthority(
      WHERE c.candidate_id=?`,
   ).get(action.command.request_id, action.command.fence, request.candidate_id) as Record<string, unknown> | undefined;
   const content = request.payload["content"];
-  if (!row || (row.state !== "approved" && (!providerPreflight && row.state !== "queued"))
+  if (!row || (row.state !== "approved" && (!providerPreflight && row.state !== "queued" && !(scopedDispatch !== undefined && row.state === "accepted_unsettled")))
     || row.action_state !== "claimed" || row.action_decision !== "approve"
     || row.action_digest !== action.command.command_digest || row.receipt_digest !== action.command.command_digest
     || row.redeemed_receipt !== action.command.receipt_id || row.candidate_digest !== request.candidate_digest

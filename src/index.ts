@@ -260,7 +260,7 @@ export { publishMemoryScopedWriteRequest, type MemoryScopedPublicationOptions } 
 
 export { registerMemoryScopedOutbox } from "./memory-scoped-outbox.js";
 
-export { readCurrentMemoryScopedOutbox } from "./memory-scoped-outbox-reader.js";
+export { readCurrentMemoryScopedOutbox, readCurrentDispatchedMemoryScopedOutbox } from "./memory-scoped-outbox-reader.js";
 
 export { claimMemoryScopedOutbox, markMemoryScopedOutboxDispatch, recoverMemoryScopedOutboxDispatches, type MemoryScopedOutboxLease } from "./memory-scoped-outbox-worker.js";
 
@@ -268,3 +268,5 @@ export { parseSecondBrainScopedWriteAccepted, type SecondBrainScopedWriteAccepte
 export { recordMemoryScopedOutboxAcceptance } from "./memory-scoped-outbox-result.js";
 
 export { verifySecondBrainScopedProof } from "./second-brain-scoped-proof.js";
+
+export { verifyMemoryScopedProviderWrite } from "./memory-scoped-provider-authority.js";

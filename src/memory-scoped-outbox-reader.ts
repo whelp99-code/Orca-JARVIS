@@ -1,3 +1,4 @@
+import { readMemoryScopedDispatchBinding } from "./memory-scoped-dispatch-binding.js";
 import { canonicalize } from "./canonical.js";
 import { ControlPlane } from "./control-plane.js";
 import { JarvisError } from "./db.js";
@@ -9,7 +10,7 @@ import { readRegisteredMemoryScopeReview } from "./memory-scope-review.js";
 import { parseMemoryScopedWriteRequestJson } from "./memory-scoped-write-codec.js";
 import type { MemoryScopedPublicationOptions } from "./memory-scoped-write-publication.js";
 import { MemoryScopedWriteSpool } from "./memory-scoped-write-spool.js";
-import { hasRegisteredScopedSourceAuthority } from "./second-brain-write-authority.js";
+import { hasDispatchedScopedSourceAuthority, hasRegisteredScopedSourceAuthority } from "./second-brain-write-authority.js";
 
 type Options = Pick<MemoryScopedPublicationOptions, "authority" | "resolveWriteScope" | "providerInstanceId" | "spoolRoot" | "clock">
   & { readonly roots: { readonly dispatch?: string; readonly review?: string } };
@@ -17,6 +18,16 @@ type Options = Pick<MemoryScopedPublicationOptions, "authority" | "resolveWriteS
 /** Reconstruct registered bytes with current source/review/policy checks. No
  * claim, dispatch, provider acceptance or reusable grant is produced here. */
 export function readCurrentMemoryScopedOutbox(options: Options, outboxId: string) {
+  return readCurrentScopedOutbox(options, outboxId);
+}
+
+/** Revalidate one original spent attempt; never claims or re-dispatches it. */
+export function readCurrentDispatchedMemoryScopedOutbox(options: Options, outboxId: string, fence: number) {
+  if (!Number.isSafeInteger(fence) || fence < 1) throw new JarvisError("SCOPED_DISPATCH_AUTHORITY_INVALID");
+  return readCurrentScopedOutbox(options, outboxId, fence);
+}
+
+function readCurrentScopedOutbox(options: Options, outboxId: string, fence?: number) {
   const fail = (): never => { throw new JarvisError("SCOPED_OUTBOX_CURRENT_REQUEST_INVALID"); };
   let previous = Number.NEGATIVE_INFINITY;
   const clock = () => {
@@ -33,7 +44,9 @@ export function readCurrentMemoryScopedOutbox(options: Options, outboxId: string
       AND b.idempotency_key=o.idempotency_key AND b.created_at=o.created_at WHERE o.outbox_id=?`).get(outboxId) as
       Record<string, unknown> | undefined;
     if (row === undefined || row.request_profile !== "scoped-v4" || row.provider_instance_id !== options.providerInstanceId
-      || (row.state !== "queued" && row.state !== "claimed")) return fail();
+      || (fence === undefined ? row.state !== "queued" && row.state !== "claimed"
+        : row.state !== "dispatching" && row.state !== "reconciling")) return fail();
+    if (fence !== undefined) readMemoryScopedDispatchBinding(options.authority, outboxId, fence, clock());
     const spool = new MemoryScopedWriteSpool(options.spoolRoot, options.providerInstanceId);
     const request = spool.read(String(row.idempotency_key), clock());
     const raw = canonicalize(request), source = request.source_request, binding = request.preparation.binding;
@@ -79,8 +92,11 @@ export function readCurrentMemoryScopedOutbox(options: Options, outboxId: string
       if (canonicalize(identity) !== canonicalize(expectedIdentity) || binding.proposal_digest !== proposal.proposal_digest
         || binding.expires_at !== review.expires_at || binding.control_receipt_id !== review.control_receipt_id
         || binding.command_digest !== review.command_digest) return fail();
-      requireMemoryOutboxAuthority(options.authority, action, at, false);
-      if (!hasRegisteredScopedSourceAuthority(options.authority, source, outboxId, at)) return fail();
+      const dispatch = fence === undefined ? undefined : { outbox_id: outboxId, fence };
+      requireMemoryOutboxAuthority(options.authority, action, at, false, dispatch);
+      const valid = fence === undefined ? hasRegisteredScopedSourceAuthority(options.authority, source, outboxId, at)
+        : hasDispatchedScopedSourceAuthority(options.authority, source, outboxId, fence, at);
+      if (!valid) return fail();
     };
     check(readAction());
     if (canonicalize(spool.read(request.idempotency_key, clock())) !== raw) return fail();

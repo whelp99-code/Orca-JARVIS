@@ -1,3 +1,5 @@
+import { readMemoryScopedDispatchBinding } from "./memory-scoped-dispatch-binding.js";
+import { JarvisError } from "./db.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import type { AuthorityDb } from "./db.js";
 import type { SecondBrainRememberWriteRequest } from "./second-brain-adapter-types.js";
@@ -44,8 +46,21 @@ export function hasRegisteredScopedSourceAuthority(authority: AuthorityDb,
   return hasMemorySourceAuthority(authority, request, now, outboxId);
 }
 
+/** Current source authority for the exact already-spent scoped attempt. */
+export function hasDispatchedScopedSourceAuthority(authority: AuthorityDb,
+  request: SecondBrainRememberWriteRequest, outboxId: string, fence: number, now: Date): boolean {
+  try {
+    return authority.db.transaction(() => {
+      const dispatch = readMemoryScopedDispatchBinding(authority, outboxId, fence, now);
+      return dispatch.candidate_id === request.candidate_id && dispatch.source_request_id === request.request_id
+        && dispatch.source_request_digest === request.request_digest
+        && hasMemorySourceAuthority(authority, request, now, outboxId, true);
+    }).immediate();
+  } catch (error) { if (error instanceof JarvisError) return false; throw error; }
+}
+
 function hasMemorySourceAuthority(authority: AuthorityDb, request: SecondBrainRememberWriteRequest,
-  now: Date, scopedOutboxId?: string): boolean {
+  now: Date, scopedOutboxId?: string, dispatched = false): boolean {
   if (new MemoryProjectionAuthority(authority).isProjectionIdSuppressed(request.candidate_id)) return false;
   const value = authority.db.prepare(
     `SELECT c.candidate_id,c.state,c.operation,c.required_confirmation,c.content_digest,c.subject_digest,c.purpose,
@@ -83,11 +98,13 @@ function hasMemorySourceAuthority(authority: AuthorityDb, request: SecondBrainRe
   const scopedRegistration = scopedOutboxId === undefined ? undefined : authority.db.prepare(`
     SELECT 1 FROM memory_scoped_outbox_bindings b JOIN memory_outbox o ON o.outbox_id=b.outbox_id
     WHERE b.outbox_id=? AND b.candidate_id=? AND b.source_request_id=? AND b.source_request_digest=?
-    AND o.request_profile='scoped-v4' AND o.state IN ('queued','claimed')
+    AND o.request_profile='scoped-v4'
     AND o.candidate_id=b.candidate_id AND o.request_id=b.request_id AND o.request_digest=b.request_digest
     AND o.idempotency_key=b.idempotency_key`).get(scopedOutboxId, request.candidate_id, request.request_id, request.request_digest);
   const candidateStateValid = scopedOutboxId !== undefined
-    ? row["state"] === "queued" && scopedRegistration !== undefined
+    ? scopedRegistration !== undefined && (dispatched
+      ? row["state"] === "accepted_unsettled" && ["dispatching", "reconciling"].includes(String(row["outbox_state"]))
+      : row["state"] === "queued" && ["queued", "claimed"].includes(String(row["outbox_state"])))
     : row["state"] === "approved" || (
     row["state"] === "accepted_unsettled" && row["outbox_state"] === "dispatching"
     && row["outbox_request_id"] === request.request_id
