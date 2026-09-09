@@ -51,3 +51,12 @@ verifier key, readiness was preflight_passed and execution_available remained fa
 Both exited0. The parent shell environment was unchanged and temporary key material
 was removed. Receipt: /home/jm/.cache/jarvis-test-runtime-qa-20260908/task-runtime-probe-cli.json.
 This command dispatches before database construction; no --db argument was used.
+
+
+Diagnostic regression follow-up: seven probe tests now assert all four allowlisted
+reason codes and the generic fallback for ordinary errors and unknown JarvisError
+codes. Failure paths also assert zero candidate generation. Probe/reviewability
+9 tests passed; after the tuple typing correction, probe 7 tests passed again.
+Compiled CLI with installed Claude and a nonexistent verifier key returned exit 0,
+readiness unavailable/TASK_VERIFIER_UNAVAILABLE, execution_available false and
+zero configured path/key-ID leaks. This is failure-path acceptance, not task execution.

@@ -15,14 +15,23 @@ it("does not construct a runnable probe for unregistered or incomplete configura
   } finally { ready.mockRestore(); generate.mockRestore(); }
 });
 
-it.each([new Error("private-secret-path"), new JarvisError("TASK_PROVIDER_UNAVAILABLE")])(
-  "returns bounded preflight failures without raw diagnostics", async error => {
+const failures: [Error, string][] = [
+  [new Error("private-secret-path"), "TASK_EXECUTOR_PREFLIGHT_FAILED"],
+  [new JarvisError("private-secret-code"), "TASK_EXECUTOR_PREFLIGHT_FAILED"],
+  ...["TASK_PROVIDER_UNAVAILABLE", "TASK_VERIFIER_UNAVAILABLE", "TASK_SANDBOX_UNAVAILABLE",
+    "TASK_EXECUTION_CLOCK_UNAVAILABLE"].map((code): [Error, string] => [new JarvisError(code), code]),
+];
+
+it.each(failures)(
+  "returns bounded preflight failures without raw diagnostics: %s", async (error, reason_code) => {
     const ready = vi.spyOn(ClaudeTaskCandidateProvider.prototype, "checkReady").mockRejectedValue(error);
+    const generate = vi.spyOn(ClaudeTaskCandidateProvider.prototype, "generate");
     try {
       const result = await probeTaskExecutorRuntime("claude-code", { JARVIS_TASK_CLAUDE_PATH: "/private/provider",
         JARVIS_TASK_VERIFIER_KEY_PATH: "/private/key", JARVIS_TASK_VERIFIER_KEY_ID: "private-id" });
       expect(result).toMatchObject({ execution_available: false, authentication: "not_probed",
-        readiness: { state: "unavailable", remote_verification: "not_performed" } });
-      expect(JSON.stringify(result)).not.toMatch(/private-secret-path|\/private\/|private-id/);
-    } finally { ready.mockRestore(); }
+        readiness: { state: "unavailable", scope: "local_runtime_preflight", remote_verification: "not_performed", reason_code } });
+      expect(JSON.stringify(result)).not.toMatch(/private-secret-path|private-secret-code|\/private\/|private-id/);
+      expect(generate).not.toHaveBeenCalled();
+    } finally { ready.mockRestore(); generate.mockRestore(); }
   });
