@@ -204,7 +204,7 @@ const SQLITE_SURFACE_PREFIXES: Readonly<Record<string, readonly string[]>> = {
   outbox_attempts_events: ["memory_outbox", "memory_reconciliation",
     "memory_scoped_outbox", "memory_scoped_completion", "memory_scoped_settlements"],
   deletion_export_tombstone_delegation_proof: ["memory_deletion", "memory_export", "memory_tombstone", "memory_effect"],
-  audit_retention: ["audit_", "retention_", "personal_operation_audit"],
+  audit_retention: ["audit_", "retention_", "personal_operation_audit", "remote_audit_", "remote_auth_retention_"],
   observations: ["personal_observation", "personal_source_checkpoint"],
   contexts_edges_snapshots: ["personal_context"],
   recommendations_actions_evidence: ["personal_recommendation"],

@@ -79,7 +79,7 @@ describe("complete managed memory surface inventory", () => {
     } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
   });
 
-  it("fails closed when a forbidden byte identity remains in managed state", async () => {
+  it.each(["state", "remote-auth"])("fails closed when forbidden bytes remain in %s", async surface => {
     // Given: a content-free forbidden identity and the matching bytes in a managed state file.
     const root = mkdtempSync(join(tmpdir(), "jarvis-task30-inventory-match-"));
     const db = new AuthorityDb(tempDb()); await db.migrate();
@@ -93,9 +93,13 @@ describe("complete managed memory surface inventory", () => {
       persistForbiddenContentIdentities(db, { purge_id: "purge:test", material: [canary],
         observed_at: "2026-08-31T00:00:00.000Z" });
       db.db.pragma("foreign_keys=ON");
-      writeFileSync(join(layout.state_root, "retained.json"), Buffer.concat([
+      if (surface === "state") writeFileSync(join(layout.state_root, "retained.json"), Buffer.concat([
         Buffer.from("prefix:"), canary, Buffer.from(":suffix"),
       ]), { mode: 0o600 });
+      else db.db.prepare(`INSERT INTO remote_auth_retention_authorizations_v2
+        (authorization_id,job_id,fence,cutoff,state,authorization_digest,created_at)
+        VALUES(?,'fixture',1,'2025-01-01T00:00:00.000Z','completed','sha256:fixture','2026-09-09T00:00:00.000Z')`)
+        .run(canary.toString());
       const constructor = Reflect.get(Jarvis, "MemoryManagedSurfaceScanner");
       expect(isScannerConstructor(constructor)).toBe(true);
       if (!isScannerConstructor(constructor)) return;
