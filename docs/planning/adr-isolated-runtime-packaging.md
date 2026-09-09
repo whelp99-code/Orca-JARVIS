@@ -20,3 +20,9 @@ backend build lock/staging directories. Existing fileIdentity rejects symlinks a
 special files in copied input and bounds file counts/bytes. npm's generated runtime
 dependency tree retains normal package symlinks. Dependency logs stay in the scratch
 directory; the final receipt contains identities and exit evidence, not log contents.
+
+The CLI smoke harness is now an explicit copied and hashed payload root. Execute
+that packaged copy during packaging and permit the same entrypoint for independent
+revalidation. It imports only Node builtins and invokes the package's own CLI, so
+the source checkout is unnecessary after artifact creation. This closes the former
+source-harness dependency without copying the entire developer script tree.

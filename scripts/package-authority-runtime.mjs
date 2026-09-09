@@ -9,7 +9,7 @@ if (!values["output-parent"]) throw new Error("RUNTIME_PACKAGE_OUTPUT_PARENT_REQ
 const root = process.cwd();
 const parent = resolve(values["output-parent"]);
 const roots = ["dist/src", "dist/tests", "dist/migrations", "dist/contracts", "dist/dashboard",
-  "dist/build-metadata.json", "migrations", "config", "package.json", "package-lock.json"];
+  "dist/build-metadata.json", "migrations", "config", "package.json", "package-lock.json", "scripts/cli-smoke.mjs"];
 let output;
 function run(command, args, cwd, log, env = process.env) {
   const fd = openSync(log, "wx", 0o600);
@@ -43,7 +43,7 @@ try {
   run("npm", ["ci", "--omit=dev", "--offline", "--no-audit", "--no-fund"], output,
     join(output, "dependency-install.log"));
   mkdirSync(join(output, "smoke-state"));
-  run(process.execPath, [join(root, "scripts/cli-smoke.mjs")], output, join(output, "cli-smoke.log"),
+  run(process.execPath, ["scripts/cli-smoke.mjs"], output, join(output, "cli-smoke.log"),
     { ...process.env, TMPDIR: join(output, "smoke-state") });
   const identityDb = join(output, "identity-must-not-create.sqlite");
   const identityLog = join(output, "runtime-identity.json");

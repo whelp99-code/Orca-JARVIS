@@ -37,6 +37,10 @@ It creates a new jarvis-runtime-* directory, builds backend/dashboard, checks bu
 identity, copies runtime roots, installs locked production dependencies offline and
 runs the real CLI smoke with isolated SQLite state. Required output files and modes
 are hashed and rechecked; source HEAD, dirty state and toolchain are recorded.
+The copied `scripts/cli-smoke.mjs` belongs to that payload vector and is the script
+the packager executes. To rerun from the package directory, set `TMPDIR` to an
+existing private scratch directory and run `node scripts/cli-smoke.mjs`.
+This rerun uses the packaged CLI and production dependencies, without a source checkout.
 The packaged runtime identity CLI must also report matching source/input/artifact
 identity and toolchain without creating the deliberately missing probe database.
 

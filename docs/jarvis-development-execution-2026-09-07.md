@@ -1637,3 +1637,19 @@
 - Fresh independent scoped_integration_review returned ship/finding0 after its own
   exact2file/2test pass, parent SQL byte comparison84/80 with0mismatches, and
   unresolved-index0/diff-check0. Full gate and production holds remain unchanged.
+
+### Self-contained packaged CLI validation — 2026-09-09
+
+- Packager now includes scripts/cli-smoke.mjs in its copied/hashed/rechecked roots
+  and executes the output copy. The former absolute source-harness dependency is
+  removed; no additional developer script tree or dependency is included.
+- Actual full package command exit0: source5c186e4 dirty=true,1393payload files,
+  jarvis-runtime-BpApfW under shared QA cache. Build, offline production install,
+  copied CLI smoke and runtime identity passed; deployment_ready=false.
+- Independent rerun used bwrap to hide both canonical JARVIS source and all JARVIS
+  workspaces, unshare network, and run only packaged scripts/cli-smoke.mjs with
+  private scratch. Exit0/stdout0bytes/stderr0bytes. Receipt in the package:
+  independent-smoke-receipt.json. This is same-host CLI validation, not provider,
+  browser, hermetic dependencies, or production deployment acceptance.
+- Parent reviewed the two-line executable change; node --check and diff --check
+  exit0. No new test duplicates the existing executable CLI smoke.
