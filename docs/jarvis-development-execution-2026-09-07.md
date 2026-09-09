@@ -1312,3 +1312,22 @@
 - Independent approved_routing_review returned ship/findings0. Parent verified
   11/11 packet hashes before acceptance; requested terra/high, actual metadata
   unavailable. No product changes after final checks. Accepted for bounded commit.
+
+### Routing selection display — 2026-09-09
+
+- Isolated branch codex/routing-approval-ui starts at912736e while the original
+  integration worktree's full verify92007 remains live; no original source edits.
+- Added original-command-bound display projection, guarded optional API fields,
+  preparation/request summaries and unsupported executor preparation blocking.
+- Backend projection85339:3pass; frontend22503:10pass then updated2362:3pass
+  (11 distinct frontend tests including existing8). Lint81924, build12274 and
+  final three typechecks14312 exited0. Reviewability/projection17914:5pass.
+- Actual isolated Playwright80711 exited0 at widths1440/390: prepare200,
+  stage202, same task-spec digest in authenticated refresh, console0/overflow0,
+  real model calls0. Receipt routing-ui-20260909/browser-receipt.json in QA cache.
+  Browser plugin unavailable; source selection/approval preparation only, not
+  production dispatch or live event-stream readiness. Screenshot inspected.
+- Fresh routing_ui_review requested terra/high, read-only task constraint;
+  returned ship/code findings0. Parent accepts the reviewed unit for commit.
+  Actual model/effort and token telemetry unavailable. Full01–25 and previously
+  recorded HOLD items remain.

@@ -5,6 +5,7 @@ import { readTaskCompletionEvidence } from "../task-completion-evidence.js";
 import { parseTaskExecutionPlan } from "../task-execution-plan.js";
 import type { OverviewApproval } from "./legacy-read-contracts.js";
 import { parseTaskTemplateBinding } from "../task-templates.js";
+import { readDashboardTaskRouting } from "./task-routing-read.js";
 
 function taskTemplate(input: unknown) {
   if (!input || typeof input !== "object" || !Object.hasOwn(input, "task_template")) return undefined;
@@ -21,7 +22,9 @@ export function readDashboardTaskExecution(db: AuthorityDb, taskId: string, obse
     const runs = rows.slice(0, 20).map(row => {
       const run = graph.get(row.run_id);
       const template = taskTemplate(run.input);
+      const routing = readDashboardTaskRouting(db, run);
       return { run_id: run.run_id, state: run.state, updated_at: run.updated_at,
+        ...(routing ? { routing } : {}),
         ...(template ? { task_template: template } : {}) };
     });
     const candidates = db.db.prepare(`SELECT request_id FROM control_command_requests
@@ -31,12 +34,15 @@ export function readDashboardTaskExecution(db: AuthorityDb, taskId: string, obse
       const command = readControlCommand(db, row.request_id);
       if (!command) return [];
       const plan = parseTaskExecutionPlan(command.args.plan);
-      const template = taskTemplate(graph.get(plan.run_id).input);
+      const run = graph.get(plan.run_id);
+      const template = taskTemplate(run.input);
+      const routing = readDashboardTaskRouting(db, run, plan);
       if (plan.task_id !== taskId || command.target.run_id !== plan.run_id) throw new JarvisError("TASK_EXECUTION_BINDING_INVALID");
       const request: OverviewApproval = { request_id: command.request_id, action: command.action,
         action_level: command.action_level, requested_at: command.requested_at, requested_by: command.requested_by,
         state: command.state, summary: "Execute the reviewed task plan", retry_status: "not_allowed" };
       return [{ request, plan, command_digest: command.command_digest, expires_at: command.expires_at,
+        ...(routing ? { routing } : {}),
         ...(template ? { task_template: template } : {}),
         completion: readTaskCompletionEvidence(db, command.request_id, observedAt)?.completion ?? null }];
     });

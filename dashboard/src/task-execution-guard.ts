@@ -10,6 +10,16 @@ const oid = (v: unknown) => typeof v === "string" && /^(?:[a-f0-9]{40}|[a-f0-9]{
 const integer = (v: unknown, min: number, max: number) => Number.isSafeInteger(v) && Number(v) >= min && Number(v) <= max;
 const list = (v: unknown, min: number, max: number): v is any[] => Array.isArray(v) && v.length >= min && v.length <= max;
 const states = ["pending", "approved", "rejected", "claimed", "completed", "failed", "uncertain", "cancelled"];
+function routing(v: unknown): boolean {
+  const label = (s: unknown) => typeof s === "string" && /^[a-z][a-z0-9-]{0,63}$/.test(s);
+  return object(v) && Object.keys(v).sort().join(",") ===
+    "authority,decision_digest,delivery,executor_id,policy_digest,policy_id,policy_revision,proposed_record_stores,rule_id,schema_version,task_spec_digest"
+    && v.schema_version === 1 && v.authority === "display_only" && v.delivery === "not_attested"
+    && [v.executor_id, v.policy_id, v.rule_id].every(label) && integer(v.policy_revision, 1, Number.MAX_SAFE_INTEGER)
+    && [v.policy_digest, v.decision_digest, v.task_spec_digest].every(digest)
+    && list(v.proposed_record_stores, 1, 8) && v.proposed_record_stores.every(label)
+    && new Set(v.proposed_record_stores).size === v.proposed_record_stores.length;
+}
 
 /** Response validation only; browser fields never grant execution authority. */
 export function isTaskExecutionPlan(v: unknown): v is TaskExecutionPlan {
@@ -45,11 +55,14 @@ export function parseTaskExecution(v: unknown, taskId: string): DashboardTaskExe
   if (!object(v) || v.schema_version !== 1 || v.task_id !== taskId || !list(v.runs, 0, 20) || !list(v.requests, 0, 20)
     || !object(v.truncated) || typeof v.truncated.runs !== "boolean" || typeof v.truncated.requests !== "boolean") return undefined;
   if (!v.runs.every(run => object(run) && text(run.run_id) && text(run.state) && text(run.updated_at)
+    && (!Object.hasOwn(run, "routing") || routing(run.routing))
     && (!Object.hasOwn(run, "task_template") || isTaskTemplateBinding(run.task_template)))) return undefined;
   if (!v.requests.every(item => {
     if (!object(item) || !object(item.request) || !isTaskExecutionPlan(item.plan) || item.plan.task_id !== taskId
       || !digest(item.command_digest) || !text(item.expires_at)) return false;
     if (Object.hasOwn(item, "task_template") && !isTaskTemplateBinding(item.task_template)) return false;
+    if (Object.hasOwn(item, "routing") && (!routing(item.routing) || item.routing.task_spec_digest !== item.plan.task_spec_digest
+      || (item.routing.executor_id === "claude-code" && item.plan.provider !== "claude"))) return false;
     const r = item.request;
     if (!text(r.request_id) || r.action !== "task.execute" || r.action_level !== 3 || !text(r.requested_at)
       || !text(r.requested_by) || !text(r.summary) || !states.includes(r.state) || r.retry_status !== "not_allowed") return false;

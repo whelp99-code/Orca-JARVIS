@@ -79,3 +79,36 @@ operational activation and the full01–25 objective remain incomplete.
 - Independent approved_routing_review returned ship/findings0. Parent verified
   11/11 packet hashes before acceptance; requested terra/high, actual metadata
   unavailable. No product changes after final checks. Accepted for bounded commit.
+
+## Dashboard selection display — 2026-09-09
+
+Task execution reads now project the original routing selection on workflow runs
+and execution requests. A routed projection requires the original completed
+workflow.start effect, an unsuppressed source command with a matching digest,
+canonical workflow equality and, for requests, matching task/spec/run/provider.
+Absent routing preserves legacy responses; inconsistent provenance fails the read.
+Reads add no writes, provider calls, policy body or task objective to the response.
+
+The preparation form and execution request show the selected executor, policy
+revision/rule and proposed record stores. Hashes are inspectable in a details
+control. `authority=display_only` and `delivery=not_attested` are explicit API
+fields; the browser rejects malformed fields and mismatched task-spec digests.
+Unsupported selected executors cannot prepare plans in this Claude-only form.
+This does not add policy editing, automatic routing or record-store dispatch.
+
+Validation: backend routing projection 3 tests; frontend routing 3 tests and
+existing execution panel 8 tests passed. Lint, three typechecks and build passed.
+Browser plugin unavailable: regular Playwright exercised isolated dashboard HTTP
+at 1440x1000 and 390x1000, expanding identifiers, preparing a plan (200), staging
+approval (202), and checking the browser's authenticated refresh against the
+plan digest. Both widths: console errors/warnings 0, horizontal overflow 0,
+framework overlays 0, real model calls 0. Screenshots and receipt:
+`/home/jm/.cache/jarvis-test-runtime-qa-20260908/routing-ui-20260909/`.
+Harness corrections: expected two summaries after staging, but the pending
+request correctly replaces the eligible preparation form (one summary). A
+standalone API probe lacked CSRF and returned403; the final harness observes
+the actual UI's authenticated GET instead. Both final browser runs exited0.
+Fresh independent routing_ui_review returned ship, code findings0. Requested
+terra/high; actual model/effort and token telemetry unavailable. Full integration
+verify92007 runs on the preceding
+912736e worktree and does not cover these uncommitted UI changes.

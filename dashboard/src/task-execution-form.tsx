@@ -6,13 +6,16 @@ import { isTaskExecutionRejection, taskExecutionMessage } from "./task-execution
 import { TaskExecutionPlanView } from "./task-execution-plan-view.js";
 import type { TaskTemplateBinding } from "../../src/task-templates.js";
 import { TaskTemplateSummary } from "./task-template-summary.js";
+import { TaskRoutingSummary } from "./task-routing-summary.js";
+import type { DashboardTaskRouting } from "../../src/dashboard/task-routing-read.js";
 
 type FileInput = { id: number; path: string; access: "read" | "write"; exists: boolean };
 type CheckInput = { id: number; executable: string; args: string; cwd: string };
-export function TaskExecutionForm({ taskId, runs, client, refresh, enabled, templates, idFactory = SYSTEM_AUTHORITY_ID_FACTORY }: Readonly<{
+export function TaskExecutionForm({ taskId, runs, client, refresh, enabled, templates, routing, idFactory = SYSTEM_AUTHORITY_ID_FACTORY }: Readonly<{
   taskId: string; runs: readonly string[]; client: TaskExecutionClient; refresh: () => Promise<void>;
   enabled: boolean; idFactory?: AuthorityIdFactory;
   templates?: Readonly<Record<string, TaskTemplateBinding>>;
+  routing?: Readonly<Record<string, DashboardTaskRouting>>;
 }>) {
   const [run, setRun] = useState(runs.length === 1 ? runs[0]! : "");
   const [root, setRoot] = useState(""); const [branch, setBranch] = useState("");
@@ -24,7 +27,9 @@ export function TaskExecutionForm({ taskId, runs, client, refresh, enabled, temp
   const [submitted, setSubmitted] = useState<string>();
   const [existing, setExisting] = useState<readonly string[]>([]);
   const template = templates?.[run];
-  const available = enabled && runs.includes(run) && !busy && !submitted;
+  const selection = routing?.[run];
+  const supportedSelection = !selection || selection.executor_id === "claude-code";
+  const available = enabled && runs.includes(run) && !busy && !submitted && supportedSelection;
 
   function edit(change: () => void) { change(); setPreview(undefined); setError(""); }
   async function prepare(event: SyntheticEvent<HTMLFormElement, SubmitEvent>) {
@@ -55,6 +60,8 @@ export function TaskExecutionForm({ taskId, runs, client, refresh, enabled, temp
   }
   return <section aria-label="실행 계획 준비" className="execution-form-section">
     <h3>실행 계획 준비</h3>
+    {selection ? <TaskRoutingSummary routing={selection} /> : null}
+    {!supportedSelection ? <p role="alert">선택된 실행자는 이 화면에서 실행 계획을 준비할 수 없습니다.</p> : null}
     <p>커밋된 파일에서 작업을 시작합니다. 수정할 파일과 검사에 필요한 읽기 파일을 함께 선택하세요.</p>
     <form className="control-form" onSubmit={event => { void prepare(event); }}>
       <fieldset disabled={busy || !enabled || !!submitted}>
