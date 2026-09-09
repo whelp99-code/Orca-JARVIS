@@ -2340,3 +2340,22 @@ It is not a new current-HEAD package, full gate or provider execution verificati
 - 범위: 실제 TCP 단절 후 SSE 재연결과 복구 후 사용자 입력 경로. 단절 중 타 클라이언트가
   만든 변경의 정합성, 장시간 단절, 느린 소비자의 메모리 상한은 이 인수에서 검증하지 않았다.
   Backlog17 전체 완료 및 운영 배포 준비 완료를 주장하지 않는다.
+
+## TCP 단절 중 다른 브라우저가 생성한 요청 복구 — 2026-09-10
+
+- 같은 URsHND 패키지의 격리 DB/HTTP 서버에서 Chromium 별도 context2개 사용.
+  관찰 브라우저(1440px)의 프록시 TCP 연결을 단절한 동안 직접 연결 브라우저에서
+  preview 후 workflow.start 요청1개를 생성했다. 승인/실행/provider 호출은 하지 않았다.
+- 직접 조회 overview의 pending request ID와 재연결 후 관찰 브라우저가 받은
+  overview의 ID가 일치: request_id-d8bb102b-c7d9-41a1-b07f-50e071980e03.
+  양쪽 pending_approvals1개. 관찰 브라우저의 navigation/reload 없이 연결됨으로
+  복귀하고 빈 승인 안내가 사라지며 승인 패널 항목이 표시됐다. Probe exit0, 서버 exit0.
+- 단절 중 overview는 기존 내용을 유지하지 않고 Unable to load overview / Offline /
+  Retry를 표시했다. 초기 snapshot 후속 조회 실패 시점의 현상으로, 단절 중 마지막
+  데이터 표시 UX는 잔여 검토 대상이다. 복구된 데이터의 정합성 통과와 구분한다.
+- 초기 harness의 빈 화면 유지 가정과 중복 텍스트 locator를 수정했다. 최종 검증은
+  서버의 실제 request ID 비교와 승인 패널 record-title 표시를 확인한다.
+- 증거: /home/jm/.cache/jarvis-test-runtime-qa-20260908/ 아래
+  packaged-dashboard-missed-update-probe.mjs, packaged-dashboard-missed-update.log,
+  packaged-dashboard-missed-update.json. 장시간 단절/대량 변경/느린 클라이언트
+  메모리 상한을 검증한 것은 아니며 Backlog17 잔여를 유지한다.
