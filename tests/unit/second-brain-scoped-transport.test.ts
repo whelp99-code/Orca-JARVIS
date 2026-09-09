@@ -36,3 +36,22 @@ it('loads v2 with status while keeping v1 fixed at two methods', () => {
   expect(inspectFrozenSchemas(tools, v2).matches).toBe(false);
   expect(() => loadSecondBrainContract(path, 'scoped-record-read-v2')).toThrow('SECOND_BRAIN_CONTRACT_MISMATCH');
 });
+
+it('pins v3 separately and refuses older contracts, writes and missing claims', async () => {
+  const v3Path = path.replace('-v1.json', '-v3.json');
+  const v3 = loadSecondBrainContract(v3Path, 'scoped-record-read-v3') as typeof contract & { read_page_access: unknown };
+  expect(v3.read_page_access).toBeDefined();
+  const declared = Object.entries(v3.tools).map(([name, tool]) => ({ name, inputSchema: tool.arguments }));
+  expect(inspectFrozenSchemas(declared, v3).matches).toBe(true);
+  expect(Object.keys(v3.tools).sort()).toEqual(['sb_generation_status', 'sb_read_page', 'sb_search']);
+  expect(() => loadSecondBrainContract(path.replace('-v1.json', '-v2.json'), 'scoped-record-read-v3')).toThrow('SECOND_BRAIN_CONTRACT_MISMATCH');
+  expect(() => loadSecondBrainContract(v3Path, 'scoped-record-read-v2')).toThrow('SECOND_BRAIN_CONTRACT_MISMATCH');
+  let starts = 0;
+  const transport = createSecondBrainTransport({ contractProfile: 'scoped-record-read-v3', contractPath: v3Path,
+    execFile: () => { starts++; throw new Error('must not spawn'); } });
+  try {
+    await expect(transport.call('sb_read_page', { id: 'wiki/example' })).rejects.toThrow('SECOND_BRAIN_INVALID_ARGUMENTS');
+    await expect(transport.call('sb_write_request', { request: {} })).rejects.toThrow('SECOND_BRAIN_INVALID_ARGUMENTS');
+    expect(starts).toBe(0);
+  } finally { await transport.close(); }
+});

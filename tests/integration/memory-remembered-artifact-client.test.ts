@@ -13,12 +13,13 @@ const accepted = JSON.parse(readFileSync(new URL('../fixtures/scoped-provider-pr
 const artifact = JSON.parse(readFileSync(new URL('../fixtures/scoped-remembered-artifact.json', import.meta.url), 'utf8'));
 const databases: MemoryDatabase[] = [];
 afterEach(() => { for (const db of databases.splice(0)) closeMemoryDatabase(db); });
-async function setup() {
+const pageAccess = JSON.parse(readFileSync(new URL('../fixtures/scoped-page-access.json', import.meta.url), 'utf8'));
+async function setup(profile: "scoped-record-read-v2" | "scoped-record-read-v3" = "scoped-record-read-v2") {
   const db = await memoryDatabase(); databases.push(db);
   const { config } = memoryReadFenceFixture(db);
   const scope: AuthorizedMemoryReadScope = { principal_id: 'principal:owner', agent_id: 'agent:reader', session_id: 'session:reader',
     projects: ['project:shared-memory'], policy_revision: 'policy:fixture', valid_until: new Date(OUTBOX_NOW.getTime() + 10000).toISOString() };
-  const state = { current: scope as AuthorizedMemoryReadScope | undefined, value: structuredClone(artifact),
+  const state = { current: scope as AuthorizedMemoryReadScope | undefined, value: { ...structuredClone(artifact), ...(profile === "scoped-record-read-v3" ? { page_access: structuredClone(pageAccess) } : {}) },
     after: () => {}, sent: 0, error: false, mutate: () => {} };
   const transport: SecondBrainTransport = {
     async call(method, args, options) {
@@ -28,12 +29,12 @@ async function setup() {
       const fence = args.read_fence as Record<string, unknown>;
       state.mutate(); state.after();
       if (state.error) return { kind: 'error', code: 'FIXTURE_TOOL_FAILURE' };
-      return { kind: 'data', value: { ...state.value, profile: 'scoped-record-read-v2', request_digest: claim.request_digest,
+      return { kind: 'data', value: { ...state.value, profile, request_digest: claim.request_digest,
         access_claim_digest: 'sha256:' + createHash('sha256').update('orca-jarvis/memory-access-claim-binding/v1\0' + canonicalize(claim)).digest('hex'),
         tombstone_sequence: fence.tombstone_sequence, tombstone_set_root: fence.tombstone_set_root } };
     }, async close() {}, async restart() {}, diagnostics: () => [],
   };
-  const client = createMemoryScopedClient({ profile: 'scoped-record-read-v2',
+  const client = createMemoryScopedClient({ profile,
     issue: createProductionMemoryAccessClaim(db.authority, config, () => state.current), transport, now: () => OUTBOX_NOW,
     budgets: { max_hits: 10, max_excerpt_bytes: 4096, max_total_bytes: 100000, max_page_bytes: 20000 },
     max_age_ms: 86400000, expiry_ms: 172800000 });
@@ -88,3 +89,34 @@ it('allows a reader whose authenticated project grant contains the request scope
   state.current = { ...scope, projects: ['project:other', 'project:shared-memory'] };
   expect((await client.readRememberedArtifact(request, accepted)).record_ids).toHaveLength(4);
 });
+
+it('v3 returns an exact source classification observation through the authenticated client', async () => {
+  const { client } = await setup('scoped-record-read-v3');
+  const observed = await client.readRememberedArtifact(request, accepted);
+  expect(observed.kind).toBe('remembered_artifact_observed');
+  expect(observed.access).toEqual(pageAccess);
+  expect(Object.isFrozen(observed.access!.sources[0]!.classification.projects)).toBe(true);
+});
+it.each(['missing', 'incomplete', 'empty', 'duplicate', 'digest', 'owner', 'policy', 'extra', 'source', 'classification', 'mixed'])(
+  'v3 rejects %s access evidence even when records are unchanged', async mode => {
+    const { client, state, scope } = await setup('scoped-record-read-v3');
+    state.current = { ...scope, projects: ['project:other', 'project:shared-memory'] };
+    const access = state.value.page_access;
+    const source = access.sources[0];
+    if (mode === 'missing') delete state.value.page_access;
+    if (mode === 'incomplete') access.complete = false;
+    if (mode === 'empty') access.sources = [];
+    if (mode === 'duplicate') access.sources.push(structuredClone(source));
+    if (mode === 'digest') source.classification_digest = 'sha256:' + '0'.repeat(64);
+    if (mode === 'owner') source.classification.owner = 'principal:other';
+    if (mode === 'policy') source.classification.policy_revision = 'policy:next';
+    if (mode === 'extra') access.extra = true;
+    if (mode === 'source') source.source_ref_digest = 'sha256:' + '0'.repeat(64);
+    if (mode === 'classification') source.classification.projects = ['project:other'];
+    if (mode === 'mixed') access.sources.push({ ...structuredClone(source), source_ref_digest: 'sha256:' + 'f'.repeat(64) });
+    if (['owner', 'policy', 'source', 'classification', 'mixed'].includes(mode)) {
+      for (const row of access.sources) row.classification_digest = 'sha256:' + createHash('sha256')
+        .update('second-brain/source-access-classification/v1\0' + row.source_ref_digest + '\0' + canonicalize(row.classification)).digest('hex');
+    }
+    await expect(client.readRememberedArtifact(request, accepted)).rejects.toThrow();
+  });

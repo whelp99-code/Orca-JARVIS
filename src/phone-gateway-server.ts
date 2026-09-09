@@ -52,7 +52,7 @@ export function createPhoneGatewayServer(options: {
     void handleRequest({
       request, response, config: options.config, sessions, limiter, adapter,
       staticRoot, assets, now, audit, upstream: upstreamUrl,
-      memoryContext, memoryAgentId: options.memoryContext?.agent_id,
+      memoryContext, memoryAgentId: options.memoryContext?.agent_id, memoryProfile: options.memoryContext?.memory.profile,
     });
   });
   httpServer.headersTimeout = 5000;

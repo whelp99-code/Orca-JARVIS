@@ -1,3 +1,4 @@
+import { parseSecondBrainPageAccess, type PageAccessScope } from "./second-brain-page-access.js";
 import { JarvisError } from "./db.js";
 import type { SecondBrainAdapterBudgets } from "./second-brain-adapter-types.js";
 import { parseSecondBrainBoundRecords } from "./second-brain-evidence-parser.js";
@@ -7,7 +8,8 @@ import { SecondBrainReadBudget } from "./second-brain-read-budget.js";
 
 type ScopedExpectation = {
   readonly method: "sb_read_page" | "sb_search" | "sb_generation_status";
-  readonly profile?: "scoped-record-read-v1" | "scoped-record-read-v2";
+  readonly profile?: "scoped-record-read-v1" | "scoped-record-read-v2" | "scoped-record-read-v3";
+  readonly scope?: PageAccessScope;
   readonly page_id?: string;
   readonly limit: number;
   readonly request_digest: string;
@@ -48,15 +50,17 @@ export function parseScopedSecondBrainResponse(value: unknown, expected: ScopedE
     || expected.fence.operation !== (expected.method === "sb_generation_status" ? "status" : "read")
     || !(Date.parse(expected.fence.not_before) <= expected.checked_at.getTime()
       && expected.checked_at.getTime() < Date.parse(expected.fence.expires_at))) return fail();
-  const payloadKeys = expected.method === "sb_generation_status" ? ["schema_version", "pointer_health", "journal_health"] : expected.method === "sb_read_page" ? ["page_id", "content_digest", "records"] : ["results"];
+  const classified = expected.profile === "scoped-record-read-v3";
+  const payloadKeys = expected.method === "sb_generation_status" ? ["schema_version", "pointer_health", "journal_health"] : expected.method === "sb_read_page" ? ["page_id", "content_digest", "records", ...(classified ? ["page_access"] : [])] : ["results"];
   if (!exact(value, ["profile", "request_digest", "access_claim_digest", ...generationKeys, ...payloadKeys])) return fail();
   const bound = bindSecondBrainGenerationRead(value, { fence: expected.fence, method: expected.method === "sb_generation_status" ? "sb_read_page" : expected.method,
     contract_profile: "schema4", unbound_generations: new Map() });
   if (bound === undefined) return fail();
   const generation = secondBrainGenerationBinding(bound);
-  if (generation === undefined) return fail();
+  if (generation === undefined || (classified && (generation.tombstone_sequence < 0
+    || generation.generation_id !== `sbgen:v1:${generation.generation_manifest_digest.slice(7)}`))) return fail();
   if (expected.method === "sb_generation_status") {
-    if (expected.profile !== "scoped-record-read-v2" || value.schema_version !== 1
+    if ((!classified && expected.profile !== "scoped-record-read-v2") || value.schema_version !== 1
       || value.pointer_health !== "healthy" || value.journal_health !== "healthy") return fail();
     return { generation, pages: [] };
   }
@@ -85,7 +89,8 @@ export function parseScopedSecondBrainResponse(value: unknown, expected: ScopedE
       requestedPageId: id, checkedAt: expected.checked_at, budgets: expected.budgets, requestBudget: budget,
       maxAgeMs: expected.max_age_ms, expiryMs: expected.expiry_ms }, group.digest);
     if (parsed.kind === "invalid") return fail();
-    return { page_id: id, content_digest: group.digest, parsed };
+    return { page_id: id, content_digest: group.digest, parsed,
+      ...(classified && expected.method === "sb_read_page" ? { access: parseSecondBrainPageAccess(value.page_access, expected.scope) } : {}) };
   });
   return { generation, pages };
 }

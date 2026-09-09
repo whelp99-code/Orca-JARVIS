@@ -189,7 +189,7 @@ async function serveMatchedRoute(
   if (!stillAuthenticated()) return;
   if (matched.routeClass === "memory_capabilities") {
     writeJson(ctx.response, 200, requestId, { schema_version: 1,
-      profile: "scoped-record-read-v2", configured: ctx.memoryContext !== undefined,
+      profile: ctx.memoryProfile ?? "scoped-record-read-v2", configured: ctx.memoryContext !== undefined,
       supported_operations: ["context"], writes_supported: false,
       authorization: "checked_per_request", readiness: "not_checked" }, true);
     update({ outcome: "allowed", code: "ok", status: 200 }); return;

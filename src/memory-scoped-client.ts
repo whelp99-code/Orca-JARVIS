@@ -14,7 +14,7 @@ type Bundle = ReturnType<Issuer>;
 export type MemoryScopedClientOptions = {
   readonly issue: Issuer;
   readonly status_issue?: Issuer;
-  readonly profile?: "scoped-record-read-v1" | "scoped-record-read-v2";
+  readonly profile?: "scoped-record-read-v1" | "scoped-record-read-v2" | "scoped-record-read-v3";
   readonly transport: SecondBrainTransport;
   readonly now: () => Date;
   readonly budgets: SecondBrainAdapterBudgets;
@@ -35,7 +35,7 @@ const denied = (): never => { throw new JarvisError("MEMORY_SCOPED_READ_UNAVAILA
 export function createMemoryScopedClient(options: MemoryScopedClientOptions) {
   async function read(method: "sb_read_page" | "sb_search" | "sb_generation_status", arguments_: Readonly<Record<string, unknown>>, signal?: AbortSignal, artifact?: ReturnType<typeof rememberedArtifactExpectation>) {
     const request: MemoryAccessRequest = Object.freeze({ method, arguments: Object.freeze({ ...arguments_ }) });
-    if (method === "sb_generation_status" && options.profile !== "scoped-record-read-v2") return denied();
+    if (method === "sb_generation_status" && (options.profile !== "scoped-record-read-v2" && options.profile !== "scoped-record-read-v3")) return denied();
     const issue = method === "sb_generation_status" ? options.status_issue : options.issue;
     if (issue === undefined) return denied();
     const bundle = issue(request, new Date(options.now().getTime()));
@@ -57,7 +57,8 @@ export function createMemoryScopedClient(options: MemoryScopedClientOptions) {
     const checked = recheck();
     if (outcome.kind !== "data") return denied();
     const parsed = parseScopedSecondBrainResponse(outcome.value, {
-      method, profile: options.profile, page_id: method === "sb_read_page" ? String(request.arguments.id) : undefined,
+      method, profile: options.profile, scope: { owner: bundle.access_claim.principal_id,
+        projects: bundle.access_claim.projects, policy_revision: bundle.access_claim.policy_revision }, page_id: method === "sb_read_page" ? String(request.arguments.id) : undefined,
       limit: method === "sb_search" ? Number(request.arguments.limit) : 64,
       request_digest: bundle.access_claim.request_digest,
       access_claim_digest: "sha256:" + createHash("sha256").update("orca-jarvis/memory-access-claim-binding/v1\0"
@@ -74,7 +75,7 @@ export function createMemoryScopedClient(options: MemoryScopedClientOptions) {
       return verifyRememberedArtifactRead(expected, response);
     },
     authorizationIdentity: () => {
-      if (options.profile !== "scoped-record-read-v2" || options.status_issue === undefined) return denied();
+      if ((options.profile !== "scoped-record-read-v2" && options.profile !== "scoped-record-read-v3") || options.status_issue === undefined) return denied();
       return identity(options.status_issue({ method: "sb_generation_status", arguments: {} }, new Date(options.now().getTime())));
     },
     status: (signal?: AbortSignal) => read("sb_generation_status", {}, signal),
