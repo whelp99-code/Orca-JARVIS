@@ -284,3 +284,5 @@ export { readMemoryScopedCompletionProof } from "./memory-scoped-completion-proo
 export { readMemoryScopedSettlementAuthority } from "./memory-scoped-settlement-authority.js";
 
 export { readMemoryScopedSettlement, settleMemoryScopedCompletion } from "./memory-scoped-settlement.js";
+
+export { createProductionScopedProviderVerifier, type ScopedProviderProductionOptions } from "./memory-scoped-provider-production.js";
