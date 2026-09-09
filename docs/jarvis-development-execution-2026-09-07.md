@@ -21,7 +21,7 @@
 | 10–11, 21 최소 | 실제 준비 상태와 승인된 작업 한 건의 실행 완결 | Claude CLI·독립 검증·서명·Git·완료 영수증·실제 UI 인수 완료. readiness 인증은 not_probed, Codex 실행자는 unsupported, 운영 대상 등록·인수는 후속 |
 | 12 | 일일 스케줄과 실제 retention 어댑터 | 저장 소스 기반 아침·서명된 저녁 단계의 service 연결과 격리 재시작 검증 완료. 기억 후보 정리 스캐너 구현·리뷰 완료(2ba5ddb); 명시적 경로/한도 기반 service 정리 연결·컴파일 CLI 검증·독립 리뷰 완료. provider refresh·일반 retention·운영 적용은 미완료 |
 | 13 | 관찰 장애와 실행 장애 분리 | 영속 backoff·건강 상태 및 실제 격리 CLI 검증 완료. 운영 활성화는 후속 |
-| 14–19 | 구조·설치·조회·SSE·테스트·운영 정보 | 도메인 일부 분리, Linux 설치/검증 분리, 순차 test shard, SQL/승인 페이지, SSE·HTTP 병합·본문 상한, 빌드 식별 생산자 및 현황판 서버/DB 식별 API·UI 격리 검증. 최신 전체 gate SHAa2e685c: 3874테스트 통과; 이후 정리 스캐너 변경은 집중 검증만 수행. 구조 부채·일부 목록·별도 daemon/운영 인수는 미완료 |
+| 14–19 | 구조·설치·조회·SSE·테스트·운영 정보 | 도메인 일부 분리, Linux 설치/검증 분리, 순차 test shard, SQL/승인 페이지, SSE·HTTP 병합·본문 상한, 빌드 식별 생산자 및 현황판 서버/DB 식별 API·UI 격리 검증. 최신 전체 gate SHAfea01e6: 정리 스캐너·서비스 연결 포함 3881테스트 통과. 구조 부채·일부 목록·별도 daemon/운영 인수는 미완료 |
 | 20–25 | 라우팅·실행자·기억 연동·커넥터·템플릿·지표 | 범위 유지; 아래 의존성/보류 항목 참조 |
 
 ## 보류 판정과 재개 조건
@@ -1978,3 +1978,22 @@ SIGTERM, and the reopened fixture database had0 foreign key violations. Receipt:
 Default signal termination does not prove graceful finally execution. Candidate
 file deletion remains covered by the separate compiled CLI integration test.
 Backlog01–25 remains open, including broader retention, refresh and production use.
+
+
+## Cleanup service canonical acceptance
+
+- Tested commit fea01e67b2953d87b3a8ddbf400b481e48d9da8b.
+- First canonical session87727 ended143 without a result receipt; process inspection
+  found no remaining matching verifier. Cause unconfirmed. That run is interrupted,
+  not passed. Before restarting, all1785 tracked file hashes were unchanged.
+- Retry session7894: uninterrupted npm run verify exit0.
+- Backend shard1:257files1794tests passed,569.37s; shard2:257files1832tests passed,514.73s.
+- Dashboard:37files255tests passed,33.57s. Total3881tests passed.
+- Runtime check, lint, typecheck, build, fixed-clock acceptance and CLI smoke passed.
+  Acceptance returned pre_gjc_ready/stopped, completion_promoted true, gjc_dispatched false.
+- Before/after tracked hashes:1785files, changed_files [].
+- Evidence directory: /home/jm/.cache/jarvis-test-runtime-qa-20260908.
+  verify-cleanup-service-interruption.json, verify-cleanup-service-retry.log,
+  verify-cleanup-service-retry-result.json, verify-cleanup-service-before.json.
+- This verifies the current candidate cleanup implementation. Broader retention,
+  provider refresh, operational activation and the remaining backlog01–25 are open.
