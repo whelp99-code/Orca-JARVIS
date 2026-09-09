@@ -8,6 +8,7 @@ import { LiveSupervisor, type LiveSupervisorCycle } from "./live-supervisor.js";
 import { PreGjcShadow } from "./pre-gjc-shadow.js";
 import { PERSONAL_OS_CONTROL_CHANNEL_ENV, servePersonalOsCycleChannel } from "./personal-os-cycle-channel.js";
 import { configuredMemoryReviewCleanup } from "./cli-memory-review-cleanup.js";
+import { RemoteAuditService } from "./remote-audit-service.js";
 import { DailyServiceCycles } from "./daily-service-cycles.js";
 import { PersonalOsRuntime } from "./personal-os-runtime.js";
 import { CYCLE_READY_TYPE } from "./personal-os-cycle-ready.js";
@@ -21,6 +22,10 @@ export async function executeGjcCommand(
 ): Promise<Record<string, unknown> | undefined> {
   const { command, subcommand, argument, values, db, dependencies } = context;
   if (command !== "gjc" && command !== "service") return undefined;
+  const rawAuditLimit = values["remote-audit-retention-limit"];
+  if (rawAuditLimit !== undefined && (!/^[1-9][0-9]{0,3}$/.test(rawAuditLimit) || Number(rawAuditLimit) > 1000
+    || process.env[PERSONAL_OS_CONTROL_CHANNEL_ENV])) throw new JarvisError("REMOTE_AUDIT_RETENTION_CONFIG_INVALID");
+  const audit = rawAuditLimit === undefined ? undefined : new RemoteAuditService(db.db, Number(rawAuditLimit), () => commandNow(context));
   const cleanup = configuredMemoryReviewCleanup(context);
   let daily: DailyServiceCycles | undefined;
   if (command === "service" && (values.input !== undefined || values["key-file"] !== undefined)) {
@@ -52,7 +57,18 @@ export async function executeGjcCommand(
   });
   let lastDailyOutput: string | undefined;
   let lastCleanupOutput: string | undefined;
+  let lastAuditOutput: string | undefined;
   const once = async () => {
+    let remote_audit_retention;
+    if (audit) {
+      try { remote_audit_retention = audit.cycle(); }
+      catch { remote_audit_retention = { status: "error", code: "REMOTE_AUDIT_RETENTION_FAILED" }; }
+      const serialized = JSON.stringify(remote_audit_retention);
+      if (subcommand === "run" && !values.once && serialized !== lastAuditOutput) {
+        outputSync({ ok: remote_audit_retention.status !== "error", command: "service.remote-audit-retention", ...remote_audit_retention });
+        lastAuditOutput = serialized;
+      }
+    }
     const memory_review_cleanup = cleanup?.cycle(commandNow(context));
     if (memory_review_cleanup !== undefined && subcommand === "run" && !values.once) {
       const serialized = JSON.stringify(memory_review_cleanup);
@@ -70,7 +86,8 @@ export async function executeGjcCommand(
       }
     }
     const result = await service.once(commandNow(context).toISOString());
-    return { ...result, ...(memory_review_cleanup === undefined ? {} : { memory_review_cleanup }), ...(phases === undefined ? {} : { daily: {
+    return { ...result, ...(remote_audit_retention === undefined ? {} : { remote_audit_retention }),
+      ...(memory_review_cleanup === undefined ? {} : { memory_review_cleanup }), ...(phases === undefined ? {} : { daily: {
       scope: "stored-local-sources", provider_refresh: "unavailable", phases,
     } }) };
   };
