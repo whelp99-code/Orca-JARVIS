@@ -4,6 +4,8 @@ import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PHONE_MEMORY_CLI_FIELDS, parsePhoneMemoryContextCli } from "./phone-memory-context-cli.js";
 import type { PhoneMemoryContextOptions } from "./phone-memory-context.js";
+import { PHONE_RECONCILE_CLI_FIELDS, parsePhoneMemoryReconcileCli } from "./phone-memory-reconcile-cli.js";
+import type { PhoneMemoryReconcileOptions } from "./phone-memory-reconcile.js";
 import {
   createPhoneGatewayServer,
   PHONE_GATEWAY_PORT,
@@ -23,6 +25,7 @@ export type PhoneGatewayCliOptions = {
   readonly staticRoot: string;
   readonly envFile: string;
   readonly memoryContext?: PhoneMemoryContextOptions;
+  readonly memoryReconcile?: PhoneMemoryReconcileOptions;
 };
 
 export function parsePhoneGatewayCli(argv: readonly string[]): PhoneGatewayCliOptions {
@@ -30,6 +33,7 @@ export function parsePhoneGatewayCli(argv: readonly string[]): PhoneGatewayCliOp
     args: [...argv],
     options: {
       ...Object.fromEntries(PHONE_MEMORY_CLI_FIELDS.map(name => [name, { type: "string" as const }])),
+      ...Object.fromEntries(PHONE_RECONCILE_CLI_FIELDS.map(name => [name, { type: "string" as const }])),
       host: { type: "string" },
       port: { type: "string" },
       upstream: { type: "string" },
@@ -48,6 +52,7 @@ export function parsePhoneGatewayCli(argv: readonly string[]): PhoneGatewayCliOp
     throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
   }
   const memoryContext = parsePhoneMemoryContextCli(values);
+  const memoryReconcile = parsePhoneMemoryReconcileCli(values);
   return {
     host: LOOPBACK,
     port: PHONE_GATEWAY_PORT,
@@ -55,6 +60,7 @@ export function parsePhoneGatewayCli(argv: readonly string[]): PhoneGatewayCliOp
     staticRoot: resolve(values["static-root"]),
     envFile: resolve(values["env-file"]),
     ...(memoryContext === undefined ? {} : { memoryContext }),
+    ...(memoryReconcile === undefined ? {} : { memoryReconcile }),
   };
 }
 
@@ -76,6 +82,7 @@ export function startPhoneGatewayCli(
     staticRoot: options.staticRoot,
     config,
     memoryContext: options.memoryContext,
+    memoryReconcile: options.memoryReconcile,
   });
   write(`http://${server.address.host}:${String(server.address.port)}`);
   return { close: () => { server.close(); } };
