@@ -73,3 +73,19 @@ retry and accessibility flows. They do not exercise the new work-lineage form.
 Next acceptance work must cover relationship selection, predecessor validation,
 preview invalidation and persisted approval details through an actual browser.
 The UI unit tests and compiled CLI integration are not substitutes for that flow.
+
+The browser gap above is now covered by `e2e/task-lineage.spec.ts`, included in the
+default E2E runner. Its compiled fixture starts the real dashboard server with an
+isolated authority DB and committed Git repository, and stages/rejects an original
+request using a signed decision. Chromium fills the rework form, checks required
+predecessor inputs, invalidates previews on edits, stages through the HTTP API, and
+reloads the page to verify the persisted predecessor ID/digest in approval details.
+No approval or model execution is performed by this scenario.
+
+Validation: typecheck, zero-warning lint and build exited 0. The first browser run
+passed 26 existing cases and failed 2 new cases because the test selector matched
+both an execution article and its nested approval article. After constraining the
+selector to the named execution article, the focused run passed 2/2 in 17.9 seconds
+at 1440 and 1024 widths, including horizontal overflow and console error checks.
+Log: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/work-lineage-browser-final.log`.
+The full canonical gate and independent implementation review are still outstanding.
