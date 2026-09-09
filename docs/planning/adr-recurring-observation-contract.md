@@ -125,3 +125,40 @@ that guard; cache integration6 tests passed again. Reviewer model/effort and
 API-equivalent token cost are not observable. No CLI/service activation, daily-loop adapter, or
 versioned context-consumer integration is claimed. Subject lifecycle management and
 runtime scheduling remain required before automatic operation.
+
+## Consumer boundary decision after 267e8d8
+
+Status: local collection and exact-ID CLI consumption implemented; automatic morning
+recommendation consumption deferred. This does not close backlog12 or23.
+
+Current source inspection:
+- cli-local-timeline.ts already exposes versioned collected bytes through snapshot,
+  and subjects supplies discoverable IDs for automatic service collections.
+- local-timeline-snapshot-store.ts revalidates source bytes and expiry on exact reads;
+  replacement, holds and reconstruction invalidate cached references.
+- context-assembler-sources.ts requires verified Linux live_adapter/live_task input
+  and confirmed memory. A local SQLite timeline does not satisfy that source claim.
+- personal-context-evidence.ts resolves observation references from immutable history.
+- morning-recommendation-source.ts requires stored recommendation identities,
+  ranking provenance and Linux evidence bindings; morning-brief-publisher.ts persists
+  publication dependencies and rechecks them at publication.
+- daily-loop-morning-execution.ts invokes refresh_reader inside a write transaction;
+  the actual local collection producer intentionally rejects nested transactions.
+
+Decision: do not add a second local context wrapper merely to rename existing snapshot
+output, and do not substitute collection counts for provider refresh or recommendation
+evidence. Existing local snapshot CLI consumption is the implemented local-only use.
+The full morning workflow remains an open requirement, not satisfied by that CLI.
+
+Resume automatic local advisory integration only with a defined user-facing advisory
+purpose and a versioned recommendation/provenance contract that explicitly accepts
+local scope. That implementation must define historical publication versus current
+actionability, stable subject holds, suppression/restore lineage, and bounded storage
+when disposable source bytes disappear. Collection stays outside write transactions;
+publication must revalidate the exact bound collection under its admission boundary.
+Tests must include replacement/expiry/hold/source-change/reconstruction between
+selection and publication, without weakening existing Linux evidence acceptance.
+
+This is a design decision grounded in current code, not evidence that the deferred
+consumer is implemented. General retention and the other backlog items remain available
+for development independently of this source-contract decision.
