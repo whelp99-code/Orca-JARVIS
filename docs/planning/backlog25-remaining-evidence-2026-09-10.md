@@ -47,3 +47,33 @@ Use a new migration if storage is required; preserve shipped migrations.
 This contract is the next investigation target. No relationship schema, recording
 API or rework metric has been implemented by this document. Backlog01–25 remains
 the full objective; other gaps and reported holds are not removed.
+
+## Staging integration choice
+
+Inspection after a314732 found an existing persistence and approval boundary:
+`stageTaskExecution` stores canonical command args and compares them byte-for-byte
+on request replay. `validateTaskExecutionAction` currently requires exactly plan
+and execution_plan_digest. Control approval binds command_digest, so relationship
+metadata can be signed as an optional versioned command argument without changing
+the existing execution plan v1/v2 or introducing a parallel relation table.
+
+Implementation sequence:
+1. Add a strict work_lineage v1 argument with explicit original/rework/retry kind.
+   Original has no predecessor; rework/retry bind prior request ID and command digest.
+   Absence remains legacy/unknown rather than original.
+2. Extend staging and action validation together. Before storage, verify predecessor
+   action, immutable digest, repository identity and temporal ordering. New requests
+   may point only to already existing requests; immutable links prevent later cycles.
+   Do not use repository path alone as project identity.
+3. Revalidate the relationship on generic execution paths, not only dashboard input.
+   Replays preserve the originally approved relationship and never relabel it.
+4. Extend the existing JSON-file CLI and dashboard preparation/staging boundary so
+   users can inspect the relationship before approval. Request metadata must survive
+   preparation and appear in the approval review; hidden inferred defaults are excluded.
+5. Derive measured counts from immutable command args with bounded predecessor reads.
+   Distinguish unknown legacy coverage, explicit originals, rework and technical retry.
+   Verify completion/suppression before reporting successful rework outcomes.
+
+No runtime changes are made by this design update. The next code unit must include
+the producer and validation/consumer boundary together; a disconnected schema helper
+would not implement the requested workflow.
