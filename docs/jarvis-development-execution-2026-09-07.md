@@ -1721,3 +1721,20 @@
   stays false. Full verify91507 remains separate on frozen a6c6988.
 - Fresh runtime_dependency_review returned ship,0findings; requested terra/high,
   actual model/effort unobservable. It reviewed the implementation and QA evidence.
+
+### Scoped-contract build fixture completion — 2026-09-09
+
+- Live full verify91507 exposed9backend-build failures: the isolated build fixture
+  lacked newly merged scoped writev1 and readv3/v4/v5 contracts. Its explicit
+  copy/expected-output vector now includes those4contracts and SHA sidecars.
+  Production copier and assertions are unchanged.
+- Red evidence: verify-schema-fixture-full.log, ENOENT for scoped-write-v1.json.
+  Focused replay after fixture correction:1file10tests passed,6.02s,exit0.
+  Syntax and diff checks exit0; parent reviewed the two-line fixture change.
+- Full gate also reports policy-binding explicit-restart5000ms timeout and real
+  MCP-process180000ms timeout. A focused unchanged-assertion replay is running
+  separately; no timeout increase or completion claim is made from these failures.
+- Focused timeout diagnostic completed exit0:2files76tests,31.98s. Policy-binding
+  75tests passed in8.90s; actual built MCP lifecycle passed in19.36s. The timeout
+  failures did not reproduce in this run. This does not prove the full gate passes
+  or establish a root cause for the earlier stall; keep full-gate failure visible.
