@@ -12,6 +12,9 @@ import { parseCreateTaskRequest } from "./validation.js";
 const TASKS_PATH = "/api/v1/tasks";
 
 const ERROR_STATUS = {
+  TASK_ROUTING_BINDING_INVALID: 400,
+  TASK_ROUTING_REVIEW_REQUIRED: 409,
+  TASK_EXECUTOR_UNREGISTERED: 409,
   TASK_INPUT_INVALID: 400,
   TASK_TEMPLATE_INVALID: 400,
   TASK_SPEC_BINDING_INVALID: 400,
@@ -23,6 +26,9 @@ const ERROR_STATUS = {
 } as const;
 
 const ERROR_MESSAGE = {
+  TASK_ROUTING_BINDING_INVALID: "Invalid task routing binding",
+  TASK_ROUTING_REVIEW_REQUIRED: "Routing requires review",
+  TASK_EXECUTOR_UNREGISTERED: "Selected executor is not registered",
   TASK_INPUT_INVALID: "Invalid task input",
   TASK_TEMPLATE_INVALID: "Invalid task template",
   TASK_SPEC_BINDING_INVALID: "Invalid task specification binding",
@@ -94,6 +100,9 @@ type MappedTaskError = {
 function mappedTaskError(error: unknown): MappedTaskError | undefined {
   if (!(error instanceof JarvisError)) return undefined;
   switch (error.code) {
+    case "TASK_ROUTING_BINDING_INVALID":
+    case "TASK_ROUTING_REVIEW_REQUIRED":
+    case "TASK_EXECUTOR_UNREGISTERED":
     case "TASK_INPUT_INVALID":
     case "TASK_TEMPLATE_INVALID":
     case "TASK_SPEC_BINDING_INVALID":

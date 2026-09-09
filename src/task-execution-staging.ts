@@ -5,6 +5,8 @@ import { LoopGraph } from "./loopgraph.js";
 import { controlWorkflowRunInput } from "./control-workflow-input.js";
 import { parseTaskExecutionPlan, taskExecutionPlanDigest, type TaskExecutionPlan } from "./task-execution-plan.js";
 import { assertTaskTemplatePlan } from "./task-templates.js";
+import { registeredTaskExecutor } from "./task-executor-registry.js";
+import type { TaskSpecV1 } from "./task-spec-input.js";
 
 export interface StageTaskExecutionInput {
   readonly request_id: string;
@@ -23,6 +25,10 @@ export function assertTaskExecutionBinding(db: AuthorityDb, plan: TaskExecutionP
   const input = workflow.input as Record<string, unknown> | null;
   if (!input || input.task_id !== plan.task_id || input.task_spec_digest !== plan.task_spec_digest
     || !Object.hasOwn(input, "task_spec")) throw new JarvisError("TASK_EXECUTION_BINDING_INVALID");
+  const routing = (input.task_spec as TaskSpecV1).routing;
+  if (routing && registeredTaskExecutor(plan.provider)?.id !== routing.executor_id) {
+    throw new JarvisError("TASK_ROUTING_EXECUTOR_MISMATCH");
+  }
   const deadline = Date.parse(workflow.budget.deadline);
   if (!Number.isFinite(deadline) || deadline <= now.getTime()
     || !Number.isSafeInteger(workflow.budget.max_steps) || workflow.budget.max_steps <= run.attempts

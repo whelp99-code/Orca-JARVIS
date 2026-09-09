@@ -10,8 +10,9 @@ import { verifierKey } from "../helpers.js";
 
 export async function approvedTaskFixture(passed = true, options: {
   stage?: boolean; approvedStart?: boolean; template?: NonNullable<Parameters<typeof taskPublicationFixture>[1]>["template"];
+  routing?: NonNullable<Parameters<typeof taskPublicationFixture>[1]>["routing"];
 } = {}) {
-  const f = await taskPublicationFixture(options.approvedStart, { template: options.template }); let now = f.now;
+  const f = await taskPublicationFixture(options.approvedStart, { template: options.template, routing: options.routing }); let now = f.now;
   const plan = { ...f.plan, provider: "claude" as const };
   if (options.stage !== false) {
     const request = stageTaskExecution(f.db, { ...f.request, plan }, now); f.approve(request);

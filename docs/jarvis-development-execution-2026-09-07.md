@@ -1292,3 +1292,23 @@
 - Independent routing_shadow_review completed ship/findings0. Parent rechecked
   5/5 reviewed hashes at c045bff, accepted this unit for commit. Actual model/effort
   and token telemetry unavailable; no cost estimate. Full01–25 remains active.
+
+### Approved per-task routing — 2026-09-09
+
+- Previous goal turn progressed: routing shadow committed6deea8d. New HTTP task
+  routing proposal is recomputed, selected registered executor persisted in
+  TaskSpec digest and enforced against provider during execution binding checks.
+  No-match/conflict returns409, stale binding400, unregistered executor409.
+- Final31305 build+49tests/6files29.93s; regression79767:73tests/5files47.92s.
+  Lint/three typechecks34002 exit0. Earlier format/lint failures documented in ADR.
+- Actual78083 exit0:Claude1/verifier1, result a6210f19f8c4babcf23b91bffb0b7303bb8cc5ea,
+  elapsed42490ms, routing/specdigest retained, replay calls0, originalsource/HEAD
+  preserved. Isolated fixture/key, not production activation. Staticcycles0.
+- Read-only approved_routing_review dispatched terra/high, verdict pending.
+  Parent packet11/11 matches. Details docs/planning/adr-approved-task-routing.md.
+  UI policy controls/global default/other executors/record-store effects and
+  full01–25 remain incomplete; no service/configuration/productionDB changes.
+
+- Independent approved_routing_review returned ship/findings0. Parent verified
+  11/11 packet hashes before acceptance; requested terra/high, actual metadata
+  unavailable. No product changes after final checks. Accepted for bounded commit.

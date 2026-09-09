@@ -1,6 +1,7 @@
 import type { CapabilityFact } from "../capabilities.js";
 import type { CommandApprovalReceipt } from "../control-plane.js";
 import { JarvisError } from "../db.js";
+import { parseTaskRoutingBinding, type TaskRoutingBinding } from "../task-routing-binding.js";
 import { parseTaskTemplateBinding, type TaskTemplateBinding } from "../task-templates.js";
 import type { TeamProposalRequestV1, TeamWorkType } from "../team-proposal.js";
 import {
@@ -191,10 +192,12 @@ function parseReceipt(value: unknown, fail: Fail): CommandApprovalReceipt {
   };
 }
 
-export function parseCreateTaskRequest(value: unknown): CreateTaskRequest & { readonly task_template?: TaskTemplateBinding } {
+export function parseCreateTaskRequest(value: unknown): CreateTaskRequest
+  & { readonly task_template?: TaskTemplateBinding; readonly routing?: TaskRoutingBinding } {
   const fail = failWith(TASK_INPUT_INVALID);
   const input = record(value, fail);
-  exactKeys(input, [...CREATE_TASK_KEYS, ...(Object.hasOwn(input, "task_template") ? ["task_template"] : [])], fail);
+  exactKeys(input, [...CREATE_TASK_KEYS, ...(Object.hasOwn(input, "task_template") ? ["task_template"] : []),
+    ...(Object.hasOwn(input, "routing") ? ["routing"] : [])], fail);
   if (input.schema_version !== DASHBOARD_SCHEMA_VERSION) fail();
   return {
     schema_version: DASHBOARD_SCHEMA_VERSION,
@@ -205,6 +208,8 @@ export function parseCreateTaskRequest(value: unknown): CreateTaskRequest & { re
     expected_proposal_digest: parseDigest(input.expected_proposal_digest, fail),
     proposal_request: parseProposal(input.proposal_request, fail),
     budget: parseBudget(input.budget, fail),
+    ...(Object.hasOwn(input, "routing")
+      ? { routing: parseTaskRoutingBinding(input.routing, parseProposal(input.proposal_request, fail).objective) } : {}),
     ...(Object.hasOwn(input, "task_template") ? { task_template: parseTaskTemplateBinding(input.task_template) } : {}),
   };
 }

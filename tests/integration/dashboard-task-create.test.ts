@@ -10,6 +10,7 @@ import {
 import type { CreateTaskRequest, Sha256Digest } from "../../src/dashboard/contracts.js";
 import { createDashboardServer, type DashboardServer } from "../../src/dashboard/server.js";
 import { initialized, localKey, tempDb } from "../helpers.js";
+import { classifyWorkRouting } from "../../src/work-routing.js";
 
 const TASKS = "/api/v1/tasks";
 const CSRF = "X-JARVIS-CSRF";
@@ -127,6 +128,32 @@ async function readyDigest(db: AuthorityDb, capabilityProbe: CapabilityProbe): P
 }
 
 describe("dashboard receipt-bound task request staging", () => {
+  it("preserves per-task routing in the approval and rejects stale or unregistered selections over HTTP", async () => {
+    const db = await migratedDb(), capabilityProbe = probe(), server = startServer(db, capabilityProbe);
+    const policy = { schema_version: 1, policy_id: "http-task-routing", revision: 1,
+      rules: [{ id: "code", keywords: ["planner"], executor_ids: ["claude-code"], record_stores: ["second-brain"] }] };
+    const routing = { schema_version: 1 as const, policy, executor_id: "claude-code",
+      decision_digest: classifyWorkRouting({ schema_version: 1, objective: proposal().objective }, policy).decision_digest };
+    try {
+      const input = { ...taskBody(await readyDigest(db, capabilityProbe)), routing };
+      const csrf = await csrfToken(server);
+      const send = (body: unknown) => post(server, TASKS, { csrf, type: JSON_TYPE, body: JSON.stringify(body) });
+      const before = fingerprint(db);
+      expect((await send({ ...input, routing: { ...routing, decision_digest: STALE } })).status).toBe(400);
+      const unsupported = { ...policy, rules: [{ ...policy.rules[0]!, executor_ids: ["cowork"] }] };
+      const failed = await send({ ...input, routing: { ...routing, policy: unsupported, executor_id: "cowork",
+        decision_digest: classifyWorkRouting({ schema_version: 1, objective: proposal().objective }, unsupported).decision_digest } });
+      expect(failed.status).toBe(409); expect(errorCode(failed.body)).toBe("TASK_EXECUTOR_UNREGISTERED");
+      expect(fingerprint(db)).toBe(before);
+      const result = await send(input);
+      expect(result.status).toBe(202);
+      const stored = new ControlPlane(db).get(input.request_id)!;
+      const spec = (stored.args.input as { task_spec: TaskSpecV1 }).task_spec;
+      expect(spec.routing).toEqual(routing);
+      expect((stored.args.input as { task_spec_digest: string }).task_spec_digest).toBe(taskSpecDigest(spec));
+      expect(stored.state).toBe("pending");
+    } finally { server.close(); await server.drain(); db.close(); }
+  });
   it("stages exactly one pending workflow.start for a matching ready digest", async () => {
     const db = await migratedDb();
     const capabilityProbe = probe();

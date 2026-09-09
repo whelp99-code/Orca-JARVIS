@@ -5,6 +5,7 @@ import { createTaskSpec, taskSpecDigest } from "../../src/task-spec.js";
 import type { TaskExecutionPlanV1 } from "../../src/task-execution-plan.js";
 import { initialized, localKey } from "../helpers.js";
 import type { compileTaskTemplate } from "../../src/task-templates.js";
+import type { TaskRoutingBinding } from "../../src/task-routing-binding.js";
 
 export function executionPlan(): TaskExecutionPlanV1 {
   return { schema_version: 1, run_id: "run", task_id: "task", task_spec_digest: `sha256:${"a".repeat(64)}`,
@@ -16,7 +17,7 @@ export function executionPlan(): TaskExecutionPlanV1 {
 }
 
 export async function taskExecutionFixture(approvedStart = true,
-  options: { objective?: string; template?: ReturnType<typeof compileTaskTemplate> } = {}) {
+  options: { objective?: string; template?: ReturnType<typeof compileTaskTemplate>; routing?: TaskRoutingBinding } = {}) {
   const db = await initialized();
   const control = new ControlPlane(db);
   const now = new Date();
@@ -26,7 +27,7 @@ export async function taskExecutionFixture(approvedStart = true,
     requirements: { work_type: "development" as const, constraints: ["no deployment"], completion_evidence: ["focused checks pass"] },
     members: [{ member_id: "builder", archetype: "builder" as const, role: "Implement changes", scope: ["implement_changes"],
       exclusions: ["grant_authority"], verification: ["run_required_checks"], preferred_capability_ids: ["codex" as const] }] };
-  const spec = createTaskSpec("task", proposal, budget);
+  const spec = { ...createTaskSpec("task", proposal, budget), ...(options.routing ? { routing: options.routing } : {}) };
   if (options.template) {
     const request = options.template.proposal_request;
     Object.assign(spec, { objective: request.objective, requirements: { work_type: request.work_type,
