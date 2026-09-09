@@ -143,3 +143,10 @@ The generic list still returns all commands and uses O(N) memory with at most
 64 in-memory predecessor steps per request. Full pagination/capacity work in
 backlog16 remains open; this correction removes repeated ancestor SQL and repeated
 suppression reads introduced by lineage. Independent acceptance is still pending.
+
+Post-correction browser regression at `9547266`: the existing backend build and
+dashboard assets completed `node scripts/run-tests.mjs e2e` with exit 0,
+28/28 tests in 1.3 minutes across Chromium 1440 and 1024. This includes the two
+real-server lineage form/staging/reload cases and 26 existing UI regressions.
+Log: `lineage-final-browser-regression.log` in the QA directory. A fresh read-only
+review was dispatched to `/root/lineage_fresh_review`; no verdict is recorded yet.
