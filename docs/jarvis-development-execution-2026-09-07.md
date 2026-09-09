@@ -1416,3 +1416,17 @@
 - Focused88086:13tests/3files passed69.80s. Three typechecks and targeted ESLint37128
   exit0; diff check exit0. Existing physical-file replacement and recovery assertions
   execute unchanged; this test budget is not a product performance SLA.
+
+### Latest dashboard browser acceptance — 2026-09-09
+
+- At646d119, canonical npm run test:e2e session22978 exited0 after backend/dashboard
+  build. Chromium1440/1024:26tests passed1.2m,1worker/0retries. Covered overview,
+  task detail, Korean rendering, redaction, empty state, read-only proposal preview,
+  signed approve/execute/reject, cancellation, retry/replan and accessibility/overflow.
+- Fixture web servers use isolated seeded databases; this is not a production smoke
+  or external model workflow. Task-ID quarantineHTTP200→404 is separately verified
+  in82cb28e's ADR; the26browser cases do not specifically cover that added boundary.
+- After browser completion, HEAD646d119 remained and git status had only untracked
+  node_modules. No product edits were made during this browser run. Full verify89979
+  remains a separate live run on6380e1d with known first-shard timeouts; latest browser
+  acceptance does not change that failing gate status or complete the01–25 objective.
