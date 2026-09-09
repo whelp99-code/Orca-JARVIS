@@ -1485,3 +1485,24 @@
   complete payload. Reusable packaging automation, sealed source/reproducibility
   evidence and packaged dashboard/doctor/provider health gates remain unfinished.
   deployment_ready=false; no production activation or production DB mutation.
+
+### Packaged dashboard and doctor execution — 2026-09-09
+
+- Continued the same runtime-package-7htxb2nv artifact from source2e0aa3f.
+  Created and migrated an isolated dashboard-probe.sqlite with packaged AuthorityDb.
+  Launched the actual packaged dashboard/main.js CLI on loopback/port0 with its
+  packaged dist/dashboard static root. A test-only Node preload blocks child
+  process execution so these observations do not establish provider integration.
+  Native filesystem readiness probes still observe host executable/config metadata.
+- HTTP root200 (1733bytes), JS asset200 (448980bytes), CSS asset200 (26548bytes).
+  /api/v1/health200 reports authority=ready and second_brain.readiness=unavailable;
+  provider read/write authorization bothfalse. SIGTERM shutdown exit0, stderr0bytes.
+  This is HTTP asset/startup validation, not rendered-browser interaction evidence.
+- Actual packaged doctor CLI with the same preload exited0:7checks passed,
+  Node24.19.0/ABI137, SQLite3.53.2, quick_check=ok, migrations84/84 and checksums
+  verified. Its overall ok=true is authority health; provider remains unavailable,
+  so this result must not satisfy the release mcp-handshake gate.
+- Receipts dashboard-package-probe.json, packaged-doctor.json and
+  packaged-doctor.stderr reside in the artifact cache directory. No provider
+  process was executed. Full integration verify session93446 was separately
+  re-polled and remained live; its worktree was not modified or restarted.
