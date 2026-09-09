@@ -117,3 +117,14 @@ Acceptance remains held: the reviewer also found that a hidden descendant can
 reach generic claim and consume its approval before failing, and noted unbounded
 total list traversal cost. Resolve the claim boundary and assess list capacity
 before obtaining a fresh independent acceptance review.
+
+The quarantine claim defect was reproduced: the new direct-claim regression did
+not throw before the fix. `nextApproved` now excludes hidden task execution requests,
+and `claim` rechecks visibility inside its transaction before changing state or
+redeeming approval. Direct claim and ApprovedCommandExecutor entry both reject
+with unchanged serialized DB bytes and zero provider calls after ancestor quarantine.
+Focused lineage/execution tests passed 24 tests; control-plane unit tests passed 11;
+reviewability passed 2. Typecheck, zero-warning lint and backend build exited 0.
+Evidence: `lineage-claim-before.log`, `lineage-claim-after.log`,
+`lineage-claim-control-unit.log` under the existing QA directory.
+The list traversal capacity finding and a fresh independent review remain open.

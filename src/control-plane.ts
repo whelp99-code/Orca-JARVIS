@@ -91,7 +91,7 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
       if (loss && this.recoverClaimedAuthorityLoss(String(row.request_id), Number(row.lease_fence), at, loss)) recovered++; } return recovered; }
   nextApproved(now = new Date(), excludedActions: readonly string[] = []): string | null {
     const nowMs = finiteDate(now, "CONTROL_QUEUE_INVALID"); const rows = this.authority.db .prepare(
-        `SELECT r.request_id,r.command_digest,r.expires_at,a.receipt_id,
+        `SELECT r.request_id,r.action,r.command_digest,r.expires_at,a.receipt_id,
            a.expires_at AS approval_expires
          FROM control_command_requests r
          JOIN control_command_receipts a
@@ -103,6 +103,7 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
          ORDER BY r.requested_at,r.request_id`,
       ) .all(JSON.stringify(excludedActions)) as Array<Record<string, unknown>>; for (const row of rows) {
       if (Date.parse(String(row.expires_at)) <= nowMs || Date.parse(String(row.approval_expires)) <= nowMs) continue;
+      if (row.action === "task.execute" && !readControlCommand(this.authority, String(row.request_id))) continue;
       if (this.commandRevoked(String(row.request_id), String(row.command_digest), String(row.receipt_id))) continue; return String(row.request_id); }
     return null; } private expireStaleClaims(now: string): void { this.recoverExpired(new Date(now)); }
   claim(requestId: string, worker: string, now = new Date(), leaseMs = 60_000): ClaimedControlCommand { const nowMs = finiteDate(now, "CONTROL_CLAIM_INVALID");
@@ -119,6 +120,7 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
       if (!row || row.state !== "approved" || Date.parse(String(row.expires_at)) <= nowMs || Date.parse(String(row.approval_expires)) <= nowMs)
         throw new JarvisError("CONTROL_APPROVAL_REQUIRED");
       if (row.action === "memory.scope.review") throw new JarvisError("CONTROL_ACTION_REVIEW_ONLY");
+      if (row.action === "task.execute" && !readControlCommand(this.authority, requestId)) throw new JarvisError("CONTROL_APPROVAL_REQUIRED");
       if (this.commandRevoked(requestId, String(row.command_digest), String(row.receipt_id))) throw new JarvisError("CONTROL_APPROVAL_REVOKED");
       const action = this.parseStoredAction(row); validateControlAction(action); const fence = Number(row.lease_fence) + 1;
       const leaseUntil = Math.min(nowMs + leaseMs, Date.parse(String(row.expires_at)), Date.parse(String(row.approval_expires)));
