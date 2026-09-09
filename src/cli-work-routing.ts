@@ -34,6 +34,12 @@ export async function executeWorkRouting(requestPath: string, policyPath: string
   return { ok: true, command: "routing.classify", routing: classifyWorkRouting(request, policy) };
 }
 
+export async function readWorkRoutingPolicy(path: string): Promise<unknown> {
+  const policy = await readJson(path, 65536);
+  classifyWorkRouting({ schema_version: 1, objective: "policy validation" }, policy);
+  return policy;
+}
+
 export async function executeExecutorPlanValidation(id: string, path: string): Promise<Record<string, unknown>> {
   const plan = await readJson(path, 4 * 1024 * 1024);
   return { ok: true, command: "routing.validate-plan", validation: inspectTaskExecutorPlan(id, plan) };

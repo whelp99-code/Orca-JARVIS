@@ -1276,3 +1276,19 @@
   before acceptance. Full3644 gate predates fix; post-fix18 and crash/replay evidence
   remain the final verification scope. Requested terra/high; actual model/effort
   and token usage unavailable. Parent accepts this bounded integration for commit.
+
+### Historical routing shadow comparison — 2026-09-09
+
+- Previous goal turn progressed: merge commit c045bff completed. This unit adds
+  report routing-shadow over original task.execute/TaskSpec inputs, explicit
+  baseline/candidate policy digests, classification transitions and coverage.
+- Build23563 exit0, focused29838:34tests/5files10.73s, lint/three types77099 exit0.
+  Actual compiled85833:2CLIchildren, changedtarget1, stablecohortdigest, provider0,
+  pendingtask and logicalDBunchanged. Fixture input, no production policy installed.
+- Parent inspected5-file packet; independent routing_shadow_review still running
+  at the latest native list_agents observation. Commit awaits its verdict.
+  Details: docs/planning/adr-task-routing-shadow.md. Outcome shadow comparison,
+  automatic policy promotion, operational activation and full01–25 remain open.
+- Independent routing_shadow_review completed ship/findings0. Parent rechecked
+  5/5 reviewed hashes at c045bff, accepted this unit for commit. Actual model/effort
+  and token telemetry unavailable; no cost estimate. Full01–25 remains active.

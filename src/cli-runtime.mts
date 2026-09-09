@@ -1,6 +1,8 @@
 import { parseArgs } from "node:util";
 import { statSync } from "node:fs";
 import { readTaskPerformance, taskPerformanceWindow } from "./task-performance.js";
+import { readTaskRoutingShadow } from "./task-routing-shadow.js";
+import { readWorkRoutingPolicy } from "./cli-work-routing.js";
 import { inspectRuntimeIdentity } from "./cli-runtime-identity.js";
 import {
   type CliCommandContext,
@@ -33,6 +35,7 @@ const CLI_HELP =
   + "daily evening --once --db PATH --input CONFIG --key-file PATH: publish stored native completions; automatic operation held\n"
   + "runtime identity [--db PATH]: observe this CLI build and persisted daemon identity without migrating the DB\n"
   + "report task-performance FROM TO --db PATH: current-state execution cohort metrics; no policy promotion\n"
+  + "report routing-shadow FROM TO BASELINE.json CANDIDATE.json --db PATH: compare policies on historical task inputs; no execution\n"
   + "control plan-task <plan.json>: stage a task execution plan for separate approval (execution unavailable)\n"
   + "control check-task <plan.json>: check repository baseline and declared files without executing an agent\n"
   + "memory classify <input.json> <policy.json>: classify a bounded candidate; does not store memory\n"
@@ -137,12 +140,16 @@ export async function execute(
     throw new JarvisError("DAILY_LOOP_CONFIG_INVALID");
   }
   const performanceReport = command === "report" && subcommand === "task-performance";
-  const performanceAt = performanceReport ? dependencies.clock?.() ?? new Date() : undefined;
-  if (performanceReport) {
-    if (parsed.positionals.length !== 4 || !values.db || Object.keys(parsed.values).some(key => !["db", "json"].includes(key))) {
+  const routingShadow = command === "report" && subcommand === "routing-shadow";
+  const performanceAt = performanceReport || routingShadow ? dependencies.clock?.() ?? new Date() : undefined;
+  let shadowPolicies: unknown[] = [];
+  if (performanceReport || routingShadow) {
+    if (parsed.positionals.length !== (routingShadow ? 6 : 4) || !values.db
+      || Object.keys(parsed.values).some(key => !["db", "json"].includes(key))) {
       throw new JarvisError("TASK_PERFORMANCE_INPUT_INVALID");
     }
     taskPerformanceWindow(argument, fourth, performanceAt!);
+    if (routingShadow) shadowPolicies = [await readWorkRoutingPolicy(fifth!), await readWorkRoutingPolicy(sixth!)];
     try { if (!statSync(values.db).isFile()) throw new Error(); }
     catch { throw new JarvisError("TASK_PERFORMANCE_DATABASE_UNAVAILABLE"); }
   }
@@ -164,6 +171,8 @@ export async function execute(
     const bootstrap = await executeBootstrapCommand(context);
     if (bootstrap !== undefined) return bootstrap;
     await db.assertMigrationsReady();
+    if (routingShadow) return { ok: true, command: "report.routing-shadow",
+      report: readTaskRoutingShadow(db, argument, fourth, shadowPolicies[0], shadowPolicies[1], performanceAt) };
     if (performanceReport) return { ok: true, command: "report.task-performance",
       report: readTaskPerformance(db, argument, fourth, performanceAt) };
     for (const handler of COMMAND_HANDLERS) {
