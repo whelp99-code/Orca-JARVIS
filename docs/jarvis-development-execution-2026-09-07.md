@@ -1860,3 +1860,23 @@
   1 native publication, unchanged daily run rows after restart. Synthetic clock/key.
 - Full gate, provider refresh, retention composition and production activation
   remain pending. See docs/planning/task-daily-service-composition.md for evidence.
+
+### Canonical acceptance for configured daily service
+
+- `npm run verify` at bc035f44112b13bf5152715a42ab1a5707d863fd exited 0.
+- Backend shards: 251 files / 1,752 tests and 251 files / 1,792 tests.
+  Dashboard: 37 files / 255 tests. Total 3,799 passing tests.
+- Runtime, lint, typecheck, build, fixed-clock acceptance and CLI smoke completed.
+  All 1,743 tracked-file hashes unchanged through the gate.
+- QA: /home/jm/.cache/jarvis-test-runtime-qa-20260908/verify-daily-service.log,
+  verify-daily-service-before.json and verify-daily-service-result.json.
+- Direct retention-to-file-cleanup composition remains HOLD: isolated reproduction
+  produced MEMORY_REVIEW_CLEANUP_TRANSACTION_ACTIVE, then E_RETENTION_ADAPTER and
+  a failed job before filesystem access. Receipt: retention-cleanup-composition.json
+  in the same QA root. Preserve both existing transaction guards.
+- Refresh integration requires run completion tied to the active published generation,
+  protocol, capped state and source scope. Current Second Brain source c0e99ee records
+  run completion in staging before activation. Four source hashes and requirements
+  saved in daily-refresh-integration-boundary.json in QA. No provider changes made.
+- Full backlog 01–25 remains active; refresh/retention implementation and production
+  activation are not established by this canonical gate.

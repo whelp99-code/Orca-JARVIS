@@ -93,7 +93,7 @@ command, not a readiness probe; it can publish local daily artifacts.
   daily-service-final-tests.log, daily-service-live/run.mjs and receipt.json.
   Initial QA config used an invalid two-character key ID and was rejected before
   any cycle; corrected synthetic key ID passed. No product validation was bypassed.
-- Native independent acceptance: ship/no findings. Full canonical gate for this diff remains pending.
+- Native independent acceptance: ship/no findings. Full canonical gate at bc035f4 passed 3,799 tests with exit 0 and 1,743 tracked-file hashes unchanged.
   Provider refresh, retention composition and production activation remain pending;
   this is not completion of backlog 12 or the full 01–25 objective.
 
