@@ -2032,3 +2032,19 @@ Observed reviewer model/effort and API-equivalent token cost are unavailable.
   verify-main-five-before.json and verify-main-five-result.json.
 - No production deployment or service restart. Recurring collection and remaining backlog01–25 remain open.
 - API-equivalent cost unavailable: per-call token usage/model pricing scope not observed.
+
+## Local timeline collection canonical acceptance
+
+- Tested commit 9730830480cec438ba5c24ab7d74aba55e3f771a, session2748, npm run verify exit0.
+- Backend shard1:264files1832tests passed,600.26s; shard2:263files1859tests passed,546.46s.
+- Dashboard:37files255tests passed,33.51s. Total3946tests passed.
+- Runtime/lint/typecheck/test build/tests/fixed-clock acceptance/CLI smoke chain exited0.
+- Acceptance: pre_gjc_ready/stopped, completion_promoted true, gjc_dispatched false.
+- Before/after hashes:1827 tracked files, changed_files []. Finished 2026-09-09T14:40:13.516614+00:00.
+- Evidence: /home/jm/.cache/jarvis-test-runtime-qa-20260908/verify-local-timeline.log,
+  verify-local-timeline-before.json and verify-local-timeline-result.json.
+- Covers the committed local timeline producer, bounded snapshot lifecycle, CLI and opt-in service collector.
+  Separate compiled-process usage evidence and limitations are recorded in docs/local-timeline-snapshots.md.
+- Local snapshots are not verified Linux live evidence or completed provider refresh receipts.
+  Their use as morning recommendation provenance remains deferred until an explicit consumer contract is implemented.
+- No production deployment or service restart. Remaining backlog01–25 completion is not established by this gate.
