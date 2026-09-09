@@ -2019,3 +2019,16 @@ Independent read-only review by /root/refresh_receipt_review returned ship.
 Reviewer measured unmerged entries0, conflict markers0 and diff-check0. Parent
 read back completed logs confirming unit20 and integration22 before commit.
 Observed reviewer model/effort and API-equivalent token cost are unavailable.
+
+## Main integration canonical acceptance
+
+- Tested commit 32d0774f7bd6575a1083d2d83f7a05ac2a2a4431, session33596, npm run verify exit0.
+- Backend shard1:262files1828tests passed,588.76s; shard2:261files1849tests passed,537.03s.
+- Dashboard:37files255tests passed,33.65s. Total3932tests passed.
+- Canonical runtime/lint/typecheck/build/tests/fixed-clock acceptance/smoke chain exited0.
+- Acceptance: pre_gjc_ready/stopped, completion_promoted true, gjc_dispatched false.
+- Before/after hashes:1817 tracked files, changed_files [].
+- Evidence: /home/jm/.cache/jarvis-test-runtime-qa-20260908/verify-main-five.log,
+  verify-main-five-before.json and verify-main-five-result.json.
+- No production deployment or service restart. Recurring collection and remaining backlog01–25 remain open.
+- API-equivalent cost unavailable: per-call token usage/model pricing scope not observed.
