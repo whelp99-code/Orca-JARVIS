@@ -19,3 +19,41 @@
 - 정식 회귀: task_id만 차단한 경우, 후보 생성 후 원본 차단, 이미 준비한 승인 명령, uncertain 전송/재시작, 저장 후 두 클라이언트 조회, 복원 후 재유입 0. 정상 입력은 실제 작업 완료→사용자 검토→저장→출처 재조회까지 확인한다.
 
 이 항목은 B4/I1·I7/G6의 필수 잔여다. 보류를 전체 기능 삭제나 완료 기준 축소로 취급하지 않는다. 현재 제품 classify는 외부 입력에 대한 기존 분류 경로이며 작업 자동 수집 완료가 아니다. 운영 배포·서비스 재시작·push는 수행하지 않았다.
+
+## 2026-09-09 계약 재검증
+
+자비스 기준 `6380e1d`, provider 작업공간 HEAD
+`bddbc382dc00d8d4ca71acd7947552139efa4944`. 아래 확인한 provider 계약/모델 파일의
+working-tree 변경은 0개였다. provider 배포 상태를 뜻하지 않는다.
+
+- 양쪽 `contracts/second-brain-mcp-v5.json` 바이트 일치.
+  SHA256 `d137a7a7b0e4a577abef04d6ecb2768630e9912cd24b8f270c320cb45d60165d`.
+- 양쪽 `contracts/second-brain-scoped-read-v2.json` 바이트 일치.
+  SHA256 `a5af30045ba19eb6e79d07f649e3049842741822d75bdb7212d2ec7eabd9cb37`.
+- remember V3의 payload 필드는 content이며, 요청에는 candidate/classification digest와
+  승인 receipt가 있지만 task/request/run/completion 원본 관계를 전달하는 필드는 없다.
+- provider `sb/mcp_remember_models.py`의 `MemoryRememberRequestV3Model`은
+  `extra="forbid"`. 실제 provider 가상환경에서 공개 fixture를 model_validate하면 성공하고,
+  같은 fixture에 제안 필드 source_lineage만 추가하면 해당 필드의 extra_forbidden 1건으로
+  거부된다. 프로세스 exit0; provider 호출/DB 변경 없이 모델 파서만 검증했다.
+- provider `tests/test_lineage_resolution.py`는 PageSpec의 prompt/model/derivation_key
+  보존·복원 테스트다. 이 소스 검토만으로 자비스 task 삭제의 파생 record 차단을 증명할 수 없다.
+- 자비스 `4c483a1`·`ca4fb77`은 기존 projection의 subject 차단과 알림 상태 전이를 보강했다.
+  task→candidate→provider record 출처 관계의 생성·삭제 계약을 추가한 커밋은 아니다.
+
+### 필요한 계약 변경안 — 미구현·미합의
+
+1. 기존 frozen 계약은 유지하고 별도 버전/feature로 출처 연계를 협상한다. 후보 digest나
+   summary 본문에 출처를 묻는 방식으로 새 권한을 암묵적으로 만들지 않는다.
+2. 원래 승인 task의 request/task/run/completion 식별자와 검증된 결과 digest를
+   프로젝트 범위 및 provider record identity에 결합한다. 외부에 노출할 식별자 형식,
+   개인정보 보호 방식, 키 관리와 서명 주체를 양쪽 계약에서 정한다.
+3. 출처 연결을 요청 digest·승인·저장 receipt에 포함하고, 동일 입력 재시도는 같은 관계를
+   재사용한다. 임의 클라이언트가 다른 프로젝트의 출처나 삭제 권한을 연결할 수 없어야 한다.
+4. 원본 차단을 provider가 관측한 시퀀스와 파생 record/색인/복원 상태를 증명한다.
+   차단 전후 및 uncertain 전송의 재조정까지 포함하며 단순 accepted 응답을 완료로 삼지 않는다.
+5. 기존 재개 조건의 여섯 회귀와 정상 저장 경로를 양쪽 클라이언트로 검증한 뒤
+   collect-task 진입점을 활성화한다. 현재 모델 파서 검증은 이 인수를 대체하지 않는다.
+
+즉시 가능한 자비스 작업은 원본 식별과 로컬 관계의 설계·격리 구현이다. provider의 출처
+계약이 없는 상태에서 저장 후 삭제 전파까지 완성됐다고 표시하는 것은 보류한다.
