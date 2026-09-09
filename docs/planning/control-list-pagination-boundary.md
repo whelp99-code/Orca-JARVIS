@@ -166,3 +166,29 @@ Evidence in `/home/jm/.cache/jarvis-test-runtime-qa-20260908`:
 dynamic imports and external dependency graphs. Receipt: page-cache-import-graph.json.
 The gate covers this source revision, not production activation or the full
 backlog's remaining provider, operational and capacity requirements.
+
+## Bounded raw-row memo admission
+
+The page-local raw-row memo now admits at most 256 entries and 1MiB of UTF-8
+string values plus map keys. Rows exceeding either remaining budget are still
+read and returned normally, but are not retained in that memo. Existing entries
+are reused until the transaction closes. Suppression observations and per-root
+edge/depth/cycle validation keep their existing scope and semantics.
+
+This is a retained text admission budget, not a bound on JavaScript heap, SQLite
+buffers, the response body or temporary decoding of a single large row. Those
+limits must not be inferred from the 1MiB value. Full response byte budgeting
+remains separate work, with an explicit oversized-command access contract needed
+before changing list response behavior.
+
+Capacity regression: 300 small rows, 200 multibyte rows and one oversized row
+verify cache bypass without content loss and with unchanged DB bytes (3 tests).
+Existing page/deep-lineage snapshot regressions passed 2 tests. Typecheck,
+zero-warning lint and backend build exited 0. The same compiled 10k/100k
+shared-chain probe still performs 657 queries and returns 164286 bytes/100 leaves,
+with DB changes 0. Five-sample p95 was 45.98ms/61.79ms; synthetic sequential runs
+are not a production SLO. Receipt: control-page-deep-lineage-bounded.json in the
+shared QA directory. The 3966-test canonical gate above predates this capacity
+follow-up; it was not rerun for this bounded admission change. Independent review
+/root/pagination_acceptance returned SHIP with no correctness findings. Cache
+bypass can increase same-snapshot SQL work for distinct or oversized ancestors.

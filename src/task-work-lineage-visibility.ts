@@ -3,6 +3,9 @@ import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { parseTaskWorkLineage } from "./task-work-lineage.js";
 import { JarvisError } from "./db.js";
 
+const MAX_MEMO_ROWS = 256;
+const MAX_MEMO_TEXT_BYTES = 1024 * 1024;
+
 /** Observations are scoped to this transaction; the reader cannot be used after it ends. */
 export function withVisibleControlCommandReader<T>(db: AuthorityDb,
   consume: (read: (id: string) => Record<string, unknown> | undefined) => T): T {
@@ -12,9 +15,19 @@ export function withVisibleControlCommandReader<T>(db: AuthorityDb,
     const rows = new Map<string, Record<string, unknown> | undefined>();
     const payloads = new Map<string, boolean>(), tasks = new Map<string, boolean>();
     const statement = db.db.prepare("SELECT * FROM control_command_requests WHERE request_id=?");
+    let retainedTextBytes = 0;
     const read = (id: string) => {
-      if (!rows.has(id)) rows.set(id, statement.get(id) as Record<string, unknown> | undefined);
-      return rows.get(id);
+      if (rows.has(id)) return rows.get(id);
+      const row = statement.get(id) as Record<string, unknown> | undefined;
+      if (rows.size < MAX_MEMO_ROWS) {
+        const bytes = Buffer.byteLength(id) + Object.values(row ?? {}).reduce<number>((total, value) =>
+          total + (typeof value === "string" ? Buffer.byteLength(value) : 0), 0);
+        if (bytes <= MAX_MEMO_TEXT_BYTES - retainedTextBytes) {
+          rows.set(id, row);
+          retainedTextBytes += bytes;
+        }
+      }
+      return row;
     };
     const payloadSuppressed = (id: string) => {
       if (!payloads.has(id)) payloads.set(id, projections.isSuppressed({ kind: "control_payload", id, component_id: id }));
