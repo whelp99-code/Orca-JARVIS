@@ -1,8 +1,47 @@
 # Backlog25 remaining evidence contract
 
-Inspected baseline: c0f0350. This records incomplete requirements, not completion.
+Original design baseline: c0f0350. Historical design sections below are retained.
 
-## Current implementation
+## Current reconciliation at 0b47991
+
+Explicit signed original/rework/retry declarations are now implemented through
+staging, generic ingress, approval input, execution and the performance reader.
+`src/task-work-lineage-performance.ts` reports declaration counts, excludes retry
+from the business denominator, leaves missing legacy coverage unknown and verifies
+completion evidence separately. It does not infer business outcomes from titles.
+Current source evidence: task-work-lineage.ts, task-work-lineage-binding.ts,
+task-work-lineage-visibility.ts and task-work-lineage-performance.ts. Acceptance
+and current limits are recorded in ../task-work-lineage.md. Rework is no longer
+an unimplemented reason in task-performance.ts.
+
+The following three measurement gaps remain explicit in task-performance.ts:
+
+| Requirement | Current source result | Required next evidence |
+| --- | --- | --- |
+| Billing-backed cost per success | billing_usage_not_recorded | Attributed billing records, currency and complete coverage of measured attempts |
+| Duplicate external effects | external_effect_observation_not_recorded | Provider effect identifiers and reconciled outcomes across attempts |
+| Executed candidate comparison | candidate_execution_outcomes_not_recorded | Comparable executions and verified results for both policies |
+
+task-usage-performance.ts aggregates Claude client estimates with
+billing_verified=false. task-routing-shadow.ts replays policies over historical
+inputs with executable=false and policy_promoted=false. Neither provides the
+missing evidence above. Policy automatic promotion remains held.
+
+Compiled CLI readback in the current development shell returned one registration
+(claude-code) and three templates (code-fix, incident-report, technical-review).
+`routing probe-runtime claude-code` returned not_probed with
+TASK_EXECUTOR_CONFIGURATION_MISSING: JARVIS_TASK_CLAUDE_PATH,
+JARVIS_TASK_VERIFIER_KEY_PATH and JARVIS_TASK_VERIFIER_KEY_ID were absent.
+This does not measure the production service environment or revoke earlier
+isolated authenticated execution evidence. Do not silently select another
+executor or treat the successful CLI exit as readiness.
+
+Next measurement work must define authenticated receipt ingestion and attribution
+before exposing billing or external-effect rates. No real billing records or
+provider reconciliation source has been supplied by this reconciliation. Pending
+evidence is not zero cost, zero duplicates, or a policy improvement.
+
+## Historical implementation before work-lineage development
 
 `src/task-performance.ts` reports verified terminal success, accepted-approval wait,
 completion latency and provider cost estimates for a bounded request cohort.
