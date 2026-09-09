@@ -50,3 +50,15 @@ it("preserves responses for tasks with no routing selection", async () => {
     expect(result.requests[0]).not.toHaveProperty("routing");
   } finally { await f.cleanup(); }
 });
+
+it("keeps ambiguous origin effects unavailable with the indexed lookup", async () => {
+  const f = await approvedTaskFixture(true, { routing });
+  try {
+    f.db.db.prepare(`INSERT INTO control_command_effects(effect_id,request_id,effect_type,payload_json,payload_digest,created_at)
+      SELECT 'duplicate-origin',request_id,effect_type,payload_json,payload_digest,created_at
+      FROM control_command_effects WHERE request_id='start' AND effect_type='workflow.started' LIMIT 1`).run();
+    const before = f.db.db.prepare("SELECT total_changes() AS n").get();
+    expect(() => readDashboardTaskExecution(f.db, f.plan.task_id, f.clock())).toThrow("TASK_ROUTING_DISPLAY_UNAVAILABLE");
+    expect(f.db.db.prepare("SELECT total_changes() AS n").get()).toEqual(before);
+  } finally { await f.cleanup(); }
+});

@@ -1331,3 +1331,21 @@
   returned ship/code findings0. Parent accepts the reviewed unit for commit.
   Actual model/effort and token telemetry unavailable. Full01–25 and previously
   recorded HOLD items remain.
+
+### Full routing baseline and indexed task reads — 2026-09-09
+
+- Previous goal turn progressed: routed approval UI committed3df01c4. Full
+  verify92007 finished exit0 at912736e: backend1686/241files778.11s plus
+  1715/240files812.00s; dashboard252/36files35.26s. Total3653tests/517files.
+  Runtime/lint/three typechecks/build/fixed-clock acceptance/CLI smoke passed.
+  verify-approved-routing-before/after.json proves1659 tracked files unchanged.
+- Fast-forwarded codex/priority-deadline-evidence to reviewed UI commit3df01c4
+  after snapshot verification. Full3653 predates UI and index changes.
+- Current branch codex/routing-approval-ui adds forward migration079 (83rd file)
+  for four task/routing lookup indexes. All82 prior SQL files unchanged. Three
+  actual SQL query plans changed from scans/sorts to indexed searches. 10k/100k
+  benchmark receipts and exact limits are in adr-task-execution-read-indexes.md.
+- Final focused74169:36pass; migration83625:7pass. Lint/types88739 and build83625
+  exit0. Native routing_index_review returned ship/findings0, packet hashes5/5
+  matched. Requested sol/high, actual runtime metadata/token usage unavailable.
+  Parent accepts the bounded index change for commit. Full01–25 remains active.

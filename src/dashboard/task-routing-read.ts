@@ -18,7 +18,7 @@ export function readDashboardTaskRouting(db: AuthorityDb, run: ReturnType<LoopGr
   const spec = input.task_spec, routing = spec.routing!;
   const rows = db.db.prepare(`SELECT r.request_id FROM control_command_requests r
     JOIN control_command_effects e ON e.request_id=r.request_id AND e.effect_type='workflow.started'
-    WHERE r.action='workflow.start' AND r.state='completed' AND json_extract(r.args_json,'$.run_id')=?
+    WHERE r.action='workflow.start' AND r.state='completed' AND json_valid(r.args_json) AND json_extract(r.args_json,'$.run_id')=?
     ORDER BY r.request_id LIMIT 2`).all(run.run_id) as { request_id: string }[];
   if (rows.length !== 1) return fail();
   const source = new ControlPlane(db).get(rows[0]!.request_id);

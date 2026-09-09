@@ -15,7 +15,7 @@ function taskTemplate(input: unknown) {
 /** Durable status only; no filesystem/provider checks or command writes during refresh. */
 export function readDashboardTaskExecution(db: AuthorityDb, taskId: string, observedAt = new Date()) {
   return db.db.transaction(() => {
-    const rows = db.db.prepare(`SELECT run_id FROM workflow_runs WHERE json_extract(input_json,'$.task_id')=?
+    const rows = db.db.prepare(`SELECT run_id FROM workflow_runs WHERE json_valid(input_json) AND json_extract(input_json,'$.task_id')=?
       ORDER BY created_at DESC,run_id DESC LIMIT 21`).all(taskId) as { run_id: string }[];
     if (rows.length === 0) throw new JarvisError("TASK_NOT_FOUND");
     const graph = new LoopGraph(db);
@@ -28,7 +28,7 @@ export function readDashboardTaskExecution(db: AuthorityDb, taskId: string, obse
         ...(template ? { task_template: template } : {}) };
     });
     const candidates = db.db.prepare(`SELECT request_id FROM control_command_requests
-      WHERE action='task.execute' AND json_extract(target_json,'$.task_id')=?
+      WHERE action='task.execute' AND json_valid(target_json) AND json_extract(target_json,'$.task_id')=?
       ORDER BY requested_at DESC,request_id DESC LIMIT 21`).all(taskId) as { request_id: string }[];
     const requests = candidates.slice(0, 20).flatMap(row => {
       const command = readControlCommand(db, row.request_id);
