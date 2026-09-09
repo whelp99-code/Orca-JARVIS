@@ -63,3 +63,13 @@ Independent review dispatch failed with "agent thread limit reached". The subseq
 live-agent list contained only the parent. No independent ship verdict exists.
 This candidate must not be described as independently accepted. Broader final
 verification and review remain required before closing this development item.
+
+Browser regression at commit `988aa5ab09265f29cb076089e84b607a0606baf9`:
+`npm run test:e2e` rebuilt backend/dashboard and exited 0; 26 tests passed in
+1.1 minutes across Chromium 1440 and 1024 viewport projects. The log is
+`/home/jm/.cache/jarvis-test-runtime-qa-20260908/work-lineage-browser-regression.log`.
+These 13 scenarios per viewport cover existing overview, proposal, approval,
+retry and accessibility flows. They do not exercise the new work-lineage form.
+Next acceptance work must cover relationship selection, predecessor validation,
+preview invalidation and persisted approval details through an actual browser.
+The UI unit tests and compiled CLI integration are not substitutes for that flow.
