@@ -8,16 +8,23 @@ import { taskCompletionWorkflow } from "./task-completion-workflow.js";
 import { executeTaskWorkflow } from "./task-completion.js";
 import { completedTaskExecution, settleApprovedTaskError } from "./approved-task-outcome.js";
 import { assertTaskRuntimeReady, productionTaskExecutionRuntime, type TaskExecutionRuntime } from "./task-execution-runtime.js";
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 
 export async function executeApprovedTaskRequest(input: { authority: AuthorityDb; request_id: string;
   worker: string; clock: () => Date; runtime?: TaskExecutionRuntime }): Promise<ApprovedExecutionResult> {
   const { authority, request_id: requestId, clock } = input;
   const control = new ControlPlane(authority); const request = control.get(requestId);
   if (!request || request.action !== "task.execute") throw new JarvisError("TASK_EXECUTION_REQUEST_INVALID");
-  const previous = completedTaskExecution(authority, requestId); if (previous) return previous;
+  const plan = parseTaskExecutionPlan(request.args.plan);
+  const previous = authority.db.transaction(() => {
+    if (new MemoryProjectionAuthority(authority).isProjectionIdSuppressed(plan.task_id)) {
+      throw new JarvisError("TASK_EXECUTION_SOURCE_SUPPRESSED");
+    }
+    return completedTaskExecution(authority, requestId);
+  }).deferred();
+  if (previous) return previous;
   if (request.state !== "approved") throw new JarvisError("CONTROL_APPROVAL_REQUIRED");
   validateControlAction(request, { enforceMinimumLevel: true });
-  const plan = parseTaskExecutionPlan(request.args.plan);
   const check = () => { const now = clock(); assertTaskExecutionBinding(authority, plan, now);
     taskCompletionWorkflow(authority, plan.run_id, now); };
   check();

@@ -6,6 +6,7 @@ import { parseTaskExecutionPlan } from "../task-execution-plan.js";
 import type { OverviewApproval } from "./legacy-read-contracts.js";
 import { parseTaskTemplateBinding } from "../task-templates.js";
 import { readDashboardTaskRouting } from "./task-routing-read.js";
+import { MemoryProjectionAuthority } from "../memory-projection-authority.js";
 
 function taskTemplate(input: unknown) {
   if (!input || typeof input !== "object" || !Object.hasOwn(input, "task_template")) return undefined;
@@ -15,6 +16,7 @@ function taskTemplate(input: unknown) {
 /** Durable status only; no filesystem/provider checks or command writes during refresh. */
 export function readDashboardTaskExecution(db: AuthorityDb, taskId: string, observedAt = new Date()) {
   return db.db.transaction(() => {
+    if (new MemoryProjectionAuthority(db).isProjectionIdSuppressed(taskId)) throw new JarvisError("TASK_NOT_FOUND");
     const rows = db.db.prepare(`SELECT run_id FROM workflow_runs WHERE json_valid(input_json) AND json_extract(input_json,'$.task_id')=?
       ORDER BY created_at DESC,run_id DESC LIMIT 21`).all(taskId) as { run_id: string }[];
     if (rows.length === 0) throw new JarvisError("TASK_NOT_FOUND");

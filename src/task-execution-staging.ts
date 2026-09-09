@@ -7,6 +7,7 @@ import { parseTaskExecutionPlan, taskExecutionPlanDigest, type TaskExecutionPlan
 import { assertTaskTemplatePlan } from "./task-templates.js";
 import { registeredTaskExecutor } from "./task-executor-registry.js";
 import type { TaskSpecV1 } from "./task-spec-input.js";
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 
 export interface StageTaskExecutionInput {
   readonly request_id: string;
@@ -17,6 +18,9 @@ export interface StageTaskExecutionInput {
 
 /** Recheck this binding again at execution; staging is neither approval nor provider readiness. */
 export function assertTaskExecutionBinding(db: AuthorityDb, plan: TaskExecutionPlan, now: Date): void {
+  if (new MemoryProjectionAuthority(db).isProjectionIdSuppressed(plan.task_id)) {
+    throw new JarvisError("TASK_EXECUTION_SOURCE_SUPPRESSED");
+  }
   const run = new LoopGraph(db).get(plan.run_id);
   if (!["running", "waiting_approval"].includes(run.state) || !Number.isFinite(now.getTime())) {
     throw new JarvisError("TASK_EXECUTION_WORKFLOW_NOT_READY");

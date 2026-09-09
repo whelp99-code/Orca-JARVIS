@@ -8,6 +8,7 @@ import { readDashboardTaskExecution } from "../../src/dashboard/task-execution-r
 import { TaskPublicationGit } from "../../src/task-publication-git.js";
 import { PinnedDirectory } from "../../src/task-workspace-directory.js";
 import { JarvisError } from "../../src/db.js";
+import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
 import { approvedTaskFixture } from "../fixtures/approved-task-fixture.js";
 import { spawnSync } from "node:child_process";
 
@@ -18,6 +19,18 @@ const preparation = (f: Fixture) => ({ schema_version: 1, run_id: f.plan.run_id,
 const changes = (f: Fixture) => f.db.db.prepare("SELECT total_changes() AS n").get();
 
 describe("dashboard task plan preparation", () => {
+  it("blocks a quarantined task identity before reading or preparing its execution", async () => {
+    const f = await approvedTaskFixture(true, { stage: false });
+    try {
+      new MemoryProjectionAuthority(f.db).quarantineUnresolved({ kind: "task_timeline", id: "task", component_id: "task" }, f.clock());
+      const before = changes(f);
+      expect(() => readDashboardTaskExecution(f.db, "task", f.clock())).toThrow("TASK_NOT_FOUND");
+      await expect(prepareDashboardTaskExecution(f.db, "task", preparation(f), f.clock)).rejects.toThrow("TASK_EXECUTION_SOURCE_SUPPRESSED");
+      expect(changes(f)).toEqual(before);
+      expect(f.generate).not.toHaveBeenCalled(); expect(f.runtime.checkReady).not.toHaveBeenCalled();
+    } finally { await f.cleanup(); }
+  });
+
   it("derives the reviewed plan without DB, index, ref or provider changes; stages once", async () => {
     const f = await approvedTaskFixture(true, { stage: false });
     try {
