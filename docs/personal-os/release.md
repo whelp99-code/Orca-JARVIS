@@ -52,3 +52,25 @@ the error JSON; dependency/build log contents are not included in that response.
 The package is a developer validation artifact with deployment_ready=false; it must
 not be activated as a release. Provider, browser, reproducibility and sealed-manifest
 gates are not established by CLI smoke. Runtime dependencies target the current host.
+
+The receipt also records a separate `dependencies` vector for installed node_modules:
+file contents, modes, directories and relative symlink targets. It excludes no
+manifest filenames and is compared before and after validation. This local digest
+is not a signature. To independently check a retained package, run from its root:
+
+```bash
+node --input-type=module <<'JS'
+import { readFileSync } from 'node:fs';
+import { runtimeDependencyIdentity } from './dist/src/personal-os-release-manifest.js';
+const receipt = JSON.parse(readFileSync('runtime-package-receipt.json', 'utf8'));
+const matches = runtimeDependencyIdentity('node_modules').digest === receipt.dependencies?.digest;
+console.log(JSON.stringify({ dependency_identity_matches: matches, deployment_ready: false }));
+process.exitCode = matches ? 0 : 1;
+JS
+```
+
+Two complete offline package runs at 43fc8e7 on Node24.19.0/Linux x64 produced
+identical source identities,1395payload file entries and2843dependency entries.
+Both recorded vectors were rehashed from disk and matched. This is a same-host,
+same-cache repeat-build observation; cross-host reproducibility, signed manifests
+and production readiness are still unproven. See the development execution log.

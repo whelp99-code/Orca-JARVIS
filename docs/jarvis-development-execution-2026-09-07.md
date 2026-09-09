@@ -1738,3 +1738,26 @@
   75tests passed in8.90s; actual built MCP lifecycle passed in19.36s. The timeout
   failures did not reproduce in this run. This does not prove the full gate passes
   or establish a root cause for the earlier stall; keep full-gate failure visible.
+
+### Same-host complete package repeat and full gate result — 2026-09-09
+
+- Completed two independent fresh package directories at43fc8e7113cd5d1e8c595afffc8a34626b81f382:
+  jarvis-runtime-jtPFtm and jarvis-runtime-vejWFA under shared QA. Both full build,
+  offline npm ci, CLI smoke and no-DB runtime identity exit0. Source dirty=true
+  (checkout has untracked node_modules), Node24.19.0/ABI137/Linux x64/TS5.9.3.
+- Source identities equal,1395payload files equal,2843dependency entries equal;
+  differences0in both vectors. Independently rehashed both directories from disk
+  and matched each receipt. Evidence:runtime-repeat-comparison.json and the two
+  runtime-repeat-{first,second}.json outputs. Logs/temporary smoke state are outside
+  these vectors. Same host/toolchain/cache only; no hermetic or cross-host claim,
+  signatures, activation or production data changes. Both deployment_ready=false.
+- Prior frozen a6c6988 verify91507 ended exit1:shard1 1741pass/9fail across250files;
+  shard2 1779pass/3fail across249files. Input vector1735files unchanged before/after.
+  Fixture missing4contracts fixed in43fc8e7; focused10tests passed. Three timeouts
+  were policy binding, real MCP lifecycle, and reopened task operation. First two
+  focused76tests passed previously; third focused18tests now passed in4.13s.
+  No timeout changes were made; the earlier stalls' cause remains unproven.
+- After observing prior process exit, fast-forwarded the isolated integration tree
+  to43fc8e7 and started canonical npm run verify6691. Captured1735tracked file hashes
+  in verify-runtime-dependencies-before.json; output in
+  verify-runtime-dependencies-full.log. This run is pending, not a passing gate.
