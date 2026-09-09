@@ -19,7 +19,7 @@ Adapters may only perform synchronous changes on that same connection.
 | context | 032: personal_context_snapshots_immutable_delete and immutable evidence links | Hold |
 | recommendation | 032: personal_recommendations_immutable_delete and immutable action/evidence links | Hold |
 | notification | 036: notification_intents_immutable_delete; deliveries reference intents | Hold |
-| audit | 032/033: immutable audit deletion triggers | Hold |
+| audit | Context audit remains immutable; 056 replaces operation-audit deletion with a remote-event authorization guard | Hold for generic adapter; inspect existing remote-auth lifecycle |
 | memory_candidate | File cleanup rejects an enclosing SQL transaction; prior isolated receipt documents this | Hold for direct composition |
 | delete | Existing memory deletion requires explicit scoped authority; cutoff alone is insufficient | Hold for generic adapter |
 
@@ -238,3 +238,49 @@ compiled candidate deletion is verified separately by the service integration te
 SIGTERM uses default process termination, not a graceful shutdown handler. It does
 not establish execution of finally on signal. Normal loop completion closes the
 scanner as covered by the callback test. No production service was changed.
+
+
+## Current-schema correction and payload inventory (99c29db)
+
+An isolated in-memory AuthorityDb migrated with the current migration vector was
+queried using table_info, foreign_key_list and sqlite_schema. Six target tables
+were inspected; production data was not read or changed. Full column, incoming
+foreign-key and trigger definitions are recorded at:
+`/home/jm/.cache/jarvis-test-runtime-qa-20260908/retention-current-schema-inventory.json`.
+
+| Table | Columns | Incoming FK edges | Payload-bearing candidates / constraint |
+| --- | ---: | ---: | --- |
+| personal_observations | 13 | 2 | canonical_envelope_json; immutable update/delete |
+| personal_context_snapshots | 24 | 4 | canonical_envelope_json, declared_query; immutable update/delete |
+| personal_recommendations | 15 | 3 | canonical_envelope_json; immutable update/delete |
+| notification_intents | 12 | 1 | redacted_preview, deep_link; identity immutable/delete prohibited |
+| personal_context_audit_events | 7 | 0 | identifiers/digests; immutable update/delete |
+| personal_operation_audit_events | 23 | 0 | identifiers/digests and remote metadata; conditional remote deletion |
+
+These are structural candidates, not a declaration that any column can safely be
+purged. Foreign keys do not enumerate application-level digest/ID dependencies.
+Reader and replay analysis is still required before any lifecycle migration.
+
+Correction to the original audit hold: migration
+`056_remote_approval_v2.sql` already replaces operation-audit immutable deletion
+with `personal_operation_audit_guarded_delete`. It accepts only remote.* events
+older than an applying remote_auth_retention_authorizations_v2 cutoff, joined to
+a claimed audit job with remote-auth: job_key, matching fence and non-null owner.
+The original claim that every audit row is unconditionally immutable was wrong.
+The same migration supplies authorization and immutable tombstone tables.
+A source search found no src implementation consuming these authorization tables.
+
+Do not remove or replace this guard merely to add an adapter. A bounded remote
+operation-audit adapter is the next lifecycle candidate to investigate. Before
+implementation, bind authorization cutoff to the persisted job policy, preserve
+required tombstones and replay evidence, enforce current lease ownership/expiry
+through RetentionRuntime, and settle authorization in the same transaction.
+The SQL guard alone does not check current time, lease expiry, policy_cutoff equality,
+or require a tombstone for each removed row. It is therefore insufficient as a
+standalone authorization API. No claim of an exploitable external endpoint is made.
+
+Acceptance must include remote versus non-remote rows, strict cutoff equality,
+missing/wrong fence or job authorization, expiry rollback, tombstone/authorization
+rollback on injected failure, and restart/replay. Existing remote approval readers
+must retain verifiable historical outcomes. General audit/context/notification
+retention and service activation remain held until their own contracts are proven.
