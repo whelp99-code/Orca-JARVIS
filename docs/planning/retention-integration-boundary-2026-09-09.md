@@ -219,3 +219,22 @@ lookup from mock.instances to mock.contexts. CLI help now lists both options.
 Review limits: no real timer/signal shutdown test yet; structured-output equality
 is observed in the test log but has no direct assertion. These remain acceptance
 follow-ups, not evidence of production activation.
+
+
+## Actual timer and process restart acceptance
+
+Tested compiled commit d7ebb92 against an isolated migrated database and7 ignored
+files. Two separate `service run` processes used interval25ms and cleanup limit2.
+Each emitted exactly2 cleanup rows: scanned2/incomplete, then scanned1/complete.
+The unchanged intermediate scanned2 results were suppressed. Completion of the
+first traversal was observed at351.315793ms and of the restarted process at
+294.237455ms from spawning. These are single-run observations, not latency targets.
+Both processes exited via SIGTERM; reopening the fixture DB yielded zero foreign
+key violations. The test harness exited0 and removed its temporary fixture tree.
+
+Evidence: /home/jm/.cache/jarvis-test-runtime-qa-20260908/service-cleanup-timer-live.json.
+This uses the actual timer/CLI/process path, with no eligible candidate deletion;
+compiled candidate deletion is verified separately by the service integration test.
+SIGTERM uses default process termination, not a graceful shutdown handler. It does
+not establish execution of finally on signal. Normal loop completion closes the
+scanner as covered by the callback test. No production service was changed.

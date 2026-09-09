@@ -1966,3 +1966,15 @@
   It does not prove production activation or completion of backlog 01–25.
   Actual retention adapters and refresh integration remain open; the previously
   documented unsafe file-cleanup transaction composition remains on hold.
+
+
+## Candidate review service timer acceptance
+
+Commit d7ebb92: isolated compiled CLI service run executed twice with7 ignored files,
+limit2 and25ms timer. Each process emitted2 changed-state cleanup rows and completed
+its traversal; unchanged intermediate results were suppressed. Both terminated via
+SIGTERM, and the reopened fixture database had0 foreign key violations. Receipt:
+/home/jm/.cache/jarvis-test-runtime-qa-20260908/service-cleanup-timer-live.json.
+Default signal termination does not prove graceful finally execution. Candidate
+file deletion remains covered by the separate compiled CLI integration test.
+Backlog01–25 remains open, including broader retention, refresh and production use.
