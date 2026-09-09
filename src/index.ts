@@ -247,3 +247,4 @@ export { createScopedMemoryReference } from "./memory-scoped-reference.js";
 export { createProductionScopedMemory, type ScopedMemoryProductionOptions } from "./memory-scoped-production.js";
 export { type PhoneMemoryContextOptions } from "./phone-memory-context.js";
 export * from "./memory-scoped-api.js";
+export { probeTaskExecutorRuntime } from "./task-executor-registry.js";

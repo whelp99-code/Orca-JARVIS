@@ -16,7 +16,7 @@ import { executeGjcCommand } from "./cli-gjc-commands.js";
 import { executeDailyCommand } from "./cli-daily-commands.js";
 import { executeWorkRouting, executeExecutorPlanValidation, executeTaskTemplateCompilation } from "./cli-work-routing.js";
 import { taskTemplateCatalog } from "./task-templates.js";
-import { inspectTaskExecutor, inspectTaskExecutors, probeTaskExecutor } from "./task-executor-registry.js";
+import { inspectTaskExecutor, inspectTaskExecutors, probeTaskExecutor, probeTaskExecutorRuntime } from "./task-executor-registry.js";
 import { executeLiveCommand } from "./cli-live-commands.js";
 import { executePreGjcCommand } from "./cli-pre-gjc-commands.js";
 import { executeStateCommand } from "./cli-state-commands.js";
@@ -30,6 +30,7 @@ const CLI_HELP =
   + "routing executors | routing executor ID: inspect compiled registrations and configuration presence; no readiness probe\n"
   + "routing validate-plan ID PLAN.json: validate registered input structure; no approval, repository or readiness checks\n"
   + "routing probe-executor ID: query local CLI login status; no model call or execution authority\n"
+  + "routing probe-runtime ID: check local executor/verifier/sandbox prerequisites; no model call or execution authority\n"
   + "routing templates | routing compile-template INPUT.json: inspect or compile versioned task templates before approval\n"
   + "daily morning --once --db PATH --input CONFIG: run stored-source morning recovery; provider refresh unavailable\n"
   + "daily evening --once --db PATH --input CONFIG --key-file PATH: publish stored native completions; automatic operation held\n"
@@ -118,6 +119,9 @@ export async function execute(
     }
     if (subcommand === "executor" && parsed.positionals.length === 3 && argument) {
       return { ok: true, command: "routing.executor", executor: inspectTaskExecutor(argument) };
+    }
+    if (subcommand === "probe-runtime" && parsed.positionals.length === 3 && argument) {
+      return { ok: true, command: "routing.probe-runtime", executor: await probeTaskExecutorRuntime(argument) };
     }
     if (subcommand === "probe-executor" && parsed.positionals.length === 3 && argument) {
       return { ok: true, command: "routing.probe-executor", executor: await probeTaskExecutor(argument) };

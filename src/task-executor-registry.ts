@@ -67,3 +67,24 @@ export async function probeTaskExecutor(id: string, env: NodeJS.ProcessEnv = pro
     : { state: "not_probed", remote_verification: "not_performed", reason_code: "TASK_EXECUTOR_UNREGISTERED" };
   return { ...inspection, authentication, checked_at: new Date().toISOString() };
 }
+
+/** Explicit local runtime preflight. Never creates a candidate or grants execution authority. */
+export async function probeTaskExecutorRuntime(id: string, env: NodeJS.ProcessEnv = process.env) {
+  const snapshot = { ...env };
+  const inspection = inspectTaskExecutor(id, snapshot);
+  const result = (state: string, reason_code?: string) => ({ ...inspection, checked_at: new Date().toISOString(),
+    readiness: { state, scope: "local_runtime_preflight", remote_verification: "not_performed",
+      ...(reason_code === undefined ? {} : { reason_code }) } });
+  if (inspection.registration !== "registered") return result("not_probed", "TASK_EXECUTOR_UNREGISTERED");
+  if (inspection.configuration !== "present") return result("not_probed", "TASK_EXECUTOR_CONFIGURATION_MISSING");
+  try {
+    const runtime = createRegisteredTaskRuntime(inspection.descriptor.provider, snapshot);
+    if (runtime === undefined) return result("unavailable", "TASK_PROVIDER_UNAVAILABLE");
+    await runtime.checkReady();
+    return result("preflight_passed");
+  } catch (error) {
+    const allowed = ["TASK_PROVIDER_UNAVAILABLE", "TASK_VERIFIER_UNAVAILABLE", "TASK_SANDBOX_UNAVAILABLE", "TASK_EXECUTION_CLOCK_UNAVAILABLE"];
+    return result("unavailable", error instanceof JarvisError && allowed.includes(error.code)
+      ? error.code : "TASK_EXECUTOR_PREFLIGHT_FAILED");
+  }
+}
