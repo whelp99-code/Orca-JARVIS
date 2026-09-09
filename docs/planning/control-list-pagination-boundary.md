@@ -94,3 +94,30 @@ CLI help now documents the default/maximum page size, continuation across empty
 pages, stale-anchor restart and explicit unbounded --all compatibility. Backend
 build and compiled `control list --help` exited 0; existing cli-help integration
 suite passed 6/6. This help-only follow-up did not rerun the canonical suite.
+
+## Shared deep-lineage capacity measurement
+
+Reproducible command after build:backend:
+`node scripts/control-page-deep-lineage-probe.mjs <receipt.json>`.
+The script uses the existing private test-environment launcher and removes its
+fixture DB/repository. It stages 63 valid ancestors and 100 leaves sharing that
+chain, then adds synthetic workflow rows to reach the specified population.
+Statement get/all/run calls are counted; BEGIN/COMMIT and serialization checks
+are excluded. Instrumentation is included in timings. Five samples per size:
+
+| Total commands | Queries per 100-leaf page | Sample p95 | Response bytes |
+| --- | --- | --- | --- |
+| 10000 | 38503 | 311.71ms | 164286 |
+| 100000 | 38503 | 311.52ms | 164286 |
+
+All pages returned exactly the 100 leaves; DB bytes were unchanged. Receipt:
+`/home/jm/.cache/jarvis-test-runtime-qa-20260908/control-page-deep-lineage.json`.
+The first direct fixture attempt failed on /tmp quota; the launcher now uses
+the repository's private scratch policy. A missing synthetic expiry was fixed
+before the successful run. No provider or production operation was invoked.
+
+This closes the missing shared-chain measurement, not the capacity work. The
+next implementation should reuse ancestor rows and suppression observations only
+inside a single page's read transaction. It must retain the 64-depth/cycle checks,
+revalidate on every new page, and preserve late ancestor quarantine behavior.
+No cross-request authority cache is justified by these measurements.
