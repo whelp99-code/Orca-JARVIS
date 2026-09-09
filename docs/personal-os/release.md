@@ -38,8 +38,9 @@ identity, copies runtime roots, installs locked production dependencies offline 
 runs the real CLI smoke with isolated SQLite state. Required output files and modes
 are hashed and rechecked; source HEAD, dirty state and toolchain are recorded.
 
-The success receipt is runtime-package-receipt.json. Failure leaves diagnostic logs
-without that receipt. npm cache misses fail instead of switching to an online install.
+The success receipt is runtime-package-receipt.json. Failures after output creation
+retain diagnostic output without that receipt. Argument or parent-path errors may
+fail before any output exists. npm cache misses fail instead of switching to an online install.
 The package is a developer validation artifact with deployment_ready=false; it must
 not be activated as a release. Provider, browser, reproducibility and sealed-manifest
 gates are not established by CLI smoke. Runtime dependencies target the current host.
