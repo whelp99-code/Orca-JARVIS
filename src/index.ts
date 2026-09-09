@@ -272,3 +272,7 @@ export { verifySecondBrainScopedProof } from "./second-brain-scoped-proof.js";
 export { verifyMemoryScopedProviderWrite } from "./memory-scoped-provider-authority.js";
 
 export { parseSecondBrainRecoveredRequestStatus, parseSecondBrainScopedRequestStatus } from "./second-brain-scoped-request-status.js";
+
+export { claimMemoryScopedReconciliation, readMemoryScopedReconciliationRequest,
+  requireMemoryScopedReconciliationLease, releaseMemoryScopedReconciliation,
+  type MemoryScopedReconcileLease, type MemoryScopedReconcileOptions } from "./memory-scoped-reconciliation.js";
