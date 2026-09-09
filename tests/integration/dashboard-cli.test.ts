@@ -48,6 +48,29 @@ async function migratedDb(): Promise<string> {
 }
 
 describe("dashboard CLI", () => {
+  it("wires the real proposal planner without fixture dependencies", async () => {
+    const dbPath = await migratedDb();
+    let origin = "";
+    const runtime = startDashboardCli({ host: "127.0.0.1", port: 0, dbPath,
+      staticRoot: join(dirname(dbPath), "static") }, line => { origin = line; });
+    const observer = new AuthorityDb(dbPath);
+    try {
+      const session = await request(`${origin}/api/v1/session`);
+      const { csrf_token: token } = JSON.parse(await session.body.text());
+      const before = observer.db.prepare("PRAGMA data_version").get();
+      const response = await request(`${origin}/api/v1/proposals/preview`, {
+        method: "POST", headers: { origin, "content-type": "application/json", "x-jarvis-csrf": token },
+        body: JSON.stringify({ schema_version: 1, objective: "Preview from the real entrypoint",
+          work_type: "development", completion_evidence: ["HTTP preview"], answers: [],
+          constraints: ["no deployment"], requested_capabilities: [] }),
+      });
+      expect(response.statusCode).toBe(200);
+      expect(JSON.parse(await response.body.text()).proposal).toMatchObject({ status: "ready",
+        requirements: { constraints: ["no deployment"], completion_evidence: ["HTTP preview"] } });
+      expect(observer.db.prepare("PRAGMA data_version").get()).toEqual(before);
+    } finally { observer.close(); await runtime.close(); }
+  });
+
   it("validates paired closeout trust options before database creation", () => {
     const root = mkdtempSync(join(tmpdir(), "jarvis-closeout-key-"));
     roots.add(root);

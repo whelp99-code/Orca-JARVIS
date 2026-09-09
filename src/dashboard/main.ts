@@ -8,6 +8,7 @@ import type { SecondBrainTransport, SecondBrainTransportOptions } from "../secon
 import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
 import type { DashboardExecutorFactory } from "./authority-service.js";
 import { runtimeCapabilityProbe } from "../doctor.js";
+import { planTeamProposal } from "../team-proposal.js";
 import { defaultRunner } from "../orca.js";
 import { bindDashboardMemoryDependencies } from "./memory-production.js";
 import { composeRemoteApproval } from "../remote-approval-compose.js";
@@ -125,6 +126,7 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
     port: options.port,
     orcaRunner: defaultRunner,
     capabilityProbe: runtimeCapabilityProbe(),
+    planner: planTeamProposal,
     memoryLifecycle,
     memoryAdapter: bound.memoryAdapter,
     memoryProjectionKey: bound.memoryProjectionKey,

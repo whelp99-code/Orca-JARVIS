@@ -2194,3 +2194,33 @@ Observed reviewer model/effort and API-equivalent token cost are unavailable.
   This is supplementary evidence; the original package receipt remains unchanged.
 - Scope excludes browser interaction, provider/model execution, and production activation.
   `deployment_ready=false` remains applicable; the full backlog is not complete.
+
+
+### 2026-09-10 — production proposal composition defect
+
+- Actual packaged Chromium interaction reproduced HTTP 404 / NOT_FOUND for
+  POST /api/v1/proposals/preview. The real startDashboardCli supplied a capability
+  probe but omitted the planner; fixture servers supplied both. Connected existing
+  planTeamProposal at the production composition root, restoring preview and staging.
+- Added a real-entrypoint HTTP regression: preview returns ready with the entered
+  constraints/evidence and the observing connection PRAGMA data_version is unchanged.
+  dashboard-cli + dashboard-proposal: 2 files / 9 tests passed. typecheck, zero-warning
+  lint, backend build and isolated package creation exited 0.
+- Fixed package: /home/jm/.cache/jarvis-test-runtime-qa-20260908/jarvis-runtime-DeVFyt.
+  Its source receipt records HEAD5076232 with dirty=true and input digest
+  sha256:f733e3e245f0782562eb9443b6234482e59dcd2cb6ae31adbee011523760ba5e.
+- Browser plugin not available; used installed Playwright Chromium. First launch
+  with /tmp failed SIGTRAP; explicit QA TMPDIR allowed browser launch. Original
+  package reproduced the 404; fixed package passed overview empty states, title,
+  proposal preview and requirement display at 1440x1000 and 1024x1000. Both had
+  console/page errors0, Vite overlays0, horizontal overflow0. At1024 Stage task
+  created a pending workflow.start request. No approval or provider execution.
+- Temporary script, JSON receipt and screenshots reside outside the repository at
+  /home/jm/.cache/jarvis-test-runtime-qa-20260908/packaged-dashboard-browser* and
+  packaged-dashboard-{1440,1024}.png. Screenshot shows disconnected SSE status;
+  this is not evidence of healthy live updates. No mobile or other browser coverage.
+- This repairs a real entrypoint/fixture mismatch; full backlog01–25 and deployment
+  remain incomplete. Original package is not patched or promoted.
+- Follow-up compiled dashboard-cli5/5 and dashboard-task-create8/8 passed;
+  distinct focused coverage is17tests across3files. Independent review verdict SHIP,
+  findings0: preview/staging preserve CSRF, digest and separate approval gates.
