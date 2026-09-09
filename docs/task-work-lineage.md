@@ -156,8 +156,12 @@ in dashboard approval pages and pending totals: common read returned absent whil
 the page returned child and pending total 1. These SQL surfaces now apply bounded
 ancestor suppression within the same page/count transaction. Focused lineage/read
 tests passed 12; existing pagination tests passed 4; typecheck and lint exited 0.
-Completion ordering in the lineage metric now also compares finite parsed instants;
-dedicated offset-completion coverage remains pending.
+Completion ordering in the lineage metric now also compares finite parsed instants.
+The reviewer subsequently clarified that this is defensive hardening, not a proven
+reporting-path defect: readTaskPerformance rejects noncanonical row timestamps
+before calling this helper, and completion evidence uses canonical UTC. The earlier
+offset string example did not pass through that caller guard. No standalone helper
+test is used to claim a production defect or a resolved reporting requirement.
 
 The canonical run at `cea687c` (session98914) was deliberately terminated after
 these defects were confirmed, with exit143. It is incomplete and not a passing
