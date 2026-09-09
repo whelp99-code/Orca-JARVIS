@@ -142,7 +142,9 @@ export class ApprovedCommandExecutor {
   }
 
   async execute(requestId: string, worker = "approved-command-executor", now = this.clock()): Promise<ApprovedExecutionResult> {
-    if (this.control.get(requestId)?.action === "task.execute") return executeApprovedTaskRequest({
+    const route = this.authority.db.prepare("SELECT action FROM control_command_requests WHERE request_id=?")
+      .get(requestId) as { action: string } | undefined;
+    if (route?.action === "task.execute") return executeApprovedTaskRequest({
       authority: this.authority, request_id: requestId, worker, clock: this.clock, runtime: this.taskRuntime });
     const command = this.control.claim(requestId, worker, now);
     const externalRunbook = command.action === "runbook.execute"

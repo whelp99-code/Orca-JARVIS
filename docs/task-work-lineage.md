@@ -185,3 +185,18 @@ lineage preview invalidation, staging and persistence after reload. This uses
 real local HTTP fixture servers; it does not attest production deployment.
 Evidence: `lineage-own-task-browser.log` in the QA directory. Canonical verify
 started at the same code revision (session45611); its result remains pending.
+
+That canonical run finished with exit 1: shard 1 passed 266 files/1838 tests;
+shard 2 passed 264 files/1867 tests and failed 1 file/4 tests. Dashboard and
+acceptance were not reached. The hash receipt records only this documentation
+file changing during execution; product source bytes remained unchanged.
+The failures in task-identity-suppression exposed coupling between public hidden
+reads and internal execution routing/settlement. Routing now reads only the action;
+task suppression, visible command and completion replay share one read snapshot.
+Error settlement reads only internal state after exact redeemed-authority binding,
+so quarantine during provider execution cannot prevent uncertain settlement.
+Existing SOURCE_SUPPRESSED errors are preserved for task-scope suppression.
+Focused identity/lineage-claim/approved-execution regression: 3 files, 23 tests
+passed in 11.07s. Typecheck and lint exited 0. Evidence: `verify-own-task-result.json`,
+`lineage-settlement-fix.log`, `lineage-settlement-types.log`, `lineage-settlement-lint.log`.
+Full corrected verification and independent acceptance remain outstanding.

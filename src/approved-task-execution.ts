@@ -13,14 +13,19 @@ import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 export async function executeApprovedTaskRequest(input: { authority: AuthorityDb; request_id: string;
   worker: string; clock: () => Date; runtime?: TaskExecutionRuntime }): Promise<ApprovedExecutionResult> {
   const { authority, request_id: requestId, clock } = input;
-  const control = new ControlPlane(authority); const request = control.get(requestId);
-  if (!request || request.action !== "task.execute") throw new JarvisError("TASK_EXECUTION_REQUEST_INVALID");
-  const plan = parseTaskExecutionPlan(request.args.plan);
-  const previous = authority.db.transaction(() => {
-    if (new MemoryProjectionAuthority(authority).isProjectionIdSuppressed(plan.task_id)) {
+  const control = new ControlPlane(authority);
+  const { request, plan, previous } = authority.db.transaction(() => {
+    const target = authority.db.prepare("SELECT target_json FROM control_command_requests WHERE request_id=? AND action='task.execute'")
+      .get(requestId) as { target_json: string } | undefined;
+    if (!target) throw new JarvisError("TASK_EXECUTION_REQUEST_INVALID");
+    const taskId = JSON.parse(target.target_json)?.task_id;
+    if (typeof taskId === "string" && new MemoryProjectionAuthority(authority).isProjectionIdSuppressed(taskId)) {
       throw new JarvisError("TASK_EXECUTION_SOURCE_SUPPRESSED");
     }
-    return completedTaskExecution(authority, requestId);
+    const request = control.get(requestId);
+    if (!request) throw new JarvisError("CONTROL_APPROVAL_REQUIRED");
+    const plan = parseTaskExecutionPlan(request.args.plan);
+    return { request, plan, previous: completedTaskExecution(authority, requestId) };
   }).deferred();
   if (previous) return previous;
   if (request.state !== "approved") throw new JarvisError("CONTROL_APPROVAL_REQUIRED");

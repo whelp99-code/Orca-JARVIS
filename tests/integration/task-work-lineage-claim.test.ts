@@ -24,7 +24,8 @@ it.each(["payload", "task"])("does not consume approval or expose requests after
     expect(f.control.nextApproved(f.now)).toBeNull();
     expect(() => f.control.claim(child.request_id, "direct", f.now)).toThrow("CONTROL_APPROVAL_REQUIRED");
     expect(f.db.db.serialize().equals(before)).toBe(true);
-    await expect(f.executor.execute(child.request_id, "executor", f.now)).rejects.toThrow("CONTROL_APPROVAL_REQUIRED");
+    await expect(f.executor.execute(child.request_id, "executor", f.now)).rejects.toThrow(
+      kind === "task" ? "TASK_EXECUTION_SOURCE_SUPPRESSED" : "CONTROL_APPROVAL_REQUIRED");
     expect(f.db.db.serialize().equals(before)).toBe(true);
     expect(f.generate).not.toHaveBeenCalled();
   } finally { await f.cleanup(); }

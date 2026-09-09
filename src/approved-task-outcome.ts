@@ -25,18 +25,22 @@ export function settleApprovedTaskError(authority: AuthorityDb, command: Claimed
       WHERE request_id=? AND receipt_id=? AND lease_fence=? AND task_run_id IS NOT NULL`)
       .get(command.request_id, command.receipt_id, command.fence) as { state: string } | undefined;
     if (attempt && ["prepared", "invoking"].includes(attempt.state)) new ControlEffectAttempts(authority).markTaskUncertain(command, now);
-    let stored = control.get(command.request_id);
+    // Settlement reads only internal state after verifying the exact redeemed authority above.
+    // Public visibility may disappear while the provider is running.
+    const readState = () => authority.db.prepare("SELECT state FROM control_command_requests WHERE request_id=?")
+      .get(command.request_id) as { state: string } | undefined;
+    let stored = readState();
     if (stored?.state === "claimed") {
       const state = checksFailed || !attempt ? "failed" : "uncertain";
       try { control.settle(command.request_id, command.fence, { state,
         effect_type: state === "failed" ? "task.execution.failed" : "task.execution.uncertain", payload: { code }, failure_code: code }, now); }
       catch (error) {
         // ControlPlane may have durably projected expiry/revocation to uncertain before throwing.
-        stored = control.get(command.request_id);
+        stored = readState();
         if (!(error instanceof JarvisError) || stored?.state !== "uncertain") throw error;
       }
     }
-    stored = control.get(command.request_id);
+    stored = readState();
     if (!stored || !["failed", "uncertain"].includes(stored.state)) throw new JarvisError("TASK_EXECUTION_SETTLEMENT_FAILED");
     const failure = authority.db.prepare("SELECT failure_code FROM control_command_requests WHERE request_id=?")
       .get(command.request_id) as { failure_code: string | null };
