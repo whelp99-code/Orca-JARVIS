@@ -18,7 +18,7 @@ const NAV_ITEMS = [
 
 afterEach(cleanup);
 
-function renderShell(connectionState: "live" | "offline", initialPath = "/tasks/task-42"): void {
+function renderShell(connectionState: "connecting" | "live" | "offline", initialPath = "/tasks/task-42"): void {
   render(
     <MemoryRouter initialEntries={[initialPath]}>
       <OperationalShell connectionState={connectionState}>
@@ -30,6 +30,12 @@ function renderShell(connectionState: "live" | "offline", initialPath = "/tasks/
 }
 
 describe("OperationalShell", () => {
+  it("distinguishes initial connection from a failed connection", () => {
+    renderShell("connecting");
+    const status = screen.getByRole("status", { name: "실시간" });
+    expect(status).toHaveTextContent("연결 중");
+    expect(status).not.toHaveTextContent("끊김");
+  });
   it("provides a visible skip link and focusable main target when content renders", () => {
     renderShell("live");
 

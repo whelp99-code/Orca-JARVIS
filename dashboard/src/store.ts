@@ -69,6 +69,7 @@ export function createDashboardStore(options: DashboardStoreOptions) {
   function start(): void {
     if (running) return;
     running = true;
+    assign({ connectionState: "connecting" });
     void begin(generation);
   }
 

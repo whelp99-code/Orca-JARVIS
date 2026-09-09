@@ -264,6 +264,7 @@ h1 {
   background: var(--color-success);
 }
 
+.connection-state[data-state="connecting"] .connection-icon,
 .connection-state[data-state="reconnecting"] .connection-icon {
   background: var(--color-warning);
 }

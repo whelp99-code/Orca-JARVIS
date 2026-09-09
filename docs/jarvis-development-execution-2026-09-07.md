@@ -2224,3 +2224,27 @@ Observed reviewer model/effort and API-equivalent token cost are unavailable.
 - Follow-up compiled dashboard-cli5/5 and dashboard-task-create8/8 passed;
   distinct focused coverage is17tests across3files. Independent review verdict SHIP,
   findings0: preview/staging preserve CSRF, digest and separate approval gates.
+
+
+### 2026-09-10 — initial live-update status clarification
+
+- Rechecked the unchanged DeVFyt package with an explicit live-status wait:
+  Chromium1440/1024 both reached 연결됨. The earlier screenshot captured startup;
+  it did not establish a persistent SSE outage. Evidence: QA packaged-dashboard-sse.json.
+- createDashboardStore.start now publishes connecting while session/snapshot reads
+  precede EventSource creation. OperationalShell labels it 연결 중 with the existing
+  amber connecting indicator. Session failure still yields offline; EventSource error
+  still yields reconnecting. No authority is granted by the added state.
+- Added startup-hydration and rendered-label assertions; existing session-failure
+  test now waits for its terminal offline state rather than the first notification.
+  Full dashboard37files/261tests, typecheck, zero-warning lint and dashboard build passed.
+- Built-checkout real HTTP/Chromium validation delayed (not fabricated) the session
+  response and asserted 연결 중 then 연결됨 at1440/1024. Preview remained Ready with
+  constraints/evidence preserved;1024 staging produced pending workflow.start.
+  Console/page errors0, Vite overlays0, horizontal overflow0; shutdown exit0.
+- QA artifacts: dashboard-connecting-probe.mjs, dashboard-connecting.json,
+  connecting-{1440,1024}.png and connected-{1440,1024}.png under
+  /home/jm/.cache/jarvis-test-runtime-qa-20260908. Browser plugin absent; installed
+  Playwright used with explicit private TMPDIR. Parent inspected all6changed files.
+  No provider execution, production change, mobile check or sustained SSE outage
+  recovery is claimed by this startup-only verification. Full objective remains open.

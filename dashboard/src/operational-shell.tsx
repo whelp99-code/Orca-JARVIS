@@ -20,6 +20,7 @@ const NAV_ITEMS = [
 ] as const;
 
 const CONNECTION_LABELS = {
+  connecting: "연결 중",
   live: copy.connected,
   reconnecting: "다시 연결 중",
   offline: copy.disconnected,

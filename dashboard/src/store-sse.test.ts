@@ -24,6 +24,7 @@ describe("dashboard store SSE refetch", () => {
     const loading = onceState(current.store, (snapshot) => snapshot.overview.status === "loading");
     current.store.start();
     await loading;
+    expect(current.store.getSnapshot().connectionState).toBe("connecting");
     expect(current.lifecycle.sourceCreated).toBe(false);
     current.client.data.release?.(current.client.data.overview);
     await current.opened;
@@ -51,6 +52,7 @@ describe("dashboard store SSE refetch", () => {
     current.client.data.sessionError = new TypeError("Failed to fetch");
     const settled = new Promise<Snapshot>((resolve) => {
       const unsubscribe = current.store.subscribe(() => {
+        if (current.store.getSnapshot().connectionState !== "offline") return;
         unsubscribe();
         resolve(current.store.getSnapshot());
       });

@@ -8,7 +8,7 @@ import type { ApiError, ApiErrorKind, DashboardClient } from "./api.js";
 import type { TaskExecutionResource } from "./task-execution-resource.js";
 import type { TaskExecutionOperation } from "./task-execution-operations.js";
 
-export type ConnectionState = "live" | "reconnecting" | "offline";
+export type ConnectionState = "connecting" | "live" | "reconnecting" | "offline";
 export type ResourceState<T> =
   | { readonly status: "idle" | "loading" | "retrying"; readonly kind?: never }
   | { readonly status: "success"; readonly data: T; readonly kind?: never }
