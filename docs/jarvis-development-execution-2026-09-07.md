@@ -1430,3 +1430,15 @@
   node_modules. No product edits were made during this browser run. Full verify89979
   remains a separate live run on6380e1d with known first-shard timeouts; latest browser
   acceptance does not change that failing gate status or complete the01–25 objective.
+
+### Frozen integration gate settlement — 2026-09-09
+
+- verify89979 terminal exit1 on6380e1d: shard1 1692pass/3timeout failures
+  in242files845.02s; shard2 1722pass/242files836.74s. All3 failures are the known
+  physical reconstruction5s budgets corrected by646d119. No additional failed cases.
+  Dashboard/acceptance/smoke not reached by this gate.
+- Before/after HEAD6380e1d and1671 tracked SHA256 hashes match exactly,0mismatches.
+  Latest queued commits include task identity privacy82cb28e, physical budgets646d119,
+  browser acceptance41aecdc, binding lookup3cc50f1 and provider lineage gapc6e67f7.
+  This failed run cannot prove those newer changes; integrate only after terminal
+  snapshot verification, then start a new fixed-source full gate.
