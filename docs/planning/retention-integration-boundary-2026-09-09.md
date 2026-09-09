@@ -1,7 +1,29 @@
 # Retention service integration boundary
 
-Status: implementation design; not an implemented adapter or deletion authorization.
+Status: historical design with a subsequently implemented remote-operation-audit subset.
+This document is not production deletion authorization.
 Baseline: 6a646d0, inspected 2026-09-09.
+
+## Current implementation reconciliation (cc0f6c8)
+
+The discovery sections below describe the baseline, not missing implementation at
+the current commit. `src/remote-audit-retention.ts` now consumes the existing
+authorization tables, retires bounded remote operation-audit rows and retains
+minimal outcome records. `src/remote-audit-history.ts` reads active/retired history
+and checks its authorization. `src/remote-audit-service.ts` schedules one explicitly
+configured batch per UTC day; `src/cli-gjc-commands.ts` connects it through
+`--remote-audit-retention-limit`. Commit `ece7210` introduced that service scheduler.
+
+Regression coverage resides in `tests/integration/remote-audit-retention.test.ts`
+and `tests/integration/remote-audit-service.test.ts`: cutoff, lease expiry, rollback,
+history reads, daily replay, next-day processing and expired-owner recovery.
+The canonical gate at `3b6ac90` exited 0 (3958 tests across backend/dashboard).
+That is automated verification, not proof of production activation or physical
+erasure. Do not recreate this adapter based on the historical discovery below.
+
+General observation/context/recommendation/notification retention and scoped
+memory deletion still need their own proven contracts. The implemented remote
+operation-audit subset does not resolve all backlog 07/12 requirements.
 
 ## Confirmed mismatch
 
