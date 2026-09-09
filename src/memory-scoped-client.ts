@@ -100,11 +100,7 @@ export function createMemoryScopedClient(options: MemoryScopedClientOptions) {
     checkpoint();
     return parsed;
   }
-  return {
-    /** Current completion evidence, not permission to settle or a reusable grant.
-     * A downstream writer must still fence its own transaction and revalidate
-     * current authority at use; this does not mutate an outbox or control task. */
-    readRememberedCompletion: async (request: MemoryScopedWriteRequestMaterial, signal?: AbortSignal) => {
+  async function completion(request: MemoryScopedWriteRequestMaterial, signal?: AbortSignal) {
       if (options.profile !== "scoped-record-read-v5") return denied();
       const started = new Date(options.now().getTime()), created = new Date(request.created_at);
       if (!Number.isFinite(started.getTime()) || !Number.isFinite(created.getTime()) || created > started) return denied();
@@ -135,9 +131,38 @@ export function createMemoryScopedClient(options: MemoryScopedClientOptions) {
         checked = at;
       }
       requireActive(signal);
-      return Object.freeze({ kind: "remembered_completion_observed" as const,
+      const value = () => Object.freeze({ kind: "remembered_completion_observed" as const,
         request_id: snapshot.request_id, request_digest: snapshot.request_digest,
         status, artifact, checked_at: new Date(checked).toISOString(), valid_until: new Date(until).toISOString() });
+      return { observation: value(), refresh: () => {
+        requireActive(signal);
+        for (const checkpoint of checkpoints) {
+          const at = checkpoint.recheck().getTime();
+          until = Math.min(until, ...checkpoints.map(check => Date.parse(check.expires_at)));
+          if (!Number.isFinite(at) || at < checked || !(at < until)) return denied();
+          checked = at;
+        }
+        requireActive(signal);
+        return value();
+      } };
+  }
+  return {
+    /** Current completion evidence, not permission to settle or a reusable grant.
+     * A downstream writer must still fence its own transaction and revalidate
+     * current authority at use; this does not mutate an outbox or control task. */
+    readRememberedCompletion: async (request: MemoryScopedWriteRequestMaterial, signal?: AbortSignal) =>
+      (await completion(request, signal)).observation,
+    /** Trusted synchronous consumer only. Refresh current local read authority
+     * inside the consumer's transaction before commit. This does not renew the
+     * provider snapshot or grant settlement. The refresh expires on return. */
+    withRememberedCompletion: async <T>(request: MemoryScopedWriteRequestMaterial,
+      consume: (observation: Awaited<ReturnType<typeof completion>>["observation"],
+        refresh: () => Awaited<ReturnType<typeof completion>>["observation"]) => T, signal?: AbortSignal): Promise<T> => {
+      const result = await completion(request, signal);
+      let active = true;
+      const refresh = () => { if (!active) return denied(); return result.refresh(); };
+      try { return consume(refresh(), refresh); }
+      finally { active = false; }
     },
     recoverRequestStatus: async (request: MemoryScopedWriteRequestMaterial, signal?: AbortSignal) => {
       if (options.profile !== "scoped-record-read-v5") return denied();

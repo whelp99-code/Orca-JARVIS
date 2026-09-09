@@ -276,3 +276,5 @@ export { parseSecondBrainRecoveredRequestStatus, parseSecondBrainScopedRequestSt
 export { claimMemoryScopedReconciliation, readMemoryScopedReconciliationRequest,
   requireMemoryScopedReconciliationLease, releaseMemoryScopedReconciliation,
   type MemoryScopedReconcileLease, type MemoryScopedReconcileOptions } from "./memory-scoped-reconciliation.js";
+
+export { observeMemoryScopedCompletion } from "./memory-scoped-completion-observation.js";

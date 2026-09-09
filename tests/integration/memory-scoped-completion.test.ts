@@ -93,3 +93,15 @@ it.each(['cancel_before', 'cancel_after_1', 'cancel_after_2', 'cancel_after_3', 
     await expect(f.client.readRememberedCompletion(request, f.signal)).rejects.toMatchObject({ code: 'SECOND_BRAIN_CANCELLED' });
     expect(f.calls()).toBe(mode === 'cancel_before' ? 0 : mode === 'cancel_recheck' ? 3 : Number(mode.slice(-1)));
   });
+
+it('limits the current-authority refresh to the synchronous consumer', async () => {
+  const f = await fixture();
+  let saved: (() => unknown) | undefined;
+  const result = await f.client.withRememberedCompletion(request, (value, refresh) => {
+    saved = refresh;
+    expect(refresh()).toEqual(value);
+    return value.kind;
+  });
+  expect(result).toBe('remembered_completion_observed');
+  expect(() => saved!()).toThrow('MEMORY_SCOPED_READ_UNAVAILABLE');
+});
