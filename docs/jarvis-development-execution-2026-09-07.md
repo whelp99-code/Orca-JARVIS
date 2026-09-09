@@ -4,7 +4,24 @@
 실사용 검증과 코드/자동 테스트 검증을 구분한다. 문제가 될 기능은 근거와 재개 조건을 남겨 보류한다.
 기준 목록은 `improvement-backlog-2026-09-07.md`의 01–25이며 일부 완료를 전체 완료로 보고하지 않는다.
 
-## 최신 확인 — 2026-09-10 KST, 0b47991 기준
+## 최신 전체 검증 — 2026-09-10 KST, 3439aff 기준
+
+- `npm run verify` exit0. Backend267파일/1835테스트 +267파일/1881테스트,
+  dashboard37파일/261테스트: 합계571파일/3977테스트 통과.
+- Node24.19.0/ABI137 런타임 검사, lint, typecheck, backend/dashboard 빌드,
+  고정 시계 acceptance, CLI smoke를 포함한 canonical gate가 종료됐다.
+  Acceptance는 pre_gjc_ready / stopped / completion_promoted=true /
+  gjc_dispatched=false를 반환했다. 이는 운영 업무 실행 증거가 아니다.
+- 검증 SHA3439aff311203e8b12402963889a8e98ea919014. 실행 전후 추적1852파일
+  SHA256 변경0개, HEAD 동일. git status는 미추적 node_modules1개만 표시했다.
+- 증거: /home/jm/.cache/jarvis-test-runtime-qa-20260908 아래
+  verify-dashboard-composition.log, verify-dashboard-composition-before.json,
+  verify-dashboard-composition-result.json. 결과 관측2026-09-09T19:37:50.778061Z.
+- 이 gate에는 실제 production planner 연결과 초기 연결 상태 변경이 포함된다.
+  패키지/브라우저 인수는 아래 개별 기록 범위이며 전체 verify가 실제 provider
+  작업이나 운영 배포까지 완료했다는 뜻은 아니다. Backlog01–25 잔여와 보류 유지.
+
+## 이전 확인 — 2026-09-10 KST, 0b47991 기준
 
 - 아래 실행 범위 표와 시간순 기록은 당시 증거를 보존한다. 최신 전체 검증은
   ed07b1c의 `npm run verify` exit 0, 569파일/3966테스트, 추적1848파일 해시 변경0개다.
