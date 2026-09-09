@@ -2374,3 +2374,18 @@ It is not a new current-HEAD package, full gate or provider execution verificati
   sse-real-backpressure-probe.mjs, sse-real-backpressure.json.
 - 이 측정은 Node writable buffer 상한이며 RSS/heap/커널 소켓 버퍼의 총 메모리
   상한이 아니다. 전체 dashboard 다중 클라이언트 부하 및 장시간 단절 검증은 잔여다.
+
+## 실제 TCP 역압 검사를 회귀 테스트로 편입 — 2026-09-10
+
+- tests/integration/dashboard-sse-real-backpressure.test.ts 추가. 실제 Node HTTP
+  writable과 읽기를 멈춘 TCP 클라이언트를 사용한다. response.write의 반환값 및
+  writableLength를 조작하지 않고 관측하여 버퍼 상한·전송 병합·종료 기한을 검사한다.
+- 소켓/서버/타이머를 finally에서 정리한다. CI 스케줄링 여유를 포함한 종료 상한
+  및 테스트 timeout을 명시했다. 전체 프로세스 메모리 상한 검사는 아니다.
+- canonical integration runner로 기존 backpressure7개+실제 TCP1개=2파일8테스트
+  통과(exit0), 새 테스트5.367초. 전체 typecheck exit0, 변경 파일 ESLint exit0.
+  실행 명령: node scripts/run-tests.mjs integration
+  tests/integration/dashboard-sse-real-backpressure.test.ts
+  tests/integration/dashboard-sse-backpressure.test.ts.
+- 제품 소스 변경0개. 기존 임시 실제 소켓 인수를 저장소 자동 회귀 경로에 포함했다.
+  전체 verify 재실행 및 전체 backlog 완료를 의미하지 않는다.
