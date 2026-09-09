@@ -286,3 +286,5 @@ export { readMemoryScopedSettlementAuthority } from "./memory-scoped-settlement-
 export { readMemoryScopedSettlement, settleMemoryScopedCompletion } from "./memory-scoped-settlement.js";
 
 export { createProductionScopedProviderVerifier, type ScopedProviderProductionOptions } from "./memory-scoped-provider-production.js";
+
+export { createPhoneMemoryProviderVerifier, type PhoneMemoryProviderVerifierOptions } from "./phone-memory-provider-verifier.js";

@@ -18,6 +18,8 @@ import { dispatchRequest } from "./phone-gateway-dispatch.js";
 import type { PhoneGatewayRequestCtx } from "./phone-gateway-request-ctx.js";
 import { createPhoneMemoryContext, type PhoneMemoryContextOptions } from "./phone-memory-context.js";
 
+import { createPhoneMemoryProviderVerifier, type PhoneMemoryProviderVerifierOptions } from "./phone-memory-provider-verifier.js";
+
 export type PhoneGatewayServer = {
   readonly address: { readonly host: "127.0.0.1"; readonly port: number; readonly family: "IPv4" };
   close(): void;
@@ -32,6 +34,7 @@ export function createPhoneGatewayServer(options: {
   readonly now?: () => number;
   readonly audit?: (line: string) => void;
   readonly memoryContext?: PhoneMemoryContextOptions;
+  readonly memoryProviderVerifier?: PhoneMemoryProviderVerifierOptions;
 }): PhoneGatewayServer {
   if (options.host !== LOOPBACK) throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
   if (options.port !== 0 && options.port !== PHONE_GATEWAY_PORT) throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
@@ -42,6 +45,8 @@ export function createPhoneGatewayServer(options: {
   const now = options.now ?? Date.now;
   const memoryContext = options.memoryContext === undefined ? undefined
     : createPhoneMemoryContext(options.memoryContext, () => new Date(now()));
+  const memoryProviderVerifier = options.memoryProviderVerifier === undefined ? undefined
+    : createPhoneMemoryProviderVerifier(options.memoryProviderVerifier, () => new Date(now()));
   const sessions = createPhoneGatewaySessionStore({ key: options.config.sessionKey, now });
   const limiter = createPhoneRateLimiter({ now });
   const adapter = createPhoneAuthorityReadAdapter({ upstream: upstreamUrl });
@@ -52,6 +57,7 @@ export function createPhoneGatewayServer(options: {
     void handleRequest({
       request, response, config: options.config, sessions, limiter, adapter,
       staticRoot, assets, now, audit, upstream: upstreamUrl,
+      memoryProviderVerifier, memoryProviderAgentId: options.memoryProviderVerifier?.agent_id,
       memoryContext, memoryAgentId: options.memoryContext?.agent_id, memoryProfile: options.memoryContext?.memory.profile,
     });
   });

@@ -60,6 +60,9 @@ export function matchPhoneRoute(input: {
     }
   }
   if (method === "POST" && query === "") {
+    if (input.path === "/api/v1/memory/provider/verify") {
+      return route("memory_provider_verify", method, input.path, "", 4096, true, true, false);
+    }
     if (input.path === "/api/v1/memory/context") {
       return route("memory_context", method, input.path, "", PHONE_GATEWAY_LIMITS.jsonResponse, true, true, false);
     }
@@ -97,6 +100,7 @@ function route(
 
 function knownMethods(path: string): readonly string[] | undefined {
   const exact = new Map<string, readonly string[]>([
+    ["/api/v1/memory/provider/verify", ["POST"]],
     ["/api/v1/memory/context/capabilities", ["GET"]],
     ["/healthz", ["GET", "HEAD"]], ["/readyz", ["GET", "HEAD"]],
     ["/api/v1/phone/session", ["GET"]], ["/", ["GET"]], ["/memory", ["GET"]],
