@@ -247,6 +247,8 @@ export function normalizePersonalObservations(input: unknown): readonly Observat
 export function normalizeAndPersistPersonalObservations(
   input: PersonalObservationPersistenceInput,
 ): readonly StoredObservation[] {
-  return normalizePersonalObservations(input.input).map(observation =>
+  const observations = normalizePersonalObservations(input.input);
+  if (input.store.persistObservationBatch !== undefined) return input.store.persistObservationBatch(observations, input.persisted_at);
+  return observations.map(observation =>
     input.store.persistObservation(observation, input.persisted_at));
 }

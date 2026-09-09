@@ -1,5 +1,6 @@
 import { JarvisError, progressFaultPoints, timestamp, type ProgressFaultPoint, type Row } from "./authority-db-base.js";
 import { GjcQuestionAuthorityDb } from "./gjc-question-store.js";
+import { isPersistenceTime } from "./personal-persistence-values.js";
 import type {
 	ContextPersistenceInput,
 	RecommendationActionTransition,
@@ -20,6 +21,11 @@ import type {
 export abstract class ProgressAuthorityDb extends GjcQuestionAuthorityDb {
 	persistObservation(value: unknown, now = timestamp()): StoredObservation {
 		return this.personalContext.persistObservation(value, now);
+	}
+	persistObservationBatch(values: readonly unknown[], now = timestamp()): readonly StoredObservation[] {
+		if (!Array.isArray(values) || values.length > 256) throw new JarvisError("PERSONAL_OBSERVATION_BATCH_INVALID");
+		if (!isPersistenceTime(now)) throw new JarvisError("PERSONAL_TIME_INVALID");
+		return this.db.transaction(() => Array.from(values, value => this.personalContext.persistObservation(value, now))).immediate();
 	}
 	persistContextSnapshot(value: ContextPersistenceInput, now = timestamp()): StoredContext {
 		return this.personalContext.persistContext(value, now);

@@ -46,6 +46,8 @@ export type PersonalObservationNormalizationInput = {
 };
 export type PersonalObservationPersistence = {
   readonly persistObservation: (value: unknown, now: string) => StoredObservation;
+  /** If supplied, the store owns one atomic batch transaction. */
+  readonly persistObservationBatch?: (values: readonly unknown[], now: string) => readonly StoredObservation[];
 };
 export type PersonalObservationPersistenceInput = {
   readonly input: PersonalObservationNormalizationInput;
