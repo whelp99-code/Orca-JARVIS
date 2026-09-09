@@ -1,0 +1,60 @@
+# Repeated collection contract investigation at 602b2fe
+
+This is an implementation design draft, not working collector evidence.
+
+Observed constraints:
+- personal-observations.ts derives task source ID from environment only; observation identity and idempotency derive from checkpoint while canonical bytes also include checked_at.
+- personal-observation-store.ts orders checkpoints strictly by observed_at within source_id. Existing immutable rows and migrations must remain unchanged.
+- personal-context-evidence.ts checks exact source ID, digest and observed_at, then reads stored freshness. A refresh receipt alone cannot extend an old observation's freshness for context consumers.
+- task-timeline.ts generated_at is the local read time; task.updated_at is source state time. Changing generated_at is not proof of a remote terminal read.
+- orca-bound-observation.ts authenticates the selected terminal binding through structured list/read matching but returns state unknown. Its output alone cannot justify working=true or a task completion claim.
+
+Required next implementation boundary:
+1. Introduce a versioned collected-snapshot representation, retaining the existing normalizer and immutable observation history for existing callers.
+2. Partition checkpoint streams by configured environment, worktree and task/binding identity. Scope membership must remain the configured source/worktree pair, separate from the derived stream ID.
+3. Preserve source_updated_at in the snapshot payload and use trusted collection completion as observation time only when an actual collector has read the source. Bind snapshot identity/checkpoint to that collection, so exact retries replay and new reads are distinct observations.
+4. Do not expose an arbitrary timestamp switch on the old normalize/admit API as a substitute for collection proof. Implement the producer and versioned admission together, collecting outside the SQLite write transaction.
+5. Recheck source version, binding identity, complete scope outcomes, timestamp bounds, cap status and suppression before admission. Context evidence must bind the newly recorded snapshot bytes.
+6. Validate unchanged task across two actual reads, two tasks with identical source update time, restart/replay, concurrent admission, stale binding, old snapshot resubmission, partial scope, source removal and context freshness at expiry.
+
+Known risks to resolve before activation:
+- A new snapshot ID must not evade an existing task/source suppression decision.
+- Snapshot volume needs an explicit retention path; one new permanent row per poll is not an acceptable implicit lifecycle.
+- A local task timeline and a remote terminal are different source claims. Prefer an honest local task-timeline collector first if no authenticated remote task-state contract is available.
+
+The initial investigation preserved product sources during canonical session 60065;
+that session subsequently completed successfully.
+
+## Revalidated compiled evidence after CLI work
+
+The compiled observation implementation remains unchanged from the accepted timeline
+completeness build. Repeated checkpoint probe: PERSONAL_OBSERVATION_IDENTITY_CONFLICT,
+zero failed-admission byte changes, two observations and one receipt. Replaying the
+old request does not make its expired receipt ready. Two tasks in the same environment
+with equal update time: normalized two records, one source ID, PERSONAL_CHECKPOINT_STALE,
+zero failed-admission byte changes.
+
+A third probe quarantined one observation, then admitted the same task/source with a
+new cursor and later valid source update time. The old receipt read unavailable and
+the new receipt read ready, with two stored observations. Current quarantine is exact
+projection-ID scoped. This is not evidence that existing policy promises source-wide
+quarantine, nor that a real provider bypassed an authorization boundary. It proves
+that changing observation IDs alone cannot preserve a desired source-wide hold.
+
+Decision for recurring collection: do not change the existing immutable observation
+contract in place, and do not silently reinterpret row quarantine as source quarantine.
+A versioned collector contract must name separate source/subject and snapshot identities
+and specify how an explicit source hold is created, checked, retained after source-row
+disposal, and released. Existing row suppression continues to protect historical rows.
+Collector activation remains held until this contract and its actual producer are tested
+together; unrelated development remains available.
+
+The first truthful source candidate is the local task timeline. A structured terminal
+read that yields state unknown must not be converted into verified working/completed
+state. Local timeline collection and remote terminal state collection need distinct
+source metadata and acceptance cases.
+
+Local QA evidence directory /home/jm/.cache/jarvis-test-runtime-qa-20260908:
+refresh-unchanged-checkpoint.json, refresh-multiple-tasks.json,
+refresh-source-quarantine-probe.json. These are isolated fixture observations, not
+production activation or resolved defects.
