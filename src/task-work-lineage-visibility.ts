@@ -1,7 +1,39 @@
 import type { AuthorityDb } from "./db.js";
-import type { MemoryProjectionAuthority } from "./memory-projection-authority.js";
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { parseTaskWorkLineage } from "./task-work-lineage.js";
 import { JarvisError } from "./db.js";
+
+/** Observations are scoped to this transaction; the reader cannot be used after it ends. */
+export function withVisibleControlCommandReader<T>(db: AuthorityDb,
+  consume: (read: (id: string) => Record<string, unknown> | undefined) => T): T {
+  return db.db.transaction(() => {
+    const projections = new MemoryProjectionAuthority(db);
+    projections.assertReady();
+    const rows = new Map<string, Record<string, unknown> | undefined>();
+    const payloads = new Map<string, boolean>(), tasks = new Map<string, boolean>();
+    const statement = db.db.prepare("SELECT * FROM control_command_requests WHERE request_id=?");
+    const read = (id: string) => {
+      if (!rows.has(id)) rows.set(id, statement.get(id) as Record<string, unknown> | undefined);
+      return rows.get(id);
+    };
+    const payloadSuppressed = (id: string) => {
+      if (!payloads.has(id)) payloads.set(id, projections.isSuppressed({ kind: "control_payload", id, component_id: id }));
+      return payloads.get(id)!;
+    };
+    const taskSuppressed = (id: string) => {
+      if (!tasks.has(id)) tasks.set(id, projections.isProjectionIdSuppressed(id));
+      return tasks.get(id)!;
+    };
+    let active = true;
+    try {
+      return consume(id => {
+        if (!active) throw new JarvisError("CONTROL_READ_SNAPSHOT_CLOSED");
+        const row = read(id);
+        return row && !payloadSuppressed(id) && visible(row, read, payloadSuppressed, taskSuppressed) ? row : undefined;
+      });
+    } finally { active = false; rows.clear(); payloads.clear(); tasks.clear(); }
+  }).deferred();
+}
 
 /** Resolve late ancestor suppression without recursion or writes. Excess depth is unavailable. */
 export function visibleTaskWorkLineage(db: AuthorityDb, row: Record<string, unknown>, projections: MemoryProjectionAuthority): boolean {

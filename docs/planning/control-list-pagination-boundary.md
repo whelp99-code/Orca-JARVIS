@@ -121,3 +121,29 @@ next implementation should reuse ancestor rows and suppression observations only
 inside a single page's read transaction. It must retain the 64-depth/cycle checks,
 revalidate on every new page, and preserve late ancestor quarantine behavior.
 No cross-request authority cache is justified by these measurements.
+
+## Page-local observation reuse
+
+The page reader now owns one deferred transaction and memoizes raw ancestor rows,
+payload suppression and task suppression inside that call. It still walks each
+root with an independent visited set and 64-step limit, checking every digest
+and timestamp edge. The callback reader rejects calls after closure; all maps are
+cleared on success or exception. No cached visibility verdict survives a page.
+
+The same compiled instrumented probe returned 657 SQL calls per page, down from
+38503. Five-sample p95: 10000 rows 41.72ms; 100000 rows 50.48ms. Response bytes
+remain 164286, 100 leaf results, DB changes 0. Optimized receipt:
+`/home/jm/.cache/jarvis-test-runtime-qa-20260908/control-page-deep-lineage-optimized.json`.
+These are separate synthetic runs, not a controlled production latency guarantee.
+
+Focused page/lineage/claim tests passed 3 files/4 tests; the expanded lineage-list
+test also passed after adding reader-lifetime and one-observation-per-identity
+checks. Typecheck, zero-warning lint and backend build exited 0. Independent
+review is pending. Final focused run including compiled CLI lineage and signed
+rework execution passed 4 files/10 tests. Full canonical verification predates
+this optimization.
+
+Residual: raw rows are retained for the current page, so distinct deep chains can
+increase peak memory (at most the scanned roots and their bounded ancestors).
+Payload byte budgets and concurrent-load acceptance remain open. The unpaged
+library compatibility path is unchanged.

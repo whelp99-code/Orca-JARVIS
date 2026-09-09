@@ -5,6 +5,7 @@ import { listControlCommands, readControlCommand } from "../../src/control-comma
 import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
 import { controlRequestPage, pendingControlSummary } from "../../src/dashboard/control-request-read.js";
 import { pageControlCommands } from "../../src/control-command-page.js";
+import { withVisibleControlCommandReader } from "../../src/task-work-lineage-visibility.js";
 
 it("reuses loaded ancestors within a list snapshot and observes quarantine on the next call", async () => {
   const f = await taskPublicationFixture();
@@ -33,6 +34,18 @@ it("reuses loaded ancestors within a list snapshot and observes quarantine on th
     const page = pageControlCommands(f.db);
     expect(page.requests).toEqual(listed);
     expect(page.page.next_cursor).toBeNull();
+    const escaped = withVisibleControlCommandReader(f.db, read => {
+      expect(read(root.request_id)).toBeDefined();
+      return read;
+    });
+    expect(() => escaped(root.request_id)).toThrow("CONTROL_READ_SNAPSHOT_CLOSED");
+    const pagePayload = vi.spyOn(MemoryProjectionAuthority.prototype, "isSuppressed");
+    const pageTask = vi.spyOn(MemoryProjectionAuthority.prototype, "isProjectionIdSuppressed");
+    try {
+      expect(pageControlCommands(f.db).requests).toEqual(listed);
+      expect(pagePayload).toHaveBeenCalledTimes(65);
+      expect(pageTask).toHaveBeenCalledTimes(1);
+    } finally { pagePayload.mockRestore(); pageTask.mockRestore(); }
     expect(controlRequestPage(f.db, f.now, { limit: 10 }).page).toMatchObject({ total: 64, returned: 10, has_more: true });
     expect(pendingControlSummary(f.db, f.now).total).toBe(64);
     expect(f.db.db.serialize().equals(before)).toBe(true);
