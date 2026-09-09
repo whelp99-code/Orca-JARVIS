@@ -31,7 +31,7 @@ export function createProductionMemoryAccessClaim(authority: AuthorityDb,
   const authorize = createProductionMemoryReadAuthorization(authority, config, purpose);
   if (authorize === undefined) return fail();
   return (request: MemoryAccessRequest, at: Date) => {
-    if ((purpose === "memory_status") !== (request.method === "sb_generation_status")) return fail();
+    if ((purpose === "memory_status") !== (request.method === "sb_generation_status" || request.method === "sb_request_status")) return fail();
     // A resolver must not change the exact request that will be signed.
     const observed = at.getTime();
     if (!Number.isFinite(observed)) return fail();

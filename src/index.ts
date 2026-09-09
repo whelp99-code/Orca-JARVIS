@@ -270,3 +270,5 @@ export { recordMemoryScopedOutboxAcceptance } from "./memory-scoped-outbox-resul
 export { verifySecondBrainScopedProof } from "./second-brain-scoped-proof.js";
 
 export { verifyMemoryScopedProviderWrite } from "./memory-scoped-provider-authority.js";
+
+export { parseSecondBrainScopedRequestStatus } from "./second-brain-scoped-request-status.js";

@@ -18,7 +18,7 @@ export type PhoneGatewayRequestCtx = {
   readonly upstream: string;
   readonly memoryContext?: ReturnType<typeof createPhoneMemoryContext>;
   readonly memoryAgentId?: string;
-  readonly memoryProfile?: "scoped-record-read-v2" | "scoped-record-read-v3";
+  readonly memoryProfile?: "scoped-record-read-v2" | "scoped-record-read-v3" | "scoped-record-read-v4";
 };
 
 export type DispatchUpdate = {

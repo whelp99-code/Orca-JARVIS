@@ -72,7 +72,7 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 			return Promise.reject(this.error("SECOND_BRAIN_CONTRACT_PROFILE_REQUIRED", "fatal", { method }));
 		if (method === "sb_submit_cancellation" && this.profile !== "cancellation-submit-schema7")
 			return Promise.reject(this.error("SECOND_BRAIN_CONTRACT_PROFILE_REQUIRED", "fatal", { method }));
-		if ((this.profile === "scoped-record-read-v1" || this.profile === "scoped-record-read-v2" || this.profile === "scoped-record-read-v3") && !frozenArgumentsMatch(method, snapshot, this.contract))
+		if ((this.profile === "scoped-record-read-v1" || this.profile === "scoped-record-read-v2" || this.profile === "scoped-record-read-v3" || this.profile === "scoped-record-read-v4") && !frozenArgumentsMatch(method, snapshot, this.contract))
 			return Promise.reject(this.error("SECOND_BRAIN_INVALID_ARGUMENTS", "fatal", { method }));
 		let argumentBytes: number; try {
 			argumentBytes = Buffer.byteLength(JSON.stringify(snapshot), "utf8"); } catch { return Promise.reject(
@@ -245,7 +245,7 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 export function createSecondBrainTransport( options: SecondBrainTransportOptions = {}, ): SecondBrainTransport {
 	const profile = options.contractProfile ?? process.env["JARVIS_SECOND_BRAIN_CONTRACT_PROFILE"]
 		?? SECOND_BRAIN_CONTRACT_PROFILE;
-	if (profile !== "scoped-record-read-v3" && profile !== "scoped-record-read-v2" && profile !== "scoped-record-read-v1" && profile !== "task32-schema4" && profile !== "remember-schema5" && profile !== "cancellation-schema6" && profile !== "cancellation-submit-schema7") {
+	if (profile !== "scoped-record-read-v4" && profile !== "scoped-record-read-v3" && profile !== "scoped-record-read-v2" && profile !== "scoped-record-read-v1" && profile !== "task32-schema4" && profile !== "remember-schema5" && profile !== "cancellation-schema6" && profile !== "cancellation-submit-schema7") {
 		throw new SecondBrainTransportError("SECOND_BRAIN_CONTRACT_PROFILE_INVALID", "fatal", { generation: 0 });
 	}
 	return new SupervisedSecondBrainTransport({ ...options, contractProfile: profile });

@@ -15,6 +15,6 @@ for (const name of ["second-brain-mcp-v1.json", "second-brain-mcp-v1.json.sha256
   "second-brain-mcp-v5.json", "second-brain-mcp-v5.json.sha256",
   "second-brain-scoped-read-v1.json", "second-brain-scoped-read-v1.json.sha256",
   "second-brain-scoped-read-v2.json", "second-brain-scoped-read-v2.json.sha256",
-  "second-brain-scoped-read-v3.json", "second-brain-scoped-read-v3.json.sha256"]) {
+  "second-brain-scoped-read-v4.json", "second-brain-scoped-read-v4.json.sha256", "second-brain-scoped-read-v3.json", "second-brain-scoped-read-v3.json.sha256"]) {
   await cp(join("contracts", name), join(output, "contracts", name));
 }

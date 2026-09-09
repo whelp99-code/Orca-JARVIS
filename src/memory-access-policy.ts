@@ -68,7 +68,7 @@ function resolveFileScope(policyPath: string, provider: string,
         || typeof row.agent_id !== "string" || !id.test(row.agent_id)
         || (!agentPolicy && (typeof row.session_id !== "string" || !id.test(row.session_id)))
         || !strings(row.projects, item => item.startsWith("project:") && id.test(item) && id.test(item.slice(8)))
-        || !strings(row.methods, item => item === "sb_read_page" || item === "sb_search" || item === "sb_generation_status" || (version === 3 && item === "sb_write_request"))) return undefined;
+        || !strings(row.methods, item => item === "sb_read_page" || item === "sb_search" || item === "sb_generation_status" || (version === 3 && (item === "sb_write_request" || item === "sb_request_status")))) return undefined;
       const key = agentPolicy ? row.agent_id : `${row.agent_id}\0${row.session_id}`;
       if (seen.has(key)) return undefined;
       seen.add(key);
@@ -83,7 +83,7 @@ function resolveFileScope(policyPath: string, provider: string,
 }
 
 
-const READ_METHODS = new Set(["sb_read_page", "sb_search", "sb_generation_status"]);
+const READ_METHODS = new Set(["sb_read_page", "sb_search", "sb_generation_status", "sb_request_status"]);
 
 export function createFileMemoryAccessScopeResolver(policyPath: string, provider: string,
   getSession: () => AuthenticatedMemorySession | undefined): MemoryAccessScopeResolver {

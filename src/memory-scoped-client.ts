@@ -1,3 +1,6 @@
+import { parseMemoryScopedWriteRequestJson } from "./memory-scoped-write-codec.js";
+import { parseSecondBrainScopedWriteAccepted } from "./second-brain-scoped-write-result.js";
+import { parseSecondBrainScopedRequestStatus } from "./second-brain-scoped-request-status.js";
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./db.js";
@@ -14,7 +17,7 @@ type Bundle = ReturnType<Issuer>;
 export type MemoryScopedClientOptions = {
   readonly issue: Issuer;
   readonly status_issue?: Issuer;
-  readonly profile?: "scoped-record-read-v1" | "scoped-record-read-v2" | "scoped-record-read-v3";
+  readonly profile?: "scoped-record-read-v1" | "scoped-record-read-v2" | "scoped-record-read-v3" | "scoped-record-read-v4";
   readonly transport: SecondBrainTransport;
   readonly now: () => Date;
   readonly budgets: SecondBrainAdapterBudgets;
@@ -33,10 +36,11 @@ const denied = (): never => { throw new JarvisError("MEMORY_SCOPED_READ_UNAVAILA
 /** Connects the current authenticated scope issuer, supervised transport and record
  * consumer. Does not own sessions, cache permissions, or attest task success. */
 export function createMemoryScopedClient(options: MemoryScopedClientOptions) {
-  async function read(method: "sb_read_page" | "sb_search" | "sb_generation_status", arguments_: Readonly<Record<string, unknown>>, signal?: AbortSignal, artifact?: ReturnType<typeof rememberedArtifactExpectation>) {
+  async function read(method: "sb_read_page" | "sb_search" | "sb_generation_status" | "sb_request_status", arguments_: Readonly<Record<string, unknown>>, signal?: AbortSignal, artifact?: ReturnType<typeof rememberedArtifactExpectation>, historical?: { request: MemoryScopedWriteRequestMaterial; acceptance: unknown }) {
     const request: MemoryAccessRequest = Object.freeze({ method, arguments: Object.freeze({ ...arguments_ }) });
-    if (method === "sb_generation_status" && (options.profile !== "scoped-record-read-v2" && options.profile !== "scoped-record-read-v3")) return denied();
-    const issue = method === "sb_generation_status" ? options.status_issue : options.issue;
+    if (method === "sb_generation_status" && (options.profile !== "scoped-record-read-v2" && options.profile !== "scoped-record-read-v3" && options.profile !== "scoped-record-read-v4")) return denied();
+    if (method === "sb_request_status" && options.profile !== "scoped-record-read-v4") return denied();
+    const issue = ["sb_generation_status", "sb_request_status"].includes(method) ? options.status_issue : options.issue;
     if (issue === undefined) return denied();
     const bundle = issue(request, new Date(options.now().getTime()));
     if (artifact !== undefined && (bundle.access_claim.provider_instance_id !== artifact.provider
@@ -65,17 +69,31 @@ export function createMemoryScopedClient(options: MemoryScopedClientOptions) {
         + canonicalize(bundle.access_claim)).digest("hex"),
       authorized_until: bundle.access_claim.expires_at, fence: bundle.read_fence, checked_at: checked,
       budgets: options.budgets, max_age_ms: options.max_age_ms, expiry_ms: options.expiry_ms });
+    if (method === "sb_request_status") {
+      if (historical === undefined || !("request_status" in parsed)) return denied();
+      const status = parseSecondBrainScopedRequestStatus(parsed.request_status, historical.request, historical.acceptance, checked);
+      recheck();
+      return { generation: parsed.generation, pages: [], request_status: status };
+    }
     recheck();
     return parsed;
   }
   return {
+    requestStatus: async (request: MemoryScopedWriteRequestMaterial, acceptance: unknown, signal?: AbortSignal) => {
+      const accepted = parseSecondBrainScopedWriteAccepted(acceptance, request, new Date(options.now().getTime()));
+      const snapshot = parseMemoryScopedWriteRequestJson(canonicalize(request), request.provider_instance_id, new Date(accepted.accepted_at));
+      const expected = rememberedArtifactExpectation(snapshot, accepted, new Date(options.now().getTime()));
+      const response = await read("sb_request_status", { request: snapshot }, signal, expected, { request: snapshot, acceptance: accepted });
+      if (!("request_status" in response)) return denied();
+      return { generation: response.generation, status: response.request_status };
+    },
     readRememberedArtifact: async (request: MemoryScopedWriteRequestMaterial, acceptance: unknown, signal?: AbortSignal) => {
       const expected = rememberedArtifactExpectation(request, acceptance, new Date(options.now().getTime()));
       const response = await read("sb_read_page", { id: expected.page_id }, signal, expected);
       return verifyRememberedArtifactRead(expected, response);
     },
     authorizationIdentity: () => {
-      if ((options.profile !== "scoped-record-read-v2" && options.profile !== "scoped-record-read-v3") || options.status_issue === undefined) return denied();
+      if ((options.profile !== "scoped-record-read-v2" && options.profile !== "scoped-record-read-v3" && options.profile !== "scoped-record-read-v4") || options.status_issue === undefined) return denied();
       return identity(options.status_issue({ method: "sb_generation_status", arguments: {} }, new Date(options.now().getTime())));
     },
     status: (signal?: AbortSignal) => read("sb_generation_status", {}, signal),

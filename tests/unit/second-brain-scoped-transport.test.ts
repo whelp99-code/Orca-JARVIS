@@ -55,3 +55,21 @@ it('pins v3 separately and refuses older contracts, writes and missing claims', 
     expect(starts).toBe(0);
   } finally { await transport.close(); }
 });
+
+it('pins v4 request status separately with exact claim and request arguments', async () => {
+  const v4Path = path.replace('-v1.json', '-v4.json');
+  const v4 = loadSecondBrainContract(v4Path, 'scoped-record-read-v4') as typeof contract;
+  const declared = Object.entries(v4.tools).map(([name, tool]) => ({ name, inputSchema: tool.arguments }));
+  expect(inspectFrozenSchemas(declared, v4).matches).toBe(true);
+  expect(Object.keys(v4.tools).sort()).toEqual(['sb_generation_status', 'sb_read_page', 'sb_request_status', 'sb_search']);
+  expect(() => loadSecondBrainContract(v4Path, 'scoped-record-read-v3')).toThrow();
+  let starts = 0;
+  const transport = createSecondBrainTransport({ contractProfile: 'scoped-record-read-v4', contractPath: v4Path,
+    execFile: () => { starts++; throw new Error('must not spawn'); } });
+  try {
+    await expect(transport.call('sb_request_status', { request: {} })).rejects.toThrow('SECOND_BRAIN_INVALID_ARGUMENTS');
+    await expect(transport.call('sb_request_status', { request_id: 'wrong', read_fence: {}, access_claim: {} })).rejects.toThrow('SECOND_BRAIN_INVALID_ARGUMENTS');
+    await expect(transport.call('sb_write_request', { request: {} })).rejects.toThrow('SECOND_BRAIN_INVALID_ARGUMENTS');
+    expect(starts).toBe(0);
+  } finally { await transport.close(); }
+});

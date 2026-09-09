@@ -117,3 +117,19 @@ it("requires explicit v3 write grants and keeps read claims read-only", () => {
   current = session; expect(write(new Date(session.expires_at))).toBeUndefined();
   f.save({ ...base, schema_version: 3, agents: [] }); expect(write(now)).toBeUndefined();
 });
+
+it('requires an explicit v3 request-status grant and never grants a write from it', () => {
+  const f = fixture();
+  const read = createFileMemoryAccessScopeResolver(f.path, 'provider:test', () => session);
+  const query = { method: 'sb_request_status', arguments: { request: {} } };
+  expect(read(now, query)).toBeUndefined();
+  const base = Object.fromEntries(Object.entries(policy).filter(([key]) => key !== 'sessions'));
+  const grant = { agent_id: 'agent:test', projects: ['project:a'], methods: ['sb_request_status'] };
+  f.save({ ...base, schema_version: 2, agents: [grant] });
+  expect(read(now, query)).toBeUndefined();
+  f.save({ ...base, schema_version: 3, agents: [grant] });
+  expect(read(now, query)?.projects).toEqual(['project:a']);
+  expect(createFileMemoryWriteScopeResolver(f.path, 'provider:test', () => session)(now)).toBeUndefined();
+  f.save({ ...base, schema_version: 3, agents: [] });
+  expect(read(now, query)).toBeUndefined();
+});
