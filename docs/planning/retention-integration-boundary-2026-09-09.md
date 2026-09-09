@@ -37,9 +37,11 @@ No historical migration bytes or guards were changed during this inspection.
    payload as an empty successful observation, or return a digest for changed bytes.
 4. For SQL-only retirement, keep the existing atomic policy/lease checks and prove
    rollback on expiry, database failure and policy mismatch.
-5. File cleanup needs a separate durable operation with recovery and authority
-   checks around each irreversible step. It cannot be injected into the synchronous
-   SQL adapter or reported complete when only a cleanup request was created.
+5. File cleanup must execute outside the RetentionRuntime transaction. Reuse the
+   existing committed candidate/outbox lifecycle where its eligibility applies; a
+   new generic cutoff policy needs its own durable authorization and recovery.
+   Do not inject filesystem effects into the synchronous SQL adapter or report
+   completion when only a cleanup request was created.
 6. Connect the supported lifecycle to the service with an explicit configuration,
    daily idempotency, bounded batches, restart recovery and per-class results.
    Unsupported classes remain explicit failures/unavailable, never zero-count success.
@@ -57,3 +59,34 @@ retirement; SQL deletion alone does not establish physical storage erasure.
 
 This design keeps backlog 07/12 open. It identifies the required lifecycle work;
 it does not replace actual retention with a status-only scheduler.
+
+
+## Existing reusable file lifecycle — verified follow-up
+
+`memory-outbox.ts` reconcileOnce invokes cleanupMemoryCandidateReviews after command
+reconciliation. Cleanup errors are reported independently and retried on the next
+cycle without changing a committed settlement. This is existing functionality,
+not an absent retention implementation for all file payloads.
+
+`memory-candidate-review-cleanup.ts` permits terminal candidates/outboxes and expired
+unused automatically approved candidates; queued/claimed/dispatching/reconciling
+outboxes retain their source bytes. Each candidate is checked under an immediate
+transaction against persisted digests before the file is removed. The immutable
+classification snapshot is preserved. This eligibility is not a generic cutoff.
+
+Focused verification at baseline 0179551:
+- Command: node scripts/run-tests.mjs integration
+  tests/integration/memory-auto-expiry-cleanup.test.ts
+  tests/integration/memory-outbox-saga.test.ts
+- 2 files, 11 tests passed; exit 0; 4.93 seconds.
+- Real temporary file deletion, expiry-boundary retention for queued work, preserved
+  classification, cleanup-failure retry and settled outcomes are exercised.
+- Evidence: /home/jm/.cache/jarvis-test-runtime-qa-20260908/retention-existing-spool-lifecycle-retry.log.
+- Direct npx vitest attempt failed before collecting tests with two system -122
+  write errors. The project runner selected its managed temporary environment and
+  passed; no tests or guards were weakened.
+
+Next implementation should first expose this existing lifecycle through the
+configured service where needed, with bounded work and separate cleanup results.
+The SQL RetentionRuntime adapter remains unsuitable for that composition. General
+observation/context retirement still needs the reader and reference audit above.
