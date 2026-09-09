@@ -19,10 +19,11 @@ readonly CURRENT="${RUNTIME_ROOT}/current"
 }
 
 cd "${WORKTREE}"
-npm run build
 
 dependency_release="$(readlink -f -- "${CONTROL_ROOT}/current")"
 "${NODE_BIN}" "${CONTROL_VERIFIER}" --verify-release "${dependency_release}" --runtime-root "${CONTROL_ROOT}" >/dev/null
+"${NODE_BIN}" "${WORKTREE}/scripts/check-release-dependency-reuse.mjs" "${WORKTREE}" "${dependency_release}" >/dev/null
+npm run build
 
 mkdir -p "${WORKTREE}/.runtime-tmp" "${WORKTREE}/.runtime-tmp/authority-sidecars"
 stage="$(mktemp -d "${WORKTREE}/.runtime-tmp/authority-stage-XXXXXXXX")"
@@ -37,6 +38,7 @@ cp -al -- "${dependency_release}/node_modules" "${stage}/node_modules"
 for name in package.json package-lock.json dist migrations ops deploy config contracts; do
   [[ -e "${WORKTREE}/${name}" ]] && cp -a -- "${WORKTREE}/${name}" "${stage}/"
 done
+"${NODE_BIN}" "${WORKTREE}/scripts/check-release-dependency-reuse.mjs" "${stage}" "${stage}" >/dev/null
 
 source_head="$(git rev-parse HEAD)"
 source_tree="$(git rev-parse HEAD^{tree})"

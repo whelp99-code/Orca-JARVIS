@@ -57,10 +57,14 @@ export type ManifestInput = {
 
 function walk(root: string, dir: string, entries: ManifestEntry[], excludeManifest: boolean): void {
   for (const name of readdirSync(dir).sort()) {
-    if (excludeManifest && name === MANIFEST_NAME) continue;
     const full = join(dir, name);
     const rel = relative(root, full).split(sep).join("/");
     const stat = lstatSync(full);
+    if (excludeManifest && dir === root && name === MANIFEST_NAME) {
+      if (stat.isSymbolicLink()) throw new PersonalOsError("E_UNSAFE_SYMLINK");
+      if (!stat.isFile()) throw new PersonalOsError("E_STAGE_INVALID");
+      continue;
+    }
     const mode = stat.mode & 0o777;
     if (stat.isDirectory()) {
       entries.push({ path: rel, type: "directory", mode, size: 0, sha256: null, target: null });

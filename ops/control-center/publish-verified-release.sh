@@ -19,13 +19,15 @@ readonly CURRENT="${RUNTIME_ROOT}/current"
 }
 
 cd "${WORKTREE}"
-npm run build
 
 dependency_release="$(readlink -f -- "${CURRENT}")"
 [[ "$(dirname -- "${dependency_release}")" == "$(readlink -f -- "${RUNTIME_ROOT}/releases")" ]] || {
   printf 'CONTROL_CENTER_CURRENT_INVALID\n' >&2
   exit 1
 }
+
+"${NODE_BIN}" "${WORKTREE}/scripts/check-release-dependency-reuse.mjs" "${WORKTREE}" "${dependency_release}" >/dev/null
+npm run build
 
 stage="$(mktemp -d "${RUNTIME_ROOT}/.stage-control-center-XXXXXXXX")"
 cleanup() {
@@ -39,6 +41,7 @@ cp -al -- "${dependency_release}/node_modules" "${stage}/node_modules"
 for name in package.json package-lock.json dist migrations ops deploy config contracts; do
   [[ -e "${WORKTREE}/${name}" ]] && cp -a -- "${WORKTREE}/${name}" "${stage}/"
 done
+"${NODE_BIN}" "${WORKTREE}/scripts/check-release-dependency-reuse.mjs" "${stage}" "${stage}" >/dev/null
 if [[ -f "${WORKTREE}/scripts/dashboard-authority-fingerprint.mjs" ]]; then
   mkdir -p "${stage}/scripts"
   cp -a -- "${WORKTREE}/scripts/dashboard-authority-fingerprint.mjs" "${stage}/scripts/"

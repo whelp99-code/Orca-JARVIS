@@ -1997,3 +1997,25 @@ Backlog01–25 remains open, including broader retention, refresh and production
   verify-cleanup-service-retry-result.json, verify-cleanup-service-before.json.
 - This verifies the current candidate cleanup implementation. Broader retention,
   provider refresh, operational activation and the remaining backlog01–25 are open.
+
+## Main follow-up integration (195b1a7)
+
+Integrated five main commits through 195b1a7 into development d14dd6c. Three
+conflicted files resolved by retaining development runtime-dependency hashing and
+main root-only release-manifest exclusion, both test sets, and expanded memory MCP
+evidence/omission guidance with the existing lazy public SDK-loading boundary.
+Dependency-reuse preflight and bounded portfolio stdin were also incorporated.
+
+Focused validation: unit3files20tests and integration3files22tests passed. Typecheck,
+zero-warning lint and backend build exited0. Integration includes isolated release
+rehearsal, actual compiled portfolio CLI and phone-memory client behavior. A compiled
+probe additionally verified that changing a root manifest-named file changes the
+runtime dependency digest (entry_count1), preserving the false-exclusion mode.
+Logs: /home/jm/.cache/jarvis-test-runtime-qa-20260908/main-five-unit.log and
+main-five-integration.log. Production publisher/service/current were not activated.
+Canonical gate on this integration is pending; earlier3920-test gate predates it.
+
+Independent read-only review by /root/refresh_receipt_review returned ship.
+Reviewer measured unmerged entries0, conflict markers0 and diff-check0. Parent
+read back completed logs confirming unit20 and integration22 before commit.
+Observed reviewer model/effort and API-equivalent token cost are unavailable.
