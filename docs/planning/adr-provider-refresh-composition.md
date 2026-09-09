@@ -64,3 +64,19 @@ contract and must not promote retrieved memory into owner approval.
 
 These are implementation requirements, not passing-test claims. The remote-audit
 service verification currently running is independent of this source-refresh gap.
+
+## Compiled persistence boundary experiment
+
+On the compiled implementation, a fixture SQLite trigger aborted the second
+observation insertion. Calling normalizeAndPersistPersonalObservations directly
+left1 observation and1 checkpoint; wrapping the same call in an immediate outer
+transaction left0 observations and0 checkpoints. Both fixture databases had0
+foreign-key violations and were closed/removed. This establishes that the existing
+persistence wrapper is per-observation atomic, not batch atomic. The refresh owner
+must cover observations and its completion receipt in the same outer transaction.
+It does not require changing the generic store-only normalization interface.
+
+Evidence (exit0):
+`/home/jm/.cache/jarvis-test-runtime-qa-20260908/observation-batch-atomicity.mjs`
+and `observation-batch-atomicity.json` in the same directory. No provider collection
+or production write was performed by this experiment.
