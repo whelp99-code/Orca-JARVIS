@@ -11,6 +11,18 @@ afterEach(() => {
 });
 
 describe("PersonalOsRuntime retention owner", () => {
+  it.each([
+    { notBefore: "invalid" }, { expiresAt: "invalid" }, { notBefore: "2026-08-28" },
+    { expiresAt: T1 }, { notBefore: T5, expiresAt: T2 },
+  ])("rejects unusable retention schedules before persistence %j", async schedule => {
+    const db = await personalDb(); open.push(db);
+    const runtime = new PersonalOsRuntime({ db: db.db, now: () => new Date(T1) });
+    const before = db.db.serialize();
+    expect(() => runtime.retention.createJob({ jobId: "bad-schedule", jobKey: "bad-schedule", idempotencyKey: "bad-schedule",
+      dataClass: "notification", notBefore: T0, expiresAt: T5, createdAt: T1, cutoff: T0, ...schedule }))
+      .toThrow("E_RETENTION_POLICY");
+    expect(db.db.serialize().equals(before)).toBe(true);
+  });
   it.each([T2, "2026-08-28", "invalid"])("rejects invalid creation cutoff %s without inserting a job", async cutoff => {
     const db = await personalDb(); open.push(db);
     const runtime = new PersonalOsRuntime({ db: db.db, now: () => new Date(T1) });

@@ -58,7 +58,9 @@ export class RetentionRuntime {
   ) { this.owner = `${owner}:${process.pid}:${randomUUID()}`; }
 
   createJob(input: RetentionJobInput): void {
-    if (!validTimestamp(input.cutoff) || !validTimestamp(input.createdAt) || input.cutoff > input.createdAt) {
+    if (!validTimestamp(input.cutoff) || !validTimestamp(input.createdAt) || input.cutoff > input.createdAt
+      || !validTimestamp(input.notBefore) || !validTimestamp(input.expiresAt)
+      || input.expiresAt <= input.notBefore || input.expiresAt <= input.createdAt) {
       throw new PersonalOsError("E_RETENTION_POLICY");
     }
     this.db

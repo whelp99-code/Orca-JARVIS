@@ -2061,3 +2061,17 @@ Observed reviewer model/effort and API-equivalent token cost are unavailable.
 - Parent inspected complete diff; this bounded read-only CLI addition did not use delegated review.
   Prior3946-test canonical gate predates this addition. No production activation.
 - API-equivalent cost unavailable: per-call token usage and runtime pricing scope not observed.
+
+## Retention creation schedule validation
+
+- Five new regression cases failed before the change: four returned raw SQLite constraint errors,
+  and a job already expired at its creation timestamp was inserted successfully.
+- createJob now checks canonical notBefore/expiresAt and requires expiry strictly after
+  both notBefore and createdAt before inserting. Existing migration bytes are unchanged.
+- Retention runtime, remote audit adapter/service and reviewability:4files41tests passed.
+  Typecheck, zero-warning lint and backend build exited0.
+- A separate compiled Node process rejected creation at expiry with unchanged database bytes,
+  then created, claimed and completed a valid job using an isolated empty-scan adapter.
+  This verifies the runtime lifecycle, not production deletion or a new retention adapter.
+- Parent inspected the bounded validation diff. No delegated review or production activation.
+  General retention integration and the full backlog remain open.
