@@ -22,11 +22,14 @@ import { executePreGjcCommand } from "./cli-pre-gjc-commands.js";
 import { executeStateCommand } from "./cli-state-commands.js";
 import { readRemoteAuditHistory } from "./remote-audit-history.js";
 import { AuthorityDb, JarvisError } from "./db.js";
+import { executeLocalTimeline, localTimelinePreflight } from "./cli-local-timeline.js";
 
 const CLI_HELP =
   "JARVIS — agent-ops runtime\n"
   + "Commands: init, db migrate/rebuild-projections, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, "
   + "observe, pre-gjc, capabilities, team, portfolio, status, daily, routing\n"
+  + "timeline register|collect|hold|release TASK_ID --db PATH: manage local task snapshots (64 subjects maximum)\n"
+  + "timeline snapshot TASK_ID COLLECTION_ID --db PATH | timeline expire --db PATH: read exact snapshot or clear expired payloads\n"
   + "routing classify REQUEST.json POLICY.json: preview literal routing rules; no database or agent execution\n"
   + "routing executors | routing executor ID: inspect compiled registrations and configuration presence; no readiness probe\n"
   + "routing validate-plan ID PLAN.json: validate registered input structure; no approval, repository or readiness checks\n"
@@ -51,6 +54,7 @@ const CLI_HELP =
   + "memory outbox list [--limit N]: inspect bounded memory delivery state";
 
 const COMMAND_HANDLERS: readonly CliCommandHandler[] = [
+  executeLocalTimeline,
   executeCoreCommand,
   executeControlCommand,
   executeLiveCommand,
@@ -112,6 +116,7 @@ export async function execute(
   })();
   const [command, subcommand, argument, fourth, fifth, sixth] = parsed.positionals;
   const values = normalizeCliValues(parsed.values);
+  const localTimeline = localTimelinePreflight(parsed.positionals, values);
   if ((values["memory-review-cleanup-root"] !== undefined || values["memory-review-cleanup-limit"] !== undefined)
     && (command !== "service" || !["once", "run"].includes(subcommand ?? ""))) {
     throw new JarvisError("MEMORY_REVIEW_CLEANUP_CONFIG_INVALID");
@@ -188,8 +193,10 @@ export async function execute(
     try { if (!statSync(values.db).isFile()) throw new Error(); }
     catch { throw new JarvisError("TASK_PERFORMANCE_DATABASE_UNAVAILABLE"); }
   }
-  const readOnlyReport = auditHistory || performanceReport || routingShadow;
-  const db = new AuthorityDb(values.db, undefined, readOnlyReport ? { fileMustExist: true, readonly: true } : undefined);
+  const readOnlyReport = auditHistory || performanceReport || routingShadow || (localTimeline && subcommand === "snapshot");
+  const dbOptions = readOnlyReport ? { fileMustExist: true, readonly: true }
+    : localTimeline ? { fileMustExist: true } : undefined;
+  const db = new AuthorityDb(values.db, undefined, dbOptions);
   const context: CliCommandContext = {
     args,
     values,
