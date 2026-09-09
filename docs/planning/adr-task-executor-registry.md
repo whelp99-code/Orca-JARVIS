@@ -163,3 +163,34 @@ This is a concrete adapter acceptance checklist, not an implementation or claim
 that the inspected CLI lacks all possible isolation mechanisms. The installed
 binary alone is insufficient to enable the executor. Existing Claude development
 and other backlog items remain in scope.
+
+
+## 2026-09-10 Codex feature override readback
+
+Official configuration reference fetched from
+https://learn.chatgpt.com/docs/config-file/config-reference (redirect from
+https://developers.openai.com/codex/config-reference/) documents features.shell_tool,
+features.unified_exec and features.multi_agent as separate switches. It also describes
+app enabled settings and plugin-specific MCP enabled settings. These are configuration
+surfaces, not proof of an empty effective tool inventory.
+
+Read-only installed CLI0.153.4 experiment:
+
+```
+codex features list --disable shell_tool --disable unified_exec --disable multi_agent
+multi_agent   stable false
+shell_tool    stable false
+unified_exec  stable true
+```
+
+A separate `codex features list -c features.unified_exec=false` also reported
+unified_exec=true. Both commands exited0. This was the current local effective
+configuration; no model prompt ran. Do not infer either that exec tools are exposed
+when shell_tool=false, or that tool execution is fully disabled, from this feature
+listing alone. The override/readback discrepancy requires an actual tool-inventory
+and side-effect isolation probe before compiled registration.
+
+Raw non-secret feature-list receipts: shared QA codex-candidate-features.txt and
+codex-unified-exec-override.txt. No user configuration or auth file was edited.
+No unsupported feature key was invented, no bypass flag was used, and the current
+Codex execution hold remains pending effective-tool evidence.
