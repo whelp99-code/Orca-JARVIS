@@ -10,7 +10,7 @@ import {
   type TimelineEventSink,
   type TimelineGraph,
 } from "./task-timeline-model.js";
-import { TaskTimelineQuery } from "./task-timeline-query.js";
+import { groupTimelineRows, TaskTimelineQuery } from "./task-timeline-query.js";
 
 export class TaskTimelineAuthorityEvents {
   private readonly query: TaskTimelineQuery;
@@ -158,12 +158,13 @@ export class TaskTimelineAuthorityEvents {
           created_at: string(row.created_at) });
       }
     }
-    for (const id of graphIds(graph)) {
-      for (const row of this.query.rows(
-        "SELECT * FROM control_events WHERE correlation_id=? OR subject=? ORDER BY seq",
-        id,
-        id,
-      )) {
+    const ids = graphIds(graph);
+    const encoded = JSON.stringify([...ids]);
+    const events = groupTimelineRows(this.query.rows(
+      "SELECT * FROM control_events WHERE correlation_id IN (SELECT value FROM json_each(?)) " +
+        "OR subject IN (SELECT value FROM json_each(?)) ORDER BY seq", encoded, encoded), ["correlation_id", "subject"]);
+    for (const id of ids) {
+      for (const row of events.get(id) ?? []) {
         const eventType = string(row.event_type);
         sink({ event_id: string(row.event_id), task_id: taskId, source: "control",
           kind: eventType.startsWith("workflow.") ? "workflow" : "command",

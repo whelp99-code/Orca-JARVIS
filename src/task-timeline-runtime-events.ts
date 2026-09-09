@@ -11,7 +11,7 @@ import {
   type TimelineEventSink,
   type TimelineGraph,
 } from "./task-timeline-model.js";
-import { TaskTimelineQuery } from "./task-timeline-query.js";
+import { groupTimelineRows, TaskTimelineQuery } from "./task-timeline-query.js";
 
 export class TaskTimelineRuntimeEvents {
   private readonly query: TaskTimelineQuery;
@@ -74,11 +74,18 @@ export class TaskTimelineRuntimeEvents {
   }
 
   private addGjcEvents(taskId: string, graph: TimelineGraph, sink: TimelineEventSink): void {
-    for (const intent of this.query.inRows(
-      "SELECT * FROM gjc_intents WHERE intent_id IN",
-      graph.intentIds,
-      "ORDER BY created_at,intent_id",
-    )) {
+    const intents = this.query.inRows(
+      "SELECT * FROM gjc_intents WHERE intent_id IN", graph.intentIds, "ORDER BY created_at,intent_id");
+    const ids = intents.map(intent => string(intent.intent_id));
+    const events = groupTimelineRows(this.query.inRows(
+      "SELECT * FROM gjc_intent_events WHERE intent_id IN", ids, "ORDER BY sequence"), ["intent_id"]);
+    const dispatches = groupTimelineRows(this.query.inRows(
+      "SELECT * FROM gjc_dispatch_receipts WHERE intent_id IN", ids, "ORDER BY accepted_at,intent_id"), ["intent_id"]);
+    const answers = groupTimelineRows(this.query.inRows(
+      "SELECT * FROM gjc_answer_receipts WHERE intent_id IN", ids, "ORDER BY completed_at,intent_id"), ["intent_id"]);
+    const questions = groupTimelineRows(this.query.inRows(
+      "SELECT * FROM gjc_questions WHERE intent_id IN", ids, "ORDER BY created_at,question_id"), ["intent_id"]);
+    for (const intent of intents) {
       const intentId = string(intent.intent_id);
       sink({ event_id: `gjc:${intentId}:state`, task_id: taskId, source: "gjc", kind: "agent",
         actor: "gjc-coordinator", title: `gjc.${string(intent.kind)}`,
@@ -86,37 +93,25 @@ export class TaskTimelineRuntimeEvents {
           continuation_id: intent.continuation_id, attempts: intent.attempts,
           failure_code: intent.failure_code, receipt: parse(intent.receipt_json) },
         evidence_refs: evidence(intent.payload_digest), created_at: string(intent.created_at) });
-      for (const row of this.query.rows(
-        "SELECT * FROM gjc_intent_events WHERE intent_id=? ORDER BY sequence",
-        intentId,
-      )) {
+      for (const row of events.get(intentId) ?? []) {
         sink({ event_id: `gjc-event:${string(row.sequence)}`, task_id: taskId, source: "gjc",
           kind: "agent", actor: "gjc-runtime", title: string(row.event_type),
           status: string(row.event_type), payload: parse(row.payload_json), evidence_refs: [],
           created_at: string(row.created_at) });
       }
-      for (const row of this.query.rows(
-        "SELECT * FROM gjc_dispatch_receipts WHERE intent_id=? ORDER BY accepted_at,intent_id",
-        intentId,
-      )) {
+      for (const row of dispatches.get(intentId) ?? []) {
         sink({ event_id: `gjc-dispatch-receipt:${intentId}`, task_id: taskId, source: "gjc",
           kind: "agent", actor: "gjc-coordinator", title: "gjc.dispatch.receipt",
           status: "accepted", payload: parse(row.receipt_json), evidence_refs: [],
           created_at: string(row.accepted_at) });
       }
-      for (const row of this.query.rows(
-        "SELECT * FROM gjc_answer_receipts WHERE intent_id=? ORDER BY completed_at,intent_id",
-        intentId,
-      )) {
+      for (const row of answers.get(intentId) ?? []) {
         sink({ event_id: `gjc-answer-receipt:${intentId}`, task_id: taskId, source: "gjc",
           kind: "agent", actor: "gjc-coordinator", title: "gjc.answer.receipt",
           status: "completed", payload: parse(row.receipt_json), evidence_refs: [],
           created_at: string(row.completed_at) });
       }
-      for (const row of this.query.rows(
-        "SELECT * FROM gjc_questions WHERE intent_id=? ORDER BY created_at,question_id",
-        intentId,
-      )) {
+      for (const row of questions.get(intentId) ?? []) {
         sink({ event_id: string(row.question_id), task_id: taskId, source: "gjc",
           kind: "approval", actor: "gjc-coordinator", title: "agent.question",
           status: string(row.state), payload: parse(row.snapshot_json),

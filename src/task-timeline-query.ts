@@ -23,3 +23,17 @@ export class TaskTimelineQuery {
     return Number(this.row("SELECT total_changes() AS count")?.count ?? 0);
   }
 }
+
+/** Preserve query order for each lookup key, including rows matching multiple keys. */
+export function groupTimelineRows(rows: readonly Row[], columns: readonly string[]): Map<string, Row[]> {
+  const groups = new Map<string, Row[]>();
+  for (const row of rows) {
+    const keys = new Set(columns.map(column => row[column]).filter((key): key is string => typeof key === "string"));
+    for (const key of keys) {
+      const existing = groups.get(key);
+      if (existing) existing.push(row);
+      else groups.set(key, [row]);
+    }
+  }
+  return groups;
+}

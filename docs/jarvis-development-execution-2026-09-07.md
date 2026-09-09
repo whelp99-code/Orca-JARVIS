@@ -1794,3 +1794,22 @@
 - Remaining performance work is measured:full100k-intent timeline returns200events
  with500024queries/6786.16ms. Per-record event lookups remain; this commit does not
  claim their removal or whole-backlog completion.
+
+### Batched GJC timeline events — 2026-09-09
+
+- Replaced four child reads per GJC intent and one control-event read per graph ID
+  with set queries, preserving parent/category/key ordering and first-event wins.
+- Related4files20tests passed, lint/typecheck/backendbuild exit0. Compared compiled
+  prior a1a28f8 collectors and new collectors on identical2k/10k/100kfixtures:
+  complete returned JSON hashes equal, writes0. Populated7event fixture also equal
+  including question/state-ID collision and dual-key control events.
+- At100kintents queries500024->28, paired time6874.33->2131.21ms. Five new samples
+  p50=2149.77ms/sample p95=2157.12ms; not a production SLO. Actual CLI exit0,
+  200events,2546.64ms,stderr0,no independent data_version change.
+- Independent timeline_batch_review ship/no findings, requested sol/high, actual
+  metadata unavailable. Reviewer extra test invocation was rejected by npm; no
+  extra test pass claimed. Parent QA evidence remains20tests and compiled receipts.
+- Dense-child peak memory is unmeasured; retaining batched raw rows may increase it.
+  Non-GJC per-record queries remain. ADR:adr-timeline-event-batches.md; QA receipts
+  in timeline-batch-compare-8FpTMB. Earlier3790test full gate predates this change;
+  this unit has targeted acceptance and does not claim a new full gate.
