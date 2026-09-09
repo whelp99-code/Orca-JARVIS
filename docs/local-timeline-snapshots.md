@@ -33,8 +33,8 @@ and their immutable checkpoint/receipt data are separate.
 
 Commands require explicit --db and reject missing files, extra positionals and
 irrelevant options before database creation. Administrative register/hold/release
-and collect/expire mutate that selected database. Daily/service scheduling and
-versioned context-consumer integration remain pending.
+and collect/expire mutate that selected database. Opt-in service collection is
+described below; daily and versioned context-consumer integration remain pending.
 
 Validation: CLI integration2tests passed. Existing timeline7tests passed. A source
 reviewability failure from an overlong database-options line was fixed; the final
@@ -45,3 +45,39 @@ snapshot_missing. No production database or service was changed in that probe.
 Final typecheck, zero-warning lint and backend build exited0. Independent read-only
 review by /root/refresh_receipt_review returned ship. Observed reviewer model/effort
 and API-equivalent token cost are unavailable.
+
+## Opt-in service collection candidate
+
+```bash
+jarvis service once --db /absolute/path/to/authority.sqlite --local-timeline-refresh
+jarvis service run --db /absolute/path/to/authority.sqlite --local-timeline-refresh
+```
+
+The flag is disabled by default and requires an explicit database. Register subjects
+before enabling it. A running service attempts a cycle at most once per 60 seconds;
+this throttle and the round-robin cursor are process-local. Restart permits a new
+collection immediately and resets the cursor. Multiple service processes can each
+collect: no durable exactly-once or cross-process scheduling claim is made.
+
+The cycle expires old payloads, reads at most 64 registered subjects, skips held
+subjects, and counts collected/capped/failed/remaining results. A 30-second budget
+is checked between tasks; synchronous source reads cannot be interrupted, so this
+is not a hard wall-time ceiling. A partial result does not attest complete scope.
+The cursor rotates unfinished work within a running process. Frequent restarts can
+reset that progress; full-scope freshness is not guaranteed by the cycle counts.
+
+Individual source failures are isolated; a cycle-level error is reported separately
+and coordinator processing continues. Repeated identical cycle summaries are not
+re-emitted by service run. These counts describe attempted collection, not a durable
+refresh receipt or task completion. The existing daily reader continues to report
+provider refresh unavailable; no morning-brief readiness is promoted by this flag.
+The staged personal-OS control channel rejects activation of this collector.
+
+Validation: service integration3tests and reviewability2tests passed, final typecheck,
+zero-warning lint and backend build exited0. A separate compiled service-once process
+collected one registered fixture task; reopening the DB and reading its exact
+collection ID returned ready. Coordinator state remained disconnected. This was an
+isolated fixture database, not production service activation. Independent read-only
+review by /root/refresh_receipt_review returned ship. Existing remote-audit service
+and local CLI regressions6 tests passed. Reviewer runtime model/effort and
+API-equivalent cost are unobservable.

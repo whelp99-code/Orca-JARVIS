@@ -39,6 +39,7 @@ const CLI_HELP =
   + "routing templates | routing compile-template INPUT.json: inspect or compile versioned task templates before approval\n"
   + "daily morning --once --db PATH --input CONFIG: run stored-source morning recovery; provider refresh unavailable\n"
   + "daily evening --once --db PATH --input CONFIG --key-file PATH: publish stored native completions; automatic operation held\n"
+  + "service once/run --db PATH --local-timeline-refresh: collect registered local task snapshots at most once per minute\n"
   + "service once/run --remote-audit-retention-limit N: enable one bounded remote-audit batch per UTC date (1-1000)\n"
   + "service once/run --memory-review-cleanup-root PATH [--memory-review-cleanup-limit N]: clean eligible review files; existing private root, limit 1-1000\n"
   + "runtime identity [--db PATH]: observe this CLI build and persisted daemon identity without migrating the DB\n"
@@ -106,6 +107,7 @@ export async function execute(
           "memory-review-cleanup-root": { type: "string" },
           "memory-review-cleanup-limit": { type: "string" },
           "remote-audit-retention-limit": { type: "string" },
+          "local-timeline-refresh": { type: "boolean" },
         },
         allowPositionals: true,
         strict: true,
@@ -117,6 +119,10 @@ export async function execute(
   const [command, subcommand, argument, fourth, fifth, sixth] = parsed.positionals;
   const values = normalizeCliValues(parsed.values);
   const localTimeline = localTimelinePreflight(parsed.positionals, values);
+  if (values["local-timeline-refresh"] !== undefined
+    && (command !== "service" || !["once", "run"].includes(subcommand ?? "") || !values.db)) {
+    throw new JarvisError("LOCAL_COLLECTION_CONFIG_INVALID");
+  }
   if ((values["memory-review-cleanup-root"] !== undefined || values["memory-review-cleanup-limit"] !== undefined)
     && (command !== "service" || !["once", "run"].includes(subcommand ?? ""))) {
     throw new JarvisError("MEMORY_REVIEW_CLEANUP_CONFIG_INVALID");

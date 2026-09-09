@@ -57,6 +57,7 @@ export type CliValues = {
   readonly "memory-review-cleanup-root"?: string;
   readonly "memory-review-cleanup-limit"?: string;
   readonly "remote-audit-retention-limit"?: string;
+  readonly "local-timeline-refresh"?: boolean;
 };
 
 export type CliCommandContext = {
@@ -106,6 +107,7 @@ export function normalizeCliValues(
     "memory-review-cleanup-root": stringValue(value["memory-review-cleanup-root"]),
     "memory-review-cleanup-limit": stringValue(value["memory-review-cleanup-limit"]),
     "remote-audit-retention-limit": stringValue(value["remote-audit-retention-limit"]),
+    "local-timeline-refresh": booleanValue(value["local-timeline-refresh"]),
   };
 }
 

@@ -11,6 +11,7 @@ import { configuredMemoryReviewCleanup } from "./cli-memory-review-cleanup.js";
 import { RemoteAuditService } from "./remote-audit-service.js";
 import { DailyServiceCycles } from "./daily-service-cycles.js";
 import { PersonalOsRuntime } from "./personal-os-runtime.js";
+import { LocalTimelineRefreshService } from "./local-timeline-refresh-service.js";
 import { CYCLE_READY_TYPE } from "./personal-os-cycle-ready.js";
 
 function outputSync(value: object): void {
@@ -22,6 +23,10 @@ export async function executeGjcCommand(
 ): Promise<Record<string, unknown> | undefined> {
   const { command, subcommand, argument, values, db, dependencies } = context;
   if (command !== "gjc" && command !== "service") return undefined;
+  if (values["local-timeline-refresh"] && process.env[PERSONAL_OS_CONTROL_CHANNEL_ENV]) {
+    throw new JarvisError("LOCAL_COLLECTION_CONFIG_INVALID");
+  }
+  const localCollector = values["local-timeline-refresh"] ? new LocalTimelineRefreshService(db, () => commandNow(context)) : undefined;
   const rawAuditLimit = values["remote-audit-retention-limit"];
   if (rawAuditLimit !== undefined && (!/^[1-9][0-9]{0,3}$/.test(rawAuditLimit) || Number(rawAuditLimit) > 1000
     || process.env[PERSONAL_OS_CONTROL_CHANNEL_ENV])) throw new JarvisError("REMOTE_AUDIT_RETENTION_CONFIG_INVALID");
@@ -55,10 +60,21 @@ export async function executeGjcCommand(
       }
     },
   });
+  let lastCollectionOutput: string | undefined;
   let lastDailyOutput: string | undefined;
   let lastCleanupOutput: string | undefined;
   let lastAuditOutput: string | undefined;
   const once = async () => {
+    let local_collection;
+    try { local_collection = localCollector?.cycle(); }
+    catch { local_collection = { status: "error", code: "LOCAL_COLLECTION_FAILED" }; }
+    if (local_collection && subcommand === "run" && !values.once) {
+      const encoded = JSON.stringify(local_collection);
+      if (encoded !== lastCollectionOutput) {
+        outputSync({ ok: local_collection.status !== "error", command: "service.local-collection", ...local_collection });
+        lastCollectionOutput = encoded;
+      }
+    }
     let remote_audit_retention;
     if (audit) {
       try { remote_audit_retention = audit.cycle(); }
@@ -86,7 +102,8 @@ export async function executeGjcCommand(
       }
     }
     const result = await service.once(commandNow(context).toISOString());
-    return { ...result, ...(remote_audit_retention === undefined ? {} : { remote_audit_retention }),
+    return { ...result, ...(local_collection === undefined ? {} : { local_collection }),
+      ...(remote_audit_retention === undefined ? {} : { remote_audit_retention }),
       ...(memory_review_cleanup === undefined ? {} : { memory_review_cleanup }), ...(phases === undefined ? {} : { daily: {
       scope: "stored-local-sources", provider_refresh: "unavailable", phases,
     } }) };
