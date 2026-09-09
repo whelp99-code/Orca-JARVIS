@@ -89,3 +89,39 @@ checkpoint and refresh receipt histories remain unchanged. Fresh-authority compa
 is a suppression/rebuild workflow, not a live periodic expiry adapter; the service
 currently supplies no observation retention adapter. Historical refresh receipts
 survive compaction and become unavailable when their source is removed.
+
+## Bounded local snapshot storage candidate
+
+The proposed `LocalTimelineSnapshotStore` calls the local collector itself; it has
+no API accepting an externally supplied snapshot. Explicit subject registration is
+limited to 64 rows. Each subject stores at most one canonical snapshot, bounded by
+262144 encoded bytes, expiring five minutes after collection start. Replacing a
+snapshot invalidates the old collection ID rather than resolving it to newer bytes.
+No per-poll audit/checkpoint/receipt history is appended.
+
+A hold clears the payload and increments a subject generation. Release also clears
+payload; recollection is required. Generation changes between collection and locked
+admission reject the result. Expiry keeps registration and hold metadata. The cache
+is disposable: fresh-authority reconstruction selects NULL for payload/ID/expiry,
+and restore copies current subject metadata with NULL payloads, preserving current
+holds without copying cached content. Existing migration bytes remain unchanged;
+085_local_timeline_snapshots.sql adds the candidate schema.
+
+Reads resolve only the exact ID and revalidate source bytes; collection and admission
+both use actual timeline reads. Freshness is checked after source revalidation too.
+The digest describes collected bytes, including generated_at; it is not a semantic
+unchanged-state key. This is local task scope, not environment/worktree attestation.
+
+Validation: cache integration6 tests passed; existing observation-refresh-compaction
+1 test passed; existing authority compaction and restore high-water2 tests passed
+(2 files,10.77s). Typecheck, zero-warning lint and backend build exited0. A compiled
+separate Node process verified saved snapshot after reopen and held subject after a
+second reopen. The initial default /tmp probe failed SQLITE_IOERR_WRITE during DB
+construction; a rerun in the task QA cache directory exited0.
+
+Independent read-only review by /root/refresh_receipt_review returned ship after
+the encoded-byte guard was added. Final typecheck/lint/backend build exited0 after
+that guard; cache integration6 tests passed again. Reviewer model/effort and
+API-equivalent token cost are not observable. No CLI/service activation, daily-loop adapter, or
+versioned context-consumer integration is claimed. Subject lifecycle management and
+runtime scheduling remain required before automatic operation.

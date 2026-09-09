@@ -4,6 +4,7 @@ import { JarvisError } from "./db.js";
 import type { SuppressedProjection } from "./memory-compaction-sanitize.js";
 
 const AUTHORITY_TABLES = [
+  "local_timeline_subjects",
   "memory_tombstone_chain",
   "memory_tombstone_delegation_links",
   "memory_suppressions",
@@ -68,9 +69,11 @@ export function applyCurrentRestoreAuthority(current: AuthorityDb, candidate: Au
         return typeof name === "string" && hidden === 0 ? [name] : [];
       });
       const list = columns.map(quote).join(",");
+      const selected = columns.map(column => table === "local_timeline_subjects"
+        && ["snapshot_json", "collection_id", "expires_at"].includes(column) ? "NULL" : quote(column)).join(",");
       candidate.db.exec(`DELETE FROM ${quote(table)}`);
       candidate.db.exec(`INSERT INTO ${quote(table)}(${list})
-        SELECT ${list} FROM current_authority.${quote(table)}`);
+        SELECT ${selected} FROM current_authority.${quote(table)}`);
     }
   } finally {
     candidate.db.exec("DETACH DATABASE current_authority");

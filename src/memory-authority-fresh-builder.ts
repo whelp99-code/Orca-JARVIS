@@ -151,6 +151,8 @@ function tableColumns(database: AuthorityDb, table: string): readonly string[] {
 }
 
 function copyExpression(table: string, column: string): string {
+  // Disposable collected content never crosses physical reconstruction. Preserve subject holds.
+  if (table === "local_timeline_subjects" && ["snapshot_json", "collection_id", "expires_at"].includes(column)) return "NULL";
   if (table === "control_command_requests" && (column === "target_json" || column === "args_json")) {
     return `CASE WHEN EXISTS (SELECT 1 FROM blocked_projections p
       WHERE p.kind IN ('control_payload','restore_control') AND p.id=source_row.request_id)
