@@ -1,6 +1,6 @@
 import { parseMemoryPlainText } from "./memory-plain-text.js";
 import { createHash } from "node:crypto";
-import { readdirSync } from "node:fs";
+import { opendirSync } from "node:fs";
 import { join } from "node:path";
 import { canonicalize } from "./canonical.js";
 import {
@@ -156,10 +156,18 @@ export class MemoryCandidateReviewSpool {
   }
 
   paths(): readonly string[] {
+    return [...this.iteratePaths()];
+  }
+
+  *iteratePaths(): Generator<string, void, undefined> {
     assertPrivateSpoolRoot(this.spool);
-    return readdirSync(this.root, { withFileTypes: true })
-      .filter(entry => entry.isFile() && entry.name.endsWith(".json"))
-      .map(entry => join(this.root, entry.name));
+    const directory = opendirSync(this.root);
+    try {
+      for (let entry = directory.readSync(); entry !== null; entry = directory.readSync()) {
+        assertPrivateSpoolRoot(this.spool);
+        if (entry.isFile() && entry.name.endsWith(".json")) yield join(this.root, entry.name);
+      }
+    } finally { directory.closeSync(); }
   }
 
   private filePath(candidateId: string): string {

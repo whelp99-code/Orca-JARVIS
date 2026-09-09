@@ -90,3 +90,19 @@ Next implementation should first expose this existing lifecycle through the
 configured service where needed, with bounded work and separate cleanup results.
 The SQL RetentionRuntime adapter remains unsuitable for that composition. General
 observation/context retirement still needs the reader and reference audit above.
+
+
+## Streaming enumeration implementation
+
+The candidate cleanup path now consumes a directory iterator instead of materializing
+all filenames through readdirSync/filter/map. Existing paths() callers retain the
+array API. The iterator closes its directory in finally, including consumer errors,
+and rechecks the private root identity while scanning. Eligibility and file digest
+checks remain in the existing cleanup transaction.
+
+Focused existing lifecycle verification: 3 files / 24 tests passed, including review
+handoff, outbox cleanup retry and expiry. Evidence:
+/home/jm/.cache/jarvis-test-runtime-qa-20260908/retention-streaming-cleanup.log.
+This removes the full-directory filename array from cleanup; it does not bound cycle
+execution time or implement a resumable service batch. Those remain required before
+claiming bounded scheduled retention.

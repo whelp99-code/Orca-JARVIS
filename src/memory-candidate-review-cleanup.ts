@@ -10,7 +10,7 @@ export function cleanupMemoryCandidateReviews(authority: AuthorityDb, root: stri
   if (at !== undefined && !Number.isFinite(at)) throw new Error("MEMORY_REVIEW_CLEANUP_CLOCK_INVALID");
   const spool = new MemoryCandidateReviewSpool(root);
   let removed = 0;
-  for (const path of spool.paths()) {
+  for (const path of spool.iteratePaths()) {
     const name = basename(path);
     if (!/^memcand_pos_v1_[0-9a-f]{64}\.json$/.test(name)) continue;
     const candidateId = `memcand:pos:v1:${name.slice(15, -5)}`;
