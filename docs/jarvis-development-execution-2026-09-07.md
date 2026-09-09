@@ -2359,3 +2359,18 @@ It is not a new current-HEAD package, full gate or provider execution verificati
   packaged-dashboard-missed-update-probe.mjs, packaged-dashboard-missed-update.log,
   packaged-dashboard-missed-update.json. 장시간 단절/대량 변경/느린 클라이언트
   메모리 상한을 검증한 것은 아니며 Backlog17 잔여를 유지한다.
+
+## 실제 TCP 느린 소비자의 SSE 전송 상한 — 2026-09-10
+
+- URsHND 패키지의 compiled createBoundedSseSink를 실제 Node HTTP ServerResponse에
+  연결하고, net.Socket 클라이언트는 HTTP 요청 후 pause하여 응답을 읽지 않았다.
+  전체 dashboard 라우트 부하가 아닌 패키지 sink의 실제 소켓 인수다.
+- 16,008바이트 프레임 전송 시도5,280,000회, 실제 response.write175회.
+  write 직후 측정 writableLength 최대80,244바이트 <= 상한131,072바이트.
+  마지막 write(false)부터 종료까지5,000.744961ms, 설정 drain timeout5,000ms.
+  대기 중 추가 전송 시도가 기존 타이머를 연장하지 않음을 실제 시간으로 확인했다.
+- Probe exit0. 격리 HTTP 서버/클라이언트 종료. 운영 변경/provider 호출0회.
+  증거: /home/jm/.cache/jarvis-test-runtime-qa-20260908/ 아래
+  sse-real-backpressure-probe.mjs, sse-real-backpressure.json.
+- 이 측정은 Node writable buffer 상한이며 RSS/heap/커널 소켓 버퍼의 총 메모리
+  상한이 아니다. 전체 dashboard 다중 클라이언트 부하 및 장시간 단절 검증은 잔여다.
