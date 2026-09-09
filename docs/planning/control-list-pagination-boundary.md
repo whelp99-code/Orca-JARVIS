@@ -84,5 +84,13 @@ backend266files1838tests +266files1872tests; dashboard37files256tests,
 total569files3966tests. All1847tracked hashes unchanged. Runtime/lint/typecheck,
 build, fixed-clock acceptance and CLI smoke passed. Receipt/log:
 verify-pagination-result.json and verify-pagination.log in the QA directory.
-Fresh read-only review /root/pagination_acceptance is pending; this gate does
-not establish production activation or completion of the full backlog.
+Fresh read-only review /root/pagination_acceptance returned no fix-first findings
+for c4fbef9/0b99653. Remaining limits: payload bytes are not capped per page;
+lineage traversal may perform 500×64 bounded steps; synthetic benchmarks exclude
+deep lineage and concurrent load. This does not establish production activation
+or completion of the full backlog.
+
+CLI help now documents the default/maximum page size, continuation across empty
+pages, stale-anchor restart and explicit unbounded --all compatibility. Backend
+build and compiled `control list --help` exited 0; existing cli-help integration
+suite passed 6/6. This help-only follow-up did not rerun the canonical suite.
