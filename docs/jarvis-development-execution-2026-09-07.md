@@ -2318,3 +2318,25 @@ It is not a new current-HEAD package, full gate or provider execution verificati
   remain part of preview. No service configuration or production release changed.
   deployment_ready=false. This package includes the projection-key concurrency fix
   and connecting label, but HTTP checks alone do not re-prove those specific behaviors.
+
+## 패키지 TCP 단절·복구 브라우저 인수 — 2026-09-10
+
+- 대상 URsHND 패키지 source ea11197cbce2addb8b379e4180a7e5df16a4db05,
+  input_digest sha256:b2e55ee7ed5ddf4c443c4c8f78564f55bd1ef10de72aeb7af79c7302a323de65.
+  개인 임시 DB·루프백 프로세스·Chromium 사용. 운영 서비스 변경 및 provider 실행0회.
+- 첫 Playwright setOffline(true) 검증은 15초 후에도 연결됨으로 표시되어 실패했다.
+  이 방식이 기존 SSE 소켓을 단절했다는 증거는 없어 제품 결함으로 확정하지 않았다.
+- 후속 검증은 로컬 HTTP 프록시의 실제 TCP 소켓을 destroy하고 새 연결을 차단했다.
+  브라우저 상태가 다시 연결 중으로 바뀐 뒤 연결을 허용해 연결됨 복귀를 확인했다.
+  프록시는 Host/Origin을 upstream 주소로 변환한다. 초기 미변환 실행의 preview403은
+  테스트 프록시 설정 오류이며 제품의 origin 검증을 변경하지 않았다.
+- 화면 폭1440/1024 각각 복구 후 preview Ready, 1024에서 pending workflow.start
+  생성 확인. 양쪽 수평 overflow0, pageerror 및 의도한 단절 구간 밖 console error0.
+  단절 구간 console error는 수집 제외하므로 전체 console error0이라는 뜻은 아니다.
+  서버 종료 code0/signal null, 최종 probe exit0.
+- 증거: /home/jm/.cache/jarvis-test-runtime-qa-20260908/ 아래
+  packaged-dashboard-recovery.log(최초 실패), packaged-dashboard-tcp-recovery-probe.mjs,
+  packaged-dashboard-tcp-recovery.log, packaged-dashboard-tcp-recovery.json.
+- 범위: 실제 TCP 단절 후 SSE 재연결과 복구 후 사용자 입력 경로. 단절 중 타 클라이언트가
+  만든 변경의 정합성, 장시간 단절, 느린 소비자의 메모리 상한은 이 인수에서 검증하지 않았다.
+  Backlog17 전체 완료 및 운영 배포 준비 완료를 주장하지 않는다.
