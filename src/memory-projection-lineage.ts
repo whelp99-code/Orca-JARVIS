@@ -167,6 +167,7 @@ export class MemoryProjectionLineage {
          FROM memory_suppressions s JOIN memory_projection_dependencies d ON
            d.projection_kind=? AND d.projection_id=? AND d.component_id=? AND (
              d.target_digest=s.target_digest
+             OR d.keyed_subject_digest=s.keyed_subject_digest
              OR d.source_identity_digest=s.source_identity_digest
              OR d.content_identity_digest=s.content_identity_digest
              OR d.citation_identity_digest=s.citation_identity_digest)

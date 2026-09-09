@@ -1349,3 +1349,25 @@
   exit0. Native routing_index_review returned ship/findings0, packet hashes5/5
   matched. Requested sol/high, actual runtime metadata/token usage unavailable.
   Parent accepts the bounded index change for commit. Full01–25 remains active.
+
+### Late-bound subject suppression — 2026-09-09
+
+- Previous goal turn progressed: index optimization8e1db4e committed/integrated;
+  full verify56591 on that immutable integration source remains live.
+- Inspection found activateForSequence matches keyed_subject_digest while late
+  activateRef omitted it. After correcting fixture target setup,90978 reproduced
+  two failures: a late root and an inherited child remained visible.
+- Added the same keyed-subject match and forward migration080 for preexisting
+  missing links. Earlier83migrationbytes unchanged; tombstone/event/dependency
+  identity preserved. Complete task-to-memory/provider lineage remains HOLD.
+- New/existing focused41955:11pass. Broader direct24449 hit tmp EDQUOT(-122)
+  and SQLite I/O errors; standard scratch-isolating runner54248 passed49tests/
+  11files43.31s. Use repository runner for subsequent focused DB suites.
+- Lint/3types84127 and backend17286 exit0. Actual compiled Node readers2 each
+  returned linked_visiblefalse/unrelatedtrue/child_suppressedtrue/read_writes0.
+  Provider0/operationalchanges0; cache late-subject-live.json and ADR record limits.
+- Fresh native late_subject_review requested terra/high, no external review
+  services/install/auth authorized. Returned ship/findings0; hashes3/3 matched.
+  Requested terra/high; actual metadata/token usage unavailable. Parent accepts
+  this local visibility fix for commit; in-flight notifications/provider lifecycle
+  and the full01–25 objective remain open.
