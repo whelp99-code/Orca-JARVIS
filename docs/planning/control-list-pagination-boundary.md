@@ -78,3 +78,11 @@ maximum is retained, not discarded. These are synthetic observations, not a
 production SLO, full deep-lineage scale result or whole backlog16 acceptance.
 Evidence in the QA directory: control-page-cli-result.json and
 control-pagination-scale.json. Full verification and fresh review remain pending.
+
+Canonical verification at0b996538613db0412c9357583e61507b4309f95f exited0:
+backend266files1838tests +266files1872tests; dashboard37files256tests,
+total569files3966tests. All1847tracked hashes unchanged. Runtime/lint/typecheck,
+build, fixed-clock acceptance and CLI smoke passed. Receipt/log:
+verify-pagination-result.json and verify-pagination.log in the QA directory.
+Fresh read-only review /root/pagination_acceptance is pending; this gate does
+not establish production activation or completion of the full backlog.
