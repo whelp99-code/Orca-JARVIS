@@ -85,3 +85,15 @@ Receipt: /home/jm/.cache/jarvis-test-runtime-qa-20260908/remote-audit-expiry-com
 Independent review /root/pagination_acceptance returned SHIP with no findings.
 Future-dated updates remain excluded until the clock catches up, and backlogs
 over100 jobs require further cycles. No production activation or full-goal completion.
+
+Follow-up compiled CLI acceptance: run
+`node scripts/remote-audit-expiry-cli-probe.mjs <receipt.json>` after build:backend.
+The probe creates a private file-backed DB with no GJC configuration, seeds expired
+pending/claimed jobs, closes it, and starts three separate CLI processes. An
+unconfigured `service once` leaves retention rows unchanged; configured execution
+marks old pending failed/old claimed uncertain and completes today's empty batch;
+the third process preserves all retention rows and the same completion response.
+The temporary database is removed on exit. All three processes returned exit0 and
+service state disconnected. This is not a live provider or production retention
+deletion test. Receipt: shared QA remote-audit-expiry-cli.json. The probe guards
+against a UTC date transition so different daily jobs are not called a replay.
