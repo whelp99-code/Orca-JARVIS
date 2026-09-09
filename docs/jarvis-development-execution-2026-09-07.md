@@ -2389,3 +2389,24 @@ It is not a new current-HEAD package, full gate or provider execution verificati
   tests/integration/dashboard-sse-backpressure.test.ts.
 - 제품 소스 변경0개. 기존 임시 실제 소켓 인수를 저장소 자동 회귀 경로에 포함했다.
   전체 verify 재실행 및 전체 backlog 완료를 의미하지 않는다.
+
+## 종료된 SSE 연결의 자동 복구 수정 — 2026-09-10
+
+- 전체 연결 수 상한을 검토하면서 HTTP503에 대한 선행 복구 결함을 발견했다.
+  기존 URsHND 패키지를 Chromium에서 열고 첫 events 요청만503으로 응답했을 때,
+  6.5초 후 요청1회/native readyState2(CLOSED)/화면 다시 연결 중이었다.
+- store는 CLOSED 오류에만 5초 재시도를 예약한다. CONNECTING은 브라우저의 기존
+  재접속을 유지하고 오류 중복 호출은 타이머를 추가하지 않는다. stop에서 취소하며
+  교체된 연결의 늦은 open/error/snapshot/reconcile은 source identity로 무시한다.
+  새 연결의 snapshot이 기존 canonical refetch 경로를 사용한다.
+- 수정 빌드 Chromium 인수: 같은 첫503 조건에서6.5초 후 요청2회/readyState1/연결됨.
+  실제 임시 DB·HTTP 서버와 브라우저를 사용하되503은 Playwright route로 주입했다.
+  새 배포 패키지 인수가 아닌 a68ab13+미커밋 수정의 built checkout 인수다.
+- 관련3파일15테스트, 전체 typecheck, 변경 파일 ESLint, dashboard build exit0.
+  증거: 공통 QA 경로의 packaged-dashboard-sse-503-probe.mjs/json 및
+  dashboard-sse-503-fixed-probe.mjs/json. 서비스 종료code0. 제품의 승인/실행 경로 변경0개.
+- readyState를 제공하지 않는 사용자 정의 EventSourceLike는 기존 동작을 유지한다.
+  영구 장애도 화면이 열린 동안5초 간격으로 조회 연결을 재시도한다. 전체 연결 수
+  상한은 아직 구현하지 않았으며 이 수정을 해당 항목 완료로 집계하지 않는다.
+- 후속 전체 dashboard 검사:38파일263테스트/34.67초, exit0. 부모가 변경 diff와
+  연결 교체·타이머 취소·늦은 이벤트 검증을 확인했다. 별도 에이전트 리뷰는 수행하지 않았다.

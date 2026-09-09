@@ -24,6 +24,7 @@ export type DashboardState = {
   readonly taskExecutionOperations?: readonly TaskExecutionOperation[];
 };
 export type EventSourceLike = {
+  readonly readyState?: number;
   addEventListener(type: string, listener: (event: Event) => void): void;
   close(): void;
   onopen: ((event: Event) => void) | null;

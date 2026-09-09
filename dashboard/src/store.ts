@@ -23,6 +23,7 @@ export function createDashboardStore(options: DashboardStoreOptions) {
   let generation = 0;
   let running = false;
   let source: EventSourceLike | undefined;
+  let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
   let connectionVersion = 0;
   let snapshotConnectionVersion = 0;
   let approvalCursor: string | undefined;
@@ -82,6 +83,7 @@ export function createDashboardStore(options: DashboardStoreOptions) {
     snapshotRefresh = createSnapshotRefresh(generation);
     running = false;
     freshnessTimer.clear();
+    clearTimeout(reconnectTimer); reconnectTimer = undefined;
     source?.close(); source = undefined;
     execution.stop(false);
   }
@@ -125,19 +127,31 @@ export function createDashboardStore(options: DashboardStoreOptions) {
     if (token !== generation) return;
     await refetch(token, SNAPSHOT_TOPICS);
     if (token !== generation) return;
+    openEvents(token);
+  }
+
+  function openEvents(token: number): void {
     const next = options.eventSourceFactory(EVENTS_PATH);
     source = next;
-    next.addEventListener("snapshot", (event) => { onFrame(token, "snapshot", event); });
-    next.addEventListener("reconcile", (event) => { onFrame(token, "reconcile", event); });
+    next.addEventListener("snapshot", (event) => { if (source === next) onFrame(token, "snapshot", event); });
+    next.addEventListener("reconcile", (event) => { if (source === next) onFrame(token, "reconcile", event); });
     next.onopen = () => {
-      if (token !== generation) return;
+      if (token !== generation || source !== next) return;
       connectionVersion += 1;
       assign({ connectionState: "live" });
     };
     next.onerror = () => {
-      if (token !== generation) return;
+      if (token !== generation || source !== next) return;
       connectionVersion += 1;
       assign({ connectionState: "reconnecting" });
+      // CONNECTING sources already retry natively; CLOSED sources do not (e.g. HTTP 503).
+      if (next.readyState !== 2 || reconnectTimer !== undefined) return;
+      reconnectTimer = setTimeout(() => {
+        reconnectTimer = undefined;
+        if (token !== generation || source !== next) return;
+        next.close();
+        openEvents(token);
+      }, 5_000);
     };
   }
 
