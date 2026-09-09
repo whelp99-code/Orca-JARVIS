@@ -128,3 +128,18 @@ reviewability passed 2. Typecheck, zero-warning lint and backend build exited 0.
 Evidence: `lineage-claim-before.log`, `lineage-claim-after.log`,
 `lineage-claim-control-unit.log` under the existing QA directory.
 The list traversal capacity finding and a fresh independent review remain open.
+
+List reads now reuse already loaded ancestor rows and memoize payload/task
+suppression only within a single deferred read transaction. No cache survives a
+list call. A 64-request chain returned the same 65 commands with predecessor SQL
+lookups reduced from 2016 to 0. Isolated compiled measurements were 105.8ms before
+and 22.6ms after (one sample each, not p95); both preserved DB bytes.
+The regression checks agreement with individual reads and observes new ancestor
+quarantine on the next list call. Four lineage files passed 12 tests; dashboard
+read/reviewability passed 7. Typecheck, lint and backend build exited 0.
+Evidence: `lineage-list-baseline.json`, `lineage-list-after.json`,
+`lineage-list-tests.log`, `lineage-list-read-regression.log` in the QA directory.
+The generic list still returns all commands and uses O(N) memory with at most
+64 in-memory predecessor steps per request. Full pagination/capacity work in
+backlog16 remains open; this correction removes repeated ancestor SQL and repeated
+suppression reads introduced by lineage. Independent acceptance is still pending.

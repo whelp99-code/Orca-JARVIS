@@ -5,6 +5,30 @@ import { JarvisError } from "./db.js";
 
 /** Resolve late ancestor suppression without recursion or writes. Excess depth is unavailable. */
 export function visibleTaskWorkLineage(db: AuthorityDb, row: Record<string, unknown>, projections: MemoryProjectionAuthority): boolean {
+  return visible(row, id => db.db.prepare("SELECT * FROM control_command_requests WHERE request_id=?")
+    .get(id) as Record<string, unknown> | undefined,
+  id => projections.isSuppressed({ kind: "control_payload", id, component_id: id }),
+  id => projections.isProjectionIdSuppressed(id));
+}
+
+/** Caller holds one read transaction. No memoized observation survives this call. */
+export function visibleTaskWorkLineageRows(rows: readonly Record<string, unknown>[], projections: MemoryProjectionAuthority) {
+  const byId = new Map(rows.map(row => [String(row.request_id), row]));
+  const payloads = new Map<string, boolean>(), tasks = new Map<string, boolean>();
+  const payloadSuppressed = (id: string) => {
+    if (!payloads.has(id)) payloads.set(id, projections.isSuppressed({ kind: "control_payload", id, component_id: id }));
+    return payloads.get(id)!;
+  };
+  const taskSuppressed = (id: string) => {
+    if (!tasks.has(id)) tasks.set(id, projections.isProjectionIdSuppressed(id));
+    return tasks.get(id)!;
+  };
+  return rows.filter(row => !payloadSuppressed(String(row.request_id))
+    && visible(row, id => byId.get(id), payloadSuppressed, taskSuppressed));
+}
+
+function visible(row: Record<string, unknown>, read: (id: string) => Record<string, unknown> | undefined,
+  payloadSuppressed: (id: string) => boolean, taskSuppressed: (id: string) => boolean): boolean {
   if (row.action !== "task.execute") return true;
   let current = row;
   const visited = new Set<string>();
@@ -17,14 +41,13 @@ export function visibleTaskWorkLineage(db: AuthorityDb, row: Record<string, unkn
     if (lineage.kind === "original") return true;
     if (visited.has(lineage.prior_request_id)) return false;
     visited.add(lineage.prior_request_id);
-    const prior = db.db.prepare("SELECT * FROM control_command_requests WHERE request_id=?")
-      .get(lineage.prior_request_id) as Record<string, unknown> | undefined;
+    const prior = read(lineage.prior_request_id);
     if (!prior || prior.action !== "task.execute" || prior.command_digest !== lineage.prior_command_digest
       || !Number.isFinite(Date.parse(String(prior.requested_at))) || !Number.isFinite(Date.parse(String(current.requested_at)))
       || Date.parse(String(prior.requested_at)) >= Date.parse(String(current.requested_at))
-      || projections.isSuppressed({ kind: "control_payload", id: lineage.prior_request_id, component_id: lineage.prior_request_id })) return false;
+      || payloadSuppressed(lineage.prior_request_id)) return false;
     const target = JSON.parse(String(prior.target_json));
-    if (typeof target?.task_id !== "string" || projections.isProjectionIdSuppressed(target.task_id)) return false;
+    if (typeof target?.task_id !== "string" || taskSuppressed(target.task_id)) return false;
     current = prior;
   }
   return false;
