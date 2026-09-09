@@ -30,6 +30,27 @@
 
 ## 실행 범위
 
+### 운영 설정 읽기 및 격리 런타임 패키지 — 4abe9c0
+
+system 범위에는 jm-jarvis 유닛이 없고, `systemctl --user show`에서 서비스와
+대시보드는 모두 active/running이었다. 실제 프로세스 환경의 값은 출력하지 않고
+설정 존재 여부만 확인했다. 양쪽 모두 JARVIS_TASK_CLAUDE_PATH,
+JARVIS_TASK_VERIFIER_KEY_PATH, JARVIS_TASK_VERIFIER_KEY_ID가 없었다.
+서비스 cwd는 authority/releases/a3cbbbe1604798052db6051a8751f039573eb126,
+대시보드 cwd는 control-center/releases/artifact-4146a192b5fb9e489e2ce3fcb9629077739df0134bc26094750628369dcfdb98였다.
+즉 개발 브랜치 검증은 운영 실행자 설정이나 운영 소스 갱신의 증거가 아니다.
+
+`node scripts/package-authority-runtime.mjs --output-parent <QA>` exit0으로
+`/home/jm/.cache/jarvis-test-runtime-qa-20260908/jarvis-runtime-GbXulG`를 생성했다.
+source HEAD4abe9c0, payload1477파일/9081122바이트, dependency6668항목/44689094바이트.
+생산용 의존성 설치·의존성 식별·패키지 CLI smoke·runtime identity가 통과했고,
+별도 프로세스의 의존성 재해시도 receipt와 일치했다. source_dirty=true는 그대로
+기록하며 당시 git status는 추적 변경0개, 미추적 node_modules1개였다.
+
+runtime-package-receipt.json은 deployment_ready=false를 명시한다. 패키지 자체의
+dashboard/provider/reproducibility 검증과 sealed release/활성화 게이트는 미충족이다.
+이 산출물을 운영 current에 연결하지 않았다. 서비스 설정 변경·재시작도 수행하지 않았다.
+
 ### 실행 준비 오류 안내 보완
 
 실행 환경 확인 화면에서 DB 접근·시간 검사·검증 권한·일반 사전 검사 실패가
