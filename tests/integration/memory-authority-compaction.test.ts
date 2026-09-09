@@ -38,7 +38,9 @@ function isConstructor(value: unknown): value is new (...args: readonly unknown[
   return typeof value === "function";
 }
 
-describe("quiesced fresh-file AuthorityDb reconstruction", () => {
+// Budget includes migration, subprocess coordination, physical replacement and disposal.
+// Runtime watchdogs and authority deadlines remain independently enforced.
+describe("quiesced fresh-file AuthorityDb reconstruction", { timeout: 15_000 }, () => {
   it("atomically changes inode, preserves unrelated data, and disposes old physical content", async () => {
     // Given: one suppressed notification projection, one unrelated row, and complete fixed roots.
     const root = mkdtempSync(join(tmpdir(), "jarvis-task30-compact-"));

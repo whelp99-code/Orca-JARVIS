@@ -1397,3 +1397,22 @@
 - Focused retry33975 exited0:11tests passed. Targeted ESLint37511 and diff check
   exited0. This test-only correction does not assert a compaction latency SLA or
   validate real provider deletion. A new fixed-source full gate is still required.
+
+### Task identity boundary and physical test budgets — 2026-09-09
+
+- 82cb28e applies task-ID suppression to execution detail, shared execution binding,
+  and approved completed-result replay. Parent49tests/4files passed, then final
+  snapshot/interleaving21tests/2files passed; types/lint/build/acceptance/smoke exit0.
+  Compiled HTTP200→404, unrelated200, readwrites0/provider0. Initial review fix-first
+  for split replay snapshots; fresh final review ship/findings0 after one deferred
+  snapshot and two-connection regression. Task-memory lineage remains HOLD.
+- Current full verify89979 remains live at6380e1d; shard1 already reports3 failures,
+  all5000ms physical reconstruction timeouts (5229/5294/5335ms),1692pass/3fail.
+  Do not restart it while shard2 remains live or cite it as a passing full gate.
+- Apply15s suite budgets to physical cancellation reconstruction and fresh-file
+  reconstruction, and15s to cancellation→follow-up integration. Ordinary default
+  test budgets, runtime watchdogs, leases, migrations and product code unchanged.
+  TypeScript AST comparison proves12 test callback bodies unchanged across3files.
+- Focused88086:13tests/3files passed69.80s. Three typechecks and targeted ESLint37128
+  exit0; diff check exit0. Existing physical-file replacement and recovery assertions
+  execute unchanged; this test budget is not a product performance SLA.

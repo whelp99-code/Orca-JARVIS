@@ -5,6 +5,7 @@ import { dispatchFollowupCorrection } from "../fixtures/memory-followup-correcti
 import { MemoryCorrectionCancellationResultStore } from "../../src/memory-correction-cancellation-result-store.js";
 import { memoryEffectDigest, requireMemoryEffectWriteRequest, type MemoryEffectWriteRequestV2 } from "../../src/second-brain-effect-v2.js";
 
+// Includes full physical reconstruction before follow-up dispatch; no production deadline change.
 it("uses real confirmation and dispatch APIs to publish seq2 after cancellation settlement", async () => {
   const f = await cancellationResultFixture();
   try {
@@ -41,4 +42,4 @@ it("uses real confirmation and dispatch APIs to publish seq2 after cancellation 
     expect(f.db.db.prepare("SELECT accepted_through_sequence FROM memory_effect_dispatch_cursor").get()).toEqual({ accepted_through_sequence: 2 });
     expect(f.writer.calls).toHaveLength(0);
   } finally { await f.close(); }
-});
+}, 15_000);

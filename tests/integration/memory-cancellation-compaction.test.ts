@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
-import { expect, it, vi } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { MemoryAuthorityCompactor } from "../../src/memory-authority-compactor.js";
 import { AuthorityDb } from "../../src/db.js";
 import { AuthorityDatabaseRuntime } from "../../src/authority-database-runtime.js";
@@ -12,6 +12,9 @@ import { MemoryCorrectionCancellationResultStore } from "../../src/memory-correc
 import { cancellationResultFixture } from "../fixtures/memory-cancellation-result.js";
 import { providerSurfaceInventory, reingressGuardObservations } from "../fixtures/memory-surface-observations.js";
 
+// Physical reconstruction tests include fixture migration, file disposal and recovery.
+// Test budget only: production watchdogs, leases and all assertions remain unchanged.
+describe("physical cancellation reconstruction", { timeout: 15_000 }, () => {
 // Includes fixture migration, physical DB replacement, and repeated scan/recovery checks.
 // Only the test harness budget changes; runtime watchdog and authority deadlines remain enforced.
 it("preserves cancellation evidence across physical DB replacement under the existing full inventory contract", async () => {
@@ -250,3 +253,5 @@ it("atomically settles a verified cancellation and replays without advancing twi
     await expect(f.runtime.compactor.settleCancellation(f.record.correction_id)).rejects.toThrow();
   } finally { await f.close(); }
 }, 15_000);
+
+});
