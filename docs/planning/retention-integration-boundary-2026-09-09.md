@@ -125,3 +125,45 @@ callback and closes the GJC service in finally. A future resumable cleanup scann
 must also be closed there and run independently of daily publication errors. The
 current DailyServiceCycles owns only morning/evening loops; no cleanup service
 was enabled by this verification.
+
+
+## Bounded scanner implementation
+
+MemoryReviewCleanupScanner adds a process-local directory cursor. Each cycle accepts
+1–1000 entries (default 64); every directory entry consumes the budget, including
+non-JSON files, directories and symlinks. The batch reports scanned, removed, failed
+and scan_complete. scan_complete describes directory traversal, not successful
+retirement of every candidate. Individual failures retry on a future traversal;
+they do not prevent later entries from being inspected. Each candidate retains the
+existing SQL state and digest checks immediately before file removal.
+
+The scanner holds a directory handle between cycles and must be closed on service
+shutdown. Restart begins a fresh traversal and rechecks persisted eligibility;
+there is no persisted directory offset. This is an entry-count bound, not a hard
+wall-clock deadline. It is not yet wired into cli-gjc-commands.ts.
+
+Verification: 3 files / 13 tests passed; lint and typecheck exit 0. New tests cover
+ignored-entry bounds, resumed traversal, expiry changes between passes, corrupt
+file reporting and repair, unchanged classification, foreign keys and closed use.
+Log: /home/jm/.cache/jarvis-test-runtime-qa-20260908/retention-scanner-tests.log.
+Native read-only cleanup_scanner_review returned ship with no blocking findings.
+Requested model/effort: gpt-5.6-sol/high; actual model/effort unavailable.
+
+
+Compiled scanner acceptance: build:backend exit 0. A
+standalone process scanned 10000 ignored files in 157 calls with limit64; maximum
+scanned per call was64, removed0, failed0. After beginning another pass and closing
+the scanner, matching /proc/self/fd directory handles were0. Elapsed19.000322ms
+for the single run; no latency percentile claim. This harness intentionally used
+an authority stub that throws on database access because all files were ignored;
+real deletion remains covered by the database-backed integration tests above.
+Evidence: /home/jm/.cache/jarvis-test-runtime-qa-20260908/retention-scanner-live.json.
+
+
+Review follow-up: exact-limit EOF is reported on the following call as scanned0,
+scan_complete true. This is traversal completion only. The owner must close the
+scanner on shutdown and surface failed counts, including infrastructure failures.
+Concurrent directory mutation may defer entries to another pass; no hard latency
+or persistent cursor guarantee is made. Added restart regression passes: close an
+incomplete instance, reopen, delete an expired eligible file once, then scan empty.
+Targeted scanner suite: 1 file/3 tests passed; retention-scanner-restart.log.

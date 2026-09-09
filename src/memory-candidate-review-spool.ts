@@ -160,12 +160,17 @@ export class MemoryCandidateReviewSpool {
   }
 
   *iteratePaths(): Generator<string, void, undefined> {
+    for (const path of this.iterateEntries()) if (path !== undefined) yield path;
+  }
+
+  /** Yield once per directory entry so callers can bound work, including ignored entries. */
+  *iterateEntries(): Generator<string | undefined, void, undefined> {
     assertPrivateSpoolRoot(this.spool);
     const directory = opendirSync(this.root);
     try {
       for (let entry = directory.readSync(); entry !== null; entry = directory.readSync()) {
         assertPrivateSpoolRoot(this.spool);
-        if (entry.isFile() && entry.name.endsWith(".json")) yield join(this.root, entry.name);
+        yield entry.isFile() && entry.name.endsWith(".json") ? join(this.root, entry.name) : undefined;
       }
     } finally { directory.closeSync(); }
   }

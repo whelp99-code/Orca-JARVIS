@@ -11,10 +11,19 @@ export function cleanupMemoryCandidateReviews(authority: AuthorityDb, root: stri
   const spool = new MemoryCandidateReviewSpool(root);
   let removed = 0;
   for (const path of spool.iteratePaths()) {
-    const name = basename(path);
-    if (!/^memcand_pos_v1_[0-9a-f]{64}\.json$/.test(name)) continue;
-    const candidateId = `memcand:pos:v1:${name.slice(15, -5)}`;
-    removed += authority.db.transaction(() => {
+    removed += cleanupMemoryCandidateReviewPath(authority, spool, path, at);
+  }
+  return removed;
+}
+
+/** Internal single-entry operation; callers must not enclose filesystem effects in a transaction. */
+export function cleanupMemoryCandidateReviewPath(authority: AuthorityDb, spool: MemoryCandidateReviewSpool,
+  path: string, at: number | undefined): number {
+  if (authority.db.inTransaction) throw new Error("MEMORY_REVIEW_CLEANUP_TRANSACTION_ACTIVE");
+  const name = basename(path);
+  if (!/^memcand_pos_v1_[0-9a-f]{64}\.json$/.test(name)) return 0;
+  const candidateId = `memcand:pos:v1:${name.slice(15, -5)}`;
+  return authority.db.transaction(() => {
       const row = authority.db.prepare(
         `SELECT c.state,c.expires_at,c.required_confirmation,c.content_digest,c.subject_digest,m.candidate_digest,m.classification_digest,
            p.review_spool_digest,o.state AS outbox_state
@@ -45,6 +54,4 @@ export function cleanupMemoryCandidateReviews(authority: AuthorityDb, root: stri
         throw error;
       }
     }).immediate();
-  }
-  return removed;
 }

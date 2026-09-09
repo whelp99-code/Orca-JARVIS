@@ -34,3 +34,5 @@ export {
   type MemoryCandidateState,
   type MemorySourceReference,
 } from "./memory-candidate-types.js";
+
+export { MemoryReviewCleanupScanner, type MemoryReviewCleanupBatch } from "./memory-review-cleanup-scanner.js";
