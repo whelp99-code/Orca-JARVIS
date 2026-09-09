@@ -11,7 +11,8 @@ it("adds daemon072 after memory071 without changing prior schema, journal or ref
   const source = join(process.cwd(), "migrations");
   const daemonFile = "072_daemon_runtime_identity.sql";
   const prior = readdirSync(source).filter(file => file.endsWith(".sql") && file < daemonFile);
-  expect(prior).toHaveLength(71);
+  expect(prior).toHaveLength(72);
+  expect(prior).toContain("028_budgeted_evolution_memory.sql");
   for (const file of prior) copyFileSync(join(source, file), join(directory, file));
   const db = new AuthorityDb(join(root, "authority.sqlite"), directory);
   try {
@@ -29,8 +30,8 @@ it("adds daemon072 after memory071 without changing prior schema, journal or ref
     copyFileSync(join(source, daemonFile), join(directory, daemonFile));
     await db.migrate(); await db.migrate(); await db.assertMigrationsReady();
     const after = journal();
-    expect(after).toHaveLength(72); expect(after.slice(0, 71)).toEqual(before);
-    expect(after[71]).toMatchObject({ id: daemonFile,
+    expect(after).toHaveLength(before.length + 1); expect(after.slice(0, before.length)).toEqual(before);
+    expect(after[before.length]).toMatchObject({ id: daemonFile,
       checksum: createHash("sha256").update(readFileSync(join(source, daemonFile))).digest("hex") });
     expect(attempts()).toEqual(original);
     expect(schema().filter(value => (value as { name: string }).name !== "gjc_runtime_identity")).toEqual(objects);

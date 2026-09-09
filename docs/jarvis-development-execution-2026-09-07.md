@@ -1903,3 +1903,46 @@
   it is not evidence for the candidate tree. Integration, focused contract tests,
   independent review and a subsequent canonical gate remain required. Full backlog
   01–25 is unchanged; no production activation or completion is claimed.
+
+### Main integration implementation and acceptance
+
+- Integrated main 70d04285e59b3cc49ba523146a3497960dc22d4a into development
+  e338efccbcd4b3e37e85f1cdf4107ecc6b77007a. Six textual conflicts resolved,
+  preserving extracted APIs, scoped status/read/write profiles and cancellation guards.
+- Gateway provider verification now awaits migration readiness and rechecks the live
+  session. Extracted reconciliation route retains authorization, CSRF and capacity checks.
+- Public createPhoneMemoryClientMcp is asynchronous and loads the optional SDK on
+  demand. Its dedicated executable/direct factory stays unchanged. Eager SDK import
+  initialized node:process stdin, causing the synchronous lock fixture to throw EAGAIN;
+  lazy loading restores the original two-process winner/loser and busy-timeout checks.
+  The child exit observer also handles a child that already exited; no timeout extension.
+- Recovered migration 028 remains byte-identical (SHA256 55faa41aa1c3c0b2c78ebfa4f59cd9daf6e4793deac91f39bfb3ea7e00955386).
+  Updated fixture vectors explicitly retain both 028 filenames. The original 36-file
+  baseline digest is unchanged; the recovered file is pinned separately. Unknown
+  migration histories still fail readiness. No shipped SQL bytes were rewritten.
+- Initial canonical attempt was interrupted after reproducible failures: exit130,
+  1780 tracked hashes unchanged. Revised full backend execution ended exit1:
+  shard1 1789 pass/2 fail; shard2 1826 pass/2 fail. All four remaining failures were
+  stale migration fixture expectations, corrected afterward. Focused migration
+  verification: 5 files/12 tests pass. Earlier import/doctor/progress fixes: 4 files/29 pass.
+- Final lint/typecheck exit0. Product build exit0 (1317 artifacts,87 migrations).
+  Separate remaining gate stages passed: dashboard37 files/255 tests, fixed-clock
+  acceptance, CLI smoke. These results do not relabel the failed canonical command
+  as passed; an uninterrupted canonical gate on the final commit remains pending.
+- Actual compiled HTTP login -> separate Python MCP acceptance passed for pending,
+  failed and proved with synthetic authority/policy/clock. Independent restart kept
+  attempts1, acceptance event1 or settlement1, FK0; completed replay provider calls0.
+  Pending/failed remain reconciling; proved reaches candidate/outbox settled and control
+  completed. Test receipts predate the lazy import correction; subsequent public MCP
+  HTTPS test passes using the corrected public factory.
+- Isolated production installation: npm ci --omit=dev --offline exit0,161 packages;
+  CLI smoke and awaited public MCP factory creation/close exit0. No deployment.
+- Native full integration review returned ship/no findings. Four test-only fixture
+  corrections received incremental ship/no findings. Runtime model/effort metadata
+  and token usage were unavailable for both reviews.
+- Evidence root: /home/jm/.cache/jarvis-test-runtime-qa-20260908. Files:
+  verify-main-integration-fixed-result.json, main-integration-migration-fixes.log,
+  main-integration-dashboard.log, main-integration-acceptance.log,
+  main-integration-smoke.log, main-integration-http-summary.json,
+  main-integration-prod-deps-result.json. Full backlog01–25 remains active, including
+  retention/refresh composition and actual operational activation.

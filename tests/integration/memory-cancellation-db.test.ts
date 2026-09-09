@@ -52,9 +52,17 @@ it.each(["quarantine", "unsuppressed"] as const)("does not invent suppression ev
 it.each(["cursor", "accepted", "attempt"] as const)("rejects actual %s evidence before issuing", async state => {
   const f = await cancellationDatabaseFixture();
   try {
-    if (state === "cursor" || state === "accepted") new MemoryDestructiveDispatchCursor(f.db).claim({ lane: "correction", lane_id: f.record.lane_id,
+    if (state === "cursor") new MemoryDestructiveDispatchCursor(f.db).claim({ lane: "correction", lane_id: f.record.lane_id,
       sequence: f.record.tombstone_sequence, request_digest: f.record.request_digest }, f.runtime.clock());
-    if (state === "accepted") new MemoryDestructiveDispatchCursor(f.db).accepted(f.record.lane_id, f.runtime.clock());
+    if (state === "accepted") {
+      expect(() => f.db.db.prepare("UPDATE memory_effect_dispatch_cursor SET accepted_through_sequence=1").run())
+        .toThrow("cancellation settlement required");
+      const cursor = new MemoryDestructiveDispatchCursor(f.db);
+      cursor.claim({ lane: "correction", lane_id: f.record.lane_id, sequence: f.record.tombstone_sequence,
+        request_digest: f.record.request_digest }, f.runtime.clock());
+      cursor.accepted(f.record.lane_id, f.runtime.clock());
+      expect(cursor.active()).toMatchObject({ active_lane_id: null, accepted_through_sequence: f.record.tombstone_sequence });
+    }
     if (state === "attempt") f.db.db.prepare(`INSERT INTO memory_correction_attempts
       (attempt_id,correction_id,dispatch_fence,invocation_digest,outcome,dispatched_at,created_at)
       VALUES('test',?,1,?,'dispatching',?,?)`).run(f.record.correction_id, `sha256:${"a".repeat(64)}`, f.runtime.clock().toISOString(), f.runtime.clock().toISOString());

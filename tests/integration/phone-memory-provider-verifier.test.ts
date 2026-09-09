@@ -54,12 +54,20 @@ it("verifies the original dispatch through live gateway login, CSRF and current 
     const body = canonicalize(dispatched.request);
     const call = (changed: Record<string, string> = {}, payload = body) => request(`${origin}/api/v1/memory/provider/verify`, {
       method: "POST", headers: { ...headers, ...changed }, body: payload });
-    const before = f.database.authority.db.prepare("SELECT total_changes() AS n").get();
+    let before = f.database.authority.db.prepare("SELECT total_changes() AS n").get();
     at += 10;
     const normal = await call();
     expect(normal.statusCode).toBe(200);
     expect(await normal.body.json()).toMatchObject({ kind: "current_scoped_dispatch", outbox_id: registered.outbox_id,
       request_id: dispatched.request.request_id, dispatch_fence: lease.fence });
+    f.database.authority.db.prepare("INSERT INTO schema_migrations VALUES (?,?,?)")
+      .run("999_future.sql", "a".repeat(64), f.now.toISOString());
+    const incompatibleBefore = f.database.authority.db.prepare("SELECT total_changes() AS n").get();
+    const incompatible = await call(); expect(incompatible.statusCode).toBe(403); await incompatible.body.text();
+    expect(f.database.authority.db.prepare("SELECT total_changes() AS n").get()).toEqual(incompatibleBefore);
+    f.database.authority.db.prepare("DELETE FROM schema_migrations WHERE id='999_future.sql'").run();
+    before = f.database.authority.db.prepare("SELECT total_changes() AS n").get();
+    const restored = await call(); expect(restored.statusCode).toBe(200); await restored.body.text();
     for (const [changed, status] of [[{ Cookie: "" }, 401], [{ "X-JARVIS-CSRF": "wrong" }, 403]] as const) {
       const denied = await call(changed); expect(denied.statusCode).toBe(status); await denied.body.text();
     }

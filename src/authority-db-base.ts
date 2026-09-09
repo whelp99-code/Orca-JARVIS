@@ -50,9 +50,10 @@ export abstract class AuthorityDbBase {
 	constructor(
 		readonly filename = process.env.JARVIS_DB ?? "jarvis-authority.sqlite",
 		migrationsPath?: string,
+		private readonly openOptions: { readonly fileMustExist?: boolean } = {},
 	) {
 		this.migrationsPath = migrationsPath;
-		this.db = new Database(filename);
+		this.db = new Database(filename, openOptions);
 		const stores = this.stores(this.db);
 		this.migrations = stores.migrations;
 		this.orcaObservations = stores.orcaObservations;
@@ -64,7 +65,7 @@ export abstract class AuthorityDbBase {
 	}
 	reopen(): void {
 		if (this.db.open) throw new JarvisError("AUTHORITY_DATABASE_ALREADY_OPEN");
-		this.db = new Database(this.filename);
+		this.db = new Database(this.filename, this.openOptions);
 		const stores = this.stores(this.db);
 		this.migrations = stores.migrations;
 		this.orcaObservations = stores.orcaObservations;

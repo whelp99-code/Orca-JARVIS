@@ -1,4 +1,4 @@
-import { servePhoneMemoryProviderVerification } from "./phone-memory-provider-route.js";
+import { servePhoneMemoryProviderVerification, servePhoneMemoryReconciliation } from "./phone-memory-provider-route.js";
 import { phoneRequestAuthentication } from "./phone-request-authentication.js";
 import {
   CSRF_HEADER,
@@ -180,8 +180,12 @@ async function serveMatchedRoute(
       authorization: "checked_per_request", readiness: "not_checked" }, true);
     update({ outcome: "allowed", code: "ok", status: 200 }); return;
   }
+  if (matched.routeClass === "memory_reconcile") {
+    await servePhoneMemoryReconciliation(ctx, cookieHeader, body, requestId, update, stillAuthenticated);
+    return;
+  }
   if (matched.routeClass === "memory_provider_verify") {
-    servePhoneMemoryProviderVerification(ctx, cookieHeader, body, requestId, update, stillAuthenticated);
+    await servePhoneMemoryProviderVerification(ctx, cookieHeader, body, requestId, update, stillAuthenticated);
     return;
   }
   if (matched.routeClass === "memory_context") {

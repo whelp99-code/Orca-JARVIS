@@ -16,6 +16,7 @@ describe("task 35 migration allocation grammar", () => {
     // Preserve both immutable published histories; reject any unlisted collision.
     expect(prefixes.map(prefix => files.filter((_, index) => ids[index] === prefix))
       .filter(group => group.length > 1)).toEqual([
+      ["028_budgeted_evolution_memory.sql", "028_negative_evidence.sql"],
       ["072_daemon_runtime_identity.sql", "072_memory_correction_cancellation.sql"],
       ["073_memory_cancellation_results.sql", "073_native_evening_publications.sql"],
       ["074_memory_cancellation_material.sql", "074_retention_policy_binding.sql"],

@@ -46,3 +46,16 @@ export { readMemoryScopedSettlement, settleMemoryScopedCompletion } from "./memo
 export { createProductionScopedProviderVerifier, type ScopedProviderProductionOptions } from "./memory-scoped-provider-production.js";
 
 export { createPhoneMemoryProviderVerifier, type PhoneMemoryProviderVerifierOptions } from "./phone-memory-provider-verifier.js";
+
+export { createMemoryScopedJournalClient, type MemoryScopedJournalClientOptions } from "./memory-scoped-journal-client.js";
+export { recoverMemoryScopedJournalAcceptance } from "./memory-scoped-journal-recovery.js";
+export { reconcileMemoryScopedOnce, type MemoryScopedReconcileOnceOptions } from "./memory-scoped-reconcile-once.js";
+export { createProductionScopedReconciler, type ScopedReconcileProductionOptions } from "./memory-scoped-reconcile-production.js";
+export { type PhoneMemoryReconcileOptions } from "./phone-memory-reconcile.js";
+export { parsePhoneMemoryProviderCli, openPhoneMemoryProviderCli, type PhoneMemoryProviderCliOptions } from "./phone-memory-provider-cli.js";
+export { readPhoneMemoryContext, PhoneMemoryClientError } from "./phone-memory-client.js";
+/** Load the optional MCP server only when requested, preserving core import IO. */
+export async function createPhoneMemoryClientMcp(credentialsPath: string) {
+  const client = await import("./phone-memory-client-mcp.js");
+  return client.createPhoneMemoryClientMcp(credentialsPath);
+}

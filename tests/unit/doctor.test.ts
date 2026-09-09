@@ -66,13 +66,13 @@ describe("doctor", () => {
     expect(report.capabilities.schema_version).toBe(1);
     db.close();
   });
-  it("does not flag MIGRATIONS_PENDING when the journal keeps an extra historical id", async () => {
-    // Given a fully migrated database plus a retired journal row that is not a current file
+  it("distinguishes unsupported history from missing migrations", async () => {
+    // Fully migrated DB plus an unknown history entry must fail readiness.
     const db = new AuthorityDb(tempDb());
     await db.migrate();
     db.db.prepare(
       "INSERT INTO schema_migrations(id,checksum,applied_at) VALUES(?,?,?)",
-    ).run("028_budgeted_evolution_memory.sql", "0".repeat(64), "2026-08-18T12:00:00.000Z");
+    ).run("999_unknown_history.sql", "0".repeat(64), "2026-08-18T12:00:00.000Z");
     const journalCount = Number(
       (db.db.prepare("SELECT COUNT(*) AS count FROM schema_migrations").get() as { count: number }).count,
     );
@@ -86,7 +86,9 @@ describe("doctor", () => {
     );
     const migrationCheck = report.checks.find(check => check.name === "database.migration_count");
 
-    // Then extra historical rows are not pending migrations
+    // Required migrations are present, but unknown history is not supported.
+    expect(report.checks.find(check => check.name === "database.migration_checksums"))
+      .toMatchObject({ ok: false, actual: "MIGRATION_VERSION_UNSUPPORTED" });
     expect(journalCount).toBeGreaterThan(report.database.expected_migrations);
     expect(migrationCheck).toMatchObject({ ok: true, actual: report.database.expected_migrations });
     expect(migrationCheck?.code).toBeUndefined();

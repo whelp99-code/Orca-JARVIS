@@ -1,3 +1,4 @@
+import { createPhoneMemoryReconcile, type PhoneMemoryReconcileOptions } from "./phone-memory-reconcile.js";
 import { randomUUID } from "node:crypto";
 import { realpathSync } from "node:fs";
 import { createServer } from "node:http";
@@ -33,6 +34,7 @@ export function createPhoneGatewayServer(options: {
   readonly config: PhoneGatewayConfig;
   readonly now?: () => number;
   readonly audit?: (line: string) => void;
+  readonly memoryReconcile?: PhoneMemoryReconcileOptions;
   readonly memoryContext?: PhoneMemoryContextOptions;
   readonly memoryProviderVerifier?: PhoneMemoryProviderVerifierOptions;
 }): PhoneGatewayServer {
@@ -43,6 +45,8 @@ export function createPhoneGatewayServer(options: {
   const staticRoot = realpathSync(options.staticRoot);
   const assets = loadAssetNames(staticRoot);
   const now = options.now ?? Date.now;
+  const memoryReconcile = options.memoryReconcile === undefined ? undefined
+    : createPhoneMemoryReconcile(options.memoryReconcile, () => new Date(now()));
   const memoryContext = options.memoryContext === undefined ? undefined
     : createPhoneMemoryContext(options.memoryContext, () => new Date(now()));
   const memoryProviderVerifier = options.memoryProviderVerifier === undefined ? undefined
@@ -57,6 +61,7 @@ export function createPhoneGatewayServer(options: {
     void handleRequest({
       request, response, config: options.config, sessions, limiter, adapter,
       staticRoot, assets, now, audit, upstream: upstreamUrl,
+      memoryReconcile, memoryReconcileAgentId: options.memoryReconcile?.agent_id,
       memoryProviderVerifier, memoryProviderAgentId: options.memoryProviderVerifier?.agent_id,
       memoryContext, memoryAgentId: options.memoryContext?.agent_id, memoryProfile: options.memoryContext?.memory.profile,
     });

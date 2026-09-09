@@ -11,7 +11,7 @@ import { BACKEND_OUTPUT_ROOTS, fileIdentity } from "../../scripts/lib/backend-bu
 const roots = [];
 const contractFiles = ["second-brain-mcp-v1", "second-brain-mcp-v3", "second-brain-mcp-v4",
   "second-brain-mcp-v5", "second-brain-scoped-read-v1", "second-brain-scoped-read-v2",
-  "second-brain-scoped-read-v3", "second-brain-scoped-read-v4", "second-brain-scoped-read-v5", "second-brain-scoped-write-v1"]
+  "second-brain-scoped-read-v3", "second-brain-scoped-read-v4", "second-brain-scoped-read-v5", "second-brain-scoped-write-v1", "second-brain-scoped-status-v1"]
   .flatMap(name => [`${name}.json`, `${name}.json.sha256`]);
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 function fixture() {

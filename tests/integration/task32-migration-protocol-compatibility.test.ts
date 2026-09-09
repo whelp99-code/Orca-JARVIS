@@ -16,10 +16,11 @@ describe("Task 32 migration protocol compatibility", () => {
       const prefixes = [...new Set(ids.map(id => Number(id.slice(0, 3))))];
       expect(prefixes).toEqual(Array.from({ length: prefixes.length }, (_, index) => index + 1));
       // Both published histories must retain their filenames and checksums. Only
-      // these six pinned branch collisions are permitted; new duplicates fail.
+      // these seven pinned history collisions are permitted; new duplicates fail.
       const duplicates = prefixes.map(prefix => ids.filter(id => Number(id.slice(0, 3)) === prefix))
         .filter(group => group.length > 1);
       expect(duplicates).toEqual([
+        ["028_budgeted_evolution_memory.sql", "028_negative_evidence.sql"],
         ["072_daemon_runtime_identity.sql", "072_memory_correction_cancellation.sql"],
         ["073_memory_cancellation_results.sql", "073_native_evening_publications.sql"],
         ["074_memory_cancellation_material.sql", "074_retention_policy_binding.sql"],

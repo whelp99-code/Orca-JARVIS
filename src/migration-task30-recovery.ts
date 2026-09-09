@@ -51,6 +51,10 @@ export class Task30MigrationRecovery {
     private readonly error: PersistenceErrorFactory,
   ) {}
 
+  recognizesRejectedMigration(id: string): boolean {
+    return REJECTED_MIGRATIONS.some(([known]) => known === id);
+  }
+
   recoverRejectedCandidate(): void {
     const rows = this.database.prepare(
       `SELECT id,checksum FROM schema_migrations

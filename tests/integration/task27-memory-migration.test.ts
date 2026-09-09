@@ -34,7 +34,8 @@ function migrationDirectory(): { readonly root: string; readonly path: string } 
 
 function baselineManifestDigest(): string {
   const names = readdirSync(join(process.cwd(), "migrations"))
-    .filter(name => name.endsWith(".sql") && name <= "036_notification_intent_immutable_delete.sql")
+    .filter(name => name.endsWith(".sql") && name <= "036_notification_intent_immutable_delete.sql"
+      && name !== "028_budgeted_evolution_memory.sql")
     .sort();
   const manifest = names.map(name => {
     const bytes = readFileSync(join(process.cwd(), "migrations", name));
@@ -57,6 +58,10 @@ describe("Task 27 forward memory classification migration", () => {
 
     // Then: all 36 immutable source files match the frozen baseline.
     expect(digest).toBe(BASELINE_MANIFEST_DIGEST);
+    // Restored deployed history is additional to, not a replacement for, the baseline.
+    const restored = readFileSync(join(process.cwd(), "migrations", "028_budgeted_evolution_memory.sql"));
+    expect(createHash("sha256").update(restored).digest("hex"))
+      .toBe("55faa41aa1c3c0b2c78ebfa4f59cd9daf6e4793deac91f39bfb3ea7e00955386");
   });
 
   it("publishes exact immutable classification, source-reference, and idempotency tables", async () => {

@@ -9,7 +9,7 @@ import {
 } from "./second-brain-transport-contract.js";
 
 export function requireSecondBrainProfile(profile: unknown): SecondBrainContractProfile {
-  if (profile !== "scoped-request-write-v1" && profile !== "scoped-record-read-v5"
+  if (profile !== "scoped-request-status-v1" && profile !== "scoped-request-write-v1" && profile !== "scoped-record-read-v5"
     && profile !== "scoped-record-read-v4" && profile !== "scoped-record-read-v3" && profile !== "scoped-record-read-v2" && profile !== "scoped-record-read-v1"
     && profile !== "task32-schema4" && profile !== "remember-schema5"
     && profile !== "cancellation-schema6" && profile !== "cancellation-submit-schema7") {
@@ -59,7 +59,8 @@ export function secondBrainRecord(value: unknown): Record<string, unknown> {
 }
 
 export function isScopedTransportProfile(profile: SecondBrainContractProfile): boolean {
-  return profile === "scoped-request-write-v1" || profile === "scoped-record-read-v1" || profile === "scoped-record-read-v2"
+  return profile === "scoped-request-status-v1" || profile === "scoped-request-write-v1"
+    || profile === "scoped-record-read-v1" || profile === "scoped-record-read-v2"
     || profile === "scoped-record-read-v3" || profile === "scoped-record-read-v4" || profile === "scoped-record-read-v5";
 }
 export function secondBrainArgumentLimit(profile: SecondBrainContractProfile, method: SecondBrainMethod): number {

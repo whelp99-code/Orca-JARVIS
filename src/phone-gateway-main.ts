@@ -1,9 +1,13 @@
+import { PHONE_PROVIDER_CLI_FIELDS, parsePhoneMemoryProviderCli, openPhoneMemoryProviderCli,
+  type PhoneMemoryProviderCliOptions } from "./phone-memory-provider-cli.js";
 import { parseArgs } from "node:util";
 import { realpathSync } from "node:fs";
 import { resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { PHONE_MEMORY_CLI_FIELDS, parsePhoneMemoryContextCli } from "./phone-memory-context-cli.js";
 import type { PhoneMemoryContextOptions } from "./phone-memory-context.js";
+import { PHONE_RECONCILE_CLI_FIELDS, parsePhoneMemoryReconcileCli } from "./phone-memory-reconcile-cli.js";
+import type { PhoneMemoryReconcileOptions } from "./phone-memory-reconcile.js";
 import {
   createPhoneGatewayServer,
   PHONE_GATEWAY_PORT,
@@ -23,6 +27,8 @@ export type PhoneGatewayCliOptions = {
   readonly staticRoot: string;
   readonly envFile: string;
   readonly memoryContext?: PhoneMemoryContextOptions;
+  readonly memoryReconcile?: PhoneMemoryReconcileOptions;
+  readonly memoryProvider?: PhoneMemoryProviderCliOptions;
 };
 
 export function parsePhoneGatewayCli(argv: readonly string[]): PhoneGatewayCliOptions {
@@ -30,6 +36,8 @@ export function parsePhoneGatewayCli(argv: readonly string[]): PhoneGatewayCliOp
     args: [...argv],
     options: {
       ...Object.fromEntries(PHONE_MEMORY_CLI_FIELDS.map(name => [name, { type: "string" as const }])),
+      ...Object.fromEntries(PHONE_RECONCILE_CLI_FIELDS.map(name => [name, { type: "string" as const }])),
+      ...Object.fromEntries(PHONE_PROVIDER_CLI_FIELDS.map(name => [name, { type: "string" as const }])),
       host: { type: "string" },
       port: { type: "string" },
       upstream: { type: "string" },
@@ -48,6 +56,8 @@ export function parsePhoneGatewayCli(argv: readonly string[]): PhoneGatewayCliOp
     throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
   }
   const memoryContext = parsePhoneMemoryContextCli(values);
+  const memoryReconcile = parsePhoneMemoryReconcileCli(values);
+  const memoryProvider = parsePhoneMemoryProviderCli(values);
   return {
     host: LOOPBACK,
     port: PHONE_GATEWAY_PORT,
@@ -55,13 +65,15 @@ export function parsePhoneGatewayCli(argv: readonly string[]): PhoneGatewayCliOp
     staticRoot: resolve(values["static-root"]),
     envFile: resolve(values["env-file"]),
     ...(memoryContext === undefined ? {} : { memoryContext }),
+    ...(memoryReconcile === undefined ? {} : { memoryReconcile }),
+    ...(memoryProvider === undefined ? {} : { memoryProvider }),
   };
 }
 
-export function startPhoneGatewayCli(
+export async function startPhoneGatewayCli(
   options: PhoneGatewayCliOptions,
   write: (line: string) => void = line => { process.stdout.write(`${line}\n`); },
-): { close: () => void } {
+): Promise<{ close: () => void }> {
   const getuid = process.getuid;
   const home = process.env.HOME;
   if (getuid === undefined || home === undefined || home.length === 0) {
@@ -69,16 +81,25 @@ export function startPhoneGatewayCli(
   }
   const uid = getuid();
   const config = parsePhoneGatewayConfig({ home, envFile: options.envFile, uid });
-  const server: PhoneGatewayServer = createPhoneGatewayServer({
-    host: options.host,
-    port: options.port,
-    upstream: options.upstream,
-    staticRoot: options.staticRoot,
-    config,
-    memoryContext: options.memoryContext,
-  });
-  write(`http://${server.address.host}:${String(server.address.port)}`);
-  return { close: () => { server.close(); } };
+  const provider = options.memoryProvider === undefined ? undefined : await openPhoneMemoryProviderCli(options.memoryProvider);
+  let server: PhoneGatewayServer;
+  try {
+    server = createPhoneGatewayServer({
+      host: options.host,
+      port: options.port,
+      upstream: options.upstream,
+      staticRoot: options.staticRoot,
+      config,
+      memoryContext: options.memoryContext,
+      memoryReconcile: options.memoryReconcile,
+      memoryProviderVerifier: provider?.options,
+    });
+  } catch (error) { provider?.close(); throw error; }
+  let closed = false;
+  const close = () => { if (closed) return; closed = true; try { server.close(); } finally { provider?.close(); } };
+  try { write(`http://${server.address.host}:${String(server.address.port)}`); }
+  catch (error) { close(); throw error; }
+  return { close };
 }
 
 function isDirectRun(): boolean {
@@ -94,7 +115,7 @@ function isDirectRun(): boolean {
 
 if (isDirectRun()) {
   try {
-    const runtime = startPhoneGatewayCli(parsePhoneGatewayCli(process.argv.slice(2)));
+    const runtime = await startPhoneGatewayCli(parsePhoneGatewayCli(process.argv.slice(2)));
     const shutdown = (): void => {
       runtime.close();
       process.exit(0);
