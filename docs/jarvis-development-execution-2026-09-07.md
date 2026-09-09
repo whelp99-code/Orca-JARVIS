@@ -1835,3 +1835,15 @@
   `verify-timeline-batch-before.json`, `verify-timeline-batch-result.json`.
 - This gate predates the prepared top-k collection patch; it does not validate
   that patch or establish production activation.
+
+### Retained timeline tail implementation
+
+- Keeps only requested sorted tail payloads while preserving first ID occurrence,
+  stable equal-key ordering and original fractional/NaN slice behavior.
+- Parent verification: lint/typecheck/backend build exit 0; 5 files / 22 tests pass.
+  Unicode equal-key regression failed in the draft and passed after correction.
+- Actual compiled dense fixture output unchanged, 200 events, 0 writes; CLI exit 0,
+  0 stderr bytes, independent data_version unchanged. Single-sample max RSS
+  396,124 KiB; raw-row and ID memory remain unbounded.
+- Details: `docs/planning/adr-timeline-retained-tail.md`. Native review ship/no findings;
+  prior canonical gate does not cover this implementation.

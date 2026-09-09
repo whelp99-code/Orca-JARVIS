@@ -65,23 +65,38 @@ export class TaskTimeline {
   ): TaskTimelineEvent[] {
     if (taskId.length === 0) throw new JarvisError("TASK_TIMELINE_INVALID");
     const maximum = clamp(limit, 1, 1000);
+    const capacity = Math.ceil(maximum);
     const events: MutableEvent[] = [];
+    const compare = (left: MutableEvent, right: MutableEvent): number =>
+      left.created_at.localeCompare(right.created_at)
+      || left.source.localeCompare(right.source)
+      || left.event_id.localeCompare(right.event_id);
     const eventIds = new Set<string>();
     const add = (event: MutableEvent): void => {
       if (eventIds.has(event.event_id)) return;
+      // Remember even discarded IDs: a later duplicate must not replace the first event.
       eventIds.add(event.event_id);
-      events.push(event);
+      if (events.length === capacity && compare(event, events[0]!) < 0) return;
+      let low = 0;
+      let high = events.length;
+      while (low < high) {
+        const middle = (low + high) >>> 1;
+        if (compare(events[middle]!, event) <= 0) low = middle + 1;
+        else high = middle;
+      }
+      events.splice(low, 0, event);
+      if (events.length > capacity) events.shift();
     };
     this.authorityEvents.add(taskId, graph, add);
     this.runtimeEvents.add(taskId, graph, add);
-    const sorted = events.sort((left, right) =>
-      left.created_at.localeCompare(right.created_at)
-      || left.source.localeCompare(right.source)
-      || left.event_id.localeCompare(right.event_id));
+    const sorted = events;
     if (sorted.length === 0 && !this.summaryReader.summary(taskId, graph)) {
       throw new JarvisError("TASK_TIMELINE_NOT_FOUND");
     }
-    return sorted.slice(Math.max(0, sorted.length - maximum))
+    // Preserve the original slice conversion, including fractional limits and NaN.
+    const originalStart = Math.trunc(Math.max(0, eventIds.size - maximum));
+    const discarded = eventIds.size - sorted.length;
+    return sorted.slice(Math.max(0, originalStart - discarded))
       .map((event, index) => ({ ...event, sequence: index + 1 }));
   }
 
