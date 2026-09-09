@@ -74,3 +74,20 @@ identical source identities,1395payload file entries and2843dependency entries.
 Both recorded vectors were rehashed from disk and matched. This is a same-host,
 same-cache repeat-build observation; cross-host reproducibility, signed manifests
 and production readiness are still unproven. See the development execution log.
+
+
+### Packaged dashboard HTTP smoke
+
+After packaging, run from the source checkout:
+
+```bash
+node scripts/packaged-dashboard-http-probe.mjs /absolute/package/root /absolute/new-receipt.json
+```
+
+The probe uses the supplied package's entrypoint, dependencies and static assets
+with a private migrated database. It checks byte-identical HTML/JS/CSS, health,
+session establishment and a CSRF-bound proposal preview preserving requirements
+and a digest. A missing production planner fails even when static assets/health pass.
+It performs no staging, approval or provider candidate generation. Runtime capability
+version probes may run as part of preview. This remains developer HTTP evidence,
+not browser interaction, production activation or deployment readiness.

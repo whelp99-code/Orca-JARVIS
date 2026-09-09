@@ -2287,3 +2287,16 @@ Observed reviewer model/effort and API-equivalent token cost are unavailable.
   rather than inventing another identity. Canonical3977test gate predates this change.
 - Final typecheck exit0; independent review SHIP with0findings. Partial-writer startup
   rejection is the explicit residual availability limit.
+
+
+### 2026-09-10 — packaged proposal regression gate
+
+Extended packaged-dashboard-http-probe.mjs with real session/CSRF POST preview,
+ready status, exact constraints/completion evidence and digest-shape checks.
+Negative retained package GbXulG exits1 at HTTP404!=200; positive retained package
+DeVFyt exits0 with6HTTP200responses and proposal_preview=ready. Static bytes remain
+identical and successful shutdown exits0. node --check exits0. No product code changed.
+Evidence in shared QA: packaged-preview-negative.log and packaged-preview-positive.json.
+Both retained artifacts predate current HEAD; this comparison validates the probe's
+ability to detect the previously reproduced production composition regression.
+It is not a new current-HEAD package, full gate or provider execution verification.

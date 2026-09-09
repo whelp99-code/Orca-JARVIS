@@ -59,6 +59,24 @@ try {
   assert.ok(health !== null && typeof health === "object");
   assert.equal(health.status, "ok");
   assert.equal(health.authority, "ready");
+  const session = JSON.parse((await get("/api/v1/session")).toString());
+  assert.equal(typeof session.csrf_token, "string");
+  const previewPath = "/api/v1/proposals/preview";
+  const requirements = { work_type: "development", constraints: ["no deployment"],
+    completion_evidence: ["packaged HTTP preview"] };
+  const preview = await fetch(`${origin}${previewPath}`, {
+    method: "POST", redirect: "error", signal: AbortSignal.timeout(10000),
+    headers: { origin, "content-type": "application/json", "x-jarvis-csrf": session.csrf_token },
+    body: JSON.stringify({ schema_version: 1, objective: "Verify the packaged proposal route",
+      ...requirements, answers: [], requested_capabilities: [] }),
+  });
+  const previewBody = Buffer.from(await preview.arrayBuffer());
+  assert.equal(preview.status, 200, `${previewPath}: ${previewBody.toString().slice(0, 500)}`);
+  const proposal = JSON.parse(previewBody.toString()).proposal;
+  assert.equal(proposal.status, "ready");
+  assert.deepEqual(proposal.requirements, requirements);
+  assert.match(proposal.proposal_digest, /^sha256:[a-f0-9]{64}$/);
+  responses.push({ path: previewPath, method: "POST", status: preview.status, bytes: previewBody.length });
   child.kill("SIGTERM");
   const forceTimer = setTimeout(() => child.kill("SIGKILL"), 5000);
   let exit;
@@ -66,7 +84,8 @@ try {
   assert.equal(exit.code, 0, stderr);
   assert.equal(exit.signal, null);
   const result = { scope: "packaged dashboard HTTP with private migrated DB; no browser or provider execution",
-    package_root: root, source: receipt.source, responses, static_bytes_match: true, shutdown: exit,
+    package_root: root, source: receipt.source, responses, static_bytes_match: true,
+    proposal_preview: "ready", shutdown: exit,
     deployment_ready: false };
   if (process.argv[3]) writeFileSync(process.argv[3], `${JSON.stringify(result, null, 2)}\n`);
   console.log(JSON.stringify(result));
