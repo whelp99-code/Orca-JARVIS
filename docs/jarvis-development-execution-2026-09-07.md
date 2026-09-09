@@ -2089,3 +2089,24 @@ Observed reviewer model/effort and API-equivalent token cost are unavailable.
 - Includes read-only local collection discovery and retention schedule validation.
   No production deployment, provider refresh promotion or general retention activation.
   Full backlog completion remains unproven; this gate validates the tested implementation only.
+
+## Work lineage and projection indexes — canonical gate, acceptance pending
+
+- Tested product commit a951729f781e86e6371a93e74dcb06773af76158; npm run verify exit0.
+- Backend:266files1838tests +265files1871tests; dashboard37files256tests.
+  Total568files3965tests. All1843 tracked hashes unchanged during the gate.
+- Browser:28tests passed across1440/1024,1.3minutes, local HTTP fixture servers.
+- Fixes include explicit signed original/rework/retry declarations, generic staging
+  binding, bounded predecessor visibility, approval-page suppression, task identity
+  snapshot/replay and internal uncertain settlement after mid-execution quarantine.
+- Migration086 adds projection_id indexes; prior92 migration files are unchanged.
+  Detailed scale and upgrade evidence: docs/planning/projection-id-index-evidence.md.
+- Fresh read-only review /root/indexed_lineage_review is running; no accepting
+  verdict yet. Feature evidence: docs/task-work-lineage.md. No production activation.
+- Backlog25 remains incomplete: task-usage-performance reports client estimates,
+  billing_verified=false. Billing-backed cost, reconciled external duplicate effects
+  and executed candidate outcome comparison remain unavailable, not measured zero.
+- Backlog16 remains incomplete: generic command list still materializes all rows.
+  Identifier indexes do not implement generic CLI pagination or close all capacity work.
+- The original backlog01–25 and earlier operational/retention/consumer holds remain
+  in scope; this feature gate is not a full-goal completion claim.
