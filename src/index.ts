@@ -282,3 +282,5 @@ export { observeMemoryScopedCompletion } from "./memory-scoped-completion-observ
 export { readMemoryScopedCompletionProof } from "./memory-scoped-completion-proof.js";
 
 export { readMemoryScopedSettlementAuthority } from "./memory-scoped-settlement-authority.js";
+
+export { readMemoryScopedSettlement, settleMemoryScopedCompletion } from "./memory-scoped-settlement.js";

@@ -55,5 +55,5 @@ export async function completionObservationFixture() {
     status, artifact, checked_at: at.toISOString(), valid_until: new Date(at.getTime() + 5000).toISOString() };
   const client = { withRememberedCompletion: async (_request: unknown, consume: any) => consume(value, () => value) };
   const recorded = await observeMemoryScopedCompletion(f.options, leased.lease, client, () => at);
-  return { ...f, at, recorded, leased };
+  return { ...f, at, recorded, leased, client, observation: value };
 }

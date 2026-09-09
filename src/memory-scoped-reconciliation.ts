@@ -15,7 +15,7 @@ function instant(now: Date) {
   if (!Number.isFinite(now.getTime())) return fail();
   return now.toISOString();
 }
-/** Trusted worker material for one already-spent attempt. The historical decode
+/** Historical worker material for one already-spent or settled attempt. The historical decode
  * does not renew write authority or authorize a provider read. The consumer must
  * obtain current read claims independently. No global enumeration or resend. */
 export function readMemoryScopedReconciliationRequest(options: MemoryScopedReconcileOptions, outboxId: string, now: Date) {
@@ -29,7 +29,7 @@ export function readMemoryScopedReconciliationRequest(options: MemoryScopedRecon
       AND b.idempotency_key=o.idempotency_key AND b.created_at=o.created_at
       JOIN memory_outbox_attempts a ON a.outbox_id=o.outbox_id AND a.dispatch_fence=o.dispatch_fence
       AND a.request_digest=o.request_digest
-      WHERE o.outbox_id=? AND o.request_profile='scoped-v4' AND o.state='reconciling'`).get(outboxId) as Record<string, unknown> | undefined;
+      WHERE o.outbox_id=? AND o.request_profile='scoped-v4' AND o.state IN ('reconciling','settled')`).get(outboxId) as Record<string, unknown> | undefined;
     if (row === undefined || row.provider_instance_id !== options.providerInstanceId
       || !["dispatching", "uncertain", "accepted"].includes(String(row.outcome))
       || !Number.isSafeInteger(row.dispatch_fence) || Number(row.dispatch_fence) < 1

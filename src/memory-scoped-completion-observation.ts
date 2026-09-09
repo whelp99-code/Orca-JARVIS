@@ -14,6 +14,17 @@ export async function observeMemoryScopedCompletion(options: MemoryScopedReconci
   now: () => Date, signal?: AbortSignal) {
   const request = readMemoryScopedReconciliationRequest(options, lease.outbox_id, now());
   return client.withRememberedCompletion(request, (observation, refresh) => {
+    return recordMemoryScopedCompletionObservation(options, lease, request, observation, refresh, now);
+
+  }, signal);
+}
+
+// Internal synchronous primitive; only consume a live trusted-client callback.
+export function recordMemoryScopedCompletionObservation(
+  options: MemoryScopedReconcileOptions, lease: MemoryScopedReconcileLease,
+  request: ReturnType<typeof readMemoryScopedReconciliationRequest>,
+  observation: Awaited<ReturnType<ReturnType<typeof createMemoryScopedClient>["readRememberedCompletion"]>>,
+  refresh: () => typeof observation, now: () => Date) {
     const db = options.authority.db;
     return db.transaction(() => {
       const check = () => {
@@ -55,5 +66,4 @@ export async function observeMemoryScopedCompletion(options: MemoryScopedReconci
       return Object.freeze({ kind: "completion_observation_recorded" as const, observation_id: id,
         outbox_id: lease.outbox_id, evidence_digest: digest, replayed: existing !== undefined });
     }).immediate();
-  }, signal);
 }
