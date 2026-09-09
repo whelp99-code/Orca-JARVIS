@@ -1775,3 +1775,22 @@
 - Current timeline ID-set work is separate and uncommitted pending independent
   review. Reviewer timeline_id_set_review failed to start due to tool-reported
   usage limit (retry time15:25). No review verdict or product completion is claimed.
+
+### Timeline SQL parameter-limit closure — 2026-09-09
+
+- Reproduced too many SQL variables with2000connected intents and separately
+ 40000control references in negative evidence. Replaced ID-per-placeholder queries
+ in graph/query/summary/negative-evidence readers with bound JSON-array IN queries.
+ Existing filters/order/empty behavior retained; no migration/write changes.
+- Focused19tests and lint/typecheck/build passed. Actual compiled graph100kintents
+ returned all100kIDs with14queries,5samples1002.98–1086.66ms,0writes/FKerrors.
+ BuiltCLI2000connected intents returned200events,exit0,stderr0,no DB commit observed.
+- Independent luna/max review ship/no findings; actual model metadata unavailable.
+ Previous terra usage-limit failure did not constitute a review. Optional CodeRabbit
+ install failed on filesystem quota; no CodeRabbit result claimed.
+- Full canonical verify71580 exit0:backend250files1748tests +250files1787tests;
+ dashboard37files255tests, total3790passed.1737source files unchanged before/after.
+ Evidence and scope in docs/planning/adr-timeline-id-sets.md and shared QA receipts.
+- Remaining performance work is measured:full100k-intent timeline returns200events
+ with500024queries/6786.16ms. Per-record event lookups remain; this commit does not
+ claim their removal or whole-backlog completion.

@@ -15,8 +15,8 @@ export class TaskTimelineQuery {
   inRows(sqlPrefix: string, ids: Iterable<string>, sqlSuffix = ""): Row[] {
     const items = values(ids);
     if (items.length === 0) return [];
-    const placeholders = items.map(() => "?").join(",");
-    return this.rows(`${sqlPrefix} (${placeholders}) ${sqlSuffix}`, ...items);
+    const placeholders = "SELECT value FROM json_each(?)";
+    return this.rows(`${sqlPrefix} (${placeholders}) ${sqlSuffix}`, JSON.stringify(items));
   }
 
   totalChanges(): number {

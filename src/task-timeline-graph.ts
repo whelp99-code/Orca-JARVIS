@@ -21,8 +21,8 @@ export class TaskTimelineGraphReader {
   private inRows(sqlPrefix: string, ids: Iterable<string>, sqlSuffix = ""): Row[] {
     const items = values(ids);
     if (items.length === 0) return [];
-    const placeholders = items.map(() => "?").join(",");
-    return this.rows(`${sqlPrefix} (${placeholders}) ${sqlSuffix}`, ...items);
+    const placeholders = "SELECT value FROM json_each(?)";
+    return this.rows(`${sqlPrefix} (${placeholders}) ${sqlSuffix}`, JSON.stringify(items));
   }
 
   private add(set: Set<string>, value: unknown): boolean {
@@ -51,15 +51,16 @@ export class TaskTimelineGraphReader {
   private relatedControlRequestsFor(ids: Iterable<string>): Row[] {
     const items = values(ids);
     if (items.length === 0) return [];
-    const placeholders = items.map(() => "?").join(",");
+    const placeholders = "SELECT value FROM json_each(?)";
     const jsonPaths = ["$.task_id", "$.work_id", "$.run_id", "$.correlation_id", "$.request_id",
       "$.continuation_id", "$.intent_id", "$.question_id", "$.project_id"];
     const predicates = [`request_id IN (${placeholders})`];
-    const params: unknown[] = [...items];
+    const encoded = JSON.stringify(items);
+    const params: unknown[] = [encoded];
     for (const column of ["target_json", "args_json"]) {
       for (const path of jsonPaths) {
         predicates.push(`json_extract(${column},'${path}') IN (${placeholders})`);
-        params.push(...items);
+        params.push(encoded);
       }
     }
     return this.rows(
@@ -72,14 +73,15 @@ export class TaskTimelineGraphReader {
   private relatedWorkflowRunsFor(ids: Iterable<string>): Row[] {
     const items = values(ids);
     if (items.length === 0) return [];
-    const placeholders = items.map(() => "?").join(",");
-    const params: unknown[] = [...items, ...items];
+    const placeholders = "SELECT value FROM json_each(?)";
+    const encoded = JSON.stringify(items);
+    const params: unknown[] = [encoded, encoded];
     const jsonPaths = ["$.task_id", "$.work_id", "$.request_id", "$.correlation_id", "$.run_id",
       "$.continuation_id", "$.intent_id", "$.project_id"];
     const predicates = [`run_id IN (${placeholders})`, `correlation_id IN (${placeholders})`];
     for (const path of jsonPaths) {
       predicates.push(`json_extract(input_json,'${path}') IN (${placeholders})`);
-      params.push(...items);
+      params.push(encoded);
     }
     return this.rows(
       `SELECT * FROM workflow_runs WHERE ${predicates.join(" OR ")} ORDER BY created_at,run_id`,
@@ -93,18 +95,19 @@ export class TaskTimelineGraphReader {
     const predicates: string[] = [];
     const params: unknown[] = [];
     if (items.length > 0) {
-      const placeholders = items.map(() => "?").join(",");
+      const placeholders = "SELECT value FROM json_each(?)";
       predicates.push(
         `intent_id IN (${placeholders})`,
         `continuation_id IN (${placeholders})`,
         `json_extract(payload_json,'$.continuation_id') IN (${placeholders})`,
       );
-      params.push(...items, ...items, ...items);
+      const encoded = JSON.stringify(items);
+      params.push(encoded, encoded, encoded);
     }
     if (questions.length > 0) {
-      const placeholders = questions.map(() => "?").join(",");
+      const placeholders = "SELECT value FROM json_each(?)";
       predicates.push(`json_extract(payload_json,'$.question_id') IN (${placeholders})`);
-      params.push(...questions);
+      params.push(JSON.stringify(questions));
     }
     if (predicates.length === 0) return [];
     return this.rows(
@@ -120,16 +123,16 @@ export class TaskTimelineGraphReader {
     const predicates: string[] = [];
     const params: unknown[] = [];
     if (projectIds.length > 0) {
-      predicates.push(`project_id IN (${projectIds.map(() => "?").join(",")})`);
-      params.push(...projectIds);
+      predicates.push(`project_id IN (SELECT value FROM json_each(?))`);
+      params.push(JSON.stringify(projectIds));
     }
     if (canonicalPaths.length > 0) {
-      predicates.push(`canonical_path IN (${canonicalPaths.map(() => "?").join(",")})`);
-      params.push(...canonicalPaths);
+      predicates.push(`canonical_path IN (SELECT value FROM json_each(?))`);
+      params.push(JSON.stringify(canonicalPaths));
     }
     if (projectIds.length === 0 && worktreeIds.length > 0) {
-      predicates.push(`worktree_id IN (${worktreeIds.map(() => "?").join(",")})`);
-      params.push(...worktreeIds);
+      predicates.push(`worktree_id IN (SELECT value FROM json_each(?))`);
+      params.push(JSON.stringify(worktreeIds));
     }
     if (predicates.length === 0) return false;
     let changed = false;

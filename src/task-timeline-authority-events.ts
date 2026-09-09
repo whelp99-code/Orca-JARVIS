@@ -183,8 +183,8 @@ export class TaskTimelineAuthorityEvents {
     const predicates = ["task_id=?"];
     const params: unknown[] = [taskId];
     if (requestIds.length > 0) {
-      predicates.push(`request_id IN (${requestIds.map(() => "?").join(",")})`);
-      params.push(...requestIds);
+      predicates.push("request_id IN (SELECT value FROM json_each(?))");
+      params.push(JSON.stringify(requestIds));
     }
     const sql = `SELECT evidence_id,task_id,attempt_id,reason_code,evidence_digest,created_at
       FROM negative_evidence WHERE ${predicates.join(" OR ")} ORDER BY created_at,evidence_id`;
