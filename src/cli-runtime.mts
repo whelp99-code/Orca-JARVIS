@@ -68,42 +68,48 @@ export async function execute(
     console.log(CLI_HELP);
     return { ok: true, command: "help" };
   }
-  const parsed = parseArgs({
-    args,
-    options: {
-      db: { type: "string" },
-      decision_public: { type: "string" },
-      decision_key_id: { type: "string" },
-      decision_principal: { type: "string" },
-      verifier_public: { type: "string" },
-      verifier_key_id: { type: "string" },
-      verifier_principal: { type: "string" },
-      json: { type: "boolean" },
-      once: { type: "boolean" },
-      crash: { type: "string" },
-      worktree: { type: "string" },
-      bindings: { type: "string" },
-      limit: { type: "string" },
-      max_pages: { type: "string" },
-      max_bytes: { type: "string" },
-      interval_ms: { type: "string" },
-      "interval-ms": { type: "string" },
-      environments: { type: "string" },
-      live_resume: { type: "boolean" },
-      session_id: { type: "string" },
-      input: { type: "string" },
-      idempotency_key: { type: "string" },
-      allow_mutation: { type: "boolean" },
-      worker: { type: "string" },
-      source: { type: "string" },
-      "key-file": { type: "string" },
-      "memory-review-cleanup-root": { type: "string" },
-      "memory-review-cleanup-limit": { type: "string" },
-      "remote-audit-retention-limit": { type: "string" },
-    },
-    allowPositionals: true,
-    strict: false,
-  });
+  const parsed = (() => {
+    try {
+      return parseArgs({
+        args,
+        options: {
+          db: { type: "string" },
+          decision_public: { type: "string" },
+          decision_key_id: { type: "string" },
+          decision_principal: { type: "string" },
+          verifier_public: { type: "string" },
+          verifier_key_id: { type: "string" },
+          verifier_principal: { type: "string" },
+          json: { type: "boolean" },
+          once: { type: "boolean" },
+          crash: { type: "string" },
+          worktree: { type: "string" },
+          bindings: { type: "string" },
+          limit: { type: "string" },
+          max_pages: { type: "string" },
+          max_bytes: { type: "string" },
+          interval_ms: { type: "string" },
+          "interval-ms": { type: "string" },
+          environments: { type: "string" },
+          live_resume: { type: "boolean" },
+          session_id: { type: "string" },
+          input: { type: "string" },
+          idempotency_key: { type: "string" },
+          allow_mutation: { type: "boolean" },
+          worker: { type: "string" },
+          source: { type: "string" },
+          "key-file": { type: "string" },
+          "memory-review-cleanup-root": { type: "string" },
+          "memory-review-cleanup-limit": { type: "string" },
+          "remote-audit-retention-limit": { type: "string" },
+        },
+        allowPositionals: true,
+        strict: true,
+      });
+    } catch {
+      throw new JarvisError("CLI_ARGUMENT_INVALID");
+    }
+  })();
   const [command, subcommand, argument, fourth, fifth, sixth] = parsed.positionals;
   const values = normalizeCliValues(parsed.values);
   if ((values["memory-review-cleanup-root"] !== undefined || values["memory-review-cleanup-limit"] !== undefined)
