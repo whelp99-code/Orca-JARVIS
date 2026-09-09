@@ -4,6 +4,7 @@ import { MemoryProjectionAuthority } from "../memory-projection-authority.js";
 import type { ActionLevel, ControlCommandState } from "../control-plane-contract.js";
 import type { ControlRequestListResponse, OverviewApproval } from "./legacy-read-contracts.js";
 import { dashboardRetryStatus } from "./retry-policy.js";
+import { CONTROL_LINEAGE_VISIBLE_SQL } from "./control-lineage-visibility-sql.js";
 
 export type ControlPageInput = { readonly limit: number; readonly after?: readonly [string, string] };
 const validAnchor = (key: readonly string[]): boolean => key.length === 2
@@ -15,7 +16,8 @@ const ACTIONABLE = "c.state IN ('pending','approved','failed')";
 const VISIBLE = `NOT EXISTS (SELECT 1 FROM memory_projection_quarantine q
   WHERE q.projection_kind='control_payload' AND q.projection_id=c.request_id AND q.component_id=c.request_id)
   AND NOT EXISTS (SELECT 1 FROM memory_projection_suppressions s
-  WHERE s.projection_kind='control_payload' AND s.projection_id=c.request_id AND s.component_id=c.request_id)`;
+  WHERE s.projection_kind='control_payload' AND s.projection_id=c.request_id AND s.component_id=c.request_id)
+  AND ${CONTROL_LINEAGE_VISIBLE_SQL}`;
 const SELECT = `SELECT CAST(c.rowid AS TEXT) AS position,c.command_digest,
   c.request_id,c.action,c.action_level,c.requested_at,c.requested_by,c.state,
   CASE WHEN c.action='task.execute' AND json_type(c.target_json,'$.task_id')='text'

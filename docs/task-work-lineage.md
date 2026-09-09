@@ -150,3 +150,16 @@ dashboard assets completed `node scripts/run-tests.mjs e2e` with exit 0,
 real-server lineage form/staging/reload cases and 26 existing UI regressions.
 Log: `lineage-final-browser-regression.log` in the QA directory. A fresh read-only
 review was dispatched to `/root/lineage_fresh_review`; no verdict is recorded yet.
+
+The fresh review and a parent compiled probe found hidden descendants still present
+in dashboard approval pages and pending totals: common read returned absent while
+the page returned child and pending total 1. These SQL surfaces now apply bounded
+ancestor suppression within the same page/count transaction. Focused lineage/read
+tests passed 12; existing pagination tests passed 4; typecheck and lint exited 0.
+Completion ordering in the lineage metric now also compares finite parsed instants;
+dedicated offset-completion coverage remains pending.
+
+The canonical run at `cea687c` (session98914) was deliberately terminated after
+these defects were confirmed, with exit143. It is incomplete and not a passing
+gate. Logs remain `verify-lineage-corrections.log`; no successful receipt was made.
+Browser/full-gate revalidation and a fresh independent verdict are still required.

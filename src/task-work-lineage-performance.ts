@@ -26,7 +26,9 @@ export function readTaskWorkLineagePerformance(db: AuthorityDb,
       if (command.state === "completed") {
         try {
           const evidence = readTaskCompletionEvidence(db, row.request_id, observedAt);
-          if (!evidence || evidence.completion.completed_at < row.requested_at) completed.invalid_evidence++;
+          if (!evidence || !Number.isFinite(Date.parse(row.requested_at))
+            || !Number.isFinite(Date.parse(evidence.completion.completed_at))
+            || Date.parse(evidence.completion.completed_at) < Date.parse(row.requested_at)) completed.invalid_evidence++;
           else completed[lineage.kind]++;
         } catch (error) {
           if (!(error instanceof JarvisError) || error.code !== "TASK_COMPLETION_INVALID") throw error;
