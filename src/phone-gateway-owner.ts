@@ -211,8 +211,10 @@ async function serveMatchedRoute(
       update({ code, status: ERROR_STATUS[code], outcome: "rejected" }); return;
     }
     if (!stillAuthenticated()) return;
+    // Canonical scalar decision fields support the bounded provider channel.
     // Verification never renews a login or creates a reusable write grant.
-    writeJson(ctx.response, 200, requestId, result, true);
+    const canonicalResult = Object.fromEntries(Object.keys(result).sort().map(key => [key, Reflect.get(result, key)]));
+    writeJson(ctx.response, 200, requestId, canonicalResult, true);
     update({ outcome: "allowed", code: "ok", status: 200 }); return;
   }
   if (matched.routeClass === "memory_context") {
