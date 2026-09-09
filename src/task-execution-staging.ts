@@ -40,7 +40,8 @@ export function assertTaskExecutionBinding(db: AuthorityDb, plan: TaskExecutionP
   const starts = db.db.prepare(`SELECT r.args_json FROM control_command_requests r
     JOIN control_command_effects e ON e.request_id=r.request_id AND e.effect_type='workflow.started'
     JOIN control_command_redemptions x ON x.request_id=r.request_id AND x.lease_fence=r.lease_fence
-    WHERE r.action='workflow.start' AND r.state='completed' AND json_extract(r.args_json,'$.run_id')=?`)
+    WHERE r.action='workflow.start' AND r.state='completed' AND json_valid(r.args_json)
+      AND json_extract(r.args_json,'$.run_id')=?`)
     .all(plan.run_id) as { args_json: string }[];
   const matches = starts.some(row => {
     const approved = controlWorkflowRunInput(JSON.parse(row.args_json));

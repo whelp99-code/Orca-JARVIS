@@ -60,3 +60,30 @@ Evidence: `routing-query-before.json`, `routing-query-after.json` and
   unavailable. Prior external-review detour stopped before any project source
   submission; newly installed CLI removed and auth process stopped. This is the task/routing lookup portion of backlog16;
   it does not claim every query or the full01–25 objective is complete.
+
+## Execution binding lookup — 2026-09-09
+
+The common assertTaskExecutionBinding query omitted json_valid(args_json), so
+SQLite could not use the existing partial control_workflow_start_run index.
+A source-query EXPLAIN regression failed before the change. Add that predicate;
+retain completed state, redemption/fence, workflow.started effect joins and exact
+approved workflow/spec/budget comparisons. No migration or authority rule changes.
+Malformed historical argument rows cannot establish an approved matching workflow
+and are excluded by the query, consistent with the indexed dashboard lookup.
+
+Verification:30tests/4files34.79s passed, types/lint/backend build and diff check
+exit0. Positive original approval and changed-spec rejection retain zero read writes.
+Compiled standalone AuthorityDb benchmark with actual84 migrations and the source
+SQL,21 warm measured iterations, p95 nearest-rank20th observation:
+
+| Completed workflow history | Prior p95 ms | Indexed p95 ms |
+|---|---:|---:|
+| 10,000 | 3.235416 | 0.009860 |
+| 100,000 | 32.784062 | 0.003300 |
+
+Both variants return0rows for the benchmark's intentionally absent redemption;
+this is a negative lookup microbenchmark, not approved end-to-end latency or a
+service SLA. Query plan changes from state-index candidate enumeration to run-ID
+expression lookup; effect/redemption joins remain indexed. Positive binding is
+covered by the integration fixture, not this timing result. Provider calls0,
+production database changes0. Receipt task-binding-index-benchmark.jsonl in QA cache.
