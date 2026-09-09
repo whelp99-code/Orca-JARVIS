@@ -294,3 +294,5 @@ export { createProductionScopedProviderVerifier, type ScopedProviderProductionOp
 export { createPhoneMemoryProviderVerifier, type PhoneMemoryProviderVerifierOptions } from "./phone-memory-provider-verifier.js";
 
 export { type PhoneMemoryReconcileOptions } from "./phone-memory-reconcile.js";
+
+export { parsePhoneMemoryProviderCli, openPhoneMemoryProviderCli, type PhoneMemoryProviderCliOptions } from "./phone-memory-provider-cli.js";
