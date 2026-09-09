@@ -58,3 +58,34 @@ Local QA evidence directory /home/jm/.cache/jarvis-test-runtime-qa-20260908:
 refresh-unchanged-checkpoint.json, refresh-multiple-tasks.json,
 refresh-source-quarantine-probe.json. These are isolated fixture observations, not
 production activation or resolved defects.
+
+## Local collection producer milestone
+
+`LocalTimelineCollection.collect(taskId)` reads the actual local authority timeline
+inside a deferred read transaction. The result names `local_task_timeline`, carries
+separate started/completed/source-updated timestamps, an independent collection UUID,
+and canonical context bytes with their digest. A truncated context yields `capped`.
+The producer refuses nested transactions, invalid task IDs, invalid clocks, future
+source timestamps and reads lasting at least five minutes.
+
+This producer attests neither a worktree nor remote executor liveness. The existing
+timeline can aggregate related graph records; assigning it a configured worktree
+without verifying those relationships would overstate its scope. Collection objects
+are not authenticated admission receipts and must not be accepted as caller-supplied
+proof by a future persistence API.
+
+Verification: integration three tests passed; typecheck, zero-warning lint and backend
+build exited0. A separate compiled Node process read a migrated isolated database
+twice with the real clock, verified distinct collection IDs and unchanged DB bytes.
+No operational service was connected. Independent read-only review by
+/root/refresh_receipt_review returned ship; no fix-first findings. Observed reviewer
+model/effort and API-equivalent usage costs are unavailable. The context digest
+includes generated_at, so it is a collected-byte digest, not an unchanged-state key.
+
+Remaining implementation must cover bounded snapshot storage and replay horizon,
+stable subject holds surviving eviction, source/scope revalidation at admission,
+versioned context resolution and daily-loop integration. Existing observation,
+checkpoint and refresh receipt histories remain unchanged. Fresh-authority compaction
+is a suppression/rebuild workflow, not a live periodic expiry adapter; the service
+currently supplies no observation retention adapter. Historical refresh receipts
+survive compaction and become unavailable when their source is removed.
