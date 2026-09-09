@@ -278,3 +278,5 @@ export { claimMemoryScopedReconciliation, readMemoryScopedReconciliationRequest,
   type MemoryScopedReconcileLease, type MemoryScopedReconcileOptions } from "./memory-scoped-reconciliation.js";
 
 export { observeMemoryScopedCompletion } from "./memory-scoped-completion-observation.js";
+
+export { readMemoryScopedCompletionProof } from "./memory-scoped-completion-proof.js";
