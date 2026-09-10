@@ -26,7 +26,9 @@ it("reuses loaded ancestors within a list snapshot and observes quarantine on th
     try {
       listed = listControlCommands(f.db);
       expect(listed).toHaveLength(65);
-      expect(prepare.mock.calls.filter(([sql]) => sql === "SELECT * FROM control_command_requests WHERE request_id=?")).toHaveLength(0);
+      // Sequential reads share one prepared statement; no full raw-payload array is materialized.
+      expect(prepare.mock.calls.filter(([sql]) => sql === "SELECT * FROM control_command_requests WHERE request_id=?")).toHaveLength(1);
+      expect(prepare.mock.calls.filter(([sql]) => sql === "SELECT * FROM control_command_requests ORDER BY requested_at,request_id")).toHaveLength(0);
       expect(payload).toHaveBeenCalledTimes(65);
       expect(task).toHaveBeenCalledTimes(1);
     } finally { prepare.mockRestore(); payload.mockRestore(); task.mockRestore(); }

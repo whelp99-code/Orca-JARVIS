@@ -56,22 +56,6 @@ export function visibleTaskWorkLineage(db: AuthorityDb, row: Record<string, unkn
   id => projections.isProjectionIdSuppressed(id));
 }
 
-/** Caller holds one read transaction. No memoized observation survives this call. */
-export function visibleTaskWorkLineageRows(rows: readonly Record<string, unknown>[], projections: MemoryProjectionAuthority) {
-  const byId = new Map(rows.map(row => [String(row.request_id), row]));
-  const payloads = new Map<string, boolean>(), tasks = new Map<string, boolean>();
-  const payloadSuppressed = (id: string) => {
-    if (!payloads.has(id)) payloads.set(id, projections.isSuppressed({ kind: "control_payload", id, component_id: id }));
-    return payloads.get(id)!;
-  };
-  const taskSuppressed = (id: string) => {
-    if (!tasks.has(id)) tasks.set(id, projections.isProjectionIdSuppressed(id));
-    return tasks.get(id)!;
-  };
-  return rows.filter(row => !payloadSuppressed(String(row.request_id))
-    && visible(row, id => byId.get(id), payloadSuppressed, taskSuppressed));
-}
-
 function visible(row: Record<string, unknown>, read: (id: string) => Record<string, unknown> | undefined,
   payloadSuppressed: (id: string) => boolean, taskSuppressed: (id: string) => boolean): boolean {
   if (row.action !== "task.execute") return true;

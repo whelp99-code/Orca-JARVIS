@@ -4,6 +4,30 @@
 실사용 검증과 코드/자동 테스트 검증을 구분한다. 문제가 될 기능은 근거와 재개 조건을 남겨 보류한다.
 기준 목록은 `improvement-backlog-2026-09-07.md`의 01–25이며 일부 완료를 전체 완료로 보고하지 않는다.
 
+## 전체 명령 목록의 중간 메모리 개선 — 2026-09-10
+
+- backlog16: `listControlCommands`의 전체 원본 행 배열·행 인덱스·필터 배열을
+  제거하고, 정렬된 ID 반복자와 기존 트랜잭션 범위 reader를 재사용한다.
+  사용처가 없어진 `visibleTaskWorkLineageRows`도 제거했다.
+- 기존 배열 반환 계약과 정렬, 조상 격리, 다음 호출의 최신 격리 반영을 유지한다.
+  raw row memo는 기존 256행/텍스트1MiB 상한이다. 최종 결과 배열과 boolean
+  memo는 전체 건수에 비례하므로 전체 메모리 상한 또는 스트리밍 API라고 주장하지 않는다.
+- 관련 통합 테스트4파일7개 통과, 전체 typecheck/backend build/변경3파일 lint exit0.
+  기존 조회문 생성 횟수 가정은 공유 조회문1개와 전체 raw 조회0개로 갱신했다.
+  부모 에이전트가 diff와 reader의 트랜잭션/정리 경로를 확인했으며 별도 에이전트 리뷰는 없다.
+- 실제 빌드의 메모리 SQLite에 10,000건(각 payload4,000문자)을 넣어 조회했다.
+  결과10,000건, 처음/마지막 ID 및 총 payload40,000,000문자 확인, DB 쓰기0.
+  변경 전 단일 실행: 282.59673ms, heap 증가96,655,112bytes, maxRSS321,440KiB.
+  변경 후 단일 실행: 291.073653ms, heap 증가60,999,048bytes, maxRSS244,248KiB.
+  단일 실행이며 p95 또는 운영 부하 측정이 아니다. maxRSS에는 DB/fixture 생성도 포함된다.
+  메모리 감소와 소폭의 실행시간 증가를 함께 기록한다.
+- 증거: `/home/jm/.cache/jarvis-test-runtime-qa-20260908/control-list-` 접두사의
+  focused.log, typecheck.log, build.log, memory-baseline.json, memory-product.json.
+  product receipt의 mode=baseline은 측정 스크립트에서 실제 제품 함수를 선택하는 인자이며
+  수정 전 코드라는 의미가 아니다. 빌드 기준33ca43c+미커밋 변경, input digest
+  a260652beb173b6019c6b5b790939fed8afc443c987554bfc74cb1540bdfc62b.
+- 아래 전체 gate3985테스트는 이번 변경을 포함하지 않는다. 운영 배포는 하지 않았다.
+
 ## 최신 전체 검증 — 2026-09-10 KST, 2807414 기준
 
 - `npm run verify` exit0. Backend269파일1845테스트 +268파일1877테스트,
