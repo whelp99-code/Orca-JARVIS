@@ -2436,3 +2436,15 @@ It is not a new current-HEAD package, full gate or provider execution verificati
   요청 성공/연결됨을 확인했다. 서버 종료code0. 운영 서비스 변경0개.
 - 전체 HTTP 소켓/RSS/장시간 과부하의 상한을 확인한 것은 아니다. Backlog17의
   연결 수 무제한 경로를 보완했으며 전체01–25 목표는 계속 유지한다.
+
+## 503 재접속 브라우저 회귀 및 전체 E2E — 2026-09-10
+
+- e2e/sse-recovery.spec.ts 추가, scripts/run-tests.mjs의 기본 E2E 목록에 포함.
+  첫 events 응답만503으로 주입하고 두 번째 요청의 실제 SSE 연결과 canonical
+  overview 재조회를 확인한다. 새로고침/변경 요청0개, 예상 events503 외 오류0개.
+- 집중 검증1440/1024의2개 통과(26.3초). E2E 타입 검사, 새 파일 ESLint,
+  runner node --check exit0. 이후 전체 node scripts/run-tests.mjs e2e는
+  1440/1024 총30개 통과(1.5분), exit0. 로그: 공통 QA의 sse-recovery-e2e.log.
+- 제품 소스 변경0개로 앞선2807414 전체 verify의 빌드를 사용했다. 새 테스트와
+  runner 목록 변경은3985테스트 gate 이후이며 해당 gate에 소급해 포함하지 않는다.
+  실제 서버 용량 포화 후 복구 인수는 앞선 별도 기록을 따른다.
