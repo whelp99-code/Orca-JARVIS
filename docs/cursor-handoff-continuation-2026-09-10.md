@@ -26,14 +26,22 @@ production 적용은 한 건도 하지 않았다.
 | `9b55b37` | D | 실행자 설정 공백 읽기 전용 재확인 |
 | `61b3503` | B | 대체된 local source를 brief 전체 실패 대신 제외 |
 | `e2504ac` | B | 보존 cutoff 경계를 rebuild adapter로 실측 |
+| `4f4e73f` | 보고 | 이 인계 이어받기 결과 문서 |
+| `3a06e83` | B | 수집 cycle을 재시작·중복 기동에 대해 내구성 fence로 차단 |
+| `fa89ea1` | B | cutoff가 끊게 될 notification 참조를 실측 |
 
-전체 verify는 `b4df634`, `353b29b`, `61b3503` 시점에서 각각 exit 0으로 통과했다.
-마지막 통과 실측: backend shard1 272파일/1861테스트, shard2 272파일/1899테스트,
-dashboard 38파일/263테스트, 합계 582파일/4023테스트. architecture 655모듈/2434간선/
-순환 0. 고정 시각 acceptance `pre_gjc_ready`, `aggregate_status=stopped`,
-`completion_promoted=true`, `gjc_dispatched=false`. 증거 로그는
-`/home/jm/.cache/jarvis-lineage-qa/`의 `verify.log`, `verify2.log`, `verify3.log`.
-git에 포함되지 않는 로컬 증거이며, 다른 머신에서 접근할 수 없으면 재현해야 한다.
+전체 verify는 `b4df634`, `353b29b`, `61b3503`, `3a06e83` 시점에서 각각 exit 0으로
+통과했다. 마지막 통과 실측(`3a06e83`, `verify4.log`): backend shard1 272파일/
+1862테스트, shard2 272파일/1899테스트, dashboard 38파일/263테스트, 합계
+582파일/4024테스트. architecture 655모듈/2434간선/순환 0. 고정 시각 acceptance
+`pre_gjc_ready`, `aggregate_status=stopped`, `completion_promoted=true`,
+`gjc_dispatched=false`. 증거 로그는 `/home/jm/.cache/jarvis-lineage-qa/`의
+`verify.log`, `verify2.log`, `verify3.log`, `verify4.log`. git에 포함되지 않는
+로컬 증거이며, 다른 머신에서 접근할 수 없으면 재현해야 한다.
+
+`e2504ac`와 `fa89ea1`은 src 변경이 없어 대상 테스트·typecheck·lint로 검증했고
+전체 verify를 반복하지 않았다. 원본 지시서 §8의 "실패 원인 없이 같은 전체 검증을
+반복하지 않는다"를 따른 것이다.
 
 실제 프로세스 검증: 컴파일된 `dist/src` 모듈만 로드하는 별도 node 프로세스로
 격리 DB에 대해 lineage와 발행 경로를 재현했다(`lineage-live.json`,
@@ -139,7 +147,8 @@ JARVIS 쪽 구분(미설정·실패·비호환·capped·stale·완료)은 이미
 
 | 항목 | 재개 조건 |
 |---|---|
-| B: cutoff 선정 표면과 opt-in service 연결 | 내구성 cycle fence와 중복 판정이 선행돼야 한다. fence는 이 문서 커밋 시점에 migration 088과 service 변경으로 작성되어 전체 verify 대기 중이며 아직 커밋되지 않았다. 자동 전체 task 등록은 하지 않는다 |
+| B: cutoff 선정 표면 | 세 가지 실측 제약을 반영해야 한다. 경계는 포함 제거, 재구축은 행을 줄이되 파일 크기를 줄이지 않음, notification 참조는 FK도 인덱스도 없고 percent-encoding 상태다. **소유자 판단 필요**: 끊긴 notification intent를 제거할지 suppress할지 남길지는 사용자 대면 데이터 처리 결정이므로 임의로 고르지 않았다 |
+| B: opt-in 접수 연결 | fence는 `3a06e83`으로 완료됐다. 그러나 retention이 계약만 있고 구현이 없으므로 자동 접수를 켜면 저장이 무한히 증가한다. cutoff 선정이 구현된 뒤에 연결한다. 자동 전체 task 등록은 하지 않는다 |
 | B: 내용 기반 접수 dedup | 채택하지 않는다. 관측 식별자가 collection에 결속되므로 이전 관측을 재사용하면 cache 교체 즉시 영구 unavailable이 된다. 이는 "collection별 새 ID 요구를 제거해 중복을 숨기지 않는다"는 원본 지시와도 어긋난다 |
 | C: provider receipt adapter | cap/완전성 결과와 provider release 식별자, refresh↔scoped request 매핑을 상대 과제와 합의 |
 | D: 실제 업무 1건 인수 | 운영자가 대상 환경에 실행자 경로·검증 키 경로·키 ID를 설정 |
