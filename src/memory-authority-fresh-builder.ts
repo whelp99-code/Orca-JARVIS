@@ -38,15 +38,24 @@ export async function buildFreshAuthority(
   input: {
     readonly blocked_projections?: readonly SuppressedProjection[];
     readonly sensitive_material?: readonly Buffer[];
+    /**
+     * "replace" keeps the contract the compaction and restore callers were written against: the
+     * builder owns the destination name and removes whatever occupies it. "claimed" means the
+     * caller already created that exact file exclusively and owns its removal, so the builder
+     * never deletes a path it did not create - a destination naming the source by another
+     * spelling must not be erased here.
+     */
+    readonly destination?: "replace" | "claimed";
   } = {},
 ): Promise<FreshAuthorityBuild> {
+  const claimed = input.destination === "claimed";
   const blockedProjections = input.blocked_projections ?? suppressedProjections(source.db);
   source.db.pragma("wal_checkpoint(TRUNCATE)");
   const sourceDigest = digest(readFileSync(source.filename));
   const sensitive = input.sensitive_material === undefined
     ? collectSuppressedContent(source.db, blockedProjections)
     : [...input.sensitive_material];
-  rmSync(freshPath, { force: true });
+  if (!claimed) rmSync(freshPath, { force: true });
   const fresh = new AuthorityDb(freshPath);
   try {
     await fresh.migrate();
@@ -122,8 +131,10 @@ export async function buildFreshAuthority(
       source_generation: sourceGeneration, result_generation: sourceGeneration + 1 };
   } catch (error) {
     if (fresh.db.open) fresh.close();
-    removeSidecars(freshPath);
-    rmSync(freshPath, { force: true });
+    if (!claimed) {
+      removeSidecars(freshPath);
+      rmSync(freshPath, { force: true });
+    }
     throw error;
   }
 }

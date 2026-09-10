@@ -1,3 +1,5 @@
+import { closeSync, existsSync, openSync, realpathSync, rmSync } from "node:fs";
+import { basename, dirname, join, resolve } from "node:path";
 import type Database from "better-sqlite3";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
@@ -142,20 +144,69 @@ export function selectLocalObservationRetention(
   return { cutoff, blocked, retained };
 }
 
+const DESTINATION_SIDECARS = ["-wal", "-shm", "-journal"] as const;
+
 /**
- * Applies a cutoff by rebuilding a fresh authority file. The source is not swapped, deleted, or
- * written: the rebuild adapter is the only sanctioned deletion path for this immutable lineage.
- * Destination equal to the source path is refused so a caller cannot compact in place.
+ * Takes exclusive ownership of the destination name before anything writes through it.
+ *
+ * String inequality is not file inequality: `/dir/./authority.sqlite`, a relative spelling and a
+ * symlink all name the source, and the rebuild adapter removes its destination. The claim resolves
+ * the real path, refuses the source's own file, refuses a name whose SQLite sidecars already exist,
+ * and then creates the file with O_EXCL so a second caller racing for the same name loses instead
+ * of sharing it. Nothing that existed before this call is ever removed.
+ */
+function claimRetentionDestination(source: AuthorityDb, freshPath: string): string {
+  if (typeof freshPath !== "string" || freshPath.trim().length === 0) {
+    throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
+  }
+  const absolute = resolve(freshPath);
+  let destination: string;
+  let sourcePath: string;
+  try {
+    destination = join(realpathSync(dirname(absolute)), basename(absolute));
+    sourcePath = realpathSync(source.filename);
+  } catch {
+    throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
+  }
+  if (destination === sourcePath
+    || DESTINATION_SIDECARS.some(suffix => existsSync(`${destination}${suffix}`))) {
+    throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
+  }
+  try {
+    closeSync(openSync(destination, "wx", 0o600));
+  } catch {
+    throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
+  }
+  return destination;
+}
+
+/** Removes only the file this call created, plus the sidecars the build put beside it. */
+function releaseRetentionDestination(destination: string): void {
+  for (const suffix of DESTINATION_SIDECARS) rmSync(`${destination}${suffix}`, { force: true });
+  rmSync(destination, { force: true });
+}
+
+/**
+ * Applies a cutoff by rebuilding the authority into a destination this call owns exclusively.
+ *
+ * The source is neither swapped nor deleted, and its logical rows are unchanged; the rebuild
+ * adapter does checkpoint the source's write-ahead log, so the source file's bytes can change
+ * while `total_changes()` stays equal. The rebuild adapter remains the only sanctioned deletion
+ * path for this immutable lineage, and a failed build takes only this call's own destination
+ * with it.
  */
 export async function applyLocalObservationRetention(
   source: AuthorityDb, cutoffValue: unknown, freshPath: string,
 ): Promise<LocalObservationRetentionApplication> {
-  if (typeof freshPath !== "string" || freshPath.length === 0 || freshPath === source.filename) {
-    throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
-  }
   const selection = selectLocalObservationRetention(source.db, cutoffValue);
-  const build = await buildFreshAuthority(source, freshPath, {
-    blocked_projections: selection.blocked, sensitive_material: [],
-  });
-  return { selection, build };
+  const destination = claimRetentionDestination(source, freshPath);
+  try {
+    const build = await buildFreshAuthority(source, destination, {
+      blocked_projections: selection.blocked, sensitive_material: [], destination: "claimed",
+    });
+    return { selection, build };
+  } catch (error) {
+    releaseRetentionDestination(destination);
+    throw error;
+  }
 }
