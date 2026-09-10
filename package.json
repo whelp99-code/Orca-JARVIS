@@ -19,7 +19,7 @@
     "test": "node scripts/run-tests.mjs backend && node scripts/run-tests.mjs dashboard",
     "acceptance:pre-gjc": "node scripts/run-tests.mjs acceptance",
     "personal-os:eval": "npm run build:backend --silent && node scripts/personal-os-eval.mjs",
-    "verify": "npm run runtime:check && npm run lint && npm run typecheck && npm test && npm run acceptance:pre-gjc -- --fixture test/fixtures/pre-gjc-e2e.json --clock 2026-08-09T00:00:00.000Z && node scripts/run-tests.mjs smoke",
+    "verify": "npm run runtime:check && npm run lint && npm run architecture:check && npm run typecheck && npm test && npm run acceptance:pre-gjc -- --fixture test/fixtures/pre-gjc-e2e.json --clock 2026-08-09T00:00:00.000Z && node scripts/run-tests.mjs smoke",
     "architecture:check": "node scripts/check-runtime-imports.mjs",
     "runtime:check": "node scripts/assert-runtime.mjs",
     "prebuild": "npm run runtime:check",

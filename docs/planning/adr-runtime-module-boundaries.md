@@ -153,4 +153,5 @@ import/re-export 연결에서 순환을 검사한다. 순환 또는 검사 실�
 모든 도메인 경계 준수를 증명하지 않으며 TypeScript 검사와 함께 사용한다.
 CLI에 별도 소스 루트를 전달할 수 있어 runtime cycle/self cycle/type-only reverse
 edge/shared dependency의 네 격리 fixture를 실제 자식 프로세스로 검증했다(4통과).
-전체 verify에 자동 삽입하지 않았으며 필요 시 이 명령으로 현재 구조를 재검사한다.
+전체 `npm run verify`에서 lint 다음에 실행한다. 기존 CI도 같은 verify 명령을 사용하므로
+순환 발견 시 typecheck 및 긴 테스트 실행 전에 실패한다. 단독 실행 명령도 유지한다.
