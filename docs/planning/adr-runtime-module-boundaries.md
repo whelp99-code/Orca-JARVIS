@@ -139,3 +139,18 @@ provider X_OK 검사는 제품에 유지되며 별도 실제 파일 권한 검�
 두 번째 client·재전송 0·잔여 review 파일 0을 확인했다. 최종 compile 중 cycle은
 1,405.000328ms다. 독립 마지막 정적 검토 필수 지적 0건, 타입 포함 API 791개 불변,
 새 정적 순환 그룹 0개도 최종 소스에서 재확인했다.
+
+## 2026-09-10 — 재실행 가능한 정적 의존성 검사
+
+`npm run architecture:check`는 현재 src의 TypeScript를 ESM으로 변환해 정적 내부
+import/re-export 연결에서 순환을 검사한다. 순환 또는 검사 실패는 exit1이다.
+기존 QA 스크립트의 측정을 저장소 명령으로 제공하며 파일 수·줄 수 상한을 추가하지 않는다.
+같은 두 모듈 사이의 중복 연결은 한 번만 센다. 현재653모듈/2421연결/순환0이며
+이전 QA의2451연결은 중복 import/re-export를 각각 센 값이다.
+
+타입 전용 import는 변환 후 제거된다. 동적 import/require, 외부 패키지 및 검사 루트
+밖의 상대 경로는 범위에 포함되지 않는다. 전체 런타임 호출 그래프나 모듈 해석 정확성,
+모든 도메인 경계 준수를 증명하지 않으며 TypeScript 검사와 함께 사용한다.
+CLI에 별도 소스 루트를 전달할 수 있어 runtime cycle/self cycle/type-only reverse
+edge/shared dependency의 네 격리 fixture를 실제 자식 프로세스로 검증했다(4통과).
+전체 verify에 자동 삽입하지 않았으며 필요 시 이 명령으로 현재 구조를 재검사한다.
