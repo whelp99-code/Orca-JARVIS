@@ -67,3 +67,36 @@ This design does not claim external calendar/mail/messenger input, provider refr
 production activation, or completion of backlog12/23. The next code task is unit1's
 admission/lifecycle inspection, followed by the adapter only when its invariants can
 be enforced with the existing transaction and suppression contracts.
+
+## Admission/lifecycle inspection — 2026-09-10
+
+The existing ObservationRefreshStore admission explicitly accepts only normalized
+Orca live tasks, with worktree, terminal, session, incarnation, PTY and cursor fields.
+A local SQLite task collection does not establish those identities. Do not invent
+those fields or label the local cache as an Orca runtime observation to reuse this API.
+PersonalObservationStore accepts validated advisory envelopes, but has no local
+collection binding/revalidation hook. It is a lower-level persistence primitive,
+not a complete adapter for this source.
+
+MemoryProjectionLineage.inherit copies the parents' resolved memory identities;
+it checks current parent quarantine during inheritance but does not persist a live
+parent-child quarantine relationship. An isolated compiled-Node experiment bound a
+synthetic task_timeline parent, inherited an observation child, then quarantined the
+parent: parent_suppressed=true, inherited_child_suppressed=false. This is evidence
+of the API's existing semantics, not proof that an enabled local-daily bridge leaked
+data (there is no such bridge). QA: local-daily-lineage-boundary.json under
+/home/jm/.cache/jarvis-test-runtime-qa-20260908.
+
+Next implementation must introduce a durable local observation source binding and
+an explicit validator for that binding at derived consumption. The binding needs
+the exact subject generation and collection identity alongside source/content/time
+fields. Current hold, replacement, missing/changed source and quarantine must reject
+consumption even if memory identities inherited earlier remain unsuppressed.
+Do not globally change inherit semantics: its existing memory suppression contract
+is broader than this adapter and does not represent arbitrary task lifecycle edges.
+
+Before creating the binding, define a local-source observation envelope that states
+only persisted local task facts and remains advisory. Add atomic admission and
+consumer tests first; then connect context/recommendation production. A new migration
+is required if the current immutable persistence cannot hold the binding. This is
+JARVIS implementation work, separate from the external provider refresh dependency.
