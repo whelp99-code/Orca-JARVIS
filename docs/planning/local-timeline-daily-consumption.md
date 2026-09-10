@@ -588,8 +588,36 @@ requirement in order to hide duplication.
 `src/local-observation-retention.ts` implements `selectLocalObservationRetention`,
 which turns a cutoff instant into the set a rebuild could remove. It is read-only:
 it performs no deletion and opens no write, and the test asserts `total_changes()`
-is unmoved across a selection. Applying the result stays a separate step through
-`buildFreshAuthority`, which remains the only sanctioned deletion path.
+is unmoved across a selection. Applying the result is a separate step:
+`applyLocalObservationRetention` feeds the selector into `buildFreshAuthority` and
+writes a fresh file. The source is not swapped, deleted, or written; destination
+equal to the source path is refused. A group the selector retained for a live
+notification is copied into the rebuilt file rather than removed.
+
+The cutoff value itself now comes from an explicit configuration rather than a
+caller-chosen instant. `parseLocalObservationRetentionConfig` accepts one closed
+record, `{ schema_version: 1, retain_ms }`, with the window bounded to
+[300,000, 31,536,000,000] ms - the floor is the observation expiry window itself,
+the ceiling is 365 days - and `resolveLocalObservationRetentionCutoff` measures
+that window back from the caller's clock. A different version, a missing or extra
+key, a non-integer window, or one outside the bounds is refused with
+`LOCAL_RETENTION_CONFIG_INVALID`; no cutoff is ever defaulted.
+`timeline retention-preview CONFIG --db PATH` exposes the pair read-only: it
+reports the window, the derived cutoff and the selection, and deletes nothing.
+
+Measured through the compiled `dist/src/cli.js`: a 3,600,000 ms window run at
+13:02:20Z returned cutoff `2026-09-10T12:02:20.127Z` with an empty selection on an
+empty database; a window below the floor and a record carrying an extra key each
+exited 2 with `LOCAL_RETENTION_CONFIG_INVALID`; and the database's SHA-256 was
+identical before and after all three runs
+(`~/.cache/jarvis-lineage-qa/retention-config-live.log`, local evidence, not in
+git). The in-process test pins the arithmetic the empty database cannot: with the
+same window the CLI cuts exactly on a chain observation's expiry one hour later
+and selects its group, one millisecond earlier selects nothing, and the database
+bytes are unchanged either way.
+
+Scheduling - deciding when a cutoff runs, and swapping the rebuilt file in - is
+still unimplemented and remains an operator decision.
 
 The function encodes the four measured constraints rather than restating them.
 The cutoff matches `expires_at<=cutoff`, so the observation sitting exactly on it
@@ -625,6 +653,25 @@ returns empty and retains with `outside_event_names_replacement`. The in-group
 case still asserts the opposite, that a naming event removed together with its
 target does not retain, so the rule is pinned from both sides rather than only
 where it is convenient.
+
+The same parameterisation cleared the other recorded hold: the chain now runs
+through the real `daily morning --once` CLI handler in
+`tests/integration/local-observation-daily-cli.test.ts`. The CLI publishes a brief
+carrying the chain's recommendation, a replay adds no second completed run or
+brief, and a source held before the run yields an abstaining brief containing none
+of the withdrawn content. That last case re-verifies the publication behaviour
+change above through the CLI rather than only through an in-process loop.
+
+Two facts had to be measured to get there, and both look like fixture bugs until
+they are named. First, the morning schedule fires only at 07:15:00.000 KST, and
+the 2026-08-28 morning falls at `2026-08-27T22:15Z`, which is before
+`config/personal-os-policy.json` becomes `effective_at`
+`2026-08-28T00:00:00.000Z`; ranking there abstains with `POLICY_NOT_EFFECTIVE`
+and recommendation creation fails with `RECOMMENDATION_RANKING_INVALID`. The test
+therefore uses the 08-29 morning. Second, a CLI invocation at that instant leaves
+more than one `morning_reconcile` row, so assertions must select the completed one
+rather than assume a single row; the counts are split into runs, completed runs
+and completed reconciles.
 
 Parameterising that fixture also corrected a latent defect in it:
 `extendLocalObservationChain` refreshed the collection on the original store's
