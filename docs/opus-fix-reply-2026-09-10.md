@@ -91,7 +91,7 @@
 | "정리된 snapshot"은 `snapshot_missing`이지 진짜 원본 부재가 아니다 | 대상 task 행을 지워 `TaskTimeline`이 `TASK_TIMELINE_NOT_FOUND`를 던지는 `source_missing` 분기를 자식 프로세스로 검증한다 |
 | capped 미커버 | **이후 닫았다.** 대상 intent의 `gjc_intent_events`를 64건×4KiB로 키워 128KiB 예산을 넘기면 `TaskTimeline`이 이벤트를 잘라 수집 상태가 `capped`가 된다. 실측: `refresh()` 스냅샷 `capped`, `read()` → `unavailable`/`capped`, `admitLocalTimelineObservation` → `LOCAL_OBSERVATION_SOURCE_UNAVAILABLE`, 자식 프로세스는 exit 0에 brief `item_count=0`. 음성 증거 기록 경로(행마다 고유 `control_command_requests`)는 범위 밖으로 남긴다 |
 
-리뷰어의 최종 판정은 REJECT였고 그 근거 중 남은 것은 capped 프로세스 인수 한 건이었다. 승인으로 바꾸려 재검토를 돌리는 대신 그 한 건을 실제로 구현했다(위 표). 리뷰어에게 재판정을 다시 요청하지는 않았으므로, 기록상 최종 리뷰 판정은 REJECT 상태 그대로다.
+1·2차 판정은 REJECT였고 남은 근거는 capped 프로세스 인수 한 건이었다. 승인으로 바꾸려 재검토를 돌리는 대신 그 한 건을 실제로 구현했고(`2673e4a`), 그 뒤 독립 리뷰어에게 그 커밋만 좁게 3차 감사를 받아 **APPROVE**를 받았다. 리뷰어가 직접 확인한 것: fixture가 상태를 위조하지 않고 실제 제품 경로(`gjc_intent_events` → `TaskTimeline.context` 절단 → `LocalTimelineCollection` capped)를 지난다는 것, 단정 사슬이 주장만큼 강하다는 것, 세 기록이 커버 범위와 미커버(negative_evidence 기록 경로)를 정확히 적었다는 것, 기존 케이스를 약화시키지 않고 파일에 sleep·벽시계 의존이 없다는 것, 그리고 8/8 통과. 보고서는 `/home/jm/.cache/jarvis-lineage-qa/gate-review.md`에 3차까지 누적돼 있다.
 
 ## 리뷰 재현 스크립트 재실행
 
@@ -112,7 +112,7 @@
 | `npm run typecheck` / `npm run lint` / `npm run architecture:check` | RC 0 / RC 0 / 657모듈·2,441간선·순환 0 |
 | `npm run test:integration -- <builder 도달 테스트 16파일>` | 16파일 / 79테스트 통과, 185초 (R1 시점) |
 | `npm run test:integration -- <retention 4파일>` | retention 12/12, destination 3/3, consistency 8/8, source-writes 1/1 |
-| `npm run test:integration -- tests/integration/daily-morning-cli-process.test.ts` | 1파일 / **7테스트** 통과 |
+| `npm run test:integration -- tests/integration/daily-morning-cli-process.test.ts` | 1파일 / **8테스트** 통과 (capped 추가 후 최종) |
 | `node <리뷰 reproduce.mjs 사본>` (최종 빌드) | `source_exists_after=true`·digest 동일, `destination_overwritten=false`, interleaving `LOCAL_RETENTION_SOURCE_CHANGED`, checkpoint 케이스는 동작 유지 |
 
 전체 verify는 통합 시점에 1회만 끝까지 돌렸다. 그 이전 두 번의 실행은 각각 리뷰가능성 실패(모듈 줄 수 초과)와 그 수정 도중 트리가 바뀌어 무효였으므로 중단했고, 무효 실행의 결과를 이 표에 쓰지 않았다.
