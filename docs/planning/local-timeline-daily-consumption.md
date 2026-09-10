@@ -583,10 +583,59 @@ the cache is replaced - the behaviour the replacement tests already measure. It
 would also contradict the instruction not to remove the per-collection identity
 requirement in order to hide duplication.
 
-Not yet done in B. The cutoff selection surface and its configuration are not
-implemented; no opt-in service wiring exists, which is correct because the
-handoff requires the contract and its verification first. The measurements above
-also show what that wiring will need:
+## Retention cutoff selection
+
+`src/local-observation-retention.ts` implements `selectLocalObservationRetention`,
+which turns a cutoff instant into the set a rebuild could remove. It is read-only:
+it performs no deletion and opens no write, and the test asserts `total_changes()`
+is unmoved across a selection. Applying the result stays a separate step through
+`buildFreshAuthority`, which remains the only sanctioned deletion path.
+
+The function encodes the four measured constraints rather than restating them.
+The cutoff matches `expires_at<=cutoff`, so the observation sitting exactly on it
+is selected. A cited observation expands to its citing context and that context's
+recommendations, which is exactly the grouping the rebuild accepts: feeding a
+selection straight into `buildFreshAuthority` returns `foreign_key_errors=0` and
+`integrity_check=ok` and empties the observation and recommendation tables.
+
+Two cases are retained instead of selected, each with a recorded reason.
+`notification_addresses_recommendation` holds an observation whose recommendation
+a notification intent still addresses, matched on the percent-encoded ID because
+the raw form matches nothing. `context_cites_current_observation` holds one whose
+context also cites an observation still inside the window, since removing that
+context would drop links to material the cutoff did not select.
+
+One limit of the selection is identified but not yet measured, and it is recorded
+here so it is not mistaken for covered ground. `migrations/034` adds
+`replacement_recommendation_id` to `personal_recommendation_action_events`
+referencing `personal_recommendations`. The rebuild filters those event rows by
+their own `recommendation_id`, not by the replacement target, so a selection that
+blocks a newer recommendation while keeping an older one whose event names it as
+the replacement would leave a dangling foreign key and the rebuild would refuse
+the whole set with `MEMORY_COMPACTION_FOREIGN_KEY_INVALID`. A time-ordered cutoff
+usually removes the older material first, which is the safe direction, but the
+selection is driven by observation expiry rather than recommendation age, so the
+unsafe ordering is reachable. The next unit should measure this case and either
+expand the selection to the naming events or retain the group, matching how the
+two existing retain reasons behave.
+
+The retain-on-notification rule deserves a note, because it is a choice and not a
+measurement. Declining to delete is the conservative reading, and it is the only
+option that changes nothing a user can see. Whether a cutoff should instead remove
+or suppress those intents is a user-facing data decision that is deliberately not
+made here; the selection surface simply refuses to break them, which is what the
+absent foreign key would have done had one existed.
+
+Gate for the selection surface. `npm run verify` exit0: backend shard1
+273files/1868tests, backend shard2 272files/1899tests, dashboard 38files/263tests,
+total 583files/4030tests, architecture 656modules/2436edges/0cycles, fixed-clock
+acceptance `pre_gjc_ready`/`stopped`/`completion_promoted=true`/
+`gjc_dispatched=false`. Log `verify5.log`.
+
+Not yet done in B. Applying a selection on a schedule, and the configuration
+surface that would choose a cutoff, are not implemented; no opt-in service wiring
+exists, which is correct because the handoff requires the contract and its
+verification first. The measurements above also show what that wiring will need:
 a durable cycle fence, and a duplication judgement over
 `collection_content_digest` and task state so repeated cycles stop creating
 storage that only the read paths discard.

@@ -147,7 +147,9 @@ JARVIS 쪽 구분(미설정·실패·비호환·capped·stale·완료)은 이미
 
 | 항목 | 재개 조건 |
 |---|---|
-| B: cutoff 선정 표면 | 세 가지 실측 제약을 반영해야 한다. 경계는 포함 제거, 재구축은 행을 줄이되 파일 크기를 줄이지 않음, notification 참조는 FK도 인덱스도 없고 percent-encoding 상태다. **소유자 판단 필요**: 끊긴 notification intent를 제거할지 suppress할지 남길지는 사용자 대면 데이터 처리 결정이므로 임의로 고르지 않았다 |
+| B: cutoff 선정 표면 | `src/local-observation-retention.ts`로 구현했다. 읽기 전용 선정이며 삭제는 하지 않는다. 경계 포함 제거, 인용 관측의 context·recommendation 확장, notification이 가리키는 그룹 보류, 창 안의 관측을 함께 인용하는 context 보류를 포함한다. 끊긴 notification을 제거·suppress할지는 사용자 대면 결정이므로 고르지 않았고, 선정기는 "삭제하지 않음"만 택했다 |
+| B: 선정의 replacement FK 미측정 한계 | `migrations/034`의 `personal_recommendation_action_events.replacement_recommendation_id`는 재구축이 대상 기준으로 거르지 않는다. 최신 recommendation을 제거하고 그것을 replacement로 지목한 오래된 event를 남기면 FK가 끊겨 재구축 전체가 거절된다. 관측 만료 기준 선정이라 이 순서가 도달 가능하다. 다음 단위에서 측정하고 확장 또는 보류 중 하나로 처리한다 |
+| B: cutoff 적용과 일정화 | 선정 결과를 실제 재구축으로 적용하는 단계, 그리고 cutoff 값을 고르는 설정 표면은 미구현 |
 | B: opt-in 접수 연결 | fence는 `3a06e83`으로 완료됐다. 그러나 retention이 계약만 있고 구현이 없으므로 자동 접수를 켜면 저장이 무한히 증가한다. cutoff 선정이 구현된 뒤에 연결한다. 자동 전체 task 등록은 하지 않는다 |
 | B: 내용 기반 접수 dedup | 채택하지 않는다. 관측 식별자가 collection에 결속되므로 이전 관측을 재사용하면 cache 교체 즉시 영구 unavailable이 된다. 이는 "collection별 새 ID 요구를 제거해 중복을 숨기지 않는다"는 원본 지시와도 어긋난다 |
 | C: provider receipt adapter | cap/완전성 결과와 provider release 식별자, refresh↔scoped request 매핑을 상대 과제와 합의 |
