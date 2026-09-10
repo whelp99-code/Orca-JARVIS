@@ -658,6 +658,41 @@ bytes are unchanged either way.
 Scheduling - deciding when a cutoff runs, and swapping the rebuilt file in - is
 still unimplemented and remains an operator decision.
 
+## Compiled CLI evidence, and what it does not cover
+
+`tests/integration/daily-morning-cli-process.test.ts` runs the daily morning
+command in real child processes and reads every result back through a connection
+opened after the process exited. The product binary itself, `node dist/src/cli.js
+daily morning --once`, is exercised on the fail-closed path: an unusable config
+exits 2 with `DAILY_LOOP_CONFIG_INVALID` on stderr, nothing on stdout, and the
+database's SHA-256 unchanged. Run at an arbitrary wall-clock instant it answers
+`DAILY_LOOP_MISSED_RECOVERY_WINDOW` with exit 2, because the morning schedule
+fires only at 07:15:00.000 KST.
+
+The fixed-instant cases therefore run the same compiled dist through
+`tests/fixtures/compiled-daily-cli.ts`, built into `dist` and run from there, a
+test-only entry that injects the clock
+the way `execute()` already supports. The product binary is deliberately left
+without a clock override: a fixed-instant flag on a shipped binary is an
+operational bypass, not test support. Through that entry the child process
+publishes a brief carrying the chain's recommendation (exit 0, `provider_refresh`
+`unavailable`, `automatic_operation` `hold`), a replay adds no second run or brief,
+and a source held beforehand yields an abstaining brief with
+`abstention_reasons: ["no_authoritative_data"]`.
+
+What this does not prove: the chain is still built by
+`tests/fixtures/local-observation-chain.ts`, which composes context evidence
+directly as `linux_live_fact`, `user_confirmed_principle` and `owner_decision`,
+while the real assembler emits `context_observation` and `confirmed_memory` (the
+distinction `tests/integration/local-observation-recommendation-lineage.test.ts`
+already records). A fixture chain reaching the brief is therefore not the real
+producer path reaching the brief. Closing that gap needs a contract that binds
+assembler-produced evidence to what a recommendation requires, including the real
+source and authority behind a confirmed principle and an owner decision; swapping
+the evidence-kind strings or forcing `sufficient` would fake it. Until an
+acceptance drives the real producer, this record does not claim the
+source-to-brief operational path is connected.
+
 The function encodes the four measured constraints rather than restating them.
 The cutoff matches `expires_at<=cutoff`, so the observation sitting exactly on it
 is selected. A cited observation expands to its citing context and that context's

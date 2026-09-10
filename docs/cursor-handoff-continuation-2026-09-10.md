@@ -156,7 +156,7 @@ JARVIS 쪽 구분(미설정·실패·비호환·capped·stale·완료)은 이미
 | B: 내용 기반 접수 dedup | 채택하지 않는다. 관측 식별자가 collection에 결속되므로 이전 관측을 재사용하면 cache 교체 즉시 영구 unavailable이 된다. 이는 "collection별 새 ID 요구를 제거해 중복을 숨기지 않는다"는 원본 지시와도 어긋난다 |
 | C: provider receipt adapter | cap/완전성 결과와 provider release 식별자, refresh↔scoped request 매핑을 상대 과제와 합의 |
 | D: 실제 업무 1건 인수 | 운영자가 대상 환경에 실행자 경로·검증 키 경로·키 ID를 설정 |
-| 컴파일 daily CLI로 이 체인 구동 | 해소됐다. `tests/integration/local-observation-daily-cli.test.ts`가 실제 `daily morning --once` 처리기로 발행·재실행 무중복·hold 시 기권 발행을 확인한다. 도달 과정에서 두 가지를 실측했다: 08-28 아침(`2026-08-27T22:15Z`)은 정책 `effective_at`(`2026-08-28T00:00:00.000Z`) 이전이라 `POLICY_NOT_EFFECTIVE`로 기권하므로 08-29 아침을 쓴다. 그리고 이 시점 CLI 실행은 `morning_reconcile` 행을 둘 이상 남기므로 단정은 completed 행을 골라야 한다 |
+| 컴파일 daily CLI로 이 체인 구동 | 처리기와 실제 프로세스를 구분해 기록한다. `tests/integration/local-observation-daily-cli.test.ts`는 같은 프로세스에서 `execute()`를 호출하는 통합 테스트이고, `tests/integration/daily-morning-cli-process.test.ts`가 자식 프로세스 인수 검증이다: 실제 `node dist/src/cli.js daily morning --once`는 잘못된 설정에서 exit 2 `DAILY_LOOP_CONFIG_INVALID`를 내고 DB sha256이 불변이며, 고정 시각 케이스는 제품에 clock 플래그를 만들지 않기 위해 같은 dist 빌드를 쓰는 테스트 전용 진입점(`tests/fixtures/compiled-daily-cli.ts`를 빌드한 `dist/tests/fixtures/compiled-daily-cli.js`)으로 실행해 발행·재실행 무중복·hold 기권을 프로세스 종료 후 새 연결로 확인한다. 실제 바이너리를 임의 시각에 그대로 돌리면 `DAILY_LOOP_MISSED_RECOVERY_WINDOW` exit 2가 나온다(실측). 이 체인은 여전히 fixture가 만든 증거이므로 실제 producer 경로 완료가 아니다. 도달 과정에서 두 가지를 실측했다: 08-28 아침(`2026-08-27T22:15Z`)은 정책 `effective_at`(`2026-08-28T00:00:00.000Z`) 이전이라 `POLICY_NOT_EFFECTIVE`로 기권하므로 08-29 아침을 쓴다. 그리고 이 시점 CLI 실행은 `morning_reconcile` 행을 둘 이상 남기므로 단정은 completed 행을 골라야 한다 |
 | `capped` 수집 상태 | `negative_evidence` 행마다 고유한 `control_command_requests` FK가 필요 |
 | 원본 01–25 | 대부분 개발 checkout 구현 상태이며 production 적용이 아니다 |
 
