@@ -12,6 +12,7 @@ export const DEFAULT_RECONCILE_TOPICS = ["overview", "tasks", "agents", "approva
 
 const DATA_VERSION_INTERVAL_MS = 1_000;
 const REPLAY_LIMIT = 128;
+export const SSE_MAX_CLIENTS = 128;
 const NOTIFICATION_FINGERPRINT_LIMIT = 1_024;
 
 type SseSink = { write(frame: string): void; close(): void };
@@ -25,7 +26,10 @@ export class ReconcileHub {
   private readonly clients = new Set<SseSink>();
   private readonly replay: StoredFrame[] = [];
 
+  get hasCapacity(): boolean { return this.clients.size < SSE_MAX_CLIENTS; }
+
   connect(sink: SseSink, lastEventId?: string): () => void {
+    if (!this.clients.has(sink) && !this.hasCapacity) throw new JarvisError("SSE_CAPACITY_EXCEEDED");
     this.clients.add(sink);
     try {
       if (lastEventId === undefined || lastEventId.length === 0) {

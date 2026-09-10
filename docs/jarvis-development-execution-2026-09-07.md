@@ -2410,3 +2410,14 @@ It is not a new current-HEAD package, full gate or provider execution verificati
   상한은 아직 구현하지 않았으며 이 수정을 해당 항목 완료로 집계하지 않는다.
 - 후속 전체 dashboard 검사:38파일263테스트/34.67초, exit0. 부모가 변경 diff와
   연결 교체·타이머 취소·늦은 이벤트 검증을 확인했다. 별도 에이전트 리뷰는 수행하지 않았다.
+
+## SSE 구독 수 상한과 포화 후 브라우저 복구 — 2026-09-10
+
+- Hub당128개 구독 상한, 초과 HTTP503/SSE_CAPACITY_EXCEEDED/Retry-After5 구현.
+  direct hub도 같은 상한을 적용한다. 기존 연결의 이벤트 전달은 계속되며 종료 시
+  슬롯이 반환된다. 상세 결정·검증: planning/adr-sse-connection-capacity.md.
+- 관련3파일12테스트, typecheck, backend build, 변경 파일 lint exit0.
+  실제 built dashboard의128개 SSE 포화→브라우저503→1개 해제→브라우저 두 번째
+  요청 성공/연결됨을 확인했다. 서버 종료code0. 운영 서비스 변경0개.
+- 전체 HTTP 소켓/RSS/장시간 과부하의 상한을 확인한 것은 아니다. Backlog17의
+  연결 수 무제한 경로를 보완했으며 전체01–25 목표는 계속 유지한다.

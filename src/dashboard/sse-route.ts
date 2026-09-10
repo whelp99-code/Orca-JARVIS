@@ -1,6 +1,7 @@
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { ReconcileHub } from "./events.js";
 import { createBoundedSseSink } from "./sse-bounded-sink.js";
+import { writeDashboardError } from "./http.js";
 
 const EVENTS_PATH = "/api/v1/events";
 const HEARTBEAT_MS = 15_000;
@@ -15,6 +16,11 @@ export type DashboardSseInput = {
 
 export function tryHandleDashboardSse(input: DashboardSseInput): boolean {
   if (input.path !== EVENTS_PATH) return false;
+  if (!input.hub.hasCapacity) {
+    input.response.setHeader("Retry-After", "5");
+    writeDashboardError(input.response, { status: 503, code: "SSE_CAPACITY_EXCEEDED", requestId: input.requestId });
+    return true;
+  }
   attachSseClient(input);
   return true;
 }
