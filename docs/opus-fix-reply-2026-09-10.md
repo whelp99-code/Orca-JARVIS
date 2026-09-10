@@ -76,7 +76,7 @@
 | 인터리빙 매트릭스에 다른 연결의 context/replacement 삽입과 중단 후 미완성 후보 확인이 없다 | 두 번째 연결이 context 체인 전체를 추가하는 케이스를 넣었고, 경로 교체 케이스에서 후보와 sidecar가 하나도 남지 않음을 단정한다 |
 | 기록은 WAL/SHM을 측정한다고 하는데 테스트는 `-wal`만 본다 | `-shm`도 측정하도록 테스트를 고쳤다(문구를 낮추지 않고 측정을 맞췄다) |
 | 계획 문서에 "적용과 설정 표면 미구현" 문단이 남아 자기 문서와 모순된다 | 해당 문단을 현재 구현(적용·설정 구현, 일정화·교체 미구현)으로 정정했다 |
-| §4 프로세스 매트릭스에 replacement·만료·원본 부재·capped가 없다 | 만료·정리된 snapshot·대체 소스 세 케이스를 자식 프로세스로 추가했다. **capped는 남는다**: capped는 잘린 수집에서 나오고(`src/local-timeline-collection.ts:35`), 음성 증거 기록은 `migrations/028` 가드 때문에 행마다 고유한 `control_command_requests` FK fixture를 요구한다 |
+| §4 프로세스 매트릭스에 replacement·만료·원본 부재·capped가 없다 | 만료·정리된 snapshot·대체 소스를 먼저 추가했고, 이후 진짜 원본 부재와 **capped**까지 넣어 매트릭스를 닫았다(프로세스 테스트 8/8) |
 
 리뷰가 실제로 잡아낸 회귀가 하나 더 있었다. 전체 verify 1차 실행에서 `task12-runtime-reviewability`와 `personal-context-remediation`이 실패했다. `src/local-observation-retention.ts`가 비어있지 않은 줄 256(한도 250)을 넘겼기 때문이다. 선정·설정을 `src/local-observation-retention-selection.ts`로 분리하고 후보 수명주기를 원래 경로에 남겨 두 테스트를 통과시켰다. 분리 직후 리뷰어가 리포 지표로 실측한 값은 각각 128줄과 154줄이었다(내 커밋 메시지의 134줄은 부정확했다). 2차 대응까지 반영한 현재 값은 200줄과 128줄로 둘 다 한도 250 아래다. 원래 경로를 유지한 이유는 리뷰의 `reproduce.mjs`가 `dist/src/local-observation-retention.js`에서 `applyLocalObservationRetention`을 import하기 때문이다.
 
@@ -89,9 +89,9 @@
 | device/inode는 **현재 경로**를 식별할 뿐이다. apply 시작 **전에** 경로가 교체돼 있으면 두 fence 판독 모두 새 inode를 보고, 선정은 열린 연결의 옛 inode를 읽는다 | 후보를 선정이 사용한 연결과 대조한다. 선정이 바꿀 수 있는 표는 차단한 만큼만 줄어야 하고, `gjc_intents`·`notification_intents`·`personal_context_audit_events`·`local_timeline_subjects`는 동일해야 한다. 실측: 사전 교체 시 재구축이 대체 파일에서 실패하고 fence가 `LOCAL_RETENTION_SOURCE_CHANGED`로 보고한다. 테스트는 코드가 아니라 계약(거절 + 후보 미잔존)을 단정하며, 복사 대조는 "교체본으로도 빌드가 성공해 버리는" 경우를 위한 방어다 |
 | 매트릭스에 취소/재시작이 없다 | 거절 후 같은 목적지로 재시도가 성공함을 단정한다. 거절이 claim도 후보도 남기지 않았고, 재시도는 바뀐 원본을 다시 선정해 알림이 가리키는 그룹을 보존한다 |
 | "정리된 snapshot"은 `snapshot_missing`이지 진짜 원본 부재가 아니다 | 대상 task 행을 지워 `TaskTimeline`이 `TASK_TIMELINE_NOT_FOUND`를 던지는 `source_missing` 분기를 자식 프로세스로 검증한다 |
-| capped 미커버 | **닫지 않았다.** 두 기록에 실측 근거를 적었다: capped는 1000이벤트/128KiB 절단에서 나오고(`src/local-timeline-collection.ts:35`, `src/task-timeline.ts:101`, 저장소는 `local-timeline-snapshot-store.ts:85`에서 `capped`로 보고), fixture가 1000건 초과 타임라인이나 128KiB 문맥을 만들어야 하며 음성 증거 기록에는 `migrations/028` 가드 때문에 행마다 고유 `control_command_requests`가 필요하다 |
+| capped 미커버 | **이후 닫았다.** 대상 intent의 `gjc_intent_events`를 64건×4KiB로 키워 128KiB 예산을 넘기면 `TaskTimeline`이 이벤트를 잘라 수집 상태가 `capped`가 된다. 실측: `refresh()` 스냅샷 `capped`, `read()` → `unavailable`/`capped`, `admitLocalTimelineObservation` → `LOCAL_OBSERVATION_SOURCE_UNAVAILABLE`, 자식 프로세스는 exit 0에 brief `item_count=0`. 음성 증거 기록 경로(행마다 고유 `control_command_requests`)는 범위 밖으로 남긴다 |
 
-리뷰어의 최종 판정은 REJECT였고, 그 근거 중 남은 것은 capped 프로세스 인수 한 건이다. 승인으로 바꾸기 위해 다시 검토를 돌리지 않았다.
+리뷰어의 최종 판정은 REJECT였고 그 근거 중 남은 것은 capped 프로세스 인수 한 건이었다. 승인으로 바꾸려 재검토를 돌리는 대신 그 한 건을 실제로 구현했다(위 표). 리뷰어에게 재판정을 다시 요청하지는 않았으므로, 기록상 최종 리뷰 판정은 REJECT 상태 그대로다.
 
 ## 리뷰 재현 스크립트 재실행
 
@@ -122,7 +122,7 @@
 - retention 일정화와 교체 프로토콜(원본/candidate identity, writer 배제, 중단 복구)은 미구현이다. `verifyLocalObservationRetentionCandidate`는 교체 직전 검사만 제공한다.
 - 끊긴 notification의 제거/suppress/유지 정책은 여전히 사용자 결정이며, 이번 수정은 ‘참조되는 그룹 유지’ 계약을 지키는 쪽이다.
 - 실제 producer(assembler → 추천) 경로 연결은 위 R4 항목대로 미완료다.
-- provider refresh receipt 계약, 실행자 설정(`JARVIS_TASK_CLAUDE_PATH`, verifier key path/id), `capped` 수집의 `negative_evidence` FK fixture는 이번 범위 밖이다.
+- provider refresh receipt 계약, 실행자 설정(`JARVIS_TASK_CLAUDE_PATH`, verifier key path/id), 그리고 capped 결과를 `negative_evidence`로 **기록**하는 경로(행마다 고유 `control_command_requests` FK)는 범위 밖이다. capped 수집 자체의 인수는 닫았다.
 - push·merge·deploy·서비스 재시작·운영 DB 변경·운영 교체는 하지 않았다. `node_modules`는 손대지 않았고 다른 작업의 산출물도 지우지 않았다.
 
 ## 증거 경로

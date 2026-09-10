@@ -6,6 +6,7 @@ import { afterEach, expect, it } from "vitest";
 import { AuthorityDb } from "../../src/db.js";
 import { todayProjection } from "../../src/dashboard/personal-today.js";
 import { LocalTimelineSnapshotStore } from "../../src/local-timeline-snapshot-store.js";
+import { admitLocalTimelineObservation } from "../../src/local-timeline-observation.js";
 import { localObservationChain, LOCAL_CHAIN_TASK_ID } from "../fixtures/local-observation-chain.js";
 import { tempDb } from "../helpers.js";
 
@@ -187,5 +188,41 @@ it("drops a superseded local source through the child process without failing th
   expect(run.status).toBe(0);
   expect(JSON.parse(run.stdout)).toMatchObject({ ok: true, run: { state: "completed" } });
   const after = reopen(f.path, at);
+  expect(after.detail).not.toContain(f.chain.created.recommendation.id);
+});
+
+// capped is the collection state for a truncated read: LocalTimelineCollection asks TaskTimeline
+// for at most 1000 events and 128KiB, and TaskTimeline drops events until the canonical context
+// fits, setting truncated. Growing the subject's intent event log past that budget is what makes
+// the state reachable without touching the product.
+it("refuses to admit a capped collection and the child process abstains", async () => {
+  const f = await fixture();
+  const db = new AuthorityDb(f.path);
+  let collection: string;
+  try {
+    const intent = String(db.db.prepare("SELECT intent_id FROM gjc_intents WHERE continuation_id=?")
+      .pluck().get(LOCAL_CHAIN_TASK_ID));
+    const insert = db.db.prepare(`INSERT INTO gjc_intent_events(intent_id,event_type,payload_json,created_at)
+      VALUES(?,'progress',?,'2026-08-28T21:00:00.000Z')`);
+    const payload = JSON.stringify({ note: "x".repeat(4096) });
+    db.db.transaction(() => { for (let index = 0; index < 64; index++) insert.run(intent, payload); })();
+
+    const store = new LocalTimelineSnapshotStore(db, () => new Date(CLI_AT));
+    const snapshot = store.refresh(LOCAL_CHAIN_TASK_ID);
+    collection = snapshot.collection_id;
+    expect(snapshot.state).toBe("capped");
+    expect(store.read(LOCAL_CHAIN_TASK_ID, collection))
+      .toMatchObject({ state: "unavailable", reason: "capped" });
+    // A capped collection is never admitted, so no observation can cite a truncated read.
+    expect(() => admitLocalTimelineObservation(db, LOCAL_CHAIN_TASK_ID, collection,
+      () => new Date(CLI_AT))).toThrow("LOCAL_OBSERVATION_SOURCE_UNAVAILABLE");
+  } finally { db.close(); }
+
+  const run = child([HARNESS, f.path, f.input, CLI_AT]);
+
+  expect(run.status).toBe(0);
+  expect(JSON.parse(run.stdout)).toMatchObject({ ok: true, run: { state: "completed" } });
+  const after = reopen(f.path);
+  expect(after.brief.item_count).toBe(0);
   expect(after.detail).not.toContain(f.chain.created.recommendation.id);
 });
