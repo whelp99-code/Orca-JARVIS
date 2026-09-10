@@ -41,6 +41,36 @@ before exposing billing or external-effect rates. No real billing records or
 provider reconciliation source has been supplied by this reconciliation. Pending
 evidence is not zero cost, zero duplicates, or a policy improvement.
 
+### Read-only reconfirmation — 2026-09-10
+
+`inspectTaskExecutors` and `probeTaskExecutorRuntime("claude-code")` were run from
+the compiled `dist/src/task-executor-registry.js` against the current development
+shell environment. No value or secret was read or printed; these surfaces report
+configuration key names and states only.
+
+Result, unchanged from the readback above: one registration `claude-code`,
+`registration=registered`, `configuration=missing`, `execution_available=false`,
+`missing_configuration` = `JARVIS_TASK_CLAUDE_PATH`,
+`JARVIS_TASK_VERIFIER_KEY_PATH`, `JARVIS_TASK_VERIFIER_KEY_ID`, and runtime
+preflight `state=not_probed`, `scope=local_runtime_preflight`,
+`remote_verification=not_performed`,
+`reason_code=TASK_EXECUTOR_CONFIGURATION_MISSING`. The descriptor still declares
+`mode=verified_git_commit`, `verification=independent_verifier` and
+`automatic_retry=false`.
+
+Scope of this reading, repeated because it is easy to overclaim: it measures this
+development shell, not the production service environment, and it neither revokes
+nor renews the earlier isolated authenticated execution evidence. A successful
+process exit here is not readiness.
+
+Consequence for the remaining operator work: with all three settings absent there
+is no configured execution path, so carrying one real permitted task through
+TaskSpec, approval, durable dispatch, execution evidence, signature verification
+and completion cannot begin from this checkout. That step needs operator-supplied
+executor path, verifier key path and key ID in the target environment, which this
+handoff explicitly excludes from development scope. Do not substitute another
+executor and do not treat a probe as execution.
+
 ## Historical implementation before work-lineage development
 
 `src/task-performance.ts` reports verified terminal success, accepted-approval wait,
