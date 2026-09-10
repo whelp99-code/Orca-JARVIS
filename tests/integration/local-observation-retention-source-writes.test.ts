@@ -1,0 +1,66 @@
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, statSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { afterEach, expect, it } from "vitest";
+import { AuthorityDb } from "../../src/db.js";
+import { applyLocalObservationRetention } from "../../src/local-observation-retention.js";
+import { localObservationChain } from "../fixtures/local-observation-chain.js";
+import { tempDb } from "../helpers.js";
+
+const opened: AuthorityDb[] = [];
+afterEach(() => { for (const db of opened.splice(0)) if (db.db.open) db.close(); });
+
+const sha = (path: string): string =>
+  createHash("sha256").update(readFileSync(path)).digest("hex");
+const bytes = (path: string): number | null => existsSync(path) ? statSync(path).size : null;
+const rows = (db: AuthorityDb): Record<string, number> => Object.fromEntries(
+  ["personal_observations", "personal_context_observations", "personal_context_snapshots",
+    "personal_recommendations", "notification_intents", "personal_context_audit_events",
+    "gjc_intents"].map(table =>
+    [table, Number(db.db.prepare(`SELECT COUNT(*) FROM ${table}`).pluck().get())]));
+
+// The apply path claimed the source was "never written". It is never written logically, but the
+// rebuild adapter checkpoints the source's write-ahead log, which rewrites the main database file.
+// This measures each signal separately so neither claim can hide behind the other.
+it("leaves the source logically identical while checkpointing rewrites its bytes", async () => {
+  const db = new AuthorityDb(tempDb()); opened.push(db);
+  const chain = await localObservationChain(db);
+  const cutoff = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
+    .pluck().get(chain.observation.id));
+  // Hold the write-ahead log so the source has un-checkpointed content when the build starts.
+  db.db.pragma("wal_autocheckpoint=0");
+  db.db.pragma("wal_checkpoint(TRUNCATE)");
+  db.db.prepare(`INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,payload_digest,
+    idempotency_key,state,created_at) VALUES('wal','task:wal','dispatch','{}','sha256:fixture','wal',
+    'pending','2026-08-28T11:00:00.000Z')`).run();
+
+  const before = {
+    changes: Number(db.db.prepare("SELECT total_changes()").pluck().get()),
+    rows: rows(db),
+    main: sha(db.filename),
+    wal: bytes(`${db.filename}-wal`),
+  };
+  expect(before.wal).toBeGreaterThan(0);
+
+  const application = await applyLocalObservationRetention(db, cutoff,
+    join(dirname(db.filename), "source-write-candidate.sqlite"));
+  expect(application.build.foreign_key_errors).toBe(0);
+
+  const after = {
+    changes: Number(db.db.prepare("SELECT total_changes()").pluck().get()),
+    rows: rows(db),
+    main: sha(db.filename),
+    wal: bytes(`${db.filename}-wal`),
+  };
+  // No DML and no logical change: the apply removes nothing from the source.
+  expect(after.changes).toBe(before.changes);
+  expect(after.rows).toEqual(before.rows);
+  // Physical bytes do change, and the write-ahead log is truncated into the main file.
+  expect(after.main).not.toBe(before.main);
+  expect(after.wal).toBe(0);
+  // A fresh connection reads exactly the same logical content afterwards.
+  const reopened = new AuthorityDb(db.filename); opened.push(reopened);
+  expect(rows(reopened)).toEqual(before.rows);
+  expect(String(reopened.db.prepare("SELECT observation_id FROM personal_observations").pluck().get()))
+    .toBe(chain.observation.id);
+});

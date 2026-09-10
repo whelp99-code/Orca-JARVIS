@@ -590,9 +590,48 @@ which turns a cutoff instant into the set a rebuild could remove. It is read-onl
 it performs no deletion and opens no write, and the test asserts `total_changes()`
 is unmoved across a selection. Applying the result is a separate step:
 `applyLocalObservationRetention` feeds the selector into `buildFreshAuthority` and
-writes a fresh file. The source is not swapped, deleted, or written; destination
-equal to the source path is refused. A group the selector retained for a live
+writes a fresh file it owns exclusively. A group the selector retained for a live
 notification is copied into the rebuilt file rather than removed.
+
+Three claims in the first version of this section were wrong, and an isolated
+reproduction proved each of them
+(`/home/jm/.cache/jarvis-opus-review-20260910/reproduce-result.json`).
+
+*Destination ownership.* Comparing the destination with `source.filename` as
+strings let `/dir/./authority.sqlite`, a relative spelling and a symlink through,
+and the rebuild adapter removes its destination with `rmSync(force)`: the
+reproduction ended with the source file gone and `MEMORY_COMPACTION_ROW_INVALID`
+returned, and a separate case overwrote an unrelated existing file with no error at
+all. The apply now resolves the real path, refuses the source's own file, refuses a
+name whose SQLite sidecars already exist, and creates the destination with
+`O_EXCL`, so a second caller racing for the same name loses it instead of sharing
+it. `buildFreshAuthority` takes an explicit destination mode: `replace` keeps the
+contract its compaction and restore callers were written against, and `claimed`
+never removes a path the builder did not create.
+
+*Source writes.* "The source is not written" was false. The adapter runs
+`wal_checkpoint(TRUNCATE)` on the source, so with un-checkpointed content the main
+file's SHA-256 changes and the write-ahead log drops to 0 bytes, while
+`total_changes()` and every logical row count stay equal and a fresh connection
+reads the same content afterwards.
+`tests/integration/local-observation-retention-source-writes.test.ts` measures
+those five signals separately so neither claim can hide behind the other. The
+accurate contract is: no swap, no deletion, no logical change, and a maintenance
+write to the source's own write-ahead log.
+
+*Selection and copy.* The adapter yields at `await fresh.migrate()`, so a write
+landing after the selection was still copied: a notification inserted in that gap
+produced a candidate with `recommendations=0` and `notification_intents=1` while
+the call reported success and `foreign_key_errors=0`. The apply now fences the
+source - this connection's `total_changes` plus `data_version`, which moves on any
+other connection's commit - re-reads the fence after the build, and rejects the
+candidate with `LOCAL_RETENTION_SOURCE_CHANGED`. It also checks the removed
+recommendations against `notification_intents.deep_link`, which no foreign key or
+index protects, and reports `LOCAL_RETENTION_REFERENCE_DANGLING`. The fence travels
+with the result, so `verifyLocalObservationRetentionCandidate` refuses a candidate
+whose source moved afterwards, before anything acts on it. A rejected candidate is
+deleted together with its sidecars, so an interrupted apply leaves nothing that
+could be mistaken for a usable one.
 
 The cutoff value itself now comes from an explicit configuration rather than a
 caller-chosen instant. `parseLocalObservationRetentionConfig` accepts one closed
