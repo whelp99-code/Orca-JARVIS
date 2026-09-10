@@ -350,6 +350,80 @@ this chain: its schedule window is 07:15 KST while the fixture clock is fixed at
 caps at 1000 events and 128KiB and the fixture task is small. Both remain open
 with those exact resumption conditions.
 
+## Repeated producer growth, duplication and the retention contract
+
+This section is investigation and contract only. No automatic producer, retention
+job or service configuration was added.
+
+Measured growth, `tests/integration/local-observation-growth.test.ts`. Eight
+registered subjects whose timelines never change, refreshed and admitted for ten
+cycles: 80 admissions, 80 inserted, 0 replayed, 80 rows in
+`personal_observations`, 80 rows in `personal_context_audit_events`
+(`observation_recorded`), and `local_timeline_subjects` still 8 rows with 8
+cached snapshots. Database pages grew from 4,292,608 to 4,747,264 bytes, about
+5.7KiB per admitted observation. So stored observations and their audit lineage
+grow linearly and without bound while the replaceable cache stays at its
+registered-subject count; the 64-subject cache cap does not bound storage.
+
+Duplication signals, measured on the same run. Across those 80 rows there are 80
+distinct `canonical_digest` and 80 distinct `content_digest`, but only 8 distinct
+`payload.value.collection_content_digest` and 1 distinct `payload.value.state`.
+Both stored digests embed the collection ID, so they are storage identity, not a
+business duplication judgement. The stable business signals are the collected
+source bytes (`collection_content_digest`) and the task state. Re-admitting the
+same collection replays: `inserted=false`, same `observation_id` and
+`canonical_digest`, and no new row. The per-collection identity requirement is
+therefore kept as is; duplication must be judged by source bytes and task state
+at recommendation time, not by removing that requirement.
+
+Retention cannot be a plain DELETE. Every table in this lineage carries
+`immutable_delete` triggers in `migrations/032_personal_context.sql`; the test
+measures `DELETE FROM personal_observations` aborting with `immutable personal
+observation` and `DELETE FROM personal_context_audit_events` aborting with
+`immutable personal context audit`.
+
+The only sanctioned deletion adapter is `buildFreshAuthority`
+(`src/memory-authority-fresh-builder.ts`): it migrates a fresh database, drops
+triggers and sets `foreign_keys=OFF` for the copy, applies per-table `copyFilter`
+predicates keyed on a temporary `blocked_projections` table, runs
+`removeSuppressedRows`, recreates every trigger, restores `foreign_keys=ON`, and
+then requires an empty `foreign_key_check` and `integrity_check=ok` before
+retiring the active generation and activating generation+1. It also scans the
+resulting bytes for suppressed content.
+
+Reference contract, measured. `copyFilter` drops `personal_context_*` rows only
+when the **context** is blocked, never when an observation is blocked. Blocking a
+single observation that a surviving context cites therefore leaves a dangling
+`personal_context_observations` row and the rebuild is refused with
+`MEMORY_COMPACTION_FOREIGN_KEY_INVALID`, with the source database unchanged.
+Blocking the observation together with its citing context and that context's
+recommendation succeeds: `foreign_key_errors=0`, `integrity_check=ok`,
+`result_generation=source_generation+1`, and the rebuilt database holds zero
+observations, zero context observation links and zero recommendations.
+
+Deletion lineage is preserved by construction: `personal_context_audit_events` is
+explicitly excluded from the context copy filter, and the rebuilt database keeps
+the same audit row count after its subjects are removed. The replaceable local
+cache never crosses reconstruction: `copyExpression` nulls
+`local_timeline_subjects.snapshot_json`, `collection_id` and `expires_at` while
+preserving the subject row and its hold, measured as 1 subject row with 0 cached
+snapshots after the rebuild.
+
+Contract that follows from those measurements. A retention cutoff must be
+expressed as an additional blocked-projection set fed to the same rebuild
+adapter, not as a new deletion path. A cutoff may only remove an observation
+whose citing contexts, and those contexts' recommendations, are removed in the
+same set; otherwise it must retain the observation. Audit rows are never part of
+a cutoff set. `observation-refresh-compaction.test.ts` already fixes the read
+behaviour after such a removal: the historical receipt stays readable and its
+current read reports `unavailable`/`source_missing`, which is the same policy the
+sections above apply to contexts, recommendations and briefs.
+
+Not yet done in B. The cutoff selection itself, its configuration surface, and
+the restart / same-instant / duplicate-service-start / cutoff-boundary
+measurements are not implemented; no opt-in service wiring exists, which is
+correct because the handoff requires the contract and its verification first.
+
 Limits. The morning source still fails the whole read when one cited local source
 is unavailable instead of excluding that recommendation; that fail-closed
 behaviour was left unchanged. Contexts produced by `assemblePersonalContext`
