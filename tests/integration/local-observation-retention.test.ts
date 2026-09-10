@@ -113,6 +113,38 @@ it("retains an observation whose context also cites one still inside the window"
   expect(selectLocalObservationRetention(db.db, cutoff).blocked).toHaveLength(3);
 });
 
+// Only the in-group case is reachable with a fixed-clock fixture: both chains share one expiry, so
+// no cutoff can select one recommendation while leaving another that names it. The cross-group
+// retention that `outside_event_names_replacement` exists for is therefore unmeasured, and needs
+// the same time-parameterised chain fixture already recorded as a hold.
+it("does not retain when the event naming a replacement is removed with its target", async () => {
+  const db = new AuthorityDb(tempDb()); opened.push(db);
+  const chain = await localObservationChain(db);
+  const target = chain.created.recommendation.id;
+  const cutoff = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
+    .pluck().get(chain.observation.id));
+  expect(selectLocalObservationRetention(db.db, cutoff).blocked).toHaveLength(3);
+
+  // An event belonging to a recommendation outside this group names the group's recommendation as
+  // its replacement. The rebuild filters events by their own recommendation, so removing the target
+  // would leave that key dangling; the selection must decline instead.
+  // The event table is immutable by trigger, which is the shipped guarantee; the trigger is
+  // dropped here only to fabricate the naming row that a real supersession would have written.
+  for (const name of db.db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='personal_recommendation_action_events'")
+    .pluck().all() as string[]) db.db.exec(`DROP TRIGGER "${name.replaceAll('"', '""')}"`);
+  db.db.prepare(`UPDATE personal_recommendation_action_events
+    SET replacement_recommendation_id=? WHERE rowid=(SELECT MIN(rowid) FROM personal_recommendation_action_events)`)
+    .run(target);
+  const named = db.db.prepare(
+    "SELECT recommendation_id FROM personal_recommendation_action_events WHERE replacement_recommendation_id=?")
+    .pluck().get(target);
+  expect(named).toBe(target);
+  // Same group, so this must NOT retain: the naming event is removed together with its target.
+  expect(selectLocalObservationRetention(db.db, cutoff).blocked).toHaveLength(3);
+  expect(selectLocalObservationRetention(db.db, cutoff).retained).toEqual([]);
+});
+
 it("rejects a cutoff that is not a persistence instant", async () => {
   const db = new AuthorityDb(tempDb()); opened.push(db);
   await db.migrate();

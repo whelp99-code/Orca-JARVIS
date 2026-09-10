@@ -605,19 +605,24 @@ the raw form matches nothing. `context_cites_current_observation` holds one whos
 context also cites an observation still inside the window, since removing that
 context would drop links to material the cutoff did not select.
 
-One limit of the selection is identified but not yet measured, and it is recorded
-here so it is not mistaken for covered ground. `migrations/034` adds
+A third retain reason covers the replacement key. `migrations/034` adds
 `replacement_recommendation_id` to `personal_recommendation_action_events`
-referencing `personal_recommendations`. The rebuild filters those event rows by
-their own `recommendation_id`, not by the replacement target, so a selection that
-blocks a newer recommendation while keeping an older one whose event names it as
-the replacement would leave a dangling foreign key and the rebuild would refuse
-the whole set with `MEMORY_COMPACTION_FOREIGN_KEY_INVALID`. A time-ordered cutoff
-usually removes the older material first, which is the safe direction, but the
-selection is driven by observation expiry rather than recommendation age, so the
-unsafe ordering is reachable. The next unit should measure this case and either
-expand the selection to the naming events or retain the group, matching how the
-two existing retain reasons behave.
+referencing `personal_recommendations`, and the rebuild filters those event rows
+by their own `recommendation_id` rather than by the target. Blocking a
+recommendation that a surviving event names would leave a dangling key and the
+rebuild would refuse the whole set with `MEMORY_COMPACTION_FOREIGN_KEY_INVALID`.
+The selection therefore holds such a group with reason
+`outside_event_names_replacement`. Retaining was chosen over expanding the set:
+expanding would delete a recommendation that may still be current only because an
+older one expired, which inverts the purpose of a cutoff.
+
+That reason is implemented but its positive case is **not measured**, and the
+distinction matters. With the fixed-clock fixture both chains share one expiry, so
+no cutoff can select one recommendation while leaving another that names it; only
+the in-group case is reachable, and the test asserts that case correctly does
+*not* retain, because the naming event is removed together with its target.
+Measuring the cross-group retention needs the time-parameterised chain fixture
+already recorded as a hold.
 
 The retain-on-notification rule deserves a note, because it is a choice and not a
 measurement. Declining to delete is the conservative reading, and it is the only
@@ -630,7 +635,32 @@ Gate for the selection surface. `npm run verify` exit0: backend shard1
 273files/1868tests, backend shard2 272files/1899tests, dashboard 38files/263tests,
 total 583files/4030tests, architecture 656modules/2436edges/0cycles, fixed-clock
 acceptance `pre_gjc_ready`/`stopped`/`completion_promoted=true`/
-`gjc_dispatched=false`. Log `verify5.log`.
+`gjc_dispatched=false`. Log `verify5.log`. The replacement guard added afterwards
+passed its own gate the same way, exit0 with backend shard1 273files/1869tests,
+shard2 272files/1899tests, dashboard 38files/263tests, total 583files/4031tests
+and the same architecture and acceptance results. Log `verify6.log`.
+
+Reference survey, closed. Outside `migrations/032` exactly two foreign keys point
+into `personal_*`: the `034` replacement self-reference now covered by the guard
+above, and a `personal_context_reference_sessions` reference in `071`. The second
+turns out not to touch this lineage at all - that table is keyed by an HMAC
+`session_key` with `binding_key`, `state` and timestamps, and the migration
+contains no `context_id`, `recommendation_id` or `observation_id` - so a cutoff
+cannot dangle it. Notifications remain the only by-value reference class, with
+neither constraint nor index and percent-encoded.
+
+Why opt-in admission still waits, in numbers rather than in principle. The fence
+admits one cycle per 60,000ms and the subject table is capped at 64 rows, so a
+service admitting once per subject per cycle has an upper bound of 1,440 cycles a
+day and up to 92,160 observations a day. At the measured 5.7KiB per admitted
+observation that is roughly 525MB a day of immutable rows, plus one audit row
+each. Selection alone does not reclaim any of it, because selection deletes
+nothing. So the ordering is not a formality: until a selection is actually applied
+through the rebuild on some schedule, enabling automatic admission would add
+storage at that rate with no path to remove it, and the shipped triggers make
+in-place cleanup impossible. This paragraph is the reason the wiring is absent,
+and it should be re-derived rather than trusted if the fence interval, the subject
+cap or the observation size changes.
 
 Not yet done in B. Applying a selection on a schedule, and the configuration
 surface that would choose a cutoff, are not implemented; no opt-in service wiring

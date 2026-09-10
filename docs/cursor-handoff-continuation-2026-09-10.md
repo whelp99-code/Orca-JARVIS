@@ -29,6 +29,8 @@ production 적용은 한 건도 하지 않았다.
 | `4f4e73f` | 보고 | 이 인계 이어받기 결과 문서 |
 | `3a06e83` | B | 수집 cycle을 재시작·중복 기동에 대해 내구성 fence로 차단 |
 | `fa89ea1` | B | cutoff가 끊게 될 notification 참조를 실측 |
+| `d889966` | 보고 | 이어받기 기록을 최종 실측 상태로 갱신 |
+| `97edb20` | B | 보존 cutoff 선정 표면(읽기 전용, 삭제 없음) |
 
 전체 verify는 `b4df634`, `353b29b`, `61b3503`, `3a06e83` 시점에서 각각 exit 0으로
 통과했다. 마지막 통과 실측(`3a06e83`, `verify4.log`): backend shard1 272파일/
@@ -148,7 +150,7 @@ JARVIS 쪽 구분(미설정·실패·비호환·capped·stale·완료)은 이미
 | 항목 | 재개 조건 |
 |---|---|
 | B: cutoff 선정 표면 | `src/local-observation-retention.ts`로 구현했다. 읽기 전용 선정이며 삭제는 하지 않는다. 경계 포함 제거, 인용 관측의 context·recommendation 확장, notification이 가리키는 그룹 보류, 창 안의 관측을 함께 인용하는 context 보류를 포함한다. 끊긴 notification을 제거·suppress할지는 사용자 대면 결정이므로 고르지 않았고, 선정기는 "삭제하지 않음"만 택했다 |
-| B: 선정의 replacement FK 미측정 한계 | `migrations/034`의 `personal_recommendation_action_events.replacement_recommendation_id`는 재구축이 대상 기준으로 거르지 않는다. 최신 recommendation을 제거하고 그것을 replacement로 지목한 오래된 event를 남기면 FK가 끊겨 재구축 전체가 거절된다. 관측 만료 기준 선정이라 이 순서가 도달 가능하다. 다음 단위에서 측정하고 확장 또는 보류 중 하나로 처리한다 |
+| B: replacement FK 보류 규칙의 양성 사례 미측정 | 규칙은 `outside_event_names_replacement`로 구현했다(확장이 아니라 보류를 택했다. 확장하면 오래된 것이 만료됐다는 이유로 현재 recommendation을 지우게 된다). 그러나 고정 시각 fixture에서는 두 체인의 만료가 같아 한쪽만 선정되는 상황을 만들 수 없어, 도달 가능한 것은 같은 그룹 사례뿐이고 테스트는 그 경우 보류하지 **않음**을 확인한다. 교차 그룹 보류는 시각 매개변수화 fixture가 있어야 측정된다 |
 | B: cutoff 적용과 일정화 | 선정 결과를 실제 재구축으로 적용하는 단계, 그리고 cutoff 값을 고르는 설정 표면은 미구현 |
 | B: opt-in 접수 연결 | fence는 `3a06e83`으로 완료됐다. 그러나 retention이 계약만 있고 구현이 없으므로 자동 접수를 켜면 저장이 무한히 증가한다. cutoff 선정이 구현된 뒤에 연결한다. 자동 전체 task 등록은 하지 않는다 |
 | B: 내용 기반 접수 dedup | 채택하지 않는다. 관측 식별자가 collection에 결속되므로 이전 관측을 재사용하면 cache 교체 즉시 영구 unavailable이 된다. 이는 "collection별 새 ID 요구를 제거해 중복을 숨기지 않는다"는 원본 지시와도 어긋난다 |

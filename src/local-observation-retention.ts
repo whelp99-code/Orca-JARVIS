@@ -7,7 +7,8 @@ const LOCAL_TIMELINE_SOURCE = "src:pos:v1:task-timeline:local";
 export type RetentionProjection = { readonly kind: "observation" | "context" | "recommendation";
   readonly id: string; readonly component_id: string };
 export type RetentionRetained = { readonly observation_id: string;
-  readonly reason: "context_cites_current_observation" | "notification_addresses_recommendation" };
+  readonly reason: "context_cites_current_observation" | "notification_addresses_recommendation"
+    | "outside_event_names_replacement" };
 export type LocalObservationRetentionSelection = {
   readonly cutoff: string;
   readonly blocked: readonly RetentionProjection[];
@@ -44,6 +45,12 @@ export function selectLocalObservationRetention(
     "SELECT recommendation_id FROM personal_recommendations WHERE context_id=? ORDER BY recommendation_id");
   const addressingIntents = database.prepare(
     "SELECT COUNT(*) FROM notification_intents WHERE deep_link LIKE '%'||?||'%'").pluck();
+  // migrations/034 lets an action event name another recommendation as its replacement, and the
+  // rebuild filters those rows by their own recommendation, not by the target. Removing a named
+  // target while its naming event survives would dangle that key and the rebuild would refuse.
+  const namingEvents = database.prepare(
+    `SELECT DISTINCT recommendation_id FROM personal_recommendation_action_events
+     WHERE replacement_recommendation_id=? ORDER BY recommendation_id`);
 
   const blocked: RetentionProjection[] = [];
   const retained: RetentionRetained[] = [];
@@ -68,6 +75,11 @@ export function selectLocalObservationRetention(
       // The reference lives percent-encoded inside deep_link, so match the encoded form.
       if (recommendations.some(id => Number(addressingIntents.get(encodeURIComponent(id))) > 0)) {
         hold = "notification_addresses_recommendation"; break;
+      }
+      const grouped = new Set(recommendations);
+      if (recommendations.some(id => namingEvents.pluck().all(id).map(persistenceText)
+        .some(naming => !grouped.has(naming)))) {
+        hold = "outside_event_names_replacement"; break;
       }
       group.push({ kind: "context", id: context, component_id: context });
       for (const id of recommendations) group.push({ kind: "recommendation", id, component_id: id });
