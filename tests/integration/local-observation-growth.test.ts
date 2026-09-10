@@ -155,6 +155,68 @@ it("does not throttle a restarted or duplicated service, so each start replaces 
     '$.payload.value.collection_content_digest')) FROM personal_observations`)).toBe(SUBJECTS);
 });
 
+/** Admits one observation per cycle on a single task, advancing the clock so expiries differ. */
+async function admitAcrossTime(db: AuthorityDb, cycles: number, stepMs: number) {
+  await db.migrate();
+  const task = "task:fixture-0";
+  db.db.prepare(`INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,payload_digest,
+    idempotency_key,state,created_at) VALUES(?,?,'dispatch','{}','sha256:fixture',?,'pending',?)`)
+    .run("fixture-0", task, "fixture-0", "2026-08-28T11:00:00.000Z");
+  let now = new Date(AT);
+  const clock = () => now;
+  const store = new LocalTimelineSnapshotStore(db, clock);
+  store.register(task);
+  const admitted: { observation_id: string; expires_at: string }[] = [];
+  for (let cycle = 0; cycle < cycles; cycle++) {
+    now = new Date(Date.parse(AT) + cycle * stepMs);
+    const snapshot = store.refresh(task);
+    const result = admitLocalTimelineObservation(db, task, snapshot.collection_id, clock);
+    admitted.push({ observation_id: result.observation_id,
+      expires_at: String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
+        .pluck().get(result.observation_id)) });
+  }
+  return { admitted };
+}
+
+it("applies a retention cutoff inclusively and keeps the audit lineage of what it removed", async () => {
+  const db = new AuthorityDb(tempDb()); opened.push(db);
+  const { admitted } = await admitAcrossTime(db, 3, 60_000);
+  const expiries = admitted.map(item => item.expires_at);
+  expect(new Set(expiries).size).toBe(3);
+  expect([...expiries].sort()).toEqual(expiries);
+  const auditBefore = scalar(db, "SELECT COUNT(*) FROM personal_context_audit_events");
+  const bytesBefore = bytes(db);
+
+  // Cutoff sits exactly on the second observation's expiry to fix the boundary.
+  const cutoff = expiries[1];
+  const selected = db.db.prepare(
+    "SELECT observation_id FROM personal_observations WHERE expires_at<=? ORDER BY expires_at").pluck().all(cutoff) as string[];
+  expect(selected).toEqual([admitted[0]?.observation_id, admitted[1]?.observation_id]);
+
+  const fresh = join(dirname(db.filename), "fresh-cutoff.sqlite");
+  const result = await buildFreshAuthority(db, fresh, {
+    blocked_projections: selected.map(id => ({ kind: "observation", id, component_id: id })),
+    sensitive_material: [],
+  });
+  expect(result.foreign_key_errors).toBe(0);
+  expect(result.integrity_check).toBe("ok");
+  expect(result.result_generation).toBe(result.source_generation + 1);
+
+  const rebuilt = new AuthorityDb(fresh); opened.push(rebuilt);
+  // Only the observation past the cutoff survives; the boundary itself is removed.
+  expect(rebuilt.db.prepare("SELECT observation_id FROM personal_observations").pluck().all())
+    .toEqual([admitted[2]?.observation_id]);
+  // Row count falls, but a freshly migrated database carries its own baseline, so a small
+  // cutoff does not necessarily shrink the file. Retention is a row contract, not a size promise.
+  expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_observations"))
+    .toBeLessThan(scalar(db, "SELECT COUNT(*) FROM personal_observations"));
+  expect(bytesBefore).toBeGreaterThan(0);
+  // Removing subjects never removes their deletion lineage.
+  expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_context_audit_events")).toBe(auditBefore);
+  expect(scalar(rebuilt,
+    "SELECT COUNT(*) FROM personal_context_audit_events WHERE event_type='observation_recorded'")).toBe(3);
+});
+
 it("refuses a rebuild that would remove an observation a surviving context still cites", async () => {
   const db = new AuthorityDb(tempDb()); opened.push(db);
   const chain = await localObservationChain(db);

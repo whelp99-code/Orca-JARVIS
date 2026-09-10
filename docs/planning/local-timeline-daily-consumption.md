@@ -497,10 +497,28 @@ total 582files/4023tests passed; fixed-clock acceptance `pre_gjc_ready`,
 runtime check, lint, typecheck, build and CLI smoke exit0. Log `verify3.log` in
 the local evidence directory. Development gate only, not a production deployment.
 
-Not yet done in B. The cutoff selection itself, its configuration surface, and
-the cutoff-boundary measurement are not implemented; no opt-in service wiring
-exists, which is correct because the handoff requires the contract and its
-verification first. The measurements above also show what that wiring will need:
+Cutoff boundary, measured. Three observations were admitted on one task at
+60,000ms clock steps, giving three distinct `expires_at` values in ascending
+order. A cutoff placed exactly on the second observation's expiry, selected with
+`expires_at<=?`, matched the first two, so the boundary is inclusive and the
+observation sitting exactly on the cutoff is removed. Feeding that selection to
+`buildFreshAuthority` as blocked observation projections rebuilt with
+`foreign_key_errors=0`, `integrity_check=ok` and `result_generation` one above
+the source, leaving exactly the single observation past the cutoff.
+
+Two properties of that rebuild are worth stating because they are easy to assume
+wrongly. Audit lineage is untouched: all three `observation_recorded` rows and the
+total audit count survive the removal of their subjects. And retention is a row
+contract, not a size promise - the rebuilt database measured 4,354,048 bytes
+against the source's 4,304,896, because a freshly migrated database carries its
+own baseline schema and a new generation row. At this scale a cutoff reduces rows
+while the file grows, so no retention design should be justified by expected file
+shrinkage.
+
+Not yet done in B. The cutoff selection surface and its configuration are not
+implemented; no opt-in service wiring exists, which is correct because the
+handoff requires the contract and its verification first. The measurements above
+also show what that wiring will need:
 a durable cycle fence, and a duplication judgement over
 `collection_content_digest` and task state so repeated cycles stop creating
 storage that only the read paths discard.
