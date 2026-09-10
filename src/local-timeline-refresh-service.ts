@@ -10,8 +10,6 @@ export class LocalTimelineRefreshService {
 
   cycle() {
     const started = this.now();
-    if (started < this.previousAt) throw new JarvisError("LOCAL_COLLECTION_CLOCK_INVALID");
-    this.previousAt = started;
     if (started < this.nextAt) return undefined;
     this.nextAt = started + 60000;
     const store = new LocalTimelineSnapshotStore(this.authority, this.clock);
@@ -23,7 +21,6 @@ export class LocalTimelineRefreshService {
     let attempted = 0, collected = 0, capped = 0, failed = 0, held = 0;
     for (const row of ordered) {
       const now = this.now();
-      if (now < started) throw new JarvisError("LOCAL_COLLECTION_CLOCK_INVALID");
       // Synchronous source reads cannot be interrupted; this budget is checked between tasks.
       if (now - started >= 30000) break;
       this.cursor = row.task_id; attempted++;
@@ -33,9 +30,7 @@ export class LocalTimelineRefreshService {
         if (result.state === "capped") capped++; else collected++;
       } catch { failed++; }
     }
-    const finished = this.now();
-    if (finished < started) throw new JarvisError("LOCAL_COLLECTION_CLOCK_INVALID");
-    this.previousAt = finished;
+    this.now();
     const remaining = rows.length - attempted;
     return { source_kind: "local_task_timeline" as const, status: rows.length === 0 ? "no_data" : remaining || failed || capped ? "partial" : "processed",
       subjects: rows.length, attempted, collected, capped, failed, held, remaining, expired };
@@ -44,6 +39,9 @@ export class LocalTimelineRefreshService {
   private now(): number {
     const value = this.clock();
     if (!(value instanceof Date) || !Number.isFinite(value.getTime())) throw new JarvisError("LOCAL_COLLECTION_CLOCK_INVALID");
-    return value.getTime();
+    const timestamp = value.getTime();
+    if (timestamp < this.previousAt) throw new JarvisError("LOCAL_COLLECTION_CLOCK_INVALID");
+    this.previousAt = timestamp;
+    return timestamp;
   }
 }

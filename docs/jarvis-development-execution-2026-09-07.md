@@ -28,6 +28,20 @@
   a260652beb173b6019c6b5b790939fed8afc443c987554bfc74cb1540bdfc62b.
 - 아래 전체 gate3985테스트는 이번 변경을 포함하지 않는다. 운영 배포는 하지 않았다.
 
+## 로컬 수집 주기 내부 시간 역행 차단 — 2026-09-10
+
+- LocalTimelineRefreshService가 매 subject 시각을 시작 시각하고만 비교해,
+  시작+20초 다음 시작+10초를 허용하는 사례를 회귀 테스트로 재현했다(수정 전1실패/3통과).
+- 서비스의 now()에서 직전 관측 시각을 유지하고 매 호출마다 역행을 차단한다.
+  시작·subject 간·종료 및 이후 호출에 같은 검증을 적용한다. 수집 간격/예산은 유지한다.
+- 관련2파일10테스트, 변경 파일 lint, backend build exit0. 실제 compiled Node에서
+  주기 내 역행과 이후 호출 역행2회 거부, +60초 회복 후 held2/failed0/collected0 확인.
+  격리 SQLite와 주입 clock을 사용했으며 OS 시각이나 운영 서비스를 바꾸지 않았다.
+- QA: /home/jm/.cache/jarvis-test-runtime-qa-20260908/local-refresh-clock-
+  before.log, after.log, build.log, live.json. 기존 전체3991테스트 gate는 이번 변경을 포함하지 않는다.
+- 이 수정은 서비스가 관측한 시각에 한정된다. provider 새로고침 발행 계약과
+  외부 커넥터 입력 연결의 보류를 해제하지 않는다.
+
 ## 목록 CLI 실사용 경로 확인 — 2026-09-10
 
 - 913b35a의 실제 compiled CLI를 별도 Node 자식으로 실행했다. 격리 디스크 DB에

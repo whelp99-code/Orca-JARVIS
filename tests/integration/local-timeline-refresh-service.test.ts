@@ -44,3 +44,14 @@ it("keeps service collection opt-in and continues coordinator status on a missin
       .rejects.toThrow("LOCAL_COLLECTION_CONFIG_INVALID");
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
 });
+it("rejects clock rollback between subjects even when still after cycle start", async () => {
+  const db = new AuthorityDb(":memory:", "migrations");
+  try {
+    await db.migrate();
+    const store = new LocalTimelineSnapshotStore(db);
+    for (const id of ["task:first", "task:second"]) { store.register(id); store.setHeld(id, true); }
+    const times = [at, at, "2026-09-09T01:00:20.000Z", "2026-09-09T01:00:10.000Z", "2026-09-09T01:00:20.000Z"];
+    const service = new LocalTimelineRefreshService(db, () => new Date(times.shift()!));
+    expect(() => service.cycle()).toThrow("LOCAL_COLLECTION_CLOCK_INVALID");
+  } finally { db.close(); }
+});
