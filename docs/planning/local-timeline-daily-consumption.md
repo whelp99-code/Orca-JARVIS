@@ -439,10 +439,71 @@ restarted producers multiply stored observations without changing the underlying
 facts, and any future automatic admission needs a durable cycle fence rather than
 this per-instance throttle.
 
+Duplicate actionable output, measured, and the defect it exposed. Three producer
+cycles over one unchanged task were driven end to end: each cycle admits its own
+observation and builds its own context and recommendation, so storage reaches
+3 observations, 3 contexts and 3 recommendations while
+`collection_content_digest` stays at one distinct value. Before the change the
+actionable reads were already correct - `next_actions` and the dashboard
+`next_actions` each held exactly the newest recommendation, with one
+`RECOMMENDATION_SOURCE_UNAVAILABLE` warning per superseded producer - but
+`MorningRecommendationSource.generate` raised
+`MORNING_RECOMMENDATION_SOURCE_INVALID` from the second cycle onward. A repeated
+producer therefore did not duplicate output; it removed the morning brief
+entirely, permanently, which is a hard blocker for automatic admission rather
+than the documented soft limitation.
+
+`MorningRecommendationSource` now excludes a candidate whose cited context has an
+unavailable local source, counting it in a new `excluded.source_unavailable`
+field, exactly as it already excludes suppressed and quarantined candidates in
+SQL before parsing. Measured after the change, per cycle n: storage n, one
+distinct source digest, `next_actions` exactly the newest recommendation,
+`lifecycle_actions` n, n-1 `RECOMMENDATION_SOURCE_UNAVAILABLE` warnings, dashboard
+`next_actions` 1, `excluded.source_unavailable` n-1, brief items 1,
+`needs_you_first` 1 with a single contributing recommendation ID. Duplicate
+actionable recommendations and duplicate brief items are therefore 0 across
+repeated producers, which is the A.5 and B requirement.
+
+The exclusion is narrow. Quarantining the newest observation excludes every
+candidate and the brief abstains with `no_authoritative_data` rather than
+publishing a partial result, and an altered context envelope still raises
+`MorningRecommendationSourceError`, so integrity failures remain fail-closed and
+only supersession, hold, replacement and quarantine of a local source became
+exclusions.
+
+Publication behaviour changed with it, deliberately, and the earlier assertions in
+`local-observation-morning-publication.test.ts` and
+`local-observation-recommendation-lineage.test.ts` were rewritten to the new
+contract rather than kept. Previously a held or missing local source made
+`MorningBriefPublisher` raise `MORNING_PUBLICATION_REJECTED`, leaving the run
+`running` with steps `["completed","pending"]` and no brief at all. Measured now,
+identically for a held source and for a deleted task row: `finish` returns true,
+the run is `completed` with `failure_code` null, both steps are `completed`, and
+the published brief is `state=degraded` with `item_count=0`,
+`context_readiness=degraded`, `abstention_reasons=["no_authoritative_data"]`,
+`needs_you_first=[]`, no `morning_brief` projection dependency, and no withdrawn
+content anywhere in the stored step detail. The daily run therefore completes with
+an honest degraded abstention instead of wedging the morning step, and it still
+never emits partial or stale material. That trade is required by B: under a
+repeating producer the previous behaviour would refuse publication every time the
+last remaining producer had just been superseded, which is the same outage in a
+narrower form.
+
+Full gate for the exclusion change. `npm run verify` exit0. Measured:
+`architecture:check` 655modules/2434edges/0cycles; backend shard1
+272files/1861tests, backend shard2 272files/1899tests, dashboard 38files/263tests,
+total 582files/4023tests passed; fixed-clock acceptance `pre_gjc_ready`,
+`aggregate_status=stopped`, `completion_promoted=true`, `gjc_dispatched=false`;
+runtime check, lint, typecheck, build and CLI smoke exit0. Log `verify3.log` in
+the local evidence directory. Development gate only, not a production deployment.
+
 Not yet done in B. The cutoff selection itself, its configuration surface, and
 the cutoff-boundary measurement are not implemented; no opt-in service wiring
 exists, which is correct because the handoff requires the contract and its
-verification first.
+verification first. The measurements above also show what that wiring will need:
+a durable cycle fence, and a duplication judgement over
+`collection_content_digest` and task state so repeated cycles stop creating
+storage that only the read paths discard.
 
 Limits. The morning source still fails the whole read when one cited local source
 is unavailable instead of excluding that recommendation; that fail-closed

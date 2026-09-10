@@ -4,7 +4,7 @@ import { assemblePersonalContext } from "../../src/context-assembler.js";
 import { canonicalPersonalContractHash } from "../../src/personal-validation.js";
 import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
 import { projectRecommendations } from "../../src/recommendation-projection.js";
-import { MorningRecommendationSource, MorningRecommendationSourceError } from "../../src/morning-recommendation-source.js";
+import { MorningRecommendationSource } from "../../src/morning-recommendation-source.js";
 import { todayProjection } from "../../src/dashboard/personal-today.js";
 import {
   admitLocalChainObservation,
@@ -61,7 +61,11 @@ it("stops exposing current actions once the local source is held, without writin
   const { db, store } = await chain();
   store.setHeld(LOCAL_CHAIN_TASK_ID, true);
   const before = writes(db);
-  expect(() => new MorningRecommendationSource(db).generate(AT)).toThrow(MorningRecommendationSourceError);
+  // The held source excludes its own recommendation; the brief abstains instead of failing the read.
+  const generated = new MorningRecommendationSource(db).generate(AT);
+  expect(generated.source.excluded.source_unavailable).toBe(1);
+  expect(generated.source.input.items).toEqual([]);
+  expect(generated.brief.abstention_reasons).toEqual(["no_authoritative_data"]);
   expect(nextActionIds(db)).toEqual([]);
   expect(todayActionIds(db)).toEqual([]);
   expect(projectRecommendations(db.db, AT).lifecycle_actions).toHaveLength(1);

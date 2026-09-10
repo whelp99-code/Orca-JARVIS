@@ -3,6 +3,7 @@ import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { storedRecommendationIdentity, type RecommendationIdentity } from "./recommendation-identity.js";
 import { validateStoredRecommendationEvents } from "./recommendation-transition-identity.js";
 import { deriveRecommendationEvidenceLinks } from "./recommendation-evidence-binding.js";
+import { contextsWithUnavailableLocalSource } from "./local-observation-availability.js";
 import { persistenceRow } from "./personal-persistence-values.js";
 import { instant, integer } from "./morning-brief-parse-values.js";
 import { parseMorningBriefInput } from "./morning-brief-input.js";
@@ -20,7 +21,10 @@ export type MorningRecommendationLineage = {
 export type MorningRecommendationSnapshot = {
   readonly input: MorningBriefInput;
   readonly lineage: readonly MorningRecommendationLineage[];
-  readonly excluded: { readonly legacy_ranking: number; readonly stale_deadline: number; readonly inactive: number };
+  readonly excluded: {
+    readonly legacy_ranking: number; readonly source_unavailable: number;
+    readonly stale_deadline: number; readonly inactive: number;
+  };
   readonly source_capped: boolean;
 };
 type Candidate = { readonly recommendation_id: string; readonly context_id: string; readonly rank: number };
@@ -84,9 +88,14 @@ export class MorningRecommendationSource {
     const candidates = this.candidates(maximum);
     const identities = new Map<string, RecommendationIdentity>(); const sources = new Map<string, Source>();
     const records: MorningBriefRecord[] = []; const lineage: MorningRecommendationLineage[] = [];
-    const excluded = { legacy_ranking: 0, stale_deadline: 0, inactive: 0 };
+    const excluded = { legacy_ranking: 0, source_unavailable: 0, stale_deadline: 0, inactive: 0 };
+    // A replaced or held local source excludes its own recommendation, like a quarantined one,
+    // instead of failing every other publishable recommendation in the same read.
+    const unavailable = contextsWithUnavailableLocalSource(this.authority.db,
+      [...new Set(candidates.slice(0, maximum).map(candidate => candidate.context_id))], now);
     let degraded = candidates.length > maximum;
     for (const candidate of candidates.slice(0, maximum)) {
+      if (unavailable.has(candidate.context_id)) { excluded.source_unavailable++; continue; }
       let identity = identities.get(candidate.recommendation_id);
       if (identity === undefined) {
         identity = this.identity(candidate.recommendation_id, candidates.slice(0, maximum)

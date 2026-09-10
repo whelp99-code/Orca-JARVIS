@@ -12,6 +12,17 @@ export const LOCAL_CHAIN_CONTEXT_ID = "ctx:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e
 export const LOCAL_CHAIN_RECOMMENDATION_ID = "rec:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7101";
 export const LOCAL_CHAIN_PRINCIPLE_REF = "memory:principle:customer-first";
 export const LOCAL_CHAIN_MEMORY_TARGET = `sha256:${"d".repeat(64)}`;
+
+/** Distinct identities per producer cycle; cycle 0 keeps the original constants. */
+export function localChainIds(cycle = 0) {
+  const suffix = String(cycle).padStart(2, "0");
+  return cycle === 0
+    ? { contextId: LOCAL_CHAIN_CONTEXT_ID, recommendationId: LOCAL_CHAIN_RECOMMENDATION_ID,
+      contextKey: "1".repeat(64), recommendationKey: "c".repeat(64) }
+    : { contextId: `ctx:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f72${suffix}`,
+      recommendationId: `rec:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f73${suffix}`,
+      contextKey: `${suffix}`.repeat(32), recommendationKey: `${suffix}`.repeat(32) };
+}
 const OWNER_REF = "decision:owner:import";
 const OWNER_GATE_REF = "request:owner:deploy";
 const POLICY_REF = "policy:linux:personal-os-policy-v1:task17";
@@ -58,7 +69,8 @@ export async function admitLocalChainObservation(db: AuthorityDb) {
 
 /** Cited context: the admitted local observation plus confirmed memory and both owner decisions. */
 export function persistLocalChainContext(db: AuthorityDb, observationId: string, observationDigest: string,
-  observedAt: string) {
+  observedAt: string, cycle = 0) {
+  const identity = localChainIds(cycle);
   const evidence = [
     { evidence_id: "evi:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7201", digest: observationDigest,
       kind: "linux_live_fact", source_id: "src:pos:v1:task-timeline:local", observed_at: observedAt },
@@ -67,14 +79,14 @@ export function persistLocalChainContext(db: AuthorityDb, observationId: string,
       observed_at: "2026-08-28T11:30:00.000Z" })),
   ];
   const context = parseContextSnapshotV1({
-    schema_version: 1, id: LOCAL_CHAIN_CONTEXT_ID, created_at: LOCAL_CHAIN_AT, observed_at: LOCAL_CHAIN_AT,
+    schema_version: 1, id: identity.contextId, created_at: LOCAL_CHAIN_AT, observed_at: LOCAL_CHAIN_AT,
     valid_at: LOCAL_CHAIN_AT,
     source: { source_id: "src:pos:v1:jarvis:primary", source_kind: "authority",
       host_id: "host:pos:linux-control-plane", source_version: "local-lineage-v1",
       evidence_ref: "context:local-lineage" },
     authority: { authority_kind: "none", principal_id: null, request_id: null, receipt_id: null },
     freshness: { state: "fresh", checked_at: LOCAL_CHAIN_AT, fresh_until: "2026-08-28T12:03:59.999Z" },
-    expires_at: "2026-08-28T12:04:00.000Z", idempotency_key: `idem:pos:v1:context:${"1".repeat(64)}`,
+    expires_at: "2026-08-28T12:04:00.000Z", idempotency_key: `idem:pos:v1:context:${identity.contextKey}`,
     correlation_id: "corr:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7301", causation_id: null,
     payload: { purpose: "daily_prioritization", query: "What should happen next?",
       included_observation_refs: [observationId], included_memory_refs: MEMORIES.map(item => item.memory_ref),
@@ -92,7 +104,8 @@ export function persistLocalChainContext(db: AuthorityDb, observationId: string,
 
 /** One owner-gated advisory action whose current evidence is the admitted local observation. */
 export function createLocalChainRecommendation(db: AuthorityDb, observationId: string, observationDigest: string,
-  context: ReturnType<typeof parseContextSnapshotV1>, evidence: readonly { evidence_id: string }[]) {
+  context: ReturnType<typeof parseContextSnapshotV1>, evidence: readonly { evidence_id: string }[], cycle = 0) {
+  const identity = localChainIds(cycle);
   const ranking = rankPriorityActionsWithDeadlineEvidence(priorityPolicyConfig(), {
     schema_version: 1, clock: LOCAL_CHAIN_AT, linux_policy_decision_ref: POLICY_REF,
     context_policy_input: { schema_version: 1, clock: LOCAL_CHAIN_AT,
@@ -116,9 +129,10 @@ export function createLocalChainRecommendation(db: AuthorityDb, observationId: s
   });
   const contextDigest = canonicalPersonalContractHash(context);
   return new Recommendations(db).create({
-    id: LOCAL_CHAIN_RECOMMENDATION_ID, idempotency_key: `idem:pos:v1:recommendation:${"c".repeat(64)}`,
+    id: identity.recommendationId,
+    idempotency_key: `idem:pos:v1:recommendation:${identity.recommendationKey}`,
     correlation_id: "corr:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7301", causation_id: null,
-    context_id: LOCAL_CHAIN_CONTEXT_ID, context_digest: contextDigest, expires_at: "2026-08-28T12:03:00.000Z",
+    context_id: identity.contextId, context_digest: contextDigest, expires_at: "2026-08-28T12:03:00.000Z",
     ranking,
     actions: [{ action_id: "local-task-followup", title: "Next: local-task-followup", operation: "review",
       target_digest: DIGEST_A }],
@@ -138,12 +152,31 @@ export function createLocalChainRecommendation(db: AuthorityDb, observationId: s
 /** source -> collection -> admitted observation -> cited context -> recommendation, in one database. */
 export async function localObservationChain(db: AuthorityDb) {
   const { store, admitted, observation } = await admitLocalChainObservation(db);
+  return { store, ...buildLocalChainCycle(db, admitted, observation, 0) };
+}
+
+/**
+ * Another producer cycle over the same unchanged task: a replacement collection, its own admitted
+ * observation, and its own cited context and recommendation.
+ */
+export function extendLocalObservationChain(db: AuthorityDb, store: LocalTimelineSnapshotStore, cycle: number) {
+  const clock = () => new Date(LOCAL_CHAIN_AT);
+  const snapshot = store.refresh(LOCAL_CHAIN_TASK_ID);
+  const admitted = admitLocalTimelineObservation(db, LOCAL_CHAIN_TASK_ID, snapshot.collection_id, clock);
+  const observation = prepareLocalTimelineObservation(db, LOCAL_CHAIN_TASK_ID, snapshot.collection_id, clock);
+  return buildLocalChainCycle(db, admitted, observation, cycle);
+}
+
+function buildLocalChainCycle(db: AuthorityDb, admitted: { canonical_digest: string },
+  observation: ReturnType<typeof prepareLocalTimelineObservation>, cycle: number) {
+  const identity = localChainIds(cycle);
   const { context, stored, evidence } = persistLocalChainContext(db, observation.id, admitted.canonical_digest,
-    observation.observed_at);
+    observation.observed_at, cycle);
   // Publication requires memory lineage on the context; recommendations inherit it at creation.
-  new MemoryProjectionAuthority(db).bind({ kind: "context", id: LOCAL_CHAIN_CONTEXT_ID,
-    component_id: LOCAL_CHAIN_CONTEXT_ID }, [{ target_digest: LOCAL_CHAIN_MEMORY_TARGET }],
+  new MemoryProjectionAuthority(db).bind({ kind: "context", id: identity.contextId,
+    component_id: identity.contextId }, [{ target_digest: LOCAL_CHAIN_MEMORY_TARGET }],
   new Date(LOCAL_CHAIN_AT));
-  const created = createLocalChainRecommendation(db, observation.id, admitted.canonical_digest, context, evidence);
-  return { store, admitted, observation, context, stored, evidence, created };
+  const created = createLocalChainRecommendation(db, observation.id, admitted.canonical_digest, context,
+    evidence, cycle);
+  return { admitted, observation, context, stored, evidence, created };
 }

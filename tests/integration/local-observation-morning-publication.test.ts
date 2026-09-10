@@ -93,26 +93,37 @@ it("does not republish or duplicate the brief after a restart", async () => {
   expect(reopened.db.prepare("SELECT COUNT(*) AS n FROM daily_loop_runs").get()).toEqual({ n: 1 });
 });
 
-it("refuses publication while the local source is held and leaves the step pending", async () => {
+const reconcileDetail = (db: AuthorityDb): string => String(db.db.prepare(
+  "SELECT detail_json FROM daily_loop_steps WHERE step_key='morning_reconcile'").pluck().get());
+
+it("publishes an abstaining brief rather than stale items while the local source is held", async () => {
   const f = await setup();
   f.timeline.setHeld(LOCAL_CHAIN_TASK_ID, true);
-  expect(() => f.loop.finish(f.claim)).toThrow("MORNING_PUBLICATION_REJECTED");
+  // The only cited source is unverifiable, so the run completes with an explicitly degraded brief
+  // instead of wedging the morning step, and it carries none of the withdrawn content.
+  expect(f.loop.finish(f.claim)).toBe(true);
   expect(f.db.db.prepare("SELECT state,failure_code FROM daily_loop_runs WHERE run_id=?").get(f.run))
-    .toEqual({ state: "running", failure_code: null });
-  expect(f.store.steps(f.run).map(step => step.state)).toEqual(["completed", "pending"]);
-  expect(brief(f.db)).toMatchObject({ state: "no_data", brief_id: null, item_count: 0 });
+    .toEqual({ state: "completed", failure_code: null });
+  expect(f.store.steps(f.run).map(step => step.state)).toEqual(["completed", "completed"]);
+  expect(brief(f.db)).toMatchObject({ state: "degraded", item_count: 0 });
+  const detail = JSON.parse(reconcileDetail(f.db)) as Record<string, unknown>;
+  expect(detail["abstention_reasons"]).toEqual(["no_authoritative_data"]);
+  expect(detail["context_readiness"]).toBe("degraded");
+  expect(detail["needs_you_first"]).toEqual([]);
+  expect(reconcileDetail(f.db)).not.toContain("local-task-followup");
+  // An empty lineage binds no brief dependency.
   expect(f.db.db.prepare(
     "SELECT COUNT(*) AS n FROM memory_projection_dependencies WHERE projection_kind='morning_brief'")
     .get()).toEqual({ n: 0 });
 });
 
-it("refuses publication when the local task source is gone and never emits a partial brief", async () => {
+it("publishes no partial content when the local task source is gone", async () => {
   const f = await setup();
   f.db.db.prepare("DELETE FROM gjc_intents WHERE continuation_id=?").run(LOCAL_CHAIN_TASK_ID);
-  expect(() => f.loop.finish(f.claim)).toThrow("MORNING_PUBLICATION_REJECTED");
-  expect(f.store.steps(f.run).map(step => step.state)).toEqual(["completed", "pending"]);
-  expect(reconcileSteps(f.db).map(step => (step as { state: string }).state)).toEqual(["pending"]);
-  expect(brief(f.db)).toMatchObject({ state: "no_data", item_count: 0 });
+  expect(f.loop.finish(f.claim)).toBe(true);
+  expect(reconcileSteps(f.db).map(step => (step as { state: string }).state)).toEqual(["completed"]);
+  expect(brief(f.db)).toMatchObject({ state: "degraded", item_count: 0 });
+  expect(reconcileDetail(f.db)).not.toContain("local-task-followup");
   expect(projectRecommendations(f.db.db, LOCAL_CHAIN_AT).next_actions).toEqual([]);
   expect(projectRecommendations(f.db.db, LOCAL_CHAIN_AT).warnings).toEqual([
     { recommendation_id: LOCAL_CHAIN_RECOMMENDATION_ID, code: "RECOMMENDATION_SOURCE_UNAVAILABLE",
