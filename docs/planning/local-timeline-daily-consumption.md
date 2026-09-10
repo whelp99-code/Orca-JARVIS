@@ -118,3 +118,21 @@ build/lint passed; architecture654modules/2425edges/cycles0. Separate compiled N
 confirmed advisory/read-only behavior and rejection after hold (QA local-observation-live.json).
 Durable binding and consumption-time validation remain required before storing or
 connecting this draft to daily report production; it is not an admission receipt.
+
+## Persisted draft revalidation implemented
+
+`readCurrentLocalTimelineObservation` reads the canonical observation and digest
+in a read transaction, rejects observation quarantine, recreates the exact current
+cache draft and requires byte-equivalent canonical material. Replacement, hold and
+expiry are therefore checked through the snapshot reader. Callers must keep this
+validation inside their consumption transaction. This function is not yet wired
+into PersonalContextEvidenceResolver or automatic admission.
+
+Persistence testing exposed that collection IDs are not global ordered checkpoints:
+the observation store rejects different checkpoints at an identical observed time.
+Local drafts now use checkpoint=null; collection identity remains in evidence_ref
+and payload. The existing source checkpoint ordering contract is unchanged.
+Two integration tests passed (including multiple same-time persisted drafts,
+replacement, observation quarantine and hold); lint and backend build exit0.
+Compiled Node persisted/read two same-time drafts and rejected the replaced one
+(QA local-observation-read-live.json). No shipped migration was changed.

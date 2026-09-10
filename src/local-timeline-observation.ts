@@ -3,7 +3,8 @@ import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
 import { canonicalize } from "./canonical.js";
 import { LocalTimelineSnapshotStore } from "./local-timeline-snapshot-store.js";
-import { parseObservationEnvelopeV1 } from "./personal-validation.js";
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
+import { canonicalPersonalContractHash, parseObservationEnvelopeV1 } from "./personal-validation.js";
 import type { TaskTimelineContext } from "./task-timeline.js";
 
 const hash = (value: unknown): string => createHash("sha256").update(canonicalize(value)).digest("hex");
@@ -36,9 +37,32 @@ export function prepareLocalTimelineObservation(authority: AuthorityDb, taskId: 
     expires_at: read.expires_at, idempotency_key: `idem:pos:v1:observation:${hash(identity)}`,
     correlation_id: `corr:pos:v1:${uuid({ source: sourceId, taskId })}`, causation_id: null,
     payload: { kind: "local_task_state", subject: taskId, value, trust: "verified", sensitivity: "personal",
-      cursor: null, checkpoint: collectionId, content_digest: digest, state: "fresh" },
+      cursor: null, checkpoint: null, content_digest: digest, state: "fresh" },
     policy_decision: { decision: "allow", policy_version: "local-task-observation-v1", reason_codes: ["POLICY_SATISFIED"] },
     evidence: [{ evidence_id: `evi:pos:v1:${uuid({ collectionId })}`, digest: snapshot.content_digest,
       kind: "structured_ref", source_id: sourceId, observed_at: snapshot.completed_at }], receipt: null,
   });
+}
+
+
+/** Revalidate persisted local material; callers must use this inside their consumption transaction. */
+export function readCurrentLocalTimelineObservation(authority: AuthorityDb, observationId: string,
+  clock: () => Date = () => new Date()) {
+  return authority.db.transaction(() => {
+    const unavailable = (): never => { throw new JarvisError("LOCAL_OBSERVATION_SOURCE_UNAVAILABLE"); };
+    const row = authority.db.prepare(`SELECT canonical_envelope_json,canonical_digest
+      FROM personal_observations WHERE observation_id=?`).get(observationId) as
+      { canonical_envelope_json: string; canonical_digest: string } | undefined;
+    if (!row || Buffer.byteLength(row.canonical_envelope_json) > 65536) return unavailable();
+    const projections = new MemoryProjectionAuthority(authority);
+    if (projections.isProjectionIdSuppressed(observationId)) return unavailable();
+    const stored = parseObservationEnvelopeV1(JSON.parse(row.canonical_envelope_json));
+    if (stored.id !== observationId || stored.source.source_id !== "src:pos:v1:task-timeline:local"
+      || stored.payload.kind !== "local_task_state"
+      || canonicalize(stored) !== row.canonical_envelope_json
+      || canonicalPersonalContractHash(stored) !== row.canonical_digest) return unavailable();
+    const current = prepareLocalTimelineObservation(authority, stored.payload.subject, stored.source.evidence_ref, clock);
+    if (canonicalize(current) !== row.canonical_envelope_json) return unavailable();
+    return current;
+  }).deferred();
 }

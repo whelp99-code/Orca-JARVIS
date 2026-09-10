@@ -1,7 +1,8 @@
 import { expect, it } from "vitest";
 import { AuthorityDb } from "../../src/db.js";
 import { LocalTimelineSnapshotStore } from "../../src/local-timeline-snapshot-store.js";
-import { prepareLocalTimelineObservation } from "../../src/local-timeline-observation.js";
+import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
+import { prepareLocalTimelineObservation, readCurrentLocalTimelineObservation } from "../../src/local-timeline-observation.js";
 
 it("prepares only a current local advisory draft and rejects replacement, hold and expiry without writes", async () => {
   const db = new AuthorityDb(":memory:", "migrations");
@@ -27,5 +28,30 @@ it("prepares only a current local advisory draft and rejects replacement, hold a
     expect(() => prepareLocalTimelineObservation(db, "task:fixture", second.collection_id, clock)).toThrow("LOCAL_OBSERVATION_SOURCE_UNAVAILABLE");
     time = new Date("2026-09-10T01:00:00Z"); store.setHeld("task:fixture", true);
     expect(() => prepareLocalTimelineObservation(db, "task:fixture", second.collection_id, clock)).toThrow("LOCAL_OBSERVATION_SOURCE_UNAVAILABLE");
+  } finally { db.close(); }
+});
+
+it("revalidates persisted drafts after source replacement and observation quarantine", async () => {
+  const db = new AuthorityDb(":memory:", "migrations");
+  const clock = () => new Date("2026-09-10T01:00:00Z");
+  try {
+    await db.migrate();
+    db.db.exec(`INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,payload_digest,idempotency_key,state,created_at)
+      VALUES ('fixture','task:fixture','dispatch','{}','sha256:fixture','fixture','pending','2026-09-10T00:00:00.000Z')`);
+    const store = new LocalTimelineSnapshotStore(db, clock); store.register("task:fixture");
+    const persist = () => {
+      const snapshot = store.refresh("task:fixture");
+      const draft = prepareLocalTimelineObservation(db, "task:fixture", snapshot.collection_id, clock);
+      db.persistObservation(draft, clock().toISOString()); return draft;
+    };
+    const first = persist(); const before = db.db.serialize();
+    expect(readCurrentLocalTimelineObservation(db, first.id, clock)).toEqual(first);
+    expect(db.db.serialize().equals(before)).toBe(true);
+    const second = persist();
+    expect(() => readCurrentLocalTimelineObservation(db, first.id, clock)).toThrow("LOCAL_OBSERVATION_SOURCE_UNAVAILABLE");
+    new MemoryProjectionAuthority(db).quarantineUnresolved({ kind: "observation", id: second.id, component_id: second.id }, clock());
+    expect(() => readCurrentLocalTimelineObservation(db, second.id, clock)).toThrow("LOCAL_OBSERVATION_SOURCE_UNAVAILABLE");
+    const third = persist(); store.setHeld("task:fixture", true);
+    expect(() => readCurrentLocalTimelineObservation(db, third.id, clock)).toThrow("LOCAL_OBSERVATION_SOURCE_UNAVAILABLE");
   } finally { db.close(); }
 });
