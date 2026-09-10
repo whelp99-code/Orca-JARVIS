@@ -419,10 +419,30 @@ behaviour after such a removal: the historical receipt stays readable and its
 current read reports `unavailable`/`source_missing`, which is the same policy the
 sections above apply to contexts, recommendations and briefs.
 
+Restart, same instant and duplicate service start, measured. One
+`LocalTimelineRefreshService.cycle()` over eight subjects reports
+`attempted=8, collected=8, failed=0, held=0` and writes cache rows only:
+`personal_observations` and `personal_context_audit_events` both stay at 0, so
+the collection service by itself never grows storage and admission remains
+explicit. Calling `cycle()` again on the same instance at the same clock returns
+`undefined`.
+
+That 60,000ms throttle is in-memory instance state (`nextAt`), not a durable
+lease. A restarted instance and a duplicate concurrent instance both start at
+`nextAt=0` and collect again at the same clock: three starts at one instant
+produced three complete generations of collection IDs with zero overlap between
+consecutive generations, while `local_timeline_subjects` stayed at eight rows.
+Admitting once per start therefore stores one immutable observation per start for
+byte-identical source content, and the measurement confirms eight rows with eight
+distinct `collection_content_digest` values, one per subject. So duplicate or
+restarted producers multiply stored observations without changing the underlying
+facts, and any future automatic admission needs a durable cycle fence rather than
+this per-instance throttle.
+
 Not yet done in B. The cutoff selection itself, its configuration surface, and
-the restart / same-instant / duplicate-service-start / cutoff-boundary
-measurements are not implemented; no opt-in service wiring exists, which is
-correct because the handoff requires the contract and its verification first.
+the cutoff-boundary measurement are not implemented; no opt-in service wiring
+exists, which is correct because the handoff requires the contract and its
+verification first.
 
 Limits. The morning source still fails the whole read when one cited local source
 is unavailable instead of excluding that recommendation; that fail-closed

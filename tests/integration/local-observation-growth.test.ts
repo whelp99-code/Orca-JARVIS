@@ -3,6 +3,7 @@ import { afterEach, expect, it } from "vitest";
 import { AuthorityDb } from "../../src/db.js";
 import { LocalTimelineSnapshotStore } from "../../src/local-timeline-snapshot-store.js";
 import { admitLocalTimelineObservation } from "../../src/local-timeline-observation.js";
+import { LocalTimelineRefreshService } from "../../src/local-timeline-refresh-service.js";
 import { buildFreshAuthority } from "../../src/memory-authority-fresh-builder.js";
 import { localObservationChain, LOCAL_CHAIN_AT } from "../fixtures/local-observation-chain.js";
 import { tempDb } from "../helpers.js";
@@ -104,6 +105,54 @@ it("refuses in-place deletion of stored observations and their audit lineage", a
   expect(() => db.db.prepare("DELETE FROM personal_context_audit_events WHERE subject_id=?")
     .run(admitted.observation_id)).toThrow("immutable personal context audit");
   expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(1);
+});
+
+it("collects without admitting, so the refresh service alone never grows stored observations", async () => {
+  const db = new AuthorityDb(tempDb()); opened.push(db);
+  await registerSubjects(db);
+  const service = new LocalTimelineRefreshService(db, () => new Date(AT));
+  const first = service.cycle();
+  expect(first).toMatchObject({ subjects: SUBJECTS, attempted: SUBJECTS, collected: SUBJECTS, failed: 0, held: 0 });
+  // Admission stays explicit: a collection cycle writes cache rows only.
+  expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(0);
+  expect(scalar(db, "SELECT COUNT(*) FROM personal_context_audit_events")).toBe(0);
+  expect(scalar(db, "SELECT COUNT(*) FROM local_timeline_subjects WHERE snapshot_json IS NOT NULL")).toBe(SUBJECTS);
+  // The same instance is throttled for 60s at the same clock.
+  expect(service.cycle()).toBeUndefined();
+});
+
+it("does not throttle a restarted or duplicated service, so each start replaces every collection", async () => {
+  const db = new AuthorityDb(tempDb()); opened.push(db);
+  const store = await registerSubjects(db);
+  const clock = () => new Date(AT);
+  const collections = () => new Set(store.subjects().map(item => String(item.cached_collection_id)));
+
+  new LocalTimelineRefreshService(db, clock).cycle();
+  const afterFirst = collections();
+  expect(afterFirst.size).toBe(SUBJECTS);
+
+  // A restart resets the in-memory throttle, so a second start at the same clock collects again.
+  new LocalTimelineRefreshService(db, clock).cycle();
+  const afterRestart = collections();
+  expect(afterRestart.size).toBe(SUBJECTS);
+  expect([...afterRestart].some(id => afterFirst.has(id))).toBe(false);
+
+  // A duplicate concurrent start at the same clock replaces them once more.
+  new LocalTimelineRefreshService(db, clock).cycle();
+  const afterDuplicate = collections();
+  expect([...afterDuplicate].some(id => afterRestart.has(id))).toBe(false);
+  // Only the cache moved; nothing was admitted by any of the three starts.
+  expect(scalar(db, "SELECT COUNT(*) FROM local_timeline_subjects")).toBe(SUBJECTS);
+  expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(0);
+
+  // Admitting once per start would store one immutable row per start for identical source bytes.
+  for (const collection of [...afterDuplicate]) {
+    const subject = store.subjects().find(item => item.cached_collection_id === collection);
+    admitLocalTimelineObservation(db, String(subject?.task_id), collection, clock);
+  }
+  expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(SUBJECTS);
+  expect(scalar(db, `SELECT COUNT(DISTINCT json_extract(canonical_envelope_json,
+    '$.payload.value.collection_content_digest')) FROM personal_observations`)).toBe(SUBJECTS);
 });
 
 it("refuses a rebuild that would remove an observation a surviving context still cites", async () => {
