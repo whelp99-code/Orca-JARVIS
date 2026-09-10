@@ -28,6 +28,22 @@
   a260652beb173b6019c6b5b790939fed8afc443c987554bfc74cb1540bdfc62b.
 - 아래 전체 gate3985테스트는 이번 변경을 포함하지 않는다. 운영 배포는 하지 않았다.
 
+## 최신 독립 실행 패키지 확인 — 2026-09-10
+
+- package-authority-runtime exit0: 소스20328f62c8f6914999308bc67d65548aedf12455,
+  output /home/jm/.cache/jarvis-test-runtime-qa-20260908/jarvis-runtime-o06V8W.
+  payload1482파일, production 의존성 설치 및 격리 CLI smoke 포함. 미추적 node_modules로 dirty=true.
+- 별도 trusted checkout 무결성 CLI를 HTTP 실행 전후 호출해 각각 exit0/matched.
+  dependency entries6668, receipt SHA256
+  6abdb603c9c34b83af8ef785fb37ec739e3f59b84fd3cb4045538b25abb109c2.
+- 패키지의 실제 dashboard 서버+격리 DB에서 HTML/JS/CSS/health/session 및
+  proposal preview6응답 모두200. 정적 바이트 일치, preview=ready, 서버 정상종료0.
+- QA package-local-refresh-clock.log, -receipt.sha256, -integrity.json,
+  -http.json, -integrity-after.json. Node24.19.0/ABI137, input1576파일,
+  digest b5ac87a66ca9129726fc74a21321440b44a21216d7d01f38999bf26283279896.
+- 브라우저/외부 provider를 실행한 검증은 아니다. signature_verified=false,
+  deployment_ready=false이며 운영 활성화는 하지 않았다. 전체 목표는 계속 진행한다.
+
 ## 로컬 수집 주기 내부 시간 역행 차단 — 2026-09-10
 
 - LocalTimelineRefreshService가 매 subject 시각을 시작 시각하고만 비교해,
