@@ -2466,3 +2466,30 @@ It is not a new current-HEAD package, full gate or provider execution verificati
   패키지 runtime-package-receipt.json. 이전 URsHND 인수와 소스를 구분한다.
 - deployment_ready=false 유지. provider 계약·sealed manifest·실제 운영 활성화
   게이트는 이 개발 패키지 검사로 충족되지 않는다. 서비스 변경/배포0회.
+
+## 최신 자비스 패키지와 설치된 Second Brain 연동 — 2026-09-10
+
+- 자비스 NxuC5J(source dc4c05a), provider 설치물
+  /var/tmp/sb-inbox-release-gicqbwxw/releases/78a5792d53a7cbdb1b4d4c50f58ca63cd97c77f1
+  (provider source f0fec140aee0fbe14fcd9289e7461509144a6c7e)을 연결했다.
+  provider 작업공간 현재 HEAD0947571은 문서 커밋이며 설치 source와 구분한다.
+- provider deploy/check-release-integration.py의 원본 실행은 dist/node_modules/undici
+  경로가 없어 중단됐다. 패키지에는 개발용 undici가 없으며 SDK는 root/node_modules에
+  있다. 패키지 변경 대신 임시 harness2파일의 import3개만 조정했다: HTTP 시험 도구는
+  기존 개발 설치 undici, MCP SDK2개는 패키지 자체 root/node_modules. 첫 조정 후
+  SDK 경로 실패도 확인했으며 최종 조정 실행만 exit0이다.
+- 승인된 MCP 쓰기→실제 TLS/gateway/CLI/provider→proved→JARVIS settled/control
+  completed→새 로그인 조회 통과. settlement1/attempt1, 같은 generation 확인.
+  독립 stdio reader2개가 각각 기록2개 회수, reader 철회 후403.
+  접수 중 철회는 accepted row0; 실행 전 철회·만료는 failed/active generation false.
+  4개 시나리오 모두 FK 오류0. 합성 identity/source/policy/clock, native 모델 호출0회.
+- 검증 전후 provider18474항목, JARVIS8178항목 및 Node 실행 파일 일치.
+  provider inventory babb369eec8daf16f72659b34ad4a300c18875bc7ec34a0b3c163dfd5247fb2e,
+  JARVIS inventory 9b720c4dd046b004c3af3d1436130493a8538cc10b241d3f4d792f656e2db1ec.
+- 증거: 공통 QA의 run-packaged-provider-pair.py,
+  latest-packaged-provider-pair-adapted.json/stderr, 원본 실패 latest-packaged-provider-pair.stderr.
+  성공 JSON은 원본/수정 harness SHA와 import 경로를 포함한다. 원본 harness 무수정
+  통과나 두 패키지만으로 모든 시험 의존성이 충족된다고 주장하지 않는다.
+- provider 소스/운영 current/서비스/운영 DB 변경0개. production_activated=false.
+  이 인수는 일일 refresh publication 계약이나 원본 업무 계보의 자동 기억 수집
+  계약을 충족하지 않으므로 해당 HOLD와 전체01–25 잔여는 유지한다.
