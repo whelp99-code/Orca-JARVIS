@@ -2523,3 +2523,14 @@ It is not a new current-HEAD package, full gate or provider execution verificati
   결과: 공통 QA의 runtime-package-bounds-results.json. node --check/diff check0.
 - 안정된 파일 트리에서 검사 자원을 제한하는 사전 검사다. 사전 검사 후 파일을
   교체하는 동시 변경, 프로세스 전체 RSS 상한, 서명 검증을 보장하지 않는다.
+
+## 패키지 무결성 CLI 자동 회귀 편입 — 2026-09-10
+
+- tests/integration/runtime-package-integrity-cli.test.ts 추가. 각 테스트는 별도
+  임시 candidate/고정 receipt를 만들고 실제 Node CLI 자식 프로세스를 실행한다.
+  candidate의 검사 모듈은 실행 시 throw하도록 만들어 후보 코드 비실행을 확인한다.
+- 정상 무결성/잘못된 pin/payload 변경/의존성 추가/중첩 의존성/필수 파일 누락
+  6개 통과(1파일,0.441초). backend tsc --noEmit 및 새 파일 ESLint exit0.
+  각 fixture는 finally에서 정리하고 자식 종료 코드·signal·구조화 결과를 검증한다.
+- 기존 실물 NxuC5J 변형 인수와 별도로 일반 integration/backend discovery에
+  포함되는 회귀 검사다. 전체3985 gate 이후 테스트 추가이며 소급 집계하지 않는다.
