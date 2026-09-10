@@ -101,6 +101,46 @@ it("refuses a candidate when a second connection adds a context chain during the
   expect(second.created.recommendation.id).not.toBe(f.chain.created.recommendation.id);
 });
 
+// A pathname replaced before the apply even starts is self-consistent: both fence reads see the
+// new inode while the open connection still reads the old one. Only comparing the copy against
+// the connection the selection used catches that.
+it("refuses a candidate copied from a file the selection never read", async () => {
+  const f = await fixture();
+  const swapped = join(dirname(f.db.filename), "swapped.sqlite");
+  const other = new AuthorityDb(swapped);
+  await other.migrate();
+  other.db.pragma("wal_checkpoint(TRUNCATE)");
+  other.close();
+  renameSync(swapped, f.db.filename);
+
+  // Measured: the rebuild fails against the substituted file and the fence, which sees the open
+  // connection notice the replacement, reports LOCAL_RETENTION_SOURCE_CHANGED. Either that or
+  // LOCAL_RETENTION_CANDIDATE_MISMATCH is correct here - the copy check is what would catch a
+  // substitution that still builds cleanly - and both leave the caller without a candidate.
+  await expect(applyLocalObservationRetention(f.db, f.cutoff, f.destination))
+    .rejects.toThrow(/LOCAL_RETENTION_(SOURCE_CHANGED|CANDIDATE_MISMATCH)/);
+  expect(existsSync(f.destination)).toBe(false);
+  // The selection's own connection still holds its rows; nothing was removed from it.
+  expect(count(f.db, "personal_recommendations")).toBe(1);
+});
+
+it("still produces a candidate on a retry after a rejected apply", async () => {
+  const f = await fixture();
+  const pending = applyLocalObservationRetention(f.db, f.cutoff, f.destination);
+  addIntent(f.db, f.chain.created.recommendation.id);
+  await expect(pending).rejects.toThrow("LOCAL_RETENTION_SOURCE_CHANGED");
+  expect(existsSync(f.destination)).toBe(false);
+
+  // Restart on the same destination: the refused attempt left neither a claim nor a candidate,
+  // and the retry now sees the notification, so the selector retains the group instead.
+  const retry = await applyLocalObservationRetention(f.db, f.cutoff, f.destination);
+  expect(retry.selection.blocked).toEqual([]);
+  expect(retry.selection.retained).toEqual([
+    { observation_id: f.chain.observation.id, reason: "notification_addresses_recommendation" }]);
+  expect(retry.build.foreign_key_errors).toBe(0);
+  expect(existsSync(f.destination)).toBe(true);
+});
+
 it("finds the dangling reference a clean foreign_key_check cannot", async () => {
   const f = await fixture();
   const recommendation = f.chain.created.recommendation.id;

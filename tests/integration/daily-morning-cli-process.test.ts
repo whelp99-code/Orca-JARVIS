@@ -158,6 +158,23 @@ it("abstains through the child process when the local snapshot was cleared", asy
   expect(after.detail).not.toContain(f.chain.created.recommendation.id);
 });
 
+it("abstains through the child process when the task timeline itself is gone", async () => {
+  const f = await fixture();
+  const db = new AuthorityDb(f.path);
+  try {
+    // snapshot_missing (the cleared-cache case above) is not source absence: the store reports
+    // source_missing only when TaskTimeline raises TASK_TIMELINE_NOT_FOUND for the subject.
+    db.db.prepare("DELETE FROM gjc_intents WHERE continuation_id=?").run(LOCAL_CHAIN_TASK_ID);
+  } finally { db.close(); }
+
+  const run = child([HARNESS, f.path, f.input, CLI_AT]);
+
+  expect(run.status).toBe(0);
+  const after = reopen(f.path);
+  expect(after.brief.item_count).toBe(0);
+  expect(after.detail).not.toContain(f.chain.created.recommendation.id);
+});
+
 it("drops a superseded local source through the child process without failing the run", async () => {
   const f = await fixture();
   const at = new Date(Date.parse(MORNING_KST_0715) + 10_000).toISOString();

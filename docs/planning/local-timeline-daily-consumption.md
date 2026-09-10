@@ -343,12 +343,24 @@ profile is what covers `src/dashboard/personal-today.ts`; the targeted 40-file
 integration selection does not run it. Log `verify2.log` in the local evidence
 directory. Development gate only, not a production deployment.
 
-Not covered here. The compiled `jarvis daily morning --once` CLI was not used for
-this chain: its schedule window is 07:15 KST while the fixture clock is fixed at
-21:00 KST, so driving the CLI needs a time-parameterised chain fixture. A
-`capped` local collection was not exercised either, because `LocalTimelineCollection`
-caps at 1000 events and 128KiB and the fixture task is small. Both remain open
-with those exact resumption conditions.
+Not covered here at the time. The compiled `jarvis daily morning --once` CLI was
+not used for this chain: its schedule window is 07:15 KST while the fixture clock
+was fixed at 21:00 KST, so driving the CLI needed a time-parameterised chain
+fixture. That is now done, in-process and as a child process
+(`tests/integration/daily-morning-cli-process.test.ts`).
+
+A `capped` local collection is still not exercised, and it is the one case of the
+required process matrix that remains. The state comes from a truncated collection:
+`LocalTimelineCollection` asks `TaskTimeline` for at most 1000 events and 128KiB
+and marks the snapshot `capped` when the timeline was truncated
+(`src/local-timeline-collection.ts:35`, `src/task-timeline.ts:101`), after which
+the store reports the snapshot as unavailable with reason `capped`
+(`src/local-timeline-snapshot-store.ts:85`). Reaching it needs a fixture task
+carrying more than 1000 timeline events or more than 128KiB of context, and
+recording negative evidence for that outcome additionally needs a unique
+`control_command_requests` row per `negative_evidence` row to satisfy the guard in
+`migrations/028_negative_evidence.sql`. Both costs are fixture work, not a product
+change.
 
 ## Repeated producer growth, duplication and the retention contract
 

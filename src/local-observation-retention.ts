@@ -1,7 +1,7 @@
 import { closeSync, existsSync, openSync, realpathSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type Database from "better-sqlite3";
-import type { AuthorityDb } from "./db.js";
+import { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
 import {
   selectLocalObservationRetention, type LocalObservationRetentionSelection,
@@ -118,6 +118,52 @@ function claimRetentionDestination(source: AuthorityDb, freshPath: string): stri
   return destination;
 }
 
+/**
+ * Tables the copy must reproduce exactly. The first two lose precisely what the selection
+ * blocked; the rest are untouched by any retention selection, so a mismatch there means the
+ * copy did not come from the database the selection read.
+ */
+const CANDIDATE_UNAFFECTED = ["gjc_intents", "notification_intents",
+  "personal_context_audit_events", "local_timeline_subjects"] as const;
+
+function tableCount(database: Database.Database, table: string): number {
+  return Number(database.prepare(`SELECT COUNT(*) FROM ${table}`).pluck().get());
+}
+
+/**
+ * Proves the candidate was copied from the database the selection actually read.
+ *
+ * The fence pins this connection's counters and the pathname's device and inode, but a pathname
+ * replaced before the apply started would be consistent with itself while the open connection
+ * still reads the original file: selection would describe one database and the adapter, which
+ * attaches by pathname through its own connection, would copy another. Comparing the copied row
+ * counts against the connection the selection used closes that gap without trusting either
+ * pathname.
+ */
+function assertCandidateMatchesSelection(
+  source: AuthorityDb, destination: string, selection: LocalObservationRetentionSelection,
+): void {
+  const removed = (kind: RetentionProjection["kind"]): number =>
+    selection.blocked.filter(item => item.kind === kind).length;
+  const expected = new Map<string, number>([
+    ["personal_observations", tableCount(source.db, "personal_observations") - removed("observation")],
+    ["personal_recommendations",
+      tableCount(source.db, "personal_recommendations") - removed("recommendation")],
+    ...CANDIDATE_UNAFFECTED.map(table => [table, tableCount(source.db, table)] as const),
+  ]);
+  const candidate = new AuthorityDb(destination, undefined, { readonly: true, fileMustExist: true });
+  let mismatch: string | undefined;
+  try {
+    for (const [table, count] of expected) {
+      if (tableCount(candidate.db, table) !== count) { mismatch = table; break; }
+    }
+  } finally {
+    candidate.close();
+    for (const suffix of DESTINATION_SIDECARS) rmSync(`${destination}${suffix}`, { force: true });
+  }
+  if (mismatch !== undefined) throw new JarvisError("LOCAL_RETENTION_CANDIDATE_MISMATCH");
+}
+
 /** Removes only the file this call created, plus the sidecars the build put beside it. */
 function releaseRetentionDestination(destination: string): void {
   for (const suffix of DESTINATION_SIDECARS) rmSync(`${destination}${suffix}`, { force: true });
@@ -151,6 +197,9 @@ export async function applyLocalObservationRetention(
       blocked_projections: selection.blocked, sensitive_material: [], destination: "claimed",
     });
     const application = { selection, build, source_fence: fence };
+    // What was copied is checked before why it might differ: a pathname swapped before this call
+    // is self-consistent for the fence, and only the copy itself shows the divergence.
+    assertCandidateMatchesSelection(source, destination, selection);
     verifyLocalObservationRetentionCandidate(source, application);
     return application;
   } catch (error) {
