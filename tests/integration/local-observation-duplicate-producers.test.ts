@@ -22,10 +22,10 @@ const todayActions = (db: AuthorityDb) => (todayProjection(db, new Date(AT)) as
 
 it("keeps actionable output at one item while repeated producer cycles pile up storage", async () => {
   const db = new AuthorityDb(tempDb()); opened.push(db);
-  const chain = await localObservationChain(db);
+  await localObservationChain(db);
 
   for (let cycle = 1; cycle <= 3; cycle++) {
-    if (cycle > 1) extendLocalObservationChain(db, chain.store, cycle - 1);
+    if (cycle > 1) extendLocalObservationChain(db, cycle - 1);
     const stored = cycle;
     // Every cycle stores another immutable row set for byte-identical source content.
     expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(stored);
@@ -55,8 +55,8 @@ it("keeps actionable output at one item while repeated producer cycles pile up s
 
 it("excludes a quarantined observation from the brief instead of failing the whole read", async () => {
   const db = new AuthorityDb(tempDb()); opened.push(db);
-  const chain = await localObservationChain(db);
-  const second = extendLocalObservationChain(db, chain.store, 1);
+  await localObservationChain(db);
+  const second = extendLocalObservationChain(db, 1);
   new MemoryProjectionAuthority(db).quarantineUnresolved({ kind: "observation", id: second.observation.id,
     component_id: second.observation.id }, new Date(AT));
   const generated = new MorningRecommendationSource(db).generate(AT);

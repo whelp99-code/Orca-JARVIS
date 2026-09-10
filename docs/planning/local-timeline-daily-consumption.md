@@ -616,13 +616,21 @@ The selection therefore holds such a group with reason
 expanding would delete a recommendation that may still be current only because an
 older one expired, which inverts the purpose of a cutoff.
 
-That reason is implemented but its positive case is **not measured**, and the
-distinction matters. With the fixed-clock fixture both chains share one expiry, so
-no cutoff can select one recommendation while leaving another that names it; only
-the in-group case is reachable, and the test asserts that case correctly does
-*not* retain, because the naming event is removed together with its target.
-Measuring the cross-group retention needs the time-parameterised chain fixture
-already recorded as a hold.
+Both directions are now measured. The chain fixture derives every instant from one
+base through `localChainTimes`, so two cycles can be placed at different bases and
+their observations get distinct expiries. With the older cycle's expiry as the
+cutoff the older group is selected and the newer one is untouched; once the newer
+recommendation's event names the selected one as its replacement, the selection
+returns empty and retains with `outside_event_names_replacement`. The in-group
+case still asserts the opposite, that a naming event removed together with its
+target does not retain, so the rule is pinned from both sides rather than only
+where it is convenient.
+
+Parameterising that fixture also corrected a latent defect in it:
+`extendLocalObservationChain` refreshed the collection on the original store's
+clock while admitting at the new base, so a later cycle would have read a snapshot
+that had already expired 300s after the earlier one started. The cycle now
+collects on its own clock.
 
 The retain-on-notification rule deserves a note, because it is a choice and not a
 measurement. Declining to delete is the conservative reading, and it is the only

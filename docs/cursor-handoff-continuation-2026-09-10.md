@@ -150,7 +150,7 @@ JARVIS 쪽 구분(미설정·실패·비호환·capped·stale·완료)은 이미
 | 항목 | 재개 조건 |
 |---|---|
 | B: cutoff 선정 표면 | `src/local-observation-retention.ts`로 구현했다. 읽기 전용 선정이며 삭제는 하지 않는다. 경계 포함 제거, 인용 관측의 context·recommendation 확장, notification이 가리키는 그룹 보류, 창 안의 관측을 함께 인용하는 context 보류를 포함한다. 끊긴 notification을 제거·suppress할지는 사용자 대면 결정이므로 고르지 않았고, 선정기는 "삭제하지 않음"만 택했다 |
-| B: replacement FK 보류 규칙의 양성 사례 미측정 | 규칙은 `outside_event_names_replacement`로 구현했다(확장이 아니라 보류를 택했다. 확장하면 오래된 것이 만료됐다는 이유로 현재 recommendation을 지우게 된다). 그러나 고정 시각 fixture에서는 두 체인의 만료가 같아 한쪽만 선정되는 상황을 만들 수 없어, 도달 가능한 것은 같은 그룹 사례뿐이고 테스트는 그 경우 보류하지 **않음**을 확인한다. 교차 그룹 보류는 시각 매개변수화 fixture가 있어야 측정된다 |
+| B: replacement FK 보류 규칙 | 해소됐다. fixture를 `localChainTimes` 기준 시각 매개변수화로 바꿔 두 주기를 서로 다른 base에 두었고, 교차 그룹 보류(`outside_event_names_replacement`)와 같은 그룹 비보류를 양쪽 다 측정했다. 매개변수화 과정에서 fixture 자체의 잠복 결함도 고쳤다: `extendLocalObservationChain`이 수집은 이전 store 시계로, 접수는 새 base로 하고 있어 뒤 주기가 이미 만료된 snapshot을 읽을 수 있었다 |
 | B: cutoff 적용과 일정화 | 선정 결과를 실제 재구축으로 적용하는 단계, 그리고 cutoff 값을 고르는 설정 표면은 미구현 |
 | B: opt-in 접수 연결 | fence는 `3a06e83`으로 완료됐다. 그러나 retention이 계약만 있고 구현이 없으므로 자동 접수를 켜면 저장이 무한히 증가한다. cutoff 선정이 구현된 뒤에 연결한다. 자동 전체 task 등록은 하지 않는다 |
 | B: 내용 기반 접수 dedup | 채택하지 않는다. 관측 식별자가 collection에 결속되므로 이전 관측을 재사용하면 cache 교체 즉시 영구 unavailable이 된다. 이는 "collection별 새 ID 요구를 제거해 중복을 숨기지 않는다"는 원본 지시와도 어긋난다 |

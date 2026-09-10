@@ -5,7 +5,8 @@ import { LocalTimelineSnapshotStore } from "../../src/local-timeline-snapshot-st
 import { admitLocalTimelineObservation } from "../../src/local-timeline-observation.js";
 import { buildFreshAuthority } from "../../src/memory-authority-fresh-builder.js";
 import { selectLocalObservationRetention } from "../../src/local-observation-retention.js";
-import { localObservationChain, LOCAL_CHAIN_AT, LOCAL_CHAIN_TASK_ID } from "../fixtures/local-observation-chain.js";
+import { extendLocalObservationChain, localObservationChain, LOCAL_CHAIN_AT, LOCAL_CHAIN_TASK_ID }
+  from "../fixtures/local-observation-chain.js";
 import { tempDb } from "../helpers.js";
 
 const AT = LOCAL_CHAIN_AT;
@@ -143,6 +144,40 @@ it("does not retain when the event naming a replacement is removed with its targ
   // Same group, so this must NOT retain: the naming event is removed together with its target.
   expect(selectLocalObservationRetention(db.db, cutoff).blocked).toHaveLength(3);
   expect(selectLocalObservationRetention(db.db, cutoff).retained).toEqual([]);
+});
+
+it("retains a selected group when a surviving outside event names its recommendation", async () => {
+  const db = new AuthorityDb(tempDb()); opened.push(db);
+  // Two cycles at different bases give the two observations distinct expiries, which is what makes
+  // a cutoff able to select one recommendation while leaving the other behind.
+  const later = new Date(Date.parse(AT) + 600_000).toISOString();
+  const first = await localObservationChain(db);
+  const second = extendLocalObservationChain(db, 1, later);
+  const target = first.created.recommendation.id;
+  const survivor = second.created.recommendation.id;
+  expect(survivor).not.toBe(target);
+
+  const cutoff = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
+    .pluck().get(first.observation.id));
+  const secondExpiry = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
+    .pluck().get(second.observation.id));
+  expect(cutoff < secondExpiry).toBe(true);
+  // Without a naming event the older group is selected and the newer one is untouched.
+  expect(selectLocalObservationRetention(db.db, cutoff).blocked.map(item => item.id))
+    .toEqual([first.observation.id, first.context.id, target]);
+
+  // The surviving recommendation's event now names the selected one as its replacement. The
+  // event table is immutable by trigger; the trigger is dropped only to fabricate that row.
+  for (const name of db.db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='trigger' AND tbl_name='personal_recommendation_action_events'")
+    .pluck().all() as string[]) db.db.exec(`DROP TRIGGER "${name.replaceAll('"', '""')}"`);
+  db.db.prepare(`UPDATE personal_recommendation_action_events SET replacement_recommendation_id=?
+    WHERE recommendation_id=?`).run(target, survivor);
+
+  const selection = selectLocalObservationRetention(db.db, cutoff);
+  expect(selection.blocked).toEqual([]);
+  expect(selection.retained).toEqual([
+    { observation_id: first.observation.id, reason: "outside_event_names_replacement" }]);
 });
 
 it("rejects a cutoff that is not a persistence instant", async () => {
