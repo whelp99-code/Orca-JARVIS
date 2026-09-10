@@ -18,9 +18,18 @@ export type LocalObservationRetentionSelection = {
   readonly blocked: readonly RetentionProjection[];
   readonly retained: readonly RetentionRetained[];
 };
+/**
+ * What the candidate was built from. `total_changes` moves when this connection writes and
+ * `data_version` moves when any other connection commits, so together they cover both writers.
+ */
+export type RetentionSourceFence = {
+  readonly data_version: number;
+  readonly total_changes: number;
+};
 export type LocalObservationRetentionApplication = {
   readonly selection: LocalObservationRetentionSelection;
   readonly build: FreshAuthorityBuild;
+  readonly source_fence: RetentionSourceFence;
 };
 
 /** The floor is the observation expiry window itself; the ceiling is 365 days. */
@@ -146,6 +155,47 @@ export function selectLocalObservationRetention(
 
 const DESTINATION_SIDECARS = ["-wal", "-shm", "-journal"] as const;
 
+function retentionSourceFence(source: AuthorityDb): RetentionSourceFence {
+  return {
+    data_version: Number(source.db.pragma("data_version", { simple: true })),
+    total_changes: Number(source.db.prepare("SELECT total_changes()").pluck().get()),
+  };
+}
+
+/**
+ * Lists the removed recommendations a notification still addresses.
+ *
+ * `notification_intents` names a recommendation only inside `deep_link` text, percent-encoded,
+ * with no foreign key and no index behind it, so `foreign_key_check` reports a clean candidate
+ * while the reference dangles. A hit here means the reference appeared after the selection ran:
+ * had it existed earlier, the selector would have retained the group instead of blocking it.
+ */
+export function findDanglingRetentionReferences(
+  database: Database.Database, blocked: readonly RetentionProjection[],
+): readonly string[] {
+  const addressed = database.prepare(
+    "SELECT COUNT(*) FROM notification_intents WHERE deep_link LIKE '%'||?||'%'").pluck();
+  return blocked.filter(item => item.kind === "recommendation").map(item => item.id)
+    .filter(id => Number(addressed.get(encodeURIComponent(id))) > 0);
+}
+
+/**
+ * Re-checks that the source has not moved past the fence the candidate was built from. Callers
+ * run this immediately before acting on a candidate: it is the only thing standing between a
+ * stale rebuild and a source that changed after it was produced.
+ */
+export function verifyLocalObservationRetentionCandidate(
+  source: AuthorityDb, application: LocalObservationRetentionApplication,
+): void {
+  const fence = retentionSourceFence(source);
+  if (fence.data_version !== application.source_fence.data_version
+    || fence.total_changes !== application.source_fence.total_changes) {
+    throw new JarvisError("LOCAL_RETENTION_SOURCE_CHANGED");
+  }
+  const dangling = findDanglingRetentionReferences(source.db, application.selection.blocked);
+  if (dangling.length !== 0) throw new JarvisError("LOCAL_RETENTION_REFERENCE_DANGLING");
+}
+
 /**
  * Takes exclusive ownership of the destination name before anything writes through it.
  *
@@ -189,22 +239,32 @@ function releaseRetentionDestination(destination: string): void {
 /**
  * Applies a cutoff by rebuilding the authority into a destination this call owns exclusively.
  *
+ * The candidate is the source as of `source_fence`, and nothing here is a swap. Selection and
+ * copy do not share one read transaction - the rebuild adapter copies through its own connection
+ * and yields while migrating - so a write landing in that gap would otherwise be copied without
+ * being selected. The fence is therefore re-read after the build and any movement rejects the
+ * candidate, and the removed recommendations are checked against notification references that no
+ * foreign key protects. Callers re-run `verifyLocalObservationRetentionCandidate` immediately
+ * before acting on the candidate, because this fence only proves the source held still until here.
+ *
  * The source is neither swapped nor deleted, and its logical rows are unchanged; the rebuild
  * adapter does checkpoint the source's write-ahead log, so the source file's bytes can change
- * while `total_changes()` stays equal. The rebuild adapter remains the only sanctioned deletion
- * path for this immutable lineage, and a failed build takes only this call's own destination
- * with it.
+ * while `total_changes()` stays equal. A failed or rejected build takes only this call's own
+ * destination with it, leaving nothing that could be mistaken for a usable candidate.
  */
 export async function applyLocalObservationRetention(
   source: AuthorityDb, cutoffValue: unknown, freshPath: string,
 ): Promise<LocalObservationRetentionApplication> {
+  const fence = retentionSourceFence(source);
   const selection = selectLocalObservationRetention(source.db, cutoffValue);
   const destination = claimRetentionDestination(source, freshPath);
   try {
     const build = await buildFreshAuthority(source, destination, {
       blocked_projections: selection.blocked, sensitive_material: [], destination: "claimed",
     });
-    return { selection, build };
+    const application = { selection, build, source_fence: fence };
+    verifyLocalObservationRetentionCandidate(source, application);
+    return application;
   } catch (error) {
     releaseRetentionDestination(destination);
     throw error;
