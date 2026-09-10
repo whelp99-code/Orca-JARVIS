@@ -91,3 +91,25 @@ and a digest. A missing production planner fails even when static assets/health 
 It performs no staging, approval or provider candidate generation. Runtime capability
 version probes may run as part of preview. This remains developer HTTP evidence,
 not browser interaction, production activation or deployment readiness.
+
+### Recheck a retained runtime package
+
+From a trusted development checkout with its backend already built, run:
+
+```sh
+node scripts/verify-runtime-package.mjs /absolute/package/root --receipt-sha256 <previously-recorded-64-hex-receipt-hash>
+```
+
+Keep the expected receipt hash independently when the candidate is accepted; do
+not derive a replacement hash from a suspect candidate at verification time. The
+command reads the candidate without importing or executing its code. It checks
+the pinned receipt, required payload roots, installed dependency inventory, and
+recorded backend identity. Nested node_modules/.git trees in payload roots are
+rejected because the build file walker otherwise skips those names.
+
+This checks the recorded payload and dependency scopes, not arbitrary files beside
+them (such as package build logs). Run against a quiescent candidate; it does not
+lock files against concurrent replacement. A matching local digest is not a
+signature, source attestation, fresh runtime test, or production activation gate.
+The result reports signature_verified=false, runtime_validation=not_performed and
+deployment_ready=false even on success. Failures exit1 with a structured code.

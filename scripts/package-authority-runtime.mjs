@@ -4,13 +4,12 @@ import { basename, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
 import { BACKEND_OUTPUT_ROOTS, backendSourceIdentity, fileIdentity } from "./lib/backend-build-identity.mjs";
+import { RUNTIME_PACKAGE_ROOTS as roots } from "./lib/runtime-package-roots.mjs";
 
 const { values } = parseArgs({ options: { "output-parent": { type: "string" } }, strict: true });
 if (!values["output-parent"]) throw new Error("RUNTIME_PACKAGE_OUTPUT_PARENT_REQUIRED");
 const root = process.cwd();
 const parent = resolve(values["output-parent"]);
-const roots = ["dist/src", "dist/tests", "dist/migrations", "dist/contracts", "dist/dashboard",
-  "dist/build-metadata.json", "migrations", "config", "package.json", "package-lock.json", "scripts/cli-smoke.mjs"];
 let output;
 function run(command, args, cwd, log, env = process.env) {
   const fd = openSync(log, "wx", 0o600);

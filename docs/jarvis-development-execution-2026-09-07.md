@@ -2493,3 +2493,20 @@ It is not a new current-HEAD package, full gate or provider execution verificati
 - provider 소스/운영 current/서비스/운영 DB 변경0개. production_activated=false.
   이 인수는 일일 refresh publication 계약이나 원본 업무 계보의 자동 기억 수집
   계약을 충족하지 않으므로 해당 HOLD와 전체01–25 잔여는 유지한다.
+
+## 보관된 실행 패키지의 독립 무결성 검사 명령 — 2026-09-10
+
+- scripts/verify-runtime-package.mjs 추가. 사전에 기록한 receipt SHA256을 필수로
+  받아 payload/의존성 전체 벡터와 backend 메타데이터를 다시 대조한다. 검사 코드는
+  신뢰하는 개발 checkout에서 로드하며 대상 패키지 코드를 import/실행하지 않는다.
+- packager와 verifier의 필수 루트 목록을 scripts/lib/runtime-package-roots.mjs로
+  공유했다. 기존 목록은 동일하다. payload 하위 node_modules/.git는 명시적으로
+  거절해 기존 파일 열거기의 제외 규칙으로 숨는 입력을 허용하지 않는다.
+- 실제 NxuC5J와 별도 복사본으로7개 CLI 시나리오 검증: 원본/복원본/원본 재검사
+  exit0, 잘못된 receipt pin/변경 payload/추가 dependency/중첩 dependency는 각각
+  해당 오류 코드와 exit1. 복사본은 finally 정리. JS3파일 node --check와 diff check0.
+  결과: 공통 QA의 runtime-package-integrity-results.json.
+- 해시 일치는 서명·출처 증명·실행 시험·배포 권한이 아니다. 검사 도중 파일 교체를
+  잠그지 않으며, payload/의존성 범위 밖 로그 등은 검사 대상이 아니다. 결과에
+  signature_verified=false/runtime_validation=not_performed/deployment_ready=false 명시.
+  제품 backend/frontend 소스 변경0개, 기존 전체 verify3985/E2E30과 구분한다.
