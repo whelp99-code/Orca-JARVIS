@@ -25,14 +25,18 @@ function observation(state: ClassificationState, item: ObservationEnvelopeV1, cl
     case "fresh": {
       const linuxTask = item.source.host_id === "host:pos:linux-control-plane"
         && item.source.source_kind === "live_adapter" && item.payload.kind === "live_task";
+      const localTask = item.source.host_id === "host:pos:linux-control-plane"
+        && item.source.source_kind === "timeline" && item.source.source_id === "src:pos:v1:task-timeline:local"
+        && item.payload.kind === "local_task_state";
+      const supportedTask = linuxTask || localTask;
       const current = item.freshness.state === "fresh"
         && Date.parse(item.freshness.fresh_until) > Date.parse(clock)
         && Date.parse(item.expires_at) > Date.parse(clock);
-      if (linuxTask && current) {
+      if (supportedTask && current) {
         if (item.payload.trust === "verified") state.observations.push(item);
         else omit(state, "UNVERIFIED_SOURCE", item.id);
       }
-      else omit(state, linuxTask ? "STALE_SOURCE" : "NON_LINUX_LIVE", item.id, linuxTask);
+      else omit(state, supportedTask ? "STALE_SOURCE" : "NON_LINUX_LIVE", item.id, supportedTask);
       return;
     }
     case "stale": omit(state, "STALE_SOURCE", item.id); return;

@@ -1,6 +1,5 @@
 import { PersonalContextEvidenceResolver } from "../../src/personal-context-evidence.js";
 import { assemblePersonalContext } from "../../src/context-assembler.js";
-import { canonicalPersonalContractHash } from "../../src/personal-validation.js";
 import { expect, it } from "vitest";
 import { AuthorityDb } from "../../src/db.js";
 import { LocalTimelineSnapshotStore } from "../../src/local-timeline-snapshot-store.js";
@@ -70,11 +69,11 @@ it("blocks stale local observation evidence at the context persistence boundary"
     const snapshot = store.refresh("task:fixture");
     const draft = prepareLocalTimelineObservation(db, "task:fixture", snapshot.collection_id, clock);
     db.persistObservation(draft, at);
-    const base = assemblePersonalContext({ purpose: "daily_prioritization", query: "local evidence", clock: at,
+    const context = assemblePersonalContext({ purpose: "daily_prioritization", query: "local evidence", clock: at,
       expires_in_ms: 240000, budgets: { max_items: 16, max_excerpt_bytes: 128, max_total_bytes: 4096 },
-      observations: [], memories: [], pending_authority_refs: [] });
-    const context = { ...base, payload: { ...base.payload, included_observation_refs: [draft.id] },
-      evidence: [{ ...draft.evidence[0]!, digest: canonicalPersonalContractHash(draft) }] };
+      observations: [draft], memories: [], pending_authority_refs: [] });
+    expect(context.payload.included_observation_refs).toEqual([draft.id]);
+    expect(context.payload.state).toBe("insufficient");
     expect(db.persistContextSnapshot({ context, memory_evidence: [] }, at)).toMatchObject({ observation_count: 1 });
     store.setHeld("task:fixture", true);
     const before = db.db.serialize();

@@ -154,3 +154,21 @@ Compiled Node resolved one source before hold and rejected it afterward with zer
 DB byte changes (QA local-context-live.json). Architecture654modules/2427edges/cycles0.
 Automatic local observation admission, assembler source selection and end-to-end
 recommendation/brief production remain unfinished. No service activation was added.
+
+## Context assembler selects explicit local task sources
+
+The classifier accepts the exact task-timeline:local source with timeline kind,
+Linux control-plane host and local_task_state payload, subject to the existing
+verified trust and freshness checks. It does not reinterpret local facts as live
+terminal observations. Existing live-adapter selection remains unchanged.
+
+The integration now uses the actual assembler output instead of manually attaching
+observation references to a context: draft -> persisted observation -> assembled
+context -> persisted context -> held-source rejection during evidence resolution.
+The assembler still requires confirmed memory for a sufficient context; local
+facts alone remain insufficient. An initial sufficient expectation failed and was
+corrected without weakening that rule. Unit7files/22tests and integration1file/3tests
+passed, along with changed-file lint and backend build. QA local-context-assembly.log,
+local-context-assembly-unit.log and local-context-assembly-build.log record the runs.
+The integration runner excludes unit paths, so unit coverage was run separately.
+No automatic admission, recommendation generation or service activation was added.
