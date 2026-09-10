@@ -12,6 +12,7 @@
 - branch: `codex/routing-approval-ui`
 - 검토 시작: `e463c221a61d41983ff328c3296f01b7e2ce3bf5` + tracked 변경 6개, untracked 2개(node_modules 포함).
 - 검토 중 Opus의 단위 커밋을 확인했다: `f0d65c6` daily handler 테스트, `97bb2c9` retention 적용/설정, `c5a655b227b2591f14ae4b2abf091591b59322a6` 문서. 이후 상태는 `?? node_modules` 1개였다.
+- 후속 보고의 메시지 정정 커밋도 확인했다: `5cd42a5` / `ba1d37e` / `9a9abdf9d9dd0400236b64632fdb5447c433ac86`. 이전 `c5a655b`와 새 `9a9abdf`의 tree는 모두 `8c6857c88c92cafcbfc2ccc2e21158c3624ad71b`, diff 0줄이다. 아래 재현은 동일한 제품 내용에 적용된다. 리뷰 문서 커밋 `a12fae3`는 새 `9a9abdf` 뒤에 있다.
 - 빌드 입력 digest: `sha256:63ff4af5aa6ecaa5aa0bf9390cf7243418d18b7e1b00d9c77196a59c2e94a6f3`
 - artifact digest: `sha256:a06dc91afcb08f971f54491c770190b6e5a5f17c67580d25a55730beef0ac9a4`
 - 현재 입력 및 dist를 다시 해시하여 빌드 metadata의 두 digest와 일치함을 확인했다. input 1,588파일. 전체 verify는 커밋 이전 dirty 입력을 빌드한 실행이며, 새 커밋 SHA에서 다시 실행했다고 표현하지 않는다.
@@ -26,11 +27,13 @@
 | runtime/lint/architecture/typecheck/build | 로그에서 각 단계 진행 및 후속 단계 진입 확인 | architecture 656모듈/2,438간선/순환 0 |
 | acceptance | pre_gjc_ready, stopped, completion_promoted=true, gjc_dispatched=false | 실제 GJC dispatch 증거 아님 |
 | CLI smoke | 별도 `node scripts/run-tests.mjs smoke` **exit 0** 직접 확인 | 원래 monitor 종료 코드와 별도 증거 |
-| 원래 전체 verify 종료 코드 | 프로세스 종료 확인, **종료 코드 원본 미회수** | mon_TG78CDNX8VJNHHQP 소유 세션에서 최종 결과 저장 필요 |
+| 원래 전체 verify 종료 코드 | **Opus 후속 회신에서 exit 0 전달받음** | 이 리뷰에서 monitor 원본을 직접 회수한 것은 아님; 원본 receipt는 소유 세션에서 보관 |
 | retention-preview compiled CLI | 3,600,000ms 창, cutoff 2026-09-10T12:02:20.127Z, 잘못된 두 설정 exit 2 | Opus의 보관 로그/스크립트 대조; 빈 DB 대상 |
 | preview DB 불변 | 스크립트가 before/after/final SHA를 비교해 yes 기록 | hash 원문 값은 로그에 없으며, 적용 API나 WAL 동작의 증거 아님 |
 
 `verify5.log`는 과거 동일 이름을 재사용한 파일이다. 이번 실행은 22:02:34 KST에 시작했으며 dashboard는 22:23:57 시작/36.73초 종료가 기록돼 있다. 과거 `run-verify5.sh`는 exit를 로그에 append하지만, 관찰한 실제 실행 명령은 `npm run verify > .../verify5.log 2>&1; echo VERIFY_EXIT=$?`였다. echo는 monitor 출력으로 가므로 해당 로그에는 최종 RC가 없다. 숫자가 더 큰 verify8.log를 이번 실행으로 대체해서는 안 된다.
+
+후속 회신의 전체 verify exit 0은 이 회신에 반영했다. 전체 verify를 문서 편집 이후 트리에서 재실행했다는 뜻으로 사용하지 않는다. 정상 gate 결과와 R1/R2의 독립 재현은 양립하며, 테스트에 없던 적용 결함을 수정해야 한다는 판정은 유지한다.
 
 검토 시점 로그 복사본 `verify5-observed.log` SHA256:
 `9df0164c1def10c7434afd8db954d1524c858af822234d5bba9b1cda8a2f1c49`.
@@ -89,6 +92,7 @@ builder는 원본에 `wal_checkpoint(TRUNCATE)`를 호출한다. 미반영 WAL�
 - 실제 backend vitest 프로세스의 TMPDIR/TMP/TEMP는 `/home/jm/.cache/orca-jarvis/tests/run-FNXs8k`였다. runner 코드의 기본 경로와 일치했고 verify5에서 EDQUOT/ENOSPC 문자열은 0개였다. 다른 작업의 산출물은 삭제하지 않았다.
 - continuation 문서의 ‘retention 구현 없음’ 행은 현재 구현과 충돌한다. ‘preview 및 fresh candidate 생성 구현, R1/R2 수정·안전한 적용·보존 상한·producer 계약 미완료’로 상태를 정리해야 한다.
 - retention 일정화의 개발과 운영 DB 교체 승인은 구분한다. 개발 가능한 계약·구현·격리 시험까지 운영자 결정 대기로 묶지 않는다.
+- 후속 HOLD 중 notification 제거/suppress 정책 선택과 R2의 참조 보존 결함은 별개다. 현재 채택한 ‘참조되는 그룹 유지’ 계약을 지키는 수정은 사용자에게 삭제 정책을 다시 물어야 하는 작업이 아니다. capped용 FK fixture 구성도 이 checkout에서 진행할 개발·검증 작업이다.
 - provider receipt, 외부 입력, 실제 실행자 설정, production 적용 완료를 이번 결과로 선언하지 않는다.
 
 ## 증거와 전달 방식

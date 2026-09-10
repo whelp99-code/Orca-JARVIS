@@ -5,9 +5,9 @@
 ## 0. 시작과 증거 고정
 
 1. `/home/jm/orca/workspaces/Orca-JARVIS/codex-routing-approval-ui`, branch `codex/routing-approval-ui`에서 AGENTS.md와 적용되는 운영·release 지침을 읽는다.
-2. 최신 확인 HEAD는 `c5a655b227b2591f14ae4b2abf091591b59322a6`이다. `git status`, HEAD, diff를 재확인하고 다른 작업자의 변경을 보존한다. `node_modules`를 커밋하거나 삭제하지 않는다.
-3. 검토 중 생성된 `f0d65c6`, `97bb2c9`, `c5a655b`를 다시 만들거나 중복 커밋하지 않는다.
-4. mon_TG78CDNX8VJNHHQP의 소유 세션에서 실제 최종 exit code와 종료 시각을 회수해 receipt로 저장한다. 회수할 수 없으면 원래 RC는 미확인으로 둔다. 프로세스가 사라졌다는 사실만으로 RC 0을 기록하지 않는다.
+2. 제품 인계 기준은 `9a9abdf9d9dd0400236b64632fdb5447c433ac86`이며 그 뒤에 이 리뷰 문서 커밋이 있다. `git status`, HEAD, diff를 재확인하고 다른 작업자의 변경을 보존한다. `node_modules`를 커밋하거나 삭제하지 않는다.
+3. Opus가 메시지 정정한 `5cd42a5`, `ba1d37e`, `9a9abdf`를 다시 만들거나 중복 커밋하지 않는다. 이전 `f0d65c6`, `97bb2c9`, `c5a655b`와 비교한 최종 tree는 동일하므로 R1–R4는 해소되지 않았다.
+4. 후속 보고의 전체 verify exit 0은 접수했다. mon_TG78CDNX8VJNHHQP 소유 세션에 있는 최종 exit code와 종료 시각을 receipt로 보관해 로그와 연결한다. 원본을 회수할 수 없으면 ‘Opus 보고 RC 0 / 리뷰 직접 회수 없음’으로 출처를 구분한다. 프로세스가 사라졌다는 사실만으로 RC 0을 기록하지 않는다.
 5. 향후 로그를 재사용하지 않는다. 실행 ID별 로그와 command/cwd/source input digest/시작·종료 시각/RC를 저장한다. 이번 전체 테스트는 584파일/4,040개이며 별도 리뷰 smoke는 RC 0이다.
 6. 리뷰 재현을 먼저 읽고 격리 scratch에서 실행한다:
 
