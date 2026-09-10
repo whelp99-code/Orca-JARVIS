@@ -28,6 +28,19 @@
   a260652beb173b6019c6b5b790939fed8afc443c987554bfc74cb1540bdfc62b.
 - 아래 전체 gate3985테스트는 이번 변경을 포함하지 않는다. 운영 배포는 하지 않았다.
 
+## 목록 CLI 실사용 경로 확인 — 2026-09-10
+
+- 913b35a의 실제 compiled CLI를 별도 Node 자식으로 실행했다. 격리 디스크 DB에
+  10,000명령/각4,000문자 payload를 저장한 뒤 `control list`와 `control list --all`을 호출했다.
+- 기본 조회100건/437,144bytes/252.999606ms, 전체 조회10,000건/43,690,062bytes/810.212205ms.
+  두 프로세스 exit0, JSON ok=true, 첫/마지막 ID와 payload 총 문자 수가 기대값과 일치했다.
+  단일 실행이고 CLI 시작·JSON 파싱 시간을 포함하므로 API p95와 직접 비교하지 않는다.
+- 첫 실행은 기본 임시 경로에서 DB 생성 중 SQLITE_IOERR_WRITE였다. 기존 QA 디렉터리를
+  TMPDIR로 지정해 통과했다. 제품 코드는 변경하지 않았다. 성공 fixture는 finally에서 삭제했다.
+  부모 연결의 total_changes는 자식 쓰기를 계측하지 않으므로 이 실험으로 CLI 쓰기0을 주장하지 않는다.
+- 증거: /home/jm/.cache/jarvis-test-runtime-qa-20260908/control-list-cli-probe.mjs,
+  control-list-cli-result.json. 전체3991테스트 gate 뒤 수행한 별도 실프로세스 확인이다.
+
 ## 최신 전체 검증 — 2026-09-10 KST, 913b35a 기준
 
 - `npm run verify` exit0. Backend269파일1845테스트 +269파일1883테스트,

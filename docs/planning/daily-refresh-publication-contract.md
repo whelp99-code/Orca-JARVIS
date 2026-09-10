@@ -50,3 +50,12 @@ Recovery must not label a historical receipt as current readiness or repeat a wr
 Direct wiring from readiness.last_successful_refresh_at or unbound JSON is on hold.
 This is a dependency boundary, not a decision to leave provider refresh permanently
 unimplemented. Broader backlog01–25 remains active.
+
+## Reinspection — 2026-09-10
+
+Read-only inspection at Second Brain HEAD235a2e4 found sb_generation_status still
+returns generation/provider/tombstone/health and versioned features, without a
+refresh request identity, completion time or cap/completeness outcome.
+GenerationRuntime still activates conditionally on mutation.authority.activate.
+The publication receipt dependency therefore remains open; no provider files were
+changed and no generation status was relabeled as a completed refresh.
