@@ -1,0 +1,69 @@
+# Local timeline to daily report: consumption boundary
+
+Status: implementation design; no automatic bridge is enabled.
+Inspected JARVIS source at 30cc249 on 2026-09-10. Backlog12/23 remain incomplete.
+
+## Existing code and missing connection
+
+- LocalTimelineCollection reads TaskTimeline outside a caller transaction, bounds
+  events/bytes, and binds canonical content, task ID, source time and collection ID.
+- LocalTimelineSnapshotStore keeps one replaceable snapshot per subject, at most
+  64 subjects, with expiry at collection start +300000ms. Refresh replaces the ID.
+  read checks current hold, exact ID, source bytes, cap and freshness again.
+- LocalTimelineRefreshService refreshes explicitly registered subjects. Its counts
+  are cycle outcomes, not durable readiness or provider publication receipts.
+- PersonalContextEvidenceResolver resolves observation references from
+  personal_observations and checks evidence digest, source time and expiry. It
+  has no local_timeline_subjects input path.
+- MorningRecommendationSource consumes persisted recommendations and contexts.
+  MorningBriefPublisher binds their dependencies to the daily publication under
+  the daily lease. Adding unbound timeline text to that publisher bypasses this path.
+- Configured daily loops still use a null provider refresh reader. Local collection
+  cannot satisfy the separate provider activation/refresh receipt contract.
+
+## Chosen implementation direction
+
+Reuse the existing observation/context/recommendation pipeline. Keep collection
+outside the daily publication transaction; admit only an exact currently readable
+snapshot, then bind its task/source lineage to the persisted observation. Do not
+introduce a second daily-report publisher or make a cache row an authority token.
+
+The bridge must be explicit in service configuration and restrict input to already
+registered, non-held subjects. It must not auto-register all local tasks. Collection
+completion with state=capped, expired/replaced IDs or source changes produces an
+unavailable input, never a sufficient context or a successful refresh claim.
+
+## Work units and acceptance before activation
+
+1. Inspect the observation admission and projection-dependency APIs and define the
+   durable binding: task ID, exact collection ID, content digest, source update time,
+   collection interval, expiry, and subject hold/generation. Use a new migration only
+   if existing structures cannot preserve this binding; shipped SQL stays immutable.
+2. Implement an admission adapter that rereads the exact snapshot and validates the
+   binding in the same transaction as observation admission. Replaying the same
+   collection is idempotent. A later collection with identical content must preserve
+   its new observation identity without duplicating an actionable recommendation.
+3. Extend consumption-side evidence validation through existing projection lineage.
+   A subject hold, original task quarantine or source change after admission must
+   invalidate affected derived reads; merely checking at collection time is insufficient.
+4. Feed admitted observations through existing context and recommendation creation.
+   Preserve evidence deadlines: the resulting context must not outlive its evidence.
+   Daily publication must still recheck its lease, evidence and byte/action budgets.
+5. Run the actual packaged service and daily CLI with an isolated persisted task.
+   Prove source -> collection -> observation -> context -> recommendation -> brief IDs,
+   restart/replay, hold after admission, replacement before consumption, expiry during
+   publication, capped input and missing source. Assert no duplicate actionable output.
+
+## Decisions still required from implementation evidence
+
+The cache deliberately discards previous bytes. Do not retain raw historical
+snapshots merely to make an old brief appear current. Determine whether existing
+projection dependencies can invalidate a historical observation when the subject
+is held or replaced. If they cannot, implement the lifecycle binding before wiring
+this bridge into the service. Reports may remain stored historical artifacts, but
+current reads must not expose suppressed source content as valid actionable context.
+
+This design does not claim external calendar/mail/messenger input, provider refresh,
+production activation, or completion of backlog12/23. The next code task is unit1's
+admission/lifecycle inspection, followed by the adapter only when its invariants can
+be enforced with the existing transaction and suppression contracts.
