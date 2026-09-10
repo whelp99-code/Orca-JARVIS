@@ -100,3 +100,21 @@ only persisted local task facts and remains advisory. Add atomic admission and
 consumer tests first; then connect context/recommendation production. A new migration
 is required if the current immutable persistence cannot hold the binding. This is
 JARVIS implementation work, separate from the external provider refresh dependency.
+
+## Read-only local observation draft implemented
+
+`prepareLocalTimelineObservation` rereads an exact ready cache entry and returns a
+validated advisory observation using the existing task-timeline/timeline source.
+It includes task ID, persisted kind/state/approval flag, source update time and
+collection digest/ID; no title, event prose or inferred terminal liveness. IDs are
+stable per collection, distinct after replacement. Freshness ends 1ms before cache
+expiry to satisfy the existing strict freshness-before-expiry contract, without
+extending source lifetime. There is no persistence or service activation yet.
+
+Integration regression passed: stable replay, source identity, unchanged DB bytes,
+replacement/held/expiry rejection. Initial equality of freshness and expiry was
+rejected by the contract and corrected without changing its validator. Backend
+build/lint passed; architecture654modules/2425edges/cycles0. Separate compiled Node
+confirmed advisory/read-only behavior and rejection after hold (QA local-observation-live.json).
+Durable binding and consumption-time validation remain required before storing or
+connecting this draft to daily report production; it is not an admission receipt.
