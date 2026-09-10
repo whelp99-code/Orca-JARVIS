@@ -2448,3 +2448,21 @@ It is not a new current-HEAD package, full gate or provider execution verificati
 - 제품 소스 변경0개로 앞선2807414 전체 verify의 빌드를 사용했다. 새 테스트와
   runner 목록 변경은3985테스트 gate 이후이며 해당 gate에 소급해 포함하지 않는다.
   실제 서버 용량 포화 후 복구 인수는 앞선 별도 기록을 따른다.
+
+## SSE 후속을 포함한 최신 패키지 인수 — 2026-09-10
+
+- package-authority-runtime exit0, 출력 공통 QA의 jarvis-runtime-NxuC5J.
+  source dc4c05a8f733751bcad65aa229a78616b7914846, source_dirty=true
+  (git status는 미추적 node_modules1개), input1571파일, payload1480파일/9093244바이트.
+  input_digest sha256:03d5ec1c0631a6f19aa62826c0e0bab3959ec82a6f4acad349a421fe7a19da3d.
+- 패키지 CLI smoke 및 identity 검사를 포함한 생성 완료 후 독립 프로세스로
+  runtimeDependencyIdentity 재계산 일치를 확인했다(exit0).
+- packaged-dashboard-http-probe exit0: HTML/JS/CSS 바이트 일치, health/session/
+  제안 preview 포함6응답200, preview ready, 서버 종료code0/signal null.
+- 패키지의 실제 서버와 Chromium: SSE128개 유지→브라우저503→연결1개 해제→
+  브라우저 두 번째 요청200/readyState1/연결됨. route 응답 모킹 없음, exit0.
+- 증거: 공통 QA의 package-sse-capacity.log, packaged-sse-capacity-http.json,
+  packaged-sse-capacity-browser-probe.mjs, packaged-sse-capacity-browser.json,
+  패키지 runtime-package-receipt.json. 이전 URsHND 인수와 소스를 구분한다.
+- deployment_ready=false 유지. provider 계약·sealed manifest·실제 운영 활성화
+  게이트는 이 개발 패키지 검사로 충족되지 않는다. 서비스 변경/배포0회.
