@@ -409,12 +409,44 @@ cache never crosses reconstruction: `copyExpression` nulls
 preserving the subject row and its hold, measured as 1 subject row with 0 cached
 snapshots after the rebuild.
 
+Notification references, and a limit on the guard above. The investigation list
+also names notifications, and they do not behave like the other three.
+`notification_intents` in `migrations/033_personal_operations.sql` holds no
+foreign key into the personal lineage; it carries `correlation_id` and a free-text
+`deep_link`, and `src/notification-intent-types.ts` passes `recommendation_id`
+into the intent by value. Across every migration other than `032`, only two
+foreign keys point into `personal_*` at all: the `replacement_recommendation_id`
+self-reference added by `034`, and a `personal_context_reference_sessions`
+reference in `071`. `notification_deliveries` references only its intent.
+
+The linkage is weaker still than "by value". `src/notification-intent-store.ts`
+inserts exactly `intent_id`, `correlation_id`, `idempotency_key`, `dedup_key`,
+`urgency`, `channel`, `redacted_preview`, `deep_link`, `state`, `expires_at`,
+`created_at` and `updated_at`. No recommendation column is persisted at all: the
+recommendation survives only inside the opaque `deep_link` text and inside
+`dedup_key`, which `src/decision-queue.ts` derives from a hash over
+`recommendation_id` and `action_id`. A cutoff therefore cannot locate the affected
+intents by any indexed column; it would have to parse deep links or recompute
+those hashes.
+
+The consequence is that the protection measured above is narrower than it looks.
+Removing a recommendation whose observation is past a cutoff will not be refused
+on account of notifications, because `foreign_key_check` has nothing to check; it
+will silently leave intents whose `deep_link` addresses a recommendation that no
+longer exists. `foreign_key_check=0` is therefore evidence about the constrained
+tables only, and must not be read as a completeness signal for the cutoff as a
+whole. Any cutoff design has to decide notification handling explicitly, because
+the database will not decide it.
+
 Contract that follows from those measurements. A retention cutoff must be
 expressed as an additional blocked-projection set fed to the same rebuild
 adapter, not as a new deletion path. A cutoff may only remove an observation
 whose citing contexts, and those contexts' recommendations, are removed in the
 same set; otherwise it must retain the observation. Audit rows are never part of
-a cutoff set. `observation-refresh-compaction.test.ts` already fixes the read
+a cutoff set. Because notifications carry recommendation references by value and
+not by constraint, a cutoff that removes recommendations must also resolve the
+notification intents addressing them, and that resolution has to be selected and
+checked by the cutoff itself; the rebuild's foreign key check will not catch it. `observation-refresh-compaction.test.ts` already fixes the read
 behaviour after such a removal: the historical receipt stays readable and its
 current read reports `unavailable`/`source_missing`, which is the same policy the
 sections above apply to contexts, recommendations and briefs.
@@ -514,6 +546,38 @@ against the source's 4,304,896, because a freshly migrated database carries its
 own baseline schema and a new generation row. At this scale a cutoff reduces rows
 while the file grows, so no retention design should be justified by expected file
 shrinkage.
+
+## Durable collection cycle fence
+
+The measurements above named a durable cycle fence as a prerequisite for any
+automatic admission, because the 60,000ms throttle lived in process memory and a
+restart or duplicate start collected again at the same instant.
+`migrations/088_local_timeline_cycle_fence.sql` adds a single-row fence and
+`LocalTimelineRefreshService.cycle()` now claims the window in one immediate
+transaction instead of consulting an instance field. The claim reuses the
+caller's instant and performs no additional clock read, which the existing
+service tests require because their fake-clock arrays are calibrated to the exact
+number of `clock()` calls.
+
+Measured after the change: a fresh instance standing in for a restart and a
+duplicate concurrent instance are both refused at the same clock, cached
+collections are unchanged and `total_changes()` is unmoved by the refused
+attempts. The fence row records `claimed_at` and the `next_at` it advanced to.
+Past the window a start collects again, which is the intended cadence rather than
+a bypass, and collection still admits nothing by itself. `npm run verify` exit0
+on this change: backend shard1 272files/1862tests, backend shard2
+272files/1899tests, dashboard 38files/263tests, total 582files/4024tests,
+architecture 655modules/2434edges/0cycles, fixed-clock acceptance
+`pre_gjc_ready`/`stopped`/`completion_promoted=true`/`gjc_dispatched=false`. Log
+`verify4.log`.
+
+Content-based admission dedup was considered and rejected rather than deferred.
+An observation's identity binds its collection, and consumption revalidates
+against the current cached collection, so reusing an earlier observation for
+unchanged content would produce a row that is permanently unavailable as soon as
+the cache is replaced - the behaviour the replacement tests already measure. It
+would also contradict the instruction not to remove the per-collection identity
+requirement in order to hide duplication.
 
 Not yet done in B. The cutoff selection surface and its configuration are not
 implemented; no opt-in service wiring exists, which is correct because the

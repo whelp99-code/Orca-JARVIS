@@ -121,38 +121,36 @@ it("collects without admitting, so the refresh service alone never grows stored 
   expect(service.cycle()).toBeUndefined();
 });
 
-it("does not throttle a restarted or duplicated service, so each start replaces every collection", async () => {
+it("fences a restarted or duplicated service so repeated starts cannot replace collections", async () => {
   const db = new AuthorityDb(tempDb()); opened.push(db);
   const store = await registerSubjects(db);
-  const clock = () => new Date(AT);
+  let now = new Date(AT);
+  const clock = () => now;
   const collections = () => new Set(store.subjects().map(item => String(item.cached_collection_id)));
 
-  new LocalTimelineRefreshService(db, clock).cycle();
+  expect(new LocalTimelineRefreshService(db, clock).cycle()).toMatchObject({ collected: SUBJECTS });
   const afterFirst = collections();
   expect(afterFirst.size).toBe(SUBJECTS);
 
-  // A restart resets the in-memory throttle, so a second start at the same clock collects again.
-  new LocalTimelineRefreshService(db, clock).cycle();
-  const afterRestart = collections();
-  expect(afterRestart.size).toBe(SUBJECTS);
-  expect([...afterRestart].some(id => afterFirst.has(id))).toBe(false);
+  // The fence is durable, so a fresh instance standing in for a restart is refused,
+  // and so is a duplicate concurrent instance at the same clock.
+  const writesBefore = scalar(db, "SELECT total_changes()");
+  expect(new LocalTimelineRefreshService(db, clock).cycle()).toBeUndefined();
+  expect(new LocalTimelineRefreshService(db, clock).cycle()).toBeUndefined();
+  expect(collections()).toEqual(afterFirst);
+  expect(scalar(db, "SELECT total_changes()")).toBe(writesBefore);
 
-  // A duplicate concurrent start at the same clock replaces them once more.
-  new LocalTimelineRefreshService(db, clock).cycle();
-  const afterDuplicate = collections();
-  expect([...afterDuplicate].some(id => afterRestart.has(id))).toBe(false);
-  // Only the cache moved; nothing was admitted by any of the three starts.
-  expect(scalar(db, "SELECT COUNT(*) FROM local_timeline_subjects")).toBe(SUBJECTS);
+  // One row records the claim and the window it advanced to.
+  expect(scalar(db, "SELECT COUNT(*) FROM local_timeline_cycle_fence")).toBe(1);
+  expect(db.db.prepare("SELECT claimed_at,next_at FROM local_timeline_cycle_fence").get())
+    .toEqual({ claimed_at: AT, next_at: new Date(Date.parse(AT) + 60_000).toISOString() });
+
+  // Past the window a start collects again, which is the intended cadence rather than a bypass.
+  now = new Date(Date.parse(AT) + 60_000);
+  expect(new LocalTimelineRefreshService(db, clock).cycle()).toMatchObject({ collected: SUBJECTS });
+  expect([...collections()].some(id => afterFirst.has(id))).toBe(false);
+  // Collection still admits nothing by itself.
   expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(0);
-
-  // Admitting once per start would store one immutable row per start for identical source bytes.
-  for (const collection of [...afterDuplicate]) {
-    const subject = store.subjects().find(item => item.cached_collection_id === collection);
-    admitLocalTimelineObservation(db, String(subject?.task_id), collection, clock);
-  }
-  expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(SUBJECTS);
-  expect(scalar(db, `SELECT COUNT(DISTINCT json_extract(canonical_envelope_json,
-    '$.payload.value.collection_content_digest')) FROM personal_observations`)).toBe(SUBJECTS);
 });
 
 /** Admits one observation per cycle on a single task, advancing the clock so expiries differ. */
