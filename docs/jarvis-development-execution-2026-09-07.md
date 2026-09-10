@@ -4,7 +4,22 @@
 실사용 검증과 코드/자동 테스트 검증을 구분한다. 문제가 될 기능은 근거와 재개 조건을 남겨 보류한다.
 기준 목록은 `improvement-backlog-2026-09-07.md`의 01–25이며 일부 완료를 전체 완료로 보고하지 않는다.
 
-## 최신 전체 검증 — 2026-09-10 KST, 3439aff 기준
+## 최신 전체 검증 — 2026-09-10 KST, 2807414 기준
+
+- `npm run verify` exit0. Backend269파일1845테스트 +268파일1877테스트,
+  dashboard38파일263테스트: 합계575파일3985테스트 통과.
+- 런타임 Node24.19.0/ABI137, 전체 lint/typecheck, backend/dashboard build,
+  두 backend shard, dashboard, 고정 시계 acceptance 및 CLI smoke 완료.
+  Acceptance: pre_gjc_ready / stopped / completion_promoted=true / gjc_dispatched=false.
+- 검증 SHA2807414943f2e89de0a6d5957cc9885679210c4d. 실행 전후 추적1857파일
+  SHA256 변경0개, HEAD 동일. git status: 미추적 node_modules1개만 존재.
+- 증거: /home/jm/.cache/jarvis-test-runtime-qa-20260908/ 아래
+  verify-sse-capacity.log, verify-sse-capacity-before.json, verify-sse-capacity-result.json.
+- 이번 gate는 projection key 동시 생성 수정, 실제 TCP 역압 회귀 테스트,
+  종료된 SSE 재시도 및 서버당128구독 상한을 포함한다. 앞선 개별 브라우저·소켓
+  인수와 함께 해석하며, 전체 운영 배포 또는 backlog01–25 완료를 뜻하지 않는다.
+
+## 이전 전체 검증 — 2026-09-10 KST, 3439aff 기준
 
 - `npm run verify` exit0. Backend267파일/1835테스트 +267파일/1881테스트,
   dashboard37파일/261테스트: 합계571파일/3977테스트 통과.
