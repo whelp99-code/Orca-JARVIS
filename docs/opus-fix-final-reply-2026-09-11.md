@@ -4,12 +4,16 @@
 
 ## 판정
 
-**R1·R2(P1) 두 결함은 수정됐고, 리뷰의 재현 스크립트는 더 이상 재현하지 못한다. R3는 계약 정정과 측정으로, R4는 실제 프로세스 인수 매트릭스 완결로 닫았다.** 독립 게이트 리뷰 3회 중 마지막 판정은 APPROVE다. production 적용·교체·배포는 한 건도 하지 않았다.
+**R1·R2(P1) 두 결함은 수정됐고, 리뷰의 재현 스크립트는 더 이상 재현하지 못한다. R3는 계약 정정과 측정으로, R4는 실제 프로세스 인수 매트릭스 완결로 닫았다.** production 적용·교체·배포는 한 건도 하지 않았다.
+
+이 문서는 두 번 갱신됐다. `31514bd` 최초 작성 이후 재검증(`docs/opus-final-review-2026-09-11.md`, 커밋 `5357f44`)이 **R2에 남은 결함**을 재현했고 — 열린 WAL 원본의 경로를 행 수가 같고 내용이 다른 DELETE 모드 DB로 교체하면 잘못된 후보가 만들어지고 재검증까지 통과했다 — 그 결함은 `c7cc50b`으로 수정했다. 아래 R2 절과 “R2 재개” 절이 최신 상태다.
+
+독립 게이트 리뷰는 3회 받았고 마지막 판정은 APPROVE지만, **그 3차의 대상은 `2673e4a`의 capped 테스트 한 건으로 제한**돼 있다. R2 전체나 `52db87d`에 대한 독립 승인이 아니며, `c7cc50b`은 아직 독립 재검토를 받지 않았다.
 
 ## 대상과 커밋
 
 - worktree `/home/jm/orca/workspaces/Orca-JARVIS/codex-routing-approval-ui`, branch `codex/routing-approval-ui`
-- 시작 `5c99b27` → 커밋 9건(HEAD `21ccb26`)에 이 문서를 더해 10건. tracked 변경 13파일 + 이 문서, migrations 변경 **0**, `node_modules` 추적 **0**.
+- 시작 `5c99b27`. 이 문서 작성 시점의 커밋은 9건(`21ccb26`)이었고, 이후 재검증 대응으로 `c7cc50b`(원본 파일 동일성)과 행 출처 검증 커밋이 더해졌다. 아래 “R2 재개” 절이 최신이며, 그 커밋들은 `src`를 바꾸므로 전체 verify를 다시 수행한다. migrations 변경 **0**, `node_modules` 추적 **0**.
 - 기존 커밋 `5cd42a5`/`ba1d37e`/`9a9abdf`는 손대지 않았다.
 
 | # | SHA | 구간 | 내용 |
@@ -23,6 +27,8 @@
 | 7 | `3158a29` | 보고 | 진행 회신서 |
 | 8 | `2673e4a` | R4 잔여 | capped 수집 인수로 프로세스 매트릭스 완결 |
 | 9 | `21ccb26` | 보고 | 3차 판정(APPROVE) 기록, 오표기 정정 |
+| 10 | `c7cc50b` | R2 재개 | 열린 연결이 읽는 파일로 fence 결속(`/proc/self/fd`) |
+| 11 | 아래 참조 | R2 재개 | 복사된 행의 출처 검증으로 대체(행 수 비교 제거) |
 
 ## R1 — 적용 목적지 소유권
 
@@ -42,7 +48,27 @@
 3. FK도 인덱스도 없는 `notification_intents.deep_link` 참조를 제거된 추천에 대해 검사해 `LOCAL_RETENTION_REFERENCE_DANGLING`.
 4. fence가 결과에 실려 나가 `verifyLocalObservationRetentionCandidate`가 교체 직전 재확인한다. 거절된 후보는 sidecar와 함께 삭제한다.
 
-인수(`local-observation-retention-consistency.test.ts` 8테스트, sleep 없음, adapter 자신의 yield로 구동): 같은 연결·두 번째 연결의 notification 삽입, 복사 중 경로 교체, 두 번째 연결이 context 체인 전체 추가, 선정이 읽지 않은 파일에서 복사된 후보, 거절 후 재시도 성공, dangling 참조 탐지, 생성 후 원본 이동 시 stale 판정.
+인수(`local-observation-retention-consistency.test.ts` **11테스트**, sleep 없음, adapter 자신의 yield 또는 호출 전 동기 rename으로 구동): 같은 연결·두 번째 연결의 notification 삽입, 복사 중 경로 교체, 두 번째 연결이 context 체인 전체 추가, 선정이 읽지 않은 파일에서 복사된 후보, 거절 후 재시도 성공, dangling 참조 탐지, 생성 후 원본 이동 시 stale 판정, 그리고 아래 R2 재개에서 추가한 동일 행 수 교체 2건(WAL→DELETE, DELETE→WAL)과 빌드 후 경로 교체 1건.
+
+### R2 재개 — 행 수는 내용의 증거가 아니다 (`c7cc50b`)
+
+재검증이 재현한 결함: 열린 연결이 WAL 원본을 읽는 동안 그 pathname을 **행 수가 같고 내용이 다른 DELETE 모드 DB**로 바꾸면, pathname을 stat한 device/inode도, 후보와 원본의 행 수 비교도 모두 자기 자신과 일관되어 통과한다. 그래서 선정이 읽지 않은 파일에서 복사된 후보가 성공 반환되고 재검증까지 통과했다. journal mode 조합이 조건의 일부다 — DELETE 교체본은 WAL 기반 신호를 전혀 건드리지 않기 때문에, 앞서 WAL→WAL 교체를 막았던 것은 설계가 아니라 부작용이었다.
+
+수정: fence가 **열린 연결이 실제로 읽는 파일**의 device/inode를 이 프로세스의 디스크립터 표(`/proc/self/fd`)에서 읽어, pathname이 가리키는 파일과 대조한다. 불일치는 `LOCAL_RETENTION_SOURCE_IDENTITY_MISMATCH`, 디스크립터 표를 읽을 수 없으면 `LOCAL_RETENTION_SOURCE_IDENTITY_UNVERIFIED`로 **거절**한다(증명 불가 시 가정하지 않는다). 행 수 비교는 남기되 두 기록과 코드 주석에서 “내용의 증거가 아니라 보조 점검”으로 명시했다.
+
+실측(직접 확인): 교체 후 열린 fd는 원래 inode를 유지하고 pathname은 다른 inode로 해석된다 — pathname에서 유도한 어떤 신호로도 표현할 수 없는 차이다. 리뷰의 재현 스크립트를 출력 경로만 바꿔 수정 빌드에서 실행한 결과, `WAL/DELETE`와 `DELETE/WAL` 두 모드 모두 `error=LOCAL_RETENTION_SOURCE_IDENTITY_MISMATCH`, `candidate_exists=false`, 원본은 `{"marker":"selected-source"}` 유지였다(`/home/jm/.cache/jarvis-lineage-qa/repro-identity/mixed-journal-source-result.json`).
+
+회귀: 동일 행 수 교체를 호출 **전에** 수행한 두 journal 조합, 빌드 **후** 교체 시 stale 판정. 기존 R1·notification interleaving 회귀는 그대로 유지된다.
+
+#### 독립 R2 전체 감사가 다시 지적한 것과 그 처리
+
+`c7cc50b` 직후 R2 전체(0197ce0·72e85c0·52db87d·c7cc50b)를 독립 감사에 넘겨 **REJECT**를 받았다. 핵심 지적은 정확했다: fence의 두 검사는 빌드의 **앞뒤**만 감쌀 뿐, adapter가 중간에 수행하는 `ATTACH`를 묶지 못한다. 경로를 ATTACH 직전에 바꾸고 직후 되돌리면 양 끝점·연결 카운터·행 수가 모두 자기 자신과 일관돼 잘못된 복사가 통과할 수 있다.
+
+처리: 행 수 비교를 이 경로에서 **제거**하고, **복사된 행의 출처**를 검증한다(`src/local-observation-retention-candidate.ts`). 후보의 모든 행은 선정이 사용한 연결에도 존재해야 하며, 복사가 일부러 비우는 열(`local_timeline_subjects`의 snapshot/collection/expiry)은 원본 쪽도 비워 비교하고, 빌드가 다시 쓰는 두 표(`schema_migrations`, `memory_database_generations`)는 제외한다. 없는 행은 `LOCAL_RETENTION_CANDIDATE_FOREIGN_ROW`다. retention 선정은 행을 지우기만 하므로 “부분집합은 정상, 외래 행은 비정상”이 성립하고, adapter의 표별 필터를 재구현하지 않고도 판정할 수 있다. 어떤 파일이 ATTACH됐는지를 묻는 대신 **무엇이 복사됐는지**를 확인하므로, ABA 타이밍이든 다른 경로든 결과가 걸린다.
+
+같은 감사가 짚은 나머지도 처리했다: 복사 중 recommendation replacement 쓰기 인수를 추가했고(두 번째 연결에서 `replacement_recommendation_id` 기록 → `LOCAL_RETENTION_SOURCE_CHANGED`), 행 수를 “증거”라고 부르던 함수 JSDoc과 이름은 함수 자체를 대체하며 사라졌다. 남은 한계는 정직하게 적는다 — ABA 창을 **경합으로 재현하는** 회귀는 단일 프로세스 이벤트 루프에서 결정적으로 만들 수 없어, 그 효과(외래 행)를 직접 단정하는 테스트로 대신했다. 그리고 프로세스가 갑자기 죽으면 배타 확보된 목적지에 부분 파일이 남고, 이후 재시도는 그 목적지를 거절한다(덮어쓰지 않는다).
+
+실측: consistency **13테스트**, retention 세트와 공유 builder 호출자까지 **11파일/62테스트 통과**. typecheck RC 0, lint RC 0, architecture 658모듈·2,444간선·순환 0.
 
 ## R3 — 원본 쓰기 계약
 
@@ -82,7 +108,7 @@
 | `npm run test:integration -- daily-morning-cli-process.test.ts` | 1파일 / **8테스트** 통과 | 현재 HEAD |
 | `node <리뷰 reproduce.mjs 사본>` | 위 표대로 두 P1 재현 소멸 | 최종 빌드 |
 
-전체 verify 이후 커밋 3건(`3158a29`, `2673e4a`, `21ccb26`)의 `src` 변경은 **0파일**이다(`git diff --name-only 52db87d..HEAD -- src`). 그 중 제품 외 변경은 문서와 추가된 테스트 1건이며, 그 테스트는 자체 대상 실행 8/8로 검증했다. 전체 게이트를 다시 돌리지 않은 이유는 제품 코드가 그 이후 바뀌지 않았기 때문이며, “같은 입력에 대한 전체 검증을 반복하지 않는다”는 지시를 따른 것이다.
+이 표의 전체 verify는 `52db87d` 시점 제품 코드를 덮는다. 그 직후 세 커밋(`3158a29`, `2673e4a`, `21ccb26`)은 `src`를 바꾸지 않았으므로 그때는 게이트를 반복하지 않았다. **그 판단은 `c7cc50b` 이후로는 더 이상 성립하지 않는다** — 재검증 대응이 `src/local-observation-retention.ts`를 바꾸고 새 모듈을 추가했으므로 전체 verify를 다시 수행하며, 그 결과는 아래 “R2 재개”에 기록한다.
 
 중간에 시작한 전체 verify 두 번은 결과로 쓰지 않았다. 1회차는 리뷰가능성 한도 초과로 실패했고(그 실패가 실제 회귀를 잡아냈다), 2회차는 그 수정 도중 트리가 바뀌어 무효였으므로 중단했다.
 
@@ -92,7 +118,8 @@
 |---|---|---|
 | 1차 (네 커밋 대상) | REJECT | fence가 열린 연결 카운터만 봄 → device/inode 추가. 인터리빙 매트릭스 부족 → 경로 교체·두 번째 연결 체인 추가. WAL/SHM 표기와 측정 불일치 → SHM 측정 추가. 계획 문서의 “미구현” 모순 → 정정. 또한 리뷰와 무관하게 전체 게이트가 잡은 실제 회귀(모듈이 리뷰가능성 한도 250줄 초과)를 모듈 분리로 해소 |
 | 2차 (`72e85c0` 대상) | REJECT | 호출 전에 경로가 이미 교체된 경우 → 후보를 선정이 읽은 연결과 대조. 취소/재시작 부재 → 거절 후 재시도 회귀. `snapshot_missing`을 원본 부재로 오인 → 진짜 `source_missing` 케이스. capped 미커버는 이 시점에 남김 |
-| 3차 (`2673e4a` 대상) | **APPROVE** | capped가 fixture 위조가 아니라 제품 경로를 지난다는 것, 단정 사슬이 주장만큼 강하다는 것, 기록이 커버·미커버를 정확히 적었다는 것, 기존 케이스 약화 없음과 sleep·벽시계 의존 없음, 8/8 통과를 직접 확인 |
+| 3차 (`2673e4a`의 capped 케이스**만**) | **APPROVE** | capped가 fixture 위조가 아니라 제품 경로를 지난다는 것, 단정 사슬이 주장만큼 강하다는 것, 기록이 커버·미커버를 정확히 적었다는 것, 기존 케이스 약화 없음과 sleep·벽시계 의존 없음, 8/8 통과를 직접 확인. **범위가 capped 한 건이므로 R2 전체나 `52db87d`의 독립 승인으로 쓰지 않는다** |
+| 사용자 재검증 (`5357f44`) | 인수 보류 | 행 수 일치가 내용 일치를 보장하지 않음을 재현. `c7cc50b`으로 수정했고, 이 커밋은 아직 독립 재검토를 받지 않았다 |
 
 보고서 전문은 `/home/jm/.cache/jarvis-lineage-qa/gate-review.md`에 3차까지 누적돼 있다.
 

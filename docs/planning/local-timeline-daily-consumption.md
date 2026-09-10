@@ -655,8 +655,19 @@ to equal the file the pathname names; a mismatch is
 rather than assumes. The journal mode is irrelevant to this check, which matters:
 a DELETE-mode replacement disturbs none of the WAL-derived signals that
 accidentally caught the first replacement case. A replacement during the copy is
-still reported as movement, and the count comparison stays as a bounded
-cross-check that is never described as proof.
+still reported as movement.
+
+Those two checks bracket the build; they do not bind the attach the adapter makes
+in between. A pathname replaced just before that attach and restored just after
+would leave both endpoints, this connection's counters and any row count agreeing
+with themselves. So the decisive check is on the copied rows: every row in the
+candidate must be a row the selection's own connection holds, compared by value
+after blanking the columns the copy deliberately drops and skipping the two tables
+the build rewrites. A row the connection does not hold is
+`LOCAL_RETENTION_CANDIDATE_FOREIGN_ROW`. A retention selection only removes rows,
+so a subset is expected and a foreign row is not; that is what makes the check
+decidable without re-deriving the adapter's per-table filters. Row counts were
+removed from this path entirely - they were never evidence of content.
 
 *Selection and copy.* The adapter yields at `await fresh.migrate()`, so a write
 landing after the selection was still copied: a notification inserted in that gap
