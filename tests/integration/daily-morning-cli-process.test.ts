@@ -49,11 +49,11 @@ async function fixture() {
 }
 
 /** Reads the result the exited process left behind, through a connection it never shared. */
-function reopen(path: string) {
+function reopen(path: string, at: string = CLI_AT) {
   const db = new AuthorityDb(path);
   try {
     return {
-      brief: todayProjection(db, new Date(CLI_AT))["brief"] as
+      brief: todayProjection(db, new Date(at))["brief"] as
         { state: string; item_count: number; brief_id: string | null },
       detail: String(db.db.prepare(
         `SELECT detail_json FROM daily_loop_steps WHERE step_key='morning_reconcile' AND state='completed'
@@ -124,4 +124,51 @@ it("publishes an abstaining brief from the child process when the local source i
   expect(after.detail).not.toContain(f.chain.created.recommendation.id);
   expect(JSON.parse(after.detail)["abstention_reasons"]).toEqual(["no_authoritative_data"]);
   expect(after.reconciles).toBe(1);
+});
+
+// The observation expires 300s after its collection starts and the config's recovery window is
+// 600s, so +400s is a morning the CLI can still recover with a local source that is no longer
+// current. Same shape for a snapshot that was cleared, and for one superseded by a new collection.
+it("abstains through the child process when the observation expired before the run", async () => {
+  const f = await fixture();
+  const at = new Date(Date.parse(MORNING_KST_0715) + 400_000).toISOString();
+
+  const run = child([HARNESS, f.path, f.input, at]);
+
+  expect(run.status).toBe(0);
+  expect(JSON.parse(run.stdout)).toMatchObject({ ok: true, run: { state: "completed" } });
+  const after = reopen(f.path, at);
+  expect(after.brief.item_count).toBe(0);
+  expect(after.detail).not.toContain(f.chain.created.recommendation.id);
+});
+
+it("abstains through the child process when the local snapshot was cleared", async () => {
+  const f = await fixture();
+  const at = new Date(Date.parse(MORNING_KST_0715) + 400_000).toISOString();
+  const db = new AuthorityDb(f.path);
+  try {
+    expect(new LocalTimelineSnapshotStore(db, () => new Date(at)).expire()).toBeGreaterThan(0);
+  } finally { db.close(); }
+
+  const run = child([HARNESS, f.path, f.input, at]);
+
+  expect(run.status).toBe(0);
+  const after = reopen(f.path, at);
+  expect(after.brief.item_count).toBe(0);
+  expect(after.detail).not.toContain(f.chain.created.recommendation.id);
+});
+
+it("drops a superseded local source through the child process without failing the run", async () => {
+  const f = await fixture();
+  const at = new Date(Date.parse(MORNING_KST_0715) + 10_000).toISOString();
+  const db = new AuthorityDb(f.path);
+  try { new LocalTimelineSnapshotStore(db, () => new Date(at)).refresh(LOCAL_CHAIN_TASK_ID); }
+  finally { db.close(); }
+
+  const run = child([HARNESS, f.path, f.input, at]);
+
+  expect(run.status).toBe(0);
+  expect(JSON.parse(run.stdout)).toMatchObject({ ok: true, run: { state: "completed" } });
+  const after = reopen(f.path, at);
+  expect(after.detail).not.toContain(f.chain.created.recommendation.id);
 });

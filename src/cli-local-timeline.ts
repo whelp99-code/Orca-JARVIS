@@ -3,7 +3,7 @@ import { readFileSync, statSync } from "node:fs";
 import {
   parseLocalObservationRetentionConfig, resolveLocalObservationRetentionCutoff,
   selectLocalObservationRetention,
-} from "./local-observation-retention.js";
+} from "./local-observation-retention-selection.js";
 import { commandNow, type CliCommandContext, type CliValues } from "./cli-command-context.js";
 import { JarvisError } from "./db.js";
 import { LocalTimelineSnapshotStore } from "./local-timeline-snapshot-store.js";

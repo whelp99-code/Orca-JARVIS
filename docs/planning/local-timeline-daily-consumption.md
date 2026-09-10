@@ -619,6 +619,13 @@ those five signals separately so neither claim can hide behind the other. The
 accurate contract is: no swap, no deletion, no logical change, and a maintenance
 write to the source's own write-ahead log.
 
+*Source identity.* The fence also pins the source's device and inode, because the
+rebuild adapter copies by attaching `source.filename` through its own connection:
+an open connection's counters cannot see a path replaced underneath it, so without
+that pin selection could describe one inode while the copy read another. A source
+path replaced during the copy is rejected, and a build that fails while the source
+is moving reports the movement rather than the downstream symptom.
+
 *Selection and copy.* The adapter yields at `await fresh.migrate()`, so a write
 landing after the selection was still copied: a notification inserted in that gap
 produced a candidate with `recommendations=0` and `notification_intents=1` while
@@ -791,10 +798,13 @@ in-place cleanup impossible. This paragraph is the reason the wiring is absent,
 and it should be re-derived rather than trusted if the fence interval, the subject
 cap or the observation size changes.
 
-Not yet done in B. Applying a selection on a schedule, and the configuration
-surface that would choose a cutoff, are not implemented; no opt-in service wiring
-exists, which is correct because the handoff requires the contract and its
-verification first. The measurements above also show what that wiring will need:
+Not yet done in B. Applying a selection is implemented
+(`applyLocalObservationRetention`), and so is the configuration surface that
+chooses a cutoff (`parseLocalObservationRetentionConfig` plus
+`timeline retention-preview`); what remains unimplemented is running either on a
+schedule and the swap protocol that would put a candidate in place. No opt-in
+service wiring exists, which is correct because the handoff requires the contract
+and its verification first. The measurements above also show what that wiring will need:
 a durable cycle fence, and a duplication judgement over
 `collection_content_digest` and task state so repeated cycles stop creating
 storage that only the read paths discard.

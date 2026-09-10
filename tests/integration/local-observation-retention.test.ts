@@ -6,9 +6,8 @@ import { AuthorityDb } from "../../src/db.js";
 import { LocalTimelineSnapshotStore } from "../../src/local-timeline-snapshot-store.js";
 import { admitLocalTimelineObservation } from "../../src/local-timeline-observation.js";
 import { buildFreshAuthority } from "../../src/memory-authority-fresh-builder.js";
-import {
-  applyLocalObservationRetention, selectLocalObservationRetention,
-} from "../../src/local-observation-retention.js";
+import { applyLocalObservationRetention } from "../../src/local-observation-retention.js";
+import { selectLocalObservationRetention } from "../../src/local-observation-retention-selection.js";
 import { extendLocalObservationChain, localObservationChain, LOCAL_CHAIN_AT, LOCAL_CHAIN_TASK_ID }
   from "../fixtures/local-observation-chain.js";
 import { tempDb } from "../helpers.js";

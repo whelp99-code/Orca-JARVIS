@@ -39,6 +39,7 @@ it("leaves the source logically identical while checkpointing rewrites its bytes
     rows: rows(db),
     main: sha(db.filename),
     wal: bytes(`${db.filename}-wal`),
+    shm: bytes(`${db.filename}-shm`),
   };
   expect(before.wal).toBeGreaterThan(0);
 
@@ -51,6 +52,7 @@ it("leaves the source logically identical while checkpointing rewrites its bytes
     rows: rows(db),
     main: sha(db.filename),
     wal: bytes(`${db.filename}-wal`),
+    shm: bytes(`${db.filename}-shm`),
   };
   // No DML and no logical change: the apply removes nothing from the source.
   expect(after.changes).toBe(before.changes);
@@ -58,6 +60,10 @@ it("leaves the source logically identical while checkpointing rewrites its bytes
   // Physical bytes do change, and the write-ahead log is truncated into the main file.
   expect(after.main).not.toBe(before.main);
   expect(after.wal).toBe(0);
+  // The shared-memory sidecar stays present for the still-open connection and is measured, not
+  // assumed: the record claims WAL and SHM are both observed.
+  expect(after.shm).toBe(before.shm);
+  expect(after.shm).not.toBeNull();
   // A fresh connection reads exactly the same logical content afterwards.
   const reopened = new AuthorityDb(db.filename); opened.push(reopened);
   expect(rows(reopened)).toEqual(before.rows);

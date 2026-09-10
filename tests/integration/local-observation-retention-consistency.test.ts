@@ -1,4 +1,4 @@
-import { existsSync } from "node:fs";
+import { existsSync, renameSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { AuthorityDb } from "../../src/db.js";
@@ -7,7 +7,9 @@ import {
   applyLocalObservationRetention, findDanglingRetentionReferences,
   verifyLocalObservationRetentionCandidate,
 } from "../../src/local-observation-retention.js";
-import { localObservationChain, LOCAL_CHAIN_AT } from "../fixtures/local-observation-chain.js";
+import {
+  extendLocalObservationChain, localObservationChain, LOCAL_CHAIN_AT,
+} from "../fixtures/local-observation-chain.js";
 import { tempDb } from "../helpers.js";
 
 const opened: AuthorityDb[] = [];
@@ -62,6 +64,43 @@ it("refuses a candidate whose source a second connection changed during the copy
 
 // notification_intents references a recommendation only through deep_link text: no foreign key,
 // no index. foreign_key_check therefore reports a clean candidate while the reference dangles.
+// The rebuild adapter copies by attaching source.filename through its own connection, so an
+// open connection's counters cannot see a path replaced underneath it. The fence pins device and
+// inode for exactly this case.
+it("refuses a candidate when the source path is replaced during the copy", async () => {
+  const f = await fixture();
+  const replacement = join(dirname(f.db.filename), "replacement.sqlite");
+  const other = new AuthorityDb(replacement);
+  await other.migrate();
+  other.db.pragma("wal_checkpoint(TRUNCATE)");
+  other.close();
+
+  const pending = applyLocalObservationRetention(f.db, f.cutoff, f.destination);
+  renameSync(replacement, f.db.filename);
+
+  await expect(pending).rejects.toThrow("LOCAL_RETENTION_SOURCE_CHANGED");
+  // Nothing usable is left behind: no candidate and no sidecar of one.
+  for (const suffix of ["", "-wal", "-shm", "-journal"]) {
+    expect(existsSync(`${f.destination}${suffix}`)).toBe(false);
+  }
+});
+
+it("refuses a candidate when a second connection adds a context chain during the copy", async () => {
+  const f = await fixture();
+  const writer = new AuthorityDb(f.db.filename); opened.push(writer);
+  const later = new Date(Date.parse(LOCAL_CHAIN_AT) + 600_000).toISOString();
+
+  const pending = applyLocalObservationRetention(f.db, f.cutoff, f.destination);
+  const second = extendLocalObservationChain(writer, 1, later);
+
+  await expect(pending).rejects.toThrow("LOCAL_RETENTION_SOURCE_CHANGED");
+  expect(existsSync(f.destination)).toBe(false);
+  // Both chains are still in the source: a refused apply removes nothing.
+  expect(count(f.db, "personal_recommendations")).toBe(2);
+  expect(count(f.db, "personal_observations")).toBe(2);
+  expect(second.created.recommendation.id).not.toBe(f.chain.created.recommendation.id);
+});
+
 it("finds the dangling reference a clean foreign_key_check cannot", async () => {
   const f = await fixture();
   const recommendation = f.chain.created.recommendation.id;
