@@ -276,6 +276,80 @@ backend shard1 271files/1854tests, backend shard2 270files/1887tests, dashboard
 production deployment or an external execution result. Playwright E2E and runtime
 package acceptance were not part of this run.
 
+## Morning publication and the published brief read path
+
+The chain above was carried through an actual morning publication under the daily
+lease, fence and budgets: `DailyLoopStore.prepare`/`claim` then
+`createStoredMorningDailyLoop(...).finish(claim)`, with `refresh_context` and
+`morning_reconcile` as the two stored steps. Two fixture facts were required and
+are recorded because they are contract, not decoration. Publication rejects a
+lineage whose context carries no `memory_projection_dependencies`, so the fixture
+binds one confirmed-memory target to the context before the recommendation is
+created and the recommendation inherits it. The brief generator abstains when no
+item is authoritative, so the fixture action is owner-gated; a non-gated advisory
+action publishes a brief with zero items.
+
+Measured after a successful publication (`published=true`, run `completed`, one
+`morning_reconcile` step, usage `items=2 work=2`, one `morning_brief`
+dependency), before the change:
+
+| read path | after publication | after hold/replacement/quarantine |
+|---|---|---|
+| `todayProjection().next_actions` | 1 action | 0 actions |
+| `todayProjection().brief` | `ready`, `item_count=1` | `ready`, `item_count=1` |
+
+So a published brief kept presenting items whose local source no longer matched
+the current source. `latestBrief` already downgraded a brief to `stale` for a
+past loop date or for items past `fresh_until`/`valid_until`, but never checked
+source availability.
+
+`contextsWithUnavailableLocalSource` moved to `src/local-observation-availability.ts`
+and gained `recommendationsWithUnavailableLocalSource`, keyed by the
+`contributing_recommendation_ids` a brief item already carries.
+`src/dashboard/personal-today.ts` now excludes those items from `currentItems`,
+which makes the brief `stale` with `item_count=0` while `brief_id` and
+`generated_at` are unchanged. `src/recommendation-projection.ts` consumes the same
+module instead of its own copy.
+
+This is the same policy as above, applied one layer later: the published artifact
+stays readable as history, and only its claim to be current evidence is withdrawn.
+
+Other measured outcomes, unchanged by this work and now pinned by tests:
+publication while the source is already held raises
+`MORNING_PUBLICATION_REJECTED`, leaves steps `["completed","pending"]`, the run
+`running` with `failure_code=null`, no `morning_brief` dependency and a `no_data`
+brief; the same holds when the underlying task row is deleted, and the read
+projection then reports `RECOMMENDATION_SOURCE_UNAVAILABLE`. A restart that
+reopens the database and runs another `cycle()` returns
+`completed_run_ids: []`, keeps one `daily_loop_runs` row and one
+`morning_reconcile` step, and returns the identical brief summary, so no
+duplicate actionable brief is produced. Publishing after the context deadline
+produces an abstaining brief with `item_count=0` rather than expired items.
+
+Verification of this step. `tests/integration/local-observation-morning-publication.test.ts`
+8tests passed. A separate node process running only compiled `dist/src` modules
+against an isolated database reproduced publication, the post-publication hold and
+replacement, and the restart, with `failures: []`, `writes_during_reads: 0`,
+`runs_after_restart=1` and `reconcile_after_restart` length 1. QA
+`publication-live.mjs`/`publication-live.json`.
+
+Full gate for this step. `npm run verify` exit0. Measured: `runtime:check`
+`node=v24.19.0 abi=137`; `architecture:check` 655modules/2433edges/0cycles;
+backend shard1 271files/1858tests, backend shard2 271files/1891tests, dashboard
+38files/263tests, total 580files/4012tests passed; fixed-clock acceptance
+`pre_gjc_ready`, `aggregate_status=stopped`, `completion_promoted=true`,
+`gjc_dispatched=false`; lint, typecheck, build and CLI smoke exit0. The dashboard
+profile is what covers `src/dashboard/personal-today.ts`; the targeted 40-file
+integration selection does not run it. Log `verify2.log` in the local evidence
+directory. Development gate only, not a production deployment.
+
+Not covered here. The compiled `jarvis daily morning --once` CLI was not used for
+this chain: its schedule window is 07:15 KST while the fixture clock is fixed at
+21:00 KST, so driving the CLI needs a time-parameterised chain fixture. A
+`capped` local collection was not exercised either, because `LocalTimelineCollection`
+caps at 1000 events and 128KiB and the fixture task is small. Both remain open
+with those exact resumption conditions.
+
 Limits. The morning source still fails the whole read when one cited local source
 is unavailable instead of excluding that recommendation; that fail-closed
 behaviour was left unchanged. Contexts produced by `assemblePersonalContext`

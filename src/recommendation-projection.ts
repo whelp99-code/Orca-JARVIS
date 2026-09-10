@@ -1,6 +1,5 @@
 import type Database from "better-sqlite3";
-import { JarvisError } from "./jarvis-error.js";
-import { readCurrentLocalTimelineObservation } from "./local-timeline-observation.js";
+import { contextsWithUnavailableLocalSource } from "./local-observation-availability.js";
 import type { Sha256Digest } from "./personal-contracts.js";
 import { RecommendationError } from "./recommendation-errors.js";
 import { storedRecommendationIdentity, type RecommendationIdentity } from "./recommendation-identity.js";
@@ -107,30 +106,6 @@ function replacementId(row: Readonly<Record<string, unknown>>, source: EnvelopeS
       evidence_digest: row["replacement_evidence_digest"],
     },
   });
-}
-
-const LOCAL_TIMELINE_SOURCE = "src:pos:v1:task-timeline:local";
-
-/** Contexts whose admitted local observations no longer match their current source at this clock. */
-function contextsWithUnavailableLocalSource(database: Database.Database, contextIds: readonly string[],
-  now: string): ReadonlySet<string> {
-  const unavailable = new Set<string>();
-  const select = database.prepare(
-    `SELECT o.observation_id FROM personal_context_observations o
-     JOIN personal_observations p ON p.observation_id=o.observation_id
-     WHERE o.context_id=? AND p.source_id=? ORDER BY o.position`,
-  );
-  const clock = (): Date => new Date(now);
-  for (const contextId of contextIds) {
-    for (const value of select.pluck().all(contextId, LOCAL_TIMELINE_SOURCE)) {
-      try { readCurrentLocalTimelineObservation({ db: database }, persistenceText(value), clock); }
-      catch (error) {
-        if (!(error instanceof JarvisError)) throw error;
-        unavailable.add(contextId);
-      }
-    }
-  }
-  return unavailable;
 }
 
 export function projectRecommendations(database: Database.Database, now: string, limit = 100): RecommendationReadProjection {

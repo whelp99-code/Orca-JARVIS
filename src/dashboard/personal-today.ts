@@ -4,6 +4,7 @@ import type { TrustedCloseoutKey } from "../evening-closeout-types.js";
 import type { AuthorityDb } from "../db.js";
 import { assertDailyLoopIntegrity } from "../daily-loop-integrity.js";
 import { kstLocalDate } from "../daily-loop-time.js";
+import { recommendationsWithUnavailableLocalSource } from "../local-observation-availability.js";
 import { verifyMorningBriefResult } from "../morning-brief-artifact.js";
 import { MemoryProjectionAuthority } from "../memory-projection-authority.js";
 import { verifyEveningCloseoutArtifact } from "../evening-closeout-artifact.js";
@@ -107,7 +108,11 @@ function latestBrief(db: AuthorityDb, now: Date): BriefSummary {
     return { state: "no_data", brief_id: null, generated_at: null, item_count: 0 };
   }
   const currentDay = kstLocalDate(now) === text(row, "loop_date");
-  const currentItems = currentDay ? items.filter(item => timestamp < item.fresh_until && timestamp < item.valid_until) : [];
+  // A published brief stays readable, but items whose local source no longer matches are not current.
+  const unavailable = recommendationsWithUnavailableLocalSource(db.db,
+    items.flatMap(item => item.contributing_recommendation_ids), timestamp);
+  const currentItems = currentDay ? items.filter(item => timestamp < item.fresh_until && timestamp < item.valid_until
+    && item.contributing_recommendation_ids.every(id => !unavailable.has(id))) : [];
   const stale = !currentDay || currentItems.length !== items.length;
   return { state: stale ? "stale" : brief.context_readiness, brief_id: brief.brief_id,
     generated_at: brief.generated_at, item_count: currentItems.length };
