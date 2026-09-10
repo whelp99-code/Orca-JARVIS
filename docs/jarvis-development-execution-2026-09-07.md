@@ -28,7 +28,23 @@
   a260652beb173b6019c6b5b790939fed8afc443c987554bfc74cb1540bdfc62b.
 - 아래 전체 gate3985테스트는 이번 변경을 포함하지 않는다. 운영 배포는 하지 않았다.
 
-## 최신 전체 검증 — 2026-09-10 KST, 2807414 기준
+## 최신 전체 검증 — 2026-09-10 KST, 913b35a 기준
+
+- `npm run verify` exit0. Backend269파일1845테스트 +269파일1883테스트,
+  dashboard38파일263테스트: 합계576파일3991테스트 통과.
+- 런타임 Node24.19.0/ABI137, 전체 lint/typecheck, backend/dashboard build,
+  두 backend shard, dashboard, 고정 시계 acceptance 및 CLI smoke 완료.
+  Acceptance: pre_gjc_ready / stopped / completion_promoted=true / gjc_dispatched=false.
+- 실행 전후 SHA913b35afe94e8fb2b23e666617f528f0e52d05fc 동일,
+  추적1861파일 SHA256 변경0개. 미추적 node_modules1개만 존재.
+  종료 시각2026-09-10T01:15:55.490201+00:00.
+- 이번 gate는 패키지 무결성 검증기 실제 CLI 회귀6개와 전체 명령 목록의
+  중간 메모리 개선을 포함한다. 브라우저 E2E는 이 명령의 구성에 포함되지 않는다.
+- 증거: /home/jm/.cache/jarvis-test-runtime-qa-20260908/ 아래
+  verify-control-list.log, verify-control-list-before.json, verify-control-list-result.json.
+- 운영 배포, provider 자동 refresh 계약 및 전체 backlog01–25 완료를 뜻하지 않는다.
+
+## 이전 전체 검증 — 2026-09-10 KST, 2807414 기준
 
 - `npm run verify` exit0. Backend269파일1845테스트 +268파일1877테스트,
   dashboard38파일263테스트: 합계575파일3985테스트 통과.
