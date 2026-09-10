@@ -1,4 +1,6 @@
 import type Database from "better-sqlite3";
+import { JarvisError } from "./jarvis-error.js";
+import { readCurrentLocalTimelineObservation } from "./local-timeline-observation.js";
 import type { Sha256Digest } from "./personal-contracts.js";
 import { RecommendationError } from "./recommendation-errors.js";
 import { storedRecommendationIdentity, type RecommendationIdentity } from "./recommendation-identity.js";
@@ -41,7 +43,7 @@ export type ProjectedRecommendationAction = {
 };
 export type RecommendationWarning = {
   readonly recommendation_id: string;
-  readonly code: "RECOMMENDATION_EXPIRED" | "RECOMMENDATION_STALE";
+  readonly code: "RECOMMENDATION_EXPIRED" | "RECOMMENDATION_SOURCE_UNAVAILABLE" | "RECOMMENDATION_STALE";
   readonly deadline: string;
 };
 export type RecommendationReadProjection = {
@@ -107,6 +109,30 @@ function replacementId(row: Readonly<Record<string, unknown>>, source: EnvelopeS
   });
 }
 
+const LOCAL_TIMELINE_SOURCE = "src:pos:v1:task-timeline:local";
+
+/** Contexts whose admitted local observations no longer match their current source at this clock. */
+function contextsWithUnavailableLocalSource(database: Database.Database, contextIds: readonly string[],
+  now: string): ReadonlySet<string> {
+  const unavailable = new Set<string>();
+  const select = database.prepare(
+    `SELECT o.observation_id FROM personal_context_observations o
+     JOIN personal_observations p ON p.observation_id=o.observation_id
+     WHERE o.context_id=? AND p.source_id=? ORDER BY o.position`,
+  );
+  const clock = (): Date => new Date(now);
+  for (const contextId of contextIds) {
+    for (const value of select.pluck().all(contextId, LOCAL_TIMELINE_SOURCE)) {
+      try { readCurrentLocalTimelineObservation({ db: database }, persistenceText(value), clock); }
+      catch (error) {
+        if (!(error instanceof JarvisError)) throw error;
+        unavailable.add(contextId);
+      }
+    }
+  }
+  return unavailable;
+}
+
 export function projectRecommendations(database: Database.Database, now: string, limit = 100): RecommendationReadProjection {
   return database.transaction(() => readRecommendations(database, now, limit)).deferred();
 }
@@ -166,6 +192,8 @@ function readRecommendations(database: Database.Database, now: string, limit: nu
         row["replacement_evidence_digest"], row["replacement_envelope_json"]));
     }
   }
+  const unavailableContexts = contextsWithUnavailableLocalSource(database,
+    [...new Set(rows.map(row => persistenceText(row["context_id"])))], now);
   const actions = rows.map(row => {
     const state = lifecycle(row["state"]); const rank = Number(row["rank"]); const id = persistenceText(row["recommendation_id"]);
     const details = summaries.get(id); if (details === undefined) throw new RecommendationError("RECOMMENDATION_INPUT_INVALID");
@@ -179,7 +207,8 @@ function readRecommendations(database: Database.Database, now: string, limit: nu
       recommendation.freshness.checked_at, persistenceText(row["context_created_at"]),
       persistenceText(row["context_observed_at"]), persistenceText(row["context_valid_at"]),
       occurredAt, persistenceText(row["recorded_at"])].every(timestamp => timestamp <= now);
-    const current = (state === "pending" || state === "accepted") && started && now < deadline;
+    const current = (state === "pending" || state === "accepted") && started && now < deadline
+      && !unavailableContexts.has(persistenceText(row["context_id"]));
     return {
       recommendation_id: id, context_id: persistenceText(row["context_id"]), context_digest: persistenceText(row["context_digest"]),
       canonical_digest: persistenceText(row["canonical_digest"]), context_evidence_digest: persistenceText(row["evidence_digest"]),
@@ -205,7 +234,10 @@ function readRecommendations(database: Database.Database, now: string, limit: nu
     const warning = now >= (expires ?? fresh)
       ? { recommendation_id: id, code: "RECOMMENDATION_EXPIRED" as const, deadline: expires ?? fresh }
       : now >= fresh ? { recommendation_id: id, code: "RECOMMENDATION_STALE" as const, deadline: fresh } : undefined;
-    return warning === undefined ? [] : [[`${id}:${warning.code}`, warning] as const];
+    const source = unavailableContexts.has(persistenceText(row["context_id"]))
+      ? { recommendation_id: id, code: "RECOMMENDATION_SOURCE_UNAVAILABLE" as const, deadline: expires ?? fresh }
+      : undefined;
+    return [warning, source].flatMap(item => item === undefined ? [] : [[`${id}:${item.code}`, item] as const]);
   })).values()].sort((left, right) => left.deadline.localeCompare(right.deadline)
     || left.recommendation_id.localeCompare(right.recommendation_id));
   return { generated_at: now, next_actions: current,

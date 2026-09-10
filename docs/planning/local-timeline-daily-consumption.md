@@ -202,3 +202,87 @@ registered/collected a synthetic task, admitted once (exit0/inserted=true), repl
 LOCAL_OBSERVATION_SOURCE_UNAVAILABLE). QA local-admission-cli-live.mjs/.json.
 The harness initially parsed error stdout; corrected to inspect stderr as the CLI
 contract requires. The isolated database was removed in finally on both attempts.
+
+## Recommendation read projection revalidates local observation sources
+
+The full chain was reproduced in one isolated database before any code change:
+`local_timeline_subjects` collection -> admitted observation
+(`src:pos:v1:task-timeline:local`) -> persisted context snapshot citing that
+observation -> recommendation created through `Recommendations.create` ->
+`MorningRecommendationSource` brief item. `tests/integration/local-observation-recommendation-lineage.test.ts`
+asserts the identity and deadline bindings of that chain: the observation
+`evidence_ref` equals the cached `collection_id`, the context evidence digest
+equals the stored observation `canonical_digest`, the recommendation
+`context_digest` equals the context canonical digest, its evidence equals the
+context evidence, and both its `expires_at` and `freshness.fresh_until` are at or
+before the context deadlines. The morning lineage row carries the same
+`context_id`, `recommendation_id`, rank, `action_id` and `identity_digest`.
+
+Measured behaviour of the current-read paths after the source was held
+(`LocalTimelineSnapshotStore.setHeld`), before the change:
+
+| read path | before hold | after hold (measured) |
+|---|---|---|
+| `MorningRecommendationSource.generate` | 1 item | throws `MORNING_RECOMMENDATION_SOURCE_INVALID` |
+| `projectRecommendations().next_actions` | 1 action | 1 action (stale source still exposed) |
+| dashboard `todayProjection().next_actions` | 1 action | 1 action (stale source still exposed) |
+
+The same leak was measured after a replacement collection and after observation
+quarantine. `projectRecommendations` was therefore the proven missing consumption
+path: it filtered recommendation and action level suppression/quarantine but never
+revalidated admitted local material against its current source.
+
+`contextsWithUnavailableLocalSource` now runs inside the existing deferred read
+transaction, selects only `personal_context_observations` rows whose observation
+`source_id` is `src:pos:v1:task-timeline:local`, and revalidates each through
+`readCurrentLocalTimelineObservation` at the projection clock. A `JarvisError`
+from that revalidation marks the context; other errors propagate. Actions of a
+marked context lose `current`, so they leave `next_actions` and
+`owner_decisions_needed`, and a `RECOMMENDATION_SOURCE_UNAVAILABLE` warning with
+the action deadline is emitted. Stored history is preserved: those actions remain
+in `lifecycle_actions` with their persisted state, digests and transitions.
+
+Policy separation recorded here: persisted context, recommendation and brief rows
+stay readable as past artifacts with their stored metadata, while the
+current-actionable surfaces (`next_actions`, `owner_decisions_needed`, morning
+brief generation) require the local source to still match at read time. Replay of
+a stored context or a previously published brief returns stored metadata and is
+not a current-evidence check.
+
+Verification. `tests/integration/local-observation-recommendation-lineage.test.ts`
+4tests passed. The related integration selection (recommendation, morning, daily,
+today paths) ran 39files/411tests, exit0. `runtime:check` exit0, `architecture:check`
+654modules/2430edges/0cycles, `build:backend` exit0, changed-file lint exit0.
+A separate node process executed only compiled `dist/src` modules against an
+isolated database created outside the repository: before the hold the today
+projection and the recommendation projection each exposed one current action and
+the morning source produced one item; after the hold both projections exposed
+none, `lifecycle_actions` still held the stored action, the
+`RECOMMENDATION_SOURCE_UNAVAILABLE` warning appeared with deadline
+`2026-08-28T12:02:59.999Z`, the morning source raised
+`MORNING_RECOMMENDATION_SOURCE_INVALID`, and `total_changes()` was unchanged
+across the read paths. The replacement collection produced the same result. QA
+`lineage-live.mjs`/`lineage-live.json` in the local evidence directory; the
+scratch database was removed in `finally`. The fixtures are synthetic tasks in an
+isolated database and are not operational work.
+
+Full gate. `npm run verify` exit0 on this change. Measured: `runtime:check`
+`node=v24.19.0 abi=137`; `architecture:check` 654modules/2430edges/0cycles;
+backend shard1 271files/1854tests, backend shard2 270files/1887tests, dashboard
+38files/263tests, total 579files/4004tests passed; fixed-clock acceptance
+`pre_gjc_ready`, `aggregate_status=stopped`, `completion_promoted=true`,
+`gjc_dispatched=false`; lint, typecheck, build and CLI smoke exit0. Log
+`verify.log` in the local evidence directory. This is a development gate, not a
+production deployment or an external execution result. Playwright E2E and runtime
+package acceptance were not part of this run.
+
+Limits. The morning source still fails the whole read when one cited local source
+is unavailable instead of excluding that recommendation; that fail-closed
+behaviour was left unchanged. Contexts produced by `assemblePersonalContext`
+still cannot back any recommendation, because the assembler emits
+`context_observation` and `confirmed_memory` evidence kinds while
+`recommendation-evidence-binding.ts` citation slots require `linux_live_fact`,
+`user_confirmed_principle` or `owner_decision`; the lineage test pins that
+measured boundary. No producer in `src/` assembles or persists a context, so the
+chain above is exercised through the library and stored fixtures, not through a
+scheduled service.
