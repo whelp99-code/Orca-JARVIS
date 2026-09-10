@@ -1,5 +1,7 @@
 import type Database from "better-sqlite3";
+import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
+import { buildFreshAuthority, type FreshAuthorityBuild } from "./memory-authority-fresh-builder.js";
 import { isPersistenceTime, persistenceText } from "./personal-persistence-values.js";
 
 const LOCAL_TIMELINE_SOURCE = "src:pos:v1:task-timeline:local";
@@ -14,6 +16,56 @@ export type LocalObservationRetentionSelection = {
   readonly blocked: readonly RetentionProjection[];
   readonly retained: readonly RetentionRetained[];
 };
+export type LocalObservationRetentionApplication = {
+  readonly selection: LocalObservationRetentionSelection;
+  readonly build: FreshAuthorityBuild;
+};
+
+/** The floor is the observation expiry window itself; the ceiling is 365 days. */
+export const LOCAL_RETENTION_MIN_RETAIN_MS = 300_000;
+export const LOCAL_RETENTION_MAX_RETAIN_MS = 31_536_000_000;
+
+export type LocalObservationRetentionConfig = {
+  readonly schema_version: 1;
+  readonly retain_ms: number;
+};
+
+/**
+ * Parses the explicit configuration that chooses a cutoff. The record is closed: a different
+ * schema version, a missing or extra key, a non-integer window, or one outside
+ * [LOCAL_RETENTION_MIN_RETAIN_MS, LOCAL_RETENTION_MAX_RETAIN_MS] is refused rather than
+ * defaulted, so no cutoff is ever inferred for a caller that did not state one.
+ */
+export function parseLocalObservationRetentionConfig(value: unknown): LocalObservationRetentionConfig {
+  if (typeof value !== "object" || value === null || Array.isArray(value)
+    || Object.getPrototypeOf(value) !== Object.prototype) {
+    throw new JarvisError("LOCAL_RETENTION_CONFIG_INVALID");
+  }
+  const entries = Object.entries(value);
+  const record: Record<string, unknown> = Object.fromEntries(entries);
+  const retain = record["retain_ms"];
+  if (entries.length !== 2 || record["schema_version"] !== 1 || typeof retain !== "number"
+    || !Number.isSafeInteger(retain) || retain < LOCAL_RETENTION_MIN_RETAIN_MS
+    || retain > LOCAL_RETENTION_MAX_RETAIN_MS) {
+    throw new JarvisError("LOCAL_RETENTION_CONFIG_INVALID");
+  }
+  return { schema_version: 1, retain_ms: retain };
+}
+
+/**
+ * Derives the instant a configured window cuts at. The window is measured back from the caller's
+ * clock, so the selection stays the inclusive `expires_at<=cutoff` rule the selector already
+ * documents; the derivation itself reads nothing and decides nothing about removal.
+ */
+export function resolveLocalObservationRetentionCutoff(
+  config: LocalObservationRetentionConfig, now: Date,
+): string {
+  const at = new Date(now.getTime() - config.retain_ms);
+  if (Number.isNaN(at.getTime())) throw new JarvisError("LOCAL_RETENTION_CONFIG_INVALID");
+  const cutoff = at.toISOString();
+  if (!isPersistenceTime(cutoff)) throw new JarvisError("LOCAL_RETENTION_CONFIG_INVALID");
+  return cutoff;
+}
 
 /**
  * Selects what a retention cutoff could remove. Read-only: it performs no deletion and
@@ -88,4 +140,22 @@ export function selectLocalObservationRetention(
     for (const item of group) add(item.kind, item.id);
   }
   return { cutoff, blocked, retained };
+}
+
+/**
+ * Applies a cutoff by rebuilding a fresh authority file. The source is not swapped, deleted, or
+ * written: the rebuild adapter is the only sanctioned deletion path for this immutable lineage.
+ * Destination equal to the source path is refused so a caller cannot compact in place.
+ */
+export async function applyLocalObservationRetention(
+  source: AuthorityDb, cutoffValue: unknown, freshPath: string,
+): Promise<LocalObservationRetentionApplication> {
+  if (typeof freshPath !== "string" || freshPath.length === 0 || freshPath === source.filename) {
+    throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
+  }
+  const selection = selectLocalObservationRetention(source.db, cutoffValue);
+  const build = await buildFreshAuthority(source, freshPath, {
+    blocked_projections: selection.blocked, sensitive_material: [],
+  });
+  return { selection, build };
 }

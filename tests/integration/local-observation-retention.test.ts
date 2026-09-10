@@ -1,10 +1,14 @@
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { afterEach, expect, it } from "vitest";
+import { execute } from "../../src/cli.js";
 import { AuthorityDb } from "../../src/db.js";
 import { LocalTimelineSnapshotStore } from "../../src/local-timeline-snapshot-store.js";
 import { admitLocalTimelineObservation } from "../../src/local-timeline-observation.js";
 import { buildFreshAuthority } from "../../src/memory-authority-fresh-builder.js";
-import { selectLocalObservationRetention } from "../../src/local-observation-retention.js";
+import {
+  applyLocalObservationRetention, selectLocalObservationRetention,
+} from "../../src/local-observation-retention.js";
 import { extendLocalObservationChain, localObservationChain, LOCAL_CHAIN_AT, LOCAL_CHAIN_TASK_ID }
   from "../fixtures/local-observation-chain.js";
 import { tempDb } from "../helpers.js";
@@ -187,4 +191,112 @@ it("rejects a cutoff that is not a persistence instant", async () => {
   for (const value of ["2026-08-28", "", "2026-02-30T00:00:00.000Z", 1, null]) {
     expect(() => selectLocalObservationRetention(db.db, value)).toThrow("LOCAL_RETENTION_CUTOFF_INVALID");
   }
+});
+
+it("applies the selector through the rebuild adapter without writing the source", async () => {
+  const db = new AuthorityDb(tempDb()); opened.push(db);
+  const chain = await localObservationChain(db);
+  const cutoff = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
+    .pluck().get(chain.observation.id));
+  const before = writes(db);
+  const observations = scalar(db, "SELECT COUNT(*) FROM personal_observations");
+  const fresh = join(dirname(db.filename), "applied.sqlite");
+  const applied = await applyLocalObservationRetention(db, cutoff, fresh);
+  expect(applied.selection.blocked.map(item => item.kind)).toEqual(["observation", "context", "recommendation"]);
+  expect(applied.build.foreign_key_errors).toBe(0);
+  expect(applied.build.integrity_check).toBe("ok");
+  expect(applied.build.result_generation).toBe(applied.build.source_generation + 1);
+  expect(writes(db)).toEqual(before);
+  expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(observations);
+  const rebuilt = new AuthorityDb(fresh); opened.push(rebuilt);
+  expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_observations")).toBe(0);
+  expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_recommendations")).toBe(0);
+});
+
+it("does not remove a group the selector retained for a live notification", async () => {
+  const db = new AuthorityDb(tempDb()); opened.push(db);
+  const chain = await localObservationChain(db);
+  addIntent(db, chain.created.recommendation.id);
+  const cutoff = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
+    .pluck().get(chain.observation.id));
+  const before = writes(db);
+  const fresh = join(dirname(db.filename), "applied-retained.sqlite");
+  const applied = await applyLocalObservationRetention(db, cutoff, fresh);
+  expect(applied.selection.blocked).toEqual([]);
+  expect(applied.selection.retained).toEqual([
+    { observation_id: chain.observation.id, reason: "notification_addresses_recommendation" }]);
+  expect(applied.build.foreign_key_errors).toBe(0);
+  expect(writes(db)).toEqual(before);
+  const rebuilt = new AuthorityDb(fresh); opened.push(rebuilt);
+  expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_observations")).toBe(1);
+  expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_recommendations")).toBe(1);
+  expect(scalar(rebuilt, "SELECT COUNT(*) FROM notification_intents")).toBe(1);
+});
+
+it("rejects applying onto the source path or an invalid cutoff without creating a destination", async () => {
+  const db = new AuthorityDb(tempDb()); opened.push(db);
+  await db.migrate();
+  const missing = join(dirname(db.filename), "missing-apply.sqlite");
+  await expect(applyLocalObservationRetention(db, "2026-08-28", missing))
+    .rejects.toThrow("LOCAL_RETENTION_CUTOFF_INVALID");
+  expect(existsSync(missing)).toBe(false);
+  await expect(applyLocalObservationRetention(db, AT, db.filename))
+    .rejects.toThrow("LOCAL_RETENTION_DESTINATION_INVALID");
+});
+
+it("derives the cutoff from a configured window through the CLI entry and never writes", async () => {
+  const db = new AuthorityDb(tempDb());
+  const chain = await localObservationChain(db);
+  const path = db.filename;
+  const expiry = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
+    .pluck().get(chain.observation.id));
+  db.close();
+  const config = join(dirname(path), "retention-window.json");
+  writeFileSync(config, JSON.stringify({ schema_version: 1, retain_ms: 3_600_000 }));
+  const preview = (at: Date) =>
+    execute(["timeline", "retention-preview", config, "--db", path], { clock: () => at });
+
+  // The configured window chooses the instant: one hour after the observation expired the cutoff
+  // lands exactly on that expiry, which the inclusive rule selects.
+  const elapsed = new Date(Date.parse(expiry) + 3_600_000);
+  const before = readFileSync(path);
+  const result = await preview(elapsed);
+  expect(result).toMatchObject({ ok: true, command: "timeline.retention-preview",
+    source_kind: "local_task_timeline" });
+  expect(result["retention"]).toEqual({ retain_ms: 3_600_000, cutoff: expiry, retained: [], blocked: [
+    { kind: "observation", id: chain.observation.id, component_id: chain.observation.id },
+    { kind: "context", id: chain.context.id, component_id: chain.context.id },
+    { kind: "recommendation", id: chain.created.recommendation.id,
+      component_id: chain.created.recommendation.id }] });
+  expect(readFileSync(path).equals(before)).toBe(true);
+
+  // One millisecond before the window elapses the same configuration selects nothing.
+  const early = await preview(new Date(elapsed.getTime() - 1));
+  expect(early["retention"]).toMatchObject({ blocked: [], retained: [] });
+  expect(readFileSync(path).equals(before)).toBe(true);
+});
+
+it("refuses a retention window it cannot read as an exact bounded configuration", async () => {
+  const db = new AuthorityDb(tempDb());
+  await db.migrate();
+  const path = db.filename;
+  db.close();
+  const config = join(dirname(path), "retention-invalid.json");
+  const before = readFileSync(path);
+  // No cutoff is ever inferred: a wrong version, an out-of-range or non-integer window, a missing
+  // or extra key, and a non-record document are all refused rather than defaulted.
+  for (const document of [{ schema_version: 2, retain_ms: 3_600_000 }, { schema_version: 1, retain_ms: 299_999 },
+    { schema_version: 1, retain_ms: 31_536_000_001 }, { schema_version: 1, retain_ms: 1.5 },
+    { schema_version: 1, retain_ms: "3600000" }, { schema_version: 1 },
+    { schema_version: 1, retain_ms: 3_600_000, extra: true }, [1], "text", null]) {
+    writeFileSync(config, JSON.stringify(document));
+    await expect(execute(["timeline", "retention-preview", config, "--db", path]))
+      .rejects.toThrow("LOCAL_RETENTION_CONFIG_INVALID");
+  }
+  writeFileSync(config, "{not json");
+  await expect(execute(["timeline", "retention-preview", config, "--db", path]))
+    .rejects.toThrow("LOCAL_RETENTION_CONFIG_INVALID");
+  await expect(execute(["timeline", "retention-preview", join(dirname(path), "absent.json"), "--db", path]))
+    .rejects.toThrow("LOCAL_RETENTION_CONFIG_INVALID");
+  expect(readFileSync(path).equals(before)).toBe(true);
 });

@@ -31,6 +31,7 @@ const CLI_HELP =
   + "timeline register|collect|hold|release TASK_ID --db PATH: manage local task snapshots (64 subjects maximum)\n"
   + "timeline admit-observation TASK_ID COLLECTION_ID --db PATH: persist an exact current local observation; no scheduling\n"
   + "timeline subjects --db PATH: list registered subjects and cached IDs; use snapshot to validate each collection\n"
+  + "timeline retention-preview CONFIG --db PATH: report what a configured window would remove; read-only, no deletion\n"
   + "timeline snapshot TASK_ID COLLECTION_ID --db PATH | timeline expire --db PATH: read exact snapshot or clear expired payloads\n"
   + "routing classify REQUEST.json POLICY.json: preview literal routing rules; no database or agent execution\n"
   + "routing executors | routing executor ID: inspect compiled registrations and configuration presence; no readiness probe\n"

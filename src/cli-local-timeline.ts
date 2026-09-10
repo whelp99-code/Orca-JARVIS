@@ -1,9 +1,23 @@
 import { admitLocalTimelineObservation } from "./local-timeline-observation.js";
-import { statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
+import {
+  parseLocalObservationRetentionConfig, resolveLocalObservationRetentionCutoff,
+  selectLocalObservationRetention,
+} from "./local-observation-retention.js";
 import { commandNow, type CliCommandContext, type CliValues } from "./cli-command-context.js";
 import { JarvisError } from "./db.js";
 import { LocalTimelineSnapshotStore } from "./local-timeline-snapshot-store.js";
-const actions = ["register", "collect", "snapshot", "admit-observation", "subjects", "hold", "release", "expire"];
+const actions = ["register", "collect", "snapshot", "admit-observation", "subjects", "hold", "release",
+  "expire", "retention-preview"];
+
+/** Bounded read of the configuration document: this surface takes one closed two-field record. */
+function readRetentionConfig(path: string): unknown {
+  try {
+    const stat = statSync(path);
+    if (!stat.isFile() || stat.size > 4096) throw new Error();
+    return JSON.parse(readFileSync(path, "utf8"));
+  } catch { throw new JarvisError("LOCAL_RETENTION_CONFIG_INVALID"); }
+}
 export function localTimelinePreflight(positionals: readonly string[], values: CliValues): boolean {
   if (positionals[0] !== "timeline" || !actions.includes(positionals[1] ?? "")) return false;
   const action = positionals[1];
@@ -36,6 +50,14 @@ export async function executeLocalTimeline(context: CliCommandContext): Promise<
       store.setHeld(context.argument!, held); return { ...base, task_id: context.argument, held };
     }
     case "expire": return { ...base, expired_snapshots: store.expire() };
+    case "retention-preview": {
+      // Read-only: the configured window chooses a cutoff and the selector reports what it
+      // would reach. Applying it is a separate rebuild that this command never performs.
+      const config = parseLocalObservationRetentionConfig(readRetentionConfig(context.argument!));
+      const cutoff = resolveLocalObservationRetentionCutoff(config, commandNow(context));
+      return { ...base, retention: { retain_ms: config.retain_ms,
+        ...selectLocalObservationRetention(context.db.db, cutoff) } };
+    }
     default: throw new JarvisError("LOCAL_COLLECTION_INPUT_INVALID");
   }
 }
