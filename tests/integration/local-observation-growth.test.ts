@@ -231,6 +231,46 @@ it("refuses a rebuild that would remove an observation a surviving context still
   expect(scalar(db, "SELECT COUNT(*) FROM personal_context_observations")).toBe(1);
 });
 
+it("leaves a notification addressing a removed recommendation, with the integrity check clean", async () => {
+  const db = new AuthorityDb(tempDb()); opened.push(db);
+  const chain = await localObservationChain(db);
+  const recommendation = chain.created.recommendation.id;
+  // Realistic addressing row: the shipped store persists no recommendation column, so the
+  // reference exists only inside deep_link text and the hashed dedup_key.
+  db.db.prepare(`INSERT INTO notification_intents(intent_id,correlation_id,idempotency_key,dedup_key,
+    urgency,channel,redacted_preview,deep_link,state,expires_at,created_at,updated_at)
+    VALUES(?,?,?,?,'action','mac','owner decision waiting',?,'created',?,?,?)`).run(
+    "nin:pos:v1:fixture", "corr:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7301", "idem:notify:fixture",
+    "dedup:notify:fixture", `/recommendations/${encodeURIComponent(recommendation)}`,
+    "2026-08-28T13:00:00.000Z", AT, AT);
+  expect(scalar(db, "SELECT COUNT(*) FROM notification_intents")).toBe(1);
+
+  const fresh = join(dirname(db.filename), "fresh-notify.sqlite");
+  const result = await buildFreshAuthority(db, fresh, {
+    blocked_projections: [
+      { kind: "observation", id: chain.observation.id, component_id: chain.observation.id },
+      { kind: "context", id: chain.context.id, component_id: chain.context.id },
+      { kind: "recommendation", id: recommendation, component_id: recommendation },
+    ],
+    sensitive_material: [],
+  });
+  // No foreign key protects this reference, so the rebuild reports a clean integrity result.
+  expect(result.foreign_key_errors).toBe(0);
+  expect(result.integrity_check).toBe("ok");
+
+  const rebuilt = new AuthorityDb(fresh); opened.push(rebuilt);
+  expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_recommendations")).toBe(0);
+  // The intent survives and still addresses the recommendation that no longer exists.
+  expect(scalar(rebuilt, "SELECT COUNT(*) FROM notification_intents")).toBe(1);
+  expect(rebuilt.db.prepare("SELECT deep_link FROM notification_intents").pluck().get())
+    .toBe(`/recommendations/${encodeURIComponent(recommendation)}`);
+  // The reference is percent-encoded inside the link, so a naive search on the raw
+  // recommendation ID finds nothing; a cutoff has to encode before it can even match.
+  const like = "SELECT COUNT(*) FROM notification_intents WHERE deep_link LIKE '%'||?||'%'";
+  expect(rebuilt.db.prepare(like).pluck().get(recommendation)).toBe(0);
+  expect(rebuilt.db.prepare(like).pluck().get(encodeURIComponent(recommendation))).toBe(1);
+});
+
 it("keeps audit lineage when the citing context is removed with its observation", async () => {
   const db = new AuthorityDb(tempDb()); opened.push(db);
   const chain = await localObservationChain(db);

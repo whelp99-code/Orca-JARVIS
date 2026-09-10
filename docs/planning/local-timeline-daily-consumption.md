@@ -429,11 +429,15 @@ recommendation survives only inside the opaque `deep_link` text and inside
 intents by any indexed column; it would have to parse deep links or recompute
 those hashes.
 
-The consequence is that the protection measured above is narrower than it looks.
-Removing a recommendation whose observation is past a cutoff will not be refused
-on account of notifications, because `foreign_key_check` has nothing to check; it
-will silently leave intents whose `deep_link` addresses a recommendation that no
-longer exists. `foreign_key_check=0` is therefore evidence about the constrained
+The consequence is that the protection measured above is narrower than it looks,
+and it is now measured rather than inferred. With an intent addressing a
+recommendation, a rebuild blocking that recommendation together with its context
+and observation returns `foreign_key_errors=0` and `integrity_check=ok`, the
+recommendation row is gone, and the intent survives with its `deep_link`
+unchanged and still addressing the removed recommendation. The same test also
+fixes a trap: searching `deep_link` for the raw recommendation ID matches nothing,
+because the ID is percent-encoded inside the link, and only the encoded form
+matches. A cutoff must encode before it can even find what it broke. `foreign_key_check=0` is therefore evidence about the constrained
 tables only, and must not be read as a completeness signal for the cutoff as a
 whole. Any cutoff design has to decide notification handling explicitly, because
 the database will not decide it.
