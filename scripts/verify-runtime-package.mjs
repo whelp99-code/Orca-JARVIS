@@ -1,6 +1,6 @@
 // Read-only integrity verification from the trusted development checkout.
 import { createHash } from "node:crypto";
-import { lstatSync, readdirSync, readFileSync } from "node:fs";
+import { lstatSync, opendirSync, readFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { BACKEND_OUTPUT_ROOTS, fileIdentity } from "./lib/backend-build-identity.mjs";
@@ -16,14 +16,25 @@ function boundedBytes(path) {
   requireValue(bytes.length <= 8 * 1024 * 1024, "PACKAGE_METADATA_INVALID");
   return bytes;
 }
-function assertPayloadTree(path) {
+function assertTree(path, budget, payload, depth = 0) {
+  requireValue(depth <= 64 && --budget.entries >= 0, "PACKAGE_TREE_LIMIT");
   const stat = lstatSync(path);
-  requireValue(!stat.isSymbolicLink(), "PACKAGE_PAYLOAD_SYMLINK");
-  if (!stat.isDirectory()) return;
-  for (const name of readdirSync(path)) {
-    // fileIdentity intentionally skips these names; reject hidden executable dependencies.
-    requireValue(name !== "node_modules" && name !== ".git", "PACKAGE_UNTRACKED_PAYLOAD_TREE");
-    assertPayloadTree(join(path, name));
+  if (payload) requireValue(!stat.isSymbolicLink(), "PACKAGE_PAYLOAD_SYMLINK");
+  requireValue(stat.isFile() || stat.isDirectory() || stat.isSymbolicLink(), "PACKAGE_TREE_INVALID");
+  if (!stat.isDirectory()) {
+    budget.bytes -= stat.size;
+    requireValue(budget.bytes >= 0, "PACKAGE_TREE_LIMIT");
+    return;
+  }
+  const directory = opendirSync(path);
+  try {
+    for (let entry; (entry = directory.readSync()) !== null;) {
+      // fileIdentity intentionally skips these names; reject hidden executable dependencies.
+      if (payload) requireValue(entry.name !== "node_modules" && entry.name !== ".git", "PACKAGE_UNTRACKED_PAYLOAD_TREE");
+      assertTree(join(path, entry.name), budget, payload, depth + 1);
+    }
+  } finally {
+    directory.closeSync();
   }
 }
 try {
@@ -37,9 +48,11 @@ try {
   const receipt = JSON.parse(bytes.toString("utf8"));
   requireValue(receipt.schema_version === 1 && receipt.kind === "isolated-authority-runtime-package"
     && receipt.deployment_ready === false, "PACKAGE_RECEIPT_INVALID");
-  for (const name of RUNTIME_PACKAGE_ROOTS) assertPayloadTree(join(root, name));
+  const payloadBudget = { entries: 32_768, bytes: 256 * 1024 * 1024 };
+  for (const name of RUNTIME_PACKAGE_ROOTS) assertTree(join(root, name), payloadBudget, true);
   const payload = fileIdentity(root, RUNTIME_PACKAGE_ROOTS);
   requireValue(JSON.stringify(payload) === JSON.stringify(receipt.payload), "PACKAGE_PAYLOAD_MISMATCH");
+  assertTree(join(root, "node_modules"), { entries: 65_536, bytes: 256 * 1024 * 1024 }, false);
   const dependencies = runtimeDependencyIdentity(join(root, "node_modules"));
   requireValue(JSON.stringify(dependencies) === JSON.stringify(receipt.dependencies), "PACKAGE_DEPENDENCIES_MISMATCH");
   const metadata = JSON.parse(boundedBytes(join(root, "dist/build-metadata.json")).toString("utf8"));

@@ -107,6 +107,12 @@ the pinned receipt, required payload roots, installed dependency inventory, and
 recorded backend identity. Nested node_modules/.git trees in payload roots are
 rejected because the build file walker otherwise skips those names.
 
+Before hashing, a streaming directory scan limits payload paths to 32,768 entries
+and dependency paths to 65,536 entries, with depth at most 64 and at most 256 MiB
+of file/symlink sizes in each scope. Exceeding a limit returns PACKAGE_TREE_LIMIT.
+Directory handles close on rejection. These limits assume the candidate remains
+quiescent through the subsequent hash scan; they are not a total RSS guarantee.
+
 This checks the recorded payload and dependency scopes, not arbitrary files beside
 them (such as package build logs). Run against a quiescent candidate; it does not
 lock files against concurrent replacement. A matching local digest is not a

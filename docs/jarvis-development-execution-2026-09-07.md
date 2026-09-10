@@ -2510,3 +2510,16 @@ It is not a new current-HEAD package, full gate or provider execution verificati
   잠그지 않으며, payload/의존성 범위 밖 로그 등은 검사 대상이 아니다. 결과에
   signature_verified=false/runtime_validation=not_performed/deployment_ready=false 명시.
   제품 backend/frontend 소스 변경0개, 기존 전체 verify3985/E2E30과 구분한다.
+
+## 패키지 무결성 검사 사전 순회 상한 — 2026-09-10
+
+- verify-runtime-package의 배열 기반 사전 순회를 opendir/readSync로 바꾸고,
+  payload32768항목/의존성65536항목, 깊이64, 각 범위256MiB 파일·링크 크기 상한을
+  적용했다. 한도를 넘으면 내용 해시 전에 PACKAGE_TREE_LIMIT으로 거절한다.
+  특수 파일도 거절하며 열었던 directory handle은 finally에서 닫는다.
+- 원본 NxuC5J와 별도 복사본의 실제 CLI6시나리오 확인: 원본/원본 재확인 exit0;
+  깊이65/항목32769개 추가/256MiB 초과 희소 의존성 파일은 limit/exit1;
+  필수 cli-smoke 파일 누락은 verification failed/exit1. 복사본은 정리했다.
+  결과: 공통 QA의 runtime-package-bounds-results.json. node --check/diff check0.
+- 안정된 파일 트리에서 검사 자원을 제한하는 사전 검사다. 사전 검사 후 파일을
+  교체하는 동시 변경, 프로세스 전체 RSS 상한, 서명 검증을 보장하지 않는다.
