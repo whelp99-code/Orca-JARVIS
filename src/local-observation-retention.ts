@@ -1,4 +1,6 @@
-import { closeSync, existsSync, openSync, realpathSync, rmSync, statSync } from "node:fs";
+import {
+  closeSync, existsSync, openSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync,
+} from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type Database from "better-sqlite3";
 import { AuthorityDb } from "./db.js";
@@ -12,9 +14,8 @@ import { buildFreshAuthority, type FreshAuthorityBuild } from "./memory-authorit
 /**
  * What the candidate was built from. `total_changes` moves when this connection writes and
  * `data_version` moves when any other connection commits. Neither notices a source whose path
- * was replaced underneath the open connection, which matters because the rebuild adapter copies
- * by attaching `source.filename` through its own connection: the device and inode pin the file
- * that will actually be read.
+ * was replaced underneath the open connection, so the device and inode are those of the file the
+ * connection actually has open, checked against the pathname the rebuild adapter will re-open.
  */
 export type RetentionSourceFence = {
   readonly data_version: number;
@@ -30,13 +31,56 @@ export type LocalObservationRetentionApplication = {
 
 const DESTINATION_SIDECARS = ["-wal", "-shm", "-journal"] as const;
 
+const DELETED_LINK_SUFFIX = " (deleted)";
+
+/**
+ * Identity of the file the source connection actually has open, taken from this process's own
+ * descriptor table rather than from the pathname.
+ *
+ * A pathname can be replaced underneath an open connection: the descriptor keeps reading the
+ * original file while the name points at another one. Every signal derived from the pathname or
+ * from row counts then agrees with itself, which is why neither proves anything here. The rebuild
+ * adapter copies by re-opening the pathname, so only the descriptor's device and inode show
+ * whether it will read the database the selection read. This reads /proc, where this control
+ * plane runs; where it cannot be read, the apply refuses instead of assuming.
+ */
+function openSourceIdentity(source: AuthorityDb): { readonly device: string; readonly inode: string } {
+  const target = resolve(source.filename);
+  const identities = new Map<string, { readonly device: string; readonly inode: string }>();
+  let entries: readonly string[];
+  try { entries = readdirSync("/proc/self/fd"); }
+  catch { throw new JarvisError("LOCAL_RETENTION_SOURCE_IDENTITY_UNVERIFIED"); }
+  for (const entry of entries) {
+    let link: string;
+    try { link = readlinkSync(`/proc/self/fd/${entry}`); } catch { continue; }
+    const named = link.endsWith(DELETED_LINK_SUFFIX)
+      ? link.slice(0, -DELETED_LINK_SUFFIX.length) : link;
+    if (named !== target) continue;
+    try {
+      const opened = statSync(`/proc/self/fd/${entry}`, { bigint: true });
+      identities.set(`${opened.dev}:${opened.ino}`,
+        { device: opened.dev.toString(), inode: opened.ino.toString() });
+    } catch { continue; }
+  }
+  // No descriptor, or descriptors on different files under one name, leaves the binding unproven.
+  const [identity, ...rest] = [...identities.values()];
+  if (identity === undefined || rest.length !== 0) {
+    throw new JarvisError("LOCAL_RETENTION_SOURCE_IDENTITY_UNVERIFIED");
+  }
+  return identity;
+}
+
 function retentionSourceFence(source: AuthorityDb): RetentionSourceFence {
-  const identity = statSync(source.filename, { bigint: true });
+  const open = openSourceIdentity(source);
+  const named = statSync(source.filename, { bigint: true });
+  if (named.dev.toString() !== open.device || named.ino.toString() !== open.inode) {
+    throw new JarvisError("LOCAL_RETENTION_SOURCE_IDENTITY_MISMATCH");
+  }
   return {
     data_version: Number(source.db.pragma("data_version", { simple: true })),
     total_changes: Number(source.db.prepare("SELECT total_changes()").pluck().get()),
-    device: identity.dev.toString(),
-    inode: identity.ino.toString(),
+    device: open.device,
+    inode: open.inode,
   };
 }
 
@@ -119,9 +163,10 @@ function claimRetentionDestination(source: AuthorityDb, freshPath: string): stri
 }
 
 /**
- * Tables the copy must reproduce exactly. The first two lose precisely what the selection
- * blocked; the rest are untouched by any retention selection, so a mismatch there means the
- * copy did not come from the database the selection read.
+ * Tables whose row counts the copy must reproduce: the first two lose precisely what the
+ * selection blocked, the rest are untouched by any retention selection. This is a bounded
+ * cross-check, not a proof of content - equal counts can hide different rows entirely, which is
+ * why the source identity above, not this, is what binds the copy to the selection.
  */
 const CANDIDATE_UNAFFECTED = ["gjc_intents", "notification_intents",
   "personal_context_audit_events", "local_timeline_subjects"] as const;

@@ -637,12 +637,26 @@ those five signals separately so neither claim can hide behind the other. The
 accurate contract is: no swap, no deletion, no logical change, and a maintenance
 write to the source's own write-ahead log.
 
-*Source identity.* The fence also pins the source's device and inode, because the
-rebuild adapter copies by attaching `source.filename` through its own connection:
-an open connection's counters cannot see a path replaced underneath it, so without
-that pin selection could describe one inode while the copy read another. A source
-path replaced during the copy is rejected, and a build that fails while the source
-is moving reports the movement rather than the downstream symptom.
+*Source identity.* The rebuild adapter copies by attaching `source.filename`
+through its own connection, so the selection and the copy can read different files
+whenever the pathname is replaced underneath the open connection. Two weaker
+answers were tried and both failed on measurement. Stat-ing the pathname pins only
+the name: after a replacement the stat and the fence agree with each other while
+the connection still reads the original file. Comparing row counts between the
+candidate and the selection's connection fails the same way, because a replacement
+carrying equal counts and different rows satisfies every count. Neither is
+evidence of content or of identity.
+
+The fence therefore reads the identity of the file the connection actually has
+open, from this process's own descriptor table (`/proc/self/fd`), and requires it
+to equal the file the pathname names; a mismatch is
+`LOCAL_RETENTION_SOURCE_IDENTITY_MISMATCH` and an unreadable descriptor table is
+`LOCAL_RETENTION_SOURCE_IDENTITY_UNVERIFIED`, so an unprovable binding refuses
+rather than assumes. The journal mode is irrelevant to this check, which matters:
+a DELETE-mode replacement disturbs none of the WAL-derived signals that
+accidentally caught the first replacement case. A replacement during the copy is
+still reported as movement, and the count comparison stays as a bounded
+cross-check that is never described as proof.
 
 *Selection and copy.* The adapter yields at `await fresh.migrate()`, so a write
 landing after the selection was still copied: a notification inserted in that gap

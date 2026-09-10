@@ -113,12 +113,10 @@ it("refuses a candidate copied from a file the selection never read", async () =
   other.close();
   renameSync(swapped, f.db.filename);
 
-  // Measured: the rebuild fails against the substituted file and the fence, which sees the open
-  // connection notice the replacement, reports LOCAL_RETENTION_SOURCE_CHANGED. Either that or
-  // LOCAL_RETENTION_CANDIDATE_MISMATCH is correct here - the copy check is what would catch a
-  // substitution that still builds cleanly - and both leave the caller without a candidate.
+  // The descriptor the connection reads from still names the original inode while the pathname
+  // names another, so the identity check refuses before anything is copied.
   await expect(applyLocalObservationRetention(f.db, f.cutoff, f.destination))
-    .rejects.toThrow(/LOCAL_RETENTION_(SOURCE_CHANGED|CANDIDATE_MISMATCH)/);
+    .rejects.toThrow("LOCAL_RETENTION_SOURCE_IDENTITY_MISMATCH");
   expect(existsSync(f.destination)).toBe(false);
   // The selection's own connection still holds its rows; nothing was removed from it.
   expect(count(f.db, "personal_recommendations")).toBe(1);
@@ -174,4 +172,60 @@ it("reports a candidate stale once the source moves past the fence it was built 
   // Detection happens before any swap, so both files stay exactly where the caller left them.
   expect(existsSync(f.destination)).toBe(true);
   expect(count(f.db, "personal_recommendations")).toBe(1);
+});
+
+/** A minimal authority carrying one marked intent row, in the requested journal mode. */
+async function seedMarked(path: string, marker: string, journal: "WAL" | "DELETE") {
+  const db = new AuthorityDb(path);
+  await db.migrate();
+  db.db.prepare(`INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,payload_digest,
+    idempotency_key,state,created_at) VALUES('qa','task:qa','dispatch',?,'sha256:fixture','qa','pending',
+    '2026-08-28T12:00:00.000Z')`).run(JSON.stringify({ marker }));
+  db.db.pragma("wal_checkpoint(TRUNCATE)");
+  db.db.pragma(`journal_mode=${journal}`);
+  return db;
+}
+
+const marked = (db: AuthorityDb): string =>
+  String(db.db.prepare("SELECT payload_json FROM gjc_intents").pluck().get());
+
+// Row counts are not content. A pathname replaced by a database with the same counts and different
+// rows leaves every count check satisfied while the selection reads one file and the rebuild
+// adapter, which re-opens by pathname, copies another. The journal modes differ deliberately: a
+// DELETE-mode replacement perturbs none of the WAL-derived signals.
+it.each([["WAL", "DELETE"], ["DELETE", "WAL"]] as const)(
+  "refuses a source pathname replaced by an equal-count database (%s source, %s replacement)",
+  async (sourceMode, replacementMode) => {
+    const path = tempDb();
+    const root = dirname(path);
+    const source = await seedMarked(path, "selected-source", sourceMode); opened.push(source);
+    const replacement = join(root, "replacement.sqlite");
+    (await seedMarked(replacement, "different-content", replacementMode)).close();
+    renameSync(replacement, path);
+    const destination = join(root, "identity-candidate.sqlite");
+
+    await expect(applyLocalObservationRetention(source, "2026-08-28T12:00:00.000Z", destination))
+      .rejects.toThrow("LOCAL_RETENTION_SOURCE_IDENTITY_MISMATCH");
+
+    expect(existsSync(destination)).toBe(false);
+    // The open connection still reads the database a selection would have described.
+    expect(marked(source)).toBe(JSON.stringify({ marker: "selected-source" }));
+    expect(count(source, "gjc_intents")).toBe(1);
+  });
+
+it("reports a candidate stale when the source pathname is replaced after the build", async () => {
+  const path = tempDb();
+  const root = dirname(path);
+  const source = await seedMarked(path, "selected-source", "WAL"); opened.push(source);
+  const destination = join(root, "post-swap-candidate.sqlite");
+  const application = await applyLocalObservationRetention(source, "2026-08-28T12:00:00.000Z", destination);
+  expect(() => verifyLocalObservationRetentionCandidate(source, application)).not.toThrow();
+
+  const replacement = join(root, "post-swap-replacement.sqlite");
+  (await seedMarked(replacement, "different-content", "DELETE")).close();
+  renameSync(replacement, path);
+
+  expect(() => verifyLocalObservationRetentionCandidate(source, application))
+    .toThrow("LOCAL_RETENTION_SOURCE_CHANGED");
+  expect(marked(source)).toBe(JSON.stringify({ marker: "selected-source" }));
 });
