@@ -2632,3 +2632,20 @@ It is not a new current-HEAD package, full gate or provider execution verificati
   각 fixture는 finally에서 정리하고 자식 종료 코드·signal·구조화 결과를 검증한다.
 - 기존 실물 NxuC5J 변형 인수와 별도로 일반 integration/backend discovery에
   포함되는 회귀 검사다. 전체3985 gate 이후 테스트 추가이며 소급 집계하지 않는다.
+
+## Local observation 전체 검증 및 Cursor 인계 — 2026-09-10
+
+- 제품 source b5c13babe220d21dd63da648bb0a9ebea959275a에서 npm run verify exit0.
+  backend270파일/1850테스트 +270파일/1887테스트, dashboard38파일/263테스트:
+  합계578파일/4000테스트 통과. runtime/lint/architecture/typecheck/build/
+  고정 시각 acceptance/CLI smoke가 같은 명령에서 완료됐다.
+- static internal ESM654모듈/2428unique edges/순환0. 검증 전후 HEAD 동일,
+  tracked1866파일 내용 동일, status는 ?? node_modules 1개. 완료11:12:00 KST.
+- 증거: /home/jm/.cache/jarvis-test-runtime-qa-20260908 아래
+  verify-local-observation.log, verify-local-observation-before.json,
+  verify-local-observation-result.json. acceptance gjc_dispatched=false;
+  이번 gate에 별도 Playwright/최신 패키지/production 적용은 포함하지 않았다.
+- 사용자 요청에 따라 현재 검증을 마친 뒤 신규 기능 개발을 중단하고
+  docs/cursor-handoff-2026-09-10.md에01–25 상태, local observation 구현,
+  recommendation/brief 소비 검증, 반복 생산/retention, provider refresh,
+  운영 적용 및 보류 조건을 인계했다. 전체01–25 완료 선언이 아니다.
