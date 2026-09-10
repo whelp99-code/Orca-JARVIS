@@ -26,9 +26,12 @@ it("registers, collects, reads, holds, releases and expires through the CLI entr
       subjects: [{ cached_collection_id: id }] });
     await expect(run(["snapshot", "task:cli", id])).resolves.toMatchObject({ result: { state: "ready" } });
     expect(readFileSync(path).equals(before)).toBe(true);
+    await expect(run(["admit-observation", "task:cli", id])).resolves.toMatchObject({ observation: { inserted: true } });
+    await expect(run(["admit-observation", "task:cli", id])).resolves.toMatchObject({ observation: { inserted: false } });
     await expect(run(["hold", "task:cli"])).resolves.toMatchObject({ held: true });
     await expect(run(["subjects"])).resolves.toMatchObject({ subjects: [{ held: true, cached_collection_id: null }] });
     await expect(run(["collect", "task:cli"])).rejects.toThrow("LOCAL_COLLECTION_HELD");
+    await expect(run(["admit-observation", "task:cli", id])).rejects.toThrow("LOCAL_OBSERVATION_SOURCE_UNAVAILABLE");
     await expect(run(["release", "task:cli"])).resolves.toMatchObject({ held: false });
     await expect(run(["snapshot", "task:cli", id])).resolves.toMatchObject({ result: { reason: "snapshot_missing" } });
     await run(["collect", "task:cli"]);
@@ -45,6 +48,8 @@ it("rejects missing explicit databases, extra arguments and irrelevant options b
     await expect(execute(["timeline", "collect", "task:x", "extra", "--db", path])).rejects.toThrow("LOCAL_COLLECTION_INPUT_INVALID");
     await expect(execute(["timeline", "collect", "task:x", "--db", path, "--limit", "1"])).rejects.toThrow("LOCAL_COLLECTION_INPUT_INVALID");
     await expect(execute(["timeline", "register", "task:x", "--db", path])).rejects.toThrow("LOCAL_COLLECTION_DATABASE_UNAVAILABLE");
+    await expect(execute(["timeline", "admit-observation", "task:x", "--db", path])).rejects.toThrow("LOCAL_COLLECTION_INPUT_INVALID");
+    await expect(execute(["timeline", "admit-observation", "task:x", "invalid", "--db", path])).rejects.toThrow("LOCAL_COLLECTION_INPUT_INVALID");
     expect(existsSync(path)).toBe(false);
   } finally { rmSync(root, { recursive: true, force: true }); }
 });

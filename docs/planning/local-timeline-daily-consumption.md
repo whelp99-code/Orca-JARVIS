@@ -188,3 +188,17 @@ compiled Node verified first insert, duplicate replay and rollback after expiry
 (QA local-observation-admission-live.json). Automatic repeated admission is not
 connected: observation retention/growth and recommendation deduplication still need
 an explicit service policy before enabling a recurring producer.
+
+## Explicit CLI admission
+
+`timeline admit-observation TASK_ID COLLECTION_ID --db PATH` invokes atomic admission
+for an exact existing collection. Preflight requires an existing database, exact
+argument count and a collection ID; irrelevant options are rejected. Output contains
+only the observation identity/digest and insertion result. No periodic producer is enabled.
+
+Related2files/6tests and lint/backend build passed. Actual compiled CLI subprocesses
+registered/collected a synthetic task, admitted once (exit0/inserted=true), replayed
+(exit0/same ID/inserted=false), then held it and rejected admission (exit2,
+LOCAL_OBSERVATION_SOURCE_UNAVAILABLE). QA local-admission-cli-live.mjs/.json.
+The harness initially parsed error stdout; corrected to inspect stderr as the CLI
+contract requires. The isolated database was removed in finally on both attempts.
