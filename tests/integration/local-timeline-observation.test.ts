@@ -4,7 +4,7 @@ import { expect, it } from "vitest";
 import { AuthorityDb } from "../../src/db.js";
 import { LocalTimelineSnapshotStore } from "../../src/local-timeline-snapshot-store.js";
 import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
-import { prepareLocalTimelineObservation, readCurrentLocalTimelineObservation } from "../../src/local-timeline-observation.js";
+import { admitLocalTimelineObservation, prepareLocalTimelineObservation, readCurrentLocalTimelineObservation } from "../../src/local-timeline-observation.js";
 
 it("prepares only a current local advisory draft and rejects replacement, hold and expiry without writes", async () => {
   const db = new AuthorityDb(":memory:", "migrations");
@@ -80,5 +80,27 @@ it("blocks stale local observation evidence at the context persistence boundary"
     expect(() => new PersonalContextEvidenceResolver(db.db, code => new Error(code))
       .resolve({ context, memory_evidence: [] }, at)).toThrow("PERSONAL_CONTEXT_SOURCE_UNAVAILABLE");
     expect(db.db.serialize().equals(before)).toBe(true);
+  } finally { db.close(); }
+});
+
+it("atomically admits exact collections, replays once and rolls back expiry during admission", async () => {
+  const db = new AuthorityDb(":memory:", "migrations"); const at = "2026-09-10T01:00:00.000Z";
+  const clock = () => new Date(at);
+  try {
+    await db.migrate();
+    db.db.exec(`INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,payload_digest,idempotency_key,state,created_at)
+      VALUES ('fixture','task:fixture','dispatch','{}','sha256:fixture','fixture','pending','2026-09-10T00:00:00.000Z')`);
+    const store = new LocalTimelineSnapshotStore(db, clock); store.register("task:fixture");
+    const first = store.refresh("task:fixture");
+    expect(admitLocalTimelineObservation(db, "task:fixture", first.collection_id, clock).inserted).toBe(true);
+    expect(admitLocalTimelineObservation(db, "task:fixture", first.collection_id, clock).inserted).toBe(false);
+    const second = store.refresh("task:fixture");
+    const before = db.db.serialize(); let calls = 0;
+    expect(() => admitLocalTimelineObservation(db, "task:fixture", second.collection_id,
+      () => new Date(++calls >= 4 ? "2026-09-10T01:05:00.000Z" : at))).toThrow("LOCAL_OBSERVATION_SOURCE_UNAVAILABLE");
+    expect(db.db.serialize().equals(before)).toBe(true);
+    expect(db.db.prepare("SELECT COUNT(*) AS n FROM personal_observations").get()).toEqual({ n: 1 });
+    store.setHeld("task:fixture", true);
+    expect(() => admitLocalTimelineObservation(db, "task:fixture", first.collection_id, clock)).toThrow("LOCAL_OBSERVATION_SOURCE_UNAVAILABLE");
   } finally { db.close(); }
 });

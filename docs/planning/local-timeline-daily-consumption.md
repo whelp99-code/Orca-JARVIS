@@ -172,3 +172,19 @@ passed, along with changed-file lint and backend build. QA local-context-assembl
 local-context-assembly-unit.log and local-context-assembly-build.log record the runs.
 The integration runner excludes unit paths, so unit coverage was run separately.
 No automatic admission, recommendation generation or service activation was added.
+
+## Atomic explicit observation admission implemented
+
+`admitLocalTimelineObservation` owns an immediate transaction, prepares the exact
+current draft, persists through the existing observation store, then revalidates
+persisted material before commit. Same-collection replay returns inserted=false;
+replacement/hold cannot use replay to bypass current validation. Expiry during the
+post-write check rolls back all changes, verified by whole-DB serialized bytes.
+No extra table or new migration is required: the existing immutable envelope and
+digest carry the collection binding and consumer revalidation checks its source.
+
+Four integration tests passed, changed-file lint and backend build exit0. Separate
+compiled Node verified first insert, duplicate replay and rollback after expiry
+(QA local-observation-admission-live.json). Automatic repeated admission is not
+connected: observation retention/growth and recommendation deduplication still need
+an explicit service policy before enabling a recurring producer.

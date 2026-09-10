@@ -66,3 +66,18 @@ export function readCurrentLocalTimelineObservation(authority: Pick<AuthorityDb,
     return current;
   }).deferred();
 }
+
+/** Explicit admission only; no scheduling. Source checks and persistence share one write lock. */
+export function admitLocalTimelineObservation(authority: AuthorityDb, taskId: string, collectionId: string,
+  clock: () => Date = () => new Date()) {
+  return authority.db.transaction(() => {
+    const draft = prepareLocalTimelineObservation(authority, taskId, collectionId, clock);
+    const at = clock();
+    if (!(at instanceof Date) || !Number.isFinite(at.getTime()) || at.toISOString() < draft.created_at) {
+      throw new JarvisError("LOCAL_OBSERVATION_SOURCE_UNAVAILABLE");
+    }
+    const stored = authority.persistObservation(draft, at.toISOString());
+    readCurrentLocalTimelineObservation(authority, stored.observation_id, clock);
+    return stored;
+  }).immediate();
+}
