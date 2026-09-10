@@ -28,6 +28,21 @@
   a260652beb173b6019c6b5b790939fed8afc443c987554bfc74cb1540bdfc62b.
 - 아래 전체 gate3985테스트는 이번 변경을 포함하지 않는다. 운영 배포는 하지 않았다.
 
+## 패키지 로컬 수집 서비스의 재기동 확인 — 2026-09-10
+
+- jarvis-runtime-o06V8W의 실제 CLI를 별도 Node 프로세스2개로 순차 실행했다.
+  `service once --local-timeline-refresh --db <isolated>` 두 실행 exit0.
+- 합성 로컬 작업1개와 보류 subject1개를 격리 디스크 DB에 등록했다.
+  두 번 모두 subjects2/attempted2/collected1/held1/failed0/capped0/remaining0.
+  coordinator=disconnected 상태에서도 로컬 수집 결과를 별도로 반환했다.
+- 각 CLI 종료 후 새 DB 연결로 저장된 수집 결과를 읽어 ready 확인.
+  두 번째 실행의 수집 ID는 첫 실행과 다르고 이전 ID는 unavailable이다.
+  보류 subject의 cached_collection_id는 두 번 모두 null이다.
+- fixture는 finally에서 제거했다. 패키지 무결성 재검사 exit0/matched.
+  QA packaged-local-refresh-service.mjs, .json, -integrity.json.
+- 실제 설치 패키지/프로세스 경로의 증거이며 데이터는 합성이다. 외부 provider,
+  일일 보고 소비 계약 또는 운영 서비스 활성화를 증명하지 않는다.
+
 ## 최신 독립 실행 패키지 확인 — 2026-09-10
 
 - package-authority-runtime exit0: 소스20328f62c8f6914999308bc67d65548aedf12455,
