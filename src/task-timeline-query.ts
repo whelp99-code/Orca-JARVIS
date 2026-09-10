@@ -2,7 +2,7 @@ import type { AuthorityDb } from "./db.js";
 import { values, type Row } from "./task-timeline-model.js";
 
 export class TaskTimelineQuery {
-  constructor(private readonly authority: AuthorityDb) {}
+  constructor(private readonly authority: Pick<AuthorityDb, "db">) {}
 
   rows(sql: string, ...params: unknown[]): Row[] {
     return this.authority.db.prepare<unknown[], Row>(sql).all(...params);

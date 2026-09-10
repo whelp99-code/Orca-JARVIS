@@ -14,7 +14,7 @@ function uuid(value: unknown): string {
 }
 
 /** Read-only draft from an exact current cache entry. No persistence or execution authority. */
-export function prepareLocalTimelineObservation(authority: AuthorityDb, taskId: string, collectionId: string,
+export function prepareLocalTimelineObservation(authority: Pick<AuthorityDb, "db">, taskId: string, collectionId: string,
   clock: () => Date = () => new Date()) {
   const read = new LocalTimelineSnapshotStore(authority, clock).read(taskId, collectionId);
   if (read.state !== "ready") throw new JarvisError("LOCAL_OBSERVATION_SOURCE_UNAVAILABLE");
@@ -46,7 +46,7 @@ export function prepareLocalTimelineObservation(authority: AuthorityDb, taskId: 
 
 
 /** Revalidate persisted local material; callers must use this inside their consumption transaction. */
-export function readCurrentLocalTimelineObservation(authority: AuthorityDb, observationId: string,
+export function readCurrentLocalTimelineObservation(authority: Pick<AuthorityDb, "db">, observationId: string,
   clock: () => Date = () => new Date()) {
   return authority.db.transaction(() => {
     const unavailable = (): never => { throw new JarvisError("LOCAL_OBSERVATION_SOURCE_UNAVAILABLE"); };

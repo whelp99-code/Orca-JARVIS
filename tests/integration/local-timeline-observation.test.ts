@@ -1,3 +1,6 @@
+import { PersonalContextEvidenceResolver } from "../../src/personal-context-evidence.js";
+import { assemblePersonalContext } from "../../src/context-assembler.js";
+import { canonicalPersonalContractHash } from "../../src/personal-validation.js";
 import { expect, it } from "vitest";
 import { AuthorityDb } from "../../src/db.js";
 import { LocalTimelineSnapshotStore } from "../../src/local-timeline-snapshot-store.js";
@@ -53,5 +56,30 @@ it("revalidates persisted drafts after source replacement and observation quaran
     expect(() => readCurrentLocalTimelineObservation(db, second.id, clock)).toThrow("LOCAL_OBSERVATION_SOURCE_UNAVAILABLE");
     const third = persist(); store.setHeld("task:fixture", true);
     expect(() => readCurrentLocalTimelineObservation(db, third.id, clock)).toThrow("LOCAL_OBSERVATION_SOURCE_UNAVAILABLE");
+  } finally { db.close(); }
+});
+
+it("blocks stale local observation evidence at the context persistence boundary", async () => {
+  const db = new AuthorityDb(":memory:", "migrations"); const at = "2026-09-10T01:00:00.000Z";
+  const clock = () => new Date(at);
+  try {
+    await db.migrate();
+    db.db.exec(`INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,payload_digest,idempotency_key,state,created_at)
+      VALUES ('fixture','task:fixture','dispatch','{}','sha256:fixture','fixture','pending','2026-09-10T00:00:00.000Z')`);
+    const store = new LocalTimelineSnapshotStore(db, clock); store.register("task:fixture");
+    const snapshot = store.refresh("task:fixture");
+    const draft = prepareLocalTimelineObservation(db, "task:fixture", snapshot.collection_id, clock);
+    db.persistObservation(draft, at);
+    const base = assemblePersonalContext({ purpose: "daily_prioritization", query: "local evidence", clock: at,
+      expires_in_ms: 240000, budgets: { max_items: 16, max_excerpt_bytes: 128, max_total_bytes: 4096 },
+      observations: [], memories: [], pending_authority_refs: [] });
+    const context = { ...base, payload: { ...base.payload, included_observation_refs: [draft.id] },
+      evidence: [{ ...draft.evidence[0]!, digest: canonicalPersonalContractHash(draft) }] };
+    expect(db.persistContextSnapshot({ context, memory_evidence: [] }, at)).toMatchObject({ observation_count: 1 });
+    store.setHeld("task:fixture", true);
+    const before = db.db.serialize();
+    expect(() => new PersonalContextEvidenceResolver(db.db, code => new Error(code))
+      .resolve({ context, memory_evidence: [] }, at)).toThrow("PERSONAL_CONTEXT_SOURCE_UNAVAILABLE");
+    expect(db.db.serialize().equals(before)).toBe(true);
   } finally { db.close(); }
 });

@@ -136,3 +136,21 @@ Two integration tests passed (including multiple same-time persisted drafts,
 replacement, observation quarantine and hold); lint and backend build exit0.
 Compiled Node persisted/read two same-time drafts and rejected the replaced one
 (QA local-observation-read-live.json). No shipped migration was changed.
+
+## Context evidence consumer connected
+
+PersonalContextEvidenceResolver now validates task-timeline:local observations via
+readCurrentLocalTimelineObservation before using their stored evidence. This covers
+new context admission and the resolver used by morning recommendation validation.
+The timeline/cache readers now accept Pick<AuthorityDb, "db">, so the resolver uses
+its existing connection without constructing another authority runtime. Error-only
+imports point at jarvis-error to preserve an acyclic runtime dependency graph.
+
+Context persistence replay still returns the existing stored metadata; it is not
+current evidence consumption. An initial test incorrectly expected replay to run
+the resolver; the acceptance now explicitly invokes the consumer after hold.
+Related3files/23tests passed; changed-file lint, backend typecheck/build exit0.
+Compiled Node resolved one source before hold and rejected it afterward with zero
+DB byte changes (QA local-context-live.json). Architecture654modules/2427edges/cycles0.
+Automatic local observation admission, assembler source selection and end-to-end
+recommendation/brief production remain unfinished. No service activation was added.

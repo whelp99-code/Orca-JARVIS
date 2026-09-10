@@ -15,7 +15,7 @@ import { groupTimelineRows, TaskTimelineQuery } from "./task-timeline-query.js";
 export class TaskTimelineAuthorityEvents {
   private readonly query: TaskTimelineQuery;
 
-  constructor(authority: AuthorityDb) {
+  constructor(authority: Pick<AuthorityDb, "db">) {
     this.query = new TaskTimelineQuery(authority);
   }
 

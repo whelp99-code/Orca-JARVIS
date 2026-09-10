@@ -1,6 +1,6 @@
 import { canonicalize } from "./canonical.js";
 import type { AuthorityDb } from "./db.js";
-import { JarvisError } from "./db.js";
+import { JarvisError } from "./jarvis-error.js";
 import { TaskTimelineAuthorityEvents } from "./task-timeline-authority-events.js";
 import { TaskTimelineGraphReader } from "./task-timeline-graph.js";
 import {
@@ -31,7 +31,7 @@ export class TaskTimeline {
   private readonly authorityEvents: TaskTimelineAuthorityEvents;
   private readonly runtimeEvents: TaskTimelineRuntimeEvents;
 
-  constructor(authority: AuthorityDb) {
+  constructor(authority: Pick<AuthorityDb, "db">) {
     this.query = new TaskTimelineQuery(authority);
     this.graphReader = new TaskTimelineGraphReader(authority);
     this.summaryReader = new TaskTimelineSummaryReader(authority);

@@ -74,7 +74,7 @@ function decode(row: SummaryRow): TaskTimelineSummary {
 }
 
 export class TaskTimelinePopulation {
-  constructor(private readonly authority: AuthorityDb) {}
+  constructor(private readonly authority: Pick<AuthorityDb, "db">) {}
 
   overview(limit: number, excludeRecommendations = false): { recent: TaskTimelineSummary[]; activeCount: number } {
     new MemoryProjectionAuthority(this.authority).assertReady();

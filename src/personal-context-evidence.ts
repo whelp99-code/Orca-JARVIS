@@ -1,3 +1,4 @@
+import { readCurrentLocalTimelineObservation } from "./local-timeline-observation.js";
 import type Database from "better-sqlite3";
 import type { Evidence, Freshness, UtcTimestamp } from "./personal-contracts.js";
 import type { ParsedContextPersistenceInput } from "./personal-context-types.js";
@@ -56,6 +57,10 @@ export class PersonalContextEvidenceResolver {
     ).get(reference);
     if (value === undefined) throw this.error("PERSONAL_CONTEXT_INVALID");
     const stored = persistenceRow(value);
+    if (stored["source_id"] === "src:pos:v1:task-timeline:local") {
+      try { readCurrentLocalTimelineObservation({ db: this.database }, reference, () => new Date(now)); }
+      catch { throw this.error("PERSONAL_CONTEXT_SOURCE_UNAVAILABLE"); }
+    }
     if (Date.parse(persistenceText(stored["expires_at"])) <= Date.parse(now)) {
       throw this.error("PERSONAL_CONTEXT_SOURCE_EXPIRED");
     }

@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
-import { JarvisError, type AuthorityDb } from "./db.js";
+import type { AuthorityDb } from "./db.js";
+import { JarvisError } from "./jarvis-error.js";
 import { LocalTimelineCollection } from "./local-timeline-collection.js";
 import { isPersistenceTime } from "./personal-persistence-values.js";
 import { TaskTimeline } from "./task-timeline.js";
@@ -12,7 +13,7 @@ const validId = (id: string): boolean => typeof id === "string" && /^[A-Za-z0-9:
 
 /** Bounded disposable cache. No execution authority or remote liveness is implied. */
 export class LocalTimelineSnapshotStore {
-  constructor(private readonly authority: AuthorityDb, private readonly clock: () => Date = () => new Date()) {}
+  constructor(private readonly authority: Pick<AuthorityDb, "db">, private readonly clock: () => Date = () => new Date()) {}
 
   /** Cache inventory only; callers must read the exact collection to validate its current source and freshness. */
   subjects() {

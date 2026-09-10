@@ -1,12 +1,13 @@
 import { createHash, randomUUID } from "node:crypto";
 import { canonicalize } from "./canonical.js";
-import { JarvisError, type AuthorityDb } from "./db.js";
+import type { AuthorityDb } from "./db.js";
+import { JarvisError } from "./jarvis-error.js";
 import { isPersistenceTime } from "./personal-persistence-values.js";
 import { TaskTimeline } from "./task-timeline.js";
 
 /** Actual local database read. This does not attest a worktree or remote runtime state. */
 export class LocalTimelineCollection {
-  constructor(private readonly authority: AuthorityDb, private readonly clock: () => Date = () => new Date()) {}
+  constructor(private readonly authority: Pick<AuthorityDb, "db">, private readonly clock: () => Date = () => new Date()) {}
 
   collect(taskId: string) {
     if (typeof taskId !== "string" || !/^[A-Za-z0-9:._/-]{1,256}$/.test(taskId)) {
