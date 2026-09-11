@@ -45,6 +45,9 @@ export type MemoryAwaitingWithdrawal = {
   readonly candidate_id: string;
   readonly task_id: string;
   readonly content_digest: string;
+  /** The provider target a withdrawal would act on, or null when nothing was stored yet. */
+  readonly target_id: string | null;
+  readonly target_digest: string | null;
 };
 
 /**
@@ -58,15 +61,20 @@ export type MemoryAwaitingWithdrawal = {
  *
  * A stored copy is matched the way the restore path matches one: by the content identity the
  * suppression records carry, because the provider owns the record identity and this database does
- * not store it.
+ * not store it. The same identity reaches the resolved target metadata, so each entry carries the
+ * target a withdrawal would name; a null target means nothing reached the provider and there is
+ * nothing out there to take back.
  */
 export function memoriesAwaitingTaskWithdrawal(
   authority: AuthorityDb,
 ): readonly MemoryAwaitingWithdrawal[] {
   const rows = authority.db.prepare(
-    `SELECT t.candidate_id AS candidate_id,t.task_id AS task_id,c.content_digest AS content_digest
+    `SELECT t.candidate_id AS candidate_id,t.task_id AS task_id,c.content_digest AS content_digest,
+       r.target_id AS target_id,r.target_digest AS target_digest
      FROM memory_candidate_task_sources t
      JOIN memory_candidates c ON c.candidate_id=t.candidate_id
+     LEFT JOIN memory_resolved_target_metadata r
+       ON replace(r.content_identity_digest,'sha256:','')=replace(c.content_digest,'sha256:','')
      WHERE NOT EXISTS (SELECT 1 FROM memory_suppressions s WHERE s.state='active'
        AND replace(c.content_digest,'sha256:','')=replace(s.content_identity_digest,'sha256:',''))
      ORDER BY t.task_id,t.candidate_id`).all();
@@ -75,10 +83,14 @@ export function memoriesAwaitingTaskWithdrawal(
     const taskId = String(Reflect.get(row, "task_id"));
     return taskSuppressed(authority, taskId)
       ? [{ candidate_id: String(Reflect.get(row, "candidate_id")), task_id: taskId,
-        content_digest: String(Reflect.get(row, "content_digest")) }]
+        content_digest: String(Reflect.get(row, "content_digest")),
+        target_id: text(Reflect.get(row, "target_id")),
+        target_digest: text(Reflect.get(row, "target_digest")) }]
       : [];
   });
 }
+
+const text = (value: unknown): string | null => typeof value === "string" ? value : null;
 
 function taskSuppressed(authority: AuthorityDb, taskId: string): boolean {
   return new TaskTimelinePopulation(authority).isSuppressed(taskId);
