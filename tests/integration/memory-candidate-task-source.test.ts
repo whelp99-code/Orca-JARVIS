@@ -1,11 +1,15 @@
-import { join } from "node:path";
+import { dirname, join } from "node:path";
+import { copyFileSync, rmSync } from "node:fs";
 import { afterEach, expect, it } from "vitest";
 import { readCandidateReview } from "../../src/dashboard/memory-candidate-review.js";
 import { MemoryCandidateStore } from "../../src/memory-candidate-store.js";
 import {
   candidateTaskSource, candidateTaskSourceSuppressed, recordCandidateTaskSource,
 } from "../../src/memory-candidate-task-source.js";
+import { buildFreshAuthority } from "../../src/memory-authority-fresh-builder.js";
 import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
+import { sanitizeMemoryRestoreCandidate } from "../../src/memory-restore-high-water.js";
+import { AuthorityDb } from "../../src/db.js";
 import {
   hasDispatchedScopedSourceAuthority, hasRegisteredScopedSourceAuthority,
   hasSecondBrainWriteAuthority,
@@ -88,4 +92,60 @@ it("binds one task once and refuses to be pointed somewhere else", async () => {
   expect(() => f.authority.db.prepare(
     "DELETE FROM memory_candidate_task_sources WHERE candidate_id=?")
     .run(f.candidateId)).toThrow("immutable memory candidate task source");
+}, 60_000);
+
+it("takes the binding with the candidate when a rebuild removes it", async () => {
+  const f = await fixture();
+  recordCandidateTaskSource(f.authority, f.candidateId, TASK, NOW);
+  const fresh = `${f.authority.filename}.rebuilt`;
+
+  // A blocked candidate deletes its parent row, so a binding left behind would dangle and the
+  // rebuild would refuse. It does not, because the copier filters every table carrying a
+  // candidate_id by the blocked set; this pins that the new table inherits that rule rather than
+  // needing one of its own.
+  const build = await buildFreshAuthority(f.authority, fresh, {
+    blocked_projections: [{ kind: "candidate", id: f.candidateId, component_id: f.candidateId }],
+    sensitive_material: [],
+  });
+  expect(build.foreign_key_errors).toBe(0);
+  expect(build.integrity_check).toBe("ok");
+
+  const rebuilt = new AuthorityDb(fresh);
+  try {
+    expect(rebuilt.db.prepare("SELECT COUNT(*) FROM memory_candidate_task_sources").pluck().get())
+      .toBe(0);
+    expect(rebuilt.db.prepare("SELECT COUNT(*) FROM memory_candidates WHERE candidate_id=?")
+      .pluck().get(f.candidateId)).toBe(0);
+  } finally {
+    rebuilt.close();
+    for (const suffix of ["", "-wal", "-shm"]) rmSync(`${fresh}${suffix}`, { force: true });
+  }
+}, 60_000);
+
+it("keeps a task hidden after a backup taken before it was hidden is restored", async () => {
+  const f = await fixture();
+  recordCandidateTaskSource(f.authority, f.candidateId, TASK, NOW);
+  const backup = `${f.authority.filename}.backup`;
+  f.authority.db.pragma("wal_checkpoint(TRUNCATE)");
+  copyFileSync(f.authority.filename, backup);
+
+  // Hidden only after the backup exists, which is the case a restore could undo.
+  hide(f.authority, TASK);
+
+  const restore = await sanitizeMemoryRestoreCandidate({ authority: f.authority, source: backup,
+    workspace: join(dirname(backup), "restore-workspace"), now: NOW });
+  expect(restore.disposition).toBe("sanitized");
+  expect(restore.activated).toBe(false);
+  const path = restore.sanitized_path;
+  expect(path).not.toBeNull();
+  const restored = new AuthorityDb(String(path));
+  try {
+    // The binding travels with the candidate, and the hiding travels with the current authority,
+    // so the restored database answers the same way this one does.
+    expect(candidateTaskSource(restored, f.candidateId)).toBe(TASK);
+    expect(candidateTaskSourceSuppressed(restored, f.candidateId)).toBe(true);
+    expect(readCandidateReview(restored, f.reviewRoot, f.candidateId, NOW)).toBeUndefined();
+  } finally {
+    restored.close();
+  }
 }, 60_000);
