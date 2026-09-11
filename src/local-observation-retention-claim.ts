@@ -1,5 +1,5 @@
 import {
-  closeSync, existsSync, lstatSync, mkdirSync, openSync, realpathSync, renameSync, rmdirSync, rmSync,
+  closeSync, existsSync, lstatSync, mkdirSync, openSync, realpathSync, rmSync,
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type { AuthorityDb } from "./db.js";

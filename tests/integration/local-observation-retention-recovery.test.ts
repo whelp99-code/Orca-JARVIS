@@ -234,7 +234,6 @@ it("refuses to install a candidate whose bytes changed after it was verified", a
 it("writes the verified digest once and refuses to have it rewritten", async () => {
   const seed = await seeded();
   const db = reopen(seed);
-  const stagedFile = stagedOf(db, seed);
   await applyLocalObservationRetention(db, seed.cutoff, seed.candidate, new Date(LOCAL_CHAIN_AT));
 
   const recorded = String(db.db.prepare("SELECT verified_digest FROM local_retention_operations")
@@ -279,7 +278,6 @@ it("leaves an operation alone while the process that owns it is still running", 
 it("keeps a directory an intent never proved it created", async () => {
   const seed = await seeded();
   const db = reopen(seed);
-  const stagedFile = stagedOf(db, seed);
   const foreign = seed.candidate;
   mkdirSync(foreign, { recursive: true });
   writeFileSync(join(foreign, "sentinel.txt"), "somebody else's directory");
@@ -302,7 +300,6 @@ it("keeps a directory an intent never proved it created", async () => {
 it("does not decide a claim is abandoned when it cannot read the owner", async () => {
   const seed = await seeded();
   const db = reopen(seed);
-  const stagedFile = stagedOf(db, seed);
   mkdirSync(seed.candidate, { recursive: true });
   writeFileSync(join(seed.candidate, "sentinel.txt"), "unreadable owner");
   // No start token: nothing here says the process that wrote this is gone.
