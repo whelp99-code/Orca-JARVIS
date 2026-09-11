@@ -135,3 +135,20 @@ sb/mcp_remember_models.py와 sb/scoped_write_request.py의 SHA256은 이전79ec7
    출처 차단을 다시 검사한다. 화면에서 숨기는 것으로 대체하지 않는다.
 4. 저장 후 삭제·재색인·백업 복원에서 파생 기억의 tombstone이 유지되는지 검증한다. 직접 MCP 클라이언트
    2개 확인은 provider 측 계약이 필요하므로 그 부분만 외부 의존으로 남는다.
+
+### 배제한 우회로 (같은 날 확인)
+
+“기존 열로 task에 닿을 수 있으니 계약 변경 없이 소비측만 고치면 된다”는 우회로를 먼저 검토하고
+배제했다. 근거는 다음과 같다.
+
+- `memory_candidate_classifications.control_request_id`(`migrations/038:47`)는 존재하고,
+  `control_command_requests.target_json`의 `$.task_id`는 실제로 색인돼 있다
+  (`migrations/079_task_execution_read_indexes.sql:8`). 여기까지는 경로가 있어 보인다.
+- 그러나 기억 후보가 만드는 control command의 target은 `{candidate_id, correlation_id}`다
+  (`tests/fixtures/memory-candidate-store.ts`의 instruction/decision seed). 즉 이 action에서
+  `target_json`에는 `task_id`가 **없다**.
+- 따라서 `control_request_id`를 따라가도 원본 task에 도달하지 못한다. `$.task_id` 색인은 task 실행
+  계열 action을 위한 것이고 기억 후보 계열과는 다른 요청이다.
+
+결론은 바뀌지 않는다: 위 1단계(후보가 원본 task를 기록할 자리를 만들고 digest 호환을 설계)를 건너뛸 수
+있는 경로는 현재 스키마에 없다.
