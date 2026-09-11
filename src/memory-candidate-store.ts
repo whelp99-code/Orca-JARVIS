@@ -1,4 +1,7 @@
 import { bindCandidateTaskSource } from "./memory-candidate-task-source.js";
+import {
+  assertCandidateProjectInScope, readMemoryProjectScope, type MemoryProjectScope,
+} from "./memory-candidate-project-scope.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { recoverUncommittedCandidateReview } from "./memory-candidate-review-recovery.js";
 import { claimMemoryCandidateAuthority, requireMemoryCandidateAuthority } from "./memory-candidate-authority.js";
@@ -27,6 +30,7 @@ type IdempotencyInsert = { readonly computation: MemoryCandidateComputation; rea
 export class MemoryCandidateStore {
   private readonly policy: ParsedMemoryCandidatePolicy;
   private reviewSpool: MemoryCandidateReviewSpool | undefined;
+  private projectScope: MemoryProjectScope | undefined;
 
   constructor(private readonly authority: AuthorityDb, policyValue: unknown, private readonly clock: () => unknown) {
     this.policy = parseMemoryCandidatePolicy(policyValue);
@@ -34,6 +38,14 @@ export class MemoryCandidateStore {
 
   attachReviewSpool(root: string): void {
     this.reviewSpool = new MemoryCandidateReviewSpool(root);
+  }
+
+  /**
+   * Opt in to the owner's project policy. Until this is called there is no policy and admission
+   * does not consider projects, which is what every deployment without the document gets.
+   */
+  attachProjectScope(path: string): void {
+    this.projectScope = readMemoryProjectScope(path);
   }
 
   /** `taskSource` binds the originating task in this same transaction; see admission contract. */
@@ -47,6 +59,9 @@ export class MemoryCandidateStore {
       return this.authority.db.transaction(() => {
         const classified = this.persist(input, value => { publication = value; });
         if (taskSource !== undefined) {
+          // In the same transaction as the binding, for the same reason the suppression check is:
+          // a candidate the policy refuses must not exist at all, not exist and be filtered later.
+          assertCandidateProjectInScope(this.authority, taskSource, this.projectScope);
           bindCandidateTaskSource(this.authority, classified.candidate_id, taskSource,
             memoryDate(this.clock()));
         }

@@ -1,0 +1,7 @@
+{
+  "schema_version": 1,
+  "mode": "allow_list",
+  "projects": [
+    "replace-with-a-project-id-from-the-projects-table"
+  ]
+}
