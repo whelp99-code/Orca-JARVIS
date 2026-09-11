@@ -14,9 +14,10 @@ export {
 	type RecommendationReadProjection, type ProjectedRecommendationAction, type RecommendationWarning,
 } from "./recommendations.js";
 export {
-	assemblePersonalContext, CONTEXT_ASSEMBLER_BUDGET_IMPOSSIBLE, CONTEXT_ASSEMBLER_INPUT_INVALID, ContextAssemblerError,
+	assemblePersonalContext, assembleModelRequest, CONTEXT_ASSEMBLER_BUDGET_IMPOSSIBLE, CONTEXT_ASSEMBLER_INPUT_INVALID, ContextAssemblerError,
 	type ContextAssemblerErrorCode, type ContextAssemblerInput, type ContextBudget,
 	type MemoryEvidenceInput, type MemoryGapInput, type MemoryInput,
+	type ModelMemoryDelivery, type ModelRequestV1,
 } from "./context-assembler.js";
 export { CONTEXT_POLICY_CONFIG_INVALID, CONTEXT_POLICY_INPUT_INVALID, CONTEXT_POLICY_REASON_CODES, ContextPolicyError, evaluateContextPolicy,
 	type ContextPolicyDecision, type ContextPolicyErrorCode, type ContextPolicyReasonCode } from "./context-policy.js";
