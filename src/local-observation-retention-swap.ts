@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { exclusionHole } from "./authority-database-process.js";
 import Database from "better-sqlite3";
-import { existsSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import type { AuthorityDatabaseRuntime } from "./authority-database-runtime.js";
 import { publishSwapBarrier, releaseSwapBarrier } from "./authority-database-swap-barrier.js";
