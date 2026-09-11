@@ -28,7 +28,6 @@
 | 4 | 격리 이름이 대장에 기록되지 않아 크래시 시 고아가 될 수 있음 | 남아 있다 |
 | 5 | `memory-candidate-scope`의 제안 경로가 task 게이트를 거치지 않음 | 남아 있다 |
 
-
 > **2026-09-12 갱신 (§9.28 정본).** 이 시점의 상태는 `IN_PROGRESS`다. 제품 SHA는
 > `4c0e793b0bb77f4f6bdce2862764b5de03d53d61`, 전체 gate `VERIFY24=0`, 패키지 `jarvis-runtime-Yi1OYT`
 > (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=4c0e793…`.
@@ -1073,7 +1072,7 @@ namespace)에서 돌린다. 그러면 위 규칙이 의미를 갖고, 거절은 
 
 | 항목 | 값 |
 |---|---|
-| 입력 SHA | `4c0e793b0bb77f4f6bdce2862764b5de03d53d61` |
+| 입력 SHA | `1c709871e0c739686dbeb77c91178a7781055031` |
 | exit code | **0** (`VERIFY17=0`) |
 | 종료 시각 | `2026-09-12 04:15:59 +0900` |
 | backend shard 1/2 | 279 파일 / 1,932 테스트 |
@@ -1104,8 +1103,8 @@ load average가 8.39**였다. 고아는 같은 UID로 임시 DB를 열어둔 채
 
 | 항목 | 값 |
 |---|---|
-| package root | `<QA>/package/jarvis-runtime-Yi1OYT` |
-| source_head | `4c0e793b0bb77f4f6bdce2862764b5de03d53d61` — gate 입력과 같은 SHA |
+| package root | `<QA>/package/jarvis-runtime-U83OKE` |
+| source_head | `1c709871e0c739686dbeb77c91178a7781055031` — gate 입력과 같은 SHA |
 | payload_files / dependency_entries | 1,541 / 6,668 |
 | receipt pin (독립 고정) | `a22b8a7b83cf61ec7d3881d9e625cc7c95862ea9d628326dfdf8f3123a2d3f33` |
 | verify-runtime-package | `ok=true`, `integrity="matched"`, RC 0 |
@@ -1144,10 +1143,10 @@ argv로 받고, 일정 서비스 테스트는 `<db>.retention-candidate/candidat
 
 | 항목 | 실측 |
 | --- | --- |
-| 제품 SHA | `4c0e793b0bb77f4f6bdce2862764b5de03d53d61` |
-| 전체 gate | `VERIFY24=0` (backend 279 파일 / 1,942 케이스, dashboard 38 파일 / 263 케이스) |
-| 런타임 패키지 | `jarvis-runtime-Yi1OYT`, `source_head=4c0e793…`, payload 1,541, receipt `619b5f67…`, `integrity=matched`, `deployment_ready=false` |
-| manifest | `gate_input_sha=4c0e793…`, 아티팩트 40, 누락 0 |
+| 제품 SHA | `b94468796c8cb766d557039f32a7c3b41fc6a07c` |
+| 전체 gate | `VERIFY20=0` (backend 279 파일 / 1,942 케이스, dashboard 38 파일 / 263 케이스) |
+| 런타임 패키지 | `jarvis-runtime-ec1enI`, `source_head=b944687…`, payload 1,541, receipt `94c27ebd…`, `integrity=matched`, `deployment_ready=false` |
+| manifest | `gate_input_sha=b944687…`, 아티팩트 40, 누락 0 |
 
 **닫힌 것 — 기존 목적지 보존 (REVIEW-01).** `claimRetentionOperation` 은 이제 staged 디렉터리만 만들고,
 announce된 목적지는 생성·점유·교체하지 않는다(`takeRetentionDestination` 제거, 커밋 `9fb366a`). mkdir→rmdir→rename
@@ -1181,7 +1180,7 @@ announce된 목적지는 생성·점유·교체하지 않는다(`takeRetentionDe
 
 **따라서 REVIEW-20260912-02 와 -03 은 열린 상태로 유지한다.**
 
-### 9.29 증명 가능한 절반은 실제로 착지시켰다 (커밋 `4c0e793`)
+### 9.29 증명 가능한 절반은 실제로 착지시켰다 (커밋 `8c245d8`)
 
 `exclusionHole(filename)` 은 두 swap 경로에서 **sidecar 제거 이전에** 묻는다: 소스가 이 사용자 밖 소유이거나
 외부 쓰기 가능이면 `LOCAL_RETENTION_EXCLUSION_UNPROVABLE` / `MEMORY_EXCLUSION_UNPROVABLE` 로 거절한다.
@@ -1198,11 +1197,11 @@ announce된 목적지는 생성·점유·교체하지 않는다(`takeRetentionDe
 
 | 최종 실측 | 값 |
 | --- | --- |
-| 제품 SHA | `4c0e793b0bb77f4f6bdce2862764b5de03d53d61` |
-| 전체 gate | `VERIFY24=0` (backend 279 / 1,942, dashboard 38 / 263) |
-| 패키지 | `jarvis-runtime-Yi1OYT`, `source_head=4c0e793…`, payload 1,541, receipt `619b5f67…`, `integrity=matched`, `deployment_ready=false` |
+| 제품 SHA | `8c245d8c0e57b1f548c8307f1ea3f4787b2c3763` |
+| 전체 gate | `VERIFY21=0` (backend 279 / 1,942, dashboard 38 / 263) |
+| 패키지 | `jarvis-runtime-GFqQk1`, `source_head=8c245d8…`, payload 1,541, receipt `3dada57e…`, `integrity=matched`, `deployment_ready=false` |
 
-### 9.30 기본값을 거절로 올렸다 (커밋 `a1f7c31`, `4c0e793`)
+### 9.30 기본값을 거절로 올렸다 (커밋 `a1f7c31`, `c67a139`)
 
 `exclusionHole(filename, observed)` 은 이제 관측에 **구멍이 있으면** — 이 사용자 소유인데 `/proc` 을 읽을 수 없는
 프로세스가 하나라도 있으면 — 파괴 이전에 거절한다. 소유자·외부 쓰기 권한 조건도 함께 유지된다. §9.28 에서
@@ -1222,9 +1221,9 @@ announce된 목적지는 생성·점유·교체하지 않는다(`takeRetentionDe
 
 | 최종 실측 | 값 |
 | --- | --- |
-| 제품 SHA | `4c0e793b0bb77f4f6bdce2862764b5de03d53d61` |
-| 전체 gate | `VERIFY24=0` (backend 279 / 1,942, dashboard 38 / 263) |
-| 패키지 | `jarvis-runtime-Yi1OYT`, `source_head=4c0e793…`, payload 1,543, receipt `619b5f67…`, `integrity=matched`, `deployment_ready=false` |
+| 제품 SHA | `c67a139261b5b92071a77794fefda5443dee66b7` |
+| 전체 gate | `VERIFY23=0` (backend 279 / 1,942, dashboard 38 / 263) |
+| 패키지 | `jarvis-runtime-JPQBPL`, `source_head=c67a139…`, payload 1,542, receipt `bb0f7f26…`, `integrity=matched`, `deployment_ready=false` |
 
 남은 잔여는 하나다: admission 없이 데이터베이스를 연 **숨은** 프로세스와 특권 프로세스. 전자는 이제 거절로
 **막히지만**(구멍이 있으면 교체하지 않는다) 배제된 것은 아니며, 후자는 사용자 공간 프로토콜의 명시된 한계다.

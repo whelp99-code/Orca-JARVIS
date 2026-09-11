@@ -1,8 +1,9 @@
 import { randomUUID } from "node:crypto";
+import Database from "better-sqlite3";
 import { withProvableExclusion } from "../fixtures/provable-exclusion.js";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
-import { mkdtempSync, chmodSync, closeSync, existsSync, mkdirSync, openSync, statSync, writeFileSync } from "node:fs";
+import { readdirSync, mkdtempSync, chmodSync, closeSync, existsSync, mkdirSync, openSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createInterface, type Interface } from "node:readline";
 import { afterEach, expect, it } from "vitest";
@@ -312,4 +313,47 @@ it("refuses on an environment whose answer has a hole, and preserves everything 
     expect(existsSync(`${db.filename}-wal`)).toBe(true);
     expect(existsSync(application.operation.candidate_path)).toBe(true);
     expect(existsSync(swapBarrierPath(db.filename))).toBe(false);
+  }, 60_000);
+
+it("keeps the source, its log and the candidate when a writer commits after the last question",
+  async () => {
+    const { db, runtime, cutoff } = await seeded();
+    const application = await applyLocalObservationRetention(db, cutoff,
+      join(dirname(db.filename), "post-check-writer-candidate"));
+    const source = db.filename;
+
+    // A real second connection, opened and committed synchronously on the last question the swap
+    // asks - the interval between that question and the rename, which no instantaneous observation
+    // covers. Nothing is simulated here: the row is written by SQLite into the live file.
+    let entered = false;
+    const observe = runtime.observeOldInode.bind(runtime);
+    runtime.observeOldInode = ((device: bigint, ino: bigint) => {
+      const answer = observe(device, ino);
+      if (entered || !existsSync(application.operation.candidate_path)) return answer;
+      entered = true;
+      const late = new Database(source);
+      try {
+        late.prepare(`INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,
+          payload_digest,idempotency_key,state,created_at) VALUES('late-writer','task:late','dispatch',
+          '{}','sha256:late','late','pending','2026-08-28T12:00:00.000Z')`).run();
+      } finally { late.close(); }
+      // Answered as the swap would have been answered a moment earlier: this is the case where the
+      // check passed and the writer arrived afterwards.
+      return { ...answer, fd_count: 0, unprovable: [] };
+    }) as typeof runtime.observeOldInode;
+
+    await runtime.quiesce("local_retention",
+      async () => applyRetentionCandidate(runtime, application, new Date()));
+    expect(entered).toBe(true);
+
+    // The candidate is live, and the database the late writer wrote into is still on disk under
+    // its retired name, with that commit in it. Nothing it committed was destroyed.
+    const retired = readdirSync(dirname(source))
+      .filter(name => name.includes(".retired"));
+    expect(retired.some(name => name.endsWith(".retired"))).toBe(true);
+    const kept = new AuthorityDb(join(dirname(source),
+      retired.find(name => name.endsWith(".retired")) as string));
+    opened.push(kept);
+    expect(Number(kept.db.prepare(
+      "SELECT COUNT(*) FROM gjc_intents WHERE intent_id='late-writer'").pluck().get())).toBe(1);
   }, 60_000);

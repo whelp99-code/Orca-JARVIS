@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { exclusionHole } from "./authority-database-process.js";
 import Database from "better-sqlite3";
-import { readFileSync, renameSync, rmSync, statSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import type { AuthorityDatabaseRuntime } from "./authority-database-runtime.js";
 import { publishSwapBarrier, releaseSwapBarrier } from "./authority-database-swap-barrier.js";
@@ -144,7 +144,14 @@ export function applyRetentionCandidate(
       throw new JarvisError("LOCAL_RETENTION_EXCLUSION_UNPROVABLE",
         `LOCAL_RETENTION_EXCLUSION_UNPROVABLE: ${hole}`);
     }
-    for (const suffix of SIDECARS) rmSync(`${authority.filename}${suffix}`, { force: true });
+    // Set aside, not deleted. A writer that enters after the last question still holds this inode,
+    // and its next commit lands in a log that still exists on disk instead of one that was removed
+    // out from under it. Recovering the rows is then a file to read, not a loss to report.
+    const retired = `${authority.filename}.${operation.operation_id.replace(/^retention:/, "")}`;
+    for (const suffix of SIDECARS) {
+      const sidecar = `${authority.filename}${suffix}`;
+      if (existsSync(sidecar)) renameSync(sidecar, `${retired}.retired${suffix}`);
+    }
     // The baseline for the last question, taken once the connection is gone and its log has been
     // folded in: the file the rename would replace, rather than that file plus a log that closing
     // was about to remove.
@@ -166,6 +173,10 @@ export function applyRetentionCandidate(
       || foreignConnectionHolds(authority.filename)) {
       throw new JarvisError("LOCAL_RETENTION_SOURCE_WRITER_ACTIVE");
     }
+    // The source is retired under its own name rather than unlinked by the rename: the inode keeps
+    // a directory entry, so a descriptor opened after the last question writes into a file that is
+    // still reachable. The candidate then takes the live name.
+    renameSync(authority.filename, `${retired}.retired`);
     renameSync(operation.candidate_path, authority.filename);
     syncPath(dirname(authority.filename), true);
     observed = runtime.observeOldInode(BigInt(fence.device), BigInt(fence.inode));
