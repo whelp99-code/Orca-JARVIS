@@ -7,6 +7,7 @@ import { closedObject } from "./evening-closeout-parse-values.js";
 import { parseTrustedCloseoutKey } from "./evening-closeout-crypto.js";
 import { parseNativeEveningSourceConfig } from "./evening-native-source.js";
 import { parseDailyLoopOptions } from "./daily-loop-input.js";
+import { SecondBrainRefreshReceiptReader } from "./second-brain-refresh-receipt.js";
 import type { DailyLoopConfig } from "./daily-loop-types.js";
 import type { CloseoutSigningHandle } from "./evening-closeout-types.js";
 
@@ -23,16 +24,33 @@ async function boundedFile(path: string, maximum: number, privateFile = false): 
   } finally { await file.close(); }
 }
 
+/** The one field this version adds: an absolute path the provider publishes its receipt at. */
+function refreshReceiptPath(value: unknown): string {
+  const path = closedObject(value, ["receipt_path"])["receipt_path"];
+  if (typeof path !== "string" || !path.startsWith("/") || path.length > 512
+    || path.includes("\0")) throw new Error("INVALID_REFRESH");
+  return path;
+}
+
 export async function readEveningCliInputs(configPath: string, keyPath: string, owner: string, clock: () => Date) {
   try {
     const text = new TextDecoder("utf-8", { fatal: true }).decode(await boundedFile(configPath, 16384));
-    const value = closedObject(parseBoundedStrictJson(text, { depth: 32, nodes: 8192, workItems: 32768, characters: 16384 }),
-      ["schema_version", "daily", "source", "trusted_key"]);
-    if (value.schema_version !== 1) throw new Error("INVALID_VERSION");
+    const document = parseBoundedStrictJson(text, { depth: 32, nodes: 8192, workItems: 32768, characters: 16384 });
+    // A provider refresh receipt is a new input, so it arrives as its own declared version rather
+    // than as an optional key: version 1 stays exactly the four-field record it always was.
+    const version = document !== null && typeof document === "object"
+      ? Reflect.get(document, "schema_version") : undefined;
+    if (version !== 1 && version !== 2) throw new Error("INVALID_VERSION");
+    const value = closedObject(document, version === 2
+      ? ["schema_version", "daily", "source", "trusted_key", "refresh"]
+      : ["schema_version", "daily", "source", "trusted_key"]);
+    const receipts = new SecondBrainRefreshReceiptReader(
+      version === 2 ? refreshReceiptPath(value["refresh"]) : undefined);
     const daily = closedObject(value.daily, ["time_zone", "lease_ms", "deadline_ms", "recovery_window_ms",
       "recovery_lookback_days", "refresh_freshness_ms", "budgets"]);
     const options = parseDailyLoopOptions({ ...daily as Omit<DailyLoopConfig, "owner_id">, owner_id: owner, clock,
-      event_source: { drain: () => [] }, refresh_reader: { read: () => null } });
+      event_source: { drain: () => [] },
+      refresh_reader: { read: (at: Date) => receipts.read(at) } });
     const source = parseNativeEveningSourceConfig(value.source); const trusted = parseTrustedCloseoutKey(value.trusted_key);
     const bytes = await boundedFile(keyPath, 4096, true);
     const key = (() => { try { return createPrivateKey(bytes); } finally { bytes.fill(0); } })();

@@ -2,7 +2,8 @@ import type { AuthorityDb } from "./db.js";
 import { canonicalize } from "./canonical.js";
 import { assertDailyLoopIntegrity } from "./daily-loop-integrity.js";
 import { parseDailyLoopDate } from "./daily-loop-input.js";
-import { DailyLoopError, type DailyLoopBudgets, type DailyLoopFailureCode } from "./daily-loop-types.js";
+import { DailyLoopError, type DailyLoopBudgets, type DailyLoopFailureCode,
+  type RefreshContext } from "./daily-loop-types.js";
 import { kstLocalDate } from "./daily-loop-time.js";
 import { verifyMorningBriefResult } from "./morning-brief-artifact.js";
 import { verifyEveningCloseoutArtifact } from "./evening-closeout-artifact.js";
@@ -16,6 +17,26 @@ export class DailyBudgetExceeded extends Error {
 }
 
 export type DailyLoopUsage = { readonly items: number; readonly work: number; readonly bytes: number };
+/**
+ * The stored refresh_context detail, read under the rule that wrote it.
+ *
+ * The ledger validates this shape when it charges the step, and the read path needs the same
+ * answer; keeping one parser is what stops a row from being billable but unreadable, or readable
+ * with a state the loop never produces.
+ */
+export function parseRefreshContextDetail(detail: unknown): RefreshContext {
+  if (typeof detail !== "object" || detail === null || Array.isArray(detail)) return invalid();
+  const row = detail as Record<string, unknown>;
+  if (Object.keys(row).sort().join(",") !== "reason,refresh_id,state") return invalid();
+  const missing = row["state"] === "no_data" && row["reason"] === "refresh_missing" && row["refresh_id"] === null;
+  const invalidRefresh = row["state"] === "degraded" && row["reason"] === "refresh_invalid" && row["refresh_id"] === null;
+  const identified = typeof row["refresh_id"] === "string" && row["refresh_id"].length > 0 && (
+    (row["state"] === "ready" && row["reason"] === "refresh_fresh") || (row["state"] === "degraded"
+      && ["refresh_failed", "refresh_stale", "refresh_incompatible", "refresh_capped"].includes(String(row["reason"]))));
+  if (!missing && !invalidRefresh && !identified) return invalid();
+  return row as unknown as RefreshContext;
+}
+
 const invalid = (): never => { throw new DailyLoopError("DAILY_LOOP_INTEGRITY_FAILURE"); };
 
 /** Completed output usage, including suppressed outputs. This is not token or CPU accounting. */
@@ -66,15 +87,8 @@ function completedDailyStepCost(key: string, json: string, date: string, run: Us
     if (kstLocalDate(new Date(brief.generated_at)) !== date) return invalid();
     return { items: brief.needs_you_first.length + brief.waiting.length + brief.fyi.length, work: 1, bytes };
   }
-  if (key !== "refresh_context" || typeof detail !== "object" || detail === null || Array.isArray(detail)) return invalid();
-  const row = detail as Record<string, unknown>;
-  if (Object.keys(row).sort().join(",") !== "reason,refresh_id,state") return invalid();
-  const missing = row["state"] === "no_data" && row["reason"] === "refresh_missing" && row["refresh_id"] === null;
-  const invalidRefresh = row["state"] === "degraded" && row["reason"] === "refresh_invalid" && row["refresh_id"] === null;
-  const identified = typeof row["refresh_id"] === "string" && row["refresh_id"].length > 0 && (
-    (row["state"] === "ready" && row["reason"] === "refresh_fresh") || (row["state"] === "degraded"
-      && ["refresh_failed", "refresh_stale", "refresh_incompatible", "refresh_capped"].includes(String(row["reason"]))));
-  if (!missing && !invalidRefresh && !identified) return invalid();
+  if (key !== "refresh_context") return invalid();
+  parseRefreshContextDetail(detail);
   return { items: 1, work: 1, bytes };
 }
 
