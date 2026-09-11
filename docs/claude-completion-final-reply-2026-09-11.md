@@ -30,8 +30,8 @@
 
 
 > **2026-09-12 갱신 (§9.28 정본).** 이 시점의 상태는 `IN_PROGRESS`다. 제품 SHA는
-> `c67a139261b5b92071a77794fefda5443dee66b7`, 전체 gate `VERIFY23=0`, 패키지 `jarvis-runtime-JPQBPL`
-> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=c67a139…`.
+> `4c0e793b0bb77f4f6bdce2862764b5de03d53d61`, 전체 gate `VERIFY24=0`, 패키지 `jarvis-runtime-Yi1OYT`
+> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=4c0e793…`.
 > **닫힘:** 기존 목적지 보존(REVIEW-01) — 목적지를 생성·점유·교체하는 경로 자체를 제거했고 세 형태 모두 회귀로 고정.
 > **열림:** writer 배타성(REVIEW-02/-03) — `b4927fb` 는 창을 좁혔을 뿐 봉쇄하지 않으며, 증명 불가 환경의 거절은
 > 두 구현을 만들어 측정한 결과 각각 "항상 거절" 과 "타이밍 의존 거절" 로 무너져 되돌렸다(§9.28). 남은 해법은
@@ -1073,7 +1073,7 @@ namespace)에서 돌린다. 그러면 위 규칙이 의미를 갖고, 거절은 
 
 | 항목 | 값 |
 |---|---|
-| 입력 SHA | `c67a139261b5b92071a77794fefda5443dee66b7` |
+| 입력 SHA | `4c0e793b0bb77f4f6bdce2862764b5de03d53d61` |
 | exit code | **0** (`VERIFY17=0`) |
 | 종료 시각 | `2026-09-12 04:15:59 +0900` |
 | backend shard 1/2 | 279 파일 / 1,932 테스트 |
@@ -1104,8 +1104,8 @@ load average가 8.39**였다. 고아는 같은 UID로 임시 DB를 열어둔 채
 
 | 항목 | 값 |
 |---|---|
-| package root | `<QA>/package/jarvis-runtime-JPQBPL` |
-| source_head | `c67a139261b5b92071a77794fefda5443dee66b7` — gate 입력과 같은 SHA |
+| package root | `<QA>/package/jarvis-runtime-Yi1OYT` |
+| source_head | `4c0e793b0bb77f4f6bdce2862764b5de03d53d61` — gate 입력과 같은 SHA |
 | payload_files / dependency_entries | 1,541 / 6,668 |
 | receipt pin (독립 고정) | `a22b8a7b83cf61ec7d3881d9e625cc7c95862ea9d628326dfdf8f3123a2d3f33` |
 | verify-runtime-package | `ok=true`, `integrity="matched"`, RC 0 |
@@ -1144,10 +1144,10 @@ argv로 받고, 일정 서비스 테스트는 `<db>.retention-candidate/candidat
 
 | 항목 | 실측 |
 | --- | --- |
-| 제품 SHA | `c67a139261b5b92071a77794fefda5443dee66b7` |
-| 전체 gate | `VERIFY23=0` (backend 279 파일 / 1,942 케이스, dashboard 38 파일 / 263 케이스) |
-| 런타임 패키지 | `jarvis-runtime-JPQBPL`, `source_head=c67a139…`, payload 1,541, receipt `bb0f7f26…`, `integrity=matched`, `deployment_ready=false` |
-| manifest | `gate_input_sha=c67a139…`, 아티팩트 40, 누락 0 |
+| 제품 SHA | `4c0e793b0bb77f4f6bdce2862764b5de03d53d61` |
+| 전체 gate | `VERIFY24=0` (backend 279 파일 / 1,942 케이스, dashboard 38 파일 / 263 케이스) |
+| 런타임 패키지 | `jarvis-runtime-Yi1OYT`, `source_head=4c0e793…`, payload 1,541, receipt `619b5f67…`, `integrity=matched`, `deployment_ready=false` |
+| manifest | `gate_input_sha=4c0e793…`, 아티팩트 40, 누락 0 |
 
 **닫힌 것 — 기존 목적지 보존 (REVIEW-01).** `claimRetentionOperation` 은 이제 staged 디렉터리만 만들고,
 announce된 목적지는 생성·점유·교체하지 않는다(`takeRetentionDestination` 제거, 커밋 `9fb366a`). mkdir→rmdir→rename
@@ -1181,7 +1181,7 @@ announce된 목적지는 생성·점유·교체하지 않는다(`takeRetentionDe
 
 **따라서 REVIEW-20260912-02 와 -03 은 열린 상태로 유지한다.**
 
-### 9.29 증명 가능한 절반은 실제로 착지시켰다 (커밋 `c67a139`)
+### 9.29 증명 가능한 절반은 실제로 착지시켰다 (커밋 `4c0e793`)
 
 `exclusionHole(filename)` 은 두 swap 경로에서 **sidecar 제거 이전에** 묻는다: 소스가 이 사용자 밖 소유이거나
 외부 쓰기 가능이면 `LOCAL_RETENTION_EXCLUSION_UNPROVABLE` / `MEMORY_EXCLUSION_UNPROVABLE` 로 거절한다.
@@ -1198,11 +1198,11 @@ announce된 목적지는 생성·점유·교체하지 않는다(`takeRetentionDe
 
 | 최종 실측 | 값 |
 | --- | --- |
-| 제품 SHA | `c67a139261b5b92071a77794fefda5443dee66b7` |
-| 전체 gate | `VERIFY23=0` (backend 279 / 1,942, dashboard 38 / 263) |
-| 패키지 | `jarvis-runtime-JPQBPL`, `source_head=c67a139…`, payload 1,541, receipt `bb0f7f26…`, `integrity=matched`, `deployment_ready=false` |
+| 제품 SHA | `4c0e793b0bb77f4f6bdce2862764b5de03d53d61` |
+| 전체 gate | `VERIFY24=0` (backend 279 / 1,942, dashboard 38 / 263) |
+| 패키지 | `jarvis-runtime-Yi1OYT`, `source_head=4c0e793…`, payload 1,541, receipt `619b5f67…`, `integrity=matched`, `deployment_ready=false` |
 
-### 9.30 기본값을 거절로 올렸다 (커밋 `a1f7c31`, `c67a139`)
+### 9.30 기본값을 거절로 올렸다 (커밋 `a1f7c31`, `4c0e793`)
 
 `exclusionHole(filename, observed)` 은 이제 관측에 **구멍이 있으면** — 이 사용자 소유인데 `/proc` 을 읽을 수 없는
 프로세스가 하나라도 있으면 — 파괴 이전에 거절한다. 소유자·외부 쓰기 권한 조건도 함께 유지된다. §9.28 에서
@@ -1222,9 +1222,34 @@ announce된 목적지는 생성·점유·교체하지 않는다(`takeRetentionDe
 
 | 최종 실측 | 값 |
 | --- | --- |
-| 제품 SHA | `c67a139261b5b92071a77794fefda5443dee66b7` |
-| 전체 gate | `VERIFY23=0` (backend 279 / 1,942, dashboard 38 / 263) |
-| 패키지 | `jarvis-runtime-JPQBPL`, `source_head=c67a139…`, payload 1,542, receipt `bb0f7f26…`, `integrity=matched`, `deployment_ready=false` |
+| 제품 SHA | `4c0e793b0bb77f4f6bdce2862764b5de03d53d61` |
+| 전체 gate | `VERIFY24=0` (backend 279 / 1,942, dashboard 38 / 263) |
+| 패키지 | `jarvis-runtime-Yi1OYT`, `source_head=4c0e793…`, payload 1,543, receipt `619b5f67…`, `integrity=matched`, `deployment_ready=false` |
 
 남은 잔여는 하나다: admission 없이 데이터베이스를 연 **숨은** 프로세스와 특권 프로세스. 전자는 이제 거절로
 **막히지만**(구멍이 있으면 교체하지 않는다) 배제된 것은 아니며, 후자는 사용자 공간 프로토콜의 명시된 한계다.
+
+### 9.31 open/reopen 진입점을 목록화하고 공통 경계에 묶었다 (커밋 `4c0e793`)
+
+통합 지시서 M2 의 "모든 지원 writer·open/reopen 진입점을 목록화하고 가장 작은 일관된 경계에서 공통 계약을
+적용한다" 를 코드로 옮겼다. `src` 전체에서 데이터베이스를 여는 지점은 8곳이다.
+
+| 지점 | 처리 |
+| --- | --- |
+| `authority-db-base.ts` (생성자·reopen) | 이미 `openUnderSwapAdmission` |
+| `cli-runtime-identity.ts`, `personal-os-backup.ts` (온라인 백업 소스) | 이미 admission |
+| `authority-database-swap-lock.ts` | swap 자신의 락 파일 — 라이브 권한 DB 아님 (이름으로 명시) |
+| `local-observation-retention-operation.ts` | 빌드 중인 candidate — 아직 라이브 아님 (명시) |
+| `local-observation-retention-swap.ts` | swap 이 barrier 를 쥔 채 쓰는 락 탐침 (명시) |
+| `personal-os-backup.ts` (quick_check) | 목적지의 백업 사본 (명시) |
+| `personal-os-process-stress.ts`, `personal-os-rehearsal-payload.ts` ×2, `personal-os-rehearsal.ts` | **무등록 open 이었다 → admission 통과로 변경** |
+
+`tests/unit/authority-open-admission.test.ts` 가 이 경계를 고정한다. admission 을 거치지도, 목록에 이름이 있지도
+않은 새 open 이 생기면 실패한다. 그리고 목록에 적힌 파일이 데이터베이스를 더 이상 열지 않게 되면 목록에서도
+빠져야 하므로, 이것은 억제 목록이 아니라 **열거**다. personal-os 스위트 27 파일 / 135 케이스 통과.
+
+| 최종 실측 | 값 |
+| --- | --- |
+| 제품 SHA | `4c0e793b0bb77f4f6bdce2862764b5de03d53d61` |
+| 전체 gate | `VERIFY24=0` (backend 279 / 1,942, dashboard 38 / 263) |
+| 패키지 | `jarvis-runtime-Yi1OYT`, payload 1,543, receipt `619b5f67…`, `integrity=matched`, `deployment_ready=false` |
