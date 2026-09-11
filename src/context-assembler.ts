@@ -166,7 +166,7 @@ export function assembleModelRequest(input: unknown): ModelRequestV1 {
   const included = new Set(snapshot.payload.included_memory_refs);
   const memories: ModelMemoryDelivery[] = [];
   const omitted = [...snapshot.payload.omissions];
-  let used = 0;
+  let used = Buffer.byteLength(parsed.query, "utf8");
   for (const item of parsed.memories) {
     if (item.kind !== "evidence" || !included.has(item.memory_ref) || item.trust === "untrusted") {
       continue;
@@ -185,12 +185,23 @@ export function assembleModelRequest(input: unknown): ModelRequestV1 {
     });
     used += bytes;
   }
-  return {
+  const finish = (): ModelRequestV1 => ({
     query: parsed.query,
     memories,
     omitted,
     budgets: parsed.budgets,
     used_bytes: used,
     remaining_bytes: Math.max(0, parsed.budgets.max_total_bytes - used),
-  };
+  });
+  let request = finish();
+  while (Buffer.byteLength(JSON.stringify(request), "utf8") > parsed.budgets.max_total_bytes && memories.length > 0) {
+    const dropped = memories.pop();
+    if (dropped === undefined) {
+      break;
+    }
+    omitted.push(dropped.memory_ref);
+    used -= dropped.bytes;
+    request = finish();
+  }
+  return request;
 }

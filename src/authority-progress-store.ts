@@ -24,6 +24,10 @@ export abstract class ProgressAuthorityDb extends GjcQuestionAuthorityDb {
 	persistContextSnapshot(value: ContextPersistenceInput, now = timestamp()): StoredContext {
 		return this.personalContext.persistContext(value, now);
 	}
+
+	persistAssembledContextSnapshot(input: unknown, evidence: ContextPersistenceInput["memory_evidence"], now = timestamp()): StoredContext {
+		return this.personalContext.persistAssembledContext(input, evidence, now);
+	}
 	persistRecommendation(value: RecommendationPersistenceInput, now = timestamp()): StoredRecommendation {
 		return this.personalContext.persistRecommendation(value, now);
 	}
