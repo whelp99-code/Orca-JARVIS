@@ -77,4 +77,39 @@ describe("production assembled model session", () => {
     expect(transport.sent).toHaveLength(2);
     db.close();
   });
+
+  it("does not send when the production read fence denies", async () => {
+    const { db, input, evidence } = await ready();
+    const transport = new RecordingModelTransport();
+    let fenceCalls = 0;
+    const produced = createProductionMemoryReference(db, {
+      projection_key: Buffer.alloc(32, 7),
+      model_transport: transport,
+      read_fence: () => { fenceCalls += 1; throw new Error("deny fence"); },
+      transport: { call: async () => undefined as never, close: async () => undefined } as never,
+    });
+    await expect(produced.deliverAssembled(input, evidence, CONTEXT_NOW)).rejects.toThrow(/deny fence/);
+    expect(fenceCalls).toBe(1);
+    expect(transport.sent).toHaveLength(0);
+    db.close();
+  });
+
+  it("retries a thrown disconnect then succeeds", async () => {
+    const { db, input, evidence } = await ready();
+    const transport: ModelTransport & { sent: ModelTransportCapture[] } = {
+      sent: [],
+      async send(capture) {
+        this.sent.push(capture);
+        if (this.sent.length === 1) {
+          throw Object.assign(new Error("socket disconnect"), { retryable: true });
+        }
+        return { accepted: true };
+      },
+    };
+    const session = new AssembledModelSession(db, transport);
+    const delivered = await session.deliver(input, evidence, CONTEXT_NOW);
+    expect(delivered.capture.json).toContain("what now?");
+    expect(transport.sent).toHaveLength(2);
+    db.close();
+  });
 });

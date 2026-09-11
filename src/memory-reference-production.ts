@@ -57,7 +57,11 @@ export function createProductionMemoryReference(authority: AuthorityDb, options:
   const reader = new MemoryReferenceReader({ authority, adapter, membership, clock,
     generation_status: () => transport.call("sb_generation_status", { read_fence: statusFence?.(clock()) ?? null }),
     assert_authorized: at => { readFence?.(at); statusFence?.(at); } });
-  const modelSession = new AssembledModelSession(authority, options.model_transport ?? new RecordingModelTransport());
+  const modelSession = new AssembledModelSession(
+    authority,
+    options.model_transport ?? new RecordingModelTransport(),
+    at => { readFence?.(at); statusFence?.(at); },
+  );
   let closing: Promise<void> | undefined;
   return { reader, deliverAssembled: modelSession.deliver.bind(modelSession), close: (): Promise<void> => {
     if (options.transport !== undefined) return Promise.resolve();

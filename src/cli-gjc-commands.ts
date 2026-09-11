@@ -8,6 +8,8 @@ import { LiveSupervisor, type LiveSupervisorCycle } from "./live-supervisor.js";
 import { PreGjcShadow } from "./pre-gjc-shadow.js";
 import { PERSONAL_OS_CONTROL_CHANNEL_ENV, servePersonalOsCycleChannel } from "./personal-os-cycle-channel.js";
 import { PersonalOsRuntime } from "./personal-os-runtime.js";
+import { createProductionMemoryReference } from "./memory-reference-production.js";
+import type { ContextPersistenceInput } from "./personal-context-store.js";
 
 function outputSync(value: object): void {
   writeSync(process.stdout.fd, `${JSON.stringify({ version: 1, ...value })}\n`);
@@ -86,8 +88,12 @@ export async function executeGjcCommand(
     }
     if (command === "gjc" && subcommand === "dispatch" && argument) {
       const task = objectValue(await jsonFile(argument));
+      const assembled = await assembleDispatchContext(context, task);
       const intent = db.createGjcDispatchFromTask(task, commandNow(context).toISOString());
-      return { ok: true, command: "gjc.dispatch", intent_id: intent };
+      return {
+        ok: true, command: "gjc.dispatch", intent_id: intent,
+        ...(assembled === undefined ? {} : { model_request_bytes: assembled.capture.bytes, model_session_id: assembled.capture.session_id }),
+      };
     }
     if (command === "gjc" && subcommand === "questions") {
       const questions = db.db
@@ -160,4 +166,25 @@ function deliverReport(input: ReportDelivery): void {
   const command = input.context.command === "service" ? `service.${input.context.subcommand}` : "gjc.run";
   output({ ok: true, command, ...(input.interval === undefined ? {} : { interval_ms: input.interval }), ...input.result });
   input.supervisor.acknowledgeReport(report.report_id);
+}
+
+async function assembleDispatchContext(
+  context: CliCommandContext,
+  task: Record<string, unknown>,
+) {
+  const options = context.dependencies.memoryReferenceOptions;
+  const assemble = task["assemble_context"];
+  if (options === undefined || assemble === undefined) return undefined;
+  const evidence = Array.isArray(task["memory_evidence"])
+    ? task["memory_evidence"] as ContextPersistenceInput["memory_evidence"]
+    : [];
+  const runtime = createProductionMemoryReference(context.db, {
+    ...options,
+    clock: () => commandNow(context),
+  });
+  try {
+    return await runtime.deliverAssembled(assemble, evidence, commandNow(context).toISOString());
+  } finally {
+    await runtime.close();
+  }
 }
