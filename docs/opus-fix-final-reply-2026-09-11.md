@@ -102,7 +102,8 @@
 
 | 명령 | 결과 | 덮는 범위 |
 |---|---|---|
-| `npm run verify` | **exit 0**. backend 275파일/1,885 + 275파일/1,911, dashboard 38파일/263 → **588파일 / 4,059테스트**. 고정 시각 acceptance `pre_gjc_ready`/`stopped`/`completion_promoted=true`/`gjc_dispatched=false` | `52db87d` 시점 제품 코드 |
+| `npm run verify` (R2 재개 후, 최종) | **exit 0**. backend 275파일/1,886 + 275파일/1,916, dashboard 38파일/263 → **588파일 / 4,065테스트**. architecture 658모듈·2,444간선·순환 0. 고정 시각 acceptance `pre_gjc_ready`/`stopped`/`completion_promoted=true`/`gjc_dispatched=false` | HEAD `c0c0382`, tree `3397ecb`, 입력 digest `sha256:4a7f7b91…`(1,595파일), 종료 2026-09-11 09:05:20 +09:00 |
+| `npm run verify` (이전) | exit 0. backend 275파일/1,885 + 275파일/1,911, dashboard 38파일/263 → 588파일 / 4,059테스트 | `52db87d` 시점 제품 코드 |
 | `npm run typecheck` / `npm run lint` / `npm run architecture:check` | RC 0 / RC 0 / 657모듈·2,441간선·순환 0 | 현재 HEAD |
 | `npm run test:integration -- <retention 4파일>` | retention 12/12, destination 3/3, consistency 8/8, source-writes 1/1 | 현재 HEAD |
 | `npm run test:integration -- daily-morning-cli-process.test.ts` | 1파일 / **8테스트** 통과 | 현재 HEAD |
@@ -141,8 +142,10 @@ push, merge, deploy, 서비스 재시작, 운영 DB 변경, 운영 교체는 없
 
 ## 증거 경로
 
-- `/home/jm/.cache/jarvis-lineage-qa/verify-final.log` — 전체 verify(exit 0)
-- `/home/jm/.cache/jarvis-lineage-qa/verify-receipts.json` — 실행별 monitor/RC 출처 구분
+- `/home/jm/.cache/jarvis-lineage-qa/verify-provenance.log` — R2 재개 후 전체 verify(exit 0, HEAD `c0c0382`)
+- `/home/jm/.cache/jarvis-lineage-qa/repro-identity/mixed-journal-source-result.json` — 재검증 재현을 수정 빌드에서 재실행한 결과
+- `/home/jm/.cache/jarvis-lineage-qa/verify-final.log` — 이전 전체 verify(exit 0, `52db87d` 범위)
+- `/home/jm/.cache/jarvis-lineage-qa/verify-receipts.json` — 실행별 monitor/RC/종료 시각/입력 digest. 중단한 실행은 killed와 사유로 남겼다. 마지막 run의 빌드 metadata `source.dirty=true`는 추적되지 않는 도구 상태(`.omo/**`)와 `node_modules` 때문이며, tracked 변경은 0이다
 - `/home/jm/.cache/jarvis-lineage-qa/repro-after-fix/reproduce-result.json` — 재현 재실행 결과
 - `/home/jm/.cache/jarvis-lineage-qa/gate-review.md` — 독립 리뷰 3회 보고서
 - `/home/jm/.cache/jarvis-lineage-qa/retention-config-live.log` — 컴파일 CLI `retention-preview` 실측
