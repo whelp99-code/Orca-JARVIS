@@ -19,6 +19,10 @@ export {
 	type MemoryEvidenceInput, type MemoryGapInput, type MemoryInput,
 	type ModelMemoryDelivery, type ModelRequestV1,
 } from "./context-assembler.js";
+export {
+	prepareModelTransport, sendAssembledModelRequest, RecordingModelTransport,
+	type ModelTransport, type ModelTransportCapture, type ModelTransportResult,
+} from "./context-model-transport.js";
 export { CONTEXT_POLICY_CONFIG_INVALID, CONTEXT_POLICY_INPUT_INVALID, CONTEXT_POLICY_REASON_CODES, ContextPolicyError, evaluateContextPolicy,
 	type ContextPolicyDecision, type ContextPolicyErrorCode, type ContextPolicyReasonCode } from "./context-policy.js";
 export {

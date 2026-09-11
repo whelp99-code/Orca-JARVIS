@@ -1,5 +1,6 @@
 import type Database from "better-sqlite3";
-import { assembleModelRequest, assemblePersonalContext } from "./context-assembler.js";
+import { assemblePersonalContext } from "./context-assembler.js";
+import { prepareModelTransport } from "./context-model-transport.js";
 import { PersonalContextStore, type ContextMemoryEvidenceBinding, type ContextPersistenceInput, type StoredContext } from "./personal-context-store.js";
 import { PersonalObservationStore, type StoredObservation } from "./personal-observation-store.js";
 import { PersonalRecommendationActionStore } from "./personal-recommendation-action-store.js";
@@ -49,7 +50,7 @@ export class PersonalContextPersistence {
   }
 
   persistAssembledContext(input: unknown, evidence: ContextPersistenceInput["memory_evidence"], now: string): StoredContext {
-    assembleModelRequest(input);
+    prepareModelTransport(input, `persist:${now}`);
     const snapshot = assemblePersonalContext(input);
     return this.contexts.persist({ context: snapshot, memory_evidence: evidence }, now);
   }
