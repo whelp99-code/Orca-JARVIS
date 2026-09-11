@@ -1,4 +1,5 @@
 import { canonicalize } from "../../src/canonical.js";
+import { withProvableExclusion } from "./provable-exclusion.js";
 import { verifyMemoryDispositionProof } from "../../src/memory-disposition-proof.js";
 import { registerMemoryProviderProofKey } from "../../src/memory-effect-delegation.js";
 import { providerSurfaceInventory, reingressGuardObservations } from "./memory-surface-observations.js";
@@ -161,6 +162,8 @@ export async function correctionPreparedFixture(resolved?: { target: ResolvedMem
     backup_root: join(root,"backups"), restore_root: join(root,"restore") };
   for (const path of Object.values(layout)) mkdirSync(path, { recursive: true, mode: 0o700 });
   const databaseRuntime = new AuthorityDatabaseRuntime(db, { registry_root: join(root,"registry"), watchdog_ms: 5000 });
+  // Declared, not assumed: this case needs an environment where exclusion is provable.
+  withProvableExclusion(databaseRuntime);
   const compactor = new MemoryAuthorityCompactor({ runtime: databaseRuntime,
     scanner: new MemoryManagedSurfaceScanner({ authority: db, layout }), layout, clock: () => current });
   const runtime = { authority: db, spool_root: layout.spool_root, writer, provider,

@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import { withProvableExclusion } from "../fixtures/provable-exclusion.js";
 import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { MemoryAuthorityCompactor } from "../../src/memory-authority-compactor.js";
@@ -119,6 +120,8 @@ it("compacts a cancelled correction with its signed result and actual local scan
     const reopened = new AuthorityDatabaseRuntime(new AuthorityDb(f.db.filename), {
       registry_root: join(f.root, "reopened-registry"), watchdog_ms: 5000,
     });
+    // Declared, not assumed: this case needs an environment where exclusion is provable.
+    withProvableExclusion(reopened);
     try { expect(reopened.activeGeneration().generation).toBe(result.result_generation); }
     finally { await reopened.close(); }
     f.db.db.prepare("UPDATE memory_provider_proof_keys SET state='revoked'").run();
@@ -221,6 +224,8 @@ it("recovers a replacement whose post-rename runtime metadata was never written"
     expect(retired).toHaveLength(1);
     expect(statSync(join(dirname(f.db.filename), retired[0]!)).ino).toBe(before);
     replacement = new AuthorityDatabaseRuntime(f.db, { registry_root: join(f.root, "replacement-registry"), watchdog_ms: 5000 });
+    // Declared, not assumed: this case needs an environment where exclusion is provable.
+    withProvableExclusion(replacement);
     const layout = { spool_root: f.runtime.spool_root, state_root: join(f.root, "state"), dist_root: join(f.root, "dist"),
       backup_root: join(f.root, "backups"), restore_root: join(f.root, "restore") };
     const compactor = new MemoryAuthorityCompactor({ runtime: replacement, layout, clock: f.runtime.clock,

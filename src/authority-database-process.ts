@@ -186,7 +186,12 @@ export class ProcessObservationError extends Error {
  * it commits next. A privileged process can write regardless, which no user-space protocol
  * excludes - that is this contract's stated limit rather than an assumption hidden inside it.
  */
-export function exclusionHole(filename: string): string | null {
+export function exclusionHole(filename: string, observed: OpenInodeObservation): string | null {
+  // A process this user owns but cannot read is a hole, not a silence: nothing about it says it is
+  // not holding this database. Destructive replacement stays refused until the answer is complete.
+  if (observed.unprovable.length !== 0) {
+    return `unreadable_processes:${observed.unprovable.join(",")}`;
+  }
   const source = statSync(filename);
   if (source.uid !== process.getuid?.()) return "owner_outside_this_user";
   if ((source.mode & 0o022) !== 0) return "writable_outside_this_user";

@@ -126,7 +126,8 @@ export function applyRetentionCandidate(
     // excused by sharing a pid. Nothing has been removed yet, which is the point: a write-ahead
     // log deleted beside a connection that is still open would take committed rows with it, so
     // exclusion is proved first and the file is touched second.
-    if (runtime.observeOldInode(BigInt(fence.device), BigInt(fence.inode)).fd_count !== 0) {
+    const closed = runtime.observeOldInode(BigInt(fence.device), BigInt(fence.inode));
+    if (closed.fd_count !== 0) {
       throw new JarvisError("LOCAL_RETENTION_SOURCE_WRITER_ACTIVE");
     }
     // The last question before anything is removed, and the only one a writer cannot evade by
@@ -137,7 +138,8 @@ export function applyRetentionCandidate(
     // Nothing has been removed yet, which is where this belongs: a database another user may
     // write is not proved exclusive by any answer this process can get, so it refuses instead of
     // destroying the log on an answer that does not cover that writer.
-    const hole = exclusionHole(authority.filename);
+    const hole = exclusionHole(authority.filename,
+      runtime.observeExclusion(BigInt(fence.device), BigInt(fence.inode)));
     if (hole !== null) {
       throw new JarvisError("LOCAL_RETENTION_EXCLUSION_UNPROVABLE",
         `LOCAL_RETENTION_EXCLUSION_UNPROVABLE: ${hole}`);

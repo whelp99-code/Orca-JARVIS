@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { withProvableExclusion } from "../fixtures/provable-exclusion.js";
 import { once } from "node:events";
 import {
   existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync,
@@ -226,6 +227,8 @@ it("refuses to install a candidate whose bytes changed after it was verified", a
   const registry = join(dirname(seed.path), "registry-tamper");
   mkdirSync(registry, { recursive: true });
   const runtime = new AuthorityDatabaseRuntime(db, { registry_root: registry, watchdog_ms: 1000 });
+  // Declared, not assumed: this case needs an environment where exclusion is provable.
+  withProvableExclusion(runtime);
   await expect(runtime.quiesce("local_retention",
     async () => applyRetentionCandidate(runtime, application, new Date(LOCAL_CHAIN_AT))))
     .rejects.toThrow("LOCAL_RETENTION_CANDIDATE_MODIFIED");

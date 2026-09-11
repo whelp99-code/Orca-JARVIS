@@ -1,4 +1,5 @@
 // allow: SIZE_OK — one indivisible four-operation real-process lifecycle scenario.
+import { withProvableExclusion } from "../fixtures/provable-exclusion.js";
 import { execFileSync } from "node:child_process";
 import { createHash, createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
 import {
@@ -205,6 +206,8 @@ describe("Task 30 real built-process lifecycle", () => {
       }
       const databaseRuntime = new AuthorityDatabaseRuntime(authority,
         { registry_root: join(root, "jarvis-runtime"), watchdog_ms: 10_000 });
+      // Declared, not assumed: this case needs an environment where exclusion is provable.
+      withProvableExclusion(databaseRuntime);
       const lifecycle = createProductionMemoryLifecycleService(databaseRuntime, {
         provider_instance_id: PROVIDER_ID, launcher_path: launcher,
         provider_config_path: config, contract_path: resolve(CONTRACT),

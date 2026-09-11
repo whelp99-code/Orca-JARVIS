@@ -57,7 +57,10 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
       throw new AuthorityError("MEMORY_SOURCE_WRITER_ACTIVE");
     }
     // Same question, same place: before the log goes, not after.
-    const hole = exclusionHole(authority.filename);
+    // Taken straight from the observer for the same reason writableHolders is: the runtime's
+    // reading of the retired inode is a later, distinct step of this swap.
+    const hole = exclusionHole(authority.filename,
+      runtime.observeExclusion(input.old_device, input.old_inode));
     if (hole !== null) {
       releaseSwapBarrier(authority.filename);
       authority.reopen();

@@ -122,6 +122,15 @@ export class AuthorityDatabaseRuntime {
     return discoverOpenInodeHolders(device, inode, registered);
   }
 
+  /**
+   * The answer a destructive replacement is allowed to act on. Taken straight from the observer
+   * rather than through observeOldInode, because the runtime's reading of the retired inode is a
+   * later, distinct step of a swap and the two must not be one call.
+   */
+  observeExclusion(device: bigint, inode: bigint): OpenInodeObservation {
+    return discoverOpenInodeHolders(device, inode, this.registeredProcesses());
+  }
+
   close(): Promise<void> {
     if (this.activeLeases !== 0 || this.quiescing) {
       return Promise.reject(new JarvisError("AUTHORITY_DATABASE_BUSY"));

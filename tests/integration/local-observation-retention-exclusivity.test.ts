@@ -1,7 +1,8 @@
 import { randomUUID } from "node:crypto";
+import { withProvableExclusion } from "../fixtures/provable-exclusion.js";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
-import { chmodSync, closeSync, existsSync, mkdirSync, openSync, statSync, writeFileSync } from "node:fs";
+import { mkdtempSync, chmodSync, closeSync, existsSync, mkdirSync, openSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createInterface, type Interface } from "node:readline";
 import { afterEach, expect, it } from "vitest";
@@ -76,7 +77,8 @@ async function seeded(): Promise<{
   const registry = join(dirname(db.filename), "registry");
   mkdirSync(registry, { recursive: true });
   return { db, cutoff,
-    runtime: new AuthorityDatabaseRuntime(db, { registry_root: registry, watchdog_ms: 5_000 }) };
+    runtime: withProvableExclusion(
+      new AuthorityDatabaseRuntime(db, { registry_root: registry, watchdog_ms: 5_000 })) };
 }
 
 it("refuses to replace a source another process holds open, then swaps once it lets go",
@@ -276,3 +278,38 @@ it("refuses before removing anything when the source is writable outside this us
   expect(inode(db.filename)).not.toBe(before.inode);
   expect(observations(db)).toBe(before.observations - 1);
 }, 60_000);
+
+it("refuses on an environment whose answer has a hole, and preserves everything it was asked to replace",
+  async () => {
+    // No seam and no injection: this runtime answers with whatever this host's /proc gives, holes
+    // included. The contract is that a destructive replacement does not happen on an answer like
+    // that, so the assertion is about what is still here afterwards.
+    const seeds = await seeded();
+    const db = seeds.db;
+    const cutoff = seeds.cutoff;
+    // The harness declares its environment provable; this case asks the host directly instead.
+    const runtime = new AuthorityDatabaseRuntime(db,
+      { registry_root: mkdtempSync(join(dirname(db.filename), "registry-")), watchdog_ms: 5_000 });
+    const application = await applyLocalObservationRetention(db, cutoff,
+      join(dirname(db.filename), "unprovable-environment-candidate"));
+    const before = { inode: inode(db.filename), observations: observations(db) };
+    const source = statSync(db.filename, { bigint: true });
+    const holes = runtime.observeOldInode(source.dev, source.ino).unprovable.length;
+
+    const attempt = runtime.quiesce("local_retention",
+      async () => applyRetentionCandidate(runtime, application, new Date()));
+    if (holes === 0) {
+      // An environment that can answer completely is allowed to proceed: the contract refuses on
+      // holes, not on principle.
+      await expect(attempt).resolves.toMatchObject({ old_fd_count: 0 });
+      expect(inode(db.filename)).not.toBe(before.inode);
+      return;
+    }
+    await expect(attempt).rejects.toMatchObject({ code: "LOCAL_RETENTION_EXCLUSION_UNPROVABLE" });
+    // Refused before the destructive half: source, rows, log, candidate and no barrier left behind.
+    expect(inode(db.filename)).toBe(before.inode);
+    expect(observations(db)).toBe(before.observations);
+    expect(existsSync(`${db.filename}-wal`)).toBe(true);
+    expect(existsSync(application.operation.candidate_path)).toBe(true);
+    expect(existsSync(swapBarrierPath(db.filename))).toBe(false);
+  }, 60_000);

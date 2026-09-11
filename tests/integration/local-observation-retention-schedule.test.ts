@@ -1,4 +1,5 @@
 import { spawn } from "node:child_process";
+import { withProvableExclusion } from "../fixtures/provable-exclusion.js";
 import { once } from "node:events";
 import { existsSync, mkdirSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -45,7 +46,10 @@ async function fixture(retainMs = 3_600_000): Promise<Fixture> {
     db, config,
     candidate: `${db.filename}.retention-candidate`,
     candidateFile: join(`${db.filename}.retention-candidate`, "candidate.sqlite"),
-    runtime: new AuthorityDatabaseRuntime(db, { registry_root: registry, watchdog_ms: 1000 }),
+    // Declared, not assumed: these cases are about the schedule, so the environment they run the
+    // swap in has to be one where exclusion is provable.
+    runtime: withProvableExclusion(
+      new AuthorityDatabaseRuntime(db, { registry_root: registry, watchdog_ms: 1000 })),
     // An instant whose window ends exactly at the expiry of the seeded chain.
     cutoffAt: new Date(Date.parse(expires) + retainMs),
   };
