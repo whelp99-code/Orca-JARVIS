@@ -8,7 +8,7 @@ import type { RetentionProjection } from "./local-observation-retention-selectio
 import { processStartToken } from "./authority-database-process.js";
 import { syncPath } from "./memory-authority-swap.js";
 import {
-  candidateDigest, candidateStillClaimed, releaseRetentionCandidate, SIDECARS,
+  candidateDigest, candidateStillClaimed, releaseRetentionOperationDirectory, SIDECARS,
   type RetentionClaim, type RetentionSnapshotClaim,
 } from "./local-observation-retention-artifacts.js";
 
@@ -17,8 +17,7 @@ export type {
   RetentionClaim, RetentionSnapshotClaim,
 } from "./local-observation-retention-artifacts.js";
 export {
-  candidateDigest, candidateStillClaimed, releaseProvenArtifact, releaseRetentionCandidate,
-  snapshotStillClaimed,
+  candidateDigest, candidateStillClaimed, releaseRetentionOperationDirectory, snapshotStillClaimed,
 } from "./local-observation-retention-artifacts.js";
 
 export type RetentionOperation = RetentionClaim & RetentionSnapshotClaim & {
@@ -147,7 +146,7 @@ export function abandonRetentionOperation(
   } catch {
     // The record is evidence, not a lock: a failure to write it must not hide the original error.
   }
-  releaseRetentionCandidate(operation.candidate_path);
+  releaseRetentionOperationDirectory(operation.candidate_path);
 }
 
 /** Proof that this operation, and not merely something at that path, owns the candidate. */

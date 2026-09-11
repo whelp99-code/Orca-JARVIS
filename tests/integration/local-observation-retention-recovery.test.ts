@@ -23,7 +23,9 @@ const rows = (db: AuthorityDb, sql: string): unknown[] => db.db.prepare(sql).all
 
 type Seed = {
   readonly path: string;
+  /** The directory the operation owns; the candidate file lives inside it. */
   readonly candidate: string;
+  readonly candidateFile: string;
   readonly cutoff: string;
   readonly observation: string;
   readonly observations: number;
@@ -38,7 +40,8 @@ async function seeded(): Promise<Seed> {
     .pluck().get(chain.observation.id));
   const seed = {
     path: db.filename,
-    candidate: join(dirname(db.filename), "candidate.sqlite"),
+    candidate: join(dirname(db.filename), "operation"),
+    candidateFile: join(dirname(db.filename), "operation", "candidate.sqlite"),
     cutoff,
     observation: chain.observation.id,
     observations: scalar(db, "SELECT COUNT(*) FROM personal_observations"),
@@ -92,7 +95,7 @@ it("explains a process killed with the claim recorded and nothing built", async 
 
   const recovered = recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT));
   expect(recovered.map(item => item.outcome)).toEqual(["removed_partial"]);
-  expect(recovered[0]?.candidate_path).toBe(seed.candidate);
+  expect(recovered[0]?.candidate_path).toBe(seed.candidateFile);
   expect(existsSync(seed.candidate)).toBe(false);
   expect(state(db)).toBe("abandoned");
   expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(seed.observations);
@@ -103,7 +106,7 @@ it("removes a half-copied candidate and leaves the source able to try again", as
   await crashAt(seed, "during_copy");
   const db = reopen(seed);
   expect(state(db)).toBe("preparing");
-  expect(statSync(seed.candidate).size).toBeGreaterThan(0);
+  expect(statSync(seed.candidateFile).size).toBeGreaterThan(0);
 
   const recovered = recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT));
   expect(recovered.map(item => item.outcome)).toEqual(["removed_partial"]);
@@ -134,7 +137,7 @@ it("keeps the source intact when the process dies one step before the swap", asy
   await crashAt(seed, "before_swap");
   const db = reopen(seed);
   expect(state(db)).toBe("verified");
-  const candidate = new AuthorityDb(seed.candidate);
+  const candidate = new AuthorityDb(seed.candidateFile);
   opened.push(candidate);
   // The applied record is written into the candidate, so a candidate that never went live has none.
   expect(scalar(candidate, "SELECT COUNT(*) FROM local_retention_operations")).toBe(0);
@@ -157,7 +160,7 @@ it("leaves an applied database that explains its own history when the process di
       operation_id: expect.stringMatching(/^retention:/) as unknown,
       state: "applied",
       failure_code: null,
-      candidate_path: seed.candidate,
+      candidate_path: seed.candidateFile,
       result_device: live.dev.toString(),
       result_inode: live.ino.toString(),
     }]);
@@ -173,20 +176,21 @@ it("preserves a file at the claimed path that this operation did not create", as
   const seed = await seeded();
   await crashAt(seed, "during_copy");
   const db = reopen(seed);
-  const claimed = statSync(seed.candidate, { bigint: true });
-  // Somebody else's file under the same name. It is created while the candidate still exists and
-  // renamed over it, so it cannot be handed the candidate's inode number; the filesystem is free
-  // to recycle that number for a later file, which is why birth time is recorded with it.
-  const foreign = `${seed.candidate}.foreign`;
+  const claimed = statSync(seed.candidateFile, { bigint: true });
+  // Somebody else's file under the same name, inside the directory this operation owns. It is
+  // created while the candidate still exists and renamed over it, so it cannot be handed the
+  // candidate's inode number; the filesystem may recycle that number later, which is why birth
+  // time is recorded with it.
+  const foreign = `${seed.candidateFile}.foreign`;
   writeFileSync(foreign, "not the candidate\n");
-  rmSync(seed.candidate);
-  renameSync(foreign, seed.candidate);
-  const replaced = statSync(seed.candidate, { bigint: true });
+  rmSync(seed.candidateFile);
+  renameSync(foreign, seed.candidateFile);
+  const replaced = statSync(seed.candidateFile, { bigint: true });
   expect([replaced.ino, replaced.birthtimeNs]).not.toEqual([claimed.ino, claimed.birthtimeNs]);
 
   const recovered = recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT));
   expect(recovered.map(item => item.outcome)).toEqual(["retained_unproven"]);
-  expect(readFileSync(seed.candidate, "utf8")).toBe("not the candidate\n");
+  expect(readFileSync(seed.candidateFile, "utf8")).toBe("not the candidate\n");
   // Unproven work stays unfinished on the record too: nothing here decides what that file is.
   expect(state(db)).toBe("preparing");
 }, 60_000);
@@ -198,7 +202,7 @@ it("refuses to install a candidate whose bytes changed after it was verified", a
     new Date(LOCAL_CHAIN_AT));
 
   // Same path, same inode, same birth time, different bytes.
-  const candidate = new AuthorityDb(seed.candidate);
+  const candidate = new AuthorityDb(seed.candidateFile);
   candidate.db.pragma("user_version = 42");
   candidate.db.pragma("wal_checkpoint(TRUNCATE)");
   candidate.close();

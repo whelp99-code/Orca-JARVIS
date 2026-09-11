@@ -2,12 +2,9 @@ import { existsSync, statSync } from "node:fs";
 import { processStartToken } from "./authority-database-process.js";
 import type { AuthorityDb } from "./db.js";
 import {
-  activeGeneration, candidateStillClaimed, releaseProvenArtifact, snapshotStillClaimed,
+  activeGeneration, candidateStillClaimed, releaseRetentionOperationDirectory,
   type RetentionClaim, type RetentionSnapshotClaim,
 } from "./local-observation-retention-operation.js";
-
-/** Matches the path the apply derives for the snapshot it copies from. */
-const SNAPSHOT_SUFFIX = ".selected-source";
 
 export type RetentionRecovery = {
   readonly operation_id: string;
@@ -74,16 +71,9 @@ export function recoverLocalRetentionOperations(
       report("retained_unproven");
       continue;
     }
-    // Moved, then proved, then unlinked: a replacement that arrives after the check above is not
-    // what gets deleted.
-    if (!releaseProvenArtifact(row.candidate_path, moved => candidateStillClaimed(moved, row))) {
-      report("retained_unproven");
-      continue;
-    }
-    // The snapshot beside it goes on the same proof, with its sidecars: a write-ahead log left
-    // next to a removed database still occupies the name the retry has to claim.
-    const snapshotPath = `${row.candidate_path}${SNAPSHOT_SUFFIX}`;
-    releaseProvenArtifact(snapshotPath, moved => snapshotStillClaimed(moved, row));
+    // The candidate proves the directory is this operation's, and the directory is everything it
+    // owns, so one removal takes the candidate, the snapshot and every sidecar with it.
+    releaseRetentionOperationDirectory(row.candidate_path);
     abandon(source, row.operation_id, row.state === "verified"
       ? "LOCAL_RETENTION_RECOVERED_UNAPPLIED" : "LOCAL_RETENTION_RECOVERED_PARTIAL", now);
     report(row.state === "verified" ? "removed_unapplied" : "removed_partial");

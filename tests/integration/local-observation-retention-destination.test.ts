@@ -58,13 +58,11 @@ it("refuses a destination that already exists and preserves it byte for byte", a
   const occupied = new AuthorityDb(join(root, "existing.sqlite")); opened.push(occupied);
   await occupied.migrate();
   occupied.db.pragma("wal_checkpoint(TRUNCATE)");
-  // A stale sidecar with no main file is still someone else's material: SQLite would recover from
-  // it, so the claim has to refuse rather than build on top of it.
-  const orphan = join(root, "orphan.sqlite");
-  writeFileSync(`${orphan}-wal`, "stale sidecar");
   const before = { text: sha(text), occupied: sha(occupied.filename) };
 
-  for (const destination of [text, occupied.filename, orphan]) {
+  // The operation creates a directory, so any name already taken by a file loses the claim and
+  // keeps its contents.
+  for (const destination of [text, occupied.filename]) {
     await expect(applyLocalObservationRetention(db, cutoff, destination))
       .rejects.toThrow("LOCAL_RETENTION_DESTINATION_INVALID");
   }
@@ -72,8 +70,21 @@ it("refuses a destination that already exists and preserves it byte for byte", a
   expect(sha(text)).toBe(before.text);
   expect(readFileSync(text, "utf8")).toBe("owned existing destination sentinel");
   expect(sha(occupied.filename)).toBe(before.occupied);
-  expect(existsSync(orphan)).toBe(false);
-  expect(readFileSync(`${orphan}-wal`, "utf8")).toBe("stale sidecar");
+});
+
+it("ignores a stale sidecar beside the name and never writes through it", async () => {
+  const { db, root, cutoff } = await source();
+  // A sidecar with no database was dangerous while the artifact was a file at that name: SQLite
+  // would have recovered from it. The artifacts live inside the directory now, so it is somebody
+  // else's file next door - to be left exactly as it is.
+  const destination = join(root, "beside-a-sidecar");
+  writeFileSync(`${destination}-wal`, "stale sidecar");
+
+  const applied = await applyLocalObservationRetention(db, cutoff, destination);
+
+  expect(applied.build.fresh_path).toBe(join(destination, "candidate.sqlite"));
+  expect(lstatSync(destination).isDirectory()).toBe(true);
+  expect(readFileSync(`${destination}-wal`, "utf8")).toBe("stale sidecar");
 });
 
 // Two callers naming the same destination must not both believe they own it. The claim is taken
@@ -89,7 +100,7 @@ it("gives exactly one of two racing calls the destination", async () => {
   const rejected = results.find(result => result.status === "rejected");
   expect(String(rejected instanceof Object && "reason" in rejected ? rejected.reason : ""))
     .toContain("LOCAL_RETENTION_DESTINATION_INVALID");
-  const rebuilt = new AuthorityDb(destination); opened.push(rebuilt);
+  const rebuilt = new AuthorityDb(join(destination, "candidate.sqlite")); opened.push(rebuilt);
   expect(observations(rebuilt)).toBe(0);
   expect(observations(db)).toBe(1);
 });

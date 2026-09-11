@@ -216,7 +216,7 @@ it("applies the selector through the rebuild adapter without writing the source"
   expect(writes(db)).toBe(before + 2);
   expect(operationStates(db)).toEqual(["verified"]);
   expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(observations);
-  const rebuilt = new AuthorityDb(fresh); opened.push(rebuilt);
+  const rebuilt = new AuthorityDb(applied.build.fresh_path); opened.push(rebuilt);
   expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_observations")).toBe(0);
   expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_recommendations")).toBe(0);
 });
@@ -238,7 +238,7 @@ it("does not remove a group the selector retained for a live notification", asyn
   // attempt and the update that records the verdict. Nothing in the data tables moves.
   expect(writes(db)).toBe(before + 2);
   expect(operationStates(db)).toEqual(["verified"]);
-  const rebuilt = new AuthorityDb(fresh); opened.push(rebuilt);
+  const rebuilt = new AuthorityDb(applied.build.fresh_path); opened.push(rebuilt);
   expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_observations")).toBe(1);
   expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_recommendations")).toBe(1);
   expect(scalar(rebuilt, "SELECT COUNT(*) FROM notification_intents")).toBe(1);

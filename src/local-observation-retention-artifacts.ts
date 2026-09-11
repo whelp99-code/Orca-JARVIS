@@ -1,5 +1,6 @@
-import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
+import { dirname } from "node:path";
 import { JarvisError } from "./jarvis-error.js";
 
 export const SIDECARS = ["-wal", "-shm", "-journal"] as const;
@@ -65,41 +66,12 @@ export function candidateDigest(candidatePath: string): string {
 }
 
 /**
- * Removes an artifact this operation can still prove is its own, by moving it first.
+ * Removes the directory the operation writes inside, which is everything it owns.
  *
- * Checking a pathname and then deleting that pathname are two operations, and between them the
- * file can be replaced; the deletion would then fall on somebody else's file. Renaming is atomic,
- * so the object that moves is the object that gets inspected and unlinked. A file that turns out
- * not to be ours is put back and left alone.
- *
- * The name it moves to is random and used once. A fixed name would be predictable, and rename
- * replaces its destination silently, so anything sitting there would be destroyed by the move
- * itself - the same fault this function exists to avoid. A crash between the move and the unlink
- * leaves that random name behind rather than removing a file this operation could not prove.
- *
- * The sidecars are removed by name. The path is claimed exclusively for this operation and never
- * handed out, so the names beside it are this operation's namespace; giving each sidecar its own
- * recorded identity, or isolating every artifact in an operation-owned directory, is the stronger
- * form and is recorded as follow-up rather than implied here.
+ * The candidate and the snapshot live in a directory this operation created, so releasing is one
+ * removal of a name nobody else writes to. There is no file beside them to guess at and no second
+ * step for a crash to land between.
  */
-export function releaseProvenArtifact(path: string, proven: (moved: string) => boolean): boolean {
-  const moving = `${path}.releasing-${randomUUID()}`;
-  try {
-    renameSync(path, moving);
-  } catch {
-    return false;
-  }
-  if (!proven(moving)) {
-    try { renameSync(moving, path); } catch { /* left under the moved name rather than deleted */ }
-    return false;
-  }
-  for (const suffix of SIDECARS) rmSync(`${path}${suffix}`, { force: true });
-  rmSync(moving, { force: true });
-  return true;
-}
-
-/** Removes the candidate and its sidecars. Callers own that path. */
-export function releaseRetentionCandidate(candidatePath: string): void {
-  for (const suffix of SIDECARS) rmSync(`${candidatePath}${suffix}`, { force: true });
-  rmSync(candidatePath, { force: true });
+export function releaseRetentionOperationDirectory(candidatePath: string): void {
+  rmSync(dirname(candidatePath), { recursive: true, force: true });
 }

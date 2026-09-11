@@ -24,6 +24,7 @@ type Fixture = {
   readonly db: AuthorityDb;
   readonly config: string;
   readonly candidate: string;
+  readonly candidateFile: string;
   readonly runtime: AuthorityDatabaseRuntime;
   readonly cutoffAt: Date;
 };
@@ -43,6 +44,7 @@ async function fixture(retainMs = 3_600_000): Promise<Fixture> {
   return {
     db, config,
     candidate: `${db.filename}.retention-candidate`,
+    candidateFile: join(`${db.filename}.retention-candidate`, "candidate.sqlite"),
     runtime: new AuthorityDatabaseRuntime(db, { registry_root: registry, watchdog_ms: 1000 }),
     // An instant whose window ends exactly at the expiry of the seeded chain.
     cutoffAt: new Date(Date.parse(expires) + retainMs),
@@ -142,8 +144,8 @@ it("stops the next cycle instead of piling candidates beside work it cannot acco
     lines.close();
     child.kill("SIGKILL");
     await once(child, "exit");
-    rmSync(seeded.candidate);
-    writeFileSync(seeded.candidate, "someone else's file\n");
+    rmSync(seeded.candidateFile);
+    writeFileSync(seeded.candidateFile, "someone else's file\n");
 
     const cycle = await service(seeded,
       { config: seeded.config, runtime: seeded.runtime, now: () => seeded.cutoffAt }).cycle();

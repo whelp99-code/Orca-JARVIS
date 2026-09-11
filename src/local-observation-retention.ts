@@ -1,6 +1,4 @@
-import {
-  closeSync, existsSync, openSync, realpathSync, rmSync,
-} from "node:fs";
+import { closeSync, mkdirSync, openSync, realpathSync, rmSync } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type Database from "better-sqlite3";
 import { AuthorityDb } from "./db.js";
@@ -16,8 +14,7 @@ import {
   assertCandidateMatchesCopyPlan,
 } from "./local-observation-retention-candidate.js";
 import {
-  abandonRetentionOperation, beginRetentionOperation, markRetentionOperationVerified,
-  releaseRetentionCandidate, type RetentionOperation,
+  abandonRetentionOperation, beginRetentionOperation, markRetentionOperationVerified, type RetentionOperation,
 } from "./local-observation-retention-operation.js";
 import { buildFreshAuthority, type FreshAuthorityBuild } from "./memory-authority-fresh-builder.js";
 
@@ -31,7 +28,12 @@ export type LocalObservationRetentionApplication = {
   readonly operation: RetentionOperation;
 };
 
-const DESTINATION_SIDECARS = ["-wal", "-shm", "-journal"] as const;
+/** Where an operation keeps what it writes. The candidate is what a swap renames into place. */
+export type RetentionPaths = {
+  readonly directory: string;
+  readonly candidate: string;
+  readonly snapshot: string;
+};
 
 /**
  * Lists the removed recommendations a notification still addresses.
@@ -66,43 +68,40 @@ export function verifyLocalObservationRetentionCandidate(
 }
 
 /**
- * Takes exclusive ownership of the destination name before anything writes through it.
+ * Takes exclusive ownership of a directory that holds everything this operation writes.
  *
  * String inequality is not file inequality: `/dir/./authority.sqlite`, a relative spelling and a
- * symlink all name the source, and the rebuild adapter removes its destination. The claim resolves
- * the real path, refuses the source's own file, refuses a name whose SQLite sidecars already exist,
- * and then creates the file with O_EXCL so a second caller racing for the same name loses instead
- * of sharing it. Nothing that existed before this call is ever removed.
+ * symlink all name the source. The claim resolves the real parent, refuses the source's own file,
+ * and then creates the directory, which fails if anything already holds that name. Everything the
+ * operation writes lives inside it, so no file that existed before this call can sit where an
+ * artifact goes, and releasing is removing one directory rather than guessing at names beside it.
  */
-function claimRetentionDestination(source: AuthorityDb, freshPath: string): string {
+function claimRetentionOperation(source: AuthorityDb, freshPath: string): RetentionPaths {
   if (typeof freshPath !== "string" || freshPath.trim().length === 0) {
     throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
   }
   const absolute = resolve(freshPath);
-  let destination: string;
-  let sourcePath: string;
+  let directory: string;
   try {
-    destination = join(realpathSync(dirname(absolute)), basename(absolute));
-    sourcePath = realpathSync(source.filename);
+    directory = join(realpathSync(dirname(absolute)), basename(absolute));
+    if (directory === realpathSync(source.filename)) {
+      throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
+    }
+    mkdirSync(directory, { mode: 0o700 });
   } catch {
     throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
   }
-  if (destination === sourcePath
-    || DESTINATION_SIDECARS.some(suffix => existsSync(`${destination}${suffix}`))) {
-    throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
-  }
-  try {
-    closeSync(openSync(destination, "wx", 0o600));
-  } catch {
-    throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
-  }
-  return destination;
+  const paths = { directory, candidate: join(directory, "candidate.sqlite"),
+    snapshot: join(directory, "snapshot.sqlite") };
+  // The candidate file exists from the claim so the operation record can identify it before the
+  // build writes through it; the build opens this file rather than creating its own.
+  closeSync(openSync(paths.candidate, "wx", 0o600));
+  return paths;
 }
 
-/** Removes only the file this call created, plus the sidecars the build put beside it. */
-function releaseRetentionDestination(destination: string): void {
-  for (const suffix of DESTINATION_SIDECARS) rmSync(`${destination}${suffix}`, { force: true });
-  rmSync(destination, { force: true });
+/** Removes the directory this call created, and only that. */
+function releaseRetentionOperation(directory: string): void {
+  rmSync(directory, { recursive: true, force: true });
 }
 
 /**
@@ -136,7 +135,6 @@ async function captureSelectedSource(source: AuthorityDb, snapshotPath: string):
   try {
     await source.db.backup(snapshotPath);
   } catch {
-    releaseRetentionDestination(snapshotPath);
     throw new JarvisError("LOCAL_RETENTION_SOURCE_SNAPSHOT_FAILED");
   }
   return new AuthorityDb(snapshotPath);
@@ -147,33 +145,27 @@ export async function applyLocalObservationRetention(
 ): Promise<LocalObservationRetentionApplication> {
   let fence = retentionSourceFence(source);
   assertRetentionCutoff(cutoffValue);
-  const destination = claimRetentionDestination(source, freshPath);
-  const snapshotPath = `${destination}.selected-source`;
-  // Claimed exclusively like the candidate: a file already sitting there belongs to somebody else
-  // and must not be written over or, on failure, deleted. Until the operation row exists there is
-  // nothing to explain a leftover candidate either, so a failure here takes it back.
-  let claimed = false;
+  const paths = claimRetentionOperation(source, freshPath);
   let snapshot: Awaited<ReturnType<typeof captureSelectedSource>>;
   try {
-    claimRetentionDestination(source, snapshotPath);
-    claimed = true;
-    snapshot = await captureSelectedSource(source, snapshotPath);
+    snapshot = await captureSelectedSource(source, paths.snapshot);
   } catch (error) {
-    if (claimed) releaseRetentionDestination(snapshotPath);
-    releaseRetentionDestination(destination);
+    // Nothing is recorded yet, so a failure here takes the whole directory with it.
+    releaseRetentionOperation(paths.directory);
     throw error;
   }
   let operation: RetentionOperation | undefined;
   try {
     const selection = selectLocalObservationRetention(snapshot.db, cutoffValue);
     // Recorded before the build so an interrupted run leaves evidence rather than a bare file.
-    operation = beginRetentionOperation(source, destination, snapshotPath, selection.blocked, now);
+    operation = beginRetentionOperation(source, paths.candidate, paths.snapshot, selection.blocked, now);
     fence = ownWrite(fence, operation.recorded_changes);
-    const build = await buildFreshAuthority(snapshot, destination, {
+    const build = await buildFreshAuthority(snapshot, paths.candidate, {
       blocked_projections: selection.blocked, sensitive_material: [], destination: "claimed",
     });
     // The candidate must equal what the copier's own plan produces from this snapshot.
-    assertCandidateMatchesCopyPlan(snapshot, destination, selection.blocked, build.result_generation);
+    assertCandidateMatchesCopyPlan(snapshot, paths.candidate, selection.blocked,
+      build.result_generation);
     const application = { selection, build, source_fence: fence, operation };
     verifyLocalObservationRetentionCandidate(source, application);
     return { ...application,
@@ -182,12 +174,15 @@ export async function applyLocalObservationRetention(
     const moved = retentionSourceMoved(source, fence);
     const code = moved ? "LOCAL_RETENTION_SOURCE_CHANGED"
       : error instanceof Error ? error.message : "LOCAL_RETENTION_APPLY_FAILED";
-    if (operation === undefined) releaseRetentionCandidate(destination);
+    if (operation === undefined) releaseRetentionOperation(paths.directory);
     else abandonRetentionOperation(source, operation, code, now);
     if (moved) throw new JarvisError("LOCAL_RETENTION_SOURCE_CHANGED");
     throw error;
   } finally {
     if (snapshot.db.open) snapshot.close();
-    releaseRetentionDestination(snapshotPath);
+    // The snapshot has done its work; the candidate stays until it is installed or recovered.
+    for (const suffix of ["", "-wal", "-shm", "-journal"]) {
+      rmSync(`${paths.snapshot}${suffix}`, { force: true });
+    }
   }
 }

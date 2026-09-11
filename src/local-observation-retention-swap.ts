@@ -5,6 +5,7 @@ import type { AuthorityDatabaseRuntime } from "./authority-database-runtime.js";
 import { JarvisError } from "./jarvis-error.js";
 import {
   assertCandidateUnchanged, assertRetentionOperationOwned, recordAppliedRetentionOperation,
+  releaseRetentionOperationDirectory,
 } from "./local-observation-retention-operation.js";
 import { retentionSourceMoved,
   type LocalObservationRetentionApplication } from "./local-observation-retention.js";
@@ -88,6 +89,8 @@ export function applyRetentionCandidate(
     throw new JarvisError("LOCAL_RETENTION_SWAP_RESULT_INVALID");
   }
   if (observed.fd_count !== 0) throw new JarvisError("LOCAL_RETENTION_OLD_DATABASE_FD_ACTIVE");
+  // The candidate has become the live database, so the directory that held it is empty and ours.
+  releaseRetentionOperationDirectory(operation.candidate_path);
   return {
     operation_id: operation.operation_id,
     result_generation: build.result_generation,

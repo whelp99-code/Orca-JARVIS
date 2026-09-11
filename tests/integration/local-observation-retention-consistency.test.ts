@@ -299,12 +299,13 @@ it("ignores a source swapped around the adapter's attach and keeps the unselecte
   // The copy read the snapshot taken from this connection, so the swap changed nothing.
   expect(swaps.count()).toBeGreaterThan(0);
   expect(application.selection.blocked).toEqual([]);
-  const candidate = new AuthorityDb(destination); opened.push(candidate);
+  const candidate = new AuthorityDb(application.build.fresh_path); opened.push(candidate);
   expect(count(candidate, "gjc_intents")).toBe(1);
   expect(String(candidate.db.prepare("SELECT payload_json FROM gjc_intents").pluck().get()))
     .toBe(JSON.stringify({ marker: "must-keep" }));
   expect(marked(source)).toBe(JSON.stringify({ marker: "must-keep" }));
-  expect(existsSync(`${destination}.selected-source`)).toBe(false);
+  // The snapshot lived inside the operation's own directory and is gone with its work done.
+  expect(existsSync(join(destination, "snapshot.sqlite"))).toBe(false);
 });
 
 // A row whose own key happens to reuse a blocked identifier is still not a selected removal.
@@ -329,7 +330,7 @@ it("keeps an unrelated row whose key reuses a blocked id when the source is swap
   } finally { swaps.restore(); }
 
   expect(application.selection.blocked).toHaveLength(3);
-  const candidate = new AuthorityDb(f.destination); opened.push(candidate);
+  const candidate = new AuthorityDb(application.build.fresh_path); opened.push(candidate);
   // The selected group is gone; the decoy, which only reuses the id as its own key, is not.
   expect(count(candidate, "personal_recommendations")).toBe(0);
   expect(Number(candidate.db.prepare(
