@@ -74,6 +74,24 @@ it("rejects a candidate that lost an audit row naming a removed context", async 
     cut.build.result_generation)).toThrow("LOCAL_RETENTION_CANDIDATE_MISSING_ROW");
 }, 60_000);
 
+it("rejects a candidate whose INTEGER differs only beyond the safe range", async () => {
+  const keep = await built(false);
+  // Two integers that JavaScript rounds to the same number. The column is a real INTEGER, so the
+  // rounding happens on the way out of SQLite rather than in a text literal.
+  unlock(keep.source, "local_timeline_subjects");
+  expect(keep.source.db.prepare("UPDATE local_timeline_subjects SET generation=9007199254740992")
+    .run().changes).toBeGreaterThan(0);
+  const candidate = new AuthorityDb(keep.destination); opened.push(candidate);
+  unlock(candidate, "local_timeline_subjects");
+  expect(candidate.db.prepare("UPDATE local_timeline_subjects SET generation=9007199254740993")
+    .run().changes).toBeGreaterThan(0);
+  candidate.close();
+
+  expect(() => assertCandidateMatchesCopyPlan(keep.source, keep.destination, [],
+    keep.build.result_generation))
+    .toThrow(/LOCAL_RETENTION_CANDIDATE_(FOREIGN_ROW|MISSING_ROW)/);
+}, 60_000);
+
 // Values that differ only by separators, quoting, emptiness, type or precision must not collide.
 it.each([
   ["separator and token", `UPDATE gjc_intents SET payload_json='{"a":"x s:y"}'`],

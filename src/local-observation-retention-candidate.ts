@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import type Database from "better-sqlite3";
 import { rmSync } from "node:fs";
 import { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
@@ -35,6 +36,17 @@ function rowKey(row: unknown): string {
     hash.update(`${tag}${Buffer.byteLength(String(encoded), "utf8")}:${encoded}\u0000`);
   }
   return hash.digest("hex");
+}
+
+/**
+ * Reads comparison rows with exact integers.
+ *
+ * Without this, SQLite integers arrive as JavaScript numbers and two different values above
+ * 2^53 round to the same one, so a candidate could differ from the source in an INTEGER column and
+ * still produce an identical row key. Both sides of every comparison read through here.
+ */
+function exact(database: AuthorityDb, sql: string): Database.Statement {
+  return database.db.prepare(sql).safeIntegers(true);
 }
 
 function tablesOf(database: AuthorityDb): readonly string[] {
@@ -79,13 +91,13 @@ function expectedRows(
   blocked: readonly SuppressedProjection[],
 ): Map<string, number> {
   const selected = columns.map(column => `${copyExpression(table, column)} AS ${quote(column)}`).join(",");
-  const kept = multiset(snapshot.db.prepare(
+  const kept = multiset(exact(snapshot,
     `SELECT ${selected} FROM ${quote(table)} AS source_row ${copyFilter(table, columns)}`).iterate());
   for (const projection of blocked) {
     for (const mutation of suppressedRowMutations(projection)) {
       if (mutation.table !== table) continue;
       if (mutation.update !== undefined) throw new JarvisError("LOCAL_RETENTION_PLAN_UNSUPPORTED");
-      for (const row of snapshot.db.prepare(
+      for (const row of exact(snapshot,
         `SELECT ${selected} FROM ${quote(table)} AS source_row WHERE ${mutation.where}`)
         .iterate(...mutation.params)) {
         const key = rowKey(row);
@@ -150,9 +162,9 @@ export function assertCandidateMatchesCopyPlan(
       if (columns.length === 0) continue;
       const list = (table === SELF_APPLIED ? SELF_APPLIED_IDENTITY : columns).map(quote).join(",");
       const expected = table === SELF_APPLIED
-        ? multiset(snapshot.db.prepare(`SELECT ${list} FROM ${quote(table)}`).iterate())
+        ? multiset(exact(snapshot, `SELECT ${list} FROM ${quote(table)}`).iterate())
         : expectedRows(snapshot, table, columns, blocked);
-      for (const row of candidate.db.prepare(`SELECT ${list} FROM ${quote(table)}`).iterate()) {
+      for (const row of exact(candidate, `SELECT ${list} FROM ${quote(table)}`).iterate()) {
         const key = rowKey(row);
         const remaining = expected.get(key);
         if (remaining === undefined || remaining === 0) {
