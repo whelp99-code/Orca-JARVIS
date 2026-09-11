@@ -2,6 +2,11 @@ import { JarvisError, deterministic, json, sha, timestamp, type Row } from "./au
 import { GjcDispatchAuthorityDb } from "./gjc-dispatch-store.js";
 
 export abstract class GjcIntentAuthorityDb extends GjcDispatchAuthorityDb {
+	gjcIntentIdForKey(idempotencyKey: string): string | undefined {
+		const row = this.db.prepare("SELECT intent_id FROM gjc_intents WHERE idempotency_key=?").get(idempotencyKey) as Row | undefined;
+		return typeof row?.intent_id === "string" ? row.intent_id : undefined;
+	}
+
 	createGjcIntent(
 		kind: "sync" | "dispatch" | "answer",
 		payload: unknown,

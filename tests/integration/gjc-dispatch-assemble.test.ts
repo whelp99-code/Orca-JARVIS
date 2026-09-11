@@ -1,0 +1,86 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
+import { describe, expect, it } from "vitest";
+import { executeGjcCommand } from "../../src/cli-gjc-commands.js";
+import { RecordingModelTransport } from "../../src/index.js";
+import { gjcTaskFor, seedGjcDispatch } from "../fixtures/gjc-dispatch-fixture.js";
+import { contextAssemblerInput, CONTEXT_NOW } from "../fixtures/context-assembler-input.js";
+import { assemblePersonalContext } from "../../src/index.js";
+import { initialized } from "../helpers.js";
+
+function writeJson(value: unknown): string {
+  const dir = mkdtempSync(join(tmpdir(), "gjc-dispatch-"));
+  const path = join(dir, "task.json");
+  writeFileSync(path, JSON.stringify(value));
+  return path;
+}
+
+describe("gjc.dispatch assemble envelope", () => {
+  it("does not send when extra keys sit on the exact-key task", async () => {
+    const db = await initialized();
+    db.configureGjc(process.cwd(), "s", true);
+    const source = seedGjcDispatch(db);
+    const task = { ...gjcTaskFor(db, source, "extra-keys"), assemble_context: contextAssemblerInput() };
+    const transport = new RecordingModelTransport();
+    await expect(executeGjcCommand({
+      args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
+      argument: writeJson(task), fourth: undefined, fifth: undefined, sixth: undefined, db,
+      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+    } as never)).rejects.toMatchObject({ code: "GJC_DISPATCH_SCHEMA_INVALID" });
+    expect(transport.sent).toHaveLength(0);
+    db.close();
+  });
+
+  it("sends once from a nested envelope after schema and auth pass", async () => {
+    const db = await initialized();
+    db.configureGjc(process.cwd(), "s", true);
+    const source = seedGjcDispatch(db);
+    const input = contextAssemblerInput();
+    for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
+      db.persistObservation(observation, CONTEXT_NOW);
+    }
+    const snapshot = assemblePersonalContext(input);
+    const memory = snapshot.evidence.find(item => item.kind === "confirmed_memory");
+    if (memory === undefined) throw new Error("memory");
+    const transport = new RecordingModelTransport();
+    const result = await executeGjcCommand({
+      args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
+      argument: writeJson({
+        task: gjcTaskFor(db, source, "envelope-ok"),
+        assemble_context: input,
+        memory_evidence: [{
+          memory_ref: snapshot.payload.included_memory_refs[0] ?? memory.evidence_id,
+          evidence_id: memory.evidence_id,
+          source_id: memory.source_id,
+          digest: memory.digest,
+          observed_at: memory.observed_at,
+          fresh_until: snapshot.expires_at,
+        }],
+      }),
+      fourth: undefined, fifth: undefined, sixth: undefined, db,
+      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+    } as never);
+    expect(result).toMatchObject({ ok: true, command: "gjc.dispatch" });
+    expect(transport.sent).toHaveLength(1);
+    db.close();
+  });
+
+  it("does not send a duplicate idempotency key", async () => {
+    const db = await initialized();
+    db.configureGjc(process.cwd(), "s", true);
+    const source = seedGjcDispatch(db);
+    const task = gjcTaskFor(db, source, "dup-key");
+    db.createGjcDispatchFromTask(task);
+    const transport = new RecordingModelTransport();
+    const result = await executeGjcCommand({
+      args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
+      argument: writeJson({ task, assemble_context: contextAssemblerInput() }),
+      fourth: undefined, fifth: undefined, sixth: undefined, db,
+      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+    } as never);
+    expect(result).toMatchObject({ ok: true, duplicate: true });
+    expect(transport.sent).toHaveLength(0);
+    db.close();
+  });
+});

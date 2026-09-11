@@ -112,4 +112,17 @@ describe("production assembled model session", () => {
     expect(transport.sent).toHaveLength(2);
     db.close();
   });
+
+  it("re-authorizes before retry so a mid-flight revoke does not send twice", async () => {
+    const { db, input, evidence } = await ready();
+    let authorizes = 0;
+    const transport = new SequenceTransport([{ accepted: false, reason: "unavailable" }, { accepted: true }]);
+    const session = new AssembledModelSession(db, transport, () => {
+      authorizes += 1;
+      if (authorizes === 2) throw new Error("revoked after first send");
+    });
+    await expect(session.deliver(input, evidence, CONTEXT_NOW)).rejects.toThrow(/revoked after first send/);
+    expect(transport.sent).toHaveLength(1);
+    db.close();
+  });
 });

@@ -8,7 +8,8 @@ import { LiveSupervisor, type LiveSupervisorCycle } from "./live-supervisor.js";
 import { PreGjcShadow } from "./pre-gjc-shadow.js";
 import { PERSONAL_OS_CONTROL_CHANNEL_ENV, servePersonalOsCycleChannel } from "./personal-os-cycle-channel.js";
 import { PersonalOsRuntime } from "./personal-os-runtime.js";
-import { createProductionMemoryReference } from "./memory-reference-production.js";
+import { AssembledModelSession } from "./assembled-model-session.js";
+import { RecordingModelTransport } from "./context-model-transport.js";
 import type { ContextPersistenceInput } from "./personal-context-store.js";
 
 function outputSync(value: object): void {
@@ -87,9 +88,16 @@ export async function executeGjcCommand(
       return { ok: true, command: "gjc.sync", intent_id: db.createGjcIntent("sync", payload, values.idempotency_key) };
     }
     if (command === "gjc" && subcommand === "dispatch" && argument) {
-      const task = objectValue(await jsonFile(argument));
-      const assembled = await assembleDispatchContext(context, task);
-      const intent = db.createGjcDispatchFromTask(task, commandNow(context).toISOString());
+      const envelope = objectValue(await jsonFile(argument));
+      const parsed = parseDispatchEnvelope(envelope);
+      const now = commandNow(context).toISOString();
+      db.assertGjcDispatchTask(parsed.task, now);
+      const existing = db.gjcIntentIdForKey(String(parsed.task.idempotency_key));
+      if (existing !== undefined) {
+        return { ok: true, command: "gjc.dispatch", intent_id: existing, duplicate: true };
+      }
+      const assembled = await assembleDispatchContext(context, parsed);
+      const intent = db.createGjcDispatchFromTask(parsed.task, now);
       return {
         ok: true, command: "gjc.dispatch", intent_id: intent,
         ...(assembled === undefined ? {} : { model_request_bytes: assembled.capture.bytes, model_session_id: assembled.capture.session_id }),
@@ -168,23 +176,33 @@ function deliverReport(input: ReportDelivery): void {
   input.supervisor.acknowledgeReport(report.report_id);
 }
 
+function parseDispatchEnvelope(raw: Record<string, unknown>): {
+  task: Record<string, unknown>;
+  assemble_context: unknown;
+  memory_evidence: ContextPersistenceInput["memory_evidence"];
+} {
+  if (typeof raw.task === "object" && raw.task !== null && !Array.isArray(raw.task)) {
+    const extra = Object.keys(raw).filter(key => key !== "task" && key !== "assemble_context" && key !== "memory_evidence");
+    if (extra.length > 0) throw new JarvisError("GJC_DISPATCH_SCHEMA_INVALID");
+    const evidence = Array.isArray(raw.memory_evidence)
+      ? raw.memory_evidence as ContextPersistenceInput["memory_evidence"]
+      : [];
+    return { task: raw.task as Record<string, unknown>, assemble_context: raw.assemble_context, memory_evidence: evidence };
+  }
+  return { task: raw, assemble_context: undefined, memory_evidence: [] };
+}
+
 async function assembleDispatchContext(
   context: CliCommandContext,
-  task: Record<string, unknown>,
+  parsed: { assemble_context: unknown; memory_evidence: ContextPersistenceInput["memory_evidence"] },
 ) {
+  if (parsed.assemble_context === undefined) return undefined;
   const options = context.dependencies.memoryReferenceOptions;
-  const assemble = task["assemble_context"];
-  if (options === undefined || assemble === undefined) return undefined;
-  const evidence = Array.isArray(task["memory_evidence"])
-    ? task["memory_evidence"] as ContextPersistenceInput["memory_evidence"]
-    : [];
-  const runtime = createProductionMemoryReference(context.db, {
-    ...options,
-    clock: () => commandNow(context),
-  });
-  try {
-    return await runtime.deliverAssembled(assemble, evidence, commandNow(context).toISOString());
-  } finally {
-    await runtime.close();
-  }
+  if (options === undefined) throw new JarvisError("MEMORY_REFERENCE_OPTIONS_REQUIRED");
+  const session = new AssembledModelSession(
+    context.db,
+    options.model_transport ?? new RecordingModelTransport(),
+    at => { options.read_fence?.(at); options.status_fence?.(at); },
+  );
+  return session.deliver(parsed.assemble_context, parsed.memory_evidence, commandNow(context).toISOString());
 }
