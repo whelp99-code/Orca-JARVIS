@@ -62,6 +62,9 @@ export async function executeMemoryIntake(context: CliCommandContext): Promise<R
     }, stored: false };
   } catch (error) {
     if (error instanceof MemoryCandidateError) throw new JarvisError(error.code);
+    // A refusal that already names its reason keeps it: an operator told the intake failed cannot
+    // tell a hidden task from a malformed document, and those need different answers.
+    if (error instanceof JarvisError) throw error;
     throw new JarvisError("MEMORY_CANDIDATE_INTAKE_FAILED");
   }
 }

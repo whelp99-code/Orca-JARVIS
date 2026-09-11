@@ -20,6 +20,8 @@ import { createDashboardSession } from "../../src/dashboard/session.js";
 import { ControlPlane, signCommandApproval } from "../../src/control-plane.js";
 import { inferredMemoryInput, memoryPolicy, MEMORY_NOW, verifiedMemoryInput } from "../fixtures/memory-candidate-fixture.js";
 import { closeMemoryDatabase, memoryDatabase } from "../fixtures/memory-candidate-store.js";
+import { candidateTaskSource } from "../../src/memory-candidate-task-source.js";
+import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
 import { localKey } from "../helpers.js";
 
 async function fixture(statement?: string) {
@@ -220,4 +222,31 @@ describe("memory candidate CLI intake", () => {
       expect(readdirSync(f.roots.candidate_review_spool_root)).toEqual([]);
     } finally { closeMemoryDatabase(f.database); }
   });
+});
+
+describe("memory candidate CLI intake with a task source", () => {
+  const TASK = "task:cli-intake";
+
+  it("binds the task the command names, and refuses one the owner hid", async () => {
+    const visible = await fixture();
+    try {
+      const result = await visible.run(["memory", "classify", visible.file, visible.policy, TASK]) as
+        { readonly candidate: { readonly candidate_id: string; readonly task_source: string } };
+      expect(result.candidate.task_source).toBe(TASK);
+      expect(candidateTaskSource(visible.database.authority, result.candidate.candidate_id)).toBe(TASK);
+    } finally { closeMemoryDatabase(visible.database); }
+
+    const hidden = await fixture();
+    try {
+      new MemoryProjectionAuthority(hidden.database.authority).quarantineUnresolved(
+        { kind: "task_timeline", id: TASK, component_id: TASK }, hidden.now);
+      await expect(hidden.run(["memory", "classify", hidden.file, hidden.policy, TASK]))
+        .rejects.toThrow("MEMORY_CANDIDATE_TASK_SOURCE_SUPPRESSED");
+      // The command leaves nothing behind: no candidate, no binding.
+      expect(hidden.database.authority.db.prepare("SELECT COUNT(*) FROM memory_candidates")
+        .pluck().get()).toBe(0);
+      expect(hidden.database.authority.db.prepare(
+        "SELECT COUNT(*) FROM memory_candidate_task_sources").pluck().get()).toBe(0);
+    } finally { closeMemoryDatabase(hidden.database); }
+  }, 60_000);
 });
