@@ -1061,7 +1061,7 @@ namespace)에서 돌린다. 그러면 위 규칙이 의미를 갖고, 거절은 
 
 | 항목 | 값 |
 |---|---|
-| 입력 SHA | `1c709871e0c739686dbeb77c91178a7781055031` |
+| 입력 SHA | `b94468796c8cb766d557039f32a7c3b41fc6a07c` |
 | exit code | **0** (`VERIFY17=0`) |
 | 종료 시각 | `2026-09-12 04:15:59 +0900` |
 | backend shard 1/2 | 279 파일 / 1,932 테스트 |
@@ -1092,8 +1092,8 @@ load average가 8.39**였다. 고아는 같은 UID로 임시 DB를 열어둔 채
 
 | 항목 | 값 |
 |---|---|
-| package root | `<QA>/package/jarvis-runtime-U83OKE` |
-| source_head | `1c709871e0c739686dbeb77c91178a7781055031` — gate 입력과 같은 SHA |
+| package root | `<QA>/package/jarvis-runtime-ec1enI` |
+| source_head | `b94468796c8cb766d557039f32a7c3b41fc6a07c` — gate 입력과 같은 SHA |
 | payload_files / dependency_entries | 1,541 / 6,668 |
 | receipt pin (독립 고정) | `a22b8a7b83cf61ec7d3881d9e625cc7c95862ea9d628326dfdf8f3123a2d3f33` |
 | verify-runtime-package | `ok=true`, `integrity="matched"`, RC 0 |
@@ -1127,3 +1127,44 @@ argv로 받고, 일정 서비스 테스트는 `<db>.retention-candidate/candidat
 4. "목적지에 있던 남의 파일을 보존한다"는 계약은 그대로 유지된다 — 그 경로는 이제 **아예 만들어지지
    않기 때문**이며, 회귀도 그 사실을 단정하도록 바꾼다.
 5. 일정 서비스의 `blocked` 판정은 목적지 존재가 아니라 미완료 operation 행으로 판정한다(이미 그렇다).
+
+### 9.28 여섯 번째·일곱 번째 검토 (REVIEW-20260912-01/-02/-03) 와 그 처리
+
+| 항목 | 실측 |
+| --- | --- |
+| 제품 SHA | `b94468796c8cb766d557039f32a7c3b41fc6a07c` |
+| 전체 gate | `VERIFY20=0` (backend 279 파일 / 1,942 케이스, dashboard 38 파일 / 263 케이스) |
+| 런타임 패키지 | `jarvis-runtime-ec1enI`, `source_head=b944687…`, payload 1,541, receipt `94c27ebd…`, `integrity=matched`, `deployment_ready=false` |
+| manifest | `gate_input_sha=b944687…`, 아티팩트 40, 누락 0 |
+
+**닫힌 것 — 기존 목적지 보존 (REVIEW-01).** `claimRetentionOperation` 은 이제 staged 디렉터리만 만들고,
+announce된 목적지는 생성·점유·교체하지 않는다(`takeRetentionDestination` 제거, 커밋 `9fb366a`). mkdir→rmdir→rename
+경로 자체가 사라졌으므로 "빈 목적지 교체" 지적은 구조적으로 닫힌다. 회귀는 기존 목적지의 세 형태(파일 byte 단위,
+빈 디렉터리, 비어있지 않은 디렉터리) 와 stale sidecar, 경합하는 두 호출을 모두 고정한다. 테스트는 경로를 예측하지
+않고 대장에서 읽는다(`application.operation.candidate_path`).
+
+**좁혔으나 닫지 못한 것 — writer 배타성 (REVIEW-02/-03).** 커밋 `b4927fb` 는 rename 직전에 마지막 배타성 질문을
+추가한다. 이것은 창을 **좁힐 뿐 봉쇄하지 않는다**: 마지막 검사와 `renameSync` 는 별개 호출이고, 검사 통과 이후 진입한
+비협조 writer는 여전히 배제되지 않는다. 회귀는 "그 시점 관측이 보유자를 보고하면 거절한다" 만 증명하며,
+변이 검사로 변별력을 확인했다(블록 제거 시 `promise resolved instead of rejecting` 로 실패).
+앞선 "sealed" 표현은 과장이었고 정정했다.
+
+**증명 불가 시 거절 — 두 구현을 실제로 만들고 측정한 뒤 되돌렸다.**
+
+1. 구멍이 있으면 무조건 거절: 이 호스트의 같은 UID 프로세스 500개 중 23개가 `/proc/<pid>/fd` 판독 불가
+   (systemd --user, sd-pam, gpg-agent — dumpable=0). 결과는 **모든 swap 거절**(9개 이상 pid를 나열).
+   항상 거절하는 계약은 계약이 아니다.
+2. inode 생성 시각으로 구멍을 좁힘: 생성 이전에 시작된 숨은 프로세스는 그 inode의 기존 fd를 가질 수 없다는 근거.
+   결과는 여전히 거절 — 테스트 데이터베이스 생성 **이후** 시작되는 숨은 프로세스가 실제로 존재하므로 술어가
+   환경·타이밍 의존이 되어 gate를 흔든다. 또한 `chmod` 가 ctime을 바꾸는 탓에 mode 케이스는 소스 fence의
+   `LOCAL_RETENTION_SOURCE_CHANGED` 에 먼저 걸려 검사에 도달조차 하지 못했다.
+
+이 측정이 말하는 것은 "Node API가 없다" 가 아니다. `/proc` 은 하드닝된 같은 UID 프로세스에 대해 **답 자체를 주지
+않으며**, 그 위에 세운 술어는 항상 거절하거나 타이밍으로 거절한다. 남은 설계는 관측이 아니라 **프로토콜**이다:
+모든 연결이 `openUnderSwapAdmission` 을 통과해 등록되고, swap 은 보이는 모든 디스크립터가 등록된 경우에만
+진행하며(등록되지 않은 가시 디스크립터는 이미 오늘도 거절한다), 파일이 이 사용자 밖에서 열릴 수 없음을 mode/owner로
+함께 요구한다. 잔여는 admission 없이 연 숨은 프로세스이며, 이는 커널 측 답(없음) 또는 데이터베이스를 프로토콜
+밖에서 열 수 없게 만드는 변경을 요구한다. 특권 프로세스는 어떤 사용자 공간 프로토콜로도 배제할 수 없으며,
+이는 계약의 **명시된 한계**로 남기고 가정으로 숨기지 않는다.
+
+**따라서 REVIEW-20260912-02 와 -03 은 열린 상태로 유지한다.**
