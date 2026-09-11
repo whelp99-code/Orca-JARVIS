@@ -30,8 +30,8 @@
 
 
 > **2026-09-12 갱신 (§9.28 정본).** 이 시점의 상태는 `IN_PROGRESS`다. 제품 SHA는
-> `b94468796c8cb766d557039f32a7c3b41fc6a07c`, 전체 gate `VERIFY20=0`, 패키지 `jarvis-runtime-ec1enI`
-> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=b944687…`.
+> `8c245d8c0e57b1f548c8307f1ea3f4787b2c3763`, 전체 gate `VERIFY21=0`, 패키지 `jarvis-runtime-GFqQk1`
+> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=8c245d8…`.
 > **닫힘:** 기존 목적지 보존(REVIEW-01) — 목적지를 생성·점유·교체하는 경로 자체를 제거했고 세 형태 모두 회귀로 고정.
 > **열림:** writer 배타성(REVIEW-02/-03) — `b4927fb` 는 창을 좁혔을 뿐 봉쇄하지 않으며, 증명 불가 환경의 거절은
 > 두 구현을 만들어 측정한 결과 각각 "항상 거절" 과 "타이밍 의존 거절" 로 무너져 되돌렸다(§9.28). 남은 해법은
@@ -1073,7 +1073,7 @@ namespace)에서 돌린다. 그러면 위 규칙이 의미를 갖고, 거절은 
 
 | 항목 | 값 |
 |---|---|
-| 입력 SHA | `b94468796c8cb766d557039f32a7c3b41fc6a07c` |
+| 입력 SHA | `8c245d8c0e57b1f548c8307f1ea3f4787b2c3763` |
 | exit code | **0** (`VERIFY17=0`) |
 | 종료 시각 | `2026-09-12 04:15:59 +0900` |
 | backend shard 1/2 | 279 파일 / 1,932 테스트 |
@@ -1104,8 +1104,8 @@ load average가 8.39**였다. 고아는 같은 UID로 임시 DB를 열어둔 채
 
 | 항목 | 값 |
 |---|---|
-| package root | `<QA>/package/jarvis-runtime-ec1enI` |
-| source_head | `b94468796c8cb766d557039f32a7c3b41fc6a07c` — gate 입력과 같은 SHA |
+| package root | `<QA>/package/jarvis-runtime-GFqQk1` |
+| source_head | `8c245d8c0e57b1f548c8307f1ea3f4787b2c3763` — gate 입력과 같은 SHA |
 | payload_files / dependency_entries | 1,541 / 6,668 |
 | receipt pin (독립 고정) | `a22b8a7b83cf61ec7d3881d9e625cc7c95862ea9d628326dfdf8f3123a2d3f33` |
 | verify-runtime-package | `ok=true`, `integrity="matched"`, RC 0 |
@@ -1144,10 +1144,10 @@ argv로 받고, 일정 서비스 테스트는 `<db>.retention-candidate/candidat
 
 | 항목 | 실측 |
 | --- | --- |
-| 제품 SHA | `b94468796c8cb766d557039f32a7c3b41fc6a07c` |
-| 전체 gate | `VERIFY20=0` (backend 279 파일 / 1,942 케이스, dashboard 38 파일 / 263 케이스) |
-| 런타임 패키지 | `jarvis-runtime-ec1enI`, `source_head=b944687…`, payload 1,541, receipt `94c27ebd…`, `integrity=matched`, `deployment_ready=false` |
-| manifest | `gate_input_sha=b944687…`, 아티팩트 40, 누락 0 |
+| 제품 SHA | `8c245d8c0e57b1f548c8307f1ea3f4787b2c3763` |
+| 전체 gate | `VERIFY21=0` (backend 279 파일 / 1,942 케이스, dashboard 38 파일 / 263 케이스) |
+| 런타임 패키지 | `jarvis-runtime-GFqQk1`, `source_head=8c245d8…`, payload 1,541, receipt `3dada57e…`, `integrity=matched`, `deployment_ready=false` |
+| manifest | `gate_input_sha=8c245d8…`, 아티팩트 40, 누락 0 |
 
 **닫힌 것 — 기존 목적지 보존 (REVIEW-01).** `claimRetentionOperation` 은 이제 staged 디렉터리만 만들고,
 announce된 목적지는 생성·점유·교체하지 않는다(`takeRetentionDestination` 제거, 커밋 `9fb366a`). mkdir→rmdir→rename
@@ -1180,3 +1180,24 @@ announce된 목적지는 생성·점유·교체하지 않는다(`takeRetentionDe
 이는 계약의 **명시된 한계**로 남기고 가정으로 숨기지 않는다.
 
 **따라서 REVIEW-20260912-02 와 -03 은 열린 상태로 유지한다.**
+
+### 9.29 증명 가능한 절반은 실제로 착지시켰다 (커밋 `8c245d8`)
+
+`exclusionHole(filename)` 은 두 swap 경로에서 **sidecar 제거 이전에** 묻는다: 소스가 이 사용자 밖 소유이거나
+외부 쓰기 가능이면 `LOCAL_RETENTION_EXCLUSION_UNPROVABLE` / `MEMORY_EXCLUSION_UNPROVABLE` 로 거절한다.
+이것은 §9.28 의 시도 A 중 측정을 견딘 부분이다 — 파일 자체의 성질이므로 `/proc` 을 보지 않고, 따라서 항상
+거절하지도 타이밍에 의존하지도 않는다.
+
+회귀는 fence 이전에 `chmod 0666` 을 걸어 거절을 확인하고, 그 시점에 소스·WAL·후보가 모두 남아 있고 barrier 가
+없음을 함께 고정한다. 이어서 `chmod 0600` 후에는 **새로 만든** 후보가 설치된다 — 거절된 시도가 소스의 fence 를
+지나가므로 재시도는 후보를 다시 만들어야 하며, 이는 제품 동작이라 우회하지 않고 그대로 고정했다.
+변이 검사: 이 블록을 지우면 `promise resolved instead of rejecting` 으로 실패한다. `fix31.log` 7 passed (7).
+
+여전히 열린 잔여는 그대로다: admission 없이 데이터베이스를 연 숨은 같은 UID 프로세스(이 호스트 23개)와 특권
+프로세스. 이 둘은 또 다른 탐침이 아니라 §9.28 의 admission 프로토콜 설계를 요구한다.
+
+| 최종 실측 | 값 |
+| --- | --- |
+| 제품 SHA | `8c245d8c0e57b1f548c8307f1ea3f4787b2c3763` |
+| 전체 gate | `VERIFY21=0` (backend 279 / 1,942, dashboard 38 / 263) |
+| 패키지 | `jarvis-runtime-GFqQk1`, `source_head=8c245d8…`, payload 1,541, receipt `3dada57e…`, `integrity=matched`, `deployment_ready=false` |
