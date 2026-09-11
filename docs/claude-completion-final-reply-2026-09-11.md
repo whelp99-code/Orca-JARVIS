@@ -1099,3 +1099,31 @@ load average가 8.39**였다. 고아는 같은 UID로 임시 DB를 열어둔 채
 | verify-runtime-package | `ok=true`, `integrity="matched"`, RC 0 |
 | signature_verified / runtime_validation / deployment_ready | `false` / `not_performed` / **false** |
 | source_dirty | `true`. receipt는 이 값만 기록한다. 별도 확인한 `git status`에서 tracked 수정은 `docs/` 1건뿐이었다 |
+
+
+### 9.27 목적지 계약 변경을 다음 단위로 남기는 이유와 그 사양
+
+§9.23에서 "다음 단위"로 적은 항목을 이 밤에 두 번 구현해 보고 두 번 다 범위를 실측했다. 결과는
+같다: **이것은 retention 경로 계약 전체의 이주이지 한 파일의 수정이 아니다.**
+
+운영이 staged 이름 아래에서만 살면 candidate 경로에 operation UUID가 들어간다. 그러면 테스트는
+**실행 전에 경로를 예측할 수 없다.** 지금 회귀는 그 예측에 기대고 있다: 급사 픽스처는 목적지 경로를
+argv로 받고, 일정 서비스 테스트는 `<db>.retention-candidate/candidate.sqlite`를 직접 만들며,
+복구 테스트는 그 이름으로 sentinel을 놓는다. 실측 영향은 **6파일 16건**이고, 오늘 재현한 실패 목록은
+`qa/fix20.log`에 있다.
+
+그래서 **지금은 되돌렸다.** 마지막 시간에 green·제출 가능한 트리를 흔들어 반쯤 바뀐 상태로 넘기는
+것이 남는 위험보다 나쁘다. 남는 위험은 정확히 하나이고 이미 좁다: 검사와 rename 사이에 **비협조
+프로세스가** 목적지에 만든 **빈 디렉터리**가 대체될 수 있다(협조 실행끼리는 intent UNIQUE가 막는다).
+
+다음 단위는 이 사양으로 시작하면 된다.
+
+1. `claimRetentionOperation(staged)`이 staged만 만들고 `takeRetentionDestination`은 삭제한다.
+   목적지는 대장에 announce만 하고 생성하지 않는다.
+2. 테스트는 경로를 **예측하지 말고 읽는다**: `application.operation.candidate_path` 또는
+   `SELECT candidate_path FROM local_retention_operations`.
+3. 급사 픽스처는 목적지 대신 **announce할 이름**을 받고, 부모는 자식이 죽은 뒤 대장에서 실제 경로를
+   읽는다.
+4. "목적지에 있던 남의 파일을 보존한다"는 계약은 그대로 유지된다 — 그 경로는 이제 **아예 만들어지지
+   않기 때문**이며, 회귀도 그 사실을 단정하도록 바꾼다.
+5. 일정 서비스의 `blocked` 판정은 목적지 존재가 아니라 미완료 operation 행으로 판정한다(이미 그렇다).
