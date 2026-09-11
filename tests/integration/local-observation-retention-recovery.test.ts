@@ -225,3 +225,29 @@ it("writes the verified digest once and refuses to have it rewritten", async () 
   expect(String(db.db.prepare("SELECT verified_digest FROM local_retention_operations").pluck().get()))
     .toBe(recorded);
 }, 60_000);
+
+it("leaves an operation alone while the process that owns it is still running", async () => {
+  const seed = await seeded();
+  const child = spawn(process.execPath, [
+    join(process.cwd(), "tests", "fixtures", "local-retention-crash-child.mjs"),
+    seed.path, seed.candidate, seed.cutoff, "after_claim",
+    join(dirname(seed.path), "registry"), LOCAL_CHAIN_AT,
+  ], { stdio: ["ignore", "pipe", "pipe"] });
+  try {
+    const lines = createInterface({ input: child.stdout });
+    let reached = false;
+    for await (const line of lines) if (line === "after_claim") { reached = true; break; }
+    lines.close();
+    expect(reached).toBe(true);
+
+    // The child is held, not killed: its row says `preparing` exactly like a crashed one would.
+    const db = reopen(seed);
+    const recovered = recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT));
+    expect(recovered.map(item => item.outcome)).toEqual(["retained_active"]);
+    expect(state(db)).toBe("preparing");
+    expect(existsSync(seed.candidate)).toBe(true);
+  } finally {
+    child.kill("SIGKILL");
+    await once(child, "exit");
+  }
+}, 60_000);

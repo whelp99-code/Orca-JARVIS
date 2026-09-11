@@ -5,6 +5,7 @@ import { canonicalize } from "./canonical.js";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
 import type { RetentionProjection } from "./local-observation-retention-selection.js";
+import { processStartToken } from "./authority-database-process.js";
 import { syncPath } from "./memory-authority-swap.js";
 import {
   candidateDigest, candidateStillClaimed, releaseRetentionCandidate, SIDECARS,
@@ -22,6 +23,7 @@ export {
 
 export type RetentionOperation = RetentionClaim & RetentionSnapshotClaim & {
   readonly recorded_changes: number;
+  readonly owner_start_token: string;
   readonly operation_id: string;
   readonly source_device: string;
   readonly source_inode: string;
@@ -91,6 +93,7 @@ export function beginRetentionOperation(
     source_device: identity.dev.toString(),
     source_inode: identity.ino.toString(),
     owner_token: `${process.pid}:${randomUUID()}`,
+    owner_start_token: processStartToken(process.pid),
     candidate_path: candidatePath,
     source_generation: generation,
     result_generation: generation + 1,
@@ -100,14 +103,14 @@ export function beginRetentionOperation(
   const recorded = rowsWritten(source, () => { source.db.prepare(
     `INSERT INTO local_retention_operations(operation_id,owner_token,source_device,source_inode,
       source_generation,result_generation,selection_digest,candidate_path,claim_device,claim_inode,
-      claim_birthtime,snapshot_device,snapshot_inode,snapshot_birthtime,
+      claim_birthtime,snapshot_device,snapshot_inode,snapshot_birthtime,owner_start_token,
       state,failure_code,created_at,updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'preparing',NULL,?,?)`,
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,'preparing',NULL,?,?)`,
   ).run(operation.operation_id, operation.owner_token, operation.source_device,
     operation.source_inode, operation.source_generation, operation.result_generation,
     operation.selection_digest, candidatePath, operation.claim_device, operation.claim_inode,
     operation.claim_birthtime, operation.snapshot_device, operation.snapshot_inode,
-    operation.snapshot_birthtime, at, at); });
+    operation.snapshot_birthtime, operation.owner_start_token, at, at); });
   return { ...operation, recorded_changes: recorded };
 }
 

@@ -1,4 +1,5 @@
 import { existsSync, statSync } from "node:fs";
+import { processStartToken } from "./authority-database-process.js";
 import type { AuthorityDb } from "./db.js";
 import {
   activeGeneration, candidateStillClaimed, releaseProvenArtifact, snapshotStillClaimed,
@@ -12,7 +13,8 @@ export type RetentionRecovery = {
   readonly operation_id: string;
   readonly recorded_state: "preparing" | "verified";
   readonly candidate_path: string;
-  readonly outcome: "removed_partial" | "removed_unapplied" | "retained_unproven" | "already_gone";
+  readonly outcome: "removed_partial" | "removed_unapplied" | "retained_unproven" | "already_gone"
+    | "retained_active";
 };
 
 type UnfinishedRow = RetentionClaim & Partial<RetentionSnapshotClaim> & {
@@ -23,6 +25,7 @@ type UnfinishedRow = RetentionClaim & Partial<RetentionSnapshotClaim> & {
   readonly source_device: string;
   readonly source_inode: string;
   readonly source_generation: number;
+  readonly owner_start_token: string | null;
 };
 
 /**
@@ -49,6 +52,13 @@ export function recoverLocalRetentionOperations(
     && row.source_generation === generation;
   const recovered: RetentionRecovery[] = [];
   for (const row of unfinishedRows(source)) {
+    // Recovery runs before the schedule window, so it can meet an operation whose process is still
+    // building. The row says `preparing` either way; only the owner being gone separates them.
+    if (ownerAlive(row)) {
+      recovered.push({ operation_id: row.operation_id, recorded_state: row.state,
+        candidate_path: row.candidate_path, outcome: "retained_active" });
+      continue;
+    }
     const present = existsSync(row.candidate_path);
     const proven = candidateStillClaimed(row.candidate_path, row);
     const report = (outcome: RetentionRecovery["outcome"]): void => {
@@ -81,10 +91,28 @@ export function recoverLocalRetentionOperations(
   return recovered;
 }
 
+/**
+ * True while the process that recorded this operation is still the one running under that pid.
+ *
+ * Pids are reused, so the recorded start time decides: a different token means a different process
+ * wearing the same number, and no token at all means a row written before this was recorded, which
+ * is treated as no live owner exactly as it was before.
+ */
+function ownerAlive(row: UnfinishedRow): boolean {
+  const pid = Number.parseInt(row.owner_token.split(":")[0] ?? "", 10);
+  if (row.owner_start_token === null || !Number.isSafeInteger(pid) || pid < 1) return false;
+  if (pid === process.pid) return false;
+  try {
+    return processStartToken(pid) === row.owner_start_token;
+  } catch {
+    return false;
+  }
+}
+
 function unfinishedRows(source: AuthorityDb): readonly UnfinishedRow[] {
   const rows = source.db.prepare(
     `SELECT operation_id,owner_token,candidate_path,state,source_device,source_inode,
-       source_generation,claim_device,claim_inode,claim_birthtime,
+       source_generation,owner_start_token,claim_device,claim_inode,claim_birthtime,
        snapshot_device,snapshot_inode,snapshot_birthtime FROM local_retention_operations
      WHERE state IN ('preparing','verified') ORDER BY created_at,operation_id`).all();
   return rows.flatMap(row => row === null || typeof row !== "object" ? []
@@ -96,6 +124,8 @@ function unfinishedRows(source: AuthorityDb): readonly UnfinishedRow[] {
       source_device: String(Reflect.get(row, "source_device")),
       source_inode: String(Reflect.get(row, "source_inode")),
       source_generation: Number(Reflect.get(row, "source_generation")),
+      owner_start_token: typeof Reflect.get(row, "owner_start_token") === "string"
+        ? String(Reflect.get(row, "owner_start_token")) : null,
       claim_device: String(Reflect.get(row, "claim_device")),
       claim_inode: String(Reflect.get(row, "claim_inode")),
       claim_birthtime: String(Reflect.get(row, "claim_birthtime")),

@@ -69,3 +69,37 @@ push·merge·deploy·서비스 재시작·운영 DB/설정 변경·`current` 전
 | P1 최종 fence 이후 원본 쓰기 유실 | 수정 | 검사를 체크포인트 이후로 옮기고, 닫은 뒤 rename 직전까지 원본 바이트·sidecar 유무를 재확인. 재현이 `lateRows:0`(유실) → `lateRows:1`(보존) + SOURCE_CHANGED로 뒤집힘 |
 | P1 snapshot 경로 미소유·삭제 | 수정 | snapshot도 배타 확보, 실패 시 남의 파일 보존·자기 후보 회수. 재현이 `snapshotExists:true, candidateExists:false`로 뒤집힘. 연쇄로 드러난 sidecar 잔류(재시도 영구 차단)도 소유 증거 기반으로 정리 |
 | P1 복구의 경로 기반 TOCTOU·sidecar 미확인 | 수정 | 원자적으로 옮긴 뒤 옮긴 객체를 확인하고 삭제. 우리 것이 아니면 되돌리고 `retained_unproven`. sidecar는 배타 확보된 이름 공간이라는 근거를 명시하고 개별 식별·전용 디렉터리 격리는 후속으로 기록 |
+
+## 2차 독립 리뷰 (2026-09-11)
+
+같은 방식으로 **수정 자체**를 다른 모델에게 다시 읽혔다(`e53c857~1..HEAD`). 판정 **CHANGES_REQUIRED**,
+P1 6건·P2 3건. 재현은 `/home/jm/.cache/jarvis-indep-review2-20260911/*.mjs`.
+
+| 지적 | 상태 | 근거 |
+|---|---|---|
+| INTEGER와 REAL이 같은 키 | 수정 | 정수는 bigint로만 들어오므로 number는 항상 REAL로 태깅. 재현 `accepted:false` |
+| generation 비교가 JSON 숫자 | 수정 | 정확 정수 읽기 + 타입 비교로 재작성 |
+| 자동 publication이 task 차단 미검사 | 수정 | 재현 `published:false, ledgerRows:0` |
+| legacy correction 승인·준비 우회 | 수정 | 재현 `MEMORY_CANDIDATE_SUPPRESSED`, 상태 불변 |
+| `verified_digest` 가변 | 수정 | migration 093 단일 기록 트리거 + 회귀 |
+| `.releasing` 이름 선점·덮어쓰기 | 수정 | 임의 1회용 이름(리뷰 도착 전 자체 발견) |
+| 복구가 살아 있는 소유자 작업 파괴 | 수정 | migration 094 시작 토큰, 재현 `retained_active`·파일 생존 |
+| 후보 digest 확인~rename 창 | **열림** | 아래 |
+| 원본 마지막 읽기~rename 창 | **열림** | 아래 |
+| 운영 행 기록 이전 claim 유실 | **열림** | 아래 |
+| `.releasing` 중 크래시 고아 | **열림** | 아래 |
+
+### 남은 4건은 하나의 설계 문제다
+
+네 건 모두 **산출물이 공유 이름 공간에 있고 교체 구간에 프로세스 간 배타성이 없다**는 같은 뿌리에서
+나온다. 리뷰어의 처방도 하나다: **운영 전용 비공개 디렉터리 + 프로세스 간 swap/rebuild lease**.
+
+- 비공개 디렉터리(생성 자체가 배타적)는 남의 파일이 우리 산출물 자리에 있을 수 없게 만들어 snapshot
+  정리와 `.releasing` 계열 문제를 없앤다. 고정 부모 아래 두면 복구가 열거해 **행 없는 디렉터리**를
+  발견할 수 있으므로 운영 행 이전 claim 유실도 보고 가능해진다.
+- swap lease는 최종 읽기와 rename 사이에 다른 writer가 커밋하지 못하게 한다. 바이트 비교로는 닫히지
+  않는다는 리뷰어 지적이 옳다.
+
+이 변경은 `applyLocalObservationRetention`의 경로 계약과 복구·교체·일정 서비스, 그리고 관련 회귀
+전반을 함께 바꾼다. 절반만 적용하면 같은 계열의 결함을 남긴 채 겉보기만 달라지므로, **독립된 단위로
+설계·구현·재리뷰**하는 것을 전제로 여기서 멈추고 범위를 고정한다.
