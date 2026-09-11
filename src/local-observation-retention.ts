@@ -1,4 +1,6 @@
-import { closeSync, mkdirSync, openSync, realpathSync, rmSync } from "node:fs";
+import {
+  closeSync, existsSync, lstatSync, mkdirSync, openSync, realpathSync, rmSync,
+} from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type Database from "better-sqlite3";
 import { AuthorityDb } from "./db.js";
@@ -14,7 +16,8 @@ import {
   assertCandidateMatchesCopyPlan,
 } from "./local-observation-retention-candidate.js";
 import {
-  abandonRetentionOperation, beginRetentionOperation, markRetentionOperationVerified, type RetentionOperation,
+  abandonRetentionOperation, beginRetentionOperation, clearRetentionClaimIntent,
+  markRetentionOperationVerified, recordRetentionClaimIdentity, recordRetentionClaimIntent, type RetentionOperation,
 } from "./local-observation-retention-operation.js";
 import { buildFreshAuthority, type FreshAuthorityBuild } from "./memory-authority-fresh-builder.js";
 
@@ -76,17 +79,28 @@ export function verifyLocalObservationRetentionCandidate(
  * operation writes lives inside it, so no file that existed before this call can sit where an
  * artifact goes, and releasing is removing one directory rather than guessing at names beside it.
  */
-function claimRetentionOperation(source: AuthorityDb, freshPath: string): RetentionPaths {
+function resolveRetentionDirectory(source: AuthorityDb, freshPath: string): string {
   if (typeof freshPath !== "string" || freshPath.trim().length === 0) {
     throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
   }
   const absolute = resolve(freshPath);
-  let directory: string;
   try {
-    directory = join(realpathSync(dirname(absolute)), basename(absolute));
-    if (directory === realpathSync(source.filename)) {
+    const directory = join(realpathSync(dirname(absolute)), basename(absolute));
+    // A name already taken - by the source, by a file, by a symlink - is refused before anything
+    // is written down. The create below is still what decides ownership; this only keeps a run
+    // from announcing a path it cannot have.
+    if (directory === realpathSync(source.filename) || existsSync(directory)
+      || lstatSync(directory, { throwIfNoEntry: false }) !== undefined) {
       throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
     }
+    return directory;
+  } catch {
+    throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
+  }
+}
+
+function claimRetentionOperation(directory: string): RetentionPaths {
+  try {
     mkdirSync(directory, { mode: 0o700 });
   } catch {
     throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
@@ -145,21 +159,45 @@ export async function applyLocalObservationRetention(
 ): Promise<LocalObservationRetentionApplication> {
   let fence = retentionSourceFence(source);
   assertRetentionCutoff(cutoffValue);
-  const paths = claimRetentionOperation(source, freshPath);
+  // The path is announced before it exists, so a process that dies while copying the snapshot
+  // leaves something in the database that explains the directory on disk.
+  const directory = resolveRetentionDirectory(source, freshPath);
+  let intent: ReturnType<typeof recordRetentionClaimIntent>;
+  try {
+    intent = recordRetentionClaimIntent(source, directory, now);
+  } catch {
+    // Another run has already announced this path; it is not this one's to take.
+    throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
+  }
+  fence = ownWrite(fence, intent.recorded_changes);
+  let paths: RetentionPaths;
+  try {
+    paths = claimRetentionOperation(directory);
+  } catch (error) {
+    // The create failed, so whatever holds that name is somebody else's and is left untouched.
+    fence = ownWrite(fence, clearRetentionClaimIntent(source, intent.operation_id));
+    throw error;
+  }
+  // Owned from here: the identity is recorded before anything else can go wrong, so a failure or a
+  // crash after this point can be cleaned up on proof rather than on the pathname.
+  fence = ownWrite(fence, recordRetentionClaimIdentity(source, intent.operation_id, directory));
   let snapshot: Awaited<ReturnType<typeof captureSelectedSource>>;
   try {
     snapshot = await captureSelectedSource(source, paths.snapshot);
   } catch (error) {
-    // Nothing is recorded yet, so a failure here takes the whole directory with it.
-    releaseRetentionOperation(paths.directory);
+    releaseRetentionOperation(directory);
+    fence = ownWrite(fence, clearRetentionClaimIntent(source, intent.operation_id));
     throw error;
   }
   let operation: RetentionOperation | undefined;
   try {
     const selection = selectLocalObservationRetention(snapshot.db, cutoffValue);
     // Recorded before the build so an interrupted run leaves evidence rather than a bare file.
-    operation = beginRetentionOperation(source, paths.candidate, paths.snapshot, selection.blocked, now);
-    fence = ownWrite(fence, operation.recorded_changes);
+    operation = beginRetentionOperation(source, paths.candidate, paths.snapshot, selection.blocked,
+      now, intent.operation_id);
+    // The operation row explains the directory from here on, so the intent is spent.
+    fence = ownWrite(fence, operation.recorded_changes
+      + clearRetentionClaimIntent(source, intent.operation_id));
     const build = await buildFreshAuthority(snapshot, paths.candidate, {
       blocked_projections: selection.blocked, sensitive_material: [], destination: "claimed",
     });
@@ -174,7 +212,10 @@ export async function applyLocalObservationRetention(
     const moved = retentionSourceMoved(source, fence);
     const code = moved ? "LOCAL_RETENTION_SOURCE_CHANGED"
       : error instanceof Error ? error.message : "LOCAL_RETENTION_APPLY_FAILED";
-    if (operation === undefined) releaseRetentionOperation(paths.directory);
+    if (operation === undefined) {
+      releaseRetentionOperation(paths.directory);
+      clearRetentionClaimIntent(source, intent.operation_id);
+    }
     else abandonRetentionOperation(source, operation, code, now);
     if (moved) throw new JarvisError("LOCAL_RETENTION_SOURCE_CHANGED");
     throw error;

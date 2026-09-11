@@ -211,10 +211,12 @@ it("applies the selector through the rebuild adapter without writing the source"
   expect(applied.build.foreign_key_errors).toBe(0);
   expect(applied.build.integrity_check).toBe("ok");
   expect(applied.build.result_generation).toBe(applied.build.source_generation + 1);
-  // The apply's only write to the source is its own operation record: the row that registers the
-  // attempt and the update that records the verdict. Nothing in the data tables moves.
-  expect(writes(db)).toBe(before + 2);
+  // The apply's only writes to the source are its own claim ledger: the intent that announces the
+  // directory, the identity the create produced, the operation row, the delete that spends the
+  // intent, and the verdict. Nothing in the data tables moves.
+  expect(writes(db)).toBe(before + 5);
   expect(operationStates(db)).toEqual(["verified"]);
+  expect(scalar(db, "SELECT COUNT(*) FROM local_retention_claim_intents")).toBe(0);
   expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(observations);
   const rebuilt = new AuthorityDb(applied.build.fresh_path); opened.push(rebuilt);
   expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_observations")).toBe(0);
@@ -234,10 +236,12 @@ it("does not remove a group the selector retained for a live notification", asyn
   expect(applied.selection.retained).toEqual([
     { observation_id: chain.observation.id, reason: "notification_addresses_recommendation" }]);
   expect(applied.build.foreign_key_errors).toBe(0);
-  // The apply's only write to the source is its own operation record: the row that registers the
-  // attempt and the update that records the verdict. Nothing in the data tables moves.
-  expect(writes(db)).toBe(before + 2);
+  // The apply's only writes to the source are its own claim ledger: the intent that announces the
+  // directory, the identity the create produced, the operation row, the delete that spends the
+  // intent, and the verdict. Nothing in the data tables moves.
+  expect(writes(db)).toBe(before + 5);
   expect(operationStates(db)).toEqual(["verified"]);
+  expect(scalar(db, "SELECT COUNT(*) FROM local_retention_claim_intents")).toBe(0);
   const rebuilt = new AuthorityDb(applied.build.fresh_path); opened.push(rebuilt);
   expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_observations")).toBe(1);
   expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_recommendations")).toBe(1);

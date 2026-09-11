@@ -1,4 +1,5 @@
-import { existsSync, statSync } from "node:fs";
+import { existsSync, rmSync, statSync } from "node:fs";
+import { join } from "node:path";
 import { processStartToken } from "./authority-database-process.js";
 import type { AuthorityDb } from "./db.js";
 import {
@@ -51,7 +52,7 @@ export function recoverLocalRetentionOperations(
   for (const row of unfinishedRows(source)) {
     // Recovery runs before the schedule window, so it can meet an operation whose process is still
     // building. The row says `preparing` either way; only the owner being gone separates them.
-    if (ownerAlive(row)) {
+    if (ownerLiveness(row) !== "dead") {
       recovered.push({ operation_id: row.operation_id, recorded_state: row.state,
         candidate_path: row.candidate_path, outcome: "retained_active" });
       continue;
@@ -78,7 +79,84 @@ export function recoverLocalRetentionOperations(
       ? "LOCAL_RETENTION_RECOVERED_UNAPPLIED" : "LOCAL_RETENTION_RECOVERED_PARTIAL", now);
     report(row.state === "verified" ? "removed_unapplied" : "removed_partial");
   }
+  recovered.push(...recoverUnrecordedClaims(source, now));
   return recovered;
+}
+
+/**
+ * Directories a run announced but never got as far as recording an operation for.
+ *
+ * The intent names the path and the process that meant to create it. If that process is still
+ * running the claim is live work, not debris. If it is gone, the directory is this lane's own
+ * abandoned work: it was created by the run that wrote the intent and nothing else ever writes
+ * there, so removing it is removing our own, and the intent goes with it.
+ */
+function recoverUnrecordedClaims(source: AuthorityDb, now: Date): readonly RetentionRecovery[] {
+  void now;
+  const rows = source.db.prepare(
+    `SELECT i.operation_id AS operation_id,i.owner_token AS owner_token,
+       i.owner_start_token AS owner_start_token,i.directory AS directory,
+       i.claim_device AS claim_device,i.claim_inode AS claim_inode,
+       i.claim_birthtime AS claim_birthtime
+     FROM local_retention_claim_intents i
+     WHERE NOT EXISTS (SELECT 1 FROM local_retention_operations o
+       WHERE o.operation_id=i.operation_id)
+     ORDER BY i.created_at,i.operation_id`).all();
+  const recovered: RetentionRecovery[] = [];
+  for (const value of rows) {
+    if (value === null || typeof value !== "object") continue;
+    const text = (name: string): string | null =>
+      typeof Reflect.get(value, name) === "string" ? String(Reflect.get(value, name)) : null;
+    const directory = String(Reflect.get(value, "directory"));
+    const operationId = String(Reflect.get(value, "operation_id"));
+    const report = (outcome: RetentionRecovery["outcome"]): void => {
+      recovered.push({ operation_id: operationId, recorded_state: "preparing",
+        candidate_path: join(directory, "candidate.sqlite"), outcome });
+    };
+    const clear = (): void => {
+      source.db.prepare("DELETE FROM local_retention_claim_intents WHERE operation_id=?")
+        .run(operationId);
+    };
+    // Not dead is not the same as dead: a process we cannot read is one we must not assume about.
+    if (ownerLiveness({ owner_token: String(Reflect.get(value, "owner_token")),
+      owner_start_token: text("owner_start_token") }) !== "dead") {
+      report("retained_active");
+      continue;
+    }
+    const claim = { claim_device: text("claim_device"), claim_inode: text("claim_inode"),
+      claim_birthtime: text("claim_birthtime") };
+    if (!existsSync(directory)) {
+      // Nothing was created, or it is already gone; the intent is the only thing left to clear.
+      clear();
+      report("already_gone");
+      continue;
+    }
+    // An intent without a recorded identity says only that this run meant to create the path. What
+    // is there now may be anybody's, so it stays and is reported.
+    if (claim.claim_device === null || !directoryStillClaimed(directory, claim)) {
+      report("retained_unproven");
+      continue;
+    }
+    rmSync(directory, { recursive: true, force: true });
+    clear();
+    report("removed_partial");
+  }
+  return recovered;
+}
+
+/** The directory this intent created, still carrying the identity the create produced. */
+function directoryStillClaimed(directory: string, claim: {
+  readonly claim_device: string | null; readonly claim_inode: string | null;
+  readonly claim_birthtime: string | null;
+}): boolean {
+  try {
+    const present = statSync(directory, { bigint: true });
+    return present.dev.toString() === claim.claim_device
+      && present.ino.toString() === claim.claim_inode
+      && present.birthtimeNs.toString() === claim.claim_birthtime;
+  } catch {
+    return false;
+  }
 }
 
 /**
@@ -88,14 +166,20 @@ export function recoverLocalRetentionOperations(
  * wearing the same number, and no token at all means a row written before this was recorded, which
  * is treated as no live owner exactly as it was before.
  */
-function ownerAlive(row: UnfinishedRow): boolean {
+function ownerLiveness(row: {
+  readonly owner_token: string; readonly owner_start_token: string | null;
+}): "alive" | "dead" | "unknown" {
   const pid = Number.parseInt(row.owner_token.split(":")[0] ?? "", 10);
-  if (row.owner_start_token === null || !Number.isSafeInteger(pid) || pid < 1) return false;
-  if (pid === process.pid) return false;
+  // No token, an unreadable pid, or this very process: none of these prove the owner is gone, and
+  // an apply running in this process right now wears this pid.
+  if (row.owner_start_token === null || !Number.isSafeInteger(pid) || pid < 1) return "unknown";
+  if (pid === process.pid) return "alive";
   try {
-    return processStartToken(pid) === row.owner_start_token;
+    return processStartToken(pid) === row.owner_start_token ? "alive" : "dead";
   } catch {
-    return false;
+    // No entry under /proc means no such process. A read that failed for any other reason is a
+    // question this cannot answer, and an unanswered question is not permission to delete.
+    return existsSync(`/proc/${pid}`) ? "unknown" : "dead";
   }
 }
 

@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import { existsSync, lstatSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, writeFileSync,
+} from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { AuthorityDb } from "../../src/db.js";
@@ -103,4 +105,27 @@ it("gives exactly one of two racing calls the destination", async () => {
   const rebuilt = new AuthorityDb(join(destination, "candidate.sqlite")); opened.push(rebuilt);
   expect(observations(rebuilt)).toBe(0);
   expect(observations(db)).toBe(1);
+});
+
+// Reported by review as P1-C1: a failed claim is not ownership, and the failure path was deleting
+// whatever already held the name while returning the correct error.
+it("leaves an occupied destination exactly as it was when the claim fails", async () => {
+  const { db, root, cutoff } = await source();
+  const occupiedDirectory = join(root, "occupied-directory");
+  mkdirSync(occupiedDirectory);
+  const sentinel = join(occupiedDirectory, "sentinel.txt");
+  writeFileSync(sentinel, "not this run's file");
+  const occupiedFile = join(root, "occupied-file");
+  writeFileSync(occupiedFile, "not this run's file either");
+
+  for (const destination of [occupiedDirectory, occupiedFile]) {
+    await expect(applyLocalObservationRetention(db, cutoff, destination))
+      .rejects.toThrow("LOCAL_RETENTION_DESTINATION_INVALID");
+  }
+
+  expect(existsSync(occupiedDirectory)).toBe(true);
+  expect(readFileSync(sentinel, "utf8")).toBe("not this run's file");
+  expect(readFileSync(occupiedFile, "utf8")).toBe("not this run's file either");
+  // The refusal leaves no claim behind either.
+  expect(db.db.prepare("SELECT COUNT(*) FROM local_retention_claim_intents").pluck().get()).toBe(0);
 });

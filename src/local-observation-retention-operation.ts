@@ -66,6 +66,49 @@ export function activeGeneration(source: AuthorityDb): number {
 }
 
 /**
+ * Announces the path this run is about to create, before it creates it.
+ *
+ * The operation record needs the claim's identity and the selection's digest, and the selection
+ * needs a snapshot that takes as long as a database copy to make. Everything in that window would
+ * otherwise be invisible to recovery, which reads rows. The intent is written first and carries
+ * the same owner identity, so what is found later can be recognised without trusting a pathname.
+ */
+export function recordRetentionClaimIntent(
+  source: AuthorityDb, directory: string, now: Date,
+): { readonly operation_id: string; readonly recorded_changes: number } {
+  const operationId = `retention:${randomUUID()}`;
+  const recorded = rowsWritten(source, () => { source.db.prepare(
+    `INSERT INTO local_retention_claim_intents(operation_id,owner_token,owner_start_token,
+      directory,created_at) VALUES(?,?,?,?,?)`,
+  ).run(operationId, `${process.pid}:${randomUUID()}`, processStartToken(process.pid), directory,
+    now.toISOString()); });
+  return { operation_id: operationId, recorded_changes: recorded };
+}
+
+/**
+ * Records what the exclusive create actually produced, once it has produced it.
+ *
+ * Between the intent and this call the path may hold something this run did not make - the create
+ * may have failed, or never been reached. Recovery reads this identity, so writing it is the
+ * moment the claim stops being an intention and becomes a fact.
+ */
+export function recordRetentionClaimIdentity(
+  source: AuthorityDb, operationId: string, directory: string,
+): number {
+  const claim = statSync(directory, { bigint: true });
+  return rowsWritten(source, () => { source.db.prepare(
+    `UPDATE local_retention_claim_intents SET claim_device=?,claim_inode=?,claim_birthtime=?
+     WHERE operation_id=?`,
+  ).run(claim.dev.toString(), claim.ino.toString(), claim.birthtimeNs.toString(), operationId); });
+}
+
+/** The intent has served its purpose once the operation it belongs to is recorded or gone. */
+export function clearRetentionClaimIntent(source: AuthorityDb, operationId: string): number {
+  return rowsWritten(source, () => { source.db.prepare(
+    "DELETE FROM local_retention_claim_intents WHERE operation_id=?").run(operationId); });
+}
+
+/**
  * Records the rebuild before it produces anything, so an interrupted run is explainable.
  *
  * The row names the source this selection read - device, inode and active generation - the digest
@@ -74,7 +117,7 @@ export function activeGeneration(source: AuthorityDb): number {
  */
 export function beginRetentionOperation(
   source: AuthorityDb, candidatePath: string, snapshotPath: string,
-  blocked: readonly RetentionProjection[], now: Date,
+  blocked: readonly RetentionProjection[], now: Date, intentId?: string,
 ): RetentionOperation {
   const identity = statSync(source.filename, { bigint: true });
   const claim = statSync(candidatePath, { bigint: true });
@@ -88,7 +131,8 @@ export function beginRetentionOperation(
     snapshot_device: snapshot.dev.toString(),
     snapshot_inode: snapshot.ino.toString(),
     snapshot_birthtime: snapshot.birthtimeNs.toString(),
-    operation_id: `retention:${randomUUID()}`,
+    // Carries the intent's id so the announced claim and the recorded work are one thing.
+    operation_id: intentId ?? `retention:${randomUUID()}`,
     source_device: identity.dev.toString(),
     source_inode: identity.ino.toString(),
     owner_token: `${process.pid}:${randomUUID()}`,

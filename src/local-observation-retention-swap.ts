@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import type { AuthorityDatabaseRuntime } from "./authority-database-runtime.js";
+import { publishSwapBarrier, releaseSwapBarrier } from "./authority-database-swap-barrier.js";
 import { JarvisError } from "./jarvis-error.js";
 import {
   assertCandidateUnchanged, assertRetentionOperationOwned, recordAppliedRetentionOperation,
@@ -20,6 +21,20 @@ export type RetentionSwapResult = {
 };
 
 const SIDECARS = ["-wal", "-shm", "-journal"] as const;
+
+/**
+ * Descriptors on the source that belong to somebody else.
+ *
+ * This process's own connection is still open when the question is first asked, and it is not the
+ * problem: it is closed a moment later, in order, by the swap itself. Every other holder is one
+ * the rename would leave writing into an orphaned inode.
+ */
+function foreignHolders(
+  runtime: AuthorityDatabaseRuntime, fence: { readonly device: string; readonly inode: string },
+): number {
+  return runtime.observeOldInode(BigInt(fence.device), BigInt(fence.inode))
+    .holders.filter(holder => holder.pid !== process.pid).length;
+}
 
 /**
  * The source as bytes, with any write-ahead log folded into the answer.
@@ -61,17 +76,40 @@ export function applyRetentionCandidate(
   if (retentionSourceMoved(authority, fence)) {
     throw new JarvisError("LOCAL_RETENTION_SOURCE_CHANGED");
   }
-  recordAppliedRetentionOperation(
-    operation.candidate_path, operation, result, build.result_generation, now);
-  authority.close();
-  for (const suffix of SIDECARS) rmSync(`${authority.filename}${suffix}`, { force: true });
-  // Taken once the connection is gone and its log is folded in, so the baseline is the file the
-  // rename would replace rather than the file plus a log that closing was about to remove.
-  const settled = sourceBytes(authority.filename);
+  // Published while the source connection is still open, which is the order that makes the two
+  // halves meet: from here a cooperating process cannot be admitted, so the scan below sees every
+  // connection that will ever exist against this file, and it runs before anything is closed,
+  // written or moved.
+  publishSwapBarrier(authority.filename, "local_retention", now);
   let observed;
   try {
-    // The connection is gone, so the last word on whether anybody wrote in the remaining moments
-    // is the file itself: identical bytes and no write-ahead log beside it.
+    // A descriptor on the source held by another process belongs to a writer the rename would
+    // orphan: its commits would land in an inode nothing reads again. There is no way to take that
+    // descriptor away, so the swap is refused while the source is still the live database - with
+    // this connection still open, the candidate untouched and the operation exactly as
+    // verification left it. That is what makes the refusal retryable rather than a rebuild thrown
+    // away: closing the connection would reset the row counter the caller's fence is stated in,
+    // and the same fence has to still describe this connection when the caller tries again.
+    if (foreignHolders(runtime, fence) !== 0) {
+      throw new JarvisError("LOCAL_RETENTION_SOURCE_WRITER_ACTIVE");
+    }
+    authority.close();
+    for (const suffix of SIDECARS) rmSync(`${authority.filename}${suffix}`, { force: true });
+    // Asked again now that this process's own connection is gone, so the answer covers every
+    // holder rather than every other holder: the rename proceeds only against a file nobody has
+    // open at all.
+    if (runtime.observeOldInode(BigInt(fence.device), BigInt(fence.inode)).fd_count !== 0) {
+      throw new JarvisError("LOCAL_RETENTION_SOURCE_WRITER_ACTIVE");
+    }
+    // Written only once the swap is certain to be attempted. It is the last write before the
+    // rename, so it still survives into the live database.
+    recordAppliedRetentionOperation(
+      operation.candidate_path, operation, result, build.result_generation, now);
+    // Taken once the connection is gone and its log is folded in, so the baseline is the file the
+    // rename would replace rather than the file plus a log that closing was about to remove.
+    const settled = sourceBytes(authority.filename);
+    // The connection is gone and no other holder remains, so the last word on whether anybody
+    // wrote in the remaining moments is the file itself: identical bytes and no log beside it.
     if (sourceBytes(authority.filename) !== settled) {
       throw new JarvisError("LOCAL_RETENTION_SOURCE_CHANGED");
     }
@@ -79,10 +117,14 @@ export function applyRetentionCandidate(
     syncPath(dirname(authority.filename), true);
     observed = runtime.observeOldInode(BigInt(fence.device), BigInt(fence.inode));
   } catch (error) {
-    authority.reopen();
+    releaseSwapBarrier(authority.filename);
+    if (!authority.db.open) authority.reopen();
     throw error;
   }
+  // Reopened while this process still holds the barrier, which admits its own owner, so the live
+  // connection is back before anybody else is let in.
   authority.reopen();
+  releaseSwapBarrier(authority.filename);
   runtime.acknowledgeGeneration(build.result_generation);
   const live = statSync(authority.filename, { bigint: true });
   if (live.dev.toString() !== result.device || live.ino.toString() !== result.inode) {

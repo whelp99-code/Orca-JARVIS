@@ -103,3 +103,99 @@ P1 6건·P2 3건. 재현은 `/home/jm/.cache/jarvis-indep-review2-20260911/*.mjs
 이 변경은 `applyLocalObservationRetention`의 경로 계약과 복구·교체·일정 서비스, 그리고 관련 회귀
 전반을 함께 바꾼다. 절반만 적용하면 같은 계열의 결함을 남긴 채 겉보기만 달라지므로, **독립된 단위로
 설계·구현·재리뷰**하는 것을 전제로 여기서 멈추고 범위를 고정한다.
+
+
+## 복구 세션 CODEX-JARVIS-RECOVERY-20260911-02 (2026-09-11)
+
+이전 세션은 코드 완료가 아니라 대화 컨텍스트 초과로 멈췄다. 제품 트리는 보존된 채 이어받았고,
+시작 시점 실측은 branch `codex/routing-approval-ui`, HEAD `49783df`, tracked M 5 / D 0, untracked
+`migrations/095`·`migrations/096`·`docs/codex-opus-claim-followup-2026-09-11.md` 및 도구 상태였다.
+
+### 실행 환경 결함 (제품 결함 아님)
+
+지시서 §10.4가 예고한 `/tmp` usrquota 문제가 실제로 재현됐다. `/tmp` tmpfs 81% 사용(49G/61G)에서
+vitest 워커가 `Unknown system error -122`(EDQUOT)로 7개 파일 전부 collection 실패했다. 이후 모든
+실행은 `TMPDIR=/home/jm/.cache/jarvis-codex-claim-review-20260911-4ztfcjp6/monitor-repair-20260911/qa/tmp`
+로 고정한다. 또한 vitest 위치 인자는 glob이 아니라 substring filter이므로 glob을 넘기면 "No test
+files found"로 RC 1이 된다. 두 사실은 실패 집계에서 제품 결함과 분리한다.
+
+### 인계된 실패 4건의 실제 원인과 처리
+
+baseline `qa/retention-baseline.log`: 7파일 62테스트 중 4 failed / 58 passed.
+
+| 실패 테스트 | 관측값 | 원인 | 처리 |
+|---|---|---|---|
+| `retention.test` "applies the selector through the rebuild adapter without writing the source" | expected 143 to be 140 | claim 대장(intent 기록 → identity 기록 → operation → intent 소멸 → verdict) 도입으로 source 쓰기가 2행에서 5행이 됐는데 단정은 이전 계약인 +2 | 계약을 +5로 갱신하고 `local_retention_claim_intents` 잔여 0을 함께 단정 |
+| `retention.test` "does not remove a group the selector retained for a live notification" | expected 144 to be 141 | 같음 | 같음 |
+| `retention-source-writes` "leaves the source untouched, logically and physically, while it copies" | expected 144 to be 141 | 같음 | 같음 |
+| `retention-schedule` "holds the window against a duplicate start, a clock that went back and a long outage" | expected 'failed' to be 'processed' | **제품 결함**. `memory-authority-fresh-builder`가 모든 표를 무조건 복사하므로 `local_retention_claim_intents`가 candidate에 실려 교체 후 live authority에 남는다. 이 표의 `directory`는 UNIQUE이고 소유 프로세스는 이미 없으므로, 다음 주기의 intent INSERT가 죽은 행과 충돌해 `LOCAL_RETENTION_DESTINATION_INVALID`로 실패한다 | `copyFilter`에 `local_retention_claim_intents → WHERE 0`. 복사 계획을 그대로 재사용하는 `assertCandidateMatchesCopyPlan`도 같은 규칙을 보므로 검증기와 복사기가 어긋나지 않는다 |
+
+검증: `qa/fix1.log` — 3파일 18테스트 전부 통과, RC 0 (선행 `npm run build` RC 0).
+
+### 단위 원장 추가
+
+| 단위 ID | 상태 | 파일·계약 | 인수 항목 | 실행 결과 |
+|---|---|---|---|---|
+| R02-claim-ledger-contract | VERIFIED | `local-observation-retention*.test.ts` | 확보 대장 도입 후 source 쓰기 계약을 정확히 5행으로 고정하고 intent 잔여 0 | fix1.log 18/18 |
+| R02-intent-not-copied | VERIFIED | `memory-authority-fresh-builder.ts` | 교체된 authority가 죽은 claim을 상속하지 않고 다음 주기가 같은 경로를 다시 확보 | schedule 5/5 (7일 뒤 재기동 `processed`, operations 2행) |
+| R02-swap-exclusivity | VERIFIED | `authority-database-swap-barrier.ts`(신규), `authority-db-base.ts`, `local-observation-retention-swap.ts`, `memory-authority-swap.ts`, `local-observation-retention-exclusivity.test.ts`(신규), `local-retention-writer-holder.mjs`(신규) | 아래 §배타성 | 아래 |
+
+### 배타성(M2 §6.1-4, followup §4)의 실제 구현
+
+2차 독립 리뷰가 남긴 4건의 공통 뿌리였던 "교체 구간에 프로세스 간 배타성이 없다"를 닫았다.
+두 번째 authority/swap 체계를 만들지 않고, 이미 있는 세 가지를 결합했다: 모든 연결이 지나는 단일
+open 경계(`AuthorityDbBase` 생성자와 `reopen()`), `/proc` 기반 open-inode 관측
+(`discoverOpenInodeHolders`), 프로세스 레지스트리.
+
+1. **배리어**: `<database>.swap-barrier`. 경로만으로 유도되므로 레지스트리 위치를 모르는 프로세스도
+   찾을 수 있다. pid + start_token + reason을 담고, 소유자가 사라진 레코드는 debris로 취급해 제거한다.
+   따라서 교체 중 급사가 DB를 영구히 잠그지 않는다.
+2. **입장 통제**: open 경계에서 `assertSwapAdmission()`. 교체 중 새 연결은
+   `AUTHORITY_DATABASE_SWAP_IN_PROGRESS`로 거절된다. 배리어 소유자 자신은 허용된다(자기 reopen).
+3. **파괴 이전 거절**: retention 교체 순서를 checkpoint·fence 확인 → **배리어 공개(연결은 아직 열린
+   상태)** → 1차 스캔(자기 pid를 제외한 holder가 있으면 `LOCAL_RETENTION_SOURCE_WRITER_ACTIVE`로
+   즉시 거절) → close → sidecar 제거 → 2차 스캔(이제 자기 것까지 포함해 fd_count 0이어야 함) →
+   applied 기록 → byte 재확인 → rename → reopen → 배리어 해제로 바꿨다. 공개가 스캔보다 먼저이므로
+   스캔 이전에 열린 연결은 스캔이 보고, 스캔 이후의 연결은 입장 통제가 막는다. 이 순서가 "마지막
+   검사 직후 커밋" 창을 닫는다.
+4. **재시도 가능한 거절**: 1차 스캔이 연결을 닫기 전에 답하는 것은 편의가 아니라 필수다.
+   `RetentionSourceFence.total_changes`는 연결 단위 카운터(`SELECT total_changes()`)라서
+   `close()`/`reopen()`이 0으로 재시작시키고, 그러면 호출자가 들고 있던 fence가 이후 영구히
+   "source가 움직였다"로 판정된다. 첫 구현은 close 뒤에 스캔을 두어 실제로 이 결함을 냈고, 격리
+   회귀의 재시도 단계가 `LOCAL_RETENTION_SOURCE_CHANGED`로 실패했다. 계측으로
+   `total_changes 143 → 0`을 실측한 뒤 순서를 바로잡았다. 지금은 거절이 아무것도 닫지 않고
+   아무것도 쓰지 않으므로 writer가 사라진 뒤 같은 candidate로 재시도가 성립하며, 그 재시도까지
+   회귀가 단정한다.
+5. **공통 프로토콜**: 같은 배리어를 compaction 교체(`memory-authority-swap.ts`)에도 공개/해제한다.
+   retention끼리만의 lock이 아니다. compaction의 기존 reader drain 계약
+   (`MEMORY_OLD_DATABASE_FD_ACTIVE` 후 `recover`)은 의도적으로 바꾸지 않았다. 그것은 writer 배제가
+   아니라 retired inode를 쥔 reader를 배수하는 별도 계약이고, 기존 인수 회귀가 그 동작을 고정한다.
+
+회귀 `tests/integration/local-observation-retention-exclusivity.test.ts`는 셋 다 **실제 별도 프로세스**를
+쓰고 sleep이 없다(자식의 stdout 라인과 exit 이벤트로만 동기화).
+
+- 별도 프로세스가 실제 연결을 쥔 채 교체 시도 → 거절, source inode·행 수·candidate·배리어 파일이
+  모두 보존됨을 단정. 자식이 연결을 놓은 뒤 같은 application으로 교체가 성공하고 관측 1건이 줄어든다.
+- 배리어 유지 중 새 프로세스의 open → `AUTHORITY_DATABASE_SWAP_IN_PROGRESS`, 해제 후 open 성공.
+- 배리어를 쥔 프로세스를 SIGKILL → 다음 open이 정상 허용되고 debris가 제거된다.
+
+### 이 회귀가 수정을 실제로 고정한다는 근거 (변이 검사, 실측)
+
+두 스캔을 `if (false)`로 바꾸고 같은 회귀를 실행하면 실패한다:
+
+    × refuses to replace a source another process holds open, then swaps once it lets go
+      → expected Error: LOCAL_RETENTION_OLD_DATABASE_FD_AC… to match { code: 'LOCAL_RETENTION_SOURCE_WRITER_ACTIVE' }
+
+즉 수정이 없으면 교체가 그대로 진행되고 **원본을 잃은 뒤** old-fd를 발견해 오류를 낸다.
+followup §4가 "데이터를 잃은 뒤 old-fd 발견/error 반환은 인수가 아니다"로 지목한 바로 그 동작이며,
+회귀는 그 차이를 구분한다. 검사 후 원본 코드를 그대로 복원했다.
+
+## TMPDIR 사실 정정 (실측)
+
+`scripts/lib/test-environment.mjs`는 TMPDIR이 비어 있으면 스스로
+`~/.cache/orca-jarvis/tests` 아래에 private scratch를 만들고 TMPDIR/TMP/TEMP를 거기로 덮어쓴다.
+따라서 `npm test` / `npm run verify` 경로는 원래부터 /tmp 쿼터의 영향을 받지 않는다.
+EDQUOT(-122)는 내가 `npx vitest`를 직접 호출해 `os.tmpdir()`가 /tmp로 해석된 경우에만
+발생했다. 즉 이 장애는 **직접 호출 방식의 문제**이지 제품이나 공식 gate의 결함이 아니다.
+`gui` 프로파일이 TMPDIR을 /tmp로 설정하는 곳은 bwrap 샌드박스 안의 private tmp를 /tmp에 bind한
+경우라 공유 tmpfs와 무관하다.

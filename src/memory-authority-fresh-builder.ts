@@ -175,6 +175,12 @@ export function copyExpression(table: string, column: string): string {
 
 export function copyFilter(table: string, columns: readonly string[]): string {
   const projection = "blocked_projections";
+  // A claim intent is one live process announcing a directory it is about to create on this host.
+  // It is not data: the rebuilt file is a different database, the process that wrote the row does
+  // not own anything in it, and `directory` is unique, so copying the row would leave a dead claim
+  // that refuses that path to every later run. Recovery reads intents from the live source, which
+  // still holds them, so dropping them here loses no evidence.
+  if (table === "local_retention_claim_intents") return "WHERE 0";
   if (table === "memory_outbox") return `WHERE NOT EXISTS (SELECT 1 FROM ${projection} p
     WHERE (p.kind='candidate' AND p.id=source_row.candidate_id)
        OR (p.kind='outbox' AND p.id=source_row.outbox_id))`;

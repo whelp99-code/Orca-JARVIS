@@ -255,3 +255,43 @@ it("leaves an operation alone while the process that owns it is still running", 
     await once(child, "exit");
   }
 }, 60_000);
+
+// Reported by review as P1-C2: an intent records what a run meant to create. Recovery was reading
+// it as proof that the object now at that path is the one it created.
+it("keeps a directory an intent never proved it created", async () => {
+  const seed = await seeded();
+  const db = reopen(seed);
+  const foreign = seed.candidate;
+  mkdirSync(foreign, { recursive: true });
+  writeFileSync(join(foreign, "sentinel.txt"), "somebody else's directory");
+  // A process that wrote the intent and died before creating anything: no identity was recorded.
+  const dead = spawn(process.execPath, ["-e", ""], { stdio: "ignore" });
+  await once(dead, "exit");
+  db.db.prepare(
+    `INSERT INTO local_retention_claim_intents(operation_id,owner_token,owner_start_token,
+      directory,created_at) VALUES(?,?,?,?,?)`,
+  ).run("retention:intent-only", `${dead.pid}:token`, "1", foreign, LOCAL_CHAIN_AT);
+
+  const recovered = recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT));
+
+  expect(recovered.map(item => item.outcome)).toEqual(["retained_unproven"]);
+  expect(readFileSync(join(foreign, "sentinel.txt"), "utf8")).toBe("somebody else's directory");
+  // The intent stays too: it is the only record that something here is unaccounted for.
+  expect(db.db.prepare("SELECT COUNT(*) FROM local_retention_claim_intents").pluck().get()).toBe(1);
+}, 60_000);
+
+it("does not decide a claim is abandoned when it cannot read the owner", async () => {
+  const seed = await seeded();
+  const db = reopen(seed);
+  mkdirSync(seed.candidate, { recursive: true });
+  writeFileSync(join(seed.candidate, "sentinel.txt"), "unreadable owner");
+  // No start token: nothing here says the process that wrote this is gone.
+  db.db.prepare(
+    `INSERT INTO local_retention_claim_intents(operation_id,owner_token,owner_start_token,
+      directory,created_at) VALUES(?,?,NULL,?,?)`,
+  ).run("retention:unknown-owner", "999999999:token", seed.candidate, LOCAL_CHAIN_AT);
+
+  expect(recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT)).map(item => item.outcome))
+    .toEqual(["retained_active"]);
+  expect(readFileSync(join(seed.candidate, "sentinel.txt"), "utf8")).toBe("unreadable owner");
+}, 60_000);

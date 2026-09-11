@@ -4,6 +4,7 @@ import { basename, dirname, join } from "node:path";
 import { canonicalize } from "./canonical.js";
 import type { AuthorityDatabaseRuntime } from "./authority-database-runtime.js";
 import { JarvisError as AuthorityError } from "./db.js";
+import { publishSwapBarrier, releaseSwapBarrier } from "./authority-database-swap-barrier.js";
 const digest = (value: unknown): string => `sha256:${createHash("sha256").update(canonicalize(value)).digest("hex")}`;
 
 export type SwapRequest = {
@@ -29,18 +30,25 @@ export type SwapObservation = {
 export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, input: SwapRequest): Promise<SwapObservation> {
     const authority = runtime.authorityDb();
     authority.db.pragma("wal_checkpoint(TRUNCATE)");
+    // The same barrier the retention swap takes, so the two replacement paths exclude each other
+    // and neither is joined by a connection opened after its critical section began. Taken while
+    // this connection is still open, so there is no moment between closing and excluding. This
+    // does not change what compaction tolerates: readers holding the retired inode are still
+    // drained after the rename rather than refused before it.
+    publishSwapBarrier(authority.filename, "memory_compaction", new Date(input.observed_at));
     authority.close();
     removeSidecars(authority.filename);
     if (input.cancellation) {
       const source = lstatSync(authority.filename, { bigint: true });
       if (!source.isFile() || source.nlink !== 1n || source.dev !== input.old_device || source.ino !== input.old_inode) {
+        releaseSwapBarrier(authority.filename);
         authority.reopen();
         throw new AuthorityError("MEMORY_CANCELLATION_RETIRED_SOURCE_INVALID");
       }
       try {
         linkSync(authority.filename, retiredSourcePath(authority.filename, input.purge_id));
         syncPath(dirname(authority.filename), true);
-      } catch (error) { authority.reopen(); throw error; }
+      } catch (error) { releaseSwapBarrier(authority.filename); authority.reopen(); throw error; }
     }
     const oldInode = (() => {
       try {
@@ -48,11 +56,13 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
         syncPath(dirname(authority.filename), true);
         return runtime.observeOldInode(input.old_device, input.old_inode);
       } catch (error) {
+        releaseSwapBarrier(authority.filename);
         authority.reopen();
         throw error;
       }
     })();
     authority.reopen();
+    releaseSwapBarrier(authority.filename);
     runtime.acknowledgeGeneration(input.result_generation);
     const active = statSync(authority.filename, { bigint: true });
     const oldFdCount = oldInode.fd_count;

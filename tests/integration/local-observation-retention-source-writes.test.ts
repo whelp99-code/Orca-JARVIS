@@ -57,10 +57,13 @@ it("leaves the source untouched, logically and physically, while it copies", asy
     wal: bytes(`${db.filename}-wal`),
     shm: bytes(`${db.filename}-shm`),
   };
-  // The only write the apply makes to the source is its own operation record: one insert that
-  // registers the attempt and one update that records the verdict.
-  expect(after.changes).toBe(before.changes + 2);
+  // The only writes the apply makes to the source are its own claim ledger: the intent that
+  // announces the directory, the identity the create produced, the operation row, the delete that
+  // spends the intent, and the verdict.
+  expect(after.changes).toBe(before.changes + 5);
   expect(operations(db)).toBe(1);
+  expect(Number(db.db.prepare("SELECT COUNT(*) FROM local_retention_claim_intents").pluck().get()))
+    .toBe(0);
   expect(String(db.db.prepare("SELECT state FROM local_retention_operations").pluck().get()))
     .toBe("verified");
   // No data table moves: the apply removes nothing from the source.

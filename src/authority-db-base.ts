@@ -6,6 +6,7 @@ import { OrcaObservationStore } from "./orca-observation-store.js";
 import { PersonalContextPersistence } from "./personal-context-persistence.js";
 import type { DecisionReceipt, PolicyAuthorization, WorkState } from "./types.js";
 import { JarvisError } from "./jarvis-error.js";
+import { assertSwapAdmission } from "./authority-database-swap-barrier.js";
 export { JarvisError } from "./jarvis-error.js";
 
 export type Row = Record<string, unknown>;
@@ -53,6 +54,10 @@ export abstract class AuthorityDbBase {
 		private readonly openOptions: { readonly fileMustExist?: boolean; readonly readonly?: boolean } = {},
 	) {
 		this.migrationsPath = migrationsPath;
+		// Every connection to an authority database is opened here or in reopen(), so this is the
+		// one place a swap can exclude new arrivals. A connection admitted after the replacement
+		// began would hold an inode the rename is about to orphan.
+		assertSwapAdmission(filename);
 		this.db = new Database(filename, openOptions);
 		const stores = this.stores(this.db);
 		this.migrations = stores.migrations;
@@ -65,6 +70,7 @@ export abstract class AuthorityDbBase {
 	}
 	reopen(): void {
 		if (this.db.open) throw new JarvisError("AUTHORITY_DATABASE_ALREADY_OPEN");
+		assertSwapAdmission(this.filename);
 		this.db = new Database(this.filename, this.openOptions);
 		const stores = this.stores(this.db);
 		this.migrations = stores.migrations;
