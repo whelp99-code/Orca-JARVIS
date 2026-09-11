@@ -89,7 +89,10 @@ it("discards cached content through reconstruction and restore while preserving 
       expect(rebuilt.db.pragma("foreign_key_check")).toEqual([]);
     } finally { rebuilt.close(); }
   } finally { db.close(); rmSync(root, { recursive: true, force: true }); }
-});
+// Reconstruction and a restore inside one case: measured at 3.2s, 4.8s and 5.8s for identical
+// code on the same machine, so the five second default decides this by load rather than by
+// behaviour. The assertions are untouched; only the deadline is stated.
+}, 60_000);
 it("does not publish or return a snapshot when source revalidation consumes its freshness window", async () => {
   const db = await fixture();
   try {
