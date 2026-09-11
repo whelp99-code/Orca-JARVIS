@@ -154,7 +154,8 @@ open 경계(`AuthorityDbBase` 생성자와 `reopen()`), `/proc` 기반 open-inod
    `AUTHORITY_DATABASE_SWAP_IN_PROGRESS`로 거절된다. 배리어 소유자 자신은 허용된다(자기 reopen).
 3. **파괴 이전 거절**: retention 교체 순서를 checkpoint·fence 확인 → **배리어 공개(연결은 아직 열린
    상태)** → 1차 스캔(자기 pid를 제외한 holder가 있으면 `LOCAL_RETENTION_SOURCE_WRITER_ACTIVE`로
-   즉시 거절) → close → sidecar 제거 → 2차 스캔(이제 자기 것까지 포함해 fd_count 0이어야 함) →
+   즉시 거절) → close → 2차 스캔(자기 것까지 포함해 fd_count 0, **여기까지 아무것도 지우지 않는다**) →
+   sidecar 제거 → byte 기준선 →
    applied 기록 → byte 재확인 → rename → reopen → 배리어 해제로 바꿨다. 공개가 스캔보다 먼저이므로
    스캔 이전에 열린 연결은 스캔이 보고, 스캔 이후의 연결은 입장 통제가 막는다. 이 순서가 "마지막
    검사 직후 커밋" 창을 닫는다.
@@ -199,3 +200,62 @@ EDQUOT(-122)는 내가 `npx vitest`를 직접 호출해 `os.tmpdir()`가 /tmp로
 발생했다. 즉 이 장애는 **직접 호출 방식의 문제**이지 제품이나 공식 gate의 결함이 아니다.
 `gui` 프로파일이 TMPDIR을 /tmp로 설정하는 곳은 bwrap 샌드박스 안의 private tmp를 /tmp에 bind한
 경우라 공유 tmpfs와 무관하다.
+
+
+## M4.2-project-scope 재평가 (followup §5.4) — 실측과 판정
+
+지시는 "기존 TaskSpec의 검증된 scope와 명시 정책을 기준으로 결정하고, 출처가 모호하면 fail-closed로
+처리하며 임의 project/owner authority는 만들지 않는다"였다. 네 가지를 실제로 측정했다.
+
+| 측정 | 결과 |
+|---|---|
+| task의 검증된 프로젝트 정체성 | **있다.** `work_items.snapshot_id` → `census_snapshots.project_id` → `projects.id` (migrations/001). 후보는 `memory_candidate_task_sources.task_id`로 task에 이미 결속돼 있다 |
+| `projects` 테이블이 담는 것 | `id`, `target_kind`(codex/claude), `created_at`뿐. repo slug도 경로도 없다 |
+| 제품 안의 명시적 프로젝트 범위 정책 | **없다.** 후보 정책·평가 계약(`personal-os-policy-contract.ts`)은 닫힌 `schema_version: 1` 레코드이고 키 목록이 전부 열거돼 있으며 project 개념이 없다 |
+| `config/portfolio-repositories.json` | GitHub slug 20여 개의 **포함** 목록이지만 소비자는 `ops/portfolio/local-portfolio-publisher.sh` 하나뿐이다. 제품 코드는 읽지 않으며 `projects.id`와 식별자 공간이 다르고 둘을 잇는 매핑이 존재하지 않는다 |
+
+판정: 결속과 정체성은 이미 있으므로 **해상(resolution)은 개발 가능**하지만, 어떤 프로젝트를
+제외하는지는 제품 어디에도 진술돼 있지 않다. slug 목록과 `projects.id`를 잇는 매핑을 새로 만들면
+그것이 곧 소유자가 진술한 적 없는 project authority가 되며, §5.4가 금지한 바로 그 행위다. 또한
+검증된 정체성이 없는 task(=`workflow_runs`에서만 파생된 task)를 일괄 거절하도록 바꾸면 근거 없이
+접수 전반을 차단하게 된다.
+
+따라서 이 항목은 **소유자 결정 필요**로 분리한다. 전체 개발을 멈추지 않으며, 재개에 필요한 입력은
+정확히 두 가지다.
+
+1. 제외(또는 허용) 대상 프로젝트를 `projects.id` 공간에서 열거한 목록, 또는 slug↔project_id 매핑의
+   출처를 소유자가 지정할 것.
+2. 검증된 프로젝트 정체성이 없는 task에서 파생된 후보를 거절할지 통과시킬지의 정책(fail-closed 기본을
+   제안한다).
+
+이 둘이 정해지면 구현 지점은 이미 좁혀져 있다: 해상은 `memory-candidate-task-source.ts`의 결속을
+따라가는 한 함수, 집행은 접수(`MemoryCandidateStore.classify`와 같은 트랜잭션)와 소비
+(`candidateTaskSourceSuppressed`가 이미 호출되는 지점) 두 곳이다.
+
+
+## 독립 리뷰와 그 수정 (커밋 `320b59c`)
+
+`4518103`을 다른 모델(GPT-5.6)에게 읽기 전용으로 검토시켰다. 판정 **CHANGES_REQUIRED**, P1 5건·
+P2 3건. 상세 대조표는 회신서 §9.4에 있고, 요지는 "배제를 선언했지만 아직 빈틈이 있었다"이다.
+
+| 단위 ID | 상태 | 인수 항목 | 실행 결과 |
+|---|---|---|---|
+| R02-admission-two-phase | VERIFIED | 디스크립터 생성 전후 두 번 묻는 입장 통제. 늦게 연 연결은 스스로 반납한다 | 신규 회귀 1건. 사후 재확인 제거 시 그 1건만 실패(변이 실측) |
+| R02-barrier-atomic | VERIFIED | 고유 이름에 완전한 내용을 쓴 뒤 `link()`로 획득. 승자는 커널이 정한다 | "정확히 하나만 성공" 회귀. 비배타 쓰기로 바꾸면 4건 실패 |
+| R02-no-destruction-before-proof | VERIFIED | 2차 스캔을 sidecar 제거 이전으로. 같은 프로세스의 두 번째 연결도 면제되지 않는다 | 기존 회귀 + 거절 후 `db.db.open` 단정 |
+| R02-compaction-writer-refusal | VERIFIED | 외부 **writer**는 rename 이전 거절, reader 배수 계약은 불변. `fdinfo` 접근 모드로 구분하고 못 읽으면 writer로 센다 | compaction 인수 회귀 1/1 그대로 통과 |
+| R02-intent-evidence | VERIFIED | 자기 intent만 소멸, 남의 intent는 candidate로 이월 | 신규 회귀 1건 |
+| R02-unwind-safety | VERIFIED | 실패 경로가 reopen·해제를 하되 원래 오류를 덮지 않는다 | 타입·린트 0, 거절 후 재시도 성공 회귀 |
+
+대상 회귀 실측: **9 files / 69 tests passed**, RC 0 (`qa/fix5.log`). 이전 라운드 66 → 69.
+
+
+## 전체 gate 실측 (야간 라운드)
+
+| 회차 | 입력 SHA | RC | 결과 |
+|---|---|---|---|
+| 1 | `320b59c` | 1 | backend shard1에서 2건 실패. 둘 다 이 라운드 변경이 원인이며 `5a53e10`에서 수정(모듈 라인 예산 251→248, compaction 사전 스캔이 1회용 mock을 소비하던 문제를 호출 분리로 해결) |
+| 2 | `5a53e10` | **0** | backend 279+278 파일 / 1,929+1,931 테스트, dashboard 38 파일 / 263 테스트 = **595 파일 / 4,123 테스트**. architecture 668 모듈·2,490 간선·순환 0. acceptance `pre_gjc_ready` |
+
+이전에 `VERIFY=143`으로 끝난 run이 하나 더 있으나 이는 독립 리뷰 수정을 위해 **내가 SIGTERM으로
+중단**한 것이며 어떤 합격 근거로도 쓰지 않는다.

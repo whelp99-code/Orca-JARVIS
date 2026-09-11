@@ -21,13 +21,13 @@ M5의 설정 manifest·적용/rollback 안은 구현·회귀·전체 gate를 마
 |---|---|
 | worktree | `/home/jm/orca/workspaces/Orca-JARVIS/codex-routing-approval-ui` |
 | branch | `codex/routing-approval-ui` |
-| 제품 검증 SHA (전체 verify 입력) | `0af102572ef9a21f3661967636b5f091eb5c5f13` |
-| 검증 시점 tree | `b49d39ce919ab8155bec75b9c40977085ed016ad` |
-| 문서 포함 제출 HEAD | 이 회신서를 담은 문서 커밋. `git diff --name-only 0af1025..HEAD`가 `docs/`만 보여야 한다 |
+| 제품 검증 SHA (전체 verify 입력) | `45181034055347f9b2512b2e05654b926401056b` |
+| 검증 시점 tree | `1be9b34dfa4af79cfa33c49342c866d1f8b5dfa7` |
+| 문서 포함 제출 HEAD | 이 회신서를 담은 문서 커밋. `git diff --name-only 4518103..HEAD`가 `docs/`만 보여야 한다 |
 | upstream | `not_configured` — ahead/behind 측정 불가 (`git rev-parse --abbrev-ref @{u}` 실패) |
 | tracked 변경 | M 0, D 0 |
 | untracked | 3 (`.omo/evidence/ulw/`, `.omo/ulw-loop/`, `node_modules`) — 도구 상태·공유 의존성, 커밋 대상 아님 |
-| 베이스라인 대비 | `082d689..0af1025` 22 커밋 (문서 커밋 별도) |
+| 베이스라인 대비 | `082d689..4518103` 39 커밋 (문서 커밋 별도) |
 | dashboard 파일 변경 | **0** (`git diff --name-only 082d689..HEAD | grep -ci dashboard`) |
 
 packager가 `source_dirty: true`로 기록한 것은 위 untracked 3건 때문이며, tracked 수정은 0이다.
@@ -46,9 +46,11 @@ packager가 `source_dirty: true`로 기록한 것은 위 untracked 3건 때문�
 | `453bd48` | 제품+테스트+문서 | 숨긴 task가 provider에 남긴 저장분을 열거하는 surface. 철회 자체는 쓰지 않음 |
 | `3e94d17` | 제품+테스트+문서 | 후보 생성 뒤 원본을 숨겼을 때, 미리 준비된 승인의 확정을 차단(실제 구멍이었고 검사를 빼면 회귀가 실패함) |
 | `128d290` | 제품+테스트+문서 | 철회가 지목할 resolved target을 목록에 실음. 저장 전이면 null |
+| `49783df` | 문서 | 운영 디렉터리 도입분의 재제출과 receipt 정정 |
+| `4518103` | 제품+테스트+문서 | 교체 구간의 프로세스 간 배타성(§9.2). 공유 swap 배리어와 단일 open 경계의 입장 통제, 파괴 이전 거절, 확보 대장이 남긴 두 결함(죽은 intent 상속·source 쓰기 계약 2→5) 정리 |
 
-과거 gate 결과를 새 코드에 소급하지 않았다. §6의 전체 verify는 `0d6d614` 입력으로 새로 실행했고, 실행
-전후 입력 digest가 동일하다.
+과거 gate 결과를 새 코드에 소급하지 않았다. `0af1025`까지의 gate는 그 시점의 기준점으로만 유효하고,
+§6의 전체 verify는 이 회신서가 제출하는 제품 SHA `4518103` 입력으로 다시 실행했다(§9.4).
 
 ## 3. R2 반례 before/after
 
@@ -123,7 +125,10 @@ fixture 통과를 실제 생산자 통과로 세지 않는다.
 | acceptance | `pre_gjc_ready`, `aggregate_status=stopped`, `completion_promoted=true`, `gjc_dispatched=false` |
 | log | `<QA>/verify-20260911T084128Z/verify.log`, sha256 `8a4b974d5701aa8747e2866084edbd79f013190ef70883b7ad55c1bfd53dde3b` |
 
-과거 4,066은 목표치로 쓰지 않았다. 위 수치는 이번 실행의 로그 실측이다.
+과거 4,066은 목표치로 쓰지 않았다. 위 수치는 그 실행의 로그 실측이다.
+
+> **이 표는 `0af1025` 기준점이며 현재 제품의 검증이 아니다.** 그 뒤로 제품 코드가 바뀌었으므로
+> 현재 제출의 gate는 §9.5다. 여기 수치를 새 코드에 소급하지 않는다.
 
 **합격 근거에서 제외한 run이 있다.** `verify-20260911T020553Z`(같은 입력, 같은 HEAD)는 exit 1로
 끝났다. 실패는 1건이었다:
@@ -417,3 +422,196 @@ push·merge·deploy·서비스 재시작·운영 DB/설정 변경·`current` 전
 운영 서명·notarization·실제 업무 실행·provider 쓰기·외부 전송도 하지 않았다. 독립 리뷰는 §8bis대로 **수행했고** 지적 9건을 전부 수정했다. 다만 그 리뷰어는 이 구현을 쓰지 않은
 다른 모델일 뿐 운영 승인 권한이 없으므로, 그 APPROVE를 최종 인수로 쓰지 않는다. 이 회신서는 Codex의
 독립 검증을 그대로 요청한다.
+
+
+## 9. 복구 라운드 CODEX-JARVIS-RECOVERY-20260911-02 (2026-09-11)
+
+이전 세션은 코드가 완료되어 끝난 것이 아니라 대화 컨텍스트 한도로 멈췄다. 제품 트리는 그대로
+보존됐고, 이 라운드는 그 지점에서 이어졌다. 시작 실측은 HEAD `49783df`, tracked M 5 / D 0,
+untracked에 `migrations/095`·`migrations/096`·followup 문서였다.
+
+### 9.1 인계된 실패 4건의 실제 원인
+
+baseline(`qa/retention-baseline.log`) 7파일 62테스트 중 4 failed. 세 건과 한 건의 성격이 다르다.
+
+| 실패 | 관측 | 성격 | 처리 |
+|---|---|---|---|
+| `retention.test` "applies the selector…" | expected 143 to be 140 | **계약 변화**. 확보 대장이 도입되면서 apply가 source에 쓰는 행이 2에서 5로 늘었다(intent → identity → operation → intent 소멸 → verdict) | 단정을 +5로 갱신하고 `local_retention_claim_intents` 잔여 0을 함께 단정 |
+| `retention.test` "does not remove a group…" | expected 144 to be 141 | 같음 | 같음 |
+| `retention-source-writes` "leaves the source untouched…" | expected 144 to be 141 | 같음 | 같음 |
+| `retention-schedule` "holds the window…" | expected 'failed' to be 'processed' | **제품 결함** | 아래 |
+
+제품 결함은 다음과 같다. `memory-authority-fresh-builder`는 `sqlite_master`의 모든 표를
+조건 없이 복사하므로 `local_retention_claim_intents`도 candidate에 실린다. 그 표의 `directory`는
+UNIQUE이고, 교체가 끝나면 그 candidate가 live authority가 된다. 결과적으로 새 authority는 **이미 끝난
+실행의 죽은 claim**을 상속하고, 그 프로세스는 존재하지 않으므로 정리되지도 않으며, 다음 주기가 같은
+디렉터리를 확보하려 하면 UNIQUE 충돌로 `LOCAL_RETENTION_DESTINATION_INVALID`가 난다. 즉 일정화된
+보존은 **첫 회차 이후 영구히 실패**한다. `copyFilter`에 `local_retention_claim_intents → "WHERE 0"`를
+추가해 닫았다. intent는 이 호스트의 살아 있는 프로세스가 만들려는 디렉터리에 대한 선언이지 데이터가
+아니고, 복구는 intent를 live source에서 읽으므로 증거 손실도 없다. 복사 계획을 그대로 재사용하는
+`assertCandidateMatchesCopyPlan`이 같은 규칙을 보기 때문에 복사기와 검증기가 어긋나지 않는다.
+
+### 9.2 교체 구간 배타성 — followup §4와 M2 §6.1-4의 마감
+
+2차 독립 리뷰가 남긴 4건은 "산출물이 공유 이름 공간에 있고 교체 구간에 프로세스 간 배타성이 없다"는
+하나의 뿌리에서 나왔다. 비공개 디렉터리 쪽은 이전 라운드가 처리했고, 이번에 **swap lease**를 닫았다.
+
+두 번째 authority/swap 체계를 만들지 않았다. 이미 있던 세 가지를 결합했다.
+
+- 모든 연결이 지나는 단일 open 경계: `AuthorityDbBase` 생성자와 `reopen()`.
+- `/proc` 기반 open-inode 관측: `discoverOpenInodeHolders`.
+- 프로세스 레지스트리: `AuthorityProcessRegistry`.
+
+**배리어.** `<database>.swap-barrier`. 데이터베이스 경로만으로 유도되므로, 배제당할 프로세스가
+레지스트리 위치를 알 필요가 없다. pid와 start token을 담아 pid 재사용을 구분하고, 소유자가 사라진
+레코드는 살아 있는 배제가 아니라 급사의 잔해이므로 제거된다. 따라서 교체 중 급사가 데이터베이스를
+영구히 잠그지 않는다. SQLite가 소유한 `-wal`/`-shm`/`-journal` 접미사와 충돌하지 않는다.
+
+**입장 통제.** 교체 중에는 새 연결이 `AUTHORITY_DATABASE_SWAP_IN_PROGRESS`로 거절된다. 배리어
+소유자 자신은 허용되는데, 자기 교체의 마지막 단계가 그 파일을 다시 여는 것이기 때문이다.
+
+**순서가 핵심이다.**
+
+1. checkpoint 후 source fence 확인
+2. **배리어 공개 — 아직 연결은 열려 있다**
+3. 1차 스캔: 자기 pid를 제외한 holder가 있으면 `LOCAL_RETENTION_SOURCE_WRITER_ACTIVE`로 거절
+4. close
+5. 2차 스캔: 이제 자기 것까지 포함해 `fd_count`가 0이어야 한다. **여기까지 아무것도 지우지 않는다**
+6. sidecar 제거 → byte 기준선 → applied 기록 → byte 재확인 → rename → reopen → 배리어 해제
+
+공개가 스캔보다 먼저이므로, 스캔 이전에 열린 연결은 스캔이 보고 스캔 이후의 연결은 입장 통제가
+막는다. 이것이 "마지막 검사 직후 다른 프로세스가 커밋"하는 창을 닫는 부분이며, 바이트 비교는 그
+대체물이 아니라 그 다음 확인으로 남아 있다.
+
+1차 스캔이 **연결을 닫기 전에** 답하는 것은 편의가 아니다. `RetentionSourceFence.total_changes`는
+연결 단위 카운터(`SELECT total_changes()`)라서 `close()`/`reopen()`이 0으로 재시작시키고,
+그러면 호출자가 들고 있던 fence가 이후 영구히 "source가 움직였다"로 판정된다. 첫 구현은 close 뒤에
+스캔을 두어 실제로 이 결함을 냈고, 격리 회귀의 재시도 단계가 `LOCAL_RETENTION_SOURCE_CHANGED`로
+실패했다. 계측으로 `total_changes 143 → 0`을 확인한 뒤 순서를 바로잡았다. 지금은 거절이 아무것도
+닫지 않고 쓰지 않으므로, 다른 writer가 사라진 뒤 **같은 candidate로 재시도가 성립**한다.
+
+**공통 프로토콜이다.** compaction 교체(`memory-authority-swap.ts`)도 같은 배리어를 공개·해제한다.
+retention끼리만 지키는 lock이 아니다. 다만 compaction의 기존 계약 — 퇴역 inode를 쥔 reader를 rename
+이후에 배수하고 `MEMORY_OLD_DATABASE_FD_ACTIVE` 후 `recover`로 완료하는 것 — 은 의도적으로
+바꾸지 않았다. 그것은 writer 배제가 아니라 reader 배수이고 기존 인수 회귀가 그 동작을 고정한다.
+
+**협조하지 않는 writer.** `src/`에서 authority 파일을 `AuthorityDbBase` 없이 여는 경로를
+열거했다. 실제로 authority 경로를 여는 것은 `cli-runtime-identity.ts`의 진단용 readonly open
+하나였고, 같은 admission을 거치도록 했다. 그 함수는 원래 열기 실패를 "unavailable 증거"로 처리하므로
+교체 중에는 자연스럽게 unavailable로 보고된다. 나머지 raw open은 rehearsal/stress 경로의 자체 DB이거나
+(`local-observation-retention-operation.ts`) candidate 파일이라 source가 아니다. 등록하지 않은
+외부 writer는 배제할 수 없으므로 **파괴적 교체 전에 거절**한다 — 이것이 followup §4의 요구다.
+
+### 9.3 격리 회귀와 그 회귀가 실제로 무엇을 고정하는지
+
+`tests/integration/local-observation-retention-exclusivity.test.ts` 3건. 모두 **실제 별도 프로세스**를
+쓰고, 동기화는 자식의 stdout 라인과 exit 이벤트로만 한다. sleep이 없다.
+
+1. 별도 프로세스가 실제 연결을 쥔 채 교체 시도 → 거절. source inode·행 수·candidate·배리어 파일이
+   모두 보존됨을 단정. 자식이 연결을 놓은 뒤 **같은 application으로 교체가 성공**하고 관측 1건이 준다.
+   자식은 candidate 빌드 **이전에** 합류시킨다. 빌드 이후에 커밋하는 프로세스는 source fence가 이미
+   거절하므로, 그 경우를 배제해야 "열린 디스크립터" 자체가 유일한 거절 사유가 된다.
+2. 배리어 유지 중 새 프로세스의 open → `AUTHORITY_DATABASE_SWAP_IN_PROGRESS`, 해제 후 open 성공.
+3. 배리어를 쥔 프로세스를 SIGKILL → 다음 open이 허용되고 잔해가 제거된다.
+
+변이 검사(실측): 두 스캔을 `if (false)`로 바꾸면 1번이 실패한다.
+
+    → expected LOCAL_RETENTION_OLD_DATABASE_FD_ACTIVE to match LOCAL_RETENTION_SOURCE_WRITER_ACTIVE
+
+즉 수정이 없으면 rename이 그대로 일어나고 **원본을 잃은 뒤** old-fd를 발견해 오류를 낸다. followup §4가
+인수 불가로 지목한 바로 그 동작이며, 이 회귀는 둘을 구분한다. 검사 후 원본 코드를 복원했다.
+
+
+### 9.4 독립 리뷰 — 수행함, 판정 CHANGES_REQUIRED, 전부 수정
+
+§9.2의 첫 구현(`4518103`)을 다른 모델(GPT-5.6, 읽기 전용, 제품 수정·gate 실행 금지)에게 그대로
+읽혔다. 입력은 `49783df..4518103` diff와 followup §4·지시서 §6. 판정은 **CHANGES_REQUIRED**,
+P1 5건·P2 3건이었고, 지적은 대부분 정확했다. 수정 커밋은 `320b59c`다.
+
+| 지적 | 판정 | 처리 |
+|---|---|---|
+| 입장 통제가 check-then-open이라 검사 통과 후 스캔 이후에 디스크립터가 생길 수 있다 | **타당** | open을 감싸는 `openUnderSwapAdmission()`이 **디스크립터 생성 전후로 두 번** 묻는다. 늦게 연 쪽은 배리어를 보고 디스크립터를 반납하고, 먼저 연 쪽은 스캔에 잡혀 교체가 거절된다. 두 순서 모두 안전한 결과로 닫힌다 |
+| 배리어 획득이 read-then-write라 두 교체가 동시에 "내가 쥐었다"고 믿을 수 있다 | **타당** | 고유 이름에 내용을 먼저 쓰고 `link()`로 이름을 만든다. 승자는 커널이 정하고, 이름이 생기는 순간 내용은 이미 완전하다(반쯤 쓰인 배리어가 관측되지 않는다) |
+| 1차 스캔이 같은 pid를 통째로 면제해, 같은 프로세스의 두 번째 연결이 살아 있는데 WAL/SHM을 먼저 지운다 | **타당. 실제 데이터 손실 경로** | 2차 스캔을 **sidecar 제거 이전으로** 옮겼다. 배제가 증명되기 전에는 아무것도 지우지 않는다 |
+| compaction이 rename **후에야** 외부 holder를 보고한다 | **타당** | 외부 **writer**는 close·rename 이전에 `MEMORY_SOURCE_WRITER_ACTIVE`로 거절한다. reader/writer는 디스크립터 자신의 `/proc/<pid>/fdinfo` 접근 모드로 구분하고, 읽을 수 없으면 writer로 센다(fail-closed). 읽기 전용 holder를 rename 후 배수하는 기존 계약과 그 인수 회귀는 그대로다 |
+| `WHERE 0`이 도달 가능한 복구 증거를 없앤다 | **타당** | 운영 행이 기록되지 않은 intent는 그 디렉터리에 대해 복구가 가진 유일한 행이다. 이제 **자기 것만** 제외한다. 제외 대상은 복사 계획에 실려 복사기와 검증기가 같은 규칙을 본다 |
+| 배리어 경로가 철자에 의존한다 | 타당 | 배리어 이름과 기록되는 `database`를 부모의 realpath 기준으로 정규화했다 |
+| 정리 경로가 예외 안전하지 않다 | 타당 | 실패 경로에서 reopen과 해제를 각각 감싸 **원래 오류를 덮지 않는다**. 연결은 열린 채로, 배리어는 해제된 채로 빠져나간다 |
+| 회귀가 두 경주를 노출하지 못하고 exit 리스너를 늦게 단다 | 타당 | exit 프라미스를 spawn 직후에 등록했다(빨리 끝난 자식이 타임아웃까지 매달리던 실제 결함). 경주 두 건을 추가했다 |
+
+추가 회귀 3건(합계 **9 files / 69 tests**):
+
+1. 열리는 도중 교체가 시작되면 **연결을 반납한다** — 살아 있는 별도 프로세스를 소유자로 하는 배리어가
+   open 콜백 안에서 등장하고, 열린 디스크립터가 닫혔음을 단정한다.
+2. 두 프로세스가 배리어를 동시에 노리면 **정확히 하나만 성공한다**.
+3. 다른 실행의 claim intent가 candidate로 **이월된다**(자기 것은 소멸).
+
+변이 검사(실측): 사후 재확인을 제거하면 1번만 실패한다
+(`failed=["gives a connection up when a swap begins while it is being opened"]`).
+`link()` 획득을 비배타적 쓰기로 바꾸면 4건이 실패한다. 두 번째 변이는 넓게 실패하므로 원자성만
+분리해 증명하지는 않는다 — **원자성 자체는 `link()`의 커널 보장이고, 회귀가 고정하는 것은
+"둘 다 성공하지 않는다"는 불변식**이다. 서브밀리초 인터리빙을 강제하지는 못한다고 명시한다.
+
+남은 한계(정직하게): 등록하지 않고 배리어도 보지 않는 완전 비협조 writer가 마지막 스캔과 rename
+사이에 파일을 열면 막을 수단이 없다. 그래서 계약이 "배제할 수 없으면 파괴적 교체 전에 거절"이고,
+협조 경로는 위 두 순서로 닫혀 있다. 이 지점은 리뷰어도 커널 강제 lock 없이는 불가능하다고 적었다.
+
+
+### 9.5 이번 제출의 전체 gate (정본)
+
+| 항목 | 값 |
+|---|---|
+| command / cwd | `npm run verify` / `/home/jm/orca/workspaces/Orca-JARVIS/codex-routing-approval-ui` |
+| 입력 SHA | `5a53e107e411b645ab3277636a0a0be67ce490e3` |
+| 입력 트리 상태 | tracked M 0 / D 0 (docs는 gate 이후 갱신, `src/`·`tests/` 불변) |
+| exit code | **0** (`VERIFY2=0`) |
+| 종료 시각 | `2026-09-11 23:05:17 +0900` |
+| toolchain | node `v24.19.0`, npm `12.0.2` |
+| backend shard 1/2 | **279 파일 / 1,929 테스트 통과**, 778.33s |
+| backend shard 2/2 | **278 파일 / 1,931 테스트 통과**, 680.07s |
+| dashboard | **38 파일 / 263 테스트 통과**, 37.08s |
+| 합계 | **595 파일 / 4,123 테스트** |
+| architecture | `{"ok":true,"scope":"static_internal_esm","modules":668,"edges":2490,"cycles":[]}` |
+| acceptance | `{"boundary":"pre_gjc_ready","aggregate_status":"stopped","completion_promoted":true,"gjc_dispatched":false}` |
+| 로그 | `<QA>/verify2.log`, sha256 `1a86b0efead9acc85883953213416a71cb0a69c36d3384ee9e373bf5ddb5f02e` |
+
+**합격 근거에서 제외한 run 2건.** 둘 다 이번 라운드의 내 변경이 원인이거나 내가 중단한 것이며,
+숨기지 않고 원인과 처리를 적는다.
+
+1. 입력 `320b59c`, `VERIFY=1`. backend shard 1/2에서 2건 실패
+   (`Test Files 2 failed | 277 passed`, `Tests 2 failed | 1927 passed`), shard 2/2는 전부 통과.
+   - `task12-runtime-reviewability`: `memory-authority-fresh-builder.ts`가 모듈당 250줄 예산을
+     1줄 초과(251). 주석 포함 비어있지 않은 줄을 세는 규칙이다. 주석을 줄여 **248**로 맞췄다.
+   - `memory-cancellation-compaction`: 그 테스트는 `observeOldInode`를 `mockImplementationOnce`로
+     한 번만 throw시켜 rename 직후 크래시를 재현한다. 내가 넣은 compaction 사전 writer 스캔이 그 1회용
+     mock을 먼저 소비해 교체 자체가 일어나지 않았다. 사전 스캔을 `discoverOpenInodeHolders` 직접
+     호출로 분리해, 사전 거절과 사후 배수가 서로 다른 호출로 남게 했다. **기대값을 고치지 않았다.**
+   - 두 수정은 `5a53e10`이고, 해당 파일 단독 재실행에서 각각 2/2와 11/11 통과를 확인한 뒤 위 gate를
+     다시 돌렸다.
+2. 그 이전 run은 `VERIFY=143`(SIGTERM). 독립 리뷰 지적을 수정하기로 결정해 **내가 중단**했다.
+   입력이 바뀌므로 어떤 근거로도 쓰지 않는다.
+
+### 9.6 migration 바이트 비교 (갱신)
+
+베이스라인 `082d689` 대비 기존 파일 **수정 0**(`git diff --name-status 082d689 HEAD -- migrations`의
+`M` 0건), 신규 8개: 089·090·091·092·093·094·095·096. 총 파일 수 **103**.
+
+
+### 9.7 이번 제출의 런타임 패키지 (정본)
+
+| 항목 | 값 |
+|---|---|
+| package root | `<QA>/package/jarvis-runtime-E1mFHx` |
+| source_head | `5a53e107e411b645ab3277636a0a0be67ce490e3` — gate 입력과 **같은 SHA** |
+| source_dirty | `true`. 패키지 시점의 tracked 수정은 `docs/` 2개(이 회신서와 원장)뿐이고 `src/`·`tests/`는 0이다. 나머지는 `node_modules`·`.omo/**` 도구 상태 |
+| payload_files / dependency_entries | 1,535 / 6,668 |
+| receipt pin (독립 고정) | `39238a3c294f9cb5f158ba53be7e2de896347956d5be671b715b16b9944538d6` |
+| verify-runtime-package | `ok=true`, `integrity="matched"`, RC 0 |
+| signature_verified | **false** (운영 서명 없음) |
+| runtime_validation | `not_performed` |
+| deployment_ready | **false** |
+| 로그 | `<QA>/package.log`, `<QA>/package-verify.log` |
+
+receipt 기대값은 후보 패키지 자신이 아니라 개발 checkout에서 `sha256sum`으로 먼저 고정한 뒤
+검증기에 전달했다. 패키지 성공은 개발 증거이며 배포 준비 완료가 아니다. 운영 적용·서명·서비스
+전환은 하지 않았고 이 제출의 범위도 아니다.
