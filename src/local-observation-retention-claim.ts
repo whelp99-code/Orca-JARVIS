@@ -1,4 +1,6 @@
-import { closeSync, existsSync, lstatSync, mkdirSync, openSync, realpathSync, renameSync, rmSync } from "node:fs";
+import {
+  closeSync, existsSync, lstatSync, mkdirSync, openSync, realpathSync, renameSync, rmdirSync, rmSync,
+} from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
@@ -75,10 +77,25 @@ export function claimRetentionOperation(directory: string, staged: string): Rete
     snapshot: join(directory, "snapshot.sqlite") };
 }
 
-/** Moves the staged objects onto the destination, which nothing else may hold. */
+/**
+ * Moves the staged objects onto the destination, which nothing else may hold.
+ *
+ * The name is taken by creating it, which the kernel refuses if anything at all is already there -
+ * a file, a full directory, an empty one. That create is then undone and the staged objects are
+ * renamed in. Two cooperating runs never reach here for the same destination, because announcing
+ * it is exclusive in the database; what this ordering adds is that a run does not decide the name
+ * is free by asking and then acting on the answer. Node exposes no rename that refuses to replace,
+ * so the remaining gap is between the undo and the rename, and only a process outside this
+ * protocol can be inside it.
+ */
 export function takeRetentionDestination(staged: string, directory: string): void {
-  if (existsSync(directory)) throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
   try {
+    mkdirSync(directory, { mode: 0o700 });
+  } catch {
+    throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
+  }
+  try {
+    rmdirSync(directory);
     renameSync(staged, directory);
   } catch {
     throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");

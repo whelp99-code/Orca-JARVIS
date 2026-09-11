@@ -34,6 +34,17 @@ export function processStartToken(pid: number): string {
   return token;
 }
 
+/**
+ * Who holds this inode open, and which of them can write to it.
+ *
+ * A process of this user whose descriptor table cannot be read is skipped. That is a real limit
+ * and not a safe one on its own: the process nobody can inspect is exactly the one whose commits a
+ * replacement would orphan. On a shared account there are always such processes, so refusing
+ * whenever one exists would refuse always. What closes the gap is not this scan - it is the
+ * barrier, which keeps cooperating processes from opening the file at all, and the exclusive
+ * database lock the retention swap takes before it renames, which any SQLite writer must contend
+ * with whether or not this scan can see it.
+ */
 export function discoverOpenInodeHolders(
   device: bigint,
   inode: bigint,

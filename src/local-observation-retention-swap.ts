@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import Database from "better-sqlite3";
 import { readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import type { AuthorityDatabaseRuntime } from "./authority-database-runtime.js";
@@ -21,6 +22,29 @@ export type RetentionSwapResult = {
 };
 
 const SIDECARS = ["-wal", "-shm", "-journal"] as const;
+
+/**
+ * Whether any other connection still holds this database, asked of SQLite rather than of /proc.
+ *
+ * Scanning descriptors misses a process of this user whose descriptor table cannot be read, and on
+ * a shared account there is always at least one. A writer of this database cannot hide from SQLite
+ * the same way: to write it has to take the file's locks, so an exclusive transaction that cannot
+ * begin means somebody else is holding it, visible or not. The transaction is rolled back and the
+ * connection closed immediately; nothing is written, and no lock is carried into the rename.
+ */
+function foreignConnectionHolds(path: string): boolean {
+  const probe = new Database(path);
+  try {
+    probe.pragma("busy_timeout = 0");
+    probe.exec("BEGIN EXCLUSIVE");
+    probe.exec("ROLLBACK");
+    return false;
+  } catch {
+    return true;
+  } finally {
+    probe.close();
+  }
+}
 
 /**
  * Descriptors on the source that belong to somebody else.
@@ -104,6 +128,11 @@ export function applyRetentionCandidate(
     if (runtime.observeOldInode(BigInt(fence.device), BigInt(fence.inode)).fd_count !== 0) {
       throw new JarvisError("LOCAL_RETENTION_SOURCE_WRITER_ACTIVE");
     }
+    // The last question before anything is removed, and the only one a writer cannot evade by
+    // being invisible to /proc: if another connection holds this database, it holds its locks.
+    if (foreignConnectionHolds(authority.filename)) {
+      throw new JarvisError("LOCAL_RETENTION_SOURCE_WRITER_ACTIVE");
+    }
     for (const suffix of SIDECARS) rmSync(`${authority.filename}${suffix}`, { force: true });
     // The baseline for the last question, taken once the connection is gone and its log has been
     // folded in: the file the rename would replace, rather than that file plus a log that closing
@@ -134,9 +163,13 @@ export function applyRetentionCandidate(
     throw error;
   }
   // Reopened while this process still holds the barrier, which admits its own owner, so the live
-  // connection is back before anybody else is let in.
-  authority.reopen();
-  releaseSwapBarrier(authority.filename);
+  // connection is back before anybody else is let in. Both happen whatever the rest of this
+  // function does, because a barrier left standing would refuse every future open.
+  try {
+    if (!authority.db.open) authority.reopen();
+  } finally {
+    releaseSwapBarrier(authority.filename);
+  }
   runtime.acknowledgeGeneration(build.result_generation);
   const live = statSync(authority.filename, { bigint: true });
   if (live.dev.toString() !== result.device || live.ino.toString() !== result.inode) {

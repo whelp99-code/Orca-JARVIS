@@ -1,3 +1,4 @@
+import { candidateTaskSourceClosed } from "../memory-candidate-task-source.js";
 import { JarvisError, type AuthorityDb } from "../db.js";
 import { isDeepStrictEqual } from "node:util";
 import { readCandidateReview } from "./memory-candidate-review.js";
@@ -131,8 +132,14 @@ export class MemoryReadService {
              AND json_extract(r.target_json,'$.candidate_id')=c.candidate_id)))
        ORDER BY c.created_at,c.candidate_id LIMIT ?`,
     ).all(state, this.clock().toISOString(), this.clock().toISOString(), limit) as Array<Record<string, unknown>>;
+    // The list is a read of derived memory, so it asks what every other consumption asks: is the
+    // task this candidate came from closed to us, by the owner hiding it or by its project falling
+    // outside the list they wrote. The policy is not something SQL can join against, so it is
+    // applied here, over the rows the query returned.
+    const visible = rows.filter(row =>
+      !candidateTaskSourceClosed(this.authority, String(row["candidate_id"])));
     return { schema_version: 1, resource: "memory-candidates", generated_at: this.clock().toISOString(),
-      state: "ready", items: rows.map(row => ({ candidate_id: String(row["candidate_id"]),
+      state: "ready", items: visible.map(row => ({ candidate_id: String(row["candidate_id"]),
         candidate_revision: this.tokens.revision("candidate", this.session.authenticatedSessionId(),
           String(row["candidate_id"])), kind: String(row["candidate_kind"]), operation: String(row["operation"]),
         confidence: String(row["confidence"]), sensitivity: String(row["policy_sensitivity"]),

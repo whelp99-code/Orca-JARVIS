@@ -1,4 +1,5 @@
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
+import { candidateTaskSourceClosed } from "./memory-candidate-task-source.js";
 import { captureCorrectionCancellationSource } from "./memory-correction-cancellation-db.js";
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
@@ -154,7 +155,11 @@ export class MemoryCorrectionDispatcher {
       || Date.parse(row.expires_at) <= now.getTime()) {
       throw new JarvisError("MEMORY_CORRECTION_AUTHORITY_INVALID");
     }
-    if (new MemoryProjectionAuthority(this.options.authority).isProjectionIdSuppressed(row.candidate_id)) {
+    if (new MemoryProjectionAuthority(this.options.authority).isProjectionIdSuppressed(row.candidate_id)
+      || candidateTaskSourceClosed(this.options.authority, row.candidate_id)) {
+      // Two different closures, asked at the last moment before an effect leaves: the projection
+      // itself can be suppressed, and the task the candidate came from can be hidden or out of the
+      // owner's project list. A preparation approved before either happened is not authority now.
       throw new JarvisError("MEMORY_CANDIDATE_SUPPRESSED");
     }
     return row;

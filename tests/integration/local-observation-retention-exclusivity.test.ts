@@ -191,5 +191,14 @@ it("does not let a barrier outlive the process that took it", async () => {
   const admitted = announce(db.filename, "open");
   expect(await admitted.line).toBe("opened");
   await admitted.exited;
+  // Reading does not remove it. Deciding a record is debris and clearing it are two acts, and a
+  // reader that did both could unlink a record that had just become somebody's live claim, so
+  // removal belongs to the writers that hold the lock. The file therefore outlives its owner.
+  expect(existsSync(swapBarrierPath(db.filename))).toBe(true);
+
+  // And it blocks nothing: the next swap reclaims the name and takes it.
+  const taken = publishSwapBarrier(db.filename, "local_retention", new Date());
+  expect(taken.pid).toBe(process.pid);
+  releaseSwapBarrier(db.filename);
   expect(existsSync(swapBarrierPath(db.filename))).toBe(false);
 }, 60_000);

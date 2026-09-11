@@ -1,5 +1,5 @@
-import { createHash } from "node:crypto";
-import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
+import { createHash, randomUUID } from "node:crypto";
+import { existsSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import { JarvisError } from "./jarvis-error.js";
 
@@ -72,6 +72,38 @@ export function candidateDigest(candidatePath: string): string {
  * removal of a name nobody else writes to. There is no file beside them to guess at and no second
  * step for a crash to land between.
  */
+/**
+ * Removes a directory this run proved is its own, without trusting the name in between.
+ *
+ * Proving identity and then deleting the pathname are two acts, and a pathname can change owner
+ * between them: another recovery can clear the same claim and a later run can take that name for
+ * itself, at which point the delete would land on somebody else's work. The directory is moved
+ * aside first, which is atomic, and the object that actually moved is then checked against the
+ * recorded identity. If it is not the one that was proved, it goes back where it was and nothing
+ * is destroyed.
+ */
+export function removeProvenDirectory(directory: string, claim: {
+  readonly device: string; readonly inode: string; readonly birthtime: string;
+}): boolean {
+  const quarantine = `${directory}.${randomUUID()}.releasing`;
+  try {
+    renameSync(directory, quarantine);
+  } catch {
+    return false;
+  }
+  if (!stillClaimed(quarantine, claim.device, claim.inode, claim.birthtime)) {
+    try {
+      renameSync(quarantine, directory);
+    } catch {
+      // It could not go back, so it stays under the name it was moved to rather than being
+      // destroyed: an object nobody can account for is preserved, not tidied away.
+    }
+    return false;
+  }
+  rmSync(quarantine, { recursive: true, force: true });
+  return true;
+}
+
 export function releaseRetentionOperationDirectory(candidatePath: string): void {
   rmSync(dirname(candidatePath), { recursive: true, force: true });
 }

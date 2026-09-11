@@ -80,8 +80,11 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
         throw error;
       }
     })();
-    authority.reopen();
-    releaseSwapBarrier(authority.filename);
+    try {
+      authority.reopen();
+    } finally {
+      releaseSwapBarrier(authority.filename);
+    }
     runtime.acknowledgeGeneration(input.result_generation);
     const active = statSync(authority.filename, { bigint: true });
     const oldFdCount = oldInode.fd_count;

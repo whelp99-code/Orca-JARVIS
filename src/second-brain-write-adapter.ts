@@ -11,6 +11,7 @@ import { parseMemoryEffectAccepted, type MemoryEffectWriteRequestV2 } from "./se
 import type { SecondBrainTransport } from "./second-brain-transport.js";
 import { SecondBrainTransportError } from "./second-brain-transport.js";
 import { hasSecondBrainWriteAuthority } from "./second-brain-write-authority.js";
+import { candidateTaskSourceClosed } from "./memory-candidate-task-source.js";
 import { parseSecondBrainWriteRequest } from "./second-brain-write-request.js";
 import { parseSecondBrainWriteResult } from "./second-brain-write-result.js";
 
@@ -57,8 +58,12 @@ class BoundedSecondBrainWriteRequestAdapter implements SecondBrainWriteRequestAd
            AND envelope_digest=? AND idempotency_key=? AND delegation_id=? AND delegation_digest=?
            AND lane_id=? AND state='dispatching' AND dispatch_fence=1`,
         ).get(...identity) as { candidate_id: string } | undefined;
+        // Asked at the last moment before anything leaves for the provider, and asked about both
+        // closures: the projection itself, and the task the candidate came from - which the owner
+        // can hide, or put outside the project list, after this request was prepared.
         return row !== undefined
-          && !new MemoryProjectionAuthority(this.authority).isProjectionIdSuppressed(row.candidate_id);
+          && !new MemoryProjectionAuthority(this.authority).isProjectionIdSuppressed(row.candidate_id)
+          && !candidateTaskSourceClosed(this.authority, row.candidate_id);
       }
       case "forget": return this.authority.db.prepare(
         `SELECT 1 FROM memory_deletion_effect_requests WHERE request_id=? AND request_digest=?

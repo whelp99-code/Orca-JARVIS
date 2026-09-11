@@ -6,6 +6,7 @@ import {
   activeGeneration, candidateStillClaimed, releaseRetentionOperationDirectory,
   type RetentionClaim, type RetentionSnapshotClaim,
 } from "./local-observation-retention-operation.js";
+import { removeProvenDirectory } from "./local-observation-retention-artifacts.js";
 import { stagedClaimPath } from "./local-observation-retention-claim.js";
 
 export type RetentionRecovery = {
@@ -146,9 +147,13 @@ function recoverUnrecordedClaims(source: AuthorityDb, now: Date): readonly Reten
         report("retained_unproven");
         continue;
       }
-      rmSync(staged, { recursive: true, force: true });
+      // Proved, but the proof and the removal are two acts: the object is moved aside first and
+      // re-checked under the name it actually moved to, so a path that changed owner in between
+      // cannot be destroyed by this call.
+      const removed = removeProvenDirectory(staged, { device: String(claim.claim_device),
+        inode: String(claim.claim_inode), birthtime: String(claim.claim_birthtime) });
       clear();
-      report("removed_partial");
+      report(removed ? "removed_partial" : "retained_unproven");
       continue;
     }
     // An intent without a recorded identity says only that this run meant to create the path. What
