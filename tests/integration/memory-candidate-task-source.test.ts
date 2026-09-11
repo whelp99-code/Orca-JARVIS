@@ -2,6 +2,9 @@ import { dirname, join } from "node:path";
 import { copyFileSync, rmSync } from "node:fs";
 import { afterEach, expect, it } from "vitest";
 import { readCandidateReview } from "../../src/dashboard/memory-candidate-review.js";
+import {
+  stageMemoryCandidateDecision, type MemoryCandidateDecisionHost,
+} from "../../src/dashboard/memory-candidate-decision-staging.js";
 import { MemoryCandidateStore } from "../../src/memory-candidate-store.js";
 import {
   candidateTaskSource, candidateTaskSourceSuppressed, memoriesAwaitingTaskWithdrawal,
@@ -169,4 +172,23 @@ it("lists what a hidden task still has stored, and only that", async () => {
   const unbound = await fixture();
   hide(unbound.authority, TASK);
   expect(memoriesAwaitingTaskWithdrawal(unbound.authority)).toEqual([]);
+}, 60_000);
+
+it("refuses to confirm a decision prepared before the task was hidden", async () => {
+  const f = await fixture();
+  recordCandidateTaskSource(f.authority, f.candidateId, TASK, NOW);
+  // Only the authority and the clock are read before the refusal this pins.
+  const bare = { options: { authority: f.authority, clock: () => NOW } };
+  const host = bare as unknown as MemoryCandidateDecisionHost;
+  const decision = { candidate_id: f.candidateId, decision: "confirm" as const,
+    operation: "remember" as const, actor: "principal:owner", token: "token" };
+
+  // Visible: the refusal below is not what stops it, so it gets as far as the candidate's own state.
+  expect(() => stageMemoryCandidateDecision(host, decision as never))
+    .not.toThrow("MEMORY_CANDIDATE_SUPPRESSED");
+
+  hide(f.authority, TASK);
+
+  expect(() => stageMemoryCandidateDecision(host, decision as never))
+    .toThrow("MEMORY_CANDIDATE_SUPPRESSED");
 }, 60_000);
