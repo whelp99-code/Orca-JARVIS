@@ -7,6 +7,46 @@ export abstract class GjcIntentAuthorityDb extends GjcDispatchAuthorityDb {
 		return typeof row?.intent_id === "string" ? row.intent_id : undefined;
 	}
 
+	gjcIntentHasEvent(intentId: string, eventType: string): boolean {
+		return this.db.prepare("SELECT 1 FROM gjc_intent_events WHERE intent_id=? AND event_type=? LIMIT 1").get(intentId, eventType) !== undefined;
+	}
+
+	recordGjcModelDispatched(intentId: string, now = timestamp()): void {
+		this.atomic(() => {
+			this.db.prepare("INSERT INTO gjc_intent_events(intent_id,event_type,payload_json,created_at) VALUES(?,?,?,?)").run(intentId, "model_dispatched", json({}), now);
+			this.db.prepare("UPDATE gjc_intents SET state=CASE WHEN state='uncertain' THEN 'pending' ELSE state END WHERE intent_id=?").run(intentId);
+		});
+	}
+
+	reserveGjcIntent(
+		kind: "sync" | "dispatch" | "answer",
+		payload: unknown,
+		idempotencyKey: string,
+		continuationId?: string,
+		now = timestamp(),
+	): { intent_id: string; reserved: boolean } {
+		if (!this.gjcOperational()) throw new JarvisError("GJC_NOT_CONNECTED");
+		if (!idempotencyKey) throw new JarvisError("GJC_IDEMPOTENCY_REQUIRED");
+		const intentId = deterministic("gjc", idempotencyKey);
+		const payload_json = json(payload);
+		const payload_digest = sha(payload_json);
+		return this.atomic(() => {
+			const prior = this.db.prepare("SELECT intent_id,payload_digest,kind,continuation_id,state FROM gjc_intents WHERE idempotency_key=?").get(idempotencyKey) as Row | undefined;
+			if (prior) {
+				if (prior.payload_digest !== payload_digest || prior.kind !== kind || (prior.continuation_id ?? null) !== (continuationId ?? null))
+					throw new JarvisError("GJC_INTENT_REPLAY_CONFLICT");
+				const id = String(prior.intent_id);
+				if (this.gjcIntentHasEvent(id, "model_dispatched") || prior.state !== "uncertain")
+					return { intent_id: id, reserved: false };
+				this.db.prepare("UPDATE gjc_intents SET state='pending' WHERE intent_id=?").run(id);
+				return { intent_id: id, reserved: true };
+			}
+			this.db.prepare("INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,payload_digest,idempotency_key,state,created_at) VALUES(?,?,?,?,?,?,?,?)").run(intentId, continuationId ?? null, kind, payload_json, payload_digest, idempotencyKey, "pending", now);
+			this.db.prepare("INSERT INTO gjc_intent_events(intent_id,event_type,payload_json,created_at) VALUES(?,?,?,?)").run(intentId, "created", json({ kind, idempotency_key: idempotencyKey }), now);
+			return { intent_id: intentId, reserved: true };
+		});
+	}
+
 	createGjcIntent(
 		kind: "sync" | "dispatch" | "answer",
 		payload: unknown,

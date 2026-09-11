@@ -10,6 +10,7 @@ import { PERSONAL_OS_CONTROL_CHANNEL_ENV, servePersonalOsCycleChannel } from "./
 import { PersonalOsRuntime } from "./personal-os-runtime.js";
 import { AssembledModelSession } from "./assembled-model-session.js";
 import { RecordingModelTransport } from "./context-model-transport.js";
+import { createProductionMemoryReadFence } from "./memory-read-fence-production.js";
 import type { ContextPersistenceInput } from "./personal-context-store.js";
 
 function outputSync(value: object): void {
@@ -92,14 +93,14 @@ export async function executeGjcCommand(
       const parsed = parseDispatchEnvelope(envelope);
       const now = commandNow(context).toISOString();
       db.assertGjcDispatchTask(parsed.task, now);
-      const existing = db.gjcIntentIdForKey(String(parsed.task.idempotency_key));
-      if (existing !== undefined) {
-        return { ok: true, command: "gjc.dispatch", intent_id: existing, duplicate: true };
+      const reservation = db.reserveGjcDispatchFromTask(parsed.task, now);
+      if (!reservation.reserved) {
+        return { ok: true, command: "gjc.dispatch", intent_id: reservation.intent_id, duplicate: true };
       }
       const assembled = await assembleDispatchContext(context, parsed);
-      const intent = db.createGjcDispatchFromTask(parsed.task, now);
+      if (assembled !== undefined) db.recordGjcModelDispatched(reservation.intent_id, now);
       return {
-        ok: true, command: "gjc.dispatch", intent_id: intent,
+        ok: true, command: "gjc.dispatch", intent_id: reservation.intent_id,
         ...(assembled === undefined ? {} : { model_request_bytes: assembled.capture.bytes, model_session_id: assembled.capture.session_id }),
       };
     }
@@ -199,10 +200,21 @@ async function assembleDispatchContext(
   if (parsed.assemble_context === undefined) return undefined;
   const options = context.dependencies.memoryReferenceOptions;
   if (options === undefined) throw new JarvisError("MEMORY_REFERENCE_OPTIONS_REQUIRED");
+  const configuredFence = options.read_fence_config === undefined
+    ? undefined
+    : createProductionMemoryReadFence(context.db, options.read_fence_config);
+  const configuredStatus = options.read_fence_config === undefined
+    ? undefined
+    : createProductionMemoryReadFence(context.db, options.read_fence_config, "memory_status");
   const session = new AssembledModelSession(
     context.db,
     options.model_transport ?? new RecordingModelTransport(),
-    at => { options.read_fence?.(at); options.status_fence?.(at); },
+    at => {
+      configuredFence?.(at);
+      configuredStatus?.(at);
+      options.read_fence?.(at);
+      options.status_fence?.(at);
+    },
   );
   return session.deliver(parsed.assemble_context, parsed.memory_evidence, commandNow(context).toISOString());
 }

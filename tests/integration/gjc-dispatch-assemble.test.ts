@@ -83,4 +83,65 @@ describe("gjc.dispatch assemble envelope", () => {
     expect(transport.sent).toHaveLength(0);
     db.close();
   });
+
+  it("does not send when production read_fence_config is unavailable", async () => {
+    const db = await initialized();
+    db.configureGjc(process.cwd(), "s", true);
+    const source = seedGjcDispatch(db);
+    const transport = new RecordingModelTransport();
+    await expect(executeGjcCommand({
+      args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
+      argument: writeJson({ task: gjcTaskFor(db, source, "fence-config"), assemble_context: contextAssemblerInput() }),
+      fourth: undefined, fifth: undefined, sixth: undefined, db,
+      dependencies: {
+        clock: () => new Date(CONTEXT_NOW),
+        memoryReferenceOptions: {
+          projection_key: Buffer.alloc(32, 7),
+          model_transport: transport,
+          read_fence_config: {
+            provider_instance_id: "provider:test",
+            signing_key_id: "key:revoked",
+            private_key_path: "/tmp/missing-memory-key.pem",
+          },
+        },
+      },
+    } as never)).rejects.toBeTruthy();
+    expect(transport.sent).toHaveLength(0);
+    db.close();
+  });
+
+  it("sends once when two nested dispatches share an idempotency key", async () => {
+    const db = await initialized();
+    db.configureGjc(process.cwd(), "s", true);
+    const source = seedGjcDispatch(db);
+    const input = contextAssemblerInput();
+    for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
+      db.persistObservation(observation, CONTEXT_NOW);
+    }
+    const snapshot = assemblePersonalContext(input);
+    const memory = snapshot.evidence.find(item => item.kind === "confirmed_memory");
+    if (memory === undefined) throw new Error("memory");
+    const transport = new RecordingModelTransport();
+    const envelope = {
+      task: gjcTaskFor(db, source, "concurrent-key"),
+      assemble_context: input,
+      memory_evidence: [{
+        memory_ref: snapshot.payload.included_memory_refs[0] ?? memory.evidence_id,
+        evidence_id: memory.evidence_id,
+        source_id: memory.source_id,
+        digest: memory.digest,
+        observed_at: memory.observed_at,
+        fresh_until: snapshot.expires_at,
+      }],
+    };
+    const run = () => executeGjcCommand({
+      args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
+      argument: writeJson(envelope), fourth: undefined, fifth: undefined, sixth: undefined, db,
+      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+    } as never);
+    const [first, second] = await Promise.all([run(), run()]);
+    expect(first?.intent_id).toBe(second?.intent_id);
+    expect(transport.sent).toHaveLength(1);
+    db.close();
+  });
 });
