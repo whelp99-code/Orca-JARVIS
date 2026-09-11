@@ -148,6 +148,13 @@ export function applyRetentionCandidate(
     if (sourceBytes(authority.filename) !== settled) {
       throw new JarvisError("LOCAL_RETENTION_SOURCE_CHANGED");
     }
+    // The interval the probe cannot cover is the one this closes: a connection opened after the
+    // earlier questions still holds the file the rename is about to unlink, and an idle one
+    // changes no bytes to give itself away. Asked last, so the only window left is the syscall.
+    if (runtime.observeOldInode(BigInt(fence.device), BigInt(fence.inode)).fd_count !== 0
+      || foreignConnectionHolds(authority.filename)) {
+      throw new JarvisError("LOCAL_RETENTION_SOURCE_WRITER_ACTIVE");
+    }
     renameSync(operation.candidate_path, authority.filename);
     syncPath(dirname(authority.filename), true);
     observed = runtime.observeOldInode(BigInt(fence.device), BigInt(fence.inode));

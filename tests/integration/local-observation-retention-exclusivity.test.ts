@@ -203,3 +203,44 @@ it("does not let a barrier outlive the process that took it", async () => {
   releaseSwapBarrier(db.filename);
   expect(existsSync(swapBarrierPath(db.filename))).toBe(false);
 }, 60_000);
+
+it("refuses a holder that appears after the probe and before the rename", async () => {
+  const { db, runtime, cutoff } = await seeded();
+  const application = await applyLocalObservationRetention(db, cutoff,
+    join(dirname(db.filename), "late-holder-candidate"));
+  const before = { inode: inode(db.filename), observations: observations(db) };
+
+  // The window a byte comparison cannot see: the source was unheld through every earlier question
+  // and the holder arrives on the last one, idle, having written nothing yet. Delivered by call
+  // order rather than by timing, because a real process cannot be synchronised into an interval
+  // bounded by two synchronous calls without a poll loop.
+  const observe = runtime.observeOldInode.bind(runtime);
+  // The window is named by its contents, not by a call index: the applied record is in the
+  // candidate and the candidate is still a separate file, which is true on exactly one question -
+  // the last one before the rename.
+  const insideWindow = () => {
+    if (!existsSync(application.operation.candidate_path)) return false;
+    const probe = new AuthorityDb(application.operation.candidate_path);
+    try {
+      return Number(probe.db.prepare(
+        "SELECT COUNT(*) FROM local_retention_operations WHERE state='applied'").pluck().get()) > 0;
+    } finally { probe.close(); }
+  };
+  let refusedInWindow = false;
+  runtime.observeOldInode = ((device: bigint, ino: bigint) => {
+    const real = observe(device, ino);
+    if (!insideWindow()) return real;
+    refusedInWindow = true;
+    return { ...real, fd_count: 1 };
+  }) as typeof runtime.observeOldInode;
+
+  await expect(runtime.quiesce("local_retention",
+    async () => applyRetentionCandidate(runtime, application, new Date())))
+    .rejects.toMatchObject({ code: "LOCAL_RETENTION_SOURCE_WRITER_ACTIVE" });
+  // Refused on the pre-rename question, not an earlier one: the earlier answers were clean.
+  expect(refusedInWindow).toBe(true);
+  expect(inode(db.filename)).toBe(before.inode);
+  expect(observations(db)).toBe(before.observations);
+  expect(existsSync(application.operation.candidate_path)).toBe(true);
+  expect(existsSync(swapBarrierPath(db.filename))).toBe(false);
+}, 60_000);
