@@ -1,5 +1,5 @@
 import {
-  closeSync, existsSync, lstatSync, mkdirSync, openSync, realpathSync, rmSync,
+  closeSync, existsSync, lstatSync, mkdirSync, openSync, realpathSync, renameSync, rmSync,
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type Database from "better-sqlite3";
@@ -99,18 +99,50 @@ function resolveRetentionDirectory(source: AuthorityDb, freshPath: string): stri
   }
 }
 
-function claimRetentionOperation(directory: string): RetentionPaths {
+/**
+ * The name this run builds under before the destination is its own.
+ *
+ * Derived from the destination and this run's operation id, so recovery can find it from the
+ * intent row alone, and unguessable in the way a caller-chosen destination is not: nothing existed
+ * at this name before this run generated the id that spells it.
+ */
+export function stagedClaimPath(directory: string, operationId: string): string {
+  return join(dirname(directory),
+    `.${basename(directory)}.${operationId.replace(/^retention:/, "")}.staged`);
+}
+
+/**
+ * Creates everything this operation writes, under a name of its own, and only then takes the
+ * destination.
+ *
+ * The destination used to be created first and its identity recorded a moment later, which left a
+ * window: a process that died in between left a directory nobody could prove and an intent holding
+ * that path, and because an unproven object is preserved rather than deleted, every later run was
+ * refused that destination for good. Building under the staged name closes it. The identity is
+ * recorded while the objects are still there, the rename carries the same inode to the
+ * destination, and a crash before the rename leaves nothing at the destination at all.
+ */
+function claimRetentionOperation(directory: string, staged: string): RetentionPaths {
   try {
-    mkdirSync(directory, { mode: 0o700 });
+    mkdirSync(staged, { mode: 0o700 });
   } catch {
     throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
   }
-  const paths = { directory, candidate: join(directory, "candidate.sqlite"),
-    snapshot: join(directory, "snapshot.sqlite") };
   // The candidate file exists from the claim so the operation record can identify it before the
   // build writes through it; the build opens this file rather than creating its own.
-  closeSync(openSync(paths.candidate, "wx", 0o600));
-  return paths;
+  closeSync(openSync(join(staged, "candidate.sqlite"), "wx", 0o600));
+  return { directory, candidate: join(directory, "candidate.sqlite"),
+    snapshot: join(directory, "snapshot.sqlite") };
+}
+
+/** Moves the staged objects onto the destination, which nothing else may hold. */
+function takeRetentionDestination(staged: string, directory: string): void {
+  if (existsSync(directory)) throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
+  try {
+    renameSync(staged, directory);
+  } catch {
+    throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
+  }
 }
 
 /** Removes the directory this call created, and only that. */
@@ -171,16 +203,25 @@ export async function applyLocalObservationRetention(
   }
   fence = ownWrite(fence, intent.recorded_changes);
   let paths: RetentionPaths;
+  const staged = stagedClaimPath(directory, intent.operation_id);
   try {
-    paths = claimRetentionOperation(directory);
+    paths = claimRetentionOperation(directory, staged);
   } catch (error) {
-    // The create failed, so whatever holds that name is somebody else's and is left untouched.
+    // Nothing was created, so whatever the destination holds is somebody else's and untouched.
     fence = ownWrite(fence, clearRetentionClaimIntent(source, intent.operation_id));
     throw error;
   }
-  // Owned from here: the identity is recorded before anything else can go wrong, so a failure or a
-  // crash after this point can be cleaned up on proof rather than on the pathname.
-  fence = ownWrite(fence, recordRetentionClaimIdentity(source, intent.operation_id, directory));
+  // Owned from here, and recorded while the objects are still under this run's own name: the
+  // rename below carries the same inode to the destination, so a crash on either side of it
+  // leaves something recovery can prove rather than a destination nobody can account for.
+  fence = ownWrite(fence, recordRetentionClaimIdentity(source, intent.operation_id, staged));
+  try {
+    takeRetentionDestination(staged, directory);
+  } catch (error) {
+    releaseRetentionOperation(staged);
+    fence = ownWrite(fence, clearRetentionClaimIntent(source, intent.operation_id));
+    throw error;
+  }
   let snapshot: Awaited<ReturnType<typeof captureSelectedSource>>;
   try {
     snapshot = await captureSelectedSource(source, paths.snapshot);

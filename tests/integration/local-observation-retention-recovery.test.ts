@@ -8,7 +8,9 @@ import { createInterface } from "node:readline";
 import { afterEach, expect, it } from "vitest";
 import { AuthorityDatabaseRuntime } from "../../src/authority-database-runtime.js";
 import { AuthorityDb } from "../../src/db.js";
-import { applyLocalObservationRetention } from "../../src/local-observation-retention.js";
+import {
+  applyLocalObservationRetention, stagedClaimPath,
+} from "../../src/local-observation-retention.js";
 import { applyRetentionCandidate } from "../../src/local-observation-retention-swap.js";
 import { recoverLocalRetentionOperations } from "../../src/local-observation-retention-recovery.js";
 import { localObservationChain, LOCAL_CHAIN_AT } from "../fixtures/local-observation-chain.js";
@@ -294,4 +296,33 @@ it("does not decide a claim is abandoned when it cannot read the owner", async (
   expect(recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT)).map(item => item.outcome))
     .toEqual(["retained_active"]);
   expect(readFileSync(join(seed.candidate, "sentinel.txt"), "utf8")).toBe("unreadable owner");
+}, 60_000);
+
+// Reported by review: the destination used to be created before its identity was recorded, so a
+// death in between left a directory nobody could prove. Preserving it - which is the right answer
+// for an unproven object - then refused that destination to every later run, for good.
+it("frees the destination a run that died before recording identity never reached", async () => {
+  const seed = await seeded();
+  await crashAt(seed, "before_identity");
+  const db = reopen(seed);
+
+  // The destination was never taken; the dead run's work is under its own staged name.
+  expect(existsSync(seed.candidate)).toBe(false);
+  const intents = rows(db, "SELECT operation_id FROM local_retention_claim_intents");
+  expect(intents).toHaveLength(1);
+  const operationId = String(Reflect.get(intents[0] as object, "operation_id"));
+  const staged = stagedClaimPath(seed.candidate, operationId);
+  expect(existsSync(staged)).toBe(true);
+
+  const recovered = recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT));
+  expect(recovered).toEqual([{ operation_id: operationId, recorded_state: "preparing",
+    candidate_path: seed.candidateFile, outcome: "already_gone" }]);
+  expect(existsSync(staged)).toBe(false);
+  expect(scalar(db, "SELECT COUNT(*) FROM local_retention_claim_intents")).toBe(0);
+
+  // The point of the change: the same destination is available again.
+  const application = await applyLocalObservationRetention(db, seed.cutoff, seed.candidate);
+  expect(existsSync(application.operation.candidate_path)).toBe(true);
+  expect(scalar(db, "SELECT COUNT(*) FROM local_retention_operations WHERE state='verified'"))
+    .toBe(1);
 }, 60_000);

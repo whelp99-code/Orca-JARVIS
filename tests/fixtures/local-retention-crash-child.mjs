@@ -21,6 +21,7 @@ const hold = () => {
 
 const stopPoint = sql => {
   if (/^\s*ATTACH DATABASE/i.test(sql)) return "during_copy";
+  if (/UPDATE local_retention_claim_intents SET claim_device/i.test(sql)) return "before_identity";
   if (/INSERT INTO local_retention_operations/i.test(sql)) {
     return /'applied'/.test(sql) ? "before_swap" : "after_claim";
   }
@@ -36,7 +37,7 @@ Database.prototype.prepare = function wrapped(sql, ...rest) {
   statement.run = (...args) => {
     // The applied record is the last thing written before the rename: stopping in front of it is
     // the moment the swap is about to happen, stopping behind the others is just after each.
-    if (barrier === "before_swap") hold();
+    if (barrier === "before_swap" || barrier === "before_identity") hold();
     const result = run(...args);
     hold();
     return result;

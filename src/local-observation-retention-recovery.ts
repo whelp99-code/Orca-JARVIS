@@ -6,6 +6,7 @@ import {
   activeGeneration, candidateStillClaimed, releaseRetentionOperationDirectory,
   type RetentionClaim, type RetentionSnapshotClaim,
 } from "./local-observation-retention-operation.js";
+import { stagedClaimPath } from "./local-observation-retention.js";
 
 export type RetentionRecovery = {
   readonly operation_id: string;
@@ -126,7 +127,19 @@ function recoverUnrecordedClaims(source: AuthorityDb, now: Date): readonly Reten
     const claim = { claim_device: text("claim_device"), claim_inode: text("claim_inode"),
       claim_birthtime: text("claim_birthtime") };
     if (!existsSync(directory)) {
-      // Nothing was created, or it is already gone; the intent is the only thing left to clear.
+      // The destination is only ever taken by renaming a staged claim onto it, so a run that died
+      // before that rename left its work under a name derived from this very intent: the
+      // destination it announced and the operation id it generated. Nobody else can spell that
+      // name, which is what makes removing it different from removing a destination somebody else
+      // may have created. Anything still there is this lane's own abandoned work.
+      const staged = stagedClaimPath(directory, operationId);
+      if (existsSync(staged)) {
+        if (claim.claim_device !== null && !directoryStillClaimed(staged, claim)) {
+          report("retained_unproven");
+          continue;
+        }
+        rmSync(staged, { recursive: true, force: true });
+      }
       clear();
       report("already_gone");
       continue;
