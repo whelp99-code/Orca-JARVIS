@@ -6,7 +6,10 @@ import {
   candidateTaskSource, candidateTaskSourceSuppressed, recordCandidateTaskSource,
 } from "../../src/memory-candidate-task-source.js";
 import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
-import { hasSecondBrainWriteAuthority } from "../../src/second-brain-write-authority.js";
+import {
+  hasDispatchedScopedSourceAuthority, hasRegisteredScopedSourceAuthority,
+  hasSecondBrainWriteAuthority,
+} from "../../src/second-brain-write-authority.js";
 import type { SecondBrainRememberWriteRequest } from "../../src/second-brain-adapter-types.js";
 import { inferredMemoryInput, memoryPolicy, MEMORY_NOW } from "../fixtures/memory-candidate-fixture.js";
 import { closeMemoryDatabase, memoryDatabase, type MemoryDatabase } from "../fixtures/memory-candidate-store.js";
@@ -55,6 +58,12 @@ it("closes the review and the write when the task is hidden after the candidate 
   expect(candidateTaskSourceSuppressed(f.authority, f.candidateId)).toBe(true);
   expect(readCandidateReview(f.authority, f.reviewRoot, f.candidateId, NOW)).toBeUndefined();
   expect(hasSecondBrainWriteAuthority(f.authority, writeRequest(f.candidateId), NOW)).toBe(false);
+  // The same gate stands in front of scoped registration and of an already dispatched write, so
+  // hiding the task closes the queue and the send, not only the first write attempt.
+  expect(hasRegisteredScopedSourceAuthority(f.authority, writeRequest(f.candidateId),
+    "outbox:memory:unused", NOW)).toBe(false);
+  expect(hasDispatchedScopedSourceAuthority(f.authority, writeRequest(f.candidateId),
+    "outbox:memory:unused", 1, NOW)).toBe(false);
 }, 60_000);
 
 it("leaves a candidate that never named a task readable", async () => {
