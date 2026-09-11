@@ -8,9 +8,11 @@ import { LiveSupervisor, type LiveSupervisorCycle } from "./live-supervisor.js";
 import { PreGjcShadow } from "./pre-gjc-shadow.js";
 import { PERSONAL_OS_CONTROL_CHANNEL_ENV, servePersonalOsCycleChannel } from "./personal-os-cycle-channel.js";
 import { PersonalOsRuntime } from "./personal-os-runtime.js";
+import { assemblePersonalContext } from "./context-assembler.js";
 import { AssembledModelSession } from "./assembled-model-session.js";
 import { RecordingModelTransport } from "./context-model-transport.js";
 import { createProductionMemoryReadFence } from "./memory-read-fence-production.js";
+import { createProductionMemoryReference } from "./memory-reference-production.js";
 import type { ContextPersistenceInput } from "./personal-context-store.js";
 
 function outputSync(value: object): void {
@@ -245,6 +247,48 @@ function preflightDispatchAssemble(
   dispatchMemoryAuthorizer(context, options)(commandNow(context));
 }
 
+function queryFromAssemble(input: unknown): string {
+  return input !== null && typeof input === "object" && "query" in input && typeof input.query === "string"
+    ? input.query : "what now?";
+}
+
+function assemblerFromReference(
+  selected: { payload: { records: ReadonlyArray<{ sid: string; source_ref: string; text_digest: string; observed_at: string; fresh_until: string; text: string; sensitivity: string }> } },
+  base: unknown,
+  now: string,
+) {
+  const memories = selected.payload.records.map(record => {
+    const observed = now;
+    const fresh = new Date(Date.parse(now) + 3_600_000).toISOString();
+    const digest = typeof record.text_digest === "string" && /^sha256:[0-9a-f]{64}$/.test(record.text_digest)
+      ? record.text_digest : record.text_digest;
+    return {
+      kind: "evidence",
+      memory_ref: record.sid.slice(0, 512),
+      source_id: "src:pos:v1:second-brain:inbox",
+      digest,
+      observed_at: observed,
+      fresh_until: fresh,
+      excerpt: record.text.replace(/[\r\n\t]/g, " ").slice(0, 96),
+      trust: "user_confirmed",
+      sensitivity: record.sensitivity === "public" ? "public" : "personal",
+      relevance: "related",
+      relation: "supports",
+    };
+  });
+  const baseObject = base !== null && typeof base === "object" ? base as Record<string, unknown> : {};
+  return {
+    purpose: typeof baseObject.purpose === "string" ? baseObject.purpose : "operator-context",
+    query: queryFromAssemble(base),
+    clock: now,
+    expires_in_ms: typeof baseObject.expires_in_ms === "number" ? baseObject.expires_in_ms : 300_000,
+    budgets: baseObject.budgets ?? { max_items: 8, max_excerpt_bytes: 4_096, max_total_bytes: 16_384 },
+    observations: Array.isArray(baseObject.observations) ? baseObject.observations : [],
+    pending_authority_refs: Array.isArray(baseObject.pending_authority_refs) ? baseObject.pending_authority_refs : [],
+    memories,
+  };
+}
+
 async function assembleDispatchContext(
   context: CliCommandContext,
   parsed: { assemble_context: unknown; memory_evidence: ContextPersistenceInput["memory_evidence"]; task?: Record<string, unknown> },
@@ -254,26 +298,48 @@ async function assembleDispatchContext(
   const options = context.dependencies.memoryReferenceOptions;
   if (options === undefined) throw new JarvisError("MEMORY_REFERENCE_OPTIONS_REQUIRED");
   const sessionId = typeof parsed.task?.session_id === "string" ? parsed.task.session_id : undefined;
-  const session = new AssembledModelSession(
-    context.db,
-    options.model_transport ?? new RecordingModelTransport(),
-    dispatchMemoryAuthorizer(context, options),
-  );
-  const now = commandNow(context).toISOString();
-  const prepared = await session.prepare(parsed.assemble_context, parsed.memory_evidence, now, sessionId);
-  if (reservation !== undefined) {
-    context.db.recordGjcSendStarted(reservation.intent_id, reservation.intent_id, now, reservation.lease_fence);
-  }
-  let attempts = 0;
-  await session.send(prepared.capture, reservation === undefined ? {} : {
-    beginAttempt: () => {
-      attempts += 1;
-      context.db.recordGjcSendAttemptStarted(reservation.intent_id, `${reservation.lease_fence}:${attempts}`, now, reservation.lease_fence);
-    },
-    onKnownNegative: () => {
-      context.db.recordGjcSendAttemptFailed(reservation.intent_id, `${reservation.lease_fence}:${attempts}`, now, reservation.lease_fence);
-      context.db.recordGjcSendFailed(reservation.intent_id, now, reservation.lease_fence);
-    },
+  const { read_fence: _ignoredFence, ...readerOptions } = options;
+  const produced = createProductionMemoryReference(context.db, {
+    ...readerOptions,
+    clock: () => commandNow(context),
   });
-  return prepared;
+  try {
+    const query = queryFromAssemble(parsed.assemble_context);
+    const selected = await produced.reader.read(query, { max_records: 8, max_record_bytes: 4096, max_bytes: 16384 });
+    const now = commandNow(context).toISOString();
+    const input = assemblerFromReference(selected, parsed.assemble_context, now);
+    const snapshot = assemblePersonalContext(input);
+    const confirmed = snapshot.evidence.filter(item => item.kind === "confirmed_memory");
+    const evidence = confirmed.map(item => ({
+      memory_ref: snapshot.payload.included_memory_refs[0] ?? item.evidence_id,
+      evidence_id: item.evidence_id,
+      source_id: item.source_id,
+      digest: item.digest,
+      observed_at: item.observed_at,
+      fresh_until: snapshot.expires_at,
+    }));
+    const session = new AssembledModelSession(
+      context.db,
+      options.model_transport ?? new RecordingModelTransport(),
+      dispatchMemoryAuthorizer(context, options),
+    );
+    const prepared = await session.prepare(input, evidence, now, sessionId);
+    if (reservation !== undefined) {
+      context.db.recordGjcSendStarted(reservation.intent_id, reservation.intent_id, now, reservation.lease_fence);
+    }
+    let attempts = 0;
+    await session.send(prepared.capture, reservation === undefined ? {} : {
+      beginAttempt: () => {
+        attempts += 1;
+        context.db.recordGjcSendAttemptStarted(reservation.intent_id, `${reservation.lease_fence}:${attempts}`, now, reservation.lease_fence);
+      },
+      onKnownNegative: () => {
+        context.db.recordGjcSendAttemptFailed(reservation.intent_id, `${reservation.lease_fence}:${attempts}`, now, reservation.lease_fence);
+        context.db.recordGjcSendFailed(reservation.intent_id, now, reservation.lease_fence);
+      },
+    });
+    return prepared;
+  } finally {
+    await produced.close();
+  }
 }

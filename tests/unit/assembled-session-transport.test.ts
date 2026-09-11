@@ -121,20 +121,4 @@ describe("production assembled model session", () => {
     expect(transport.sent).toHaveLength(1);
     db.close();
   });
-
-  it("reselects memories into the selected session transport", async () => {
-    const { db, input, evidence } = await ready();
-    const transport = new RecordingModelTransport();
-    const produced = createProductionMemoryReference(db, {
-      projection_key: Buffer.alloc(32, 7),
-      model_transport: transport,
-      transport: { call: async () => undefined as never, close: async () => undefined } as never,
-    });
-    const delivered = await produced.reselectAndDeliver(input, evidence, CONTEXT_NOW, "new-session");
-    expect(delivered.capture.session_id).toBe("new-session");
-    expect(delivered.capture.no_data).toBe(false);
-    expect(transport.sent).toHaveLength(1);
-    expect(transport.sent[0]?.session_id).toBe("new-session");
-    db.close();
-  });
 });

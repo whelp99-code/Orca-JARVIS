@@ -66,12 +66,6 @@ export function createProductionMemoryReference(authority: AuthorityDb, options:
   return {
     reader,
     deliverAssembled: modelSession.deliver.bind(modelSession),
-    reselectAndDeliver: (
-      input: unknown,
-      evidence: Parameters<AssembledModelSession["deliver"]>[1],
-      now: string,
-      sessionId: string,
-    ) => modelSession.deliver(input, evidence, now, sessionId),
     close: (): Promise<void> => {
     if (options.transport !== undefined) return Promise.resolve();
     return closing ??= transport.close();

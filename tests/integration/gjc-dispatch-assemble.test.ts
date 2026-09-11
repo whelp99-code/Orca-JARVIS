@@ -7,8 +7,21 @@ import { RecordingModelTransport } from "../../src/index.js";
 import { gjcWorkerId } from "../../src/gjc-intent-store.js";
 import { gjcTaskFor, seedGjcDispatch } from "../fixtures/gjc-dispatch-fixture.js";
 import { contextAssemblerInput, CONTEXT_NOW } from "../fixtures/context-assembler-input.js";
-import { assemblePersonalContext } from "../../src/index.js";
-import { initialized } from "../helpers.js";
+import { assemblePersonalContext, JarvisError } from "../../src/index.js";
+import { MemoryReferenceProvider, REFERENCE_NOW } from "../fixtures/memory-reference-provider.js";
+import { closeMemoryDatabase, memoryDatabase } from "../fixtures/memory-candidate-store.js";
+import { memoryReadFenceFixture } from "../fixtures/memory-read-fence.js";
+
+
+async function gjcProduct() {
+  const database = await memoryDatabase();
+  const db = database.authority;
+  db.configureGjc(process.cwd(), "s", true);
+  const source = seedGjcDispatch(db);
+  const { config } = memoryReadFenceFixture(database, "2026-12-01T00:00:00.000Z");
+  const provider = new MemoryReferenceProvider();
+  return { database, db, source, config, provider };
+}
 
 function writeJson(value: unknown): string {
   const dir = mkdtempSync(join(tmpdir(), "gjc-dispatch-"));
@@ -19,24 +32,20 @@ function writeJson(value: unknown): string {
 
 describe("gjc.dispatch assemble envelope", () => {
   it("does not send when extra keys sit on the exact-key task", async () => {
-    const db = await initialized();
-    db.configureGjc(process.cwd(), "s", true);
-    const source = seedGjcDispatch(db);
+    const { database, db, source, config, provider } = await gjcProduct();
     const task = { ...gjcTaskFor(db, source, "extra-keys"), assemble_context: contextAssemblerInput() };
     const transport = new RecordingModelTransport();
     await expect(executeGjcCommand({
       args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
       argument: writeJson(task), fourth: undefined, fifth: undefined, sixth: undefined, db,
-      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+      dependencies: { clock: () => REFERENCE_NOW, memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport, transport: provider, read_fence_config: config } },
     } as never)).rejects.toMatchObject({ code: "GJC_DISPATCH_SCHEMA_INVALID" });
     expect(transport.sent).toHaveLength(0);
-    db.close();
+    closeMemoryDatabase(database);
   });
 
   it("sends once from a nested envelope after schema and auth pass", async () => {
-    const db = await initialized();
-    db.configureGjc(process.cwd(), "s", true);
-    const source = seedGjcDispatch(db);
+    const { database, db, source, config, provider } = await gjcProduct();
     const input = contextAssemblerInput();
     for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
       db.persistObservation(observation, CONTEXT_NOW);
@@ -60,17 +69,17 @@ describe("gjc.dispatch assemble envelope", () => {
         }],
       }),
       fourth: undefined, fifth: undefined, sixth: undefined, db,
-      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+      dependencies: { clock: () => REFERENCE_NOW, memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport, transport: provider, read_fence_config: config } },
     } as never);
     expect(result).toMatchObject({ ok: true, command: "gjc.dispatch" });
     expect(transport.sent).toHaveLength(1);
-    db.close();
+    expect(transport.sent[0]?.session_id).toBe("s");
+    expect(transport.sent[0]?.json).toContain("공통 기억");
+    closeMemoryDatabase(database);
   });
 
   it("does not send a duplicate idempotency key", async () => {
-    const db = await initialized();
-    db.configureGjc(process.cwd(), "s", true);
-    const source = seedGjcDispatch(db);
+    const { database, db, source, config, provider } = await gjcProduct();
     const task = gjcTaskFor(db, source, "dup-key");
     db.createGjcDispatchFromTask(task);
     const transport = new RecordingModelTransport();
@@ -78,24 +87,22 @@ describe("gjc.dispatch assemble envelope", () => {
       args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
       argument: writeJson({ task, assemble_context: contextAssemblerInput() }),
       fourth: undefined, fifth: undefined, sixth: undefined, db,
-      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+      dependencies: { clock: () => REFERENCE_NOW, memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport, transport: provider, read_fence_config: config } },
     } as never);
     expect(result).toMatchObject({ ok: true, duplicate: true });
     expect(transport.sent).toHaveLength(0);
-    db.close();
+    closeMemoryDatabase(database);
   });
 
   it("does not send when production read_fence_config is unavailable", async () => {
-    const db = await initialized();
-    db.configureGjc(process.cwd(), "s", true);
-    const source = seedGjcDispatch(db);
+    const { database, db, source, config, provider } = await gjcProduct();
     const transport = new RecordingModelTransport();
     await expect(executeGjcCommand({
       args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
       argument: writeJson({ task: gjcTaskFor(db, source, "fence-config"), assemble_context: contextAssemblerInput() }),
       fourth: undefined, fifth: undefined, sixth: undefined, db,
       dependencies: {
-        clock: () => new Date(CONTEXT_NOW),
+        clock: () => REFERENCE_NOW,
         memoryReferenceOptions: {
           projection_key: Buffer.alloc(32, 7),
           model_transport: transport,
@@ -108,13 +115,11 @@ describe("gjc.dispatch assemble envelope", () => {
       },
     } as never)).rejects.toBeTruthy();
     expect(transport.sent).toHaveLength(0);
-    db.close();
+    closeMemoryDatabase(database);
   });
 
   it("sends once when two nested dispatches share an idempotency key", async () => {
-    const db = await initialized();
-    db.configureGjc(process.cwd(), "s", true);
-    const source = seedGjcDispatch(db);
+    const { database, db, source, config, provider } = await gjcProduct();
     const input = contextAssemblerInput();
     for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
       db.persistObservation(observation, CONTEXT_NOW);
@@ -138,18 +143,16 @@ describe("gjc.dispatch assemble envelope", () => {
     const run = () => executeGjcCommand({
       args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
       argument: writeJson(envelope), fourth: undefined, fifth: undefined, sixth: undefined, db,
-      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+      dependencies: { clock: () => REFERENCE_NOW, memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport, transport: provider, read_fence_config: config } },
     } as never);
     const [first, second] = await Promise.all([run(), run()]);
     expect(first?.intent_id).toBe(second?.intent_id);
     expect(transport.sent).toHaveLength(1);
-    db.close();
+    closeMemoryDatabase(database);
   });
 
   it("sends after a denied fence is later allowed", async () => {
-    const db = await initialized();
-    db.configureGjc(process.cwd(), "s", true);
-    const source = seedGjcDispatch(db);
+    const { database, db, source, config, provider } = await gjcProduct();
     const input = contextAssemblerInput();
     for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
       db.persistObservation(observation, CONTEXT_NOW);
@@ -175,9 +178,10 @@ describe("gjc.dispatch assemble envelope", () => {
       args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
       argument: writeJson(envelope), fourth: undefined, fifth: undefined, sixth: undefined, db,
       dependencies: {
-        clock: () => new Date(CONTEXT_NOW),
+        clock: () => REFERENCE_NOW,
         memoryReferenceOptions: {
           projection_key: Buffer.alloc(32, 7), model_transport: transport,
+          transport: provider, read_fence_config: config,
           read_fence: () => { if (deny) throw new Error("deny fence"); },
           ...more,
         },
@@ -190,13 +194,11 @@ describe("gjc.dispatch assemble envelope", () => {
     expect(result).toMatchObject({ ok: true, command: "gjc.dispatch" });
     expect(result?.duplicate).not.toBe(true);
     expect(transport.sent).toHaveLength(1);
-    db.close();
+    closeMemoryDatabase(database);
   });
 
   it("sends after a failed transport is replaced", async () => {
-    const db = await initialized();
-    db.configureGjc(process.cwd(), "s", true);
-    const source = seedGjcDispatch(db);
+    const { database, db, source, config, provider } = await gjcProduct();
     const input = contextAssemblerInput();
     for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
       db.persistObservation(observation, CONTEXT_NOW);
@@ -221,7 +223,7 @@ describe("gjc.dispatch assemble envelope", () => {
     const ctx = (transport: unknown) => ({
       args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
       argument: writeJson(envelope), fourth: undefined, fifth: undefined, sixth: undefined, db,
-      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+      dependencies: { clock: () => REFERENCE_NOW, memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport, transport: provider, read_fence_config: config } },
     } as never);
     await expect(executeGjcCommand(ctx(failing))).rejects.toMatchObject({ code: "MODEL_TRANSPORT_UNAVAILABLE" });
     expect(failing.sent).toHaveLength(2);
@@ -229,13 +231,11 @@ describe("gjc.dispatch assemble envelope", () => {
     expect(result).toMatchObject({ ok: true, command: "gjc.dispatch" });
     expect(result?.duplicate).not.toBe(true);
     expect(ok.sent).toHaveLength(1);
-    db.close();
+    closeMemoryDatabase(database);
   });
 
   it("reclaims a dead-worker reservation on the public dispatch path", async () => {
-    const db = await initialized();
-    db.configureGjc(process.cwd(), "s", true);
-    const source = seedGjcDispatch(db);
+    const { database, db, source, config, provider } = await gjcProduct();
     const input = contextAssemblerInput();
     for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
       db.persistObservation(observation, CONTEXT_NOW);
@@ -262,20 +262,18 @@ describe("gjc.dispatch assemble envelope", () => {
         }],
       }),
       fourth: undefined, fifth: undefined, sixth: undefined, db,
-      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+      dependencies: { clock: () => REFERENCE_NOW, memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport, transport: provider, read_fence_config: config } },
     } as never);
     expect(result).toMatchObject({ ok: true, command: "gjc.dispatch" });
     expect(result?.duplicate).not.toBe(true);
     expect(transport.sent).toHaveLength(1);
     expect(db.gjcIntentHasEvent(String(result?.intent_id), "model_dispatched")).toBe(true);
     expect(db.db.prepare("SELECT lease_owner FROM gjc_intents WHERE idempotency_key=?").get("dead-worker")).toEqual({ lease_owner: gjcWorkerId() });
-    db.close();
+    closeMemoryDatabase(database);
   });
 
   it("does not steal a living worker lease when the clock passes expiry", async () => {
-    const db = await initialized();
-    db.configureGjc(process.cwd(), "s", true);
-    const source = seedGjcDispatch(db);
+    const { database, db, source, config, provider } = await gjcProduct();
     const input = contextAssemblerInput();
     for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
       db.persistObservation(observation, CONTEXT_NOW);
@@ -284,9 +282,9 @@ describe("gjc.dispatch assemble envelope", () => {
     const memory = snapshot.evidence.find(item => item.kind === "confirmed_memory");
     if (memory === undefined) throw new Error("memory");
     const task = gjcTaskFor(db, source, "live-expiry");
-    db.reserveGjcDispatchFromTask(task, CONTEXT_NOW);
+    db.reserveGjcDispatchFromTask(task, REFERENCE_NOW.toISOString());
     const transport = new RecordingModelTransport();
-    const later = new Date(Date.parse(CONTEXT_NOW) + 61_000).toISOString();
+    const later = new Date(REFERENCE_NOW.getTime() + 61_000).toISOString();
     const result = await executeGjcCommand({
       args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
       argument: writeJson({
@@ -302,17 +300,15 @@ describe("gjc.dispatch assemble envelope", () => {
         }],
       }),
       fourth: undefined, fifth: undefined, sixth: undefined, db,
-      dependencies: { clock: () => new Date(later), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+      dependencies: { clock: () => new Date(later), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport, transport: provider, read_fence_config: config } },
     } as never);
     expect(result).toMatchObject({ ok: true, duplicate: true });
     expect(transport.sent).toHaveLength(0);
-    db.close();
+    closeMemoryDatabase(database);
   });
 
   it("does not resend when send started and local receipt is missing", async () => {
-    const db = await initialized();
-    db.configureGjc(process.cwd(), "s", true);
-    const source = seedGjcDispatch(db);
+    const { database, db, source, config, provider } = await gjcProduct();
     const input = contextAssemblerInput();
     for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
       db.persistObservation(observation, CONTEXT_NOW);
@@ -340,17 +336,15 @@ describe("gjc.dispatch assemble envelope", () => {
         }],
       }),
       fourth: undefined, fifth: undefined, sixth: undefined, db,
-      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+      dependencies: { clock: () => REFERENCE_NOW, memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport, transport: provider, read_fence_config: config } },
     } as never);
     expect(result).toMatchObject({ ok: true, recovered: "unknown_accepted" });
     expect(transport.sent).toHaveLength(0);
-    db.close();
+    closeMemoryDatabase(database);
   });
 
   it("does not treat a later unknown attempt as unlocked by an earlier failure", async () => {
-    const db = await initialized();
-    db.configureGjc(process.cwd(), "s", true);
-    const source = seedGjcDispatch(db);
+    const { database, db, source, config, provider } = await gjcProduct();
     const input = contextAssemblerInput();
     for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
       db.persistObservation(observation, CONTEXT_NOW);
@@ -375,7 +369,7 @@ describe("gjc.dispatch assemble envelope", () => {
     const ctx = (transport: unknown) => ({
       args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
       argument: writeJson(envelope), fourth: undefined, fifth: undefined, sixth: undefined, db,
-      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+      dependencies: { clock: () => REFERENCE_NOW, memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport, transport: provider, read_fence_config: config } },
     } as never);
     await expect(executeGjcCommand(ctx(failing))).rejects.toMatchObject({ code: "MODEL_TRANSPORT_UNAVAILABLE" });
     const reserved = db.reserveGjcDispatchFromTask(task, CONTEXT_NOW);
@@ -385,13 +379,11 @@ describe("gjc.dispatch assemble envelope", () => {
     const result = await executeGjcCommand(ctx(transport));
     expect(result).toMatchObject({ ok: true, recovered: "unknown_accepted" });
     expect(transport.sent).toHaveLength(0);
-    db.close();
+    closeMemoryDatabase(database);
   });
 
   it("records a reconciled receipt even when the reserving worker is dead", async () => {
-    const db = await initialized();
-    db.configureGjc(process.cwd(), "s", true);
-    const source = seedGjcDispatch(db);
+    const { database, db, source, config, provider } = await gjcProduct();
     const input = contextAssemblerInput();
     for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
       db.persistObservation(observation, CONTEXT_NOW);
@@ -423,18 +415,16 @@ describe("gjc.dispatch assemble envelope", () => {
         }],
       }),
       fourth: undefined, fifth: undefined, sixth: undefined, db,
-      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+      dependencies: { clock: () => REFERENCE_NOW, memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport, transport: provider, read_fence_config: config } },
     } as never);
     expect(result).toMatchObject({ ok: true, recovered: "remote_accepted" });
     expect(transport.sent).toHaveLength(0);
     expect(db.gjcIntentHasEvent(reserved.intent_id, "model_dispatched")).toBe(true);
-    db.close();
+    closeMemoryDatabase(database);
   });
 
   it("does not resend after a disconnect thrown following remote acceptance", async () => {
-    const db = await initialized();
-    db.configureGjc(process.cwd(), "s", true);
-    const source = seedGjcDispatch(db);
+    const { database, db, source, config, provider } = await gjcProduct();
     const input = contextAssemblerInput();
     for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
       db.persistObservation(observation, CONTEXT_NOW);
@@ -465,25 +455,23 @@ describe("gjc.dispatch assemble envelope", () => {
     const ctx = {
       args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
       argument: writeJson(envelope), fourth: undefined, fifth: undefined, sixth: undefined, db,
-      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+      dependencies: { clock: () => REFERENCE_NOW, memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport, transport: provider, read_fence_config: config } },
     } as never;
     await expect(executeGjcCommand(ctx)).rejects.toThrow(/ECONNRESET/);
     const retry = new RecordingModelTransport();
     const result = await executeGjcCommand({
       args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
       argument: writeJson(envelope), fourth: undefined, fifth: undefined, sixth: undefined, db,
-      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: retry } },
+      dependencies: { clock: () => REFERENCE_NOW, memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: retry, transport: provider, read_fence_config: config } },
     } as never);
     expect(sends).toBe(1);
     expect(retry.sent).toHaveLength(0);
     expect(result).toMatchObject({ ok: true, recovered: "unknown_accepted" });
-    db.close();
+    closeMemoryDatabase(database);
   });
 
   it("sends after a pre-send fence deny is corrected", async () => {
-    const db = await initialized();
-    db.configureGjc(process.cwd(), "s", true);
-    const source = seedGjcDispatch(db);
+    const { database, db, source, config, provider } = await gjcProduct();
     const input = contextAssemblerInput();
     for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
       db.persistObservation(observation, CONTEXT_NOW);
@@ -511,13 +499,14 @@ describe("gjc.dispatch assemble envelope", () => {
       args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
       argument: writeJson(envelope), fourth: undefined, fifth: undefined, sixth: undefined, db,
       dependencies: {
-        clock: () => new Date(CONTEXT_NOW),
+        clock: () => REFERENCE_NOW,
         memoryReferenceOptions: {
           projection_key: Buffer.alloc(32, 7),
           model_transport: transport,
+          transport: provider, read_fence_config: config,
           read_fence: () => {
             fences += 1;
-            if (phase === 0 && fences >= 2) throw new Error("CURRENT_READER_DENIED");
+            if (phase === 0 && fences >= 2) throw new JarvisError("CURRENT_READER_DENIED");
           },
         },
       },
@@ -529,26 +518,25 @@ describe("gjc.dispatch assemble envelope", () => {
       args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
       argument: writeJson(envelope), fourth: undefined, fifth: undefined, sixth: undefined, db,
       dependencies: {
-        clock: () => new Date(CONTEXT_NOW),
+        clock: () => REFERENCE_NOW,
         memoryReferenceOptions: {
           projection_key: Buffer.alloc(32, 7),
           model_transport: transport,
+          transport: provider, read_fence_config: config,
           read_fence: () => {
             fences += 1;
-            if (phase === 0 && fences >= 2) throw new Error("CURRENT_READER_DENIED");
+            if (phase === 0 && fences >= 2) throw new JarvisError("CURRENT_READER_DENIED");
           },
         },
       },
     } as never);
     expect(result).toMatchObject({ ok: true });
     expect(transport.sent).toHaveLength(1);
-    db.close();
+    closeMemoryDatabase(database);
   });
 
   it("resends after a known-negative then retry-fence deny is corrected", async () => {
-    const db = await initialized();
-    db.configureGjc(process.cwd(), "s", true);
-    const source = seedGjcDispatch(db);
+    const { database, db, source, config, provider } = await gjcProduct();
     const input = contextAssemblerInput();
     for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
       db.persistObservation(observation, CONTEXT_NOW);
@@ -581,15 +569,16 @@ describe("gjc.dispatch assemble envelope", () => {
     const options = () => ({
       projection_key: Buffer.alloc(32, 7),
       model_transport: transport,
+      transport: provider, read_fence_config: config,
       read_fence: () => {
         fences += 1;
-        if (phase === 0 && fences >= 3) throw new Error("CURRENT_READER_DENIED");
+        if (phase === 0 && fences >= 3) throw new JarvisError("CURRENT_READER_DENIED");
       },
     });
     const ctx = () => ({
       args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
       argument: writeJson(envelope), fourth: undefined, fifth: undefined, sixth: undefined, db,
-      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: options() },
+      dependencies: { clock: () => REFERENCE_NOW, memoryReferenceOptions: options() },
     } as never);
     await expect(executeGjcCommand(ctx())).rejects.toThrow(/CURRENT_READER_DENIED/);
     expect(transport.sent).toHaveLength(1);
@@ -597,13 +586,11 @@ describe("gjc.dispatch assemble envelope", () => {
     const result = await executeGjcCommand(ctx());
     expect(result).toMatchObject({ ok: true });
     expect(transport.sent).toHaveLength(2);
-    db.close();
+    closeMemoryDatabase(database);
   });
 
   it("does not resend after an inner negative then accepted crash", async () => {
-    const db = await initialized();
-    db.configureGjc(process.cwd(), "s", true);
-    const source = seedGjcDispatch(db);
+    const { database, db, source, config, provider } = await gjcProduct();
     const input = contextAssemblerInput();
     for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
       db.persistObservation(observation, CONTEXT_NOW);
@@ -635,7 +622,7 @@ describe("gjc.dispatch assemble envelope", () => {
     const ctx = (transport: unknown) => ({
       args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
       argument: writeJson(envelope), fourth: undefined, fifth: undefined, sixth: undefined, db,
-      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+      dependencies: { clock: () => REFERENCE_NOW, memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport, transport: provider, read_fence_config: config } },
     } as never);
     await expect(executeGjcCommand(ctx(crashing))).rejects.toThrow(/ECONNRESET/);
     const retry = new RecordingModelTransport();
@@ -643,6 +630,6 @@ describe("gjc.dispatch assemble envelope", () => {
     expect(attempts).toBe(2);
     expect(retry.sent).toHaveLength(0);
     expect(result).toMatchObject({ ok: true, recovered: "unknown_accepted" });
-    db.close();
+    closeMemoryDatabase(database);
   });
 });
