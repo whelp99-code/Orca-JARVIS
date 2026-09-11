@@ -66,7 +66,7 @@ export class AuthorityDatabaseRuntime {
   }
 
   async quiesce<T>(
-    reason: "memory_compaction",
+    reason: "memory_compaction" | "local_retention",
     operation: (lease: QuiescedAuthorityLease) => Promise<T>,
   ): Promise<T> {
     void reason;

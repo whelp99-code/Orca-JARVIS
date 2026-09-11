@@ -11,7 +11,7 @@ const actions = ["register", "collect", "snapshot", "admit-observation", "subjec
   "expire", "retention-preview"];
 
 /** Bounded read of the configuration document: this surface takes one closed two-field record. */
-function readRetentionConfig(path: string): unknown {
+export function readRetentionConfig(path: string): unknown {
   try {
     const stat = statSync(path);
     if (!stat.isFile() || stat.size > 4096) throw new Error();

@@ -18,6 +18,8 @@ const rows = (db: AuthorityDb): Record<string, number> => Object.fromEntries(
     "personal_recommendations", "notification_intents", "personal_context_audit_events",
     "gjc_intents"].map(table =>
     [table, Number(db.db.prepare(`SELECT COUNT(*) FROM ${table}`).pluck().get())]));
+const operations = (db: AuthorityDb): number =>
+  Number(db.db.prepare("SELECT COUNT(*) FROM local_retention_operations").pluck().get());
 
 // The apply reads the source through SQLite's backup API into a snapshot it owns, and the rebuild
 // adapter checkpoints that snapshot rather than the source. Every signal is measured separately so
@@ -55,15 +57,18 @@ it("leaves the source untouched, logically and physically, while it copies", asy
     wal: bytes(`${db.filename}-wal`),
     shm: bytes(`${db.filename}-shm`),
   };
-  // No DML and no logical change: the apply removes nothing from the source.
-  expect(after.changes).toBe(before.changes);
+  // The only write the apply makes to the source is its own operation record: one insert that
+  // registers the attempt and one update that records the verdict.
+  expect(after.changes).toBe(before.changes + 2);
+  expect(operations(db)).toBe(1);
+  expect(String(db.db.prepare("SELECT state FROM local_retention_operations").pluck().get()))
+    .toBe("verified");
+  // No data table moves: the apply removes nothing from the source.
   expect(after.rows).toEqual(before.rows);
-  // Physical bytes no longer change either: the checkpoint now lands on the snapshot this call
-  // owns, so the source file and both sidecars are byte-identical across the apply.
+  // The checkpoint lands on the snapshot this call owns, so the source's main file is untouched
+  // and only its write-ahead log grows by the operation record.
   expect(after.main).toBe(before.main);
-  expect(after.wal).toBe(before.wal);
-  expect(after.wal).toBeGreaterThan(0);
-  expect(after.shm).toBe(before.shm);
+  expect(after.wal).toBeGreaterThan(before.wal ?? 0);
   expect(after.shm).not.toBeNull();
   // The snapshot the apply took is its own and does not survive the call.
   for (const suffix of ["", "-wal", "-shm"]) {

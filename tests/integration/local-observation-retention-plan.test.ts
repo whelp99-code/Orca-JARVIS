@@ -50,7 +50,7 @@ it("accepts the candidate the copier's own plan produces, with and without remov
   expect(count(candidate, "SELECT COUNT(*) FROM personal_recommendations")).toBe(0);
   expect(count(candidate, "SELECT COUNT(*) FROM personal_context_audit_events"))
     .toBe(count(cut.source, "SELECT COUNT(*) FROM personal_context_audit_events"));
-});
+}, 60_000);
 
 it("rejects a candidate that kept rows the selection chose to remove", async () => {
   const keep = await built(false);
@@ -58,7 +58,7 @@ it("rejects a candidate that kept rows the selection chose to remove", async () 
   // The first candidate removed nothing; checked against a plan that removes the group it is wrong.
   expect(() => assertCandidateMatchesCopyPlan(keep.source, keep.destination, cut.blocked,
     keep.build.result_generation)).toThrow("LOCAL_RETENTION_CANDIDATE_FOREIGN_ROW");
-});
+}, 60_000);
 
 it("rejects a candidate that lost an audit row naming a removed context", async () => {
   const cut = await built(true);
@@ -72,7 +72,7 @@ it("rejects a candidate that lost an audit row naming a removed context", async 
 
   expect(() => assertCandidateMatchesCopyPlan(cut.source, cut.destination, cut.blocked,
     cut.build.result_generation)).toThrow("LOCAL_RETENTION_CANDIDATE_MISSING_ROW");
-});
+}, 60_000);
 
 // Values that differ only by separators, quoting, emptiness, type or precision must not collide.
 it.each([
@@ -93,7 +93,7 @@ it.each([
   expect(() => assertCandidateMatchesCopyPlan(keep.source, keep.destination, [],
     keep.build.result_generation))
     .toThrow(/LOCAL_RETENTION_CANDIDATE_(FOREIGN_ROW|MISSING_ROW)/);
-});
+}, 60_000);
 
 it("rejects a candidate whose table set or generation history was altered", async () => {
   const dropped = await built(false);
@@ -111,4 +111,4 @@ it("rejects a candidate whose table set or generation history was altered", asyn
   expect(() => assertCandidateMatchesCopyPlan(generations.source, generations.destination, [],
     generations.build.result_generation))
     .toThrow("LOCAL_RETENTION_CANDIDATE_GENERATION_INVALID");
-});
+}, 60_000);

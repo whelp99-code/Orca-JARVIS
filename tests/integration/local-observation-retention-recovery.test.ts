@@ -1,0 +1,187 @@
+import { spawn } from "node:child_process";
+import { once } from "node:events";
+import { existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
+import { createInterface } from "node:readline";
+import { afterEach, expect, it } from "vitest";
+import { AuthorityDb } from "../../src/db.js";
+import { recoverLocalRetentionOperations } from "../../src/local-observation-retention-recovery.js";
+import { localObservationChain, LOCAL_CHAIN_AT } from "../fixtures/local-observation-chain.js";
+import { tempDb } from "../helpers.js";
+
+const opened: AuthorityDb[] = [];
+afterEach(() => { for (const db of opened.splice(0)) if (db.db.open) db.close(); });
+
+const scalar = (db: AuthorityDb, sql: string): number =>
+  Number(db.db.prepare(sql).pluck().get());
+const rows = (db: AuthorityDb, sql: string): unknown[] => db.db.prepare(sql).all();
+
+type Seed = {
+  readonly path: string;
+  readonly candidate: string;
+  readonly cutoff: string;
+  readonly observation: string;
+  readonly observations: number;
+};
+
+/** A source with one expired chain, closed: the child process must be its only holder. */
+async function seeded(): Promise<Seed> {
+  const db = new AuthorityDb(tempDb());
+  const chain = await localObservationChain(db);
+  const cutoff = String(db.db
+    .prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
+    .pluck().get(chain.observation.id));
+  const seed = {
+    path: db.filename,
+    candidate: join(dirname(db.filename), "candidate.sqlite"),
+    cutoff,
+    observation: chain.observation.id,
+    observations: scalar(db, "SELECT COUNT(*) FROM personal_observations"),
+  };
+  db.close();
+  return seed;
+}
+
+/**
+ * Runs the rebuild in a real process and kills it at a named point.
+ *
+ * The child prints the point's name when it gets there and stops; the kill follows that line, so
+ * the stop is where the test says it is rather than wherever a sleep happened to land.
+ */
+async function crashAt(seed: Seed, barrier: string): Promise<void> {
+  const child = spawn(process.execPath, [
+    join(process.cwd(), "tests", "fixtures", "local-retention-crash-child.mjs"),
+    seed.path, seed.candidate, seed.cutoff, barrier,
+    join(dirname(seed.path), "registry"), LOCAL_CHAIN_AT,
+  ], { stdio: ["ignore", "pipe", "pipe"] });
+  const failures: string[] = [];
+  child.stderr.on("data", chunk => failures.push(String(chunk)));
+  const lines = createInterface({ input: child.stdout });
+  let reached = false;
+  for await (const line of lines) if (line === barrier) { reached = true; break; }
+  lines.close();
+  child.kill("SIGKILL");
+  const [, signal] = await once(child, "exit") as [number | null, string | null];
+  if (!reached) throw new Error(`never reached ${barrier}: ${failures.join("")}`);
+  expect(signal).toBe("SIGKILL");
+}
+
+function reopen(seed: Seed): AuthorityDb {
+  const db = new AuthorityDb(seed.path);
+  opened.push(db);
+  return db;
+}
+
+const operations = (db: AuthorityDb): unknown[] => rows(db,
+  `SELECT operation_id,state,failure_code,candidate_path,result_device,result_inode
+   FROM local_retention_operations`);
+const state = (db: AuthorityDb): string =>
+  String(db.db.prepare("SELECT state FROM local_retention_operations").pluck().get());
+
+it("explains a process killed with the claim recorded and nothing built", async () => {
+  const seed = await seeded();
+  await crashAt(seed, "after_claim");
+  const db = reopen(seed);
+  expect(state(db)).toBe("preparing");
+  expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(seed.observations);
+
+  const recovered = recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT));
+  expect(recovered.map(item => item.outcome)).toEqual(["removed_partial"]);
+  expect(recovered[0]?.candidate_path).toBe(seed.candidate);
+  expect(existsSync(seed.candidate)).toBe(false);
+  expect(state(db)).toBe("abandoned");
+  expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(seed.observations);
+}, 60_000);
+
+it("removes a half-copied candidate and leaves the source able to try again", async () => {
+  const seed = await seeded();
+  await crashAt(seed, "during_copy");
+  const db = reopen(seed);
+  expect(state(db)).toBe("preparing");
+  expect(statSync(seed.candidate).size).toBeGreaterThan(0);
+
+  const recovered = recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT));
+  expect(recovered.map(item => item.outcome)).toEqual(["removed_partial"]);
+  expect(existsSync(seed.candidate)).toBe(false);
+  expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(seed.observations);
+  // The path is claimable again, which is what makes the retry possible at all.
+  await crashAt(seed, "after_claim");
+  expect(rows(db, "SELECT 1 FROM local_retention_operations WHERE state='preparing'").length)
+    .toBe(1);
+}, 60_000);
+
+it("discards a verified candidate its process never applied, losing nothing", async () => {
+  const seed = await seeded();
+  await crashAt(seed, "after_verify");
+  const db = reopen(seed);
+  expect(state(db)).toBe("verified");
+
+  const recovered = recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT));
+  expect(recovered.map(item => item.outcome)).toEqual(["removed_unapplied"]);
+  expect(existsSync(seed.candidate)).toBe(false);
+  expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(seed.observations);
+  expect(scalar(db, `SELECT COUNT(*) FROM personal_observations WHERE observation_id='${seed.observation}'`))
+    .toBe(1);
+}, 60_000);
+
+it("keeps the source intact when the process dies one step before the swap", async () => {
+  const seed = await seeded();
+  await crashAt(seed, "before_swap");
+  const db = reopen(seed);
+  expect(state(db)).toBe("verified");
+  const candidate = new AuthorityDb(seed.candidate);
+  opened.push(candidate);
+  // The applied record is written into the candidate, so a candidate that never went live has none.
+  expect(scalar(candidate, "SELECT COUNT(*) FROM local_retention_operations")).toBe(0);
+  expect(scalar(candidate, "SELECT COUNT(*) FROM personal_observations"))
+    .toBeLessThan(seed.observations);
+  candidate.close();
+
+  const recovered = recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT));
+  expect(recovered.map(item => item.outcome)).toEqual(["removed_unapplied"]);
+  expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(seed.observations);
+}, 60_000);
+
+it("leaves an applied database that explains its own history when the process dies after the swap",
+  async () => {
+    const seed = await seeded();
+    await crashAt(seed, "after_swap");
+    const live = statSync(seed.path, { bigint: true });
+    const db = reopen(seed);
+    expect(operations(db)).toEqual([{
+      operation_id: expect.stringMatching(/^retention:/) as unknown,
+      state: "applied",
+      failure_code: null,
+      candidate_path: seed.candidate,
+      result_device: live.dev.toString(),
+      result_inode: live.ino.toString(),
+    }]);
+    expect(scalar(db, "SELECT COUNT(*) FROM personal_observations"))
+      .toBeLessThan(seed.observations);
+    expect(scalar(db, `SELECT COUNT(*) FROM personal_observations WHERE observation_id='${seed.observation}'`))
+      .toBe(0);
+    expect(existsSync(seed.candidate)).toBe(false);
+    expect(recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT))).toEqual([]);
+  });
+
+it("preserves a file at the claimed path that this operation did not create", async () => {
+  const seed = await seeded();
+  await crashAt(seed, "during_copy");
+  const db = reopen(seed);
+  const claimed = statSync(seed.candidate, { bigint: true });
+  // Somebody else's file under the same name. It is created while the candidate still exists and
+  // renamed over it, so it cannot be handed the candidate's inode number; the filesystem is free
+  // to recycle that number for a later file, which is why birth time is recorded with it.
+  const foreign = `${seed.candidate}.foreign`;
+  writeFileSync(foreign, "not the candidate\n");
+  rmSync(seed.candidate);
+  renameSync(foreign, seed.candidate);
+  const replaced = statSync(seed.candidate, { bigint: true });
+  expect([replaced.ino, replaced.birthtimeNs]).not.toEqual([claimed.ino, claimed.birthtimeNs]);
+
+  const recovered = recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT));
+  expect(recovered.map(item => item.outcome)).toEqual(["retained_unproven"]);
+  expect(readFileSync(seed.candidate, "utf8")).toBe("not the candidate\n");
+  // Unproven work stays unfinished on the record too: nothing here decides what that file is.
+  expect(state(db)).toBe("preparing");
+}, 60_000);

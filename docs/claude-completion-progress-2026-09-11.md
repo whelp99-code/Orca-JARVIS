@@ -26,10 +26,11 @@
 | 단위 ID | 상태 | 근거 SHA | 파일·계약 | 인수 항목 | 실행 결과와 receipt | 다음 동작 | 외부 의존성 |
 |---|---|---|---|---|---|---|---|
 | M0-baseline | VERIFIED | `082d689` | 위 표, `migration-hash-vector.json` | 트리·도구·scratch·실행 중 gate 확인 | 이 문서의 M0 표 | M1 진행 | 없음 |
-| M1-P1A-audit | IN_PROGRESS | 작업 트리 | `local-observation-retention*.ts` | 차단 context를 인용한 감사 행 보존 | 리뷰 재현 재실행: 후보 감사 행 3 (이전 2) — `jarvis-m1-exact-20260911/audit-and-values-result.json` | 정식 회귀로 고정 | 없음 |
-| M1-P1B-values | IN_PROGRESS | 작업 트리 | 같은 모듈 | 값·열 경계 구분 | 리뷰 재현 재실행: 후보 값이 원본과 동일 (이전 변조본 통과) | 타입·길이 인코딩 회귀 고정 | 없음 |
-| M1-shared-plan | IN_PROGRESS | 작업 트리 | `memory-authority-fresh-builder.ts`(copyExpression/copyFilter/tableColumns export), `memory-compaction-sanitize.ts`(suppressedRowMutations export), `local-observation-retention-candidate.ts` | 복사기·정제기 규칙을 검증기가 그대로 사용, 양방향 비교 | 실행 중 | typecheck·consistency 결과 확인 | 없음 |
-| M2-recovery | TODO | — | 급사 복구·교체·일정화 | 격리 child process 인수 | — | M1 종료 후 | 없음 |
+| M1-P1A-audit | VERIFIED | `92e2e5a` | `local-observation-retention*.ts` | 차단 context를 인용한 감사 행 보존 | `local-observation-retention-plan.test.ts` 11/11 (감사 행 3 유지, 2로 줄인 후보 거절) | M2로 진행 | 없음 |
+| M1-P1B-values | VERIFIED | `92e2e5a` | 같은 모듈 | 값·열 경계 구분 | 같은 파일의 값 구별 7 케이스 통과 (구분자·인용·빈 문자열·NULL·blob·수치·큰 정수) | M2로 진행 | 없음 |
+| M1-shared-plan | VERIFIED | `92e2e5a` | `memory-authority-fresh-builder.ts`(copyExpression/copyFilter/tableColumns export), `memory-compaction-sanitize.ts`(suppressedRowMutations export), `local-observation-retention-candidate.ts` | 복사기·정제기 규칙을 검증기가 그대로 사용, 양방향 비교 | retention 4개 suite 52/53 통과 후 잔여 1건은 5s 기본 타임아웃 초과로 판명, 명시 타임아웃 부여 후 24/24 | M2로 진행 | 없음 |
+| M2-recovery | VERIFIED | 이 커밋 | `local-observation-retention-operation.ts`, `-recovery.ts`, `-swap.ts`, `migrations/089` | claim 후·복사 중·검증 후·교체 직전·교체 직후 5개 지점에서 실제 child process 강제 종료 후 복구 | `local-observation-retention-recovery.test.ts` 6/6 (stdout 센티널 배리어, sleep 없음) | M3 진행 | 없음 |
+| M2-schedule | VERIFIED | 이 커밋 | `local-observation-retention-service.ts`, `migrations/090`, `scripts/measure-local-retention-capacity.mjs`, `docs/local-retention-operations-proposal.md` | 무설정=inactive, runtime 없음=unsupported, 창 밖=deferred, 미완료=blocked; 뒤로 간 시계·장기 공백 | `local-observation-retention-schedule.test.ts` 5/5; 4주기 실측 capacity.json | M3 진행 | 운영 적용은 운영자 결정 |
 | M3-producer | TODO | — | assembler→추천→brief | fixture 수동 삽입 없는 제품 경로 | — | M2 종료 후 | 없음 |
 | M4-second-brain | TODO | — | refresh receipt·출처/삭제 | 최신 계약 실연동 또는 §8.4 산출물 | — | 조사 착수 | provider 계약/권한 |
 | M5-work | TODO | — | 실행자 준비·입력·성과 | 실행 증거 또는 준비된 적용안 | — | 설정 재확인 | 실행자 인증·외부 입력 권한 |

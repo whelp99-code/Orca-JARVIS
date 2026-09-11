@@ -17,7 +17,11 @@ const opened: AuthorityDb[] = [];
 afterEach(() => { for (const db of opened.splice(0)) db.close(); });
 
 const scalar = (db: AuthorityDb, sql: string): number => Number(db.db.prepare(sql).pluck().get());
-const writes = (db: AuthorityDb) => db.db.prepare("SELECT total_changes() AS n").get();
+const writes = (db: AuthorityDb): number =>
+  Number(db.db.prepare("SELECT total_changes()").pluck().get());
+const operationStates = (db: AuthorityDb): string[] => db.db
+  .prepare("SELECT state FROM local_retention_operations ORDER BY created_at").pluck()
+  .all().map(String);
 
 /** Admits uncited observations on one task, advancing the clock so expiries differ. */
 async function admitAcrossTime(db: AuthorityDb, cycles: number, stepMs: number) {
@@ -63,7 +67,9 @@ it("selects expired uncited observations inclusively and never writes", async ()
     { kind: "observation", id: admitted[1]?.observation_id, component_id: admitted[1]?.observation_id },
   ]);
   expect(selection.retained).toEqual([]);
-  expect(writes(db)).toEqual(before);
+  // The selector alone writes nothing at all: no data row, and no operation record either.
+  expect(writes(db)).toBe(before);
+  expect(operationStates(db)).toEqual([]);
 });
 
 it("expands a cited observation to its context and recommendations", async () => {
@@ -205,7 +211,10 @@ it("applies the selector through the rebuild adapter without writing the source"
   expect(applied.build.foreign_key_errors).toBe(0);
   expect(applied.build.integrity_check).toBe("ok");
   expect(applied.build.result_generation).toBe(applied.build.source_generation + 1);
-  expect(writes(db)).toEqual(before);
+  // The apply's only write to the source is its own operation record: the row that registers the
+  // attempt and the update that records the verdict. Nothing in the data tables moves.
+  expect(writes(db)).toBe(before + 2);
+  expect(operationStates(db)).toEqual(["verified"]);
   expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(observations);
   const rebuilt = new AuthorityDb(fresh); opened.push(rebuilt);
   expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_observations")).toBe(0);
@@ -225,7 +234,10 @@ it("does not remove a group the selector retained for a live notification", asyn
   expect(applied.selection.retained).toEqual([
     { observation_id: chain.observation.id, reason: "notification_addresses_recommendation" }]);
   expect(applied.build.foreign_key_errors).toBe(0);
-  expect(writes(db)).toEqual(before);
+  // The apply's only write to the source is its own operation record: the row that registers the
+  // attempt and the update that records the verdict. Nothing in the data tables moves.
+  expect(writes(db)).toBe(before + 2);
+  expect(operationStates(db)).toEqual(["verified"]);
   const rebuilt = new AuthorityDb(fresh); opened.push(rebuilt);
   expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_observations")).toBe(1);
   expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_recommendations")).toBe(1);

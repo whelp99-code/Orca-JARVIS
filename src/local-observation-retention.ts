@@ -12,6 +12,10 @@ import {
 import {
   assertCandidateMatchesCopyPlan,
 } from "./local-observation-retention-candidate.js";
+import {
+  abandonRetentionOperation, beginRetentionOperation, markRetentionOperationVerified,
+  releaseRetentionCandidate, type RetentionOperation,
+} from "./local-observation-retention-operation.js";
 import { buildFreshAuthority, type FreshAuthorityBuild } from "./memory-authority-fresh-builder.js";
 
 /**
@@ -30,7 +34,12 @@ export type LocalObservationRetentionApplication = {
   readonly selection: LocalObservationRetentionSelection;
   readonly build: FreshAuthorityBuild;
   readonly source_fence: RetentionSourceFence;
+  readonly operation: RetentionOperation;
 };
+
+/** Re-bases a fence over rows this connection wrote itself, leaving every other writer visible. */
+const ownWrite = (fence: RetentionSourceFence, rows: number): RetentionSourceFence =>
+  ({ ...fence, total_changes: fence.total_changes + rows });
 
 const DESTINATION_SIDECARS = ["-wal", "-shm", "-journal"] as const;
 
@@ -88,7 +97,7 @@ function retentionSourceFence(source: AuthorityDb): RetentionSourceFence {
 }
 
 /** True when the source moved past the fence, including a path replaced by another file. */
-function retentionFenceMoved(source: AuthorityDb, fence: RetentionSourceFence): boolean {
+export function retentionSourceMoved(source: AuthorityDb, fence: RetentionSourceFence): boolean {
   let current: RetentionSourceFence;
   try {
     current = retentionSourceFence(source);
@@ -124,7 +133,7 @@ export function findDanglingRetentionReferences(
 export function verifyLocalObservationRetentionCandidate(
   source: AuthorityDb, application: LocalObservationRetentionApplication,
 ): void {
-  if (retentionFenceMoved(source, application.source_fence)) {
+  if (retentionSourceMoved(source, application.source_fence)) {
     throw new JarvisError("LOCAL_RETENTION_SOURCE_CHANGED");
   }
   const dangling = findDanglingRetentionReferences(source.db, application.selection.blocked);
@@ -209,26 +218,35 @@ async function captureSelectedSource(source: AuthorityDb, snapshotPath: string):
 }
 
 export async function applyLocalObservationRetention(
-  source: AuthorityDb, cutoffValue: unknown, freshPath: string,
+  source: AuthorityDb, cutoffValue: unknown, freshPath: string, now: Date = new Date(),
 ): Promise<LocalObservationRetentionApplication> {
-  const fence = retentionSourceFence(source);
+  let fence = retentionSourceFence(source);
   assertRetentionCutoff(cutoffValue);
   const destination = claimRetentionDestination(source, freshPath);
   const snapshotPath = `${destination}.selected-source`;
   const snapshot = await captureSelectedSource(source, snapshotPath);
+  let operation: RetentionOperation | undefined;
   try {
     const selection = selectLocalObservationRetention(snapshot.db, cutoffValue);
+    // Recorded before the build so an interrupted run leaves evidence rather than a bare file.
+    operation = beginRetentionOperation(source, destination, selection.blocked, now);
+    fence = ownWrite(fence, operation.recorded_changes);
     const build = await buildFreshAuthority(snapshot, destination, {
       blocked_projections: selection.blocked, sensitive_material: [], destination: "claimed",
     });
     // The candidate must equal what the copier's own plan produces from this snapshot.
     assertCandidateMatchesCopyPlan(snapshot, destination, selection.blocked, build.result_generation);
-    const application = { selection, build, source_fence: fence };
+    const application = { selection, build, source_fence: fence, operation };
     verifyLocalObservationRetentionCandidate(source, application);
-    return application;
+    return { ...application,
+      source_fence: ownWrite(fence, markRetentionOperationVerified(source, operation, now)) };
   } catch (error) {
-    releaseRetentionDestination(destination);
-    if (retentionFenceMoved(source, fence)) throw new JarvisError("LOCAL_RETENTION_SOURCE_CHANGED");
+    const moved = retentionSourceMoved(source, fence);
+    const code = moved ? "LOCAL_RETENTION_SOURCE_CHANGED"
+      : error instanceof Error ? error.message : "LOCAL_RETENTION_APPLY_FAILED";
+    if (operation === undefined) releaseRetentionCandidate(destination);
+    else abandonRetentionOperation(source, operation, code, now);
+    if (moved) throw new JarvisError("LOCAL_RETENTION_SOURCE_CHANGED");
     throw error;
   } finally {
     if (snapshot.db.open) snapshot.close();
