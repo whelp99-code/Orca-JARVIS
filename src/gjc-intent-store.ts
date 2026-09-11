@@ -1,6 +1,28 @@
 import { JarvisError, deterministic, json, sha, timestamp, type Row } from "./authority-db-base.js";
 import { GjcDispatchAuthorityDb } from "./gjc-dispatch-store.js";
 
+const DISPATCH_LEASE_MS = 60_000;
+
+export function gjcWorkerId(): string {
+	return `pid:${process.pid}`;
+}
+
+export function gjcWorkerAlive(owner: unknown): boolean {
+	if (typeof owner !== "string" || !owner.startsWith("pid:")) return false;
+	const pid = Number(owner.slice(4));
+	if (!Number.isInteger(pid) || pid <= 0) return false;
+	try {
+		process.kill(pid, 0);
+		return true;
+	} catch {
+		return false;
+	}
+}
+
+function leaseExpiry(now: string): string {
+	return new Date(Date.parse(now) + DISPATCH_LEASE_MS).toISOString();
+}
+
 export abstract class GjcIntentAuthorityDb extends GjcDispatchAuthorityDb {
 	gjcIntentIdForKey(idempotencyKey: string): string | undefined {
 		const row = this.db.prepare("SELECT intent_id FROM gjc_intents WHERE idempotency_key=?").get(idempotencyKey) as Row | undefined;
@@ -45,18 +67,24 @@ export abstract class GjcIntentAuthorityDb extends GjcDispatchAuthorityDb {
 		const intentId = deterministic("gjc", idempotencyKey);
 		const payload_json = json(payload);
 		const payload_digest = sha(payload_json);
+		const owner = gjcWorkerId();
+		const expires = leaseExpiry(now);
 		return this.atomic(() => {
-			const prior = this.db.prepare("SELECT intent_id,payload_digest,kind,continuation_id,state FROM gjc_intents WHERE idempotency_key=?").get(idempotencyKey) as Row | undefined;
+			const prior = this.db.prepare("SELECT intent_id,payload_digest,kind,continuation_id,state,lease_owner,lease_expires_at FROM gjc_intents WHERE idempotency_key=?").get(idempotencyKey) as Row | undefined;
 			if (prior) {
 				if (prior.payload_digest !== payload_digest || prior.kind !== kind || (prior.continuation_id ?? null) !== (continuationId ?? null))
 					throw new JarvisError("GJC_INTENT_REPLAY_CONFLICT");
 				const id = String(prior.intent_id);
-				if (this.gjcIntentHasEvent(id, "model_dispatched") || prior.state !== "uncertain")
+				if (this.gjcIntentHasEvent(id, "model_dispatched"))
 					return { intent_id: id, reserved: false };
-				this.db.prepare("UPDATE gjc_intents SET state='pending' WHERE intent_id=?").run(id);
+				const owner = prior.lease_owner;
+				const abandoned = prior.state === "pending" && typeof owner === "string" && owner.startsWith("pid:") && (!gjcWorkerAlive(owner) || String(prior.lease_expires_at ?? "") <= now);
+				if (!abandoned && prior.state !== "uncertain")
+					return { intent_id: id, reserved: false };
+				this.db.prepare("UPDATE gjc_intents SET state='pending',lease_owner=?,lease_expires_at=? WHERE intent_id=?").run(owner, expires, id);
 				return { intent_id: id, reserved: true };
 			}
-			this.db.prepare("INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,payload_digest,idempotency_key,state,created_at) VALUES(?,?,?,?,?,?,?,?)").run(intentId, continuationId ?? null, kind, payload_json, payload_digest, idempotencyKey, "pending", now);
+			this.db.prepare("INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,payload_digest,idempotency_key,state,created_at,lease_owner,lease_expires_at) VALUES(?,?,?,?,?,?,?,?,?,?)").run(intentId, continuationId ?? null, kind, payload_json, payload_digest, idempotencyKey, "pending", now, owner, expires);
 			this.db.prepare("INSERT INTO gjc_intent_events(intent_id,event_type,payload_json,created_at) VALUES(?,?,?,?)").run(intentId, "created", json({ kind, idempotency_key: idempotencyKey }), now);
 			return { intent_id: intentId, reserved: true };
 		});

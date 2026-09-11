@@ -230,4 +230,43 @@ describe("gjc.dispatch assemble envelope", () => {
     expect(ok.sent).toHaveLength(1);
     db.close();
   });
+
+  it("reclaims a dead-worker reservation on the public dispatch path", async () => {
+    const db = await initialized();
+    db.configureGjc(process.cwd(), "s", true);
+    const source = seedGjcDispatch(db);
+    const input = contextAssemblerInput();
+    for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
+      db.persistObservation(observation, CONTEXT_NOW);
+    }
+    const snapshot = assemblePersonalContext(input);
+    const memory = snapshot.evidence.find(item => item.kind === "confirmed_memory");
+    if (memory === undefined) throw new Error("memory");
+    const task = gjcTaskFor(db, source, "dead-worker");
+    db.reserveGjcDispatchFromTask(task, CONTEXT_NOW);
+    db.db.prepare("UPDATE gjc_intents SET lease_owner='pid:2147483647' WHERE idempotency_key=?").run("dead-worker");
+    const transport = new RecordingModelTransport();
+    const result = await executeGjcCommand({
+      args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
+      argument: writeJson({
+        task,
+        assemble_context: input,
+        memory_evidence: [{
+          memory_ref: snapshot.payload.included_memory_refs[0] ?? memory.evidence_id,
+          evidence_id: memory.evidence_id,
+          source_id: memory.source_id,
+          digest: memory.digest,
+          observed_at: memory.observed_at,
+          fresh_until: snapshot.expires_at,
+        }],
+      }),
+      fourth: undefined, fifth: undefined, sixth: undefined, db,
+      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+    } as never);
+    expect(result).toMatchObject({ ok: true, command: "gjc.dispatch" });
+    expect(result?.duplicate).not.toBe(true);
+    expect(transport.sent).toHaveLength(1);
+    expect(db.gjcIntentHasEvent(String(result?.intent_id), "model_dispatched")).toBe(true);
+    db.close();
+  });
 });
