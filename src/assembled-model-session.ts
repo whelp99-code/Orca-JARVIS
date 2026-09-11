@@ -33,13 +33,15 @@ export class AssembledModelSession {
 
   async send(
     capture: ModelTransportCapture,
-    hooks: { beginAttempt?: () => void; onKnownNegative?: () => void } = {},
+    hooks: { beginAttempt?: () => void; onKnownNegative?: () => void; beforeSend?: () => Promise<void> | void } = {},
   ): Promise<ModelTransportResult> {
+    await hooks.beforeSend?.();
     hooks.beginAttempt?.();
     let result = await this.transport.send(capture);
     if (!result.accepted) {
       hooks.onKnownNegative?.();
       this.authorize(new Date());
+      await hooks.beforeSend?.();
       hooks.beginAttempt?.();
       result = await this.transport.send(capture);
     }

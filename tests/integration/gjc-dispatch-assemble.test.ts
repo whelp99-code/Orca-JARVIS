@@ -8,7 +8,9 @@ import { gjcWorkerId } from "../../src/gjc-intent-store.js";
 import { gjcTaskFor, seedGjcDispatch } from "../fixtures/gjc-dispatch-fixture.js";
 import { contextAssemblerInput, CONTEXT_NOW } from "../fixtures/context-assembler-input.js";
 import { assemblePersonalContext, JarvisError } from "../../src/index.js";
-import { MemoryReferenceProvider, REFERENCE_NOW } from "../fixtures/memory-reference-provider.js";
+import { createHash } from "node:crypto";
+import { canonicalize } from "../../src/canonical.js";
+import { MemoryReferenceProvider, REFERENCE_NOW, REFERENCE_RECORD } from "../fixtures/memory-reference-provider.js";
 import { closeMemoryDatabase, memoryDatabase } from "../fixtures/memory-candidate-store.js";
 import { memoryReadFenceFixture } from "../fixtures/memory-read-fence.js";
 
@@ -632,4 +634,136 @@ describe("gjc.dispatch assemble envelope", () => {
     expect(result).toMatchObject({ ok: true, recovered: "unknown_accepted" });
     closeMemoryDatabase(database);
   });
+
+  it("binds each selected record to its own memory_ref", async () => {
+    const { database, db, source, config, provider } = await gjcProduct();
+    const second = boundRecord("A distinct second memory", "87654321");
+    useRecords(provider, [REFERENCE_RECORD, second]);
+    const transport = new RecordingModelTransport();
+    const result = await executeGjcCommand(readerDispatch(db, source, config, provider, transport, "two-records"));
+    expect(result).toMatchObject({ ok: true, command: "gjc.dispatch" });
+    expect(transport.sent).toHaveLength(1);
+    const request = transport.sent[0]?.request;
+    expect(request?.memories.map(item => item.memory_ref).sort()).toEqual(["12345678", "87654321"]);
+    expect(new Set(request?.memories.map(item => item.source_id)).size).toBe(2);
+    closeMemoryDatabase(database);
+  });
+
+  it("preserves reader excerpt budget and source instead of rewriting them", async () => {
+    const { database, db, source, config, provider } = await gjcProduct();
+    const body = `Important ${"content ".repeat(25)}END_CRITICAL_SOURCE_DETAIL`;
+    useRecords(provider, [boundRecord(body, "87654321")]);
+    const transport = new RecordingModelTransport();
+    const result = await executeGjcCommand(readerDispatch(db, source, config, provider, transport, "long-text"));
+    expect(result).toMatchObject({ ok: true });
+    const memory = transport.sent[0]?.request.memories[0];
+    expect(memory?.excerpt).toContain("END_CRITICAL_SOURCE_DETAIL");
+    expect(memory?.source_id).not.toBe("src:pos:v1:second-brain:inbox");
+    expect(memory?.excerpt.length ?? 0).toBeGreaterThan(96);
+    closeMemoryDatabase(database);
+  });
+
+  it("does not resend a stale selection after a known-negative generation change", async () => {
+    const { database, db, source, config, provider } = await gjcProduct();
+    let sends = 0;
+    const transport = {
+      sent: [] as unknown[],
+      async send(capture: unknown) {
+        this.sent.push(capture);
+        sends += 1;
+        if (sends === 1) {
+          provider.statusOverrides = { generation_id: `sbgen:v1:${"2".repeat(64)}` };
+          return { accepted: false, reason: "synthetic-negative" };
+        }
+        return { accepted: true };
+      },
+    };
+    await expect(executeGjcCommand(readerDispatch(db, source, config, provider, transport, "gen-changed")))
+      .rejects.toMatchObject({ code: "MEMORY_REFERENCE_GENERATION_CHANGED" });
+    expect(sends).toBe(1);
+    closeMemoryDatabase(database);
+  });
 });
+
+function digestText(value: string): string {
+  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function boundRecord(text: string, sid: string) {
+  const core = {
+    schema_version: REFERENCE_RECORD.schema_version,
+    sid,
+    record_text: text,
+    record_text_digest: digestText(text),
+    citation_span_start: REFERENCE_RECORD.citation_span_start,
+    citation_span_end: Buffer.byteLength(text),
+    source_identity_full: digestText(sid).slice(7),
+    content_identity_full: digestText(text).slice(7),
+    citation_identity_full: REFERENCE_RECORD.citation_identity_full,
+    sensitivity: REFERENCE_RECORD.sensitivity,
+    source_owner_class: REFERENCE_RECORD.source_owner_class,
+    source_owner_id_digest: REFERENCE_RECORD.source_owner_id_digest,
+    origin_label: `different-source:${sid}`,
+    valid_from: REFERENCE_RECORD.valid_from,
+    valid_until: REFERENCE_RECORD.valid_until,
+  };
+  const recordDigest = digestText(`second-brain/memory-record/v1\0${canonicalize(core)}`);
+  return { ...core, record_id: `sbrecord:v1:${recordDigest.slice(7)}`, record_digest: recordDigest };
+}
+
+function useRecords(provider: MemoryReferenceProvider, records: ReadonlyArray<typeof REFERENCE_RECORD>): void {
+  const original = provider.call.bind(provider);
+  provider.call = async (method, args) => {
+    const out = await original(method, args);
+    if (out.kind !== "data") return out;
+    if (method === "sb_read_page") {
+      return { kind: "data" as const, value: { ...out.value, records } };
+    }
+    if (method === "sb_search") {
+      return {
+        kind: "data" as const,
+        value: {
+          ...out.value,
+          results: records.map(record => ({
+            page_id: "wiki/reference", section: "Memory", snippet: record.record_text, score: 1,
+            record_id: record.record_id, record_digest: record.record_digest,
+          })),
+        },
+      };
+    }
+    return out;
+  };
+}
+
+function readerAssemble() {
+  const input = contextAssemblerInput();
+  return { ...input, query: "current memory", observations: [], memories: [] };
+}
+
+function readerDispatch(
+  db: Awaited<ReturnType<typeof gjcProduct>>["db"],
+  source: ReturnType<typeof seedGjcDispatch>,
+  config: Awaited<ReturnType<typeof gjcProduct>>["config"],
+  provider: MemoryReferenceProvider,
+  transport: unknown,
+  key: string,
+) {
+  return {
+    args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
+    argument: writeJson({
+      task: gjcTaskFor(db, source, key),
+      assemble_context: readerAssemble(),
+      memory_evidence: [],
+    }),
+    fourth: undefined, fifth: undefined, sixth: undefined, db,
+    dependencies: {
+      clock: () => REFERENCE_NOW,
+      memoryReferenceOptions: {
+        projection_key: Buffer.alloc(32, 7),
+        model_transport: transport,
+        transport: provider,
+        read_fence_config: config,
+      },
+    },
+  } as never;
+}
