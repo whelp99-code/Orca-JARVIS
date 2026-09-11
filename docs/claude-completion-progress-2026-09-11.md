@@ -64,8 +64,8 @@ push·merge·deploy·서비스 재시작·운영 DB/설정 변경·`current` 전
 | P1 숨긴 task 접수가 unbound 후보를 커밋 | 수정 | 결속을 `MemoryCandidateStore.classify`의 **같은 트랜잭션**으로 이동. 리뷰어 재현 결과가 `rows:[] bindings:[] reviewFiles:[] visible:false`로 바뀜 |
 | P1 준비된 승인이 receipt 적용에서 통과 | 수정 | `MemorySurfaceAuthority.applyCandidateReceipt`에 task 차단 재검사 추가. 리뷰어 재현이 `MEMORY_CANDIDATE_SUPPRESSED`로 거절되고 발행 0 |
 | P2 복구가 일정 창에 가려짐 | 수정 | 복구를 fence claim **이전**으로 이동. `deferred`도 `recovered`를 함께 보고 |
-| P1 안전하지 않은 정수 row key 충돌 | TODO | `safeIntegers()` 또는 SQL 측 정규화 필요 |
-| P1 검증 후 후보 변조 가능 | TODO | 검증 digest를 운영 행에 고정하고 설치 직전 재확인 필요 |
+| P1 안전하지 않은 정수 row key 충돌 | 수정 | 비교 양쪽을 safe integer로 읽음. 재현이 `accepted:false`로 뒤집힘. 실제 INTEGER 열 회귀 추가(수정을 빼면 실패) |
+| P1 검증 후 후보 변조 가능 | 수정 | migration 092에 `verified_digest` 추가, 설치 직전 재확인. 재현이 `LOCAL_RETENTION_CANDIDATE_MODIFIED`로 거절되고 라이브 내용은 원본 유지 |
 | P1 최종 fence 이후 원본 쓰기 유실 | TODO | 최종 검사~rename 구간의 쓰기 배타성 필요 |
-| P1 snapshot 경로 미소유·삭제 | TODO | snapshot도 O_EXCL 확보하고 운영 기록 이전 산출물 제거 |
+| P1 snapshot 경로 미소유·삭제 | 수정 | snapshot도 배타 확보, 실패 시 남의 파일 보존·자기 후보 회수. 재현이 `snapshotExists:true, candidateExists:false`로 뒤집힘. 연쇄로 드러난 sidecar 잔류(재시도 영구 차단)도 소유 증거 기반으로 정리 |
 | P1 복구의 경로 기반 TOCTOU·sidecar 미확인 | TODO | 검증과 삭제를 분리하지 않는 방식 필요 |

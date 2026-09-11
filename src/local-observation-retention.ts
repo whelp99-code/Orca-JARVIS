@@ -1,10 +1,13 @@
 import {
-  closeSync, existsSync, openSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync,
+  closeSync, existsSync, openSync, realpathSync, rmSync,
 } from "node:fs";
 import { basename, dirname, join, resolve } from "node:path";
 import type Database from "better-sqlite3";
 import { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
+import {
+  ownWrite, retentionSourceFence, retentionSourceMoved, type RetentionSourceFence,
+} from "./local-observation-retention-fence.js";
 import {
   assertRetentionCutoff, selectLocalObservationRetention,
   type LocalObservationRetentionSelection, type RetentionProjection,
@@ -18,18 +21,9 @@ import {
 } from "./local-observation-retention-operation.js";
 import { buildFreshAuthority, type FreshAuthorityBuild } from "./memory-authority-fresh-builder.js";
 
-/**
- * What the candidate was built from. `total_changes` moves when this connection writes and
- * `data_version` moves when any other connection commits. Neither notices a source whose path
- * was replaced underneath the open connection, so the device and inode are those of the file the
- * connection actually has open, checked against the pathname the rebuild adapter will re-open.
- */
-export type RetentionSourceFence = {
-  readonly data_version: number;
-  readonly total_changes: number;
-  readonly device: string;
-  readonly inode: string;
-};
+export type { RetentionSourceFence } from "./local-observation-retention-fence.js";
+export { retentionSourceMoved } from "./local-observation-retention-fence.js";
+
 export type LocalObservationRetentionApplication = {
   readonly selection: LocalObservationRetentionSelection;
   readonly build: FreshAuthorityBuild;
@@ -37,76 +31,7 @@ export type LocalObservationRetentionApplication = {
   readonly operation: RetentionOperation;
 };
 
-/** Re-bases a fence over rows this connection wrote itself, leaving every other writer visible. */
-const ownWrite = (fence: RetentionSourceFence, rows: number): RetentionSourceFence =>
-  ({ ...fence, total_changes: fence.total_changes + rows });
-
 const DESTINATION_SIDECARS = ["-wal", "-shm", "-journal"] as const;
-
-const DELETED_LINK_SUFFIX = " (deleted)";
-
-/**
- * Identity of the file the source connection actually has open, taken from this process's own
- * descriptor table rather than from the pathname.
- *
- * A pathname can be replaced underneath an open connection: the descriptor keeps reading the
- * original file while the name points at another one. Every signal derived from the pathname or
- * from row counts then agrees with itself, which is why neither proves anything here. The rebuild
- * adapter copies by re-opening the pathname, so only the descriptor's device and inode show
- * whether it will read the database the selection read. This reads /proc, where this control
- * plane runs; where it cannot be read, the apply refuses instead of assuming.
- */
-function openSourceIdentity(source: AuthorityDb): { readonly device: string; readonly inode: string } {
-  const target = resolve(source.filename);
-  const identities = new Map<string, { readonly device: string; readonly inode: string }>();
-  let entries: readonly string[];
-  try { entries = readdirSync("/proc/self/fd"); }
-  catch { throw new JarvisError("LOCAL_RETENTION_SOURCE_IDENTITY_UNVERIFIED"); }
-  for (const entry of entries) {
-    let link: string;
-    try { link = readlinkSync(`/proc/self/fd/${entry}`); } catch { continue; }
-    const named = link.endsWith(DELETED_LINK_SUFFIX)
-      ? link.slice(0, -DELETED_LINK_SUFFIX.length) : link;
-    if (named !== target) continue;
-    try {
-      const opened = statSync(`/proc/self/fd/${entry}`, { bigint: true });
-      identities.set(`${opened.dev}:${opened.ino}`,
-        { device: opened.dev.toString(), inode: opened.ino.toString() });
-    } catch { continue; }
-  }
-  // No descriptor, or descriptors on different files under one name, leaves the binding unproven.
-  const [identity, ...rest] = [...identities.values()];
-  if (identity === undefined || rest.length !== 0) {
-    throw new JarvisError("LOCAL_RETENTION_SOURCE_IDENTITY_UNVERIFIED");
-  }
-  return identity;
-}
-
-function retentionSourceFence(source: AuthorityDb): RetentionSourceFence {
-  const open = openSourceIdentity(source);
-  const named = statSync(source.filename, { bigint: true });
-  if (named.dev.toString() !== open.device || named.ino.toString() !== open.inode) {
-    throw new JarvisError("LOCAL_RETENTION_SOURCE_IDENTITY_MISMATCH");
-  }
-  return {
-    data_version: Number(source.db.pragma("data_version", { simple: true })),
-    total_changes: Number(source.db.prepare("SELECT total_changes()").pluck().get()),
-    device: open.device,
-    inode: open.inode,
-  };
-}
-
-/** True when the source moved past the fence, including a path replaced by another file. */
-export function retentionSourceMoved(source: AuthorityDb, fence: RetentionSourceFence): boolean {
-  let current: RetentionSourceFence;
-  try {
-    current = retentionSourceFence(source);
-  } catch {
-    return true;
-  }
-  return current.data_version !== fence.data_version || current.total_changes !== fence.total_changes
-    || current.device !== fence.device || current.inode !== fence.inode;
-}
 
 /**
  * Lists the removed recommendations a notification still addresses.
@@ -224,12 +149,25 @@ export async function applyLocalObservationRetention(
   assertRetentionCutoff(cutoffValue);
   const destination = claimRetentionDestination(source, freshPath);
   const snapshotPath = `${destination}.selected-source`;
-  const snapshot = await captureSelectedSource(source, snapshotPath);
+  // Claimed exclusively like the candidate: a file already sitting there belongs to somebody else
+  // and must not be written over or, on failure, deleted. Until the operation row exists there is
+  // nothing to explain a leftover candidate either, so a failure here takes it back.
+  let claimed = false;
+  let snapshot: Awaited<ReturnType<typeof captureSelectedSource>>;
+  try {
+    claimRetentionDestination(source, snapshotPath);
+    claimed = true;
+    snapshot = await captureSelectedSource(source, snapshotPath);
+  } catch (error) {
+    if (claimed) releaseRetentionDestination(snapshotPath);
+    releaseRetentionDestination(destination);
+    throw error;
+  }
   let operation: RetentionOperation | undefined;
   try {
     const selection = selectLocalObservationRetention(snapshot.db, cutoffValue);
     // Recorded before the build so an interrupted run leaves evidence rather than a bare file.
-    operation = beginRetentionOperation(source, destination, selection.blocked, now);
+    operation = beginRetentionOperation(source, destination, snapshotPath, selection.blocked, now);
     fence = ownWrite(fence, operation.recorded_changes);
     const build = await buildFreshAuthority(snapshot, destination, {
       blocked_projections: selection.blocked, sensitive_material: [], destination: "claimed",

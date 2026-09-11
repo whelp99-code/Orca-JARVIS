@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { rmSync, statSync } from "node:fs";
+import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
 import Database from "better-sqlite3";
 import { canonicalize } from "./canonical.js";
 import type { AuthorityDb } from "./db.js";
@@ -15,7 +15,13 @@ export type RetentionClaim = {
   readonly claim_birthtime: string;
 };
 
-export type RetentionOperation = RetentionClaim & {
+export type RetentionSnapshotClaim = {
+  readonly snapshot_device: string;
+  readonly snapshot_inode: string;
+  readonly snapshot_birthtime: string;
+};
+
+export type RetentionOperation = RetentionClaim & RetentionSnapshotClaim & {
   readonly recorded_changes: number;
   readonly operation_id: string;
   readonly source_device: string;
@@ -68,11 +74,24 @@ export function activeGeneration(source: AuthorityDb): number {
  * present another file as this one.
  */
 export function candidateStillClaimed(candidatePath: string, claim: RetentionClaim): boolean {
+  return stillClaimed(candidatePath, claim.claim_device, claim.claim_inode, claim.claim_birthtime);
+}
+
+/** The same proof for the snapshot the operation copied from. */
+export function snapshotStillClaimed(
+  snapshotPath: string, claim: Partial<RetentionSnapshotClaim>,
+): boolean {
+  return claim.snapshot_device !== undefined && claim.snapshot_inode !== undefined
+    && claim.snapshot_birthtime !== undefined
+    && stillClaimed(snapshotPath, claim.snapshot_device, claim.snapshot_inode,
+      claim.snapshot_birthtime);
+}
+
+function stillClaimed(path: string, device: string, inode: string, birthtime: string): boolean {
   try {
-    const present = statSync(candidatePath, { bigint: true });
-    return present.dev.toString() === claim.claim_device
-      && present.ino.toString() === claim.claim_inode
-      && present.birthtimeNs.toString() === claim.claim_birthtime;
+    const present = statSync(path, { bigint: true });
+    return present.dev.toString() === device && present.ino.toString() === inode
+      && present.birthtimeNs.toString() === birthtime;
   } catch {
     return false;
   }
@@ -86,17 +105,21 @@ export function candidateStillClaimed(candidatePath: string, claim: RetentionCla
  * tell its own abandoned work from a file it cannot account for.
  */
 export function beginRetentionOperation(
-  source: AuthorityDb, candidatePath: string, blocked: readonly RetentionProjection[],
-  now: Date,
+  source: AuthorityDb, candidatePath: string, snapshotPath: string,
+  blocked: readonly RetentionProjection[], now: Date,
 ): RetentionOperation {
   const identity = statSync(source.filename, { bigint: true });
   const claim = statSync(candidatePath, { bigint: true });
+  const snapshot = statSync(snapshotPath, { bigint: true });
   const generation = activeGeneration(source);
   const operation = {
     recorded_changes: 0,
     claim_device: claim.dev.toString(),
     claim_inode: claim.ino.toString(),
     claim_birthtime: claim.birthtimeNs.toString(),
+    snapshot_device: snapshot.dev.toString(),
+    snapshot_inode: snapshot.ino.toString(),
+    snapshot_birthtime: snapshot.birthtimeNs.toString(),
     operation_id: `retention:${randomUUID()}`,
     source_device: identity.dev.toString(),
     source_inode: identity.ino.toString(),
@@ -110,12 +133,14 @@ export function beginRetentionOperation(
   const recorded = rowsWritten(source, () => { source.db.prepare(
     `INSERT INTO local_retention_operations(operation_id,owner_token,source_device,source_inode,
       source_generation,result_generation,selection_digest,candidate_path,claim_device,claim_inode,
-      claim_birthtime,state,failure_code,created_at,updated_at)
-      VALUES(?,?,?,?,?,?,?,?,?,?,?,'preparing',NULL,?,?)`,
+      claim_birthtime,snapshot_device,snapshot_inode,snapshot_birthtime,
+      state,failure_code,created_at,updated_at)
+      VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,'preparing',NULL,?,?)`,
   ).run(operation.operation_id, operation.owner_token, operation.source_device,
     operation.source_inode, operation.source_generation, operation.result_generation,
     operation.selection_digest, candidatePath, operation.claim_device, operation.claim_inode,
-    operation.claim_birthtime, at, at); });
+    operation.claim_birthtime, operation.snapshot_device, operation.snapshot_inode,
+    operation.snapshot_birthtime, at, at); });
   return { ...operation, recorded_changes: recorded };
 }
 
@@ -123,9 +148,37 @@ export function beginRetentionOperation(
 export function markRetentionOperationVerified(
   source: AuthorityDb, operation: RetentionOperation, now: Date,
 ): number {
+  const digest = candidateDigest(operation.candidate_path);
   return rowsWritten(source, () => { source.db.prepare(
-    "UPDATE local_retention_operations SET state='verified',updated_at=? WHERE operation_id=?")
-    .run(now.toISOString(), operation.operation_id); });
+    `UPDATE local_retention_operations SET state='verified',verified_digest=?,updated_at=?
+     WHERE operation_id=?`)
+    .run(digest, now.toISOString(), operation.operation_id); });
+}
+
+/**
+ * The bytes of a candidate that is not open anywhere.
+ *
+ * A write-ahead log beside it means rows exist that the main file does not carry, so the file this
+ * digest covers would not be the file that goes live. Both the verification and the installation
+ * read this, and they must agree.
+ */
+export function candidateDigest(candidatePath: string): string {
+  for (const suffix of SIDECARS) {
+    if (existsSync(`${candidatePath}${suffix}`)) {
+      throw new JarvisError("LOCAL_RETENTION_CANDIDATE_MODIFIED");
+    }
+  }
+  return `sha256:${createHash("sha256").update(readFileSync(candidatePath)).digest("hex")}`;
+}
+
+/** Refuses a candidate whose bytes are not the bytes that were verified. */
+export function assertCandidateUnchanged(source: AuthorityDb, operation: RetentionOperation): void {
+  const recorded = source.db.prepare(
+    "SELECT verified_digest FROM local_retention_operations WHERE operation_id=?")
+    .pluck().get(operation.operation_id);
+  if (typeof recorded !== "string" || recorded !== candidateDigest(operation.candidate_path)) {
+    throw new JarvisError("LOCAL_RETENTION_CANDIDATE_MODIFIED");
+  }
 }
 
 /** Records why the attempt ended and removes only the artefacts this operation created. */

@@ -1,10 +1,15 @@
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import {
+  existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync,
+} from "node:fs";
 import { dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { afterEach, expect, it } from "vitest";
+import { AuthorityDatabaseRuntime } from "../../src/authority-database-runtime.js";
 import { AuthorityDb } from "../../src/db.js";
+import { applyLocalObservationRetention } from "../../src/local-observation-retention.js";
+import { applyRetentionCandidate } from "../../src/local-observation-retention-swap.js";
 import { recoverLocalRetentionOperations } from "../../src/local-observation-retention-recovery.js";
 import { localObservationChain, LOCAL_CHAIN_AT } from "../fixtures/local-observation-chain.js";
 import { tempDb } from "../helpers.js";
@@ -184,4 +189,24 @@ it("preserves a file at the claimed path that this operation did not create", as
   expect(readFileSync(seed.candidate, "utf8")).toBe("not the candidate\n");
   // Unproven work stays unfinished on the record too: nothing here decides what that file is.
   expect(state(db)).toBe("preparing");
+}, 60_000);
+
+it("refuses to install a candidate whose bytes changed after it was verified", async () => {
+  const seed = await seeded();
+  const db = reopen(seed);
+  const application = await applyLocalObservationRetention(db, seed.cutoff, seed.candidate,
+    new Date(LOCAL_CHAIN_AT));
+
+  // Same path, same inode, same birth time, different bytes.
+  const candidate = new AuthorityDb(seed.candidate);
+  candidate.db.pragma("user_version = 42");
+  candidate.db.pragma("wal_checkpoint(TRUNCATE)");
+  candidate.close();
+
+  const registry = join(dirname(seed.path), "registry-tamper");
+  mkdirSync(registry, { recursive: true });
+  const runtime = new AuthorityDatabaseRuntime(db, { registry_root: registry, watchdog_ms: 1000 });
+  await expect(runtime.quiesce("local_retention",
+    async () => applyRetentionCandidate(runtime, application, new Date(LOCAL_CHAIN_AT))))
+    .rejects.toThrow("LOCAL_RETENTION_CANDIDATE_MODIFIED");
 }, 60_000);

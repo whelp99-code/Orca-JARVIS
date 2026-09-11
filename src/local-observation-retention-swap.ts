@@ -3,7 +3,7 @@ import { dirname } from "node:path";
 import type { AuthorityDatabaseRuntime } from "./authority-database-runtime.js";
 import { JarvisError } from "./jarvis-error.js";
 import {
-  assertRetentionOperationOwned, recordAppliedRetentionOperation,
+  assertCandidateUnchanged, assertRetentionOperationOwned, recordAppliedRetentionOperation,
 } from "./local-observation-retention-operation.js";
 import { retentionSourceMoved,
   type LocalObservationRetentionApplication } from "./local-observation-retention.js";
@@ -37,6 +37,8 @@ export function applyRetentionCandidate(
   if (retentionSourceMoved(authority, fence)) {
     throw new JarvisError("LOCAL_RETENTION_SOURCE_CHANGED");
   }
+  // Identity survives a rewrite, so the bytes are checked against what verification saw.
+  assertCandidateUnchanged(authority, operation);
   const candidate = statSync(operation.candidate_path, { bigint: true });
   const result = { device: candidate.dev.toString(), inode: candidate.ino.toString() };
   recordAppliedRetentionOperation(

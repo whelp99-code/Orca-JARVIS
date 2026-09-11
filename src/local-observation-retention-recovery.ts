@@ -1,8 +1,12 @@
 import { existsSync, statSync } from "node:fs";
 import type { AuthorityDb } from "./db.js";
 import {
-  activeGeneration, candidateStillClaimed, releaseRetentionCandidate, type RetentionClaim,
+  activeGeneration, candidateStillClaimed, releaseRetentionCandidate, snapshotStillClaimed,
+  type RetentionClaim, type RetentionSnapshotClaim,
 } from "./local-observation-retention-operation.js";
+
+/** Matches the path the apply derives for the snapshot it copies from. */
+const SNAPSHOT_SUFFIX = ".selected-source";
 
 export type RetentionRecovery = {
   readonly operation_id: string;
@@ -11,7 +15,7 @@ export type RetentionRecovery = {
   readonly outcome: "removed_partial" | "removed_unapplied" | "retained_unproven" | "already_gone";
 };
 
-type UnfinishedRow = RetentionClaim & {
+type UnfinishedRow = RetentionClaim & Partial<RetentionSnapshotClaim> & {
   readonly operation_id: string;
   readonly owner_token: string;
   readonly candidate_path: string;
@@ -61,6 +65,10 @@ export function recoverLocalRetentionOperations(
       continue;
     }
     releaseRetentionCandidate(row.candidate_path);
+    // The snapshot beside it is released on the same proof, with its sidecars: a write-ahead log
+    // left next to a removed database still occupies the name the retry has to claim.
+    const snapshotPath = `${row.candidate_path}${SNAPSHOT_SUFFIX}`;
+    if (snapshotStillClaimed(snapshotPath, row)) releaseRetentionCandidate(snapshotPath);
     abandon(source, row.operation_id, row.state === "verified"
       ? "LOCAL_RETENTION_RECOVERED_UNAPPLIED" : "LOCAL_RETENTION_RECOVERED_PARTIAL", now);
     report(row.state === "verified" ? "removed_unapplied" : "removed_partial");
@@ -71,7 +79,8 @@ export function recoverLocalRetentionOperations(
 function unfinishedRows(source: AuthorityDb): readonly UnfinishedRow[] {
   const rows = source.db.prepare(
     `SELECT operation_id,owner_token,candidate_path,state,source_device,source_inode,
-       source_generation,claim_device,claim_inode,claim_birthtime FROM local_retention_operations
+       source_generation,claim_device,claim_inode,claim_birthtime,
+       snapshot_device,snapshot_inode,snapshot_birthtime FROM local_retention_operations
      WHERE state IN ('preparing','verified') ORDER BY created_at,operation_id`).all();
   return rows.flatMap(row => row === null || typeof row !== "object" ? []
     : [{
@@ -85,7 +94,15 @@ function unfinishedRows(source: AuthorityDb): readonly UnfinishedRow[] {
       claim_device: String(Reflect.get(row, "claim_device")),
       claim_inode: String(Reflect.get(row, "claim_inode")),
       claim_birthtime: String(Reflect.get(row, "claim_birthtime")),
+      ...text(row, "snapshot_device"), ...text(row, "snapshot_inode"),
+      ...text(row, "snapshot_birthtime"),
     }]);
+}
+
+/** Present only when the operation recorded it; older rows have none. */
+function text(row: object, name: string): Record<string, string> {
+  const value = Reflect.get(row, name);
+  return typeof value === "string" ? { [name]: value } : {};
 }
 
 function abandon(source: AuthorityDb, operationId: string, failureCode: string, now: Date): void {
