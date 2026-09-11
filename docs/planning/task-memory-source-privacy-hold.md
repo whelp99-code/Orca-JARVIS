@@ -152,3 +152,28 @@ sb/mcp_remember_models.py와 sb/scoped_write_request.py의 SHA256은 이전79ec7
 
 결론은 바뀌지 않는다: 위 1단계(후보가 원본 task를 기록할 자리를 만들고 digest 호환을 설계)를 건너뛸 수
 있는 경로는 현재 스키마에 없다.
+
+### 제외 프로젝트(§8.2.3)가 왜 설계 결정인지 — 2026-09-11
+
+네 층위에서 확인했고, 어디에도 프로젝트 정체성이 없다.
+
+| 확인한 곳 | 결과 |
+|---|---|
+| `MEMORY_CANDIDATE_REF_NAMESPACES` (`src/memory-candidate-types.ts:15-18`) | control/verification/inference/memory/conflict/rejected 뿐. project 없음 |
+| `MemoryCandidateSourceMetadata` (같은 파일) | request/receipt/outcome/attempt/instruction/verification 식별자뿐. project 없음 |
+| `work_items` (`migrations/001_authority.sql:4`) | `scope_json`·`forbidden_json`은 있으나 project 열은 없음 |
+| Personal OS 정책 (`config/personal-os-policy.json`, `src/personal-os-policy.ts`) | purposes·sensitivity_tiers·actions·retention·quiet_hours·**prohibited_fields**. 제외는 **내용 필드 단위**이고 프로젝트 단위가 아님 |
+
+따라서 “제외 프로젝트를 접수와 소비 양쪽에서 검사”하려면 먼저 **프로젝트 정체성을 어디에 둘지** 정해야
+한다. 후보가 지목할 수 있는 선택지는 최소 세 가지이고 결과가 서로 다르다.
+
+1. task 쪽에 두기: `work_items.scope_json`에서 저장소를 파생. 기존 JSON 형태에 의존하며 task가
+   저장소를 명시하지 않는 경로에서는 성립하지 않는다.
+2. 정책 쪽에 두기: `personal-os-policy-v2`에 `excluded_projects`를 추가. 운영 설정 문서의 스키마
+   변경이며, 후보가 프로젝트를 지목할 방법은 여전히 필요하다.
+3. 결속 쪽에 두기: `memory_candidate_task_sources`에 project 열을 더하고 접수 때 호출자가 제공.
+   가장 작지만 프로젝트 taxonomy를 호출자에게 위임한다.
+
+세 선택지는 운영 문서·CLI 계약·검사 지점이 전부 달라지므로, 추측으로 닫힌 계약을 바꾸지 않았다.
+`hide(task)` 경로는 이미 동작하므로 프로젝트 단위 차단이 시급하면 그 프로젝트의 task들을 숨기는 것이
+현재 가능한 조치다.
