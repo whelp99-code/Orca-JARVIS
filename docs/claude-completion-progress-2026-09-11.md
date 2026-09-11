@@ -293,3 +293,13 @@ P2 3건. 상세 대조표는 회신서 §9.4에 있고, 요지는 "배제를 선
 않았다. **재현이 없는 상태에서 제품을 고치면 원인 확인이 아니라 은폐가 되므로 바꾸지 않았다.**
 후속 항목의 내용은 그대로 유효하다: 커서 세션 키를 서버 수명과 명시적으로 결속하고, 만료를
 복호화 실패와 다른 코드로 구분한 뒤, shard 순서와 무관하게 결정적으로 재현하는 회귀를 먼저 만든다.
+
+
+## staged claim (야간 라운드 마지막 개발 단위)
+
+| 단위 ID | 상태 | 파일 | 인수 항목 | 실행 결과 |
+|---|---|---|---|---|
+| R02-staged-claim | VERIFIED | `src/local-observation-retention-claim.ts`(신규), `src/local-observation-retention.ts`, `src/local-observation-retention-recovery.ts`, `tests/fixtures/local-retention-crash-child.mjs`, `tests/integration/local-observation-retention-recovery.test.ts` | 디렉터리 생성~identity 기록 사이 급사가 목적지를 영구 거절하지 않는다 | 9 파일 / 70 테스트(`qa/fix9.log`). 변이: 옛 순서 복원 시 해당 1건만 실패 |
+
+설계 요약: claim을 `<dir>/.<name>.<operation-id>.staged`에 만들고 identity를 기록한 뒤 목적지로
+rename한다. 복구는 intent 행에서 같은 이름을 유도해 자기 실행의 잔여만 회수한다.
