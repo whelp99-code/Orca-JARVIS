@@ -13,12 +13,25 @@ import { TaskTimelinePopulation } from "./task-timeline-population.js";
 export function recordCandidateTaskSource(
   authority: AuthorityDb, candidateId: string, taskId: string, now: Date,
 ): void {
-  authority.db.transaction(() => {
-    if (taskSuppressed(authority, taskId)) throw new JarvisError("MEMORY_CANDIDATE_TASK_SOURCE_SUPPRESSED");
-    authority.db.prepare(
-      "INSERT INTO memory_candidate_task_sources(candidate_id,task_id,recorded_at) VALUES(?,?,?)")
-      .run(candidateId, taskId, now.toISOString());
-  }).immediate();
+  authority.db.transaction(() => bindCandidateTaskSource(authority, candidateId, taskId, now))
+    .immediate();
+}
+
+/**
+ * The same binding for a caller that already holds the write transaction.
+ *
+ * Admission uses this so the candidate and its binding commit or roll back together: a candidate
+ * that is refused because its task is hidden must not exist at all, not exist unbound.
+ */
+export function bindCandidateTaskSource(
+  authority: AuthorityDb, candidateId: string, taskId: string, now: Date,
+): void {
+  if (taskSuppressed(authority, taskId)) {
+    throw new JarvisError("MEMORY_CANDIDATE_TASK_SOURCE_SUPPRESSED");
+  }
+  authority.db.prepare(
+    "INSERT INTO memory_candidate_task_sources(candidate_id,task_id,recorded_at) VALUES(?,?,?)")
+    .run(candidateId, taskId, now.toISOString());
 }
 
 /** The task this candidate was derived from, when one was recorded. */

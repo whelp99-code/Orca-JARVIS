@@ -1,3 +1,4 @@
+import { bindCandidateTaskSource } from "./memory-candidate-task-source.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { recoverUncommittedCandidateReview } from "./memory-candidate-review-recovery.js";
 import { claimMemoryCandidateAuthority, requireMemoryCandidateAuthority } from "./memory-candidate-authority.js";
@@ -35,14 +36,22 @@ export class MemoryCandidateStore {
     this.reviewSpool = new MemoryCandidateReviewSpool(root);
   }
 
-  classify(value: unknown): MemoryCandidateClassification {
+  /** `taskSource` binds the originating task in this same transaction; see admission contract. */
+  classify(value: unknown, taskSource?: string): MemoryCandidateClassification {
     const input = parseMemoryCandidateInput(value);
     // Read-only preflight; repeat under the writer lock after any lock wait.
     requireMemoryCandidateAuthority(this.authority.db,
       { input, identity: memoryCandidateIdentity(input), now: memoryDate(this.clock()) });
     let publication: MemoryCandidateReviewPublication | undefined;
     try {
-      return this.authority.db.transaction(() => this.persist(input, value => { publication = value; })).immediate();
+      return this.authority.db.transaction(() => {
+        const classified = this.persist(input, value => { publication = value; });
+        if (taskSource !== undefined) {
+          bindCandidateTaskSource(this.authority, classified.candidate_id, taskSource,
+            memoryDate(this.clock()));
+        }
+        return classified;
+      }).immediate();
     } catch (error) {
       const failedPublication = publication;
       if (failedPublication?.created === true) this.authority.db.transaction(() => {

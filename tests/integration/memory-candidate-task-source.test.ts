@@ -1,5 +1,5 @@
 import { dirname, join } from "node:path";
-import { copyFileSync, rmSync } from "node:fs";
+import { copyFileSync, existsSync, readdirSync, rmSync } from "node:fs";
 import { afterEach, expect, it } from "vitest";
 import { readCandidateReview } from "../../src/dashboard/memory-candidate-review.js";
 import {
@@ -206,4 +206,23 @@ it("refuses to confirm a decision prepared before the task was hidden", async ()
 
   expect(() => stageMemoryCandidateDecision(host, decision as never))
     .toThrow("MEMORY_CANDIDATE_SUPPRESSED");
+}, 60_000);
+
+it("commits no candidate at all when admission names a hidden task", async () => {
+  const database = await memoryDatabase();
+  open.push(database);
+  hide(database.authority, TASK);
+  const reviewRoot = join(database.root, "review");
+  const store = new MemoryCandidateStore(database.authority, memoryPolicy(), () => NOW);
+  store.attachReviewSpool(reviewRoot);
+
+  expect(() => store.classify(inferredMemoryInput({ sensitivity: "personal" }), TASK))
+    .toThrow("MEMORY_CANDIDATE_TASK_SOURCE_SUPPRESSED");
+
+  // The binding shares the candidate's transaction, so a refusal leaves nothing to read, approve
+  // or account for later.
+  expect(database.authority.db.prepare("SELECT COUNT(*) FROM memory_candidates").pluck().get()).toBe(0);
+  expect(database.authority.db.prepare("SELECT COUNT(*) FROM memory_candidate_task_sources")
+    .pluck().get()).toBe(0);
+  expect(existsSync(reviewRoot) ? readdirSync(reviewRoot) : []).toEqual([]);
 }, 60_000);

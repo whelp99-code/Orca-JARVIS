@@ -12,7 +12,8 @@ import {
 
 export type RetentionCycle =
   | { readonly status: "inactive" }
-  | { readonly status: "deferred"; readonly next_at: string }
+  | { readonly status: "deferred"; readonly next_at: string;
+      readonly recovered: readonly RetentionRecovery[] }
   | { readonly status: "blocked"; readonly unfinished: number;
       readonly recovered: readonly RetentionRecovery[] }
   | { readonly status: "unsupported"; readonly reason: "no_swap_runtime";
@@ -56,11 +57,12 @@ export class LocalObservationRetentionService {
     const config = parseLocalObservationRetentionConfig(
       readRetentionConfig(this.options.config_path));
     const now = this.clock();
-    const claim = this.claim(now);
-    if (claim !== undefined) return { status: "deferred", next_at: claim };
-    // Somebody else's unfinished work is cleared first, and what cannot be proved stops this cycle
-    // instead of accumulating candidates beside it.
+    // Recovery runs before the window is consulted. A process that died holding a claim would
+    // otherwise leave its candidate unexplained until the next window opened, which the allowed
+    // interval lets stretch to a day.
     const recovered = recoverLocalRetentionOperations(this.authority, now);
+    const claim = this.claim(now);
+    if (claim !== undefined) return { status: "deferred", next_at: claim, recovered };
     const unfinished = Number(this.authority.db.prepare(
       "SELECT COUNT(*) FROM local_retention_operations WHERE state IN ('preparing','verified')")
       .pluck().get());

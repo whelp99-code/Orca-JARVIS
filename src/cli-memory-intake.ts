@@ -7,7 +7,6 @@ import { MemoryCandidateError } from "./memory-candidate-types.js";
 import { memoryCandidateSpoolRoots, bindMemoryCandidateSpools } from "./memory-outbox-production.js";
 import { parseSecondBrainStrictJsonBytes } from "./second-brain-strict-json.js";
 import { publishAutomaticMemoryCandidate } from "./memory-auto-publication.js";
-import { recordCandidateTaskSource } from "./memory-candidate-task-source.js";
 
 const MAX_BYTES = 32_768;
 
@@ -48,12 +47,8 @@ export async function executeMemoryIntake(context: CliCommandContext): Promise<R
     const store = new MemoryCandidateStore(context.db, policy, () => commandNow(context));
     const roots = memoryCandidateSpoolRoots(context.db.filename, context.dependencies.memoryOutboxOptions);
     store.attachReviewSpool(roots.candidate_review_spool_root);
-    const candidate = store.classify(input);
-    // Bound before anything is published: a candidate derived from a hidden task is refused here
-    // rather than created and filtered afterwards.
-    if (context.fifth !== undefined) {
-      recordCandidateTaskSource(context.db, candidate.candidate_id, context.fifth, commandNow(context));
-    }
+    // The binding commits with the candidate, so a hidden task leaves nothing behind at all.
+    const candidate = store.classify(input, context.fifth);
     publishAutomaticMemoryCandidate(context.db, input, policy, roots, () => commandNow(context));
     // Register the same roots used by owner confirmation and the existing outbox.
     bindMemoryCandidateSpools(context.db, roots);

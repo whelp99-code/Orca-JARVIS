@@ -162,8 +162,7 @@ export async function execute(
     if (subcommand === "validate-plan" && parsed.positionals.length === 4 && argument && fourth) {
       return executeExecutorPlanValidation(argument, fourth);
     }
-    if (subcommand !== "classify" || parsed.positionals.length < 4 || parsed.positionals.length > 5
-      || !argument || !fourth) {
+    if (subcommand !== "classify" || parsed.positionals.length !== 4 || !argument || !fourth) {
       throw new JarvisError("WORK_ROUTING_INPUT_INVALID");
     }
     return executeWorkRouting(argument, fourth);

@@ -53,3 +53,19 @@
 ## 운영 경계
 
 push·merge·deploy·서비스 재시작·운영 DB/설정 변경·`current` 전환·타 작업 산출물 삭제는 하지 않는다. 이 원장은 개발 범위의 진행만 기록한다.
+
+## 독립 리뷰 지적 처리 (2026-09-11)
+
+다른 모델(GPT-5.6)의 독립 리뷰가 `082d689..HEAD` 제품 diff에서 **CHANGES_REQUIRED**와 함께 P1 7건·P2 1건·P3 1건을 재현 코드와 함께 제기했다. 재현 스크립트는 `/home/jm/.cache/jarvis-indep-review-20260911/*.mjs`.
+
+| 지적 | 상태 | 처리 |
+|---|---|---|
+| P3 routing CLI가 5번째 위치 인자를 조용히 수용 | 수정 | 내가 넓힌 가드는 memory가 아니라 **routing** 블록이었다. `=== 4`로 복구. memory의 5번째 인자는 `cli-control-commands.ts:28` 경유라 원래부터 동작 |
+| P1 숨긴 task 접수가 unbound 후보를 커밋 | 수정 | 결속을 `MemoryCandidateStore.classify`의 **같은 트랜잭션**으로 이동. 리뷰어 재현 결과가 `rows:[] bindings:[] reviewFiles:[] visible:false`로 바뀜 |
+| P1 준비된 승인이 receipt 적용에서 통과 | 수정 | `MemorySurfaceAuthority.applyCandidateReceipt`에 task 차단 재검사 추가. 리뷰어 재현이 `MEMORY_CANDIDATE_SUPPRESSED`로 거절되고 발행 0 |
+| P2 복구가 일정 창에 가려짐 | 수정 | 복구를 fence claim **이전**으로 이동. `deferred`도 `recovered`를 함께 보고 |
+| P1 안전하지 않은 정수 row key 충돌 | TODO | `safeIntegers()` 또는 SQL 측 정규화 필요 |
+| P1 검증 후 후보 변조 가능 | TODO | 검증 digest를 운영 행에 고정하고 설치 직전 재확인 필요 |
+| P1 최종 fence 이후 원본 쓰기 유실 | TODO | 최종 검사~rename 구간의 쓰기 배타성 필요 |
+| P1 snapshot 경로 미소유·삭제 | TODO | snapshot도 O_EXCL 확보하고 운영 기록 이전 산출물 제거 |
+| P1 복구의 경로 기반 TOCTOU·sidecar 미확인 | TODO | 검증과 삭제를 분리하지 않는 방식 필요 |

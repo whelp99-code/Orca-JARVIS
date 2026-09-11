@@ -114,11 +114,11 @@ it("holds the window against a duplicate start, a clock that went back and a lon
     const next = new Date(seeded.cutoffAt.getTime() + 6 * HOUR).toISOString();
 
     // Same instant again, a moment later, and an hour before the first: one window, one run.
-    expect(await cycles.cycle()).toEqual({ status: "deferred", next_at: next });
+    expect(await cycles.cycle()).toEqual({ status: "deferred", next_at: next, recovered: [] });
     now = new Date(seeded.cutoffAt.getTime() + HOUR);
-    expect(await cycles.cycle()).toEqual({ status: "deferred", next_at: next });
+    expect(await cycles.cycle()).toEqual({ status: "deferred", next_at: next, recovered: [] });
     now = new Date(seeded.cutoffAt.getTime() - HOUR);
-    expect(await cycles.cycle()).toEqual({ status: "deferred", next_at: next });
+    expect(await cycles.cycle()).toEqual({ status: "deferred", next_at: next, recovered: [] });
     expect(scalar(seeded.db, "SELECT COUNT(*) FROM local_retention_operations")).toBe(1);
 
     // A week later the missed windows collapse into one run, not a burst of them.
