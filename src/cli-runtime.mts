@@ -53,7 +53,7 @@ const CLI_HELP =
   + "control list --db PATH --all: legacy unbounded list; cannot combine with --limit or --cursor\n"
   + "control plan-task <plan.json>: stage a task execution plan for separate approval (execution unavailable)\n"
   + "control check-task <plan.json>: check repository baseline and declared files without executing an agent\n"
-  + "memory classify <input.json> <policy.json>: classify a bounded candidate; does not store memory\n"
+  + "memory classify <input.json> <policy.json> [TASK_ID]: classify a bounded candidate; does not store memory\n"
   + "memory context <query> [--limit N] [--max_bytes N]: read bounded source-bound reference data; not a delivery receipt\n"
   + "memory reconcile-scoped <outbox-id> --once [--worker ID]: reconcile one spent request using host-authenticated scoped configuration\n"
   + "memory stage-dispatch <candidate-id>: stage an approved memory candidate for control approval\n"
@@ -162,7 +162,8 @@ export async function execute(
     if (subcommand === "validate-plan" && parsed.positionals.length === 4 && argument && fourth) {
       return executeExecutorPlanValidation(argument, fourth);
     }
-    if (subcommand !== "classify" || parsed.positionals.length !== 4 || !argument || !fourth) {
+    if (subcommand !== "classify" || parsed.positionals.length < 4 || parsed.positionals.length > 5
+      || !argument || !fourth) {
       throw new JarvisError("WORK_ROUTING_INPUT_INVALID");
     }
     return executeWorkRouting(argument, fourth);

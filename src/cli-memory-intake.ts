@@ -7,6 +7,7 @@ import { MemoryCandidateError } from "./memory-candidate-types.js";
 import { memoryCandidateSpoolRoots, bindMemoryCandidateSpools } from "./memory-outbox-production.js";
 import { parseSecondBrainStrictJsonBytes } from "./second-brain-strict-json.js";
 import { publishAutomaticMemoryCandidate } from "./memory-auto-publication.js";
+import { recordCandidateTaskSource } from "./memory-candidate-task-source.js";
 
 const MAX_BYTES = 32_768;
 
@@ -38,7 +39,8 @@ async function intakeFile(path: string): Promise<unknown> {
 }
 
 export async function executeMemoryIntake(context: CliCommandContext): Promise<Record<string, unknown>> {
-  if (!context.argument || !context.fourth || context.fifth !== undefined) {
+  if (!context.argument || !context.fourth || context.sixth !== undefined
+    || (context.fifth !== undefined && !/^[A-Za-z0-9:._/-]{1,256}$/.test(context.fifth))) {
     throw new JarvisError("MEMORY_CANDIDATE_FILE_REQUIRED");
   }
   const [input, policy] = await Promise.all([intakeFile(context.argument), intakeFile(context.fourth)]);
@@ -47,6 +49,11 @@ export async function executeMemoryIntake(context: CliCommandContext): Promise<R
     const roots = memoryCandidateSpoolRoots(context.db.filename, context.dependencies.memoryOutboxOptions);
     store.attachReviewSpool(roots.candidate_review_spool_root);
     const candidate = store.classify(input);
+    // Bound before anything is published: a candidate derived from a hidden task is refused here
+    // rather than created and filtered afterwards.
+    if (context.fifth !== undefined) {
+      recordCandidateTaskSource(context.db, candidate.candidate_id, context.fifth, commandNow(context));
+    }
     publishAutomaticMemoryCandidate(context.db, input, policy, roots, () => commandNow(context));
     // Register the same roots used by owner confirmation and the existing outbox.
     bindMemoryCandidateSpools(context.db, roots);
@@ -56,6 +63,7 @@ export async function executeMemoryIntake(context: CliCommandContext): Promise<R
       required_confirmation: candidate.required_confirmation, delivery: candidate.delivery,
       confirmation_expires_at: candidate.confirmation_expires_at,
       candidate_expires_at: candidate.candidate_expires_at,
+      task_source: context.fifth ?? null,
     }, stored: false };
   } catch (error) {
     if (error instanceof MemoryCandidateError) throw new JarvisError(error.code);
