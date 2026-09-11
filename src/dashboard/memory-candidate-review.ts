@@ -6,14 +6,14 @@ import { memoryHash } from "../memory-candidate-values.js";
 import { privateSensitivity } from "./memory-read-projection.js";
 import { MemoryProjectionAuthority } from "../memory-projection-authority.js";
 import { containsMemorySecret, containsMemoryPromptText } from "../memory-candidate-private.js";
-import { candidateTaskSourceSuppressed } from "../memory-candidate-task-source.js";
+import { candidateTaskSourceClosed } from "../memory-candidate-task-source.js";
 
 /** Owner-only detail: never return private spool paths, credentials or unbound text. */
 export function readCandidateReview(authority: AuthorityDb, root: string | undefined,
   candidateId: string, now: Date) {
   if (new MemoryProjectionAuthority(authority).isProjectionIdSuppressed(candidateId)) return undefined;
   // Hiding the task hides what was derived from it, at the read rather than in the display.
-  if (candidateTaskSourceSuppressed(authority, candidateId)) return undefined;
+  if (candidateTaskSourceClosed(authority, candidateId)) return undefined;
   const row = authority.db.prepare(
     `SELECT c.state,c.operation,c.sensitivity,c.expires_at,c.confirmation_expires_at,
       c.content_digest,c.subject_digest,c.purpose,m.candidate_digest,m.classification_digest,

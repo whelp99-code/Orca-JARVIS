@@ -1,4 +1,4 @@
-import { candidateTaskSourceSuppressed } from "./memory-candidate-task-source.js";
+import { candidateTaskSourceClosed } from "./memory-candidate-task-source.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
@@ -104,7 +104,7 @@ export class MemorySurfaceAuthority {
     }
     if (attempt.decision === "confirm"
       && (new MemoryProjectionAuthority(this.authority).isProjectionIdSuppressed(attempt.candidate_id)
-        || candidateTaskSourceSuppressed(this.authority, attempt.candidate_id))) {
+        || candidateTaskSourceClosed(this.authority, attempt.candidate_id))) {
       // Staging asked the same question, but an owner can hide the work between staging a
       // confirmation and it arriving here, and this is the point that publishes and approves.
       throw new JarvisError("MEMORY_CANDIDATE_SUPPRESSED");

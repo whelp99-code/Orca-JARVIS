@@ -1,4 +1,5 @@
-import { readFileSync, statSync } from "node:fs";
+import { closeSync, constants, fstatSync, openSync, readFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { z } from "zod";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
@@ -6,27 +7,50 @@ import { JarvisError } from "./jarvis-error.js";
 const ScopeSchema = z.object({
   schema_version: z.literal(1),
   mode: z.literal("allow_list"),
-  projects: z.array(z.string().min(1).max(128)).min(1),
+  projects: z.array(z.string().min(1).max(512)).min(1),
 }).strict();
 
 export type MemoryProjectScope = z.infer<typeof ScopeSchema>;
 
 /**
- * Reads the document that says which projects may contribute memory.
+ * Where the owner writes the policy: beside the authority database it governs.
  *
- * There is no default list and none is inferred. A deployment that has not written this document
- * has no project policy, and the admission behaves exactly as it did before this existed; a
- * deployment that has written one is held to it exactly, which is why the record is closed and an
- * unknown key, an unknown mode or an empty list is refused rather than interpreted.
+ * A path is not configuration anyone has to wire, and every process that opens the database can
+ * find it from the name it already holds. Writing the document is therefore the whole act of
+ * turning the policy on, and removing it is the whole act of turning it off.
  */
-export function readMemoryProjectScope(path: string): MemoryProjectScope {
+export function memoryProjectScopePath(databaseFilename: string): string {
+  return join(dirname(databaseFilename), "memory-project-scope.json");
+}
+
+/**
+ * The policy in force for this database right now, or nothing when the owner has not written one.
+ *
+ * Read each time rather than captured at construction: the document is the owner's statement, and
+ * an edit takes effect when they make it rather than when something is next restarted. It is small
+ * and read through a descriptor that refuses symlinks, so the file that is measured is the file
+ * that is parsed.
+ */
+export function activeMemoryProjectScope(authority: AuthorityDb): MemoryProjectScope | undefined {
+  const path = memoryProjectScopePath(authority.filename);
+  let descriptor: number;
+  try {
+    descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch (error) {
+    // Absent is the answer "no policy". Anything else - a symlink, a directory, no permission - is
+    // a document that exists and cannot be read exactly, which is not the same thing.
+    if (error instanceof Error && Reflect.get(error, "code") === "ENOENT") return undefined;
+    throw new JarvisError("MEMORY_PROJECT_SCOPE_CONFIG_INVALID");
+  }
   let decoded: unknown;
   try {
-    const stat = statSync(path);
-    if (!stat.isFile() || stat.size > 8192) throw new Error("unreadable");
-    decoded = JSON.parse(readFileSync(path, "utf8"));
+    const identity = fstatSync(descriptor);
+    if (!identity.isFile() || identity.size > 8192) throw new Error("not a bounded regular file");
+    decoded = JSON.parse(readFileSync(descriptor, "utf8"));
   } catch {
     throw new JarvisError("MEMORY_PROJECT_SCOPE_CONFIG_INVALID");
+  } finally {
+    closeSync(descriptor);
   }
   const parsed = ScopeSchema.safeParse(decoded);
   if (!parsed.success || new Set(parsed.data.projects).size !== parsed.data.projects.length) {
@@ -38,34 +62,53 @@ export function readMemoryProjectScope(path: string): MemoryProjectScope {
 /**
  * The project a task's work was proposed against, or null when the authority cannot name one.
  *
- * This is the identity the control plane already signed off on: a work item names the census
- * snapshot it was proposed against, and that snapshot names its project. Nothing here invents a
- * mapping from some other namespace - a task that never became a work item simply has no project
- * this database can prove, and says so.
+ * This is the identity the control plane already accepted: a work item names the census snapshot
+ * it was proposed against, and that snapshot names its project. Nothing invents a mapping from any
+ * other namespace. A continuation acceptance is followed to the work item it accepted, because
+ * that is the one alias in this product that can reach a work item at all; a task that only ever
+ * existed as a workflow run has no work item and therefore no project this database can prove, and
+ * says so rather than guessing.
  */
 export function candidateTaskProject(authority: AuthorityDb, taskId: string): string | null {
-  const value = authority.db.prepare(
-    `SELECT s.project_id FROM work_items w JOIN census_snapshots s ON s.id=w.snapshot_id
-     WHERE w.id=?`).pluck().get(taskId);
-  return typeof value === "string" ? value : null;
+  const projects = authority.db.prepare(
+    `SELECT DISTINCT s.project_id FROM census_snapshots s JOIN work_items w ON w.snapshot_id=s.id
+     WHERE w.id=? OR w.id=(SELECT work_id FROM continuation_acceptances WHERE id=?)`)
+    .pluck().all(taskId, taskId).map(String);
+  // One task, one project. Anything else is an identity this cannot resolve.
+  return projects.length === 1 ? projects[0] ?? null : null;
 }
 
 /**
- * Refuses a candidate whose originating task belongs to a project the owner did not list.
+ * Refuses to bind a candidate to a task whose project the owner did not list.
  *
- * Without a scope this does nothing at all, which is the state every existing deployment is in.
- * With one, a task whose project cannot be proved is refused rather than admitted on the grounds
- * that nothing was found: the document names the projects that may contribute, and "unknown" is
- * not one of them. Candidates that carry no task are outside what the document can speak about -
- * they name no project - and are left to the contracts that already govern them.
+ * Without a document this does nothing at all, which is the state every deployment that has not
+ * written one is in. With one, a task whose project cannot be proved is refused as well: the
+ * document names the projects that may contribute, and "unknown" is not among them.
  */
-export function assertCandidateProjectInScope(
-  authority: AuthorityDb, taskId: string, scope: MemoryProjectScope | undefined,
-): void {
+export function assertCandidateProjectInScope(authority: AuthorityDb, taskId: string): void {
+  const scope = activeMemoryProjectScope(authority);
   if (scope === undefined) return;
   const project = candidateTaskProject(authority, taskId);
   if (project === null) throw new JarvisError("MEMORY_CANDIDATE_PROJECT_UNVERIFIED");
   if (!scope.projects.includes(project)) {
     throw new JarvisError("MEMORY_CANDIDATE_PROJECT_OUT_OF_SCOPE");
+  }
+}
+
+/**
+ * The same question for the paths that read rather than admit.
+ *
+ * Admission is not the only moment that matters: a candidate can be admitted before the document
+ * exists, and the owner can narrow the list afterwards. These paths answer with a boolean rather
+ * than an error, so a document that cannot be read exactly closes them - refusing to show or send
+ * derived memory is recoverable, and showing it under a policy nobody could read is not.
+ */
+export function taskProjectOutOfScope(authority: AuthorityDb, taskId: string): boolean {
+  try {
+    assertCandidateProjectInScope(authority, taskId);
+    return false;
+  } catch (error) {
+    if (error instanceof JarvisError) return true;
+    throw error;
   }
 }

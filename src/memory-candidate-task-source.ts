@@ -1,5 +1,8 @@
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
+import {
+  assertCandidateProjectInScope, taskProjectOutOfScope,
+} from "./memory-candidate-project-scope.js";
 import { TaskTimelinePopulation } from "./task-timeline-population.js";
 
 /**
@@ -29,6 +32,9 @@ export function bindCandidateTaskSource(
   if (taskSuppressed(authority, taskId)) {
     throw new JarvisError("MEMORY_CANDIDATE_TASK_SOURCE_SUPPRESSED");
   }
+  // Every binding passes here - admission through the store and any later recording alike - so
+  // this is where the owner's project policy is applied rather than at one of the callers.
+  assertCandidateProjectInScope(authority, taskId);
   authority.db.prepare(
     "INSERT INTO memory_candidate_task_sources(candidate_id,task_id,recorded_at) VALUES(?,?,?)")
     .run(candidateId, taskId, now.toISOString());
@@ -52,6 +58,19 @@ export function candidateTaskSource(authority: AuthorityDb, candidateId: string)
 export function candidateTaskSourceSuppressed(authority: AuthorityDb, candidateId: string): boolean {
   const taskId = candidateTaskSource(authority, candidateId);
   return taskId !== null && taskSuppressed(authority, taskId);
+}
+
+/**
+ * True when the originating task closes this candidate to reading, sending or approval.
+ *
+ * Two separate reasons, asked at every consumption rather than only at admission, because both can
+ * become true after a candidate exists: the owner can hide the task, and the owner can write or
+ * narrow the project policy. A candidate with no recorded task is closed by neither.
+ */
+export function candidateTaskSourceClosed(authority: AuthorityDb, candidateId: string): boolean {
+  const taskId = candidateTaskSource(authority, candidateId);
+  return taskId !== null && (taskSuppressed(authority, taskId)
+    || taskProjectOutOfScope(authority, taskId));
 }
 
 export type MemoryAwaitingWithdrawal = {

@@ -6,7 +6,7 @@ import type { SecondBrainRememberWriteRequest } from "./second-brain-adapter-typ
 import { persistenceRow } from "./personal-persistence-values.js";
 import { memoryHash } from "./memory-candidate-values.js";
 import { hasOwnerConfirmedMemoryWriteAuthority } from "./second-brain-write-confirmation.js";
-import { candidateTaskSourceSuppressed } from "./memory-candidate-task-source.js";
+import { candidateTaskSourceClosed } from "./memory-candidate-task-source.js";
 
 function terminalAuthorityValid(
   row: Readonly<Record<string, unknown>>,
@@ -65,7 +65,7 @@ function hasMemorySourceAuthority(authority: AuthorityDb, request: SecondBrainRe
   if (new MemoryProjectionAuthority(authority).isProjectionIdSuppressed(request.candidate_id)) return false;
   // The task this was derived from is asked again here: an owner who hides the work afterwards
   // withdraws the authority to store what the work produced.
-  if (candidateTaskSourceSuppressed(authority, request.candidate_id)) return false;
+  if (candidateTaskSourceClosed(authority, request.candidate_id)) return false;
   const value = authority.db.prepare(
     `SELECT c.candidate_id,c.state,c.operation,c.required_confirmation,c.content_digest,c.subject_digest,c.purpose,
       c.expires_at,m.policy_sensitivity,m.retention_days,m.candidate_digest,
