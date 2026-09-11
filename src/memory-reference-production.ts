@@ -8,11 +8,14 @@ import { createSecondBrainTransport } from "./second-brain-transport.js";
 import { createProductionMemoryReadFence } from "./memory-read-fence-production.js";
 import type { MemoryOutboxProductionOptions } from "./memory-outbox-production.js";
 import type { SecondBrainAdapterOptions } from "./second-brain-adapter-types.js";
+import { AssembledModelSession } from "./assembled-model-session.js";
+import { RecordingModelTransport, type ModelTransport } from "./context-model-transport.js";
 
 export type MemoryReferenceProductionOptions = Pick<MemoryOutboxProductionOptions,
   "transport" | "transport_options" | "clock" | "read_fence" | "read_fence_config"> & {
   readonly status_fence?: SecondBrainAdapterOptions["read_fence"];
   readonly projection_key?: Buffer;
+  readonly model_transport?: ModelTransport;
 };
 
 /** Read the existing private projection key. Never generate a replacement on read. */
@@ -54,8 +57,9 @@ export function createProductionMemoryReference(authority: AuthorityDb, options:
   const reader = new MemoryReferenceReader({ authority, adapter, membership, clock,
     generation_status: () => transport.call("sb_generation_status", { read_fence: statusFence?.(clock()) ?? null }),
     assert_authorized: at => { readFence?.(at); statusFence?.(at); } });
+  const modelSession = new AssembledModelSession(authority, options.model_transport ?? new RecordingModelTransport());
   let closing: Promise<void> | undefined;
-  return { reader, close: (): Promise<void> => {
+  return { reader, deliverAssembled: modelSession.deliver.bind(modelSession), close: (): Promise<void> => {
     if (options.transport !== undefined) return Promise.resolve();
     return closing ??= transport.close();
   } };

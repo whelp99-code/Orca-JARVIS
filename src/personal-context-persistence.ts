@@ -55,9 +55,7 @@ export class PersonalContextPersistence {
   persistAssembledContext(input: unknown, evidence: ContextPersistenceInput["memory_evidence"], now: string): StoredContext {
     const snapshot = assemblePersonalContext(input);
     const stored = this.contexts.persist({ context: snapshot, memory_evidence: evidence }, now);
-    const capture = prepareModelTransport(input, `session:${now}`);
-    this.lastCapture = capture;
-    void this.modelTransport.send(capture);
+    this.lastCapture = prepareModelTransport(input, `session:${now}`);
     return stored;
   }
 

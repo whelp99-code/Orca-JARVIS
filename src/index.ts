@@ -3,6 +3,7 @@ export * from "./memory-reference-context.js";
 export { MemoryReferenceDeliveries, type MemoryReferenceSession, type MemoryReferenceAttempt } from "./memory-reference-deliveries.js";
 export { MemoryReferenceReader, type MemoryReferenceReaderOptions, type CheckedMemoryReference } from "./memory-reference-reader.js";
 export { createProductionMemoryReference, type MemoryReferenceProductionOptions } from "./memory-reference-production.js";
+export { AssembledModelSession } from "./assembled-model-session.js";
 export * from "./core-api.js"; export * from "./daily-loop.js"; export * from "./morning-brief.js"; export * from "./memory-candidates.js";
 export * from "./notification-intents.js"; export * from "./notification-delivery-types.js"; export * from "./recommendation-workflow-public.js";
 export * from "./notification-delivery-input.js"; export * from "./notification-delivery-payload.js"; export * from "./notification-delivery-store.js";
