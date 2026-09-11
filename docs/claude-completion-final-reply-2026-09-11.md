@@ -4,10 +4,11 @@
 
 **`READY_FOR_CODEX_FINAL_REVIEW_WITH_EXTERNAL_BLOCKERS`.**
 
-이 상태로 올리는 근거는 §9.10의 실측이다. 허용된 개발 범위에서 내가 할 수 있는 작업이 남아 있지
-않고, 최종 입력 `f1e6b14`로 전체 gate가 RC 0(596 파일 / 4,131 테스트)이며, 같은 트리의 런타임
-패키지가 무결성 검증을 통과했다(§9.11). 이번 라운드에 제기된 두 번의 독립 리뷰 지적은 모두
-수정했고 각 수정이 회귀로 고정돼 있다(§9.4, §9.9).
+이 상태로 올리는 근거는 §9.13의 실측이다. 허용된 개발 범위에서 내가 할 수 있는 작업이 남아 있지
+않고, 최종 입력 `ca28dfe`로 전체 gate가 RC 0(596 파일 / 4,133 테스트)이며, 같은 트리의 런타임
+패키지가 무결성 검증을 통과했다(§9.14). 이번 라운드에 제기된 **세 번의 독립 리뷰** 지적은 모두
+수정했고 각 수정이 회귀로 고정돼 있다(§9.4, §9.9, §9.12). 세 번째 리뷰는 이 회신서의 주장까지
+감사했고, 그때 드러난 내 서술 오류 6건도 정정했다.
 
 남은 항목은 전부 **내가 만들 수 없는 입력**을 기다린다.
 
@@ -34,12 +35,12 @@
 | branch | `codex/routing-approval-ui` |
 | 제품 검증 SHA (전체 verify 입력) | `f1e6b140cacc865aa6cbd5d45b0a4742d09a3234` |
 | 검증 시점 tree | `git rev-parse f1e6b14^{tree}`로 확인 가능. 문서 포함 제출 HEAD는 아래 |
-| 문서 포함 제출 HEAD | 이 회신서를 담은 문서 커밋. `git diff --name-only 4518103..HEAD`가 `docs/`만 보여야 한다 |
+| 문서 포함 제출 HEAD | 이 회신서를 담은 문서 커밋. 제품 SHA 이후의 차이는 `docs/`만이어야 하며, 확인 명령은 `git diff --name-only <제품 SHA>..HEAD`다 |
 | upstream | `not_configured` — ahead/behind 측정 불가 (`git rev-parse --abbrev-ref @{u}` 실패) |
 | tracked 변경 | M 0, D 0 |
 | untracked | 3 (`.omo/evidence/ulw/`, `.omo/ulw-loop/`, `node_modules`) — 도구 상태·공유 의존성, 커밋 대상 아님 |
 | 베이스라인 대비 | `082d689..4518103` 39 커밋 (문서 커밋 별도) |
-| dashboard 파일 변경 | **0** (`git diff --name-only 082d689..HEAD | grep -ci dashboard`) |
+| dashboard 파일 변경 | 2 (`src/dashboard/memory-candidate-review.ts`, `src/dashboard/memory-candidate-decision-staging.ts`). 프런트엔드 `dashboard/` 번들은 0이며, 바뀐 것은 백엔드 read/staging 경로의 후보 게이트 한 줄씩이다 |
 
 packager가 `source_dirty: true`로 기록한 것은 위 untracked 3건 때문이며, tracked 수정은 0이다.
 
@@ -457,9 +458,10 @@ baseline(`qa/retention-baseline.log`) 7파일 62테스트 중 4 failed. 세 건�
 UNIQUE이고, 교체가 끝나면 그 candidate가 live authority가 된다. 결과적으로 새 authority는 **이미 끝난
 실행의 죽은 claim**을 상속하고, 그 프로세스는 존재하지 않으므로 정리되지도 않으며, 다음 주기가 같은
 디렉터리를 확보하려 하면 UNIQUE 충돌로 `LOCAL_RETENTION_DESTINATION_INVALID`가 난다. 즉 일정화된
-보존은 **첫 회차 이후 영구히 실패**한다. `copyFilter`에 `local_retention_claim_intents → "WHERE 0"`를
-추가해 닫았다. intent는 이 호스트의 살아 있는 프로세스가 만들려는 디렉터리에 대한 선언이지 데이터가
-아니고, 복구는 intent를 live source에서 읽으므로 증거 손실도 없다. 복사 계획을 그대로 재사용하는
+보존은 **첫 회차 이후 영구히 실패**한다. `copyFilter`에 규칙을 추가해 닫았다. 처음에는 이 표를 통째로 제외했으나(`WHERE 0`), 독립
+리뷰가 "운영 행이 기록되지 않은 남의 intent는 그 디렉터리에 대해 복구가 가진 유일한 행"임을 지적해
+**자기 것만 제외**하도록 바꿨다(§9.4). 최종 규칙은 복사 계획에 실린 projection으로 자기 operation의
+intent만 배제한다. 복사 계획을 그대로 재사용하는
 `assertCandidateMatchesCopyPlan`이 같은 규칙을 보기 때문에 복사기와 검증기가 어긋나지 않는다.
 
 ### 9.2 교체 구간 배타성 — followup §4와 M2 §6.1-4의 마감
@@ -515,7 +517,8 @@ retention끼리만 지키는 lock이 아니다. 다만 compaction의 기존 계�
 
 ### 9.3 격리 회귀와 그 회귀가 실제로 무엇을 고정하는지
 
-`tests/integration/local-observation-retention-exclusivity.test.ts` 3건. 모두 **실제 별도 프로세스**를
+`tests/integration/local-observation-retention-exclusivity.test.ts`(작성 시점 3건, 이후 리뷰 대응으로
+5건). 모두 **실제 별도 프로세스**를
 쓰고, 동기화는 자식의 stdout 라인과 exit 이벤트로만 한다. sleep이 없다.
 
 1. 별도 프로세스가 실제 연결을 쥔 채 교체 시도 → 거절. source inode·행 수·candidate·배리어 파일이
@@ -642,8 +645,10 @@ receipt 기대값은 후보 패키지 자신이 아니라 개발 checkout에서 
   필요 없으므로 "문서를 썼는데 아무도 읽지 않는" 상태가 구조적으로 불가능하다.
 - **집행 지점은 `bindCandidateTaskSource` 하나**다. 접수(`classify`)든 사후
   기록(`recordCandidateTaskSource`)이든 모든 결속이 이 함수를 지난다.
-- **소비도 다시 묻는다.** `candidateTaskSourceClosed()`가 리뷰·표면 권한·provider 쓰기 3지점에서
-  "이 후보의 task가 우리에게 닫혀 있는가"를 묻는다. 숨겨졌거나 범위 밖이면 닫힌다. 정책 문서를
+- **소비도 다시 묻는다.** `candidateTaskSourceClosed()`가 후보를 소비하는 **모든 지점**에서
+  "이 후보의 task가 우리에게 닫혀 있는가"를 묻는다: 리뷰, 표면 권한, provider 쓰기, 자동 publication,
+  결정 staging, correction saga, correction 확인. 처음에는 3곳만 바꿨고 3차 독립 리뷰가 나머지 4곳을
+  찾아냈다(§9.12). 이제 회귀가 "`src/` 어떤 모듈도 suppression만 묻지 않는다"는 불변식을 고정한다. 숨겨졌거나 범위 밖이면 닫힌다. 정책 문서를
   정확히 읽을 수 없으면 **닫는 쪽**으로 판정한다.
 - **fail-closed.** 문서가 있는데 프로젝트를 증명할 수 없는 task는 거절한다. alias는 work item에 도달할
   수 있는 유일한 경로인 `continuation_acceptances.work_id`만 따라간다.
@@ -670,7 +675,7 @@ P1 3건·P2 3건이며 **가장 중요한 지적은 "정책을 아무도 읽지 
 alias + `O_NOFOLLOW`). 나머지 P2(회귀 범위)도 같은 커밋에서 닫았다.
 
 
-### 9.10 이번 제출의 전체 gate (정본, 최종)
+### 9.10 전체 gate 4회차 (project-scope 1차 시점)
 
 project-scope까지 포함한 최종 입력으로 다시 실행했다. §9.5는 그 이전 시점의 기록이다.
 
@@ -688,7 +693,7 @@ project-scope까지 포함한 최종 입력으로 다시 실행했다. §9.5는 
 | acceptance | `pre_gjc_ready`, `aggregate_status=stopped`, `gjc_dispatched=false` |
 | 로그 | `<QA>/verify4.log`, sha256 `43e80030e7f1368cde09a0d19db6268cf5690d4ff0d701700dbd10f7e43be166` |
 
-이 라운드에서 실행한 전체 gate는 4회이며 그중 합격 근거로 쓰는 것은 이 1회다.
+이 라운드의 gate 실행 이력은 §9.13에 모았다.
 
 | 회차 | 입력 | RC | 처리 |
 |---|---|---|---|
@@ -698,7 +703,7 @@ project-scope까지 포함한 최종 입력으로 다시 실행했다. §9.5는 
 | 4 | `f1e6b14` | **0** | **이 제출의 정본** |
 
 
-### 9.11 이번 제출의 런타임 패키지 (정본, 최종)
+### 9.11 런타임 패키지 3회차 (project-scope 1차 시점)
 
 | 항목 | 값 |
 |---|---|
@@ -713,3 +718,71 @@ project-scope까지 포함한 최종 입력으로 다시 실행했다. §9.5는 
 
 §9.7은 배타성만 마감한 시점의 패키지이고, 이 표가 최종 제출 대상이다. 운영 적용·서명·서비스 전환은
 수행하지 않았다.
+
+
+### 9.12 세 번째 독립 리뷰 — 라운드 전체, 판정 CHANGES_REQUIRED, 수정 완료
+
+범위 `49783df..227d2c9`. 이번에는 코드뿐 아니라 **이 회신서의 주장 자체**를 표본 감사하도록 요청했다.
+그 결정이 옳았다. 리뷰는 P1 3건과 함께 **내 보고서의 사실 오류 6건**을 찾아냈다.
+
+| 지적 | 판정 | 처리 |
+|---|---|---|
+| 잔해 배리어 제거가 TOCTOU: inode 번호가 재사용되면 살아 있는 남의 배리어를 지우고 둘 다 쥘 수 있다 | **타당** | 제거 판정을 dev/ino에 더해 **레코드 바이트 일치**로 바꿨다. 레코드는 pid·start token·기록 시각을 담으므로 다른 발행자의 레코드와 절대 같을 수 없다 |
+| 소비 4지점(자동 publication, 결정 staging, correction saga, correction 확인)이 여전히 suppression만 검사 | **타당. 내가 grep 출력을 잘라 보고 완전하다고 단정한 실수** | 전부 `candidateTaskSourceClosed`로 교체하고, 구조 불변식 회귀를 추가했다 |
+| compaction이 같은 pid의 두 번째 쓰기 연결을 면제해, 연결을 닫은 뒤 rename이 그것을 고아로 만든다 | **타당** | close 이후 **자기 것도 면제하지 않는** 2차 writer 스캔을 sidecar 제거 **이전에** 넣었다. reader 배수 계약은 그대로다 |
+| §0 "남은 개발 작업 없음" | **당시 기준 틀림** | 위 P1을 수정한 뒤에만 성립한다. 수정과 gate 재실행 후 상태를 다시 적는다 |
+| §1 "dashboard 파일 변경 0" | **틀림** | 백엔드 dashboard 경로 2개가 바뀌었다. 표를 정정했다 |
+| §1 `4518103..HEAD` 문서만 | **틀림** | 그 뒤로 소스·테스트·설정이 더 들어왔다. 확인 명령을 "제품 SHA 이후"로 정정했다 |
+| §9.1 `WHERE 0` 서술 | **낡음** | 최종 규칙은 자기 intent만 제외다. 정정했다 |
+| §9.3 "3건" | **틀림** | 5건이다. 정정했다 |
+| §9.8 "소비 3지점" | **과장** | 모든 소비 지점으로 바꾸고 불변식 회귀를 추가했다 |
+
+리뷰가 P2로 제기한 것 중 **고치지 않고 남긴 것 하나**를 분명히 적는다. claim 디렉터리를 만든 직후
+identity를 기록하기 전에 프로세스가 죽으면, 증명할 수 없는 디렉터리와 intent가 남아 그 경로의 이후
+주기가 계속 거절된다. 이것은 결함이라기보다 이전 라운드가 의도적으로 택한 **fail-safe**(미입증 객체는
+지우지 않는다)의 비용이다. 리뷰가 제안한 해법 — 고유한 staged 이름으로 만들고 identity를 기록한 뒤
+목적지로 rename — 은 그 창을 없애므로 타당하며, claim·복구 프로토콜과 그 회귀를 함께 바꾸는 별도
+단위로 남긴다. 그 작업을 하지 않은 채로 "교체가 안전하다"고 말하지 않는다.
+
+
+### 9.13 이번 제출의 전체 gate (정본)
+
+3차 독립 리뷰의 P1 3건을 수정한 입력으로 다시 실행했다. **이 표가 제출의 gate 근거다.**
+
+| 항목 | 값 |
+|---|---|
+| command | `npm run verify` |
+| 입력 SHA | `ca28dfeae593c5d64958a3dcb546643c385c41cf` |
+| exit code | **0** (`VERIFY5=0`) |
+| 종료 시각 | `2026-09-12 00:26:04 +0900` |
+| backend shard 1/2 | 279 파일 / 1,929 테스트, 781.18s |
+| backend shard 2/2 | 279 파일 / 1,941 테스트, 688.43s |
+| dashboard | 38 파일 / 263 테스트, 36.70s |
+| 합계 | **596 파일 / 4,133 테스트** |
+| architecture | `{"ok":true,"scope":"static_internal_esm","modules":670,"edges":2494,"cycles":[]}` |
+| acceptance | `pre_gjc_ready`, `aggregate_status=stopped`, `gjc_dispatched=false` |
+| 로그 | `<QA>/verify5.log`, sha256 `392cdae28ed3c1508ef3cbad225711b61aa8a929cfc0b76867d88c22bcdf2595` |
+
+전체 gate 실행 이력 (숨기지 않는다):
+
+| 회차 | 입력 | RC | 처리 |
+|---|---|---|---|
+| 1 | `320b59c` | 1 | 내 변경이 만든 실패 2건 → `5a53e10`에서 수정 |
+| 2 | `5a53e10` | 0 | 배타성 마감 시점 합격. 이후 코드가 바뀌어 근거로 쓰지 않음 |
+| 3 | `e2ed929` | 143 | 2차 리뷰가 project-scope 재설계를 요구해 내가 중단 |
+| 4 | `f1e6b14` | 0 | project-scope 합격. 3차 리뷰의 P1 수정 전이라 근거로 쓰지 않음 |
+| 5 | `ca28dfe` | **0** | **정본** |
+
+
+### 9.14 이번 제출의 런타임 패키지 (정본)
+
+| 항목 | 값 |
+|---|---|
+| package root | `<QA>/package/jarvis-runtime-eRhLO4` |
+| source_head | `ca28dfeae593c5d64958a3dcb546643c385c41cf` — gate 입력과 **같은 SHA** |
+| source_dirty | `true`. 패키지 시점 tracked 수정은 `docs/`뿐이며 `src/`·`tests/`·`config/`는 0이다 |
+| payload_files / dependency_entries | 1,539 / 6,668 |
+| receipt pin (독립 고정) | `795044c6332485bbc127b47efbf4ae80daa292f2845f9fd6426d6c779fdb8e74` |
+| verify-runtime-package | `ok=true`, `integrity="matched"`, RC 0 |
+| signature_verified / runtime_validation / deployment_ready | `false` / `not_performed` / **false** |
+| 로그 | `<QA>/package3.log`, `<QA>/package3-verify.log` |
