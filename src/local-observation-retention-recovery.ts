@@ -6,7 +6,7 @@ import {
   activeGeneration, candidateStillClaimed, releaseRetentionOperationDirectory,
   type RetentionClaim, type RetentionSnapshotClaim,
 } from "./local-observation-retention-operation.js";
-import { stagedClaimPath } from "./local-observation-retention.js";
+import { stagedClaimPath } from "./local-observation-retention-claim.js";
 
 export type RetentionRecovery = {
   readonly operation_id: string;
