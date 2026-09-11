@@ -66,7 +66,15 @@
 
 처리: 행 수 비교를 이 경로에서 **제거**하고, **복사된 행의 출처**를 검증한다(`src/local-observation-retention-candidate.ts`). 후보의 모든 행은 선정이 사용한 연결에도 존재해야 하며, 복사가 일부러 비우는 열(`local_timeline_subjects`의 snapshot/collection/expiry)은 원본 쪽도 비워 비교하고, 빌드가 다시 쓰는 두 표(`schema_migrations`, `memory_database_generations`)는 제외한다. 없는 행은 `LOCAL_RETENTION_CANDIDATE_FOREIGN_ROW`다. retention 선정은 행을 지우기만 하므로 “부분집합은 정상, 외래 행은 비정상”이 성립하고, adapter의 표별 필터를 재구현하지 않고도 판정할 수 있다. 어떤 파일이 ATTACH됐는지를 묻는 대신 **무엇이 복사됐는지**를 확인하므로, ABA 타이밍이든 다른 경로든 결과가 걸린다.
 
-같은 감사가 짚은 나머지도 처리했다: 복사 중 recommendation replacement 쓰기 인수를 추가했고(두 번째 연결에서 `replacement_recommendation_id` 기록 → `LOCAL_RETENTION_SOURCE_CHANGED`), 행 수를 “증거”라고 부르던 함수 JSDoc과 이름은 함수 자체를 대체하며 사라졌다. 남은 한계는 정직하게 적는다 — ABA 창을 **경합으로 재현하는** 회귀는 단일 프로세스 이벤트 루프에서 결정적으로 만들 수 없어, 그 효과(외래 행)를 직접 단정하는 테스트로 대신했다. 그리고 프로세스가 갑자기 죽으면 배타 확보된 목적지에 부분 파일이 남고, 이후 재시도는 그 목적지를 거절한다(덮어쓰지 않는다).
+같은 감사가 짚은 나머지도 처리했다: 복사 중 recommendation replacement 쓰기 인수를 추가했고(두 번째 연결에서 `replacement_recommendation_id` 기록 → `LOCAL_RETENTION_SOURCE_CHANGED`), 행 수를 “증거”라고 부르던 함수 JSDoc과 이름은 함수 자체를 대체하며 사라졌다. #### 다시 열린 지적 — 누락은 막지 못했다
+
+이어진 재검토(`docs/opus-r2-candidate-review-2026-09-11.md`)가 이 검사의 **단방향성**을 반례로 보였다. 후보가 원본의 부분집합이기만 하면 통과하므로, 삭제 선정이 0건인데도 무관한 작업 행이 빠진 후보가 성공 반환되고 재검증까지 통과했다. 그들은 native ATTACH 호출을 테스트 전용으로 감싸 교체·복구 시점을 제어하는 **결정적** 재현을 제시했다. 내가 앞서 적은 “ABA 창은 단일 스레드에서 결정적으로 재현할 수 없다”는 문장은 **틀렸고 철회한다**.
+
+처리: 검사를 **양방향**으로 바꿨다. 후보에만 있는 행은 `LOCAL_RETENTION_CANDIDATE_FOREIGN_ROW`, 연결에는 있는데 후보에서 사라진 행은 **선정이 차단한 행일 때만** 허용하고 아니면 `LOCAL_RETENTION_CANDIDATE_MISSING_ROW`다(이 재구축이 지울 수 있는 행은 모두 차단된 id를 열 값으로 갖는다). 빌드가 다시 쓰는 두 표는 행 비교에서 제외하되 자체 계약으로 검증한다 — 마이그레이션 수 일치, 후보의 active generation이 빌드 보고값. 그들의 ATTACH 후킹 방식을 그대로 회귀로 넣었다.
+
+실측: 그들의 재현 스크립트를 출력 경로만 바꿔 수정 빌드에서 실행하니 `error=LOCAL_RETENTION_CANDIDATE_MISSING_ROW`, `candidate_exists=false`, 교체 없는 대조군은 여전히 작업 1건을 보존한 후보를 만든다(`attach_calls=1`, `source_restored=true`, 원본 작업 1건 유지). 리포 회귀는 consistency **14테스트**.
+
+남은 한계: 프로세스가 갑자기 죽으면 배타 확보된 목적지에 부분 파일이 남고, 이후 재시도는 그 목적지를 거절한다(덮어쓰지 않는다). 이 복구는 별도 작업으로 남긴다.
 
 실측: consistency **13테스트**, retention 세트와 공유 builder 호출자까지 **11파일/62테스트 통과**. typecheck RC 0, lint RC 0, architecture 658모듈·2,444간선·순환 0.
 

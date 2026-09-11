@@ -10,7 +10,7 @@ import {
   type RetentionProjection,
 } from "./local-observation-retention-selection.js";
 import {
-  assertCandidateRowsCameFromSelection,
+  assertCandidateMatchesSelectedRemoval,
 } from "./local-observation-retention-candidate.js";
 import { buildFreshAuthority, type FreshAuthorityBuild } from "./memory-authority-fresh-builder.js";
 
@@ -199,8 +199,10 @@ export async function applyLocalObservationRetention(
     });
     const application = { selection, build, source_fence: fence };
     // What was copied is checked before why it might differ: the endpoints bracket the build but
-    // do not bind the adapter's own attach, so the copied rows themselves are what settle it.
-    assertCandidateRowsCameFromSelection(source, destination);
+    // do not bind the adapter's own attach, so the copied rows themselves are what settle it -
+    // in both directions, since a substituted source can also be missing rows nobody selected.
+    assertCandidateMatchesSelectedRemoval(source, destination, selection.blocked,
+      build.result_generation);
     verifyLocalObservationRetentionCandidate(source, application);
     return application;
   } catch (error) {

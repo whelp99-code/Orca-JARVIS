@@ -8,8 +8,9 @@ import {
   verifyLocalObservationRetentionCandidate,
 } from "../../src/local-observation-retention.js";
 import {
-  assertCandidateRowsCameFromSelection,
+  assertCandidateMatchesSelectedRemoval,
 } from "../../src/local-observation-retention-candidate.js";
+import DatabaseConstructor from "better-sqlite3";
 import {
   extendLocalObservationChain, localObservationChain, LOCAL_CHAIN_AT,
 } from "../fixtures/local-observation-chain.js";
@@ -264,8 +265,60 @@ it("refuses a candidate holding rows the selection's connection does not hold", 
   expect(build.foreign_key_errors).toBe(0);
 
   // Against the database it was copied from, every row is accounted for.
-  expect(() => assertCandidateRowsCameFromSelection(f.db, built)).not.toThrow();
+  expect(() => assertCandidateMatchesSelectedRemoval(f.db, built, [], build.result_generation))
+    .not.toThrow();
   // Against a different connection, the same candidate is foreign.
-  expect(() => assertCandidateRowsCameFromSelection(other, built))
+  expect(() => assertCandidateMatchesSelectedRemoval(other, built, [], build.result_generation))
     .toThrow("LOCAL_RETENTION_CANDIDATE_FOREIGN_ROW");
+});
+
+type PreparedStatement = { run: (...args: readonly unknown[]) => unknown };
+
+// The adapter attaches the source pathname in the middle of the build, so a replacement that is
+// undone straight after leaves every endpoint signal consistent. Wrapping that one native
+// statement makes the window deterministic instead of a timing race: the wrapper calls the real
+// run and restores the pathname in its finally.
+it("refuses a candidate that lost rows nobody selected when the swap is undone", async () => {
+  const path = tempDb();
+  const root = dirname(path);
+  const source = await seedMarked(path, "must-keep", "WAL"); opened.push(source);
+  const replacement = join(root, "aba-replacement.sqlite");
+  const empty = new AuthorityDb(replacement);
+  await empty.migrate();
+  empty.db.pragma("wal_checkpoint(TRUNCATE)");
+  empty.db.pragma("journal_mode=DELETE");
+  empty.close();
+  const hidden = join(root, "aba-hidden.sqlite");
+  const destination = join(root, "aba-candidate.sqlite");
+
+  const prototype = DatabaseConstructor.prototype as unknown as
+    { prepare: (this: unknown, sql: string) => PreparedStatement };
+  const original = prototype.prepare;
+  let swaps = 0;
+  prototype.prepare = function (sql: string): PreparedStatement {
+    const statement = original.call(this, sql);
+    if (!sql.startsWith("ATTACH DATABASE")) return statement;
+    const run = statement.run.bind(statement);
+    return Object.assign(statement, {
+      run: (...args: readonly unknown[]): unknown => {
+        renameSync(path, hidden);
+        renameSync(replacement, path);
+        swaps += 1;
+        try { return run(...args); }
+        finally { renameSync(path, replacement); renameSync(hidden, path); }
+      },
+    });
+  };
+  try {
+    await expect(applyLocalObservationRetention(source, "2026-08-28T12:00:00.000Z", destination))
+      .rejects.toThrow("LOCAL_RETENTION_CANDIDATE_MISSING_ROW");
+  } finally {
+    prototype.prepare = original;
+  }
+
+  expect(swaps).toBe(1);
+  expect(existsSync(destination)).toBe(false);
+  // Nothing was selected for removal and the source still holds its work.
+  expect(marked(source)).toBe(JSON.stringify({ marker: "must-keep" }));
+  expect(count(source, "gjc_intents")).toBe(1);
 });
