@@ -1,7 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
-import { closeSync, existsSync, mkdirSync, openSync, statSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, existsSync, mkdirSync, openSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createInterface, type Interface } from "node:readline";
 import { afterEach, expect, it } from "vitest";
@@ -243,4 +243,36 @@ it("refuses a holder that appears after the probe and before the rename", async 
   expect(observations(db)).toBe(before.observations);
   expect(existsSync(application.operation.candidate_path)).toBe(true);
   expect(existsSync(swapBarrierPath(db.filename))).toBe(false);
+}, 60_000);
+
+it("refuses before removing anything when the source is writable outside this user", async () => {
+  const { db, runtime, cutoff } = await seeded();
+  // A writer that never has to appear in this user's /proc: the file itself admits one. Set before
+  // the fence is taken, so the refusal under test is the exclusion one and not a changed source.
+  chmodSync(db.filename, 0o666);
+  const application = await applyLocalObservationRetention(db, cutoff,
+    join(dirname(db.filename), "outside-writable-candidate"));
+  const before = { inode: inode(db.filename), observations: observations(db) };
+
+  await expect(runtime.quiesce("local_retention",
+    async () => applyRetentionCandidate(runtime, application, new Date())))
+    .rejects.toMatchObject({ code: "LOCAL_RETENTION_EXCLUSION_UNPROVABLE" });
+  // Refused before the destructive half: the source, its log and the candidate are all still here.
+  expect(inode(db.filename)).toBe(before.inode);
+  expect(observations(db)).toBe(before.observations);
+  expect(existsSync(`${db.filename}-wal`)).toBe(true);
+  expect(existsSync(application.operation.candidate_path)).toBe(true);
+  expect(existsSync(swapBarrierPath(db.filename))).toBe(false);
+
+  // Once the file admits only this user again, the work goes through. The refused attempt moved
+  // the source's fence past this candidate, so the retry builds its own rather than reusing one
+  // the source has already left behind.
+  chmodSync(db.filename, 0o600);
+  const retry = await applyLocalObservationRetention(db, cutoff,
+    join(dirname(db.filename), "outside-writable-retry"));
+  const result = await runtime.quiesce("local_retention",
+    async () => applyRetentionCandidate(runtime, retry, new Date()));
+  expect(result.old_fd_count).toBe(0);
+  expect(inode(db.filename)).not.toBe(before.inode);
+  expect(observations(db)).toBe(before.observations - 1);
 }, 60_000);

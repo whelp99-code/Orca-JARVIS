@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { closeSync, lstatSync, linkSync, fsyncSync, openSync, renameSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { canonicalize } from "./canonical.js";
-import { discoverOpenInodeHolders } from "./authority-database-process.js";
+import { exclusionHole, discoverOpenInodeHolders } from "./authority-database-process.js";
 import type { AuthorityDatabaseRuntime } from "./authority-database-runtime.js";
 import { JarvisError as AuthorityError } from "./db.js";
 import { publishSwapBarrier, releaseSwapBarrier } from "./authority-database-swap-barrier.js";
@@ -55,6 +55,13 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
       releaseSwapBarrier(authority.filename);
       authority.reopen();
       throw new AuthorityError("MEMORY_SOURCE_WRITER_ACTIVE");
+    }
+    // Same question, same place: before the log goes, not after.
+    const hole = exclusionHole(authority.filename);
+    if (hole !== null) {
+      releaseSwapBarrier(authority.filename);
+      authority.reopen();
+      throw new AuthorityError("MEMORY_EXCLUSION_UNPROVABLE", `MEMORY_EXCLUSION_UNPROVABLE: ${hole}`);
     }
     removeSidecars(authority.filename);
     if (input.cancellation) {

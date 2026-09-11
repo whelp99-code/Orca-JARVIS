@@ -178,3 +178,17 @@ export class ProcessObservationError extends Error {
     super(`process observation failed: ${pid}`, cause === undefined ? undefined : { cause });
   }
 }
+
+/**
+ * Why a writer outside this process's reach cannot be excluded from this database, or null when
+ * it can. The scan answers for processes of this user; a file another user may write admits a
+ * writer that never has to appear in that answer at all, and a replacement would discard whatever
+ * it commits next. A privileged process can write regardless, which no user-space protocol
+ * excludes - that is this contract's stated limit rather than an assumption hidden inside it.
+ */
+export function exclusionHole(filename: string): string | null {
+  const source = statSync(filename);
+  if (source.uid !== process.getuid?.()) return "owner_outside_this_user";
+  if ((source.mode & 0o022) !== 0) return "writable_outside_this_user";
+  return null;
+}

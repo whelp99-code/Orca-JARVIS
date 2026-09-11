@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { exclusionHole } from "./authority-database-process.js";
 import Database from "better-sqlite3";
 import { readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { dirname } from "node:path";
@@ -132,6 +133,14 @@ export function applyRetentionCandidate(
     // being invisible to /proc: if another connection holds this database, it holds its locks.
     if (foreignConnectionHolds(authority.filename)) {
       throw new JarvisError("LOCAL_RETENTION_SOURCE_WRITER_ACTIVE");
+    }
+    // Nothing has been removed yet, which is where this belongs: a database another user may
+    // write is not proved exclusive by any answer this process can get, so it refuses instead of
+    // destroying the log on an answer that does not cover that writer.
+    const hole = exclusionHole(authority.filename);
+    if (hole !== null) {
+      throw new JarvisError("LOCAL_RETENTION_EXCLUSION_UNPROVABLE",
+        `LOCAL_RETENTION_EXCLUSION_UNPROVABLE: ${hole}`);
     }
     for (const suffix of SIDECARS) rmSync(`${authority.filename}${suffix}`, { force: true });
     // The baseline for the last question, taken once the connection is gone and its log has been
