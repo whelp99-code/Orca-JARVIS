@@ -865,3 +865,32 @@ still cannot back any recommendation, because the assembler emits
 measured boundary. No producer in `src/` assembles or persists a context, so the
 chain above is exercised through the library and stored fixtures, not through a
 scheduled service.
+
+
+## Assembled evidence and what a recommendation may cite — 2026-09-11
+
+The gap recorded above is now a contract rather than a note.
+`src/personal-context-citation-contract.ts` classifies each piece of evidence in an assembled
+context from the source behind it, instead of translating the assembler's vocabulary into the
+citation vocabulary by renaming.
+
+- A local task-timeline observation is `advisory_local_source` and cites nothing. It is not a
+  `linux_live_fact`, so the citation slots `current_linux_evidence_ref`, `deadline_evidence_ref`,
+  `dependency_evidence_ref` and `stable_identity_evidence_ref` cannot be filled from it.
+- A verified live Orca task observation on the Linux control plane is a `linux_live_fact`; the same
+  envelope with `trust` other than `verified` is `unverified_observation`.
+- A `user_confirmed` memory is a `user_confirmed_principle`; any other trust is
+  `unconfirmed_memory`.
+- Nothing in the contract produces `owner_decision`. An owner decision is an authority receipt from
+  the owner, and no amount of assembled evidence implies one.
+
+Measured by `tests/integration/local-observation-citation-contract.test.ts` (3 tests): the real
+assembler output for the local chain is `["context_observation", "confirmed_memory"]`, whose only
+citable member is the confirmed memory, so `citationAvailable(..., "linux_live_fact")` and
+`citationAvailable(..., "owner_decision")` are both false for that context.
+
+What this still does not do: it does not make the local advisory chain produce an actionable
+recommendation, because it must not. An owner-gated action needs an owner decision, and the
+priority engine has no slot that an advisory local observation can fill. Connecting a real producer
+to an actionable morning brief therefore needs a genuine owner decision or a verified live Linux
+source, not a change to this contract.
