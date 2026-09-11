@@ -17,9 +17,13 @@ export interface ModelTransport {
 export class RecordingModelTransport implements ModelTransport {
   readonly sent: ModelTransportCapture[] = [];
 
-  async send(capture: ModelTransportCapture): Promise<ModelTransportResult> {
+  record(capture: ModelTransportCapture): ModelTransportResult {
     this.sent.push(capture);
     return { accepted: true };
+  }
+
+  async send(capture: ModelTransportCapture): Promise<ModelTransportResult> {
+    return this.record(capture);
   }
 }
 

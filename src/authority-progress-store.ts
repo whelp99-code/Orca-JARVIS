@@ -1,5 +1,6 @@
 import { JarvisError, progressFaultPoints, timestamp, type ProgressFaultPoint, type Row } from "./authority-db-base.js";
 import { GjcQuestionAuthorityDb } from "./gjc-question-store.js";
+import type { ModelTransportCapture } from "./context-model-transport.js";
 import type {
 	ContextPersistenceInput,
 	RecommendationActionTransition,
@@ -27,6 +28,9 @@ export abstract class ProgressAuthorityDb extends GjcQuestionAuthorityDb {
 
 	persistAssembledContextSnapshot(input: unknown, evidence: ContextPersistenceInput["memory_evidence"], now = timestamp()): StoredContext {
 		return this.personalContext.persistAssembledContext(input, evidence, now);
+	}
+	lastAssembledModelCapture(): ModelTransportCapture | undefined {
+		return this.personalContext.lastCapture;
 	}
 	persistRecommendation(value: RecommendationPersistenceInput, now = timestamp()): StoredRecommendation {
 		return this.personalContext.persistRecommendation(value, now);

@@ -1,6 +1,6 @@
 import type Database from "better-sqlite3";
 import { assemblePersonalContext } from "./context-assembler.js";
-import { prepareModelTransport } from "./context-model-transport.js";
+import { prepareModelTransport, RecordingModelTransport, type ModelTransportCapture } from "./context-model-transport.js";
 import { PersonalContextStore, type ContextMemoryEvidenceBinding, type ContextPersistenceInput, type StoredContext } from "./personal-context-store.js";
 import { PersonalObservationStore, type StoredObservation } from "./personal-observation-store.js";
 import { PersonalRecommendationActionStore } from "./personal-recommendation-action-store.js";
@@ -32,13 +32,16 @@ export class PersonalContextPersistence {
   private readonly recommendations: PersonalRecommendationStore;
   private readonly recommendationActions: PersonalRecommendationActionStore;
   private readonly recommendationReader: PersonalRecommendationReader;
+  readonly modelTransport: RecordingModelTransport;
+  lastCapture: ModelTransportCapture | undefined;
 
-  constructor(database: Database.Database, error: PersistenceErrorFactory) {
+  constructor(database: Database.Database, error: PersistenceErrorFactory, modelTransport = new RecordingModelTransport()) {
     this.contexts = new PersonalContextStore(database, error);
     this.observations = new PersonalObservationStore(database, error);
     this.recommendations = new PersonalRecommendationStore(database, error);
     this.recommendationActions = new PersonalRecommendationActionStore(database, error);
     this.recommendationReader = new PersonalRecommendationReader(database);
+    this.modelTransport = modelTransport;
   }
 
   persistObservation(value: unknown, now: string): StoredObservation {
@@ -50,7 +53,9 @@ export class PersonalContextPersistence {
   }
 
   persistAssembledContext(input: unknown, evidence: ContextPersistenceInput["memory_evidence"], now: string): StoredContext {
-    prepareModelTransport(input, `persist:${now}`);
+    const capture = prepareModelTransport(input, `session:${now}`);
+    this.lastCapture = capture;
+    this.modelTransport.record(capture);
     const snapshot = assemblePersonalContext(input);
     return this.contexts.persist({ context: snapshot, memory_evidence: evidence }, now);
   }
