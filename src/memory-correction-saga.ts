@@ -1,3 +1,4 @@
+import { candidateTaskSourceSuppressed } from "./memory-candidate-task-source.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { createHash, randomUUID } from "node:crypto";
 import { canonicalize } from "./canonical.js";
@@ -48,7 +49,8 @@ export class MemoryCorrectionSaga {
       throw new JarvisError("MEMORY_CORRECTION_INPUT_INVALID");
     }
     const requireVisible = () => {
-      if (new MemoryProjectionAuthority(this.options.authority).isProjectionIdSuppressed(input.candidate_id)) {
+      if (new MemoryProjectionAuthority(this.options.authority).isProjectionIdSuppressed(input.candidate_id)
+        || candidateTaskSourceSuppressed(this.options.authority, input.candidate_id)) {
         throw new JarvisError("MEMORY_CANDIDATE_SUPPRESSED");
       }
     };

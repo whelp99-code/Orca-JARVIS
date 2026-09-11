@@ -1,4 +1,4 @@
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import { JarvisError } from "./jarvis-error.js";
 
@@ -72,13 +72,18 @@ export function candidateDigest(candidatePath: string): string {
  * so the object that moves is the object that gets inspected and unlinked. A file that turns out
  * not to be ours is put back and left alone.
  *
+ * The name it moves to is random and used once. A fixed name would be predictable, and rename
+ * replaces its destination silently, so anything sitting there would be destroyed by the move
+ * itself - the same fault this function exists to avoid. A crash between the move and the unlink
+ * leaves that random name behind rather than removing a file this operation could not prove.
+ *
  * The sidecars are removed by name. The path is claimed exclusively for this operation and never
  * handed out, so the names beside it are this operation's namespace; giving each sidecar its own
  * recorded identity, or isolating every artifact in an operation-owned directory, is the stronger
  * form and is recorded as follow-up rather than implied here.
  */
 export function releaseProvenArtifact(path: string, proven: (moved: string) => boolean): boolean {
-  const moving = `${path}.releasing`;
+  const moving = `${path}.releasing-${randomUUID()}`;
   try {
     renameSync(path, moving);
   } catch {

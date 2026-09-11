@@ -210,3 +210,18 @@ it("refuses to install a candidate whose bytes changed after it was verified", a
     async () => applyRetentionCandidate(runtime, application, new Date(LOCAL_CHAIN_AT))))
     .rejects.toThrow("LOCAL_RETENTION_CANDIDATE_MODIFIED");
 }, 60_000);
+
+it("writes the verified digest once and refuses to have it rewritten", async () => {
+  const seed = await seeded();
+  const db = reopen(seed);
+  await applyLocalObservationRetention(db, seed.cutoff, seed.candidate, new Date(LOCAL_CHAIN_AT));
+
+  const recorded = String(db.db.prepare("SELECT verified_digest FROM local_retention_operations")
+    .pluck().get());
+  expect(recorded).toMatch(/^sha256:[0-9a-f]{64}$/);
+  // Rewriting it would let a verified operation point at bytes nobody checked.
+  expect(() => db.db.prepare("UPDATE local_retention_operations SET verified_digest=?")
+    .run(`sha256:${"f".repeat(64)}`)).toThrow("retention verified digest is written once");
+  expect(String(db.db.prepare("SELECT verified_digest FROM local_retention_operations").pluck().get()))
+    .toBe(recorded);
+}, 60_000);

@@ -31,7 +31,10 @@ function rowKey(row: unknown): string {
     const [tag, encoded] = value === null ? ["n", ""]
       : Buffer.isBuffer(value) ? ["b", value.toString("base64")]
       : typeof value === "bigint" ? ["i", value.toString()]
-      : typeof value === "number" ? [Number.isInteger(value) ? "i" : "f", value.toString()]
+      // Every comparison reads with exact integers, so a SQLite INTEGER arrives as a bigint and a
+      // number is always a REAL. Tagging an integral REAL as an integer would let 1.0 and 1 share
+      // a key, which SQLite treats as different values.
+      : typeof value === "number" ? ["f", value.toString()]
       : ["s", String(value)];
     hash.update(`${tag}${Buffer.byteLength(String(encoded), "utf8")}:${encoded}\u0000`);
   }
@@ -110,16 +113,31 @@ function expectedRows(
 }
 
 /** The generation table is the one the build rewrites: retire the active row, add the next one. */
+type GenerationRow = { readonly generation: bigint; readonly digest: string; readonly state: string };
+
 function assertGenerations(snapshot: AuthorityDb, candidate: AuthorityDb, resultGeneration: number): void {
-  const rows = (database: AuthorityDb) => database.db.prepare(
-    `SELECT generation,database_manifest_digest,state FROM ${GENERATIONS} ORDER BY generation`).all()
-    .map(row => JSON.stringify(row));
-  const before = rows(snapshot).map(row => row.replace('"state":"active"', '"state":"retired"'));
+  // Typed and exact, like every other comparison here: JSON numbers round past the safe range, so
+  // two different histories could serialize identically.
+  const rows = (database: AuthorityDb): readonly GenerationRow[] => exact(database,
+    `SELECT generation,database_manifest_digest AS digest,state FROM ${GENERATIONS} ORDER BY generation`)
+    .all().map(value => {
+      const row = value as Record<string, unknown>;
+      if (typeof row["generation"] !== "bigint" || typeof row["digest"] !== "string"
+        || typeof row["state"] !== "string") {
+        throw new JarvisError("LOCAL_RETENTION_CANDIDATE_GENERATION_INVALID");
+      }
+      return { generation: row["generation"], digest: row["digest"], state: row["state"] };
+    });
+  const key = (row: GenerationRow): string => `${row.generation}\u0000${row.digest}\u0000${row.state}`;
+  // The build retires the row that was active and adds the next one. Nothing else may move.
+  const before = rows(snapshot)
+    .map(row => key(row.state === "active" ? { ...row, state: "retired" } : row));
   const after = rows(candidate);
-  const added = after.filter(row => !before.includes(row));
-  if (after.length !== before.length + 1 || before.some(row => !after.includes(row))
-    || added.length !== 1 || !added[0]?.includes(`"generation":${resultGeneration}`)
-    || !added[0]?.includes('"state":"active"')) {
+  const present = after.map(key);
+  const added = after.filter(row => !before.includes(key(row)));
+  if (after.length !== before.length + 1 || before.some(row => !present.includes(row))
+    || added.length !== 1 || added[0]?.generation !== BigInt(resultGeneration)
+    || added[0]?.state !== "active") {
     throw new JarvisError("LOCAL_RETENTION_CANDIDATE_GENERATION_INVALID");
   }
 }
