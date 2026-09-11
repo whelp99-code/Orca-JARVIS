@@ -93,16 +93,22 @@ export async function executeGjcCommand(
       const parsed = parseDispatchEnvelope(envelope);
       const now = commandNow(context).toISOString();
       db.assertGjcDispatchTask(parsed.task, now);
+      preflightDispatchAssemble(context, parsed);
       const reservation = db.reserveGjcDispatchFromTask(parsed.task, now);
       if (!reservation.reserved) {
         return { ok: true, command: "gjc.dispatch", intent_id: reservation.intent_id, duplicate: true };
       }
-      const assembled = await assembleDispatchContext(context, parsed);
-      if (assembled !== undefined) db.recordGjcModelDispatched(reservation.intent_id, now);
-      return {
-        ok: true, command: "gjc.dispatch", intent_id: reservation.intent_id,
-        ...(assembled === undefined ? {} : { model_request_bytes: assembled.capture.bytes, model_session_id: assembled.capture.session_id }),
-      };
+      try {
+        const assembled = await assembleDispatchContext(context, parsed);
+        if (assembled !== undefined) db.recordGjcModelDispatched(reservation.intent_id, now);
+        return {
+          ok: true, command: "gjc.dispatch", intent_id: reservation.intent_id,
+          ...(assembled === undefined ? {} : { model_request_bytes: assembled.capture.bytes, model_session_id: assembled.capture.session_id }),
+        };
+      } catch (error) {
+        db.markGjcIntentUncertain(reservation.intent_id, now);
+        throw error;
+      }
     }
     if (command === "gjc" && subcommand === "questions") {
       const questions = db.db
@@ -193,6 +199,34 @@ function parseDispatchEnvelope(raw: Record<string, unknown>): {
   return { task: raw, assemble_context: undefined, memory_evidence: [] };
 }
 
+function dispatchMemoryAuthorizer(
+  context: CliCommandContext,
+  options: NonNullable<CliCommandContext["dependencies"]["memoryReferenceOptions"]>,
+) {
+  const configuredFence = options.read_fence_config === undefined
+    ? undefined
+    : createProductionMemoryReadFence(context.db, options.read_fence_config);
+  const configuredStatus = options.read_fence_config === undefined
+    ? undefined
+    : createProductionMemoryReadFence(context.db, options.read_fence_config, "memory_status");
+  return (at: Date) => {
+    configuredFence?.(at);
+    configuredStatus?.(at);
+    options.read_fence?.(at);
+    options.status_fence?.(at);
+  };
+}
+
+function preflightDispatchAssemble(
+  context: CliCommandContext,
+  parsed: { assemble_context: unknown; memory_evidence: ContextPersistenceInput["memory_evidence"] },
+): void {
+  if (parsed.assemble_context === undefined) return;
+  const options = context.dependencies.memoryReferenceOptions;
+  if (options === undefined) throw new JarvisError("MEMORY_REFERENCE_OPTIONS_REQUIRED");
+  dispatchMemoryAuthorizer(context, options)(commandNow(context));
+}
+
 async function assembleDispatchContext(
   context: CliCommandContext,
   parsed: { assemble_context: unknown; memory_evidence: ContextPersistenceInput["memory_evidence"] },
@@ -200,21 +234,10 @@ async function assembleDispatchContext(
   if (parsed.assemble_context === undefined) return undefined;
   const options = context.dependencies.memoryReferenceOptions;
   if (options === undefined) throw new JarvisError("MEMORY_REFERENCE_OPTIONS_REQUIRED");
-  const configuredFence = options.read_fence_config === undefined
-    ? undefined
-    : createProductionMemoryReadFence(context.db, options.read_fence_config);
-  const configuredStatus = options.read_fence_config === undefined
-    ? undefined
-    : createProductionMemoryReadFence(context.db, options.read_fence_config, "memory_status");
   const session = new AssembledModelSession(
     context.db,
     options.model_transport ?? new RecordingModelTransport(),
-    at => {
-      configuredFence?.(at);
-      configuredStatus?.(at);
-      options.read_fence?.(at);
-      options.status_fence?.(at);
-    },
+    dispatchMemoryAuthorizer(context, options),
   );
   return session.deliver(parsed.assemble_context, parsed.memory_evidence, commandNow(context).toISOString());
 }

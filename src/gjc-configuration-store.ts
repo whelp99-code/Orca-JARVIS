@@ -213,12 +213,4 @@ export abstract class GjcConfigurationAuthorityDb extends AuthorityDbBase {
 			now,
 		);
 	}
-
-	reserveGjcDispatchFromTask(task: Record<string, unknown>, now = timestamp()): { intent_id: string; reserved: boolean } {
-		this.assertGjcDispatchTask(task, now);
-		const config = this.gjcConfig();
-		if (!config?.operational || task.cwd !== config.canonical_cwd || task.session_id !== config.session_id)
-			throw new JarvisError("GJC_DISPATCH_NOT_AUTHORIZED");
-		return this.reserveGjcIntent("dispatch", { ...task, continuation_id: String(task.continuation_id) }, String(task.idempotency_key), String(task.continuation_id), now);
-	}
 }

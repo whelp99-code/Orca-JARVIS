@@ -18,6 +18,21 @@ export abstract class GjcIntentAuthorityDb extends GjcDispatchAuthorityDb {
 		});
 	}
 
+	markGjcIntentUncertain(intentId: string, now = timestamp()): void {
+		this.atomic(() => {
+			this.db.prepare("UPDATE gjc_intents SET state='uncertain' WHERE intent_id=? AND state IN ('pending','claimed')").run(intentId);
+			this.db.prepare("INSERT INTO gjc_intent_events(intent_id,event_type,payload_json,created_at) VALUES(?,?,?,?)").run(intentId, "dispatch_failed", json({ failure_code: "GJC_MODEL_DISPATCH_UNAVAILABLE" }), now);
+		});
+	}
+
+	reserveGjcDispatchFromTask(task: Record<string, unknown>, now = timestamp()): { intent_id: string; reserved: boolean } {
+		this.assertGjcDispatchTask(task, now);
+		const config = this.gjcConfig();
+		if (!config?.operational || task.cwd !== config.canonical_cwd || task.session_id !== config.session_id)
+			throw new JarvisError("GJC_DISPATCH_NOT_AUTHORIZED");
+		return this.reserveGjcIntent("dispatch", { ...task, continuation_id: String(task.continuation_id) }, String(task.idempotency_key), String(task.continuation_id), now);
+	}
+
 	reserveGjcIntent(
 		kind: "sync" | "dispatch" | "answer",
 		payload: unknown,
