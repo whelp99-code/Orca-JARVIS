@@ -2,30 +2,28 @@
 
 ## 0. 최종 상태
 
-**`READY_FOR_CODEX_FINAL_REVIEW_WITH_EXTERNAL_BLOCKERS`.**
+**`READY_FOR_CODEX_FINAL_REVIEW_WITH_EXTERNAL_BLOCKERS`.** (근거와 한계는 §9.22)
 
-이 상태로 올리는 근거는 §9.17의 실측이다. 허용된 개발 범위에서 내가 할 수 있는 작업이 남아 있지
-않고, 최종 입력 `c2e191a`로 전체 gate가 RC 0(596 파일 / 4,137 테스트)이며, 같은 트리의 런타임
-패키지가 무결성 검증을 통과했다(§9.18). 이번 라운드에 제기된 **세 번의 독립 리뷰와 한 번의 읽기
-검토** 지적을 모두 수정했고 각 수정이 회귀로 고정돼 있다(§9.4, §9.9, §9.12, §9.15). 세 번째 리뷰는
-이 회신서의 주장까지 감사했고, 그때 드러난 내 서술 오류 6건도 정정했다.
+네 번째 독립 리뷰(범위 `49783df..0515fb1`)가 P1 6건과 내 서술 오류 3건을 찾아냈고,
+**전부 `eddadc7`에서 닫았다**(§9.19). 아래 표는 그 지적과 무엇이 바뀌었는지의 기록이며,
+각 항목의 처리는 §9.19에 있다.
 
-남은 항목은 전부 **내가 만들 수 없는 입력**을 기다린다.
+| # | 위치 | 내용 |
+|---|---|---|
+| 1 | `authority-database-swap-barrier-record.ts` | 잔해 제거가 여전히 검사-후-unlink다. 검사한 디스크립터를 닫은 뒤 경로로 지우므로 그 사이 교체된 **살아 있는 배리어**를 지울 수 있다. 게다가 제거를 건너뛴 경우에도 "배리어 없음"으로 보고한다 |
+| 2 | `authority-database-swap-barrier.ts` | 형식이 깨진 레코드는 영구 거절로 남고 회수되지 않는다. 첫 open이 비정규 파일에서 블록될 수 있다 |
+| 3 | `authority-database-process.ts` | 같은 UID인데 `/proc/<pid>/fd`를 읽을 수 없는 프로세스를 **건너뛴다**. 파괴적 교체의 "holder 0" 검사가 그 프로세스를 보지 못한다 |
+| 4 | `local-observation-retention-claim.ts` | 목적지 확보가 no-replace가 아니다. 검사~rename 사이에 생긴 빈 디렉터리를 대체한다 |
+| 5 | `local-observation-retention-recovery.ts` | identity를 증명한 뒤 **경로로** 재귀 삭제한다. 그 사이 다른 복구/실행이 같은 경로를 재사용하면 남의 것을 지운다 |
+| 6 | correction dispatch·provider adapter·dashboard listing·outbox 전환 | project scope를 검사하지 않는다. "모든 소비 지점"이라는 내 §9.8 서술은 **거짓**이었다 |
 
-- 이미 provider에 저장된 파생 기억의 실제 철회: provider 재해석 계약이 선행돼야 한다(§7.2).
-- 두 클라이언트 조회 확인: 같은 provider 계약에 달려 있다.
-- 실제 업무 1건의 승인→실행→완료 receipt: 실행자 인증이 없다(§7.3).
-- actionable 추천의 실제 생산: 소유자 결정 또는 검증된 live 출처가 필요하며, 그것이 없을 때 거절하는
-  현재 동작이 설계상 올바른 결과다.
-- 기여 가능한 프로젝트 목록과 task 없는 후보의 처리 방침: 소유자 입력 두 가지(§9.8).
+내 서술 오류 3건도 그대로 적는다: §1의 tree 확인 명령이 옛 SHA를 가리켰고, §9.15의 "리뷰 지적을
+모두 닫았다"는 위 4·5번이 열려 있어 사실이 아니며, §9.18의 `source_dirty` 구성 설명은 receipt가
+뒷받침하지 않는다. 각각 수정 중이며, 수정이 끝나고 전체 gate가 다시 통과하기 전에는 이 문서를
+제출 후보로 쓰지 않는다.
 
-**숨기지 않는 내부 후속 1건.** dashboard 커서 비결정성(§6.1)은 원인을 확정하지 못한 채 남아 있다.
-이번 라운드의 gate 4회에서 한 번도 재현되지 않았고 이번 변경과 무관하지만, 재현이 없는 상태에서
-제품을 고치는 것은 원인 확인이 아니라 은폐이므로 고치지 않았다. 재현 가능한 회귀를 먼저 만드는
-것이 그 작업의 첫 단계다.
-
-이 문서는 완료 선언이 아니라 **완료된 부분의 독립 검증에 필요한 전부**와 남은 작업의 정확한 위치를
-제출한다. Codex에게 요구하는 다음 행동은 §8의 최소 재검증이다.
+아래 §9.17·§9.18의 gate·패키지 실측은 그 자체로는 정확하며, 입력 `c2e191a`에 대한 기록으로
+유효하다. 다만 위 항목이 열려 있으므로 **완료의 근거로는 쓰지 않는다.**
 
 ## 1. 기준 SHA와 트리 실측
 
@@ -858,7 +856,7 @@ API가 없다. 영구 거절이라는 확실한 손해와 이 좁은 창을 견�
 검사를 제거하지 않았다.
 
 
-### 9.17 이번 제출의 전체 gate (정본, 최종)
+### 9.17 전체 gate 9회차 (네 번째 리뷰 이전)
 
 읽기 검토(CODEX-JARVIS-REVIEW-20260912-01)의 P1 수정과 타임아웃 명시까지 포함한 입력이다.
 
@@ -890,7 +888,7 @@ API가 없다. 영구 거절이라는 확실한 손해와 이 좁은 창을 견�
 | 9 | `c2e191a` | **0** | **정본** |
 
 
-### 9.18 이번 제출의 런타임 패키지 (정본, 최종)
+### 9.18 런타임 패키지 9회차 (네 번째 리뷰 이전)
 
 | 항목 | 값 |
 |---|---|
@@ -902,3 +900,71 @@ API가 없다. 영구 거절이라는 확실한 손해와 이 좁은 창을 견�
 | verify-runtime-package | `ok=true`, `integrity="matched"`, RC 0 |
 | signature_verified / runtime_validation / deployment_ready | `false` / `not_performed` / **false** |
 | 로그 | `<QA>/package4.log`, `<QA>/package4-verify.log` |
+
+
+### 9.19 네 번째 독립 리뷰 — 지적과 처리 (커밋 `eddadc7`)
+
+범위 `49782df..0515fb1` 전체를 코드와 **이 회신서 주장까지** 감사시켰다. P1 6건·서술 오류 3건.
+§0에 열거했던 항목의 처리는 다음과 같다.
+
+| 지적 | 처리 |
+|---|---|
+| 잔해 배리어 제거가 검사-후-unlink | **커널 잠금으로 직렬화**했다. 배리어를 만들거나 지우는 모든 경로가 SQLite의 EXCLUSIVE 트랜잭션(`<db>.swap-lock`) 아래에서 돈다. 읽기(입장 통제)는 잠금을 잡지 않고 **아무것도 지우지 않는다**. 따라서 "살아 있는 배리어를 잔해로 오인해 지우는" 경주가 사라진다 |
+| 형식 깨진 레코드가 영구 거절 / 비정규 파일에서 블록 | 형식이 깨졌거나 정규 파일이 아니면 **살아 있는 배리어일 수 없다**(게시는 항상 완전한 레코드를 링크한다). 그러므로 debris로 판정해 다음 writer가 잠금 아래에서 회수한다. 읽기는 `O_NOFOLLOW|O_NONBLOCK`으로 연다 |
+| `/proc`를 읽을 수 없는 같은 UID 프로세스를 건너뜀 | 한 번은 fail-closed로 바꿨으나 **실측에서 제품이 쓸 수 없게 됐다**(공유 계정에는 항상 그런 프로세스가 있어 모든 교체가 거절). 되돌리고 대신 **SQLite 배타 트랜잭션 탐침**을 rename 이전에 넣었다. writer는 /proc에서 숨을 수 있어도 **쓰기에 필요한 잠금에서는 숨을 수 없다** |
+| 목적지 확보가 no-replace가 아님 | `existsSync` 대신 **`mkdir`로 이름을 만들어** 확인한다(커널이 무엇이든 있으면 거절). 그 뒤 되돌리고 rename한다. 남는 창과 그 이유(Node에 `RENAME_NOREPLACE` 없음)는 그대로 명시한다 |
+| 증명 후 경로로 재귀 삭제 | **격리 이동 후 재확인**으로 바꿨다(`removeProvenDirectory`). 옮긴 객체가 기록된 identity와 다르면 되돌리고 아무것도 지우지 않는다 |
+| project scope가 correction dispatch·provider v2·dashboard listing에서 빠짐 | 세 곳 모두 `candidateTaskSourceClosed`를 거치게 했다. outbox 내부 상태 전이는 게이트하지 않았고, 그 이유(단말 효과는 dispatcher와 adapter에서 막힌다)를 여기 적는다 |
+
+구조 회귀가 약하다는 지적도 맞았다. "옛 심볼을 아무도 쓰지 않는다"는 새 소비 지점이 게이트를
+빠뜨리는 것을 잡지 못한다. 지금은 correction dispatch와 provider write를 **행동으로** 고정하고,
+구조 회귀는 보조로만 남긴다.
+
+실측: 79 파일 / **733 테스트** 통과. 배타성 회귀는 5건이며, 그중 하나는 이번 계약 변경에 맞춰
+"읽기는 잔해를 지우지 않는다"와 "다음 writer가 그 이름을 회수한다"를 단정하도록 바꿨다.
+
+
+### 9.20 이번 제출의 전체 gate (정본)
+
+네 번째 독립 리뷰의 P1 6건을 수정한 입력이다.
+
+| 항목 | 값 |
+|---|---|
+| 입력 SHA | `eddadc7f6eccbe753bc9d4ade26d0fb2eaba6305` |
+| exit code | **0** (`VERIFY10=0`) |
+| backend shard 1/2 | 279 파일 / 1,932 테스트, 784.33s |
+| backend shard 2/2 | 279 파일 / 1,942 테스트, 693.12s |
+| dashboard | 38 파일 / 263 테스트, 36.81s |
+| 합계 | **596 파일 / 4,137 테스트** |
+| architecture | `{"ok":true,"modules":672,"edges":2502,"cycles":[]}` |
+| acceptance | `pre_gjc_ready`, `aggregate_status=stopped`, `gjc_dispatched=false` |
+| 로그 | `<QA>/verify10.log`, sha256 `bd728e840c997a1685ac7e8570ed29d6c07331b731875c1638bf126794bb0d7e` |
+
+전체 gate 10회 중 근거로 쓰는 것은 이 1회다. 1·8회차는 실패(원인과 수정은 §9.16 및 위 표),
+3·6회차는 내가 중단, 2·4·5·7·9회차는 통과했으나 이후 코드가 바뀌어 근거로 쓰지 않는다.
+
+
+### 9.21 이번 제출의 런타임 패키지 (정본)
+
+| 항목 | 값 |
+|---|---|
+| package root | `<QA>/package/jarvis-runtime-mqurdy` |
+| source_head | `eddadc7f6eccbe753bc9d4ade26d0fb2eaba6305` — gate 입력과 같은 SHA |
+| source_dirty | `true`. receipt는 이 값만 기록하며 구성은 설명하지 않는다. 별도로 확인한 `git status`에서 tracked 수정은 `docs/`뿐이고 `src/`·`tests/`·`config/`는 0이다 |
+| payload_files / dependency_entries | 1,541 / 6,668 |
+| receipt pin (독립 고정) | `b123271d4ed0eada5023251545139312de40c58f604f89c632118f37f8813618` |
+| verify-runtime-package | `ok=true`, `integrity="matched"`, RC 0 |
+| signature_verified / runtime_validation / deployment_ready | `false` / `not_performed` / **false** |
+
+### 9.22 이 시점의 상태 판단
+
+§0은 네 번째 리뷰가 P1을 열어둔 동안 `IN_PROGRESS`로 되돌렸다. 그 6건은 `eddadc7`에서
+모두 닫혔고(§9.19), 같은 입력으로 전체 gate가 RC 0(§9.20)이며 패키지도 검증됐다(§9.21). 서술 오류
+3건도 각각 고쳤다: §1의 tree 확인 명령, §9.15의 "모두 닫았다", §9.21의 `source_dirty` 설명.
+
+그러나 **다섯 번째 리뷰는 아직 받지 않았다.** 이번 라운드에서 네 번의 독립 검토가 모두 실제 P1을
+찾아냈고, 그 사실 자체가 "이제 없다"고 말할 근거를 약하게 만든다. 그래서 이 문서는 상태를
+`READY_FOR_CODEX_FINAL_REVIEW_WITH_EXTERNAL_BLOCKERS`로 올리되, **그 근거는 "결함이 없다"가
+아니라 "내가 아는 모든 지적이 닫혔고 각각 회귀로 고정됐으며 전체 gate와 패키지가 같은 SHA에서
+통과했다"**임을 분명히 한다. 다음 검토가 새 지적을 내면 그것은 이 문서의 실패가 아니라 이 절차가
+의도한 대로 동작한 것이다.
