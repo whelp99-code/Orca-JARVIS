@@ -110,7 +110,8 @@
 
 | 명령 | 결과 | 덮는 범위 |
 |---|---|---|
-| `npm run verify` (R2 재개 후, 최종) | **exit 0**. backend 275파일/1,886 + 275파일/1,916, dashboard 38파일/263 → **588파일 / 4,065테스트**. architecture 658모듈·2,444간선·순환 0. 고정 시각 acceptance `pre_gjc_ready`/`stopped`/`completion_promoted=true`/`gjc_dispatched=false` | HEAD `c0c0382`, tree `3397ecb`, 입력 digest `sha256:4a7f7b91…`(1,595파일), 종료 2026-09-11 09:05:20 +09:00 |
+| `npm run verify` (양방향 후보 검사 후, 최종) | **exit 0**. backend 275파일/1,886 + 275파일/1,917, dashboard 38파일/263 → **588파일 / 4,066테스트**. architecture 658모듈·2,444간선·순환 0. 고정 시각 acceptance 동일 | HEAD `61d6de1`, tree `d341f54`, 입력 digest `sha256:329bb698…`(1,595파일), 종료 2026-09-11 09:33:12 +09:00 |
+| `npm run verify` (행 출처 검사 시점) | **exit 0**. backend 275파일/1,886 + 275파일/1,916, dashboard 38파일/263 → **588파일 / 4,065테스트**. architecture 658모듈·2,444간선·순환 0. 고정 시각 acceptance `pre_gjc_ready`/`stopped`/`completion_promoted=true`/`gjc_dispatched=false` | HEAD `c0c0382`, tree `3397ecb`, 입력 digest `sha256:4a7f7b91…`(1,595파일), 종료 2026-09-11 09:05:20 +09:00 |
 | `npm run verify` (이전) | exit 0. backend 275파일/1,885 + 275파일/1,911, dashboard 38파일/263 → 588파일 / 4,059테스트 | `52db87d` 시점 제품 코드 |
 | `npm run typecheck` / `npm run lint` / `npm run architecture:check` | RC 0 / RC 0 / 657모듈·2,441간선·순환 0 | 현재 HEAD |
 | `npm run test:integration -- <retention 4파일>` | retention 12/12, destination 3/3, consistency 8/8, source-writes 1/1 | 현재 HEAD |
