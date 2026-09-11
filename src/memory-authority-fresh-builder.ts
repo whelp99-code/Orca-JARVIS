@@ -175,14 +175,11 @@ export function copyExpression(table: string, column: string): string {
 
 export function copyFilter(table: string, columns: readonly string[]): string {
   const projection = "blocked_projections";
-  // A claim intent announces a directory some process is about to create on this host. Only the
-  // rebuild's own intent is spent: it is still open in the snapshot, because the operation row
-  // that replaces it is written afterwards, and copying it would leave the replaced database
-  // holding a dead claim on a unique directory that no later run could ever take. Every other
-  // intent belongs to a process this rebuild knows nothing about, and it is the only row recovery
-  // has for a directory whose operation was never recorded, so it is carried across.
-  if (table === "local_retention_claim_intents") return `WHERE NOT EXISTS (SELECT 1 FROM ${projection} p
-    WHERE p.kind='retention_claim_intent' AND p.id=source_row.operation_id)`;
+  // Only the rebuild's own claim intent is spent. It is still open in the snapshot - the operation
+  // row that replaces it is written afterwards - and copying it would leave the replaced database
+  // holding a dead claim on a unique directory no later run could take. Every other intent is the
+  // only row recovery has for a directory whose operation was never recorded, so it is kept.
+  if (table === "local_retention_claim_intents") return `WHERE NOT EXISTS (SELECT 1 FROM ${projection} WHERE kind='intent' AND id=source_row.operation_id)`;
   if (table === "memory_outbox") return `WHERE NOT EXISTS (SELECT 1 FROM ${projection} p
     WHERE (p.kind='candidate' AND p.id=source_row.candidate_id)
        OR (p.kind='outbox' AND p.id=source_row.outbox_id))`;

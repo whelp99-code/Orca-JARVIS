@@ -201,8 +201,8 @@ export async function applyLocalObservationRetention(
     // The selection says which groups go; this says that the run's own claim intent is spent. It
     // is not part of the selection and does not enter its digest - the copier and the verifier
     // simply have to agree on it, and they are handed the same list.
-    const copied = [...selection.blocked, { kind: "retention_claim_intent",
-      id: intent.operation_id, component_id: "local_retention" }];
+    const copied = [...selection.blocked,
+      { kind: "intent", id: intent.operation_id, component_id: "local_retention" }];
     const build = await buildFreshAuthority(snapshot, paths.candidate, {
       blocked_projections: copied, sensitive_material: [], destination: "claimed",
     });

@@ -2,6 +2,7 @@ import { createHash } from "node:crypto";
 import { closeSync, lstatSync, linkSync, fsyncSync, openSync, renameSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { canonicalize } from "./canonical.js";
+import { discoverOpenInodeHolders } from "./authority-database-process.js";
 import type { AuthorityDatabaseRuntime } from "./authority-database-runtime.js";
 import { JarvisError as AuthorityError } from "./db.js";
 import { publishSwapBarrier, releaseSwapBarrier } from "./authority-database-swap-barrier.js";
@@ -105,15 +106,17 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
   }
 
 /**
- * Writers on the retired inode that are not this process.
+ * Writers on the source that are not this process.
  *
  * This process's own connection is open when the question is asked and is closed a moment later
- * by the swap itself, in order; nobody else's is.
+ * by the swap itself, in order; nobody else's is. The scan is taken straight from the observer
+ * rather than through the runtime, because the runtime's own reading of the retired inode is a
+ * distinct step of the swap that happens after the rename, and the two must not be one call.
  */
 function foreignWriters(
   runtime: AuthorityDatabaseRuntime, device: bigint, inode: bigint,
 ): number {
-  return runtime.observeOldInode(device, inode)
+  return discoverOpenInodeHolders(device, inode, runtime.registeredProcesses())
     .writable_holders.filter(holder => holder.pid !== process.pid).length;
 }
 
