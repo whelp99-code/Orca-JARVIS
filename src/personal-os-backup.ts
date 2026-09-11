@@ -10,6 +10,7 @@ import {
   rmSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
+import { openUnderSwapAdmission } from "./authority-database-swap-barrier.js";
 import Database from "better-sqlite3";
 import { PersonalOsError } from "./personal-os-errors.js";
 import { assertIsolatedFile } from "./personal-os-protected-paths.js";
@@ -43,7 +44,12 @@ function quickCheck(path: string): string {
 async function performOnlineBackup(sourcePath: string, destPath: string): Promise<BackupResult> {
   if (existsSync(destPath)) throw new PersonalOsError("E_BACKUP_PATH");
   try {
-    const db = new Database(sourcePath, { readonly: true, fileMustExist: true });
+    // A backup opens the live authority without going through AuthorityDb, so it asks the same
+    // question that constructor asks. Copying a file that is being replaced would produce a
+    // faithful copy of a database about to stop existing, and the descriptor would make the
+    // replacement refuse; refusing the backup instead says what actually happened.
+    const db = openUnderSwapAdmission(sourcePath,
+      () => new Database(sourcePath, { readonly: true, fileMustExist: true }));
     try {
       await db.backup(destPath);
     } finally {

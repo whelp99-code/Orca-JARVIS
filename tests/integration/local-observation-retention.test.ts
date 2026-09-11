@@ -315,3 +315,28 @@ it("refuses a retention window it cannot read as an exact bounded configuration"
     .rejects.toThrow("LOCAL_RETENTION_CONFIG_INVALID");
   expect(readFileSync(path).equals(before)).toBe(true);
 });
+
+// Reported by review: dropping every claim intent from the copy loses the only row recovery has
+// for a directory whose operation was never recorded, once a rebuild replaces the database.
+it("carries another run's claim intent into the candidate and spends only its own", async () => {
+  const db = new AuthorityDb(tempDb()); opened.push(db);
+  const chain = await localObservationChain(db);
+  const cutoff = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
+    .pluck().get(chain.observation.id));
+  // A directory some other run announced and never got as far as recording an operation for.
+  db.db.prepare(`INSERT INTO local_retention_claim_intents(operation_id,owner_token,
+    owner_start_token,directory,created_at) VALUES('retention:foreign','4242:foreign','99',
+    '/nonexistent/foreign-claim','2026-08-28T11:00:00.000Z')`).run();
+
+  const applied = await applyLocalObservationRetention(db, cutoff,
+    join(dirname(db.filename), "intent-carry"));
+
+  const intents = (database: AuthorityDb): string[] => database.db
+    .prepare("SELECT operation_id FROM local_retention_claim_intents ORDER BY operation_id")
+    .pluck().all().map(String);
+  // The run's own intent is spent the moment its operation row exists, so neither the source nor
+  // the candidate keeps it; the other run's intent is not this rebuild's to discard.
+  expect(intents(db)).toEqual(["retention:foreign"]);
+  const rebuilt = new AuthorityDb(applied.build.fresh_path); opened.push(rebuilt);
+  expect(intents(rebuilt)).toEqual(["retention:foreign"]);
+});

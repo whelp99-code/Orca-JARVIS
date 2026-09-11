@@ -36,6 +36,15 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
     // does not change what compaction tolerates: readers holding the retired inode are still
     // drained after the rename rather than refused before it.
     publishSwapBarrier(authority.filename, "memory_compaction", new Date(input.observed_at));
+    // Readers holding the retired inode are still drained after the rename: a descriptor opened
+    // read-only cannot lose a write, and that contract is what the existing acceptance proves. A
+    // writer is a different thing - the rename would leave its commits in a file nothing reads
+    // again - so a writer that is not this process refuses the replacement here, while the source
+    // is still the live database and nothing has been closed, removed or moved.
+    if (foreignWriters(runtime, input.old_device, input.old_inode) !== 0) {
+      releaseSwapBarrier(authority.filename);
+      throw new AuthorityError("MEMORY_SOURCE_WRITER_ACTIVE");
+    }
     authority.close();
     removeSidecars(authority.filename);
     if (input.cancellation) {
@@ -94,6 +103,19 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
     return { result_device: active.dev.toString(), result_inode: active.ino.toString(),
       old_fd_count: 0, reader_drain_digest: drainDigest };
   }
+
+/**
+ * Writers on the retired inode that are not this process.
+ *
+ * This process's own connection is open when the question is asked and is closed a moment later
+ * by the swap itself, in order; nobody else's is.
+ */
+function foreignWriters(
+  runtime: AuthorityDatabaseRuntime, device: bigint, inode: bigint,
+): number {
+  return runtime.observeOldInode(device, inode)
+    .writable_holders.filter(holder => holder.pid !== process.pid).length;
+}
 
 function removeSidecars(path: string): void {
   for (const suffix of ["-wal", "-shm", "-journal"]) rmSync(`${path}${suffix}`, { force: true });

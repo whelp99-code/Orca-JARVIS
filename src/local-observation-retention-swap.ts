@@ -27,7 +27,9 @@ const SIDECARS = ["-wal", "-shm", "-journal"] as const;
  *
  * This process's own connection is still open when the question is first asked, and it is not the
  * problem: it is closed a moment later, in order, by the swap itself. Every other holder is one
- * the rename would leave writing into an orphaned inode.
+ * the rename would leave writing into an orphaned inode. Asking it this way keeps the answer
+ * useful before anything is closed; a second connection inside this process is not excused by
+ * sharing a pid, and the scan that runs after the close catches it while the file is still whole.
  */
 function foreignHolders(
   runtime: AuthorityDatabaseRuntime, fence: { readonly device: string; readonly inode: string },
@@ -94,22 +96,26 @@ export function applyRetentionCandidate(
       throw new JarvisError("LOCAL_RETENTION_SOURCE_WRITER_ACTIVE");
     }
     authority.close();
-    for (const suffix of SIDECARS) rmSync(`${authority.filename}${suffix}`, { force: true });
     // Asked again now that this process's own connection is gone, so the answer covers every
-    // holder rather than every other holder: the rename proceeds only against a file nobody has
-    // open at all.
+    // holder rather than every other holder - a second connection inside this process is not
+    // excused by sharing a pid. Nothing has been removed yet, which is the point: a write-ahead
+    // log deleted beside a connection that is still open would take committed rows with it, so
+    // exclusion is proved first and the file is touched second.
     if (runtime.observeOldInode(BigInt(fence.device), BigInt(fence.inode)).fd_count !== 0) {
       throw new JarvisError("LOCAL_RETENTION_SOURCE_WRITER_ACTIVE");
     }
+    for (const suffix of SIDECARS) rmSync(`${authority.filename}${suffix}`, { force: true });
+    // The baseline for the last question, taken once the connection is gone and its log has been
+    // folded in: the file the rename would replace, rather than that file plus a log that closing
+    // was about to remove.
+    const settled = sourceBytes(authority.filename);
     // Written only once the swap is certain to be attempted. It is the last write before the
     // rename, so it still survives into the live database.
     recordAppliedRetentionOperation(
       operation.candidate_path, operation, result, build.result_generation, now);
-    // Taken once the connection is gone and its log is folded in, so the baseline is the file the
-    // rename would replace rather than the file plus a log that closing was about to remove.
-    const settled = sourceBytes(authority.filename);
-    // The connection is gone and no other holder remains, so the last word on whether anybody
-    // wrote in the remaining moments is the file itself: identical bytes and no log beside it.
+    // Asked across the one interval that is left - the applied record being written. Every
+    // cooperating connection is excluded or gone by now, so a change here is a writer that never
+    // asked, and the rename would discard whatever it just committed.
     if (sourceBytes(authority.filename) !== settled) {
       throw new JarvisError("LOCAL_RETENTION_SOURCE_CHANGED");
     }
@@ -117,8 +123,14 @@ export function applyRetentionCandidate(
     syncPath(dirname(authority.filename), true);
     observed = runtime.observeOldInode(BigInt(fence.device), BigInt(fence.inode));
   } catch (error) {
-    releaseSwapBarrier(authority.filename);
-    if (!authority.db.open) authority.reopen();
+    // Unwinding. The connection has to come back and the barrier has to go, but neither may
+    // replace the reason this failed: that reason is what the caller acts on, and both of these
+    // are recoverable without it - a connection that will not reopen stays observably closed, and
+    // a barrier this process still holds lapses when this process does.
+    try { if (!authority.db.open) authority.reopen(); }
+    catch { /* preserved below: the swap's own error is the report */ }
+    try { releaseSwapBarrier(authority.filename); }
+    catch { /* preserved below: the swap's own error is the report */ }
     throw error;
   }
   // Reopened while this process still holds the barrier, which admits its own owner, so the live

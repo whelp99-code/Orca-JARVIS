@@ -198,12 +198,16 @@ export async function applyLocalObservationRetention(
     // The operation row explains the directory from here on, so the intent is spent.
     fence = ownWrite(fence, operation.recorded_changes
       + clearRetentionClaimIntent(source, intent.operation_id));
+    // The selection says which groups go; this says that the run's own claim intent is spent. It
+    // is not part of the selection and does not enter its digest - the copier and the verifier
+    // simply have to agree on it, and they are handed the same list.
+    const copied = [...selection.blocked, { kind: "retention_claim_intent",
+      id: intent.operation_id, component_id: "local_retention" }];
     const build = await buildFreshAuthority(snapshot, paths.candidate, {
-      blocked_projections: selection.blocked, sensitive_material: [], destination: "claimed",
+      blocked_projections: copied, sensitive_material: [], destination: "claimed",
     });
     // The candidate must equal what the copier's own plan produces from this snapshot.
-    assertCandidateMatchesCopyPlan(snapshot, paths.candidate, selection.blocked,
-      build.result_generation);
+    assertCandidateMatchesCopyPlan(snapshot, paths.candidate, copied, build.result_generation);
     const application = { selection, build, source_fence: fence, operation };
     verifyLocalObservationRetentionCandidate(source, application);
     return { ...application,

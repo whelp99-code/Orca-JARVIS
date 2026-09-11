@@ -7,6 +7,8 @@ export type RegisteredAuthorityProcess = {
 
 export type OpenInodeObservation = {
   readonly holders: readonly RegisteredAuthorityProcess[];
+  /** Holders with at least one descriptor that can write. A reader cannot lose a write. */
+  readonly writable_holders: readonly RegisteredAuthorityProcess[];
   readonly fd_count: number;
 };
 
@@ -38,6 +40,7 @@ export function discoverOpenInodeHolders(
   required: readonly RegisteredAuthorityProcess[] = [],
 ): OpenInodeObservation {
   const holders: RegisteredAuthorityProcess[] = [];
+  const writable: RegisteredAuthorityProcess[] = [];
   const requiredPids = new Set(required.map(item => item.pid));
   let fdCount = 0;
   for (const entry of readdirSync("/proc", { withFileTypes: true })) {
@@ -52,7 +55,7 @@ export function discoverOpenInodeHolders(
       throw error;
     }
     const process = { pid, start_token: startToken };
-    let count: number;
+    let count: OpenInodeCount;
     try {
       count = processOpenInodeCount(process, device, inode);
     } catch (error) {
@@ -60,36 +63,63 @@ export function discoverOpenInodeHolders(
         && !requiredPids.has(pid)) continue;
       throw error;
     }
-    if (count === 0) continue;
+    if (count.descriptors === 0) continue;
     holders.push(process);
-    fdCount += count;
+    if (count.writable !== 0) writable.push(process);
+    fdCount += count.descriptors;
   }
-  return { holders, fd_count: fdCount };
+  return { holders, writable_holders: writable, fd_count: fdCount };
+}
+
+type OpenInodeCount = { readonly descriptors: number; readonly writable: number };
+
+/**
+ * Whether a descriptor can write, read from the same place the descriptor itself was read.
+ *
+ * `/proc/<pid>/fdinfo/<fd>` reports the open flags, whose low two bits are the access mode. A
+ * descriptor whose mode cannot be read is counted as a writer: the question is asked to decide
+ * whether replacing a file would silently discard somebody's commits, and an unanswered question
+ * is not permission to do that.
+ */
+function descriptorWritable(pid: number, descriptor: string): boolean {
+  let info: string;
+  try {
+    info = readFileSync(`/proc/${pid}/fdinfo/${descriptor}`, "utf8");
+  } catch {
+    return true;
+  }
+  const flags = /^flags:\s*(\d+)$/m.exec(info)?.[1];
+  if (flags === undefined) return true;
+  const mode = Number.parseInt(flags, 8) & 3;
+  return mode !== 0;
 }
 
 function processOpenInodeCount(
   process: RegisteredAuthorityProcess,
   device: bigint,
   inode: bigint,
-): number {
+): OpenInodeCount {
   let descriptors: readonly string[];
   try {
     descriptors = readdirSync(`/proc/${process.pid}/fd`);
   } catch (error) {
-    if (missing(error) && !processExists(process.pid)) return 0;
+    if (missing(error) && !processExists(process.pid)) return { descriptors: 0, writable: 0 };
     throw new ProcessObservationError(process.pid, error);
   }
   let count = 0;
+  let writable = 0;
   for (const descriptor of descriptors) {
     try {
       const metadata = statSync(`/proc/${process.pid}/fd/${descriptor}`, { bigint: true });
-      if (metadata.dev === device && metadata.ino === inode) count += 1;
+      if (metadata.dev !== device || metadata.ino !== inode) continue;
+      count += 1;
+      if (descriptorWritable(process.pid, descriptor)) writable += 1;
     } catch (error) {
       if (missing(error)) continue;
       throw new ProcessObservationError(process.pid, error);
     }
   }
-  return count;
+  return { descriptors: count, writable };
 }
 
 function ownedProcess(pid: number): boolean {

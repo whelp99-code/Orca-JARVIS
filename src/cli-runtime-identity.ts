@@ -1,5 +1,5 @@
 import Database from "better-sqlite3";
-import { assertSwapAdmission } from "./authority-database-swap-barrier.js";
+import { openUnderSwapAdmission } from "./authority-database-swap-barrier.js";
 import { createRuntimeIdentityReader } from "./runtime-identity.js";
 import { readDaemonRuntimeIdentity } from "./daemon-runtime-identity.js";
 
@@ -12,8 +12,10 @@ export function inspectRuntimeIdentity(filename: string | undefined, now: Date):
     // it asks the same question that constructor asks. A descriptor taken here during a swap would
     // make the swap refuse; a diagnostic must not be the reason a replacement cannot proceed, and
     // reporting the database as unavailable for the moment it is being replaced is the truth.
-    try { assertSwapAdmission(path); db = new Database(path, { readonly: true, fileMustExist: true }); }
-    catch { /* Missing, unreadable or mid-swap DB remains explicit unavailable evidence. */ }
+    try {
+      db = openUnderSwapAdmission(path,
+        () => new Database(path, { readonly: true, fileMustExist: true }));
+    } catch { /* Missing, unreadable or mid-swap DB remains explicit unavailable evidence. */ }
     return { ok: true, command: "runtime.identity", observer: createRuntimeIdentityReader(db)(now),
       daemon: readDaemonRuntimeIdentity(db, now) };
   } finally { db?.close(); }

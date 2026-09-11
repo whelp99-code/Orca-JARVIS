@@ -1,11 +1,12 @@
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
-import { existsSync, mkdirSync, statSync } from "node:fs";
+import { closeSync, existsSync, mkdirSync, openSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createInterface, type Interface } from "node:readline";
 import { afterEach, expect, it } from "vitest";
+import { processStartToken } from "../../src/authority-database-process.js";
 import {
-  publishSwapBarrier, releaseSwapBarrier, swapBarrierPath,
+  openUnderSwapAdmission, publishSwapBarrier, releaseSwapBarrier, swapBarrierPath,
 } from "../../src/authority-database-swap-barrier.js";
 import { AuthorityDatabaseRuntime } from "../../src/authority-database-runtime.js";
 import { AuthorityDb } from "../../src/db.js";
@@ -16,12 +17,21 @@ import { tempDb } from "../helpers.js";
 
 const HOLDER = join(process.cwd(), "tests", "fixtures", "local-retention-writer-holder.mjs");
 
+type Child = {
+  readonly child: ChildProcessWithoutNullStreams;
+  /** Registered at spawn, so a child that exits immediately is never waited for in vain. */
+  readonly exited: Promise<unknown>;
+  readonly line: Promise<string>;
+};
+
 const opened: AuthorityDb[] = [];
-const children: ChildProcessWithoutNullStreams[] = [];
+const children: Child[] = [];
 const readers: Interface[] = [];
 afterEach(() => {
   for (const reader of readers.splice(0)) reader.close();
-  for (const child of children.splice(0)) if (child.exitCode === null) child.kill("SIGKILL");
+  for (const item of children.splice(0)) {
+    if (item.child.exitCode === null) item.child.kill("SIGKILL");
+  }
   for (const db of opened.splice(0)) if (db.db.open) db.close();
 });
 
@@ -29,18 +39,28 @@ const observations = (db: AuthorityDb): number =>
   Number(db.db.prepare("SELECT COUNT(*) FROM personal_observations").pluck().get());
 const inode = (path: string): string => statSync(path, { bigint: true }).ino.toString();
 
-/** Starts the fixture and hands back its first line, which it prints once it has really acted. */
-async function announce(database: string, mode: string): Promise<{
-  readonly child: ChildProcessWithoutNullStreams; readonly line: string;
-}> {
-  const child = spawn(process.execPath, [HOLDER, database, mode], { stdio: ["pipe", "pipe", "pipe"] });
-  children.push(child);
+/**
+ * Starts the fixture and hands back both of its signals.
+ *
+ * The exit promise is registered before the child can do anything, because a child that finishes
+ * quickly would otherwise exit before anyone listened and leave the wait hanging until the test
+ * timed out. Nothing here waits on a duration.
+ */
+function announce(database: string, mode: string): Child {
+  const child = spawn(process.execPath, [HOLDER, database, mode], {
+    stdio: ["pipe", "pipe", "pipe"],
+  });
+  const exited = once(child, "exit");
   const reader = createInterface({ input: child.stdout });
   readers.push(reader);
   const iterator = reader[Symbol.asyncIterator]();
-  const first = await iterator.next();
-  if (first.done === true) throw new Error("RETENTION_HOLDER_FIXTURE_SILENT");
-  return { child, line: first.value };
+  const line = iterator.next().then(first => {
+    if (first.done === true) throw new Error("RETENTION_HOLDER_FIXTURE_SILENT");
+    return first.value;
+  });
+  const item = { child, exited, line };
+  children.push(item);
+  return item;
 }
 
 async function seeded(): Promise<{
@@ -65,8 +85,8 @@ it("refuses to replace a source another process holds open, then swaps once it l
     // process that commits after the build is already refused by the source fence, so the fence is
     // taken with the second connection in place and the only thing left to object is the open
     // descriptor itself. A real second process with a real connection, not a simulated one.
-    const holder = await announce(db.filename, "hold");
-    expect(holder.line).toBe("holding");
+    const holder = announce(db.filename, "hold");
+    expect(await holder.line).toBe("holding");
 
     const application = await applyLocalObservationRetention(db, cutoff,
       join(dirname(db.filename), "exclusive-candidate"));
@@ -81,10 +101,11 @@ it("refuses to replace a source another process holds open, then swaps once it l
     expect(observations(db)).toBe(before.observations);
     expect(existsSync(application.operation.candidate_path)).toBe(true);
     expect(existsSync(swapBarrierPath(db.filename))).toBe(false);
+    // The write-ahead log of a connection that is still open was not removed on the way out.
+    expect(db.db.open).toBe(true);
 
-    const exited = once(holder.child, "exit");
     holder.child.stdin.write("release\n");
-    await exited;
+    await holder.exited;
 
     const result = await runtime.quiesce("local_retention",
       async () => applyRetentionCandidate(runtime, application, new Date()));
@@ -98,30 +119,77 @@ it("refuses a connection opened while a swap holds the barrier, and admits one a
   const db = new AuthorityDb(tempDb());
   opened.push(db);
   publishSwapBarrier(db.filename, "local_retention", new Date());
-  const refused = await announce(db.filename, "open");
-  await once(refused.child, "exit");
-  expect(JSON.parse(refused.line.replace(/^refused /, "")))
+  const refused = announce(db.filename, "open");
+  const message = await refused.line;
+  await refused.exited;
+  expect(JSON.parse(message.replace(/^refused /, "")))
     .toEqual({ code: "AUTHORITY_DATABASE_SWAP_IN_PROGRESS" });
 
   releaseSwapBarrier(db.filename);
-  const admitted = await announce(db.filename, "open");
-  await once(admitted.child, "exit");
-  expect(admitted.line).toBe("opened");
+  const admitted = announce(db.filename, "open");
+  expect(await admitted.line).toBe("opened");
+  await admitted.exited;
+}, 60_000);
+
+it("gives a connection up when a swap begins while it is being opened", async () => {
+  const db = new AuthorityDb(tempDb());
+  opened.push(db);
+  db.close();
+  // A live process that is not this one, standing in for the swap that publishes between the two
+  // halves of an open. It only has to exist: the barrier record names its pid and start token, and
+  // that is exactly what a real swap would write.
+  const owner = announce(db.filename, "idle");
+  expect(await owner.line).toBe("idle");
+  const ownerPid = owner.child.pid ?? 0;
+  expect(ownerPid).toBeGreaterThan(0);
+
+  let closed = 0;
+  const barrier = swapBarrierPath(db.filename);
+  // The record names the database the way the barrier itself is named, which is how any spelling
+  // of one file becomes one exclusion.
+  const named = barrier.slice(0, -".swap-barrier".length);
+  const attempt = (): unknown => openUnderSwapAdmission(db.filename, () => {
+    writeFileSync(barrier, `${JSON.stringify({
+      schema_version: 1, pid: ownerPid, start_token: processStartToken(ownerPid),
+      database: named, reason: "local_retention",
+      created_at: new Date().toISOString(),
+    })}\n`, { mode: 0o600 });
+    const descriptor = openSync(db.filename, "r");
+    return { close: () => { closeSync(descriptor); closed += 1; } };
+  });
+  // One check could not see this barrier: it was published after the check and before the
+  // descriptor existed, which is the window the swap's own scan cannot cover either.
+  expect(attempt).toThrow("AUTHORITY_DATABASE_SWAP_IN_PROGRESS");
+  expect(closed).toBe(1);
+}, 60_000);
+
+it("lets exactly one of two processes take the barrier", async () => {
+  const db = new AuthorityDb(tempDb());
+  opened.push(db);
+  db.close();
+  const first = announce(db.filename, "abandon");
+  const second = announce(db.filename, "abandon");
+  const outcomes = [await first.line, await second.line].sort();
+  // Whichever order the two reach the create in, the file is created exclusively, so one of them
+  // holds the barrier and the other is told a swap is already in progress. Both succeeding is the
+  // failure this asserts against, and it does not depend on which one wins.
+  expect(outcomes).toEqual(["published", "refused"]);
+  expect(existsSync(swapBarrierPath(db.filename))).toBe(true);
 }, 60_000);
 
 it("does not let a barrier outlive the process that took it", async () => {
   const db = new AuthorityDb(tempDb());
   opened.push(db);
   db.close();
-  const abandoned = await announce(db.filename, "abandon");
-  expect(abandoned.line).toBe("published");
+  const abandoned = announce(db.filename, "abandon");
+  expect(await abandoned.line).toBe("published");
   expect(existsSync(swapBarrierPath(db.filename))).toBe(true);
   abandoned.child.kill("SIGKILL");
-  await once(abandoned.child, "exit");
+  await abandoned.exited;
 
   // The owner is gone, so the record is debris rather than an exclusion, and the database opens.
-  const admitted = await announce(db.filename, "open");
-  await once(admitted.child, "exit");
-  expect(admitted.line).toBe("opened");
+  const admitted = announce(db.filename, "open");
+  expect(await admitted.line).toBe("opened");
+  await admitted.exited;
   expect(existsSync(swapBarrierPath(db.filename))).toBe(false);
 }, 60_000);
