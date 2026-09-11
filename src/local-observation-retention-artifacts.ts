@@ -1,6 +1,6 @@
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
-import { dirname } from "node:path";
+import { dirname, join } from "node:path";
 import { JarvisError } from "./jarvis-error.js";
 
 export const SIDECARS = ["-wal", "-shm", "-journal"] as const;
@@ -84,14 +84,19 @@ export function candidateDigest(candidatePath: string): string {
  */
 export function removeProvenDirectory(directory: string, claim: {
   readonly device: string; readonly inode: string; readonly birthtime: string;
-}): boolean {
-  const quarantine = `${directory}.${randomUUID()}.releasing`;
+  /** When the identity describes a file inside the directory rather than the directory itself. */
+  readonly entry?: string;
+}, operationId?: string): boolean {
+  // Named from the operation when there is one, so a crash between the move and the delete leaves
+  // something a later recovery can still find and finish, rather than a random name nobody holds.
+  const quarantine = `${directory}.${(operationId ?? randomUUID()).replace(/^retention:/, "")}.releasing`;
   try {
     renameSync(directory, quarantine);
   } catch {
     return false;
   }
-  if (!stillClaimed(quarantine, claim.device, claim.inode, claim.birthtime)) {
+  const proof = claim.entry === undefined ? quarantine : join(quarantine, claim.entry);
+  if (!stillClaimed(proof, claim.device, claim.inode, claim.birthtime)) {
     try {
       renameSync(quarantine, directory);
     } catch {

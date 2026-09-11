@@ -1,9 +1,9 @@
 import { existsSync, rmSync, statSync } from "node:fs";
-import { join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { processStartToken } from "./authority-database-process.js";
 import type { AuthorityDb } from "./db.js";
 import {
-  activeGeneration, candidateStillClaimed, releaseRetentionOperationDirectory,
+  activeGeneration, candidateStillClaimed,
   type RetentionClaim, type RetentionSnapshotClaim,
 } from "./local-observation-retention-operation.js";
 import { removeProvenDirectory } from "./local-observation-retention-artifacts.js";
@@ -76,7 +76,18 @@ export function recoverLocalRetentionOperations(
     }
     // The candidate proves the directory is this operation's, and the directory is everything it
     // owns, so one removal takes the candidate, the snapshot and every sidecar with it.
-    releaseRetentionOperationDirectory(row.candidate_path);
+    // The identity above proved the candidate; the directory is removed by moving it aside and
+    // re-checking what moved, so a path another run has since taken is not destroyed by this one.
+    // The operation row's identity describes the candidate file, so the proof after the move is
+    // that file inside the directory that moved - not the directory, which was never what was
+    // recorded.
+    if (!removeProvenDirectory(dirname(row.candidate_path),
+      { device: row.claim_device, inode: row.claim_inode, birthtime: row.claim_birthtime,
+        entry: basename(row.candidate_path) },
+      row.operation_id)) {
+      report("retained_unproven");
+      continue;
+    }
     abandon(source, row.operation_id, row.state === "verified"
       ? "LOCAL_RETENTION_RECOVERED_UNAPPLIED" : "LOCAL_RETENTION_RECOVERED_PARTIAL", now);
     report(row.state === "verified" ? "removed_unapplied" : "removed_partial");
@@ -151,7 +162,7 @@ function recoverUnrecordedClaims(source: AuthorityDb, now: Date): readonly Reten
       // re-checked under the name it actually moved to, so a path that changed owner in between
       // cannot be destroyed by this call.
       const removed = removeProvenDirectory(staged, { device: String(claim.claim_device),
-        inode: String(claim.claim_inode), birthtime: String(claim.claim_birthtime) });
+        inode: String(claim.claim_inode), birthtime: String(claim.claim_birthtime) }, operationId);
       clear();
       report(removed ? "removed_partial" : "retained_unproven");
       continue;

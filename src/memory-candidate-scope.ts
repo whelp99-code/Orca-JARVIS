@@ -1,3 +1,4 @@
+import { candidateTaskSourceClosed } from "./memory-candidate-task-source.js";
 import { JarvisError, type AuthorityDb } from "./db.js";
 import { readMemoryCandidate } from "./memory-candidate-reader.js";
 import { memoryHash } from "./memory-candidate-values.js";
@@ -55,7 +56,11 @@ export function proposeMemoryCandidateScope(authority: AuthorityDb, candidateId:
     const candidate = readMemoryCandidate(authority.db, candidateId);
     if (candidate === undefined || candidate.state === "rejected" || candidate.state === "expired"
       || candidate.source.principal_id !== scope.owner || Date.parse(candidate.created_at) > now.getTime()
-      || new MemoryProjectionAuthority(authority).isProjectionIdSuppressed(candidateId)) return fail();
+      || new MemoryProjectionAuthority(authority).isProjectionIdSuppressed(candidateId)
+      // In the same transaction, for the same reason every other consumption asks: the owner can
+      // hide the originating task or narrow the project list after a candidate exists, and a scope
+      // proposed from it afterwards would carry work they have closed.
+      || candidateTaskSourceClosed(authority, candidateId)) return fail();
     const until = Math.min(expiry, Date.parse(candidate.candidate_expires_at));
     if (!Number.isFinite(until) || until <= now.getTime()) return fail();
     const core = { schema_version: 1 as const, authorization: "not_granted" as const,
