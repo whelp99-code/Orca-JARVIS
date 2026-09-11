@@ -1,5 +1,5 @@
 import { createHash, randomUUID } from "node:crypto";
-import { existsSync, readFileSync, rmSync, statSync } from "node:fs";
+import { existsSync, readFileSync, renameSync, rmSync, statSync } from "node:fs";
 import Database from "better-sqlite3";
 import { canonicalize } from "./canonical.js";
 import type { AuthorityDb } from "./db.js";
@@ -194,6 +194,35 @@ export function abandonRetentionOperation(
     // The record is evidence, not a lock: a failure to write it must not hide the original error.
   }
   releaseRetentionCandidate(operation.candidate_path);
+}
+
+/**
+ * Removes an artifact this operation can still prove is its own, by moving it first.
+ *
+ * Checking a pathname and then deleting that pathname are two operations, and between them the
+ * file can be replaced; the deletion would then fall on somebody else's file. Renaming is atomic,
+ * so the object that moves is the object that gets inspected and unlinked. A file that turns out
+ * not to be ours is put back and left alone.
+ *
+ * The sidecars are removed by name. The path is claimed exclusively for this operation and never
+ * handed out, so the names beside it are this operation's namespace; giving each sidecar its own
+ * recorded identity, or isolating every artifact in an operation-owned directory, is the stronger
+ * form and is recorded as follow-up rather than implied here.
+ */
+export function releaseProvenArtifact(path: string, proven: (moved: string) => boolean): boolean {
+  const moving = `${path}.releasing`;
+  try {
+    renameSync(path, moving);
+  } catch {
+    return false;
+  }
+  if (!proven(moving)) {
+    try { renameSync(moving, path); } catch { /* left under the moved name rather than deleted */ }
+    return false;
+  }
+  for (const suffix of SIDECARS) rmSync(`${path}${suffix}`, { force: true });
+  rmSync(moving, { force: true });
+  return true;
 }
 
 /** Removes the candidate and its sidecars. Callers own that path. */

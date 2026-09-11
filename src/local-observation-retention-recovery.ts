@@ -1,7 +1,7 @@
 import { existsSync, statSync } from "node:fs";
 import type { AuthorityDb } from "./db.js";
 import {
-  activeGeneration, candidateStillClaimed, releaseRetentionCandidate, snapshotStillClaimed,
+  activeGeneration, candidateStillClaimed, releaseProvenArtifact, snapshotStillClaimed,
   type RetentionClaim, type RetentionSnapshotClaim,
 } from "./local-observation-retention-operation.js";
 
@@ -64,11 +64,16 @@ export function recoverLocalRetentionOperations(
       report("retained_unproven");
       continue;
     }
-    releaseRetentionCandidate(row.candidate_path);
-    // The snapshot beside it is released on the same proof, with its sidecars: a write-ahead log
-    // left next to a removed database still occupies the name the retry has to claim.
+    // Moved, then proved, then unlinked: a replacement that arrives after the check above is not
+    // what gets deleted.
+    if (!releaseProvenArtifact(row.candidate_path, moved => candidateStillClaimed(moved, row))) {
+      report("retained_unproven");
+      continue;
+    }
+    // The snapshot beside it goes on the same proof, with its sidecars: a write-ahead log left
+    // next to a removed database still occupies the name the retry has to claim.
     const snapshotPath = `${row.candidate_path}${SNAPSHOT_SUFFIX}`;
-    if (snapshotStillClaimed(snapshotPath, row)) releaseRetentionCandidate(snapshotPath);
+    releaseProvenArtifact(snapshotPath, moved => snapshotStillClaimed(moved, row));
     abandon(source, row.operation_id, row.state === "verified"
       ? "LOCAL_RETENTION_RECOVERED_UNAPPLIED" : "LOCAL_RETENTION_RECOVERED_PARTIAL", now);
     report(row.state === "verified" ? "removed_unapplied" : "removed_partial");

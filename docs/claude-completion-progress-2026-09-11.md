@@ -66,6 +66,6 @@ push·merge·deploy·서비스 재시작·운영 DB/설정 변경·`current` 전
 | P2 복구가 일정 창에 가려짐 | 수정 | 복구를 fence claim **이전**으로 이동. `deferred`도 `recovered`를 함께 보고 |
 | P1 안전하지 않은 정수 row key 충돌 | 수정 | 비교 양쪽을 safe integer로 읽음. 재현이 `accepted:false`로 뒤집힘. 실제 INTEGER 열 회귀 추가(수정을 빼면 실패) |
 | P1 검증 후 후보 변조 가능 | 수정 | migration 092에 `verified_digest` 추가, 설치 직전 재확인. 재현이 `LOCAL_RETENTION_CANDIDATE_MODIFIED`로 거절되고 라이브 내용은 원본 유지 |
-| P1 최종 fence 이후 원본 쓰기 유실 | TODO | 최종 검사~rename 구간의 쓰기 배타성 필요 |
+| P1 최종 fence 이후 원본 쓰기 유실 | 수정 | 검사를 체크포인트 이후로 옮기고, 닫은 뒤 rename 직전까지 원본 바이트·sidecar 유무를 재확인. 재현이 `lateRows:0`(유실) → `lateRows:1`(보존) + SOURCE_CHANGED로 뒤집힘 |
 | P1 snapshot 경로 미소유·삭제 | 수정 | snapshot도 배타 확보, 실패 시 남의 파일 보존·자기 후보 회수. 재현이 `snapshotExists:true, candidateExists:false`로 뒤집힘. 연쇄로 드러난 sidecar 잔류(재시도 영구 차단)도 소유 증거 기반으로 정리 |
-| P1 복구의 경로 기반 TOCTOU·sidecar 미확인 | TODO | 검증과 삭제를 분리하지 않는 방식 필요 |
+| P1 복구의 경로 기반 TOCTOU·sidecar 미확인 | 수정 | 원자적으로 옮긴 뒤 옮긴 객체를 확인하고 삭제. 우리 것이 아니면 되돌리고 `retained_unproven`. sidecar는 배타 확보된 이름 공간이라는 근거를 명시하고 개별 식별·전용 디렉터리 격리는 후속으로 기록 |
