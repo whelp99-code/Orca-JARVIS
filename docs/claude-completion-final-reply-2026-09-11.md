@@ -21,13 +21,13 @@ M5의 설정 manifest·적용/rollback 안은 구현·회귀·전체 gate를 마
 |---|---|
 | worktree | `/home/jm/orca/workspaces/Orca-JARVIS/codex-routing-approval-ui` |
 | branch | `codex/routing-approval-ui` |
-| 제품 검증 SHA (전체 verify 입력) | `128d290485ff7f5cbd9ccaa5d5e000c9ac621cfa` |
-| 검증 시점 tree | `77631d90baef8402a2e0d988d46b20109a7297e2` |
-| 문서 포함 제출 HEAD | 이 회신서를 담은 문서 커밋. `git diff --name-only 128d290..HEAD`가 `docs/`만 보여야 한다 |
+| 제품 검증 SHA (전체 verify 입력) | `6f88422b1988cb6895477c603cf1b999c2085a90` |
+| 검증 시점 tree | `a2327d4fb8d814a7682e2426eb90356ee4d387f3` |
+| 문서 포함 제출 HEAD | 이 회신서를 담은 문서 커밋. `git diff --name-only 6f88422..HEAD`가 `docs/`만 보여야 한다 |
 | upstream | `not_configured` — ahead/behind 측정 불가 (`git rev-parse --abbrev-ref @{u}` 실패) |
 | tracked 변경 | M 0, D 0 |
 | untracked | 3 (`.omo/evidence/ulw/`, `.omo/ulw-loop/`, `node_modules`) — 도구 상태·공유 의존성, 커밋 대상 아님 |
-| 베이스라인 대비 | `082d689..128d290` 10 커밋 (문서 커밋 별도) |
+| 베이스라인 대비 | `082d689..6f88422` 16 커밋 (문서 커밋 별도) |
 | dashboard 파일 변경 | **0** (`git diff --name-only 082d689..HEAD | grep -ci dashboard`) |
 
 packager가 `source_dirty: true`로 기록한 것은 위 untracked 3건 때문이며, tracked 수정은 0이다.
@@ -109,19 +109,19 @@ fixture 통과를 실제 생산자 통과로 세지 않는다.
 
 | 항목 | 값 |
 |---|---|
-| run_id | `verify-20260911T051254Z` |
+| run_id | `verify-20260911T064437Z` |
 | command / cwd | `npm run verify` / worktree 절대경로 |
-| source_head / tree | `128d2904…` / `77631d90…` |
-| input_digest_before | `sha256:2651f2083f9ff818e006b8534c5a973e26cd124c55e6e073cb070acd432b315f` |
+| source_head / tree | `6f88422b…` / `a2327d4f…` |
+| input_digest_before | `sha256:3ab27f7b05f6343b6f77e0a86a4bec7718d9b9b5baba9954d79b3ab1fc57ff30` |
 | input_digest_after | 동일 (`input_stable=true`) |
-| started / finished | `2026-09-11T05:12:54+00:00` → `2026-09-11T05:36:12+00:00` (23분 18초) |
+| started / finished | `2026-09-11T06:44:37+00:00` → `2026-09-11T07:08:25+00:00` (23분 48초) |
 | exit_code / signal | `0` / `null` |
 | result_source | direct-process (이 세션이 monitor로 직접 회수) |
 | toolchain | node `v24.19.0`, npm `12.0.2`, abi `137` |
-| 집계 | backend shard1 278파일/1,915 · shard2 278파일/1,929 · dashboard 38파일/263 = **594파일 / 4,107 테스트** |
-| architecture | 665 모듈 / 2,470 간선 / 순환 0 |
+| 집계 | backend shard1 278파일/1,918 · shard2 278파일/1,929 · dashboard 38파일/263 = **594파일 / 4,110 테스트** |
+| architecture | 667 모듈 / 2,476 간선 / 순환 0 |
 | acceptance | `pre_gjc_ready`, `aggregate_status=stopped`, `completion_promoted=true`, `gjc_dispatched=false` |
-| log | `<QA>/verify-20260911T051254Z/verify.log`, sha256 `cef7c1225938bb98d2aa849b1256f037d2fffcd09327138e1ab9583fbaa899ae` |
+| log | `<QA>/verify-20260911T064437Z/verify.log`, sha256 `8e131a25be068e9c7e06996ef1c7a49837043527718b507dffb41a0fe48b5513` |
 
 과거 4,066은 목표치로 쓰지 않았다. 위 수치는 이번 실행의 로그 실측이다.
 
@@ -152,10 +152,10 @@ FAIL tests/integration/dashboard-personal-integrity.test.ts
 
 | 항목 | 값 |
 |---|---|
-| package root | `<QA>/package/jarvis-runtime-PpaW2S` |
-| source_head | `128d2904…` (`source_dirty=true` — untracked 3건) |
-| payload_files / dependency_entries | 1,521 / 6,668 |
-| receipt pin (독립 고정) | `946cf8913917d1707153775393c438565c0e6db909ccdcbd8cc53179adffd96a` |
+| package root | `<QA>/package/jarvis-runtime-jzt1O8` |
+| source_head | `6f88422b…` (`source_dirty=true` — untracked 3건) |
+| payload_files / dependency_entries | 1,525 / 6,668 |
+| receipt pin (독립 고정) | `ca88e28eee929b996ff4968f3cc627a9600ae3df0b8e8767c818723cfeff190d` |
 | verify-runtime-package | `ok=true`, `integrity=matched`, RC 0 |
 | signature_verified | **false** (운영 서명 없음) |
 | runtime_validation | `not_performed` |
@@ -278,11 +278,11 @@ rollback 조건·명령을 적었다. 새 fixture 키를 만들어 운영 인증
    ```bash
    cd /home/jm/orca/workspaces/Orca-JARVIS/codex-routing-approval-ui
    git log --oneline -6
-   git rev-parse 128d290485ff7f5cbd9ccaa5d5e000c9ac621cfa
+   git rev-parse 6f88422b1988cb6895477c603cf1b999c2085a90
    git status --porcelain
-   git diff --name-only 128d290..HEAD
+   git diff --name-only 6f88422..HEAD
    ```
-   제품 검증 SHA는 `128d290`이고, 마지막 명령이 `docs/`만 보여야 제품 입력 무변경이 성립한다.
+   제품 검증 SHA는 `6f88422`이고, 마지막 명령이 `docs/`만 보여야 제품 입력 무변경이 성립한다.
 
 2. 원래 P1 재현과 정식 회귀
    ```bash
@@ -301,16 +301,16 @@ rollback 조건·명령을 적었다. 새 fixture 키를 만들어 운영 인증
 
 3. receipt와 입력 readback
    ```bash
-   cat /home/jm/.cache/jarvis-m6-20260911/verify-20260911T051254Z/receipt.env
-   sha256sum /home/jm/.cache/jarvis-m6-20260911/verify-20260911T051254Z/verify.log
+   cat /home/jm/.cache/jarvis-m6-20260911/verify-20260911T064437Z/receipt.env
+   sha256sum /home/jm/.cache/jarvis-m6-20260911/verify-20260911T064437Z/verify.log
    ```
    기대: `exit_code=0`, before/after digest 동일, log sha256이 §6.1과 일치.
 
 4. 패키지 검증
    ```bash
    node scripts/verify-runtime-package.mjs \
-     /home/jm/.cache/jarvis-m6-20260911/package/jarvis-runtime-PpaW2S \
-     --receipt-sha256 946cf8913917d1707153775393c438565c0e6db909ccdcbd8cc53179adffd96a
+     /home/jm/.cache/jarvis-m6-20260911/package/jarvis-runtime-jzt1O8 \
+     --receipt-sha256 ca88e28eee929b996ff4968f3cc627a9600ae3df0b8e8767c818723cfeff190d
    ```
    기대: `integrity=matched`, `deployment_ready=false`.
 
@@ -324,9 +324,41 @@ rollback 조건·명령을 적었다. 새 fixture 키를 만들어 운영 인증
 
 6. 결론: R2/M2/M3 인용 계약/M4.1 adapter/M4.2 결속·차단 전파의 인수 여부를 판정하고, 남은 M4.2 두 항목(저장분 철회, 제외 프로젝트 범위)의 진행과 §7.1·7.2·7.3의 외부 의존성 해소(누가 무엇을 제공할지)를 지시한다.
 
+## 8bis. 독립 리뷰 — 수행함, 지적 9건 전부 수정
+
+`independent_review=not_performed`이 아니다. 다른 모델(GPT-5.6)에게 `082d689..HEAD`의 제품 diff 전체를
+읽히고, 계약별로 성립 여부와 재현을 요구했다. 판정은 **CHANGES_REQUIRED**였고 P1 7건·P2 1건·P3 1건이
+실행 가능한 재현과 함께 제기됐다. 재현 스크립트는
+`/home/jm/.cache/jarvis-indep-review-20260911/*.mjs`에 있다.
+
+전부 수정했고, **각각을 리뷰어 자신의 재현으로 전후 대조**했다.
+
+| 지적 | before (리뷰어 실측) | after (같은 스크립트) |
+|---|---|---|
+| P1 2^53 초과 정수 row key 충돌 | `accepted:true` — INTEGER 열이 달라도 통과 | `accepted:false`, `FOREIGN_ROW at progress_report_outbox` |
+| P1 검증 후 후보 변조 후 설치 | `operation:"applied"`, 라이브에 `tampered-after-verification` | `LOCAL_RETENTION_CANDIDATE_MODIFIED`, 라이브는 원본, 상태 `verified` |
+| P1 최종 검사 이후 원본 쓰기 유실 | `error:null`, `lateRows:0` | `LOCAL_RETENTION_SOURCE_CHANGED`, `lateRows:1`(보존) |
+| P1 snapshot 미소유 삭제·미설명 후보 | `snapshotExists:false`, `candidateExists:true` | `snapshotExists:true`, `candidateExists:false` |
+| P1 복구의 경로 기반 TOCTOU·sidecar | 확인 후 경로로 삭제 | 원자적 이동 → 이동한 객체 확인 → 삭제, 아니면 되돌리고 `retained_unproven` |
+| P1 숨긴 task 접수가 unbound 후보 커밋 | `rows:[awaiting_confirmation]`, `visible:true` | `rows:[] bindings:[] reviewFiles:[] visible:false` |
+| P1 준비된 승인이 receipt 적용에서 통과 | `state:"approved"`, `pubs:[published]` | `MEMORY_CANDIDATE_SUPPRESSED`, 발행 0 |
+| P2 복구가 일정 창에 가려짐 | claim 이후 실행 | claim 이전 실행, `deferred`도 `recovered` 보고 |
+| P3 routing CLI가 5번째 인자 수용 | 무시되는 인자 허용 | `=== 4` 복구 (내가 낸 계약 파손) |
+
+리뷰어가 성립한다고 판정한 것: refresh receipt 계약(JARVIS 측), 인용 분류, 배포 migration 불변,
+버전 1 설정 레코드 폐쇄성, 091의 FK가 rebuild·restore를 견딤.
+
+수정 과정에서 **제가 만든 회귀 두 개를 스스로 잡았다.** 복구가 snapshot sidecar를 남겨 재시도를
+영구히 막은 것(디렉터리를 찍어 확인)과, 바이트 기준선을 연결을 닫기 전에 계산해 정상 교체가 항상
+거절된 것(fence를 단계별로 찍어 확인)이다. 둘 다 추측을 세 번 빗나간 뒤 측정으로 특정했다.
+
+리뷰 수정으로 운영 기록 모듈이 리뷰가능성 한계를 넘자 gate가 그것을 잡았고(`exit 1`), 아티팩트
+수명주기를 `local-observation-retention-artifacts.ts`로 분리해 해소했다. 그 실패 run도 §6.1의 제외
+목록과 같은 원칙으로 기록에 남긴다.
+
 ## 9. 수행하지 않은 행동
 
 push·merge·deploy·서비스 재시작·운영 DB/설정 변경·`current` 전환·타 작업 산출물 삭제를 하지 않았다.
-운영 서명·notarization·실제 업무 실행·provider 쓰기·외부 전송도 하지 않았다. 독립 리뷰는
-`independent_review=not_performed`다. 같은 구현자가 만든 확인을 독립 승인으로 쓰지 않기 위해, 이
-회신서는 Codex의 독립 검증을 그대로 요청한다.
+운영 서명·notarization·실제 업무 실행·provider 쓰기·외부 전송도 하지 않았다. 독립 리뷰는 §8bis대로 **수행했고** 지적 9건을 전부 수정했다. 다만 그 리뷰어는 이 구현을 쓰지 않은
+다른 모델일 뿐 운영 승인 권한이 없으므로, 그 APPROVE를 최종 인수로 쓰지 않는다. 이 회신서는 Codex의
+독립 검증을 그대로 요청한다.
