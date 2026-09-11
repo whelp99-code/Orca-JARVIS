@@ -104,3 +104,34 @@ sb/mcp_remember_models.py와 sb/scoped_write_request.py의 SHA256은 이전79ec7
 다음 제공자 연동 검증은 새 버전의 명시적 출처 관계와 삭제·복원 전파 계약이
 제시되면 수행한다. 현재 기억 저장 요청에 임의 필드를 추가하거나 요약 본문에
 출처를 숨겨 넣어 자동 수집을 우회하지 않는다. 다른 자비스 개발 범위는 유지한다.
+
+
+## 착수 지점 조사 — 2026-09-11
+
+두 P1이 왜 같은 뿌리인지 코드에서 확인했다. **기억 후보 계약에 task 출처가 존재하지 않는다.**
+
+- `src/memory-candidate-types.ts:15-18` `MEMORY_CANDIDATE_REF_NAMESPACES` =
+  `control_command`, `control_receipt`, `verification_authority`, `verification_artifact`,
+  `inference_evidence`, `memory_candidate`, `second_brain_conflict`, `rejected_input`.
+  **task 네임스페이스가 없다.**
+- `MemoryCandidateSourceMetadata`(같은 파일)는 `request_id`, `receipt_id`, `outcome_id`,
+  `attempt_id`, `instruction_id`, `verification_evidence_id`를 갖지만 `task_id`가 없다.
+- 접수 경로 `src/cli-memory-intake.ts:41-64`는 입력 문서와 정책 문서만 받고 task 식별자를 요구하지
+  않는다. 따라서 “수집 전 task_id 차단”은 검사를 추가하는 문제가 아니라 **결속을 만드는 문제**다.
+- 소비 경로 `src/dashboard/memory-candidate-review.ts:12`는 `isProjectionIdSuppressed(candidateId)`만
+  본다. 원본 task가 차단돼도 후보 자체가 차단되지 않았으면 열람된다.
+- 차단 판정 자체는 이미 있다: `TaskTimelineSummaryReader.isSuppressed`
+  (`src/task-timeline-summary.ts:44-45`) → `TaskTimelinePopulation.isSuppressed`
+  (`src/task-timeline-population.ts:136`).
+
+그러므로 다음 작업 순서는 이렇게 고정한다.
+
+1. 후보가 원본 task를 기록할 자리를 만든다. 네임스페이스 추가는 닫힌 계약 변경이고 identity/source
+   digest 도메인(`MEMORY_CANDIDATE_DIGEST_DOMAINS`)에 영향을 주므로, 새 migration과 digest 호환
+   규칙을 함께 설계한다. 기존 배포 migration 바이트는 건드리지 않는다.
+2. 접수 시 그 task의 `isSuppressed`를 검사한다. request/run/completion만 검사하는 현재 판정을
+   대체하는 것이 아니라 **추가**한다.
+3. 소비 5지점(검토 열람, 소유자 결정, 승인 명령 실행 직전, dispatch 직전, 전송 중)에서 후보의 task
+   출처 차단을 다시 검사한다. 화면에서 숨기는 것으로 대체하지 않는다.
+4. 저장 후 삭제·재색인·백업 복원에서 파생 기억의 tombstone이 유지되는지 검증한다. 직접 MCP 클라이언트
+   2개 확인은 provider 측 계약이 필요하므로 그 부분만 외부 의존으로 남는다.
