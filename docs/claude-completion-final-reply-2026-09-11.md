@@ -21,7 +21,7 @@ JARVIS측 fail-closed refresh adapter와 M5의 설정 manifest·적용안은 **�
 | branch | `codex/routing-approval-ui` |
 | 제품 검증 SHA (전체 verify 입력) | `0d6d614d8f56a2e01b5cac67835b85ae1b00e859` |
 | 검증 시점 tree | `a7d74eb31fb4c98a103e68db3c201485c5cc5c4a` |
-| 문서 포함 제출 HEAD | 이 문서 커밋 이후 값 (§8의 재검증 절차에 기재) |
+| 문서 포함 제출 HEAD | `a407aba`(이 회신서 커밋)와 이 표를 실제 값으로 채운 후속 문서 커밋. 둘 다 `docs/`만 변경하며 `git diff --name-only 0d6d614..HEAD`로 확인된다 |
 | upstream | `not_configured` — ahead/behind 측정 불가 (`git rev-parse --abbrev-ref @{u}` 실패) |
 | tracked 변경 | M 0, D 0 |
 | untracked | 3 (`.omo/evidence/ulw/`, `.omo/ulw-loop/`, `node_modules`) — 도구 상태·공유 의존성, 커밋 대상 아님 |
