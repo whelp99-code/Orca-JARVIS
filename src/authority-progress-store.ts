@@ -32,6 +32,9 @@ export abstract class ProgressAuthorityDb extends GjcQuestionAuthorityDb {
 	lastAssembledModelCapture(): ModelTransportCapture | undefined {
 		return this.personalContext.lastCapture;
 	}
+	assembledModelSendCount(): number {
+		return this.personalContext.modelTransport.sent.length;
+	}
 	persistRecommendation(value: RecommendationPersistenceInput, now = timestamp()): StoredRecommendation {
 		return this.personalContext.persistRecommendation(value, now);
 	}
