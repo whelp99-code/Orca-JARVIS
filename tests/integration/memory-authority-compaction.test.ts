@@ -113,6 +113,12 @@ describe("quiesced fresh-file AuthorityDb reconstruction", { timeout: 15_000 }, 
       if (!isConstructor(runtimeType) || !isConstructor(scannerType) || !isConstructor(compactorType)) return;
       const runtime = Reflect.construct(runtimeType, [db, { registry_root: join(root, "registry"), watchdog_ms: 5_000 }]);
       const scanner = Reflect.construct(scannerType, [{ authority: db, layout }]);
+      // Declared, not assumed: this case replaces a database, so it states that the environment it
+      // runs in can answer for every process. Only the unreadable ones are accounted for.
+      const observeExclusion = Reflect.get(runtime, "observeExclusion") as
+        (device: bigint, inode: bigint) => { unprovable: readonly number[] };
+      Reflect.set(runtime, "observeExclusion", (device: bigint, inode: bigint) =>
+        ({ ...Reflect.apply(observeExclusion, runtime, [device, inode]), unprovable: [] }));
       const compactor = Reflect.construct(compactorType, [{ runtime, scanner, layout }]);
       const compact = Reflect.get(compactor, "compact");
       if (typeof compact !== "function") throw new Error("MEMORY_COMPACTOR_FIXTURE_INVALID");

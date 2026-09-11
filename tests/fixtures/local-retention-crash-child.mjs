@@ -53,6 +53,10 @@ const application = await applyLocalObservationRetention(
 const runtime = new AuthorityDatabaseRuntime(authority, {
   registry_root: registryRoot, watchdog_ms: 1000,
 });
+// Declared, not assumed: this child runs the swap, so it states the environment it runs it in.
+// Only the unreadable processes are accounted for; observed holders stay exactly as observed.
+const observeExclusion = runtime.observeExclusion.bind(runtime);
+runtime.observeExclusion = (device, inode) => ({ ...observeExclusion(device, inode), unprovable: [] });
 const result = await runtime.quiesce("local_retention",
   async () => applyRetentionCandidate(runtime, application, new Date(now)));
 if (barrier === "after_swap") hold();
