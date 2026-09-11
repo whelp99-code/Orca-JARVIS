@@ -100,7 +100,7 @@ export async function executeGjcCommand(
       }
       try {
         const assembled = await assembleDispatchContext(context, parsed);
-        if (assembled !== undefined) db.recordGjcModelDispatched(reservation.intent_id, now);
+        if (assembled !== undefined) db.recordGjcModelDispatched(reservation.intent_id, now, reservation.lease_fence);
         return {
           ok: true, command: "gjc.dispatch", intent_id: reservation.intent_id,
           ...(assembled === undefined ? {} : { model_request_bytes: assembled.capture.bytes, model_session_id: assembled.capture.session_id }),

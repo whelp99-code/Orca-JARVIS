@@ -33,9 +33,12 @@ export abstract class GjcIntentAuthorityDb extends GjcDispatchAuthorityDb {
 		return this.db.prepare("SELECT 1 FROM gjc_intent_events WHERE intent_id=? AND event_type=? LIMIT 1").get(intentId, eventType) !== undefined;
 	}
 
-	recordGjcModelDispatched(intentId: string, now = timestamp()): void {
+	recordGjcModelDispatched(intentId: string, now = timestamp(), leaseFence?: number, worker = gjcWorkerId()): void {
 		this.atomic(() => {
-			this.db.prepare("INSERT INTO gjc_intent_events(intent_id,event_type,payload_json,created_at) VALUES(?,?,?,?)").run(intentId, "model_dispatched", json({}), now);
+			const owned = this.db.prepare("SELECT lease_fence,lease_owner FROM gjc_intents WHERE intent_id=?").get(intentId) as Row | undefined;
+			if (owned === undefined) return;
+			if (leaseFence !== undefined && (Number(owned.lease_fence) !== leaseFence || owned.lease_owner !== worker)) return;
+			this.db.prepare("INSERT INTO gjc_intent_events(intent_id,event_type,payload_json,created_at) VALUES(?,?,?,?)").run(intentId, "model_dispatched", json({ lease_fence: Number(owned.lease_fence), worker }), now);
 			this.db.prepare("UPDATE gjc_intents SET state=CASE WHEN state='uncertain' THEN 'pending' ELSE state END WHERE intent_id=?").run(intentId);
 		});
 	}
@@ -47,7 +50,7 @@ export abstract class GjcIntentAuthorityDb extends GjcDispatchAuthorityDb {
 		});
 	}
 
-	reserveGjcDispatchFromTask(task: Record<string, unknown>, now = timestamp()): { intent_id: string; reserved: boolean } {
+	reserveGjcDispatchFromTask(task: Record<string, unknown>, now = timestamp()): { intent_id: string; reserved: boolean; lease_fence: number } {
 		this.assertGjcDispatchTask(task, now);
 		const config = this.gjcConfig();
 		if (!config?.operational || task.cwd !== config.canonical_cwd || task.session_id !== config.session_id)
@@ -61,32 +64,34 @@ export abstract class GjcIntentAuthorityDb extends GjcDispatchAuthorityDb {
 		idempotencyKey: string,
 		continuationId?: string,
 		now = timestamp(),
-	): { intent_id: string; reserved: boolean } {
+	): { intent_id: string; reserved: boolean; lease_fence: number } {
 		if (!this.gjcOperational()) throw new JarvisError("GJC_NOT_CONNECTED");
 		if (!idempotencyKey) throw new JarvisError("GJC_IDEMPOTENCY_REQUIRED");
 		const intentId = deterministic("gjc", idempotencyKey);
 		const payload_json = json(payload);
 		const payload_digest = sha(payload_json);
-		const owner = gjcWorkerId();
+		const worker = gjcWorkerId();
 		const expires = leaseExpiry(now);
 		return this.atomic(() => {
-			const prior = this.db.prepare("SELECT intent_id,payload_digest,kind,continuation_id,state,lease_owner,lease_expires_at FROM gjc_intents WHERE idempotency_key=?").get(idempotencyKey) as Row | undefined;
+			const prior = this.db.prepare("SELECT intent_id,payload_digest,kind,continuation_id,state,lease_owner,lease_expires_at,lease_fence FROM gjc_intents WHERE idempotency_key=?").get(idempotencyKey) as Row | undefined;
 			if (prior) {
 				if (prior.payload_digest !== payload_digest || prior.kind !== kind || (prior.continuation_id ?? null) !== (continuationId ?? null))
 					throw new JarvisError("GJC_INTENT_REPLAY_CONFLICT");
 				const id = String(prior.intent_id);
+				const fence = Number(prior.lease_fence ?? 0);
 				if (this.gjcIntentHasEvent(id, "model_dispatched"))
-					return { intent_id: id, reserved: false };
-				const owner = prior.lease_owner;
-				const abandoned = prior.state === "pending" && typeof owner === "string" && owner.startsWith("pid:") && (!gjcWorkerAlive(owner) || String(prior.lease_expires_at ?? "") <= now);
+					return { intent_id: id, reserved: false, lease_fence: fence };
+				const priorOwner = prior.lease_owner;
+				const abandoned = prior.state === "pending" && typeof priorOwner === "string" && priorOwner.startsWith("pid:") && !gjcWorkerAlive(priorOwner);
 				if (!abandoned && prior.state !== "uncertain")
-					return { intent_id: id, reserved: false };
-				this.db.prepare("UPDATE gjc_intents SET state='pending',lease_owner=?,lease_expires_at=? WHERE intent_id=?").run(owner, expires, id);
-				return { intent_id: id, reserved: true };
+					return { intent_id: id, reserved: false, lease_fence: fence };
+				const taken = this.db.prepare("UPDATE gjc_intents SET state='pending',lease_owner=?,lease_expires_at=?,lease_fence=lease_fence+1 WHERE intent_id=? AND ifnull(lease_owner,'')=ifnull(?, '') AND lease_fence=?").run(worker, expires, id, priorOwner ?? "", fence);
+				if (taken.changes !== 1) return { intent_id: id, reserved: false, lease_fence: fence };
+				return { intent_id: id, reserved: true, lease_fence: fence + 1 };
 			}
-			this.db.prepare("INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,payload_digest,idempotency_key,state,created_at,lease_owner,lease_expires_at) VALUES(?,?,?,?,?,?,?,?,?,?)").run(intentId, continuationId ?? null, kind, payload_json, payload_digest, idempotencyKey, "pending", now, owner, expires);
+			this.db.prepare("INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,payload_digest,idempotency_key,state,created_at,lease_owner,lease_expires_at,lease_fence) VALUES(?,?,?,?,?,?,?,?,?,?,?)").run(intentId, continuationId ?? null, kind, payload_json, payload_digest, idempotencyKey, "pending", now, worker, expires, 1);
 			this.db.prepare("INSERT INTO gjc_intent_events(intent_id,event_type,payload_json,created_at) VALUES(?,?,?,?)").run(intentId, "created", json({ kind, idempotency_key: idempotencyKey }), now);
-			return { intent_id: intentId, reserved: true };
+			return { intent_id: intentId, reserved: true, lease_fence: 1 };
 		});
 	}
 

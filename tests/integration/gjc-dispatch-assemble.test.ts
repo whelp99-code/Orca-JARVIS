@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { executeGjcCommand } from "../../src/cli-gjc-commands.js";
 import { RecordingModelTransport } from "../../src/index.js";
+import { gjcWorkerId } from "../../src/gjc-intent-store.js";
 import { gjcTaskFor, seedGjcDispatch } from "../fixtures/gjc-dispatch-fixture.js";
 import { contextAssemblerInput, CONTEXT_NOW } from "../fixtures/context-assembler-input.js";
 import { assemblePersonalContext } from "../../src/index.js";
@@ -267,6 +268,44 @@ describe("gjc.dispatch assemble envelope", () => {
     expect(result?.duplicate).not.toBe(true);
     expect(transport.sent).toHaveLength(1);
     expect(db.gjcIntentHasEvent(String(result?.intent_id), "model_dispatched")).toBe(true);
+    expect(db.db.prepare("SELECT lease_owner FROM gjc_intents WHERE idempotency_key=?").get("dead-worker")).toEqual({ lease_owner: gjcWorkerId() });
+    db.close();
+  });
+
+  it("does not steal a living worker lease when the clock passes expiry", async () => {
+    const db = await initialized();
+    db.configureGjc(process.cwd(), "s", true);
+    const source = seedGjcDispatch(db);
+    const input = contextAssemblerInput();
+    for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
+      db.persistObservation(observation, CONTEXT_NOW);
+    }
+    const snapshot = assemblePersonalContext(input);
+    const memory = snapshot.evidence.find(item => item.kind === "confirmed_memory");
+    if (memory === undefined) throw new Error("memory");
+    const task = gjcTaskFor(db, source, "live-expiry");
+    db.reserveGjcDispatchFromTask(task, CONTEXT_NOW);
+    const transport = new RecordingModelTransport();
+    const later = new Date(Date.parse(CONTEXT_NOW) + 61_000).toISOString();
+    const result = await executeGjcCommand({
+      args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
+      argument: writeJson({
+        task,
+        assemble_context: input,
+        memory_evidence: [{
+          memory_ref: snapshot.payload.included_memory_refs[0] ?? memory.evidence_id,
+          evidence_id: memory.evidence_id,
+          source_id: memory.source_id,
+          digest: memory.digest,
+          observed_at: memory.observed_at,
+          fresh_until: snapshot.expires_at,
+        }],
+      }),
+      fourth: undefined, fifth: undefined, sixth: undefined, db,
+      dependencies: { clock: () => new Date(later), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+    } as never);
+    expect(result).toMatchObject({ ok: true, duplicate: true });
+    expect(transport.sent).toHaveLength(0);
     db.close();
   });
 });
