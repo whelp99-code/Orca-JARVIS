@@ -5,7 +5,7 @@ import { parseMemoryCandidatePolicy } from "./memory-candidate-policy.js";
 import { memoryCandidateIdentity, computeMemoryCandidate } from "./memory-candidate-material.js";
 import { requireMemoryCandidateAuthority } from "./memory-candidate-authority.js";
 import { readMemoryCandidate } from "./memory-candidate-reader.js";
-import { candidateTaskSourceSuppressed } from "./memory-candidate-task-source.js";
+import { candidateTaskSourceClosed } from "./memory-candidate-task-source.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { createMemoryCandidateReviewEnvelope, MemoryCandidateReviewSpool } from "./memory-candidate-review-spool.js";
 import { MemoryCandidateDispatchSpool } from "./memory-candidate-dispatch-spool.js";
@@ -27,7 +27,7 @@ export function publishAutomaticMemoryCandidate(authority: AuthorityDb, inputVal
         || new MemoryProjectionAuthority(authority).isProjectionIdSuppressed(candidate.candidate_id)
         // Publishing is what makes the material reachable, so it asks about the work as well as
         // about the candidate.
-        || candidateTaskSourceSuppressed(authority, candidate.candidate_id)) {
+        || candidateTaskSourceClosed(authority, candidate.candidate_id)) {
         throw new JarvisError("MEMORY_AUTO_PUBLICATION_INVALID");
       }
       return requireMemoryCandidateAuthority(authority.db, { input, identity: memoryCandidateIdentity(input), now: at });

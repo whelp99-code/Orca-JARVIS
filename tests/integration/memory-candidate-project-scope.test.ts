@@ -1,7 +1,12 @@
 import { join } from "node:path";
 import { readdirSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { afterEach, expect, it } from "vitest";
+import { execFileSync } from "node:child_process";
 import { readCandidateReview } from "../../src/dashboard/memory-candidate-review.js";
+import {
+  stageMemoryCandidateDecision, type MemoryCandidateDecisionHost,
+} from "../../src/dashboard/memory-candidate-decision-staging.js";
+
 import { MemoryCandidateStore } from "../../src/memory-candidate-store.js";
 import {
   candidateTaskProject, memoryProjectScopePath,
@@ -180,3 +185,34 @@ it("refuses a document it cannot read exactly, including one reached through a l
   expect(() => f.store.classify(inferredMemoryInput({ sensitivity: "personal" }), TASK))
     .toThrow("MEMORY_PROJECT_SCOPE_CONFIG_INVALID");
 }, 60_000);
+
+it("stops an approval that was preparable before the project left the list", async () => {
+  const f = await fixture();
+  proposeWorkItem(f.database, TASK, PROJECT);
+  f.write(allow(PROJECT));
+  const classified = f.store.classify(inferredMemoryInput({ sensitivity: "personal" }), TASK);
+  // Only the authority and the clock are read before the refusal this pins.
+  const host = { options: { authority: f.database.authority, clock: () => NOW } } as
+    unknown as MemoryCandidateDecisionHost;
+  const decision = { candidate_id: classified.candidate_id, decision: "confirm" as const,
+    operation: "remember" as const, actor: "principal:owner", token: "token" };
+  // In scope, the project is not what stops it: it gets as far as the candidate's own state.
+  expect(() => stageMemoryCandidateDecision(host, decision as never))
+    .not.toThrow("MEMORY_CANDIDATE_SUPPRESSED");
+
+  // The owner narrows the list after the candidate exists and after it was preparable.
+  f.write(allow("project:other"));
+
+  expect(() => stageMemoryCandidateDecision(host, decision as never))
+    .toThrow("MEMORY_CANDIDATE_SUPPRESSED");
+  expect(candidateTaskSourceClosed(f.database.authority, classified.candidate_id)).toBe(true);
+}, 60_000);
+
+it("asks the same question at every place that consumes a candidate", () => {
+  // The project policy is only as good as the last path that forgot it, and a review found four
+  // that had. This pins the invariant rather than the four: no module under src/ may ask about
+  // suppression alone, because that question ignores the owner's project list.
+  const hits = execFileSync("git", ["grep", "-l", "candidateTaskSourceSuppressed", "--", "src"],
+    { encoding: "utf8" }).trim().split("\n");
+  expect(hits).toEqual(["src/memory-candidate-task-source.ts"]);
+});

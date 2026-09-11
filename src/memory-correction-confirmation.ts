@@ -1,4 +1,4 @@
-import { candidateTaskSourceSuppressed } from "./memory-candidate-task-source.js";
+import { candidateTaskSourceClosed } from "./memory-candidate-task-source.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
@@ -29,7 +29,7 @@ export function confirmMemoryCorrectionCandidate(
     if (new MemoryProjectionAuthority(authority).isProjectionIdSuppressed(candidateId)
       // The correction lane approves the same candidates the remember lane does, and an owner who
       // hid the work hid it for both.
-      || candidateTaskSourceSuppressed(authority, candidateId)) {
+      || candidateTaskSourceClosed(authority, candidateId)) {
       throw new JarvisError("MEMORY_CANDIDATE_SUPPRESSED");
     }
     const candidate = authority.db.prepare(

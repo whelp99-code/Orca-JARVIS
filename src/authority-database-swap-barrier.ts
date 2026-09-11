@@ -1,42 +1,17 @@
 import {
-  closeSync, existsSync, fstatSync, fsyncSync, linkSync, lstatSync, openSync, readFileSync,
-  realpathSync, rmSync, writeSync,
+  closeSync, constants, fstatSync, fsyncSync, linkSync, openSync, readFileSync, rmSync, writeSync,
 } from "node:fs";
 import { randomUUID } from "node:crypto";
-import { dirname, resolve } from "node:path";
-import { z } from "zod";
+import { dirname } from "node:path";
 import { canonicalize } from "./canonical.js";
-import { processStartToken, ProcessObservationError } from "./authority-database-process.js";
+import { processStartToken } from "./authority-database-process.js";
+import {
+  BarrierSchema, canonicalDatabase, isOwner, ownerAlive, removeIdentifiedFile, syncPath,
+  type AuthoritySwapBarrier,
+} from "./authority-database-swap-barrier-record.js";
 import { JarvisError } from "./jarvis-error.js";
 
-const BarrierSchema = z.object({
-  schema_version: z.literal(1),
-  pid: z.number().int().positive(),
-  start_token: z.string().regex(/^\d+$/),
-  database: z.string().min(1),
-  reason: z.enum(["local_retention", "memory_compaction"]),
-  created_at: z.string().min(1),
-}).strict();
-
-export type AuthoritySwapBarrier = z.infer<typeof BarrierSchema>;
-
-/**
- * One name for one file, whichever way a caller spells it.
- *
- * Two processes exclude each other only if they derive the same barrier, and a database can be
- * named by a relative path, through a symlinked directory, or by an alias. The real path of the
- * parent plus the entry name is the same string for all of them, which is what the retention claim
- * already resolves paths with. A parent that does not exist yet cannot be a live database, so the
- * lexical path stands in and nothing is excluded.
- */
-function canonicalDatabase(database: string): string {
-  const absolute = resolve(database);
-  try {
-    return resolve(realpathSync(dirname(absolute)), absolute.slice(absolute.lastIndexOf("/") + 1));
-  } catch {
-    return absolute;
-  }
-}
+export type { AuthoritySwapBarrier } from "./authority-database-swap-barrier-record.js";
 
 /**
  * The barrier for a database, named from the database itself.
@@ -69,9 +44,11 @@ export function readSwapBarrier(database: string): AuthoritySwapBarrier | undefi
   }
   let decoded: unknown;
   let identity;
+  let contents = "";
   try {
     identity = fstatSync(descriptor, { bigint: true });
-    decoded = JSON.parse(readFileSync(descriptor, "utf8"));
+    contents = readFileSync(descriptor, "utf8");
+    decoded = JSON.parse(contents);
   } catch (error) {
     if (error instanceof SyntaxError) throw new JarvisError("AUTHORITY_SWAP_BARRIER_INVALID");
     throw error;
@@ -83,7 +60,7 @@ export function readSwapBarrier(database: string): AuthoritySwapBarrier | undefi
     throw new JarvisError("AUTHORITY_SWAP_BARRIER_INVALID");
   }
   if (ownerAlive(parsed.data)) return parsed.data;
-  removeIdentifiedFile(path, identity);
+  removeIdentifiedFile(path, identity, contents);
   return undefined;
 }
 
@@ -183,65 +160,38 @@ export function publishSwapBarrier(
   }
 }
 
-/** Gives the barrier up. Only the process that took it may. */
+/**
+ * Gives the barrier up. Only the process that took it may, and only the record it wrote.
+ *
+ * The record is read again here rather than trusted from before, so a release removes the file it
+ * just proved is its own: bytes and identity together, the same test debris removal uses.
+ */
 export function releaseSwapBarrier(database: string): void {
   const path = swapBarrierPath(database);
+  let descriptor: number;
+  try {
+    descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch (error) {
+    if (error instanceof Error && Reflect.get(error, "code") === "ENOENT") return;
+    throw new JarvisError("AUTHORITY_SWAP_BARRIER_INVALID");
+  }
   let identity;
+  let contents: string;
   try {
-    identity = lstatSync(path, { bigint: true });
-  } catch (error) {
-    if (error instanceof Error && Reflect.get(error, "code") === "ENOENT") return;
-    throw error;
-  }
-  const held = readSwapBarrier(database);
-  if (held === undefined) return;
-  if (!isOwner(held)) throw new JarvisError("AUTHORITY_DATABASE_SWAP_IN_PROGRESS");
-  removeIdentifiedFile(path, identity);
-  syncPath(dirname(path));
-}
-
-/** Removes a path only while it is still the file that was inspected. */
-function removeIdentifiedFile(path: string, identity: { readonly dev: bigint; readonly ino: bigint }): void {
-  let present;
-  try {
-    present = lstatSync(path, { bigint: true });
-  } catch (error) {
-    if (error instanceof Error && Reflect.get(error, "code") === "ENOENT") return;
-    throw error;
-  }
-  // A record published between the read and here is somebody's live barrier, not the debris this
-  // call decided to clear.
-  if (present.dev !== identity.dev || present.ino !== identity.ino) return;
-  rmSync(path, { force: true });
-}
-
-function isOwner(barrier: AuthoritySwapBarrier): boolean {
-  if (barrier.pid !== process.pid) return false;
-  try {
-    return processStartToken(process.pid) === barrier.start_token;
-  } catch (error) {
-    if (error instanceof ProcessObservationError) return false;
-    throw error;
-  }
-}
-
-function ownerAlive(barrier: AuthoritySwapBarrier): boolean {
-  if (!existsSync(`/proc/${barrier.pid}`)) return false;
-  try {
-    return processStartToken(barrier.pid) === barrier.start_token;
-  } catch (error) {
-    // A process that vanished between the two reads is gone; anything else is unreadable, and an
-    // unreadable owner is treated as live so a swap in progress is never overrun by guesswork.
-    if (error instanceof ProcessObservationError) return existsSync(`/proc/${barrier.pid}`);
-    throw error;
-  }
-}
-
-function syncPath(path: string): void {
-  const descriptor = openSync(path, "r");
-  try {
-    fsyncSync(descriptor);
+    identity = fstatSync(descriptor, { bigint: true });
+    contents = readFileSync(descriptor, "utf8");
   } finally {
     closeSync(descriptor);
   }
+  let parsed;
+  try {
+    parsed = BarrierSchema.safeParse(JSON.parse(contents));
+  } catch {
+    throw new JarvisError("AUTHORITY_SWAP_BARRIER_INVALID");
+  }
+  if (!parsed.success) throw new JarvisError("AUTHORITY_SWAP_BARRIER_INVALID");
+  if (!isOwner(parsed.data)) throw new JarvisError("AUTHORITY_DATABASE_SWAP_IN_PROGRESS");
+  removeIdentifiedFile(path, identity, contents);
+  syncPath(dirname(path));
 }
+

@@ -42,11 +42,20 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
     // writer is a different thing - the rename would leave its commits in a file nothing reads
     // again - so a writer that is not this process refuses the replacement here, while the source
     // is still the live database and nothing has been closed, removed or moved.
-    if (foreignWriters(runtime, input.old_device, input.old_inode) !== 0) {
+    if (writableHolders(runtime, input.old_device, input.old_inode, true) !== 0) {
       releaseSwapBarrier(authority.filename);
       throw new AuthorityError("MEMORY_SOURCE_WRITER_ACTIVE");
     }
     authority.close();
+    // Asked again with this connection gone, and this time without excusing anything for sharing a
+    // pid: a second writable connection inside this process would be orphaned by the rename just
+    // as surely as another process's, and the write-ahead log removed below would take its
+    // committed rows with it. Readers are still left to the drain that follows the rename.
+    if (writableHolders(runtime, input.old_device, input.old_inode, false) !== 0) {
+      releaseSwapBarrier(authority.filename);
+      authority.reopen();
+      throw new AuthorityError("MEMORY_SOURCE_WRITER_ACTIVE");
+    }
     removeSidecars(authority.filename);
     if (input.cancellation) {
       const source = lstatSync(authority.filename, { bigint: true });
@@ -113,11 +122,12 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
  * rather than through the runtime, because the runtime's own reading of the retired inode is a
  * distinct step of the swap that happens after the rename, and the two must not be one call.
  */
-function foreignWriters(
-  runtime: AuthorityDatabaseRuntime, device: bigint, inode: bigint,
+function writableHolders(
+  runtime: AuthorityDatabaseRuntime, device: bigint, inode: bigint, excuseSelf: boolean,
 ): number {
-  return discoverOpenInodeHolders(device, inode, runtime.registeredProcesses())
-    .writable_holders.filter(holder => holder.pid !== process.pid).length;
+  const writers = discoverOpenInodeHolders(device, inode, runtime.registeredProcesses())
+    .writable_holders;
+  return (excuseSelf ? writers.filter(holder => holder.pid !== process.pid) : writers).length;
 }
 
 function removeSidecars(path: string): void {

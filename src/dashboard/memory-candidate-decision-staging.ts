@@ -1,4 +1,4 @@
-import { candidateTaskSourceSuppressed } from "../memory-candidate-task-source.js";
+import { candidateTaskSourceClosed } from "../memory-candidate-task-source.js";
 import { MemoryProjectionAuthority } from "../memory-projection-authority.js";
 import { createHash } from "node:crypto";
 import { canonicalize } from "../canonical.js";
@@ -54,7 +54,7 @@ input: MemoryCandidateDecisionInput,
     // Hiding the work hides what confirming it would store, including a decision prepared while
     // the task was still visible: the candidate itself may be untouched and still not confirmable.
     if (new MemoryProjectionAuthority(host.options.authority).isProjectionIdSuppressed(input.candidate_id)
-      || candidateTaskSourceSuppressed(host.options.authority, input.candidate_id)) {
+      || candidateTaskSourceClosed(host.options.authority, input.candidate_id)) {
       throw new JarvisError("MEMORY_CANDIDATE_SUPPRESSED");
     }
   };
