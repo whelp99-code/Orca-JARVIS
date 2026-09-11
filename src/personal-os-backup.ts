@@ -138,11 +138,12 @@ export function restoreSqlite(input: {
   mkdirSync(dirname(destPath), { recursive: true });
   try {
     copyFileSync(backupPath, destPath);
+    const check = quickCheck(destPath);
+    if (check !== "ok") throw new PersonalOsError("E_RESTORE_FAILED");
+    return { destPath, quick_check: check, ...digestFile(destPath) };
   } catch (error) {
+    rmSync(destPath, { force: true });
     if (error instanceof PersonalOsError) throw error;
     throw new PersonalOsError("E_RESTORE_FAILED");
   }
-  const check = quickCheck(destPath);
-  if (check !== "ok") throw new PersonalOsError("E_RESTORE_FAILED");
-  return { destPath, quick_check: check, ...digestFile(destPath) };
 }

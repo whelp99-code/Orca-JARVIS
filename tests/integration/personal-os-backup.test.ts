@@ -81,4 +81,13 @@ describe("personal-OS backup, restore, and publish", () => {
       destPath: "/home/jm/.local/state/orca-jarvis/jarvis.sqlite",
     })).toThrow(PersonalOsError);
   });
+
+  it("refuses a non-sqlite backup instead of copying it as recovered state", () => {
+    const root = scratch();
+    const junk = join(root, "junk.sqlite");
+    const dest = join(root, "restore", "jarvis.sqlite");
+    mkdirSync(join(root, "restore"), { recursive: true });
+    writeFileSync(junk, "not-a-database");
+    expect(() => restoreSqlite({ backupPath: junk, destPath: dest })).toThrow(PersonalOsError);
+  });
 });
