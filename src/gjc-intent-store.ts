@@ -70,6 +70,33 @@ export abstract class GjcIntentAuthorityDb extends GjcDispatchAuthorityDb {
 		});
 	}
 
+	recordGjcSendAttemptStarted(intentId: string, attemptId: string, now = timestamp(), leaseFence = 0): void {
+		this.atomic(() => {
+			this.db.prepare("INSERT INTO gjc_intent_events(intent_id,event_type,payload_json,created_at) VALUES(?,?,?,?)").run(intentId, "model_send_attempt_started", json({ attempt_id: attemptId, lease_fence: leaseFence }), now);
+		});
+	}
+
+	recordGjcSendAttemptFailed(intentId: string, attemptId: string, now = timestamp(), leaseFence = 0): void {
+		this.atomic(() => {
+			this.db.prepare("INSERT INTO gjc_intent_events(intent_id,event_type,payload_json,created_at) VALUES(?,?,?,?)").run(intentId, "model_send_attempt_failed", json({ attempt_id: attemptId, lease_fence: leaseFence }), now);
+		});
+	}
+
+	latestGjcSendAttempt(intentId: string, leaseFence?: number): { attempt_id: string; failed: boolean } | undefined {
+		const row = (leaseFence === undefined
+			? this.db.prepare("SELECT payload_json FROM gjc_intent_events WHERE intent_id=? AND event_type='model_send_attempt_started' ORDER BY rowid DESC LIMIT 1").get(intentId)
+			: this.db.prepare("SELECT payload_json FROM gjc_intent_events WHERE intent_id=? AND event_type='model_send_attempt_started' AND json_extract(payload_json,'$.lease_fence')=? ORDER BY rowid DESC LIMIT 1").get(intentId, leaseFence)) as Row | undefined;
+		if (row === undefined || typeof row.payload_json !== "string") return undefined;
+		try {
+			const payload = JSON.parse(row.payload_json) as { attempt_id?: unknown };
+			if (typeof payload.attempt_id !== "string") return undefined;
+			const failed = this.db.prepare("SELECT 1 FROM gjc_intent_events WHERE intent_id=? AND event_type='model_send_attempt_failed' AND json_extract(payload_json,'$.attempt_id')=? LIMIT 1").get(intentId, payload.attempt_id) !== undefined;
+			return { attempt_id: payload.attempt_id, failed };
+		} catch {
+			return undefined;
+		}
+	}
+
 	recordGjcReconciledReceipt(intentId: string, now = timestamp()): void {
 		const worker = gjcWorkerId();
 		const expires = leaseExpiry(now);
@@ -129,7 +156,10 @@ export abstract class GjcIntentAuthorityDb extends GjcDispatchAuthorityDb {
 				const fence = Number(prior.lease_fence ?? 0);
 				if (this.gjcIntentHasEvent(id, "model_dispatched"))
 					return { intent_id: id, reserved: false, lease_fence: fence };
-				if (this.gjcIntentHasFenceEvent(id, "model_send_started", fence) && !this.gjcIntentHasFenceEvent(id, "model_send_failed", fence))
+				const latestAttempt = this.latestGjcSendAttempt(id, fence);
+				if (latestAttempt !== undefined && !latestAttempt.failed)
+					return { intent_id: id, reserved: false, lease_fence: fence };
+				if (latestAttempt === undefined && this.gjcIntentHasFenceEvent(id, "model_send_started", fence))
 					return { intent_id: id, reserved: false, lease_fence: fence };
 				const priorOwner = prior.lease_owner;
 				const abandoned = prior.state === "pending" && typeof priorOwner === "string" && priorOwner.startsWith("pid:") && !gjcWorkerAlive(priorOwner);

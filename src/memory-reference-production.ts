@@ -63,7 +63,16 @@ export function createProductionMemoryReference(authority: AuthorityDb, options:
     at => { readFence?.(at); statusFence?.(at); },
   );
   let closing: Promise<void> | undefined;
-  return { reader, deliverAssembled: modelSession.deliver.bind(modelSession), close: (): Promise<void> => {
+  return {
+    reader,
+    deliverAssembled: modelSession.deliver.bind(modelSession),
+    reselectAndDeliver: (
+      input: unknown,
+      evidence: Parameters<AssembledModelSession["deliver"]>[1],
+      now: string,
+      sessionId: string,
+    ) => modelSession.deliver(input, evidence, now, sessionId),
+    close: (): Promise<void> => {
     if (options.transport !== undefined) return Promise.resolve();
     return closing ??= transport.close();
   } };

@@ -96,7 +96,10 @@ export async function executeGjcCommand(
       preflightDispatchAssemble(context, parsed);
       const reservation = db.reserveGjcDispatchFromTask(parsed.task, now);
       if (!reservation.reserved) {
-        if (db.gjcIntentHasEvent(reservation.intent_id, "model_send_started") && !db.gjcIntentHasEvent(reservation.intent_id, "model_dispatched")) {
+        const latestAttempt = db.latestGjcSendAttempt(reservation.intent_id, reservation.lease_fence);
+        const unknownSend = (latestAttempt !== undefined && !latestAttempt.failed)
+          || (latestAttempt === undefined && db.gjcIntentHasEvent(reservation.intent_id, "model_send_started"));
+        if (unknownSend && !db.gjcIntentHasEvent(reservation.intent_id, "model_dispatched")) {
           const deliveryId = db.gjcSendDeliveryId(reservation.intent_id);
           const transport = context.dependencies.memoryReferenceOptions?.model_transport;
           const reconciled = deliveryId !== undefined && transport !== undefined && "reconcile" in transport
@@ -261,8 +264,14 @@ async function assembleDispatchContext(
   if (reservation !== undefined) {
     context.db.recordGjcSendStarted(reservation.intent_id, reservation.intent_id, now, reservation.lease_fence);
   }
+  let attempts = 0;
   await session.send(prepared.capture, reservation === undefined ? {} : {
+    beginAttempt: () => {
+      attempts += 1;
+      context.db.recordGjcSendAttemptStarted(reservation.intent_id, `${reservation.lease_fence}:${attempts}`, now, reservation.lease_fence);
+    },
     onKnownNegative: () => {
+      context.db.recordGjcSendAttemptFailed(reservation.intent_id, `${reservation.lease_fence}:${attempts}`, now, reservation.lease_fence);
       context.db.recordGjcSendFailed(reservation.intent_id, now, reservation.lease_fence);
     },
   });
