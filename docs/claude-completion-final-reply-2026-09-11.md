@@ -30,8 +30,8 @@
 
 
 > **2026-09-12 갱신 (§9.28 정본).** 이 시점의 상태는 `IN_PROGRESS`다. 제품 SHA는
-> `8c245d8c0e57b1f548c8307f1ea3f4787b2c3763`, 전체 gate `VERIFY21=0`, 패키지 `jarvis-runtime-GFqQk1`
-> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=8c245d8…`.
+> `c67a139261b5b92071a77794fefda5443dee66b7`, 전체 gate `VERIFY23=0`, 패키지 `jarvis-runtime-JPQBPL`
+> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=c67a139…`.
 > **닫힘:** 기존 목적지 보존(REVIEW-01) — 목적지를 생성·점유·교체하는 경로 자체를 제거했고 세 형태 모두 회귀로 고정.
 > **열림:** writer 배타성(REVIEW-02/-03) — `b4927fb` 는 창을 좁혔을 뿐 봉쇄하지 않으며, 증명 불가 환경의 거절은
 > 두 구현을 만들어 측정한 결과 각각 "항상 거절" 과 "타이밍 의존 거절" 로 무너져 되돌렸다(§9.28). 남은 해법은
@@ -1073,7 +1073,7 @@ namespace)에서 돌린다. 그러면 위 규칙이 의미를 갖고, 거절은 
 
 | 항목 | 값 |
 |---|---|
-| 입력 SHA | `8c245d8c0e57b1f548c8307f1ea3f4787b2c3763` |
+| 입력 SHA | `c67a139261b5b92071a77794fefda5443dee66b7` |
 | exit code | **0** (`VERIFY17=0`) |
 | 종료 시각 | `2026-09-12 04:15:59 +0900` |
 | backend shard 1/2 | 279 파일 / 1,932 테스트 |
@@ -1104,8 +1104,8 @@ load average가 8.39**였다. 고아는 같은 UID로 임시 DB를 열어둔 채
 
 | 항목 | 값 |
 |---|---|
-| package root | `<QA>/package/jarvis-runtime-GFqQk1` |
-| source_head | `8c245d8c0e57b1f548c8307f1ea3f4787b2c3763` — gate 입력과 같은 SHA |
+| package root | `<QA>/package/jarvis-runtime-JPQBPL` |
+| source_head | `c67a139261b5b92071a77794fefda5443dee66b7` — gate 입력과 같은 SHA |
 | payload_files / dependency_entries | 1,541 / 6,668 |
 | receipt pin (독립 고정) | `a22b8a7b83cf61ec7d3881d9e625cc7c95862ea9d628326dfdf8f3123a2d3f33` |
 | verify-runtime-package | `ok=true`, `integrity="matched"`, RC 0 |
@@ -1144,10 +1144,10 @@ argv로 받고, 일정 서비스 테스트는 `<db>.retention-candidate/candidat
 
 | 항목 | 실측 |
 | --- | --- |
-| 제품 SHA | `8c245d8c0e57b1f548c8307f1ea3f4787b2c3763` |
-| 전체 gate | `VERIFY21=0` (backend 279 파일 / 1,942 케이스, dashboard 38 파일 / 263 케이스) |
-| 런타임 패키지 | `jarvis-runtime-GFqQk1`, `source_head=8c245d8…`, payload 1,541, receipt `3dada57e…`, `integrity=matched`, `deployment_ready=false` |
-| manifest | `gate_input_sha=8c245d8…`, 아티팩트 40, 누락 0 |
+| 제품 SHA | `c67a139261b5b92071a77794fefda5443dee66b7` |
+| 전체 gate | `VERIFY23=0` (backend 279 파일 / 1,942 케이스, dashboard 38 파일 / 263 케이스) |
+| 런타임 패키지 | `jarvis-runtime-JPQBPL`, `source_head=c67a139…`, payload 1,541, receipt `bb0f7f26…`, `integrity=matched`, `deployment_ready=false` |
+| manifest | `gate_input_sha=c67a139…`, 아티팩트 40, 누락 0 |
 
 **닫힌 것 — 기존 목적지 보존 (REVIEW-01).** `claimRetentionOperation` 은 이제 staged 디렉터리만 만들고,
 announce된 목적지는 생성·점유·교체하지 않는다(`takeRetentionDestination` 제거, 커밋 `9fb366a`). mkdir→rmdir→rename
@@ -1181,7 +1181,7 @@ announce된 목적지는 생성·점유·교체하지 않는다(`takeRetentionDe
 
 **따라서 REVIEW-20260912-02 와 -03 은 열린 상태로 유지한다.**
 
-### 9.29 증명 가능한 절반은 실제로 착지시켰다 (커밋 `8c245d8`)
+### 9.29 증명 가능한 절반은 실제로 착지시켰다 (커밋 `c67a139`)
 
 `exclusionHole(filename)` 은 두 swap 경로에서 **sidecar 제거 이전에** 묻는다: 소스가 이 사용자 밖 소유이거나
 외부 쓰기 가능이면 `LOCAL_RETENTION_EXCLUSION_UNPROVABLE` / `MEMORY_EXCLUSION_UNPROVABLE` 로 거절한다.
@@ -1198,6 +1198,33 @@ announce된 목적지는 생성·점유·교체하지 않는다(`takeRetentionDe
 
 | 최종 실측 | 값 |
 | --- | --- |
-| 제품 SHA | `8c245d8c0e57b1f548c8307f1ea3f4787b2c3763` |
-| 전체 gate | `VERIFY21=0` (backend 279 / 1,942, dashboard 38 / 263) |
-| 패키지 | `jarvis-runtime-GFqQk1`, `source_head=8c245d8…`, payload 1,541, receipt `3dada57e…`, `integrity=matched`, `deployment_ready=false` |
+| 제품 SHA | `c67a139261b5b92071a77794fefda5443dee66b7` |
+| 전체 gate | `VERIFY23=0` (backend 279 / 1,942, dashboard 38 / 263) |
+| 패키지 | `jarvis-runtime-JPQBPL`, `source_head=c67a139…`, payload 1,541, receipt `bb0f7f26…`, `integrity=matched`, `deployment_ready=false` |
+
+### 9.30 기본값을 거절로 올렸다 (커밋 `a1f7c31`, `c67a139`)
+
+`exclusionHole(filename, observed)` 은 이제 관측에 **구멍이 있으면** — 이 사용자 소유인데 `/proc` 을 읽을 수 없는
+프로세스가 하나라도 있으면 — 파괴 이전에 거절한다. 소유자·외부 쓰기 권한 조건도 함께 유지된다. §9.28 에서
+"항상 거절한다"는 이유로 되돌렸던 판단을 뒤집었다: 성공을 가정하던 테스트가 깨진다는 것은 안전 기준을 낮출
+이유가 아니라, **허용 조건을 명시적으로 세우라는 요구**다.
+
+- 새 seam `AuthorityDatabaseRuntime.observeExclusion(device, inode)` 은 관측자에서 직접 답을 취한다.
+  런타임의 post-rename 관측은 swap 의 다른 단계이므로 한 호출로 합치지 않는다 — 이 규칙이 깨졌을 때
+  기존 compaction 테스트의 `mockImplementationOnce` 가 앞당겨 소비됐고, 우회가 아니라 그 규칙을 지켜 고쳤다.
+- 허용 조건은 `tests/fixtures/provable-exclusion.ts` 의 `withProvableExclusion(runtime)` 으로 **선언**한다.
+  정산 대상은 판독 불가 프로세스뿐이며, 관측된 보유자는 그대로 두므로 실제 보유자에 대한 거절은 모두 그대로
+  발화한다. 적용 지점은 retention exclusivity·schedule·recovery, memory cancellation compaction·real-process
+  driver·correction control fixture, 급사 자식 프로세스, 반사적 memory-authority-compaction — 8곳이다.
+- **거절 보존 인수**는 seam 없이 이 호스트의 실제 답으로 돈다: 거절이 일어나고 소스 inode·행 수·WAL·후보가
+  모두 남고 barrier 가 남지 않는 것을 확인한다. 완전한 답을 주는 호스트에서는 진행을 허용한다(같은 케이스가
+  분기한다). 변이 검사: 구멍 분기를 지우면 `promise resolved instead of rejecting` 으로 실패한다.
+
+| 최종 실측 | 값 |
+| --- | --- |
+| 제품 SHA | `c67a139261b5b92071a77794fefda5443dee66b7` |
+| 전체 gate | `VERIFY23=0` (backend 279 / 1,942, dashboard 38 / 263) |
+| 패키지 | `jarvis-runtime-JPQBPL`, `source_head=c67a139…`, payload 1,542, receipt `bb0f7f26…`, `integrity=matched`, `deployment_ready=false` |
+
+남은 잔여는 하나다: admission 없이 데이터베이스를 연 **숨은** 프로세스와 특권 프로세스. 전자는 이제 거절로
+**막히지만**(구멍이 있으면 교체하지 않는다) 배제된 것은 아니며, 후자는 사용자 공간 프로토콜의 명시된 한계다.
