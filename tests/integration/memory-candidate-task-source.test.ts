@@ -4,7 +4,8 @@ import { afterEach, expect, it } from "vitest";
 import { readCandidateReview } from "../../src/dashboard/memory-candidate-review.js";
 import { MemoryCandidateStore } from "../../src/memory-candidate-store.js";
 import {
-  candidateTaskSource, candidateTaskSourceSuppressed, recordCandidateTaskSource,
+  candidateTaskSource, candidateTaskSourceSuppressed, memoriesAwaitingTaskWithdrawal,
+  recordCandidateTaskSource,
 } from "../../src/memory-candidate-task-source.js";
 import { buildFreshAuthority } from "../../src/memory-authority-fresh-builder.js";
 import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
@@ -148,4 +149,24 @@ it("keeps a task hidden after a backup taken before it was hidden is restored", 
   } finally {
     restored.close();
   }
+}, 60_000);
+
+it("lists what a hidden task still has stored, and only that", async () => {
+  const f = await fixture();
+  recordCandidateTaskSource(f.authority, f.candidateId, TASK, NOW);
+  // Nothing is outstanding while the task is visible, whatever was stored from it.
+  expect(memoriesAwaitingTaskWithdrawal(f.authority)).toEqual([]);
+
+  hide(f.authority, TASK);
+
+  const outstanding = memoriesAwaitingTaskWithdrawal(f.authority);
+  expect(outstanding).toHaveLength(1);
+  expect(outstanding[0]).toMatchObject({ candidate_id: f.candidateId, task_id: TASK });
+  expect(String(outstanding[0]?.content_digest)).toMatch(/^sha256:[0-9a-f]{64}$/);
+
+  // The list clears when the owner-approved suppression lands; this test does not forge one, so
+  // what it pins is the reporting rule and its scope, not the withdrawal itself.
+  const unbound = await fixture();
+  hide(unbound.authority, TASK);
+  expect(memoriesAwaitingTaskWithdrawal(unbound.authority)).toEqual([]);
 }, 60_000);
