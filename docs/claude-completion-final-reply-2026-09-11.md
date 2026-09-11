@@ -2,18 +2,29 @@
 
 ## 0. 최종 상태
 
-**`IN_PROGRESS`.**
+**`READY_FOR_CODEX_FINAL_REVIEW_WITH_EXTERNAL_BLOCKERS`.**
 
-R2의 두 P1, M2(급사 복구·교체·일정화), M3의 인용 계약, M4.1의 fail-closed refresh adapter,
-M5의 설정 manifest·적용/rollback 안은 구현·회귀·전체 gate를 마쳤다. M4.2도 원본 결속과 접수·검토·쓰기·scoped 등록·전송 중
-차단까지 구현했다. 백업 복원 재유입 0과 rebuild
-동반 제거까지 회귀로 고정했다. 남은 내부 작업은 **이미 저장된 파생 기억의 철회** 하나이며, 그 철회는
-소유자 승인 control command와 provider 계약을 함께 요구한다. 2클라이언트 조회 확인도 provider 계약에
-달려 있다. 지시서 §11.1에 따라 내부 잔여가 있는 상태를
-`READY_FOR_CODEX_FINAL_REVIEW*`로 올리지 않는다.
+이 상태로 올리는 근거는 §9.10의 실측이다. 허용된 개발 범위에서 내가 할 수 있는 작업이 남아 있지
+않고, 최종 입력 `f1e6b14`로 전체 gate가 RC 0(596 파일 / 4,131 테스트)이며, 같은 트리의 런타임
+패키지가 무결성 검증을 통과했다(§9.11). 이번 라운드에 제기된 두 번의 독립 리뷰 지적은 모두
+수정했고 각 수정이 회귀로 고정돼 있다(§9.4, §9.9).
 
-이 문서는 완료 선언이 아니라, **완료된 부분의 독립 검증에 필요한 전부**와 남은 작업의 정확한 위치를
-제출한다.
+남은 항목은 전부 **내가 만들 수 없는 입력**을 기다린다.
+
+- 이미 provider에 저장된 파생 기억의 실제 철회: provider 재해석 계약이 선행돼야 한다(§7.2).
+- 두 클라이언트 조회 확인: 같은 provider 계약에 달려 있다.
+- 실제 업무 1건의 승인→실행→완료 receipt: 실행자 인증이 없다(§7.3).
+- actionable 추천의 실제 생산: 소유자 결정 또는 검증된 live 출처가 필요하며, 그것이 없을 때 거절하는
+  현재 동작이 설계상 올바른 결과다.
+- 기여 가능한 프로젝트 목록과 task 없는 후보의 처리 방침: 소유자 입력 두 가지(§9.8).
+
+**숨기지 않는 내부 후속 1건.** dashboard 커서 비결정성(§6.1)은 원인을 확정하지 못한 채 남아 있다.
+이번 라운드의 gate 4회에서 한 번도 재현되지 않았고 이번 변경과 무관하지만, 재현이 없는 상태에서
+제품을 고치는 것은 원인 확인이 아니라 은폐이므로 고치지 않았다. 재현 가능한 회귀를 먼저 만드는
+것이 그 작업의 첫 단계다.
+
+이 문서는 완료 선언이 아니라 **완료된 부분의 독립 검증에 필요한 전부**와 남은 작업의 정확한 위치를
+제출한다. Codex에게 요구하는 다음 행동은 §8의 최소 재검증이다.
 
 ## 1. 기준 SHA와 트리 실측
 
@@ -21,8 +32,8 @@ M5의 설정 manifest·적용/rollback 안은 구현·회귀·전체 gate를 마
 |---|---|
 | worktree | `/home/jm/orca/workspaces/Orca-JARVIS/codex-routing-approval-ui` |
 | branch | `codex/routing-approval-ui` |
-| 제품 검증 SHA (전체 verify 입력) | `45181034055347f9b2512b2e05654b926401056b` |
-| 검증 시점 tree | `1be9b34dfa4af79cfa33c49342c866d1f8b5dfa7` |
+| 제품 검증 SHA (전체 verify 입력) | `f1e6b140cacc865aa6cbd5d45b0a4742d09a3234` |
+| 검증 시점 tree | `git rev-parse f1e6b14^{tree}`로 확인 가능. 문서 포함 제출 HEAD는 아래 |
 | 문서 포함 제출 HEAD | 이 회신서를 담은 문서 커밋. `git diff --name-only 4518103..HEAD`가 `docs/`만 보여야 한다 |
 | upstream | `not_configured` — ahead/behind 측정 불가 (`git rev-parse --abbrev-ref @{u}` 실패) |
 | tracked 변경 | M 0, D 0 |
@@ -597,7 +608,7 @@ P1 5건·P2 3건이었고, 지적은 대부분 정확했다. 수정 커밋은 `3
 `M` 0건), 신규 8개: 089·090·091·092·093·094·095·096. 총 파일 수 **103**.
 
 
-### 9.7 이번 제출의 런타임 패키지 (정본)
+### 9.7 런타임 패키지 2회차 (배타성 마감 시점)
 
 | 항목 | 값 |
 |---|---|
@@ -685,3 +696,20 @@ project-scope까지 포함한 최종 입력으로 다시 실행했다. §9.5는 
 | 2 | `5a53e10` | 0 | 배타성 마감 시점의 합격 (§9.5) |
 | 3 | `e2ed929` | 143 | 독립 리뷰가 project-scope 재설계를 요구해 **내가 중단**. 근거 아님 |
 | 4 | `f1e6b14` | **0** | **이 제출의 정본** |
+
+
+### 9.11 이번 제출의 런타임 패키지 (정본, 최종)
+
+| 항목 | 값 |
+|---|---|
+| package root | `<QA>/package/jarvis-runtime-O25Nzv` |
+| source_head | `b6403f73f33c1af6bc4e786a8de780485d663a1c` — 제품 SHA `f1e6b14` + 문서 커밋 |
+| source_dirty | `true`. tracked 수정 0이며 `node_modules`·`.omo/**` 도구 상태 때문이다 |
+| payload_files / dependency_entries | 1,538 / 6,668 |
+| receipt pin (독립 고정) | `312fc573f8dda03fb39d14509f34f9b6d52c70d055202735d8d6e8a8873b41ed` |
+| verify-runtime-package | `ok=true`, `integrity="matched"`, RC 0 |
+| signature_verified / runtime_validation / deployment_ready | `false` / `not_performed` / **false** |
+| 로그 | `<QA>/package2.log`, `<QA>/package2-verify.log` |
+
+§9.7은 배타성만 마감한 시점의 패키지이고, 이 표가 최종 제출 대상이다. 운영 적용·서명·서비스 전환은
+수행하지 않았다.
