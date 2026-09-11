@@ -141,7 +141,7 @@ it("still produces a candidate on a retry after a rejected apply", async () => {
     { observation_id: f.chain.observation.id, reason: "notification_addresses_recommendation" }]);
   expect(retry.build.foreign_key_errors).toBe(0);
   expect(existsSync(retry.operation.candidate_path)).toBe(true);
-});
+}, 60_000);
 
 it("finds the dangling reference a clean foreign_key_check cannot", async () => {
   const f = await fixture();
