@@ -43,7 +43,12 @@ describe("GJC runtime ownership", () => {
     const service = new GjcRuntimeService(db, new GjcCoordinatorClient(), "shared");
     await service.once(now);
     const old = db.db.prepare("SELECT fence FROM gjc_runtime_leases WHERE id=1").get() as { fence: number };
-    await expect(service.once("2026-09-07T00:01:00.000Z")).resolves.toMatchObject({ state: "disconnected" });
+    // A cycle stamps its heartbeat at the injected time plus the milliseconds it really took, so a
+    // lease taken at 00:00:00 expires a hair after 00:01:00 whenever the cycle is not instant. The
+    // boundary instant therefore passed or failed on how busy the machine was; an instant that is
+    // unambiguously past the lease asserts the same thing - an expired lease is retaken with a new
+    // fence - without asking the clock for a favour.
+    await expect(service.once("2026-09-07T00:02:00.000Z")).resolves.toMatchObject({ state: "disconnected" });
     expect(db.db.prepare("SELECT fence FROM gjc_runtime_leases WHERE id=1").get()).toEqual({ fence: old.fence + 1 });
   });
 
