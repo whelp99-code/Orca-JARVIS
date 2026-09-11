@@ -21,7 +21,9 @@ const hold = () => {
 
 const stopPoint = sql => {
   if (/^\s*ATTACH DATABASE/i.test(sql)) return "during_copy";
-  if (/UPDATE local_retention_claim_intents SET claim_device/i.test(sql)) return "before_identity";
+  if (/UPDATE local_retention_claim_intents SET claim_device/i.test(sql)) {
+    return barrier === "after_identity" ? "after_identity" : "before_identity";
+  }
   if (/INSERT INTO local_retention_operations/i.test(sql)) {
     return /'applied'/.test(sql) ? "before_swap" : "after_claim";
   }

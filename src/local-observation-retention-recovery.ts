@@ -128,20 +128,27 @@ function recoverUnrecordedClaims(source: AuthorityDb, now: Date): readonly Reten
       claim_birthtime: text("claim_birthtime") };
     if (!existsSync(directory)) {
       // The destination is only ever taken by renaming a staged claim onto it, so a run that died
-      // before that rename left its work under a name derived from this very intent: the
-      // destination it announced and the operation id it generated. Nobody else can spell that
-      // name, which is what makes removing it different from removing a destination somebody else
-      // may have created. Anything still there is this lane's own abandoned work.
+      // before that rename left nothing at the destination and the name is free again whatever
+      // happens next. Its work, if any, is under a name derived from this intent.
       const staged = stagedClaimPath(directory, operationId);
-      if (existsSync(staged)) {
-        if (claim.claim_device !== null && !directoryStillClaimed(staged, claim)) {
-          report("retained_unproven");
-          continue;
-        }
-        rmSync(staged, { recursive: true, force: true });
+      if (!existsSync(staged)) {
+        clear();
+        report("already_gone");
+        continue;
       }
+      // Whether that object is ours is decided by the identity recorded for it, not by the name.
+      // A name this run chose is not a claim on whatever is wearing it now, which is the same rule
+      // that keeps recovery off a destination it cannot account for. Unproven, it stays exactly
+      // where it is and is reported; the intent still goes, because the destination it was holding
+      // was never taken and nothing is served by refusing that path to every later run.
+      if (claim.claim_device === null || !directoryStillClaimed(staged, claim)) {
+        clear();
+        report("retained_unproven");
+        continue;
+      }
+      rmSync(staged, { recursive: true, force: true });
       clear();
-      report("already_gone");
+      report("removed_partial");
       continue;
     }
     // An intent without a recorded identity says only that this run meant to create the path. What

@@ -315,14 +315,52 @@ it("frees the destination a run that died before recording identity never reache
   expect(existsSync(staged)).toBe(true);
 
   const recovered = recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT));
+  // No identity was recorded for it, so it is not proved to be ours and is left alone. Reported by
+  // review: the name this run chose is not a claim on whatever is wearing it.
   expect(recovered).toEqual([{ operation_id: operationId, recorded_state: "preparing",
-    candidate_path: seed.candidateFile, outcome: "already_gone" }]);
-  expect(existsSync(staged)).toBe(false);
+    candidate_path: seed.candidateFile, outcome: "retained_unproven" }]);
+  expect(existsSync(staged)).toBe(true);
   expect(scalar(db, "SELECT COUNT(*) FROM local_retention_claim_intents")).toBe(0);
 
-  // The point of the change: the same destination is available again.
+  // The point of the change: the destination it announced was never taken, so it is free again.
   const application = await applyLocalObservationRetention(db, seed.cutoff, seed.candidate);
   expect(existsSync(application.operation.candidate_path)).toBe(true);
   expect(scalar(db, "SELECT COUNT(*) FROM local_retention_operations WHERE state='verified'"))
     .toBe(1);
+}, 60_000);
+
+it("recovers a staged claim whose identity it can still prove", async () => {
+  const seed = await seeded();
+  await crashAt(seed, "after_identity");
+  const db = reopen(seed);
+  const operationId = String(db.db
+    .prepare("SELECT operation_id FROM local_retention_claim_intents").pluck().get());
+  const staged = stagedClaimPath(seed.candidate, operationId);
+  expect(existsSync(staged)).toBe(true);
+  expect(existsSync(seed.candidate)).toBe(false);
+
+  const recovered = recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT));
+  // The identity recorded for that directory still describes it, so it is this lane's own work.
+  expect(recovered).toEqual([{ operation_id: operationId, recorded_state: "preparing",
+    candidate_path: seed.candidateFile, outcome: "removed_partial" }]);
+  expect(existsSync(staged)).toBe(false);
+  expect(scalar(db, "SELECT COUNT(*) FROM local_retention_claim_intents")).toBe(0);
+}, 60_000);
+
+it("leaves an object squatting a staged name exactly as it was", async () => {
+  const seed = await seeded();
+  await crashAt(seed, "before_identity");
+  const db = reopen(seed);
+  const operationId = String(db.db
+    .prepare("SELECT operation_id FROM local_retention_claim_intents").pluck().get());
+  const staged = stagedClaimPath(seed.candidate, operationId);
+  // Somebody else's object at that name, with the dead run's own directory gone.
+  rmSync(staged, { recursive: true, force: true });
+  mkdirSync(staged, { recursive: true });
+  writeFileSync(join(staged, "sentinel.txt"), "not ours\n");
+
+  const recovered = recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT));
+  expect(recovered).toEqual([{ operation_id: operationId, recorded_state: "preparing",
+    candidate_path: seed.candidateFile, outcome: "retained_unproven" }]);
+  expect(readFileSync(join(staged, "sentinel.txt"), "utf8")).toBe("not ours\n");
 }, 60_000);

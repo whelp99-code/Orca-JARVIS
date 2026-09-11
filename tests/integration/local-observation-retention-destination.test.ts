@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import {
-  existsSync, lstatSync, mkdirSync, readFileSync, symlinkSync, writeFileSync,
+  existsSync, lstatSync, mkdirSync, readFileSync, readdirSync, statSync, symlinkSync, writeFileSync,
 } from "node:fs";
 import { basename, dirname, join, relative } from "node:path";
 import { afterEach, expect, it } from "vitest";
@@ -128,4 +128,24 @@ it("leaves an occupied destination exactly as it was when the claim fails", asyn
   expect(readFileSync(occupiedFile, "utf8")).toBe("not this run's file either");
   // The refusal leaves no claim behind either.
   expect(db.db.prepare("SELECT COUNT(*) FROM local_retention_claim_intents").pluck().get()).toBe(0);
+});
+
+// Reported by review: the claim is now staged and renamed onto the destination, and rename is the
+// one operation that would replace an empty directory rather than refuse it. The name is refused
+// before anything moves, so an empty directory standing there survives exactly like a full one.
+it("refuses an empty directory standing at the destination and leaves it there", async () => {
+  const { db, root, cutoff } = await source();
+  const empty = join(root, "empty-destination");
+  mkdirSync(empty);
+  const before = statSync(empty, { bigint: true });
+
+  await expect(applyLocalObservationRetention(db, cutoff, empty))
+    .rejects.toMatchObject({ code: "LOCAL_RETENTION_DESTINATION_INVALID" });
+
+  const after = statSync(empty, { bigint: true });
+  expect({ dev: after.dev, ino: after.ino }).toEqual({ dev: before.dev, ino: before.ino });
+  expect(readdirSync(empty)).toEqual([]);
+  // Nothing was announced either: the path is still free for whoever owns that directory.
+  expect(Number(db.db.prepare("SELECT COUNT(*) FROM local_retention_claim_intents").pluck().get()))
+    .toBe(0);
 });
