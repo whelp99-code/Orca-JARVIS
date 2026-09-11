@@ -1,4 +1,5 @@
 import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { openUnderSwapAdmission } from "./authority-database-swap-barrier.js";
 import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { z } from "zod";
@@ -52,7 +53,8 @@ function scenarioTimes(clock: string): { readonly anchor_at: string; readonly vi
 }
 
 function migrationEntries(dbPath: string): readonly { readonly id: string; readonly sha256: string }[] {
-  const db = new Database(dbPath, { readonly: true, fileMustExist: true });
+  const db = openUnderSwapAdmission(dbPath,
+    () => new Database(dbPath, { readonly: true, fileMustExist: true }));
   try {
     return db.prepare("SELECT id, checksum AS sha256 FROM schema_migrations ORDER BY id").all() as Array<{
       readonly id: string;

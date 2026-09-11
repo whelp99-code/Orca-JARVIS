@@ -1,4 +1,5 @@
 import { spawn, type ChildProcess } from "node:child_process";
+import { openUnderSwapAdmission } from "./authority-database-swap-barrier.js";
 import { existsSync, unlinkSync } from "node:fs";
 import { join } from "node:path";
 import Database from "better-sqlite3";
@@ -174,7 +175,8 @@ export async function runPersonalOsProcessStress(input: ProcessStressInput): Pro
     client.sendShutdown();
     await waitExit(child, 5_000);
     client.close();
-    const sqlite = new Database(dbPath, { readonly: true, fileMustExist: true });
+    const sqlite = openUnderSwapAdmission(dbPath,
+      () => new Database(dbPath, { readonly: true, fileMustExist: true }));
     const cursor = readCycleCursor(sqlite);
     sqlite.close();
     unlinkIfExists(socketPath);

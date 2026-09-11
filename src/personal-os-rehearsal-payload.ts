@@ -1,4 +1,5 @@
 import { copyFileSync, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import { openUnderSwapAdmission } from "./authority-database-swap-barrier.js";
 import { dirname, join } from "node:path";
 import Database from "better-sqlite3";
 import { JarvisError } from "./db.js";
@@ -37,7 +38,7 @@ export async function migrateRehearsalSqlite(input: {
   readonly migrationsPath: string;
 }): Promise<void> {
   mkdirSync(dirname(input.dbPath), { recursive: true });
-  const database = new Database(input.dbPath);
+  const database = openUnderSwapAdmission(input.dbPath, () => new Database(input.dbPath));
   try {
     database.pragma("busy_timeout = 5000");
     database.pragma("foreign_keys = ON");
@@ -57,7 +58,8 @@ export async function migrateRehearsalSqlite(input: {
 }
 
 export function assertMigratedSchema(dbPath: string): void {
-  const database = new Database(dbPath, { readonly: true, fileMustExist: true });
+  const database = openUnderSwapAdmission(dbPath,
+    () => new Database(dbPath, { readonly: true, fileMustExist: true }));
   try {
     const tables = database.prepare(
       "SELECT name FROM sqlite_master WHERE type='table'",
