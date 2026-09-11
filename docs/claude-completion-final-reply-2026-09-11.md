@@ -21,13 +21,13 @@ M5의 설정 manifest·적용/rollback 안은 구현·회귀·전체 gate를 마
 |---|---|
 | worktree | `/home/jm/orca/workspaces/Orca-JARVIS/codex-routing-approval-ui` |
 | branch | `codex/routing-approval-ui` |
-| 제품 검증 SHA (전체 verify 입력) | `6f88422b1988cb6895477c603cf1b999c2085a90` |
-| 검증 시점 tree | `a2327d4fb8d814a7682e2426eb90356ee4d387f3` |
-| 문서 포함 제출 HEAD | 이 회신서를 담은 문서 커밋. `git diff --name-only 6f88422..HEAD`가 `docs/`만 보여야 한다 |
+| 제품 검증 SHA (전체 verify 입력) | `e67534f7dcec84e3dfcf0190280be8d6db581696` |
+| 검증 시점 tree | `b1918255d67df216913f64ad80e67b511fc8d958` |
+| 문서 포함 제출 HEAD | 이 회신서를 담은 문서 커밋. `git diff --name-only e67534f..HEAD`가 `docs/`만 보여야 한다 |
 | upstream | `not_configured` — ahead/behind 측정 불가 (`git rev-parse --abbrev-ref @{u}` 실패) |
 | tracked 변경 | M 0, D 0 |
 | untracked | 3 (`.omo/evidence/ulw/`, `.omo/ulw-loop/`, `node_modules`) — 도구 상태·공유 의존성, 커밋 대상 아님 |
-| 베이스라인 대비 | `082d689..6f88422` 16 커밋 (문서 커밋 별도) |
+| 베이스라인 대비 | `082d689..e67534f` 20 커밋 (문서 커밋 별도) |
 | dashboard 파일 변경 | **0** (`git diff --name-only 082d689..HEAD | grep -ci dashboard`) |
 
 packager가 `source_dirty: true`로 기록한 것은 위 untracked 3건 때문이며, tracked 수정은 0이다.
@@ -109,19 +109,19 @@ fixture 통과를 실제 생산자 통과로 세지 않는다.
 
 | 항목 | 값 |
 |---|---|
-| run_id | `verify-20260911T064437Z` |
+| run_id | `verify-20260911T073829Z` |
 | command / cwd | `npm run verify` / worktree 절대경로 |
-| source_head / tree | `6f88422b…` / `a2327d4f…` |
-| input_digest_before | `sha256:3ab27f7b05f6343b6f77e0a86a4bec7718d9b9b5baba9954d79b3ab1fc57ff30` |
+| source_head / tree | `e67534f7…` / `b1918255…` |
+| input_digest_before | `sha256:0713f2e4469c27375027d8490921adb3aa879055ad050026da6fa9231b0cd971` |
 | input_digest_after | 동일 (`input_stable=true`) |
-| started / finished | `2026-09-11T06:44:37+00:00` → `2026-09-11T07:08:25+00:00` (23분 48초) |
+| started / finished | `2026-09-11T07:38:29+00:00` → `2026-09-11T08:02:43+00:00` (24분 14초) |
 | exit_code / signal | `0` / `null` |
 | result_source | direct-process (이 세션이 monitor로 직접 회수) |
 | toolchain | node `v24.19.0`, npm `12.0.2`, abi `137` |
-| 집계 | backend shard1 278파일/1,918 · shard2 278파일/1,929 · dashboard 38파일/263 = **594파일 / 4,110 테스트** |
-| architecture | 667 모듈 / 2,476 간선 / 순환 0 |
+| 집계 | backend shard1 278파일/1,921 · shard2 278파일/1,929 · dashboard 38파일/263 = **594파일 / 4,113 테스트** |
+| architecture | 667 모듈 / 2,481 간선 / 순환 0 |
 | acceptance | `pre_gjc_ready`, `aggregate_status=stopped`, `completion_promoted=true`, `gjc_dispatched=false` |
-| log | `<QA>/verify-20260911T064437Z/verify.log`, sha256 `8e131a25be068e9c7e06996ef1c7a49837043527718b507dffb41a0fe48b5513` |
+| log | `<QA>/verify-20260911T073829Z/verify.log`, sha256 `b9ebde70f63ce89ac793064e42b872b99010aa5d8d5f5c0ce092e63d28a2089e` |
 
 과거 4,066은 목표치로 쓰지 않았다. 위 수치는 이번 실행의 로그 실측이다.
 
@@ -152,10 +152,10 @@ FAIL tests/integration/dashboard-personal-integrity.test.ts
 
 | 항목 | 값 |
 |---|---|
-| package root | `<QA>/package/jarvis-runtime-jzt1O8` |
-| source_head | `6f88422b…` (`source_dirty=true` — untracked 3건) |
-| payload_files / dependency_entries | 1,525 / 6,668 |
-| receipt pin (독립 고정) | `ca88e28eee929b996ff4968f3cc627a9600ae3df0b8e8767c818723cfeff190d` |
+| package root | `<QA>/package/jarvis-runtime-jcjm4s` |
+| source_head | `e67534f7…` (`source_dirty=true` — untracked 3건) |
+| payload_files / dependency_entries | 1,529 / 6,668 |
+| receipt pin (독립 고정) | `11142d2dd26596d3f04e71223c81ec6890c0b3f715976ce136b93232bf167c89` |
 | verify-runtime-package | `ok=true`, `integrity=matched`, RC 0 |
 | signature_verified | **false** (운영 서명 없음) |
 | runtime_validation | `not_performed` |
@@ -278,11 +278,11 @@ rollback 조건·명령을 적었다. 새 fixture 키를 만들어 운영 인증
    ```bash
    cd /home/jm/orca/workspaces/Orca-JARVIS/codex-routing-approval-ui
    git log --oneline -6
-   git rev-parse 6f88422b1988cb6895477c603cf1b999c2085a90
+   git rev-parse e67534f7dcec84e3dfcf0190280be8d6db581696
    git status --porcelain
-   git diff --name-only 6f88422..HEAD
+   git diff --name-only e67534f..HEAD
    ```
-   제품 검증 SHA는 `6f88422`이고, 마지막 명령이 `docs/`만 보여야 제품 입력 무변경이 성립한다.
+   제품 검증 SHA는 `e67534f`이고, 마지막 명령이 `docs/`만 보여야 제품 입력 무변경이 성립한다.
 
 2. 원래 P1 재현과 정식 회귀
    ```bash
@@ -301,16 +301,16 @@ rollback 조건·명령을 적었다. 새 fixture 키를 만들어 운영 인증
 
 3. receipt와 입력 readback
    ```bash
-   cat /home/jm/.cache/jarvis-m6-20260911/verify-20260911T064437Z/receipt.env
-   sha256sum /home/jm/.cache/jarvis-m6-20260911/verify-20260911T064437Z/verify.log
+   cat /home/jm/.cache/jarvis-m6-20260911/verify-20260911T073829Z/receipt.env
+   sha256sum /home/jm/.cache/jarvis-m6-20260911/verify-20260911T073829Z/verify.log
    ```
    기대: `exit_code=0`, before/after digest 동일, log sha256이 §6.1과 일치.
 
 4. 패키지 검증
    ```bash
    node scripts/verify-runtime-package.mjs \
-     /home/jm/.cache/jarvis-m6-20260911/package/jarvis-runtime-jzt1O8 \
-     --receipt-sha256 ca88e28eee929b996ff4968f3cc627a9600ae3df0b8e8767c818723cfeff190d
+     /home/jm/.cache/jarvis-m6-20260911/package/jarvis-runtime-jcjm4s \
+     --receipt-sha256 11142d2dd26596d3f04e71223c81ec6890c0b3f715976ce136b93232bf167c89
    ```
    기대: `integrity=matched`, `deployment_ready=false`.
 
@@ -355,6 +355,23 @@ rollback 조건·명령을 적었다. 새 fixture 키를 만들어 운영 인증
 리뷰 수정으로 운영 기록 모듈이 리뷰가능성 한계를 넘자 gate가 그것을 잡았고(`exit 1`), 아티팩트
 수명주기를 `local-observation-retention-artifacts.ts`로 분리해 해소했다. 그 실패 run도 §6.1의 제외
 목록과 같은 원칙으로 기록에 남긴다.
+
+## 8quater. 2차 독립 리뷰 — 수정 자체를 다시 읽혔고, 4건이 열려 있다
+
+같은 방식으로 **수정 커밋 범위**(`e53c857~1..HEAD`)를 다른 모델에게 다시 읽혔다. 판정은 또
+**CHANGES_REQUIRED**였고 P1 6건·P2 3건이 나왔다. 5건은 제 수정이 만든 것이었다.
+
+닫은 것(각각 리뷰어 재현으로 대조): INTEGER와 REAL이 같은 키를 만들던 문제, generation 비교가 JSON
+숫자로 반올림되던 문제, 자동 publication과 legacy correction 승인·준비의 task 차단 누락,
+`verified_digest` 가변, `.releasing` 이름 선점, 복구가 살아 있는 소유자의 작업을 파괴하던 문제.
+
+**열려 있는 4건은 하나의 설계 문제다.** 후보 digest 확인~rename 창, 원본 마지막 읽기~rename 창,
+운영 행 기록 이전의 claim 유실, `.releasing` 중 크래시 고아 — 모두 *산출물이 공유 이름 공간에 있고
+교체 구간에 프로세스 간 배타성이 없다*는 같은 뿌리에서 나온다. 리뷰어의 처방도 하나다:
+**운영 전용 비공개 디렉터리 + 프로세스 간 swap/rebuild lease**. 바이트 비교로는 닫히지 않는다는
+지적은 옳고, 이 변경은 apply의 경로 계약·복구·교체·일정 서비스와 관련 회귀를 함께 바꾼다. 절반만
+적용하면 같은 계열의 결함을 남긴 채 겉보기만 달라지므로 **독립된 단위로 설계·구현·재리뷰**하도록
+범위를 고정하고 여기서 멈췄다. 이것이 이 회신서가 `IN_PROGRESS`인 이유다.
 
 ## 8ter. 남은 항목별 blocker, 준비물, 재개 조건
 
