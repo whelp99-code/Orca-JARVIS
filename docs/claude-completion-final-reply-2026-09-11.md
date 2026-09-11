@@ -21,13 +21,13 @@ M5의 설정 manifest·적용/rollback 안은 구현·회귀·전체 gate를 마
 |---|---|
 | worktree | `/home/jm/orca/workspaces/Orca-JARVIS/codex-routing-approval-ui` |
 | branch | `codex/routing-approval-ui` |
-| 제품 검증 SHA (전체 verify 입력) | `453bd48b691a1709cae884e6d87c5f82c4911a7e` |
-| 검증 시점 tree | `194b8f595cdada991ad69c2dbcb808cb1fc17302` |
-| 문서 포함 제출 HEAD | 이 회신서를 담은 문서 커밋. `git diff --name-only 453bd48..HEAD`가 `docs/`만 보여야 한다 |
+| 제품 검증 SHA (전체 verify 입력) | `3e94d178c37e98bde5d1cfb36cf01f088a751617` |
+| 검증 시점 tree | `6cee4d9893cb119415560b2b74d961890d04464f` |
+| 문서 포함 제출 HEAD | 이 회신서를 담은 문서 커밋. `git diff --name-only 3e94d17..HEAD`가 `docs/`만 보여야 한다 |
 | upstream | `not_configured` — ahead/behind 측정 불가 (`git rev-parse --abbrev-ref @{u}` 실패) |
 | tracked 변경 | M 0, D 0 |
 | untracked | 3 (`.omo/evidence/ulw/`, `.omo/ulw-loop/`, `node_modules`) — 도구 상태·공유 의존성, 커밋 대상 아님 |
-| 베이스라인 대비 | `082d689..453bd48` 8 커밋 (문서 커밋 별도) |
+| 베이스라인 대비 | `082d689..3e94d17` 9 커밋 (문서 커밋 별도) |
 | dashboard 파일 변경 | **0** (`git diff --name-only 082d689..HEAD | grep -ci dashboard`) |
 
 packager가 `source_dirty: true`로 기록한 것은 위 untracked 3건 때문이며, tracked 수정은 0이다.
@@ -44,6 +44,7 @@ packager가 `source_dirty: true`로 기록한 것은 위 untracked 3건 때문�
 | `af708be` | 테스트+문서 | 같은 gate가 scoped 등록과 전송 중 경로도 막는다는 사실을 단정으로 고정 |
 | `3da7272` | 테스트+문서 | rebuild 동반 제거와 백업 복원 재유입 0을 고정. 정제기에 임시로 넣었던 규칙은 복사기가 이미 처리함을 실측하고 되돌림 |
 | `453bd48` | 제품+테스트+문서 | 숨긴 task가 provider에 남긴 저장분을 열거하는 surface. 철회 자체는 쓰지 않음 |
+| `3e94d17` | 제품+테스트+문서 | 후보 생성 뒤 원본을 숨겼을 때, 미리 준비된 승인의 확정을 차단(실제 구멍이었고 검사를 빼면 회귀가 실패함) |
 
 과거 gate 결과를 새 코드에 소급하지 않았다. §6의 전체 verify는 `0d6d614` 입력으로 새로 실행했고, 실행
 전후 입력 digest가 동일하다.
@@ -107,19 +108,19 @@ fixture 통과를 실제 생산자 통과로 세지 않는다.
 
 | 항목 | 값 |
 |---|---|
-| run_id | `verify-20260911T042032Z` |
+| run_id | `verify-20260911T044703Z` |
 | command / cwd | `npm run verify` / worktree 절대경로 |
-| source_head / tree | `453bd48b…` / `194b8f59…` |
-| input_digest_before | `sha256:f071f9640bd9ab858ff173248d2e2821b843b39131dc9f8e4c0ffdba22ce9347` |
+| source_head / tree | `3e94d178…` / `6cee4d98…` |
+| input_digest_before | `sha256:46bd93028424fe3494376fecfedd648c44d20c3705af4d82d0ad5309f7e1e116` |
 | input_digest_after | 동일 (`input_stable=true`) |
-| started / finished | `2026-09-11T04:20:32+00:00` → `2026-09-11T04:43:42+00:00` (23분 10초) |
+| started / finished | `2026-09-11T04:47:03+00:00` → `2026-09-11T05:10:16+00:00` (23분 13초) |
 | exit_code / signal | `0` / `null` |
 | result_source | direct-process (이 세션이 monitor로 직접 회수) |
 | toolchain | node `v24.19.0`, npm `12.0.2`, abi `137` |
-| 집계 | backend shard1 278파일/1,914 · shard2 278파일/1,929 · dashboard 38파일/263 = **594파일 / 4,106 테스트** |
+| 집계 | backend shard1 278파일/1,915 · shard2 278파일/1,929 · dashboard 38파일/263 = **594파일 / 4,107 테스트** |
 | architecture | 665 모듈 / 2,470 간선 / 순환 0 |
 | acceptance | `pre_gjc_ready`, `aggregate_status=stopped`, `completion_promoted=true`, `gjc_dispatched=false` |
-| log | `<QA>/verify-20260911T042032Z/verify.log`, sha256 `bfdf412fa4d4b8e34500a676007d73cfb6928af783f808de08125db18ca7dddf` |
+| log | `<QA>/verify-20260911T044703Z/verify.log`, sha256 `14bcc9848ae080e1edc1873544677cb47f29c4020065a3a65e5c34bb1298309b` |
 
 과거 4,066은 목표치로 쓰지 않았다. 위 수치는 이번 실행의 로그 실측이다.
 
@@ -150,10 +151,10 @@ FAIL tests/integration/dashboard-personal-integrity.test.ts
 
 | 항목 | 값 |
 |---|---|
-| package root | `<QA>/package/jarvis-runtime-YYLYaw` |
-| source_head | `453bd48b…` (`source_dirty=true` — untracked 3건) |
+| package root | `<QA>/package/jarvis-runtime-18NZtL` |
+| source_head | `3e94d178…` (`source_dirty=true` — untracked 3건) |
 | payload_files / dependency_entries | 1,521 / 6,668 |
-| receipt pin (독립 고정) | `61ff241a8e143124b81c774505f460649b09c52e3164521e270a7f4f62adca1a` |
+| receipt pin (독립 고정) | `dc2351a4411494a861ca7721dde13cb5607d08ac209920e6da6ba6f905bb5c49` |
 | verify-runtime-package | `ok=true`, `integrity=matched`, RC 0 |
 | signature_verified | **false** (운영 서명 없음) |
 | runtime_validation | `not_performed` |
@@ -220,7 +221,8 @@ verification·session은 이름을 갖지만, 그 작업을 한 **task를 지목
   모든 후보가 무효가 된다. 후보당 task 하나, 접수 때 한 번 기록, update·delete는 표 자신이 거절한다.
 - `src/memory-candidate-task-source.ts`: 접수 시 **이미 숨겨진 task면 거절**한다(같은 트랜잭션에서 검사와
   기록). 소비 시에는 다시 묻는다.
-- 소비 지점 연결: `readCandidateReview`(검토 열람)와 `hasMemorySourceAuthority`. 후자는
+- 소비 지점 연결: `readCandidateReview`(검토 열람), `stageMemoryCandidateDecision`(**미리 준비된 승인의
+  확정**), `hasMemorySourceAuthority`. 후자는
   `hasSecondBrainWriteAuthority`·`hasRegisteredScopedSourceAuthority`·
   `hasDispatchedScopedSourceAuthority` 세 함수가 공유하는 단일 gate이므로, 쓰기뿐 아니라 **outbox
   preflight·dispatch·scoped 등록·이미 발송된 시도**까지 같은 판정을 받는다. 이 사실은 호출 그래프로
@@ -272,11 +274,11 @@ rollback 조건·명령을 적었다. 새 fixture 키를 만들어 운영 인증
    ```bash
    cd /home/jm/orca/workspaces/Orca-JARVIS/codex-routing-approval-ui
    git log --oneline -6
-   git rev-parse 453bd48b691a1709cae884e6d87c5f82c4911a7e
+   git rev-parse 3e94d178c37e98bde5d1cfb36cf01f088a751617
    git status --porcelain
-   git diff --name-only 453bd48..HEAD
+   git diff --name-only 3e94d17..HEAD
    ```
-   제품 검증 SHA는 `453bd48`이고, 마지막 명령이 `docs/`만 보여야 제품 입력 무변경이 성립한다.
+   제품 검증 SHA는 `3e94d17`이고, 마지막 명령이 `docs/`만 보여야 제품 입력 무변경이 성립한다.
 
 2. 원래 P1 재현과 정식 회귀
    ```bash
@@ -295,16 +297,16 @@ rollback 조건·명령을 적었다. 새 fixture 키를 만들어 운영 인증
 
 3. receipt와 입력 readback
    ```bash
-   cat /home/jm/.cache/jarvis-m6-20260911/verify-20260911T042032Z/receipt.env
-   sha256sum /home/jm/.cache/jarvis-m6-20260911/verify-20260911T042032Z/verify.log
+   cat /home/jm/.cache/jarvis-m6-20260911/verify-20260911T044703Z/receipt.env
+   sha256sum /home/jm/.cache/jarvis-m6-20260911/verify-20260911T044703Z/verify.log
    ```
    기대: `exit_code=0`, before/after digest 동일, log sha256이 §6.1과 일치.
 
 4. 패키지 검증
    ```bash
    node scripts/verify-runtime-package.mjs \
-     /home/jm/.cache/jarvis-m6-20260911/package/jarvis-runtime-YYLYaw \
-     --receipt-sha256 61ff241a8e143124b81c774505f460649b09c52e3164521e270a7f4f62adca1a
+     /home/jm/.cache/jarvis-m6-20260911/package/jarvis-runtime-18NZtL \
+     --receipt-sha256 dc2351a4411494a861ca7721dde13cb5607d08ac209920e6da6ba6f905bb5c49
    ```
    기대: `integrity=matched`, `deployment_ready=false`.
 
