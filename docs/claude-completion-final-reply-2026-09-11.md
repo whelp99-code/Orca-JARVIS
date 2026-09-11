@@ -557,7 +557,7 @@ P1 5건·P2 3건이었고, 지적은 대부분 정확했다. 수정 커밋은 `3
 협조 경로는 위 두 순서로 닫혀 있다. 이 지점은 리뷰어도 커널 강제 lock 없이는 불가능하다고 적었다.
 
 
-### 9.5 이번 제출의 전체 gate (정본)
+### 9.5 전체 gate 2회차 (배타성 마감 시점)
 
 | 항목 | 값 |
 |---|---|
@@ -615,3 +615,73 @@ P1 5건·P2 3건이었고, 지적은 대부분 정확했다. 수정 커밋은 `3
 receipt 기대값은 후보 패키지 자신이 아니라 개발 checkout에서 `sha256sum`으로 먼저 고정한 뒤
 검증기에 전달했다. 패키지 성공은 개발 증거이며 배포 준비 완료가 아니다. 운영 적용·서명·서비스
 전환은 하지 않았고 이 제출의 범위도 아니다.
+
+
+### 9.8 M4.2 project-scope — 개발 가능한 부분을 전부 구현했다
+
+원장은 이 항목을 "소유자 결정 필요"로 두고 있었다. 실제로 소유자만 정할 수 있는 것은 **목록 그
+자체**이고, 그 주변은 전부 개발 가능했다. 커밋 `e2ed929` → 독립 리뷰 → `f1e6b14`로 마감했다.
+
+- **프로젝트 정체성을 지어내지 않았다.** `work_items.snapshot_id → census_snapshots.project_id`는
+  control plane이 이미 받아들인 제안의 정체성이다. `config/portfolio-repositories.json`의 GitHub
+  slug와 `projects.id`를 잇는 매핑은 존재하지 않으며, 만들지 않았다 — 그것이 followup §5.4가
+  금지한 임의 project authority 생성이다.
+- **정책 문서는 authority DB 옆**(`<db dir>/memory-project-scope.json`)에 둔다. 닫힌 레코드
+  `{schema_version:1, mode:"allow_list", projects:[...]}`이며 파일이 없으면 정책이 없다. 배선이
+  필요 없으므로 "문서를 썼는데 아무도 읽지 않는" 상태가 구조적으로 불가능하다.
+- **집행 지점은 `bindCandidateTaskSource` 하나**다. 접수(`classify`)든 사후
+  기록(`recordCandidateTaskSource`)이든 모든 결속이 이 함수를 지난다.
+- **소비도 다시 묻는다.** `candidateTaskSourceClosed()`가 리뷰·표면 권한·provider 쓰기 3지점에서
+  "이 후보의 task가 우리에게 닫혀 있는가"를 묻는다. 숨겨졌거나 범위 밖이면 닫힌다. 정책 문서를
+  정확히 읽을 수 없으면 **닫는 쪽**으로 판정한다.
+- **fail-closed.** 문서가 있는데 프로젝트를 증명할 수 없는 task는 거절한다. alias는 work item에 도달할
+  수 있는 유일한 경로인 `continuation_acceptances.work_id`만 따라간다.
+- **문서 읽기**는 `O_NOFOLLOW`로 열고 `fstat`로 정규파일·크기를 확인한 뒤 그 디스크립터에서
+  읽는다. symlink와 stat↔read 사이 교체가 정책을 결정하지 못한다.
+
+회귀 8건: 허용 / continuation alias 해상 / 목록 밖 거절 / 증명 불가 거절 / **후보 생성 뒤 결속 거절** /
+**admission 이후에 쓰인 정책이 소비를 닫음** / 무설정 무영향 / 잘못된 문서 6종 + symlink. 거절 시
+DB 행이 없을 뿐 아니라 **review spool에 사적 텍스트가 남지 않음**도 단정한다. 인접 회귀 70파일 632테스트.
+
+소유자 입력으로 남긴 것은 둘뿐이다: (1) `projects.id` 공간의 실제 허용 목록, (2) task가 없는
+후보에도 정책을 적용할지(현재는 적용하지 않음 — 그런 후보는 프로젝트를 지목하지 않는다). 둘 다
+결정되면 각각 파일 한 개와 한 줄이다.
+
+정직한 한계: JSON 중복 키는 last-wins(JSON 자체 의미)를 따른다. 감사 시 눈에 보이는 값과 파서가 쓴
+값이 다를 수 있으며, 이 문서가 소유자 소유 디렉터리에 있다는 전제로 수용했다.
+
+### 9.9 두 번째 독립 리뷰 — 수행함, 판정 CHANGES_REQUIRED, 전부 수정
+
+`e2ed929`을 같은 조건(다른 모델, 읽기 전용, gate 실행 중이라 빌드/테스트 금지)으로 검토시켰다.
+P1 3건·P2 3건이며 **가장 중요한 지적은 "정책을 아무도 읽지 않는다"**였다 — 유일한 생산 접수 경로가
+`attachProjectScope`를 호출하지 않았다. 그 상태에서 내 커밋 메시지는 사실이 아니었고, 지적이
+맞다. §9.8의 설계는 그 지적을 반영해 다시 만든 것이다(경로 규약 + 단일 집행 지점 + 소비 재확인 +
+alias + `O_NOFOLLOW`). 나머지 P2(회귀 범위)도 같은 커밋에서 닫았다.
+
+
+### 9.10 이번 제출의 전체 gate (정본, 최종)
+
+project-scope까지 포함한 최종 입력으로 다시 실행했다. §9.5는 그 이전 시점의 기록이다.
+
+| 항목 | 값 |
+|---|---|
+| command / cwd | `npm run verify` / worktree |
+| 입력 SHA | `f1e6b140cacc865aa6cbd5d45b0a4742d09a3234` |
+| 입력 트리 | tracked M 0 / D 0 (문서는 gate 이후 갱신, `src/`·`tests/`·`config/` 불변) |
+| exit code | **0** (`VERIFY4=0`) |
+| backend shard 1/2 | **279 파일 / 1,929 테스트**, 758.72s |
+| backend shard 2/2 | **279 파일 / 1,939 테스트**, 675.14s |
+| dashboard | **38 파일 / 263 테스트**, 35.93s |
+| 합계 | **596 파일 / 4,131 테스트** |
+| architecture | `{"ok":true,"modules":669,"edges":2492,"cycles":[]}` |
+| acceptance | `pre_gjc_ready`, `aggregate_status=stopped`, `gjc_dispatched=false` |
+| 로그 | `<QA>/verify4.log`, sha256 `43e80030e7f1368cde09a0d19db6268cf5690d4ff0d701700dbd10f7e43be166` |
+
+이 라운드에서 실행한 전체 gate는 4회이며 그중 합격 근거로 쓰는 것은 이 1회다.
+
+| 회차 | 입력 | RC | 처리 |
+|---|---|---|---|
+| 1 | `320b59c` | 1 | 내 변경이 만든 실패 2건. `5a53e10`에서 수정 |
+| 2 | `5a53e10` | 0 | 배타성 마감 시점의 합격 (§9.5) |
+| 3 | `e2ed929` | 143 | 독립 리뷰가 project-scope 재설계를 요구해 **내가 중단**. 근거 아님 |
+| 4 | `f1e6b14` | **0** | **이 제출의 정본** |

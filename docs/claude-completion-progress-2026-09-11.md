@@ -232,6 +232,10 @@ EDQUOT(-122)는 내가 `npx vitest`를 직접 호출해 `os.tmpdir()`가 /tmp로
 따라가는 한 함수, 집행은 접수(`MemoryCandidateStore.classify`와 같은 트랜잭션)와 소비
 (`candidateTaskSourceSuppressed`가 이미 호출되는 지점) 두 곳이다.
 
+**갱신(야간 라운드, 커밋 `e2ed929`): 위 "구현 지점"을 실제로 구현했다.** 아래 M4.2-project-scope
+항목을 본다. 소유자에게 남은 것은 목록 그 자체와 task 없는 후보의 처리 방침 하나뿐이며, 나머지
+계약·해상·집행·회귀는 끝났다.
+
 
 ## 독립 리뷰와 그 수정 (커밋 `320b59c`)
 
@@ -259,3 +263,33 @@ P2 3건. 상세 대조표는 회신서 §9.4에 있고, 요지는 "배제를 선
 
 이전에 `VERIFY=143`으로 끝난 run이 하나 더 있으나 이는 독립 리뷰 수정을 위해 **내가 SIGTERM으로
 중단**한 것이며 어떤 합격 근거로도 쓰지 않는다.
+
+
+## M4.2-project-scope — 구현 완료 (커밋 `e2ed929`)
+
+| 단위 ID | 상태 | 파일·계약 | 인수 항목 | 실행 결과 |
+|---|---|---|---|---|
+| M4.2-project-scope | VERIFIED (목록은 소유자 입력) | `src/memory-candidate-project-scope.ts`(신규), `src/memory-candidate-task-source.ts`, `src/second-brain-write-authority.ts`, `src/memory-surface-authority.ts`, `src/dashboard/memory-candidate-review.ts`, `config/memory-project-scope.example.json`, `tests/integration/memory-candidate-project-scope.test.ts`(신규) | 무설정=비활성, 단일 집행 지점(모든 결속), 소비 재확인, alias 해상, `O_NOFOLLOW` 문서 읽기, fail-closed | 최종 `f1e6b14`: 신규 8/8, 인접 70 파일 / 632 테스트 통과(`qa/scope2.log`). 첫 시도 `e2ed929`는 독립 리뷰에서 "생산 경로가 정책을 읽지 않음"으로 거절돼 재설계했다 |
+
+설계 근거(지어낸 권한 없음):
+- 프로젝트 정체성은 새로 만들지 않았다. `work_items.snapshot_id → census_snapshots.project_id`는
+  control plane이 이미 받아들인 제안의 정체성이다.
+- `config/portfolio-repositories.json`의 GitHub slug와 `projects.id`를 잇는 매핑은 **만들지 않았다.**
+  그 매핑을 발명하는 것이 §5.4가 금지한 임의 project authority 생성이기 때문이다.
+- 무설정=비활성은 retention 설정과 같은 기존 관례다. 문서를 쓰지 않은 배포는 동작이 전혀 바뀌지 않고,
+  실제로 기존 memory 회귀 19파일이 그대로 통과한다.
+- fail-closed: 문서가 켜져 있는데 프로젝트를 증명할 수 없는 task는 거절한다. 문서는 기여 가능한
+  프로젝트를 열거하며 "모름"은 그 목록에 없다.
+- task가 없는 후보는 프로젝트를 지목하지 않으므로 이 정책의 대상이 아니다. 이를 바꾸려면 한 줄이며,
+  소유자 결정 항목으로 남긴다.
+
+## 재검토했으나 추측 수정하지 않은 항목
+
+회신서 §6.1이 후속으로 적어둔 dashboard 커서 비결정성(`PERSONAL_CURSOR_STALE` 기대에
+`PERSONAL_CURSOR_INVALID` 수신)을 다시 읽었다. 실패를 만들 수 있는 경로는 정확히 둘이다.
+`src/dashboard/personal-cursor.ts`의 복호화·`parsePayload(parsed, this.sessionId, this.keyEpoch)`
+세션/epoch 불일치, 그리고 같은 파일의 `expected.now.toISOString() >= payload.expires_at` 만료 비교다.
+둘 다 단일 서버·단일 read model 안에서는 성립하지 않고, 이번 야간 gate 2회차·3회차에서도 재현되지
+않았다. **재현이 없는 상태에서 제품을 고치면 원인 확인이 아니라 은폐가 되므로 바꾸지 않았다.**
+후속 항목의 내용은 그대로 유효하다: 커서 세션 키를 서버 수명과 명시적으로 결속하고, 만료를
+복호화 실패와 다른 코드로 구분한 뒤, shard 순서와 무관하게 결정적으로 재현하는 회귀를 먼저 만든다.
