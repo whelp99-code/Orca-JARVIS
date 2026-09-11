@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { realpathSync, writeSync } from "node:fs";
 import { type CliCommandContext, commandNow } from "./cli-command-context.js";
 import { integer, jsonFile, objectValue } from "./cli-command-input.js";
@@ -9,8 +10,8 @@ import { PreGjcShadow } from "./pre-gjc-shadow.js";
 import { PERSONAL_OS_CONTROL_CHANNEL_ENV, servePersonalOsCycleChannel } from "./personal-os-cycle-channel.js";
 import { PersonalOsRuntime } from "./personal-os-runtime.js";
 import { AssembledModelSession } from "./assembled-model-session.js";
-import { RecordingModelTransport, type ModelTransportCapture } from "./context-model-transport.js";
-import type { ModelRequestV1 } from "./context-assembler.js";
+import { RecordingModelTransport } from "./context-model-transport.js";
+import { assemblePersonalContext, type MemoryEvidenceInput, type ModelRequestV1 } from "./context-assembler.js";
 import { createProductionMemoryReadFence } from "./memory-read-fence-production.js";
 import { createProductionMemoryReference } from "./memory-reference-production.js";
 import type { ContextPersistenceInput } from "./personal-context-store.js";
@@ -258,7 +259,47 @@ function sourceIdFromReference(sourceRef: string): string {
   return slug.length === 0 ? "src:pos:v1:second-brain:primary" : `src:pos:v1:second-brain:${slug}`;
 }
 
-function persistAssembleInput(base: unknown, now: string): Record<string, unknown> {
+function assemblerExcerpt(text: string): string {
+  const normalized = [...text.normalize("NFC")].map(character => {
+    const code = character.charCodeAt(0);
+    return code < 32 || code === 127 ? " " : character;
+  }).join("");
+  const trimmed = normalized.trim();
+  return trimmed.length === 0 ? "memory" : trimmed;
+}
+
+function memoriesFromReference(
+  selected: {
+    payload: {
+      records: ReadonlyArray<{
+        sid: string; source_ref: string; text: string; text_digest: string;
+        observed_at: string; fresh_until: string; sensitivity: string;
+      }>;
+    };
+  },
+): MemoryEvidenceInput[] {
+  return selected.payload.records.map(record => {
+    const excerpt = assemblerExcerpt(record.text);
+    const digest = excerpt === record.text && /^sha256:[0-9a-f]{64}$/.test(record.text_digest)
+      ? record.text_digest
+      : `sha256:${createHash("sha256").update(excerpt).digest("hex")}`;
+    return {
+      kind: "evidence",
+      memory_ref: record.sid.slice(0, 512),
+      source_id: sourceIdFromReference(record.source_ref),
+      digest,
+      observed_at: record.observed_at,
+      fresh_until: record.fresh_until,
+      excerpt,
+      trust: "user_confirmed",
+      sensitivity: record.sensitivity === "public" ? "public" : "personal",
+      relevance: "related",
+      relation: "supports",
+    };
+  });
+}
+
+function persistAssembleInput(base: unknown, now: string, memories: readonly MemoryEvidenceInput[]): Record<string, unknown> {
   const baseObject = base !== null && typeof base === "object" ? base as Record<string, unknown> : {};
   return {
     purpose: typeof baseObject.purpose === "string" ? baseObject.purpose : "operator-context",
@@ -268,8 +309,28 @@ function persistAssembleInput(base: unknown, now: string): Record<string, unknow
     budgets: assembleBudgets(base),
     observations: [],
     pending_authority_refs: [],
-    memories: [],
+    memories,
   };
+}
+
+function evidenceForPersist(input: Record<string, unknown>): ContextPersistenceInput["memory_evidence"] {
+  const snapshot = assemblePersonalContext(input);
+  const memories = Array.isArray(input.memories) ? input.memories as MemoryEvidenceInput[] : [];
+  const byRef = new Map(memories.filter(item => item.kind === "evidence").map(item => [item.memory_ref, item]));
+  return snapshot.payload.included_memory_refs.map(ref => {
+    const memory = byRef.get(ref);
+    const item = snapshot.evidence.find(row => row.kind === "confirmed_memory" && memory !== undefined
+      && row.digest === memory.digest && row.source_id === memory.source_id && row.observed_at === memory.observed_at);
+    if (memory === undefined || item === undefined) throw new JarvisError("PERSONAL_CONTEXT_MEMORY_EVIDENCE_CONFLICT");
+    return {
+      memory_ref: ref,
+      evidence_id: item.evidence_id,
+      source_id: item.source_id,
+      digest: item.digest,
+      observed_at: item.observed_at,
+      fresh_until: memory.fresh_until,
+    };
+  });
 }
 
 function assembleBudgets(base: unknown): ModelRequestV1["budgets"] {
@@ -284,59 +345,6 @@ function assembleBudgets(base: unknown): ModelRequestV1["budgets"] {
     }
   }
   return { max_items: 8, max_excerpt_bytes: 4_096, max_total_bytes: 16_384 };
-}
-
-function captureFromReference(
-  selected: {
-    payload: {
-      records: ReadonlyArray<{
-        sid: string; source_ref: string; source_version: string; text: string; text_digest: string;
-      }>;
-    };
-  },
-  base: unknown,
-  sessionId: string,
-): ModelTransportCapture {
-  const query = queryFromAssemble(base);
-  const budgets = assembleBudgets(base);
-  const memories: Array<ModelRequestV1["memories"][number]> = [];
-  const omitted: string[] = [];
-  let used = Buffer.byteLength(query, "utf8");
-  for (const record of selected.payload.records) {
-    if (memories.length >= budgets.max_items) {
-      omitted.push(record.sid);
-      continue;
-    }
-    const bytes = Buffer.byteLength(record.text, "utf8");
-    if (used + bytes > budgets.max_total_bytes) {
-      omitted.push(record.sid);
-      continue;
-    }
-    memories.push({
-      memory_ref: record.sid,
-      source_id: sourceIdFromReference(record.source_ref),
-      version: record.source_version.length > 0 ? record.source_version : record.text_digest,
-      excerpt: record.text,
-      bytes,
-    });
-    used += bytes;
-  }
-  const request: ModelRequestV1 = {
-    query,
-    memories,
-    omitted,
-    budgets,
-    used_bytes: used,
-    remaining_bytes: Math.max(0, budgets.max_total_bytes - used),
-  };
-  const json = JSON.stringify(request);
-  return {
-    session_id: sessionId,
-    request,
-    json,
-    bytes: Buffer.byteLength(json, "utf8"),
-    no_data: memories.length === 0,
-  };
 }
 
 /** Selected-session transport for explicit gjc.dispatch after configureGjc.
@@ -364,18 +372,17 @@ async function assembleDispatchContext(
       options.model_transport ?? new RecordingModelTransport(),
       dispatchMemoryAuthorizer(context, options),
     );
-    const persistInput = persistAssembleInput(parsed.assemble_context, now);
-    const prepared = await session.prepare(persistInput, [], now, sessionId);
-    const capture = captureFromReference(selected, parsed.assemble_context, sessionId ?? prepared.capture.session_id);
-    if (reservation !== undefined) {
-      context.db.recordGjcSendStarted(reservation.intent_id, reservation.intent_id, now, reservation.lease_fence);
-    }
+    const persistInput = persistAssembleInput(parsed.assemble_context, now, memoriesFromReference(selected));
+    const prepared = await session.prepare(persistInput, evidenceForPersist(persistInput), now, sessionId);
     let attempts = 0;
-    await session.send(capture, {
+    await session.send(prepared.capture, {
       beforeSend: () => produced.reader.revalidate(selected),
       ...(reservation === undefined ? {} : {
         beginAttempt: () => {
           attempts += 1;
+          if (attempts === 1) {
+            context.db.recordGjcSendStarted(reservation.intent_id, reservation.intent_id, now, reservation.lease_fence);
+          }
           context.db.recordGjcSendAttemptStarted(reservation.intent_id, `${reservation.lease_fence}:${attempts}`, now, reservation.lease_fence);
         },
         onKnownNegative: () => {
@@ -384,7 +391,7 @@ async function assembleDispatchContext(
         },
       }),
     });
-    return { stored: prepared.stored, capture };
+    return prepared;
   } finally {
     await produced.close();
   }

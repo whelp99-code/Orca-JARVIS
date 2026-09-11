@@ -654,12 +654,79 @@ describe("gjc.dispatch assemble envelope", () => {
     const body = `Important ${"content ".repeat(25)}END_CRITICAL_SOURCE_DETAIL`;
     useRecords(provider, [boundRecord(body, "87654321")]);
     const transport = new RecordingModelTransport();
-    const result = await executeGjcCommand(readerDispatch(db, source, config, provider, transport, "long-text"));
+    const assemble = {
+      ...readerAssemble(),
+      budgets: { max_items: 16, max_excerpt_bytes: 4_096, max_total_bytes: 4_096 },
+    };
+    const result = await executeGjcCommand(readerDispatch(db, source, config, provider, transport, "long-text", assemble));
     expect(result).toMatchObject({ ok: true });
     const memory = transport.sent[0]?.request.memories[0];
     expect(memory?.excerpt).toContain("END_CRITICAL_SOURCE_DETAIL");
     expect(memory?.source_id).not.toBe("src:pos:v1:second-brain:inbox");
     expect(memory?.excerpt.length ?? 0).toBeGreaterThan(96);
+    closeMemoryDatabase(database);
+  });
+
+  it("limits final JSON and excerpt bytes to the assemble budgets", async () => {
+    const { database, db, source, config, provider } = await gjcProduct();
+    const body = `Important ${"content ".repeat(200)}END_CRITICAL_SOURCE_DETAIL`;
+    useRecords(provider, [boundRecord(body, "87654321")]);
+    const transport = new RecordingModelTransport();
+    const assemble = {
+      ...readerAssemble(),
+      budgets: { max_items: 16, max_excerpt_bytes: 128, max_total_bytes: 2_048 },
+    };
+    const result = await executeGjcCommand(readerDispatch(db, source, config, provider, transport, "budget-2048", assemble));
+    expect(result).toMatchObject({ ok: true });
+    expect(transport.sent).toHaveLength(1);
+    const capture = transport.sent[0];
+    expect(capture?.bytes ?? 0).toBeLessThanOrEqual(2_048);
+    expect(Buffer.byteLength(capture?.json ?? "", "utf8")).toBeLessThanOrEqual(2_048);
+    for (const memory of capture?.request.memories ?? []) {
+      expect(memory.bytes).toBeLessThanOrEqual(128);
+      expect(Buffer.byteLength(memory.excerpt, "utf8")).toBeLessThanOrEqual(128);
+    }
+    closeMemoryDatabase(database);
+  });
+
+  it("persists the same selected memories that the transport sends", async () => {
+    const { database, db, source, config, provider } = await gjcProduct();
+    const second = boundRecord("A distinct second memory", "87654321");
+    useRecords(provider, [REFERENCE_RECORD, second]);
+    const transport = new RecordingModelTransport();
+    await executeGjcCommand(readerDispatch(db, source, config, provider, transport, "lineage"));
+    const snapshot = db.db.prepare(
+      "SELECT memory_count, evidence_count FROM personal_context_snapshots ORDER BY rowid DESC LIMIT 1",
+    ).get() as { memory_count: number; evidence_count: number } | undefined;
+    const bindings = db.db.prepare("SELECT memory_ref FROM personal_context_memory_evidence").all() as Array<{ memory_ref: string }>;
+    expect(snapshot?.memory_count).toBe(2);
+    expect(bindings.map(row => row.memory_ref).sort()).toEqual(["12345678", "87654321"]);
+    expect(db.lastAssembledModelCapture()?.request.memories).toEqual(transport.sent[0]?.request.memories);
+    expect(db.lastAssembledModelCapture()?.no_data).toBe(false);
+    closeMemoryDatabase(database);
+  });
+
+  it("sends after a before-send generation refusal is corrected", async () => {
+    const { database, db, source, config, provider } = await gjcProduct();
+    let phase = 0;
+    const original = provider.call.bind(provider);
+    provider.call = async (method, args) => {
+      const out = await original(method, args);
+      if (phase === 0 && method === "sb_generation_status" && out.kind === "data"
+        && provider.calls.filter(call => call.method === "sb_generation_status").length >= 3) {
+        return { kind: "data" as const, value: { ...out.value, generation_id: `sbgen:v1:${"2".repeat(64)}` } };
+      }
+      return out;
+    };
+    const transport = new RecordingModelTransport();
+    await expect(executeGjcCommand(readerDispatch(db, source, config, provider, transport, "before-send-gen")))
+      .rejects.toMatchObject({ code: "MEMORY_REFERENCE_GENERATION_CHANGED" });
+    expect(transport.sent).toHaveLength(0);
+    phase = 1;
+    const result = await executeGjcCommand(readerDispatch(db, source, config, provider, transport, "before-send-gen"));
+    expect(result).toMatchObject({ ok: true, command: "gjc.dispatch" });
+    expect(result).not.toMatchObject({ recovered: "unknown_accepted" });
+    expect(transport.sent).toHaveLength(1);
     closeMemoryDatabase(database);
   });
 
@@ -747,12 +814,13 @@ function readerDispatch(
   provider: MemoryReferenceProvider,
   transport: unknown,
   key: string,
+  assemble: ReturnType<typeof readerAssemble> = readerAssemble(),
 ) {
   return {
     args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
     argument: writeJson({
       task: gjcTaskFor(db, source, key),
-      assemble_context: readerAssemble(),
+      assemble_context: assemble,
       memory_evidence: [],
     }),
     fourth: undefined, fifth: undefined, sixth: undefined, db,
