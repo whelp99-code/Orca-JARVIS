@@ -5,9 +5,9 @@
 **`IN_PROGRESS`.**
 
 R2의 두 P1, M2(급사 복구·교체·일정화), M3의 인용 계약, M4.1의 fail-closed refresh adapter,
-M5의 설정 manifest·적용/rollback 안은 구현·회귀·전체 gate를 마쳤다. 남은 내부 작업은
-**M4.2(task 결과 → 기억 후보의 출처·삭제 전파)** 하나이며, 이는 provider의 lineage 필드 부재와 별개로
-JARVIS측 구현이 남아 있다. 지시서 §11.1에 따라 내부 잔여가 있는 상태를
+M5의 설정 manifest·적용/rollback 안은 구현·회귀·전체 gate를 마쳤다. M4.2도 원본 결속과 접수·검토·쓰기·scoped 등록·전송 중
+차단까지 구현했다. 남은 내부 작업은 **M4.2의 저장 후 구간**(삭제 전파, 백업 복원 재유입)이며,
+2클라이언트 조회 확인은 provider 계약에 달려 있다. 지시서 §11.1에 따라 내부 잔여가 있는 상태를
 `READY_FOR_CODEX_FINAL_REVIEW*`로 올리지 않는다.
 
 이 문서는 완료 선언이 아니라, **완료된 부분의 독립 검증에 필요한 전부**와 남은 작업의 정확한 위치를
@@ -19,13 +19,13 @@ JARVIS측 구현이 남아 있다. 지시서 §11.1에 따라 내부 잔여가 �
 |---|---|
 | worktree | `/home/jm/orca/workspaces/Orca-JARVIS/codex-routing-approval-ui` |
 | branch | `codex/routing-approval-ui` |
-| 제품 검증 SHA (전체 verify 입력) | `200f9f7bede300519581e3bd08e7496cf45ed48a` |
-| 검증 시점 tree | `e5d7ddaca3a13a4bc4fa894e17920225c543c2c0` |
-| 문서 포함 제출 HEAD | 이 회신서를 담은 문서 커밋. `git diff --name-only 200f9f7..HEAD`가 `docs/`만 보여야 한다 |
+| 제품 검증 SHA (전체 verify 입력) | `af708be6613265e4b2c14c136c4f39347e9d4c0d` |
+| 검증 시점 tree | `7be9a9e0ecc5aaed330898e28bb80d6945b7522e` |
+| 문서 포함 제출 HEAD | 이 회신서를 담은 문서 커밋. `git diff --name-only af708be..HEAD`가 `docs/`만 보여야 한다 |
 | upstream | `not_configured` — ahead/behind 측정 불가 (`git rev-parse --abbrev-ref @{u}` 실패) |
 | tracked 변경 | M 0, D 0 |
 | untracked | 3 (`.omo/evidence/ulw/`, `.omo/ulw-loop/`, `node_modules`) — 도구 상태·공유 의존성, 커밋 대상 아님 |
-| 베이스라인 대비 | `082d689..200f9f7` 4 커밋 (문서 커밋 별도) |
+| 베이스라인 대비 | `082d689..af708be` 6 커밋 (문서 커밋 별도) |
 | dashboard 파일 변경 | **0** (`git diff --name-only 082d689..HEAD | grep -ci dashboard`) |
 
 packager가 `source_dirty: true`로 기록한 것은 위 untracked 3건 때문이며, tracked 수정은 0이다.
@@ -38,6 +38,8 @@ packager가 `source_dirty: true`로 기록한 것은 위 untracked 3건 때문�
 | `ea4f538` | 제품+migration+테스트+스크립트+문서 | M2. 운영 기록(089)·소유 증명·복구·quiesce 교체·일정 fence(090)·용량 실측 스크립트·운영자 제안서 |
 | `0d6d614` | 제품+테스트+문서 | M3 인용 계약. assembler 증거를 출처 기반으로 분류해 advisory 로컬 관측의 승격을 차단 |
 | `200f9f7` | 제품+테스트+문서 | M4.1. provider refresh receipt의 fail-closed 파서·버전 협상, `provider_refresh`를 상수에서 저장된 단계 기록으로 전환, provider 인계 bundle |
+| `037ab03` | 제품+migration+테스트+문서 | M4.2 결속. 후보↔원본 task 결속표(091)와 접수 거절, 검토·쓰기 차단 전파 |
+| `af708be` | 테스트+문서 | 같은 gate가 scoped 등록과 전송 중 경로도 막는다는 사실을 단정으로 고정 |
 
 과거 gate 결과를 새 코드에 소급하지 않았다. §6의 전체 verify는 `0d6d614` 입력으로 새로 실행했고, 실행
 전후 입력 digest가 동일하다.
@@ -72,7 +74,8 @@ packager가 `source_dirty: true`로 기록한 것은 위 untracked 3건 때문�
 | M3 actionable 생산 체인 | **잔여** | advisory 로컬 관측만으로는 owner-gated 행동을 만들 수 없음(설계상 정확). 실제 owner decision 표면 또는 verified live adapter 필요 |
 | M4.1 provider refresh adapter | 완료(내부) | `second-brain-refresh-receipt.test.ts` 6/6, daily 회귀 5파일/35테스트 |
 | M4.1 provider 계약 | **외부 잔여** | receipt 스키마 미합의. 인계 bundle 작성 완료 |
-| M4.2 출처·삭제 전파 | **잔여(내부+외부)** | provider lineage 필드 부재(외부) + JARVIS측 차단 전파 미구현(내부) |
+| M4.2 결속·차단 전파 | 완료(내부) | `memory-candidate-task-source.test.ts` 4/4, 인접 memory 회귀 3파일/25테스트 |
+| M4.2 저장 후 구간 | **잔여(내부+외부)** | 삭제 전파·복원 재유입 미착수(내부), 2클라이언트 조회(외부) |
 | M5 준비물 | 완료(내부) | 설정 manifest·preflight 실측·업무안·적용/rollback 문서 |
 | M5 실제 실행 | **외부 잔여** | 실행자 인증 3개 키 미설정, fail-closed 확인 |
 | M6 통합 gate·패키지 | 완료 | §6 |
@@ -99,19 +102,19 @@ fixture 통과를 실제 생산자 통과로 세지 않는다.
 
 | 항목 | 값 |
 |---|---|
-| run_id | `verify-20260911T023025Z` |
+| run_id | `verify-20260911T032524Z` |
 | command / cwd | `npm run verify` / worktree 절대경로 |
-| source_head / tree | `200f9f7b…` / `e5d7ddac…` |
-| input_digest_before | `sha256:2021c90d0d5084130dbfd5a57fab183cd18870bdafd1491f105aa0ae60602a18` |
+| source_head / tree | `af708be6…` / `7be9a9e0…` |
+| input_digest_before | `sha256:aefef809c2eb2b935c380d80914855859a764a8e88920a96eb5ca77c6237778d` |
 | input_digest_after | 동일 (`input_stable=true`) |
-| started / finished | `2026-09-11T02:30:25+00:00` → `2026-09-11T02:54:14+00:00` (23분 49초) |
+| started / finished | `2026-09-11T03:25:24+00:00` → `2026-09-11T03:48:36+00:00` (23분 12초) |
 | exit_code / signal | `0` / `null` |
 | result_source | direct-process (이 세션이 monitor로 직접 회수) |
 | toolchain | node `v24.19.0`, npm `12.0.2`, abi `137` |
-| 집계 | backend shard1 278파일/1,908 · shard2 277파일/1,928 · dashboard 38파일/263 = **593파일 / 4,099 테스트** |
-| architecture | 664 모듈 / 2,465 간선 / 순환 0 |
+| 집계 | backend shard1 278파일/1,911 · shard2 278파일/1,929 · dashboard 38파일/263 = **594파일 / 4,103 테스트** |
+| architecture | 665 모듈 / 2,470 간선 / 순환 0 |
 | acceptance | `pre_gjc_ready`, `aggregate_status=stopped`, `completion_promoted=true`, `gjc_dispatched=false` |
-| log | `<QA>/verify-20260911T023025Z/verify.log`, sha256 `cab7cf7bec45a64e103996909a3a940f942b917a4baf385f6e945869660ef736` |
+| log | `<QA>/verify-20260911T032524Z/verify.log`, sha256 `e0f10aac4d65d2fd3c059d41be55f99fe810fa6d0445314db0155679340ca999` |
 
 과거 4,066은 목표치로 쓰지 않았다. 위 수치는 이번 실행의 로그 실측이다.
 
@@ -142,23 +145,24 @@ FAIL tests/integration/dashboard-personal-integrity.test.ts
 
 | 항목 | 값 |
 |---|---|
-| package root | `<QA>/package/jarvis-runtime-6YPDf3` |
-| source_head | `200f9f7b…` (`source_dirty=true` — untracked 3건) |
-| payload_files / dependency_entries | 1,517 / 6,668 |
-| receipt pin (독립 고정) | `7876ec48f6d8da0917ebe1f18e7587dbcdac3e0fdeb269bfc7a68bfc7aafffa7` |
+| package root | `<QA>/package/jarvis-runtime-EqAvOV` |
+| source_head | `af708be6…` (`source_dirty=true` — untracked 3건) |
+| payload_files / dependency_entries | 1,521 / 6,668 |
+| receipt pin (독립 고정) | `c81c70d90804703d8a2ca10642503c1705594d8766bda964a9d76c000c30a552` |
 | verify-runtime-package | `ok=true`, `integrity=matched`, RC 0 |
 | signature_verified | **false** (운영 서명 없음) |
 | runtime_validation | `not_performed` |
 | deployment_ready | **false** |
-| packaged dashboard HTTP | `/` 200(1,733B), 번들 JS 200(452,054B), CSS 200(26,606B), `/api/v1/health` 200. input digest `sha256:cd84caec…`, 1,610파일 |
+| packaged dashboard HTTP | `/` 200(1,733B), 번들 JS 200(452,054B), CSS 200(26,606B), `/api/v1/health` 200. input digest `sha256:8e77b3e8…`, 1,613파일 |
 
 receipt 기대값은 후보 패키지 자신이 아니라 개발 checkout에서 먼저 고정한 뒤 검증기에 전달했다. 패키지
 성공은 개발 증거이며 배포 준비 완료가 아니다.
 
 ### 6.3 migration 바이트 비교
 
-베이스라인 95개 파일 전부 sha256 **변경 0**, 신규 2개만 추가:
-`089_local_retention_operations.sql`, `090_local_retention_cycle_fence.sql`.
+베이스라인 95개 파일 전부 sha256 **변경 0**, 신규 3개만 추가:
+`089_local_retention_operations.sql`, `090_local_retention_cycle_fence.sql`,
+`091_memory_candidate_task_sources.sql`.
 벡터는 `<QA>/migration-hash-vector.json`.
 
 ### 6.4 원본 쓰기와 checkpoint의 물리 영향
@@ -196,12 +200,36 @@ apply가 원본에 남기는 쓰기는 **자기 운영 기록 2행(삽입 1 + �
 인계 bundle은 `docs/claude-second-brain-contract-handoff-2026-09-11.md`이며 **전송하지 않았다**.
 정확한 envelope·예시 payload·오류/호환 규칙·격리 harness 실행법·도착 후 검증 절차·통과 기준을 담았다.
 
-### 7.2 M4.2 — task 결과 → 기억 후보의 출처·삭제 전파 (**내부 잔여**)
+### 7.2 M4.2 — task 결과 → 기억 후보의 출처·삭제 전파
 
-`docs/planning/task-memory-source-privacy-hold.md`의 두 P1이 열려 있다: 수집 전 `task_id` 차단 누락,
-수집 후 원본→후보 차단 연결 부재. provider에 `source_lineage`/`task_lineage`/`completion_id` 필드가
-없는 것은 외부 사유지만, 수집 전/후·승인 전/후·전송 중·저장 후 차단 전파는 JARVIS측 구현이다.
-**이번 작업에서 착수하지 않았다.** 이것이 최종 상태를 `IN_PROGRESS`로 두는 유일한 내부 사유다.
+**두 P1은 검사 두 개가 아니라 결속 하나가 없던 문제였다.** 후보는 자기가 지나온 control command·
+verification·session은 이름을 갖지만, 그 작업을 한 **task를 지목한 적이 없었다**. 그래서 소유자가 task를
+숨겨도 그 task의 요약은 열람·승인·저장될 수 있었다. 우회로(후보의 `control_request_id` → 
+`target_json.$.task_id`)도 검토했지만, 기억 후보가 만드는 control command의 target은
+`{candidate_id, correlation_id}`뿐이라 task에 닿지 않는다.
+
+이번에 구현한 것:
+
+- `migrations/091_memory_candidate_task_sources.sql`: 후보 **옆에** 두는 결속표. 후보의 identity·
+  source·content digest는 이미 봉인돼 있어, 증명 대상이 아니던 관계를 넣겠다고 그 형태를 바꾸면 저장된
+  모든 후보가 무효가 된다. 후보당 task 하나, 접수 때 한 번 기록, update·delete는 표 자신이 거절한다.
+- `src/memory-candidate-task-source.ts`: 접수 시 **이미 숨겨진 task면 거절**한다(같은 트랜잭션에서 검사와
+  기록). 소비 시에는 다시 묻는다.
+- 소비 지점 연결: `readCandidateReview`(검토 열람)와 `hasMemorySourceAuthority`. 후자는
+  `hasSecondBrainWriteAuthority`·`hasRegisteredScopedSourceAuthority`·
+  `hasDispatchedScopedSourceAuthority` 세 함수가 공유하는 단일 gate이므로, 쓰기뿐 아니라 **outbox
+  preflight·dispatch·scoped 등록·이미 발송된 시도**까지 같은 판정을 받는다. 이 사실은 호출 그래프로
+  추정하지 않고 회귀로 단정했다.
+- `jarvis memory classify <input.json> <policy.json> [TASK_ID]`: 선택적 다섯 번째 위치 인자로 결속을
+  받는다. 인자가 없으면 결속이 없고 기존 동작 그대로다.
+
+회귀 `tests/integration/memory-candidate-task-source.test.ts` 4/4: 숨겨진 task로는 접수 거절(결속 0건),
+사후에 숨기면 검토 `undefined` + 쓰기/등록/발송 판정 false, 결속 없는 후보는 영향 없음, 결속은 한 번만
+기록되고 UPDATE·DELETE는 트리거가 거절. 인접 memory 회귀 3파일/25테스트 통과.
+
+**남은 것(내부).** 저장 후 구간이다: 저장된 파생 기억의 삭제 전파, 백업 복원 후 재유입 0 확인.
+**남은 것(외부).** 직접 MCP 클라이언트 2개에서 삭제된 파생 기억이 반환되지 않는지 확인하는 것은
+provider lineage 계약이 필요하다.
 
 ### 7.3 M5 — 업무 실행자
 
@@ -223,11 +251,11 @@ rollback 조건·명령을 적었다. 새 fixture 키를 만들어 운영 인증
    ```bash
    cd /home/jm/orca/workspaces/Orca-JARVIS/codex-routing-approval-ui
    git log --oneline -6
-   git rev-parse 200f9f7bede300519581e3bd08e7496cf45ed48a
+   git rev-parse af708be6613265e4b2c14c136c4f39347e9d4c0d
    git status --porcelain
-   git diff --name-only 200f9f7..HEAD
+   git diff --name-only af708be..HEAD
    ```
-   제품 검증 SHA는 `200f9f7`이고, 마지막 명령이 `docs/`만 보여야 제품 입력 무변경이 성립한다.
+   제품 검증 SHA는 `af708be`이고, 마지막 명령이 `docs/`만 보여야 제품 입력 무변경이 성립한다.
 
 2. 원래 P1 재현과 정식 회귀
    ```bash
@@ -239,27 +267,28 @@ rollback 조건·명령을 적었다. 새 fixture 키를 만들어 운영 인증
      tests/integration/local-observation-retention-schedule.test.ts \
      tests/integration/local-observation-retention-source-writes.test.ts \
      tests/integration/local-observation-citation-contract.test.ts \
-     tests/integration/second-brain-refresh-receipt.test.ts
+     tests/integration/second-brain-refresh-receipt.test.ts \
+     tests/integration/memory-candidate-task-source.test.ts
    ```
    기대: 전부 통과. 특히 감사 행 손실·값 충돌·ATTACH ABA·선정 외 삭제가 모두 거절되는지.
 
 3. receipt와 입력 readback
    ```bash
-   cat /home/jm/.cache/jarvis-m6-20260911/verify-20260911T023025Z/receipt.env
-   sha256sum /home/jm/.cache/jarvis-m6-20260911/verify-20260911T023025Z/verify.log
+   cat /home/jm/.cache/jarvis-m6-20260911/verify-20260911T032524Z/receipt.env
+   sha256sum /home/jm/.cache/jarvis-m6-20260911/verify-20260911T032524Z/verify.log
    ```
    기대: `exit_code=0`, before/after digest 동일, log sha256이 §6.1과 일치.
 
 4. 패키지 검증
    ```bash
    node scripts/verify-runtime-package.mjs \
-     /home/jm/.cache/jarvis-m6-20260911/package/jarvis-runtime-6YPDf3 \
-     --receipt-sha256 7876ec48f6d8da0917ebe1f18e7587dbcdac3e0fdeb269bfc7a68bfc7aafffa7
+     /home/jm/.cache/jarvis-m6-20260911/package/jarvis-runtime-EqAvOV \
+     --receipt-sha256 c81c70d90804703d8a2ca10642503c1705594d8766bda964a9d76c000c30a552
    ```
    기대: `integrity=matched`, `deployment_ready=false`.
 
-5. 결론: R2/M2/M3 인용 계약/M4.1 adapter의 인수 여부를 판정하고, 남은 M4.2(출처·삭제 전파) 진행과
-   §7.1·7.3의 외부 의존성 해소(누가 무엇을 제공할지)를 지시한다.
+5. 결론: R2/M2/M3 인용 계약/M4.1 adapter/M4.2 결속·차단 전파의 인수 여부를 판정하고, 남은 M4.2 저장 후
+   구간의 진행과 §7.1·7.2·7.3의 외부 의존성 해소(누가 무엇을 제공할지)를 지시한다.
 
 ## 9. 수행하지 않은 행동
 
