@@ -261,6 +261,10 @@ async function assembleDispatchContext(
   if (reservation !== undefined) {
     context.db.recordGjcSendStarted(reservation.intent_id, reservation.intent_id, now, reservation.lease_fence);
   }
-  await session.send(prepared.capture);
+  await session.send(prepared.capture, reservation === undefined ? {} : {
+    onKnownNegative: () => {
+      context.db.recordGjcSendFailed(reservation.intent_id, now, reservation.lease_fence);
+    },
+  });
   return prepared;
 }

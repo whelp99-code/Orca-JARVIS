@@ -31,13 +31,20 @@ export class AssembledModelSession {
     return { stored, capture };
   }
 
-  async send(capture: ModelTransportCapture): Promise<ModelTransportResult> {
+  async send(
+    capture: ModelTransportCapture,
+    hooks: { onKnownNegative?: () => void } = {},
+  ): Promise<ModelTransportResult> {
     let result = await this.transport.send(capture);
     if (!result.accepted) {
+      hooks.onKnownNegative?.();
       this.authorize(new Date());
       result = await this.transport.send(capture);
     }
-    if (!result.accepted) throw new JarvisError("MODEL_TRANSPORT_UNAVAILABLE");
+    if (!result.accepted) {
+      hooks.onKnownNegative?.();
+      throw new JarvisError("MODEL_TRANSPORT_UNAVAILABLE");
+    }
     return result;
   }
 

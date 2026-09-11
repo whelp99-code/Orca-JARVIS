@@ -544,4 +544,59 @@ describe("gjc.dispatch assemble envelope", () => {
     expect(transport.sent).toHaveLength(1);
     db.close();
   });
+
+  it("resends after a known-negative then retry-fence deny is corrected", async () => {
+    const db = await initialized();
+    db.configureGjc(process.cwd(), "s", true);
+    const source = seedGjcDispatch(db);
+    const input = contextAssemblerInput();
+    for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
+      db.persistObservation(observation, CONTEXT_NOW);
+    }
+    const snapshot = assemblePersonalContext(input);
+    const memory = snapshot.evidence.find(item => item.kind === "confirmed_memory");
+    if (memory === undefined) throw new Error("memory");
+    const task = gjcTaskFor(db, source, "negative-then-deny");
+    const envelope = {
+      task,
+      assemble_context: input,
+      memory_evidence: [{
+        memory_ref: snapshot.payload.included_memory_refs[0] ?? memory.evidence_id,
+        evidence_id: memory.evidence_id,
+        source_id: memory.source_id,
+        digest: memory.digest,
+        observed_at: memory.observed_at,
+        fresh_until: snapshot.expires_at,
+      }],
+    };
+    let fences = 0;
+    let phase = 0;
+    const transport = {
+      sent: [] as unknown[],
+      async send(capture: unknown) {
+        this.sent.push(capture);
+        return { accepted: phase !== 0 };
+      },
+    };
+    const options = () => ({
+      projection_key: Buffer.alloc(32, 7),
+      model_transport: transport,
+      read_fence: () => {
+        fences += 1;
+        if (phase === 0 && fences >= 3) throw new Error("CURRENT_READER_DENIED");
+      },
+    });
+    const ctx = () => ({
+      args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
+      argument: writeJson(envelope), fourth: undefined, fifth: undefined, sixth: undefined, db,
+      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: options() },
+    } as never);
+    await expect(executeGjcCommand(ctx())).rejects.toThrow(/CURRENT_READER_DENIED/);
+    expect(transport.sent).toHaveLength(1);
+    phase = 1;
+    const result = await executeGjcCommand(ctx());
+    expect(result).toMatchObject({ ok: true });
+    expect(transport.sent).toHaveLength(2);
+    db.close();
+  });
 });
