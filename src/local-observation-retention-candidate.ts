@@ -2,125 +2,177 @@ import { createHash } from "node:crypto";
 import { rmSync } from "node:fs";
 import { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
-import type { RetentionProjection } from "./local-observation-retention-selection.js";
+import { copyExpression, copyFilter, tableColumns } from "./memory-authority-fresh-builder.js";
+import {
+  suppressedRowMutations, type SuppressedProjection,
+} from "./memory-compaction-sanitize.js";
 
-/** Rewritten by the build itself, so these are checked against their own contract instead. */
-const REBUILT_TABLES = new Set(["schema_migrations", "memory_database_generations"]);
-/** Columns the copy deliberately drops; the source side is projected the same way to compare. */
-const DROPPED_COLUMNS: Readonly<Record<string, readonly string[]>> = {
-  local_timeline_subjects: ["snapshot_json", "collection_id", "expires_at"],
-};
 const SIDECARS = ["-wal", "-shm", "-journal"] as const;
+/**
+ * The fresh database applies its own migrations, so its `applied_at` is its own. The identity that
+ * must match is the applied set and each checksum; nothing else about this table is excused.
+ */
+const SELF_APPLIED = "schema_migrations";
+const SELF_APPLIED_IDENTITY = ["id", "checksum"] as const;
+const GENERATIONS = "memory_database_generations";
 
 const quote = (identifier: string): string => `"${identifier.replaceAll('"', '""')}"`;
 
-function values(row: unknown): readonly unknown[] {
-  return row !== null && typeof row === "object" ? Object.values(row) : [row];
+/**
+ * Typed, length-prefixed row key. Values keep their SQL type tag and their exact bytes, and every
+ * value carries its own length, so no two different rows - differing in separators, quotes, empty
+ * strings, NULLs, blobs or numeric type - can produce the same key.
+ */
+function rowKey(row: unknown): string {
+  const values = row !== null && typeof row === "object" ? Object.values(row) : [row];
+  const hash = createHash("sha256");
+  for (const value of values) {
+    const [tag, encoded] = value === null ? ["n", ""]
+      : Buffer.isBuffer(value) ? ["b", value.toString("base64")]
+      : typeof value === "bigint" ? ["i", value.toString()]
+      : typeof value === "number" ? [Number.isInteger(value) ? "i" : "f", value.toString()]
+      : ["s", String(value)];
+    hash.update(`${tag}${Buffer.byteLength(String(encoded), "utf8")}:${encoded}\u0000`);
+  }
+  return hash.digest("hex");
 }
 
-function serialize(row: unknown): string {
-  return createHash("sha256").update(values(row).map(value => {
-    if (value === null) return "n:";
-    if (Buffer.isBuffer(value)) return `b:${value.toString("base64")}`;
-    if (typeof value === "number" || typeof value === "bigint") return `d:${value.toString()}`;
-    return `s:${String(value)}`;
-  }).join(" ")).digest("hex");
+function tablesOf(database: AuthorityDb): readonly string[] {
+  return database.db.prepare(
+    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
+  ).pluck().all().map(String);
 }
 
-function columnsOf(database: AuthorityDb, table: string): readonly string[] {
-  return database.db.prepare(`PRAGMA table_xinfo(${quote(table)})`).all().flatMap(value => {
-    if (value === null || typeof value !== "object") return [];
-    const name = Reflect.get(value, "name");
-    return typeof name === "string" && Reflect.get(value, "hidden") === 0 ? [name] : [];
-  });
+function multiset(rows: Iterable<unknown>): Map<string, number> {
+  const counts = new Map<string, number>();
+  for (const row of rows) counts.set(rowKey(row), (counts.get(rowKey(row)) ?? 0) + 1);
+  return counts;
 }
-
-function projection(table: string, columns: readonly string[]): string {
-  const dropped = new Set(DROPPED_COLUMNS[table] ?? []);
-  return columns.map(column => dropped.has(column) ? `NULL AS ${quote(column)}` : quote(column)).join(",");
-}
-
-const scalar = (database: AuthorityDb, sql: string): number =>
-  Number(database.db.prepare(sql).pluck().get());
 
 /**
- * Checks the two tables the build rewrites against their own contract, so excluding them from the
- * row comparison is not a blanket permission to differ.
+ * The copier evaluates its keep filter against a temporary `blocked_projections` table and against
+ * the source attached as `source_authority`. The verifier reproduces both names on its own
+ * connection rather than reinterpreting the predicate: the same file is attached under that name,
+ * so every filter the copier runs resolves to the same rows here.
  */
-function assertRebuiltTables(source: AuthorityDb, candidate: AuthorityDb, generation: number): void {
-  const migrations = "SELECT COUNT(*) FROM schema_migrations";
-  const active = "SELECT COUNT(*) FROM memory_database_generations WHERE state='active' AND generation=";
-  if (scalar(candidate, migrations) !== scalar(source, migrations)
-    || scalar(candidate, `${active}${generation}`) !== 1) {
-    throw new JarvisError("LOCAL_RETENTION_CANDIDATE_REBUILD_INVALID");
+function withBlockedProjections<T>(
+  snapshot: AuthorityDb, blocked: readonly SuppressedProjection[], read: () => T,
+): T {
+  snapshot.db.exec("CREATE TEMP TABLE blocked_projections(kind TEXT,id TEXT,component_id TEXT)");
+  snapshot.db.prepare("ATTACH DATABASE ? AS source_authority").run(snapshot.filename);
+  try {
+    const insert = snapshot.db.prepare(
+      "INSERT INTO blocked_projections(kind,id,component_id) VALUES(?,?,?)");
+    for (const projection of blocked) {
+      insert.run(projection.kind, projection.id, projection.component_id);
+    }
+    return read();
+  } finally {
+    snapshot.db.exec("DETACH DATABASE source_authority");
+    snapshot.db.exec("DROP TABLE IF EXISTS blocked_projections");
+  }
+}
+
+/** The rows the copier keeps for this table, with the sanitizer's removals already applied. */
+function expectedRows(
+  snapshot: AuthorityDb, table: string, columns: readonly string[],
+  blocked: readonly SuppressedProjection[],
+): Map<string, number> {
+  const selected = columns.map(column => `${copyExpression(table, column)} AS ${quote(column)}`).join(",");
+  const kept = multiset(snapshot.db.prepare(
+    `SELECT ${selected} FROM ${quote(table)} AS source_row ${copyFilter(table, columns)}`).iterate());
+  for (const projection of blocked) {
+    for (const mutation of suppressedRowMutations(projection)) {
+      if (mutation.table !== table) continue;
+      if (mutation.update !== undefined) throw new JarvisError("LOCAL_RETENTION_PLAN_UNSUPPORTED");
+      for (const row of snapshot.db.prepare(
+        `SELECT ${selected} FROM ${quote(table)} AS source_row WHERE ${mutation.where}`)
+        .iterate(...mutation.params)) {
+        const key = rowKey(row);
+        const remaining = kept.get(key);
+        if (remaining !== undefined && remaining > 0) kept.set(key, remaining - 1);
+      }
+    }
+  }
+  return kept;
+}
+
+/** The generation table is the one the build rewrites: retire the active row, add the next one. */
+function assertGenerations(snapshot: AuthorityDb, candidate: AuthorityDb, resultGeneration: number): void {
+  const rows = (database: AuthorityDb) => database.db.prepare(
+    `SELECT generation,database_manifest_digest,state FROM ${GENERATIONS} ORDER BY generation`).all()
+    .map(row => JSON.stringify(row));
+  const before = rows(snapshot).map(row => row.replace('"state":"active"', '"state":"retired"'));
+  const after = rows(candidate);
+  const added = after.filter(row => !before.includes(row));
+  if (after.length !== before.length + 1 || before.some(row => !after.includes(row))
+    || added.length !== 1 || !added[0]?.includes(`"generation":${resultGeneration}`)
+    || !added[0]?.includes('"state":"active"')) {
+    throw new JarvisError("LOCAL_RETENTION_CANDIDATE_GENERATION_INVALID");
   }
 }
 
 /**
- * Verifies that the candidate is the database the selection read minus exactly what the selection
- * chose to remove.
+ * Verifies that the candidate is exactly what the copier's own plan produces from the snapshot the
+ * selection read.
  *
- * The rebuild adapter copies through its own `ATTACH` of the source pathname, so checks that only
- * bracket the build cannot bind it: a pathname replaced just before that attach and restored just
- * after leaves the endpoints, this connection's counters and every row count agreeing with
- * themselves. Row counts cannot help either, since a replacement carrying equal counts and
- * different rows satisfies them all.
+ * The plan is not restated here: the per-table keep filter comes from `copyFilter`, the column
+ * transforms from `copyExpression`, and the removals from `suppressedRowMutations`, which are the
+ * same functions the rebuild adapter and its sanitizer run. Earlier versions approximated that
+ * plan - counting rows, then allowing any row that mentioned a blocked identifier - and each
+ * approximation accepted a wrong candidate: a replacement with equal counts, and the removal of an
+ * audit row whose subject happened to be a blocked context, which the copier deliberately keeps.
  *
- * Comparing the copied rows against the connection the selection used settles what was copied
- * rather than which file was attached, and it has to run in both directions. A row the connection
- * does not hold is `LOCAL_RETENTION_CANDIDATE_FOREIGN_ROW`. A row the connection holds and the
- * candidate lost is allowed only when the selection blocked it - every row this rebuild may drop
- * names a blocked observation, context or recommendation in one of its columns - and is otherwise
- * `LOCAL_RETENTION_CANDIDATE_MISSING_ROW`. Without that second direction a substituted source that
- * merely lacks unrelated rows passes as a subset.
+ * Both directions are checked against the expected multiset, so an extra row, a missing row, a
+ * changed value and a lost duplicate are all rejected, as is a table or column set that differs.
  */
-export function assertCandidateMatchesSelectedRemoval(
-  source: AuthorityDb, destination: string,
-  blocked: readonly RetentionProjection[], resultGeneration: number,
+export function assertCandidateMatchesCopyPlan(
+  snapshot: AuthorityDb, destination: string,
+  blocked: readonly SuppressedProjection[], resultGeneration: number,
 ): void {
-  const removable = new Set(blocked.map(item => item.id));
   const candidate = new AuthorityDb(destination, undefined, { readonly: true, fileMustExist: true });
   let failure: string | undefined;
+  let failedTable = "";
   try {
-    assertRebuiltTables(source, candidate, resultGeneration);
-    const tables = candidate.db.prepare(
-      "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
-    ).pluck().all().map(String).filter(table => !REBUILT_TABLES.has(table));
+    withBlockedProjections(snapshot, blocked, () => {
+    const tables = tablesOf(snapshot);
+    if (JSON.stringify(tables) !== JSON.stringify(tablesOf(candidate))) {
+      throw new JarvisError("LOCAL_RETENTION_CANDIDATE_SCHEMA_INVALID");
+    }
+    assertGenerations(snapshot, candidate, resultGeneration);
     for (const table of tables) {
-      const columns = columnsOf(candidate, table);
+      if (table === GENERATIONS) continue;
+      const columns = tableColumns(snapshot, table);
+      if (JSON.stringify(columns) !== JSON.stringify(tableColumns(candidate, table))) {
+        failure = "LOCAL_RETENTION_CANDIDATE_SCHEMA_INVALID";
+        break;
+      }
       if (columns.length === 0) continue;
-      const held = new Map<string, { count: number; readonly row: readonly unknown[] }>();
-      for (const row of source.db.prepare(
-        `SELECT ${projection(table, columns)} FROM ${quote(table)}`).iterate()) {
-        const key = serialize(row);
-        const entry = held.get(key);
-        if (entry === undefined) held.set(key, { count: 1, row: values(row) });
-        else entry.count += 1;
-      }
-      for (const row of candidate.db.prepare(
-        `SELECT ${columns.map(quote).join(",")} FROM ${quote(table)}`).iterate()) {
-        const entry = held.get(serialize(row));
-        if (entry === undefined || entry.count === 0) {
+      const list = (table === SELF_APPLIED ? SELF_APPLIED_IDENTITY : columns).map(quote).join(",");
+      const expected = table === SELF_APPLIED
+        ? multiset(snapshot.db.prepare(`SELECT ${list} FROM ${quote(table)}`).iterate())
+        : expectedRows(snapshot, table, columns, blocked);
+      for (const row of candidate.db.prepare(`SELECT ${list} FROM ${quote(table)}`).iterate()) {
+        const key = rowKey(row);
+        const remaining = expected.get(key);
+        if (remaining === undefined || remaining === 0) {
           failure = "LOCAL_RETENTION_CANDIDATE_FOREIGN_ROW";
+          failedTable = table;
           break;
         }
-        entry.count -= 1;
+        expected.set(key, remaining - 1);
       }
-      if (failure !== undefined) break;
-      // Whatever the candidate did not take must be a row this selection chose to remove.
-      for (const entry of held.values()) {
-        if (entry.count === 0) continue;
-        if (!entry.row.some(value => typeof value === "string" && removable.has(value))) {
-          failure = "LOCAL_RETENTION_CANDIDATE_MISSING_ROW";
-          break;
-        }
+      if (failure === undefined && [...expected.values()].some(count => count > 0)) {
+        failure = "LOCAL_RETENTION_CANDIDATE_MISSING_ROW";
+        failedTable = table;
       }
       if (failure !== undefined) break;
     }
+    });
   } finally {
     candidate.close();
     // The read-only open recreates the sidecars the build removed; they are this call's own.
     for (const suffix of SIDECARS) rmSync(`${destination}${suffix}`, { force: true });
   }
-  if (failure !== undefined) throw new JarvisError(failure);
+  if (failure !== undefined) throw new JarvisError(failure, `${failure} at ${failedTable}`);
 }

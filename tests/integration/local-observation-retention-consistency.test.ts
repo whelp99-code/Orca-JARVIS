@@ -8,7 +8,7 @@ import {
   verifyLocalObservationRetentionCandidate,
 } from "../../src/local-observation-retention.js";
 import {
-  assertCandidateMatchesSelectedRemoval,
+  assertCandidateMatchesCopyPlan,
 } from "../../src/local-observation-retention-candidate.js";
 import DatabaseConstructor from "better-sqlite3";
 import {
@@ -265,11 +265,10 @@ it("refuses a candidate holding rows the selection's connection does not hold", 
   expect(build.foreign_key_errors).toBe(0);
 
   // Against the database it was copied from, every row is accounted for.
-  expect(() => assertCandidateMatchesSelectedRemoval(f.db, built, [], build.result_generation))
-    .not.toThrow();
-  // Against a different connection, the same candidate is foreign.
-  expect(() => assertCandidateMatchesSelectedRemoval(other, built, [], build.result_generation))
-    .toThrow("LOCAL_RETENTION_CANDIDATE_FOREIGN_ROW");
+  expect(() => assertCandidateMatchesCopyPlan(f.db, built, [], build.result_generation)).not.toThrow();
+  // Against a different database, the same candidate does not match that plan.
+  expect(() => assertCandidateMatchesCopyPlan(other, built, [], build.result_generation))
+    .toThrow(/LOCAL_RETENTION_CANDIDATE_(FOREIGN_ROW|GENERATION_INVALID)/);
 });
 
 type PreparedStatement = { run: (...args: readonly unknown[]) => unknown };
@@ -278,7 +277,7 @@ type PreparedStatement = { run: (...args: readonly unknown[]) => unknown };
 // undone straight after leaves every endpoint signal consistent. Wrapping that one native
 // statement makes the window deterministic instead of a timing race: the wrapper calls the real
 // run and restores the pathname in its finally.
-it("refuses a candidate that lost rows nobody selected when the swap is undone", async () => {
+it("ignores a source swapped around the adapter's attach and keeps the unselected work", async () => {
   const path = tempDb();
   const root = dirname(path);
   const source = await seedMarked(path, "must-keep", "WAL"); opened.push(source);
@@ -291,6 +290,89 @@ it("refuses a candidate that lost rows nobody selected when the swap is undone",
   const hidden = join(root, "aba-hidden.sqlite");
   const destination = join(root, "aba-candidate.sqlite");
 
+  const swaps = swapAroundAttach(path, replacement, hidden);
+  let application;
+  try {
+    application = await applyLocalObservationRetention(source, "2026-08-28T12:00:00.000Z", destination);
+  } finally { swaps.restore(); }
+
+  // The copy read the snapshot taken from this connection, so the swap changed nothing.
+  expect(swaps.count()).toBeGreaterThan(0);
+  expect(application.selection.blocked).toEqual([]);
+  const candidate = new AuthorityDb(destination); opened.push(candidate);
+  expect(count(candidate, "gjc_intents")).toBe(1);
+  expect(String(candidate.db.prepare("SELECT payload_json FROM gjc_intents").pluck().get()))
+    .toBe(JSON.stringify({ marker: "must-keep" }));
+  expect(marked(source)).toBe(JSON.stringify({ marker: "must-keep" }));
+  expect(existsSync(`${destination}.selected-source`)).toBe(false);
+});
+
+// A row whose own key happens to reuse a blocked identifier is still not a selected removal.
+it("keeps an unrelated row whose key reuses a blocked id when the source is swapped", async () => {
+  const f = await fixture();
+  const blockedObservation = f.chain.observation.id;
+  f.db.db.prepare(`INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,payload_digest,
+    idempotency_key,state,created_at) VALUES('decoy-must-keep','task:decoy','dispatch','{}','sha256:d',?,
+    'pending','2026-08-28T12:00:00.000Z')`).run(blockedObservation);
+  const root = dirname(f.db.filename);
+  const replacement = join(root, "decoy-replacement.sqlite");
+  const empty = new AuthorityDb(replacement);
+  await empty.migrate();
+  empty.db.pragma("wal_checkpoint(TRUNCATE)");
+  empty.db.pragma("journal_mode=DELETE");
+  empty.close();
+
+  const swaps = swapAroundAttach(f.db.filename, replacement, join(root, "decoy-hidden.sqlite"));
+  let application;
+  try {
+    application = await applyLocalObservationRetention(f.db, f.cutoff, f.destination);
+  } finally { swaps.restore(); }
+
+  expect(application.selection.blocked).toHaveLength(3);
+  const candidate = new AuthorityDb(f.destination); opened.push(candidate);
+  // The selected group is gone; the decoy, which only reuses the id as its own key, is not.
+  expect(count(candidate, "personal_recommendations")).toBe(0);
+  expect(Number(candidate.db.prepare(
+    "SELECT COUNT(*) FROM gjc_intents WHERE intent_id='decoy-must-keep'").pluck().get())).toBe(1);
+});
+
+// Generation lineage must come from the database the selection read, not from a substitute.
+it("advances the generation from the selected source when another is swapped in", async () => {
+  const path = tempDb();
+  const root = dirname(path);
+  const source = await seedMarked(path, "must-keep", "WAL"); opened.push(source);
+  const activeOf = (db: AuthorityDb): number => Number(db.db.prepare(
+    "SELECT generation FROM memory_database_generations WHERE state='active'").pluck().get());
+  const selectedGeneration = activeOf(source);
+
+  const replacement = join(root, "generation-replacement.sqlite");
+  const ahead = new AuthorityDb(replacement);
+  await ahead.migrate();
+  ahead.db.prepare(`UPDATE memory_database_generations SET state='retired',retired_at=?
+    WHERE state='active'`).run("2026-08-28T12:00:00.000Z");
+  ahead.db.prepare(`INSERT INTO memory_database_generations(generation,database_manifest_digest,state,
+    activated_at,retired_at) VALUES(?,?,'active',?,NULL)`).run(selectedGeneration + 1,
+    `sha256:${"a1b2c3d4".repeat(8)}`, "2026-08-28T12:00:00.000Z");
+  ahead.db.pragma("wal_checkpoint(TRUNCATE)");
+  ahead.db.pragma("journal_mode=DELETE");
+  ahead.close();
+
+  const swaps = swapAroundAttach(path, replacement, join(root, "generation-hidden.sqlite"));
+  let application;
+  try {
+    application = await applyLocalObservationRetention(source, "2026-08-28T12:00:00.000Z", destinationFor(root));
+  } finally { swaps.restore(); }
+
+  expect(application.build.source_generation).toBe(selectedGeneration);
+  expect(application.build.result_generation).toBe(selectedGeneration + 1);
+});
+
+function destinationFor(root: string): string {
+  return join(root, `swap-candidate-${Math.random().toString(36).slice(2)}.sqlite`);
+}
+
+/** Replaces the pathname for the duration of the adapter's ATTACH and restores it in a finally. */
+function swapAroundAttach(path: string, replacement: string, hidden: string) {
   const prototype = DatabaseConstructor.prototype as unknown as
     { prepare: (this: unknown, sql: string) => PreparedStatement };
   const original = prototype.prepare;
@@ -309,16 +391,5 @@ it("refuses a candidate that lost rows nobody selected when the swap is undone",
       },
     });
   };
-  try {
-    await expect(applyLocalObservationRetention(source, "2026-08-28T12:00:00.000Z", destination))
-      .rejects.toThrow("LOCAL_RETENTION_CANDIDATE_MISSING_ROW");
-  } finally {
-    prototype.prepare = original;
-  }
-
-  expect(swaps).toBe(1);
-  expect(existsSync(destination)).toBe(false);
-  // Nothing was selected for removal and the source still holds its work.
-  expect(marked(source)).toBe(JSON.stringify({ marker: "must-keep" }));
-  expect(count(source, "gjc_intents")).toBe(1);
-});
+  return { restore: () => { prototype.prepare = original; }, count: () => swaps };
+}

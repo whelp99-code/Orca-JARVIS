@@ -637,44 +637,40 @@ those five signals separately so neither claim can hide behind the other. The
 accurate contract is: no swap, no deletion, no logical change, and a maintenance
 write to the source's own write-ahead log.
 
-*Source identity.* The rebuild adapter copies by attaching `source.filename`
-through its own connection, so the selection and the copy can read different files
-whenever the pathname is replaced underneath the open connection. Two weaker
-answers were tried and both failed on measurement. Stat-ing the pathname pins only
-the name: after a replacement the stat and the fence agree with each other while
-the connection still reads the original file. Comparing row counts between the
-candidate and the selection's connection fails the same way, because a replacement
-carrying equal counts and different rows satisfies every count. Neither is
-evidence of content or of identity.
+*Source identity and the copy plan.* The rebuild adapter copies by attaching a pathname through
+its own connection, so selection and copy could read different files whenever that pathname was
+replaced underneath the open connection. Three weaker answers were tried and each was broken by a
+reviewer: stat-ing the pathname pins only the name; comparing row counts accepts a replacement
+carrying equal counts and different rows; and allowing any missing row that mentions a blocked
+identifier accepts the removal of an audit row whose subject happens to be a blocked context,
+which the copier deliberately keeps.
 
-The fence therefore reads the identity of the file the connection actually has
-open, from this process's own descriptor table (`/proc/self/fd`), and requires it
-to equal the file the pathname names; a mismatch is
-`LOCAL_RETENTION_SOURCE_IDENTITY_MISMATCH` and an unreadable descriptor table is
-`LOCAL_RETENTION_SOURCE_IDENTITY_UNVERIFIED`, so an unprovable binding refuses
-rather than assumes. The journal mode is irrelevant to this check, which matters:
-a DELETE-mode replacement disturbs none of the WAL-derived signals that
-accidentally caught the first replacement case. A replacement during the copy is
-still reported as movement.
+The apply now takes its own snapshot of the database the connection reads, through SQLite's backup
+API, and selection and copy both work from that snapshot. Binding is therefore by construction
+rather than by detection, and a pathname replaced around the adapter's attach - even one restored
+immediately afterwards - cannot change what is copied. The endpoint checks remain: the fence still
+pins this connection's `total_changes`, `data_version`, and the device and inode of the file the
+descriptor table says it has open, so a source that moved is still reported before any candidate is
+used.
 
-Those two checks bracket the build; they do not bind the attach the adapter makes
-in between. A pathname replaced just before that attach and restored just after
-would leave both endpoints, this connection's counters and any row count agreeing
-with themselves. So the decisive check is on the copied rows, and it runs in
-both directions. Every row in the candidate must be a row the selection's own
-connection holds, compared by value after blanking the columns the copy
-deliberately drops; a row the connection does not hold is
-`LOCAL_RETENTION_CANDIDATE_FOREIGN_ROW`. Every row the connection holds and the
-candidate lost must be one the selection blocked - each row this rebuild may drop
-names a blocked observation, context or recommendation in one of its columns - and
-is otherwise `LOCAL_RETENTION_CANDIDATE_MISSING_ROW`. The first direction alone was
-not enough: a substituted source that merely lacks unrelated rows is still a
-subset, so with nothing selected for removal an unrelated work row disappeared
-from a candidate that was accepted. The two tables the build rewrites are excluded
-from the row comparison and checked against their own contract instead - the
-migration count must match and the candidate's active generation must be the one
-the build reports - so exclusion is not a blanket permission to differ. Row counts
-were removed from this path entirely; they were never evidence of content.
+The candidate is then compared against what the copier's own plan produces from that snapshot. The
+plan is not restated: the keep filter is `copyFilter`, the column transforms are `copyExpression`,
+and the removals are `suppressedRowMutations`, the same functions the adapter and its sanitizer
+run. The comparison is a multiset over typed, length-prefixed row keys, so separators, quoting,
+empty strings, NULLs, blobs and numeric types cannot collide, and it runs in both directions: an
+extra row is `LOCAL_RETENTION_CANDIDATE_FOREIGN_ROW`, a lost row is
+`LOCAL_RETENTION_CANDIDATE_MISSING_ROW`, and a differing table or column set is
+`LOCAL_RETENTION_CANDIDATE_SCHEMA_INVALID`. The two tables the build rewrites are held to their own
+contracts instead of being excused: `schema_migrations` must match on applied id and checksum, and
+`memory_database_generations` must retire exactly the previously active row and add exactly the
+generation the build reports.
+
+*Source writes.* Because the checkpoint now lands on the snapshot, the apply leaves the source
+alone physically as well as logically: `total_changes`, every logical row count, the main file's
+SHA-256 and both sidecars are unchanged across an apply, and the snapshot is deleted with the call.
+The earlier record said the source's own write-ahead log was truncated by this path; that was true
+of the earlier implementation and is no longer true here. The shared rebuild adapter still
+checkpoints whatever database it is given, which is what its compaction and restore callers pass.
 
 *Selection and copy.* The adapter yields at `await fresh.migrate()`, so a write
 landing after the selection was still copied: a notification inserted in that gap

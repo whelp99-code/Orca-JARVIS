@@ -6,11 +6,11 @@ import type Database from "better-sqlite3";
 import { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
 import {
-  selectLocalObservationRetention, type LocalObservationRetentionSelection,
-  type RetentionProjection,
+  assertRetentionCutoff, selectLocalObservationRetention,
+  type LocalObservationRetentionSelection, type RetentionProjection,
 } from "./local-observation-retention-selection.js";
 import {
-  assertCandidateMatchesSelectedRemoval,
+  assertCandidateMatchesCopyPlan,
 } from "./local-observation-retention-candidate.js";
 import { buildFreshAuthority, type FreshAuthorityBuild } from "./memory-authority-fresh-builder.js";
 
@@ -187,29 +187,51 @@ function releaseRetentionDestination(destination: string): void {
  * while `total_changes()` stays equal. A failed or rejected build takes only this call's own
  * destination with it, leaving nothing that could be mistaken for a usable candidate.
  */
+/**
+ * Copies the database this connection reads into a file this call owns, through SQLite's backup
+ * API rather than through the pathname.
+ *
+ * This is what binds selection and copy to one source. The rebuild adapter attaches a pathname on
+ * its own connection, so while the pathname was the source, a replacement timed around that attach
+ * - even one undone immediately - produced a candidate built from a file the selection never read,
+ * and no endpoint check, counter or row comparison could tell. Reading through the open connection
+ * removes the question: the snapshot is the selection's data by construction, and everything after
+ * it, including the adapter's own filters, works from that one file.
+ */
+async function captureSelectedSource(source: AuthorityDb, snapshotPath: string): Promise<AuthorityDb> {
+  try {
+    await source.db.backup(snapshotPath);
+  } catch {
+    releaseRetentionDestination(snapshotPath);
+    throw new JarvisError("LOCAL_RETENTION_SOURCE_SNAPSHOT_FAILED");
+  }
+  return new AuthorityDb(snapshotPath);
+}
+
 export async function applyLocalObservationRetention(
   source: AuthorityDb, cutoffValue: unknown, freshPath: string,
 ): Promise<LocalObservationRetentionApplication> {
   const fence = retentionSourceFence(source);
-  const selection = selectLocalObservationRetention(source.db, cutoffValue);
+  assertRetentionCutoff(cutoffValue);
   const destination = claimRetentionDestination(source, freshPath);
+  const snapshotPath = `${destination}.selected-source`;
+  const snapshot = await captureSelectedSource(source, snapshotPath);
   try {
-    const build = await buildFreshAuthority(source, destination, {
+    const selection = selectLocalObservationRetention(snapshot.db, cutoffValue);
+    const build = await buildFreshAuthority(snapshot, destination, {
       blocked_projections: selection.blocked, sensitive_material: [], destination: "claimed",
     });
+    // The candidate must equal what the copier's own plan produces from this snapshot.
+    assertCandidateMatchesCopyPlan(snapshot, destination, selection.blocked, build.result_generation);
     const application = { selection, build, source_fence: fence };
-    // What was copied is checked before why it might differ: the endpoints bracket the build but
-    // do not bind the adapter's own attach, so the copied rows themselves are what settle it -
-    // in both directions, since a substituted source can also be missing rows nobody selected.
-    assertCandidateMatchesSelectedRemoval(source, destination, selection.blocked,
-      build.result_generation);
     verifyLocalObservationRetentionCandidate(source, application);
     return application;
   } catch (error) {
     releaseRetentionDestination(destination);
-    // A build that failed while the source was moving failed because of that movement; report the
-    // cause the caller can act on rather than the downstream symptom it produced.
     if (retentionFenceMoved(source, fence)) throw new JarvisError("LOCAL_RETENTION_SOURCE_CHANGED");
     throw error;
+  } finally {
+    if (snapshot.db.open) snapshot.close();
+    releaseRetentionDestination(snapshotPath);
   }
 }

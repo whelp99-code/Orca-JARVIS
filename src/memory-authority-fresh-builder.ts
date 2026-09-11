@@ -153,7 +153,8 @@ function schemaRows(database: AuthorityDb): readonly SchemaRow[] {
   });
 }
 
-function tableColumns(database: AuthorityDb, table: string): readonly string[] {
+/** Shared with the retention verifier so copy and check cannot drift apart. */
+export function tableColumns(database: AuthorityDb, table: string): readonly string[] {
   return database.db.prepare(`PRAGMA table_xinfo(${quote(table)})`).all().flatMap(value => {
     if (value === null || typeof value !== "object") return [];
     const name = Reflect.get(value, "name"); const hidden = Reflect.get(value, "hidden");
@@ -161,7 +162,7 @@ function tableColumns(database: AuthorityDb, table: string): readonly string[] {
   });
 }
 
-function copyExpression(table: string, column: string): string {
+export function copyExpression(table: string, column: string): string {
   // Disposable collected content never crosses physical reconstruction. Preserve subject holds.
   if (table === "local_timeline_subjects" && ["snapshot_json", "collection_id", "expires_at"].includes(column)) return "NULL";
   if (table === "control_command_requests" && (column === "target_json" || column === "args_json")) {
@@ -172,7 +173,7 @@ function copyExpression(table: string, column: string): string {
   return `source_row.${quote(column)}`;
 }
 
-function copyFilter(table: string, columns: readonly string[]): string {
+export function copyFilter(table: string, columns: readonly string[]): string {
   const projection = "blocked_projections";
   if (table === "memory_outbox") return `WHERE NOT EXISTS (SELECT 1 FROM ${projection} p
     WHERE (p.kind='candidate' AND p.id=source_row.candidate_id)

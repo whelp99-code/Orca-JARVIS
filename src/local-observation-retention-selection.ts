@@ -71,13 +71,18 @@ export function resolveLocalObservationRetentionCutoff(
  * recommendation still addressed by a notification intent. That second case has no foreign
  * key and no index behind it, so the rebuild's integrity check cannot catch it.
  */
-export function selectLocalObservationRetention(
-  database: Database.Database, cutoffValue: unknown,
-): LocalObservationRetentionSelection {
+/** The cutoff guard on its own, so a caller can refuse before it claims or copies anything. */
+export function assertRetentionCutoff(cutoffValue: unknown): string {
   if (typeof cutoffValue !== "string" || !isPersistenceTime(cutoffValue)) {
     throw new JarvisError("LOCAL_RETENTION_CUTOFF_INVALID");
   }
-  const cutoff = cutoffValue;
+  return cutoffValue;
+}
+
+export function selectLocalObservationRetention(
+  database: Database.Database, cutoffValue: unknown,
+): LocalObservationRetentionSelection {
+  const cutoff = assertRetentionCutoff(cutoffValue);
   const expired = database.prepare(
     `SELECT observation_id FROM personal_observations
      WHERE source_id=? AND expires_at<=? ORDER BY expires_at,observation_id`,

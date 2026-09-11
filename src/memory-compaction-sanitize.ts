@@ -116,63 +116,84 @@ function selectionFor(projection: SuppressedProjection): Selection | undefined {
   }
 }
 
-function deleteStatements(projection: SuppressedProjection): readonly DeleteStatement[] {
+/**
+ * The rows each suppressed projection removes or rewrites, as data rather than SQL text, so the
+ * retention verifier can compute the same expected result the compaction path produces.
+ */
+export type SuppressedRowMutation = {
+  readonly table: string;
+  readonly where: string;
+  readonly params: readonly string[];
+  readonly update?: string;
+};
+
+export function suppressedRowMutations(
+  projection: SuppressedProjection,
+): readonly SuppressedRowMutation[] {
+  const remove = (table: string, where: string, ...params: string[]): SuppressedRowMutation =>
+    ({ table, where, params });
   switch (projection.kind) {
     case "notification_intent": return [
-      statement("DELETE FROM notification_deliveries WHERE intent_id=?", projection.id),
-      statement("DELETE FROM notification_intents WHERE intent_id=?", projection.id),
+      remove("notification_deliveries", "intent_id=?", projection.id),
+      remove("notification_intents", "intent_id=?", projection.id),
     ];
     case "recommendation": return [
-      statement("DELETE FROM personal_recommendation_action_events WHERE recommendation_id=?", projection.id),
-      statement("DELETE FROM personal_recommendation_actions WHERE recommendation_id=?", projection.id),
-      statement("DELETE FROM personal_recommendation_evidence WHERE recommendation_id=?", projection.id),
-      statement("DELETE FROM personal_recommendations WHERE recommendation_id=?", projection.id),
+      remove("personal_recommendation_action_events", "recommendation_id=?", projection.id),
+      remove("personal_recommendation_actions", "recommendation_id=?", projection.id),
+      remove("personal_recommendation_evidence", "recommendation_id=?", projection.id),
+      remove("personal_recommendations", "recommendation_id=?", projection.id),
     ];
     case "context": return [
-      statement("DELETE FROM personal_context_observations WHERE context_id=?", projection.id),
-      statement("DELETE FROM personal_context_memory_evidence WHERE context_id=?", projection.id),
-      statement("DELETE FROM personal_context_evidence WHERE context_id=?", projection.id),
-      statement("DELETE FROM personal_context_snapshots WHERE context_id=?", projection.id),
+      remove("personal_context_observations", "context_id=?", projection.id),
+      remove("personal_context_memory_evidence", "context_id=?", projection.id),
+      remove("personal_context_evidence", "context_id=?", projection.id),
+      remove("personal_context_snapshots", "context_id=?", projection.id),
     ];
     case "daily_run": return [
-      statement("DELETE FROM daily_loop_checkpoints WHERE run_id=?", projection.id),
-      statement("DELETE FROM daily_loop_steps WHERE run_id=?", projection.id),
-      statement("DELETE FROM daily_loop_runs WHERE run_id=?", projection.id),
+      remove("daily_loop_checkpoints", "run_id=?", projection.id),
+      remove("daily_loop_steps", "run_id=?", projection.id),
+      remove("daily_loop_runs", "run_id=?", projection.id),
     ];
-    case "daily_step": case "morning_brief": case "evening_closeout":
-      return [statement("DELETE FROM daily_loop_checkpoints WHERE step_id=?", projection.id),
-        statement("DELETE FROM daily_loop_steps WHERE step_id=?", projection.id)];
+    case "daily_step": case "morning_brief": case "evening_closeout": return [
+      remove("daily_loop_checkpoints", "step_id=?", projection.id),
+      remove("daily_loop_steps", "step_id=?", projection.id),
+    ];
     case "observation": return [
-      statement("DELETE FROM personal_source_checkpoints WHERE observation_id=?", projection.id),
-      statement("DELETE FROM personal_observations WHERE observation_id=?", projection.id),
+      remove("personal_source_checkpoints", "observation_id=?", projection.id),
+      remove("personal_observations", "observation_id=?", projection.id),
     ];
-    case "control_payload": case "restore_control": return [statement(
-      `UPDATE control_command_requests SET target_json='{"purged":true}',
-       args_json='{"purged":true}' WHERE request_id=?`, projection.id,
-    )];
+    case "control_payload": case "restore_control": return [{
+      table: "control_command_requests", where: "request_id=?", params: [projection.id],
+      update: `target_json='{"purged":true}',args_json='{"purged":true}'`,
+    }];
     case "outbox": return [
-      statement("DELETE FROM memory_scoped_settlements WHERE outbox_id=?", projection.id),
-      statement("DELETE FROM memory_scoped_completion_observations WHERE outbox_id=?", projection.id),
-      statement("DELETE FROM memory_scoped_outbox_bindings WHERE outbox_id=?", projection.id),
-      statement("DELETE FROM memory_outbox_control_cursor WHERE last_outbox_id=?", projection.id),
-      statement("DELETE FROM memory_reconciliation_events WHERE outbox_id=?", projection.id),
-      statement("DELETE FROM memory_outbox_attempts WHERE outbox_id=?", projection.id),
-      statement("DELETE FROM memory_outbox WHERE outbox_id=?", projection.id),
+      remove("memory_scoped_settlements", "outbox_id=?", projection.id),
+      remove("memory_scoped_completion_observations", "outbox_id=?", projection.id),
+      remove("memory_scoped_outbox_bindings", "outbox_id=?", projection.id),
+      remove("memory_outbox_control_cursor", "last_outbox_id=?", projection.id),
+      remove("memory_reconciliation_events", "outbox_id=?", projection.id),
+      remove("memory_outbox_attempts", "outbox_id=?", projection.id),
+      remove("memory_outbox", "outbox_id=?", projection.id),
     ];
     case "candidate": return [
-      statement("DELETE FROM memory_candidate_authority_claims WHERE candidate_id=?", projection.id),
-      statement("DELETE FROM memory_candidate_verification_authority WHERE candidate_id=?", projection.id),
-      statement("DELETE FROM memory_candidate_source_refs WHERE candidate_id=?", projection.id),
-      statement("DELETE FROM memory_candidate_idempotency WHERE candidate_id=?", projection.id),
-      statement("DELETE FROM memory_candidate_classifications WHERE candidate_id=?", projection.id),
-      statement("DELETE FROM memory_candidates WHERE candidate_id=?", projection.id),
+      remove("memory_candidate_authority_claims", "candidate_id=?", projection.id),
+      remove("memory_candidate_verification_authority", "candidate_id=?", projection.id),
+      remove("memory_candidate_source_refs", "candidate_id=?", projection.id),
+      remove("memory_candidate_idempotency", "candidate_id=?", projection.id),
+      remove("memory_candidate_classifications", "candidate_id=?", projection.id),
+      remove("memory_candidates", "candidate_id=?", projection.id),
     ];
     default: return [];
   }
 }
 
-function statement(sql: string, ...params: string[]): DeleteStatement {
-  return { sql, params };
+function deleteStatements(projection: SuppressedProjection): readonly DeleteStatement[] {
+  return suppressedRowMutations(projection).map(mutation => ({
+    sql: mutation.update === undefined
+      ? `DELETE FROM ${quote(mutation.table)} WHERE ${mutation.where}`
+      : `UPDATE ${quote(mutation.table)} SET ${mutation.update} WHERE ${mutation.where}`,
+    params: mutation.params,
+  }));
 }
 
 function quote(identifier: string): string {
