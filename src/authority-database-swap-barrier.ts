@@ -1,5 +1,6 @@
 import {
-  closeSync, constants, fstatSync, fsyncSync, linkSync, openSync, readFileSync, rmSync, writeSync,
+  closeSync, constants, existsSync, fstatSync, fsyncSync, linkSync, lstatSync, openSync,
+  readFileSync, renameSync, rmSync, writeSync,
 } from "node:fs";
 import { randomUUID } from "node:crypto";
 import { dirname } from "node:path";
@@ -118,12 +119,14 @@ export function openUnderSwapAdmission<T extends { close: () => void }>(
 }
 
 /**
- * Takes the barrier for this process, or refuses because somebody else holds it.
+ * Takes the barrier for this replacement, or refuses because somebody holds it.
  *
- * Everything that can create or remove the barrier path runs under one lock, so the two steps this
- * needs - clearing a record whose owner is gone, and putting ours in its place - cannot interleave
- * with another process doing the same. The record is written to a unique name first, complete and
- * flushed, and linked into place, so the path never names a half-written barrier.
+ * Everything that can create or remove the barrier path runs under one lock, so clearing a record
+ * whose owner is gone and putting ours in its place cannot interleave with another process doing
+ * the same. A live record refuses this publication whoever wrote it - including another operation
+ * in this process, which is a different holder even though it shares a pid. What is at the path
+ * but unreadable as a record is not deleted: it is moved aside under the lock, because an object
+ * this cannot account for is preserved, and leaving it would deny every future swap.
  */
 export function publishSwapBarrier(
   database: string, reason: AuthoritySwapBarrier["reason"], now: Date,
@@ -131,18 +134,22 @@ export function publishSwapBarrier(
   const canonical = canonicalDatabase(database);
   const record = BarrierSchema.parse({
     schema_version: 1, pid: process.pid, start_token: processStartToken(process.pid),
-    database: canonical, reason, created_at: now.toISOString(),
+    operation_token: randomUUID(), database: canonical, reason, created_at: now.toISOString(),
   });
   const path = swapBarrierPath(database);
   return withSwapBarrierLock(canonical, () => {
     const found = barrierRecord(database);
-    if (!found.debris && found.record !== undefined && !isOwner(found.record)) {
+    if (!found.debris && found.record !== undefined) {
       throw new JarvisError("AUTHORITY_DATABASE_SWAP_IN_PROGRESS");
     }
-    // Debris, or a barrier this process already holds. Either way nobody else may be creating or
-    // removing this path right now, so clearing it and taking it is one uninterrupted act.
     if (found.identity !== undefined) rmSync(path, { force: true });
-    const staged = `${path}.${randomUUID()}.staged`;
+    else if (existsSync(path) || lstatSync(path, { throwIfNoEntry: false }) !== undefined) {
+      // Something is there that could not be read as a record: a link, a directory, a pipe. It
+      // cannot be a live barrier, and it must not stand in the way for ever, so it is moved aside
+      // rather than destroyed and the operator can see what it was.
+      renameSync(path, `${path}.${record.operation_token}.unreadable`);
+    }
+    const staged = `${path}.${record.operation_token}.staged`;
     const descriptor = openSync(staged, "wx", 0o600);
     try {
       writeSync(descriptor, `${canonicalize(record)}\n`);
@@ -161,18 +168,19 @@ export function publishSwapBarrier(
 }
 
 /**
- * Gives the barrier up. Only the process that took it may, and only the record it wrote.
- *
- * Under the same lock as taking it, so the record read here is the record removed here.
+ * Gives the barrier up. Only the publication that took it may, identified by its own token.
  */
-export function releaseSwapBarrier(database: string): void {
+export function releaseSwapBarrier(database: string, held?: AuthoritySwapBarrier): void {
   const canonical = canonicalDatabase(database);
   const path = swapBarrierPath(database);
   withSwapBarrierLock(canonical, () => {
     const found = barrierRecord(database);
     if (found.identity === undefined) return;
-    if (!found.debris && found.record !== undefined && !isOwner(found.record)) {
-      throw new JarvisError("AUTHORITY_DATABASE_SWAP_IN_PROGRESS");
+    const record = found.record;
+    if (!found.debris && record !== undefined) {
+      const mine = isOwner(record)
+        && (held === undefined || record.operation_token === held.operation_token);
+      if (!mine) throw new JarvisError("AUTHORITY_DATABASE_SWAP_IN_PROGRESS");
     }
     rmSync(path, { force: true });
     syncPath(dirname(path));

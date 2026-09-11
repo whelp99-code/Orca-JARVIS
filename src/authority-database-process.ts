@@ -10,6 +10,12 @@ export type OpenInodeObservation = {
   /** Holders with at least one descriptor that can write. A reader cannot lose a write. */
   readonly writable_holders: readonly RegisteredAuthorityProcess[];
   readonly fd_count: number;
+  /**
+   * Processes of this user whose descriptors could not be read, so this observation says nothing
+   * about them. A replacement that needs to know nobody else holds the file cannot be decided
+   * while this is non-empty; a report can be.
+   */
+  readonly unprovable: readonly number[];
 };
 
 export function effectiveUserId(): number {
@@ -52,6 +58,7 @@ export function discoverOpenInodeHolders(
 ): OpenInodeObservation {
   const holders: RegisteredAuthorityProcess[] = [];
   const writable: RegisteredAuthorityProcess[] = [];
+  const unprovable: number[] = [];
   const requiredPids = new Set(required.map(item => item.pid));
   let fdCount = 0;
   for (const entry of readdirSync("/proc", { withFileTypes: true })) {
@@ -71,7 +78,12 @@ export function discoverOpenInodeHolders(
       count = processOpenInodeCount(process, device, inode);
     } catch (error) {
       if (error instanceof ProcessObservationError && denied(error)
-        && !requiredPids.has(pid)) continue;
+        && !requiredPids.has(pid)) {
+        // Not skipped quietly: a process this cannot read is a hole in the answer, and the caller
+        // that is about to replace a file has to be told rather than left to assume.
+        unprovable.push(pid);
+        continue;
+      }
       throw error;
     }
     if (count.descriptors === 0) continue;
@@ -79,7 +91,7 @@ export function discoverOpenInodeHolders(
     if (count.writable !== 0) writable.push(process);
     fdCount += count.descriptors;
   }
-  return { holders, writable_holders: writable, fd_count: fdCount };
+  return { holders, writable_holders: writable, fd_count: fdCount, unprovable };
 }
 
 type OpenInodeCount = { readonly descriptors: number; readonly writable: number };

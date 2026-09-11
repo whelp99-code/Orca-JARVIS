@@ -7,6 +7,8 @@ export const BarrierSchema = z.object({
   schema_version: z.literal(1),
   pid: z.number().int().positive(),
   start_token: z.string().regex(/^\d+$/),
+  /** One publication, not one process: two operations in a process are two different holders. */
+  operation_token: z.string().uuid(),
   database: z.string().min(1),
   reason: z.enum(["local_retention", "memory_compaction"]),
   created_at: z.string().min(1),
@@ -32,7 +34,13 @@ export function canonicalDatabase(database: string): string {
   }
 }
 
-/** True while this process is the one the record names, same pid and same start token. */
+/**
+ * True while this process is the one the record names.
+ *
+ * Admission uses this, because the connection a swap reopens is opened by the swap's own process
+ * and has no token to present. Taking and giving up the barrier use the token as well, so that two
+ * operations inside one process cannot each believe the barrier is theirs.
+ */
 export function isOwner(barrier: AuthoritySwapBarrier): boolean {
   if (barrier.pid !== process.pid) return false;
   try {

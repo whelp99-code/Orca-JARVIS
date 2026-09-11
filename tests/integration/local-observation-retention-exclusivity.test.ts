@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
 import { closeSync, existsSync, mkdirSync, openSync, statSync, writeFileSync } from "node:fs";
@@ -151,7 +152,7 @@ it("gives a connection up when a swap begins while it is being opened", async ()
   const attempt = (): unknown => openUnderSwapAdmission(db.filename, () => {
     writeFileSync(barrier, `${JSON.stringify({
       schema_version: 1, pid: ownerPid, start_token: processStartToken(ownerPid),
-      database: named, reason: "local_retention",
+      operation_token: randomUUID(), database: named, reason: "local_retention",
       created_at: new Date().toISOString(),
     })}\n`, { mode: 0o600 });
     const descriptor = openSync(db.filename, "r");
