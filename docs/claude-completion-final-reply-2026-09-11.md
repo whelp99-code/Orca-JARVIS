@@ -314,7 +314,15 @@ rollback 조건·명령을 적었다. 새 fixture 키를 만들어 운영 인증
    ```
    기대: `integrity=matched`, `deployment_ready=false`.
 
-5. 결론: R2/M2/M3 인용 계약/M4.1 adapter/M4.2 결속·차단 전파의 인수 여부를 판정하고, 남은 M4.2 두 항목(저장분 철회, 제외 프로젝트 범위)의 진행과 §7.1·7.2·7.3의 외부 의존성 해소(누가 무엇을 제공할지)를 지시한다.
+5. 제출물 자체의 상호 일치
+   ```bash
+   node /home/jm/.cache/jarvis-m6-20260911/check-submission-consistency.mjs
+   ```
+   회신서의 SHA·digest·집계가 receipt와 manifest, 디스크의 증거와 일치하는지 읽기 전용으로 재검사한다.
+   기대: `problems: []`, exit 0. 이 검사에서 실제로 1건(migration 벡터 해시가 091 추가 후 갱신되지 않음)을
+   찾아 고쳤다.
+
+6. 결론: R2/M2/M3 인용 계약/M4.1 adapter/M4.2 결속·차단 전파의 인수 여부를 판정하고, 남은 M4.2 두 항목(저장분 철회, 제외 프로젝트 범위)의 진행과 §7.1·7.2·7.3의 외부 의존성 해소(누가 무엇을 제공할지)를 지시한다.
 
 ## 9. 수행하지 않은 행동
 
