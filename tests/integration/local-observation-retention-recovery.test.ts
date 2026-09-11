@@ -3,7 +3,7 @@ import { once } from "node:events";
 import {
   existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, writeFileSync,
 } from "node:fs";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { createInterface } from "node:readline";
 import { afterEach, expect, it } from "vitest";
 import { AuthorityDatabaseRuntime } from "../../src/authority-database-runtime.js";
@@ -88,17 +88,26 @@ const operations = (db: AuthorityDb): unknown[] => rows(db,
 const state = (db: AuthorityDb): string =>
   String(db.db.prepare("SELECT state FROM local_retention_operations").pluck().get());
 
+/** The path this operation actually built, derived from the identity the ledger recorded. */
+function stagedOf(db: AuthorityDb, seed: Seed): string {
+  const row = rows(db, `SELECT operation_id FROM local_retention_operations
+    ORDER BY rowid DESC LIMIT 1`)[0] as { operation_id: string } | undefined;
+  const id = String(row?.operation_id ?? "").replace(/^retention:/, "");
+  return join(dirname(seed.path), `.${basename(seed.candidate)}.${id}.staged`, "candidate.sqlite");
+}
+
 it("explains a process killed with the claim recorded and nothing built", async () => {
   const seed = await seeded();
   await crashAt(seed, "after_claim");
   const db = reopen(seed);
+  const stagedFile = stagedOf(db, seed);
   expect(state(db)).toBe("preparing");
   expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(seed.observations);
 
   const recovered = recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT));
   expect(recovered.map(item => item.outcome)).toEqual(["removed_partial"]);
-  expect(recovered[0]?.candidate_path).toBe(seed.candidateFile);
-  expect(existsSync(seed.candidate)).toBe(false);
+  expect(recovered[0]?.candidate_path).toBe(stagedFile);
+  expect(existsSync(dirname(stagedFile))).toBe(false);
   expect(state(db)).toBe("abandoned");
   expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(seed.observations);
 }, 60_000);
@@ -107,12 +116,13 @@ it("removes a half-copied candidate and leaves the source able to try again", as
   const seed = await seeded();
   await crashAt(seed, "during_copy");
   const db = reopen(seed);
+  const stagedFile = stagedOf(db, seed);
   expect(state(db)).toBe("preparing");
-  expect(statSync(seed.candidateFile).size).toBeGreaterThan(0);
+  expect(statSync(stagedFile).size).toBeGreaterThan(0);
 
   const recovered = recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT));
   expect(recovered.map(item => item.outcome)).toEqual(["removed_partial"]);
-  expect(existsSync(seed.candidate)).toBe(false);
+  expect(existsSync(dirname(stagedFile))).toBe(false);
   expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(seed.observations);
   // The path is claimable again, which is what makes the retry possible at all.
   await crashAt(seed, "after_claim");
@@ -124,11 +134,12 @@ it("discards a verified candidate its process never applied, losing nothing", as
   const seed = await seeded();
   await crashAt(seed, "after_verify");
   const db = reopen(seed);
+  const stagedFile = stagedOf(db, seed);
   expect(state(db)).toBe("verified");
 
   const recovered = recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT));
   expect(recovered.map(item => item.outcome)).toEqual(["removed_unapplied"]);
-  expect(existsSync(seed.candidate)).toBe(false);
+  expect(existsSync(dirname(stagedFile))).toBe(false);
   expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(seed.observations);
   expect(scalar(db, `SELECT COUNT(*) FROM personal_observations WHERE observation_id='${seed.observation}'`))
     .toBe(1);
@@ -138,8 +149,9 @@ it("keeps the source intact when the process dies one step before the swap", asy
   const seed = await seeded();
   await crashAt(seed, "before_swap");
   const db = reopen(seed);
+  const stagedFile = stagedOf(db, seed);
   expect(state(db)).toBe("verified");
-  const candidate = new AuthorityDb(seed.candidateFile);
+  const candidate = new AuthorityDb(stagedFile);
   opened.push(candidate);
   // The applied record is written into the candidate, so a candidate that never went live has none.
   expect(scalar(candidate, "SELECT COUNT(*) FROM local_retention_operations")).toBe(0);
@@ -158,11 +170,12 @@ it("leaves an applied database that explains its own history when the process di
     await crashAt(seed, "after_swap");
     const live = statSync(seed.path, { bigint: true });
     const db = reopen(seed);
+    const stagedFile = stagedOf(db, seed);
     expect(operations(db)).toEqual([{
       operation_id: expect.stringMatching(/^retention:/) as unknown,
       state: "applied",
       failure_code: null,
-      candidate_path: seed.candidateFile,
+      candidate_path: stagedFile,
       result_device: live.dev.toString(),
       result_inode: live.ino.toString(),
     }]);
@@ -170,7 +183,7 @@ it("leaves an applied database that explains its own history when the process di
       .toBeLessThan(seed.observations);
     expect(scalar(db, `SELECT COUNT(*) FROM personal_observations WHERE observation_id='${seed.observation}'`))
       .toBe(0);
-    expect(existsSync(seed.candidate)).toBe(false);
+    expect(existsSync(dirname(stagedFile))).toBe(false);
     expect(recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT))).toEqual([]);
   });
 
@@ -178,21 +191,22 @@ it("preserves a file at the claimed path that this operation did not create", as
   const seed = await seeded();
   await crashAt(seed, "during_copy");
   const db = reopen(seed);
-  const claimed = statSync(seed.candidateFile, { bigint: true });
+  const stagedFile = stagedOf(db, seed);
+  const claimed = statSync(stagedFile, { bigint: true });
   // Somebody else's file under the same name, inside the directory this operation owns. It is
   // created while the candidate still exists and renamed over it, so it cannot be handed the
   // candidate's inode number; the filesystem may recycle that number later, which is why birth
   // time is recorded with it.
-  const foreign = `${seed.candidateFile}.foreign`;
+  const foreign = `${stagedFile}.foreign`;
   writeFileSync(foreign, "not the candidate\n");
-  rmSync(seed.candidateFile);
-  renameSync(foreign, seed.candidateFile);
-  const replaced = statSync(seed.candidateFile, { bigint: true });
+  rmSync(stagedFile);
+  renameSync(foreign, stagedFile);
+  const replaced = statSync(stagedFile, { bigint: true });
   expect([replaced.ino, replaced.birthtimeNs]).not.toEqual([claimed.ino, claimed.birthtimeNs]);
 
   const recovered = recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT));
   expect(recovered.map(item => item.outcome)).toEqual(["retained_unproven"]);
-  expect(readFileSync(seed.candidateFile, "utf8")).toBe("not the candidate\n");
+  expect(readFileSync(stagedFile, "utf8")).toBe("not the candidate\n");
   // Unproven work stays unfinished on the record too: nothing here decides what that file is.
   expect(state(db)).toBe("preparing");
 }, 60_000);
@@ -204,7 +218,7 @@ it("refuses to install a candidate whose bytes changed after it was verified", a
     new Date(LOCAL_CHAIN_AT));
 
   // Same path, same inode, same birth time, different bytes.
-  const candidate = new AuthorityDb(seed.candidateFile);
+  const candidate = new AuthorityDb(application.operation.candidate_path);
   candidate.db.pragma("user_version = 42");
   candidate.db.pragma("wal_checkpoint(TRUNCATE)");
   candidate.close();
@@ -220,6 +234,7 @@ it("refuses to install a candidate whose bytes changed after it was verified", a
 it("writes the verified digest once and refuses to have it rewritten", async () => {
   const seed = await seeded();
   const db = reopen(seed);
+  const stagedFile = stagedOf(db, seed);
   await applyLocalObservationRetention(db, seed.cutoff, seed.candidate, new Date(LOCAL_CHAIN_AT));
 
   const recorded = String(db.db.prepare("SELECT verified_digest FROM local_retention_operations")
@@ -248,10 +263,11 @@ it("leaves an operation alone while the process that owns it is still running", 
 
     // The child is held, not killed: its row says `preparing` exactly like a crashed one would.
     const db = reopen(seed);
+    const stagedFile = stagedOf(db, seed);
     const recovered = recoverLocalRetentionOperations(db, new Date(LOCAL_CHAIN_AT));
     expect(recovered.map(item => item.outcome)).toEqual(["retained_active"]);
     expect(state(db)).toBe("preparing");
-    expect(existsSync(seed.candidate)).toBe(true);
+    expect(existsSync(dirname(stagedFile))).toBe(true);
   } finally {
     child.kill("SIGKILL");
     await once(child, "exit");
@@ -263,6 +279,7 @@ it("leaves an operation alone while the process that owns it is still running", 
 it("keeps a directory an intent never proved it created", async () => {
   const seed = await seeded();
   const db = reopen(seed);
+  const stagedFile = stagedOf(db, seed);
   const foreign = seed.candidate;
   mkdirSync(foreign, { recursive: true });
   writeFileSync(join(foreign, "sentinel.txt"), "somebody else's directory");
@@ -285,6 +302,7 @@ it("keeps a directory an intent never proved it created", async () => {
 it("does not decide a claim is abandoned when it cannot read the owner", async () => {
   const seed = await seeded();
   const db = reopen(seed);
+  const stagedFile = stagedOf(db, seed);
   mkdirSync(seed.candidate, { recursive: true });
   writeFileSync(join(seed.candidate, "sentinel.txt"), "unreadable owner");
   // No start token: nothing here says the process that wrote this is gone.

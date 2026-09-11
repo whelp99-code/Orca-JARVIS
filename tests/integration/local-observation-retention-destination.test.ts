@@ -84,8 +84,10 @@ it("ignores a stale sidecar beside the name and never writes through it", async 
 
   const applied = await applyLocalObservationRetention(db, cutoff, destination);
 
-  expect(applied.build.fresh_path).toBe(join(destination, "candidate.sqlite"));
-  expect(lstatSync(destination).isDirectory()).toBe(true);
+  // The operation builds under its own name; the announced destination is never created, so the
+  // sidecar beside that name is untouched and nothing was ever written through it.
+  expect(applied.build.fresh_path).toBe(applied.operation.candidate_path);
+  expect(existsSync(destination)).toBe(false);
   expect(readFileSync(`${destination}-wal`, "utf8")).toBe("stale sidecar");
 });
 
@@ -102,7 +104,12 @@ it("gives exactly one of two racing calls the destination", async () => {
   const rejected = results.find(result => result.status === "rejected");
   expect(String(rejected instanceof Object && "reason" in rejected ? rejected.reason : ""))
     .toContain("LOCAL_RETENTION_DESTINATION_INVALID");
-  const rebuilt = new AuthorityDb(join(destination, "candidate.sqlite")); opened.push(rebuilt);
+  // The winner announced the destination exclusively in the ledger; what it actually built lives
+  // under its own name, which is where the rebuilt database is read from.
+  const winner = results.find(result => result.status === "fulfilled");
+  const built = winner !== undefined && winner.status === "fulfilled"
+    ? winner.value.operation.candidate_path : "";
+  const rebuilt = new AuthorityDb(built); opened.push(rebuilt);
   expect(observations(rebuilt)).toBe(0);
   expect(observations(db)).toBe(1);
 });

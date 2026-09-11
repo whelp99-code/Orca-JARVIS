@@ -140,7 +140,7 @@ it("still produces a candidate on a retry after a rejected apply", async () => {
   expect(retry.selection.retained).toEqual([
     { observation_id: f.chain.observation.id, reason: "notification_addresses_recommendation" }]);
   expect(retry.build.foreign_key_errors).toBe(0);
-  expect(existsSync(f.destination)).toBe(true);
+  expect(existsSync(retry.operation.candidate_path)).toBe(true);
 });
 
 it("finds the dangling reference a clean foreign_key_check cannot", async () => {
@@ -174,7 +174,7 @@ it("reports a candidate stale once the source moves past the fence it was built 
   expect(() => verifyLocalObservationRetentionCandidate(f.db, application))
     .toThrow("LOCAL_RETENTION_SOURCE_CHANGED");
   // Detection happens before any swap, so both files stay exactly where the caller left them.
-  expect(existsSync(f.destination)).toBe(true);
+  expect(existsSync(application.operation.candidate_path)).toBe(true);
   expect(count(f.db, "personal_recommendations")).toBe(1);
 });
 

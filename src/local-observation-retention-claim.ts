@@ -64,7 +64,7 @@ export function stagedClaimPath(directory: string, operationId: string): string 
  * recorded while the objects are still there, the rename carries the same inode to the
  * destination, and a crash before the rename leaves nothing at the destination at all.
  */
-export function claimRetentionOperation(directory: string, staged: string): RetentionPaths {
+export function claimRetentionOperation(staged: string): RetentionPaths {
   try {
     mkdirSync(staged, { mode: 0o700 });
   } catch {
@@ -73,33 +73,8 @@ export function claimRetentionOperation(directory: string, staged: string): Rete
   // The candidate file exists from the claim so the operation record can identify it before the
   // build writes through it; the build opens this file rather than creating its own.
   closeSync(openSync(join(staged, "candidate.sqlite"), "wx", 0o600));
-  return { directory, candidate: join(directory, "candidate.sqlite"),
-    snapshot: join(directory, "snapshot.sqlite") };
-}
-
-/**
- * Moves the staged objects onto the destination, which nothing else may hold.
- *
- * The name is taken by creating it, which the kernel refuses if anything at all is already there -
- * a file, a full directory, an empty one. That create is then undone and the staged objects are
- * renamed in. Two cooperating runs never reach here for the same destination, because announcing
- * it is exclusive in the database; what this ordering adds is that a run does not decide the name
- * is free by asking and then acting on the answer. Node exposes no rename that refuses to replace,
- * so the remaining gap is between the undo and the rename, and only a process outside this
- * protocol can be inside it.
- */
-export function takeRetentionDestination(staged: string, directory: string): void {
-  try {
-    mkdirSync(directory, { mode: 0o700 });
-  } catch {
-    throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
-  }
-  try {
-    rmdirSync(directory);
-    renameSync(staged, directory);
-  } catch {
-    throw new JarvisError("LOCAL_RETENTION_DESTINATION_INVALID");
-  }
+  return { directory: staged, candidate: join(staged, "candidate.sqlite"),
+    snapshot: join(staged, "snapshot.sqlite") };
 }
 
 /** Removes the directory this call created, and only that. */

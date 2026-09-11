@@ -19,7 +19,7 @@ import {
 import { buildFreshAuthority, type FreshAuthorityBuild } from "./memory-authority-fresh-builder.js";
 import {
   claimRetentionOperation, releaseRetentionOperation, resolveRetentionDirectory, stagedClaimPath,
-  takeRetentionDestination, type RetentionPaths,
+  type RetentionPaths,
 } from "./local-observation-retention-claim.js";
 
 export { stagedClaimPath } from "./local-observation-retention-claim.js";
@@ -122,7 +122,7 @@ export async function applyLocalObservationRetention(
   let paths: RetentionPaths;
   const staged = stagedClaimPath(directory, intent.operation_id);
   try {
-    paths = claimRetentionOperation(directory, staged);
+    paths = claimRetentionOperation(staged);
   } catch (error) {
     // Nothing was created, so whatever the destination holds is somebody else's and untouched.
     fence = ownWrite(fence, clearRetentionClaimIntent(source, intent.operation_id));
@@ -132,13 +132,6 @@ export async function applyLocalObservationRetention(
   // rename below carries the same inode to the destination, so a crash on either side of it
   // leaves something recovery can prove rather than a destination nobody can account for.
   fence = ownWrite(fence, recordRetentionClaimIdentity(source, intent.operation_id, staged));
-  try {
-    takeRetentionDestination(staged, directory);
-  } catch (error) {
-    releaseRetentionOperation(staged);
-    fence = ownWrite(fence, clearRetentionClaimIntent(source, intent.operation_id));
-    throw error;
-  }
   let snapshot: Awaited<ReturnType<typeof captureSelectedSource>>;
   try {
     snapshot = await captureSelectedSource(source, paths.snapshot);

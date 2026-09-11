@@ -144,8 +144,12 @@ it("stops the next cycle instead of piling candidates beside work it cannot acco
     lines.close();
     child.kill("SIGKILL");
     await once(child, "exit");
-    rmSync(seeded.candidateFile);
-    writeFileSync(seeded.candidateFile, "someone else's file\n");
+    // The operation builds under a name derived from its own id, so the path is read from the
+    // record it left rather than predicted from the name the cycle announced.
+    const built = String(seeded.db.db
+      .prepare("SELECT candidate_path FROM local_retention_operations").pluck().get());
+    rmSync(built);
+    writeFileSync(built, "someone else's file\n");
 
     const cycle = await service(seeded,
       { config: seeded.config, runtime: seeded.runtime, now: () => seeded.cutoffAt }).cycle();
