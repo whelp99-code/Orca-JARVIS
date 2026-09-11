@@ -21,13 +21,13 @@ M5의 설정 manifest·적용/rollback 안은 구현·회귀·전체 gate를 마
 |---|---|
 | worktree | `/home/jm/orca/workspaces/Orca-JARVIS/codex-routing-approval-ui` |
 | branch | `codex/routing-approval-ui` |
-| 제품 검증 SHA (전체 verify 입력) | `3da72727b5ea685942c7ffbf8c8285d942c841b5` |
-| 검증 시점 tree | `f2bd99671ab5a651dd5885a50643d70e16d75424` |
-| 문서 포함 제출 HEAD | 이 회신서를 담은 문서 커밋. `git diff --name-only 3da7272..HEAD`가 `docs/`만 보여야 한다 |
+| 제품 검증 SHA (전체 verify 입력) | `453bd48b691a1709cae884e6d87c5f82c4911a7e` |
+| 검증 시점 tree | `194b8f595cdada991ad69c2dbcb808cb1fc17302` |
+| 문서 포함 제출 HEAD | 이 회신서를 담은 문서 커밋. `git diff --name-only 453bd48..HEAD`가 `docs/`만 보여야 한다 |
 | upstream | `not_configured` — ahead/behind 측정 불가 (`git rev-parse --abbrev-ref @{u}` 실패) |
 | tracked 변경 | M 0, D 0 |
 | untracked | 3 (`.omo/evidence/ulw/`, `.omo/ulw-loop/`, `node_modules`) — 도구 상태·공유 의존성, 커밋 대상 아님 |
-| 베이스라인 대비 | `082d689..3da7272` 7 커밋 (문서 커밋 별도) |
+| 베이스라인 대비 | `082d689..453bd48` 8 커밋 (문서 커밋 별도) |
 | dashboard 파일 변경 | **0** (`git diff --name-only 082d689..HEAD | grep -ci dashboard`) |
 
 packager가 `source_dirty: true`로 기록한 것은 위 untracked 3건 때문이며, tracked 수정은 0이다.
@@ -43,6 +43,7 @@ packager가 `source_dirty: true`로 기록한 것은 위 untracked 3건 때문�
 | `037ab03` | 제품+migration+테스트+문서 | M4.2 결속. 후보↔원본 task 결속표(091)와 접수 거절, 검토·쓰기 차단 전파 |
 | `af708be` | 테스트+문서 | 같은 gate가 scoped 등록과 전송 중 경로도 막는다는 사실을 단정으로 고정 |
 | `3da7272` | 테스트+문서 | rebuild 동반 제거와 백업 복원 재유입 0을 고정. 정제기에 임시로 넣었던 규칙은 복사기가 이미 처리함을 실측하고 되돌림 |
+| `453bd48` | 제품+테스트+문서 | 숨긴 task가 provider에 남긴 저장분을 열거하는 surface. 철회 자체는 쓰지 않음 |
 
 과거 gate 결과를 새 코드에 소급하지 않았다. §6의 전체 verify는 `0d6d614` 입력으로 새로 실행했고, 실행
 전후 입력 digest가 동일하다.
@@ -106,19 +107,19 @@ fixture 통과를 실제 생산자 통과로 세지 않는다.
 
 | 항목 | 값 |
 |---|---|
-| run_id | `verify-20260911T035302Z` |
+| run_id | `verify-20260911T042032Z` |
 | command / cwd | `npm run verify` / worktree 절대경로 |
-| source_head / tree | `3da72727…` / `f2bd9967…` |
-| input_digest_before | `sha256:cb811974d85ee5514d934a53b1aad99c408486b4220492ea32322a686ba20f7b` |
+| source_head / tree | `453bd48b…` / `194b8f59…` |
+| input_digest_before | `sha256:f071f9640bd9ab858ff173248d2e2821b843b39131dc9f8e4c0ffdba22ce9347` |
 | input_digest_after | 동일 (`input_stable=true`) |
-| started / finished | `2026-09-11T03:53:02+00:00` → `2026-09-11T04:16:16+00:00` (23분 14초) |
+| started / finished | `2026-09-11T04:20:32+00:00` → `2026-09-11T04:43:42+00:00` (23분 10초) |
 | exit_code / signal | `0` / `null` |
 | result_source | direct-process (이 세션이 monitor로 직접 회수) |
 | toolchain | node `v24.19.0`, npm `12.0.2`, abi `137` |
-| 집계 | backend shard1 278파일/1,913 · shard2 278파일/1,929 · dashboard 38파일/263 = **594파일 / 4,105 테스트** |
+| 집계 | backend shard1 278파일/1,914 · shard2 278파일/1,929 · dashboard 38파일/263 = **594파일 / 4,106 테스트** |
 | architecture | 665 모듈 / 2,470 간선 / 순환 0 |
 | acceptance | `pre_gjc_ready`, `aggregate_status=stopped`, `completion_promoted=true`, `gjc_dispatched=false` |
-| log | `<QA>/verify-20260911T035302Z/verify.log`, sha256 `88092d708644580d6653ff77c76f5816fc73845277b73f98238dc687d4acdbac` |
+| log | `<QA>/verify-20260911T042032Z/verify.log`, sha256 `bfdf412fa4d4b8e34500a676007d73cfb6928af783f808de08125db18ca7dddf` |
 
 과거 4,066은 목표치로 쓰지 않았다. 위 수치는 이번 실행의 로그 실측이다.
 
@@ -149,10 +150,10 @@ FAIL tests/integration/dashboard-personal-integrity.test.ts
 
 | 항목 | 값 |
 |---|---|
-| package root | `<QA>/package/jarvis-runtime-egrdZa` |
-| source_head | `3da72727…` (`source_dirty=true` — untracked 3건) |
+| package root | `<QA>/package/jarvis-runtime-YYLYaw` |
+| source_head | `453bd48b…` (`source_dirty=true` — untracked 3건) |
 | payload_files / dependency_entries | 1,521 / 6,668 |
-| receipt pin (독립 고정) | `caf843a150a1afc7473ffb9627b047f2f02952856dbb0e872d3dbbc55ffc7ff0` |
+| receipt pin (독립 고정) | `61ff241a8e143124b81c774505f460649b09c52e3164521e270a7f4f62adca1a` |
 | verify-runtime-package | `ok=true`, `integrity=matched`, RC 0 |
 | signature_verified | **false** (운영 서명 없음) |
 | runtime_validation | `not_performed` |
@@ -241,8 +242,10 @@ verification·session은 이름을 갖지만, 그 작업을 한 **task를 지목
 
 **남은 것(내부) 둘.**
 
-1. 이미 저장된 파생 기억의 철회. 철회는 소유자 승인 control command 위에서만 가능하므로 승인 경로와
-   함께 구현해야 한다.
+1. 이미 저장된 파생 기억의 **실제 철회 실행**. 이번에 `memoriesAwaitingTaskWithdrawal`로 “무엇이 남아
+   있는지”는 열거한다(보이는 task 0건, 숨기면 candidate·task·content digest 1건, 결속 없는 DB 0건).
+   저장분 매칭 기준은 복원 경로와 같은 content identity다. 철회를 기록하는 suppression은 tombstone
+   chain에 결속된 소유자 승인 산출물이므로 개발에서 만들지 않았고, 승인 경로와 함께 구현해야 한다.
 2. 제외 프로젝트 범위 검사(§8.2.3). 실측하면 후보 정책과 후보 모듈 전체에 `project`/`exclude` 개념이
    **없고**(`grep` 매치 0) config에도 제외 목록이 없다. 비밀 검사와 원본 hold 검사는 있으나 이 항목은
    정책 계약에 범위 필드를 더하는 설계부터 필요하다. 하나 남았다고 쓰지 않기 위해 함께 적는다.
@@ -269,11 +272,11 @@ rollback 조건·명령을 적었다. 새 fixture 키를 만들어 운영 인증
    ```bash
    cd /home/jm/orca/workspaces/Orca-JARVIS/codex-routing-approval-ui
    git log --oneline -6
-   git rev-parse 3da72727b5ea685942c7ffbf8c8285d942c841b5
+   git rev-parse 453bd48b691a1709cae884e6d87c5f82c4911a7e
    git status --porcelain
-   git diff --name-only 3da7272..HEAD
+   git diff --name-only 453bd48..HEAD
    ```
-   제품 검증 SHA는 `3da7272`이고, 마지막 명령이 `docs/`만 보여야 제품 입력 무변경이 성립한다.
+   제품 검증 SHA는 `453bd48`이고, 마지막 명령이 `docs/`만 보여야 제품 입력 무변경이 성립한다.
 
 2. 원래 P1 재현과 정식 회귀
    ```bash
@@ -292,16 +295,16 @@ rollback 조건·명령을 적었다. 새 fixture 키를 만들어 운영 인증
 
 3. receipt와 입력 readback
    ```bash
-   cat /home/jm/.cache/jarvis-m6-20260911/verify-20260911T035302Z/receipt.env
-   sha256sum /home/jm/.cache/jarvis-m6-20260911/verify-20260911T035302Z/verify.log
+   cat /home/jm/.cache/jarvis-m6-20260911/verify-20260911T042032Z/receipt.env
+   sha256sum /home/jm/.cache/jarvis-m6-20260911/verify-20260911T042032Z/verify.log
    ```
    기대: `exit_code=0`, before/after digest 동일, log sha256이 §6.1과 일치.
 
 4. 패키지 검증
    ```bash
    node scripts/verify-runtime-package.mjs \
-     /home/jm/.cache/jarvis-m6-20260911/package/jarvis-runtime-egrdZa \
-     --receipt-sha256 caf843a150a1afc7473ffb9627b047f2f02952856dbb0e872d3dbbc55ffc7ff0
+     /home/jm/.cache/jarvis-m6-20260911/package/jarvis-runtime-YYLYaw \
+     --receipt-sha256 61ff241a8e143124b81c774505f460649b09c52e3164521e270a7f4f62adca1a
    ```
    기대: `integrity=matched`, `deployment_ready=false`.
 
