@@ -96,9 +96,24 @@ export async function executeGjcCommand(
       preflightDispatchAssemble(context, parsed);
       const reservation = db.reserveGjcDispatchFromTask(parsed.task, now);
       if (!reservation.reserved) {
+        if (db.gjcIntentHasEvent(reservation.intent_id, "model_send_started") && !db.gjcIntentHasEvent(reservation.intent_id, "model_dispatched")) {
+          const deliveryId = db.gjcSendDeliveryId(reservation.intent_id);
+          const transport = context.dependencies.memoryReferenceOptions?.model_transport;
+          const reconciled = deliveryId !== undefined && transport !== undefined && "reconcile" in transport
+            ? await (transport as { reconcile?: (id: string) => Promise<{ accepted: boolean } | undefined> }).reconcile?.(deliveryId)
+            : undefined;
+          if (reconciled?.accepted === true) {
+            db.recordGjcModelDispatched(reservation.intent_id, now, reservation.lease_fence);
+            return { ok: true, command: "gjc.dispatch", intent_id: reservation.intent_id, recovered: "remote_accepted" };
+          }
+          return { ok: true, command: "gjc.dispatch", intent_id: reservation.intent_id, recovered: "unknown_accepted" };
+        }
         return { ok: true, command: "gjc.dispatch", intent_id: reservation.intent_id, duplicate: true };
       }
       try {
+        if (parsed.assemble_context !== undefined) {
+          db.recordGjcSendStarted(reservation.intent_id, reservation.intent_id, now, reservation.lease_fence);
+        }
         const assembled = await assembleDispatchContext(context, parsed);
         if (assembled !== undefined) db.recordGjcModelDispatched(reservation.intent_id, now, reservation.lease_fence);
         return {
@@ -106,6 +121,7 @@ export async function executeGjcCommand(
           ...(assembled === undefined ? {} : { model_request_bytes: assembled.capture.bytes, model_session_id: assembled.capture.session_id }),
         };
       } catch (error) {
+        db.recordGjcSendFailed(reservation.intent_id, now);
         db.markGjcIntentUncertain(reservation.intent_id, now);
         throw error;
       }

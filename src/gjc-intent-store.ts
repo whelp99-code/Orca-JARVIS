@@ -33,6 +33,29 @@ export abstract class GjcIntentAuthorityDb extends GjcDispatchAuthorityDb {
 		return this.db.prepare("SELECT 1 FROM gjc_intent_events WHERE intent_id=? AND event_type=? LIMIT 1").get(intentId, eventType) !== undefined;
 	}
 
+	gjcSendDeliveryId(intentId: string): string | undefined {
+		const row = this.db.prepare("SELECT payload_json FROM gjc_intent_events WHERE intent_id=? AND event_type='model_send_started' ORDER BY created_at DESC, rowid DESC LIMIT 1").get(intentId) as Row | undefined;
+		if (row === undefined || typeof row.payload_json !== "string") return undefined;
+		try {
+			const payload = JSON.parse(row.payload_json) as { delivery_id?: unknown };
+			return typeof payload.delivery_id === "string" ? payload.delivery_id : undefined;
+		} catch {
+			return undefined;
+		}
+	}
+
+	recordGjcSendStarted(intentId: string, deliveryId: string, now = timestamp(), leaseFence = 0): void {
+		this.atomic(() => {
+			this.db.prepare("INSERT INTO gjc_intent_events(intent_id,event_type,payload_json,created_at) VALUES(?,?,?,?)").run(intentId, "model_send_started", json({ delivery_id: deliveryId, lease_fence: leaseFence }), now);
+		});
+	}
+
+	recordGjcSendFailed(intentId: string, now = timestamp()): void {
+		this.atomic(() => {
+			this.db.prepare("INSERT INTO gjc_intent_events(intent_id,event_type,payload_json,created_at) VALUES(?,?,?,?)").run(intentId, "model_send_failed", json({}), now);
+		});
+	}
+
 	recordGjcModelDispatched(intentId: string, now = timestamp(), leaseFence?: number, worker = gjcWorkerId()): void {
 		this.atomic(() => {
 			const owned = this.db.prepare("SELECT lease_fence,lease_owner FROM gjc_intents WHERE intent_id=?").get(intentId) as Row | undefined;
@@ -80,6 +103,8 @@ export abstract class GjcIntentAuthorityDb extends GjcDispatchAuthorityDb {
 				const id = String(prior.intent_id);
 				const fence = Number(prior.lease_fence ?? 0);
 				if (this.gjcIntentHasEvent(id, "model_dispatched"))
+					return { intent_id: id, reserved: false, lease_fence: fence };
+				if (this.gjcIntentHasEvent(id, "model_send_started") && !this.gjcIntentHasEvent(id, "model_send_failed"))
 					return { intent_id: id, reserved: false, lease_fence: fence };
 				const priorOwner = prior.lease_owner;
 				const abandoned = prior.state === "pending" && typeof priorOwner === "string" && priorOwner.startsWith("pid:") && !gjcWorkerAlive(priorOwner);
