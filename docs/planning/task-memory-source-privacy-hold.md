@@ -177,3 +177,33 @@ sb/mcp_remember_models.py와 sb/scoped_write_request.py의 SHA256은 이전79ec7
 세 선택지는 운영 문서·CLI 계약·검사 지점이 전부 달라지므로, 추측으로 닫힌 계약을 바꾸지 않았다.
 `hide(task)` 경로는 이미 동작하므로 프로젝트 단위 차단이 시급하면 그 프로젝트의 task들을 숨기는 것이
 현재 가능한 조치다.
+
+### 저장분 철회가 어디에서 멈추는가 — 2026-09-11
+
+철회의 준비 지점은 `MemoryDeletionSaga.prepare(input)`이며, 이 함수는 **소유자 승인용
+`ControlCommandRequestInput`을 반환한다**(`src/memory-deletion-saga.ts`). 즉 준비는 JARVIS,
+승인은 소유자라는 경계가 이미 코드에 있다.
+
+문제는 그 입력의 `targets: ResolvedMemoryTargetV2[]`다. 이 계약이 요구하는 필드와 authority DB의
+`memory_resolved_target_metadata`(`migrations/040:50-66`)가 담는 필드를 대조하면 다음이 **없다**.
+
+| `ResolvedMemoryTargetV2` 필드 | authority DB에 있는가 |
+|---|---|
+| `target_id`, `target_digest`, `provider_instance_id` | 있음 |
+| `generation_id`, `generation_manifest_digest`, `page_content_digest` | 있음 |
+| `source_identity_full`, `content_identity_full`, `citation_identity_full` | 있음(digest 열) |
+| `sensitivity`, `source_owner_class`, `source_owner_id_digest`, `resolved_at`, `expires_at` | 있음 |
+| **`vault_head`, `vault_tree`** | **없음** |
+| **`page_id`, `page_blob_oid`** | **없음** |
+| **`citation_span_start`, `citation_span_end`** | **없음** |
+| **`valid_from`, `valid_until`** | **없음** |
+| `subject_digest` | `keyed_subject_digest`로 이름이 다름 |
+
+없는 값들은 provider가 **지금** 해당 기록이 어디에 있는지 되짚어줘야 나오는 것들이다(vault head/tree와
+page blob oid는 provider 저장소의 현재 상태이고, citation span은 그 페이지 안의 위치다). 따라서
+“이미 저장된 파생 기억의 철회”는 provider에 재해석을 요청하는 단계가 선행되어야 하며, 그 요청은
+refresh receipt와 마찬가지로 아직 계약이 없다.
+
+JARVIS 측에서 이번에 끝낸 것은 그 앞까지다: 어떤 후보가 어떤 task에서 나왔고, 아직 suppression이 없고,
+어느 `target_id`/`target_digest`를 겨냥해야 하는지(`memoriesAwaitingTaskWithdrawal`). 남은 것은
+provider 재해석 계약과 그 응답을 위 타입으로 옮기는 어댑터이며, 후자는 전자 없이는 실행해볼 수 없다.
