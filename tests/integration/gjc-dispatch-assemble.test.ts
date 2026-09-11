@@ -649,6 +649,32 @@ describe("gjc.dispatch assemble envelope", () => {
     closeMemoryDatabase(database);
   });
 
+  it("binds distinct records that share body and source to different evidence", async () => {
+    const { database, db, source, config, provider } = await gjcProduct();
+    useRecords(provider, [REFERENCE_RECORD, sameContentRecord("87654321")]);
+    const transport = new RecordingModelTransport();
+    const result = await executeGjcCommand(readerDispatch(db, source, config, provider, transport, "same-content"));
+    expect(result).toMatchObject({ ok: true, command: "gjc.dispatch" });
+    expect(transport.sent[0]?.request.memories.map(item => item.memory_ref).sort()).toEqual(["12345678", "87654321"]);
+    const bindings = db.db.prepare("SELECT memory_ref, evidence_id FROM personal_context_memory_evidence").all() as Array<{ memory_ref: string; evidence_id: string }>;
+    expect(bindings.map(row => row.memory_ref).sort()).toEqual(["12345678", "87654321"]);
+    expect(new Set(bindings.map(row => row.evidence_id)).size).toBe(2);
+    closeMemoryDatabase(database);
+  });
+
+  it("keeps same-source different-body records on separate lineages", async () => {
+    const { database, db, source, config, provider } = await gjcProduct();
+    useRecords(provider, [REFERENCE_RECORD, sameSourceRecord("Other body from the same source", "87654321")]);
+    const transport = new RecordingModelTransport();
+    const result = await executeGjcCommand(readerDispatch(db, source, config, provider, transport, "same-source"));
+    expect(result).toMatchObject({ ok: true });
+    const memories = transport.sent[0]?.request.memories ?? [];
+    expect(memories.map(item => item.memory_ref).sort()).toEqual(["12345678", "87654321"]);
+    expect(new Set(memories.map(item => item.version)).size).toBe(2);
+    expect(new Set(memories.map(item => item.source_id)).size).toBe(1);
+    closeMemoryDatabase(database);
+  });
+
   it("preserves reader excerpt budget and source instead of rewriting them", async () => {
     const { database, db, source, config, provider } = await gjcProduct();
     const body = `Important ${"content ".repeat(25)}END_CRITICAL_SOURCE_DETAIL`;
@@ -754,6 +780,28 @@ describe("gjc.dispatch assemble envelope", () => {
 
 function digestText(value: string): string {
   return `sha256:${createHash("sha256").update(value).digest("hex")}`;
+}
+
+function sameContentRecord(sid: string) {
+  const { record_id: _id, record_digest: _digest, ...core } = REFERENCE_RECORD;
+  const next = { ...core, sid };
+  const recordDigest = digestText(`second-brain/memory-record/v1\0${canonicalize(next)}`);
+  return { ...next, record_id: `sbrecord:v1:${recordDigest.slice(7)}`, record_digest: recordDigest };
+}
+
+function sameSourceRecord(text: string, sid: string) {
+  const { record_id: _id, record_digest: _digest, ...core } = REFERENCE_RECORD;
+  const next = {
+    ...core,
+    sid,
+    record_text: text,
+    record_text_digest: digestText(text),
+    citation_span_end: Buffer.byteLength(text),
+    content_identity_full: digestText(text).slice(7),
+    origin_label: REFERENCE_RECORD.origin_label,
+  };
+  const recordDigest = digestText(`second-brain/memory-record/v1\0${canonicalize(next)}`);
+  return { ...next, record_id: `sbrecord:v1:${recordDigest.slice(7)}`, record_digest: recordDigest };
 }
 
 function boundRecord(text: string, sid: string) {

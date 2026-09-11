@@ -3,6 +3,7 @@ import { realpathSync, writeSync } from "node:fs";
 import { type CliCommandContext, commandNow } from "./cli-command-context.js";
 import { integer, jsonFile, objectValue } from "./cli-command-input.js";
 import { observePersistedBinding } from "./persisted-orca-observer.js";
+import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./db.js";
 import { GjcCoordinatorClient } from "./gjc.js";
 import { LiveSupervisor, type LiveSupervisorCycle } from "./live-supervisor.js";
@@ -313,14 +314,18 @@ function persistAssembleInput(base: unknown, now: string, memories: readonly Mem
   };
 }
 
+function memoryEvidenceId(memory: MemoryEvidenceInput): string {
+  const hex = createHash("sha256").update(canonicalize({ digest: memory.digest, reference: memory.memory_ref })).digest("hex");
+  return `evi:pos:v1:${hex.slice(0, 8)}-${hex.slice(8, 12)}-7${hex.slice(13, 16)}-8${hex.slice(17, 20)}-${hex.slice(20, 32)}`;
+}
+
 function evidenceForPersist(input: Record<string, unknown>): ContextPersistenceInput["memory_evidence"] {
   const snapshot = assemblePersonalContext(input);
   const memories = Array.isArray(input.memories) ? input.memories as MemoryEvidenceInput[] : [];
   const byRef = new Map(memories.filter(item => item.kind === "evidence").map(item => [item.memory_ref, item]));
   return snapshot.payload.included_memory_refs.map(ref => {
     const memory = byRef.get(ref);
-    const item = snapshot.evidence.find(row => row.kind === "confirmed_memory" && memory !== undefined
-      && row.digest === memory.digest && row.source_id === memory.source_id && row.observed_at === memory.observed_at);
+    const item = memory === undefined ? undefined : snapshot.evidence.find(row => row.evidence_id === memoryEvidenceId(memory));
     if (memory === undefined || item === undefined) throw new JarvisError("PERSONAL_CONTEXT_MEMORY_EVIDENCE_CONFLICT");
     return {
       memory_ref: ref,
