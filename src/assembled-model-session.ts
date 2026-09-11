@@ -18,7 +18,7 @@ export class AssembledModelSession {
     private readonly authorize: (at: Date) => void = () => undefined,
   ) {}
 
-  async deliver(
+  async prepare(
     input: unknown,
     evidence: ContextPersistenceInput["memory_evidence"],
     now: string,
@@ -28,21 +28,27 @@ export class AssembledModelSession {
     const stored = this.authority.persistAssembledContextSnapshot(input, evidence, now, sessionId);
     const capture = this.authority.lastAssembledModelCapture();
     if (capture === undefined) throw new JarvisError("MODEL_TRANSPORT_CAPTURE_MISSING");
-    let result = await this.sendOnce(capture);
-    if (!result.accepted) {
-      this.authorize(new Date());
-      result = await this.sendOnce(capture);
-    }
-    if (!result.accepted) throw new JarvisError("MODEL_TRANSPORT_UNAVAILABLE");
     return { stored, capture };
   }
 
-  private async sendOnce(capture: ModelTransportCapture): Promise<ModelTransportResult> {
-    try {
-      return await this.transport.send(capture);
-    } catch (error) {
-      if (!isRetryableTransportFailure(error)) throw error;
-      return { accepted: false, reason: "disconnect" };
+  async send(capture: ModelTransportCapture): Promise<ModelTransportResult> {
+    let result = await this.transport.send(capture);
+    if (!result.accepted) {
+      this.authorize(new Date());
+      result = await this.transport.send(capture);
     }
+    if (!result.accepted) throw new JarvisError("MODEL_TRANSPORT_UNAVAILABLE");
+    return result;
+  }
+
+  async deliver(
+    input: unknown,
+    evidence: ContextPersistenceInput["memory_evidence"],
+    now: string,
+    sessionId?: string,
+  ): Promise<{ stored: StoredContext; capture: ModelTransportCapture }> {
+    const prepared = await this.prepare(input, evidence, now, sessionId);
+    await this.send(prepared.capture);
+    return prepared;
   }
 }

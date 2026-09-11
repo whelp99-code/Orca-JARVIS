@@ -94,22 +94,18 @@ describe("production assembled model session", () => {
     db.close();
   });
 
-  it("retries a thrown disconnect then succeeds", async () => {
+  it("does not convert a thrown disconnect into a known-negative retry", async () => {
     const { db, input, evidence } = await ready();
     const transport: ModelTransport & { sent: ModelTransportCapture[] } = {
       sent: [],
       async send(capture) {
         this.sent.push(capture);
-        if (this.sent.length === 1) {
-          throw Object.assign(new Error("socket disconnect"), { retryable: true });
-        }
-        return { accepted: true };
+        throw Object.assign(new Error("ECONNRESET after remote acceptance"), { retryable: true });
       },
     };
     const session = new AssembledModelSession(db, transport);
-    const delivered = await session.deliver(input, evidence, CONTEXT_NOW);
-    expect(delivered.capture.json).toContain("what now?");
-    expect(transport.sent).toHaveLength(2);
+    await expect(session.deliver(input, evidence, CONTEXT_NOW)).rejects.toThrow(/ECONNRESET/);
+    expect(transport.sent).toHaveLength(1);
     db.close();
   });
 

@@ -111,10 +111,7 @@ export async function executeGjcCommand(
         return { ok: true, command: "gjc.dispatch", intent_id: reservation.intent_id, duplicate: true };
       }
       try {
-        if (parsed.assemble_context !== undefined) {
-          db.recordGjcSendStarted(reservation.intent_id, reservation.intent_id, now, reservation.lease_fence);
-        }
-        const assembled = await assembleDispatchContext(context, parsed);
+        const assembled = await assembleDispatchContext(context, parsed, reservation);
         if (assembled !== undefined) db.recordGjcModelDispatched(reservation.intent_id, now, reservation.lease_fence);
         return {
           ok: true, command: "gjc.dispatch", intent_id: reservation.intent_id,
@@ -248,6 +245,7 @@ function preflightDispatchAssemble(
 async function assembleDispatchContext(
   context: CliCommandContext,
   parsed: { assemble_context: unknown; memory_evidence: ContextPersistenceInput["memory_evidence"]; task?: Record<string, unknown> },
+  reservation?: { intent_id: string; lease_fence: number },
 ) {
   if (parsed.assemble_context === undefined) return undefined;
   const options = context.dependencies.memoryReferenceOptions;
@@ -258,5 +256,11 @@ async function assembleDispatchContext(
     options.model_transport ?? new RecordingModelTransport(),
     dispatchMemoryAuthorizer(context, options),
   );
-  return session.deliver(parsed.assemble_context, parsed.memory_evidence, commandNow(context).toISOString(), sessionId);
+  const now = commandNow(context).toISOString();
+  const prepared = await session.prepare(parsed.assemble_context, parsed.memory_evidence, now, sessionId);
+  if (reservation !== undefined) {
+    context.db.recordGjcSendStarted(reservation.intent_id, reservation.intent_id, now, reservation.lease_fence);
+  }
+  await session.send(prepared.capture);
+  return prepared;
 }

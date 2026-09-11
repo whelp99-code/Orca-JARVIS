@@ -430,4 +430,118 @@ describe("gjc.dispatch assemble envelope", () => {
     expect(db.gjcIntentHasEvent(reserved.intent_id, "model_dispatched")).toBe(true);
     db.close();
   });
+
+  it("does not resend after a disconnect thrown following remote acceptance", async () => {
+    const db = await initialized();
+    db.configureGjc(process.cwd(), "s", true);
+    const source = seedGjcDispatch(db);
+    const input = contextAssemblerInput();
+    for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
+      db.persistObservation(observation, CONTEXT_NOW);
+    }
+    const snapshot = assemblePersonalContext(input);
+    const memory = snapshot.evidence.find(item => item.kind === "confirmed_memory");
+    if (memory === undefined) throw new Error("memory");
+    const task = gjcTaskFor(db, source, "disconnect-unknown");
+    const envelope = {
+      task,
+      assemble_context: input,
+      memory_evidence: [{
+        memory_ref: snapshot.payload.included_memory_refs[0] ?? memory.evidence_id,
+        evidence_id: memory.evidence_id,
+        source_id: memory.source_id,
+        digest: memory.digest,
+        observed_at: memory.observed_at,
+        fresh_until: snapshot.expires_at,
+      }],
+    };
+    let sends = 0;
+    const transport = {
+      async send() {
+        sends += 1;
+        throw Object.assign(new Error("ECONNRESET after remote acceptance"), { retryable: true });
+      },
+    };
+    const ctx = {
+      args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
+      argument: writeJson(envelope), fourth: undefined, fifth: undefined, sixth: undefined, db,
+      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+    } as never;
+    await expect(executeGjcCommand(ctx)).rejects.toThrow(/ECONNRESET/);
+    const retry = new RecordingModelTransport();
+    const result = await executeGjcCommand({
+      args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
+      argument: writeJson(envelope), fourth: undefined, fifth: undefined, sixth: undefined, db,
+      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: retry } },
+    } as never);
+    expect(sends).toBe(1);
+    expect(retry.sent).toHaveLength(0);
+    expect(result).toMatchObject({ ok: true, recovered: "unknown_accepted" });
+    db.close();
+  });
+
+  it("sends after a pre-send fence deny is corrected", async () => {
+    const db = await initialized();
+    db.configureGjc(process.cwd(), "s", true);
+    const source = seedGjcDispatch(db);
+    const input = contextAssemblerInput();
+    for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
+      db.persistObservation(observation, CONTEXT_NOW);
+    }
+    const snapshot = assemblePersonalContext(input);
+    const memory = snapshot.evidence.find(item => item.kind === "confirmed_memory");
+    if (memory === undefined) throw new Error("memory");
+    const task = gjcTaskFor(db, source, "presend-deny");
+    const envelope = {
+      task,
+      assemble_context: input,
+      memory_evidence: [{
+        memory_ref: snapshot.payload.included_memory_refs[0] ?? memory.evidence_id,
+        evidence_id: memory.evidence_id,
+        source_id: memory.source_id,
+        digest: memory.digest,
+        observed_at: memory.observed_at,
+        fresh_until: snapshot.expires_at,
+      }],
+    };
+    let fences = 0;
+    let phase = 0;
+    const transport = new RecordingModelTransport();
+    const ctx = {
+      args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
+      argument: writeJson(envelope), fourth: undefined, fifth: undefined, sixth: undefined, db,
+      dependencies: {
+        clock: () => new Date(CONTEXT_NOW),
+        memoryReferenceOptions: {
+          projection_key: Buffer.alloc(32, 7),
+          model_transport: transport,
+          read_fence: () => {
+            fences += 1;
+            if (phase === 0 && fences >= 2) throw new Error("CURRENT_READER_DENIED");
+          },
+        },
+      },
+    } as never;
+    await expect(executeGjcCommand(ctx)).rejects.toThrow(/CURRENT_READER_DENIED/);
+    expect(transport.sent).toHaveLength(0);
+    phase = 1;
+    const result = await executeGjcCommand({
+      args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
+      argument: writeJson(envelope), fourth: undefined, fifth: undefined, sixth: undefined, db,
+      dependencies: {
+        clock: () => new Date(CONTEXT_NOW),
+        memoryReferenceOptions: {
+          projection_key: Buffer.alloc(32, 7),
+          model_transport: transport,
+          read_fence: () => {
+            fences += 1;
+            if (phase === 0 && fences >= 2) throw new Error("CURRENT_READER_DENIED");
+          },
+        },
+      },
+    } as never);
+    expect(result).toMatchObject({ ok: true });
+    expect(transport.sent).toHaveLength(1);
+    db.close();
+  });
 });
