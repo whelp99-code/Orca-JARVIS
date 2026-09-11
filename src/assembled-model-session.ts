@@ -22,9 +22,10 @@ export class AssembledModelSession {
     input: unknown,
     evidence: ContextPersistenceInput["memory_evidence"],
     now: string,
+    sessionId?: string,
   ): Promise<{ stored: StoredContext; capture: ModelTransportCapture }> {
     this.authorize(new Date());
-    const stored = this.authority.persistAssembledContextSnapshot(input, evidence, now);
+    const stored = this.authority.persistAssembledContextSnapshot(input, evidence, now, sessionId);
     const capture = this.authority.lastAssembledModelCapture();
     if (capture === undefined) throw new JarvisError("MODEL_TRANSPORT_CAPTURE_MISSING");
     let result = await this.sendOnce(capture);

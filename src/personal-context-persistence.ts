@@ -52,10 +52,10 @@ export class PersonalContextPersistence {
     return this.contexts.persist(value, now);
   }
 
-  persistAssembledContext(input: unknown, evidence: ContextPersistenceInput["memory_evidence"], now: string): StoredContext {
+  persistAssembledContext(input: unknown, evidence: ContextPersistenceInput["memory_evidence"], now: string, sessionId?: string): StoredContext {
     const snapshot = assemblePersonalContext(input);
     const stored = this.contexts.persist({ context: snapshot, memory_evidence: evidence }, now);
-    this.lastCapture = prepareModelTransport(input, `session:${now}`);
+    this.lastCapture = prepareModelTransport(input, sessionId ?? `session:${now}`);
     return stored;
   }
 

@@ -26,8 +26,8 @@ export abstract class ProgressAuthorityDb extends GjcQuestionAuthorityDb {
 		return this.personalContext.persistContext(value, now);
 	}
 
-	persistAssembledContextSnapshot(input: unknown, evidence: ContextPersistenceInput["memory_evidence"], now = timestamp()): StoredContext {
-		return this.personalContext.persistAssembledContext(input, evidence, now);
+	persistAssembledContextSnapshot(input: unknown, evidence: ContextPersistenceInput["memory_evidence"], now = timestamp(), sessionId?: string): StoredContext {
+		return this.personalContext.persistAssembledContext(input, evidence, now, sessionId);
 	}
 	lastAssembledModelCapture(): ModelTransportCapture | undefined {
 		return this.personalContext.lastCapture;

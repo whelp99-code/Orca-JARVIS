@@ -103,7 +103,7 @@ export async function executeGjcCommand(
             ? await (transport as { reconcile?: (id: string) => Promise<{ accepted: boolean } | undefined> }).reconcile?.(deliveryId)
             : undefined;
           if (reconciled?.accepted === true) {
-            db.recordGjcModelDispatched(reservation.intent_id, now, reservation.lease_fence);
+            db.recordGjcReconciledReceipt(reservation.intent_id, now);
             return { ok: true, command: "gjc.dispatch", intent_id: reservation.intent_id, recovered: "remote_accepted" };
           }
           return { ok: true, command: "gjc.dispatch", intent_id: reservation.intent_id, recovered: "unknown_accepted" };
@@ -121,7 +121,9 @@ export async function executeGjcCommand(
           ...(assembled === undefined ? {} : { model_request_bytes: assembled.capture.bytes, model_session_id: assembled.capture.session_id }),
         };
       } catch (error) {
-        db.recordGjcSendFailed(reservation.intent_id, now);
+        if (error instanceof JarvisError && error.code === "MODEL_TRANSPORT_UNAVAILABLE") {
+          db.recordGjcSendFailed(reservation.intent_id, now, reservation.lease_fence);
+        }
         db.markGjcIntentUncertain(reservation.intent_id, now);
         throw error;
       }
@@ -245,15 +247,16 @@ function preflightDispatchAssemble(
 
 async function assembleDispatchContext(
   context: CliCommandContext,
-  parsed: { assemble_context: unknown; memory_evidence: ContextPersistenceInput["memory_evidence"] },
+  parsed: { assemble_context: unknown; memory_evidence: ContextPersistenceInput["memory_evidence"]; task?: Record<string, unknown> },
 ) {
   if (parsed.assemble_context === undefined) return undefined;
   const options = context.dependencies.memoryReferenceOptions;
   if (options === undefined) throw new JarvisError("MEMORY_REFERENCE_OPTIONS_REQUIRED");
+  const sessionId = typeof parsed.task?.session_id === "string" ? parsed.task.session_id : undefined;
   const session = new AssembledModelSession(
     context.db,
     options.model_transport ?? new RecordingModelTransport(),
     dispatchMemoryAuthorizer(context, options),
   );
-  return session.deliver(parsed.assemble_context, parsed.memory_evidence, commandNow(context).toISOString());
+  return session.deliver(parsed.assemble_context, parsed.memory_evidence, commandNow(context).toISOString(), sessionId);
 }

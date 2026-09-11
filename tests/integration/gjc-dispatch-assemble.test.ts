@@ -346,4 +346,88 @@ describe("gjc.dispatch assemble envelope", () => {
     expect(transport.sent).toHaveLength(0);
     db.close();
   });
+
+  it("does not treat a later unknown attempt as unlocked by an earlier failure", async () => {
+    const db = await initialized();
+    db.configureGjc(process.cwd(), "s", true);
+    const source = seedGjcDispatch(db);
+    const input = contextAssemblerInput();
+    for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
+      db.persistObservation(observation, CONTEXT_NOW);
+    }
+    const snapshot = assemblePersonalContext(input);
+    const memory = snapshot.evidence.find(item => item.kind === "confirmed_memory");
+    if (memory === undefined) throw new Error("memory");
+    const task = gjcTaskFor(db, source, "fail-then-unknown");
+    const envelope = {
+      task,
+      assemble_context: input,
+      memory_evidence: [{
+        memory_ref: snapshot.payload.included_memory_refs[0] ?? memory.evidence_id,
+        evidence_id: memory.evidence_id,
+        source_id: memory.source_id,
+        digest: memory.digest,
+        observed_at: memory.observed_at,
+        fresh_until: snapshot.expires_at,
+      }],
+    };
+    const failing = { sent: [] as unknown[], async send(capture: unknown) { this.sent.push(capture); return { accepted: false, reason: "unavailable" }; } };
+    const ctx = (transport: unknown) => ({
+      args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
+      argument: writeJson(envelope), fourth: undefined, fifth: undefined, sixth: undefined, db,
+      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+    } as never);
+    await expect(executeGjcCommand(ctx(failing))).rejects.toMatchObject({ code: "MODEL_TRANSPORT_UNAVAILABLE" });
+    const reserved = db.reserveGjcDispatchFromTask(task, CONTEXT_NOW);
+    db.recordGjcSendStarted(reserved.intent_id, reserved.intent_id, CONTEXT_NOW, reserved.lease_fence);
+    db.db.prepare("UPDATE gjc_intents SET lease_owner='pid:2147483647' WHERE idempotency_key=?").run("fail-then-unknown");
+    const transport = new RecordingModelTransport();
+    const result = await executeGjcCommand(ctx(transport));
+    expect(result).toMatchObject({ ok: true, recovered: "unknown_accepted" });
+    expect(transport.sent).toHaveLength(0);
+    db.close();
+  });
+
+  it("records a reconciled receipt even when the reserving worker is dead", async () => {
+    const db = await initialized();
+    db.configureGjc(process.cwd(), "s", true);
+    const source = seedGjcDispatch(db);
+    const input = contextAssemblerInput();
+    for (const observation of (input as { observations?: unknown[] }).observations ?? []) {
+      db.persistObservation(observation, CONTEXT_NOW);
+    }
+    const snapshot = assemblePersonalContext(input);
+    const memory = snapshot.evidence.find(item => item.kind === "confirmed_memory");
+    if (memory === undefined) throw new Error("memory");
+    const task = gjcTaskFor(db, source, "reconcile-dead");
+    const reserved = db.reserveGjcDispatchFromTask(task, CONTEXT_NOW);
+    db.recordGjcSendStarted(reserved.intent_id, reserved.intent_id, CONTEXT_NOW, reserved.lease_fence);
+    db.db.prepare("UPDATE gjc_intents SET lease_owner='pid:2147483647' WHERE idempotency_key=?").run("reconcile-dead");
+    const transport = {
+      sent: [] as unknown[],
+      async send(capture: unknown) { this.sent.push(capture); return { accepted: true }; },
+      async reconcile() { return { accepted: true }; },
+    };
+    const result = await executeGjcCommand({
+      args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
+      argument: writeJson({
+        task,
+        assemble_context: input,
+        memory_evidence: [{
+          memory_ref: snapshot.payload.included_memory_refs[0] ?? memory.evidence_id,
+          evidence_id: memory.evidence_id,
+          source_id: memory.source_id,
+          digest: memory.digest,
+          observed_at: memory.observed_at,
+          fresh_until: snapshot.expires_at,
+        }],
+      }),
+      fourth: undefined, fifth: undefined, sixth: undefined, db,
+      dependencies: { clock: () => new Date(CONTEXT_NOW), memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), model_transport: transport } },
+    } as never);
+    expect(result).toMatchObject({ ok: true, recovered: "remote_accepted" });
+    expect(transport.sent).toHaveLength(0);
+    expect(db.gjcIntentHasEvent(reserved.intent_id, "model_dispatched")).toBe(true);
+    db.close();
+  });
 });
