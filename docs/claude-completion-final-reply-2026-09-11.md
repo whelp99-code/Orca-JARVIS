@@ -356,6 +356,22 @@ rollback 조건·명령을 적었다. 새 fixture 키를 만들어 운영 인증
 수명주기를 `local-observation-retention-artifacts.ts`로 분리해 해소했다. 그 실패 run도 §6.1의 제외
 목록과 같은 원칙으로 기록에 남긴다.
 
+## 8ter. 남은 항목별 blocker, 준비물, 재개 조건
+
+각 항목에 소유자·필요한 입력·이미 준비한 파일·재개 명령·통과 기준을 붙인다.
+
+| 항목 | 소유자 | 필요한 입력 | 준비된 파일 | 재개 후 통과 기준 |
+|---|---|---|---|---|
+| M4.1 provider refresh receipt | Second Brain provider | 인계 문서 §3.2 envelope를 발행하는 release | `docs/claude-second-brain-contract-handoff-2026-09-11.md` (미전송), 계약 회귀 `second-brain-refresh-receipt.test.ts` | 설정 `schema_version: 2`에 경로를 넣고 `jarvis daily morning --once` → `provider_refresh: "fresh"`, 저장된 `refresh_context`가 같은 `refresh_id` |
+| M4.2 저장분 철회 | Second Brain provider | 기록의 현재 위치를 되짚는 **재해석 계약** (`vault_head`/`vault_tree`/`page_id`/`page_blob_oid`/citation span/유효 구간) | 필드 대조표와 정지 지점(`docs/planning/task-memory-source-privacy-hold.md` 말미), 대상 열거 `memoriesAwaitingTaskWithdrawal` | 재해석 응답을 `ResolvedMemoryTargetV2`로 옮겨 `MemoryDeletionSaga.prepare()`가 소유자 승인 명령을 반환, 승인 후 목록이 비워짐 |
+| M4.2 2클라이언트 확인 | Second Brain provider | `source_lineage`/`task_lineage`/`completion_id` 필드 | 같은 문서의 P1 인용과 재개 조건 | 직접 MCP 클라이언트 2개에서 삭제된 파생 기억 0건 |
+| M4.2 제외 프로젝트 범위 | 소유자 / Codex | **프로젝트 정체성을 어디에 둘지 결정** (task `scope_json` 파생 / 정책 v2 `excluded_projects` / 결속표 project 열) | 네 층위 부재 근거와 선택지 3개의 파급(같은 문서) | 결정된 위치에 범위 필드를 넣고 접수·소비 양쪽 검사 회귀 통과 |
+| M5 실제 업무 실행 | 운영자 | service 환경의 키 3개 | `docs/claude-task-execution-readiness-2026-09-11.md` (검증 규칙·업무안·적용/rollback) | `routing probe-runtime claude-code` → `execution_available: true`, 승인→실행→서명 검증→완료 receipt |
+| M3 actionable 생산 체인 | 소유자 / 실제 live adapter | owner decision 또는 verified live Linux 출처 | 인용 계약과 그 한계(`personal-context-citation-contract.ts`, 회귀 3건) | 해당 출처가 생기면 advisory가 아닌 인용 슬롯이 채워져 brief가 기권하지 않음 |
+
+이 표의 어느 항목도 “구현하면 되는데 안 한 것”이 아니다. 각각 외부 계약, 외부 인증, 또는 제품 결정이
+선행되어야 하며 그 근거는 코드/스키마 수준에서 확인해 문서에 남겼다.
+
 ## 9. 수행하지 않은 행동
 
 push·merge·deploy·서비스 재시작·운영 DB/설정 변경·`current` 전환·타 작업 산출물 삭제를 하지 않았다.
