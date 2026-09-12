@@ -29,8 +29,8 @@
 | 5 | `memory-candidate-scope`의 제안 경로가 task 게이트를 거치지 않음 | 남아 있다 |
 
 > **2026-09-12 갱신 (§9.28 정본).** 이 시점의 상태는 `IN_PROGRESS`다. 제품 SHA는
-> `4c0e793b0bb77f4f6bdce2862764b5de03d53d61`, 전체 gate `VERIFY24=0`, 패키지 `jarvis-runtime-Yi1OYT`
-> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=4c0e793…`.
+> `6caf4eed45ead2b9beb25f670e2d915881522a06`, 전체 gate `VERIFY26=0`, 패키지 `jarvis-runtime-3eKSfQ`
+> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=6caf4ee…`.
 > **닫힘:** 기존 목적지 보존(REVIEW-01) — 목적지를 생성·점유·교체하는 경로 자체를 제거했고 세 형태 모두 회귀로 고정.
 > **열림:** writer 배타성(REVIEW-02/-03) — `b4927fb` 는 창을 좁혔을 뿐 봉쇄하지 않으며, 증명 불가 환경의 거절은
 > 두 구현을 만들어 측정한 결과 각각 "항상 거절" 과 "타이밍 의존 거절" 로 무너져 되돌렸다(§9.28). 남은 해법은
@@ -1252,3 +1252,29 @@ announce된 목적지는 생성·점유·교체하지 않는다(`takeRetentionDe
 | 제품 SHA | `4c0e793b0bb77f4f6bdce2862764b5de03d53d61` |
 | 전체 gate | `VERIFY24=0` (backend 279 / 1,942, dashboard 38 / 263) |
 | 패키지 | `jarvis-runtime-Yi1OYT`, payload 1,543, receipt `619b5f67…`, `integrity=matched`, `deployment_ready=false` |
+
+### 9.32 검사 이후 진입은 배제가 아니라 보존으로 다룬다 (커밋 `39c89f1`, `6caf4ee`)
+
+여섯 번째 검토(REVIEW-04)의 지적을 그대로 받는다. `observeExclusion` 은 **순간 관측**이고 마지막 검사와
+`renameSync` 는 별개 호출이므로, `unprovable=[]` 인 호스트에서도 관측 이후 admission 을 따르지 않는 같은 UID
+writer 의 진입은 배제되지 않는다. 그리고 `tests/fixtures/provable-exclusion.ts` 의 주입은 **모의 허용 조건**이지
+OS 격리 증명이 아니다 — 그 사실을 헬퍼 주석 자체에 적었다.
+
+그래서 배제할 수 없는 구간은 **파괴하지 않는 것**으로 바꿨다. retention swap 의 파괴 단계 두 곳이 퇴거가 된다.
+
+- 사이드카는 삭제하지 않고 `<db>.<operation>.retired-wal` / `-shm` 으로 rename 한다.
+- 소스는 rename 으로 덮이지 않고 `<db>.<operation>.retired` 로 먼저 물러난 뒤, 후보가 라이브 이름을 가져간다.
+
+마지막 질문 이후에 열린 디스크립터는 디렉터리 엔트리가 남아 있는 파일에 쓰게 되고, 그 커밋은 파일로 읽어낼 수
+있는 상태로 남는다. `memory-authority-swap` 이 이미 쓰던 계약과 같은 형태다.
+
+**인수는 실제 writer 로 한다.** 창 안에서 두 번째 SQLite 연결을 동기적으로 열어 실제로 한 행을 commit 하고
+(모의 관측이 아니라 SQLite 가 파일에 쓴다), swap 이 끝난 뒤 퇴거된 데이터베이스에 그 행이 있는지 확인한다.
+변이 검사: 소스 퇴거 rename 을 지우면 이 인수가 실패한다. retention 스위트 76/76.
+
+| 이 시점 실측 | 값 |
+| --- | --- |
+| 제품 SHA | `6caf4eed45ead2b9beb25f670e2d915881522a06` |
+| 전체 gate | `VERIFY26=0` (backend 279 / 1,942, dashboard 38 / 263), 종료 09:03 KST |
+| 직전 gate | `VERIFY25=1` — `39c89f1` 입력, 원인은 삭제 제거로 남은 미사용 import 1건(제품 결함 아님), `6caf4ee` 에서 제거 |
+| 패키지 | `jarvis-runtime-3eKSfQ`, `source_head=6caf4ee…`, payload 1,543, receipt `00fb9b7d…`, `integrity=matched`, `deployment_ready=false` |
