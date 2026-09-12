@@ -135,6 +135,23 @@ describe("personal-OS backup, restore, and publish", () => {
     live.close();
   });
 
+  it("refuses restore while another writer holds dest and keeps the writer commit", () => {
+    const root = scratch();
+    const dest = join(root, "live.sqlite");
+    const backup = join(root, "good.sqlite");
+    seedDb(dest, "writer-held");
+    seedDb(backup, "backup-approved");
+    const held = new Database(dest);
+    held.exec("BEGIN IMMEDIATE");
+    held.prepare("UPDATE sentinel SET value=? WHERE id=?").run("concurrent-writer-committed", "row-1");
+    expect(() => restoreSqlite({ backupPath: backup, destPath: dest })).toThrow(PersonalOsError);
+    held.exec("COMMIT");
+    held.close();
+    const live = new Database(dest, { readonly: true, fileMustExist: true });
+    expect(live.prepare("SELECT value FROM sentinel WHERE id=?").get("row-1")).toMatchObject({ value: "concurrent-writer-committed" });
+    live.close();
+  });
+
   it("reopens backup rows after replacing a dest that still has an orphan WAL", () => {
     const root = scratch();
     const backup = join(root, "backup.sqlite");
