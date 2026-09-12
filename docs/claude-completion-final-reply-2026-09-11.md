@@ -29,8 +29,8 @@
 | 5 | `memory-candidate-scope`의 제안 경로가 task 게이트를 거치지 않음 | 남아 있다 |
 
 > **2026-09-12 갱신 (§9.28 정본).** 이 시점의 상태는 `IN_PROGRESS`다. 제품 SHA는
-> `97889978c37c2b0360ee83344eebc9f213697dc9`, 전체 gate `VERIFY37=0`, 패키지 `jarvis-runtime-SwN3MA`
-> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=9788997…`.
+> `2f3f198a90df68d51d46f7a98194ffaf23446153`, 전체 gate `VERIFY39=0`, 패키지 `jarvis-runtime-Cv4gQt`
+> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=2f3f198…`.
 > **닫힘:** 기존 목적지 보존(REVIEW-01) — 목적지를 생성·점유·교체하는 경로 자체를 제거했고 세 형태 모두 회귀로 고정.
 > **열림:** writer 배타성(REVIEW-02/-03) — `b4927fb` 는 창을 좁혔을 뿐 봉쇄하지 않으며, 증명 불가 환경의 거절은
 > 두 구현을 만들어 측정한 결과 각각 "항상 거절" 과 "타이밍 의존 거절" 로 무너져 되돌렸다(§9.28). 남은 해법은
@@ -1501,3 +1501,30 @@ retention 82/82, memory cancellation 12/12, Task 30 1/1.
 | 회귀 | retention 83/83, memory cancellation 12/12, Task 30 1/1 |
 | 패키지 | `jarvis-runtime-SwN3MA`, `source_head=9788997…`, payload 1,545, receipt `0a93c220…`, `integrity=matched`, `deployment_ready=false` |
 | manifest | 아티팩트 45, 누락 0, package/input 대조 10쌍 mismatch 0 |
+
+### 9.41 열두 번째 검토 — 기준점의 누락 구간과 읽히지 않는 증거 (커밋 `2f3f198`)
+
+**(1) 기준점이 후보 확정보다 늦었다.** memory 경로는 최종 exclusion 관측 **뒤에** 기준 상태를 잡았다. 관측
+직후 commit 하고 close 한 writer 의 행은 후보에 없는데도 기준에 섞여 `before === after` 가 되고, 그 유일한
+사본인 퇴거본이 삭제된다. cancellation 이면 비대상 late commit 까지 파기된다.
+
+기준을 **이 프로세스가 더 이상 쓸 수 없게 된 순간**(연결 close 직후)으로 옮겼다. 그 뒤 파일을 바꾸는 것은
+전부 타인의 것이고, 어떤 질문 단계에서 열렸다 닫힌 연결의 커밋도 파일 변화로 드러난다. 더해 후보가 확정될
+때의 `data_version` 을 `SwapRequest` 로 받아, 그 사이 **다른 연결의 커밋**이 있었으면 파괴 이전에
+`MEMORY_SOURCE_CHANGED_BEFORE_SWAP` 으로 거절한다. `data_version` 은 우리 자신의 기록에는 반응하지 않으므로
+정상 경로를 막지 않는다 — 처음 시도한 파일 상태 기반 기준은 자기 기록까지 변화로 읽어 모든 cancellation 을
+거절했고, 그 실측이 이 구분을 강제했다.
+
+**(2) 읽히지 않는 답을 "같음" 으로 처리했다.** catch-all 이 EACCES/EIO 까지 `absent` 로 만들어, 상태를 읽지
+못한 파일이 "변하지 않았다" 와 같은 값이 됐다. 이제 ENOENT 만 `absent` 이고 그 밖의 실패는 `unreadable` 이며,
+어느 쪽에든 `unreadable` 이 있으면 같음으로 보지 않는다(단위 회귀로 고정, 디렉터리를 못 읽게 만들어 재현).
+
+변이 검사 둘 다 갈린다: 기준을 다시 늦게 잡으면 그 행이 사라지고, `unreadable` 구분을 빼면 단위 회귀가 실패한다.
+
+| 이 시점 실측 | 값 |
+| --- | --- |
+| 제품 SHA | `2f3f198a90df68d51d46f7a98194ffaf23446153` |
+| 전체 gate | `VERIFY39=0` (backend 280 / 1,943, dashboard 38 / 263), 관측 종료 17:52 KST |
+| 직전 gate | `VERIFY38=1` — `d7dfd02` 입력, 미사용 테스트 바인딩 1건(제품 결함 아님), 17:25 |
+| 패키지 | `jarvis-runtime-Cv4gQt`, `source_head=2f3f198…`, payload 1,546, receipt `efb17228…`, `integrity=matched`, `deployment_ready=false` |
+| manifest | 아티팩트 46, 누락 0, package/input 대조 11쌍 mismatch 0 |
