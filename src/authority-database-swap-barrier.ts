@@ -12,7 +12,7 @@ import {
 } from "./authority-database-swap-barrier-record.js";
 import { withSwapBarrierLock } from "./authority-database-swap-lock.js";
 import { JarvisError } from "./jarvis-error.js";
-import { settlePublishPhase } from "./local-observation-retention-publish.js";
+import { publishPhasePath, settlePublishPhase } from "./local-observation-retention-publish.js";
 
 export type { AuthoritySwapBarrier } from "./authority-database-swap-barrier-record.js";
 
@@ -105,12 +105,35 @@ export function assertSwapAdmission(database: string): void {
  * there for the scan to find, and the swap refuses instead. A caller that owns the barrier is
  * admitted throughout, because reopening the file is the last step of its own swap.
  */
+/**
+ * Finishes a publish whose owner is gone, and refuses to open anything it cannot account for.
+ *
+ * Taken under the same lock the barrier itself is published with, and only when no live owner
+ * holds that barrier: a swap in flight owns its own phase record, and an opener that settled it
+ * would take the record out from under a process that is still going to publish - which would
+ * leave that publish unrecorded and reopen the very interval the record exists to cover. Two
+ * recovering openers serialise here as well, so the moves happen once.
+ *
+ * An unproven phase is not a reason to carry on. The live name has a log that cannot be shown to
+ * belong to it, so opening it is refused and every file is left exactly where it is.
+ */
+function settleAbandonedPublish(database: string): void {
+  if (!existsSync(publishPhasePath(database))) return;
+  const outcome = withSwapBarrierLock(canonicalDatabase(database), () => {
+    const found = barrierRecord(database);
+    // A live owner is mid-swap: its record is its own and this is not the process to finish it.
+    if (!found.debris && found.record !== undefined && !isOwner(found.record)) return "owned";
+    return settlePublishPhase(database);
+  });
+  if (outcome === "unproven") {
+    throw new JarvisError("AUTHORITY_DATABASE_PUBLISH_UNSETTLED");
+  }
+}
+
 export function openUnderSwapAdmission<T extends { close: () => void }>(
   database: string, open: () => T,
 ): T {
-  // A publish that stopped between the rename and the log moving leaves a live name whose log is
-  // not its own. Settled here, on identity rather than on the name, before anything opens it.
-  settlePublishPhase(database);
+  settleAbandonedPublish(database);
   assertSwapAdmission(database);
   const opened = open();
   try {

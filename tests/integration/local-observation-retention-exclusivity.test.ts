@@ -505,3 +505,78 @@ it("leaves a live database's own log alone when the publish it was told about ne
       "SELECT COUNT(*) FROM gjc_intents WHERE intent_id='unpublished'").pluck().get())).toBe(1);
     writer.close();
   }, 60_000);
+
+it("refuses to open a database whose publish record cannot be accounted for, and keeps everything",
+  async () => {
+    const { db, cutoff } = await seeded();
+    const application = await applyLocalObservationRetention(db, cutoff,
+      join(dirname(db.filename), "unproven-phase-candidate"));
+    const source = db.filename;
+    const before = {
+      inode: inode(source), observations: observations(db),
+      candidate: existsSync(application.operation.candidate_path),
+    };
+    db.close();
+
+    // A record that describes neither the live inode nor a publish of it. Nothing here can say
+    // what the log under the live name belongs to, so nothing may be moved and nothing may open.
+    writeFileSync(publishPhasePath(source), `${JSON.stringify({
+      operation_id: application.operation.operation_id,
+      retired: `${source}.stranger`,
+      published: { device: "1", inode: "1" },
+      retired_identity: { device: "2", inode: "2" },
+    })}\n`);
+
+    let opened = 0;
+    expect(() => openUnderSwapAdmission(source, () => { opened += 1; return { close() {} }; }))
+      .toThrow("AUTHORITY_DATABASE_PUBLISH_UNSETTLED");
+    // The callback never ran, and the record, the database and the candidate are all still here.
+    expect(opened).toBe(0);
+    expect(existsSync(publishPhasePath(source))).toBe(true);
+    expect(inode(source)).toBe(before.inode);
+    expect(existsSync(application.operation.candidate_path)).toBe(before.candidate);
+
+    // A malformed record is the same answer, for the same reason.
+    writeFileSync(publishPhasePath(source), "{ not json\n");
+    expect(() => openUnderSwapAdmission(source, () => { opened += 1; return { close() {} }; }))
+      .toThrow("AUTHORITY_DATABASE_PUBLISH_UNSETTLED");
+    expect(opened).toBe(0);
+    expect(existsSync(publishPhasePath(source))).toBe(true);
+
+    rmSync(publishPhasePath(source));
+    db.reopen();
+    expect(observations(db)).toBe(before.observations);
+  }, 60_000);
+
+it("leaves a live publisher's phase record alone when another opener arrives mid-swap", async () => {
+  const { db, cutoff } = await seeded();
+  const application = await applyLocalObservationRetention(db, cutoff,
+    join(dirname(db.filename), "mid-swap-phase-candidate"));
+  const source = db.filename;
+  const original = statSync(source, { bigint: true });
+
+  // The state a publisher is in after it wrote its record and before it renamed: the record
+  // describes a publish that has not happened, so the retired_identity branch would clear it.
+  writeFileSync(publishPhasePath(source), `${JSON.stringify({
+    operation_id: application.operation.operation_id,
+    retired: `${source}.${application.operation.operation_id.replace(/^retention:/, "")}`,
+    published: { device: "9", inode: "9" },
+    retired_identity: { device: original.dev.toString(), inode: original.ino.toString() },
+  })}\n`);
+  // And that publisher is a real other process holding the barrier, which is what says it is
+  // still going. Its own process would be admitted as the owner, so the case needs a foreign one.
+  const publisher = announce(source, "abandon");
+  expect(await publisher.line).toBe("published");
+
+  let opened = 0;
+  expect(() => openUnderSwapAdmission(source, () => { opened += 1; return { close() {} }; }))
+    .toThrow("AUTHORITY_DATABASE_SWAP_IN_PROGRESS");
+  expect(opened).toBe(0);
+  // The record is untouched: an opener that cleared it would leave the publisher's own publish
+  // unrecorded, which is the interval the record exists to cover.
+  expect(existsSync(publishPhasePath(source))).toBe(true);
+
+  publisher.child.kill("SIGKILL");
+  await publisher.exited;
+  rmSync(publishPhasePath(source));
+}, 60_000);
