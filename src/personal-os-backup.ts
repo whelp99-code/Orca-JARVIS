@@ -130,6 +130,62 @@ export async function backupProductionSqlite(input: {
   return performOnlineBackup(paths.sourcePath, destPath);
 }
 
+function exclusiveCheckpoint(path: string): void {
+  let db: Database.Database | undefined;
+  try {
+    db = new Database(path, { fileMustExist: true });
+    db.pragma("busy_timeout = 0");
+    db.pragma("locking_mode = EXCLUSIVE");
+    db.exec("BEGIN IMMEDIATE");
+    db.exec("COMMIT");
+    db.pragma("wal_checkpoint(TRUNCATE)");
+  } catch (error) {
+    if (error instanceof PersonalOsError) throw error;
+    throw new PersonalOsError("E_RESTORE_FAILED");
+  } finally {
+    db?.close();
+  }
+}
+
+function logicalDigest(path: string): string {
+  const db = new Database(path, { readonly: true, fileMustExist: true });
+  try {
+    const hash = createHash("sha256");
+    const tables = db
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+      .all() as { readonly name: string }[];
+    for (const table of tables) {
+      if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(table.name)) throw new PersonalOsError("E_RESTORE_FAILED");
+      hash.update(table.name);
+      hash.update(JSON.stringify(db.prepare(`SELECT * FROM ${table.name}`).all()));
+    }
+    return hash.digest("hex");
+  } finally {
+    db.close();
+  }
+}
+
+function parkSqliteSet(destPath: string, parkDir: string): void {
+  mkdirSync(parkDir, { recursive: true });
+  const parked = join(parkDir, "main.sqlite");
+  renameSync(destPath, parked);
+  for (const suffix of ["-wal", "-shm"] as const) {
+    const sidecar = destPath + suffix;
+    if (existsSync(sidecar)) renameSync(sidecar, parked + suffix);
+  }
+}
+
+function unparkSqliteSet(destPath: string, parkDir: string): void {
+  const parked = join(parkDir, "main.sqlite");
+  rmSync(destPath, { force: true });
+  rmSync(destPath + "-wal", { force: true });
+  rmSync(destPath + "-shm", { force: true });
+  renameSync(parked, destPath);
+  for (const suffix of ["-wal", "-shm"] as const) {
+    if (existsSync(parked + suffix)) renameSync(parked + suffix, destPath + suffix);
+  }
+}
+
 export function restoreSqlite(input: {
   readonly backupPath: string;
   readonly destPath: string;
@@ -145,16 +201,29 @@ export function restoreSqlite(input: {
     throw new PersonalOsError("E_RESTORE_FAILED");
   }
   mkdirSync(dirname(destPath), { recursive: true });
-  const staging = join(dirname(destPath), `.restore-${randomBytes(8).toString("hex")}.sqlite`);
+  const entropy = randomBytes(8).toString("hex");
+  const staging = join(dirname(destPath), `.restore-${entropy}.sqlite`);
+  const parkDir = join(dirname(destPath), `.restore-park-${entropy}`);
+  let parked = false;
   try {
     copyFileSync(backupPath, staging);
     chmodSync(staging, 0o600);
     const check = quickCheck(staging);
     if (check !== "ok") throw new PersonalOsError("E_RESTORE_FAILED");
+    const expected = logicalDigest(backupPath);
+    if (existsSync(destPath)) {
+      exclusiveCheckpoint(destPath);
+      parkSqliteSet(destPath, parkDir);
+      parked = true;
+    }
     renameSync(staging, destPath);
+    if (logicalDigest(destPath) !== expected) throw new PersonalOsError("E_RESTORE_FAILED");
+    if (parked) rmSync(parkDir, { recursive: true, force: true });
     return { destPath, quick_check: check, ...digestFile(destPath) };
   } catch (error) {
     rmSync(staging, { force: true });
+    if (parked && existsSync(parkDir)) unparkSqliteSet(destPath, parkDir);
+    rmSync(parkDir, { recursive: true, force: true });
     if (error instanceof PersonalOsError) throw error;
     throw new PersonalOsError("E_RESTORE_FAILED");
   }
