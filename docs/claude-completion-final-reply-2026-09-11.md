@@ -29,8 +29,8 @@
 | 5 | `memory-candidate-scope`의 제안 경로가 task 게이트를 거치지 않음 | 남아 있다 |
 
 > **2026-09-12 갱신 (§9.28 정본).** 이 시점의 상태는 `IN_PROGRESS`다. 제품 SHA는
-> `6caf4eed45ead2b9beb25f670e2d915881522a06`, 전체 gate `VERIFY26=0`, 패키지 `jarvis-runtime-3eKSfQ`
-> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=6caf4ee…`.
+> `e3c2f0439504bb64a8af0947e2beb589f0515f23`, 전체 gate `VERIFY29=0`, 패키지 `jarvis-runtime-All4Eo`
+> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=e3c2f04…`.
 > **닫힘:** 기존 목적지 보존(REVIEW-01) — 목적지를 생성·점유·교체하는 경로 자체를 제거했고 세 형태 모두 회귀로 고정.
 > **열림:** writer 배타성(REVIEW-02/-03) — `b4927fb` 는 창을 좁혔을 뿐 봉쇄하지 않으며, 증명 불가 환경의 거절은
 > 두 구현을 만들어 측정한 결과 각각 "항상 거절" 과 "타이밍 의존 거절" 로 무너져 되돌렸다(§9.28). 남은 해법은
@@ -1278,3 +1278,37 @@ OS 격리 증명이 아니다 — 그 사실을 헬퍼 주석 자체에 적었�
 | 전체 gate | `VERIFY26=0` (backend 279 / 1,942, dashboard 38 / 263), 종료 09:03 KST |
 | 직전 gate | `VERIFY25=1` — `39c89f1` 입력, 원인은 삭제 제거로 남은 미사용 import 1건(제품 결함 아님), `6caf4ee` 에서 제거 |
 | 패키지 | `jarvis-runtime-3eKSfQ`, `source_head=6caf4ee…`, payload 1,543, receipt `00fb9b7d…`, `integrity=matched`, `deployment_ready=false` |
+
+### 9.33 일곱 번째 검토(REVIEW-05)가 잡은 퇴거 계약의 두 결함
+
+둘 다 실재하는 제품 결함이었고, 코드 경로 지적만으로 재현 없이 확인됐다.
+
+**P1-R1 — 두 rename 사이에 live 경로가 없었다.** 소스를 먼저 옮기고 후보를 나중에 옮기면 그 사이에 죽은
+프로세스는 live 경로가 **없는** 상태를 남긴다. 더 나쁜 것은 그 상태에서 `AuthorityDb.reopen()` 이
+`fileMustExist` 없이 열어 **빈 권한 데이터베이스를 새로 만들 수 있었다**는 점이다.
+
+- 퇴거 이름은 이제 이동이 아니라 `linkSync` 로 만드는 **두 번째 링크**다. inode 는 이름을 잃지 않고, publish 는
+  live 경로 위의 단일 원자적 rename 이므로 live 경로가 사라지는 순간이 없다.
+- `reopen()` 은 `fileMustExist: true` 로 연다. 끝나지 않은 교체를 조용히 빈 DB 로 덮는 대신 실패한다.
+- 인수는 중단 상태를 정확히 구성한다: 퇴거 링크가 있고 후보가 publish 되지 않은 상태에서 live 경로가 여전히
+  원래 inode 이고 행 수가 그대로임을 확인하고, live 경로를 지운 뒤 `reopen()` 이 던지는 것과, 퇴거 링크에서
+  복원하면 원래 inode·행 수로 돌아오는 것까지 확인한다. 변이 검사: `fileMustExist` 를 지우면 실패한다.
+
+**P1-R2 — 기존 훅은 최종 창을 입증하지 못했다.** 후보 존재만 조건으로 삼아 `foreignHolders` 단계의 첫 관측에서
+발화했고, writer 를 즉시 닫아 열린 WAL 을 남기지 않았다. 조건을 **후보 안의 applied 레코드**로 바꿔 최종 검사
+그 한 번에만 발화하게 했고, writer 는 WAL 을 쥔 채 publish 를 넘긴다.
+
+이 인수가 세 번째 결함을 드러냈다: 검사 이후 writer 가 만든 로그가 **publish 된 새 데이터베이스에 붙어**
+`database disk image is malformed` 가 됐다. 사이드카 퇴거를 publish **이후**로 옮겨 퇴거된 inode 와 짝이 맞게
+했고, barrier 가 아직 서 있는 동안 수행하므로 승인된 연결은 그 사이를 보지 못한다. 변이 검사: 되돌리면 실패한다.
+
+그리고 이 경우 swap 은 publish 를 마친 뒤 `LOCAL_RETENTION_OLD_DATABASE_FD_ACTIVE` 로 **보고**한다. 침묵이
+아니고 손실도 아니다 — 퇴거된 데이터베이스와 그 로그에서 그 writer 의 커밋을 그대로 읽어낼 수 있다.
+
+| 이 시점 실측 | 값 |
+| --- | --- |
+| 제품 SHA | `e3c2f0439504bb64a8af0947e2beb589f0515f23` |
+| 전체 gate | `VERIFY29=0` (backend 279 / 1,942, dashboard 38 / 263), 종료 10:34 KST |
+| 직전 gate | `VERIFY27=1` (미사용 바인딩 1건), `VERIFY28=1` (스케줄 1건 `status: failed`, 단독 5/5 통과·자체 부하 재현 실패·vitest diff 가 코드를 생략해 귀속 불가) |
+| 그 처리 | 사유를 추측하지 않고, 실패한 cycle 이 자기 코드를 보고하도록 단언을 강화(`e3c2f04`). 동일 입력 gate 반복은 하지 않았다 |
+| 패키지 | `jarvis-runtime-All4Eo`, `source_head=e3c2f04…`, payload 1,543, receipt `b417cf1e…`, `integrity=matched`, `deployment_ready=false` |
