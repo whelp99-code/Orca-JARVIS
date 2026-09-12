@@ -29,8 +29,8 @@
 | 5 | `memory-candidate-scope`의 제안 경로가 task 게이트를 거치지 않음 | 남아 있다 |
 
 > **2026-09-12 갱신 (§9.28 정본).** 이 시점의 상태는 `IN_PROGRESS`다. 제품 SHA는
-> `0b1c57d83d7312a8e5f1f5cdea3f47f1954542f4`, 전체 gate `VERIFY30=0`, 패키지 `jarvis-runtime-5hx5Ww`
-> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=0b1c57d…`.
+> `8c214c0951e13a507e4988b691947394f2315966`, 전체 gate `VERIFY31=0`, 패키지 `jarvis-runtime-kEmdpu`
+> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=8c214c0…`.
 > **닫힘:** 기존 목적지 보존(REVIEW-01) — 목적지를 생성·점유·교체하는 경로 자체를 제거했고 세 형태 모두 회귀로 고정.
 > **열림:** writer 배타성(REVIEW-02/-03) — `b4927fb` 는 창을 좁혔을 뿐 봉쇄하지 않으며, 증명 불가 환경의 거절은
 > 두 구현을 만들어 측정한 결과 각각 "항상 거절" 과 "타이밍 의존 거절" 로 무너져 되돌렸다(§9.28). 남은 해법은
@@ -1340,3 +1340,32 @@ inode 정체성, 퇴거될 inode 정체성. 그리고 **연결이 만들어지�
 | 전체 gate | `VERIFY30=0` (backend 279 / 1,942, dashboard 38 / 263), 종료 11:36 KST |
 | 패키지 | `jarvis-runtime-5hx5Ww`, `source_head=0b1c57d…`, payload 1,544, receipt `b584a752…`, `integrity=matched`, `deployment_ready=false` |
 | manifest 복구 | round 5=`eRhLO4`(ca28dfe), round 9=`ZbHKKx`(c2e191a), round 10 final=`O25Nzv`(b6403f7) 를 각자의 패키지로 되돌리고, gate29(`All4Eo`)·gate30(`5hx5Ww`) 을 각각 별도 항목으로 연결 |
+
+### 9.35 아홉 번째 검토 — phase 구현 자체의 두 결함 (커밋 `8c214c0`)
+
+**(1) `unproven` 을 무시하고 열었다.** 정산이 "이 로그가 누구 것인지 말할 수 없다" 고 답해도
+`openUnderSwapAdmission` 은 그대로 `assertSwapAdmission` 으로 넘어갔다. barrier 가 없거나 죽은 owner 의
+것이면 혼합 데이터베이스가 그대로 열렸다. 이제 `AUTHORITY_DATABASE_PUBLISH_UNSETTLED` 로 **거절**한다.
+회귀는 정체성 불일치 기록과 malformed JSON 두 경우에서 open 콜백이 한 번도 실행되지 않고 기록·데이터베이스·
+후보가 모두 그대로임을 고정한다.
+
+**(2) 정산이 소유자 직렬화 경계 밖에서 돌았다.** `beginPublishPhase` 뒤 rename 전에 멈춘 **살아 있는**
+publisher 의 기록을, 다른 admitted opener 가 `retired_identity` 분기로 지운 뒤 barrier 때문에 거절될 수 있었다.
+그러면 원래 publisher 는 기록 없이 publish 하게 되고, 직후 급사하면 R3 가 그대로 다시 열린다. publish 뒤였다면
+사이드카 이동을 active owner 와 경쟁한다.
+
+정산은 이제 barrier 가 발행되는 것과 **같은 잠금**(`withSwapBarrierLock(canonicalDatabase(...))`) 안에서만
+일어나고, 살아 있는 외부 소유자가 barrier 를 쥐고 있으면 `owned` 로 물러나 기록도 사이드카도 건드리지 않는다.
+복구하려는 opener 가 둘이어도 같은 잠금에서 직렬화되므로 이동은 한 번만 일어난다. 호출 순서를 바꾼 것이
+아니라 경계를 맞춘 것이다.
+
+회귀는 **실제 다른 프로세스**가 barrier 를 쥔 상태를 쓴다. 이 프로세스 자신의 barrier 는 소유자로 admit 되므로
+그 가드를 전혀 건드리지 못하기 때문이다(holder fixture `abandon`).
+
+변이 검사 둘 다 갈린다: 거절을 지우면 열려버리고, 소유자 가드를 지우면 살아 있는 publisher 의 기록이 지워진다.
+
+| 이 시점 실측 | 값 |
+| --- | --- |
+| 제품 SHA | `8c214c0951e13a507e4988b691947394f2315966` |
+| 전체 gate | `VERIFY31=0` (backend 279 / 1,942, dashboard 38 / 263), 종료 12:33 KST |
+| 패키지 | `jarvis-runtime-kEmdpu`, `source_head=8c214c0…`, payload 1,544, receipt `e20deec1…`, `integrity=matched`, `deployment_ready=false` |
