@@ -1,6 +1,7 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
   chmodSync,
+  constants,
   copyFileSync,
   existsSync,
   lstatSync,
@@ -232,7 +233,15 @@ export function restoreSqlite(input: {
     chmodSync(staging, 0o600);
     const check = quickCheck(staging);
     if (check !== "ok") throw new PersonalOsError("E_RESTORE_FAILED");
-    renameSync(staging, destPath);
+    try {
+      copyFileSync(staging, destPath, constants.COPYFILE_EXCL);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "EEXIST") {
+        throw new PersonalOsError("E_RESTORE_FAILED");
+      }
+      throw error;
+    }
+    chmodSync(destPath, 0o600);
     if (logicalDigest(destPath) !== logicalDigest(backupPath)) throw new PersonalOsError("E_RESTORE_FAILED");
     return { destPath, quick_check: check, ...digestFile(destPath) };
   } catch (error) {

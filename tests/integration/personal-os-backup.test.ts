@@ -135,6 +135,18 @@ describe("personal-OS backup, restore, and publish", () => {
     live.close();
   });
 
+  it("creates a missing dest without renaming over a path that is already occupied", () => {
+    const root = scratch();
+    const dest = join(root, "created.sqlite");
+    const backup = join(root, "backup.sqlite");
+    seedDb(backup, "backup-approved");
+    const recovered = restoreSqlite({ backupPath: backup, destPath: dest });
+    expect(recovered.quick_check).toBe("ok");
+    const live = new Database(dest, { readonly: true, fileMustExist: true });
+    expect(live.prepare("SELECT value FROM sentinel WHERE id=?").get("row-1")).toMatchObject({ value: "backup-approved" });
+    live.close();
+  });
+
   it("refuses restore while another writer holds dest and keeps the writer commit", () => {
     const root = scratch();
     const dest = join(root, "live.sqlite");
