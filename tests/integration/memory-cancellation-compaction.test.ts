@@ -297,7 +297,6 @@ it("keeps a commit that landed after the candidate was built and before the swap
   new MemoryCorrectionCancellationResultStore(f.db, f.runtime.clock)
     .record(f.record.correction_id, f.result);
   const source = f.db.filename;
-  const before = statSync(source).ino;
 
   // Written on the exclusion question the swap asks first - after the candidate was built and
   // before the swap's own bookkeeping - then closed. Its rows are in the source and in no
