@@ -98,6 +98,9 @@ it("rebuilds once, records the stage in the database and keeps the audit trail",
   const cycle = await service(seeded,
     { config: seeded.config, runtime: seeded.runtime, now: () => seeded.cutoffAt }).cycle();
 
+  // Asserted on its own first so a failure carries the cycle's own account of itself - a refusal
+  // code names what stopped the swap, and a diff that elides it cannot be acted on.
+  expect(cycle.status, JSON.stringify(cycle)).toBe("processed");
   expect(cycle).toMatchObject({
     status: "processed", recorded_state: "applied", result_generation: generation + 1,
     removed: { observation: 1, context: 1, recommendation: 1 }, recovered: [],
