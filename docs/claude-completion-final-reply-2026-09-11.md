@@ -29,8 +29,8 @@
 | 5 | `memory-candidate-scope`의 제안 경로가 task 게이트를 거치지 않음 | 남아 있다 |
 
 > **2026-09-12 갱신 (§9.28 정본).** 이 시점의 상태는 `IN_PROGRESS`다. 제품 SHA는
-> `e3c2f0439504bb64a8af0947e2beb589f0515f23`, 전체 gate `VERIFY29=0`, 패키지 `jarvis-runtime-All4Eo`
-> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=e3c2f04…`.
+> `0b1c57d83d7312a8e5f1f5cdea3f47f1954542f4`, 전체 gate `VERIFY30=0`, 패키지 `jarvis-runtime-5hx5Ww`
+> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=0b1c57d…`.
 > **닫힘:** 기존 목적지 보존(REVIEW-01) — 목적지를 생성·점유·교체하는 경로 자체를 제거했고 세 형태 모두 회귀로 고정.
 > **열림:** writer 배타성(REVIEW-02/-03) — `b4927fb` 는 창을 좁혔을 뿐 봉쇄하지 않으며, 증명 불가 환경의 거절은
 > 두 구현을 만들어 측정한 결과 각각 "항상 거절" 과 "타이밍 의존 거절" 로 무너져 되돌렸다(§9.28). 남은 해법은
@@ -1312,3 +1312,31 @@ OS 격리 증명이 아니다 — 그 사실을 헬퍼 주석 자체에 적었�
 | 직전 gate | `VERIFY27=1` (미사용 바인딩 1건), `VERIFY28=1` (스케줄 1건 `status: failed`, 단독 5/5 통과·자체 부하 재현 실패·vitest diff 가 코드를 생략해 귀속 불가) |
 | 그 처리 | 사유를 추측하지 않고, 실패한 cycle 이 자기 코드를 보고하도록 단언을 강화(`e3c2f04`). 동일 입력 gate 반복은 하지 않았다 |
 | 패키지 | `jarvis-runtime-All4Eo`, `source_head=e3c2f04…`, payload 1,543, receipt `b417cf1e…`, `integrity=matched`, `deployment_ready=false` |
+
+### 9.34 P1-R3 — publish 와 로그 이동 사이의 중단 (커밋 `0b1c57d`)
+
+여덟 번째 검토가 짚은 대로, publish 직후 사이드카가 옮겨지기 전에 죽으면 **새 main + 옛 WAL** 의 혼합 상태가
+남는다. 그 뒤 catch 가 reopen 하고 barrier 를 풀며, 죽은 owner 의 barrier 는 debris 로 취급돼 다음 open 이
+허용되므로, 그 혼합 상태가 그대로 노출된다. 기존 인수는 publish **이전** hardlink 상태만 구성했으므로 이
+구간을 검증하지 않았다.
+
+**phase 증거로 처리했다.** publish 직전에 `<db>.publishing` 을 쓴다 — operation id, 퇴거 경로, publish 될
+inode 정체성, 퇴거될 inode 정체성. 그리고 **연결이 만들어지기 전에**(`openUnderSwapAdmission`) 정산한다.
+
+- live 경로가 기록된 publish inode면: 그 이름 아래 남은 로그는 퇴거된 inode 의 것이므로 짝이 맞는 이름으로
+  옮기고 기록을 지운다 → `completed`.
+- live 경로가 퇴거될 inode면: publish 자체가 없었으므로 **아무것도 옮기지 않고** 기록만 정리한다 → `reverted`.
+- 둘 다 아니면 `unproven`: 이름이 무엇이든 그 로그가 누구 것인지 말할 수 없으므로 손대지 않는다.
+
+파일을 지우지 않고, 살아 있는 barrier 도 믿지 않는다. 판단 근거는 dev/ino 정체성뿐이다.
+
+**변이 검사 둘 다 갈린다.** 정산 호출을 지우면 혼합 상태가 그대로 열려 `malformed database schema` 로
+실패하고, 정체성 판정을 무조건 참으로 바꾸면 publish 가 없었던 경우에 live 데이터베이스 자신의 로그를
+빼앗아 `disk I/O error` 로 실패한다. 후자를 잡기 위해 "publish 가 없었는데 기록만 있는" 케이스를 따로 세웠다.
+
+| 이 시점 실측 | 값 |
+| --- | --- |
+| 제품 SHA | `0b1c57d83d7312a8e5f1f5cdea3f47f1954542f4` |
+| 전체 gate | `VERIFY30=0` (backend 279 / 1,942, dashboard 38 / 263), 종료 11:36 KST |
+| 패키지 | `jarvis-runtime-5hx5Ww`, `source_head=0b1c57d…`, payload 1,544, receipt `b584a752…`, `integrity=matched`, `deployment_ready=false` |
+| manifest 복구 | round 5=`eRhLO4`(ca28dfe), round 9=`ZbHKKx`(c2e191a), round 10 final=`O25Nzv`(b6403f7) 를 각자의 패키지로 되돌리고, gate29(`All4Eo`)·gate30(`5hx5Ww`) 을 각각 별도 항목으로 연결 |
