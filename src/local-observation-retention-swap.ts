@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { beginPublishPhase, endPublishPhase } from "./local-observation-retention-publish.js";
 import { exclusionHole } from "./authority-database-process.js";
 import Database from "better-sqlite3";
-import { linkSync, existsSync, readFileSync, renameSync, statSync } from "node:fs";
+import { rmSync, linkSync, existsSync, readFileSync, renameSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import type { AuthorityDatabaseRuntime } from "./authority-database-runtime.js";
 import { publishSwapBarrier, releaseSwapBarrier } from "./authority-database-swap-barrier.js";
@@ -201,6 +201,15 @@ export function applyRetentionCandidate(
     endPublishPhase(authority.filename);
     syncPath(dirname(authority.filename), true);
     observed = runtime.observeOldInode(BigInt(fence.device), BigInt(fence.inode));
+    // Kept only while a descriptor can still write into the retired inode. With none left there is
+    // nothing to lose by removing it, and leaving a second copy of the material that was just
+    // replaced is its own problem.
+    if (observed.fd_count === 0) {
+      for (const suffix of ["", "-wal", "-shm", "-journal"]) {
+        rmSync(`${retired}.retired${suffix}`, { force: true });
+      }
+      syncPath(dirname(authority.filename), true);
+    }
   } catch (error) {
     // Unwinding. The connection has to come back and the barrier has to go, but neither may
     // replace the reason this failed: that reason is what the caller acts on, and both of these

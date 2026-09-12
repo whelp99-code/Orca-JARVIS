@@ -99,13 +99,31 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
             device: input.old_device.toString(), inode: input.old_inode.toString() },
         });
         renameSync(input.fresh_path, authority.filename);
+        // A cancellation is a purge: the point of it is that the material stops existing, so its
+        // log goes with it rather than being set aside where the purge would not reach. Every other
+        // compaction keeps the log beside the inode it belongs to, because nothing there is meant
+        // to be destroyed and a writer that arrived late would lose its commit.
         for (const suffix of ["-wal", "-shm", "-journal"]) {
           const sidecar = `${authority.filename}${suffix}`;
-          if (existsSync(sidecar)) renameSync(sidecar, `${retiredDatabase}${suffix}`);
+          if (!existsSync(sidecar)) continue;
+          if (input.cancellation) rmSync(sidecar, { force: true });
+          else renameSync(sidecar, `${retiredDatabase}${suffix}`);
         }
         endPublishPhase(authority.filename);
         syncPath(dirname(authority.filename), true);
-        return runtime.observeOldInode(input.old_device, input.old_inode);
+        const observed = runtime.observeOldInode(input.old_device, input.old_inode);
+        // The retired copy exists for descriptors that can still write into that inode. With none
+        // left there is nothing to lose and nothing to justify a second copy of the material, so
+        // it goes - which is also what keeps a compaction from leaving the data it just replaced
+        // lying beside the live name. A cancellation's own retirement link is not this one's to
+        // remove: the purge owns it.
+        if (observed.fd_count === 0 && !input.cancellation) {
+          for (const suffix of ["", "-wal", "-shm", "-journal"]) {
+            rmSync(`${retiredDatabase}${suffix}`, { force: true });
+          }
+          syncPath(dirname(authority.filename), true);
+        }
+        return observed;
       } catch (error) {
         releaseSwapBarrier(authority.filename);
         authority.reopen();
