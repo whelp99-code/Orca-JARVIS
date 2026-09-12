@@ -342,6 +342,56 @@ it("keeps a commit that landed after the candidate was built and before the swap
           "SELECT COUNT(*) FROM gjc_intents WHERE intent_id='pre-swap-late'").pluck().get()) > 0;
       } catch { return false; } finally { probe.close(); }
     });
-    expect(refused || survivors.length > 0, JSON.stringify({ retired, refused })).toBe(true);
+    // A refusal is only an answer if the row is still somewhere. "Refused" and "gone" together
+    // would be the same loss with a better name on it.
+    expect(survivors.length > 0, JSON.stringify({ retired, refused })).toBe(true);
   }
 }, 60_000);
+
+it("keeps a commit that landed between the candidate's read and the swap", async () => {
+  const f = await cancellationResultFixture();
+  new MemoryCorrectionCancellationResultStore(f.db, f.runtime.clock)
+    .record(f.record.correction_id, f.result);
+  const source = f.db.filename;
+
+  // The swap is entered through quiesce, after the candidate has been read. A commit here is in
+  // neither the candidate nor in the version the candidate's own read recorded.
+  let wrote = false;
+  const quiesce = f.databaseRuntime.quiesce.bind(f.databaseRuntime);
+  f.databaseRuntime.quiesce = ((scope: string, body: () => Promise<unknown>) => {
+    if (!wrote) {
+      wrote = true;
+      const late = new Database(source);
+      try {
+        late.pragma("journal_mode = WAL");
+        late.prepare(`INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,
+          payload_digest,idempotency_key,state,created_at) VALUES('between-read-and-swap',
+          'task:late','dispatch','{}','sha256:between','between','pending',
+          '2026-08-28T12:00:00.000Z')`).run();
+      } finally { late.close(); }
+    }
+    return quiesce(scope as never, body as never);
+  }) as typeof f.databaseRuntime.quiesce;
+
+  const outcome = await f.runtime.compactor.compactCancellation(f.record.correction_id)
+    .catch((error: unknown) => error);
+  expect(wrote).toBe(true);
+  expect(rowLives(source, "between-read-and-swap"),
+    JSON.stringify({ outcome: outcome instanceof Error ? outcome.message : "ok" })).toBe(true);
+}, 60_000);
+
+/** Whether this row is still readable from the live database or from anything kept beside it. */
+function rowLives(source: string, intent: string): boolean {
+  const candidates = [source, ...readdirSync(dirname(source))
+    .filter(entry => entry.endsWith(".retired"))
+    .map(entry => join(dirname(source), entry))];
+  return candidates.some(path => {
+    try {
+      const probe = new Database(path, { readonly: true });
+      try {
+        return Number(probe.prepare(
+          `SELECT COUNT(*) FROM gjc_intents WHERE intent_id='${intent}'`).pluck().get()) > 0;
+      } finally { probe.close(); }
+    } catch { return false; }
+  });
+}

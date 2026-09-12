@@ -53,19 +53,16 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
       releaseSwapBarrier(authority.filename);
       throw new AuthorityError("MEMORY_SOURCE_WRITER_ACTIVE");
     }
-    // Two different questions. The caller's snapshot says what the source looked like when the
-    // candidate stopped depending on it; data_version says whether anyone else has committed into
-    // it since this connection last looked. Our own bookkeeping moves the first and not the second,
-    // so a foreign commit is what the pair actually detects.
+    // Asked while the connection is still open, against the version the candidate's own read
+    // recorded: a commit anywhere between that read and this one refuses before anything is
+    // destroyed. The file snapshot cannot be taken here - closing checkpoints the log into the
+    // database and would move it - so it is taken the moment this process can no longer write.
     const foreignWrites = Number(authority.db.pragma("data_version", { simple: true }));
     if (String(foreignWrites) !== String(input.source_data_version)) {
       releaseSwapBarrier(authority.filename);
       throw new AuthorityError("MEMORY_SOURCE_CHANGED_BEFORE_SWAP");
     }
     authority.close();
-    // Taken the moment this process can no longer write: from here anything that changes the file
-    // is somebody else's, including a connection that opens on a later question and closes again
-    // before any count is taken.
     const retirementAtClose = retirementState(authority.filename);
     // Asked again with this connection gone, and this time without excusing anything for sharing a
     // pid: a second writable connection inside this process would be orphaned by the rename just

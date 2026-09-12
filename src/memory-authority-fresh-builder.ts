@@ -23,6 +23,8 @@ export type FreshAuthorityBuild = {
   readonly foreign_key_errors: 0;
   readonly source_generation: number;
   readonly result_generation: number;
+  /** The source's data_version as of the read this candidate was made from. */
+  readonly source_data_version: number;
 };
 
 type SchemaRow = {
@@ -128,7 +130,8 @@ export async function buildFreshAuthority(
     return { fresh_path: freshPath, source_digest: sourceDigest,
       result_digest: digest(resultBytes), logical_result_digest: logicalDigest,
       sensitive_material: sensitive, integrity_check: "ok", foreign_key_errors: 0,
-      source_generation: sourceGeneration, result_generation: sourceGeneration + 1 };
+      source_generation: sourceGeneration, result_generation: sourceGeneration + 1,
+      source_data_version: Number(source.db.pragma("data_version", { simple: true })) };
   } catch (error) {
     if (fresh.db.open) fresh.close();
     if (!claimed) {
