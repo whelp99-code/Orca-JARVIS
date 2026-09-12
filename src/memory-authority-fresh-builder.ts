@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { copySourceTables } from "./memory-authority-source-copy.js";
 import { chmodSync, existsSync, readFileSync, rmSync } from "node:fs";
 import { canonicalize } from "./canonical.js";
 import { AuthorityDb } from "./db.js";
@@ -78,22 +79,20 @@ export async function buildFreshAuthority(
     for (const projection of blockedProjections) {
       insertBlocked.run(projection.kind, projection.id, projection.component_id);
     }
-    fresh.db.prepare("ATTACH DATABASE ? AS source_authority").run(source.filename);
-    try {
-      for (const table of targetTables) {
-        if (table === "schema_migrations" || table.startsWith("sqlite_")) continue;
-        const columns = tableColumns(fresh, table);
-        if (columns.length === 0) continue;
-        fresh.db.exec(`DELETE FROM ${quote(table)}`);
-        const list = columns.map(quote).join(",");
-        const selected = columns.map(column => copyExpression(table, column)).join(",");
-        fresh.db.exec(`INSERT INTO ${quote(table)}(${list})
-          SELECT ${selected} FROM source_authority.${quote(table)} AS source_row
-          ${copyFilter(table, columns)}`);
-      }
-    } finally {
-      fresh.db.exec("DETACH DATABASE source_authority");
-    }
+    const sourceVersionAtRead = copySourceTables({ fresh: fresh.db,
+      sourceFilename: source.filename, copy: () => {
+        for (const table of targetTables) {
+          if (table === "schema_migrations" || table.startsWith("sqlite_")) continue;
+          const columns = tableColumns(fresh, table);
+          if (columns.length === 0) continue;
+          fresh.db.exec(`DELETE FROM ${quote(table)}`);
+          const list = columns.map(quote).join(",");
+          const selected = columns.map(column => copyExpression(table, column)).join(",");
+          fresh.db.exec(`INSERT INTO ${quote(table)}(${list})
+            SELECT ${selected} FROM source_authority.${quote(table)} AS source_row
+            ${copyFilter(table, columns)}`);
+        }
+      }, sourceVersion: Number(source.db.pragma("data_version", { simple: true })) });
     removeSuppressedRows(fresh.db, blockedProjections);
     for (const trigger of triggers) {
       if (trigger.sql === null) throw new JarvisError("MEMORY_COMPACTION_SCHEMA_INVALID");
@@ -130,7 +129,7 @@ export async function buildFreshAuthority(
       result_digest: digest(resultBytes), logical_result_digest: logicalDigest,
       sensitive_material: sensitive, integrity_check: "ok", foreign_key_errors: 0,
       source_generation: sourceGeneration, result_generation: sourceGeneration + 1,
-      source_data_version: Number(source.db.pragma("data_version", { simple: true })) };
+      source_data_version: sourceVersionAtRead };
   } catch (error) {
     if (fresh.db.open) fresh.close();
     if (!claimed) {
