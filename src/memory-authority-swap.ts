@@ -23,6 +23,8 @@ export type SwapRequest = {
   readonly logical_result_digest: string;
   readonly physical_scan_digest: string;
   readonly observed_at: string;
+  /** The source's data_version when the candidate stopped depending on it. */
+  readonly source_data_version: number;
 };
 
 export type SwapObservation = {
@@ -51,7 +53,20 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
       releaseSwapBarrier(authority.filename);
       throw new AuthorityError("MEMORY_SOURCE_WRITER_ACTIVE");
     }
+    // Two different questions. The caller's snapshot says what the source looked like when the
+    // candidate stopped depending on it; data_version says whether anyone else has committed into
+    // it since this connection last looked. Our own bookkeeping moves the first and not the second,
+    // so a foreign commit is what the pair actually detects.
+    const foreignWrites = Number(authority.db.pragma("data_version", { simple: true }));
+    if (String(foreignWrites) !== String(input.source_data_version)) {
+      releaseSwapBarrier(authority.filename);
+      throw new AuthorityError("MEMORY_SOURCE_CHANGED_BEFORE_SWAP");
+    }
     authority.close();
+    // Taken the moment this process can no longer write: from here anything that changes the file
+    // is somebody else's, including a connection that opens on a later question and closes again
+    // before any count is taken.
+    const retirementAtClose = retirementState(authority.filename);
     // Asked again with this connection gone, and this time without excusing anything for sharing a
     // pid: a second writable connection inside this process would be orphaned by the rename just
     // as surely as another process's, and the write-ahead log removed below would take its
@@ -88,9 +103,9 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
     // its own through a link taken before anything moves, and the phase is recorded so a fault
     // between the publish and the log's move can be settled on identity afterwards.
 
-    // Taken before the destructive half begins, for the reason the retention swap takes it there:
-    // anything written into the source after this point exists only in the retired inode.
-    const retirementBefore = retirementState(authority.filename);
+    // Taken by the caller when the candidate stopped depending on the source, not here: a writer
+    // that commits and lets go between that moment and this one would otherwise be folded into the
+    // baseline, and its rows - which are in no candidate - would compare as "nothing changed".
     const retiredDatabase = input.cancellation
       ? retiredSourcePath(authority.filename, input.purge_id)
       : `${authority.filename}.${input.purge_id}.retired`;
@@ -124,8 +139,7 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
         // it goes - which is also what keeps a compaction from leaving the data it just replaced
         // lying beside the live name. A cancellation's own retirement link is not this one's to
         // remove: the purge owns it.
-        const untouched = retirementUnchanged(
-          retirementBefore, retirementState(retiredDatabase));
+        const untouched = retirementUnchanged(retirementAtClose, retirementState(retiredDatabase));
         if (input.cancellation) {
           // A purge destroys what it names, and the retirement link is the purge's own evidence.
           // But it may not destroy a commit that arrived after the last question and is in that
@@ -140,7 +154,7 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
         }
         if (observed.fd_count === 0) {
           dropUnchangedRetirement(
-            retiredDatabase, retirementBefore, dirname(authority.filename));
+            retiredDatabase, retirementAtClose, dirname(authority.filename));
         }
         return observed;
       } catch (error) {

@@ -1,7 +1,7 @@
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import Database from "better-sqlite3";
 import { withProvableExclusion } from "../fixtures/provable-exclusion.js";
-import { dirname, join } from "node:path";
+import { basename, dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { MemoryAuthorityCompactor } from "../../src/memory-authority-compactor.js";
 import { AuthorityDb } from "../../src/db.js";
@@ -291,3 +291,58 @@ it("refuses the replacement while an unregistered writer holds the source, and d
       "SELECT COUNT(*) FROM gjc_intents WHERE intent_id='memory-unregistered'").pluck().get())).toBe(1);
     writer.close();
   }, 60_000);
+
+it("keeps a commit that landed after the candidate was built and before the swap began", async () => {
+  const f = await cancellationResultFixture();
+  new MemoryCorrectionCancellationResultStore(f.db, f.runtime.clock)
+    .record(f.record.correction_id, f.result);
+  const source = f.db.filename;
+  const before = statSync(source).ino;
+
+  // Written on the exclusion question the swap asks first - after the candidate was built and
+  // before the swap's own bookkeeping - then closed. Its rows are in the source and in no
+  // candidate, and no descriptor is left to show for them.
+  let wrote = false;
+  const observe = f.databaseRuntime.observeExclusion.bind(f.databaseRuntime);
+  f.databaseRuntime.observeExclusion = ((device: bigint, ino: bigint) => {
+    const answer = observe(device, ino);
+    if (wrote) return answer;
+    wrote = true;
+    const late = new Database(source);
+    try {
+      late.pragma("journal_mode = WAL");
+      late.prepare(`INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,
+        payload_digest,idempotency_key,state,created_at) VALUES('pre-swap-late','task:late',
+        'dispatch','{}','sha256:pre','pre-swap-late','pending','2026-08-28T12:00:00.000Z')`).run();
+    } finally { late.close(); }
+    return answer;
+  }) as typeof f.databaseRuntime.observeExclusion;
+
+  const outcome = await f.runtime.compactor.compactCancellation(f.record.correction_id)
+    .catch((error: unknown) => error);
+  expect(wrote).toBe(true);
+
+  // Either the purge refused because it could not account for that commit, or it went through and
+  // the retired copy still holds it. What may not happen is the row existing nowhere.
+  const name = basename(source);
+  const retired = readdirSync(dirname(source)).filter(entry => entry.endsWith(".retired")
+    && (entry.startsWith(name) || entry.startsWith(`.${name}`)));
+  const live = new Database(source, { readonly: true });
+  let inLive = 0;
+  try {
+    inLive = Number(live.prepare(
+      "SELECT COUNT(*) FROM gjc_intents WHERE intent_id='pre-swap-late'").pluck().get());
+  } finally { live.close(); }
+  if (inLive === 0) {
+    const refused = outcome instanceof Error
+      && (outcome as { code?: string }).code === "MEMORY_PURGE_LATE_COMMIT_UNRESOLVED";
+    const survivors = retired.filter(name => {
+      const probe = new Database(join(dirname(source), name), { readonly: true });
+      try {
+        return Number(probe.prepare(
+          "SELECT COUNT(*) FROM gjc_intents WHERE intent_id='pre-swap-late'").pluck().get()) > 0;
+      } catch { return false; } finally { probe.close(); }
+    });
+    expect(refused || survivors.length > 0, JSON.stringify({ retired, refused })).toBe(true);
+  }
+}, 60_000);

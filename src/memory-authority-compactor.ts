@@ -150,7 +150,12 @@ export class MemoryAuthorityCompactor implements MemoryAuthorityCompactorPort {
       if (countManagedMatches(this.options.layout, sensitive) !== 0) {
         throw new AuthorityError("MEMORY_COMPACTION_MANAGED_MATCH");
       }
+      // The candidate stops depending on the source here, so this is the state the retired copy
+      // has to still have before anything may remove it. Taken before the swap is entered, not
+      // inside it, because the interval between the two belongs to whoever writes in it.
+      const sourceDataVersion = Number(authority.db.pragma("data_version", { simple: true }));
       const swap = await this.swap({ cancellation: "cancellation" in request, fresh_path: freshPath,
+        source_data_version: sourceDataVersion,
         old_device: sourceMetadata.dev, old_inode: sourceMetadata.ino, purge_id: purgeId,
         result_generation: build.result_generation,
         logical_result_digest: build.logical_result_digest,

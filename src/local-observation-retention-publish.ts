@@ -73,7 +73,12 @@ export function retirementState(database: string): readonly string[] {
     try {
       const stat = statSync(`${database}${suffix}`, { bigint: true });
       return `${suffix}:${stat.size}:${stat.mtimeNs}`;
-    } catch { return `${suffix}:absent`; }
+    } catch (error) {
+      // Absence is an answer; anything else is the absence of one. A file this cannot read may
+      // have been written into, and calling that "the same" would delete the only copy of it.
+      const code = error instanceof Error ? Reflect.get(error, "code") : undefined;
+      return code === "ENOENT" ? `${suffix}:absent` : `${suffix}:unreadable`;
+    }
   });
 }
 
@@ -88,6 +93,8 @@ export function retirementState(database: string): readonly string[] {
 export function retirementUnchanged(
   before: readonly string[], after: readonly string[],
 ): boolean {
+  if (before.some(entry => entry.endsWith(":unreadable"))) return false;
+  if (after.some(entry => entry.endsWith(":unreadable"))) return false;
   return before.length === after.length && before.every((entry, index) => entry === after[index]);
 }
 
