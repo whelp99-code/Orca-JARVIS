@@ -438,7 +438,7 @@ it("settles a publish that stopped before the old log moved, on identity rather 
     // retired inode's. Constructed exactly, with the phase record the swap writes first.
     const candidate = statSync(application.operation.candidate_path, { bigint: true });
     writeFileSync(publishPhasePath(source), `${JSON.stringify({
-      operation_id: application.operation.operation_id, retired,
+      operation_id: application.operation.operation_id, retired_database: `${retired}.retired`,
       published: { device: candidate.dev.toString(), inode: candidate.ino.toString() },
       retired_identity: {
         device: originalIdentity.dev.toString(), inode: originalIdentity.ino.toString() },
@@ -489,7 +489,7 @@ it("leaves a live database's own log alone when the publish it was told about ne
 
     // The phase record exists, but the rename never ran: the live name is still the original inode.
     writeFileSync(publishPhasePath(source), `${JSON.stringify({
-      operation_id: application.operation.operation_id, retired,
+      operation_id: application.operation.operation_id, retired_database: `${retired}.retired`,
       published: { device: candidate.dev.toString(), inode: candidate.ino.toString() },
       retired_identity: { device: original.dev.toString(), inode: original.ino.toString() },
     })}\n`);
@@ -522,7 +522,7 @@ it("refuses to open a database whose publish record cannot be accounted for, and
     // what the log under the live name belongs to, so nothing may be moved and nothing may open.
     writeFileSync(publishPhasePath(source), `${JSON.stringify({
       operation_id: application.operation.operation_id,
-      retired: `${source}.stranger`,
+      retired_database: `${source}.stranger.retired`,
       published: { device: "1", inode: "1" },
       retired_identity: { device: "2", inode: "2" },
     })}\n`);
@@ -560,7 +560,7 @@ it("leaves a live publisher's phase record alone when another opener arrives mid
   // describes a publish that has not happened, so the retired_identity branch would clear it.
   writeFileSync(publishPhasePath(source), `${JSON.stringify({
     operation_id: application.operation.operation_id,
-    retired: `${source}.${application.operation.operation_id.replace(/^retention:/, "")}`,
+    retired_database: `${source}.${application.operation.operation_id.replace(/^retention:/, "")}.retired`,
     published: { device: "9", inode: "9" },
     retired_identity: { device: original.dev.toString(), inode: original.ino.toString() },
   })}\n`);
@@ -607,7 +607,7 @@ it("gives the descriptor up when a publish record appears while the database is 
     expect(() => openUnderSwapAdmission(source, () => {
       writeFileSync(publishPhasePath(source), `${JSON.stringify({
         operation_id: application.operation.operation_id,
-        retired: `${source}.${application.operation.operation_id.replace(/^retention:/, "")}`,
+        retired_database: `${source}.${application.operation.operation_id.replace(/^retention:/, "")}.retired`,
         published: { device: "7", inode: "7" },
         retired_identity: { device: original.dev.toString(), inode: original.ino.toString() },
       })}\n`);

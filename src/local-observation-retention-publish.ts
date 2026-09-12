@@ -5,7 +5,7 @@ const SIDECARS = ["-wal", "-shm", "-journal"] as const;
 /** What a publish that has not finished moving the old log leaves behind, and enough to prove it. */
 type PublishPhase = {
   readonly operation_id: string;
-  readonly retired: string;
+  readonly retired_database: string;
   readonly published: { readonly device: string; readonly inode: string };
   readonly retired_identity: { readonly device: string; readonly inode: string };
 };
@@ -51,7 +51,7 @@ export function settlePublishPhase(database: string): "none" | "completed" | "un
     // The publish happened. Any log under the live name belongs to the inode that was retired.
     for (const suffix of SIDECARS) {
       const sidecar = `${database}${suffix}`;
-      if (existsSync(sidecar)) renameSync(sidecar, `${phase.retired}.retired${suffix}`);
+      if (existsSync(sidecar)) renameSync(sidecar, `${phase.retired_database}${suffix}`);
     }
     rmSync(path, { force: true });
     return "completed";

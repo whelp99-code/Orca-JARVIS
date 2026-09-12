@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { closeSync, lstatSync, linkSync, fsyncSync, openSync, renameSync, rmSync, statSync } from "node:fs";
+import { beginPublishPhase, endPublishPhase } from "./local-observation-retention-publish.js";
+import { existsSync, closeSync, lstatSync, linkSync, fsyncSync, openSync, renameSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { canonicalize } from "./canonical.js";
 import { exclusionHole, discoverOpenInodeHolders } from "./authority-database-process.js";
@@ -66,7 +67,6 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
       authority.reopen();
       throw new AuthorityError("MEMORY_EXCLUSION_UNPROVABLE", `MEMORY_EXCLUSION_UNPROVABLE: ${hole}`);
     }
-    removeSidecars(authority.filename);
     if (input.cancellation) {
       const source = lstatSync(authority.filename, { bigint: true });
       if (!source.isFile() || source.nlink !== 1n || source.dev !== input.old_device || source.ino !== input.old_inode) {
@@ -79,9 +79,31 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
         syncPath(dirname(authority.filename), true);
       } catch (error) { releaseSwapBarrier(authority.filename); authority.reopen(); throw error; }
     }
+    // Retired rather than destroyed, on the same terms the retention swap settled on: the log is
+    // not removed beside a connection that may still hold this inode, the inode keeps a name of
+    // its own through a link taken before anything moves, and the phase is recorded so a fault
+    // between the publish and the log's move can be settled on identity afterwards.
+    const retiredDatabase = input.cancellation
+      ? retiredSourcePath(authority.filename, input.purge_id)
+      : `${authority.filename}.${input.purge_id}.retired`;
     const oldInode = (() => {
       try {
+        // A cancellation already took its own retirement link; anything else takes one here, so
+        // the inode keeps a name in both shapes of this swap rather than only one of them.
+        if (!existsSync(retiredDatabase)) linkSync(authority.filename, retiredDatabase);
+        const published = statSync(input.fresh_path, { bigint: true });
+        beginPublishPhase(authority.filename, {
+          operation_id: input.purge_id, retired_database: retiredDatabase,
+          published: { device: published.dev.toString(), inode: published.ino.toString() },
+          retired_identity: {
+            device: input.old_device.toString(), inode: input.old_inode.toString() },
+        });
         renameSync(input.fresh_path, authority.filename);
+        for (const suffix of ["-wal", "-shm", "-journal"]) {
+          const sidecar = `${authority.filename}${suffix}`;
+          if (existsSync(sidecar)) renameSync(sidecar, `${retiredDatabase}${suffix}`);
+        }
+        endPublishPhase(authority.filename);
         syncPath(dirname(authority.filename), true);
         return runtime.observeOldInode(input.old_device, input.old_inode);
       } catch (error) {
@@ -143,9 +165,6 @@ function writableHolders(
   return (excuseSelf ? writers.filter(holder => holder.pid !== process.pid) : writers).length;
 }
 
-function removeSidecars(path: string): void {
-  for (const suffix of ["-wal", "-shm", "-journal"]) rmSync(`${path}${suffix}`, { force: true });
-}
 
 export function syncPath(path: string, directory = false): void {
   const descriptor = openSync(path, directory ? "r" : "r");

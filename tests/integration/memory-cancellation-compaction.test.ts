@@ -1,4 +1,5 @@
 import { existsSync, readdirSync, readFileSync, statSync, writeFileSync } from "node:fs";
+import Database from "better-sqlite3";
 import { withProvableExclusion } from "../fixtures/provable-exclusion.js";
 import { dirname, join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
@@ -260,3 +261,33 @@ it("atomically settles a verified cancellation and replays without advancing twi
 }, 15_000);
 
 });
+
+it("refuses the replacement while an unregistered writer holds the source, and destroys nothing",
+  async () => {
+    const f = await cancellationResultFixture();
+    new MemoryCorrectionCancellationResultStore(f.db, f.runtime.clock)
+      .record(f.record.correction_id, f.result);
+    const source = f.db.filename;
+    const before = statSync(source).ino;
+
+    // A real connection this swap never admitted, holding the source with a committed row in its
+    // log. It is not injected into any answer: the scan finds it because it is there.
+    const writer = new Database(source);
+    writer.pragma("journal_mode = WAL");
+    writer.prepare(`INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,
+      payload_digest,idempotency_key,state,created_at) VALUES('memory-unregistered','task:late',
+      'dispatch','{}','sha256:late','memory-late','pending','2026-08-28T12:00:00.000Z')`).run();
+
+    const outcome = await f.runtime.compactor.compactCancellation(f.record.correction_id)
+      .catch((error: unknown) => error);
+    expect(outcome).toBeInstanceOf(Error);
+    expect((outcome as { code?: string }).code).toBe("MEMORY_SOURCE_WRITER_ACTIVE");
+
+    // Refused before anything was destroyed: same inode under the live name, the log still beside
+    // it, and the row that writer committed still readable through its own connection.
+    expect(statSync(source).ino).toBe(before);
+    expect(existsSync(`${source}-wal`)).toBe(true);
+    expect(Number(writer.prepare(
+      "SELECT COUNT(*) FROM gjc_intents WHERE intent_id='memory-unregistered'").pluck().get())).toBe(1);
+    writer.close();
+  }, 60_000);

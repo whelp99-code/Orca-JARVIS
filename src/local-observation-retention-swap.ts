@@ -184,7 +184,7 @@ export function applyRetentionCandidate(
     const publishing = statSync(operation.candidate_path, { bigint: true });
     beginPublishPhase(authority.filename, {
       operation_id: operation.operation_id,
-      retired,
+      retired_database: `${retired}.retired`,
       published: { device: publishing.dev.toString(), inode: publishing.ino.toString() },
       retired_identity: {
         device: retiredIdentity.dev.toString(), inode: retiredIdentity.ino.toString() },
