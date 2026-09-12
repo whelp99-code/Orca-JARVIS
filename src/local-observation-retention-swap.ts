@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import {
-  beginPublishPhase, dropUnchangedRetirement, endPublishPhase, retirementState,
+  dropUnchangedRetirement, publishRetiringCandidate, retirementState,
 } from "./local-observation-retention-publish.js";
 import { exclusionHole } from "./authority-database-process.js";
 import Database from "better-sqlite3";
-import { linkSync, existsSync, readFileSync, renameSync, statSync } from "node:fs";
+import { readFileSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import type { AuthorityDatabaseRuntime } from "./authority-database-runtime.js";
 import { publishSwapBarrier, releaseSwapBarrier } from "./authority-database-swap-barrier.js";
@@ -15,7 +15,7 @@ import {
 } from "./local-observation-retention-operation.js";
 import { retentionSourceMoved,
   type LocalObservationRetentionApplication } from "./local-observation-retention.js";
-import { syncPath } from "./authority-path-sync.js";
+import { holdSourceExclusively, syncPath } from "./authority-path-sync.js";
 
 export type RetentionSwapResult = {
   readonly operation_id: string;
@@ -103,7 +103,11 @@ export function applyRetentionCandidate(
   // before the question is put, so a write that arrived while the candidate was being verified is
   // seen here rather than discarded by the rename.
   authority.db.pragma("wal_checkpoint(TRUNCATE)");
+  if (!holdSourceExclusively(authority.db)) {
+    throw new JarvisError("LOCAL_RETENTION_SOURCE_WRITER_ACTIVE");
+  }
   if (retentionSourceMoved(authority, fence)) {
+    authority.db.exec("ROLLBACK");
     throw new JarvisError("LOCAL_RETENTION_SOURCE_CHANGED");
   }
   // Published while the source connection is still open, which is the order that makes the two
@@ -121,8 +125,11 @@ export function applyRetentionCandidate(
     // away: closing the connection would reset the row counter the caller's fence is stated in,
     // and the same fence has to still describe this connection when the caller tries again.
     if (foreignHolders(runtime, fence) !== 0) {
+      authority.db.exec("ROLLBACK");
       throw new JarvisError("LOCAL_RETENTION_SOURCE_WRITER_ACTIVE");
     }
+    // Closed with the lock still held; the transaction is empty, so this releases rather than
+    // writes, and no commit can have arrived since the fence was checked.
     authority.close();
     // Asked again now that this process's own connection is gone, so the answer covers every
     // holder rather than every other holder - a second connection inside this process is not
@@ -182,29 +189,14 @@ export function applyRetentionCandidate(
     // because publishing is a single atomic rename over it rather than a move away and a move back.
     // A descriptor opened after the last question therefore writes into a file that is still
     // reachable, and a process that dies between these two calls leaves the original database live.
-    linkSync(authority.filename, `${retired}.retired`);
-    // Declared before the rename, because the interval it covers begins with the rename: from here
-    // the live name can be the published database while the old log is still beside it, and only
-    // this record can tell the two inodes apart afterwards.
     const retiredIdentity = statSync(authority.filename, { bigint: true });
     const publishing = statSync(operation.candidate_path, { bigint: true });
-    beginPublishPhase(authority.filename, {
-      operation_id: operation.operation_id,
-      retired_database: `${retired}.retired`,
-      published: { device: publishing.dev.toString(), inode: publishing.ino.toString() },
-      retired_identity: {
-        device: retiredIdentity.dev.toString(), inode: retiredIdentity.ino.toString() },
-    });
-    renameSync(operation.candidate_path, authority.filename);
-    // The published candidate was checkpointed and has no log of its own, so anything under these
-    // names is the retired inode's - including a log a writer created after the last question.
-    // Moved while the barrier still stands, so no admitted connection can see the live name with a
-    // log that is not its own.
-    for (const suffix of SIDECARS) {
-      const sidecar = `${authority.filename}${suffix}`;
-      if (existsSync(sidecar)) renameSync(sidecar, `${retired}.retired${suffix}`);
-    }
-    endPublishPhase(authority.filename);
+    publishRetiringCandidate({ live: authority.filename, candidate: operation.candidate_path,
+      retiredDatabase: `${retired}.retired`,
+      phase: { operation_id: operation.operation_id,
+        published: { device: publishing.dev.toString(), inode: publishing.ino.toString() },
+        retired_identity: {
+          device: retiredIdentity.dev.toString(), inode: retiredIdentity.ino.toString() } } });
     syncPath(dirname(authority.filename), true);
     observed = runtime.observeOldInode(BigInt(fence.device), BigInt(fence.inode));
     // Kept only while a descriptor can still write into the retired inode. With none left there is

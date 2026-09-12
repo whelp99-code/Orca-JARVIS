@@ -395,3 +395,53 @@ function rowLives(source: string, intent: string): boolean {
     } catch { return false; }
   });
 }
+
+it("keeps a commit that landed between the version reading and the connection closing", async () => {
+  const f = await cancellationResultFixture();
+  new MemoryCorrectionCancellationResultStore(f.db, f.runtime.clock)
+    .record(f.record.correction_id, f.result);
+  const source = f.db.filename;
+
+  // Delivered from the swap's own version reading: the moment it asks data_version, a separate
+  // connection commits and lets go. The swap then closes, and no descriptor is left to show for it.
+  const pragma = Database.prototype.pragma;
+  let seen = 0;
+  let injected = 0;
+  let committed = false;
+  Database.prototype.pragma = function patched(this: Database.Database, sql: string, options?: unknown) {
+    const answer = (pragma as (this: Database.Database, a: string, b?: unknown) => unknown)
+      .call(this, sql, options);
+    // The builder reads this first, the swap second. Only the second reading opens the window
+    // under test: after it the swap has its answer and has not closed yet.
+    if (String(sql).startsWith("data_version") && this.name === source) seen += 1;
+    if (injected === 0 && seen === 2 && String(sql).startsWith("data_version") && this.name === source) {
+      injected += 1;
+      const late = new Database(source);
+      try {
+        late.pragma("journal_mode = WAL");
+        late.prepare(`INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,
+          payload_digest,idempotency_key,state,created_at) VALUES('between-version-and-close',
+          'task:late','dispatch','{}','sha256:between','between-vc','pending',
+          '2026-08-28T12:00:00.000Z')`).run();
+        committed = true;
+      } catch { /* excluded rather than lost: the swap holds the database against writers here */ }
+      finally { late.close(); }
+    }
+    return answer;
+  } as typeof Database.prototype.pragma;
+
+  let outcome: unknown;
+  try {
+    outcome = await f.runtime.compactor.compactCancellation(f.record.correction_id)
+      .catch((error: unknown) => error);
+  } finally { Database.prototype.pragma = pragma; }
+  expect(injected).toBeGreaterThan(0);
+
+  // Two answers are acceptable and one is not. If the writer got its commit in, that row is in no
+  // candidate and must still be readable somewhere. If it was kept out, nothing was written and
+  // nothing may be reported as written. What may not happen is a commit that succeeded and then
+  // exists nowhere - which is what this reproduced before the lock.
+  const detail = JSON.stringify({ committed,
+    outcome: outcome instanceof Error ? outcome.message : "ok" });
+  expect(rowLives(source, "between-version-and-close"), detail).toBe(committed);
+}, 60_000);

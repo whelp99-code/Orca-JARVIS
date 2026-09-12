@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { linkSync, existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { syncPath } from "./authority-path-sync.js";
 
 const SIDECARS = ["-wal", "-shm", "-journal"] as const;
@@ -112,4 +112,31 @@ export function dropUnchangedRetirement(
   }
   syncPath(directory, true);
   return true;
+}
+
+/**
+ * Retires the live inode under a name of its own and puts the candidate in its place.
+ *
+ * The retirement name is a link taken before anything moves, so the live path never stops
+ * existing and a process that dies between the two calls leaves the original database live. The
+ * log is moved afterwards, because the published candidate has none of its own and anything under
+ * those names belongs to the inode that was retired - including a log a writer created after the
+ * last question.
+ */
+export function publishRetiringCandidate(input: {
+  readonly live: string;
+  readonly retiredDatabase: string;
+  readonly candidate: string;
+  readonly phase: { readonly operation_id: string; readonly published: { readonly device: string; readonly inode: string };
+    readonly retired_identity: { readonly device: string; readonly inode: string } };
+}): void {
+  linkSync(input.live, input.retiredDatabase);
+  beginPublishPhase(input.live, { ...input.phase, retired_database: input.retiredDatabase });
+  renameSync(input.candidate, input.live);
+  for (const suffix of ["-wal", "-shm", "-journal"]) {
+    if (existsSync(`${input.live}${suffix}`)) {
+      renameSync(`${input.live}${suffix}`, `${input.retiredDatabase}${suffix}`);
+    }
+  }
+  endPublishPhase(input.live);
 }

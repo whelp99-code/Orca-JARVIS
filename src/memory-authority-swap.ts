@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { syncPath } from "./authority-path-sync.js";
+import { holdSourceExclusively, syncPath } from "./authority-path-sync.js";
 import {
   beginPublishPhase, dropUnchangedRetirement, endPublishPhase, retirementState,
   retirementUnchanged,
@@ -53,15 +53,24 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
       releaseSwapBarrier(authority.filename);
       throw new AuthorityError("MEMORY_SOURCE_WRITER_ACTIVE");
     }
-    // Asked while the connection is still open, against the version the candidate's own read
-    // recorded: a commit anywhere between that read and this one refuses before anything is
-    // destroyed. The file snapshot cannot be taken here - closing checkpoints the log into the
-    // database and would move it - so it is taken the moment this process can no longer write.
+    // Nobody else may commit between the question and the answer being acted on, so the question
+    // is asked under a lock that no other connection can write through. It is held until this
+    // connection closes: a commit in that interval would be invisible to the version already read
+    // and would be folded into the snapshot taken afterwards, which is exactly how a row ends up
+    // in the retired copy and in nothing else. A writer already holding the database makes this
+    // fail, and that refusal happens before anything is destroyed.
+    if (!holdSourceExclusively(authority.db)) {
+      releaseSwapBarrier(authority.filename);
+      throw new AuthorityError("MEMORY_SOURCE_WRITER_ACTIVE");
+    }
     const foreignWrites = Number(authority.db.pragma("data_version", { simple: true }));
     if (String(foreignWrites) !== String(input.source_data_version)) {
+      authority.db.exec("ROLLBACK");
       releaseSwapBarrier(authority.filename);
       throw new AuthorityError("MEMORY_SOURCE_CHANGED_BEFORE_SWAP");
     }
+    // Closed with the lock still held: the transaction is empty, so this releases rather than
+    // writes, and no commit can have slipped between the reading above and this line.
     authority.close();
     const retirementAtClose = retirementState(authority.filename);
     // Asked again with this connection gone, and this time without excusing anything for sharing a
