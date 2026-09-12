@@ -38,6 +38,11 @@
 
 ## 1. 기준 SHA와 트리 실측
 
+> **현재 기준 (2026-09-12 갱신).** §1 의 아래 표는 다섯 번째 리뷰 시점(`c2e191a`)의 기록이며 그대로 보존한다.
+> 지금 검증된 제품 SHA·gate·패키지는 §0 갱신 블록과 마지막 §9 절이 정본이다. 그 사이의 모든 gate 와 패키지는
+> 각각 자기 절에 자기 SHA 로 기록돼 있고, manifest 의 `gates[].package_root` 는 각 항목의 `input_sha` 와
+> receipt `source.head` 가 일치하도록 실측으로 맞춰 두었다.
+
 | 항목 | 값 |
 |---|---|
 | worktree | `/home/jm/orca/workspaces/Orca-JARVIS/codex-routing-approval-ui` |
@@ -1408,3 +1413,36 @@ fault seam 없이 테스트에서 결정적으로 주입할 수 없다. 더 안�
 | 전체 gate | `VERIFY32=0` (backend 279 / 1,942, dashboard 38 / 263), 관측 종료 13:32 KST |
 | 패키지 | `jarvis-runtime-plP9Mj`, `source_head=e6c63be…`, payload 1,544, receipt `a77fa238…`, `integrity=matched`, `deployment_ready=false` |
 | manifest | `gate_input_sha=e6c63be…`, 아티팩트 43, 누락 0, package/input 대조 8항목 mismatch 0 |
+
+### 9.37 memory 교체 경로에도 같은 계약을 적용했다 (커밋 `2966c65`)
+
+`memory-authority-swap.ts` 는 관측 뒤 `removeSidecars` 로 WAL/SHM/journal 을 **지우고** live 를 덮어썼다.
+`cancellation=false` 면 원본 hardlink 조차 없었다. retention 에서 정한 계약을 그대로 옮겼다.
+
+- 사이드카 삭제 제거. publish **이후** 퇴거된 데이터베이스 이름에 짝지어 옮긴다.
+- `cancellation` 여부와 무관하게 퇴거 링크를 먼저 잡는다. cancellation 이 이미 만든 `retiredSourcePath` 가
+  있으면 그것을 퇴거 이름으로 쓰고 중복 링크를 만들지 않는다.
+- publish 직전 phase 기록 → rename → 사이드카 이동 → phase 종료. 따라서 이 경로의 중단도 열기 전 정산 대상이다.
+  phase 기록은 이제 **퇴거된 데이터베이스 경로 자체**를 담아 두 경로가 같은 정산 코드를 쓴다.
+
+**인수는 실재하는 미등록 writer 로 세웠다.** 소스를 쥔 채 WAL 에 커밋한 연결이 있는 상태에서 교체는
+`MEMORY_SOURCE_WRITER_ACTIVE` 로 거절되고, live inode·로그·그 행이 모두 그대로 남는 것을 확인한다.
+
+**검증되지 않은 부분을 그대로 적는다.** (a) 마지막 관측 **이후** 연결을 여는 주입은 이 경로에서 성립시키지
+못했다 — 훅은 발화했으나 연결 생성이 성립하지 않았고, 성립했다고 주장하지 않는다. (b) 사이드카 퇴거 자체는
+현재 memory 스위트로 **변별되지 않는다**: 지우도록 되돌려도 12/12 가 그대로 통과한다. 늦은 writer 가 없으면
+그 로그에 잃을 것이 없기 때문이다. 계약은 유지하되 검증됐다고 적지 않는다.
+
+### 9.38 이 시점의 내부 잔여 (최신 코드 기준)
+
+| 항목 | 상태 | 근거 |
+| --- | --- | --- |
+| 기존 목적지 보존 (P1-C1/C2) | 닫힘 | 목적지를 만들지도 점유하지도 않는다. 세 형태 보존 회귀 green |
+| 교체 구간 배타성 — 관측 기반 | 좁힘 | rename 직전 최종 질문. 순간 관측이라는 한계는 §9.32 에 명시 |
+| 증명 불가 시 거절 | 적용 | 관측 구멍·외부 쓰기 가능·소유자 외부면 파괴 이전 거절, 기본값 |
+| 배제 불가 구간의 보존 | 적용 | retention·memory 모두 퇴거(삭제 아님) + phase 정산 |
+| 미등록 연결 표면 | 닫힘(내부) | `src` 의 모든 live open 이 admission 통과, 열거 회귀가 고정 |
+| 숨은 같은 UID 프로세스 | 열림 | `/proc` 이 답하지 않는 영역. 교체는 막히지만 배제된 것은 아님 |
+| 특권 프로세스 | 열림(명시된 한계) | 사용자 공간 프로토콜로 배제 불가 |
+| memory 경로 late-writer 주입 인수 | 미성립 | §9.37 (b). 대체 인수는 거절-보존으로 확보 |
+| `owned` 즉시 거절의 변별 | 미확보 | §9.36. fault seam 없이 결정적 주입 불가 |
