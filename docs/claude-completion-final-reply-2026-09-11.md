@@ -29,8 +29,8 @@
 | 5 | `memory-candidate-scope`의 제안 경로가 task 게이트를 거치지 않음 | 남아 있다 |
 
 > **2026-09-12 갱신 (§9.28 정본).** 이 시점의 상태는 `IN_PROGRESS`다. 제품 SHA는
-> `2b63375e9cfcde1bfb755be9fda4e02d58781b0e`, 전체 gate `VERIFY44=0`, 패키지 `jarvis-runtime-fQNXqQ`
-> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=2b63375…`.
+> `0001763f71d99acb897bb0b0bbdaf7baa33895d2`, 전체 gate `VERIFY45=0`, 패키지 `jarvis-runtime-efkBcB`
+> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=0001763…`.
 > **닫힘:** 기존 목적지 보존(REVIEW-01) — 목적지를 생성·점유·교체하는 경로 자체를 제거했고 세 형태 모두 회귀로 고정.
 > **열림:** writer 배타성(REVIEW-02/-03) — `b4927fb` 는 창을 좁혔을 뿐 봉쇄하지 않으며, 증명 불가 환경의 거절은
 > 두 구현을 만들어 측정한 결과 각각 "항상 거절" 과 "타이밍 의존 거절" 로 무너져 되돌렸다(§9.28). 남은 해법은
@@ -1610,3 +1610,32 @@ SIGTERM 이 gate41 을 끊고 세션 하나를 함께 내렸으며, 그 직후 "
 | 패키지 | `jarvis-runtime-fQNXqQ`, payload 1,548, receipt `fac08b61…`, `integrity=matched` |
 
 Window B 는 여전히 열려 있고, 이 수정으로 닫히지 않는다.
+
+### 9.45 Window B 도 닫았다 — 관측이 아니라 잠금으로 (커밋 `0001763`)
+
+**먼저 손실을 재현했다.** swap 이 `data_version` 을 읽은 직후 별도 연결이 commit 하고 close 하면, 교체는
+`ok` 로 끝나고 그 행은 **어디에도 없다**. 후보에도, live 에도, 퇴거 사본에도 없다. 지적한 그대로다.
+
+첫 시도는 그 증거가 아니었다는 것도 적는다: 훅이 빌더의 판독에 먼저 걸려 A 경로의 거절
+(`MEMORY_SOURCE_CHANGED_BEFORE_SWAP`)로 나타났고 행은 live 에 살아 있었다. **두 번째** 판독으로 옮겨야
+B 가 재현된다.
+
+**수정은 잠금이다.** 판독 전에 `BEGIN EXCLUSIVE` 를 잡고 **연결이 닫힐 때까지 유지**한다. 그 사이 다른
+연결은 커밋할 수 없으므로, 이미 읽은 버전에는 안 보이면서 close 이후 스냅샷에는 섞이는 커밋이 성립하지
+않는다. 트랜잭션은 비어 있어 close 는 쓰기가 아니라 해제로 작동하고, 이미 writer 가 쥐고 있으면 잠금 획득이
+실패해 **파괴 이전에** 거절한다. retention 과 memory 양쪽에 같은 형태로 적용했다.
+
+**인수는 손실 금지로 표현했다.** 커밋이 성사됐으면 그 행은 반드시 어딘가에서 읽혀야 하고, 잠금으로 배제됐으면
+애초에 존재하지 않아야 한다. 변이 검사: 잠금을 제거하면 `{"committed":true,"outcome":"ok"}` — 커밋이 성사된
+뒤 행이 사라져 실패한다.
+
+**통합 실행이 배너 직후 죽던 현상의 원인도 제품이 아니었다.** 이전 라운드의 잔여 프로세스가 누적돼 있었고
+(부하 6.15, vitest 12개), 개별 스위트는 모두 통과하며 유휴 상태에서 전체 필터가 통과한다. 이번 gate 는
+실행 전에 호스트가 비어 있음을 확인하고 단독으로 돌렸다.
+
+| 이 시점 실측 | 값 |
+| --- | --- |
+| 제품 SHA | `0001763f71d99acb897bb0b0bbdaf7baa33895d2` |
+| 전체 gate | `VERIFY45=0` (backend 280 / 1,943, dashboard 38 / 263), 관측 종료 22:21 KST, 단독 |
+| 회귀 | retention 83/83, memory 15/15, 대상 10파일 / 100케이스 |
+| 패키지 | `jarvis-runtime-efkBcB`, payload 1,548, receipt `a07f2e77…`, `integrity=matched` |
