@@ -381,7 +381,7 @@ it("keeps the source, its log and the candidate when a writer commits after the 
   }, 60_000);
 
 it("leaves the original database live when a run stops between retirement and publish", async () => {
-  const { db, runtime, cutoff } = await seeded();
+  const { db, cutoff } = await seeded();
   const application = await applyLocalObservationRetention(db, cutoff,
     join(dirname(db.filename), "interrupted-publish-candidate"));
   const source = db.filename;
