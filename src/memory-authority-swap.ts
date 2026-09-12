@@ -1,6 +1,7 @@
 import { createHash } from "node:crypto";
 import {
-  beginPublishPhase, endPublishPhase, retirementState, retirementUnchanged,
+  beginPublishPhase, dropUnchangedRetirement, endPublishPhase, retirementState,
+  retirementUnchanged,
 } from "./local-observation-retention-publish.js";
 import { existsSync, closeSync, lstatSync, linkSync, fsyncSync, openSync, renameSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
@@ -136,11 +137,9 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
           syncPath(dirname(authority.filename), true);
           return observed;
         }
-        if (observed.fd_count === 0 && untouched) {
-          for (const suffix of ["", "-wal", "-shm", "-journal"]) {
-            rmSync(`${retiredDatabase}${suffix}`, { force: true });
-          }
-          syncPath(dirname(authority.filename), true);
+        if (observed.fd_count === 0) {
+          dropUnchangedRetirement(
+            retiredDatabase, retirementBefore, dirname(authority.filename));
         }
         return observed;
       } catch (error) {

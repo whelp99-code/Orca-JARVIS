@@ -1,4 +1,5 @@
 import { existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
+import { syncPath } from "./memory-authority-swap.js";
 
 const SIDECARS = ["-wal", "-shm", "-journal"] as const;
 
@@ -88,4 +89,20 @@ export function retirementUnchanged(
   before: readonly string[], after: readonly string[],
 ): boolean {
   return before.length === after.length && before.every((entry, index) => entry === after[index]);
+}
+
+/**
+ * Drops a retired copy, but only against evidence that nothing was written into it: the state it
+ * had when the candidate stopped depending on the source has to be the state it still has.
+ * Returns whether it was dropped, so a caller can say what it left behind.
+ */
+export function dropUnchangedRetirement(
+  retiredDatabase: string, before: readonly string[], directory: string,
+): boolean {
+  if (!retirementUnchanged(before, retirementState(retiredDatabase))) return false;
+  for (const suffix of ["", "-wal", "-shm", "-journal"]) {
+    rmSync(`${retiredDatabase}${suffix}`, { force: true });
+  }
+  syncPath(directory, true);
+  return true;
 }

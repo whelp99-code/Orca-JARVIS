@@ -1,10 +1,10 @@
 import { createHash } from "node:crypto";
 import {
-  beginPublishPhase, endPublishPhase, retirementState, retirementUnchanged,
+  beginPublishPhase, dropUnchangedRetirement, endPublishPhase, retirementState,
 } from "./local-observation-retention-publish.js";
 import { exclusionHole } from "./authority-database-process.js";
 import Database from "better-sqlite3";
-import { rmSync, linkSync, existsSync, readFileSync, renameSync, statSync } from "node:fs";
+import { linkSync, existsSync, readFileSync, renameSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import type { AuthorityDatabaseRuntime } from "./authority-database-runtime.js";
 import { publishSwapBarrier, releaseSwapBarrier } from "./authority-database-swap-barrier.js";
@@ -213,12 +213,9 @@ export function applyRetentionCandidate(
     // Removed only against evidence, never against a count: if anything was written into the
     // retired inode after the last question - by a writer that committed and let go before the
     // count was taken - those rows are in that database and in no other, so it stays.
-    if (observed.fd_count === 0
-      && retirementUnchanged(retirementBefore, retirementState(`${retired}.retired`))) {
-      for (const suffix of ["", "-wal", "-shm", "-journal"]) {
-        rmSync(`${retired}.retired${suffix}`, { force: true });
-      }
-      syncPath(dirname(authority.filename), true);
+    if (observed.fd_count === 0) {
+      dropUnchangedRetirement(
+        `${retired}.retired`, retirementBefore, dirname(authority.filename));
     }
   } catch (error) {
     // Unwinding. The connection has to come back and the barrier has to go, but neither may
