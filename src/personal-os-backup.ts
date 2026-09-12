@@ -7,6 +7,7 @@ import {
   mkdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -135,14 +136,25 @@ export function restoreSqlite(input: {
 }): BackupResult {
   const backupPath = assertIsolatedFile(input.backupPath);
   const destPath = assertIsolatedFile(input.destPath);
-  mkdirSync(dirname(destPath), { recursive: true });
+  if (resolve(backupPath) === resolve(destPath)) throw new PersonalOsError("E_RESTORE_FAILED");
+  if (!existsSync(backupPath) || !lstatSync(backupPath).isFile()) throw new PersonalOsError("E_RESTORE_FAILED");
   try {
-    copyFileSync(backupPath, destPath);
-    const check = quickCheck(destPath);
+    if (quickCheck(backupPath) !== "ok") throw new PersonalOsError("E_RESTORE_FAILED");
+  } catch (error) {
+    if (error instanceof PersonalOsError) throw error;
+    throw new PersonalOsError("E_RESTORE_FAILED");
+  }
+  mkdirSync(dirname(destPath), { recursive: true });
+  const staging = join(dirname(destPath), `.restore-${randomBytes(8).toString("hex")}.sqlite`);
+  try {
+    copyFileSync(backupPath, staging);
+    chmodSync(staging, 0o600);
+    const check = quickCheck(staging);
     if (check !== "ok") throw new PersonalOsError("E_RESTORE_FAILED");
+    renameSync(staging, destPath);
     return { destPath, quick_check: check, ...digestFile(destPath) };
   } catch (error) {
-    rmSync(destPath, { force: true });
+    rmSync(staging, { force: true });
     if (error instanceof PersonalOsError) throw error;
     throw new PersonalOsError("E_RESTORE_FAILED");
   }

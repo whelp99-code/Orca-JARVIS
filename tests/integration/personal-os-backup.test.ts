@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
-import { mkdirSync, readFileSync, writeFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { backupSqlite, restoreSqlite } from "../../src/personal-os-backup.js";
@@ -89,5 +90,45 @@ describe("personal-OS backup, restore, and publish", () => {
     mkdirSync(join(root, "restore"), { recursive: true });
     writeFileSync(junk, "not-a-database");
     expect(() => restoreSqlite({ backupPath: junk, destPath: dest })).toThrow(PersonalOsError);
+    expect(existsSync(dest)).toBe(false);
+    expect(readFileSync(junk, "utf8")).toBe("not-a-database");
+  });
+
+  it("preserves an existing destination when the backup is missing or junk", () => {
+    const root = scratch();
+    const dest = join(root, "live.sqlite");
+    const junk = join(root, "junk.sqlite");
+    const missing = join(root, "missing.sqlite");
+    seedDb(dest, "keep-existing-recovered-state");
+    writeFileSync(junk, "not-a-database");
+    const before = createHash("sha256").update(readFileSync(dest)).digest("hex");
+    expect(() => restoreSqlite({ backupPath: missing, destPath: dest })).toThrow(PersonalOsError);
+    expect(createHash("sha256").update(readFileSync(dest)).digest("hex")).toBe(before);
+    expect(() => restoreSqlite({ backupPath: junk, destPath: dest })).toThrow(PersonalOsError);
+    expect(createHash("sha256").update(readFileSync(dest)).digest("hex")).toBe(before);
+    expect(readFileSync(junk, "utf8")).toBe("not-a-database");
+    const live = new Database(dest, { readonly: true, fileMustExist: true });
+    expect(live.prepare("SELECT value FROM sentinel WHERE id=?").get("row-1")).toMatchObject({ value: "keep-existing-recovered-state" });
+    live.close();
+  });
+
+  it("replaces an existing destination only after a validated backup and allows a corrected retry", () => {
+    const root = scratch();
+    const dest = join(root, "live.sqlite");
+    const junk = join(root, "junk.sqlite");
+    const good = join(root, "good.sqlite");
+    seedDb(dest, "keep-existing-recovered-state");
+    seedDb(good, "alpha");
+    writeFileSync(junk, "not-a-database");
+    const before = createHash("sha256").update(readFileSync(dest)).digest("hex");
+    expect(() => restoreSqlite({ backupPath: junk, destPath: dest })).toThrow(PersonalOsError);
+    expect(createHash("sha256").update(readFileSync(dest)).digest("hex")).toBe(before);
+    expect(() => restoreSqlite({ backupPath: dest, destPath: dest })).toThrow(PersonalOsError);
+    expect(createHash("sha256").update(readFileSync(dest)).digest("hex")).toBe(before);
+    const recovered = restoreSqlite({ backupPath: good, destPath: dest });
+    expect(recovered.quick_check).toBe("ok");
+    const live = new Database(dest, { readonly: true, fileMustExist: true });
+    expect(live.prepare("SELECT value FROM sentinel WHERE id=?").get("row-1")).toMatchObject({ value: "alpha" });
+    live.close();
   });
 });
