@@ -12,6 +12,7 @@ import {
 } from "./authority-database-swap-barrier-record.js";
 import { withSwapBarrierLock } from "./authority-database-swap-lock.js";
 import { JarvisError } from "./jarvis-error.js";
+import { settlePublishPhase } from "./local-observation-retention-publish.js";
 
 export type { AuthoritySwapBarrier } from "./authority-database-swap-barrier-record.js";
 
@@ -107,6 +108,9 @@ export function assertSwapAdmission(database: string): void {
 export function openUnderSwapAdmission<T extends { close: () => void }>(
   database: string, open: () => T,
 ): T {
+  // A publish that stopped between the rename and the log moving leaves a live name whose log is
+  // not its own. Settled here, on identity rather than on the name, before anything opens it.
+  settlePublishPhase(database);
   assertSwapAdmission(database);
   const opened = open();
   try {

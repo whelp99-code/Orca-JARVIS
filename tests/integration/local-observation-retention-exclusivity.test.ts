@@ -3,7 +3,7 @@ import Database from "better-sqlite3";
 import { withProvableExclusion } from "../fixtures/provable-exclusion.js";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
-import { rmSync, linkSync, readdirSync, mkdtempSync, chmodSync, closeSync, existsSync, mkdirSync, openSync, statSync, writeFileSync } from "node:fs";
+import { renameSync, rmSync, linkSync, readdirSync, mkdtempSync, chmodSync, closeSync, existsSync, mkdirSync, openSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createInterface, type Interface } from "node:readline";
 import { afterEach, expect, it } from "vitest";
@@ -17,6 +17,7 @@ import { applyLocalObservationRetention } from "../../src/local-observation-rete
 import { applyRetentionCandidate } from "../../src/local-observation-retention-swap.js";
 import { localObservationChain } from "../fixtures/local-observation-chain.js";
 import { tempDb } from "../helpers.js";
+import { publishPhasePath } from "../../src/local-observation-retention-publish.js";
 
 const HOLDER = join(process.cwd(), "tests", "fixtures", "local-retention-writer-holder.mjs");
 
@@ -411,3 +412,96 @@ it("leaves the original database live when a run stops between retirement and pu
   expect(observations(db)).toBe(before.observations);
   expect(inode(source)).toBe(before.inode);
 }, 60_000);
+
+it("settles a publish that stopped before the old log moved, on identity rather than on the name",
+  async () => {
+    const { db, cutoff } = await seeded();
+    const application = await applyLocalObservationRetention(db, cutoff,
+      join(dirname(db.filename), "publish-phase-candidate"));
+    const source = db.filename;
+    const operation = application.operation.operation_id.replace(/^retention:/, "");
+    const retired = `${source}.${operation}`;
+    const originalIdentity = statSync(source, { bigint: true });
+
+    // A row committed into the original database's log, so the mixed state has something to lose.
+    const late = new Database(source);
+    late.pragma("journal_mode = WAL");
+    late.prepare(`INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,payload_digest,
+      idempotency_key,state,created_at) VALUES('phase-writer','task:phase','dispatch','{}',
+      'sha256:phase','phase','pending','2026-08-28T12:00:00.000Z')`).run();
+    // Left open on purpose: the log only exists while a connection holds it, and the state under
+    // test is exactly a log that outlived the database it belonged to being published over.
+    db.close();
+
+    // The state a fault between the publish and the log's move leaves: the candidate is live under
+    // the original name, the original inode is retired, and the log beside the live name is the
+    // retired inode's. Constructed exactly, with the phase record the swap writes first.
+    const candidate = statSync(application.operation.candidate_path, { bigint: true });
+    writeFileSync(publishPhasePath(source), `${JSON.stringify({
+      operation_id: application.operation.operation_id, retired,
+      published: { device: candidate.dev.toString(), inode: candidate.ino.toString() },
+      retired_identity: {
+        device: originalIdentity.dev.toString(), inode: originalIdentity.ino.toString() },
+    })}\n`);
+    linkSync(source, `${retired}.retired`);
+    rmSync(source);
+    renameSync(application.operation.candidate_path, source);
+    expect(existsSync(`${source}-wal`)).toBe(true);
+    const strandedLog = String(statSync(`${source}-wal`, { bigint: true }).ino);
+
+    // Opening settles it first: the live name is identified as the published database, so the log
+    // that is not its own is moved beside the database it belongs to, and the phase record is over.
+    db.reopen();
+    expect(existsSync(publishPhasePath(source))).toBe(false);
+    // That exact file moved beside the database it belongs to - identified, not merely counted.
+    // The reopened connection writes a log of its own under the live name, which is why absence
+    // there proves nothing and identity does.
+    expect(String(statSync(`${retired}.retired-wal`, { bigint: true }).ino)).toBe(strandedLog);
+    expect(Number(db.db.prepare(
+      "SELECT COUNT(*) FROM gjc_intents WHERE intent_id='phase-writer'").pluck().get())).toBe(0);
+    expect(String(statSync(source, { bigint: true }).ino)).toBe(String(candidate.ino));
+
+    // Nothing was lost: the row the writer committed is still readable from the retired pair.
+    late.close();
+    const kept = new Database(`${retired}.retired`, { readonly: true });
+    try {
+      expect(Number(kept.prepare(
+        "SELECT COUNT(*) FROM gjc_intents WHERE intent_id='phase-writer'").pluck().get())).toBe(1);
+    } finally { kept.close(); }
+  }, 60_000);
+
+it("leaves a live database's own log alone when the publish it was told about never happened",
+  async () => {
+    const { db, cutoff } = await seeded();
+    const application = await applyLocalObservationRetention(db, cutoff,
+      join(dirname(db.filename), "unpublished-phase-candidate"));
+    const source = db.filename;
+    const retired = `${source}.${application.operation.operation_id.replace(/^retention:/, "")}`;
+    const original = statSync(source, { bigint: true });
+    const candidate = statSync(application.operation.candidate_path, { bigint: true });
+
+    // Committed into the live database's own log, which is the thing that must not be moved.
+    const writer = new Database(source);
+    writer.pragma("journal_mode = WAL");
+    writer.prepare(`INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,
+      payload_digest,idempotency_key,state,created_at) VALUES('unpublished','task:unpublished',
+      'dispatch','{}','sha256:unpublished','unpublished','pending','2026-08-28T12:00:00.000Z')`).run();
+
+    // The phase record exists, but the rename never ran: the live name is still the original inode.
+    writeFileSync(publishPhasePath(source), `${JSON.stringify({
+      operation_id: application.operation.operation_id, retired,
+      published: { device: candidate.dev.toString(), inode: candidate.ino.toString() },
+      retired_identity: { device: original.dev.toString(), inode: original.ino.toString() },
+    })}\n`);
+
+    db.close();
+    db.reopen();
+    // Settled as a publish that did not happen: the record is cleared and nothing was moved, so
+    // the log under the live name is still the live database's own and its row is still there.
+    expect(existsSync(publishPhasePath(source))).toBe(false);
+    expect(existsSync(`${retired}.retired-wal`)).toBe(false);
+    expect(String(statSync(source, { bigint: true }).ino)).toBe(String(original.ino));
+    expect(Number(db.db.prepare(
+      "SELECT COUNT(*) FROM gjc_intents WHERE intent_id='unpublished'").pluck().get())).toBe(1);
+    writer.close();
+  }, 60_000);

@@ -1,4 +1,5 @@
 import { createHash } from "node:crypto";
+import { beginPublishPhase, endPublishPhase } from "./local-observation-retention-publish.js";
 import { exclusionHole } from "./authority-database-process.js";
 import Database from "better-sqlite3";
 import { linkSync, existsSync, readFileSync, renameSync, statSync } from "node:fs";
@@ -176,6 +177,18 @@ export function applyRetentionCandidate(
     // A descriptor opened after the last question therefore writes into a file that is still
     // reachable, and a process that dies between these two calls leaves the original database live.
     linkSync(authority.filename, `${retired}.retired`);
+    // Declared before the rename, because the interval it covers begins with the rename: from here
+    // the live name can be the published database while the old log is still beside it, and only
+    // this record can tell the two inodes apart afterwards.
+    const retiredIdentity = statSync(authority.filename, { bigint: true });
+    const publishing = statSync(operation.candidate_path, { bigint: true });
+    beginPublishPhase(authority.filename, {
+      operation_id: operation.operation_id,
+      retired,
+      published: { device: publishing.dev.toString(), inode: publishing.ino.toString() },
+      retired_identity: {
+        device: retiredIdentity.dev.toString(), inode: retiredIdentity.ino.toString() },
+    });
     renameSync(operation.candidate_path, authority.filename);
     // The published candidate was checkpointed and has no log of its own, so anything under these
     // names is the retired inode's - including a log a writer created after the last question.
@@ -185,6 +198,7 @@ export function applyRetentionCandidate(
       const sidecar = `${authority.filename}${suffix}`;
       if (existsSync(sidecar)) renameSync(sidecar, `${retired}.retired${suffix}`);
     }
+    endPublishPhase(authority.filename);
     syncPath(dirname(authority.filename), true);
     observed = runtime.observeOldInode(BigInt(fence.device), BigInt(fence.inode));
   } catch (error) {
