@@ -29,8 +29,8 @@
 | 5 | `memory-candidate-scope`의 제안 경로가 task 게이트를 거치지 않음 | 남아 있다 |
 
 > **2026-09-12 갱신 (§9.28 정본).** 이 시점의 상태는 `IN_PROGRESS`다. 제품 SHA는
-> `c4ae462fdcd6b4ca3c53fc23923686265de22172`, 전체 gate `VERIFY34=0`, 패키지 `jarvis-runtime-gIlvC4`
-> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=c4ae462…`.
+> `97889978c37c2b0360ee83344eebc9f213697dc9`, 전체 gate `VERIFY37=0`, 패키지 `jarvis-runtime-SwN3MA`
+> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=9788997…`.
 > **닫힘:** 기존 목적지 보존(REVIEW-01) — 목적지를 생성·점유·교체하는 경로 자체를 제거했고 세 형태 모두 회귀로 고정.
 > **열림:** writer 배타성(REVIEW-02/-03) — `b4927fb` 는 창을 좁혔을 뿐 봉쇄하지 않으며, 증명 불가 환경의 거절은
 > 두 구현을 만들어 측정한 결과 각각 "항상 거절" 과 "타이밍 의존 거절" 로 무너져 되돌렸다(§9.28). 남은 해법은
@@ -1472,3 +1472,32 @@ retention 82/82, memory cancellation 12/12, Task 30 1/1.
 | 직전 gate | `VERIFY33=1` — `2966c65` 입력, 위 결함을 잡은 실패이며 테스트가 아니라 계약을 고쳤다 |
 | 패키지 | `jarvis-runtime-gIlvC4`, `source_head=c4ae462…`, payload 1,544, receipt `3de0d58a…`, `integrity=matched`, `deployment_ready=false` |
 | manifest | 아티팩트 44, 누락 0, package/input 대조 9항목 mismatch 0 |
+
+### 9.40 열한 번째 검토 — 개수는 증거가 아니다 (커밋 `f524ade`, `17b3b74`, `9788997`)
+
+`fd_count === 0` 을 "보존할 것이 없다" 의 근거로 쓴 것이 결함이었다. 마지막 질문 뒤에 commit 하고
+**개수를 세기 전에 close** 하는 writer 가 있으면, 그 행은 퇴거된 inode 에만 있고 후보에는 없는데 개수는 0 이다.
+
+**먼저 재현했다.** 창 안에서 열고 쓰고 닫는 연결을 넣자 퇴거본이 삭제되고 그 행이 사라졌다
+(`expected [] to have a length of 1`). 기존 인수는 연결을 swap 이 끝날 때까지 열어 두었으므로 이 경우를
+지나쳤다 — 지적 그대로다.
+
+**계약을 증거로 바꿨다.** 후보의 내용이 소스에서 분리되는 시점(적용 레코드 직전)에 데이터베이스와 세 사이드카의
+(크기, mtime ns) 상태를 기록하고, 퇴거본이 **그 상태 그대로일 때만** 제거한다. `fd_count` 는 필요조건일 뿐
+단독 근거가 아니며, 증거가 없으면 남긴다. 변이 검사: 증거 조건을 빼면 그 행이 다시 사라진다.
+
+**purge 도 같은 기준을 받는다.** 늦은 커밋이 감지되면 대상 행과 비대상 행을 그 자리에서 분리할 수 없으므로,
+파괴 대신 `MEMORY_PURGE_LATE_COMMIT_UNRESOLVED` 로 거절하고 전부 남긴다.
+
+**그 과정에서 gate 가 두 번 더 잡았고, 둘 다 제품 동작이 아니었다.** `VERIFY35=1` 은 모듈 예산 251/250,
+`VERIFY36=1` 은 규칙을 publish 모듈로 옮기며 닫힌 가져오기 순환이다. 전자는 `dropUnchangedRetirement` 로
+한곳에 모아 248 로, 후자는 `syncPath` 를 `authority-path-sync.ts` 로 분리해 끊었다(`cycles: []`).
+
+| 이 시점 실측 | 값 |
+| --- | --- |
+| 제품 SHA | `97889978c37c2b0360ee83344eebc9f213697dc9` |
+| 전체 gate | `VERIFY37=0` (backend 279 / 1,942, dashboard 38 / 263), 관측 종료 16:41 KST |
+| 직전 gate | `VERIFY35=1` (모듈 예산), `VERIFY36=1` (가져오기 순환) — 각각 원인과 함께 manifest 에 기록 |
+| 회귀 | retention 83/83, memory cancellation 12/12, Task 30 1/1 |
+| 패키지 | `jarvis-runtime-SwN3MA`, `source_head=9788997…`, payload 1,545, receipt `0a93c220…`, `integrity=matched`, `deployment_ready=false` |
+| manifest | 아티팩트 45, 누락 0, package/input 대조 10쌍 mismatch 0 |
