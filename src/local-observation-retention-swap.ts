@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { exclusionHole } from "./authority-database-process.js";
 import Database from "better-sqlite3";
-import { existsSync, readFileSync, renameSync, statSync } from "node:fs";
+import { linkSync, existsSync, readFileSync, renameSync, statSync } from "node:fs";
 import { dirname } from "node:path";
 import type { AuthorityDatabaseRuntime } from "./authority-database-runtime.js";
 import { publishSwapBarrier, releaseSwapBarrier } from "./authority-database-swap-barrier.js";
@@ -144,14 +144,11 @@ export function applyRetentionCandidate(
       throw new JarvisError("LOCAL_RETENTION_EXCLUSION_UNPROVABLE",
         `LOCAL_RETENTION_EXCLUSION_UNPROVABLE: ${hole}`);
     }
-    // Set aside, not deleted. A writer that enters after the last question still holds this inode,
-    // and its next commit lands in a log that still exists on disk instead of one that was removed
-    // out from under it. Recovering the rows is then a file to read, not a loss to report.
+    // Named here, moved after the publish. The log beside the live name belongs to the inode that
+    // is about to be retired, and moving it before the publish would leave a writer that arrives
+    // in between writing a log the published database would then be handed - which SQLite reads as
+    // a malformed image. Retired afterwards, it pairs with the database it actually belongs to.
     const retired = `${authority.filename}.${operation.operation_id.replace(/^retention:/, "")}`;
-    for (const suffix of SIDECARS) {
-      const sidecar = `${authority.filename}${suffix}`;
-      if (existsSync(sidecar)) renameSync(sidecar, `${retired}.retired${suffix}`);
-    }
     // The baseline for the last question, taken once the connection is gone and its log has been
     // folded in: the file the rename would replace, rather than that file plus a log that closing
     // was about to remove.
@@ -173,11 +170,21 @@ export function applyRetentionCandidate(
       || foreignConnectionHolds(authority.filename)) {
       throw new JarvisError("LOCAL_RETENTION_SOURCE_WRITER_ACTIVE");
     }
-    // The source is retired under its own name rather than unlinked by the rename: the inode keeps
-    // a directory entry, so a descriptor opened after the last question writes into a file that is
-    // still reachable. The candidate then takes the live name.
-    renameSync(authority.filename, `${retired}.retired`);
+    // The retired name is a second link to the live inode, taken before anything moves: the inode
+    // keeps a directory entry no matter what happens next, and the live path never stops existing,
+    // because publishing is a single atomic rename over it rather than a move away and a move back.
+    // A descriptor opened after the last question therefore writes into a file that is still
+    // reachable, and a process that dies between these two calls leaves the original database live.
+    linkSync(authority.filename, `${retired}.retired`);
     renameSync(operation.candidate_path, authority.filename);
+    // The published candidate was checkpointed and has no log of its own, so anything under these
+    // names is the retired inode's - including a log a writer created after the last question.
+    // Moved while the barrier still stands, so no admitted connection can see the live name with a
+    // log that is not its own.
+    for (const suffix of SIDECARS) {
+      const sidecar = `${authority.filename}${suffix}`;
+      if (existsSync(sidecar)) renameSync(sidecar, `${retired}.retired${suffix}`);
+    }
     syncPath(dirname(authority.filename), true);
     observed = runtime.observeOldInode(BigInt(fence.device), BigInt(fence.inode));
   } catch (error) {

@@ -69,8 +69,11 @@ export abstract class AuthorityDbBase {
 	}
 	reopen(): void {
 		if (this.db.open) throw new JarvisError("AUTHORITY_DATABASE_ALREADY_OPEN");
+		// Reopening is never a creation. A live path that is missing here means a replacement did not
+		// finish, and an empty database created in its place would be indistinguishable from the
+		// authority it replaced - so this fails instead, loudly, with the file still absent.
 		this.db = openUnderSwapAdmission(this.filename,
-			() => new Database(this.filename, this.openOptions));
+			() => new Database(this.filename, { ...this.openOptions, fileMustExist: true }));
 		const stores = this.stores(this.db);
 		this.migrations = stores.migrations;
 		this.orcaObservations = stores.orcaObservations;

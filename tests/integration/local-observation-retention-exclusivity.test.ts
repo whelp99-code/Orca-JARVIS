@@ -3,7 +3,7 @@ import Database from "better-sqlite3";
 import { withProvableExclusion } from "../fixtures/provable-exclusion.js";
 import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 import { once } from "node:events";
-import { readdirSync, mkdtempSync, chmodSync, closeSync, existsSync, mkdirSync, openSync, statSync, writeFileSync } from "node:fs";
+import { rmSync, linkSync, readdirSync, mkdtempSync, chmodSync, closeSync, existsSync, mkdirSync, openSync, statSync, writeFileSync } from "node:fs";
 import { dirname, join } from "node:path";
 import { createInterface, type Interface } from "node:readline";
 import { afterEach, expect, it } from "vitest";
@@ -321,39 +321,93 @@ it("keeps the source, its log and the candidate when a writer commits after the 
     const application = await applyLocalObservationRetention(db, cutoff,
       join(dirname(db.filename), "post-check-writer-candidate"));
     const source = db.filename;
+    const before = inode(source);
 
-    // A real second connection, opened and committed synchronously on the last question the swap
-    // asks - the interval between that question and the rename, which no instantaneous observation
-    // covers. Nothing is simulated here: the row is written by SQLite into the live file.
-    let entered = false;
+    // Fired on the LAST question only. The applied record is written into the candidate immediately
+    // before that question and the candidate is still a separate file until the publish, so this
+    // condition is true on exactly one observation - not on the foreign-holder scan that runs long
+    // before it, which an existsSync on the candidate would also have matched.
+    const applied = () => {
+      if (!existsSync(application.operation.candidate_path)) return false;
+      const probe = new Database(application.operation.candidate_path, { readonly: true });
+      try {
+        return Number(probe.prepare(
+          "SELECT COUNT(*) FROM local_retention_operations WHERE state='applied'").pluck().get()) > 0;
+      } finally { probe.close(); }
+    };
+    let late: Database.Database | undefined;
     const observe = runtime.observeOldInode.bind(runtime);
     runtime.observeOldInode = ((device: bigint, ino: bigint) => {
       const answer = observe(device, ino);
-      if (entered || !existsSync(application.operation.candidate_path)) return answer;
-      entered = true;
-      const late = new Database(source);
-      try {
-        late.prepare(`INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,
-          payload_digest,idempotency_key,state,created_at) VALUES('late-writer','task:late','dispatch',
-          '{}','sha256:late','late','pending','2026-08-28T12:00:00.000Z')`).run();
-      } finally { late.close(); }
-      // Answered as the swap would have been answered a moment earlier: this is the case where the
-      // check passed and the writer arrived afterwards.
+      if (late !== undefined || !applied()) return answer;
+      // A real connection, opened and committed synchronously, and left OPEN across the publish
+      // with its write-ahead log in hand. Nothing here is simulated: SQLite writes the row.
+      late = new Database(source);
+      late.pragma("journal_mode = WAL");
+      late.prepare(`INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,
+        payload_digest,idempotency_key,state,created_at) VALUES('late-writer','task:late','dispatch',
+        '{}','sha256:late','late','pending','2026-08-28T12:00:00.000Z')`).run();
+      // Answered as it would have been a moment earlier: the check passed, the writer came after.
       return { ...answer, fd_count: 0, unprovable: [] };
     }) as typeof runtime.observeOldInode;
 
-    await runtime.quiesce("local_retention",
-      async () => applyRetentionCandidate(runtime, application, new Date()));
-    expect(entered).toBe(true);
+    // The swap publishes and then reports what it found: a descriptor still holds the retired
+    // inode, which is exactly what a writer that arrived after the last question looks like. The
+    // report is the contract - it is not silence, and it is not a loss.
+    await expect(runtime.quiesce("local_retention",
+      async () => applyRetentionCandidate(runtime, application, new Date())))
+      .rejects.toMatchObject({ code: "LOCAL_RETENTION_OLD_DATABASE_FD_ACTIVE" });
+    expect(late).toBeDefined();
 
-    // The candidate is live, and the database the late writer wrote into is still on disk under
-    // its retired name, with that commit in it. Nothing it committed was destroyed.
-    const retired = readdirSync(dirname(source))
-      .filter(name => name.includes(".retired"));
-    expect(retired.some(name => name.endsWith(".retired"))).toBe(true);
-    const kept = new AuthorityDb(join(dirname(source),
-      retired.find(name => name.endsWith(".retired")) as string));
-    opened.push(kept);
-    expect(Number(kept.db.prepare(
-      "SELECT COUNT(*) FROM gjc_intents WHERE intent_id='late-writer'").pluck().get())).toBe(1);
+    // Publish happened: the live name is a different inode, and it is the database the candidate
+    // built - the late row was never part of it.
+    expect(inode(source)).not.toBe(before);
+    expect(Number(db.db.prepare(
+      "SELECT COUNT(*) FROM gjc_intents WHERE intent_id='late-writer'").pluck().get())).toBe(0);
+
+    // Retirement happened, separately from the publish: the original inode still has a name, its
+    // log is beside it under the matching name, and the row the late writer committed is readable.
+    const retired = readdirSync(dirname(source)).filter(name => name.endsWith(".retired"));
+    expect(retired).toHaveLength(1);
+    const retiredPath = join(dirname(source), retired[0] as string);
+    expect(String(statSync(retiredPath).ino)).toBe(before);
+    expect(existsSync(`${retiredPath}-wal`)).toBe(true);
+    late?.close();
+    const kept = new Database(retiredPath, { readonly: true });
+    try {
+      expect(Number(kept.prepare(
+        "SELECT COUNT(*) FROM gjc_intents WHERE intent_id='late-writer'").pluck().get())).toBe(1);
+    } finally { kept.close(); }
   }, 60_000);
+
+it("leaves the original database live when a run stops between retirement and publish", async () => {
+  const { db, runtime, cutoff } = await seeded();
+  const application = await applyLocalObservationRetention(db, cutoff,
+    join(dirname(db.filename), "interrupted-publish-candidate"));
+  const source = db.filename;
+  const before = { inode: inode(source), observations: observations(db) };
+
+  // The state a process that died between the two calls leaves behind, constructed exactly: the
+  // retired name is a second link to the live inode and the candidate has not been published.
+  const retiredPath = `${source}.${application.operation.operation_id.replace(/^retention:/, "")}.retired`;
+  linkSync(source, retiredPath);
+
+  // The live path never stopped existing, and it is still the original database with its rows.
+  expect(existsSync(source)).toBe(true);
+  expect(inode(source)).toBe(before.inode);
+  expect(String(statSync(retiredPath).ino)).toBe(before.inode);
+  expect(observations(db)).toBe(before.observations);
+  expect(existsSync(application.operation.candidate_path)).toBe(true);
+
+  // And a restart does not invent one: reopening a live path that is missing fails rather than
+  // creating an empty authority where the replaced one used to be.
+  db.close();
+  rmSync(source);
+  expect(() => db.reopen()).toThrow();
+  expect(existsSync(source)).toBe(false);
+  // Restored from the link the retirement left, which is the point of taking it first.
+  linkSync(retiredPath, source);
+  db.reopen();
+  expect(observations(db)).toBe(before.observations);
+  expect(inode(source)).toBe(before.inode);
+}, 60_000);
