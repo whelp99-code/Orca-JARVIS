@@ -128,6 +128,13 @@ function settleAbandonedPublish(database: string): void {
   if (outcome === "unproven") {
     throw new JarvisError("AUTHORITY_DATABASE_PUBLISH_UNSETTLED");
   }
+  // Seeing an owner is the end of this attempt, not a step in it. The owner can die a moment
+  // later, and its barrier would then read as debris that admits this caller into a database whose
+  // log has not been settled - so the caller that observed the owner leaves and asks again, when
+  // the same question will either find the owner gone and settle, or find it still there.
+  if (outcome === "owned") {
+    throw new JarvisError("AUTHORITY_DATABASE_SWAP_IN_PROGRESS");
+  }
 }
 
 export function openUnderSwapAdmission<T extends { close: () => void }>(
@@ -138,6 +145,12 @@ export function openUnderSwapAdmission<T extends { close: () => void }>(
   const opened = open();
   try {
     assertSwapAdmission(database);
+    // A publish that began while this was opening leaves its record here, and that record says the
+    // log under this name may not belong to it. Asked after the descriptor exists, for the same
+    // reason the barrier is: only a question asked on both sides of the open decides every order.
+    if (existsSync(publishPhasePath(database))) {
+      throw new JarvisError("AUTHORITY_DATABASE_PUBLISH_UNSETTLED");
+    }
   } catch (error) {
     opened.close();
     throw error;

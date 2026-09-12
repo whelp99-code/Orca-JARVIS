@@ -554,6 +554,7 @@ it("leaves a live publisher's phase record alone when another opener arrives mid
     join(dirname(db.filename), "mid-swap-phase-candidate"));
   const source = db.filename;
   const original = statSync(source, { bigint: true });
+  const before = observations(db);
 
   // The state a publisher is in after it wrote its record and before it renamed: the record
   // describes a publish that has not happened, so the retired_identity branch would clear it.
@@ -576,7 +577,44 @@ it("leaves a live publisher's phase record alone when another opener arrives mid
   // unrecorded, which is the interval the record exists to cover.
   expect(existsSync(publishPhasePath(source))).toBe(true);
 
+  // The owner dies after this caller observed it. Its barrier now reads as debris, which is
+  // exactly the state that used to admit an opener into an unsettled database.
   publisher.child.kill("SIGKILL");
   await publisher.exited;
-  rmSync(publishPhasePath(source));
+
+  // The next attempt settles instead of walking in: this record describes a publish that never
+  // happened, so it is cleared without moving anything, and only then does the open proceed.
+  let admitted = 0;
+  const handle = openUnderSwapAdmission(source, () => { admitted += 1; return { close() {} }; });
+  handle.close();
+  expect(admitted).toBe(1);
+  expect(existsSync(publishPhasePath(source))).toBe(false);
+  expect(String(statSync(source, { bigint: true }).ino)).toBe(String(original.ino));
+  expect(observations(db)).toBe(before);
 }, 60_000);
+
+it("gives the descriptor up when a publish record appears while the database is being opened",
+  async () => {
+    const { db, cutoff } = await seeded();
+    const application = await applyLocalObservationRetention(db, cutoff,
+      join(dirname(db.filename), "opening-race-candidate"));
+    const source = db.filename;
+    const original = statSync(source, { bigint: true });
+
+    // The record appears in the interval the descriptor is being made, which is the one interval a
+    // question asked beforehand cannot cover. Written by the open itself, so the order is fixed.
+    let closed = 0;
+    expect(() => openUnderSwapAdmission(source, () => {
+      writeFileSync(publishPhasePath(source), `${JSON.stringify({
+        operation_id: application.operation.operation_id,
+        retired: `${source}.${application.operation.operation_id.replace(/^retention:/, "")}`,
+        published: { device: "7", inode: "7" },
+        retired_identity: { device: original.dev.toString(), inode: original.ino.toString() },
+      })}\n`);
+      return { close() { closed += 1; } };
+    })).toThrow("AUTHORITY_DATABASE_PUBLISH_UNSETTLED");
+    // The descriptor was given up rather than kept against a database whose log is in question.
+    expect(closed).toBe(1);
+    expect(existsSync(publishPhasePath(source))).toBe(true);
+    rmSync(publishPhasePath(source));
+  }, 60_000);
