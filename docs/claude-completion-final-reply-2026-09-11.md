@@ -29,8 +29,8 @@
 | 5 | `memory-candidate-scope`의 제안 경로가 task 게이트를 거치지 않음 | 남아 있다 |
 
 > **2026-09-12 갱신 (§9.28 정본).** 이 시점의 상태는 `IN_PROGRESS`다. 제품 SHA는
-> `2f3f198a90df68d51d46f7a98194ffaf23446153`, 전체 gate `VERIFY39=0`, 패키지 `jarvis-runtime-Cv4gQt`
-> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=2f3f198…`.
+> `5b62a3702df1a2a9423f6d4930d0851294c95fb2`, 전체 gate `VERIFY43=0`, 패키지 `jarvis-runtime-YSMOF6`
+> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=5b62a37…`.
 > **닫힘:** 기존 목적지 보존(REVIEW-01) — 목적지를 생성·점유·교체하는 경로 자체를 제거했고 세 형태 모두 회귀로 고정.
 > **열림:** writer 배타성(REVIEW-02/-03) — `b4927fb` 는 창을 좁혔을 뿐 봉쇄하지 않으며, 증명 불가 환경의 거절은
 > 두 구현을 만들어 측정한 결과 각각 "항상 거절" 과 "타이밍 의존 거절" 로 무너져 되돌렸다(§9.28). 남은 해법은
@@ -1528,3 +1528,34 @@ retention 82/82, memory cancellation 12/12, Task 30 1/1.
 | 직전 gate | `VERIFY38=1` — `d7dfd02` 입력, 미사용 테스트 바인딩 1건(제품 결함 아님), 17:25 |
 | 패키지 | `jarvis-runtime-Cv4gQt`, `source_head=2f3f198…`, payload 1,546, receipt `efb17228…`, `integrity=matched`, `deployment_ready=false` |
 | manifest | 아티팩트 46, 누락 0, package/input 대조 11쌍 mismatch 0 |
+
+### 9.42 두 구간을 나눠서 말한다 — 하나는 닫았고 하나는 남는다 (커밋 `2c1c496`, `5b62a37`)
+
+**구간 A (후보를 읽은 시점 → swap 진입) 는 닫았다.** 후보를 만든 읽기가 본 소스 `data_version` 을
+`buildFreshAuthority` 가 **직접 돌려주고**, swap 은 연결이 열려 있는 동안 그 값과 현재 값을 대조해 다르면
+파괴 이전에 거절한다. 빌드 종료 후 따로 읽지 않으므로 그 사이에 흡수될 틈이 없다.
+
+**다만 이 수정은 테스트로 변별되지 않았다.** 변이(빌더 값 대신 빌드 직후 별도 읽기)를 넣어도 회귀가 통과한다 —
+사용 가능한 주입 지점(`quiesce` 진입)이 두 변이 모두에서 swap 측 대조에 걸리기 때문이고, 진짜 A 구간
+(빌드 반환과 바로 다음 줄 사이)에는 주입 지점이 없다. 구성상 틈이 없다는 근거로만 제시하고 증명했다고 적지 않는다.
+
+**구간 B (버전 판독 → close) 는 남는다.** 겹치는 쌍(파일 먼저, 버전 나중)으로 덮으려 했으나 실측이 그것을
+부정했다: **우리 자신의 close 가 로그를 데이터베이스로 체크포인트하므로** close 이전 스냅샷은 기준이 될 수
+없고(그렇게 두자 모든 cancellation 이 거절됐다), 그 창의 커밋은 우리 close 에 의해 그대로 반영돼 파일 기준과
+구분되지 않는다. 관측 위치를 옮겨 없앨 수 있는 문제가 아니므로, 전체 배타성으로 표시하지 않고 남은 구간으로
+적는다. 파일 스냅샷은 close 직후에 잡아 그 이후의 모든 변화는 계속 잡아낸다.
+
+**거절 단언은 강화했고 검증됐다.** 오류 코드만으로 통과하지 않는다: 그 행이 live 데이터베이스나 보존된 사본
+중 어딘가에서 실제로 읽혀야 한다. "거절했다" 와 "사라졌다" 가 같은 손실에 다른 이름을 붙이는 일은 이제 통과하지
+못한다.
+
+| 이 시점 실측 | 값 |
+| --- | --- |
+| 제품 SHA | `5b62a3702df1a2a9423f6d4930d0851294c95fb2` |
+| 전체 gate | `VERIFY43=0` (backend 280 / 1,947), 관측 종료 19:04 KST, 겹친 실행을 정리한 뒤 단독 수행 |
+| 직전 gate | `VERIFY40=1` — fresh builder 251/250 모듈 예산(제품 결함 아님), 18:32 |
+| 패키지 | `jarvis-runtime-YSMOF6`, `source_head=5b62a37…`, payload 1,546, receipt `95720871…`, `integrity=matched` |
+| manifest | 아티팩트 47, 누락 0, package/input 대조 12쌍 mismatch 0 |
+
+부수적으로, 예산을 맞추려 지운 두 줄이 intent 복사 규칙의 설명이었음을 확인하고 되돌린 뒤 내가 추가한 줄에서
+자리를 회수했다. 주석은 예산의 잔돈이 아니다.
