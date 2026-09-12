@@ -29,8 +29,8 @@
 | 5 | `memory-candidate-scope`의 제안 경로가 task 게이트를 거치지 않음 | 남아 있다 |
 
 > **2026-09-12 갱신 (§9.28 정본).** 이 시점의 상태는 `IN_PROGRESS`다. 제품 SHA는
-> `e6c63be77f1b5c5b188cae64270ecf73172633bb`, 전체 gate `VERIFY32=0`, 패키지 `jarvis-runtime-plP9Mj`
-> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=e6c63be…`.
+> `c4ae462fdcd6b4ca3c53fc23923686265de22172`, 전체 gate `VERIFY34=0`, 패키지 `jarvis-runtime-gIlvC4`
+> (`integrity=matched`, `deployment_ready=false`), manifest `gate_input_sha=c4ae462…`.
 > **닫힘:** 기존 목적지 보존(REVIEW-01) — 목적지를 생성·점유·교체하는 경로 자체를 제거했고 세 형태 모두 회귀로 고정.
 > **열림:** writer 배타성(REVIEW-02/-03) — `b4927fb` 는 창을 좁혔을 뿐 봉쇄하지 않으며, 증명 불가 환경의 거절은
 > 두 구현을 만들어 측정한 결과 각각 "항상 거절" 과 "타이밍 의존 거절" 로 무너져 되돌렸다(§9.28). 남은 해법은
@@ -1446,3 +1446,29 @@ fault seam 없이 테스트에서 결정적으로 주입할 수 없다. 더 안�
 | 특권 프로세스 | 열림(명시된 한계) | 사용자 공간 프로토콜로 배제 불가 |
 | memory 경로 late-writer 주입 인수 | 미성립 | §9.37 (b). 대체 인수는 거절-보존으로 확보 |
 | `owned` 즉시 거절의 변별 | 미확보 | §9.36. fault seam 없이 결정적 주입 불가 |
+
+### 9.39 퇴거에는 수명이 있다 — gate 33 이 잡은 내 계약의 결함 (커밋 `c4ae462`)
+
+`2966c65` 로 memory 경로까지 퇴거를 적용하자 gate 33 이 `VERIFY33=1` 로 떨어졌다. 실패한 것은
+`memory-real-process-driver` 의 Task 30 수명주기 인수이고, 이유는 명확하다: **교체된 구세대 데이터베이스가
+그대로 남아 있으면, 그 안의 자료도 그대로 남는다.** 민감 자료가 디스크 어디에도 없어야 한다는 인수가 이를
+정확히 잡았다. 내 변경이 만든 진짜 결함이며, 테스트를 고칠 일이 아니었다.
+
+퇴거의 **수명**을 정의해 해결했다.
+
+- 퇴거본은 그 inode 에 아직 쓸 수 있는 디스크립터가 있는 동안에만 존재한다. publish 이후 관측에서
+  `fd_count === 0` 이면 잃을 것이 없으므로 퇴거본과 그 사이드카를 즉시 제거한다.
+- 늦은 writer 가 실제로 잡고 있으면(§9.32 의 인수가 그 경우다) 그대로 남아 커밋이 보존되고, swap 은
+  `LOCAL_RETENTION_OLD_DATABASE_FD_ACTIVE` 로 보고한다.
+- **purge(cancellation)** 은 파기가 목적이므로 로그를 퇴거시키지 않고 제거한다. purge 자신이 만든 퇴거 링크는
+  purge 가 소유하므로 이 경로가 손대지 않는다.
+
+retention 82/82, memory cancellation 12/12, Task 30 1/1.
+
+| 이 시점 실측 | 값 |
+| --- | --- |
+| 제품 SHA | `c4ae462fdcd6b4ca3c53fc23923686265de22172` |
+| 전체 gate | `VERIFY34=0` (backend 279 / 1,942, dashboard 38 / 263), 관측 종료 15:12 KST |
+| 직전 gate | `VERIFY33=1` — `2966c65` 입력, 위 결함을 잡은 실패이며 테스트가 아니라 계약을 고쳤다 |
+| 패키지 | `jarvis-runtime-gIlvC4`, `source_head=c4ae462…`, payload 1,544, receipt `3de0d58a…`, `integrity=matched`, `deployment_ready=false` |
+| manifest | 아티팩트 44, 누락 0, package/input 대조 9항목 mismatch 0 |
