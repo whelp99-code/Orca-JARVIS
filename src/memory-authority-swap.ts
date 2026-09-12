@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import { beginPublishPhase, endPublishPhase } from "./local-observation-retention-publish.js";
+import {
+  beginPublishPhase, endPublishPhase, retirementState, retirementUnchanged,
+} from "./local-observation-retention-publish.js";
 import { existsSync, closeSync, lstatSync, linkSync, fsyncSync, openSync, renameSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { canonicalize } from "./canonical.js";
@@ -83,6 +85,10 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
     // not removed beside a connection that may still hold this inode, the inode keeps a name of
     // its own through a link taken before anything moves, and the phase is recorded so a fault
     // between the publish and the log's move can be settled on identity afterwards.
+
+    // Taken before the destructive half begins, for the reason the retention swap takes it there:
+    // anything written into the source after this point exists only in the retired inode.
+    const retirementBefore = retirementState(authority.filename);
     const retiredDatabase = input.cancellation
       ? retiredSourcePath(authority.filename, input.purge_id)
       : `${authority.filename}.${input.purge_id}.retired`;
@@ -106,8 +112,7 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
         for (const suffix of ["-wal", "-shm", "-journal"]) {
           const sidecar = `${authority.filename}${suffix}`;
           if (!existsSync(sidecar)) continue;
-          if (input.cancellation) rmSync(sidecar, { force: true });
-          else renameSync(sidecar, `${retiredDatabase}${suffix}`);
+          renameSync(sidecar, `${retiredDatabase}${suffix}`);
         }
         endPublishPhase(authority.filename);
         syncPath(dirname(authority.filename), true);
@@ -117,7 +122,21 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
         // it goes - which is also what keeps a compaction from leaving the data it just replaced
         // lying beside the live name. A cancellation's own retirement link is not this one's to
         // remove: the purge owns it.
-        if (observed.fd_count === 0 && !input.cancellation) {
+        const untouched = retirementUnchanged(
+          retirementBefore, retirementState(retiredDatabase));
+        if (input.cancellation) {
+          // A purge destroys what it names, and the retirement link is the purge's own evidence.
+          // But it may not destroy a commit that arrived after the last question and is in that
+          // database and nowhere else: the rows cannot be separated here, so this refuses and
+          // leaves everything rather than deciding on their behalf.
+          if (!untouched) throw new AuthorityError("MEMORY_PURGE_LATE_COMMIT_UNRESOLVED");
+          for (const suffix of ["-wal", "-shm", "-journal"]) {
+            rmSync(`${retiredDatabase}${suffix}`, { force: true });
+          }
+          syncPath(dirname(authority.filename), true);
+          return observed;
+        }
+        if (observed.fd_count === 0 && untouched) {
           for (const suffix of ["", "-wal", "-shm", "-journal"]) {
             rmSync(`${retiredDatabase}${suffix}`, { force: true });
           }

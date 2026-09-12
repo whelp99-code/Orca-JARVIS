@@ -65,3 +65,27 @@ export function settlePublishPhase(database: string): "none" | "completed" | "un
   // Neither: something else holds the live name, and nothing here can say what its log belongs to.
   return "unproven";
 }
+
+/** What a database and its log looked like, in enough detail that a commit cannot hide in it. */
+export function retirementState(database: string): readonly string[] {
+  return ["", "-wal", "-shm", "-journal"].map(suffix => {
+    try {
+      const stat = statSync(`${database}${suffix}`, { bigint: true });
+      return `${suffix}:${stat.size}:${stat.mtimeNs}`;
+    } catch { return `${suffix}:absent`; }
+  });
+}
+
+/**
+ * Whether the retired inode is provably the same one the candidate was built against.
+ *
+ * A count of open descriptors answers a different question: a writer can commit after the last
+ * check and let go before the count is taken, and the rows it wrote then exist in the retired
+ * database and nowhere else. So the retired copy is only removed against evidence that nothing was
+ * written into it, and kept whenever that evidence is missing.
+ */
+export function retirementUnchanged(
+  before: readonly string[], after: readonly string[],
+): boolean {
+  return before.length === after.length && before.every((entry, index) => entry === after[index]);
+}

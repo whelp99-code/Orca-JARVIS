@@ -1,5 +1,7 @@
 import { createHash } from "node:crypto";
-import { beginPublishPhase, endPublishPhase } from "./local-observation-retention-publish.js";
+import {
+  beginPublishPhase, endPublishPhase, retirementState, retirementUnchanged,
+} from "./local-observation-retention-publish.js";
 import { exclusionHole } from "./authority-database-process.js";
 import Database from "better-sqlite3";
 import { rmSync, linkSync, existsSync, readFileSync, renameSync, statSync } from "node:fs";
@@ -154,6 +156,10 @@ export function applyRetentionCandidate(
     // folded in: the file the rename would replace, rather than that file plus a log that closing
     // was about to remove.
     const settled = sourceBytes(authority.filename);
+    // Taken here, where the candidate's content stops depending on the source: anything written
+    // into the source after this point is in the retired inode and in no candidate, so this is the
+    // state the retired copy has to still have before it can be removed.
+    const retirementBefore = retirementState(authority.filename);
     // Written only once the swap is certain to be attempted. It is the last write before the
     // rename, so it still survives into the live database.
     recordAppliedRetentionOperation(
@@ -204,7 +210,11 @@ export function applyRetentionCandidate(
     // Kept only while a descriptor can still write into the retired inode. With none left there is
     // nothing to lose by removing it, and leaving a second copy of the material that was just
     // replaced is its own problem.
-    if (observed.fd_count === 0) {
+    // Removed only against evidence, never against a count: if anything was written into the
+    // retired inode after the last question - by a writer that committed and let go before the
+    // count was taken - those rows are in that database and in no other, so it stays.
+    if (observed.fd_count === 0
+      && retirementUnchanged(retirementBefore, retirementState(`${retired}.retired`))) {
       for (const suffix of ["", "-wal", "-shm", "-journal"]) {
         rmSync(`${retired}.retired${suffix}`, { force: true });
       }

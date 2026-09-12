@@ -618,3 +618,53 @@ it("gives the descriptor up when a publish record appears while the database is 
     expect(existsSync(publishPhasePath(source))).toBe(true);
     rmSync(publishPhasePath(source));
   }, 60_000);
+
+it("keeps a commit that arrived after the last question and let go before the count was taken",
+  async () => {
+    const { db, runtime, cutoff } = await seeded();
+    const application = await applyLocalObservationRetention(db, cutoff,
+      join(dirname(db.filename), "closed-late-writer-candidate"));
+    const source = db.filename;
+    const before = inode(source);
+
+    // Commits and then closes, inside the same window. By the time the swap counts descriptors
+    // there are none, and the row it wrote exists in no other file: the candidate was built before
+    // it, so a count of zero is not evidence that nothing would be lost.
+    let wrote = false;
+    const applied = () => {
+      if (!existsSync(application.operation.candidate_path)) return false;
+      const probe = new Database(application.operation.candidate_path, { readonly: true });
+      try {
+        return Number(probe.prepare(
+          "SELECT COUNT(*) FROM local_retention_operations WHERE state='applied'").pluck().get()) > 0;
+      } finally { probe.close(); }
+    };
+    const observe = runtime.observeOldInode.bind(runtime);
+    runtime.observeOldInode = ((device: bigint, ino: bigint) => {
+      const answer = observe(device, ino);
+      if (wrote || !applied()) return answer;
+      wrote = true;
+      const late = new Database(source);
+      try {
+        late.pragma("journal_mode = WAL");
+        late.prepare(`INSERT INTO gjc_intents(intent_id,continuation_id,kind,payload_json,
+          payload_digest,idempotency_key,state,created_at) VALUES('closed-late','task:late','dispatch',
+          '{}','sha256:closed','closed-late','pending','2026-08-28T12:00:00.000Z')`).run();
+      } finally { late.close(); }
+      return { ...answer, fd_count: 0, unprovable: [] };
+    }) as typeof runtime.observeOldInode;
+
+    await runtime.quiesce("local_retention",
+      async () => applyRetentionCandidate(runtime, application, new Date()));
+    expect(wrote).toBe(true);
+    expect(inode(source)).not.toBe(before);
+
+    // The row is in no live database, so the retired one has to still be here holding it.
+    const retired = readdirSync(dirname(source)).filter(name => name.endsWith(".retired"));
+    expect(retired).toHaveLength(1);
+    const kept = new Database(join(dirname(source), retired[0] as string), { readonly: true });
+    try {
+      expect(Number(kept.prepare(
+        "SELECT COUNT(*) FROM gjc_intents WHERE intent_id='closed-late'").pluck().get())).toBe(1);
+    } finally { kept.close(); }
+  }, 60_000);
