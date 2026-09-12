@@ -15,7 +15,7 @@ import {
 } from "./local-observation-retention-operation.js";
 import { retentionSourceMoved,
   type LocalObservationRetentionApplication } from "./local-observation-retention.js";
-import { syncPath } from "./memory-authority-swap.js";
+import { syncPath } from "./authority-path-sync.js";
 
 export type RetentionSwapResult = {
   readonly operation_id: string;

@@ -1,5 +1,5 @@
 import { existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { syncPath } from "./memory-authority-swap.js";
+import { syncPath } from "./authority-path-sync.js";
 
 const SIDECARS = ["-wal", "-shm", "-journal"] as const;
 

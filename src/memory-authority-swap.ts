@@ -1,9 +1,10 @@
 import { createHash } from "node:crypto";
+import { syncPath } from "./authority-path-sync.js";
 import {
   beginPublishPhase, dropUnchangedRetirement, endPublishPhase, retirementState,
   retirementUnchanged,
 } from "./local-observation-retention-publish.js";
-import { existsSync, closeSync, lstatSync, linkSync, fsyncSync, openSync, renameSync, rmSync, statSync } from "node:fs";
+import { existsSync, lstatSync, linkSync, renameSync, rmSync, statSync } from "node:fs";
 import { basename, dirname, join } from "node:path";
 import { canonicalize } from "./canonical.js";
 import { exclusionHole, discoverOpenInodeHolders } from "./authority-database-process.js";
@@ -202,10 +203,6 @@ function writableHolders(
 }
 
 
-export function syncPath(path: string, directory = false): void {
-  const descriptor = openSync(path, directory ? "r" : "r");
-  try { fsyncSync(descriptor); } finally { closeSync(descriptor); }
-}
 
 export function retiredSourcePath(databasePath: string, purgeId: string): string {
   return join(dirname(databasePath), `.${basename(databasePath)}.${digest(purgeId).slice(7, 31)}.retired`);

@@ -1,5 +1,6 @@
-import { swapAuthorityDatabase, syncPath, retiredSourcePath, removeRetiredSource,
+import { swapAuthorityDatabase, retiredSourcePath, removeRetiredSource,
   type SwapRequest, type SwapObservation } from "./memory-authority-swap.js";
+import { syncPath } from "./authority-path-sync.js";
 import { persistCancellationSettlement, type CancellationSettlement } from "./memory-cancellation-settlement.js";
 import { cancellationCompactionRequest, beginCancellationCompaction, completeCancellationCompaction, sealCancellationSwap,
   type CancellationCompactionRequest, type CancellationLocalCompaction } from "./memory-cancellation-compaction.js";

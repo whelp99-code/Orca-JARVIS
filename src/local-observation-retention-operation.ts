@@ -6,7 +6,7 @@ import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
 import type { RetentionProjection } from "./local-observation-retention-selection.js";
 import { processStartToken } from "./authority-database-process.js";
-import { syncPath } from "./memory-authority-swap.js";
+import { syncPath } from "./authority-path-sync.js";
 import {
   candidateDigest, candidateStillClaimed, releaseRetentionOperationDirectory, SIDECARS,
   type RetentionClaim, type RetentionSnapshotClaim,
