@@ -4,7 +4,21 @@ import type { RecommendationIdentity } from "./recommendation-identity.js";
 import type { PriorityActionDecision, PriorityDeadline } from "./priority-engine-contracts.js";
 import { classifyPriorityDeadline } from "./priority-engine-ranking.js";
 import type { MorningBriefRecord } from "./morning-brief-types.js";
+import type { RecommendationEvidenceKind } from "./recommendation-provenance.js";
 import { invalidMorningSource } from "./morning-recommendation-context.js";
+
+/**
+ * Where a citation that never sat in assembled evidence comes from.
+ *
+ * Two of the things an action rests on are held elsewhere: the policy decision, and the owner's own
+ * approval, which the control plane keeps as a signed receipt. Every other kind resolves a piece of
+ * context evidence and takes its source from there, so a link of any other kind that carries no
+ * evidence cannot say where it came from and is refused rather than given the context's source.
+ */
+const AUTHORITY_SOURCE_ID: Readonly<Partial<Record<RecommendationEvidenceKind, string>>> = {
+  owner: "src:pos:v1:jarvis:control-plane",
+  policy: "src:pos:v1:jarvis:personal-os-policy",
+};
 
 export function morningRecommendationRecord(identity: RecommendationIdentity, context: ContextSnapshotV1,
   decision: PriorityActionDecision, state: string, deadline: PriorityDeadline | null, now: string): MorningBriefRecord {
@@ -17,15 +31,16 @@ export function morningRecommendationRecord(identity: RecommendationIdentity, co
   const citations = links.map(link => {
     // A link either names a piece of context evidence or rests on authority the context never
     // held: the policy decision does, and so does the owner's approval receipt, which lives in the
-    // control plane rather than in assembled evidence. So the question here is consistency, not
-    // authority - a link that names evidence must resolve it and match its digest, and a link that
-    // names none must not be handed one.
+    // control plane rather than in assembled evidence. A link that names evidence must resolve it
+    // and match its digest; a link that names none must be of a kind that is held somewhere this
+    // can name, and is cited to that place rather than to the context the assembler built.
     const evidence = link.context_evidence_id === null
       ? undefined
       : context.evidence.find(item => item.evidence_id === link.context_evidence_id);
     if (link.context_evidence_id !== null && evidence === undefined) return invalidMorningSource();
     if (evidence !== undefined && evidence.digest !== link.digest) return invalidMorningSource();
-    const sourceId = evidence?.source_id ?? context.source.source_id;
+    const sourceId = evidence?.source_id ?? AUTHORITY_SOURCE_ID[link.kind];
+    if (sourceId === undefined) return invalidMorningSource();
     return { link_id: `brief-link:${persistenceHash({ ref: link.ref, source_id: sourceId, digest: link.digest }).slice(7)}`,
       source_id: sourceId, evidence_ref: link.ref };
   });
