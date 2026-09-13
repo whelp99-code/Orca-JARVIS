@@ -1,6 +1,7 @@
 import type { MemoryInput } from "./context-assembler-input.js";
 import type { AuthorityDb } from "./db.js";
 import { candidateTaskSourceClosed } from "./memory-candidate-task-source.js";
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import type { PreparedMemoryReference } from "./memory-reference-context.js";
 import { SECOND_BRAIN_SOURCE_ID } from "./second-brain-adapter-types.js";
 
@@ -15,14 +16,23 @@ type SettledCandidate = { readonly candidate_id: string; readonly content_digest
  * means the reconciliation observed that artifact. So this is the correspondence the product
  * already holds: not a shared content hash, which the two sides compute differently, but the
  * destination the owner approved writing to.
+ *
+ * Only a remember write puts a memory record on a page, so only those are asked about; a forget or
+ * an export names a destination for its own reasons. And a destination has to identify exactly one
+ * candidate: the page a remember write derives carries the candidate in it, so two of ours cannot
+ * land on one, but if this database ever holds two that say they did, it cannot tell whose record
+ * this is - and picking whichever row came back first would be an answer it has not got.
  */
 function settledCandidateFor(authority: AuthorityDb, pageId: string, sid: string): SettledCandidate | undefined {
-  const row = authority.db.prepare(
+  const rows = authority.db.prepare(
     `SELECT o.candidate_id AS candidate_id, c.content_digest AS content_digest
      FROM memory_outbox o
      JOIN memory_candidates c ON c.candidate_id=o.candidate_id
-     WHERE o.state='settled' AND o.expected_page_id=? AND o.expected_sid=? LIMIT 1`)
-    .get(pageId, sid) as { candidate_id: string; content_digest: string } | undefined;
+     WHERE o.state='settled' AND o.operation='remember'
+       AND o.expected_page_id=? AND o.expected_sid=?
+     ORDER BY o.candidate_id LIMIT 2`).all(pageId, sid) as
+    { candidate_id: string; content_digest: string }[];
+  const row = rows.length === 1 ? rows[0] : undefined;
   return row === undefined
     ? undefined
     : { candidate_id: String(row.candidate_id), content_digest: String(row.content_digest) };
@@ -36,6 +46,31 @@ function settledCandidateFor(authority: AuthorityDb, pageId: string, sid: string
  */
 export function ownerConfirmedContent(authority: AuthorityDb, contentDigest: string): boolean {
   return ownerImportDecisionFor(authority, contentDigest) !== null;
+}
+
+/**
+ * True when the owner's confirmation is on record for exactly this candidate.
+ *
+ * A confirmation is of a candidate, not of a sentence. Two candidates can carry the same statement
+ * and reach the provider by different roads - one the owner was asked about and approved, one that
+ * needed no confirmation and was published automatically - and reading the answer by content lets
+ * the second borrow the first's permission. The candidate whose write actually landed on the record
+ * in hand is the one that has to have been confirmed, and it must not have been suppressed since.
+ */
+export function ownerConfirmedCandidate(authority: AuthorityDb, candidateId: string): boolean {
+  if (new MemoryProjectionAuthority(authority).isProjectionIdSuppressed(candidateId)) return false;
+  return authority.db.prepare(
+    `SELECT 1 FROM memory_candidate_owner_decisions d
+     JOIN memory_candidate_decision_attempts t ON t.attempt_id=d.attempt_id AND t.state='applied'
+     JOIN control_command_requests r ON r.request_id=d.control_request_id
+       AND r.requested_by='principal:owner' AND r.state IN ('approved','claimed','completed')
+     JOIN control_command_receipts a ON a.receipt_id=d.control_receipt_id AND a.request_id=r.request_id
+       AND a.decision='approve' AND a.signer_principal_id='principal:owner'
+       AND a.command_digest=r.command_digest
+     WHERE d.decision='confirm' AND d.candidate_id=?
+       AND NOT EXISTS(SELECT 1 FROM control_command_revocations v
+         WHERE v.request_id=r.request_id OR v.receipt_id=a.receipt_id)
+     LIMIT 1`).get(candidateId) !== undefined;
 }
 
 /**
@@ -94,7 +129,8 @@ function resolvedTargetFor(authority: AuthorityDb,
  *   what names the candidate behind it;
  * - that candidate's task must not be closed, asked again here because a read that began before
  *   the owner hid a task returns after they did;
- * - the owner's confirmation for that candidate's content has to be on record;
+ * - the owner's confirmation has to be on record for that candidate itself, not merely for the
+ *   same words on some other candidate;
  * - and the target identity for that record has to be one this database resolved, because an
  *   artifact resting on a memory has to stay suppressible: when the owner later forgets it, the
  *   projection authority reaches the context and everything published from it through exactly that
@@ -116,7 +152,7 @@ export function contextMemoryFromReference(
     const candidate = settledCandidateFor(authority, row.page_id, row.sid);
     if (candidate === undefined) return gap("no_data");
     if (candidateTaskSourceClosed(authority, candidate.candidate_id)) return gap("unavailable");
-    if (!ownerConfirmedContent(authority, candidate.content_digest)) return gap("no_data");
+    if (!ownerConfirmedCandidate(authority, candidate.candidate_id)) return gap("no_data");
     const target = resolvedTargetFor(authority, row.record);
     if (target === undefined) return gap("no_data");
     return { kind: "evidence", memory_ref: target, source_id: SECOND_BRAIN_SOURCE_ID,
