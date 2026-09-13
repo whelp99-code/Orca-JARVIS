@@ -12,7 +12,7 @@ let service: Recommendations;
 let evidenceDigest: string;
 beforeAll(async () => {
   db = new AuthorityDb(tempDb()); await db.migrate(); service = new Recommendations(db);
-  evidenceDigest = service.create(task18Request(persistTask18Context(db))).evidence_digest;
+  evidenceDigest = service.create(task18Request(await persistTask18Context(db))).evidence_digest;
 });
 beforeEach(() => db.db.exec("BEGIN"));
 afterEach(() => db.db.exec("ROLLBACK"));

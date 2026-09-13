@@ -14,7 +14,7 @@ let db: AuthorityDb;
 let recommendationId: RecommendationId;
 beforeAll(async () => {
   db = new AuthorityDb(tempDb()); await db.migrate();
-  const request = task18Request(persistTask18Context(db));
+  const request = task18Request(await persistTask18Context(db));
   recommendationId = new Recommendations(db).create({ ...request, actions: [...request.actions].reverse() }).recommendation.id;
 });
 beforeEach(() => db.db.exec("BEGIN"));

@@ -25,7 +25,7 @@ async function fixture(closeoutKey: TrustedCloseoutKey | null = trustedCloseoutK
   const db = new AuthorityDb(tempDb());
   await db.migrate();
   roots.push(dirname(db.filename));
-  const context = persistTask18Context(db);
+  const context = await persistTask18Context(db);
   new Recommendations(db).create(task18Request(context));
   const root = mkdtempSync(join(tmpdir(), "jarvis-personal-integrity-"));
   roots.push(root);

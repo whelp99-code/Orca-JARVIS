@@ -15,8 +15,15 @@ export function morningRecommendationRecord(identity: RecommendationIdentity, co
   const refs = new Set(Object.values(decision.rationale.citations).filter(value => value !== null));
   const links = identity.provenance.linux_evidence.filter(link => refs.has(link.ref));
   const citations = links.map(link => {
-    const evidence = context.evidence.find(item => item.evidence_id === link.context_evidence_id);
-    if (evidence === undefined && link.kind !== "policy") return invalidMorningSource();
+    // A link either names a piece of context evidence or rests on authority the context never
+    // held: the policy decision does, and so does the owner's approval receipt, which lives in the
+    // control plane rather than in assembled evidence. So the question here is consistency, not
+    // authority - a link that names evidence must resolve it and match its digest, and a link that
+    // names none must not be handed one.
+    const evidence = link.context_evidence_id === null
+      ? undefined
+      : context.evidence.find(item => item.evidence_id === link.context_evidence_id);
+    if (link.context_evidence_id !== null && evidence === undefined) return invalidMorningSource();
     if (evidence !== undefined && evidence.digest !== link.digest) return invalidMorningSource();
     const sourceId = evidence?.source_id ?? context.source.source_id;
     return { link_id: `brief-link:${persistenceHash({ ref: link.ref, source_id: sourceId, digest: link.digest }).slice(7)}`,

@@ -63,7 +63,7 @@ describe("personal operating dashboard reads", () => {
   it("projects verified recommendation and exact context evidence without raw memory", async () => {
     // Given
     const { db, server } = await fixture();
-    const context = persistTask18Context(db);
+    const context = await persistTask18Context(db);
     new Recommendations(db).create(task18Request(context));
     const before = tableCounts(db);
     try {

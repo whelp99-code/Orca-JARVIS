@@ -25,7 +25,7 @@ describe("Task 18 recommendation creation", () => {
     // Given: an exact sufficient Task 15 context and ranked authority-free Task 17 output.
     const db = await database();
     try {
-      const context = persistTask18Context(db); const service = new Recommendations(db); const before = counts(db);
+      const context = await persistTask18Context(db); const service = new Recommendations(db); const before = counts(db);
       // When: the public boundary creates and exactly replays the recommendation.
       const request = task18Request(context); const created = service.create(request); const replay = service.create(request);
       const projection = service.project(RECOMMENDATION_NOW);
@@ -47,7 +47,7 @@ describe("Task 18 recommendation creation", () => {
     // Given: one immutable recommendation identity.
     const db = await database();
     try {
-      const context = persistTask18Context(db); const service = new Recommendations(db); const request = task18Request(context); service.create(request);
+      const context = await persistTask18Context(db); const service = new Recommendations(db); const request = task18Request(context); service.create(request);
       const conflicts = [
         { ...request, actions: request.actions.map((action, index) => index === 0 ? { ...action, title: "Changed" } : action) },
         { ...request, ranking: { ...request.ranking, reason_codes: ["PRIORITY_RANKED", "PRIORITY_EXECUTABLE"] } },
@@ -66,7 +66,7 @@ describe("Task 18 recommendation creation", () => {
   it("rejects stale context, changed context digest, accessors, and execute-shaped input with zero effects", async () => {
     const db = await database();
     try {
-      const context = persistTask18Context(db); const service = new Recommendations(db);
+      const context = await persistTask18Context(db); const service = new Recommendations(db);
       const before = counts(db); const request = task18Request(context);
       expect(() => service.create({ ...request, context_digest: `sha256:${"f".repeat(64)}` }))
         .toThrowError(expect.objectContaining({ code: "RECOMMENDATION_EVIDENCE_CONFLICT" }));

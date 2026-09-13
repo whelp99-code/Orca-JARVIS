@@ -12,17 +12,17 @@ import { persistTask18Context, task18Request } from "../fixtures/recommendation-
 import { dispatchKey as dispatchKeyFor, externalAnchors, initialized, localKey,
   progressKey as progressKeyFor, tempDb, verifierKey } from "../helpers.js";
 
-const NOW = new Date("2026-08-28T12:10:01.000Z");
+const NOW = new Date("2026-08-28T12:01:01.000Z");
 const digest = (value: unknown) => `sha256:${createHash("sha256").update(canonicalize(value)).digest("hex")}`;
 
 async function staged(db: AuthorityDb) {
-  const context = persistTask18Context(db); const recommendation = new Recommendations(db).create(task18Request(context));
+  const context = await persistTask18Context(db); const recommendation = new Recommendations(db).create(task18Request(context));
   const request = new RecommendationWorkflowStager(db, () => new Date(NOW.getTime() - 1_000)).stage({
     schema_version: 1, recommendation_id: recommendation.recommendation.id, action_rank: 1,
     requested_by: { principal_id: "test-operator", authenticated_session_id: "session:owner" },
     target: { repository: "Orca-JARVIS", environment: "local" },
     workflow: { goal: "Implement bounded work", args: { branch: "task26" } },
-    budget: { max_steps: 6, max_attempts_per_node: 2 }, deadline: "2026-08-28T12:45:00.000Z",
+    budget: { max_steps: 6, max_attempts_per_node: 2 }, deadline: "2026-08-28T12:02:45.000Z",
   });
   const payload: Omit<CommandApprovalReceipt, "signature"> = {
     schema_version: 1, receipt_id: `receipt:${request.request_id}`, request_id: request.request_id,
@@ -439,14 +439,14 @@ describe("Task 26 recommendation work runtime", () => {
       ["evidence", "personal_recommendation_evidence", `UPDATE personal_recommendation_evidence SET evidence_digest='${changed}'`],
       ["action", "personal_recommendation_actions", "UPDATE personal_recommendation_actions SET title=title||' changed'"],
       ["event", "personal_recommendation_action_events", `UPDATE personal_recommendation_action_events SET evidence_digest='${changed}'`],
-      ["request", "control_command_requests", "UPDATE control_command_requests SET nonce='changed-nonce'"],
+      ["request", "control_command_requests", "UPDATE control_command_requests SET nonce='changed-nonce' WHERE request_id NOT LIKE 'req:pos:v1:task18:owner:%'"],
       ["receipt", "control_command_receipts", "UPDATE control_command_receipts SET signer_principal_id='other-principal'"],
       ["redemption", "control_command_redemptions", "UPDATE control_command_redemptions SET lease_fence=lease_fence+1"],
-      ["proposal", "control_command_requests", `UPDATE control_command_requests SET args_json=json_set(args_json,'$.input.proposal.proposal_digest','${changed}')`],
+      ["proposal", "control_command_requests", `UPDATE control_command_requests SET args_json=json_set(args_json,'$.input.proposal.proposal_digest','${changed}') WHERE request_id NOT LIKE 'req:pos:v1:task18:owner:%'`],
       ["workflow", "workflow_runs", "UPDATE workflow_runs SET input_json=json_set(input_json,'$.recommendation_id','changed')"],
-      ["task", "control_command_requests", "UPDATE control_command_requests SET target_json=json_set(target_json,'$.task_id','changed-task')"],
+      ["task", "control_command_requests", "UPDATE control_command_requests SET target_json=json_set(target_json,'$.task_id','changed-task') WHERE request_id NOT LIKE 'req:pos:v1:task18:owner:%'"],
       ["budget", "workflow_runs", "UPDATE workflow_runs SET budget_json=json_set(budget_json,'$.max_steps',99)"],
-      ["deadline", "control_command_requests", "UPDATE control_command_requests SET expires_at='2026-08-28T12:20:00.000Z'"],
+      ["deadline", "control_command_requests", "UPDATE control_command_requests SET expires_at='2026-08-28T12:01:30.000Z' WHERE request_id NOT LIKE 'req:pos:v1:task18:owner:%'"],
       ["context-evidence", "personal_context_evidence", "UPDATE personal_context_evidence SET freshness_state='stale'"],
     ] as const;
     for (const [name, table, statement] of cases) {

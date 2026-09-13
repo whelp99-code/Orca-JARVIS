@@ -140,12 +140,23 @@ export function citationAuthorityForContext(
         reason: classified.reason });
     }
   }
+  // The sealed context is the proof for memories. Assembly omits anything whose trust is not
+  // user_confirmed, so a piece sealed as `confirmed_memory` carries the confirmation the assembler
+  // checked - and a piece sealed under any other kind carries none, whatever string sits beside it.
   const memories = database.prepare(
-    "SELECT memory_ref AS reference, evidence_id FROM personal_context_memory_evidence WHERE context_id=? ORDER BY rowid",
-  ).all(contextId) as { reference: string; evidence_id: string }[];
+    `SELECT m.memory_ref AS reference, m.evidence_id AS evidence_id, e.evidence_kind AS sealed
+     FROM personal_context_memory_evidence m
+     JOIN personal_context_evidence e ON e.context_id=m.context_id AND e.evidence_id=m.evidence_id
+     WHERE m.context_id=? ORDER BY m.rowid`,
+  ).all(contextId) as { reference: string; evidence_id: string; sealed: string }[];
   for (const row of memories) {
-    uncitable.push({ reference: row.reference, evidence_id: row.evidence_id,
-      reason: "unconfirmed_memory" });
+    if (row.sealed === "confirmed_memory") {
+      citable.push({ reference: row.reference, evidence_id: row.evidence_id,
+        citation_kind: "user_confirmed_principle" });
+    } else {
+      uncitable.push({ reference: row.reference, evidence_id: row.evidence_id,
+        reason: "unconfirmed_memory" });
+    }
   }
   return { citable, uncitable };
 }

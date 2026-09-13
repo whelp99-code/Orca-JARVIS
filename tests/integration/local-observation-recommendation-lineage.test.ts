@@ -2,6 +2,8 @@ import { afterEach, expect, it } from "vitest";
 import { AuthorityDb } from "../../src/db.js";
 import { assemblePersonalContext } from "../../src/context-assembler.js";
 import { citationAuthorityForContext, classifyAssembledCitations, citationAvailable } from "../../src/personal-context-citation-contract.js";
+import { forgedCitationRequest, persistForgedCitationContext } from "../fixtures/forged-citation-fixture.js";
+import { Recommendations } from "../../src/recommendations.js";
 import { canonicalPersonalContractHash } from "../../src/personal-validation.js";
 import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
 import { projectRecommendations } from "../../src/recommendation-projection.js";
@@ -38,12 +40,23 @@ const todayActionIds = (db: AuthorityDb) => ((todayProjection(db, new Date(AT)) 
 const writes = (db: AuthorityDb) => db.db.prepare("SELECT total_changes() AS n").get();
 
 it("binds source, collection, observation, context and recommendation identities in one chain", async () => {
-  const { db, admitted, observation, context, stored, created } = await chain();
+  const { db, admitted, observation, live, context, stored, created } = await chain();
   expect(observation.source.source_id).toBe("src:pos:v1:task-timeline:local");
   expect(observation.source.evidence_ref).toBe(db.db.prepare(
     "SELECT collection_id FROM local_timeline_subjects WHERE task_id=?").pluck().get(LOCAL_CHAIN_TASK_ID));
-  expect(stored.observation_count).toBe(1);
+  // The context carries both observations of the same task: the advisory local one this chain is
+  // named for, and the verified live fact the action is allowed to cite. Only the second one earns
+  // a citation licence, and the confirmed principle earns its own.
+  expect(stored.observation_count).toBe(2);
   expect(context.evidence[0]?.digest).toBe(admitted.canonical_digest);
+  expect(context.evidence[1]?.digest).toBe(live.digest);
+  const carried = citationAuthorityForContext(db.db, context.id);
+  expect(carried.citable).toEqual([
+    { reference: live.id, evidence_id: context.evidence[1]?.evidence_id, citation_kind: "linux_live_fact" },
+    { reference: LOCAL_CHAIN_PRINCIPLE_REF, evidence_id: context.evidence[2]?.evidence_id,
+      citation_kind: "user_confirmed_principle" }]);
+  expect(carried.uncitable).toEqual([{ reference: observation.id,
+    evidence_id: context.evidence[0]?.evidence_id, reason: "advisory_local_source" }]);
   expect(created.recommendation.payload.context_id).toBe(LOCAL_CHAIN_CONTEXT_ID);
   expect(created.recommendation.payload.context_digest).toBe(canonicalPersonalContractHash(context));
   expect(created.recommendation.evidence).toEqual(context.evidence);
@@ -140,7 +153,27 @@ it("derives citation authority for the real assembled context at the consumption
     digest: localChainConfirmedMemory.digest, observed_at: localChainConfirmedMemory.observed_at,
     fresh_until: localChainConfirmedMemory.fresh_until }] }, AT);
   const carried = citationAuthorityForContext(db.db, context.id);
-  expect(carried.citable).toEqual([]);
-  expect(carried.uncitable.map(item => item.reason))
-    .toEqual(["advisory_local_source", "unconfirmed_memory"]);
+  // The local timeline observation stays advisory; the memory the assembler sealed as confirmed
+  // keeps the one role it earned, and no owner authority is invented for either.
+  expect(carried.citable.map(item => item.citation_kind)).toEqual(["user_confirmed_principle"]);
+  expect(carried.uncitable.map(item => item.reason)).toEqual(["advisory_local_source"]);
+});
+
+// A context can be stored with citation-kind strings beside pieces no source backs: the task18
+// context declares user_confirmed_principle, owner_decision and linux_live_fact for memory
+// references that carry no confirmation on record and no observation at all. The consumption
+// boundary reads those strings and issues links, which is the forgery the citation contract exists
+// to prevent. It has to ask what the stored sources can actually back.
+it("refuses citation links the stored sources cannot back, at the consumption boundary", async () => {
+  const db = open();
+  await db.migrate();
+  const context = persistForgedCitationContext(db);
+
+  const authority = citationAuthorityForContext(db.db, context.id);
+  expect(authority.citable).toEqual([]);
+  expect(new Set(authority.uncitable.map(item => item.reason))).toEqual(new Set(["unconfirmed_memory"]));
+
+  // create() either refuses, or it has issued citation links for evidence no source backs.
+  const request = forgedCitationRequest(context);
+  expect(() => new Recommendations(db).create(request)).toThrowError();
 });

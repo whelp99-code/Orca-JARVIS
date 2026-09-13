@@ -27,8 +27,11 @@ it("keeps actionable output at one item while repeated producer cycles pile up s
   for (let cycle = 1; cycle <= 3; cycle++) {
     if (cycle > 1) extendLocalObservationChain(db, cycle - 1);
     const stored = cycle;
-    // Every cycle stores another immutable row set for byte-identical source content.
-    expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(stored);
+    // Every cycle stores another immutable row set for byte-identical source content: the local
+    // timeline collection, and the live fact that cycle's recommendation cites beside it.
+    expect(scalar(db, `SELECT COUNT(*) FROM personal_observations
+      WHERE source_id='src:pos:v1:task-timeline:local'`)).toBe(stored);
+    expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(stored * 2);
     expect(scalar(db, "SELECT COUNT(*) FROM personal_context_snapshots")).toBe(stored);
     expect(scalar(db, "SELECT COUNT(*) FROM personal_recommendations")).toBe(stored);
     expect(scalar(db, `SELECT COUNT(DISTINCT json_extract(canonical_envelope_json,

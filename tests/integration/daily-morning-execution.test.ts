@@ -19,7 +19,8 @@ function options(clock: () => Date, overrides: Partial<DailyLoopOptions> = {}): 
 }
 async function setup(overrides: Partial<DailyLoopOptions> = {}, empty = false) {
   const db = new AuthorityDb(tempDb()); opened.push(db);
-  const fixture = await morningPublicationFixture(db, { preceding: true, empty });
+  const fixture = await morningPublicationFixture(db, { preceding: true, empty,
+    lease_ms: typeof overrides.lease_ms === "number" ? overrides.lease_ms : undefined });
   let now = PUBLICATION_AT; const config = options(() => now, overrides);
   return { db, ...fixture, config, loop: createStoredMorningDailyLoop(db, config), setClock: (value: Date) => { now = value; } };
 }
@@ -52,11 +53,17 @@ it.each([
 });
 
 it("resumes through cycle after reopen without repeating the completed refresh or charging it twice", async () => {
-  let refreshCalls = 0; const f = await setup({ refresh_reader: { read: () => { refreshCalls++; return null; } } });
+  // The resume has to happen after the claim lease expires but while the cited evidence is still
+  // valid: a context resting on live Linux facts outlives neither. A shorter lease puts the second
+  // cycle inside that window instead of past it.
+  const lease = 120_000;
+  let refreshCalls = 0;
+  const f = await setup({ lease_ms: lease, refresh_reader: { read: () => { refreshCalls++; return null; } } });
   expect(f.loop.runNext(f.claim)).toBe(true); const saved = f.db.db.prepare("SELECT * FROM daily_loop_steps WHERE sequence=1").get();
   f.db.close(); opened.pop(); const reopened = new AuthorityDb(f.db.filename); opened.push(reopened);
-  const now = new Date(PUBLICATION_AT.getTime() + 300_001);
+  const now = new Date(PUBLICATION_AT.getTime() + lease + 1);
   const loop = createStoredMorningDailyLoop(reopened, options(() => now, {
+    lease_ms: lease,
     refresh_reader: { read: () => { refreshCalls++; throw new Error("REPEATED_REFRESH"); } },
   }));
   expect((await loop.cycle()).completed_run_ids).toEqual([f.run]);

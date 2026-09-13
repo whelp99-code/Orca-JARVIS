@@ -38,9 +38,9 @@ type Seed = {
 async function seeded(): Promise<Seed> {
   const db = new AuthorityDb(tempDb());
   const chain = await localObservationChain(db);
-  const cutoff = String(db.db
-    .prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
-    .pluck().get(chain.observation.id));
+  // Past both of the chain's observations: a cutoff reaching only the local collection leaves the
+  // live fact it was cited beside still current, and the group is correctly retained instead.
+  const cutoff = String(db.db.prepare("SELECT MAX(expires_at) FROM personal_observations").pluck().get());
   const seed = {
     path: db.filename,
     candidate: join(dirname(db.filename), "operation"),

@@ -35,8 +35,10 @@ function addIntent(db: AuthorityDb, recommendation: string, suffix = "fixture"):
 async function fixture() {
   const db = new AuthorityDb(tempDb()); opened.push(db);
   const chain = await localObservationChain(db);
-  const cutoff = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
-    .pluck().get(chain.observation.id));
+  // The chain stores the advisory local collection and the live fact its recommendation cites.
+  // A cutoff reaching only the first would correctly retain the group, so removal scenarios place
+  // it past both observations.
+  const cutoff = String(db.db.prepare("SELECT MAX(expires_at) FROM personal_observations").pluck().get());
   return { db, chain, cutoff, destination: join(dirname(db.filename), "candidate.sqlite") };
 }
 
@@ -52,7 +54,7 @@ it("refuses a candidate whose source changed between selection and copy", async 
   expect(existsSync(f.destination)).toBe(false);
   expect(count(f.db, "personal_recommendations")).toBe(1);
   expect(count(f.db, "notification_intents")).toBe(1);
-  expect(count(f.db, "personal_observations")).toBe(1);
+  expect(count(f.db, "personal_observations")).toBe(2);
 });
 
 it("refuses a candidate whose source a second connection changed during the copy", async () => {
@@ -101,7 +103,7 @@ it("refuses a candidate when a second connection adds a context chain during the
   expect(existsSync(f.destination)).toBe(false);
   // Both chains are still in the source: a refused apply removes nothing.
   expect(count(f.db, "personal_recommendations")).toBe(2);
-  expect(count(f.db, "personal_observations")).toBe(2);
+  expect(count(f.db, "personal_observations")).toBe(4);
   expect(second.created.recommendation.id).not.toBe(f.chain.created.recommendation.id);
 });
 

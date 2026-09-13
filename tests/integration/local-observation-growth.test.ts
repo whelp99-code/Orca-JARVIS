@@ -218,7 +218,8 @@ it("applies a retention cutoff inclusively and keeps the audit lineage of what i
 it("refuses a rebuild that would remove an observation a surviving context still cites", async () => {
   const db = new AuthorityDb(tempDb()); opened.push(db);
   const chain = await localObservationChain(db);
-  expect(scalar(db, "SELECT COUNT(*) FROM personal_context_observations")).toBe(1);
+  // The context cites two observations: the advisory local collection and the live fact.
+  expect(scalar(db, "SELECT COUNT(*) FROM personal_context_observations")).toBe(2);
   const fresh = join(dirname(db.filename), "fresh.sqlite");
   // The rebuild filters context rows by blocked context, never by blocked observation, so a cutoff
   // that drops a cited observation leaves a dangling personal_context_observations reference.
@@ -227,8 +228,8 @@ it("refuses a rebuild that would remove an observation a surviving context still
     sensitive_material: [],
   })).rejects.toThrow("MEMORY_COMPACTION_FOREIGN_KEY_INVALID");
   // The source database is untouched by the refused rebuild.
-  expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(1);
-  expect(scalar(db, "SELECT COUNT(*) FROM personal_context_observations")).toBe(1);
+  expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(2);
+  expect(scalar(db, "SELECT COUNT(*) FROM personal_context_observations")).toBe(2);
 });
 
 it("leaves a notification addressing a removed recommendation, with the integrity check clean", async () => {
@@ -290,7 +291,9 @@ it("keeps audit lineage when the citing context is removed with its observation"
   expect(result.integrity_check).toBe("ok");
   expect(result.result_generation).toBe(result.source_generation + 1);
   const rebuilt = new AuthorityDb(fresh); opened.push(rebuilt);
-  expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_observations")).toBe(0);
+  // Only the blocked local collection goes: the live fact it was cited beside belongs to no
+  // removed group and survives, without the context link that left with the removed context.
+  expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_observations")).toBe(1);
   expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_context_observations")).toBe(0);
   expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_recommendations")).toBe(0);
   // Deletion lineage survives its subject: audit rows are never filtered by the context rule.

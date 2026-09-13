@@ -7,17 +7,18 @@ import { afterEach, describe, expect, it } from "vitest";
 import { Recommendations } from "../../src/index.js";
 import { createDashboardServer, type DashboardServer } from "../../src/dashboard/server.js";
 import { createDashboardSession, type DashboardSessionStore } from "../../src/dashboard/session.js";
-import { persistTask18Context, RECOMMENDATION_ID, task18Request } from "../fixtures/recommendation-fixture.js";
+import { persistTask18Context, RECOMMENDATION_ID, TASK18_OWNER_APPROVALS, task18Request }
+  from "../fixtures/recommendation-fixture.js";
 import { initialized } from "../helpers.js";
 
-const NOW = new Date("2026-08-28T12:10:00.000Z");
+const NOW = new Date("2026-08-28T12:01:00.000Z");
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
 type SessionAccess = { matches: number; authenticatedSessionId: number };
 async function fixture(authenticatedSessionId = "dashboard-session:test-route-independent") {
   const db = await initialized();
-  const context = persistTask18Context(db);
+  const context = await persistTask18Context(db);
   new Recommendations(db).create(task18Request(context));
   const root = mkdtempSync(join(tmpdir(), "jarvis-task31-route-"));
   roots.push(root);
@@ -117,13 +118,14 @@ describe("Task31 recommendation acceptance route", () => {
         state: "pending",
       });
       expect(first.text).not.toMatch(PRIVATE);
-      const stored = db.db.prepare("SELECT args_json FROM control_command_requests LIMIT 1").get();
+      const stored = db.db.prepare(
+        `SELECT args_json FROM control_command_requests WHERE ${"request_id NOT LIKE 'req:pos:v1:task18:owner:%'"} LIMIT 1`).get();
       if (typeof stored !== "object" || stored === null) throw new TypeError("staged args expected");
       const args = String(Reflect.get(stored, "args_json"));
       expect(args).toContain(authenticatedSessionId);
       expect(args).not.toContain("session:test-operator");
       expect(access).toEqual({ matches: 2, authenticatedSessionId: 2 });
-      expect(count(db, "control_command_requests")).toBe(1);
+      expect(count(db, "control_command_requests")).toBe(TASK18_OWNER_APPROVALS + 1);
       expect(count(db, "workflow_runs")).toBe(0);
       expect(count(db, "control_command_effects")).toBe(0);
       expect(count(db, "control_effect_attempts")).toBe(0);
@@ -181,7 +183,7 @@ describe("Task31 recommendation acceptance route", () => {
       const token = await csrf(server);
       const malformed = await accept(server, token, { body: '{"schema_version":1,"principal_id":"attacker"}' });
       expect(malformed.status).toBe(400);
-      expect(count(db, "control_command_requests")).toBe(0);
+      expect(count(db, "control_command_requests")).toBe(TASK18_OWNER_APPROVALS);
     } finally { server.close(); db.close(); }
   });
 });

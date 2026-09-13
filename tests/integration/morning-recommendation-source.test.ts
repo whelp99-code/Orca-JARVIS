@@ -4,17 +4,21 @@ import { MorningRecommendationSource, MorningRecommendationSourceError } from ".
 import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
 import { defaultPriorityCandidates } from "../fixtures/priority-engine-candidates.js";
 import { priorityEngineInput, priorityPolicyConfig } from "../fixtures/priority-engine-input.js";
-import { persistTask18Context, RECOMMENDATION_NOW, RECOMMENDATION_ID, REPLACEMENT_ID, task18Request } from "../fixtures/recommendation-fixture.js";
+import { persistTask18Context, RECOMMENDATION_NOW, RECOMMENDATION_ID, REPLACEMENT_ID, task18Request,
+  task18Substitute } from "../fixtures/recommendation-fixture.js";
 import { tempDb } from "../helpers.js";
 
 const opened: AuthorityDb[] = [];
 afterEach(() => { for (const db of opened.splice(0)) db.close(); });
 async function setup(legacy = false, candidatesOverride?: Record<string, unknown>[]) {
   const path = tempDb(); const db = new AuthorityDb(path); opened.push(db); await db.migrate();
-  const context = persistTask18Context(db); const request = task18Request(context);
+  const context = await persistTask18Context(db); const request = task18Request(context);
   const wanted = new Set(request.ranking.actions.map(action => action.action_id));
   const candidates = candidatesOverride ?? defaultPriorityCandidates().filter(item => wanted.has(String(item["action_id"])));
-  const ranking = rankPriorityActionsWithDeadlineEvidence(priorityPolicyConfig(), priorityEngineInput({ candidates }));
+  // The priority fixtures speak in readable slot names; only the substituted references are ones
+  // the database can back, so the same mapping the context used has to reach this ranking.
+  const ranking = rankPriorityActionsWithDeadlineEvidence(priorityPolicyConfig(),
+    task18Substitute(context, priorityEngineInput({ candidates })));
   const created = new Recommendations(db).create({ ...request, ranking: legacy ? request.ranking : ranking });
   return { db, path, context, created, ranking, candidates };
 }
@@ -75,9 +79,11 @@ describe("stored recommendations as morning sources", () => {
     const wanted = new Set(["customer-delivery", "worker-implementation", "owner-gated-deploy"]);
     const candidates = defaultPriorityCandidates().filter(item => wanted.has(String(item["action_id"]))).map(item =>
       item["action_id"] === "customer-delivery" ? { ...item,
-        deadline: { ...(item["deadline"] as object), due_at: "2026-08-28T12:10:00.000Z" } } : item);
+        deadline: { ...(item["deadline"] as object), due_at: "2026-08-28T12:01:00.000Z" } } : item);
     const { db } = await setup(false, candidates);
-    const result = new MorningRecommendationSource(db).generate("2026-08-28T12:20:00.000Z");
+    // A context resting on live Linux facts expires with them, so the report clock stays inside
+    // the window those observations are fresh for.
+    const result = new MorningRecommendationSource(db).generate("2026-08-28T12:02:00.000Z");
     expect(result.brief.needs_you_first.find(item => item.copy === "Next: customer-delivery")?.priority.deadline_bucket).toBe("overdue");
   });
 
@@ -85,9 +91,9 @@ describe("stored recommendations as morning sources", () => {
     const wanted = new Set(["customer-delivery", "worker-implementation", "owner-gated-deploy"]);
     const candidates = defaultPriorityCandidates().filter(item => wanted.has(String(item["action_id"]))).map(item =>
       item["action_id"] === "customer-delivery" ? { ...item,
-        deadline: { ...(item["deadline"] as object), fresh_until: "2026-08-28T12:10:00.000Z" } } : item);
+        deadline: { ...(item["deadline"] as object), fresh_until: "2026-08-28T12:01:00.000Z" } } : item);
     const { db } = await setup(false, candidates);
-    const result = new MorningRecommendationSource(db).generate("2026-08-28T12:20:00.000Z");
+    const result = new MorningRecommendationSource(db).generate("2026-08-28T12:02:00.000Z");
     expect(result.source.excluded.stale_deadline).toBe(1);
     expect(JSON.stringify(result.brief)).not.toContain("Next: customer-delivery");
   });
@@ -117,7 +123,7 @@ describe("stored recommendations as morning sources", () => {
     const { db, created, ranking } = await setup();
     const owner = ranking.actions.find(item => item.disposition === "owner_gate_required")!;
     new Recommendations(db).transition({ recommendation_id: RECOMMENDATION_ID, rank: owner.rank,
-      state: "accepted", evidence_digest: created.evidence_digest, occurred_at: "2026-08-28T12:10:00.000Z" });
+      state: "accepted", evidence_digest: created.evidence_digest, occurred_at: "2026-08-28T12:02:00.000Z" });
     const result = new MorningRecommendationSource(db).generate(RECOMMENDATION_NOW);
     expect(result.source.excluded.inactive).toBe(1);
     expect(result.source.lineage.some(item => item.rank === owner.rank)).toBe(false);

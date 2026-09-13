@@ -142,19 +142,20 @@ describe("complete active task population", () => {
   });
 
   it("counts a recommendation once while any ranked action remains active", async () => {
-    const db = await database(); const context = persistTask18Context(db); const service = new Recommendations(db);
+    const db = await database(); const context = await persistTask18Context(db); const service = new Recommendations(db);
     const created = service.create(task18Request(context));
     intent(db, "recommendation:send", RECOMMENDATION_ID);
     for (let i = 0; i < 21; i++) intent(db, `recent:${i}`, undefined, "pending", "2026-08-29T00:00:00.000Z");
     const timeline = new TaskTimeline(db);
-    expect(timeline.overview()).toMatchObject({ activeCount: 22 });
+    // The context's own two owner approvals are real control commands and appear here too.
+    expect(timeline.overview()).toMatchObject({ activeCount: 24 });
     const transition = (rank: number) => service.transition({ recommendation_id: RECOMMENDATION_ID, rank, state: "rejected",
-      evidence_digest: created.evidence_digest, occurred_at: "2026-08-28T12:20:00.000Z" });
+      evidence_digest: created.evidence_digest, occurred_at: "2026-08-28T12:01:00.000Z" });
     transition(1);
-    expect(timeline.overview().activeCount).toBe(22);
+    expect(timeline.overview().activeCount).toBe(24);
     expect(timeline.context(RECOMMENDATION_ID).task.state).toBe("pending");
     transition(2); transition(3);
-    expect(timeline.overview().activeCount).toBe(21);
+    expect(timeline.overview().activeCount).toBe(23);
     expect(timeline.context("recommendation:send").task).toEqual(timeline.context(RECOMMENDATION_ID).task);
     hide(db, "recommendation:send");
     expect(timeline.list(100).some(task => task.task_id === RECOMMENDATION_ID)).toBe(false);
@@ -170,18 +171,18 @@ describe("complete active task population", () => {
   });
 
   it("rejects invalid recommendation evidence outside the recent page", async () => {
-    const db = await database(); const context = persistTask18Context(db);
+    const db = await database(); const context = await persistTask18Context(db);
     new Recommendations(db).create(task18Request(context));
     for (let i = 0; i < 21; i++) intent(db, `recent:${i}`, undefined, "pending", "2026-08-29T00:00:00.000Z");
     db.db.prepare(`INSERT INTO personal_recommendation_action_events
       (recommendation_id,rank,state,evidence_digest,occurred_at,transition_occurred_at,transition_digest)
       VALUES(?,1,'rejected',?,?,?,?)`).run(RECOMMENDATION_ID, `sha256:${"a".repeat(64)}`,
-      "2026-08-28T12:20:00.000Z", "2026-08-28T12:20:00.000Z", `sha256:${"b".repeat(64)}`);
+      "2026-08-28T12:01:00.000Z", "2026-08-28T12:01:00.000Z", `sha256:${"b".repeat(64)}`);
     expect(() => new TaskTimeline(db).overview()).toThrow("RECOMMENDATION_INPUT_INVALID");
   });
 
   it("uses SQLite binary tie order when recommendations and base tasks share a timestamp", async () => {
-    const db = await database(); const context = persistTask18Context(db);
+    const db = await database(); const context = await persistTask18Context(db);
     new Recommendations(db).create(task18Request(context));
     const ids = ["Z", "a", "_", "z", "A", "R", "r", "é", "中", "!", ...Array.from({ length: 20 }, (_, i) => `task:${i}`)];
     for (const id of ids) intent(db, id);

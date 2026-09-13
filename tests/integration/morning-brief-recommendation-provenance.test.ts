@@ -10,10 +10,12 @@ it("accepts real stored recommendation identities and evidence shared by three r
   const db = new AuthorityDb(tempDb());
   try {
     await db.migrate();
-    const { projection, input } = morningRecommendationProvenance(db);
+    const { projection, input } = await morningRecommendationProvenance(db);
     expect(projection.next_actions).toHaveLength(3);
     expect(new Set(input.items.map(item => item.recommendation_id)).size).toBe(1);
-    expect(new Set(input.items.flatMap(item => item.source_ids)).size).toBe(1);
+    // Two sources stand behind these citations now: the live adapter that produced the observed
+    // facts, and the Second Brain the confirmed principle came from.
+    expect(new Set(input.items.flatMap(item => item.source_ids)).size).toBe(2);
     const allLinks = input.items.flatMap(item => item.citations.map(link => link.link_id));
     expect(new Set(allLinks).size).toBeLessThan(allLinks.length);
     const before = db.db.prepare("SELECT total_changes() AS n").get();

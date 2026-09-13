@@ -22,9 +22,10 @@ const observations = (db: AuthorityDb): number =>
 /** A source holding one full observation chain, plus the cutoff that selects that chain. */
 async function source() {
   const db = new AuthorityDb(tempDb()); opened.push(db);
-  const chain = await localObservationChain(db);
-  const cutoff = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
-    .pluck().get(chain.observation.id));
+  await localObservationChain(db);
+  // Past both of the chain's observations: a cutoff reaching only the local collection leaves the
+  // live fact it was cited beside still current, and the group is correctly retained instead.
+  const cutoff = String(db.db.prepare("SELECT MAX(expires_at) FROM personal_observations").pluck().get());
   return { db, root: dirname(db.filename), cutoff };
 }
 
@@ -110,8 +111,9 @@ it("gives exactly one of two racing calls the destination", async () => {
   const built = winner !== undefined && winner.status === "fulfilled"
     ? winner.value.operation.candidate_path : "";
   const rebuilt = new AuthorityDb(built); opened.push(rebuilt);
-  expect(observations(rebuilt)).toBe(0);
-  expect(observations(db)).toBe(1);
+  // The removed group takes the local collection; the live fact it was cited beside survives.
+  expect(observations(rebuilt)).toBe(1);
+  expect(observations(db)).toBe(2);
 });
 
 // Reported by review as P1-C1: a failed claim is not ownership, and the failure path was deleting

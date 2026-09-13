@@ -8,7 +8,7 @@ import { afterEach, expect, it } from "vitest";
 import { AuthorityDatabaseRuntime } from "../../src/authority-database-runtime.js";
 import { AuthorityDb } from "../../src/db.js";
 import { LocalObservationRetentionService } from "../../src/local-observation-retention-service.js";
-import { localObservationChain, LOCAL_CHAIN_AT } from "../fixtures/local-observation-chain.js";
+import { localChainCutoff, localObservationChain, LOCAL_CHAIN_AT } from "../fixtures/local-observation-chain.js";
 import { tempDb } from "../helpers.js";
 
 const opened: AuthorityDb[] = [];
@@ -34,10 +34,10 @@ type Fixture = {
 async function fixture(retainMs = 3_600_000): Promise<Fixture> {
   const db = new AuthorityDb(tempDb());
   opened.push(db);
-  const chain = await localObservationChain(db);
-  const expires = String(db.db
-    .prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
-    .pluck().get(chain.observation.id));
+  await localObservationChain(db);
+  // Past both of the chain's observations: a window reaching only the local collection leaves the
+  // live fact beside it current, and the selector correctly retains the group instead.
+  const expires = localChainCutoff(db);
   const config = join(dirname(db.filename), "retention.json");
   writeFileSync(config, JSON.stringify({ schema_version: 1, retain_ms: retainMs }));
   const registry = join(dirname(db.filename), "registry");

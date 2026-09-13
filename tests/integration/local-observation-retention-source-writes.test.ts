@@ -4,7 +4,7 @@ import { dirname, join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { AuthorityDb } from "../../src/db.js";
 import { applyLocalObservationRetention } from "../../src/local-observation-retention.js";
-import { localObservationChain } from "../fixtures/local-observation-chain.js";
+import { localChainCutoff, localObservationChain } from "../fixtures/local-observation-chain.js";
 import { tempDb } from "../helpers.js";
 
 const opened: AuthorityDb[] = [];
@@ -28,8 +28,7 @@ const operations = (db: AuthorityDb): number =>
 it("leaves the source untouched, logically and physically, while it copies", async () => {
   const db = new AuthorityDb(tempDb()); opened.push(db);
   const chain = await localObservationChain(db);
-  const cutoff = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
-    .pluck().get(chain.observation.id));
+  const cutoff = localChainCutoff(db);
   // Hold the write-ahead log so the source has un-checkpointed content when the build starts.
   db.db.pragma("wal_autocheckpoint=0");
   db.db.pragma("wal_checkpoint(TRUNCATE)");
@@ -80,6 +79,7 @@ it("leaves the source untouched, logically and physically, while it copies", asy
   // A fresh connection reads exactly the same logical content afterwards.
   const reopened = new AuthorityDb(db.filename); opened.push(reopened);
   expect(rows(reopened)).toEqual(before.rows);
-  expect(String(reopened.db.prepare("SELECT observation_id FROM personal_observations").pluck().get()))
-    .toBe(chain.observation.id);
+  expect(String(reopened.db.prepare(
+    "SELECT observation_id FROM personal_observations WHERE source_id='src:pos:v1:task-timeline:local'")
+    .pluck().get())).toBe(chain.observation.id);
 });

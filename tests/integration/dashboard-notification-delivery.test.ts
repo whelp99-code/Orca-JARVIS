@@ -12,7 +12,7 @@ import { tempDb } from "../helpers.js";
 
 async function fixture() {
   const db = new AuthorityDb(tempDb()); await db.migrate();
-  const context = persistTask18Context(db); new Recommendations(db).create(task18Request(context));
+  const context = await persistTask18Context(db); new Recommendations(db).create(task18Request(context));
   const rankRow = db.db.prepare("SELECT rank FROM personal_recommendation_actions WHERE recommendation_id=? ORDER BY rank LIMIT 1")
     .get(RECOMMENDATION_ID);
   const rank = Number(Reflect.get(rankRow ?? {}, "rank"));

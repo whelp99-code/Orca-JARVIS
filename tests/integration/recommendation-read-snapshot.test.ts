@@ -8,7 +8,7 @@ import { persistTask18Context, RECOMMENDATION_NOW, task18Request } from "../fixt
 
 it.each(["projection", "personal"] as const)("keeps %s validation on the snapshot that supplied its returned values", async kind => {
   const db = new AuthorityDb(tempDb()); await db.migrate();
-  const created = new Recommendations(db).create(task18Request(persistTask18Context(db)));
+  const created = new Recommendations(db).create(task18Request(await persistTask18Context(db)));
   const other = new AuthorityDb(db.filename);
   const table = kind === "projection" ? "personal_recommendation_actions" : "personal_recommendations";
   const field = kind === "projection" ? "title" : "expires_at";

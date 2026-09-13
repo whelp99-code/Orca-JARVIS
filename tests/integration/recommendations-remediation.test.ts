@@ -11,7 +11,7 @@ import {
 async function setup() {
   const db = new AuthorityDb(tempDb());
   await db.migrate();
-  const context = persistTask18Context(db);
+  const context = await persistTask18Context(db);
   return { db, context, service: new Recommendations(db) };
 }
 
@@ -91,19 +91,19 @@ describe("Task 18 frozen remediation", () => {
       const first = service.create(task18Request(context));
       const replacement = service.create(task18Request(context, REPLACEMENT_ID));
       service.transition({ recommendation_id: REPLACEMENT_ID, rank: 1, state: "rejected",
-        evidence_digest: replacement.evidence_digest, occurred_at: "2026-08-28T12:10:00.000Z" });
+        evidence_digest: replacement.evidence_digest, occurred_at: "2026-08-28T12:00:30.000Z" });
       expect(() => service.transition({ recommendation_id: RECOMMENDATION_ID, rank: 1, state: "superseded",
-        evidence_digest: first.evidence_digest, occurred_at: "2026-08-28T12:20:00.000Z",
+        evidence_digest: first.evidence_digest, occurred_at: "2026-08-28T12:01:00.000Z",
         replacement_recommendation_id: REPLACEMENT_ID,
         replacement_context_digest: replacement.recommendation.payload.context_digest,
         replacement_evidence_digest: replacement.evidence_digest,
         replacement_identity_digest: replacement.identity_digest }))
         .toThrowError(expect.objectContaining({ code: "RECOMMENDATION_SUPERSESSION_CONFLICT" }));
       service.transition({ recommendation_id: RECOMMENDATION_ID, rank: 1, state: "accepted",
-        evidence_digest: first.evidence_digest, occurred_at: "2026-08-28T12:20:00.000Z" });
+        evidence_digest: first.evidence_digest, occurred_at: "2026-08-28T12:01:00.000Z" });
       const timeline = new TaskTimeline(db);
       expect(timeline.list().find(item => item.task_id === RECOMMENDATION_ID)?.pending_approval).toBe(true);
-      expect(timeline.context(RECOMMENDATION_ID, 100, 128 * 1024, new Date("2026-08-28T12:20:00.000Z")).pending_decisions).toHaveLength(1);
+      expect(timeline.context(RECOMMENDATION_ID, 100, 128 * 1024, new Date("2026-08-28T12:01:00.000Z")).pending_decisions).toHaveLength(1);
     } finally { db.close(); }
   });
 });

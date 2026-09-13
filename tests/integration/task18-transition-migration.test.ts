@@ -63,7 +63,7 @@ describe("Task 18 transition identity migration", () => {
 		const db = new AuthorityDb(tempDb());
 		await db.migrate();
 		try {
-			const context = persistTask18Context(db);
+			const context = await persistTask18Context(db);
 			const created = new Recommendations(db).create(task18Request(context));
 			const insert = db.db.prepare(
 				`INSERT INTO personal_recommendation_action_events(
@@ -72,7 +72,7 @@ describe("Task 18 transition identity migration", () => {
          ) VALUES(?,?,?,?,?,?,?,?)`,
 			);
 			const digest = `sha256:${"a".repeat(64)}`;
-			const at = "2026-08-28T12:20:00.000Z";
+			const at = "2026-08-28T12:01:00.000Z";
 			// When / Then
 			expect(() => insert.run(RECOMMENDATION_ID, 1, "accepted", created.evidence_digest, at, null, null, null)).toThrow(/transition identity/i);
 			expect(() => insert.run(RECOMMENDATION_ID, 1, "accepted", created.evidence_digest, at, at, "bad", null)).toThrow(/constraint/i);
@@ -95,19 +95,19 @@ describe("Task 18 transition identity migration", () => {
 		const db = new AuthorityDb(tempDb());
 		await db.migrate();
 		try {
-			const context = persistTask18Context(db);
+			const context = await persistTask18Context(db);
 			const created = new Recommendations(db).create(task18Request(context));
 			db.db.exec("DROP TRIGGER personal_action_event_transition_identity");
 			const insert = db.db.prepare(
 				"INSERT INTO personal_recommendation_action_events(recommendation_id,rank,state,evidence_digest,occurred_at) VALUES(?,?,?,?,?)",
 			);
-			insert.run(RECOMMENDATION_ID, 1, "accepted", created.evidence_digest, "2026-08-28T12:20:00.000Z");
+			insert.run(RECOMMENDATION_ID, 1, "accepted", created.evidence_digest, "2026-08-28T12:01:00.000Z");
 			// When / Then
-			expect(() => new Recommendations(db).project("2026-08-28T12:30:00.000Z")).not.toThrow();
+			expect(() => new Recommendations(db).project("2026-08-28T12:02:00.000Z")).not.toThrow();
 			expect(() => db.getPersonalRecommendation(created.recommendation.id)).not.toThrow();
 			expect(() => new TaskTimeline(db).timeline(RECOMMENDATION_ID, 10)).not.toThrow();
-			insert.run(RECOMMENDATION_ID, 2, "superseded", created.evidence_digest, "2026-08-28T12:20:00.000Z");
-			expect(() => new Recommendations(db).project("2026-08-28T12:30:00.000Z")).toThrowError(
+			insert.run(RECOMMENDATION_ID, 2, "superseded", created.evidence_digest, "2026-08-28T12:01:00.000Z");
+			expect(() => new Recommendations(db).project("2026-08-28T12:02:00.000Z")).toThrowError(
 				expect.objectContaining({
 					constructor: RecommendationError,
 					code: "RECOMMENDATION_INPUT_INVALID",
@@ -123,7 +123,7 @@ describe("Task 18 transition identity migration", () => {
 		const db = new AuthorityDb(tempDb());
 		await db.migrate();
 		try {
-			const context = persistTask18Context(db);
+			const context = await persistTask18Context(db);
 			const created = new Recommendations(db).create(task18Request(context));
 			const insert = db.db.prepare(
 				`INSERT INTO personal_recommendation_action_events(

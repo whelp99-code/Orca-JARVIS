@@ -3,20 +3,22 @@ import { AuthorityDb, Recommendations, rankPriorityActionsWithDeadlineEvidence }
 import { storedRecommendationIdentity } from "../../src/recommendation-identity.js";
 import { defaultPriorityCandidates } from "../fixtures/priority-engine-candidates.js";
 import { priorityEngineInput, priorityPolicyConfig } from "../fixtures/priority-engine-input.js";
-import { persistTask18Context, RECOMMENDATION_NOW, REPLACEMENT_ID, task18Request } from "../fixtures/recommendation-fixture.js";
+import { persistTask18Context, RECOMMENDATION_NOW, REPLACEMENT_ID, task18Request, task18Substitute }
+  from "../fixtures/recommendation-fixture.js";
 import { tempDb } from "../helpers.js";
 
 const opened: AuthorityDb[] = [];
 afterEach(() => { for (const db of opened.splice(0)) db.close(); });
 it("stores v1 and v2 recommendations and restores exact v2 deadline evidence after reopening SQLite", async () => {
   const path = tempDb(); const first = new AuthorityDb(path); opened.push(first); await first.migrate();
-  const context = persistTask18Context(first); const recommendations = new Recommendations(first);
+  const context = await persistTask18Context(first); const recommendations = new Recommendations(first);
   const legacy = recommendations.create(task18Request(context));
   const request = task18Request(context, REPLACEMENT_ID);
   const wanted = new Set(request.ranking.actions.map(action => action.action_id));
-  const ranking = rankPriorityActionsWithDeadlineEvidence(priorityPolicyConfig(), priorityEngineInput({
-    candidates: defaultPriorityCandidates().filter(candidate => wanted.has(String(candidate["action_id"]))),
-  }));
+  const ranking = rankPriorityActionsWithDeadlineEvidence(priorityPolicyConfig(),
+    task18Substitute(context, priorityEngineInput({
+      candidates: defaultPriorityCandidates().filter(candidate => wanted.has(String(candidate["action_id"]))),
+    })));
   const created = recommendations.create({ ...request, ranking });
   expect(recommendations.create({ ...request, ranking })).toEqual(created);
   first.close(); opened.pop();

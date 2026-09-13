@@ -8,7 +8,7 @@ import { admitLocalTimelineObservation } from "../../src/local-timeline-observat
 import { buildFreshAuthority } from "../../src/memory-authority-fresh-builder.js";
 import { applyLocalObservationRetention } from "../../src/local-observation-retention.js";
 import { selectLocalObservationRetention } from "../../src/local-observation-retention-selection.js";
-import { extendLocalObservationChain, localObservationChain, LOCAL_CHAIN_AT, LOCAL_CHAIN_TASK_ID }
+import { extendLocalObservationChain, localChainCutoff, localObservationChain, LOCAL_CHAIN_AT, LOCAL_CHAIN_TASK_ID }
   from "../fixtures/local-observation-chain.js";
 import { tempDb } from "../helpers.js";
 
@@ -75,8 +75,7 @@ it("selects expired uncited observations inclusively and never writes", async ()
 it("expands a cited observation to its context and recommendations", async () => {
   const db = new AuthorityDb(tempDb()); opened.push(db);
   const chain = await localObservationChain(db);
-  const cutoff = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
-    .pluck().get(chain.observation.id));
+  const cutoff = localChainCutoff(db);
   const selection = selectLocalObservationRetention(db.db, cutoff);
   expect(selection.retained).toEqual([]);
   expect(selection.blocked.map(item => item.kind)).toEqual(["observation", "context", "recommendation"]);
@@ -89,8 +88,10 @@ it("expands a cited observation to its context and recommendations", async () =>
     { blocked_projections: selection.blocked, sensitive_material: [] });
   expect(result.foreign_key_errors).toBe(0);
   expect(result.integrity_check).toBe("ok");
+  // The live fact the context cited beside the local collection belongs to no removed group and
+  // survives the rebuild; what leaves is the group the cutoff selected.
   const rebuilt = new AuthorityDb(fresh); opened.push(rebuilt);
-  expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_observations")).toBe(0);
+  expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_observations")).toBe(1);
   expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_recommendations")).toBe(0);
 });
 
@@ -98,8 +99,7 @@ it("retains an observation whose recommendation a notification still addresses",
   const db = new AuthorityDb(tempDb()); opened.push(db);
   const chain = await localObservationChain(db);
   addIntent(db, chain.created.recommendation.id);
-  const cutoff = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
-    .pluck().get(chain.observation.id));
+  const cutoff = localChainCutoff(db);
   const selection = selectLocalObservationRetention(db.db, cutoff);
   // Declining to delete is the conservative answer: no foreign key would have refused this.
   expect(selection.blocked).toEqual([]);
@@ -110,17 +110,28 @@ it("retains an observation whose recommendation a notification still addresses",
 it("retains an observation whose context also cites one still inside the window", async () => {
   const db = new AuthorityDb(tempDb()); opened.push(db);
   const chain = await localObservationChain(db);
-  const cited = String(db.db.prepare("SELECT observation_id FROM personal_context_observations").pluck().get());
-  expect(cited).toBe(chain.observation.id);
-  // A second observation on the same context is simulated by cutting before the cited one,
-  // so the context still references material outside the selection.
-  const earlier = new Date(Date.parse(AT) - 60_000).toISOString();
-  expect(selectLocalObservationRetention(db.db, earlier).blocked).toEqual([]);
+  // The context really does cite two observations with different lifetimes: the advisory local
+  // collection and the verified live fact its recommendation rests on.
+  expect(db.db.prepare("SELECT observation_id FROM personal_context_observations ORDER BY position")
+    .pluck().all().map(String)).toEqual([chain.observation.id, chain.live.id]);
 
-  // Widening the cutoff past the cited observation selects the whole group instead.
-  const cutoff = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
+  // A cutoff reaching only the local collection leaves the live fact inside the window, so the
+  // group is retained rather than selected, and the live fact is never itself a removal.
+  const local = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
     .pluck().get(chain.observation.id));
-  expect(selectLocalObservationRetention(db.db, cutoff).blocked).toHaveLength(3);
+  const narrow = selectLocalObservationRetention(db.db, local);
+  expect(narrow.blocked).toEqual([]);
+  expect(narrow.retained).toEqual([
+    { observation_id: chain.observation.id, reason: "context_cites_current_observation" }]);
+
+  // Widening the cutoff past both leaves nothing current to protect, and the group is selected.
+  const wide = selectLocalObservationRetention(db.db, localChainCutoff(db));
+  expect(wide.retained).toEqual([]);
+  expect(wide.blocked).toEqual([
+    { kind: "observation", id: chain.observation.id, component_id: chain.observation.id },
+    { kind: "context", id: chain.context.id, component_id: chain.context.id },
+    { kind: "recommendation", id: chain.created.recommendation.id,
+      component_id: chain.created.recommendation.id }]);
 });
 
 // Only the in-group case is reachable with a fixed-clock fixture: both chains share one expiry, so
@@ -131,8 +142,7 @@ it("does not retain when the event naming a replacement is removed with its targ
   const db = new AuthorityDb(tempDb()); opened.push(db);
   const chain = await localObservationChain(db);
   const target = chain.created.recommendation.id;
-  const cutoff = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
-    .pluck().get(chain.observation.id));
+  const cutoff = localChainCutoff(db);
   expect(selectLocalObservationRetention(db.db, cutoff).blocked).toHaveLength(3);
 
   // An event belonging to a recommendation outside this group names the group's recommendation as
@@ -159,17 +169,19 @@ it("retains a selected group when a surviving outside event names its recommenda
   const db = new AuthorityDb(tempDb()); opened.push(db);
   // Two cycles at different bases give the two observations distinct expiries, which is what makes
   // a cutoff able to select one recommendation while leaving the other behind.
-  const later = new Date(Date.parse(AT) + 600_000).toISOString();
+  // Far enough out that every observation of the second cycle outlives every observation of the
+  // first: the live fact a cycle cites lives an hour, well past the local collection beside it.
+  const later = new Date(Date.parse(AT) + 3_900_000).toISOString();
   const first = await localObservationChain(db);
   const second = extendLocalObservationChain(db, 1, later);
   const target = first.created.recommendation.id;
   const survivor = second.created.recommendation.id;
   expect(survivor).not.toBe(target);
 
-  const cutoff = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
-    .pluck().get(first.observation.id));
-  const secondExpiry = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
-    .pluck().get(second.observation.id));
+  const expiries = (ids: readonly string[]): string[] => ids.map(id => String(db.db
+    .prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?").pluck().get(id))).sort();
+  const cutoff = expiries([first.observation.id, first.live.id]).at(-1) ?? "";
+  const secondExpiry = expiries([second.observation.id, second.live.id])[0] ?? "";
   expect(cutoff < secondExpiry).toBe(true);
   // Without a naming event the older group is selected and the newer one is untouched.
   expect(selectLocalObservationRetention(db.db, cutoff).blocked.map(item => item.id))
@@ -200,9 +212,8 @@ it("rejects a cutoff that is not a persistence instant", async () => {
 
 it("applies the selector through the rebuild adapter without writing the source", async () => {
   const db = new AuthorityDb(tempDb()); opened.push(db);
-  const chain = await localObservationChain(db);
-  const cutoff = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
-    .pluck().get(chain.observation.id));
+  await localObservationChain(db);
+  const cutoff = localChainCutoff(db);
   const before = writes(db);
   const observations = scalar(db, "SELECT COUNT(*) FROM personal_observations");
   const fresh = join(dirname(db.filename), "applied.sqlite");
@@ -218,8 +229,10 @@ it("applies the selector through the rebuild adapter without writing the source"
   expect(operationStates(db)).toEqual(["verified"]);
   expect(scalar(db, "SELECT COUNT(*) FROM local_retention_claim_intents")).toBe(0);
   expect(scalar(db, "SELECT COUNT(*) FROM personal_observations")).toBe(observations);
+  // The live fact the context cited beside the local collection belongs to no removed group and
+  // survives the rebuild; what leaves is the group the cutoff selected.
   const rebuilt = new AuthorityDb(applied.build.fresh_path); opened.push(rebuilt);
-  expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_observations")).toBe(0);
+  expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_observations")).toBe(1);
   expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_recommendations")).toBe(0);
 });
 
@@ -227,8 +240,7 @@ it("does not remove a group the selector retained for a live notification", asyn
   const db = new AuthorityDb(tempDb()); opened.push(db);
   const chain = await localObservationChain(db);
   addIntent(db, chain.created.recommendation.id);
-  const cutoff = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
-    .pluck().get(chain.observation.id));
+  const cutoff = localChainCutoff(db);
   const before = writes(db);
   const fresh = join(dirname(db.filename), "applied-retained.sqlite");
   const applied = await applyLocalObservationRetention(db, cutoff, fresh);
@@ -243,7 +255,7 @@ it("does not remove a group the selector retained for a live notification", asyn
   expect(operationStates(db)).toEqual(["verified"]);
   expect(scalar(db, "SELECT COUNT(*) FROM local_retention_claim_intents")).toBe(0);
   const rebuilt = new AuthorityDb(applied.build.fresh_path); opened.push(rebuilt);
-  expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_observations")).toBe(1);
+  expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_observations")).toBe(2);
   expect(scalar(rebuilt, "SELECT COUNT(*) FROM personal_recommendations")).toBe(1);
   expect(scalar(rebuilt, "SELECT COUNT(*) FROM notification_intents")).toBe(1);
 });
@@ -263,7 +275,8 @@ it("derives the cutoff from a configured window through the CLI entry and never 
   const db = new AuthorityDb(tempDb());
   const chain = await localObservationChain(db);
   const path = db.filename;
-  const expiry = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
+  const expiry = localChainCutoff(db);
+  const localExpiry = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
     .pluck().get(chain.observation.id));
   db.close();
   const config = join(dirname(path), "retention-window.json");
@@ -285,8 +298,9 @@ it("derives the cutoff from a configured window through the CLI entry and never 
       component_id: chain.created.recommendation.id }] });
   expect(readFileSync(path).equals(before)).toBe(true);
 
-  // One millisecond before the window elapses the same configuration selects nothing.
-  const early = await preview(new Date(elapsed.getTime() - 1));
+  // One millisecond before the local collection itself expires, the same configuration has
+  // nothing to select and nothing to hold.
+  const early = await preview(new Date(Date.parse(localExpiry) + 3_600_000 - 1));
   expect(early["retention"]).toMatchObject({ blocked: [], retained: [] });
   expect(readFileSync(path).equals(before)).toBe(true);
 });
@@ -320,9 +334,8 @@ it("refuses a retention window it cannot read as an exact bounded configuration"
 // for a directory whose operation was never recorded, once a rebuild replaces the database.
 it("carries another run's claim intent into the candidate and spends only its own", async () => {
   const db = new AuthorityDb(tempDb()); opened.push(db);
-  const chain = await localObservationChain(db);
-  const cutoff = String(db.db.prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
-    .pluck().get(chain.observation.id));
+  await localObservationChain(db);
+  const cutoff = localChainCutoff(db);
   // A directory some other run announced and never got as far as recording an operation for.
   db.db.prepare(`INSERT INTO local_retention_claim_intents(operation_id,owner_token,
     owner_start_token,directory,created_at) VALUES('retention:foreign','4242:foreign','99',

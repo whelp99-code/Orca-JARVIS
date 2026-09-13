@@ -82,7 +82,7 @@ describe("memory projection source readers", () => {
         target.sensitivity, target.source_owner_class, target.source_owner_id_digest,
         target.resolved_at, target.expires_at, target.resolved_at);
       const projections = new MemoryProjectionAuthority(db);
-      const context = persistTask18Context(db);
+      const context = await persistTask18Context(db);
       projections.bind({ kind: "context", id: context.id, component_id: context.id },
         [{ target_digest: target.target_digest }], new Date(RECOMMENDATION_NOW));
       const recommendation = new Recommendations(db).create(task18Request(context)).recommendation;
@@ -145,7 +145,10 @@ describe("memory projection source readers", () => {
         authority_receipt_digest: delta.authority_receipt_digest,
         payload_digest: correction.delegation.payload_digest,
         effective_at: correction.created_at });
-      expect(controlRequestPage(db, new Date(RECOMMENDATION_NOW), { limit: 20 }).items).toEqual([]);
+      // The page is not empty - the cited context's own owner approvals are real control
+      // requests - but the suppressed one must not be among them.
+      expect(controlRequestPage(db, new Date(RECOMMENDATION_NOW), { limit: 20 }).items
+        .some(item => item.request_id === controlId)).toBe(false);
       expect(pendingControlSummary(db, new Date(RECOMMENDATION_NOW))).toEqual({ total: 0, items: [] });
 
       const pagination = new PersonalPagination(new PersonalCursorCodec({ key: Buffer.alloc(32, 7),

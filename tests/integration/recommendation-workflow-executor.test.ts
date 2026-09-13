@@ -17,8 +17,8 @@ import { workflowInputDigest, type WorkflowStageOutcome } from "../../src/workfl
 import { persistTask18Context, RECOMMENDATION_ID, task18Request } from "../fixtures/recommendation-fixture.js";
 import { initialized, localKey } from "../helpers.js";
 
-const NOW = new Date("2026-08-28T12:10:00.000Z");
-const CLAIMED = new Date("2026-08-28T12:10:01.000Z");
+const NOW = new Date("2026-08-28T12:01:00.000Z");
+const CLAIMED = new Date("2026-08-28T12:01:01.000Z");
 const WORKER = "recommendation-workflow-primary";
 function isDigest(value: unknown): value is Sha256Digest { return typeof value === "string" && /^sha256:[0-9a-f]{64}$/.test(value); }
 
@@ -27,13 +27,13 @@ function request(): unknown {
     requested_by: { principal_id: "test-operator", authenticated_session_id: "session:owner" },
     target: { repository: "Orca-JARVIS", environment: "local" },
     workflow: { goal: "Implement the bounded recommended action", args: { branch: "task25" } },
-    budget: { max_steps: 6, max_attempts_per_node: 2 }, deadline: "2026-08-28T12:45:00.000Z" };
+    budget: { max_steps: 6, max_attempts_per_node: 2 }, deadline: "2026-08-28T12:02:45.000Z" };
 }
-function seed(db: AuthorityDb): {
+async function seed(db: AuthorityDb): Promise<{
   readonly staged: ReturnType<RecommendationWorkflowStager["stage"]>;
   readonly recommendationId: ReturnType<Recommendations["create"]>["recommendation"]["id"];
-} {
-  const context = persistTask18Context(db); const created = new Recommendations(db).create(task18Request(context));
+}> {
+  const context = await persistTask18Context(db); const created = new Recommendations(db).create(task18Request(context));
   return { staged: new RecommendationWorkflowStager(db, () => NOW).stage(request()), recommendationId: created.recommendation.id };
 }
 function approve(db: AuthorityDb, staged: ReturnType<RecommendationWorkflowStager["stage"]>,
@@ -65,7 +65,7 @@ describe("Task 25 approved workflow stage executor", () => {
     // Given: a pending recommendation workflow request and a recording adapter.
     const db = await initialized();
     try {
-      const { staged } = seed(db); const recorder = new PersistentRecorder(db); const executor = new ApprovedCommandExecutor(db);
+      const { staged } = await seed(db); const recorder = new PersistentRecorder(db); const executor = new ApprovedCommandExecutor(db);
       await expect(executor.executeWorkflowStage({ requestId: staged.request_id, worker: WORKER, adapter: recorder, now: CLAIMED }))
         .rejects.toMatchObject({ code: "CONTROL_APPROVAL_REQUIRED" });
       await expect(new RecordingWorkflowStageAdapter(db).stage(controlWorkflowRunInput(staged.args), CLAIMED))
@@ -91,7 +91,7 @@ describe("Task 25 approved workflow stage executor", () => {
     // Given: an approved command already claimed by the fixed primary worker.
     const db = await initialized();
     try {
-      const { staged } = seed(db); approve(db, staged); new ControlPlane(db).claim(staged.request_id, WORKER, CLAIMED);
+      const { staged } = await seed(db); approve(db, staged); new ControlPlane(db).claim(staged.request_id, WORKER, CLAIMED);
       const recorder = new Recorder(); const executor = new ApprovedCommandExecutor(db);
 
       // When: the executor restarts after that claim.
@@ -109,7 +109,7 @@ describe("Task 25 approved workflow stage executor", () => {
     // Given: one staged request approved under a session other than the bound authenticated session.
     const wrongDb = await initialized();
     try {
-      const { staged } = seed(wrongDb); approve(wrongDb, staged, { authenticated_session_id: "session:other" });
+      const { staged } = await seed(wrongDb); approve(wrongDb, staged, { authenticated_session_id: "session:other" });
 
       // When/Then: receipt binding fails before redemption or adapter invocation.
       const recorder = new Recorder();
@@ -121,11 +121,11 @@ describe("Task 25 approved workflow stage executor", () => {
 
     const changedDb = await initialized();
     try {
-      const { staged, recommendationId } = seed(changedDb); approve(changedDb, staged);
+      const { staged, recommendationId } = await seed(changedDb); approve(changedDb, staged);
       const evidence = changedDb.getPersonalRecommendation(recommendationId)?.recommendation["evidence_digest"];
       if (!isDigest(evidence)) throw new TypeError("evidence digest required");
       changedDb.transitionRecommendationAction({ recommendation_id: recommendationId, rank: 1, state: "accepted",
-        evidence_digest: evidence, occurred_at: "2026-08-28T12:10:00.500Z" });
+        evidence_digest: evidence, occurred_at: "2026-08-28T12:01:00.500Z" });
       const recorder = new Recorder();
       await expect(new ApprovedCommandExecutor(changedDb).executeWorkflowStage({ requestId: staged.request_id, worker: WORKER, adapter: recorder, now: CLAIMED }))
         .rejects.toMatchObject({ code: "RECOMMENDATION_WORKFLOW_NOT_ELIGIBLE" });
@@ -139,7 +139,7 @@ describe("Task 25 approved workflow stage executor", () => {
     const firstDb = await initialized();
     const secondDb = new AuthorityDb(firstDb.filename);
     try {
-      const { staged } = seed(firstDb); approve(firstDb, staged); const entered = Promise.withResolvers<void>(); const release = Promise.withResolvers<void>();
+      const { staged } = await seed(firstDb); approve(firstDb, staged); const entered = Promise.withResolvers<void>(); const release = Promise.withResolvers<void>();
       const recorder: WorkflowStageAdapter = { async stage(input) {
         entered.resolve(); await release.promise;
         return { kind: "staged", run_id: input.run_id, workflow_digest: workflowInputDigest(input) };
@@ -162,7 +162,7 @@ describe("Task 25 approved workflow stage executor", () => {
     // Given: two equivalent approvals observed immediately before and exactly at receipt expiry.
     const beforeDb = await initialized(); const exactDb = await initialized();
     try {
-      const beforeSeed = seed(beforeDb); const exactSeed = seed(exactDb);
+      const beforeSeed = await seed(beforeDb); const exactSeed = await seed(exactDb);
       approve(beforeDb, beforeSeed.staged); approve(exactDb, exactSeed.staged);
       const before = new Date(Date.parse(beforeSeed.staged.expires_at) - 1);
       const exact = new Date(exactSeed.staged.expires_at);
@@ -184,7 +184,7 @@ describe("Task 25 approved workflow stage executor", () => {
     // Given: an approved request whose adapter resolves an explicit uncertain outcome.
     const db = await initialized();
     try {
-      const { staged } = seed(db); approve(db, staged); let calls = 0;
+      const { staged } = await seed(db); approve(db, staged); let calls = 0;
       const evidence = `sha256:${"a".repeat(64)}`;
       const adapter: WorkflowStageAdapter = {
         async stage() { calls += 1; return { kind: "uncertain", reason: "stage_boundary_uncertain", evidence_digest: evidence }; },
@@ -211,7 +211,7 @@ describe("Task 25 approved workflow stage executor", () => {
     // Given: an approved request and a runtime adapter violating its declared outcome contract.
     const db = await initialized();
     try {
-      const { staged } = seed(db); approve(db, staged); let calls = 0;
+      const { staged } = await seed(db); approve(db, staged); let calls = 0;
       const adapter: WorkflowStageAdapter = {
         async stage(): Promise<WorkflowStageOutcome> { calls += 1; return JSON.parse('{"kind":"mystery"}'); },
       };
@@ -235,7 +235,7 @@ describe("Task 25 approved workflow stage executor", () => {
     // Given: an approved request and an adapter whose stage boundary throws.
     const db = await initialized();
     try {
-      const { staged } = seed(db); approve(db, staged); let calls = 0;
+      const { staged } = await seed(db); approve(db, staged); let calls = 0;
       const adapter: WorkflowStageAdapter = { async stage() { calls += 1; throw new TypeError("stage outcome unknown"); } };
       const executor = new ApprovedCommandExecutor(db);
 

@@ -20,8 +20,8 @@ function request(): unknown {
     deadline: "2026-08-28T12:45:00.000Z",
   };
 }
-function seed(db: AuthorityDb): void {
-  const context = persistTask18Context(db);
+async function seed(db: AuthorityDb): Promise<void> {
+  const context = await persistTask18Context(db);
   new Recommendations(db).create(task18Request(context));
 }
 function sql(statement: string, ...values: readonly unknown[]): (db: AuthorityDb) => void {
@@ -128,7 +128,10 @@ describe("Task 25 persisted authority mutation matrix", () => {
     // Given: one authoritative field changed after its immutable trigger is removed.
     const db = await initialized();
     try {
-      seed(db); db.db.exec(`DROP TRIGGER ${mutation.trigger}`);
+      await seed(db); db.db.exec(`DROP TRIGGER ${mutation.trigger}`);
+      // The context's own owner approvals are on record before the mutation; what must not appear
+      // is a request this refused staging wrote.
+      const requestsBefore = db.db.prepare("SELECT COUNT(*) AS count FROM control_command_requests").get();
       if (mutation.foreignKeys === false) db.db.pragma("foreign_keys=OFF");
       mutation.mutate(db);
       if (mutation.foreignKeys === false) db.db.pragma("foreign_keys=ON");
@@ -136,7 +139,7 @@ describe("Task 25 persisted authority mutation matrix", () => {
       // When/Then: canonical reload fails generically before any request write.
       expect(() => new RecommendationWorkflowStager(db, () => NOW).stage(request()))
         .toThrowError(expect.objectContaining({ code: "RECOMMENDATION_WORKFLOW_NOT_ELIGIBLE" }));
-      expect(db.db.prepare("SELECT COUNT(*) AS count FROM control_command_requests").get()).toEqual({ count: 0 });
+      expect(db.db.prepare("SELECT COUNT(*) AS count FROM control_command_requests").get()).toEqual(requestsBefore);
     } finally { db.close(); }
   });
 });

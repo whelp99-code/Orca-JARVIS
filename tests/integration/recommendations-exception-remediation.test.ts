@@ -5,6 +5,7 @@ import {
   persistTask18Context,
   RECOMMENDATION_ID,
   task18EvidenceForReference,
+  task18Reference,
   task18Request,
 } from "../fixtures/recommendation-fixture.js";
 import { tempDb } from "../helpers.js";
@@ -29,7 +30,7 @@ const IDS = [
 async function setup() {
   const db = new AuthorityDb(tempDb());
   await db.migrate();
-  const context = persistTask18Context(db);
+  const context = await persistTask18Context(db);
   return { context, db, service: new Recommendations(db) };
 }
 
@@ -90,20 +91,21 @@ describe("Task 18 exception remediation", () => {
       const exact = task18Request(context, IDS[1]);
       const exactRanking = { ...exact.ranking, actions: exact.ranking.actions.map(action => action.rank === 1
         ? { ...action, rationale: { ...action.rationale, citations: { ...action.rationale.citations,
-            deadline_evidence_ref: "live:deadline", dependency_evidence_ref: "live:dependency",
-            stable_identity_evidence_ref: "identity:customer-delivery" } } }
+            deadline_evidence_ref: task18Reference(context, "live:deadline"),
+            dependency_evidence_ref: task18Reference(context, "live:dependency"),
+            stable_identity_evidence_ref: task18Reference(context, "identity:customer-delivery") } } }
         : action) };
       const exactLinks = exact.linux_evidence.flatMap(link => {
-        if (link.ref !== "live:customer") return [link];
+        if (link.ref !== task18Reference(context, "live:customer")) return [link];
         if (link.context_evidence_id === null) throw new TypeError("current evidence fixture required");
         return [{ ...link, kind: "current" as const },
-          { ref: "live:deadline", kind: "deadline" as const,
+          { ref: task18Reference(context, "live:deadline"), kind: "deadline" as const,
             context_evidence_id: task18EvidenceForReference(context, "live:deadline").evidence_id,
             digest: task18EvidenceForReference(context, "live:deadline").digest },
-          { ref: "live:dependency", kind: "dependency" as const,
+          { ref: task18Reference(context, "live:dependency"), kind: "dependency" as const,
             context_evidence_id: task18EvidenceForReference(context, "live:dependency").evidence_id,
             digest: task18EvidenceForReference(context, "live:dependency").digest },
-          { ref: "identity:customer-delivery", kind: "stable_identity" as const,
+          { ref: task18Reference(context, "identity:customer-delivery"), kind: "stable_identity" as const,
             context_evidence_id: task18EvidenceForReference(context, "identity:customer-delivery").evidence_id,
             digest: task18EvidenceForReference(context, "identity:customer-delivery").digest }];
       });

@@ -72,10 +72,10 @@ async function seeded(): Promise<{
 }> {
   const db = new AuthorityDb(tempDb());
   opened.push(db);
-  const chain = await localObservationChain(db);
-  const cutoff = String(db.db
-    .prepare("SELECT expires_at FROM personal_observations WHERE observation_id=?")
-    .pluck().get(chain.observation.id));
+  await localObservationChain(db);
+  // Past both of the chain's observations: a cutoff reaching only the local collection leaves the
+  // live fact it was cited beside still current, and the group is correctly retained instead.
+  const cutoff = String(db.db.prepare("SELECT MAX(expires_at) FROM personal_observations").pluck().get());
   const registry = join(dirname(db.filename), "registry");
   mkdirSync(registry, { recursive: true });
   return { db, cutoff,

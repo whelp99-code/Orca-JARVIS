@@ -89,8 +89,15 @@ export function selectLocalObservationRetention(
   ).pluck().all(LOCAL_TIMELINE_SOURCE, cutoff).map(persistenceText);
   const citingContexts = database.prepare(
     "SELECT context_id FROM personal_context_observations WHERE observation_id=? ORDER BY context_id");
-  const contextObservations = database.prepare(
-    "SELECT observation_id FROM personal_context_observations WHERE context_id=? ORDER BY position");
+  // A context must not lose its link to an observation that is still current at the cutoff. That
+  // judgement belongs to the observation's own expiry, not to which source produced it: a context
+  // cites a local timeline collection beside the live adapter fact its recommendation rests on,
+  // and an expired live fact is no more "inside the window" than an expired local collection.
+  // Neither observation row is removed here either way - only the link the removed context owned.
+  const currentContextObservation = database.prepare(
+    `SELECT 1 FROM personal_context_observations o
+     JOIN personal_observations p ON p.observation_id=o.observation_id
+     WHERE o.context_id=? AND p.expires_at>? LIMIT 1`);
   const contextRecommendations = database.prepare(
     "SELECT recommendation_id FROM personal_recommendations WHERE context_id=? ORDER BY recommendation_id");
   const addressingIntents = database.prepare(
@@ -111,16 +118,14 @@ export function selectLocalObservationRetention(
     seen.add(key);
     blocked.push({ kind, id, component_id: id });
   };
-  const expiredSet = new Set(expired);
-
   for (const observation of expired) {
     const contexts = citingContexts.pluck().all(observation).map(persistenceText);
     const group: RetentionProjection[] = [{ kind: "observation", id: observation, component_id: observation }];
     let hold: RetentionRetained["reason"] | undefined;
     for (const context of contexts) {
-      // Removing a context would drop its links to observations still inside the window.
-      if (contextObservations.pluck().all(context).map(persistenceText)
-        .some(cited => !expiredSet.has(cited))) { hold = "context_cites_current_observation"; break; }
+      if (currentContextObservation.get(context, cutoff) !== undefined) {
+        hold = "context_cites_current_observation"; break;
+      }
       const recommendations = contextRecommendations.pluck().all(context).map(persistenceText);
       // The reference lives percent-encoded inside deep_link, so match the encoded form.
       if (recommendations.some(id => Number(addressingIntents.get(encodeURIComponent(id))) > 0)) {

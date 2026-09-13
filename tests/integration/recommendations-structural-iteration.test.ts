@@ -21,10 +21,13 @@ import {
 } from "../fixtures/recommendation-fixture.js";
 import { tempDb } from "../helpers.js";
 
+// Every instant here sits inside the window the cited evidence is valid for: a context resting on
+// live Linux facts expires with them, so a recommendation built from one lives minutes, not hours.
+
 async function setup() {
   const db = new AuthorityDb(tempDb());
   await db.migrate();
-  const context = persistTask18Context(db);
+  const context = await persistTask18Context(db);
   const service = new Recommendations(db);
   return { context, db, service };
 }
@@ -103,17 +106,17 @@ describe("Task 18 structural iteration 1", () => {
       const source = service.create(task18Request(context));
       const replacement = service.create(task18Request(context, REPLACEMENT_ID));
       const transition = { recommendation_id: RECOMMENDATION_ID, rank: 1, state: "superseded",
-        evidence_digest: source.evidence_digest, occurred_at: "2026-08-28T12:30:00.000Z",
+        evidence_digest: source.evidence_digest, occurred_at: "2026-08-28T12:02:00.000Z",
         replacement_recommendation_id: REPLACEMENT_ID,
         replacement_context_digest: replacement.recommendation.payload.context_digest,
         replacement_evidence_digest: replacement.evidence_digest,
         replacement_identity_digest: replacement.identity_digest } as const;
       service.transition(transition);
       service.transition({ recommendation_id: REPLACEMENT_ID, rank: 1, state: "rejected",
-        evidence_digest: replacement.evidence_digest, occurred_at: "2026-08-28T12:31:00.000Z" });
+        evidence_digest: replacement.evidence_digest, occurred_at: "2026-08-28T12:02:30.000Z" });
       // When / Then
       expect(() => service.transition(transition)).not.toThrow();
-      expect(service.project("2026-08-28T12:31:00.000Z", 1).lifecycle_actions[0])
+      expect(service.project("2026-08-28T12:02:30.000Z", 1).lifecycle_actions[0])
         .toMatchObject({ recommendation_id: RECOMMENDATION_ID, replacement_recommendation_id: REPLACEMENT_ID });
     } finally { db.close(); }
   });
@@ -127,13 +130,13 @@ describe("Task 18 structural iteration 1", () => {
       const timeline = new TaskTimeline(db);
       const dashboard = new DashboardReadModel(db);
       // When / Then
-      expectPublicRecommendationError(() => service.project("2026-08-28T12:10:00.000Z"));
+      expectPublicRecommendationError(() => service.project("2026-08-28T12:01:00.000Z"));
       expectPublicRecommendationError(() => db.getPersonalRecommendation(created.recommendation.id));
       expectPublicRecommendationError(() => timeline.list(10));
       expectPublicRecommendationError(() => timeline.timeline(RECOMMENDATION_ID, 10));
       expectPublicRecommendationError(() => timeline.context(RECOMMENDATION_ID, 10));
-      await expect(buildCurrentState(db, new Date("2026-08-28T12:10:00.000Z"))).rejects.toBeInstanceOf(RecommendationError);
-      await expect(dashboard.overview(new Date("2026-08-28T12:10:00.000Z"))).rejects.toBeInstanceOf(RecommendationError);
+      await expect(buildCurrentState(db, new Date("2026-08-28T12:01:00.000Z"))).rejects.toBeInstanceOf(RecommendationError);
+      await expect(dashboard.overview(new Date("2026-08-28T12:01:00.000Z"))).rejects.toBeInstanceOf(RecommendationError);
       expectPublicRecommendationError(() => dashboard.listTasks(10));
       expectPublicRecommendationError(() => dashboard.taskDetail(RECOMMENDATION_ID));
     } finally { db.close(); }
@@ -155,7 +158,7 @@ describe("Task 18 structural iteration 1", () => {
           evidence_digest: replacement.evidence_digest,
           identity_digest: replacement.identity_digest,
         };
-        const occurredAt = state === "expired" ? source.recommendation.freshness.fresh_until : "2026-08-28T12:20:00.000Z";
+        const occurredAt = state === "expired" ? source.recommendation.freshness.fresh_until : "2026-08-28T12:01:00.000Z";
         const identity: TerminalTransitionIdentity = { recommendation_id: source.recommendation.id, rank: 1, state,
           evidence_digest: source.evidence_digest, occurred_at: occurredAt, replacement: replacementIdentity };
         const eventEvidence = replacementIdentity === null ? source.evidence_digest
@@ -182,7 +185,7 @@ describe("Task 18 structural iteration 1", () => {
         // Then
         expectPublicRecommendationError(() => state === "dismissed"
           ? db.getPersonalRecommendation(source.recommendation.id)
-          : service.project("2026-08-28T12:30:00.000Z"));
+          : service.project("2026-08-28T12:02:00.000Z"));
       } finally { db.close(); }
     }
 
@@ -190,9 +193,9 @@ describe("Task 18 structural iteration 1", () => {
     try {
       const source = service.create(task18Request(context));
       const identity: TerminalTransitionIdentity = { recommendation_id: source.recommendation.id, rank: 1,
-        state: "accepted", evidence_digest: source.evidence_digest, occurred_at: "2026-08-28T12:20:00.000Z", replacement: null };
+        state: "accepted", evidence_digest: source.evidence_digest, occurred_at: "2026-08-28T12:01:00.000Z", replacement: null };
       insertTerminal(db, identity, `sha256:${"b".repeat(64)}`, transitionDigest(identity), identity.occurred_at);
-      expectPublicRecommendationError(() => service.project("2026-08-28T12:30:00.000Z"));
+      expectPublicRecommendationError(() => service.project("2026-08-28T12:02:00.000Z"));
     } finally { db.close(); }
   });
 
@@ -202,18 +205,18 @@ describe("Task 18 structural iteration 1", () => {
     try {
       const source = service.create(task18Request(context));
       const identity: TerminalTransitionIdentity = { recommendation_id: source.recommendation.id, rank: 1,
-        state: "accepted", evidence_digest: source.evidence_digest, occurred_at: "2026-08-28T12:20:00.000Z", replacement: null };
+        state: "accepted", evidence_digest: source.evidence_digest, occurred_at: "2026-08-28T12:01:00.000Z", replacement: null };
       insertTerminal(db, identity, source.evidence_digest, `sha256:${"c".repeat(64)}`, identity.occurred_at);
       const timeline = new TaskTimeline(db);
       const dashboard = new DashboardReadModel(db);
       // When / Then
-      expectPublicRecommendationError(() => service.project("2026-08-28T12:30:00.000Z"));
+      expectPublicRecommendationError(() => service.project("2026-08-28T12:02:00.000Z"));
       expectPublicRecommendationError(() => db.getPersonalRecommendation(source.recommendation.id));
       expectPublicRecommendationError(() => timeline.list(10));
       expectPublicRecommendationError(() => timeline.timeline(RECOMMENDATION_ID, 10));
       expectPublicRecommendationError(() => timeline.context(RECOMMENDATION_ID, 10));
-      await expectAsyncPublicRecommendationError(() => buildCurrentState(db, new Date("2026-08-28T12:30:00.000Z")));
-      await expectAsyncPublicRecommendationError(() => dashboard.overview(new Date("2026-08-28T12:30:00.000Z")));
+      await expectAsyncPublicRecommendationError(() => buildCurrentState(db, new Date("2026-08-28T12:02:00.000Z")));
+      await expectAsyncPublicRecommendationError(() => dashboard.overview(new Date("2026-08-28T12:02:00.000Z")));
       expectPublicRecommendationError(() => dashboard.listTasks(10));
       expectPublicRecommendationError(() => dashboard.taskDetail(RECOMMENDATION_ID));
     } finally { db.close(); }
@@ -226,7 +229,7 @@ describe("Task 18 structural iteration 1", () => {
     db.close();
     // When / Then
     try {
-      service.project("2026-08-28T12:30:00.000Z");
+      service.project("2026-08-28T12:02:00.000Z");
       throw new TypeError("closed database failure required");
     } catch (error) {
       if (!(error instanceof TypeError)) throw error;
@@ -248,7 +251,7 @@ describe("Task 18 structural iteration 1", () => {
           evidence_digest: replacement.evidence_digest,
           identity_digest: replacement.identity_digest,
         };
-        const occurredAt = state === "expired" ? source.recommendation.freshness.fresh_until : "2026-08-28T12:20:00.000Z";
+        const occurredAt = state === "expired" ? source.recommendation.freshness.fresh_until : "2026-08-28T12:01:00.000Z";
         const identity: TerminalTransitionIdentity = { recommendation_id: source.recommendation.id, rank: 1, state,
           evidence_digest: source.evidence_digest, occurred_at: occurredAt, replacement: replacementIdentity };
         const eventEvidence = replacementIdentity === null ? source.evidence_digest
@@ -260,7 +263,7 @@ describe("Task 18 structural iteration 1", () => {
         expect(() => db.getPersonalRecommendation(source.recommendation.id)).not.toThrow();
         expect(() => new TaskTimeline(db).timeline(RECOMMENDATION_ID, 10)).not.toThrow();
         if (state !== "dismissed" && state !== "snoozed") {
-          expect(() => service.project("2026-08-28T12:30:00.000Z")).not.toThrow();
+          expect(() => service.project("2026-08-28T12:02:00.000Z")).not.toThrow();
         }
       } finally { db.close(); }
     }

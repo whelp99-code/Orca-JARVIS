@@ -19,7 +19,7 @@ describe("Task 18 read-only composition", () => {
     // Given: three ranked actions with one owner gate.
     const db = new AuthorityDb(tempDb()); await db.migrate();
     try {
-      const context = persistTask18Context(db); new Recommendations(db).create(task18Request(context));
+      const context = await persistTask18Context(db); new Recommendations(db).create(task18Request(context));
       const before = count(db.db.prepare("SELECT total_changes() AS count").get());
       // When: current state composes the recommendation read model.
       const state = await buildCurrentState(db, new Date(RECOMMENDATION_NOW));
@@ -35,7 +35,7 @@ describe("Task 18 read-only composition", () => {
     // Given: one created recommendation and its three append-only pending events.
     const db = new AuthorityDb(tempDb()); await db.migrate();
     try {
-      const context = persistTask18Context(db);
+      const context = await persistTask18Context(db);
       new Recommendations(db).create(task18Request(context));
       const timeline = new TaskTimeline(db);
       // When: list, timeline, context, and dashboard consume the public read surface.

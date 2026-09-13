@@ -4,8 +4,8 @@ import { morningInput, morningRecord } from "./morning-brief-record.js";
 import { persistTask18Context, RECOMMENDATION_NOW, task18Request } from "./recommendation-fixture.js";
 
 // A contract fixture for shared identifiers, not an operational recommendation-to-brief policy.
-export function morningRecommendationProvenance(db: AuthorityDb) {
-  const context = persistTask18Context(db);
+export async function morningRecommendationProvenance(db: AuthorityDb) {
+  const context = await persistTask18Context(db);
   const service = new Recommendations(db); service.create(task18Request(context));
   const projection = service.project(RECOMMENDATION_NOW);
   const items = projection.next_actions.map(action => {

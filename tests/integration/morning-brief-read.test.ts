@@ -34,9 +34,10 @@ function rehash(value: Record<string, unknown>) {
 
 describe("persisted morning brief read boundary", () => {
   it("expires the brief and context at exact boundaries without changing stored bytes", async () => {
-    const db = await persisted(brief()); persistTask18Context(db); const before = writes(db);
-    expect(todayProjection(db, new Date("2026-08-28T12:59:59.998Z"))["freshness"]).toMatchObject({ state: "fresh" });
-    expect(todayProjection(db, new Date("2026-08-28T12:59:59.999Z"))["freshness"]).toMatchObject({ state: "stale" });
+    const db = await persisted(brief()); await persistTask18Context(db); const before = writes(db);
+    expect(todayProjection(db, new Date("2026-08-28T12:03:59.998Z"))["freshness"]).toMatchObject({ state: "fresh" });
+    expect(todayProjection(db, new Date("2026-08-28T12:03:59.999Z"))["freshness"]).toMatchObject({ state: "stale" });
+    // The brief fixture carries its own validity; only the cited context expires at 12:04.
     const expired = todayProjection(db, new Date("2026-08-28T13:00:00.000Z"));
     expect(expired["brief"]).toMatchObject({ state: "stale", brief_id: brief().brief_id, item_count: 0 });
     expect(expired["freshness"]).toMatchObject({ state: "expired" });
@@ -45,7 +46,7 @@ describe("persisted morning brief read boundary", () => {
     expect(writes(db)).toEqual(before);
   });
   it("does not present a future brief or context as current", async () => {
-    const db = await persisted(brief()); persistTask18Context(db); const before = writes(db);
+    const db = await persisted(brief()); await persistTask18Context(db); const before = writes(db);
     const result = todayProjection(db, new Date("2026-08-28T11:59:59.999Z"));
     expect(result["brief"]).toMatchObject({ state: "no_data", item_count: 0 });
     expect(result["freshness"]).toMatchObject({ state: "no_data" }); expect(writes(db)).toEqual(before);

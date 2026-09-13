@@ -26,8 +26,10 @@ function unlock(db: AuthorityDb, table: string): void {
 async function built(blockedFromCutoff: boolean) {
   const source = new AuthorityDb(tempDb()); opened.push(source);
   const chain = await localObservationChain(source);
+  // Past both of the chain's observations: a cutoff reaching only the local collection would
+  // correctly retain the group, leaving this plan nothing to remove.
   const cutoff = String(source.db.prepare(
-    "SELECT expires_at FROM personal_observations WHERE observation_id=?").pluck().get(chain.observation.id));
+    "SELECT MAX(expires_at) FROM personal_observations").pluck().get());
   const selection = selectLocalObservationRetention(source.db, cutoff);
   const blocked = blockedFromCutoff ? selection.blocked : [];
   const destination = join(dirname(source.filename), `plan-${blockedFromCutoff ? "cut" : "keep"}.sqlite`);
