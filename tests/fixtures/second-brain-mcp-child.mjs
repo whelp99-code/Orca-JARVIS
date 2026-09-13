@@ -5,8 +5,12 @@ import { appendFileSync, readFileSync } from "node:fs";
 const config = JSON.parse(readFileSync(process.env.SB_CONFIG, "utf8"));
 const protocolVersion = config.protocolVersion ?? "2025-11-25";
 const contractName = config.contractProfile ?? process.env.SB_MCP_CONTRACT_PROFILE;
-const frozen = JSON.parse(readFileSync(contractName === "cancellation-submit-schema7" ? "contracts/second-brain-mcp-v5.json" : contractName === "cancellation-schema6" ? "contracts/second-brain-mcp-v4.json" : contractName === "remember-schema5"
-  ? "contracts/second-brain-mcp-v3.json" : "contracts/second-brain-mcp-v1.json", "utf8"));
+// A caller that runs this child outside the development checkout - a packaged runtime, say - names
+// the frozen contract it ships rather than depending on this process's working directory.
+const contractPath = config.contractPath ?? (contractName === "cancellation-submit-schema7" ? "contracts/second-brain-mcp-v5.json"
+  : contractName === "cancellation-schema6" ? "contracts/second-brain-mcp-v4.json"
+  : contractName === "remember-schema5" ? "contracts/second-brain-mcp-v3.json" : "contracts/second-brain-mcp-v1.json");
+const frozen = JSON.parse(readFileSync(contractPath, "utf8"));
 const writeContract = frozen.tools.sb_write_request;
 const tools = Object.entries(frozen.tools).map(([name, tool]) => name === "sb_write_request"
   ? { name, description: "accept pending request", inputSchema: tool.arguments, outputSchema: tool.output_schema }

@@ -30,6 +30,9 @@ import { localKey } from "../helpers.js";
 // 2026-08-28T00:00:00.000Z. Everything is prepared at one instant so nothing depends on ordering.
 const AT = "2026-08-28T22:15:00.000Z";
 const CLI_AT = "2026-08-28T22:15:00.005Z";
+// The same morning, asked again half a minute later: still 2026-08-29 in Seoul, and still inside
+// the windows the first run wrote, so nothing about the second run's inputs has changed.
+const CLI_AT_AGAIN = "2026-08-28T22:15:30.000Z";
 const TASK = "task:daily-production";
 // The candidate fixtures carry their own evidence window around midday, and a confirmation does not
 // expire because the sun moved: the memory is confirmed and settled at that instant, while the
@@ -220,6 +223,22 @@ it("produces a recommendation from stored evidence through the compiled daily CL
   const run = child([HARNESS, f.path, f.input, CLI_AT], f.provider);
   expect(run.stderr).toBe("");
   expect(run.status).toBe(0);
+
+  const after = reopen(f.path);
+  expect(after.rows).toBe(1);
+  expect(after.brief).toMatchObject({ item_count: 1 });
+}, 120_000);
+
+// One morning produces once. A second invocation for the same local date must not leave a second
+// recommendation behind, whatever it reports.
+it("produces once for the day when the same morning is run again", async () => {
+  const f = await prepared({ ownerDecision: "confirm", ownerAuthorization: true });
+  const first = child([HARNESS, f.path, f.input, CLI_AT], f.provider);
+  expect(first.stderr).toBe("");
+  expect(first.status).toBe(0);
+
+  const again = child([HARNESS, f.path, f.input, CLI_AT_AGAIN], f.provider);
+  expect(again.status).toBe(0);
 
   const after = reopen(f.path);
   expect(after.rows).toBe(1);
