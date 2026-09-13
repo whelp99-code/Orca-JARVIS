@@ -17,6 +17,18 @@ export function memoryRememberRecordTexts(content: string): readonly string[] {
   }
   return texts;
 }
+/**
+ * The identity a remember write carries for the candidate behind it.
+ *
+ * The provider stores this on every record the write produced, and the resolved target for such a
+ * record repeats it - so it is the one number that links a candidate here to a target out there.
+ * The content identities on either side are not that link: the provider computes its over the
+ * record text and this database computes its own over the candidate material.
+ */
+export function memoryCandidateSourceIdentity(candidateId: string): string {
+  return hash(`memory-candidate:${candidateId}`);
+}
+
 export function memoryRememberArtifact(request: Pick<SecondBrainWriteRequestV1, "candidate_id" | "operation" | "payload" | "sensitivity">): {
   readonly artifact: MemoryExpectedArtifactV2;
   readonly record_texts: readonly string[];
@@ -29,7 +41,7 @@ export function memoryRememberArtifact(request: Pick<SecondBrainWriteRequestV1, 
   const texts = memoryRememberRecordTexts(content);
   return { artifact: { page_id: `wiki/memory-${hash(`${request.candidate_id}\0${rawHash}`)}`,
     sid: rawHash.slice(0, 8), source_digest: `sha256:${rawHash}` }, record_texts: texts,
-  source_identity_full: hash(`memory-candidate:${request.candidate_id}`), sensitivity: request.sensitivity };
+  source_identity_full: memoryCandidateSourceIdentity(request.candidate_id), sensitivity: request.sensitivity };
 }
 
 export function observeRememberArtifact(

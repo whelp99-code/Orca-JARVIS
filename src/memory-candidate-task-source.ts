@@ -4,6 +4,7 @@ import {
   assertCandidateProjectInScope, taskProjectOutOfScope,
 } from "./memory-candidate-project-scope.js";
 import { TaskTimelinePopulation } from "./task-timeline-population.js";
+import { memoryCandidateSourceIdentity } from "./memory-remember-artifact.js";
 
 /**
  * Binds a candidate to the task whose work produced it.
@@ -112,32 +113,41 @@ export type MemoryAwaitingWithdrawal = {
  *
  * A stored copy is matched the way the restore path matches one: by the content identity the
  * suppression records carry, because the provider owns the record identity and this database does
- * not store it. The same identity reaches the resolved target metadata, so each entry carries the
- * target a withdrawal would name; a null target means nothing reached the provider and there is
- * nothing out there to take back.
+ * not store it.
+ *
+ * The target a withdrawal would name is found by a different identity, and it has to be: the
+ * provider computes its content identity over the record text while this database computes its own
+ * over the candidate material, so those two numbers are never equal and a join between them never
+ * fires. What does link them is the source identity the write itself carries, which is derived from
+ * the candidate and repeated on the target resolved for that record. A null target means nothing
+ * reached the provider and there is nothing out there to take back.
  */
 export function memoriesAwaitingTaskWithdrawal(
   authority: AuthorityDb,
 ): readonly MemoryAwaitingWithdrawal[] {
   const rows = authority.db.prepare(
-    `SELECT t.candidate_id AS candidate_id,t.task_id AS task_id,c.content_digest AS content_digest,
-       r.target_id AS target_id,r.target_digest AS target_digest
+    `SELECT t.candidate_id AS candidate_id,t.task_id AS task_id,c.content_digest AS content_digest
      FROM memory_candidate_task_sources t
      JOIN memory_candidates c ON c.candidate_id=t.candidate_id
-     LEFT JOIN memory_resolved_target_metadata r
-       ON replace(r.content_identity_digest,'sha256:','')=replace(c.content_digest,'sha256:','')
      WHERE NOT EXISTS (SELECT 1 FROM memory_suppressions s WHERE s.state='active'
        AND replace(c.content_digest,'sha256:','')=replace(s.content_identity_digest,'sha256:',''))
      ORDER BY t.task_id,t.candidate_id`).all();
+  // The link is the source identity the write carries, which this side derives from the candidate,
+  // so the lookup happens here rather than in the join: SQL cannot compute it.
+  const resolved = authority.db.prepare(
+    `SELECT target_id,target_digest FROM memory_resolved_target_metadata
+     WHERE source_identity_digest=? ORDER BY target_id LIMIT 1`);
   return rows.flatMap(row => {
     if (row === null || typeof row !== "object") return [];
     const taskId = String(Reflect.get(row, "task_id"));
-    return taskSuppressed(authority, taskId)
-      ? [{ candidate_id: String(Reflect.get(row, "candidate_id")), task_id: taskId,
-        content_digest: String(Reflect.get(row, "content_digest")),
-        target_id: text(Reflect.get(row, "target_id")),
-        target_digest: text(Reflect.get(row, "target_digest")) }]
-      : [];
+    if (!taskSuppressed(authority, taskId)) return [];
+    const candidateId = String(Reflect.get(row, "candidate_id"));
+    const target = resolved.get(memoryCandidateSourceIdentity(candidateId));
+    const named = target === null || target === undefined || typeof target !== "object"
+      ? undefined : target as { target_id: unknown; target_digest: unknown };
+    return [{ candidate_id: candidateId, task_id: taskId,
+      content_digest: String(Reflect.get(row, "content_digest")),
+      target_id: text(named?.target_id), target_digest: text(named?.target_digest) }];
   });
 }
 

@@ -169,18 +169,10 @@ it("lists what a hidden task still has stored, and only that", async () => {
   // Nothing reached the provider yet, so there is no target a withdrawal could name.
   expect(outstanding[0]).toMatchObject({ target_id: null, target_digest: null });
 
-  // Once the provider holds a copy, the entry carries the exact target to act on.
-  const digest = String(outstanding[0]?.content_digest);
-  f.authority.db.prepare(
-    `INSERT INTO memory_resolved_target_metadata(target_id,target_digest,provider_instance_id,
-      generation_id,generation_manifest_digest,page_content_digest,source_identity_digest,
-      content_identity_digest,citation_identity_digest,keyed_subject_digest,sensitivity,
-      source_owner_class,source_owner_id_digest,resolved_at,expires_at,created_at)
-     VALUES(?,?,'provider:test','generation:1',?,?,?,?,?,?,'personal','provider_owned',?,?,?,?)`,
-  ).run("target:test", `${digest}0`, digest, digest, digest, digest, digest, digest, digest,
-    MEMORY_NOW, "2026-08-29T12:00:00.000Z", MEMORY_NOW);
-  expect(memoriesAwaitingTaskWithdrawal(f.authority)[0])
-    .toMatchObject({ target_id: "target:test", target_digest: `${digest}0` });
+  // What the entry carries once the provider does hold a copy is pinned by
+  // tests/integration/memory-withdrawal-target.test.ts, against a write taken through the product's
+  // own dispatch and settlement. A row inserted here could only assert the shape this test chose,
+  // and choosing it wrong is what let a join that never fires look like it worked.
 
   // The list clears when the owner-approved suppression lands; this test does not forge one, so
   // what it pins is the reporting rule and its scope, not the withdrawal itself.
