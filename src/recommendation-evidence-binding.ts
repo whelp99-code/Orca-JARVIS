@@ -78,8 +78,7 @@ function ordinaryLink(input: OrdinaryLinkInput): RecommendationEvidenceLink {
  * trusted decision key. The link then carries the digest of the command the owner actually
  * approved and no context evidence, exactly as the policy slot does.
  */
-function ownerDecisionLink(database: Database.Database, reference: string,
-  kind: RecommendationEvidenceKind): RecommendationEvidenceLink {
+export function approvedOwnerDecisionDigest(database: Database.Database, reference: string): Sha256Digest | undefined {
   const value = database.prepare(
     `SELECT r.command_digest AS command_digest
      FROM control_command_requests r
@@ -91,9 +90,14 @@ function ownerDecisionLink(database: Database.Database, reference: string,
        AND NOT EXISTS(SELECT 1 FROM control_command_revocations v
          WHERE v.request_id=r.request_id OR v.receipt_id=a.receipt_id)`,
   ).get(reference);
-  if (value === undefined) return fail();
+  if (value === undefined) return undefined;
   const digest = persistenceText(persistenceRow(value)["command_digest"]);
-  if (!sha256(digest)) return fail();
+  return sha256(digest) ? digest : undefined;
+}
+function ownerDecisionLink(database: Database.Database, reference: string,
+  kind: RecommendationEvidenceKind): RecommendationEvidenceLink {
+  const digest = approvedOwnerDecisionDigest(database, reference);
+  if (digest === undefined) return fail();
   return { ref: reference, kind, context_evidence_id: null, digest };
 }
 
@@ -105,7 +109,14 @@ type EvidenceBindingInput = {
   readonly actions: readonly PriorityActionDecision[];
   readonly supplied: readonly RecommendationEvidenceLink[];
 };
-export function deriveRecommendationEvidenceLinks(input: EvidenceBindingInput): readonly RecommendationEvidenceLink[] {
+/**
+ * The links a ranking requires, derived from what the database can back. A producer builds the
+ * links it will supply with this; the consumption boundary derives them again and compares, so
+ * nothing a producer states is taken on trust.
+ */
+export function recommendationEvidenceLinks(
+  input: Omit<EvidenceBindingInput, "supplied">,
+): readonly RecommendationEvidenceLink[] {
   // The stored kind says what role a piece played in assembly. Whether it may be cited is a
   // different question, and only its own source answers it - so the licence is derived here rather
   // than read from the string beside the evidence.
@@ -128,7 +139,11 @@ export function deriveRecommendationEvidenceLinks(input: EvidenceBindingInput): 
       links.set(reference, link);
     }
   }
-  const expected = [...links.values()];
+  return [...links.values()];
+}
+
+export function deriveRecommendationEvidenceLinks(input: EvidenceBindingInput): readonly RecommendationEvidenceLink[] {
+  const expected = recommendationEvidenceLinks(input);
   if (!exact(input.supplied, expected)) return fail();
   return expected;
 }

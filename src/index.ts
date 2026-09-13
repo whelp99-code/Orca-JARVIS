@@ -248,3 +248,5 @@ export { createProductionScopedMemory, type ScopedMemoryProductionOptions } from
 export { type PhoneMemoryContextOptions } from "./phone-memory-context.js";
 export * from "./memory-scoped-api.js";
 export { probeTaskExecutorRuntime } from "./task-executor-registry.js";
+export { produceDailyRecommendation } from "./personal-context-production.js";
+export type { DailyRecommendationProduction, DailyRecommendationRequest } from "./personal-context-production.js";

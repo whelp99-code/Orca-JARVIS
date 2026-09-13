@@ -137,7 +137,7 @@ export function persistLocalChainLiveObservation(db: AuthorityDb, cycle = 0, bas
   if (observation === undefined) throw new TypeError("live observation required");
   const stored = db.persistObservation(observation, base);
   return { id: observation.id, digest: stored.canonical_digest,
-    source_id: observation.source.source_id, observed_at: observation.observed_at };
+    source_id: observation.source.source_id, observed_at: observation.observed_at, observation };
 }
 
 export type LocalChainOwnerApproval = { readonly request_id: string; readonly command_digest: string };
