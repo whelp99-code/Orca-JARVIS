@@ -1,3 +1,5 @@
+import { appendFileSync, mkdirSync } from "node:fs";
+import { dirname } from "node:path";
 import { assembleModelRequest, type ModelRequestV1 } from "./context-assembler.js";
 
 export type ModelTransportCapture = {
@@ -24,6 +26,17 @@ export class RecordingModelTransport implements ModelTransport {
 
   async send(capture: ModelTransportCapture): Promise<ModelTransportResult> {
     return this.record(capture);
+  }
+}
+
+/** Host-configured session transport: append one capture JSON line to a path. */
+export class FileModelTransport implements ModelTransport {
+  constructor(readonly path: string) {}
+
+  async send(capture: ModelTransportCapture): Promise<ModelTransportResult> {
+    mkdirSync(dirname(this.path), { recursive: true });
+    appendFileSync(this.path, `${JSON.stringify(capture)}\n`);
+    return { accepted: true };
   }
 }
 

@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
-import { realpathSync, writeSync } from "node:fs";
+import { existsSync, readFileSync, realpathSync, writeFileSync, writeSync } from "node:fs";
+import { readProcessStdin } from "./cli-host-memory.js";
 import { type CliCommandContext, commandNow } from "./cli-command-context.js";
 import { integer, jsonFile, objectValue } from "./cli-command-input.js";
 import { observePersistedBinding } from "./persisted-orca-observer.js";
@@ -363,7 +364,8 @@ async function assembleDispatchContext(
   const options = context.dependencies.memoryReferenceOptions;
   if (options === undefined) throw new JarvisError("MEMORY_REFERENCE_OPTIONS_REQUIRED");
   const sessionId = typeof parsed.task?.session_id === "string" ? parsed.task.session_id : undefined;
-  const { read_fence: _ignoredFence, ...readerOptions } = options;
+  const { read_fence, ...readerOptions } = options;
+  void read_fence;
   const produced = createProductionMemoryReference(context.db, {
     ...readerOptions,
     clock: () => commandNow(context),
@@ -402,7 +404,7 @@ async function assembleDispatchContext(
   }
 }
 
-function parsePostCompactEvent(raw: unknown): { session_id: string; query: string } {
+function parsePostCompactEvent(raw: unknown): { session_id: string; query: string; event_digest: string } {
   if (raw === null || typeof raw !== "object") throw new JarvisError("HOOK_JSON_INVALID");
   const payload = raw as Record<string, unknown>;
   const name = payload.hook_event_name ?? payload.hookEventName;
@@ -416,7 +418,9 @@ function parsePostCompactEvent(raw: unknown): { session_id: string; query: strin
   const query = payload.query ?? payload.compact_summary;
   if (typeof sessionId !== "string" || sessionId.length === 0) throw new JarvisError("HOOK_SESSION_MISSING");
   if (typeof query !== "string" || query.trim().length === 0) throw new JarvisError("HOOK_QUERY_MISSING");
-  return { session_id: sessionId, query: query.trim() };
+  const trimmed = query.trim();
+  const event_digest = `sha256:${createHash("sha256").update(`${sessionId}\0${trimmed}`).digest("hex")}`;
+  return { session_id: sessionId, query: trimmed, event_digest };
 }
 
 /** Claude PostCompact (or same JSON) → existing reader reselect → configured model_transport. */
@@ -430,8 +434,7 @@ export async function executeMemoryPostcompact(
   if (context.argument !== undefined) {
     raw = await jsonFile(context.argument);
   } else {
-    const read = context.dependencies.readStdin;
-    if (read === undefined) throw new JarvisError("HOOK_JSON_INVALID");
+    const read = context.dependencies.readStdin ?? readProcessStdin;
     try {
       raw = JSON.parse(Buffer.from(await read()).toString("utf8")) as unknown;
     } catch (error) {
@@ -439,17 +442,50 @@ export async function executeMemoryPostcompact(
     }
   }
   const event = parsePostCompactEvent(raw);
+  const ledger = postcompactLedgerPath(context);
+  const seen = readPostcompactLedger(ledger);
+  if (seen.includes(event.event_digest)) {
+    return {
+      ok: true,
+      command: "memory.postcompact",
+      duplicate: true,
+      transport: "configured",
+      event_digest: event.event_digest,
+    };
+  }
   const assembled = await assembleDispatchContext(context, {
     assemble_context: { query: event.query, purpose: "postcompact-reselect" },
     memory_evidence: [],
     task: { session_id: event.session_id },
   });
   if (assembled === undefined) throw new JarvisError("MEMORY_POSTCOMPACT_ASSEMBLE_MISSING");
+  writePostcompactLedger(ledger, [...seen, event.event_digest]);
   return {
     ok: true,
     command: "memory.postcompact",
     model_session_id: assembled.capture.session_id,
     model_request_bytes: assembled.capture.bytes,
     transport: "configured",
+    event_digest: event.event_digest,
   };
+}
+
+function postcompactLedgerPath(context: CliCommandContext): string {
+  const envPath = process.env["JARVIS_POSTCOMPACT_LEDGER"];
+  if (envPath !== undefined && envPath.length > 0) return envPath;
+  return `${context.db.filename}.postcompact-events.json`;
+}
+
+function readPostcompactLedger(path: string): string[] {
+  if (!existsSync(path)) return [];
+  try {
+    const raw: unknown = JSON.parse(readFileSync(path, "utf8"));
+    return Array.isArray(raw) ? raw.filter((item): item is string => typeof item === "string") : [];
+  } catch {
+    return [];
+  }
+}
+
+function writePostcompactLedger(path: string, events: readonly string[]): void {
+  writeFileSync(path, `${JSON.stringify(events)}\n`);
 }

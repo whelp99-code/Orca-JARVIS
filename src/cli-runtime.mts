@@ -12,6 +12,7 @@ import { executeLiveCommand } from "./cli-live-commands.js";
 import { executePreGjcCommand } from "./cli-pre-gjc-commands.js";
 import { executeStateCommand } from "./cli-state-commands.js";
 import { AuthorityDb, JarvisError } from "./db.js";
+import { hostMemoryReferenceOptions } from "./cli-host-memory.js";
 
 const CLI_HELP =
   "JARVIS — agent-ops runtime\n"
@@ -40,6 +41,10 @@ export async function execute(
   args: string[],
   dependencies: CliDependencies = {},
 ): Promise<Record<string, unknown>> {
+  dependencies = {
+    ...dependencies,
+    memoryReferenceOptions: dependencies.memoryReferenceOptions ?? hostMemoryReferenceOptions(),
+  };
   if (requestsHelp(args)) {
     console.log(CLI_HELP);
     return { ok: true, command: "help" };

@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { readFileSync } from "node:fs";
+import { join } from "node:path";
+import { afterEach, describe, expect, it } from "vitest";
+import { hostMemoryReferenceOptions } from "../../src/cli-host-memory.js";
 import { executeMemoryPostcompact } from "../../src/cli-gjc-commands.js";
-import { RecordingModelTransport, type ModelTransport, type ModelTransportCapture, type ModelTransportResult } from "../../src/index.js";
+import { execute } from "../../src/cli-runtime.mjs";
+import { FileModelTransport, RecordingModelTransport, type ModelTransport, type ModelTransportCapture, type ModelTransportResult } from "../../src/index.js";
 import { MemoryReferenceProvider, REFERENCE_NOW } from "../fixtures/memory-reference-provider.js";
 import { closeMemoryDatabase, memoryDatabase } from "../fixtures/memory-candidate-store.js";
 import { memoryReadFenceFixture } from "../fixtures/memory-read-fence.js";
@@ -130,6 +134,72 @@ describe("memory.postcompact configured transport", () => {
       code: "MODEL_TRANSPORT_UNAVAILABLE",
     });
     expect(sequence.sent).toHaveLength(2);
+    closeMemoryDatabase(database);
+  });
+
+  it("does not resend the same event digest", async () => {
+    const { database, transport, context } = await ready();
+    const first = await executeMemoryPostcompact(context as never);
+    const second = await executeMemoryPostcompact(context as never);
+    expect(first.duplicate).not.toBe(true);
+    expect(second).toMatchObject({ ok: true, duplicate: true });
+    expect(transport.sent).toHaveLength(1);
+    closeMemoryDatabase(database);
+  });
+
+  it("sends again for a new compaction query", async () => {
+    const { database, transport, context } = await ready();
+    await executeMemoryPostcompact(context as never);
+    const next = {
+      ...context,
+      dependencies: {
+        ...context.dependencies,
+        readStdin: async () => Buffer.from(JSON.stringify({
+          hook_event_name: "PostCompact",
+          session_id: "claude-sess-1",
+          compact_summary: "기억",
+          trigger: "auto",
+        })),
+      },
+    };
+    const result = await executeMemoryPostcompact(next as never);
+    expect(result.duplicate).not.toBe(true);
+    expect(transport.sent).toHaveLength(2);
+    closeMemoryDatabase(database);
+  });
+});
+
+describe("memory.postcompact host composition", () => {
+  afterEach(() => {
+    delete process.env["JARVIS_MODEL_TRANSPORT_PATH"];
+  });
+
+  it("wires FileModelTransport from JARVIS_MODEL_TRANSPORT_PATH through execute", async () => {
+    const database = await memoryDatabase();
+    const { config } = memoryReadFenceFixture(database, "2026-12-01T00:00:00.000Z");
+    const capture = join(database.root, "model-capture.jsonl");
+    process.env["JARVIS_MODEL_TRANSPORT_PATH"] = capture;
+    const host = hostMemoryReferenceOptions();
+    expect(host?.model_transport).toBeInstanceOf(FileModelTransport);
+    const result = await execute(["memory", "postcompact", "--db", database.path], {
+      clock: () => REFERENCE_NOW,
+      readStdin: async () => Buffer.from(JSON.stringify({
+        hook_event_name: "PostCompact",
+        session_id: "claude-sess-1",
+        compact_summary: "공통 기억",
+        trigger: "auto",
+      })),
+      memoryReferenceOptions: {
+        ...host,
+        projection_key: Buffer.alloc(32, 7),
+        transport: new MemoryReferenceProvider(),
+        read_fence_config: config,
+      },
+    });
+    expect(result).toMatchObject({ ok: true, command: "memory.postcompact", transport: "configured" });
+    const written = readFileSync(capture, "utf8");
+    expect(written).toContain("공통 기억");
+    expect(written).toContain("claude-sess-1");
     closeMemoryDatabase(database);
   });
 });
