@@ -11,7 +11,7 @@ import { MorningRecommendationSource } from "../../src/morning-recommendation-so
 import { todayProjection } from "../../src/dashboard/personal-today.js";
 import {
   admitLocalChainObservation,
-  localChainConfirmedMemory,
+  localChainDeclaredMemory,
   localObservationChain,
   LOCAL_CHAIN_AT,
   LOCAL_CHAIN_CONTEXT_ID,
@@ -107,16 +107,16 @@ it("keeps assembled contexts out of recommendations while their evidence kinds s
   const { observation } = await admitLocalChainObservation(db);
   const context = assemblePersonalContext({ purpose: "daily_prioritization", query: "what now?", clock: AT,
     expires_in_ms: 240_000, budgets: { max_items: 16, max_excerpt_bytes: 128, max_total_bytes: 4096 },
-    observations: [observation], pending_authority_refs: [], memories: [localChainConfirmedMemory] });
+    observations: [observation], pending_authority_refs: [], memories: [localChainDeclaredMemory] });
   expect(context.payload.state).toBe("sufficient");
   expect(context.payload.included_observation_refs).toEqual([observation.id]);
   expect(context.evidence.map(item => item.kind)).toEqual(["context_observation", "confirmed_memory"]);
   const memoryEvidence = context.evidence[1];
   expect(memoryEvidence).toBeDefined();
   db.persistContextSnapshot({ context, memory_evidence: [{ memory_ref: LOCAL_CHAIN_PRINCIPLE_REF,
-    evidence_id: memoryEvidence?.evidence_id ?? "", source_id: localChainConfirmedMemory.source_id,
-    digest: localChainConfirmedMemory.digest, observed_at: localChainConfirmedMemory.observed_at,
-    fresh_until: localChainConfirmedMemory.fresh_until }] }, AT);
+    evidence_id: memoryEvidence?.evidence_id ?? "", source_id: localChainDeclaredMemory.source_id,
+    digest: localChainDeclaredMemory.digest, observed_at: localChainDeclaredMemory.observed_at,
+    fresh_until: localChainDeclaredMemory.fresh_until }] }, AT);
   // Citation binding requires linux_live_fact / user_confirmed_principle / owner_decision evidence kinds.
   expect(db.db.prepare("SELECT evidence_kind FROM personal_context_evidence WHERE context_id=? ORDER BY position")
     .pluck().all(context.id)).toEqual(["context_observation", "confirmed_memory"]);
@@ -132,11 +132,11 @@ it("derives citation authority for the real assembled context at the consumption
   const { observation } = await admitLocalChainObservation(db);
   const context = assemblePersonalContext({ purpose: "daily_prioritization", query: "what now?", clock: AT,
     expires_in_ms: 240_000, budgets: { max_items: 16, max_excerpt_bytes: 128, max_total_bytes: 4096 },
-    observations: [observation], pending_authority_refs: [], memories: [localChainConfirmedMemory] });
+    observations: [observation], pending_authority_refs: [], memories: [localChainDeclaredMemory] });
   // The sealed kinds stay exactly as assembly wrote them.
   expect(context.evidence.map(item => item.kind)).toEqual(["context_observation", "confirmed_memory"]);
 
-  const citations = classifyAssembledCitations(context, [observation], [localChainConfirmedMemory]);
+  const citations = classifyAssembledCitations(context, [observation], [localChainDeclaredMemory]);
   // A local task-timeline observation is advisory: it may not be cited as a live Linux fact, and no
   // owner authority is invented for it.
   expect(citationAvailable(citations, "linux_live_fact")).toBe(false);
@@ -149,9 +149,9 @@ it("derives citation authority for the real assembled context at the consumption
   // confirmation is not something the stored rows can show - so it is reported unconfirmed rather
   // than granted a licence it never proved.
   db.persistContextSnapshot({ context, memory_evidence: [{ memory_ref: LOCAL_CHAIN_PRINCIPLE_REF,
-    evidence_id: context.evidence[1]?.evidence_id ?? "", source_id: localChainConfirmedMemory.source_id,
-    digest: localChainConfirmedMemory.digest, observed_at: localChainConfirmedMemory.observed_at,
-    fresh_until: localChainConfirmedMemory.fresh_until }] }, AT);
+    evidence_id: context.evidence[1]?.evidence_id ?? "", source_id: localChainDeclaredMemory.source_id,
+    digest: localChainDeclaredMemory.digest, observed_at: localChainDeclaredMemory.observed_at,
+    fresh_until: localChainDeclaredMemory.fresh_until }] }, AT);
   const carried = citationAuthorityForContext(db, context.id);
   // The local timeline observation stays advisory; the memory the assembler sealed as confirmed
   // keeps the one role it earned, and no owner authority is invented for either.

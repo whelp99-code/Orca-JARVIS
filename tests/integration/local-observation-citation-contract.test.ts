@@ -6,7 +6,7 @@ import {
 } from "../../src/personal-context-citation-contract.js";
 import { parseObservationEnvelopeV1 } from "../../src/personal-validation.js";
 import {
-  admitLocalChainObservation, localChainConfirmedMemory, LOCAL_CHAIN_AT, LOCAL_CHAIN_PRINCIPLE_REF,
+  admitLocalChainObservation, localChainDeclaredMemory, LOCAL_CHAIN_AT, LOCAL_CHAIN_PRINCIPLE_REF,
 } from "../fixtures/local-observation-chain.js";
 import { tempDb } from "../helpers.js";
 
@@ -15,7 +15,7 @@ const opened: AuthorityDb[] = [];
 afterEach(() => { for (const db of opened.splice(0)) db.close(); });
 
 const assemble = (observations: readonly unknown[], memories: readonly unknown[] = [
-  localChainConfirmedMemory]) => assemblePersonalContext({
+  localChainDeclaredMemory]) => assemblePersonalContext({
   purpose: "daily_prioritization", query: "what now?", clock: AT, expires_in_ms: 240_000,
   budgets: { max_items: 16, max_excerpt_bytes: 128, max_total_bytes: 4096 },
   observations, pending_authority_refs: [], memories,
@@ -51,7 +51,7 @@ it("never lets an advisory local observation stand in for a live fact or an owne
     expect(context.evidence.map(item => item.kind))
       .toEqual(["context_observation", "confirmed_memory"]);
 
-    const citations = classifyAssembledCitations(context, [observation], [localChainConfirmedMemory]);
+    const citations = classifyAssembledCitations(context, [observation], [localChainDeclaredMemory]);
     expect(citations.citable).toEqual([{ reference: LOCAL_CHAIN_PRINCIPLE_REF,
       evidence_id: context.evidence[1]?.evidence_id, citation_kind: "user_confirmed_principle" }]);
     expect(citations.uncitable).toEqual([{ reference: observation.id,
@@ -65,7 +65,7 @@ it("never lets an advisory local observation stand in for a live fact or an owne
 it("cites a verified live Linux task and refuses the same envelope when it is only reported", () => {
   const verified = liveObservation("verified");
   const cited = classifyAssembledCitations(assemble([verified]), [verified],
-    [localChainConfirmedMemory]);
+    [localChainDeclaredMemory]);
   expect(cited.citable.map(item => item.citation_kind))
     .toEqual(["linux_live_fact", "user_confirmed_principle"]);
   expect(cited.uncitable).toEqual([]);
@@ -74,14 +74,14 @@ it("cites a verified live Linux task and refuses the same envelope when it is on
   // rather than inheriting it silently, so a merely inferred envelope stays uncitable here too.
   const inferred = liveObservation("inferred");
   const refused = classifyAssembledCitations(assemble([verified]), [inferred],
-    [localChainConfirmedMemory]);
+    [localChainDeclaredMemory]);
   expect(refused.citable.map(item => item.citation_kind)).toEqual(["user_confirmed_principle"]);
   expect(refused.uncitable.map(item => item.reason)).toEqual(["unclassified_source"]);
 }, 60_000);
 
 it("refuses a memory the user never confirmed and evidence it cannot account for", () => {
   const verified = liveObservation("verified");
-  const unconfirmed = { ...localChainConfirmedMemory, trust: "inferred" as const };
+  const unconfirmed = { ...localChainDeclaredMemory, trust: "inferred" as const };
   const context = assemble([verified]);
   const citations = classifyAssembledCitations(context, [verified], [unconfirmed]);
   expect(citations.citable.map(item => item.citation_kind)).toEqual(["linux_live_fact"]);

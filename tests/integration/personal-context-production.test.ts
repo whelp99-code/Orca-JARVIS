@@ -25,11 +25,11 @@ function candidate(currentRef: string, ownerGateRef: string): Record<string, unk
 }
 
 function request(observations: readonly unknown[], candidates: readonly Record<string, unknown>[],
-  ownerImportRef: string): DailyRecommendationRequest {
+  ownerImportRef: string, memory: unknown): DailyRecommendationRequest {
   return {
     assemble: { purpose: "daily_prioritization", query: "What should happen next?", clock: AT,
       expires_in_ms: 240_000, budgets: { max_items: 16, max_excerpt_bytes: 512, max_total_bytes: 8192 },
-      observations, pending_authority_refs: [], memories: [localChainConfirmedMemory] } as never,
+      observations, pending_authority_refs: [], memories: [memory] } as never,
     policy: priorityPolicyConfig(), policy_decision_ref: POLICY_REF,
     principle_ref: LOCAL_CHAIN_PRINCIPLE_REF, owner_import_decision_ref: ownerImportRef,
     candidates,
@@ -50,8 +50,9 @@ it("abstains through the real production path when only an advisory local source
   const { observation } = await admitLocalChainObservation(db);
   const owner = approveLocalChainOwnerDecisions(db);
 
-  const produced = produceDailyRecommendation(db,
-    request([observation], [candidate(observation.id, owner.ownerGate.request_id)], owner.importDecision.request_id));
+  const produced = produceDailyRecommendation(db, request([observation],
+    [candidate(observation.id, owner.ownerGate.request_id)], owner.importDecision.request_id,
+    localChainConfirmedMemory(db)));
 
   expect(produced.state).toBe("abstained");
   if (produced.state !== "abstained") throw new TypeError("abstention expected");
@@ -74,7 +75,8 @@ it("assembles, persists and records a recommendation when live and owner evidenc
   const owner = approveLocalChainOwnerDecisions(db);
 
   const produced = produceDailyRecommendation(db, request([observation, live.observation],
-    [candidate(live.id, owner.ownerGate.request_id)], owner.importDecision.request_id));
+    [candidate(live.id, owner.ownerGate.request_id)], owner.importDecision.request_id,
+    localChainConfirmedMemory(db)));
 
   expect(produced.state).toBe("recommended");
   if (produced.state !== "recommended") throw new TypeError("recommendation expected");
@@ -102,7 +104,8 @@ it("abstains when a candidate names an owner gate the owner never approved", asy
   const owner = approveLocalChainOwnerDecisions(db);
 
   const produced = produceDailyRecommendation(db, request([observation, live.observation],
-    [candidate(live.id, "req:local-chain:owner-gate:never-approved")], owner.importDecision.request_id));
+    [candidate(live.id, "req:local-chain:owner-gate:never-approved")], owner.importDecision.request_id,
+    localChainConfirmedMemory(db)));
 
   expect(produced.state).toBe("abstained");
   if (produced.state !== "abstained") throw new TypeError("abstention expected");

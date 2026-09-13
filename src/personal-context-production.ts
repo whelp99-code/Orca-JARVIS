@@ -3,6 +3,7 @@ import { assemblePersonalContext } from "./context-assembler.js";
 import type { ContextAssemblerInput, MemoryInput } from "./context-assembler-input.js";
 import { CANONICAL_GATES } from "./personal-os-policy-contract.js";
 import { citationAuthorityForContext, type AssembledCitation } from "./personal-context-citation-contract.js";
+import { ownerConfirmedContent } from "./personal-memory-reference-evidence.js";
 import type { ContextSnapshotV1 } from "./personal-contracts.js";
 import type { ContextMemoryEvidenceBinding, StoredContext } from "./personal-context-types.js";
 import { canonicalPersonalContractHash } from "./personal-validation.js";
@@ -157,7 +158,19 @@ export function produceDailyRecommendation(authority: AuthorityDb,
   const context = assemblePersonalContext(request.assemble);
   const stored = authority.persistContextSnapshot(
     { context, memory_evidence: memoryBindings(context, request.assemble.memories) }, request.assemble.clock);
-  const citations = citationAuthorityForContext(authority, context.id);
+  // What the stored context licenses, minus any principle this database cannot show the owner
+  // confirmed. Assembly seals a memory as a confirmed principle because the request said its trust
+  // was user_confirmed - it has nothing else to go on - so a run that produces from those inputs has
+  // to ask the control plane before resting an action on one. A principle that fails here is simply
+  // not cited, and the engine abstains for want of one.
+  const licensed = citationAuthorityForContext(authority, context.id);
+  const confirmedPrinciple = (item: AssembledCitation): boolean => {
+    if (item.citation_kind !== "user_confirmed_principle") return true;
+    const evidence = context.evidence.find(entry => entry.evidence_id === item.evidence_id);
+    return evidence !== undefined && ownerConfirmedContent(authority, evidence.digest);
+  };
+  const citations = { citable: licensed.citable.filter(confirmedPrinciple),
+    uncitable: licensed.uncitable };
   const ranking = rankPriorityActionsWithDeadlineEvidence(request.policy, {
     schema_version: 1, clock: request.assemble.clock,
     linux_policy_decision_ref: request.policy_decision_ref,

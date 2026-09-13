@@ -56,6 +56,28 @@ export async function sealFixtureAuthority(db: AuthorityDb): Promise<void> {
 export type FixtureOwnerApproval = { readonly request_id: string; readonly command_digest: string };
 
 /**
+ * Decides one command this database already staged, with a receipt signed by its own anchor.
+ *
+ * A product path that stages its own command - a memory confirmation, say - needs the owner's
+ * signature on that exact command, not on a request the fixture invented beside it. A receipt may
+ * live at most fifteen minutes, so a longer command window is clamped rather than forged.
+ */
+export function decideFixtureOwnerCommand(db: AuthorityDb, command: {
+  readonly request_id: string; readonly command_digest: string; readonly expires_at: string;
+}, at: string): void {
+  const anchor = sealed.get(db.filename);
+  if (anchor === undefined) throw new TypeError("fixture authority must be sealed before deciding");
+  const receiptExpires = new Date(Math.min(Date.parse(command.expires_at), Date.parse(at) + 600_000)).toISOString();
+  new ControlPlane(db).decide(signCommandApproval({ schema_version: 1,
+    receipt_id: `receipt:${command.request_id}`, request_id: command.request_id, decision: "approve",
+    command_digest: command.command_digest, signer_principal_id: anchor.principal,
+    authenticated_session_id: "owner-session", key_id: anchor.keyId, algorithm: "Ed25519",
+    issued_at: at, not_before: at, expires_at: receiptExpires,
+    nonce: `receipt-nonce-${command.request_id}`, max_uses: 1, status: "issued" }, anchor.key),
+  new Date(at));
+}
+
+/**
  * Stages one control command and decides it with an owner-signed receipt, so an owner citation has
  * a real approval to resolve against. A command approval receipt may live at most fifteen minutes
  * while the request it decides outlives it, so the two windows are deliberately different.

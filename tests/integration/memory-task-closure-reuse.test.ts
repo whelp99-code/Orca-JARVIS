@@ -22,6 +22,10 @@ import { createProductionMemoryReference } from "../../src/memory-reference-prod
 import { MemoryReferenceProvider, REFERENCE_NOW } from "../fixtures/memory-reference-provider.js";
 import { memoryReadFenceFixture } from "../fixtures/memory-read-fence.js";
 import { inferredMemoryInput, memoryPolicy, MEMORY_NOW } from "../fixtures/memory-candidate-fixture.js";
+import { decideFixtureOwnerCommand } from "../fixtures/fixture-authority.js";
+import { MemoryMutationService } from "../../src/dashboard/memory-mutation-service.js";
+import { MemoryTokenCache } from "../../src/dashboard/memory-token-cache.js";
+import { createDashboardSession } from "../../src/dashboard/session.js";
 import { closeMemoryDatabase, memoryDatabase, type MemoryDatabase } from "../fixtures/memory-candidate-store.js";
 
 const TASK = "task:derived-memory";
@@ -45,6 +49,17 @@ async function derivedMemoryContext() {
   await admitLocalChainObservation(authority, LOCAL_CHAIN_AT);
   const live = persistLocalChainLiveObservation(authority, 0, LOCAL_CHAIN_AT);
   const owner = approveLocalChainOwnerDecisions(authority, 0, LOCAL_CHAIN_AT);
+  // The owner confirms this derived memory through the staging the dashboard uses. Without that
+  // nothing may rest on it at all, and the closure this test is about would never be reached.
+  const mutation = new MemoryMutationService({ authority, clock: () => NOW,
+    session: createDashboardSession("owner-session"),
+    tokens: new MemoryTokenCache(Buffer.alloc(32, 1), () => NOW),
+    candidate_review_spool_root: `${database.root}/review`,
+    candidate_dispatch_spool_root: `${database.root}/dispatch` });
+  const confirmation = mutation.stageCandidateDecision({ candidate_id: candidate.candidate_id,
+    operation: "remember", decision: "confirm", intent_id: `memui:intent:v1:${"3".repeat(64)}` });
+  if (confirmation === undefined) throw new TypeError("confirmation command required");
+  decideFixtureOwnerCommand(authority, confirmation, MEMORY_NOW);
   const memory = {
     kind: "evidence" as const, memory_ref: "memory:principle:derived", source_id: "src:pos:v1:second-brain:primary",
     digest: contentDigest, observed_at: "2026-08-28T11:30:00.000Z", fresh_until: "2026-08-28T12:05:00.000Z",
