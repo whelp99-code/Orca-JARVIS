@@ -419,8 +419,18 @@ function parsePostCompactEvent(raw: unknown): { session_id: string; query: strin
   if (typeof sessionId !== "string" || sessionId.length === 0) throw new JarvisError("HOOK_SESSION_MISSING");
   if (typeof query !== "string" || query.trim().length === 0) throw new JarvisError("HOOK_QUERY_MISSING");
   const trimmed = query.trim();
-  const event_digest = `sha256:${createHash("sha256").update(`${sessionId}\0${trimmed}`).digest("hex")}`;
+  const occurrence = occurrenceId(payload);
+  const event_digest = `sha256:${createHash("sha256").update(`${sessionId}\0${occurrence}\0${trimmed}`).digest("hex")}`;
   return { session_id: sessionId, query: trimmed, event_digest };
+}
+
+function occurrenceId(payload: Record<string, unknown>): string {
+  const keys = ["prompt_id", "promptId", "compaction_id", "compactionId", "event_id", "eventId", "uuid"] as const;
+  for (const key of keys) {
+    const value = payload[key];
+    if (typeof value === "string" && value.length > 0) return value;
+  }
+  return "";
 }
 
 /** Claude PostCompact (or same JSON) → existing reader reselect → configured model_transport. */

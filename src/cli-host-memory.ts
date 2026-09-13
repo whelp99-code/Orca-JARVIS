@@ -1,13 +1,22 @@
-import { FileModelTransport } from "./context-model-transport.js";
+import { CommandModelTransport } from "./context-model-transport.js";
 import type { MemoryReferenceProductionOptions } from "./memory-reference-production.js";
 
-/** Host composition for `jarvis memory postcompact` without test DI. */
+/** Host composition: a consumer command, not a file log. */
 export function hostMemoryReferenceOptions(
   env: NodeJS.ProcessEnv = process.env,
 ): MemoryReferenceProductionOptions | undefined {
-  const path = env["JARVIS_MODEL_TRANSPORT_PATH"];
-  if (path === undefined || path.length === 0) return undefined;
-  return { model_transport: new FileModelTransport(path) };
+  const command = env["JARVIS_MODEL_TRANSPORT_CMD"];
+  if (command === undefined || command.length === 0) return undefined;
+  const rawArgs = env["JARVIS_MODEL_TRANSPORT_ARGS"];
+  let args: string[] = [];
+  if (rawArgs !== undefined && rawArgs.length > 0) {
+    const parsed: unknown = JSON.parse(rawArgs);
+    if (!Array.isArray(parsed) || parsed.some(item => typeof item !== "string")) {
+      return undefined;
+    }
+    args = parsed;
+  }
+  return { model_transport: new CommandModelTransport(command, args) };
 }
 
 export async function readProcessStdin(): Promise<Buffer> {

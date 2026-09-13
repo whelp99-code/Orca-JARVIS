@@ -1,10 +1,8 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { hostMemoryReferenceOptions } from "../../src/cli-host-memory.js";
 import { executeMemoryPostcompact } from "../../src/cli-gjc-commands.js";
 import { execute } from "../../src/cli-runtime.mjs";
-import { FileModelTransport, RecordingModelTransport, type ModelTransport, type ModelTransportCapture, type ModelTransportResult } from "../../src/index.js";
+import { CommandModelTransport, RecordingModelTransport, type ModelTransport, type ModelTransportCapture, type ModelTransportResult } from "../../src/index.js";
 import { MemoryReferenceProvider, REFERENCE_NOW } from "../fixtures/memory-reference-provider.js";
 import { closeMemoryDatabase, memoryDatabase } from "../fixtures/memory-candidate-store.js";
 import { memoryReadFenceFixture } from "../fixtures/memory-read-fence.js";
@@ -43,6 +41,7 @@ async function ready(model_transport?: CapturingTransport) {
         session_id: "claude-sess-1",
         compact_summary: "공통 기억",
         trigger: "auto",
+        prompt_id: "p1",
       })),
       memoryReferenceOptions: {
         projection_key: Buffer.alloc(32, 7),
@@ -167,20 +166,46 @@ describe("memory.postcompact configured transport", () => {
     expect(transport.sent).toHaveLength(2);
     closeMemoryDatabase(database);
   });
+
+  it("sends again when the same summary has a new prompt_id", async () => {
+    const { database, transport, context } = await ready();
+    await executeMemoryPostcompact(context as never);
+    const next = {
+      ...context,
+      dependencies: {
+        ...context.dependencies,
+        readStdin: async () => Buffer.from(JSON.stringify({
+          hook_event_name: "PostCompact",
+          session_id: "claude-sess-1",
+          compact_summary: "공통 기억",
+          trigger: "auto",
+          prompt_id: "p2",
+        })),
+      },
+    };
+    const result = await executeMemoryPostcompact(next as never);
+    expect(result.duplicate).not.toBe(true);
+    expect(transport.sent).toHaveLength(2);
+    closeMemoryDatabase(database);
+  });
 });
 
 describe("memory.postcompact host composition", () => {
   afterEach(() => {
-    delete process.env["JARVIS_MODEL_TRANSPORT_PATH"];
+    delete process.env["JARVIS_MODEL_TRANSPORT_CMD"];
+    delete process.env["JARVIS_MODEL_TRANSPORT_ARGS"];
   });
 
-  it("wires FileModelTransport from JARVIS_MODEL_TRANSPORT_PATH through execute", async () => {
+  it("accepts only when the consumer command exits 0", async () => {
     const database = await memoryDatabase();
     const { config } = memoryReadFenceFixture(database, "2026-12-01T00:00:00.000Z");
-    const capture = join(database.root, "model-capture.jsonl");
-    process.env["JARVIS_MODEL_TRANSPORT_PATH"] = capture;
+    process.env["JARVIS_MODEL_TRANSPORT_CMD"] = process.execPath;
+    process.env["JARVIS_MODEL_TRANSPORT_ARGS"] = JSON.stringify([
+      "-e",
+      "let s='';process.stdin.on('data',d=>s+=d);process.stdin.on('end',()=>process.exit(s.includes('session_id')?0:1))",
+    ]);
     const host = hostMemoryReferenceOptions();
-    expect(host?.model_transport).toBeInstanceOf(FileModelTransport);
+    expect(host?.model_transport).toBeInstanceOf(CommandModelTransport);
     const result = await execute(["memory", "postcompact", "--db", database.path], {
       clock: () => REFERENCE_NOW,
       readStdin: async () => Buffer.from(JSON.stringify({
@@ -188,6 +213,7 @@ describe("memory.postcompact host composition", () => {
         session_id: "claude-sess-1",
         compact_summary: "공통 기억",
         trigger: "auto",
+        prompt_id: "p1",
       })),
       memoryReferenceOptions: {
         ...host,
@@ -197,9 +223,6 @@ describe("memory.postcompact host composition", () => {
       },
     });
     expect(result).toMatchObject({ ok: true, command: "memory.postcompact", transport: "configured" });
-    const written = readFileSync(capture, "utf8");
-    expect(written).toContain("공통 기억");
-    expect(written).toContain("claude-sess-1");
     closeMemoryDatabase(database);
   });
 });

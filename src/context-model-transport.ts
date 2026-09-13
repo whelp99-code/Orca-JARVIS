@@ -1,3 +1,4 @@
+import { spawn } from "node:child_process";
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
 import { assembleModelRequest, type ModelRequestV1 } from "./context-assembler.js";
@@ -29,14 +30,39 @@ export class RecordingModelTransport implements ModelTransport {
   }
 }
 
-/** Host-configured session transport: append one capture JSON line to a path. */
+/** Log-only. File append is not a session consumer. */
 export class FileModelTransport implements ModelTransport {
   constructor(readonly path: string) {}
 
   async send(capture: ModelTransportCapture): Promise<ModelTransportResult> {
     mkdirSync(dirname(this.path), { recursive: true });
     appendFileSync(this.path, `${JSON.stringify(capture)}\n`);
-    return { accepted: true };
+    return { accepted: false, reason: "FILE_TRANSPORT_NOT_CONSUMER" };
+  }
+}
+
+/** Host-configured consumer: stdin capture JSON, accepted only on exit 0. */
+export class CommandModelTransport implements ModelTransport {
+  constructor(readonly command: string, readonly args: readonly string[] = []) {}
+
+  async send(capture: ModelTransportCapture): Promise<ModelTransportResult> {
+    return await new Promise(resolve => {
+      const child = spawn(this.command, [...this.args], { stdio: ["pipe", "pipe", "pipe"] });
+      const err: Buffer[] = [];
+      child.stderr.on("data", chunk => { err.push(Buffer.from(chunk)); });
+      child.on("error", error => { resolve({ accepted: false, reason: error.message }); });
+      child.on("close", code => {
+        if (code === 0) {
+          resolve({ accepted: true });
+          return;
+        }
+        resolve({
+          accepted: false,
+          reason: `exit ${String(code)} ${Buffer.concat(err).toString("utf8").slice(0, 200)}`,
+        });
+      });
+      child.stdin.end(JSON.stringify(capture));
+    });
   }
 }
 

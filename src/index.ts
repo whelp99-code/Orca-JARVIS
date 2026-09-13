@@ -22,6 +22,7 @@ export {
 } from "./context-assembler.js";
 export {
 	prepareModelTransport, sendAssembledModelRequest, RecordingModelTransport, FileModelTransport,
+	CommandModelTransport,
 	type ModelTransport, type ModelTransportCapture, type ModelTransportResult,
 } from "./context-model-transport.js";
 export { CONTEXT_POLICY_CONFIG_INVALID, CONTEXT_POLICY_INPUT_INVALID, CONTEXT_POLICY_REASON_CODES, ContextPolicyError, evaluateContextPolicy,
