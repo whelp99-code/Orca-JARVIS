@@ -1,3 +1,4 @@
+import type Database from "better-sqlite3";
 import type { MemoryEvidenceInput } from "./context-assembler-input.js";
 import type { ContextSnapshotV1, ObservationEnvelopeV1 } from "./personal-contracts.js";
 import { canonicalPersonalContractHash } from "./personal-validation.js";
@@ -104,4 +105,47 @@ function memoryCitation(memory: MemoryEvidenceInput): Classification {
   return memory.trust === "user_confirmed"
     ? { reference, citation_kind: "user_confirmed_principle" }
     : { reference, reason: "unconfirmed_memory" };
+}
+
+/**
+ * The citation authority a stored context can prove from what the database actually holds.
+ *
+ * Observations are classified from their own sealed envelopes, exactly as assembly classified them.
+ * Memory evidence is not: the stored row carries no trust, and a confirmed principle is a licence
+ * only the confirmation itself can grant, so this reports such a piece as unconfirmed rather than
+ * inventing the trust that would make it citable. A caller that needs that licence has to prove it
+ * somewhere this can read.
+ */
+export function citationAuthorityForContext(
+  database: Database.Database, contextId: string,
+): AssembledCitations {
+  const citable: AssembledCitation[] = [];
+  const uncitable: UncitableEvidence[] = [];
+  const observations = database.prepare(
+    `SELECT o.observation_id AS reference, e.evidence_id AS evidence_id,
+            p.canonical_envelope_json AS envelope
+     FROM personal_context_observations o
+     JOIN personal_context_evidence e ON e.context_id=o.context_id AND e.position=o.position
+     JOIN personal_observations p ON p.observation_id=o.observation_id
+     WHERE o.context_id=? ORDER BY o.position`,
+  ).all(contextId) as { reference: string; evidence_id: string; envelope: string }[];
+  for (const row of observations) {
+    const envelope = JSON.parse(row.envelope) as ObservationEnvelopeV1;
+    const classified = observationCitation(envelope);
+    if ("citation_kind" in classified) {
+      citable.push({ reference: row.reference, evidence_id: row.evidence_id,
+        citation_kind: classified.citation_kind });
+    } else {
+      uncitable.push({ reference: row.reference, evidence_id: row.evidence_id,
+        reason: classified.reason });
+    }
+  }
+  const memories = database.prepare(
+    "SELECT memory_ref AS reference, evidence_id FROM personal_context_memory_evidence WHERE context_id=? ORDER BY rowid",
+  ).all(contextId) as { reference: string; evidence_id: string }[];
+  for (const row of memories) {
+    uncitable.push({ reference: row.reference, evidence_id: row.evidence_id,
+      reason: "unconfirmed_memory" });
+  }
+  return { citable, uncitable };
 }

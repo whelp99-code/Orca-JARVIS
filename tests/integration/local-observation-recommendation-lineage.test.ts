@@ -1,6 +1,7 @@
 import { afterEach, expect, it } from "vitest";
 import { AuthorityDb } from "../../src/db.js";
 import { assemblePersonalContext } from "../../src/context-assembler.js";
+import { citationAuthorityForContext, classifyAssembledCitations, citationAvailable } from "../../src/personal-context-citation-contract.js";
 import { canonicalPersonalContractHash } from "../../src/personal-validation.js";
 import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
 import { projectRecommendations } from "../../src/recommendation-projection.js";
@@ -106,4 +107,40 @@ it("keeps assembled contexts out of recommendations while their evidence kinds s
   // Citation binding requires linux_live_fact / user_confirmed_principle / owner_decision evidence kinds.
   expect(db.db.prepare("SELECT evidence_kind FROM personal_context_evidence WHERE context_id=? ORDER BY position")
     .pluck().all(context.id)).toEqual(["context_observation", "confirmed_memory"]);
+});
+
+// The sealed context keeps its own vocabulary: `context_observation` is the role a piece played in
+// assembly, not a licence to cite it. Citation authority is a separate judgement that
+// `classifyAssembledCitations` makes from each piece's own source, and it has no production caller,
+// so the consumption boundary still compares a context role against a citation licence and fails
+// for every context the real path builds.
+it("derives citation authority for the real assembled context at the consumption boundary", async () => {
+  const db = open();
+  const { observation } = await admitLocalChainObservation(db);
+  const context = assemblePersonalContext({ purpose: "daily_prioritization", query: "what now?", clock: AT,
+    expires_in_ms: 240_000, budgets: { max_items: 16, max_excerpt_bytes: 128, max_total_bytes: 4096 },
+    observations: [observation], pending_authority_refs: [], memories: [localChainConfirmedMemory] });
+  // The sealed kinds stay exactly as assembly wrote them.
+  expect(context.evidence.map(item => item.kind)).toEqual(["context_observation", "confirmed_memory"]);
+
+  const citations = classifyAssembledCitations(context, [observation], [localChainConfirmedMemory]);
+  // A local task-timeline observation is advisory: it may not be cited as a live Linux fact, and no
+  // owner authority is invented for it.
+  expect(citationAvailable(citations, "linux_live_fact")).toBe(false);
+  expect(citations.uncitable.map(item => item.reason)).toContain("advisory_local_source");
+  // The confirmed memory keeps the one role it earned.
+  expect(citations.citable.map(item => item.citation_kind)).toEqual(["user_confirmed_principle"]);
+
+  // The consumption boundary has to ask that question of what the database can prove, instead of
+  // reading the context role. A local-timeline observation is uncitable there too, and the memory's
+  // confirmation is not something the stored rows can show - so it is reported unconfirmed rather
+  // than granted a licence it never proved.
+  db.persistContextSnapshot({ context, memory_evidence: [{ memory_ref: LOCAL_CHAIN_PRINCIPLE_REF,
+    evidence_id: context.evidence[1]?.evidence_id ?? "", source_id: localChainConfirmedMemory.source_id,
+    digest: localChainConfirmedMemory.digest, observed_at: localChainConfirmedMemory.observed_at,
+    fresh_until: localChainConfirmedMemory.fresh_until }] }, AT);
+  const carried = citationAuthorityForContext(db.db, context.id);
+  expect(carried.citable).toEqual([]);
+  expect(carried.uncitable.map(item => item.reason))
+    .toEqual(["advisory_local_source", "unconfirmed_memory"]);
 });
