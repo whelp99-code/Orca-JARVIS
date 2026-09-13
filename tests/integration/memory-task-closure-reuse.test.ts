@@ -12,6 +12,9 @@ import {
   LOCAL_CHAIN_AT,
 } from "../fixtures/local-observation-chain.js";
 import { priorityPolicyConfig } from "../fixtures/priority-engine-input.js";
+import { createProductionMemoryReference } from "../../src/memory-reference-production.js";
+import { MemoryReferenceProvider, REFERENCE_NOW } from "../fixtures/memory-reference-provider.js";
+import { memoryReadFenceFixture } from "../fixtures/memory-read-fence.js";
 import { inferredMemoryInput, memoryPolicy, MEMORY_NOW } from "../fixtures/memory-candidate-fixture.js";
 import { closeMemoryDatabase, memoryDatabase, type MemoryDatabase } from "../fixtures/memory-candidate-store.js";
 
@@ -109,4 +112,81 @@ it("stops offering a recommendation whose derived memory came from a task the ow
   expect(projection.lifecycle_actions).toHaveLength(1);
   expect(projection.warnings.map(item => item.code)).toContain("RECOMMENDATION_MEMORY_SOURCE_CLOSED");
   expect(new MorningRecommendationSource(authority).generate(LOCAL_CHAIN_AT).source.excluded.source_unavailable).toBe(1);
+}, 60_000);
+
+// A read that began before the owner hid the task returns afterwards carrying the identity it read.
+// The question is whether the consumption boundary asks again once the response is in hand, so the
+// provider call is held open and the hide lands strictly between the call starting and its return -
+// the ordering comes from the promise the test resolves, not from a timer.
+//
+// The provider supplies the real in-flight boundary. The derived memory's identity is the
+// candidate's own content digest: translating a provider record into context memory evidence has no
+// production path yet, which is recorded as an open item rather than pretended here.
+it("keeps a read that began before the task was hidden from putting that memory back into current work", async () => {
+  const database = await memoryDatabase();
+  open.push(database);
+  const authority = database.authority;
+  const store = new MemoryCandidateStore(authority, memoryPolicy(), () => NOW);
+  store.attachReviewSpool(`${database.root}/review`);
+  const candidate = store.classify(inferredMemoryInput({ sensitivity: "personal" }));
+  recordCandidateTaskSource(authority, candidate.candidate_id, TASK, NOW);
+  const contentDigest = String(authority.db
+    .prepare("SELECT content_digest FROM memory_candidates WHERE candidate_id=?")
+    .pluck().get(candidate.candidate_id));
+
+  await admitLocalChainObservation(authority, LOCAL_CHAIN_AT);
+  const live = persistLocalChainLiveObservation(authority, 0, LOCAL_CHAIN_AT);
+  const owner = approveLocalChainOwnerDecisions(authority, 0, LOCAL_CHAIN_AT);
+
+  const provider = new MemoryReferenceProvider();
+  const { config } = memoryReadFenceFixture(database);
+  const runtime = createProductionMemoryReference(authority, { transport: provider,
+    read_fence_config: config, projection_key: Buffer.alloc(32, 7), clock: () => REFERENCE_NOW });
+  let release: () => void = () => {};
+  let began: () => void = () => {};
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const started = new Promise<void>(resolve => { began = resolve; });
+  provider.onCall = async () => { began(); await held; };
+  const reading = runtime.reader.read("기억", { max_records: 8, max_record_bytes: 4096, max_bytes: 16384 });
+  await started;
+
+  new MemoryProjectionAuthority(authority)
+    .quarantineUnresolved({ kind: "task_timeline", id: TASK, component_id: TASK }, NOW);
+  release();
+  await reading;
+
+  const memory = {
+    kind: "evidence" as const, memory_ref: "memory:principle:derived",
+    source_id: "src:pos:v1:second-brain:primary", digest: contentDigest,
+    observed_at: "2026-08-28T11:30:00.000Z", fresh_until: "2026-08-28T12:05:00.000Z",
+    excerpt: "Derived from the work on that task.", trust: "user_confirmed" as const,
+    sensitivity: "personal" as const, relevance: "related" as const, relation: "supports" as const,
+  };
+  const produced = produceDailyRecommendation(authority, {
+    assemble: { purpose: "daily_prioritization", query: "what now?", clock: LOCAL_CHAIN_AT,
+      expires_in_ms: 240_000, budgets: { max_items: 16, max_excerpt_bytes: 256, max_total_bytes: 4096 },
+      observations: [live.observation], pending_authority_refs: [], memories: [memory] } as never,
+    policy: priorityPolicyConfig(), policy_decision_ref: "policy:linux:personal-os-policy-v1:task17",
+    principle_ref: memory.memory_ref, owner_import_decision_ref: owner.importDecision.request_id,
+    candidates: [{ action_id: "late-read-followup", execution_mode: "jarvis",
+      owner_safety_gate: "owner_approval_required", owner_gate_ref: owner.ownerGate.request_id,
+      customer_impact: "customer_critical", deadline: null, dependency: { kind: "non_blocking" },
+      irreversible_risk: "low", effort_cost: "medium", principle_ref: memory.memory_ref,
+      current_evidence_ref: live.id, stable_identity: { key: "late-read-followup", evidence_ref: live.id } }],
+    recommendation: { id: "rec:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7c01",
+      idempotency_key: `idem:pos:v1:recommendation:${"c".repeat(64)}`,
+      correlation_id: "corr:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7301", causation_id: null,
+      expires_at: "2026-08-28T12:03:00.000Z", confidence_class: "high",
+      actions: [{ action_id: "late-read-followup", title: "Next: late-read-followup", operation: "review",
+        target_digest: `sha256:${"a".repeat(64)}` }] },
+  });
+
+  expect(produced.state).toBe("abstained");
+  expect(Number(authority.db.prepare("SELECT COUNT(*) FROM personal_recommendations").pluck().get())).toBe(0);
+  const carried = citationAuthorityForContext(authority, produced.context.id);
+  expect(carried.uncitable).toContainEqual(expect.objectContaining({
+    reference: memory.memory_ref, reason: "closed_task_source" }));
+  expect(projectRecommendations(authority, LOCAL_CHAIN_AT).next_actions).toEqual([]);
+  expect(new MorningRecommendationSource(authority).generate(LOCAL_CHAIN_AT).brief.abstention_reasons)
+    .toEqual(["no_data"]);
 }, 60_000);

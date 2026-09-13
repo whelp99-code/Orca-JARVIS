@@ -97,13 +97,26 @@ function policyFacts(authority: AuthorityDb, request: DailyRecommendationRequest
   return [...assembled, ...owner];
 }
 
+/**
+ * The principle the proposed work rests on, or the engine's own way of saying it is not there.
+ *
+ * A principle that cannot be cited is reported as a gap rather than left out: the engine has a
+ * vocabulary for an unavailable principle and abstains on it, while an empty list is not an input
+ * it can read at all. A memory whose task the owner closed arrives here as exactly that gap.
+ */
 function principleSources(authority: AuthorityDb, request: DailyRecommendationRequest,
   context: ContextSnapshotV1, citable: readonly AssembledCitation[]): readonly Record<string, unknown>[] {
+  const declared = request.assemble.memories.find(item => item.kind === "evidence"
+    && item.memory_ref === request.principle_ref);
+  const gap = [{ kind: "gap", principle_ref: request.principle_ref,
+    source_id: declared !== undefined && declared.kind === "evidence"
+      ? declared.source_id : "src:pos:v1:second-brain:primary",
+    source_host: "linux-second-brain", state: "unavailable", checked_at: request.assemble.clock }];
   const principle = citable.find(item => item.reference === request.principle_ref
     && item.citation_kind === "user_confirmed_principle");
-  if (principle === undefined) return [];
+  if (principle === undefined) return gap;
   const evidence = context.evidence.find(item => item.evidence_id === principle.evidence_id);
-  if (evidence === undefined) return [];
+  if (evidence === undefined) return gap;
   const approved = approvedOwnerDecisionDigest(authority.db, request.owner_import_decision_ref) !== undefined;
   return [{
     kind: "evidence", principle_ref: principle.reference, evidence_ref: principle.reference,
