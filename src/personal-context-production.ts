@@ -76,6 +76,26 @@ function ownerGateDecided(authority: AuthorityDb, action: PriorityActionDecision
     { action: "workflow.start", subject }) !== undefined;
 }
 
+/**
+ * Whether a collection of this machine really admitted that observation, unchanged.
+ *
+ * The normaliser stamps `trust: "verified"` and a live adapter source on any structured task handed
+ * to it, because shaping an envelope is all it does. Whether anything was collected is a different
+ * question, and the refresh receipt is where this database answers it: an immutable manifest naming
+ * each observation the collection admitted, with the digest it had. A row that no manifest names, or
+ * one whose stored bytes no longer match the digest that was admitted, is not a current Linux fact -
+ * whatever the envelope says about itself.
+ */
+function collectedObservation(authority: AuthorityDb, reference: string): boolean {
+  return authority.db.prepare(
+    `SELECT 1 FROM observation_refresh_receipts r,
+            json_each(json_extract(r.manifest_json,'$.observations')) o,
+            personal_observations p
+     WHERE p.observation_id=? AND json_extract(o.value,'$.id')=p.observation_id
+       AND json_extract(o.value,'$.digest')=p.canonical_digest
+     LIMIT 1`).get(reference) !== undefined;
+}
+
 /** The subject the stored observation behind a citation reports, or null when there is no such row. */
 function observationSubject(authority: AuthorityDb, reference: string): string | null {
   const value = authority.db.prepare(
@@ -189,8 +209,9 @@ export function produceDailyRecommendation(authority: AuthorityDb,
     const evidence = context.evidence.find(entry => entry.evidence_id === item.evidence_id);
     return evidence !== undefined && ownerConfirmedContent(authority, evidence.digest);
   };
-  const citations = { citable: licensed.citable.filter(confirmedPrinciple),
-    uncitable: licensed.uncitable };
+  const citable = (item: AssembledCitation): boolean => confirmedPrinciple(item)
+    && (item.citation_kind !== "linux_live_fact" || collectedObservation(authority, item.reference));
+  const citations = { citable: licensed.citable.filter(citable), uncitable: licensed.uncitable };
   const ranking = rankPriorityActionsWithDeadlineEvidence(request.policy, {
     schema_version: 1, clock: request.assemble.clock,
     linux_policy_decision_ref: request.policy_decision_ref,

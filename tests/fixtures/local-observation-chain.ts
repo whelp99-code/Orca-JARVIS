@@ -1,5 +1,6 @@
 import type { AuthorityDb } from "../../src/db.js";
 import { LocalTimelineSnapshotStore } from "../../src/local-timeline-snapshot-store.js";
+import { ObservationRefreshStore } from "../../src/observation-refresh-store.js";
 import { admitLocalTimelineObservation, prepareLocalTimelineObservation } from "../../src/local-timeline-observation.js";
 import { Recommendations, normalizePersonalObservations,
   rankPriorityActionsWithDeadlineEvidence } from "../../src/index.js";
@@ -185,13 +186,22 @@ export function localChainCutoff(db: AuthorityDb): string {
 
 /** Normalizes and persists that live observation through the real producer path. */
 export function persistLocalChainLiveObservation(db: AuthorityDb, cycle = 0, base = LOCAL_CHAIN_AT) {
-  const observations = normalizePersonalObservations({ checked_at: base,
-    orca_tasks: [localChainLiveTask(cycle, base)], portfolios: [] });
+  const task = localChainLiveTask(cycle, base);
+  const source = `src:pos:v1:orca:${task.environment}`;
+  // Admitted through the store a collector writes to, rather than written straight in. A current
+  // Linux fact is a thing this machine went and looked at, and the receipt this leaves behind is how
+  // the database can later tell that apart from a well-shaped envelope somebody handed it.
+  new ObservationRefreshStore(db, { members: [{ source_id: source, worktree_id: task.worktree_id }] })
+    .admit({ key: `local-chain:${String(cycle)}`, capped: false,
+      collections: [{ source_id: source, worktree_id: task.worktree_id, state: "completed" }],
+      observations: { checked_at: base, portfolios: [], orca_tasks: [task] } }, base);
+  const observations = normalizePersonalObservations({ checked_at: base, orca_tasks: [task], portfolios: [] });
   const observation = observations[0];
   if (observation === undefined) throw new TypeError("live observation required");
-  const stored = db.persistObservation(observation, base);
-  return { id: observation.id, digest: stored.canonical_digest,
-    source_id: observation.source.source_id, observed_at: observation.observed_at, observation };
+  const digest = String(db.db.prepare("SELECT canonical_digest FROM personal_observations WHERE observation_id=?")
+    .pluck().get(observation.id));
+  return { id: observation.id, digest, source_id: observation.source.source_id,
+    observed_at: observation.observed_at, observation };
 }
 
 export type LocalChainOwnerApprovals = { readonly importDecision: FixtureOwnerApproval;

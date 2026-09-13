@@ -36,6 +36,7 @@ const sha = value => `sha256:${createHash("sha256").update(value).digest("hex")}
 const ARTIFACT_DIGEST = sha(ARTIFACT_LINE);
 const shift = ms => new Date(Date.parse(AT) + ms).toISOString();
 const PROVIDER_CHILD = resolve("tests/fixtures/second-brain-mcp-child.mjs");
+const LIVE_SOURCE = "src:pos:v1:orca:local";
 
 const scratch = createTestEnvironment({ PATH: process.env.PATH });
 try {
@@ -48,7 +49,7 @@ try {
   const { AuthorityDb } = await load("db.js");
   const { ControlPlane } = await load("control-plane.js");
   const { signCommandApproval } = await load("control-plane-contract.js");
-  const { normalizePersonalObservations } = await load("personal-observations.js");
+  const { ObservationRefreshStore } = await load("observation-refresh-store.js");
   const { LocalTimelineSnapshotStore } = await load("local-timeline-snapshot-store.js");
   const { admitLocalTimelineObservation } = await load("local-timeline-observation.js");
   const { MemoryCandidateStore } = await load("memory-candidate-store.js");
@@ -182,9 +183,13 @@ try {
       const timeline = new LocalTimelineSnapshotStore(db, () => at);
       timeline.register(TASK);
       admitLocalTimelineObservation(db, TASK, timeline.refresh(TASK).collection_id, () => at);
-      const [live] = normalizePersonalObservations({ checked_at: AT, portfolios: [], orca_tasks: [liveTask(label)] });
-      assert.ok(live, "live observation required");
-      db.persistObservation(live, AT);
+      // Admitted through the store a collector writes to, so the fact carries a real admission
+      // receipt rather than being a well-shaped envelope this script handed in.
+      const task = liveTask(label);
+      new ObservationRefreshStore(db, { members: [{ source_id: LIVE_SOURCE, worktree_id: task.worktree_id }] })
+        .admit({ key: `packaged:${label}`, capped: false,
+          collections: [{ source_id: LIVE_SOURCE, worktree_id: task.worktree_id, state: "completed" }],
+          observations: { checked_at: AT, portfolios: [], orca_tasks: [task] } }, AT);
 
       // The owner's decision on one memory, taken through the staging the dashboard uses.
       const candidates = new MemoryCandidateStore(db, policy, () => memoryAt);

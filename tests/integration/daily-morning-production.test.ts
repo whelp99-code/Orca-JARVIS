@@ -12,7 +12,8 @@ import { MemoryMutationService } from "../../src/dashboard/memory-mutation-servi
 import { MemoryTokenCache } from "../../src/dashboard/memory-token-cache.js";
 import { LocalTimelineSnapshotStore } from "../../src/local-timeline-snapshot-store.js";
 import { admitLocalTimelineObservation } from "../../src/local-timeline-observation.js";
-import { normalizePersonalObservations } from "../../src/personal-observations.js";
+import { ObservationRefreshStore } from "../../src/observation-refresh-store.js";
+import type { OrcaTaskObservationInput } from "../../src/index.js";
 import { MemoryCandidateStore } from "../../src/memory-candidate-store.js";
 import { MemoryCandidateDispatchSpool } from "../../src/memory-candidate-dispatch-spool.js";
 import { MemoryOutboxService } from "../../src/memory-outbox.js";
@@ -42,6 +43,7 @@ const MEMORY_AT = "2026-08-28T12:00:00.000Z";
 // holds; only a record arriving on this page and section can name the candidate behind it.
 const PAGE = "wiki/example-alpha";
 const SID = "12345678";
+const LIVE_SOURCE = "src:pos:v1:orca:local";
 const BINARY = resolve(process.cwd(), "dist/src/cli.js");
 const HARNESS = resolve(process.cwd(), "dist/tests/fixtures/compiled-daily-cli.js");
 const PROVIDER_CHILD = resolve(process.cwd(), "tests/fixtures/second-brain-mcp-child.mjs");
@@ -91,8 +93,10 @@ async function prepared(options: { readonly ownerDecision: "confirm" | "reject";
   const snapshot = store.refresh(TASK);
   admitLocalTimelineObservation(authority, TASK, snapshot.collection_id, () => at);
   // A verified live Linux fact beside it: an advisory local collection cannot carry a current fact,
-  // so without this there is nothing an action could rest on and withholding would be correct.
-  const [live] = normalizePersonalObservations({ checked_at: AT, portfolios: [], orca_tasks: [{
+  // so without this there is nothing an action could rest on and withholding would be correct. It is
+  // admitted through the store a collector writes to, because a current Linux fact is one this
+  // machine went and looked at - a well-shaped envelope handed in is not the same thing.
+  const liveTask: OrcaTaskObservationInput = {
     environment: "local", worktree: "/home/jm/orca/workspaces/daily", worktree_id: "worktree-daily",
     terminal_id: "terminal-daily", session_id: "session-daily", incarnation_id: "incarnation-daily",
     pty_id: "pty-daily", cursor: "cursor-daily", working: true,
@@ -104,9 +108,12 @@ async function prepared(options: { readonly ownerDecision: "confirm" | "reject";
         actor: "verifier", title: "not persisted", status: "recorded", payload: { fact: "not persisted" },
         evidence_refs: ["verify-daily"], created_at: new Date(at.getTime() - 60_000).toISOString(),
         sequence: 1 }],
-      pending_decisions: [], workers: [], evidence: [], truncated: false } }] });
-  if (live === undefined) throw new Error("live observation required");
-  authority.persistObservation(live, AT);
+      pending_decisions: [], workers: [], evidence: [], truncated: false } };
+  new ObservationRefreshStore(authority,
+    { members: [{ source_id: LIVE_SOURCE, worktree_id: liveTask.worktree_id }] })
+    .admit({ key: "daily-production", capped: false,
+      collections: [{ source_id: LIVE_SOURCE, worktree_id: liveTask.worktree_id, state: "completed" }],
+      observations: { checked_at: AT, portfolios: [], orca_tasks: [liveTask] } }, AT);
 
   // (b) the owner's decision on one memory, taken through the real confirmation path
   const memoryAt = new Date(MEMORY_AT);
