@@ -1,4 +1,10 @@
+import { writeFileSync } from "node:fs";
+import { dirname, join } from "node:path";
 import { afterEach, expect, it } from "vitest";
+import { AuthorityDb } from "../../src/db.js";
+import { ControlPlane } from "../../src/control-plane.js";
+import { buildFreshAuthority } from "../../src/memory-authority-fresh-builder.js";
+import { memoryProjectScopePath } from "../../src/memory-candidate-project-scope.js";
 import { assemblePersonalContext } from "../../src/context-assembler.js";
 import { MemoryCandidateStore } from "../../src/memory-candidate-store.js";
 import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
@@ -189,4 +195,80 @@ it("keeps a read that began before the task was hidden from putting that memory 
   expect(projectRecommendations(authority, LOCAL_CHAIN_AT).next_actions).toEqual([]);
   expect(new MorningRecommendationSource(authority).generate(LOCAL_CHAIN_AT).brief.abstention_reasons)
     .toEqual(["no_data"]);
+}, 60_000);
+
+const hideTask = (authority: AuthorityDb): void =>
+  new MemoryProjectionAuthority(authority)
+    .quarantineUnresolved({ kind: "task_timeline", id: TASK, component_id: TASK }, NOW);
+
+// The closure is recorded, not remembered, so another connection onto the same database - which is
+// all a restart leaves behind - reaches the same answer without being told.
+it("still refuses the memory through a connection opened after the closure", async () => {
+  const { authority, context, memory } = await derivedMemoryContext();
+  hideTask(authority);
+  const reopened = new AuthorityDb(authority.filename);
+  try {
+    expect(citationAuthorityForContext(reopened, context.id).uncitable)
+      .toContainEqual(expect.objectContaining({ reference: memory.memory_ref, reason: "closed_task_source" }));
+  } finally { reopened.close(); }
+}, 60_000);
+
+// Narrowing the project policy closes the same door without anything being hidden: the document is
+// the owner's statement, and a task whose project this database cannot prove is not on the list.
+it("closes a derived memory when the owner narrows the project policy", async () => {
+  const { authority, context, memory } = await derivedMemoryContext();
+  expect(citationAuthorityForContext(authority, context.id).citable.map(item => item.reference))
+    .toContain(memory.memory_ref);
+
+  writeFileSync(memoryProjectScopePath(authority.filename),
+    JSON.stringify({ schema_version: 1, mode: "allow_list", projects: ["project:allowed"] }));
+
+  expect(citationAuthorityForContext(authority, context.id).uncitable)
+    .toContainEqual(expect.objectContaining({ reference: memory.memory_ref, reason: "closed_task_source" }));
+}, 60_000);
+
+// A rebuilt database carries the binding and the closure with it, so the memory does not re-enter
+// on the way back in.
+it("keeps the closure through a rebuild of the authority database", async () => {
+  const { authority, context, memory } = await derivedMemoryContext();
+  hideTask(authority);
+  const fresh = join(dirname(authority.filename), "rebuilt-closure.sqlite");
+  const result = await buildFreshAuthority(authority, fresh, { blocked_projections: [], sensitive_material: [] });
+  expect(result.integrity_check).toBe("ok");
+  const rebuilt = new AuthorityDb(fresh);
+  try {
+    expect(citationAuthorityForContext(rebuilt, context.id).uncitable)
+      .toContainEqual(expect.objectContaining({ reference: memory.memory_ref, reason: "closed_task_source" }));
+  } finally { rebuilt.close(); }
+}, 60_000);
+
+// Revoking the owner's approval is the control plane's own act, and the production path reads the
+// receipt rather than a memory of one, so the next run has no owner decision to rest on.
+it("builds no new work on an owner approval the owner revoked", async () => {
+  const { authority, live, owner, memory } = await derivedMemoryContext();
+  new ControlPlane(authority).cancel({ request_id: owner.importDecision.request_id,
+    reason: "owner withdrew the import decision", revoked_by: "principal:owner",
+    revoked_at: LOCAL_CHAIN_AT }, new Date(LOCAL_CHAIN_AT));
+
+  const produced = produceDailyRecommendation(authority, {
+    assemble: { purpose: "daily_prioritization", query: "what now?", clock: LOCAL_CHAIN_AT,
+      expires_in_ms: 240_000, budgets: { max_items: 16, max_excerpt_bytes: 256, max_total_bytes: 4096 },
+      observations: [live.observation], pending_authority_refs: [], memories: [memory] } as never,
+    policy: priorityPolicyConfig(), policy_decision_ref: "policy:linux:personal-os-policy-v1:task17",
+    principle_ref: memory.memory_ref, owner_import_decision_ref: owner.importDecision.request_id,
+    candidates: [{ action_id: "revoked-followup", execution_mode: "jarvis",
+      owner_safety_gate: "owner_approval_required", owner_gate_ref: owner.ownerGate.request_id,
+      customer_impact: "customer_critical", deadline: null, dependency: { kind: "non_blocking" },
+      irreversible_risk: "low", effort_cost: "medium", principle_ref: memory.memory_ref,
+      current_evidence_ref: live.id, stable_identity: { key: "revoked-followup", evidence_ref: live.id } }],
+    recommendation: { id: "rec:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7d01",
+      idempotency_key: `idem:pos:v1:recommendation:${"d".repeat(64)}`,
+      correlation_id: "corr:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7301", causation_id: null,
+      expires_at: "2026-08-28T12:03:00.000Z", confidence_class: "high",
+      actions: [{ action_id: "revoked-followup", title: "Next: revoked-followup", operation: "review",
+        target_digest: `sha256:${"a".repeat(64)}` }] },
+  });
+
+  expect(produced.state).toBe("abstained");
+  expect(Number(authority.db.prepare("SELECT COUNT(*) FROM personal_recommendations").pluck().get())).toBe(0);
 }, 60_000);
