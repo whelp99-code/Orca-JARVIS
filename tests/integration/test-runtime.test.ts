@@ -7,7 +7,12 @@ import { runTestProcess } from "../../scripts/lib/test-process.mjs";
 
 function running(pid: number): boolean {
   try { return !["Z", "X"].includes(readFileSync(`/proc/${pid}/stat`, "utf8").split(") ")[1]!.split(" ")[0]!); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === "ENOENT") return false; throw error; }
+  catch (error) {
+    // /proc can disappear after open but before read when the process exits.
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === "ENOENT" || code === "ESRCH") return false;
+    throw error;
+  }
 }
 
 describe("test runtime lifecycle", () => {
