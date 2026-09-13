@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from "node:crypto";
 import { join } from "node:path";
 import { afterEach, expect, it } from "vitest";
 import { ControlPlane } from "../../src/control-plane.js";
@@ -13,7 +14,9 @@ import { contextMemoryFromReference, ownerConfirmedContent } from "../../src/per
 import { inferredMemoryInput, memoryPolicy, MEMORY_NOW } from "../fixtures/memory-candidate-fixture.js";
 import { closeMemoryDatabase, memoryDatabase, type MemoryDatabase } from "../fixtures/memory-candidate-store.js";
 import { evidence, FixtureReader, FixtureWriter, OUTBOX_ARTIFACT_DIGEST } from "../fixtures/memory-outbox-fixture.js";
-import { REFERENCE_GENERATION, REFERENCE_RECORD } from "../fixtures/memory-reference-provider.js";
+import { SecondBrainEffectService } from "../../src/second-brain-effect-service.js";
+import { MemoryReferenceProvider, REFERENCE_GENERATION, REFERENCE_RECORD,
+  REFERENCE_TARGET } from "../fixtures/memory-reference-provider.js";
 import { localKey } from "../helpers.js";
 
 const NOW = new Date(MEMORY_NOW);
@@ -90,9 +93,22 @@ it("accepts a record from a settled write the owner confirmed, through the real 
   expect(await service.runOnce("seam-worker", 1)).toMatchObject({ settled: 1 });
   expect(service.get(queued.outbox_id)).toMatchObject({ state: "settled" });
 
-  // Identity, closure and confirmation all answer, so the record becomes evidence rather than a gap.
+  // An artifact resting on this memory has to stay suppressible, so the target identity behind the
+  // record is resolved from the provider through the product's own effect service first.
+  const effect = new SecondBrainEffectService({ authority, transport: new MemoryReferenceProvider(),
+    writer: { write: () => Promise.reject(new Error("fixture performs no write")) }, clock: () => NOW,
+    provider_instance_id: REFERENCE_GENERATION.provider_instance_id,
+    signing_key_id: "memory-effect-positive-control",
+    private_key: generateKeyPairSync("ed25519").privateKey });
+  expect(await effect.resolveTarget({ record_id: REFERENCE_RECORD.record_id,
+    record_digest: REFERENCE_RECORD.record_digest, generation_id: REFERENCE_GENERATION.generation_id,
+    generation_manifest_digest: REFERENCE_GENERATION.generation_manifest_digest }))
+    .toMatchObject({ kind: "data" });
+
+  // Identity, closure, confirmation and that resolved target all answer, so the record becomes
+  // evidence rather than a gap, and it is named by the identity a forget would reach it through.
   const memories = contextMemoryFromReference(authority, reference());
-  expect(memories).toEqual([{ kind: "evidence", memory_ref: REFERENCE_RECORD.record_id,
+  expect(memories).toEqual([{ kind: "evidence", memory_ref: REFERENCE_TARGET.target_id,
     source_id: "src:pos:v1:second-brain:primary", digest: contentDigest,
     observed_at: expect.any(String), fresh_until: expect.any(String), excerpt: expect.any(String),
     trust: "user_confirmed", sensitivity: "personal", relevance: "related", relation: "supports" }]);

@@ -35,8 +35,20 @@ function settledCandidateFor(authority: AuthorityDb, pageId: string, sid: string
  * staged or rejected decision proves nothing. A revoked approval proves nothing either.
  */
 export function ownerConfirmedContent(authority: AuthorityDb, contentDigest: string): boolean {
-  return authority.db.prepare(
-    `SELECT 1 FROM memory_candidate_owner_decisions d
+  return ownerImportDecisionFor(authority, contentDigest) !== null;
+}
+
+/**
+ * The control request by which the owner admitted this content, or null when there is none.
+ *
+ * A principle rests on an owner decision, and in this product that decision is not a second,
+ * separate approval: it is the owner's own confirmation of the memory, which the control plane
+ * holds as an approved, unrevoked, owner-signed request. Naming it here is what keeps the daily run
+ * from being handed a reference it never earned.
+ */
+export function ownerImportDecisionFor(authority: AuthorityDb, contentDigest: string): string | null {
+  const value = authority.db.prepare(
+    `SELECT d.control_request_id AS control_request_id FROM memory_candidate_owner_decisions d
      JOIN memory_candidates c ON c.candidate_id=d.candidate_id
      JOIN memory_candidate_decision_attempts t ON t.attempt_id=d.attempt_id AND t.state='applied'
      JOIN control_command_requests r ON r.request_id=d.control_request_id
@@ -48,7 +60,26 @@ export function ownerConfirmedContent(authority: AuthorityDb, contentDigest: str
        AND replace(c.content_digest,'sha256:','')=replace(?,'sha256:','')
        AND NOT EXISTS(SELECT 1 FROM control_command_revocations v
          WHERE v.request_id=r.request_id OR v.receipt_id=a.receipt_id)
-     LIMIT 1`).get(contentDigest) !== undefined;
+     ORDER BY d.control_request_id LIMIT 1`).pluck().get(contentDigest);
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+/**
+ * The target identity this database resolved for exactly this record, or undefined.
+ *
+ * A record carries three identities the provider computed - its source, its content and its
+ * citation - and a resolved target repeats all three. Matching on the triple is what says "the
+ * target we resolved is this record", without trusting the response to tell us so.
+ */
+function resolvedTargetFor(authority: AuthorityDb,
+  record: { readonly source_identity_full: string; readonly content_identity_full: string;
+    readonly citation_identity_full: string }): string | undefined {
+  const value = authority.db.prepare(
+    `SELECT target_id FROM memory_resolved_target_metadata
+     WHERE source_identity_digest=? AND content_identity_digest=? AND citation_identity_digest=?
+     ORDER BY target_id LIMIT 1`).pluck()
+    .get(record.source_identity_full, record.content_identity_full, record.citation_identity_full);
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
 /**
@@ -63,7 +94,14 @@ export function ownerConfirmedContent(authority: AuthorityDb, contentDigest: str
  *   what names the candidate behind it;
  * - that candidate's task must not be closed, asked again here because a read that began before
  *   the owner hid a task returns after they did;
- * - the owner's confirmation for that candidate's content has to be on record.
+ * - the owner's confirmation for that candidate's content has to be on record;
+ * - and the target identity for that record has to be one this database resolved, because an
+ *   artifact resting on a memory has to stay suppressible: when the owner later forgets it, the
+ *   projection authority reaches the context and everything published from it through exactly that
+ *   identity. A record we cannot name that way is material we may read but not rest on.
+ *
+ * The memory is therefore named by the resolved target, while a gap keeps the record's own id -
+ * there is no target to name in that case, and the caller still learns which record it was.
  *
  * Anything else becomes the assembler's own gap, which is how a caller says "there is material
  * here that I may not use" without the assembler having to guess why.
@@ -79,7 +117,9 @@ export function contextMemoryFromReference(
     if (candidate === undefined) return gap("no_data");
     if (candidateTaskSourceClosed(authority, candidate.candidate_id)) return gap("unavailable");
     if (!ownerConfirmedContent(authority, candidate.content_digest)) return gap("no_data");
-    return { kind: "evidence", memory_ref: memoryRef, source_id: SECOND_BRAIN_SOURCE_ID,
+    const target = resolvedTargetFor(authority, row.record);
+    if (target === undefined) return gap("no_data");
+    return { kind: "evidence", memory_ref: target, source_id: SECOND_BRAIN_SOURCE_ID,
       digest: candidate.content_digest, observed_at: row.observed_at, fresh_until: row.fresh_until,
       excerpt: row.text, trust: "user_confirmed", sensitivity: row.sensitivity,
       relevance: "related", relation: "supports" };

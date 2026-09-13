@@ -41,7 +41,7 @@ const SCHEMA4_GENERATION = {
   tombstone_sequence: 0,
   tombstone_set_root: "sha256:7fb694c8abb7c9a4477aa38381c49446493bc4da1c01b50690c1db5b2c20b9d3",
 };
-const schema4Record = (sid, text, sensitivity, sourceSeed) => {
+const schema4Record = (sid, text, sensitivity, sourceSeed, validity = {}) => {
   const textDigest = sha256(text);
   const core = {
     schema_version: 1, sid, record_text: text, record_text_digest: textDigest,
@@ -52,7 +52,8 @@ const schema4Record = (sid, text, sensitivity, sourceSeed) => {
     sensitivity, source_owner_class: "provider_owned",
     source_owner_id_digest: `sha256:${"1".repeat(64)}`,
     origin_label: "Second Brain",
-    valid_from: "2026-08-31T00:00:00.000Z", valid_until: "2126-09-02T00:00:00.000Z",
+    valid_from: validity.valid_from ?? "2026-08-31T00:00:00.000Z",
+    valid_until: validity.valid_until ?? "2126-09-02T00:00:00.000Z",
   };
   const recordDigest = sha256("second-brain/memory-record/v1\0", canonical(core));
   return { ...core, record_id: `sbrecord:v1:${recordDigest.slice(7)}`, record_digest: recordDigest };
@@ -66,13 +67,59 @@ const SCHEMA4_PAGES = {
     schema4Record("b1b2c3d4", "Restricted personal detail held privately.", "restricted", "private"),
   ] },
 };
+// A run-owned page set. A caller that already knows which destination its own settled write
+// recorded can name that page here instead of depending on the built-in QA pages; the record
+// identity, digests and search rows are still computed here exactly as for the built-in ones.
+if (Array.isArray(config.schema4Pages)) {
+  for (const key of Object.keys(SCHEMA4_PAGES)) delete SCHEMA4_PAGES[key];
+  for (const page of config.schema4Pages) {
+    const sensitivity = page.sensitivity ?? "personal";
+    SCHEMA4_PAGES[page.page_id] = { sensitivity, updated: page.updated,
+      records: page.records.map(row => schema4Record(row.sid, row.text, sensitivity,
+        row.source_seed ?? row.sid, row)) };
+  }
+}
 const schema4SearchRows = () => Object.entries(SCHEMA4_PAGES).flatMap(([pageId, page], pageIndex) =>
   page.records.map((record, index) => ({
     page_id: pageId, section: "Record", snippet: record.record_text.slice(0, 64),
     score: 10 - pageIndex - index, record_id: record.record_id, record_digest: record.record_digest,
   })));
 const schema4Response = (name, args) => {
+  // The provider's own account of which generation it is serving. A reader compares this with the
+  // generation carried by every record it received, so both come from the one constant here.
+  if (name === "sb_generation_status") {
+    return { schema_version: 1, pointer_health: "healthy", journal_health: "healthy", ...SCHEMA4_GENERATION };
+  }
   if (name === "sb_search") return { ...SCHEMA4_GENERATION, results: schema4SearchRows() };
+  // The target identity behind one record, which is what a consumer needs before anything may rest
+  // on it. Every field is computed here from the record itself, and the digest binds all of them.
+  if (name === "sb_resolve_memory_target") {
+    const found = Object.entries(SCHEMA4_PAGES).flatMap(([pageId, page]) =>
+      page.records.map(record => ({ pageId, page, record })))
+      .find(item => item.record.record_id === args.record_id && item.record.record_digest === args.record_digest);
+    if (found === undefined) return undefined;
+    const core = { schema_version: 1,
+      provider_instance_id: SCHEMA4_GENERATION.provider_instance_id,
+      generation_id: SCHEMA4_GENERATION.generation_id,
+      generation_manifest_digest: SCHEMA4_GENERATION.generation_manifest_digest,
+      vault_head: SCHEMA4_GENERATION.vault_head, vault_tree: SCHEMA4_GENERATION.vault_tree,
+      page_id: found.pageId, page_blob_oid: sha256(`blob\u0000${found.pageId}`).slice(7, 47),
+      page_content_digest: sha256(`${found.record.record_text}\n`),
+      source_identity_full: found.record.source_identity_full,
+      content_identity_full: found.record.content_identity_full,
+      citation_identity_full: found.record.citation_identity_full,
+      citation_span_start: found.record.citation_span_start,
+      citation_span_end: found.record.citation_span_end,
+      subject_digest: sha256(`subject\u0000${found.pageId}`),
+      sensitivity: found.record.sensitivity,
+      valid_from: found.record.valid_from, valid_until: found.record.valid_until,
+      source_owner_class: found.record.source_owner_class,
+      source_owner_id_digest: found.record.source_owner_id_digest,
+      resolved_at: config.targetResolvedAt ?? "2026-08-28T00:00:00.000Z",
+      expires_at: config.targetExpiresAt ?? "2126-09-02T00:00:00.000Z" };
+    const targetDigest = sha256("second-brain/memory-target/v1\u0000", canonical(core));
+    return { ...core, target_id: `sbtarget:v1:${targetDigest.slice(7)}`, target_digest: targetDigest };
+  }
   if (name === "sb_open_conflicts") {
     return config.schema4Conflicts === true
       ? { ...SCHEMA4_GENERATION, conflicts: [{ conflict_id: "2026-09-01-principle", page_id: "wiki/principle", summary: "unresolved" }] }
@@ -82,7 +129,7 @@ const schema4Response = (name, args) => {
   if (name !== "sb_read_page") return undefined;
   const page = SCHEMA4_PAGES[args.id];
   if (page === undefined) return undefined;
-  return { ...SCHEMA4_GENERATION, frontmatter: { id: args.id, title: args.id, updated: "2026-08-31",
+  return { ...SCHEMA4_GENERATION, frontmatter: { id: args.id, title: args.id, updated: page.updated ?? "2026-08-31",
     compiled_by: "sb/0.1.0|prompt-v1|model-v1", status: "active", sources: "",
     sensitivity: page.sensitivity },
     body: "legacy body is not mutation authority", records: page.records };

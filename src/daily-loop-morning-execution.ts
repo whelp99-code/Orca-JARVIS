@@ -9,12 +9,28 @@ import { DailyLoopError, type DailyLoopAdvance, type DailyLoopClaim,
 import { DailyBudgetExceeded, dailyLoopUsage, dailyUsageExhausted } from "./daily-loop-usage.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { MorningBriefPublisher } from "./morning-brief-publisher.js";
+import type { PreparedMemoryReference } from "./memory-reference-context.js";
+import { produceStoredDailyRecommendation } from "./personal-daily-production.js";
 import { parseTrustedCloseoutKey } from "./evening-closeout-crypto.js";
 import type { TrustedCloseoutKey } from "./evening-closeout-types.js";
 
+/**
+ * What the run may rest on when it produces. Absent means this deployment produces nothing.
+ *
+ * The memory reference is read before the run claims its lease, because a provider read is IO and
+ * the step itself is one synchronous database transaction. The seam re-asks this database about
+ * every record inside that transaction, so a read that began before the owner changed their mind
+ * still cannot carry a memory they since withdrew.
+ */
+export type DailyProductionPolicy = {
+  readonly policy: unknown;
+  readonly policy_decision_ref: string;
+  readonly memory_reference?: PreparedMemoryReference;
+};
+
 /** Explicit morning composition. Unimplemented phases fail instead of emitting placeholder success. */
 export function createStoredMorningDailyLoop(authority: AuthorityDb, optionsValue: DailyLoopOptions,
-  closeoutKeyValue?: TrustedCloseoutKey): DailyControlLoop {
+  closeoutKeyValue?: TrustedCloseoutKey, production?: DailyProductionPolicy): DailyControlLoop {
   const closeoutKey = closeoutKeyValue === undefined ? undefined : parseTrustedCloseoutKey(closeoutKeyValue);
   const parsed = parseDailyLoopOptions(optionsValue); let lastAt: Date | null = null;
   const options: DailyLoopOptions = { ...parsed, clock: () => {
@@ -23,12 +39,14 @@ export function createStoredMorningDailyLoop(authority: AuthorityDb, optionsValu
     lastAt = at; return at;
   } };
   const store = new DailyLoopStore(authority);
-  return new DailyControlLoop(store, options, new StoredMorningSteps(authority, store, options, closeoutKey), "morning", true);
+  return new DailyControlLoop(store, options,
+    new StoredMorningSteps(authority, store, options, closeoutKey, production), "morning", true);
 }
 
 class StoredMorningSteps implements DailyLoopStepExecutor {
   constructor(private readonly authority: AuthorityDb, private readonly store: DailyLoopStore,
-    private readonly options: DailyLoopOptions, private readonly closeoutKey?: TrustedCloseoutKey) {}
+    private readonly options: DailyLoopOptions, private readonly closeoutKey?: TrustedCloseoutKey,
+    private readonly production?: DailyProductionPolicy) {}
 
   complete(claimValue: DailyLoopClaim): void {
     const claim = parseDailyLoopClaim(claimValue);
@@ -90,6 +108,16 @@ class StoredMorningSteps implements DailyLoopStepExecutor {
       try {
         this.authority.db.transaction(() => {
           if (step.step_key === "morning_reconcile") {
+            // The brief publishes what is on record, so the record has to be made first. Producing
+            // here rather than as its own step keeps the two-step run contract every reader and
+            // recovery path already asserts, and withholding is a result the publisher then
+            // reports as an abstention rather than a failure.
+            if (this.production !== undefined) {
+              produceStoredDailyRecommendation(this.authority, { now: now(),
+                policy: this.production.policy, policy_decision_ref: this.production.policy_decision_ref,
+                ...(this.production.memory_reference === undefined
+                  ? {} : { memory_reference: this.production.memory_reference }) });
+            }
             new MorningBriefPublisher(this.authority, now).publish(claim, 1_048_576);
           } else {
             const refresh = this.options.refresh_reader.read(at); const completedAt = now();
