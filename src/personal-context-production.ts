@@ -6,7 +6,7 @@ import { citationAuthorityForContext, type AssembledCitation } from "./personal-
 import type { ContextSnapshotV1 } from "./personal-contracts.js";
 import type { ContextMemoryEvidenceBinding, StoredContext } from "./personal-context-types.js";
 import { canonicalPersonalContractHash } from "./personal-validation.js";
-import type { PriorityEngineResultV2, PriorityReasonCode } from "./priority-engine-contracts.js";
+import type { PriorityActionDecision, PriorityEngineResultV2, PriorityReasonCode } from "./priority-engine-contracts.js";
 import { rankPriorityActionsWithDeadlineEvidence } from "./priority-engine.js";
 import { approvedOwnerDecisionDigest, recommendationEvidenceLinks } from "./recommendation-evidence-binding.js";
 import { Recommendations, type CreateRecommendationResult } from "./recommendations.js";
@@ -51,6 +51,20 @@ function memoryBindings(context: ContextSnapshotV1,
       source_id: memory.source_id, digest: memory.digest, observed_at: memory.observed_at,
       fresh_until: memory.fresh_until }];
   });
+}
+
+/**
+ * Whether the gate this action would cross is one the owner really decided.
+ *
+ * The engine ranks an owner-gated action as needing approval, which is its own correct answer: the
+ * gate is a pointer, not a proof. The proof lives here, and the binding boundary already refuses a
+ * link to an approval that is not on record - by throwing, after this function's caller has written
+ * the assembled context. So the question is asked before anything is created, and an action whose
+ * gate the owner never decided is simply not selected.
+ */
+function ownerGateDecided(authority: AuthorityDb, action: PriorityActionDecision): boolean {
+  const reference = action.rationale.citations.owner_gate_ref;
+  return reference === null || approvedOwnerDecisionDigest(authority.db, reference) !== undefined;
 }
 
 function ownerGateReferences(candidates: readonly Record<string, unknown>[]): readonly string[] {
@@ -154,7 +168,7 @@ export function produceDailyRecommendation(authority: AuthorityDb,
     candidates: request.candidates,
     presentation: { model_disagrees: false, model_preferred_action_ids: [], mac_evidence_refs: [] },
   });
-  const selected = ranking.actions.filter(action => action.rank !== null);
+  const selected = ranking.actions.filter(action => action.rank !== null && ownerGateDecided(authority, action));
   if (selected.length === 0) {
     return { state: "abstained", context, stored, ranking,
       reasons: [...new Set(ranking.actions.flatMap(action => action.reason_codes))].sort() };

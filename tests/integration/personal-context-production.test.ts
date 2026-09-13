@@ -90,3 +90,25 @@ it("assembles, persists and records a recommendation when live and owner evidenc
   expect(brief.source.input.items).toHaveLength(1);
   expect(brief.brief.needs_you_first.map(item => item.copy)).toEqual(["Next: produced-followup"]);
 });
+
+// An owner gate the owner never decided is not a gate. Everything else about this run is in order -
+// a verified live fact, a confirmed principle, the owner's import approval - and the candidate names
+// a control request that was never approved. The run has to say so and withhold, not fail after it
+// has already written the context it assembled.
+it("abstains when a candidate names an owner gate the owner never approved", async () => {
+  const db = new AuthorityDb(tempDb()); opened.push(db);
+  const { observation } = await admitLocalChainObservation(db);
+  const live = persistLocalChainLiveObservation(db);
+  const owner = approveLocalChainOwnerDecisions(db);
+
+  const produced = produceDailyRecommendation(db, request([observation, live.observation],
+    [candidate(live.id, "req:local-chain:owner-gate:never-approved")], owner.importDecision.request_id));
+
+  expect(produced.state).toBe("abstained");
+  if (produced.state !== "abstained") throw new TypeError("abstention expected");
+  // The engine ranked it as needing the owner, and the owner's decision is not on record: that is
+  // what the run reports, instead of failing at the binding boundary it would have reached next.
+  expect(produced.reasons).toEqual(["PRIORITY_OWNER_APPROVAL_REQUIRED"]);
+  expect(Number(db.db.prepare("SELECT COUNT(*) FROM personal_recommendations").pluck().get())).toBe(0);
+  expect(projectRecommendations(db, AT).next_actions).toEqual([]);
+});
