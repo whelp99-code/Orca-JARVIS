@@ -66,7 +66,7 @@ export class RecommendationWorkflowStager {
        WHERE k.principal_id=? AND p.purpose='decision'`,
     ).get(request.principalId);
     if (key === undefined) return fail("RECOMMENDATION_WORKFLOW_PRINCIPAL_INVALID");
-    const state = loadRecommendationWorkflowAuthority(this.authority.db, request);
+    const state = loadRecommendationWorkflowAuthority(this.authority, request, nowText);
     if (Date.parse(state.expiresAt) <= now.getTime()) return fail("RECOMMENDATION_WORKFLOW_NOT_ELIGIBLE");
     const proposal = readyProposal(request, state.evidence_digest, nowText);
     const immutable = {
@@ -109,7 +109,7 @@ export function verifyRecommendationWorkflowBinding(
 ): void {
   const now = task25Date(time); const input = stagedRecommendationWorkflowInput(args);
   const request = parseStagedRecommendationWorkflow(args);
-  const current = loadRecommendationWorkflowAuthority(authority.db, request);
+  const current = loadRecommendationWorkflowAuthority(authority, request, now.toISOString());
   const proposal = readyProposal(request, current.evidence_digest, now.toISOString());
   if (input["proposal_digest"] !== proposal.proposal_digest) {
     return fail("RECOMMENDATION_WORKFLOW_BINDING_STALE");

@@ -1,5 +1,7 @@
 import type Database from "better-sqlite3";
-import { JarvisError } from "./db.js";
+import { JarvisError, type AuthorityDb } from "./db.js";
+import { contextsWithUnavailableLocalSource } from "./local-observation-availability.js";
+import { contextsWithClosedMemorySource } from "./personal-memory-availability.js";
 import { canonicalPersonalContractHash, parseContextSnapshotV1, parseRecommendationV1 } from "./personal-validation.js";
 import { persistenceHash, persistenceRow, persistenceText } from "./personal-persistence-values.js";
 import { storedRecommendationIdentity } from "./recommendation-identity.js";
@@ -192,7 +194,31 @@ function load(
       context.expires_at, context.freshness.fresh_until].sort()[0] ?? fail(),
   };
 }
+/**
+ * The canonical state a workflow request may rest on, or a refusal.
+ *
+ * Execution has to ask what every reader already asks. A recommendation whose local source no longer
+ * matches, or whose memory the owner closed, is not work this database offers any more: the
+ * projection has withdrawn it and the brief has stopped carrying it. The digests checked here would
+ * all still agree, because none of them is about that - so staging, binding or running it would
+ * carry out something the owner had withdrawn, and agree with itself the whole way.
+ */
 export function loadRecommendationWorkflowAuthority(
+  authority: AuthorityDb,
+  request: ParsedRecommendationWorkflowRequest,
+  now: string,
+): CanonicalRecommendationWorkflowState {
+  const state = loaded(authority.db, request);
+  if (contextsWithUnavailableLocalSource(authority.db, [state.context_id], now).has(state.context_id)) {
+    throw new JarvisError("RECOMMENDATION_SOURCE_UNAVAILABLE");
+  }
+  if (contextsWithClosedMemorySource(authority, [state.context_id]).has(state.context_id)) {
+    throw new JarvisError("RECOMMENDATION_MEMORY_SOURCE_CLOSED");
+  }
+  return state;
+}
+
+function loaded(
   database: Database.Database,
   request: ParsedRecommendationWorkflowRequest,
 ): CanonicalRecommendationWorkflowState {
