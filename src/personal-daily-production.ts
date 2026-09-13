@@ -81,8 +81,11 @@ function currentObservations(authority: AuthorityDb, now: Date): readonly Observ
  * named by the same seam, and a candidate exists only where an observation can actually be cited as
  * a current Linux fact.
  *
- * Where any of those is missing the run withholds and writes nothing at all, which is a result
- * rather than a failure: a deployment with no memory provider still publishes what is on record.
+ * Where any of those is missing the run withholds before assembling anything, so nothing at all is
+ * written - not even a context. That is a result rather than a failure: a deployment with no memory
+ * provider still publishes what is on record. It is also a stronger statement than the one the
+ * production chain inside can make, where an abstention decided by the ranking keeps the context it
+ * assembled, because the brief reports what that context could and could not support.
  */
 export function produceStoredDailyRecommendation(
   authority: AuthorityDb,

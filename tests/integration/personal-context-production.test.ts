@@ -60,6 +60,10 @@ it("abstains through the real production path when only an advisory local source
   // single action is ranked - an earlier refusal than a citation missing from one candidate.
   expect(produced.reasons).toEqual(["PRIORITY_CONTEXT_POLICY_ABSTAINED"]);
   expect(produced.stored.observation_count).toBe(1);
+  // What an abstention leaves behind, stated exactly: the assembled context is persisted before the
+  // ranking runs, and that is the thing the brief later reports an abstention from. No
+  // recommendation is created. "Writes nothing" would be the wrong description of this.
+  expect(Number(db.db.prepare("SELECT COUNT(*) FROM personal_context_snapshots").pluck().get())).toBe(1);
   expect(Number(db.db.prepare("SELECT COUNT(*) FROM personal_recommendations").pluck().get())).toBe(0);
   expect(projectRecommendations(db, AT).next_actions).toEqual([]);
   // Nothing was recorded, so the brief has no source at all rather than one it had to exclude.

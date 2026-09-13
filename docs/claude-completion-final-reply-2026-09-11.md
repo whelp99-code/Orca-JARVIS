@@ -1670,3 +1670,17 @@ B 가 재현된다.
 | 전체 gate | `VERIFY45=0` (backend 280 / 1,943, dashboard 38 / 263), 관측 종료 22:21 KST, 단독 |
 | 회귀 | retention 83/83, memory 15/15, 대상 10파일 / 100케이스 |
 | 패키지 | `jarvis-runtime-efkBcB`, payload 1,548, receipt `a07f2e77…`, `integrity=matched` |
+
+## 정정 (2026-09-14, unit I4)
+
+위 21행의 "없을 때 `PRIORITY_OWNER_IMPORT_APPROVAL_REQUIRED`로 기권하며 **아무것도 쓰지 않는다**"는 부정확했다.
+당시의 기권은 `produceDailyRecommendation` 안에서 일어났고, 그 함수는 랭킹 **이전에** 조립한 context를
+`personal_context_snapshots`에 저장한다. 따라서 정확한 문장은 "추천은 쓰지 않고 **context만 저장한다**"이다.
+이 동작은 의도된 것이다 — 아침 브리핑이 "무엇을 근거로 기권했는지"를 보고할 수 있는 것은 그 context가 남기 때문이다.
+
+측정으로 고정했다: `tests/integration/personal-context-production.test.ts`의 기권 회귀가
+`personal_context_snapshots` 1행과 `personal_recommendations` 0행을 함께 단정한다.
+
+현재 제품 경로는 여기서 한 걸음 더 간다. `produceStoredDailyRecommendation`은 근거가 없으면
+`produceDailyRecommendation`을 **호출하기 전에** 기권하므로 context조차 남지 않는다.
+packaged probe가 이를 실측한다: 기권 세 갈래 모두 `context_rows: 0`, `recommendation_rows: 0`.
