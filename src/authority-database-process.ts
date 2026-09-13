@@ -186,6 +186,23 @@ export class ProcessObservationError extends Error {
  * it commits next. A privileged process can write regardless, which no user-space protocol
  * excludes - that is this contract's stated limit rather than an assumption hidden inside it.
  */
+/**
+ * The parts of a hole, for a caller that reports it rather than refusing on it.
+ *
+ * The refusal only needs to know there is a hole. An operator needs to know which one, and which
+ * processes they would have to look at - so the one place that spells a hole also reads it back,
+ * and the wording stays in a single file.
+ */
+export function parseExclusionHole(hole: string): {
+  readonly reason: string; readonly unreadable_processes: readonly number[];
+} {
+  const prefix = "unreadable_processes:";
+  if (!hole.startsWith(prefix)) return { reason: hole, unreadable_processes: [] };
+  const pids = hole.slice(prefix.length).split(",")
+    .map(value => Number(value)).filter(value => Number.isSafeInteger(value) && value > 0);
+  return { reason: "unreadable_processes", unreadable_processes: pids };
+}
+
 export function exclusionHole(filename: string, observed: OpenInodeObservation): string | null {
   // A process this user owns but cannot read is a hole, not a silence: nothing about it says it is
   // not holding this database. Destructive replacement stays refused until the answer is complete.

@@ -2,6 +2,7 @@ import type { AuthorityDatabaseRuntime } from "./authority-database-runtime.js";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./db.js";
 import { readRetentionConfig } from "./cli-local-timeline.js";
+import { parseExclusionHole } from "./authority-database-process.js";
 import { applyLocalObservationRetention } from "./local-observation-retention.js";
 import { recoverLocalRetentionOperations,
   type RetentionRecovery } from "./local-observation-retention-recovery.js";
@@ -23,6 +24,17 @@ export type RetentionCycle =
       readonly removed: Readonly<Record<string, number>>;
       readonly recovered: readonly RetentionRecovery[] }
   | { readonly status: "failed"; readonly code: string;
+      readonly recovered: readonly RetentionRecovery[] }
+  /**
+   * The environment could not answer who holds the source, so nothing was replaced.
+   *
+   * Its own outcome rather than a failure: nothing is broken, the answer is incomplete, and the
+   * operator needs to know which processes could not be read before they can do anything about it.
+   * It is also not blocked or deferred - there is no unfinished work to wait for and no window to
+   * wait out, because the same kernel will give the same answer.
+   */
+  | { readonly status: "unprovable"; readonly reason: string;
+      readonly unreadable_processes: readonly number[];
       readonly recovered: readonly RetentionRecovery[] };
 
 type ServiceOptions = {
@@ -73,6 +85,12 @@ export class LocalObservationRetentionService {
     try {
       return await this.rebuild(runtime, cutoff, now, recovered);
     } catch (error) {
+      if (error instanceof JarvisError && error.code === "LOCAL_RETENTION_EXCLUSION_UNPROVABLE") {
+        const hole = parseExclusionHole(
+          error.message.replace(/^LOCAL_RETENTION_EXCLUSION_UNPROVABLE:\s*/, ""));
+        return { status: "unprovable", reason: hole.reason,
+          unreadable_processes: hole.unreadable_processes, recovered };
+      }
       return { status: "failed", recovered,
         code: error instanceof Error ? error.message : "LOCAL_RETENTION_CYCLE_FAILED" };
     }
