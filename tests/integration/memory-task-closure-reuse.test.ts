@@ -208,9 +208,15 @@ it("keeps a read that began before the task was hidden from putting that memory 
 
   expect(produced.state).toBe("abstained");
   expect(Number(authority.db.prepare("SELECT COUNT(*) FROM personal_recommendations").pluck().get())).toBe(0);
+  // The memory is not carried into the new context at all. Refusing to cite it is not the same as
+  // declining to keep it, and a closed memory is left out at intake rather than sealed in and then
+  // refused - so there is nothing about it to cite or to report as uncitable here.
   const carried = citationAuthorityForContext(authority, produced.context.id);
-  expect(carried.uncitable).toContainEqual(expect.objectContaining({
-    reference: memory.memory_ref, reason: "closed_task_source" }));
+  expect(carried.citable.map(item => item.reference)).not.toContain(memory.memory_ref);
+  expect(carried.uncitable.map(item => item.reference)).not.toContain(memory.memory_ref);
+  expect(Number(authority.db
+    .prepare("SELECT COUNT(*) FROM personal_context_memory_evidence WHERE context_id=?")
+    .pluck().get(produced.context.id))).toBe(0);
   expect(projectRecommendations(authority, LOCAL_CHAIN_AT).next_actions).toEqual([]);
   expect(new MorningRecommendationSource(authority).generate(LOCAL_CHAIN_AT).brief.abstention_reasons)
     .toEqual(["no_data"]);
@@ -290,4 +296,40 @@ it("builds no new work on an owner approval the owner revoked", async () => {
 
   expect(produced.state).toBe("abstained");
   expect(Number(authority.db.prepare("SELECT COUNT(*) FROM personal_recommendations").pluck().get())).toBe(0);
+}, 60_000);
+
+// Refusing to cite a closed memory is not the same as declining to keep it. The citation authority
+// answers after the context has been assembled, sealed and written down, so a memory the owner has
+// already closed picks up a fresh stored copy every morning the run happens.
+it("does not store a fresh copy of a memory whose task the owner already closed", async () => {
+  const { authority, memory, live, owner } = await derivedMemoryContext();
+  new MemoryProjectionAuthority(authority)
+    .quarantineUnresolved({ kind: "task_timeline", id: TASK, component_id: TASK }, NOW);
+  const stored = () => Number(authority.db
+    .prepare("SELECT COUNT(*) FROM personal_context_memory_evidence").pluck().get());
+  const before = stored();
+
+  // A later run, so this is a context of its own rather than a replay of the one already stored -
+  // which is the shape the complaint is about: another morning, another copy.
+  const produced = produceDailyRecommendation(authority, {
+    assemble: { purpose: "daily_prioritization", query: "what now?", clock: "2026-08-28T12:00:30.000Z",
+      expires_in_ms: 240_000, budgets: { max_items: 16, max_excerpt_bytes: 256, max_total_bytes: 4096 },
+      observations: [live.observation], pending_authority_refs: [], memories: [memory] } as never,
+    policy: priorityPolicyConfig(), policy_decision_ref: "policy:linux:personal-os-policy-v1:task17",
+    principle_ref: memory.memory_ref, owner_import_decision_ref: owner.importDecision.request_id,
+    candidates: [{ action_id: "closed-followup", execution_mode: "jarvis",
+      owner_safety_gate: "owner_approval_required", owner_gate_ref: owner.ownerGate.request_id,
+      customer_impact: "customer_critical", deadline: null, dependency: { kind: "non_blocking" },
+      irreversible_risk: "low", effort_cost: "medium", principle_ref: memory.memory_ref,
+      current_evidence_ref: live.id, stable_identity: { key: "closed-followup", evidence_ref: live.id } }],
+    recommendation: { id: "rec:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7e01",
+      idempotency_key: `idem:pos:v1:recommendation:${"d".repeat(64)}`,
+      correlation_id: "corr:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7301", causation_id: null,
+      expires_at: "2026-08-28T12:03:00.000Z", confidence_class: "high",
+      actions: [{ action_id: "closed-followup", title: "Next: closed-followup", operation: "review",
+        target_digest: `sha256:${"a".repeat(64)}` }] },
+  });
+
+  expect(produced.state).toBe("abstained");
+  expect(stored()).toBe(before);
 }, 60_000);

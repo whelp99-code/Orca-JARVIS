@@ -4,6 +4,7 @@ import type { ContextAssemblerInput, MemoryInput } from "./context-assembler-inp
 import { CANONICAL_GATES } from "./personal-os-policy-contract.js";
 import { citationAuthorityForContext, type AssembledCitation } from "./personal-context-citation-contract.js";
 import { ownerConfirmedContent } from "./personal-memory-reference-evidence.js";
+import { derivedMemoryTaskClosed } from "./memory-candidate-task-source.js";
 import type { ContextSnapshotV1 } from "./personal-contracts.js";
 import type { ContextMemoryEvidenceBinding, StoredContext } from "./personal-context-types.js";
 import { canonicalPersonalContractHash } from "./personal-validation.js";
@@ -195,9 +196,17 @@ function principleSources(authority: AuthorityDb, request: DailyRecommendationRe
  */
 export function produceDailyRecommendation(authority: AuthorityDb,
   request: DailyRecommendationRequest): DailyRecommendationProduction {
-  const context = assemblePersonalContext(request.assemble);
+  // A memory whose task the owner closed may not be cited, and the citation authority says so -
+  // but only once the context has been assembled, sealed and written down. Refusing to cite it is
+  // not the same as declining to keep it, so it is left out at intake instead: otherwise every run
+  // that happens after the owner closed a memory files another stored copy of it.
+  const admitted = request.assemble.memories.filter(memory => memory.kind !== "evidence"
+    || !derivedMemoryTaskClosed(authority, memory.digest));
+  const assemble = admitted.length === request.assemble.memories.length
+    ? request.assemble : { ...request.assemble, memories: admitted };
+  const context = assemblePersonalContext(assemble);
   const stored = authority.persistContextSnapshot(
-    { context, memory_evidence: memoryBindings(context, request.assemble.memories) }, request.assemble.clock);
+    { context, memory_evidence: memoryBindings(context, admitted) }, assemble.clock);
   // What the stored context licenses, minus any principle this database cannot show the owner
   // confirmed. Assembly seals a memory as a confirmed principle because the request said its trust
   // was user_confirmed - it has nothing else to go on - so a run that produces from those inputs has
