@@ -1,5 +1,9 @@
 # 완료 작업 진행 원장 — 2026-09-11
 
+> **현재 판정 — 2026-09-13:** 전체 M0–M6은 `IN_PROGRESS`다. close 경계 유실 결함은 제품 `18b73ede9a369ae8cb34bb44885bf6cbef9f2687`에서 수정했고, 정확히 동일한 tree `222cfb394e897ae4db25f322a32789c6e9cb4046`의 전체 verify가 604파일·4,176테스트/RC0으로 통과했다. 첫 실패/중단 run은 제외했다.
+> 최신 검증·패키지·독립 리뷰는 [2026-09-13 수정 검증서](codex-close-fence-verification-2026-09-13.md), 실제 내부 잔여 A–D는 [OmO 실행 지시서](omo-next-units-2026-09-13.md)가 정본이다. 이하 과거 SHA·gate·잔여 표와 “A/B 모두 닫힘/환경 한계만 남음” 주장은 당시 기록이며 현재 완료 판정으로 사용하지 않는다. 실제 assembler 생산 연결·저장 기억의 현재 사용 차단·최종 packaged 프로세스 인수는 아직 내부 잔여다.
+
+
 `docs/claude-completion-instructions-2026-09-11.md`의 M0–M6을 수행하는 단일 재개 기준 문서다. 세션이 끊기면 이 원장을 먼저 읽고 이어간다. 기존 진행 문서(`docs/opus-fix-final-reply-2026-09-11.md` 등)는 덮어쓰지 않는다.
 
 상태 값: `TODO`, `IN_PROGRESS`, `VERIFIED`, `EXTERNAL_BLOCKED`. 테스트 미작성·내부 결함·검증 실패·패키지 미생성은 외부 차단이 아니다.
