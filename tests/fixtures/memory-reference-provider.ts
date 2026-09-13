@@ -44,6 +44,41 @@ export const REFERENCE_TARGET = (() => {
   return { ...core, target_id: `sbtarget:v1:${targetDigest.slice(7)}`, target_digest: targetDigest };
 })();
 
+export type ReferencePage = {
+  readonly page_id: string;
+  readonly record: Readonly<Record<string, unknown>>;
+};
+const DEFAULT_PAGE: ReferencePage = { page_id: "wiki/reference", record: REFERENCE_RECORD };
+
+/**
+ * The target identity this provider resolves for one record on one page.
+ *
+ * Computed from the record itself, exactly as the built-in constant is, so a caller serving the
+ * destination its own write derived gets a target that really belongs to that record rather than to
+ * a page the fixture happened to pick.
+ */
+export function referenceTargetFor(page: ReferencePage): Readonly<Record<string, unknown>> {
+  const record = page.record;
+  const core = { schema_version: 1,
+    provider_instance_id: REFERENCE_GENERATION.provider_instance_id,
+    generation_id: REFERENCE_GENERATION.generation_id,
+    generation_manifest_digest: REFERENCE_GENERATION.generation_manifest_digest,
+    vault_head: REFERENCE_GENERATION.vault_head, vault_tree: REFERENCE_GENERATION.vault_tree,
+    page_id: page.page_id, page_blob_oid: "7".repeat(40), page_content_digest: digest("page"),
+    source_identity_full: String(record["source_identity_full"]),
+    content_identity_full: String(record["content_identity_full"]),
+    citation_identity_full: String(record["citation_identity_full"]),
+    citation_span_start: Number(record["citation_span_start"]),
+    citation_span_end: Number(record["citation_span_end"]),
+    subject_digest: digest("subject"), sensitivity: String(record["sensitivity"]),
+    valid_from: String(record["valid_from"]), valid_until: String(record["valid_until"]),
+    source_owner_class: String(record["source_owner_class"]),
+    source_owner_id_digest: String(record["source_owner_id_digest"]),
+    resolved_at: "2026-08-28T00:00:00.000Z", expires_at: "2126-09-01T00:00:00.000Z" };
+  const targetDigest = digest(`second-brain/memory-target/v1\u0000${canonicalize(core)}`);
+  return { ...core, target_id: `sbtarget:v1:${targetDigest.slice(7)}`, target_digest: targetDigest };
+}
+
 export class MemoryReferenceProvider implements SecondBrainTransport {
   readonly calls: Array<{ method: SecondBrainMethod; args: Readonly<Record<string, unknown>> }> = [];
   statuses = 0;
@@ -51,6 +86,7 @@ export class MemoryReferenceProvider implements SecondBrainTransport {
   empty = false;
   onCall?: (method: SecondBrainMethod) => void | Promise<void>;
   statusOverrides: Readonly<Record<string, unknown>> = {};
+  constructor(private readonly page: ReferencePage = DEFAULT_PAGE) {}
   async call(method: SecondBrainMethod, args: Readonly<Record<string, unknown>>): Promise<SecondBrainOutcome> {
     this.calls.push({ method, args });
     if (method === "sb_generation_status") this.statuses++;
@@ -58,12 +94,13 @@ export class MemoryReferenceProvider implements SecondBrainTransport {
     if (method === "sb_generation_status") return { kind: "data", value: { schema_version: 1,
       ...REFERENCE_GENERATION, pointer_health: "healthy", journal_health: "healthy", ...this.statusOverrides } };
     if (method === "sb_search") return { kind: "data", value: { ...REFERENCE_GENERATION, results: this.empty ? [] : [{
-      page_id: "wiki/reference", section: "Memory", snippet: text, score: 1,
-      record_id: REFERENCE_RECORD.record_id, record_digest: REFERENCE_RECORD.record_digest }] } };
+      page_id: this.page.page_id, section: "Memory", snippet: text, score: 1,
+      record_id: this.page.record["record_id"], record_digest: this.page.record["record_digest"] }] } };
     if (method === "sb_read_page") return { kind: "data", value: { ...REFERENCE_GENERATION,
-      frontmatter: { id: "wiki/reference", title: "Reference", updated: "2026-08-31", compiled_by: "sb/fixture",
-        sensitivity: "personal", status: "active", sources: "" }, body: "legacy body is not evidence", records: [REFERENCE_RECORD] } };
-    if (method === "sb_resolve_memory_target") return { kind: "data", value: REFERENCE_TARGET };
+      frontmatter: { id: this.page.page_id, title: "Reference", updated: "2026-08-31", compiled_by: "sb/fixture",
+        sensitivity: String(this.page.record["sensitivity"]), status: "active", sources: "" },
+      body: "legacy body is not evidence", records: [this.page.record] } };
+    if (method === "sb_resolve_memory_target") return { kind: "data", value: referenceTargetFor(this.page) };
     throw new Error(`unexpected method ${method}`);
   }
   async restart(): Promise<void> {}
