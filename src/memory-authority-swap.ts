@@ -11,6 +11,7 @@ import { exclusionHole, discoverOpenInodeHolders } from "./authority-database-pr
 import type { AuthorityDatabaseRuntime } from "./authority-database-runtime.js";
 import { JarvisError as AuthorityError } from "./db.js";
 import { publishSwapBarrier, releaseSwapBarrier } from "./authority-database-swap-barrier.js";
+import { closeSourceWithContentFence } from "./authority-database-close-fence.js";
 const digest = (value: unknown): string => `sha256:${createHash("sha256").update(canonicalize(value)).digest("hex")}`;
 
 export type SwapRequest = {
@@ -69,10 +70,9 @@ export async function swapAuthorityDatabase(runtime: AuthorityDatabaseRuntime, i
       releaseSwapBarrier(authority.filename);
       throw new AuthorityError("MEMORY_SOURCE_CHANGED_BEFORE_SWAP");
     }
-    // Closed with the lock still held: the transaction is empty, so this releases rather than
-    // writes, and no commit can have slipped between the reading above and this line.
-    authority.close();
-    const retirementAtClose = retirementState(authority.filename);
+    // Closing releases the lock. Compare exact content across that release before publishing;
+    // subsequent changes remain covered by the physical retirement evidence returned here.
+    const retirementAtClose = closeSourceWithContentFence(authority, "MEMORY");
     // Asked again with this connection gone, and this time without excusing anything for sharing a
     // pid: a second writable connection inside this process would be orphaned by the rename just
     // as surely as another process's, and the write-ahead log removed below would take its

@@ -1,6 +1,6 @@
 import { createHash } from "node:crypto";
 import {
-  dropUnchangedRetirement, publishRetiringCandidate, retirementState,
+  dropUnchangedRetirement, publishRetiringCandidate,
 } from "./local-observation-retention-publish.js";
 import { exclusionHole } from "./authority-database-process.js";
 import Database from "better-sqlite3";
@@ -16,6 +16,7 @@ import {
 import { retentionSourceMoved,
   type LocalObservationRetentionApplication } from "./local-observation-retention.js";
 import { holdSourceExclusively, syncPath } from "./authority-path-sync.js";
+import { closeSourceWithContentFence } from "./authority-database-close-fence.js";
 
 export type RetentionSwapResult = {
   readonly operation_id: string;
@@ -128,9 +129,9 @@ export function applyRetentionCandidate(
       authority.db.exec("ROLLBACK");
       throw new JarvisError("LOCAL_RETENTION_SOURCE_WRITER_ACTIVE");
     }
-    // Closed with the lock still held; the transaction is empty, so this releases rather than
-    // writes, and no commit can have arrived since the fence was checked.
-    authority.close();
+    // Preserve the source baseline across close and every later lock probe. A commit inside a
+    // probe's native close must never become the baseline for deleting the retired source.
+    const retirementBefore = closeSourceWithContentFence(authority, "LOCAL_RETENTION");
     // Asked again now that this process's own connection is gone, so the answer covers every
     // holder rather than every other holder - a second connection inside this process is not
     // excused by sharing a pid. Nothing has been removed yet, which is the point: a write-ahead
@@ -163,10 +164,6 @@ export function applyRetentionCandidate(
     // folded in: the file the rename would replace, rather than that file plus a log that closing
     // was about to remove.
     const settled = sourceBytes(authority.filename);
-    // Taken here, where the candidate's content stops depending on the source: anything written
-    // into the source after this point is in the retired inode and in no candidate, so this is the
-    // state the retired copy has to still have before it can be removed.
-    const retirementBefore = retirementState(authority.filename);
     // Written only once the swap is certain to be attempted. It is the last write before the
     // rename, so it still survives into the live database.
     recordAppliedRetentionOperation(

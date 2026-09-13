@@ -1,5 +1,6 @@
 import { linkSync, existsSync, readFileSync, renameSync, rmSync, statSync, writeFileSync } from "node:fs";
 import { syncPath } from "./authority-path-sync.js";
+import { authorityFileContent } from "./authority-file-content.js";
 
 const SIDECARS = ["-wal", "-shm", "-journal"] as const;
 
@@ -72,11 +73,18 @@ export function retirementState(database: string): readonly string[] {
   return ["", "-wal", "-shm", "-journal"].map(suffix => {
     try {
       const stat = statSync(`${database}${suffix}`, { bigint: true });
-      return `${suffix}:${stat.size}:${stat.mtimeNs}`;
+      // A read-only WAL reader can create these without changing committed content. The SHM
+      // file is a rebuildable index; a zero-byte WAL contains no frames. Keep the main file,
+      // every nonempty WAL and rollback journal exact, including their content. Metadata alone
+      // misses same-size commits on filesystems with coarse timestamps.
+      if (suffix === "-shm") return `${suffix}:read-cache`;
+      if (suffix === "-wal" && stat.size === 0n) return `${suffix}:absent`;
+      return `${suffix}:${stat.size}:${stat.mtimeNs}:${authorityFileContent(`${database}${suffix}`, stat)}`;
     } catch (error) {
       // Absence is an answer; anything else is the absence of one. A file this cannot read may
       // have been written into, and calling that "the same" would delete the only copy of it.
       const code = error instanceof Error ? Reflect.get(error, "code") : undefined;
+      if (code === "ENOENT" && suffix === "-shm") return `${suffix}:read-cache`;
       return code === "ENOENT" ? `${suffix}:absent` : `${suffix}:unreadable`;
     }
   });
