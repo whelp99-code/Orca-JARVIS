@@ -1,5 +1,6 @@
-import type Database from "better-sqlite3";
+import type { AuthorityDb } from "./db.js";
 import type { MemoryEvidenceInput } from "./context-assembler-input.js";
+import { derivedMemoryTaskClosed } from "./memory-candidate-task-source.js";
 import type { ContextSnapshotV1, ObservationEnvelopeV1 } from "./personal-contracts.js";
 import { canonicalPersonalContractHash } from "./personal-validation.js";
 
@@ -16,7 +17,7 @@ export type UncitableEvidence = {
   readonly reference: string | null;
   readonly evidence_id: string;
   readonly reason: "advisory_local_source" | "unverified_observation" | "unconfirmed_memory"
-    | "unclassified_source";
+    | "closed_task_source" | "unclassified_source";
 };
 
 export type AssembledCitations = {
@@ -117,8 +118,9 @@ function memoryCitation(memory: MemoryEvidenceInput): Classification {
  * somewhere this can read.
  */
 export function citationAuthorityForContext(
-  database: Database.Database, contextId: string,
+  authority: AuthorityDb, contextId: string,
 ): AssembledCitations {
+  const database = authority.db;
   const citable: AssembledCitation[] = [];
   const uncitable: UncitableEvidence[] = [];
   const observations = database.prepare(
@@ -144,13 +146,20 @@ export function citationAuthorityForContext(
   // user_confirmed, so a piece sealed as `confirmed_memory` carries the confirmation the assembler
   // checked - and a piece sealed under any other kind carries none, whatever string sits beside it.
   const memories = database.prepare(
-    `SELECT m.memory_ref AS reference, m.evidence_id AS evidence_id, e.evidence_kind AS sealed
+    `SELECT m.memory_ref AS reference, m.evidence_id AS evidence_id, e.evidence_kind AS sealed,
+            m.evidence_digest AS digest
      FROM personal_context_memory_evidence m
      JOIN personal_context_evidence e ON e.context_id=m.context_id AND e.evidence_id=m.evidence_id
      WHERE m.context_id=? ORDER BY m.rowid`,
-  ).all(contextId) as { reference: string; evidence_id: string; sealed: string }[];
+  ).all(contextId) as { reference: string; evidence_id: string; sealed: string; digest: string }[];
   for (const row of memories) {
-    if (row.sealed === "confirmed_memory") {
+    // A confirmation the owner has since closed is no longer one to cite: hiding the task that
+    // produced a derived memory, or taking its project out of scope, closes reading it here the
+    // same way it already closes the candidate's review, approval and write.
+    if (row.sealed === "confirmed_memory" && derivedMemoryTaskClosed(authority, row.digest)) {
+      uncitable.push({ reference: row.reference, evidence_id: row.evidence_id,
+        reason: "closed_task_source" });
+    } else if (row.sealed === "confirmed_memory") {
       citable.push({ reference: row.reference, evidence_id: row.evidence_id,
         citation_kind: "user_confirmed_principle" });
     } else {

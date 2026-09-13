@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import type { AuthorityDb } from "./db.js";
 import type { Sha256Digest } from "./personal-contracts.js";
 import { persistenceRow, persistenceText } from "./personal-persistence-values.js";
 import { citationAuthorityForContext, type AssembledCitationKind } from "./personal-context-citation-contract.js";
@@ -102,7 +103,7 @@ function ownerDecisionLink(database: Database.Database, reference: string,
 }
 
 type EvidenceBindingInput = {
-  readonly database: Database.Database;
+  readonly authority: AuthorityDb;
   readonly contextId: string;
   readonly contextDigest: Sha256Digest;
   readonly result: PriorityEngineResult;
@@ -120,8 +121,8 @@ export function recommendationEvidenceLinks(
   // The stored kind says what role a piece played in assembly. Whether it may be cited is a
   // different question, and only its own source answers it - so the licence is derived here rather
   // than read from the string beside the evidence.
-  const authority = citationAuthorityForContext(input.database, input.contextId);
-  const granted = new Map(authority.citable.map(item => [item.reference, item.citation_kind]));
+  const licensed = citationAuthorityForContext(input.authority, input.contextId);
+  const granted = new Map(licensed.citable.map(item => [item.reference, item.citation_kind]));
   const links = new Map<string, RecommendationEvidenceLink>();
   for (const action of input.actions) {
     for (const [slot, kind, evidenceKind] of CITATION_SLOTS) {
@@ -132,9 +133,9 @@ export function recommendationEvidenceLinks(
           ? { ref: reference, kind, context_evidence_id: null, digest: input.contextDigest }
           : fail()
         : evidenceKind === "owner_decision"
-          ? ownerDecisionLink(input.database, reference, kind)
+          ? ownerDecisionLink(input.authority.db, reference, kind)
           : granted.get(reference) === evidenceKind
-            ? ordinaryLink({ database: input.database, contextId: input.contextId, reference, kind })
+            ? ordinaryLink({ database: input.authority.db, contextId: input.contextId, reference, kind })
             : fail();
       links.set(reference, link);
     }

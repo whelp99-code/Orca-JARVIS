@@ -151,7 +151,7 @@ export class Recommendations {
     if (confidence !== "low" && confidence !== "medium" && confidence !== "high") return fail("RECOMMENDATION_INPUT_INVALID");
     let links: readonly RecommendationEvidenceLink[];
     try {
-      links = deriveRecommendationEvidenceLinks({ database: this.authority.db, contextId, contextDigest,
+      links = deriveRecommendationEvidenceLinks({ authority: this.authority, contextId, contextDigest,
         result: parsedRanking, actions: selected, supplied: provenanceInputs.evidenceLinks });
     } catch (error) {
       if (error instanceof RecommendationEvidenceBindingError) return fail("RECOMMENDATION_EVIDENCE_CONFLICT");

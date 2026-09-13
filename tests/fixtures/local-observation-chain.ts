@@ -1,14 +1,11 @@
 import type { AuthorityDb } from "../../src/db.js";
 import { LocalTimelineSnapshotStore } from "../../src/local-timeline-snapshot-store.js";
 import { admitLocalTimelineObservation, prepareLocalTimelineObservation } from "../../src/local-timeline-observation.js";
-import { ControlPlane, Recommendations, normalizePersonalObservations,
-  rankPriorityActionsWithDeadlineEvidence, signCommandApproval } from "../../src/index.js";
-import type { CommandApprovalReceipt, OrcaTaskObservationInput } from "../../src/index.js";
-import { generateKeyPairSync, type KeyObject } from "node:crypto";
-import { mkdtemp, writeFile } from "node:fs/promises";
-import { tmpdir } from "node:os";
-import { join } from "node:path";
+import { Recommendations, normalizePersonalObservations,
+  rankPriorityActionsWithDeadlineEvidence } from "../../src/index.js";
+import type { OrcaTaskObservationInput } from "../../src/index.js";
 import { canonicalPersonalContractHash, parseContextSnapshotV1 } from "../../src/personal-validation.js";
+import { approveFixtureOwnerDecision, sealFixtureAuthority, type FixtureOwnerApproval } from "./fixture-authority.js";
 import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
 import { priorityPolicyConfig } from "./priority-engine-input.js";
 
@@ -63,35 +60,8 @@ export const localChainConfirmedMemory = {
 const PRINCIPLE_MEMORY = { memory_ref: LOCAL_CHAIN_PRINCIPLE_REF, kind: "confirmed_memory",
   digest: DIGEST_A } as const;
 
-const LOCAL_CHAIN_OWNER = "principal:owner";
-const LOCAL_CHAIN_DECISION_KEY = "decision-local-chain";
-const sealedAuthority = new Map<string, KeyObject>();
-
-/**
- * The chain ends in an owner-gated recommendation, and the priority engine requires an owner
- * import decision behind every ranked action - so this database has to carry a real decision
- * anchor. It is sealed through the product's own initialization path, exactly as a deployment
- * seals one, and the private half stays here so the fixture can sign the owner's receipts. No
- * authority row is written behind the product's back.
- */
-export async function sealLocalChainAuthority(db: AuthorityDb): Promise<void> {
-  if (sealedAuthority.has(db.filename)) { await db.migrate(); return; }
-  const decision = generateKeyPairSync("ed25519");
-  const verifier = generateKeyPairSync("ed25519");
-  const directory = await mkdtemp(join(tmpdir(), "local-chain-anchor-"));
-  const anchor = async (name: string, key: KeyObject): Promise<string> => {
-    const target = join(directory, `${name}.pub.pem`);
-    await writeFile(target, key.export({ type: "spki", format: "pem" }));
-    return target;
-  };
-  await db.initialize({
-    decision: { keyId: LOCAL_CHAIN_DECISION_KEY, principal: LOCAL_CHAIN_OWNER,
-      publicKeyPath: await anchor("decision", decision.publicKey) },
-    verifier: { keyId: "verifier-local-chain", principal: "local-chain-verifier",
-      publicKeyPath: await anchor("verifier", verifier.publicKey) },
-  });
-  sealedAuthority.set(db.filename, decision.privateKey);
-}
+/** One shared authority bootstrap, so the two fixture families cannot drift apart. */
+export const sealLocalChainAuthority = sealFixtureAuthority;
 
 /**
  * A verified live Linux observation of the same task: the one piece of this chain an action may
@@ -140,40 +110,21 @@ export function persistLocalChainLiveObservation(db: AuthorityDb, cycle = 0, bas
     source_id: observation.source.source_id, observed_at: observation.observed_at, observation };
 }
 
-export type LocalChainOwnerApproval = { readonly request_id: string; readonly command_digest: string };
-export type LocalChainOwnerApprovals = { readonly importDecision: LocalChainOwnerApproval;
-  readonly ownerGate: LocalChainOwnerApproval };
+export type LocalChainOwnerApprovals = { readonly importDecision: FixtureOwnerApproval;
+  readonly ownerGate: FixtureOwnerApproval };
 
 /**
  * Two real owner approvals in the control plane: the decision that admitted the imported principle
  * and the gate the owner-gated action rests on. Each is staged and then decided with a receipt
  * signed by the trusted decision key, so the consumption boundary has something to verify.
  */
-export function approveLocalChainOwnerDecisions(db: AuthorityDb, cycle = 0, base = LOCAL_CHAIN_AT):
-LocalChainOwnerApprovals {
-  const times = localChainTimes(base);
-  const now = new Date(base);
-  const control = new ControlPlane(db);
-  const approve = (name: string): LocalChainOwnerApproval => {
-    const requestId = `req:local-chain:${name}:${String(cycle).padStart(2, "0")}`;
-    const request = control.stage({ schema_version: 1, request_id: requestId, action: "workflow.start",
-      action_level: 2, target: { environment: "local" },
-      args: { run_id: `run-${requestId}`, loop_id: "loop-local-chain", correlation_id: `corr-${requestId}`,
-        input: {}, budget: { max_tokens: 1 } },
-      reversible: true, requested_by: LOCAL_CHAIN_OWNER, requested_at: times.sourceCreated,
-      expires_at: times.ownerApprovalExpires, nonce: `nonce-${requestId}` }, now);
-    const payload: Omit<CommandApprovalReceipt, "signature"> = { schema_version: 1,
-      receipt_id: `receipt:${requestId}`, request_id: requestId, decision: "approve",
-      command_digest: request.command_digest, signer_principal_id: LOCAL_CHAIN_OWNER,
-      authenticated_session_id: "session:owner", key_id: LOCAL_CHAIN_DECISION_KEY, algorithm: "Ed25519",
-      issued_at: base, not_before: base, expires_at: times.ownerReceiptExpires,
-      nonce: `receipt-nonce-${requestId}`, max_uses: 1, status: "issued" };
-    const key = sealedAuthority.get(db.filename);
-    if (key === undefined) throw new TypeError("local chain authority must be sealed first");
-    control.decide(signCommandApproval(payload, key), now);
-    return { request_id: requestId, command_digest: request.command_digest };
+export function approveLocalChainOwnerDecisions(db: AuthorityDb, cycle = 0,
+  base = LOCAL_CHAIN_AT): LocalChainOwnerApprovals {
+  const suffix = String(cycle).padStart(2, "0");
+  return {
+    importDecision: approveFixtureOwnerDecision(db, `req:local-chain:import:${suffix}`, base),
+    ownerGate: approveFixtureOwnerDecision(db, `req:local-chain:gate:${suffix}`, base),
   };
-  return { importDecision: approve("import"), ownerGate: approve("gate") };
 }
 
 function policyFact(ref: string, evidenceClass: string, base: string): Record<string, unknown> {

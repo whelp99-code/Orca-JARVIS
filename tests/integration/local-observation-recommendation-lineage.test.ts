@@ -50,7 +50,7 @@ it("binds source, collection, observation, context and recommendation identities
   expect(stored.observation_count).toBe(2);
   expect(context.evidence[0]?.digest).toBe(admitted.canonical_digest);
   expect(context.evidence[1]?.digest).toBe(live.digest);
-  const carried = citationAuthorityForContext(db.db, context.id);
+  const carried = citationAuthorityForContext(db, context.id);
   expect(carried.citable).toEqual([
     { reference: live.id, evidence_id: context.evidence[1]?.evidence_id, citation_kind: "linux_live_fact" },
     { reference: LOCAL_CHAIN_PRINCIPLE_REF, evidence_id: context.evidence[2]?.evidence_id,
@@ -152,7 +152,7 @@ it("derives citation authority for the real assembled context at the consumption
     evidence_id: context.evidence[1]?.evidence_id ?? "", source_id: localChainConfirmedMemory.source_id,
     digest: localChainConfirmedMemory.digest, observed_at: localChainConfirmedMemory.observed_at,
     fresh_until: localChainConfirmedMemory.fresh_until }] }, AT);
-  const carried = citationAuthorityForContext(db.db, context.id);
+  const carried = citationAuthorityForContext(db, context.id);
   // The local timeline observation stays advisory; the memory the assembler sealed as confirmed
   // keeps the one role it earned, and no owner authority is invented for either.
   expect(carried.citable.map(item => item.citation_kind)).toEqual(["user_confirmed_principle"]);
@@ -169,7 +169,7 @@ it("refuses citation links the stored sources cannot back, at the consumption bo
   await db.migrate();
   const context = persistForgedCitationContext(db);
 
-  const authority = citationAuthorityForContext(db.db, context.id);
+  const authority = citationAuthorityForContext(db, context.id);
   expect(authority.citable).toEqual([]);
   expect(new Set(authority.uncitable.map(item => item.reason))).toEqual(new Set(["unconfirmed_memory"]));
 

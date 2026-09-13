@@ -77,7 +77,7 @@ export class MorningRecommendationSource {
   private source(identity: RecommendationIdentity, now: string): Source {
     const context = readMorningRecommendationContext(this.authority.db, identity, now);
     const provenance = identity.provenance;
-    deriveRecommendationEvidenceLinks({ database: this.authority.db, contextId: context.id,
+    deriveRecommendationEvidenceLinks({ authority: this.authority, contextId: context.id,
       contextDigest: identity.recommendation.payload.context_digest, result: provenance.ranking,
       actions: provenance.ranking.actions.filter(action => action.rank !== null), supplied: provenance.linux_evidence });
     return { identity, context };

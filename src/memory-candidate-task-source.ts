@@ -73,6 +73,25 @@ export function candidateTaskSourceClosed(authority: AuthorityDb, candidateId: s
     || taskProjectOutOfScope(authority, taskId));
 }
 
+/**
+ * True when a derived memory with this content identity came from a task that is closed now.
+ *
+ * The provider owns the record identity, so a stored copy is matched the way the withdrawal list
+ * matches one: by the content identity its candidate carries. Material no candidate here produced
+ * is unaffected, which keeps memory that never came from a task readable.
+ */
+export function derivedMemoryTaskClosed(authority: AuthorityDb, contentDigest: string): boolean {
+  const rows = authority.db.prepare(
+    `SELECT t.task_id AS task_id FROM memory_candidate_task_sources t
+     JOIN memory_candidates c ON c.candidate_id=t.candidate_id
+     WHERE replace(c.content_digest,'sha256:','')=replace(?,'sha256:','')`).all(contentDigest);
+  return rows.some(row => {
+    if (row === null || typeof row !== "object") return false;
+    const taskId = String(Reflect.get(row, "task_id"));
+    return taskSuppressed(authority, taskId) || taskProjectOutOfScope(authority, taskId);
+  });
+}
+
 export type MemoryAwaitingWithdrawal = {
   readonly candidate_id: string;
   readonly task_id: string;

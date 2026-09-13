@@ -130,7 +130,7 @@ export function produceDailyRecommendation(authority: AuthorityDb,
   const context = assemblePersonalContext(request.assemble);
   const stored = authority.persistContextSnapshot(
     { context, memory_evidence: memoryBindings(context, request.assemble.memories) }, request.assemble.clock);
-  const citations = citationAuthorityForContext(authority.db, context.id);
+  const citations = citationAuthorityForContext(authority, context.id);
   const ranking = rankPriorityActionsWithDeadlineEvidence(request.policy, {
     schema_version: 1, clock: request.assemble.clock,
     linux_policy_decision_ref: request.policy_decision_ref,
@@ -153,7 +153,7 @@ export function produceDailyRecommendation(authority: AuthorityDb,
     context_id: context.id, context_digest: contextDigest,
     expires_at: request.recommendation.expires_at, ranking,
     actions: request.recommendation.actions,
-    linux_evidence: recommendationEvidenceLinks({ database: authority.db, contextId: context.id,
+    linux_evidence: recommendationEvidenceLinks({ authority, contextId: context.id,
       contextDigest, result: ranking, actions: selected }),
     approval_requirement: selected.some(action => action.disposition === "owner_gate_required") ? "owner" : "none",
     confidence_class: request.recommendation.confidence_class,
