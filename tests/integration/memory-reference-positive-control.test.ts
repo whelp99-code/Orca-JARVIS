@@ -85,9 +85,9 @@ it("accepts a record from a settled write the owner confirmed, through the real 
 
   // An artifact resting on this memory has to stay suppressible, so the target identity behind the
   // record is resolved from the provider through the product's own effect service first.
-  const record = settlement.evidence[0]?.record;
-  if (record === null || record === undefined) throw new Error("settled record required");
-  const page = { page_id: settlement.page_id, record: record as unknown as Record<string, unknown> };
+  const record = settlement.records[0];
+  if (record === undefined) throw new Error("settled record required");
+  const page = { page_id: settlement.page_id, record };
   const effect = new SecondBrainEffectService({ authority, transport: new MemoryReferenceProvider(page),
     writer: { write: () => Promise.reject(new Error("fixture performs no write")) }, clock: () => NOW,
     provider_instance_id: REFERENCE_GENERATION.provider_instance_id,

@@ -19,9 +19,17 @@ import {
 } from "../fixtures/local-observation-chain.js";
 import { priorityPolicyConfig } from "../fixtures/priority-engine-input.js";
 import { createProductionMemoryReference } from "../../src/memory-reference-production.js";
-import { MemoryReferenceProvider, REFERENCE_NOW } from "../fixtures/memory-reference-provider.js";
+import { MemoryReferenceProvider, REFERENCE_GENERATION, REFERENCE_NOW } from "../fixtures/memory-reference-provider.js";
 import { memoryReadFenceFixture } from "../fixtures/memory-read-fence.js";
 import { inferredMemoryInput, memoryPolicy, MEMORY_NOW } from "../fixtures/memory-candidate-fixture.js";
+import { generateKeyPairSync } from "node:crypto";
+import { MemoryOutboxService } from "../../src/memory-outbox.js";
+import { MemoryCandidateReviewSpool } from "../../src/memory-candidate-review-spool.js";
+import { stageMemoryRememberDispatch } from "../../src/memory-remember-dispatch.js";
+import { SecondBrainEffectService } from "../../src/second-brain-effect-service.js";
+import { contextMemoryFromReference } from "../../src/personal-memory-reference-evidence.js";
+import { FixtureReader, FixtureWriter } from "../fixtures/memory-outbox-fixture.js";
+import { rememberArtifact } from "../fixtures/memory-remember-settlement.js";
 import { decideFixtureOwnerCommand } from "../fixtures/fixture-authority.js";
 import { MemoryMutationService } from "../../src/dashboard/memory-mutation-service.js";
 import { MemoryTokenCache } from "../../src/dashboard/memory-token-cache.js";
@@ -151,20 +159,56 @@ it("keeps a read that began before the task was hidden from putting that memory 
   const database = await memoryDatabase();
   open.push(database);
   const authority = database.authority;
+  const reviewRoot = `${database.root}/review`;
+  const dispatchRoot = `${database.root}/dispatch`;
+  const roots = { candidate_review_spool_root: reviewRoot, candidate_dispatch_spool_root: dispatchRoot };
   const store = new MemoryCandidateStore(authority, memoryPolicy(), () => NOW);
-  store.attachReviewSpool(`${database.root}/review`);
+  store.attachReviewSpool(reviewRoot);
   const candidate = store.classify(inferredMemoryInput({ sensitivity: "personal" }));
   recordCandidateTaskSource(authority, candidate.candidate_id, TASK, NOW);
-  const contentDigest = String(authority.db
-    .prepare("SELECT content_digest FROM memory_candidates WHERE candidate_id=?")
-    .pluck().get(candidate.candidate_id));
 
   await admitLocalChainObservation(authority, LOCAL_CHAIN_AT);
   const live = persistLocalChainLiveObservation(authority, 0, LOCAL_CHAIN_AT);
   const owner = approveLocalChainOwnerDecisions(authority, 0, LOCAL_CHAIN_AT);
 
-  const provider = new MemoryReferenceProvider();
+  // The write really landed, through the product's own dispatch path, so the record that comes back
+  // is one this database can name - and the only thing that changes mid-read is the owner's decision
+  // to hide the task it came from.
+  const mutation = new MemoryMutationService({ authority, clock: () => NOW,
+    session: createDashboardSession("owner-session"),
+    tokens: new MemoryTokenCache(Buffer.alloc(32, 1), () => NOW),
+    candidate_review_spool_root: reviewRoot, candidate_dispatch_spool_root: dispatchRoot });
+  const confirmation = mutation.stageCandidateDecision({ candidate_id: candidate.candidate_id,
+    operation: "remember", decision: "confirm", intent_id: `memui:intent:v1:${"4".repeat(64)}` });
+  if (confirmation === undefined) throw new TypeError("confirmation command required");
+  decideFixtureOwnerCommand(authority, confirmation, MEMORY_NOW);
+  const staged = stageMemoryRememberDispatch(authority, candidate.candidate_id, NOW, roots);
+  decideFixtureOwnerCommand(authority, staged, MEMORY_NOW);
+  const statement = String(new MemoryCandidateReviewSpool(reviewRoot).read(candidate.candidate_id).statement);
+  const settlement = rememberArtifact({ candidate_id: candidate.candidate_id, statement,
+    sensitivity: "personal", observed_at: MEMORY_NOW, fresh_until: "2026-08-28T13:00:00.000Z",
+    expires_at: "2026-08-29T12:00:00.000Z" });
+  const outbox = new MemoryOutboxService({ authority, writer: new FixtureWriter(),
+    reader: new FixtureReader({ kind: "current", checked_at: MEMORY_NOW, evidence: [...settlement.evidence] }),
+    clock: () => NOW, artifactDeadlineMs: 30_000, leaseMs: 10_000,
+    candidate_dispatch_spool_root: dispatchRoot, candidate_review_spool_root: reviewRoot });
+  outbox.enqueue(new ControlPlane(authority).claim(staged.request_id, "late-read-worker", NOW));
+  expect(await outbox.runOnce("late-read-worker", 1)).toMatchObject({ settled: 1 });
+  const settled = settlement.records[0];
+  if (settled === undefined) throw new TypeError("settled record required");
+  const page = { page_id: settlement.page_id, record: settled };
+
+  const provider = new MemoryReferenceProvider(page);
   const { config } = memoryReadFenceFixture(database);
+  const effect = new SecondBrainEffectService({ authority, transport: provider,
+    writer: { write: () => Promise.reject(new Error("fixture performs no write")) }, clock: () => NOW,
+    provider_instance_id: REFERENCE_GENERATION.provider_instance_id,
+    signing_key_id: "memory-effect-late-read", private_key: generateKeyPairSync("ed25519").privateKey });
+  expect(await effect.resolveTarget({ record_id: String(settled.record_id),
+    record_digest: String(settled.record_digest), generation_id: REFERENCE_GENERATION.generation_id,
+    generation_manifest_digest: REFERENCE_GENERATION.generation_manifest_digest }))
+    .toMatchObject({ kind: "data" });
+
   const runtime = createProductionMemoryReference(authority, { transport: provider,
     read_fence_config: config, projection_key: Buffer.alloc(32, 7), clock: () => REFERENCE_NOW });
   let release: () => void = () => {};
@@ -175,28 +219,27 @@ it("keeps a read that began before the task was hidden from putting that memory 
   const reading = runtime.reader.read("기억", { max_records: 8, max_record_bytes: 4096, max_bytes: 16384 });
   await started;
 
+  // The hide lands strictly between the call starting and its return.
   new MemoryProjectionAuthority(authority)
     .quarantineUnresolved({ kind: "task_timeline", id: TASK, component_id: TASK }, NOW);
   release();
-  await reading;
+  const reference = await reading;
 
-  const memory = {
-    kind: "evidence" as const, memory_ref: "memory:principle:derived",
-    source_id: "src:pos:v1:second-brain:primary", digest: contentDigest,
-    observed_at: "2026-08-28T11:30:00.000Z", fresh_until: "2026-08-28T12:05:00.000Z",
-    excerpt: "Derived from the work on that task.", trust: "user_confirmed" as const,
-    sensitivity: "personal" as const, relevance: "related" as const, relation: "supports" as const,
-  };
+  // The reference carries the record it read, and the seam asks again now that it is in hand.
+  expect(reference.payload.records.map(item => item.record.record_id)).toEqual([String(settled.record_id)]);
+  const memories = contextMemoryFromReference(authority, reference);
+  expect(memories).toEqual([{ kind: "gap", memory_ref: String(settled.record_id), state: "unavailable" }]);
+
   const produced = produceDailyRecommendation(authority, {
     assemble: { purpose: "daily_prioritization", query: "what now?", clock: LOCAL_CHAIN_AT,
       expires_in_ms: 240_000, budgets: { max_items: 16, max_excerpt_bytes: 256, max_total_bytes: 4096 },
-      observations: [live.observation], pending_authority_refs: [], memories: [memory] } as never,
+      observations: [live.observation], pending_authority_refs: [], memories } as never,
     policy: priorityPolicyConfig(), policy_decision_ref: "policy:linux:personal-os-policy-v1:task17",
-    principle_ref: memory.memory_ref, owner_import_decision_ref: owner.importDecision.request_id,
+    principle_ref: String(settled.record_id), owner_import_decision_ref: owner.importDecision.request_id,
     candidates: [{ action_id: "late-read-followup", execution_mode: "jarvis",
       owner_safety_gate: "owner_approval_required", owner_gate_ref: owner.ownerGate.request_id,
       customer_impact: "customer_critical", deadline: null, dependency: { kind: "non_blocking" },
-      irreversible_risk: "low", effort_cost: "medium", principle_ref: memory.memory_ref,
+      irreversible_risk: "low", effort_cost: "medium", principle_ref: String(settled.record_id),
       current_evidence_ref: live.id, stable_identity: { key: "late-read-followup", evidence_ref: live.id } }],
     recommendation: { id: "rec:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7c01",
       idempotency_key: `idem:pos:v1:recommendation:${"c".repeat(64)}`,
@@ -208,12 +251,7 @@ it("keeps a read that began before the task was hidden from putting that memory 
 
   expect(produced.state).toBe("abstained");
   expect(Number(authority.db.prepare("SELECT COUNT(*) FROM personal_recommendations").pluck().get())).toBe(0);
-  // The memory is not carried into the new context at all. Refusing to cite it is not the same as
-  // declining to keep it, and a closed memory is left out at intake rather than sealed in and then
-  // refused - so there is nothing about it to cite or to report as uncitable here.
-  const carried = citationAuthorityForContext(authority, produced.context.id);
-  expect(carried.citable.map(item => item.reference)).not.toContain(memory.memory_ref);
-  expect(carried.uncitable.map(item => item.reference)).not.toContain(memory.memory_ref);
+  // Nothing about that memory is carried into the new context: a gap is not stored as evidence.
   expect(Number(authority.db
     .prepare("SELECT COUNT(*) FROM personal_context_memory_evidence WHERE context_id=?")
     .pluck().get(produced.context.id))).toBe(0);

@@ -1,23 +1,28 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "../../src/canonical.js";
 import { memoryRememberArtifact } from "../../src/memory-remember-artifact.js";
-import { MEMORY_TOMBSTONE_GENESIS_ROOT } from "../../src/second-brain-effect-v2.js";
 import type { SecondBrainEvidence } from "../../src/second-brain-adapter-types.js";
+import { REFERENCE_GENERATION } from "./memory-reference-provider.js";
 
 const hex = (value: string): string => createHash("sha256").update(value).digest("hex");
 const digest = (value: string): string => `sha256:${hex(value)}`;
 
-/** One generation for every record a settlement fixture serves; the observer requires exactly one. */
-export const REMEMBER_GENERATION = {
-  provider_instance_id: "provider:fixture", generation_id: `sbgen:v1:${"1".repeat(64)}`,
-  generation_manifest_digest: digest("manifest"), vault_head: "2".repeat(40),
-  vault_tree: "3".repeat(40), tombstone_sequence: 0, tombstone_set_root: MEMORY_TOMBSTONE_GENESIS_ROOT,
-} as const;
+/**
+ * One generation for every record a settlement fixture serves.
+ *
+ * The settlement observer requires a single generation across the records of one write, and a reader
+ * driven by the reference provider compares each record's generation against the status that
+ * provider reports - so both sides have to be the same one, and it is the provider's.
+ */
+export const REMEMBER_GENERATION = REFERENCE_GENERATION;
 
 export type RememberArtifactFixture = {
   readonly page_id: string;
   readonly sid: string;
   readonly source_digest: string;
+  /** The records a provider serves on that page: no generation, which it reports page-wide. */
+  readonly records: readonly Readonly<Record<string, unknown>>[];
+  /** The same records as evidence, carrying the generation a reader compares against the status. */
   readonly evidence: readonly SecondBrainEvidence[];
 };
 
@@ -66,5 +71,11 @@ export function rememberArtifact(options: {
         generation: REMEMBER_GENERATION },
     } as unknown as SecondBrainEvidence;
   });
-  return { page_id: artifact.page_id, sid: artifact.sid, source_digest: artifact.source_digest, evidence };
+  const records = evidence.map(item => {
+    const record = { ...(item as unknown as { record: Record<string, unknown> }).record };
+    delete record["generation"];
+    return record;
+  });
+  return { page_id: artifact.page_id, sid: artifact.sid, source_digest: artifact.source_digest,
+    records, evidence };
 }

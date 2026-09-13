@@ -100,9 +100,9 @@ it("refuses a settled write the owner never confirmed, even when the same words 
   expect(service.get(queued.outbox_id)).toMatchObject({ state: "settled" });
 
   // Everything else the seam asks for is in place, so the confirmation is the only question left.
-  const record = settlement.evidence[0]?.record;
-  if (record === null || record === undefined) throw new Error("settled record required");
-  const page = { page_id: settlement.page_id, record: record as unknown as Record<string, unknown> };
+  const record = settlement.records[0];
+  if (record === undefined) throw new Error("settled record required");
+  const page = { page_id: settlement.page_id, record };
   const effect = new SecondBrainEffectService({ authority, transport: new MemoryReferenceProvider(page),
     writer: { write: () => Promise.reject(new Error("fixture performs no write")) }, clock: () => NOW,
     provider_instance_id: REFERENCE_GENERATION.provider_instance_id,
@@ -167,9 +167,9 @@ it("resolves each settled destination to its own candidate", async () => {
       candidate_dispatch_spool_root: dispatchRoot, candidate_review_spool_root: reviewRoot });
     service.enqueue(control.claim(staged.request_id, `worker:${key}`, NOW));
     expect(await service.runOnce(`worker:${key}`, 1)).toMatchObject({ settled: 1 });
-    const record = settlement.evidence[0]?.record;
-    if (record === null || record === undefined) throw new Error("settled record required");
-    const page = { page_id: settlement.page_id, record: record as unknown as Record<string, unknown> };
+    const record = settlement.records[0];
+    if (record === undefined) throw new Error("settled record required");
+    const page = { page_id: settlement.page_id, record };
     const effect = new SecondBrainEffectService({ authority, transport: new MemoryReferenceProvider(page),
       writer: { write: () => Promise.reject(new Error("fixture performs no write")) }, clock: () => NOW,
       provider_instance_id: REFERENCE_GENERATION.provider_instance_id,

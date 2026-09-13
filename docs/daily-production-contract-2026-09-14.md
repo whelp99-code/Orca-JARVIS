@@ -39,3 +39,20 @@ therefore only these two, and they are the producer's responsibility to satisfy 
 - `candidates`: at least one entry.
 
 `tests/unit/daily-production-contract.test.ts` pins both boundaries.
+
+## Closure, and what it reaches
+
+A memory is closed when the owner hides the task it was derived from, or takes that
+task's project out of scope. Two notes on how that is answered, recorded here
+because both are deliberate and neither is obvious from the call sites:
+
+- The join is by content digest: `personal_context_memory_evidence.evidence_digest`
+  against `memory_candidates.content_digest`. The only product path that writes that
+  digest is the reference seam, and the daily producer is its caller, so a memory
+  carried into a context by the product can always be reached by a later closure. A
+  caller that invented its own digest would write a row nothing can close - which is
+  why production now takes its memories from the seam rather than from its request.
+- `contextsWithClosedMemorySource` withdraws a recommendation when any memory bound
+  to its context is closed, not only the one an action cited. That is deliberate and
+  fail-closed: the alternative is deciding, after the fact, that a closed memory did
+  not really matter to work already proposed.
