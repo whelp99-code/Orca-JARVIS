@@ -250,3 +250,4 @@ export * from "./memory-scoped-api.js";
 export { probeTaskExecutorRuntime } from "./task-executor-registry.js";
 export { produceDailyRecommendation } from "./personal-context-production.js";
 export type { DailyRecommendationProduction, DailyRecommendationRequest } from "./personal-context-production.js";
+export { contextMemoryFromReference, ownerConfirmedContent } from "./personal-memory-reference-evidence.js";
