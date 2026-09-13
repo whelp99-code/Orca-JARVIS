@@ -22,6 +22,8 @@ export const LOCAL_CHAIN_TASK_ID = "task:fixture";
 export const LOCAL_CHAIN_CONTEXT_ID = "ctx:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7100";
 export const LOCAL_CHAIN_RECOMMENDATION_ID = "rec:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7101";
 export const LOCAL_CHAIN_PRINCIPLE_REF = "memory:principle:customer-first";
+/** The subject a live observation of this chain's task reports, which is what its gate authorizes. */
+export const LOCAL_CHAIN_SUBJECT = `task:${LOCAL_CHAIN_TASK_ID}`;
 export const LOCAL_CHAIN_MEMORY_TARGET = `sha256:${"d".repeat(64)}`;
 
 /** Distinct identities per producer cycle; cycle 0 keeps the original constants. */
@@ -205,7 +207,7 @@ export function approveLocalChainOwnerDecisions(db: AuthorityDb, cycle = 0,
   const suffix = String(cycle).padStart(2, "0");
   return {
     importDecision: approveFixtureOwnerDecision(db, `req:local-chain:import:${suffix}`, base),
-    ownerGate: approveFixtureOwnerDecision(db, `req:local-chain:gate:${suffix}`, base),
+    ownerGate: approveFixtureOwnerDecision(db, `req:local-chain:gate:${suffix}`, base, LOCAL_CHAIN_SUBJECT),
   };
 }
 

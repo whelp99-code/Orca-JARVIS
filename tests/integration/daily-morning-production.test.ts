@@ -152,7 +152,8 @@ async function prepared(options: { readonly ownerDecision: "confirm" | "reject";
   }
   await sealFixtureAuthority(authority);
   // The workflow the owner started, which is the only thing that lets a proposal be made at all.
-  if (options.ownerAuthorization) approveFixtureOwnerDecision(authority, "req:daily:workflow", AT);
+  // The workflow names the work it is for: the task this morning's live fact is an observation of.
+  if (options.ownerAuthorization) approveFixtureOwnerDecision(authority, "req:daily:workflow", AT, `task:${TASK}`);
 
   // (d) the memory provider this deployment reads through: a real stdio child, serving a record on
   // the page and section the write above was approved for. It declares no trust of its own.

@@ -29,11 +29,12 @@ function identity(value: string): string {
  * The authorization the owner signed for the workflow a proposal would belong to.
  *
  * JARVIS proposes; it does not authorize itself. A proposal may only be made inside a workflow the
- * owner started, and that start is an approved, unrevoked, owner-signed control request. The most
- * recent one still in force is the gate every candidate names, so work the owner never authorized
- * cannot even be proposed, and the run withholds instead.
+ * owner started for that work, and that start is an approved, unrevoked, owner-signed control
+ * request naming the subject. An authorization for other work is not an authorization for this one,
+ * so a fact the owner authorized no work on cannot even be proposed, and a run with no authorized
+ * fact at all withholds instead.
  */
-function ownerWorkflowAuthorization(authority: AuthorityDb, now: Date): string | null {
+function ownerWorkflowAuthorization(authority: AuthorityDb, subject: string, now: Date): string | null {
   const value = authority.db.prepare(
     `SELECT r.request_id FROM control_command_requests r
      JOIN control_command_receipts a ON a.request_id=r.request_id AND a.decision='approve'
@@ -42,9 +43,14 @@ function ownerWorkflowAuthorization(authority: AuthorityDb, now: Date): string |
      JOIN authority_key_purposes p ON p.key_id=k.key_id AND p.purpose='decision'
      WHERE r.action='workflow.start' AND r.requested_by='principal:owner'
        AND r.state IN ('approved','claimed','completed') AND r.expires_at>?
+       AND json_valid(r.target_json) AND json_valid(r.args_json)
+       AND (json_extract(r.target_json,'$.task_id')=?
+         OR json_extract(r.args_json,'$.correlation_id')=?
+         OR json_extract(r.args_json,'$.input.task_id')=?)
        AND NOT EXISTS(SELECT 1 FROM control_command_revocations v
          WHERE v.request_id=r.request_id OR v.receipt_id=a.receipt_id)
-     ORDER BY r.requested_at DESC,r.request_id LIMIT 1`).pluck().get(now.toISOString());
+     ORDER BY r.requested_at DESC,r.request_id LIMIT 1`).pluck()
+    .get(now.toISOString(), subject, subject, subject);
   return typeof value === "string" && value.length > 0 ? value : null;
 }
 
@@ -113,11 +119,6 @@ export function produceStoredDailyRecommendation(
   const ownerImport = ownerImportDecisionFor(authority, principle.digest);
   if (ownerImport === null) return { state: "withheld", reason: "no_owner_import_decision", context_id: null };
 
-  const authorization = ownerWorkflowAuthorization(authority, now);
-  if (authorization === null) {
-    return { state: "withheld", reason: "no_owner_workflow_authorization", context_id: null };
-  }
-
   const observations = currentObservations(authority, now);
   if (observations.length === 0) return { state: "withheld", reason: "no_current_observation", context_id: null };
 
@@ -132,16 +133,25 @@ export function produceStoredDailyRecommendation(
   const facts = citations.citable.filter(item => item.citation_kind === "linux_live_fact");
   if (facts.length === 0) return { state: "withheld", reason: "no_citable_current_fact", context_id: null };
 
-  const candidates = facts.map(fact => ({
-    action_id: `review:${identity(fact.reference).slice(0, 8)}`,
-    // Nothing here executes itself: the run proposes and the owner decides. That is also what puts
-    // the item in front of them in the morning brief rather than leaving it a silent record.
-    execution_mode: "jarvis", owner_safety_gate: "owner_approval_required", owner_gate_ref: authorization,
-    customer_impact: "internal", deadline: null, dependency: { kind: "non_blocking" },
-    irreversible_risk: "low", effort_cost: "medium", principle_ref: principle.memory_ref,
-    current_evidence_ref: fact.reference,
-    stable_identity: { key: fact.reference, evidence_ref: fact.reference },
-  }));
+  const subjects = new Map(observations.map(item => [String(item.id), String(item.payload.subject)]));
+  const candidates = facts.flatMap(fact => {
+    const subject = subjects.get(fact.reference);
+    const gate = subject === undefined ? null : ownerWorkflowAuthorization(authority, subject, now);
+    if (gate === null) return [];
+    return [{
+      action_id: `review:${identity(fact.reference).slice(0, 8)}`,
+      // Nothing here executes itself: the run proposes and the owner decides. That is also what puts
+      // the item in front of them in the morning brief rather than leaving it a silent record.
+      execution_mode: "jarvis", owner_safety_gate: "owner_approval_required", owner_gate_ref: gate,
+      customer_impact: "internal", deadline: null, dependency: { kind: "non_blocking" },
+      irreversible_risk: "low", effort_cost: "medium", principle_ref: principle.memory_ref,
+      current_evidence_ref: fact.reference,
+      stable_identity: { key: fact.reference, evidence_ref: fact.reference },
+    }];
+  });
+  if (candidates.length === 0) {
+    return { state: "withheld", reason: "no_owner_workflow_authorization", context_id: null };
+  }
 
   const seed = digest(`daily-production/v1\u0000${clock}\u0000${candidates.map(item => item.action_id).join(",")}`);
   const production = produceDailyRecommendation(authority, {

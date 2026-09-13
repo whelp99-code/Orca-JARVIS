@@ -83,16 +83,20 @@ export function decideFixtureOwnerCommand(db: AuthorityDb, command: {
  * while the request it decides outlives it, so the two windows are deliberately different.
  */
 export function approveFixtureOwnerDecision(db: AuthorityDb, requestId: string,
-  at: string): FixtureOwnerApproval {
+  at: string, subject?: string): FixtureOwnerApproval {
   const anchor = sealed.get(db.filename);
   if (anchor === undefined) throw new TypeError("fixture authority must be sealed before approving");
   const shift = (ms: number): string => new Date(Date.parse(at) + ms).toISOString();
   const now = new Date(at);
   const control = new ControlPlane(db);
+  // A workflow the owner starts may name the work it is for, and the product's own action contract
+  // binds that name in both places: `target.task_id` has to match something the arguments carry.
+  // An authorization that names nothing authorizes nothing in particular.
   const request = control.stage({ schema_version: 1, request_id: requestId, action: "workflow.start",
-    action_level: 2, target: { environment: "local" },
+    action_level: 2,
+    target: subject === undefined ? { environment: "local" } : { environment: "local", task_id: subject },
     args: { run_id: `run-${requestId}`, loop_id: "loop-fixture", correlation_id: `corr-${requestId}`,
-      input: {}, budget: { max_tokens: 1 } },
+      input: subject === undefined ? {} : { task_id: subject }, budget: { max_tokens: 1 } },
     reversible: true, requested_by: anchor.principal, requested_at: shift(-3_600_000),
     expires_at: shift(7_200_000), nonce: `nonce-${requestId}` }, now);
   const payload: Omit<CommandApprovalReceipt, "signature"> = { schema_version: 1,

@@ -132,9 +132,9 @@ try {
   const approveWorkflow = (db, requestId) => {
     const control = new ControlPlane(db);
     const request = control.stage({ schema_version: 1, request_id: requestId, action: "workflow.start",
-      action_level: 2, target: { environment: "local" },
+      action_level: 2, target: { environment: "local", task_id: `task:${TASK}` },
       args: { run_id: `run-${requestId}`, loop_id: "loop-packaged", correlation_id: `corr-${requestId}`,
-        input: {}, budget: { max_tokens: 1 } },
+        input: { task_id: `task:${TASK}` }, budget: { max_tokens: 1 } },
       reversible: true, requested_by: "principal:owner", requested_at: shift(-3600000),
       expires_at: shift(7200000), nonce: `nonce-${requestId}` }, new Date(AT));
     control.decide(signCommandApproval({ schema_version: 1, receipt_id: `receipt:${requestId}`,

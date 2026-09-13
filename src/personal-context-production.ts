@@ -65,7 +65,23 @@ function memoryBindings(context: ContextSnapshotV1,
  */
 function ownerGateDecided(authority: AuthorityDb, action: PriorityActionDecision, now: Date): boolean {
   const reference = action.rationale.citations.owner_gate_ref;
-  return reference === null || approvedOwnerDecisionDigest(authority.db, reference, now) !== undefined;
+  if (reference === null) return true;
+  // What this action is about, as this database recorded it - not as the candidate described itself.
+  const evidence = action.rationale.citations.current_linux_evidence_ref;
+  const subject = evidence === null ? null : observationSubject(authority, evidence);
+  // A gate that cannot be tied to the work it would open is not a gate for this work. One standing
+  // approval would otherwise stand in for every proposal there is.
+  if (subject === null) return false;
+  return approvedOwnerDecisionDigest(authority.db, reference, now,
+    { action: "workflow.start", subject }) !== undefined;
+}
+
+/** The subject the stored observation behind a citation reports, or null when there is no such row. */
+function observationSubject(authority: AuthorityDb, reference: string): string | null {
+  const value = authority.db.prepare(
+    "SELECT json_extract(canonical_envelope_json,'$.payload.subject') FROM personal_observations WHERE observation_id=?")
+    .pluck().get(reference);
+  return typeof value === "string" && value.length > 0 ? value : null;
 }
 
 function ownerGateReferences(candidates: readonly Record<string, unknown>[]): readonly string[] {

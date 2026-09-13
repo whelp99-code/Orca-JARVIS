@@ -1,4 +1,5 @@
 import type Database from "better-sqlite3";
+import { controlCommandDigest, type ControlCommandRequestInput } from "./control-plane-contract.js";
 import type { AuthorityDb } from "./db.js";
 import type { Sha256Digest } from "./personal-contracts.js";
 import { persistenceRow, persistenceText } from "./personal-persistence-values.js";
@@ -88,11 +89,50 @@ function ordinaryLink(input: OrdinaryLinkInput): RecommendationEvidenceLink {
  * stands, which is what reading a recommendation that was already created needs - the receipt
  * proves the decision was made, and its window governed making it, not remembering it.
  */
+/** What a decision has to be about before it may stand as the authority for something. */
+export type OwnerDecisionBinding = { readonly action: string; readonly subject: string };
+
+/**
+ * True when this stored request is the command the owner approved, and it names that subject.
+ *
+ * The digest is recomputed from the stored command rather than trusted: a target or argument edited
+ * after the approval would no longer hash to the digest the receipt covers. What counts as naming
+ * the subject is the product's own action contract - a workflow may carry the work it is for in its
+ * target, in its correlation, or in its input, and \`bindTaskTarget\` already requires those to agree.
+ */
+function authorizesSubject(row: Readonly<Record<string, unknown>>, binding: OwnerDecisionBinding): boolean {
+  if (row["action"] !== binding.action) return false;
+  let target: unknown;
+  let args: unknown;
+  try {
+    target = JSON.parse(String(row["target_json"]));
+    args = JSON.parse(String(row["args_json"]));
+  } catch { return false; }
+  if (!isPlainRecord(target) || !isPlainRecord(args)) return false;
+  const command: ControlCommandRequestInput = { schema_version: 1,
+    request_id: String(row["request_id"]), action: String(row["action"]),
+    action_level: Number(row["action_level"]) as ControlCommandRequestInput["action_level"],
+    target: { ...target }, args: { ...args }, reversible: Boolean(row["reversible"]),
+    requested_by: String(row["requested_by"]), requested_at: String(row["requested_at"]),
+    expires_at: String(row["expires_at"]), nonce: String(row["nonce"]) };
+  if (controlCommandDigest(command) !== row["command_digest"]) return false;
+  const input = isPlainRecord(args["input"]) ? args["input"] : {};
+  return [target["task_id"], args["correlation_id"], input["task_id"]]
+    .some(named => typeof named === "string" && named === binding.subject);
+}
+
+function isPlainRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+
 export function approvedOwnerDecisionDigest(database: Database.Database, reference: string,
-  now?: Date): Sha256Digest | undefined {
+  now?: Date, binding?: OwnerDecisionBinding): Sha256Digest | undefined {
   const at = now === undefined ? null : now.toISOString();
   const value = database.prepare(
-    `SELECT r.command_digest AS command_digest
+    `SELECT r.command_digest AS command_digest, r.request_id AS request_id, r.action AS action,
+            r.action_level AS action_level, r.target_json AS target_json, r.args_json AS args_json,
+            r.reversible AS reversible, r.requested_by AS requested_by,
+            r.requested_at AS requested_at, r.expires_at AS expires_at, r.nonce AS nonce
      FROM control_command_requests r
      JOIN control_command_receipts a ON a.request_id=r.request_id AND a.decision='approve'
        AND a.command_digest=r.command_digest
@@ -104,7 +144,9 @@ export function approvedOwnerDecisionDigest(database: Database.Database, referen
          WHERE v.request_id=r.request_id OR v.receipt_id=a.receipt_id)`,
   ).get(reference, at, at, at, at);
   if (value === undefined) return undefined;
-  const digest = persistenceText(persistenceRow(value)["command_digest"]);
+  const row = persistenceRow(value);
+  if (binding !== undefined && !authorizesSubject(row, binding)) return undefined;
+  const digest = persistenceText(row["command_digest"]);
   return sha256(digest) ? digest : undefined;
 }
 function ownerDecisionLink(database: Database.Database, reference: string,

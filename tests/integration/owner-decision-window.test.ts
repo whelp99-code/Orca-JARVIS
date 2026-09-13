@@ -60,3 +60,23 @@ it("withholds when the owner's decision is long past its own window", async () =
   expect(produced.reasons).toEqual(["PRIORITY_OWNER_APPROVAL_REQUIRED"]);
   expect(Number(db.db.prepare("SELECT COUNT(*) FROM personal_recommendations").pluck().get())).toBe(0);
 }, 60_000);
+
+// The owner really approved this, it has not expired and it was never revoked - and it is an
+// authorization to work on someone else's task. A decision authorizes something; reading only
+// "approved, current, not revoked" lets one standing approval stand in for every proposal there is.
+it("withholds when the owner's decision authorizes other work than this", async () => {
+  const db = new AuthorityDb(tempDb()); opened.push(db);
+  const { observation } = await admitLocalChainObservation(db);
+  const live = persistLocalChainLiveObservation(db);
+  const current = approveLocalChainOwnerDecisions(db);
+  const elsewhere = approveFixtureOwnerDecision(db, "req:local-chain:gate:elsewhere", AT,
+    "task:somebody-elses-work");
+
+  const produced = produceDailyRecommendation(db, request([observation, live.observation],
+    localChainConfirmedMemory(db), current.importDecision.request_id, elsewhere.request_id, live.id));
+
+  expect(produced.state).toBe("abstained");
+  if (produced.state !== "abstained") throw new TypeError("abstention expected");
+  expect(produced.reasons).toEqual(["PRIORITY_OWNER_APPROVAL_REQUIRED"]);
+  expect(Number(db.db.prepare("SELECT COUNT(*) FROM personal_recommendations").pluck().get())).toBe(0);
+}, 60_000);
