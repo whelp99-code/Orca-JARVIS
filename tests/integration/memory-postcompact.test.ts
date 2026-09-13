@@ -3,7 +3,7 @@ import { hostMemoryReferenceOptions } from "../../src/cli-host-memory.js";
 import { executeMemoryPostcompact } from "../../src/cli-gjc-commands.js";
 import { execute } from "../../src/cli-runtime.mjs";
 import { CommandModelTransport, RecordingModelTransport, type ModelTransport, type ModelTransportCapture, type ModelTransportResult } from "../../src/index.js";
-import { MemoryReferenceProvider, REFERENCE_NOW } from "../fixtures/memory-reference-provider.js";
+import { MemoryReferenceProvider, REFERENCE_NOW, REFERENCE_RECORD } from "../fixtures/memory-reference-provider.js";
 import { closeMemoryDatabase, memoryDatabase } from "../fixtures/memory-candidate-store.js";
 import { memoryReadFenceFixture } from "../fixtures/memory-read-fence.js";
 
@@ -42,6 +42,7 @@ async function ready(model_transport?: CapturingTransport) {
         compact_summary: "공통 기억",
         trigger: "auto",
         prompt_id: "p1",
+        compaction_id: "c1",
       })),
       memoryReferenceOptions: {
         projection_key: Buffer.alloc(32, 7),
@@ -68,6 +69,7 @@ describe("memory.postcompact configured transport", () => {
       max_total_bytes: 16384,
     });
     expect(transport.sent[0]?.request.memories[0]?.source_id).toBeTruthy();
+    expect(transport.sent[0]?.request.memories[0]?.version).toBe(REFERENCE_RECORD.record_digest);
     closeMemoryDatabase(database);
   });
 
@@ -180,6 +182,29 @@ describe("memory.postcompact configured transport", () => {
           compact_summary: "공통 기억",
           trigger: "auto",
           prompt_id: "p2",
+        })),
+      },
+    };
+    const result = await executeMemoryPostcompact(next as never);
+    expect(result.duplicate).not.toBe(true);
+    expect(transport.sent).toHaveLength(2);
+    closeMemoryDatabase(database);
+  });
+
+  it("sends again when prompt_id is the same and compaction_id changes", async () => {
+    const { database, transport, context } = await ready();
+    await executeMemoryPostcompact(context as never);
+    const next = {
+      ...context,
+      dependencies: {
+        ...context.dependencies,
+        readStdin: async () => Buffer.from(JSON.stringify({
+          hook_event_name: "PostCompact",
+          session_id: "claude-sess-1",
+          compact_summary: "공통 기억",
+          trigger: "auto",
+          prompt_id: "p1",
+          compaction_id: "c2",
         })),
       },
     };

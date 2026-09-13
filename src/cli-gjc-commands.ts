@@ -276,25 +276,24 @@ function memoriesFromReference(
       records: ReadonlyArray<{
         sid: string; source_ref: string; text: string; text_digest: string;
         observed_at: string; fresh_until: string; sensitivity: string;
+        record: { record_id: string; record_digest: string };
       }>;
     };
   },
 ): MemoryEvidenceInput[] {
-  return selected.payload.records.map(record => {
-    const excerpt = assemblerExcerpt(record.text);
-    const digest = excerpt === record.text && /^sha256:[0-9a-f]{64}$/.test(record.text_digest)
-      ? record.text_digest
-      : `sha256:${createHash("sha256").update(excerpt).digest("hex")}`;
+  return selected.payload.records.map(row => {
+    const excerpt = assemblerExcerpt(row.text);
+    const digest = row.record.record_digest;
     return {
       kind: "evidence",
-      memory_ref: record.sid.slice(0, 512),
-      source_id: sourceIdFromReference(record.source_ref),
+      memory_ref: row.record.record_id.slice(0, 512),
+      source_id: sourceIdFromReference(row.source_ref),
       digest,
-      observed_at: record.observed_at,
-      fresh_until: record.fresh_until,
+      observed_at: row.observed_at,
+      fresh_until: row.fresh_until,
       excerpt,
       trust: "user_confirmed",
-      sensitivity: record.sensitivity === "public" ? "public" : "personal",
+      sensitivity: row.sensitivity === "public" ? "public" : "personal",
       relevance: "related",
       relation: "supports",
     };
@@ -426,11 +425,12 @@ function parsePostCompactEvent(raw: unknown): { session_id: string; query: strin
 
 function occurrenceId(payload: Record<string, unknown>): string {
   const keys = ["prompt_id", "promptId", "compaction_id", "compactionId", "event_id", "eventId", "uuid"] as const;
+  const parts: string[] = [];
   for (const key of keys) {
     const value = payload[key];
-    if (typeof value === "string" && value.length > 0) return value;
+    if (typeof value === "string" && value.length > 0) parts.push(`${key}=${value}`);
   }
-  return "";
+  return parts.join("\0");
 }
 
 /** Claude PostCompact (or same JSON) → existing reader reselect → configured model_transport. */
