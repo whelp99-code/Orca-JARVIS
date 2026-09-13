@@ -24,6 +24,8 @@ export type MorningRecommendationSnapshot = {
   readonly lineage: readonly MorningRecommendationLineage[];
   readonly excluded: {
     readonly legacy_ranking: number; readonly source_unavailable: number;
+    /** A memory whose originating task the owner closed. Not the same event as a missing source. */
+    readonly memory_source_closed: number;
     readonly stale_deadline: number; readonly inactive: number;
   };
   readonly source_capped: boolean;
@@ -89,17 +91,21 @@ export class MorningRecommendationSource {
     const candidates = this.candidates(maximum);
     const identities = new Map<string, RecommendationIdentity>(); const sources = new Map<string, Source>();
     const records: MorningBriefRecord[] = []; const lineage: MorningRecommendationLineage[] = [];
-    const excluded = { legacy_ranking: 0, source_unavailable: 0, stale_deadline: 0, inactive: 0 };
+    const excluded = { legacy_ranking: 0, source_unavailable: 0, memory_source_closed: 0,
+      stale_deadline: 0, inactive: 0 };
     // A replaced or held local source excludes its own recommendation, like a quarantined one,
     // instead of failing every other publishable recommendation in the same read.
     const contextIds = [...new Set(candidates.slice(0, maximum).map(candidate => candidate.context_id))];
     // A hidden task takes its derived memory out of the brief for the same reason a replaced local
-    // snapshot does: the source the recommendation rests on is not available to it any more.
-    const unavailable = new Set([...contextsWithUnavailableLocalSource(this.authority.db, contextIds, now),
-      ...contextsWithClosedMemorySource(this.authority, contextIds)]);
+    // snapshot does: the source the recommendation rests on is not available to it any more. They
+    // are counted apart, because they are different things that happened - one is a collection that
+    // went missing, the other is the owner deciding they no longer want that memory used.
+    const unavailable = contextsWithUnavailableLocalSource(this.authority.db, contextIds, now);
+    const closed = contextsWithClosedMemorySource(this.authority, contextIds);
     let degraded = candidates.length > maximum;
     for (const candidate of candidates.slice(0, maximum)) {
       if (unavailable.has(candidate.context_id)) { excluded.source_unavailable++; continue; }
+      if (closed.has(candidate.context_id)) { excluded.memory_source_closed++; continue; }
       let identity = identities.get(candidate.recommendation_id);
       if (identity === undefined) {
         identity = this.identity(candidate.recommendation_id, candidates.slice(0, maximum)

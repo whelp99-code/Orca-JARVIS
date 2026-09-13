@@ -132,7 +132,11 @@ it("stops offering a recommendation whose derived memory came from a task the ow
   // The record itself is untouched; only the offer is withdrawn, and the warning names the reason.
   expect(projection.lifecycle_actions).toHaveLength(1);
   expect(projection.warnings.map(item => item.code)).toContain("RECOMMENDATION_MEMORY_SOURCE_CLOSED");
-  expect(new MorningRecommendationSource(authority).generate(LOCAL_CHAIN_AT).source.excluded.source_unavailable).toBe(1);
+  // A closed memory is its own reason. Borrowing the local-source count would tell the owner their
+  // collection went missing when what actually happened is that they hid the task themselves.
+  const excluded = new MorningRecommendationSource(authority).generate(LOCAL_CHAIN_AT).source.excluded;
+  expect(excluded.memory_source_closed).toBe(1);
+  expect(excluded.source_unavailable).toBe(0);
 }, 60_000);
 
 // A read that began before the owner hid the task returns afterwards carrying the identity it read.
