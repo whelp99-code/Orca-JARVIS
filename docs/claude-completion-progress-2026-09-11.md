@@ -11,6 +11,8 @@
 > | C. 최종 패키지의 프로세스 인수 | `VERIFIED` (격리 provider 제외) | receipt를 검증 이전에 독립 QA에 고정 → 두 검증 후 재측정 동일. packaged runtime에서 대시보드 HTTP 6응답·정적 바이트 일치·정상 종료, 그리고 관측→context→추천→brief가 owner 승인 유무로 변별된다. `deployment_ready=false` |
 > | D. 최종 제출·원장 | `IN_PROGRESS` | 이 블록과 회신서 상단이 갱신분이다. B의 양성 통제가 닫히기 전에는 최종 상태를 올리지 않는다 |
 >
+> **B 양성 통제 — 2026-09-13 닫힘:** provider가 돌려준 레코드가 **소유자가 확인한** 기억으로 context에 들어가는 경로를 회귀로 고정했다. 대시보드가 쓰는 `stageCandidateDecision`으로 확인을 스테이징하고, 소유자가 서명한 receipt를 control plane이 적용하고, 그 후보를 실제 outbox saga로 dispatch·settle한 뒤, 같은 reference가 gap이 아니라 `trust: "user_confirmed"` 증거가 된다. 이제 seam은 네 가지를 변별한다 — 이름 댈 수 없는 identity(거절), 확인 없는 settled 쓰기(거절), IO 중 숨김(거절, `unavailable`), 그리고 실제 소유자 확인(수용).
+>
 > **M0–M6 대응:** M3(실제 생산자→context→추천→daily)은 A로 닫혔고 packaged runtime에서도 확인했다(`fdf960e`). M2의 급사·경합·재시작 인수는 기존대로 유지되며 이 라운드의 retention hold 규칙 수정(`4a7898c`에 포함)이 그 회귀를 통과한다. M4/M5의 provider 의존 항목은 격리 설치물이 없어 외부로 남는다.
 >
 > **외부 잔여 1건:** 격리된 Second Brain 설치물/프로세스. 소유자=운영자. 필요한 입력은 `app/current` 밖에서 실행 가능한 provider release, vault·generation journal·request 상태가 scratch에 있는 격리 config, 그 provider가 받아들일 서명/request-executor identity. 준비된 파일은 `scripts/packaged-production-chain-probe.mjs`. 재개 명령은 `JARVIS_SECOND_BRAIN_LAUNCHER`/`JARVIS_SECOND_BRAIN_CONFIG`를 격리 설치물로 지정해 같은 probe를 실행하는 것. 통과 기준은 실제 provider 프로세스가 격리 vault에 대해 읽기·쓰기·scope·활성 generation·철회를 답하고 운영 경로를 하나도 건드리지 않는 것이다.

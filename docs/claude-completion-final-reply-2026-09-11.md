@@ -20,7 +20,9 @@
 >
 > **패키지:** packager rc=0. receipt `sha256:dd10558ccaeb135fdd2d97d82588816fb722e751e03c873d843526e43de4558a`를 **검증 이전에** 독립 QA에 고정했고, 두 검증(대시보드 HTTP probe, 생산 체인 probe) 이후 재측정해도 동일했다 — 기대값을 패키지 자신에게서 재생성하지 않았다. packaged runtime에서 owner 승인이 있을 때 추천 1건이 projection·brief에 실리고, 없을 때 `PRIORITY_OWNER_IMPORT_APPROVAL_REQUIRED`로 기권하며 아무것도 쓰지 않는다. `deployment_ready=false` 유지. receipt의 `dirty:true`는 `git status --untracked-files=all` 기준이며 tracked 변경은 0이다.
 >
-> **아직 내부 잔여(이 때문에 상태를 올리지 않는다):** provider가 돌려준 레코드를 **소유자가 원칙으로 확인한** 기억으로 받아들이는 **양성 통제**가 없다. 경계·차단·거절은 모두 회귀로 고정했고, 양성은 `required_confirmation=1` 후보를 confirm 체인 → dispatch → settle까지 옮긴 fixture가 필요하다. 이는 외부 의존이 아니라 내부 작업이다.
+> **B 양성 통제 — 2026-09-13 닫힘:** provider가 돌려준 레코드가 **소유자가 확인한** 기억으로 context에 들어가는 경로를 회귀로 고정했다. 대시보드가 쓰는 `stageCandidateDecision`으로 확인을 스테이징하고, 소유자가 서명한 receipt를 control plane이 적용하고, 그 후보를 실제 outbox saga로 dispatch·settle한 뒤, 같은 reference가 gap이 아니라 `trust: "user_confirmed"` 증거가 된다. 이제 seam은 네 가지를 변별한다 — 이름 댈 수 없는 identity(거절), 확인 없는 settled 쓰기(거절), IO 중 숨김(거절, `unavailable`), 그리고 실제 소유자 확인(수용).
+>
+> **상태를 올리지 않는 이유(이 라운드의 작업이 아니다):** A·B·C의 내부 잔여는 닫혔다. 남은 것은 이전 라운드가 §9.23에 측정해 둔 두 항목이다 — (1) `/proc`로 관측할 수 없는 동일 UID 프로세스 문제는 그 문서가 스스로 "소유자/운영 결정 필요"라고 적었고, 구현해 보니 이 호스트에서 교체가 항상 거절되어 기존 인수 16건이 깨졌다. (2) 목적지 rename을 no-replace로 바꾸는 변경은 6파일 16건이 실패하는 독립 단위다. 남의 측정 판단을 이 라운드에서 임의로 재분류하지 않는다.
 >
 > **외부 잔여:** 격리된 Second Brain 설치물/프로세스. 이 호스트의 유일한 설치물은 운영용이며(살아 있는 vault 심볼릭, 당일 기록된 generation journal, request-executor 활성, 철회 lock), 제품의 launcher 상수가 `app/current`를 가리킨다. 운영 경로를 건드리지 않고는 실행할 수 없어 실행하지 않았다. 계약 표면 자체는 제품의 harness로 41파일/382테스트 rc=0으로 인수했다.
 
