@@ -401,3 +401,55 @@ async function assembleDispatchContext(
     await produced.close();
   }
 }
+
+function parsePostCompactEvent(raw: unknown): { session_id: string; query: string } {
+  if (raw === null || typeof raw !== "object") throw new JarvisError("HOOK_JSON_INVALID");
+  const payload = raw as Record<string, unknown>;
+  const name = payload.hook_event_name ?? payload.hookEventName;
+  switch (name) {
+    case "PostCompact":
+      break;
+    default:
+      throw new JarvisError("HOOK_EVENT_UNSUPPORTED");
+  }
+  const sessionId = payload.session_id;
+  const query = payload.query ?? payload.compact_summary;
+  if (typeof sessionId !== "string" || sessionId.length === 0) throw new JarvisError("HOOK_SESSION_MISSING");
+  if (typeof query !== "string" || query.trim().length === 0) throw new JarvisError("HOOK_QUERY_MISSING");
+  return { session_id: sessionId, query: query.trim() };
+}
+
+/** Claude PostCompact (or same JSON) → existing reader reselect → configured model_transport. */
+export async function executeMemoryPostcompact(
+  context: CliCommandContext,
+): Promise<Record<string, unknown>> {
+  const options = context.dependencies.memoryReferenceOptions;
+  if (options === undefined) throw new JarvisError("MEMORY_REFERENCE_OPTIONS_REQUIRED");
+  if (options.model_transport === undefined) throw new JarvisError("MEMORY_MODEL_TRANSPORT_REQUIRED");
+  let raw: unknown;
+  if (context.argument !== undefined) {
+    raw = await jsonFile(context.argument);
+  } else {
+    const read = context.dependencies.readStdin;
+    if (read === undefined) throw new JarvisError("HOOK_JSON_INVALID");
+    try {
+      raw = JSON.parse(Buffer.from(await read()).toString("utf8")) as unknown;
+    } catch (error) {
+      throw new JarvisError("HOOK_JSON_INVALID", error instanceof Error ? error.message : "HOOK_JSON_INVALID");
+    }
+  }
+  const event = parsePostCompactEvent(raw);
+  const assembled = await assembleDispatchContext(context, {
+    assemble_context: { query: event.query, purpose: "postcompact-reselect" },
+    memory_evidence: [],
+    task: { session_id: event.session_id },
+  });
+  if (assembled === undefined) throw new JarvisError("MEMORY_POSTCOMPACT_ASSEMBLE_MISSING");
+  return {
+    ok: true,
+    command: "memory.postcompact",
+    model_session_id: assembled.capture.session_id,
+    model_request_bytes: assembled.capture.bytes,
+    transport: "configured",
+  };
+}
