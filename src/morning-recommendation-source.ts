@@ -4,6 +4,7 @@ import { storedRecommendationIdentity, type RecommendationIdentity } from "./rec
 import { validateStoredRecommendationEvents } from "./recommendation-transition-identity.js";
 import { deriveRecommendationEvidenceLinks } from "./recommendation-evidence-binding.js";
 import { contextsWithUnavailableLocalSource } from "./local-observation-availability.js";
+import { contextsWithClosedMemorySource } from "./personal-memory-availability.js";
 import { persistenceRow } from "./personal-persistence-values.js";
 import { instant, integer } from "./morning-brief-parse-values.js";
 import { parseMorningBriefInput } from "./morning-brief-input.js";
@@ -91,8 +92,11 @@ export class MorningRecommendationSource {
     const excluded = { legacy_ranking: 0, source_unavailable: 0, stale_deadline: 0, inactive: 0 };
     // A replaced or held local source excludes its own recommendation, like a quarantined one,
     // instead of failing every other publishable recommendation in the same read.
-    const unavailable = contextsWithUnavailableLocalSource(this.authority.db,
-      [...new Set(candidates.slice(0, maximum).map(candidate => candidate.context_id))], now);
+    const contextIds = [...new Set(candidates.slice(0, maximum).map(candidate => candidate.context_id))];
+    // A hidden task takes its derived memory out of the brief for the same reason a replaced local
+    // snapshot does: the source the recommendation rests on is not available to it any more.
+    const unavailable = new Set([...contextsWithUnavailableLocalSource(this.authority.db, contextIds, now),
+      ...contextsWithClosedMemorySource(this.authority, contextIds)]);
     let degraded = candidates.length > maximum;
     for (const candidate of candidates.slice(0, maximum)) {
       if (unavailable.has(candidate.context_id)) { excluded.source_unavailable++; continue; }

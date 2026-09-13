@@ -159,7 +159,7 @@ export class TaskTimeline {
       throw new JarvisError("TASK_TIMELINE_INVALID");
     }
     const task = recommendationSummary(persistenceRow(value)); const events = this.timeline(taskId, limit);
-    const decisions = projectRecommendations(this.authority.db, now.toISOString(), 500).owner_decisions_needed
+    const decisions = projectRecommendations(this.authority, now.toISOString(), 500).owner_decisions_needed
       .filter(action => action.recommendation_id === taskId).map(action => ({ kind: "recommendation", ...action }));
     return { schema_version: 1, generated_at: now.toISOString(), task, events, pending_decisions: decisions,
       workers: [], evidence: [], truncated: false };

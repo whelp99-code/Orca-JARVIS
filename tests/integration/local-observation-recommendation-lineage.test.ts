@@ -32,7 +32,7 @@ async function chain() {
   return { db, ...await localObservationChain(db) };
 }
 
-const nextActionIds = (db: AuthorityDb) => projectRecommendations(db.db, AT).next_actions
+const nextActionIds = (db: AuthorityDb) => projectRecommendations(db, AT).next_actions
   .map(item => `${item.recommendation_id}#${item.rank}`);
 const todayActionIds = (db: AuthorityDb) => ((todayProjection(db, new Date(AT)) as
   Record<string, unknown>)["next_actions"] as { recommendation_id: string; rank: number }[])
@@ -82,8 +82,8 @@ it("stops exposing current actions once the local source is held, without writin
   expect(generated.brief.abstention_reasons).toEqual(["no_authoritative_data"]);
   expect(nextActionIds(db)).toEqual([]);
   expect(todayActionIds(db)).toEqual([]);
-  expect(projectRecommendations(db.db, AT).lifecycle_actions).toHaveLength(1);
-  expect(projectRecommendations(db.db, AT).warnings).toEqual([
+  expect(projectRecommendations(db, AT).lifecycle_actions).toHaveLength(1);
+  expect(projectRecommendations(db, AT).warnings).toEqual([
     { recommendation_id: LOCAL_CHAIN_RECOMMENDATION_ID, code: "RECOMMENDATION_SOURCE_UNAVAILABLE",
       deadline: "2026-08-28T12:02:59.999Z" }]);
   expect(writes(db)).toEqual(before);

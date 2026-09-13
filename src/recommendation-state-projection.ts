@@ -18,7 +18,7 @@ export async function buildCurrentState(
   options: CurrentStateOptions = {},
 ): Promise<CurrentStateProjection> {
   const base = await buildBaseCurrentState(db, now, options);
-  const recommendations = projectRecommendations(db.db, now.toISOString(), 100);
+  const recommendations = projectRecommendations(db, now.toISOString(), 100);
   return {
     ...base,
     decisions: [...recommendations.owner_decisions_needed, ...base.decisions],

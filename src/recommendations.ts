@@ -215,7 +215,7 @@ export class Recommendations {
   project(now: string, limit = 100): RecommendationReadProjection {
     const clock = instant(now);
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 500) return fail("RECOMMENDATION_INPUT_INVALID");
-    return projectRecommendations(this.authority.db, clock, limit);
+    return projectRecommendations(this.authority, clock, limit);
   }
 }
 export type { RecommendationActionMaterial, RecommendationEvidenceLink } from "./recommendation-provenance.js";

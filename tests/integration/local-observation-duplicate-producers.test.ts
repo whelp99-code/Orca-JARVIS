@@ -39,7 +39,7 @@ it("keeps actionable output at one item while repeated producer cycles pile up s
 
     // Only the newest producer stays current in every actionable read.
     const newest = localChainIds(cycle - 1).recommendationId;
-    const projection = projectRecommendations(db.db, AT);
+    const projection = projectRecommendations(db, AT);
     expect(projection.next_actions.map(item => item.recommendation_id)).toEqual([newest]);
     expect(projection.lifecycle_actions).toHaveLength(stored);
     expect(projection.warnings.map(item => item.code))
@@ -66,7 +66,7 @@ it("excludes a quarantined observation from the brief instead of failing the who
   expect(generated.source.excluded.source_unavailable).toBe(2);
   expect(generated.source.input.items).toEqual([]);
   expect(generated.brief.abstention_reasons).toEqual(["no_authoritative_data"]);
-  expect(projectRecommendations(db.db, AT).next_actions).toEqual([]);
+  expect(projectRecommendations(db, AT).next_actions).toEqual([]);
 });
 
 it("still fails closed when a cited context envelope is altered rather than merely superseded", async () => {

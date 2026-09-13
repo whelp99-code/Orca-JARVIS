@@ -60,7 +60,7 @@ it("abstains through the real production path when only an advisory local source
   expect(produced.reasons).toEqual(["PRIORITY_CONTEXT_POLICY_ABSTAINED"]);
   expect(produced.stored.observation_count).toBe(1);
   expect(Number(db.db.prepare("SELECT COUNT(*) FROM personal_recommendations").pluck().get())).toBe(0);
-  expect(projectRecommendations(db.db, AT).next_actions).toEqual([]);
+  expect(projectRecommendations(db, AT).next_actions).toEqual([]);
   // Nothing was recorded, so the brief has no source at all rather than one it had to exclude.
   expect(new MorningRecommendationSource(db).generate(AT).brief.abstention_reasons).toEqual(["no_data"]);
 });
@@ -81,7 +81,7 @@ it("assembles, persists and records a recommendation when live and owner evidenc
   expect(produced.stored.observation_count).toBe(2);
   expect(produced.created.recommendation.payload.context_id).toBe(produced.context.id);
   expect(produced.created.recommendation.payload.state).toBe("eligible");
-  expect(projectRecommendations(db.db, AT).next_actions.map(item => item.title))
+  expect(projectRecommendations(db, AT).next_actions.map(item => item.title))
     .toEqual(["Next: produced-followup"]);
 
   new MemoryProjectionAuthority(db).bind({ kind: "context", id: produced.context.id,

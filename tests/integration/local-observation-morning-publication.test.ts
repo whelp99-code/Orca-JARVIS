@@ -73,7 +73,7 @@ it.each([
   expect(after.state).toBe("stale");
   expect(after.item_count).toBe(0);
   expect(nextActions(f.db)).toEqual([]);
-  expect(projectRecommendations(f.db.db, LOCAL_CHAIN_AT).lifecycle_actions).toHaveLength(1);
+  expect(projectRecommendations(f.db, LOCAL_CHAIN_AT).lifecycle_actions).toHaveLength(1);
   expect(reconcileSteps(f.db)).toHaveLength(1);
   expect(writes(f.db)).toEqual(before);
 });
@@ -124,8 +124,8 @@ it("publishes no partial content when the local task source is gone", async () =
   expect(reconcileSteps(f.db).map(step => (step as { state: string }).state)).toEqual(["completed"]);
   expect(brief(f.db)).toMatchObject({ state: "degraded", item_count: 0 });
   expect(reconcileDetail(f.db)).not.toContain("local-task-followup");
-  expect(projectRecommendations(f.db.db, LOCAL_CHAIN_AT).next_actions).toEqual([]);
-  expect(projectRecommendations(f.db.db, LOCAL_CHAIN_AT).warnings).toEqual([
+  expect(projectRecommendations(f.db, LOCAL_CHAIN_AT).next_actions).toEqual([]);
+  expect(projectRecommendations(f.db, LOCAL_CHAIN_AT).warnings).toEqual([
     { recommendation_id: LOCAL_CHAIN_RECOMMENDATION_ID, code: "RECOMMENDATION_SOURCE_UNAVAILABLE",
       deadline: "2026-08-28T12:02:59.999Z" }]);
 });

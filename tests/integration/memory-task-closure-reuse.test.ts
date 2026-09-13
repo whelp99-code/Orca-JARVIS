@@ -4,9 +4,14 @@ import { MemoryCandidateStore } from "../../src/memory-candidate-store.js";
 import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
 import { citationAuthorityForContext } from "../../src/personal-context-citation-contract.js";
 import { recordCandidateTaskSource } from "../../src/memory-candidate-task-source.js";
+import { MorningRecommendationSource } from "../../src/morning-recommendation-source.js";
+import { produceDailyRecommendation } from "../../src/personal-context-production.js";
+import { projectRecommendations } from "../../src/recommendation-projection.js";
 import {
-  admitLocalChainObservation, persistLocalChainLiveObservation, LOCAL_CHAIN_AT,
+  admitLocalChainObservation, approveLocalChainOwnerDecisions, persistLocalChainLiveObservation,
+  LOCAL_CHAIN_AT,
 } from "../fixtures/local-observation-chain.js";
+import { priorityPolicyConfig } from "../fixtures/priority-engine-input.js";
 import { inferredMemoryInput, memoryPolicy, MEMORY_NOW } from "../fixtures/memory-candidate-fixture.js";
 import { closeMemoryDatabase, memoryDatabase, type MemoryDatabase } from "../fixtures/memory-candidate-store.js";
 
@@ -30,6 +35,7 @@ async function derivedMemoryContext() {
 
   await admitLocalChainObservation(authority, LOCAL_CHAIN_AT);
   const live = persistLocalChainLiveObservation(authority, 0, LOCAL_CHAIN_AT);
+  const owner = approveLocalChainOwnerDecisions(authority, 0, LOCAL_CHAIN_AT);
   const memory = {
     kind: "evidence" as const, memory_ref: "memory:principle:derived", source_id: "src:pos:v1:second-brain:primary",
     digest: contentDigest, observed_at: "2026-08-28T11:30:00.000Z", fresh_until: "2026-08-28T12:05:00.000Z",
@@ -45,7 +51,7 @@ async function derivedMemoryContext() {
   authority.persistContextSnapshot({ context, memory_evidence: [{ memory_ref: memory.memory_ref,
     evidence_id: evidence.evidence_id, source_id: memory.source_id, digest: memory.digest,
     observed_at: memory.observed_at, fresh_until: memory.fresh_until }] }, LOCAL_CHAIN_AT);
-  return { authority, context, memory };
+  return { authority, context, memory, live, owner };
 }
 
 // Hiding the task already closes the candidate's review, approval and write. A copy derived from
@@ -67,4 +73,40 @@ it("stops citing a derived memory once the owner hides the task it came from", a
     reference: memory.memory_ref, reason: "closed_task_source" }));
   // The live fact beside it is untouched: closure is asked of the memory's own source, not of the context.
   expect(after.citable.map(item => item.citation_kind)).toEqual(["linux_live_fact"]);
+}, 60_000);
+
+// The lineage is immutable, so a recommendation already built on that memory is not rewritten. What
+// changes is what the reader offers: it stops being current work and says why.
+it("stops offering a recommendation whose derived memory came from a task the owner hid", async () => {
+  const { authority, live, owner, memory } = await derivedMemoryContext();
+  const produced = produceDailyRecommendation(authority, {
+    assemble: { purpose: "daily_prioritization", query: "what now?", clock: LOCAL_CHAIN_AT,
+      expires_in_ms: 240_000, budgets: { max_items: 16, max_excerpt_bytes: 256, max_total_bytes: 4096 },
+      observations: [live.observation], pending_authority_refs: [], memories: [memory] } as never,
+    policy: priorityPolicyConfig(), policy_decision_ref: "policy:linux:personal-os-policy-v1:task17",
+    principle_ref: memory.memory_ref, owner_import_decision_ref: owner.importDecision.request_id,
+    candidates: [{ action_id: "derived-followup", execution_mode: "jarvis",
+      owner_safety_gate: "owner_approval_required", owner_gate_ref: owner.ownerGate.request_id,
+      customer_impact: "customer_critical", deadline: null, dependency: { kind: "non_blocking" },
+      irreversible_risk: "low", effort_cost: "medium", principle_ref: memory.memory_ref,
+      current_evidence_ref: live.id, stable_identity: { key: "derived-followup", evidence_ref: live.id } }],
+    recommendation: { id: "rec:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7b01",
+      idempotency_key: `idem:pos:v1:recommendation:${"b".repeat(64)}`,
+      correlation_id: "corr:pos:v1:018f0d4e-7b2a-7cc1-8a2b-3c4d5e6f7301", causation_id: null,
+      expires_at: "2026-08-28T12:03:00.000Z", confidence_class: "high",
+      actions: [{ action_id: "derived-followup", title: "Next: derived-followup", operation: "review",
+        target_digest: `sha256:${"a".repeat(64)}` }] },
+  });
+  expect(produced.state).toBe("recommended");
+  expect(projectRecommendations(authority, LOCAL_CHAIN_AT).next_actions).toHaveLength(1);
+
+  new MemoryProjectionAuthority(authority)
+    .quarantineUnresolved({ kind: "task_timeline", id: TASK, component_id: TASK }, NOW);
+
+  const projection = projectRecommendations(authority, LOCAL_CHAIN_AT);
+  expect(projection.next_actions).toEqual([]);
+  // The record itself is untouched; only the offer is withdrawn, and the warning names the reason.
+  expect(projection.lifecycle_actions).toHaveLength(1);
+  expect(projection.warnings.map(item => item.code)).toContain("RECOMMENDATION_MEMORY_SOURCE_CLOSED");
+  expect(new MorningRecommendationSource(authority).generate(LOCAL_CHAIN_AT).source.excluded.source_unavailable).toBe(1);
 }, 60_000);
