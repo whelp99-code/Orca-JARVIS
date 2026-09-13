@@ -63,9 +63,9 @@ function memoryBindings(context: ContextSnapshotV1,
  * the assembled context. So the question is asked before anything is created, and an action whose
  * gate the owner never decided is simply not selected.
  */
-function ownerGateDecided(authority: AuthorityDb, action: PriorityActionDecision): boolean {
+function ownerGateDecided(authority: AuthorityDb, action: PriorityActionDecision, now: Date): boolean {
   const reference = action.rationale.citations.owner_gate_ref;
-  return reference === null || approvedOwnerDecisionDigest(authority.db, reference) !== undefined;
+  return reference === null || approvedOwnerDecisionDigest(authority.db, reference, now) !== undefined;
 }
 
 function ownerGateReferences(candidates: readonly Record<string, unknown>[]): readonly string[] {
@@ -99,10 +99,14 @@ function policyFacts(authority: AuthorityDb, request: DailyRecommendationRequest
     observed_at: observedOf(item.evidence_id), valid_from: observedOf(item.evidence_id),
     valid_until: context.expires_at, fresh_until: context.freshness.fresh_until,
   }));
-  const ownerReferences = [...new Set([request.owner_import_decision_ref,
-    ...ownerGateReferences(request.candidates)])];
+  // Two different questions wear the same word. A gate authorizes acting now, so it has to hold
+  // now; an import decision records that the owner once admitted this principle, and a memory
+  // confirmed last week is still confirmed. Both stop counting the moment they are revoked.
+  const gates = new Set(ownerGateReferences(request.candidates));
+  const ownerReferences = [...new Set([request.owner_import_decision_ref, ...gates])];
   const owner = ownerReferences.flatMap(reference =>
-    approvedOwnerDecisionDigest(authority.db, reference) === undefined ? [] : [{
+    approvedOwnerDecisionDigest(authority.db, reference,
+      gates.has(reference) ? new Date(request.assemble.clock) : undefined) === undefined ? [] : [{
       kind: "evidence", ref: reference, evidence_class: "owner_decision",
       source_host: "linux-control-plane", state: "current", trust: "user_confirmed",
       relation: "supports", relates_to: request.principle_ref,
@@ -181,7 +185,8 @@ export function produceDailyRecommendation(authority: AuthorityDb,
     candidates: request.candidates,
     presentation: { model_disagrees: false, model_preferred_action_ids: [], mac_evidence_refs: [] },
   });
-  const selected = ranking.actions.filter(action => action.rank !== null && ownerGateDecided(authority, action));
+  const selected = ranking.actions.filter(action => action.rank !== null
+    && ownerGateDecided(authority, action, new Date(request.assemble.clock)));
   if (selected.length === 0) {
     return { state: "abstained", context, stored, ranking,
       reasons: [...new Set(ranking.actions.flatMap(action => action.reason_codes))].sort() };

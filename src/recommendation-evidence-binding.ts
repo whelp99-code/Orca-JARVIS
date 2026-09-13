@@ -79,7 +79,18 @@ function ordinaryLink(input: OrdinaryLinkInput): RecommendationEvidenceLink {
  * trusted decision key. The link then carries the digest of the command the owner actually
  * approved and no context evidence, exactly as the policy slot does.
  */
-export function approvedOwnerDecisionDigest(database: Database.Database, reference: string): Sha256Digest | undefined {
+/**
+ * The owner's decision on one request, or undefined.
+ *
+ * With an instant, the decision also has to be one that holds at that instant: a receipt states the
+ * window it is good for and the request states its own, and an approval from another season is not
+ * an approval for this morning. Without an instant this asks only whether the decision exists and
+ * stands, which is what reading a recommendation that was already created needs - the receipt
+ * proves the decision was made, and its window governed making it, not remembering it.
+ */
+export function approvedOwnerDecisionDigest(database: Database.Database, reference: string,
+  now?: Date): Sha256Digest | undefined {
+  const at = now === undefined ? null : now.toISOString();
   const value = database.prepare(
     `SELECT r.command_digest AS command_digest
      FROM control_command_requests r
@@ -88,9 +99,10 @@ export function approvedOwnerDecisionDigest(database: Database.Database, referen
      JOIN trusted_authority_keys k ON k.key_id=a.key_id AND k.principal_id=a.signer_principal_id
      JOIN authority_key_purposes p ON p.key_id=k.key_id AND p.purpose='decision'
      WHERE r.request_id=? AND r.state IN ('approved','claimed','completed')
+       AND (? IS NULL OR (a.issued_at<=? AND ?<a.expires_at AND ?<r.expires_at))
        AND NOT EXISTS(SELECT 1 FROM control_command_revocations v
          WHERE v.request_id=r.request_id OR v.receipt_id=a.receipt_id)`,
-  ).get(reference);
+  ).get(reference, at, at, at, at);
   if (value === undefined) return undefined;
   const digest = persistenceText(persistenceRow(value)["command_digest"]);
   return sha256(digest) ? digest : undefined;
