@@ -1,6 +1,7 @@
 import type { AuthorityDb } from "../../src/db.js";
 import { LocalTimelineSnapshotStore } from "../../src/local-timeline-snapshot-store.js";
 import { ObservationRefreshStore } from "../../src/observation-refresh-store.js";
+import { recordCandidateTaskSource } from "../../src/memory-candidate-task-source.js";
 import { admitLocalTimelineObservation, prepareLocalTimelineObservation } from "../../src/local-timeline-observation.js";
 import { Recommendations, normalizePersonalObservations,
   rankPriorityActionsWithDeadlineEvidence } from "../../src/index.js";
@@ -25,6 +26,8 @@ export const LOCAL_CHAIN_RECOMMENDATION_ID = "rec:pos:v1:018f0d4e-7b2a-7cc1-8a2b
 export const LOCAL_CHAIN_PRINCIPLE_REF = "memory:principle:customer-first";
 /** The subject a live observation of this chain's task reports, which is what its gate authorizes. */
 export const LOCAL_CHAIN_SUBJECT = `task:${LOCAL_CHAIN_TASK_ID}`;
+/** The task this chain's principle can be said to have been derived from, when a test asks for it. */
+export const LOCAL_CHAIN_MEMORY_TASK = "task:fixture-memory";
 export const LOCAL_CHAIN_MEMORY_TARGET = `sha256:${"d".repeat(64)}`;
 
 /** Distinct identities per producer cycle; cycle 0 keeps the original constants. */
@@ -65,38 +68,40 @@ const PRINCIPLE_IDEMPOTENCY_KEY = "candidate:local-chain:principle";
  * digest below is the content digest that confirmation is about.
  */
 export function confirmLocalChainPrinciple(db: AuthorityDb, base = LOCAL_CHAIN_AT): string {
+  return localChainPrinciple(db, base).digest;
+}
+
+/**
+ * The candidate behind this chain's principle, confirmed once however often this is called.
+ *
+ * Classification is an idempotent replay for an identical input, which is why the inference this
+ * principle rests on carries a fixed window rather than one that moves with the chain's clock: a
+ * chain is built in cycles, and a changed input under one idempotency key would be a second proposal
+ * of the same memory rather than a replay of the first. Whether the owner has already answered is
+ * asked of the database, so a copied or reopened database does not ask them twice.
+ */
+export function localChainPrinciple(db: AuthorityDb, base = LOCAL_CHAIN_AT): {
+  readonly candidate_id: string; readonly digest: string;
+} {
   const at = new Date(base);
   const roots = memoryCandidateSpoolRoots(db.filename);
-  // A chain is built in cycles, each at its own instant, and a database can be copied or reopened
-  // between them. The candidate this principle rests on is therefore looked up before anything is
-  // classified again: proposing the same memory a second time under one idempotency key is a replay
-  // conflict, and the owner already answered the first proposal.
-  const recorded = db.db.prepare(
-    "SELECT candidate_id,content_digest,state FROM memory_candidates WHERE idempotency_key=? ORDER BY rowid LIMIT 1")
-    .get(PRINCIPLE_IDEMPOTENCY_KEY) as
-    { candidate_id: string; content_digest: string; state: string } | undefined;
-  const candidate = recorded ?? (() => {
-    const store = new MemoryCandidateStore(db, memoryPolicy(), () => at);
-    store.attachReviewSpool(roots.candidate_review_spool_root);
-    const classified = store.classify(inferredMemoryInput({
-      subject: "wiki/customer-first", statement: PRINCIPLE_STATEMENT,
-      idempotency_key: PRINCIPLE_IDEMPOTENCY_KEY,
-      // The inference this principle rests on has to be current whenever the chain is built, and
-      // the candidate has to be the same candidate every time: an identity that moved with the
-      // chain's clock would be a second proposal of one memory under one idempotency key.
-      source: { class: "labeled_inference", source_id: "inference-source-local-chain",
-        source_version: "v1", inference_id: "inference-local-chain", label: "inference",
-        references: [evidenceRef("inference_evidence", "local-chain",
-          { observed_at: "2026-08-28T00:00:00.000Z", fresh_until: "2126-08-28T00:00:00.000Z",
-            expires_at: "2126-08-29T00:00:00.000Z" })] } }));
-    return { candidate_id: classified.candidate_id, content_digest: String(classified.content_digest),
-      state: String(db.db.prepare("SELECT state FROM memory_candidates WHERE candidate_id=?")
-        .pluck().get(classified.candidate_id)) };
-  })();
+  const store = new MemoryCandidateStore(db, memoryPolicy(), () => at);
+  store.attachReviewSpool(roots.candidate_review_spool_root);
+  const candidate = store.classify(inferredMemoryInput({
+    subject: "wiki/customer-first", statement: PRINCIPLE_STATEMENT,
+    idempotency_key: PRINCIPLE_IDEMPOTENCY_KEY,
+    source: { class: "labeled_inference", source_id: "inference-source-local-chain",
+      source_version: "v1", inference_id: "inference-local-chain", label: "inference",
+      references: [evidenceRef("inference_evidence", "local-chain",
+        { observed_at: "2026-08-28T00:00:00.000Z", fresh_until: "2126-08-28T00:00:00.000Z",
+          expires_at: "2126-08-29T00:00:00.000Z" })] } }));
   const digest = String(candidate.content_digest);
-  if (ownerConfirmedContent(db, digest)) return digest;
-  if (candidate.state !== "awaiting_confirmation") {
-    throw new TypeError(`local chain principle is ${candidate.state} without an owner confirmation`);
+  const identified = { candidate_id: candidate.candidate_id, digest };
+  if (ownerConfirmedContent(db, digest)) return identified;
+  const state = db.db.prepare("SELECT state FROM memory_candidates WHERE candidate_id=?")
+    .pluck().get(candidate.candidate_id);
+  if (state !== "awaiting_confirmation") {
+    throw new TypeError(`local chain principle is ${String(state)} without an owner confirmation`);
   }
   const mutation = new MemoryMutationService({ authority: db, clock: () => at,
     session: createDashboardSession("owner-session"),
@@ -107,7 +112,7 @@ export function confirmLocalChainPrinciple(db: AuthorityDb, base = LOCAL_CHAIN_A
     operation: "remember", decision: "confirm", intent_id: `memui:intent:v1:${"2".repeat(64)}` });
   if (command === undefined) throw new TypeError("confirmation command required");
   decideFixtureOwnerCommand(db, command, base);
-  return digest;
+  return identified;
 }
 
 /**
@@ -122,6 +127,17 @@ export const localChainDeclaredMemory = {
   excerpt: PRINCIPLE_STATEMENT, trust: "user_confirmed" as const, sensitivity: "personal" as const,
   relevance: "related" as const, relation: "supports" as const,
 };
+
+/**
+ * Says this chain's principle was derived from a task, which is what lets a test hide that task and
+ * ask what each reader does about it. Nothing else changes: a chain that never calls this carries a
+ * principle with no task behind it, exactly as before.
+ */
+export function recordLocalChainPrincipleTask(db: AuthorityDb, base = LOCAL_CHAIN_AT): string {
+  recordCandidateTaskSource(db, localChainPrinciple(db, base).candidate_id,
+    LOCAL_CHAIN_MEMORY_TASK, new Date(base));
+  return LOCAL_CHAIN_MEMORY_TASK;
+}
 
 /** The principle as an assembler input, carrying the digest the owner really confirmed. */
 export function localChainConfirmedMemory(db: AuthorityDb, base = LOCAL_CHAIN_AT) {

@@ -1,11 +1,11 @@
 import { afterEach, expect, it } from "vitest";
-import { AuthorityDb, createStoredMorningDailyLoop, dailyLoopUsage } from "../../src/index.js";
+import { AuthorityDb, createStoredMorningDailyLoop, dailyLoopUsage, Recommendations } from "../../src/index.js";
 import type { DailyLoopOptions } from "../../src/daily-loop-types.js";
 import { todayProjection } from "../../src/dashboard/personal-today.js";
 import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
 import { projectRecommendations } from "../../src/recommendation-projection.js";
-import { localObservationChain, LOCAL_CHAIN_AT, LOCAL_CHAIN_RECOMMENDATION_ID, LOCAL_CHAIN_TASK_ID }
-  from "../fixtures/local-observation-chain.js";
+import { localObservationChain, recordLocalChainPrincipleTask, LOCAL_CHAIN_AT,
+  LOCAL_CHAIN_RECOMMENDATION_ID, LOCAL_CHAIN_TASK_ID } from "../fixtures/local-observation-chain.js";
 import { morningPublicationFixture, PUBLICATION_AT } from "../fixtures/morning-publication.js";
 import { tempDb } from "../helpers.js";
 
@@ -139,4 +139,27 @@ it("publishes an abstaining brief instead of expired items after the context dea
   expect(published.brief_id).toMatch(/^morning-brief:v2:[0-9a-f]{64}$/);
   expect(published.item_count).toBe(0);
   expect(nextActions(f.db, expired)).toEqual([]);
+});
+
+
+// 07:00 a brief is published carrying an item that rests on a derived memory. 09:00 the owner hides
+// the task that memory came from. 10:00 the recommendation projection has withdrawn the work - and
+// the published brief has to say the same thing, instead of still offering it as current.
+it("stops reporting a published brief item once the owner hides the task its memory came from", async () => {
+  const f = await setup();
+  const task = recordLocalChainPrincipleTask(f.db);
+  expect(f.loop.finish(f.claim)).toBe(true);
+  expect(brief(f.db)).toMatchObject({ state: "ready", item_count: 1 });
+  expect(nextActions(f.db)).toHaveLength(1);
+
+  new MemoryProjectionAuthority(f.db)
+    .quarantineUnresolved({ kind: "task_timeline", id: task, component_id: task }, PUBLICATION_AT);
+
+  // Every reader has to answer the same question the same way. The dashboard's detail and list
+  // surfaces and the recommendation timeline all read through Recommendations.project, so pinning
+  // that reader alongside the projection, the today read and the published brief covers the set.
+  expect(projectRecommendations(f.db, PUBLICATION_AT.toISOString()).next_actions).toEqual([]);
+  expect(new Recommendations(f.db).project(PUBLICATION_AT.toISOString(), 500).next_actions).toEqual([]);
+  expect(nextActions(f.db)).toEqual([]);
+  expect(brief(f.db).item_count).toBe(0);
 });

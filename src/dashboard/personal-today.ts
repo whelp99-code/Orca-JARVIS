@@ -5,6 +5,7 @@ import type { AuthorityDb } from "../db.js";
 import { assertDailyLoopIntegrity } from "../daily-loop-integrity.js";
 import { kstLocalDate } from "../daily-loop-time.js";
 import { recommendationsWithUnavailableLocalSource } from "../local-observation-availability.js";
+import { recommendationsWithClosedMemorySource } from "../personal-memory-availability.js";
 import { verifyMorningBriefResult } from "../morning-brief-artifact.js";
 import { MemoryProjectionAuthority } from "../memory-projection-authority.js";
 import { verifyEveningCloseoutArtifact } from "../evening-closeout-artifact.js";
@@ -108,11 +109,16 @@ function latestBrief(db: AuthorityDb, now: Date): BriefSummary {
     return { state: "no_data", brief_id: null, generated_at: null, item_count: 0 };
   }
   const currentDay = kstLocalDate(now) === text(row, "loop_date");
-  // A published brief stays readable, but items whose local source no longer matches are not current.
-  const unavailable = recommendationsWithUnavailableLocalSource(db.db,
-    items.flatMap(item => item.contributing_recommendation_ids), timestamp);
+  // A published brief stays readable, but items whose source no longer stands are not current. A
+  // local observation that no longer matches is one way that happens; the owner hiding the task a
+  // derived memory came from is the other, and the projection already withdraws the work for it. A
+  // brief that kept offering the item would be telling the owner something the rest of the product
+  // has stopped believing.
+  const contributing = items.flatMap(item => item.contributing_recommendation_ids);
+  const unavailable = recommendationsWithUnavailableLocalSource(db.db, contributing, timestamp);
+  const closed = recommendationsWithClosedMemorySource(db, contributing);
   const currentItems = currentDay ? items.filter(item => timestamp < item.fresh_until && timestamp < item.valid_until
-    && item.contributing_recommendation_ids.every(id => !unavailable.has(id))) : [];
+    && item.contributing_recommendation_ids.every(id => !unavailable.has(id) && !closed.has(id))) : [];
   const stale = !currentDay || currentItems.length !== items.length;
   return { state: stale ? "stale" : brief.context_readiness, brief_id: brief.brief_id,
     generated_at: brief.generated_at, item_count: currentItems.length };
