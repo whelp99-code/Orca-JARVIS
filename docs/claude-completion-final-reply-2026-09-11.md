@@ -1,5 +1,30 @@
 # 최종 검증 회신서 — 2026-09-11
 
+> **현재 판정 — 2026-09-13 09:5x UTC 갱신:** 상태는 여전히 `IN_PROGRESS`다. 아래 2026-09-13 초기 판정과 그 이전 기록은 **당시의 것**이며, 이 블록이 현재 판정이다. 과거 §0/§4의 "A/B 모두 닫힘", "환경 한계만 남음" 문구는 현재 상태가 아니다.
+>
+> **기준값(실측):** 제품 branch `codex/routing-approval-ui`. tracking branch 미설정이라 ahead/behind는 측정할 수 없다. tracked 변경 0, untracked 3(`.omo/evidence/ulw/`, `.omo/ulw-loop/`, `node_modules` — 도구 상태·공유 의존성, 커밋 대상 아님).
+>
+> **이 라운드에 닫은 것(각각 실패 회귀 → 최소 수정 → 대상·인접 회귀 → 로컬 커밋):**
+> | commit | 무엇을 고쳤나 | 인접 증거(실제 RC) |
+> |---|---|---|
+> | `4a7898c` | owner decision을 컨텍스트가 아니라 **승인된 control-plane receipt**에서 파생. assembler는 `owner_decision`을 만들 수 없는데 priority engine은 모든 랭킹 액션에 그것을 요구했으므로, owner-gated 액션은 실제 경로로 바인딩 자체가 불가능했다 | 전체 gate rc=0, 566파일/3,915테스트 |
+> | `f4d4b66` | 생산 진입점 `produceDailyRecommendation`. 이전까지 `assemblePersonalContext`·`persistContextSnapshot`·`Recommendations.create`의 `src/` 호출자가 **0**이었다 | 58파일/477테스트 rc=0 |
+> | `50734ce` | 닫힌 task의 파생 기억을 인용 불가(`closed_task_source`)로 | 78파일/667테스트 rc=0 |
+> | `22f414a` | 이미 만들어진 추천을 현재 작업에서 철회하되 **기록은 보존**, 이유를 `RECOMMENDATION_MEMORY_SOURCE_CLOSED`로 구분 | 129파일/1,050테스트 rc=0 |
+> | `19d337f` | 인용할 원칙이 없을 때 생산자가 무효 입력을 만들어 엔진이 거부하던 것을 **engine 자신의 gap**으로 보고하도록 | 236파일/1,752테스트 rc=0 |
+> | `393bfeb` | 재시작·project scope 변경·restore rebuild·승인 취소에서의 재유입 차단을 회귀로 고정 | 대상 7건 rc=0 |
+> | `ba98ca6`→(seam 갱신) | provider 반환 레코드를 실제로 소비하는 경계. 세 조건(설정된 destination, task 미폐쇄, 소유자 확인)을 **이 데이터베이스에** 묻고 하나라도 없으면 gap | 203파일/1,583테스트 rc=0 |
+> | `fdf960e` | packaged runtime 안에서 관측→context→추천→brief를 실행하는 probe | probe rc=0 |
+>
+> **전체 gate(1회, 고정 입력):** 입력 HEAD `181aff2252a04f109fb3e2a202363e974fbd9331`, working tree digest `sha256:713d3a663641f3cef6f22ee1b4d94e334657127bfb2bafbc101e00b8b79f4a77`(변경·신규 46파일 각각 sha256 포함). 실행 rc=0, 566파일/3,915테스트, 07:07:11Z→07:33:18Z, pid 3704380, 로그 `sha256:885187f6132e22ba4088f0fbb2713fb8a0ebbb6b4a0bae9c81f695643df1f65a`. 그 이전 1차 시도는 런처 세션의 kill 마감으로 **중단**돼 RC가 없으며(로그 8,484바이트/99줄, 요약줄 없음) 합격 근거에서 제외했다.
+>
+> **패키지:** packager rc=0. receipt `sha256:dd10558ccaeb135fdd2d97d82588816fb722e751e03c873d843526e43de4558a`를 **검증 이전에** 독립 QA에 고정했고, 두 검증(대시보드 HTTP probe, 생산 체인 probe) 이후 재측정해도 동일했다 — 기대값을 패키지 자신에게서 재생성하지 않았다. packaged runtime에서 owner 승인이 있을 때 추천 1건이 projection·brief에 실리고, 없을 때 `PRIORITY_OWNER_IMPORT_APPROVAL_REQUIRED`로 기권하며 아무것도 쓰지 않는다. `deployment_ready=false` 유지. receipt의 `dirty:true`는 `git status --untracked-files=all` 기준이며 tracked 변경은 0이다.
+>
+> **아직 내부 잔여(이 때문에 상태를 올리지 않는다):** provider가 돌려준 레코드를 **소유자가 원칙으로 확인한** 기억으로 받아들이는 **양성 통제**가 없다. 경계·차단·거절은 모두 회귀로 고정했고, 양성은 `required_confirmation=1` 후보를 confirm 체인 → dispatch → settle까지 옮긴 fixture가 필요하다. 이는 외부 의존이 아니라 내부 작업이다.
+>
+> **외부 잔여:** 격리된 Second Brain 설치물/프로세스. 이 호스트의 유일한 설치물은 운영용이며(살아 있는 vault 심볼릭, 당일 기록된 generation journal, request-executor 활성, 철회 lock), 제품의 launcher 상수가 `app/current`를 가리킨다. 운영 경로를 건드리지 않고는 실행할 수 없어 실행하지 않았다. 계약 표면 자체는 제품의 harness로 41파일/382테스트 rc=0으로 인수했다.
+
+
 > **현재 판정 — 2026-09-13:** 전체 M0–M6은 `IN_PROGRESS`다. close 경계 유실 결함은 제품 `18b73ede9a369ae8cb34bb44885bf6cbef9f2687`에서 수정했고, 정확히 동일한 tree `222cfb394e897ae4db25f322a32789c6e9cb4046`의 전체 verify가 604파일·4,176테스트/RC0으로 통과했다. 첫 실패/중단 run은 제외했다.
 > 최신 검증·패키지·독립 리뷰는 [2026-09-13 수정 검증서](codex-close-fence-verification-2026-09-13.md), 실제 내부 잔여 A–D는 [OmO 실행 지시서](omo-next-units-2026-09-13.md)가 정본이다. 이하 과거 SHA·gate·잔여 표와 “A/B 모두 닫힘/환경 한계만 남음” 주장은 당시 기록이며 현재 완료 판정으로 사용하지 않는다. 실제 assembler 생산 연결·저장 기억의 현재 사용 차단·최종 packaged 프로세스 인수는 아직 내부 잔여다.
 

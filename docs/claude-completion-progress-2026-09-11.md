@@ -1,5 +1,21 @@
 # 완료 작업 진행 원장 — 2026-09-11
 
+> **현재 판정 — 2026-09-13 갱신:** `IN_PROGRESS`. 아래 2026-09-13 초기 판정과 그 이전 표는 당시 기록이며, 이 블록이 현재 상태다. 회신서는 [claude-completion-final-reply-2026-09-11.md](claude-completion-final-reply-2026-09-11.md) 상단 블록이 정본이다.
+>
+> **A–D 판정(실측 기준)**
+>
+> | 단위 | 상태 | 근거 / 남은 것 |
+> |---|---|---|
+> | A. 실제 assembler → 추천·brief 생산 경로 | `VERIFIED` | `produceDailyRecommendation`(`f4d4b66`)이 조립→저장→**저장된 컨텍스트가 증명하는 것에서 파생한** 정책 입력→랭킹→추천 생성을 수행한다. 인수 두 갈래가 실제 API로 통과: 자문용 로컬 수집만 있으면 `PRIORITY_CONTEXT_POLICY_ABSTAINED`로 기권·무기록, 검증된 live fact + confirmed 원칙 + 승인된 owner receipt면 추천이 projection·brief에 실린다. owner decision은 `4a7898c` 이후 control plane의 승인 receipt에서만 나온다 |
+> | B. 저장된 파생 기억의 현재 재사용 차단 | `IN_PROGRESS` | 차단·철회·경계는 닫혔다: 인용 차단(`50734ce`), 추천 철회 + `RECOMMENDATION_MEMORY_SOURCE_CLOSED`(`22f414a`), IO 중 숨김 이후 재검사(`19d337f`), 재시작·scope·rebuild·승인취소(`393bfeb`), provider 반환 레코드 소비 경계(`ba98ca6`+갱신). **남은 것은 양성 통제 하나** — 소유자가 원칙으로 확인한 기억이 provider 레코드로 돌아와 context에 들어가는 경로를 고정하는 회귀. `required_confirmation=1` 후보를 confirm → dispatch → settle로 옮기는 fixture가 필요하며 내부 작업이다 |
+> | C. 최종 패키지의 프로세스 인수 | `VERIFIED` (격리 provider 제외) | receipt를 검증 이전에 독립 QA에 고정 → 두 검증 후 재측정 동일. packaged runtime에서 대시보드 HTTP 6응답·정적 바이트 일치·정상 종료, 그리고 관측→context→추천→brief가 owner 승인 유무로 변별된다. `deployment_ready=false` |
+> | D. 최종 제출·원장 | `IN_PROGRESS` | 이 블록과 회신서 상단이 갱신분이다. B의 양성 통제가 닫히기 전에는 최종 상태를 올리지 않는다 |
+>
+> **M0–M6 대응:** M3(실제 생산자→context→추천→daily)은 A로 닫혔고 packaged runtime에서도 확인했다(`fdf960e`). M2의 급사·경합·재시작 인수는 기존대로 유지되며 이 라운드의 retention hold 규칙 수정(`4a7898c`에 포함)이 그 회귀를 통과한다. M4/M5의 provider 의존 항목은 격리 설치물이 없어 외부로 남는다.
+>
+> **외부 잔여 1건:** 격리된 Second Brain 설치물/프로세스. 소유자=운영자. 필요한 입력은 `app/current` 밖에서 실행 가능한 provider release, vault·generation journal·request 상태가 scratch에 있는 격리 config, 그 provider가 받아들일 서명/request-executor identity. 준비된 파일은 `scripts/packaged-production-chain-probe.mjs`. 재개 명령은 `JARVIS_SECOND_BRAIN_LAUNCHER`/`JARVIS_SECOND_BRAIN_CONFIG`를 격리 설치물로 지정해 같은 probe를 실행하는 것. 통과 기준은 실제 provider 프로세스가 격리 vault에 대해 읽기·쓰기·scope·활성 generation·철회를 답하고 운영 경로를 하나도 건드리지 않는 것이다.
+
+
 > **현재 판정 — 2026-09-13:** 전체 M0–M6은 `IN_PROGRESS`다. close 경계 유실 결함은 제품 `18b73ede9a369ae8cb34bb44885bf6cbef9f2687`에서 수정했고, 정확히 동일한 tree `222cfb394e897ae4db25f322a32789c6e9cb4046`의 전체 verify가 604파일·4,176테스트/RC0으로 통과했다. 첫 실패/중단 run은 제외했다.
 > 최신 검증·패키지·독립 리뷰는 [2026-09-13 수정 검증서](codex-close-fence-verification-2026-09-13.md), 실제 내부 잔여 A–D는 [OmO 실행 지시서](omo-next-units-2026-09-13.md)가 정본이다. 이하 과거 SHA·gate·잔여 표와 “A/B 모두 닫힘/환경 한계만 남음” 주장은 당시 기록이며 현재 완료 판정으로 사용하지 않는다. 실제 assembler 생산 연결·저장 기억의 현재 사용 차단·최종 packaged 프로세스 인수는 아직 내부 잔여다.
 
