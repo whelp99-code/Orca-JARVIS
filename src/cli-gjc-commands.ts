@@ -12,7 +12,6 @@ import { PreGjcShadow } from "./pre-gjc-shadow.js";
 import { PERSONAL_OS_CONTROL_CHANNEL_ENV, servePersonalOsCycleChannel } from "./personal-os-cycle-channel.js";
 import { PersonalOsRuntime } from "./personal-os-runtime.js";
 import { AssembledModelSession } from "./assembled-model-session.js";
-import { RecordingModelTransport } from "./context-model-transport.js";
 import { assemblePersonalContext, type MemoryEvidenceInput, type ModelRequestV1 } from "./context-assembler.js";
 import { createProductionMemoryReadFence } from "./memory-read-fence-production.js";
 import { createProductionMemoryReference } from "./memory-reference-production.js";
@@ -247,6 +246,7 @@ function preflightDispatchAssemble(
   if (parsed.assemble_context === undefined) return;
   const options = context.dependencies.memoryReferenceOptions;
   if (options === undefined) throw new JarvisError("MEMORY_REFERENCE_OPTIONS_REQUIRED");
+  if (options.model_transport === undefined) throw new JarvisError("MEMORY_MODEL_TRANSPORT_REQUIRED");
   dispatchMemoryAuthorizer(context, options)(commandNow(context));
 }
 
@@ -373,9 +373,10 @@ async function assembleDispatchContext(
     const query = queryFromAssemble(parsed.assemble_context);
     const selected = await produced.reader.read(query, { max_records: 8, max_record_bytes: 4096, max_bytes: 16384 });
     const now = commandNow(context).toISOString();
+    if (options.model_transport === undefined) throw new JarvisError("MEMORY_MODEL_TRANSPORT_REQUIRED");
     const session = new AssembledModelSession(
       context.db,
-      options.model_transport ?? new RecordingModelTransport(),
+      options.model_transport,
       dispatchMemoryAuthorizer(context, options),
     );
     const persistInput = persistAssembleInput(parsed.assemble_context, now, memoriesFromReference(selected));

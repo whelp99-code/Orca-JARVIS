@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  assemblePersonalContext, AssembledModelSession, AuthorityDb, RecordingModelTransport,
+  assemblePersonalContext, AssembledModelSession, AuthorityDb, CommandModelTransport, RecordingModelTransport,
   type ModelTransport, type ModelTransportCapture, type ModelTransportResult,
 } from "../../src/index.js";
 import { createProductionMemoryReference } from "../../src/memory-reference-production.js";
@@ -12,7 +12,7 @@ class SequenceTransport implements ModelTransport {
   constructor(private readonly replies: ModelTransportResult[]) {}
   async send(capture: ModelTransportCapture): Promise<ModelTransportResult> {
     this.sent.push(capture);
-    return this.replies[this.sent.length - 1] ?? { accepted: false, reason: "exhausted" };
+    return this.replies[this.sent.length - 1] ?? { accepted: false, reason: "exhausted", failure_class: "explicit_negative" };
   }
 }
 
@@ -51,7 +51,7 @@ describe("production assembled model session", () => {
   it("retries a failed transport send then delivers from the production factory", async () => {
     const { db, input, evidence } = await ready();
     const transport = new SequenceTransport([
-      { accepted: false, reason: "synthetic unavailable" },
+      { accepted: false, reason: "synthetic unavailable", failure_class: "explicit_negative" },
       { accepted: true },
     ]);
     const produced = createProductionMemoryReference(db, {
@@ -69,8 +69,8 @@ describe("production assembled model session", () => {
   it("throws when transport stays unavailable after retry", async () => {
     const { db, input, evidence } = await ready();
     const transport = new SequenceTransport([
-      { accepted: false, reason: "synthetic unavailable" },
-      { accepted: false, reason: "synthetic unavailable" },
+      { accepted: false, reason: "synthetic unavailable", failure_class: "explicit_negative" },
+      { accepted: false, reason: "synthetic unavailable", failure_class: "explicit_negative" },
     ]);
     const session = new AssembledModelSession(db, transport);
     await expect(session.deliver(input, evidence, CONTEXT_NOW)).rejects.toMatchObject({ code: "MODEL_TRANSPORT_UNAVAILABLE" });
@@ -112,7 +112,7 @@ describe("production assembled model session", () => {
   it("re-authorizes before retry so a mid-flight revoke does not send twice", async () => {
     const { db, input, evidence } = await ready();
     let authorizes = 0;
-    const transport = new SequenceTransport([{ accepted: false, reason: "unavailable" }, { accepted: true }]);
+    const transport = new SequenceTransport([{ accepted: false, reason: "unavailable", failure_class: "explicit_negative" }, { accepted: true }]);
     const session = new AssembledModelSession(db, transport, () => {
       authorizes += 1;
       if (authorizes === 2) throw new Error("revoked after first send");
@@ -120,5 +120,41 @@ describe("production assembled model session", () => {
     await expect(session.deliver(input, evidence, CONTEXT_NOW)).rejects.toThrow(/revoked after first send/);
     expect(transport.sent).toHaveLength(1);
     db.close();
+  });
+
+  it("does not retry an unknown transport outcome", async () => {
+    const { db, input, evidence } = await ready();
+    const transport = new SequenceTransport([
+      { accepted: false, reason: "hang", failure_class: "unknown" },
+      { accepted: true },
+    ]);
+    const session = new AssembledModelSession(db, transport);
+    await expect(session.deliver(input, evidence, CONTEXT_NOW)).rejects.toMatchObject({ code: "MODEL_TRANSPORT_UNKNOWN" });
+    expect(transport.sent).toHaveLength(1);
+    db.close();
+  });
+
+  it("classifies a missing consumer command as known_not_sent", async () => {
+    const transport = new CommandModelTransport("/no/such/jarvis-model-transport");
+    const result = await transport.send({
+      session_id: "s",
+      request: { memories: [] } as never,
+      json: "{}",
+      bytes: 2,
+      no_data: true,
+    });
+    expect(result).toMatchObject({ accepted: false, failure_class: "known_not_sent" });
+  });
+
+  it("classifies a consumer exit 1 after stdin as explicit_negative", async () => {
+    const transport = new CommandModelTransport("/bin/sh", ["-c", "cat >/dev/null; exit 1"]);
+    const result = await transport.send({
+      session_id: "s",
+      request: { memories: [] } as never,
+      json: "{}",
+      bytes: 2,
+      no_data: true,
+    });
+    expect(result).toMatchObject({ accepted: false, failure_class: "explicit_negative" });
   });
 });

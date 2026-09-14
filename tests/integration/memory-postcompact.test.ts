@@ -12,7 +12,7 @@ class SequenceTransport implements ModelTransport {
   constructor(private readonly replies: ModelTransportResult[]) {}
   async send(capture: ModelTransportCapture): Promise<ModelTransportResult> {
     this.sent.push(capture);
-    return this.replies[this.sent.length - 1] ?? { accepted: false, reason: "exhausted" };
+    return this.replies[this.sent.length - 1] ?? { accepted: false, reason: "exhausted", failure_class: "explicit_negative" };
   }
 }
 
@@ -115,7 +115,7 @@ describe("memory.postcompact configured transport", () => {
 
   it("retries a known-negative then succeeds on configured transport", async () => {
     const sequence = new SequenceTransport([
-      { accepted: false, reason: "synthetic unavailable" },
+      { accepted: false, reason: "synthetic unavailable", failure_class: "explicit_negative" },
       { accepted: true },
     ]);
     const { database, context } = await ready(sequence);
@@ -127,8 +127,8 @@ describe("memory.postcompact configured transport", () => {
 
   it("does not report success when transport stays unavailable", async () => {
     const sequence = new SequenceTransport([
-      { accepted: false, reason: "synthetic unavailable" },
-      { accepted: false, reason: "synthetic unavailable" },
+      { accepted: false, reason: "synthetic unavailable", failure_class: "explicit_negative" },
+      { accepted: false, reason: "synthetic unavailable", failure_class: "explicit_negative" },
     ]);
     const { database, context } = await ready(sequence);
     await expect(executeMemoryPostcompact(context as never)).rejects.toMatchObject({

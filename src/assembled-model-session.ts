@@ -38,18 +38,26 @@ export class AssembledModelSession {
     await hooks.beforeSend?.();
     hooks.beginAttempt?.();
     let result = await this.transport.send(capture);
-    if (!result.accepted) {
-      hooks.onKnownNegative?.();
-      this.authorize(new Date());
-      await hooks.beforeSend?.();
-      hooks.beginAttempt?.();
-      result = await this.transport.send(capture);
+    if (result.accepted) return result;
+    const firstClass = result.failure_class;
+    if (firstClass === "unknown") {
+      throw new JarvisError("MODEL_TRANSPORT_UNKNOWN");
     }
-    if (!result.accepted) {
+    if (firstClass !== "known_not_sent") {
       hooks.onKnownNegative?.();
-      throw new JarvisError("MODEL_TRANSPORT_UNAVAILABLE");
     }
-    return result;
+    this.authorize(new Date());
+    await hooks.beforeSend?.();
+    hooks.beginAttempt?.();
+    result = await this.transport.send(capture);
+    if (result.accepted) return result;
+    if (result.failure_class === "unknown") {
+      throw new JarvisError("MODEL_TRANSPORT_UNKNOWN");
+    }
+    if (result.failure_class !== "known_not_sent") {
+      hooks.onKnownNegative?.();
+    }
+    throw new JarvisError("MODEL_TRANSPORT_UNAVAILABLE");
   }
 
   async deliver(

@@ -11,7 +11,11 @@ export type ModelTransportCapture = {
   readonly no_data: boolean;
 };
 
-export type ModelTransportResult = { readonly accepted: true } | { readonly accepted: false; readonly reason: string };
+export const TRANSPORT_FAILURE_CLASSES = ["known_not_sent", "explicit_negative", "unknown"] as const;
+export type TransportFailureClass = (typeof TRANSPORT_FAILURE_CLASSES)[number];
+export type ModelTransportResult =
+  | { readonly accepted: true }
+  | { readonly accepted: false; readonly reason: string; readonly failure_class: TransportFailureClass };
 
 export interface ModelTransport {
   send(capture: ModelTransportCapture): Promise<ModelTransportResult>;
@@ -37,7 +41,7 @@ export class FileModelTransport implements ModelTransport {
   async send(capture: ModelTransportCapture): Promise<ModelTransportResult> {
     mkdirSync(dirname(this.path), { recursive: true });
     appendFileSync(this.path, `${JSON.stringify(capture)}\n`);
-    return { accepted: false, reason: "FILE_TRANSPORT_NOT_CONSUMER" };
+    return { accepted: false, reason: "FILE_TRANSPORT_NOT_CONSUMER", failure_class: "explicit_negative" };
   }
 }
 
@@ -49,19 +53,53 @@ export class CommandModelTransport implements ModelTransport {
     return await new Promise(resolve => {
       const child = spawn(this.command, [...this.args], { stdio: ["pipe", "pipe", "pipe"] });
       const err: Buffer[] = [];
+      let settled = false;
+      let wrote = false;
+      const finish = (result: ModelTransportResult) => {
+        if (settled) return;
+        settled = true;
+        resolve(result);
+      };
       child.stderr.on("data", chunk => { err.push(Buffer.from(chunk)); });
-      child.on("error", error => { resolve({ accepted: false, reason: error.message }); });
-      child.on("close", code => {
-        if (code === 0) {
-          resolve({ accepted: true });
-          return;
-        }
-        resolve({
+      child.on("error", error => {
+        finish({
           accepted: false,
-          reason: `exit ${String(code)} ${Buffer.concat(err).toString("utf8").slice(0, 200)}`,
+          reason: error.message,
+          failure_class: wrote ? "unknown" : "known_not_sent",
         });
       });
-      child.stdin.end(JSON.stringify(capture));
+      child.on("close", (code, signal) => {
+        if (code === 0) {
+          finish({ accepted: true });
+          return;
+        }
+        const stderr = Buffer.concat(err).toString("utf8").slice(0, 200);
+        if (signal !== null) {
+          finish({ accepted: false, reason: `signal ${signal} ${stderr}`, failure_class: "unknown" });
+          return;
+        }
+        if (!wrote) {
+          finish({
+            accepted: false,
+            reason: `exit ${String(code)} ${stderr}`,
+            failure_class: "known_not_sent",
+          });
+          return;
+        }
+        finish({
+          accepted: false,
+          reason: `exit ${String(code)} ${stderr}`,
+          failure_class: "explicit_negative",
+        });
+      });
+      child.stdin.on("error", error => {
+        finish({
+          accepted: false,
+          reason: error instanceof Error ? error.message : String(error),
+          failure_class: wrote ? "unknown" : "known_not_sent",
+        });
+      });
+      child.stdin.end(JSON.stringify(capture), () => { wrote = true; });
     });
   }
 }

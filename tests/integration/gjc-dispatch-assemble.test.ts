@@ -208,7 +208,7 @@ describe("gjc.dispatch assemble envelope", () => {
     const snapshot = assemblePersonalContext(input);
     const memory = snapshot.evidence.find(item => item.kind === "confirmed_memory");
     if (memory === undefined) throw new Error("memory");
-    const failing = { sent: [] as unknown[], async send(capture: unknown) { this.sent.push(capture); return { accepted: false, reason: "unavailable" }; } };
+    const failing = { sent: [] as unknown[], async send(capture: unknown) { this.sent.push(capture); return { accepted: false, reason: "unavailable", failure_class: "explicit_negative" }; } };
     const ok = new RecordingModelTransport();
     const envelope = {
       task: gjcTaskFor(db, source, "fail-then-send"),
@@ -367,7 +367,7 @@ describe("gjc.dispatch assemble envelope", () => {
         fresh_until: snapshot.expires_at,
       }],
     };
-    const failing = { sent: [] as unknown[], async send(capture: unknown) { this.sent.push(capture); return { accepted: false, reason: "unavailable" }; } };
+    const failing = { sent: [] as unknown[], async send(capture: unknown) { this.sent.push(capture); return { accepted: false, reason: "unavailable", failure_class: "explicit_negative" }; } };
     const ctx = (transport: unknown) => ({
       args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
       argument: writeJson(envelope), fourth: undefined, fifth: undefined, sixth: undefined, db,
@@ -617,7 +617,7 @@ describe("gjc.dispatch assemble envelope", () => {
     const crashing = {
       async send() {
         attempts += 1;
-        if (attempts === 1) return { accepted: false, reason: "explicit negative" };
+        if (attempts === 1) return { accepted: false, reason: "explicit negative", failure_class: "explicit_negative" };
         throw Object.assign(new Error("ECONNRESET after remote acceptance"), { retryable: true });
       },
     };
@@ -766,7 +766,7 @@ describe("gjc.dispatch assemble envelope", () => {
         sends += 1;
         if (sends === 1) {
           provider.statusOverrides = { generation_id: `sbgen:v1:${"2".repeat(64)}` };
-          return { accepted: false, reason: "synthetic-negative" };
+          return { accepted: false, reason: "synthetic-negative", failure_class: "explicit_negative" };
         }
         return { accepted: true };
       },
@@ -774,6 +774,18 @@ describe("gjc.dispatch assemble envelope", () => {
     await expect(executeGjcCommand(readerDispatch(db, source, config, provider, transport, "gen-changed")))
       .rejects.toMatchObject({ code: "MEMORY_REFERENCE_GENERATION_CHANGED" });
     expect(sends).toBe(1);
+    closeMemoryDatabase(database);
+  });
+
+  it("does not assemble when model_transport is missing", async () => {
+    const { database, db, source, config, provider } = await gjcProduct();
+    const input = contextAssemblerInput();
+    await expect(executeGjcCommand({
+      args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
+      argument: writeJson({ task: gjcTaskFor(db, source, "no-transport"), assemble_context: input, memory_evidence: [] }),
+      fourth: undefined, fifth: undefined, sixth: undefined, db,
+      dependencies: { clock: () => REFERENCE_NOW, memoryReferenceOptions: { projection_key: Buffer.alloc(32, 7), transport: provider, read_fence_config: config } },
+    } as never)).rejects.toMatchObject({ code: "MEMORY_MODEL_TRANSPORT_REQUIRED" });
     closeMemoryDatabase(database);
   });
 });
