@@ -1,5 +1,13 @@
 # 최종 검증 회신서 — 2026-09-11
 
+> **현재 판정 — 2026-09-14 R2-1 정정:** 상태는 `IN_PROGRESS`다. 아래 2026-09-13 09:5x 블록과 그 이전은 **당시의 것**이며 삭제하지 않는다. 이 블록이 현재 판정이다.
+>
+> A는 `IN_PROGRESS`다. 근거는 최종 리뷰 E1/E2다. 2026-09-13 표·문단의 A=`VERIFIED` 또는 “A·B·C의 내부 잔여는 닫혔다”는 당시 기록이다.
+>
+> §9.23 두 항목(동일 UID `/proc` 한계, 목적지 rename no-replace)은 F/G 커밋 `350efa0`·`7241511`로 이 라운드에서 닫혔다. 2026-09-13 09:5x 문단의 “이 라운드의 작업이 아니다”는 그 닫힘 이전 기록이다.
+>
+> B·M3·M6를 round2 619/4213으로 `VERIFIED`로 올리지 않는다. 외부 4건(격리 Second Brain, M5 키 3개, M4.2-withdrawal-effect provider 계약, lane 배포 경계)은 검증자가 닫지 못한다.
+
 > **현재 판정 — 2026-09-13 09:5x UTC 갱신:** 상태는 여전히 `IN_PROGRESS`다. 아래 2026-09-13 초기 판정과 그 이전 기록은 **당시의 것**이며, 이 블록이 현재 판정이다. 과거 §0/§4의 "A/B 모두 닫힘", "환경 한계만 남음" 문구는 현재 상태가 아니다.
 >
 > **기준값(실측):** 제품 branch `codex/routing-approval-ui`. tracking branch 미설정이라 ahead/behind는 측정할 수 없다. tracked 변경 0, untracked 3(`.omo/evidence/ulw/`, `.omo/ulw-loop/`, `node_modules` — 도구 상태·공유 의존성, 커밋 대상 아님).

@@ -28,6 +28,9 @@ or stored for a run with nothing to propose.
   the digest it still has;
 - selects an action only where the gate it would cross is an approved, unrevoked, owner-signed
   decision that is current and names the subject the action's evidence is about.
+  `policyFacts` cites gate references through `approvedOwnerDecisionDigest` without the
+  `{ action, subject }` binding `ownerGateDecided` passes; selection still goes through
+  `ownerGateDecided`, so that unbound citation cannot change which action is selected.
 
 ## Minimum facts
 

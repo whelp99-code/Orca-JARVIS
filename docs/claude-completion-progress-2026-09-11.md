@@ -1,5 +1,18 @@
 # 완료 작업 진행 원장 — 2026-09-11
 
+> **현재 판정 — 2026-09-14 R2-1 정정:** `IN_PROGRESS`. 아래 2026-09-13 블록과 단위 표는 **당시 기록**이며 삭제하지 않는다. 이 블록이 현재다. 회신서 상단 2026-09-14 블록이 정본이다.
+>
+> | 단위 | 상태 | 근거 / 남은 것 |
+> |---|---|---|
+> | A. 실제 assembler → 추천·brief 생산 경로 | `IN_PROGRESS` | 코드 경로 `produceDailyRecommendation`은 있다. 최종 리뷰 E1/E2가 이 단위를 `IN_PROGRESS`로 고정했다. `VERIFIED` 승격은 독립 리뷰어 몫이다. 2026-09-13 표의 A=`VERIFIED`는 당시 기록이다. |
+> | B. 저장된 파생 기억의 현재 재사용 차단 | `IN_PROGRESS` | 2026-09-13 표 행의 “남은 것은 양성 통제 하나”와 같은 파일의 “B 양성 통제 — 2026-09-13 닫힘” 문단이 모순된다. 둘 다 남긴다. round2 619/4213으로 B를 `VERIFIED`로 올리지 않는다. |
+> | C. 최종 패키지의 프로세스 인수 | `VERIFIED` (격리 provider 제외) | 당시 기록 유지. 격리 provider는 외부 4건에 속한다. |
+> | D. 최종 제출·원장 | `IN_PROGRESS` | A가 `IN_PROGRESS`인 동안 최종 상태를 올리지 않는다. |
+>
+> **단위 표 구행(승격 금지):** M3-producer `IN_PROGRESS`, M4.2-withdrawal-list 구근거 `VERIFIED`, M6-integration 592파일/4,093테스트 + 독립 리뷰 `not_performed`는 구행이다. round2 619/4213으로 이 행들을 `VERIFIED`로 고쳐 쓰지 않는다.
+>
+> **외부 4건:** 격리 Second Brain 설치물/프로세스, M5 실행자 키 3개, M4.2-withdrawal-effect provider 재해석 계약, lane 배포 경계.
+
 > **현재 판정 — 2026-09-13 갱신:** `IN_PROGRESS`. 아래 2026-09-13 초기 판정과 그 이전 표는 당시 기록이며, 이 블록이 현재 상태다. 회신서는 [claude-completion-final-reply-2026-09-11.md](claude-completion-final-reply-2026-09-11.md) 상단 블록이 정본이다.
 >
 > **A–D 판정(실측 기준)**
