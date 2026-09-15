@@ -161,18 +161,43 @@ ops/authority/publish-package-release.sh \
   --package <verified-package-root> \
   --receipt-sha256 <independently-pinned-64-hex> \
   --release-root <root> \
-  --db <db-path> [--backup-root <root>] [--dashboard-url URL] [--activate]
+  --db <db-path> [--backup-root <root>] [--dashboard-url URL] \
+  [--rehearsal-receipt <path>] [--stage-parent <dir>] [--activate]
 ```
 
 In order it: checks the owner gate when `--activate` was asked for (before publishing anything, so
 a refused activation leaves nothing half-published); runs `scripts/verify-runtime-package.mjs`
-against the candidate and the independently kept receipt hash; exclusively creates
-`<release-root>/releases/<40-hex source head>/` and copies the payload there with files 0644 and
-directories 0755 under `umask 0022`, because the task verifier rejects any published file with
-`mode & 0o022`; runs `release gates` against `--db` using the *published* CLI; runs the existing DB
-backup path (the production backup path when `--db` is the production authority database, the
-isolated one otherwise); and only then writes `<release-root>/receipts/<40-hex>.json` recording the
-verification, gate report, backup result and published payload modes.
+against the candidate and the independently kept receipt hash; assembles and seals the payload on a
+stage with files 0644 and directories 0755 under `umask 0022`, because the task verifier rejects any
+published file with `mode & 0o022`; runs `release gates` against `--db` using the *staged* CLI —
+that is, the candidate's own gates; runs the existing DB backup path (the production backup path
+when `--db` is the production authority database, the isolated one otherwise); moves the sealed
+stage into `<release-root>/releases/<40-hex source head>/` with one rename; activates when asked;
+and only then writes `<release-root>/receipts/<40-hex>.json` recording the verification, gate
+report, backup result and published payload modes.
+
+The gates and the backup run **before** the rename, so a failing gate or a failing backup publishes
+nothing at all and the retry is the same command. With `--rehearsal-receipt <path>` the gates run as
+`--phase pre-activation` against that receipt (see [phases](#gate-phases)), which is the phase that
+applies while the service has not yet run its `ExecStartPre` migrate; without it they run
+`--phase post-activation`.
+
+### An interrupted publish {#unpublish}
+
+A release directory is complete only once its receipt exists. A directory without its receipt is an
+interrupted publish (a crash or a kill between the rename and the receipt), and publishing that
+release id again refuses with `PACKAGE_RELEASE_INCOMPLETE_PUBLISH`, naming the removal command in
+its message — as opposed to `PACKAGE_RELEASE_ALREADY_PUBLISHED`, which is what a *receipted* release
+raises.
+
+```sh
+ops/authority/publish-package-release.sh --unpublish <40-hex> --release-root <root>
+```
+
+That mode takes nothing else. It removes only a never-activated, receipt-less release directory:
+`PACKAGE_RELEASE_UNPUBLISH_ACTIVE` if `current` points at it, `PACKAGE_RELEASE_UNPUBLISH_RECEIPT_PRESENT`
+if a receipt exists, `PACKAGE_RELEASE_UNPUBLISH_ABSENT` if there is no such directory. It never
+touches `current`, any receipt, any backup or any other release.
 
 The release is assembled and sealed on a stage and moved in with one rename, because the manifest
 library refuses to write inside a deployed root. `--stage-parent` (default
@@ -197,7 +222,7 @@ invented provenance. Publishing never reads the checkout for provenance itself.
 `JARVIS_PRODUCTION_ACTIVATION_APPROVAL=approved` is present — a relative symlink replaced by an
 atomic rename. Without `--activate` the release is published, gated and backed up, and `current` is
 left exactly where it was. A failing gate, a mismatched pin, or an already-published release id all
-refuse without activating. The release root, its `releases/` and its `receipts/` are 0700.
+refuse without publishing or activating. The release root, its `releases/` and its `receipts/` are 0700.
 
 `ops/authority/publish-verified-release.sh` is the older worktree-rebuild script and is left
 untouched.

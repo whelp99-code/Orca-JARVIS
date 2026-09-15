@@ -9,6 +9,12 @@
 # production-activation-gate evidence. Without --activate it publishes, gates and backs up, and
 # leaves `current` exactly where it was.
 #
+# The gates and the database backup run on the sealed stage, before the stage is moved into
+# releases/, so a failing gate or a failing backup publishes nothing at all. A release directory
+# that exists without its receipt is an interrupted publish, not a published release: it is refused
+# with PACKAGE_RELEASE_INCOMPLETE_PUBLISH and removed with --unpublish <40-hex>, which refuses any
+# directory that has a receipt or that `current` points at.
+#
 # Published payload files are mode 0644 and directories 0755 under umask 0022, because the task
 # verifier rejects any published file with `mode & 0o022`. The release root, its releases/ and its
 # receipts/ are 0700, so the private parent restricts who can reach the published tree at all.
@@ -26,6 +32,8 @@ fail() {
 
 PACKAGE=""
 PIN=""
+REHEARSAL_RECEIPT=""
+UNPUBLISH=""
 RELEASE_ROOT=""
 DB=""
 BACKUP_ROOT=""
@@ -41,14 +49,37 @@ while [[ $# -gt 0 ]]; do
     --backup-root) BACKUP_ROOT="${2:-}"; shift 2 ;;
     --dashboard-url) DASHBOARD_URL="${2:-}"; shift 2 ;;
     --stage-parent) STAGE_PARENT="${2:-}"; shift 2 ;;
+    --rehearsal-receipt) REHEARSAL_RECEIPT="${2:-}"; shift 2 ;;
+    --unpublish) UNPUBLISH="${2:-}"; shift 2 ;;
     --activate) ACTIVATE=1; shift ;;
     *) fail 'PACKAGE_RELEASE_USAGE' 2 ;;
   esac
 done
 
+# Removing an interrupted publish is its own mode: it takes only a release root and the release id,
+# and it never reads or writes anything else.
+if [[ -n "${UNPUBLISH}" ]]; then
+  [[ -n "${RELEASE_ROOT}" && "${RELEASE_ROOT}" = /* ]] || fail 'PACKAGE_RELEASE_USAGE' 2
+  [[ "${UNPUBLISH}" =~ ^[0-9a-f]{40}$ ]] || fail 'PACKAGE_RELEASE_USAGE' 2
+  [[ -z "${PACKAGE}" && -z "${PIN}" && -z "${DB}" && -z "${BACKUP_ROOT}" && -z "${DASHBOARD_URL}" \
+     && -z "${STAGE_PARENT}" && -z "${REHEARSAL_RECEIPT}" && "${ACTIVATE}" -eq 0 ]] \
+    || fail 'PACKAGE_RELEASE_USAGE' 2
+  target="${RELEASE_ROOT}/releases/${UNPUBLISH}"
+  [[ -d "${target}" && ! -L "${target}" ]] || fail 'PACKAGE_RELEASE_UNPUBLISH_ABSENT'
+  # A receipt is the record that the release was completely published; an unpublish never removes one.
+  [[ ! -e "${RELEASE_ROOT}/receipts/${UNPUBLISH}.json" ]] || fail 'PACKAGE_RELEASE_UNPUBLISH_RECEIPT_PRESENT'
+  if [[ "$(readlink -- "${RELEASE_ROOT}/current" 2>/dev/null || true)" == "releases/${UNPUBLISH}" ]]; then
+    fail 'PACKAGE_RELEASE_UNPUBLISH_ACTIVE'
+  fi
+  rm -rf -- "${target}"
+  printf '{"ok":true,"unpublished":"%s","release_path":"%s"}\n' "${UNPUBLISH}" "${target}"
+  exit 0
+fi
+
 [[ -n "${PACKAGE}" && -n "${PIN}" && -n "${RELEASE_ROOT}" && -n "${DB}" ]] || fail 'PACKAGE_RELEASE_USAGE' 2
 [[ "${PIN}" =~ ^[0-9a-f]{64}$ ]] || fail 'PACKAGE_RELEASE_USAGE' 2
 [[ "${PACKAGE}" = /* && "${RELEASE_ROOT}" = /* && "${DB}" = /* ]] || fail 'PACKAGE_RELEASE_USAGE' 2
+[[ -z "${REHEARSAL_RECEIPT}" || "${REHEARSAL_RECEIPT}" = /* ]] || fail 'PACKAGE_RELEASE_USAGE' 2
 [[ -d "${PACKAGE}" ]] || fail 'PACKAGE_RELEASE_CANDIDATE_UNAVAILABLE'
 [[ -f "${DB}" ]] || fail 'PACKAGE_RELEASE_DATABASE_UNAVAILABLE'
 
@@ -93,8 +124,14 @@ print("\n".join([value["commit"], value["tree"], value["first_parent"], value["s
 mkdir -p -m 0700 "${RELEASE_ROOT}" "${RELEASE_ROOT}/releases" "${RELEASE_ROOT}/receipts"
 chmod 0700 "${RELEASE_ROOT}" "${RELEASE_ROOT}/releases" "${RELEASE_ROOT}/receipts"
 release_path="${RELEASE_ROOT}/releases/${source_head}"
+receipt="${RELEASE_ROOT}/receipts/${source_head}.json"
 if [[ -e "${release_path}" ]]; then
-  fail 'PACKAGE_RELEASE_ALREADY_PUBLISHED'
+  if [[ -f "${receipt}" ]]; then
+    fail 'PACKAGE_RELEASE_ALREADY_PUBLISHED'
+  fi
+  printf 'a release directory without its receipt is an interrupted publish; remove it with: %s --unpublish %s --release-root %s\n' \
+    "${BASH_SOURCE[0]}" "${source_head}" "${RELEASE_ROOT}" >&2
+  fail 'PACKAGE_RELEASE_INCOMPLETE_PUBLISH'
 fi
 
 # The manifest library refuses to write inside a deployed root, so the release is assembled and
@@ -142,27 +179,39 @@ sealed="$(cd -- "${WORKTREE}" && "${NODE_BIN}" "${WORKTREE}/ops/authority/seal-r
   || fail 'PACKAGE_RELEASE_SEAL_FAILED'
 chmod 0644 "${stage}/release.manifest.json" "${stage}/release-compatibility.json"
 
+# The gates and the backup run from the sealed stage's own CLI: they are the candidate's gates, and
+# running them before the rename means a failure publishes nothing. A rehearsal receipt selects the
+# pre-activation phase, where the migrations the service is about to apply are the expected state.
+if [[ -n "${REHEARSAL_RECEIPT}" ]]; then
+  gates="$("${NODE_BIN}" "${stage}/dist/src/cli.js" release gates --db "${DB}" \
+    --phase pre-activation --rehearsal-receipt "${REHEARSAL_RECEIPT}" \
+    ${DASHBOARD_URL:+--dashboard-url "${DASHBOARD_URL}"})" || {
+    printf '%s\n' "${gates:-PACKAGE_RELEASE_GATES_FAILED}" >&2
+    fail 'PACKAGE_RELEASE_GATES_FAILED'
+  }
+else
+  gates="$("${NODE_BIN}" "${stage}/dist/src/cli.js" release gates --db "${DB}" \
+    --phase post-activation ${DASHBOARD_URL:+--dashboard-url "${DASHBOARD_URL}"})" || {
+    printf '%s\n' "${gates:-PACKAGE_RELEASE_GATES_FAILED}" >&2
+    fail 'PACKAGE_RELEASE_GATES_FAILED'
+  }
+fi
+
+if [[ "${DB}" == "${PRODUCTION_DB}" ]]; then
+  backup="$("${NODE_BIN}" "${stage}/dist/src/personal-os-backup-cli.js" \
+    --db "${DB}" --backup-root "${PRODUCTION_BACKUP_ROOT}" --production)" || fail 'PACKAGE_RELEASE_BACKUP_FAILED'
+else
+  backup="$("${NODE_BIN}" "${stage}/dist/src/personal-os-backup-cli.js" \
+    --db "${DB}" --backup-root "${BACKUP_ROOT:-${RELEASE_ROOT}/backups/${source_head}}")" \
+    || fail 'PACKAGE_RELEASE_BACKUP_FAILED'
+fi
+
 # One rename publishes the sealed stage. A destination that appeared meanwhile is not written into.
 if [[ -e "${release_path}" ]]; then
   fail 'PACKAGE_RELEASE_ALREADY_PUBLISHED'
 fi
 mv -T -- "${stage}" "${release_path}" || fail 'PACKAGE_RELEASE_STAGE_MOVE_FAILED'
 stage=""
-
-gates="$("${NODE_BIN}" "${release_path}/dist/src/cli.js" release gates --db "${DB}" \
-  ${DASHBOARD_URL:+--dashboard-url "${DASHBOARD_URL}"})" || {
-  printf '%s\n' "${gates:-PACKAGE_RELEASE_GATES_FAILED}" >&2
-  fail 'PACKAGE_RELEASE_GATES_FAILED'
-}
-
-if [[ "${DB}" == "${PRODUCTION_DB}" ]]; then
-  backup="$("${NODE_BIN}" "${release_path}/dist/src/personal-os-backup-cli.js" \
-    --db "${DB}" --backup-root "${PRODUCTION_BACKUP_ROOT}" --production)" || fail 'PACKAGE_RELEASE_BACKUP_FAILED'
-else
-  backup="$("${NODE_BIN}" "${release_path}/dist/src/personal-os-backup-cli.js" \
-    --db "${DB}" --backup-root "${BACKUP_ROOT:-${RELEASE_ROOT}/backups/${source_head}}")" \
-    || fail 'PACKAGE_RELEASE_BACKUP_FAILED'
-fi
 
 activated=0
 current_target="$(readlink -- "${RELEASE_ROOT}/current" 2>/dev/null || true)"
@@ -177,7 +226,6 @@ if [[ "${ACTIVATE}" -eq 1 ]]; then
   activated=1
 fi
 
-receipt="${RELEASE_ROOT}/receipts/${source_head}.json"
 python3 - "${receipt}" "${release_path}" "${RELEASE_ROOT}" "${source_head}" "${PIN}" \
   "${activated}" "${gates}" "${backup}" "${verified}" "${sealed}" <<'PY'
 from datetime import datetime, timezone

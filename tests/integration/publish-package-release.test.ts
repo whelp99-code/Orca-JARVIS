@@ -401,7 +401,7 @@ describe("ops/authority/publish-package-release.sh", () => {
     expect(existsSync(join(releaseRoot, "releases", bare.sourceHead))).toBe(false);
   }, 600_000);
 
-  it("refuses when a gate fails and never activates", async () => {
+  it("refuses when a gate fails and publishes nothing at all", async () => {
     const releaseRoot = scratch("publish-root-");
     const dbPath = await gateableDatabase();
     const result = publish(["--package", shared.root, "--receipt-sha256", shared.pin,
@@ -412,5 +412,73 @@ describe("ops/authority/publish-package-release.sh", () => {
     expect(result.stderr).toContain("PACKAGE_RELEASE_GATES_FAILED");
     expect(existsSync(join(releaseRoot, "current"))).toBe(false);
     expect(existsSync(join(releaseRoot, "receipts", `${shared.sourceHead}.json`))).toBe(false);
-  }, 600_000);
+    // The gates run on the stage, before the rename: a failing gate leaves no release directory
+    // behind, so the retry is the same command and not a manual removal.
+    expect(existsSync(join(releaseRoot, "releases", shared.sourceHead))).toBe(false);
+    expect(readdirSync(join(releaseRoot, "releases"))).toEqual([]);
+
+    const retried = publish(publishArgs(releaseRoot, dbPath));
+    expect({ code: retried.code, stderr: retried.stderr }).toEqual({ code: 0, stderr: "" });
+  }, 900_000);
+
+  it("gates the phase it was told, recording it in the receipt", async () => {
+    const releaseRoot = scratch("publish-root-");
+    const dbPath = await gateableDatabase();
+    const published = JSON.parse(publish(publishArgs(releaseRoot, dbPath)).stdout);
+    expect(JSON.parse(readFileSync(published.receipt, "utf8")).gates.report.phase).toBe("post-activation");
+
+    const rehearsal = join(scratch("publish-rehearsal-"), "rehearsal.json");
+    await execute(["db", "migrate", "--rehearse", dbPath, "--rehearsal-receipt", rehearsal]);
+    const second = await fixturePackage({ head: "8".repeat(40), tree: "9".repeat(40) });
+    const preActivation = publish(["--package", second.root, "--receipt-sha256", second.pin,
+      "--release-root", releaseRoot, "--db", dbPath, "--dashboard-url", dashboardUrl,
+      "--rehearsal-receipt", rehearsal]);
+    expect({ code: preActivation.code, stderr: preActivation.stderr }).toEqual({ code: 0, stderr: "" });
+    const receipt = JSON.parse(readFileSync(JSON.parse(preActivation.stdout).receipt, "utf8"));
+    expect(receipt.gates.report).toMatchObject({ ok: true, phase: "pre-activation", failed: [] });
+  }, 900_000);
+
+  it("refuses a receipt-less release directory and unpublishes only that one", async () => {
+    const releaseRoot = scratch("publish-root-");
+    const dbPath = await gateableDatabase();
+    const interrupted = join(releaseRoot, "releases", shared.sourceHead);
+    mkdirSync(interrupted, { recursive: true });
+    writeFileSync(join(interrupted, "release.manifest.json"), "{}\n");
+
+    const refused = publish(publishArgs(releaseRoot, dbPath));
+    expect(refused.code).toBe(1);
+    expect(refused.stderr).toContain("PACKAGE_RELEASE_INCOMPLETE_PUBLISH");
+    expect(refused.stderr).toContain(`--unpublish ${shared.sourceHead}`);
+
+    // `current` pointing at it, or a receipt beside it, both refuse the removal.
+    symlinkSync(`releases/${shared.sourceHead}`, join(releaseRoot, "current"));
+    const active = publish(["--unpublish", shared.sourceHead, "--release-root", releaseRoot]);
+    expect({ code: active.code, stderr: active.stderr.trim() })
+      .toEqual({ code: 1, stderr: "PACKAGE_RELEASE_UNPUBLISH_ACTIVE" });
+    rmSync(join(releaseRoot, "current"));
+    mkdirSync(join(releaseRoot, "receipts"), { recursive: true });
+    writeFileSync(join(releaseRoot, "receipts", `${shared.sourceHead}.json`), "{}\n");
+    const receipted = publish(["--unpublish", shared.sourceHead, "--release-root", releaseRoot]);
+    expect({ code: receipted.code, stderr: receipted.stderr.trim() })
+      .toEqual({ code: 1, stderr: "PACKAGE_RELEASE_UNPUBLISH_RECEIPT_PRESENT" });
+    // With a receipt beside it the directory is a published release, refused as already published.
+    expect(publish(publishArgs(releaseRoot, dbPath)).stderr.trim()).toBe("PACKAGE_RELEASE_ALREADY_PUBLISHED");
+    rmSync(join(releaseRoot, "receipts", `${shared.sourceHead}.json`));
+
+    const removed = publish(["--unpublish", shared.sourceHead, "--release-root", releaseRoot]);
+    expect({ code: removed.code, stderr: removed.stderr }).toEqual({ code: 0, stderr: "" });
+    expect(JSON.parse(removed.stdout)).toMatchObject({ ok: true, unpublished: shared.sourceHead });
+    expect(existsSync(interrupted)).toBe(false);
+    expect(publish(["--unpublish", shared.sourceHead, "--release-root", releaseRoot]).stderr.trim())
+      .toBe("PACKAGE_RELEASE_UNPUBLISH_ABSENT");
+
+    // Refusing the interrupted publish never made the release unpublishable.
+    expect(publish(publishArgs(releaseRoot, dbPath)).code).toBe(0);
+
+    // The removal mode takes nothing else, and it is not a release id unless it is 40 hex.
+    expect(publish(["--unpublish", "nothex", "--release-root", releaseRoot]).code).toBe(2);
+    expect(publish(["--unpublish", shared.sourceHead, "--release-root", releaseRoot,
+      "--db", dbPath]).code).toBe(2);
+    expect(publish(["--unpublish", shared.sourceHead]).code).toBe(2);
+  }, 900_000);
 });
