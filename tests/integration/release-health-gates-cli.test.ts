@@ -146,8 +146,21 @@ describe("release health gate CLIs", () => {
     const absent = await migratedTestDatabase(tempDb());
     const absentPath = absent.filename;
     absent.close();
-    expect(await execute(["release", "scheduler-cursor", "--db", absentPath]))
-      .toMatchObject({ ok: false, exit_code: 1, gate: { code: "RELEASE_GATE_SCHEDULER_CURSOR_ABSENT" } });
+    // No cursor table and no control channel configured: the cursor is not applicable, not broken.
+    expect(await execute(["release", "scheduler-cursor", "--db", absentPath])).toMatchObject({
+      ok: true,
+      gate: { name: "scheduler-cursor", ok: true, not_applicable: true,
+        actual: { cursor: null, control_channel_configured: false,
+          reason: "personal_os_cycle_cursor is created by service run under PERSONAL_OS_CONTROL_CHANNEL" } },
+    });
+    // A configured control channel is a promise the cursor exists, so its absence is a failure.
+    process.env["PERSONAL_OS_CONTROL_CHANNEL"] = join(scratch(), "cycle.sock");
+    try {
+      expect(await execute(["release", "scheduler-cursor", "--db", absentPath]))
+        .toMatchObject({ ok: false, exit_code: 1, gate: { code: "RELEASE_GATE_SCHEDULER_CURSOR_ABSENT" } });
+    } finally {
+      delete process.env["PERSONAL_OS_CONTROL_CHANNEL"];
+    }
     const drifted = new Database(path);
     try {
       drifted.prepare("UPDATE personal_os_cycle_cursor SET last_completed=5, applied_count=2 WHERE k=1").run();

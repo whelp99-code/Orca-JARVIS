@@ -22,6 +22,11 @@ export type ReleaseGate = {
   readonly ok: boolean;
   readonly actual: unknown;
   readonly code?: string;
+  /**
+   * A gate that has nothing to judge on this deployment passes and says so, so an operator reads
+   * the reason out of the report instead of inferring it from a pass.
+   */
+  readonly not_applicable?: true;
 };
 
 export type ReleaseGateReport = {
@@ -47,6 +52,11 @@ export type ReleaseGateOptions = {
 
 export function gate(name: ReleaseGateName, ok: boolean, actual: unknown, code?: string): ReleaseGate {
   return code === undefined ? { name, ok, actual } : { name, ok, actual, code };
+}
+
+/** A pass that carries why there was nothing to judge; it never hides a reading that did happen. */
+export function notApplicable(name: ReleaseGateName, reason: string, actual: object): ReleaseGate {
+  return { name, ok: true, actual: { ...actual, applicable: false, reason }, not_applicable: true };
 }
 
 /** Every database gate answers from its own read-only connection; none of them may write. */

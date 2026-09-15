@@ -3,9 +3,9 @@ import { readFile, readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import { migrationVectorHash } from "./backend-build-files.js";
-import { readCycleCursor } from "./personal-os-cycle-channel.js";
+import { PERSONAL_OS_CONTROL_CHANNEL_ENV, readCycleCursor } from "./personal-os-cycle-channel.js";
 import { applyCycleId } from "./personal-os-cycle-cursor.js";
-import { type ReleaseGate, gate, hasTable, readOnly } from "./release-gate-contract.js";
+import { type ReleaseGate, gate, hasTable, notApplicable, readOnly } from "./release-gate-contract.js";
 
 function migrationDirectory(): string {
   return join(dirname(fileURLToPath(import.meta.url)), "../migrations");
@@ -106,16 +106,38 @@ function nextCycleId(lastCompleted: number): number | null {
   return result.kind === "applied" ? result.id : null;
 }
 
+const CURSOR_NOT_APPLICABLE_REASON =
+  "personal_os_cycle_cursor is created by service run under PERSONAL_OS_CONTROL_CHANNEL" as const;
+
+function controlChannelConfigured(configured?: boolean): boolean {
+  if (configured !== undefined) return configured;
+  const value = process.env[PERSONAL_OS_CONTROL_CHANNEL_ENV];
+  return value !== undefined && value.length > 0;
+}
+
 /**
  * The persisted personal-OS cycle cursor and its consistency with daily_loop_runs. The channel
  * advances last_completed and applied_count together from zero, so they must be equal, and the
  * cursor may never sit behind the completed daily loop runs it accounts for.
+ *
+ * No migration creates the cursor table: only `service run` with PERSONAL_OS_CONTROL_CHANNEL set
+ * does, lazily. On a deployment that configures no control channel the cursor therefore never
+ * exists, and there is no cursor to be wrong — the gate reports `not_applicable` and passes, saying
+ * so in its own report. With a control channel configured the table is promised, so its absence
+ * stays a failure, and a present cursor is always judged.
  */
-export function schedulerCursorGate(dbPath: string): ReleaseGate {
+export function schedulerCursorGate(dbPath: string, options: {
+  readonly controlChannelConfigured?: boolean;
+} = {}): ReleaseGate {
+  const configured = controlChannelConfigured(options.controlChannelConfigured);
   try {
     return readOnly(dbPath, db => {
       if (!hasTable(db, "personal_os_cycle_cursor")) {
-        return gate("scheduler-cursor", false, { cursor: null }, "RELEASE_GATE_SCHEDULER_CURSOR_ABSENT");
+        return configured
+          ? gate("scheduler-cursor", false, { cursor: null, control_channel_configured: true },
+            "RELEASE_GATE_SCHEDULER_CURSOR_ABSENT")
+          : notApplicable("scheduler-cursor", CURSOR_NOT_APPLICABLE_REASON,
+            { cursor: null, control_channel_configured: false });
       }
       const cursor = readCycleCursor(db);
       const completed = hasTable(db, "daily_loop_runs")
@@ -125,6 +147,7 @@ export function schedulerCursorGate(dbPath: string): ReleaseGate {
       const notBehind = cursor.last_completed >= completed;
       const ok = monotonic && notBehind;
       return gate("scheduler-cursor", ok, {
+        control_channel_configured: configured,
         last_completed: cursor.last_completed,
         applied_count: cursor.applied_count,
         next_cycle_id: nextCycleId(cursor.last_completed),

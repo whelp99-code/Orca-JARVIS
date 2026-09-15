@@ -42,7 +42,7 @@ runs before migrations are applied and reports pending migrations instead of req
 | `status` | `status --json --db PATH` | unacknowledged outbox entries |
 | `dashboard-health` | `release dashboard-health [--dashboard-url URL]` | non-200, malformed, oversize, timeout, or a body that is not `status=ok`/`authority=ready` |
 | `mcp-handshake` | `release mcp-handshake` | any refusal of the real stdio handshake, or a negotiated protocol other than the pinned one |
-| `scheduler-cursor` | `release scheduler-cursor --db PATH` | absent cursor, `applied_count` other than `last_completed`, or a cursor behind the completed `daily_loop_runs` |
+| `scheduler-cursor` | `release scheduler-cursor --db PATH` | `applied_count` other than `last_completed`, a cursor behind the completed `daily_loop_runs`, or an absent cursor while `PERSONAL_OS_CONTROL_CHANNEL` is configured |
 | `uncertain-outbox` | `release gates` | any `uncertain` memory outbox or daily loop row |
 
 `dashboard-health` GETs `/api/v1/health` on the configured loopback endpoint (`127.0.0.1:4173`,
@@ -52,6 +52,14 @@ reports the negotiated protocol version and the contract profile; it honours
 `JARVIS_SECOND_BRAIN_LAUNCHER` and `JARVIS_SECOND_BRAIN_CONFIG`, so an isolated provider can be
 gated without touching a deployed installation. Every gate fails closed: an unreachable,
 unreadable or unparseable answer is a failure, never a skip.
+
+`personal_os_cycle_cursor` is created by no migration — only `service run` creates it, lazily, and
+only when `PERSONAL_OS_CONTROL_CHANNEL` is set. On a deployment that configures no control channel
+the table therefore never exists and there is no cursor that can be wrong: `scheduler-cursor`
+reports `not_applicable: true` with `control_channel_configured: false` and the reason in its own
+`actual`, and passes. With a control channel configured the table is promised, so an absent cursor
+is still `RELEASE_GATE_SCHEDULER_CURSOR_ABSENT`, and a cursor that exists is always judged. That is
+the only applicability exemption among the nine gates.
 
 ## Migration rehearsal {#migration-rehearsal}
 
