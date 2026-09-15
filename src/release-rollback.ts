@@ -33,7 +33,7 @@ const incompatible = (): never => { throw new JarvisError("RELEASE_ROLLBACK_INCO
 export type RollbackDecisionFacts = {
   readonly current_release: string;
   readonly target_release: string;
-  readonly current_vector_digest: string;
+  readonly expected_vector_digest: string;
   readonly target_accepted_digests: readonly string[];
   readonly provider_contract_match: boolean;
   readonly sealed_manifest_match: boolean;
@@ -120,9 +120,15 @@ function migrationEntries(dbPath: string): readonly MigrationEntry[] {
   }
 }
 
-/** The migration vector of what is running now, bound to the source identity `current` published. */
-function currentVectorDigest(currentDir: string, dbPath: string): string {
-  const manifest = readJson(join(currentDir, MANIFEST_NAME));
+/**
+ * The migration vector the target release expects: its own sealed source identity bound to the
+ * migrations applied to the database right now. Binding the target's identity rather than the
+ * running release's is what makes this an *exact* check — the target accepted exactly this vector
+ * when it was published, so it matches only while the database is still at that schema. A vector
+ * bound to the running release instead could never match a target published before it existed.
+ */
+function expectedVectorDigest(targetDir: string, dbPath: string): string {
+  const manifest = readJson(join(targetDir, MANIFEST_NAME));
   const source = record(manifest["source"]);
   const head = source["commit"];
   const tree = source["tree"];
@@ -199,18 +205,20 @@ export function runReleaseRollback(input: RollbackInput): RollbackResult {
   if (!HEX40.test(input.to)) throw new JarvisError("RELEASE_ROLLBACK_INPUT_INVALID");
   const releaseRoot = assertIsolatedRoot(input.releaseRoot);
   const current = activeRelease(releaseRoot);
-  const currentDir = releaseDirectory(releaseRoot, current);
+  // `current` must itself be a published release; a pointer into nothing is not a state to roll
+  // back from, even though the vector compared below is the target's.
+  releaseDirectory(releaseRoot, current);
   const targetDir = releaseDirectory(releaseRoot, input.to);
   const facts: RollbackDecisionFacts = {
     current_release: current,
     target_release: input.to,
-    current_vector_digest: currentVectorDigest(currentDir, input.dbPath),
+    expected_vector_digest: expectedVectorDigest(targetDir, input.dbPath),
     target_accepted_digests: acceptedVectorDigests(targetDir),
     provider_contract_match: providerContractMatch(releaseRoot, input.to),
     sealed_manifest_match: sealedManifestMatch(releaseRoot, input.to, targetDir),
   };
   const decision = decideRollback({
-    currentVectorDigest: facts.current_vector_digest,
+    currentVectorDigest: facts.expected_vector_digest,
     targetAcceptedDigests: facts.target_accepted_digests,
     providerContractMatch: facts.provider_contract_match,
     sealedManifestMatch: facts.sealed_manifest_match,

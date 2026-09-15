@@ -48,6 +48,16 @@ try {
   const receipt = JSON.parse(bytes.toString("utf8"));
   requireValue(receipt.schema_version === 1 && receipt.kind === "isolated-authority-runtime-package"
     && receipt.deployment_ready === false, "PACKAGE_RECEIPT_INVALID");
+  // Committed provenance is optional, but when present it must agree with the build identity it
+  // was recorded beside; a release manifest is sealed from these fields.
+  const provenance = receipt.release_source ?? null;
+  if (provenance !== null) {
+    requireValue(provenance.commit === receipt.source.head && provenance.tree === receipt.source.tree
+      && /^[0-9a-f]{40}$/.test(provenance.tree ?? "") && /^[0-9a-f]{40}$/.test(provenance.first_parent ?? "")
+      && /^[0-9a-f]{64}$/.test(provenance.archive_digest ?? "")
+      && typeof provenance.subject === "string" && typeof provenance.commit_timestamp === "string"
+      && Number.isSafeInteger(provenance.commit_epoch), "PACKAGE_RECEIPT_INVALID");
+  }
   const payloadBudget = { entries: 32_768, bytes: 256 * 1024 * 1024 };
   for (const name of RUNTIME_PACKAGE_ROOTS) assertTree(join(root, name), payloadBudget, true);
   const payload = fileIdentity(root, RUNTIME_PACKAGE_ROOTS);
@@ -60,7 +70,9 @@ try {
     && metadata.artifact.digest === fileIdentity(join(root, "dist"), BACKEND_OUTPUT_ROOTS).digest,
   "PACKAGE_BUILD_IDENTITY_MISMATCH");
   console.log(JSON.stringify({ ok: true, integrity: "matched", receipt_sha256: receiptHash,
-    source_head: receipt.source.head, payload_files: payload.file_count, dependency_entries: dependencies.entry_count,
+    source_head: receipt.source.head, source_tree: receipt.source.tree ?? null,
+    source_tracked_dirty: receipt.source.tracked_dirty ?? null,
+    release_source: provenance, payload_files: payload.file_count, dependency_entries: dependencies.entry_count,
     signature_verified: false, runtime_validation: "not_performed", deployment_ready: false }));
 } catch (error) {
   // Do not print candidate bytes, parse exceptions or filesystem paths in failures.

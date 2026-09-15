@@ -61,14 +61,15 @@ async function releaseRoot(overrides: {
     canonical_ref: MIGRATION_VECTOR_CANONICAL_REF, head: HEAD, tree: TREE, migrations,
   });
 
-  writeManifest(join(root, "releases", CURRENT_SHA), { commit: HEAD, tree: TREE, payloadDigest: sha256("current") });
+  // The running release; its own source identity is not what the vector is bound to.
+  writeManifest(join(root, "releases", CURRENT_SHA),
+    { commit: "c".repeat(40), tree: "d".repeat(40), payloadDigest: sha256("current") });
   symlinkSync(`releases/${CURRENT_SHA}`, join(root, "current"));
 
+  // The rollback target seals the source identity the expected vector is computed from.
   const targetPayload = sha256("target-payload");
   const targetDir = join(root, "releases", TARGET_SHA);
-  const manifestSha = writeManifest(targetDir, {
-    commit: "c".repeat(40), tree: "d".repeat(40), payloadDigest: targetPayload,
-  });
+  const manifestSha = writeManifest(targetDir, { commit: HEAD, tree: TREE, payloadDigest: targetPayload });
   writeFileSync(join(targetDir, "release-compatibility.json"), `${canonicalize({
     schema_version: 1,
     accepted_vector_digests: overrides.acceptedDigests ?? [vector],
@@ -104,7 +105,7 @@ describe("release rollback", () => {
       ok: true, command: "release.rollback", rollback: "allow", dry_run: false,
       current_target: `releases/${TARGET_SHA}`,
       facts: { current_release: CURRENT_SHA, target_release: TARGET_SHA,
-        current_vector_digest: fixture.vector, provider_contract_match: true, sealed_manifest_match: true },
+        expected_vector_digest: fixture.vector, provider_contract_match: true, sealed_manifest_match: true },
     });
     expect(current(fixture.root)).toBe(`releases/${TARGET_SHA}`);
   });

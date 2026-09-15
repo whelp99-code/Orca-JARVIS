@@ -3,7 +3,7 @@ import { cpSync, existsSync, mkdirSync, mkdtempSync, openSync, closeSync, readFi
 import { basename, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
-import { BACKEND_OUTPUT_ROOTS, backendSourceIdentity, fileIdentity } from "./lib/backend-build-identity.mjs";
+import { BACKEND_OUTPUT_ROOTS, backendSourceIdentity, fileIdentity, releaseSourceIdentity } from "./lib/backend-build-identity.mjs";
 import { RUNTIME_PACKAGE_ROOTS as roots } from "./lib/runtime-package-roots.mjs";
 
 const { values } = parseArgs({ options: { "output-parent": { type: "string" } }, strict: true });
@@ -64,14 +64,22 @@ try {
   if (runtimeDependencyIdentity(join(output, "node_modules")).digest !== dependencies.digest) {
     throw new Error("RUNTIME_PACKAGE_DEPENDENCIES_CHANGED");
   }
+  // Committed provenance for a sealed release manifest. Recorded only when this checkout can
+  // answer for it; a package built without a checkout carries none and cannot be published.
+  const releaseSource = releaseSourceIdentity(root);
+  if (releaseSource !== null && (releaseSource.commit !== source.head || releaseSource.tree !== source.tree)) {
+    throw new Error("RUNTIME_PACKAGE_SOURCE_IDENTITY_MISMATCH");
+  }
   const receipt = { schema_version: 1, kind: "isolated-authority-runtime-package", source,
+    ...(releaseSource === null ? {} : { release_source: releaseSource }),
     payload: before, dependencies,
     validation: { production_dependency_install: "passed", dependency_identity: "passed", cli_smoke: "passed", runtime_identity: "passed",
       dashboard: "not_performed", provider: "not_performed", reproducibility: "not_performed" },
     deployment_ready: false };
   writeFileSync(join(output, "runtime-package-receipt.json"), `${JSON.stringify(receipt)}\n`, { flag: "wx", mode: 0o600 });
   process.stdout.write(`${JSON.stringify({ ok: true, output, source_head: source.head,
-    source_dirty: source.dirty, payload_files: before.file_count, deployment_ready: false })}\n`);
+    source_tree: source.tree, source_dirty: source.dirty, source_tracked_dirty: source.tracked_dirty,
+    payload_files: before.file_count, deployment_ready: false })}\n`);
 } catch (error) {
   process.stderr.write(`${JSON.stringify({ ok: false, output, code: error.message,
     failed_step: error.failed_step, exit_code: error.exit_code, signal: error.signal })}\n`);

@@ -89,10 +89,13 @@ node dist/src/cli.js release rollback --to <40-hex> --release-root <root> --db <
 
 The three inputs are read from the release root, never supplied by the caller:
 
-- `exact-migration-vector`: the migration vector of what is running now — the applied
-  `schema_migrations` of `--db` bound to the source commit/tree that `current`'s
-  `release.manifest.json` published — must appear in the target's
-  `release-compatibility.json` `accepted_vector_digests`.
+- `exact-migration-vector`: the vector the target expects — the target's own sealed
+  source commit/tree from its `release.manifest.json`, bound to the `schema_migrations`
+  applied to `--db` right now — must appear in the target's `release-compatibility.json`
+  `accepted_vector_digests`. The target's identity is what the vector is bound to, not the
+  running release's: the target accepted exactly this vector when it was published, so it
+  matches only while the database is still at that schema. Binding the running release
+  instead could never match a target published before that release existed.
 - `provider-contract`: the `provider_contract_digest` in the target's
   `receipts/<40-hex>.json` must equal the payload digest of the published
   `provider-releases/current` manifest.
@@ -129,6 +132,25 @@ directories 0755 under `umask 0022`, because the task verifier rejects any publi
 backup path (the production backup path when `--db` is the production authority database, the
 isolated one otherwise); and only then writes `<release-root>/receipts/<40-hex>.json` recording the
 verification, gate report, backup result and published payload modes.
+
+The release is assembled and sealed on a stage and moved in with one rename, because the manifest
+library refuses to write inside a deployed root. `--stage-parent` (default
+`<worktree>/.runtime-tmp`) must be on the same filesystem as the release root. Sealing writes, into
+the release:
+
+- `release-compatibility.json` — `accepted_vector_digests` holding the migration vector of `--db`
+  bound to the release's own committed source identity, which is what a later
+  `release rollback --to <this release>` compares against.
+- `release.manifest.json` — written by the product's own manifest library from the committed
+  provenance the package receipt carried, with a sidecar pinning its hash.
+
+That provenance comes from the checkout that built the package: `scripts/package-authority-runtime.mjs`
+records `source.tree` and `source.tracked_dirty` beside `source.head` in `dist/build-metadata.json`
+and in `runtime-package-receipt.json`, and records the manifest's committed fields (commit, tree,
+first parent, subject, commit timestamp, `git archive HEAD` digest) as `release_source` in the
+receipt. A package built where no checkout can answer for HEAD carries none of this, and publishing
+refuses it with `PACKAGE_RELEASE_SOURCE_TREE_ABSENT` rather than sealing a manifest against
+invented provenance. Publishing never reads the checkout for provenance itself.
 
 `current` is moved only when `--activate` is given *and*
 `JARVIS_PRODUCTION_ACTIVATION_APPROVAL=approved` is present — a relative symlink replaced by an

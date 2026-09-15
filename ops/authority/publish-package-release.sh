@@ -30,6 +30,7 @@ RELEASE_ROOT=""
 DB=""
 BACKUP_ROOT=""
 DASHBOARD_URL=""
+STAGE_PARENT=""
 ACTIVATE=0
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -39,6 +40,7 @@ while [[ $# -gt 0 ]]; do
     --db) DB="${2:-}"; shift 2 ;;
     --backup-root) BACKUP_ROOT="${2:-}"; shift 2 ;;
     --dashboard-url) DASHBOARD_URL="${2:-}"; shift 2 ;;
+    --stage-parent) STAGE_PARENT="${2:-}"; shift 2 ;;
     --activate) ACTIVATE=1; shift ;;
     *) fail 'PACKAGE_RELEASE_USAGE' 2 ;;
   esac
@@ -71,11 +73,43 @@ source_head="$(printf '%s' "${verified}" \
   | python3 -c 'import json,sys; print(json.load(sys.stdin)["source_head"])')"
 [[ "${source_head}" =~ ^[0-9a-f]{40}$ ]] || fail 'PACKAGE_RELEASE_SOURCE_HEAD_INVALID'
 
+# A published release must be a rollback target, and a rollback target needs a sealed manifest bound
+# to the committed source tree. The tree is recorded at packaging time by the checkout that can
+# answer for it; a package built without one is refused here rather than sealed against invented
+# provenance.
+provenance="$(printf '%s' "${verified}" | python3 -c '
+import json, sys
+value = json.load(sys.stdin).get("release_source")
+if not value:
+    sys.exit(1)
+print("\n".join([value["commit"], value["tree"], value["first_parent"], value["subject"],
+                 value["commit_timestamp"], str(value["commit_epoch"]), value["archive_digest"]]))
+')" || fail 'PACKAGE_RELEASE_SOURCE_TREE_ABSENT'
+{ read -r src_commit; read -r src_tree; read -r src_parent; read -r src_subject
+  read -r src_timestamp; read -r src_epoch; read -r src_archive; } <<<"${provenance}"
+[[ "${src_commit}" == "${source_head}" ]] || fail 'PACKAGE_RELEASE_SOURCE_HEAD_INVALID'
+[[ "${src_tree}" =~ ^[0-9a-f]{40}$ ]] || fail 'PACKAGE_RELEASE_SOURCE_TREE_ABSENT'
+
 mkdir -p -m 0700 "${RELEASE_ROOT}" "${RELEASE_ROOT}/releases" "${RELEASE_ROOT}/receipts"
 chmod 0700 "${RELEASE_ROOT}" "${RELEASE_ROOT}/releases" "${RELEASE_ROOT}/receipts"
 release_path="${RELEASE_ROOT}/releases/${source_head}"
-# Exclusive create: a release directory that already exists is never written into or renamed over.
-mkdir "${release_path}" 2>/dev/null || fail 'PACKAGE_RELEASE_ALREADY_PUBLISHED'
+if [[ -e "${release_path}" ]]; then
+  fail 'PACKAGE_RELEASE_ALREADY_PUBLISHED'
+fi
+
+# The manifest library refuses to write inside a deployed root, so the release is assembled and
+# sealed on a stage and then moved in one rename. --stage-parent must be on the same filesystem as
+# the release root.
+STAGE_PARENT="${STAGE_PARENT:-${JARVIS_PUBLISH_STAGE_PARENT:-${WORKTREE}/.runtime-tmp}}"
+mkdir -p -m 0700 "${STAGE_PARENT}"
+stage="$(mktemp -d "${STAGE_PARENT}/authority-stage-XXXXXXXX")"
+sidecars="${STAGE_PARENT}/authority-sidecars"
+cleanup() {
+  if [[ -n "${stage:-}" && -d "${stage}" ]]; then
+    rm -rf -- "${stage}"
+  fi
+}
+trap cleanup EXIT
 
 payload_roots="$("${NODE_BIN}" --input-type=module -e \
   'import { RUNTIME_PACKAGE_ROOTS } from "'"${WORKTREE}"'/scripts/lib/runtime-package-roots.mjs";
@@ -83,21 +117,37 @@ payload_roots="$("${NODE_BIN}" --input-type=module -e \
 while IFS= read -r name; do
   [[ -n "${name}" ]] || continue
   [[ -e "${PACKAGE}/${name}" ]] || fail 'PACKAGE_RELEASE_PAYLOAD_INCOMPLETE'
-  mkdir -p "${release_path}/$(dirname -- "${name}")"
-  cp -a -- "${PACKAGE}/${name}" "${release_path}/${name}"
+  mkdir -p "${stage}/$(dirname -- "${name}")"
+  cp -a -- "${PACKAGE}/${name}" "${stage}/${name}"
 done <<<"${payload_roots}"
 # Installed dependencies travel with the payload as hard links; they are what makes the published
 # CLI runnable without a source checkout.
 if [[ -d "${PACKAGE}/node_modules" ]]; then
-  cp -al -- "${PACKAGE}/node_modules" "${release_path}/node_modules"
+  cp -al -- "${PACKAGE}/node_modules" "${stage}/node_modules"
 fi
 
+# Modes are settled before sealing, because the manifest records them.
 while IFS= read -r name; do
   [[ -n "${name}" ]] || continue
-  find "${release_path}/${name}" -type d -exec chmod 0755 -- {} +
-  find "${release_path}/${name}" ! -type d ! -type l -exec chmod 0644 -- {} +
+  find "${stage}/${name}" -type d -exec chmod 0755 -- {} +
+  find "${stage}/${name}" ! -type d ! -type l -exec chmod 0644 -- {} +
 done <<<"${payload_roots}"
-chmod 0755 "${release_path}"
+chmod 0755 "${stage}"
+
+sealed="$(cd -- "${WORKTREE}" && "${NODE_BIN}" "${WORKTREE}/ops/authority/seal-release-manifest.mjs" \
+  --stage "${stage}" --sidecar-dir "${sidecars}" --db "${DB}" \
+  --commit "${src_commit}" --tree "${src_tree}" --first-parent "${src_parent}" \
+  --subject "${src_subject}" --commit-timestamp "${src_timestamp}" --commit-epoch "${src_epoch}" \
+  --archive-digest "${src_archive}" --package-receipt-sha256 "${PIN}")" \
+  || fail 'PACKAGE_RELEASE_SEAL_FAILED'
+chmod 0644 "${stage}/release.manifest.json" "${stage}/release-compatibility.json"
+
+# One rename publishes the sealed stage. A destination that appeared meanwhile is not written into.
+if [[ -e "${release_path}" ]]; then
+  fail 'PACKAGE_RELEASE_ALREADY_PUBLISHED'
+fi
+mv -T -- "${stage}" "${release_path}" || fail 'PACKAGE_RELEASE_STAGE_MOVE_FAILED'
+stage=""
 
 gates="$("${NODE_BIN}" "${release_path}/dist/src/cli.js" release gates --db "${DB}" \
   ${DASHBOARD_URL:+--dashboard-url "${DASHBOARD_URL}"})" || {
@@ -129,13 +179,15 @@ fi
 
 receipt="${RELEASE_ROOT}/receipts/${source_head}.json"
 python3 - "${receipt}" "${release_path}" "${RELEASE_ROOT}" "${source_head}" "${PIN}" \
-  "${activated}" "${gates}" "${backup}" "${verified}" <<'PY'
+  "${activated}" "${gates}" "${backup}" "${verified}" "${sealed}" <<'PY'
 from datetime import datetime, timezone
 from hashlib import sha256
 from pathlib import Path
 import json, os, sys
 
-receipt_path, release, release_root, source_head, pin, activated, gates, backup, verified = sys.argv[1:]
+(receipt_path, release, release_root, source_head, pin, activated, gates, backup, verified,
+ sealed) = sys.argv[1:]
+sealed = json.loads(sealed)
 release = Path(release)
 entries = []
 for path in sorted(p for p in release.rglob("*") if "node_modules" not in p.relative_to(release).parts):
@@ -169,7 +221,12 @@ body = {
     "release": source_head,
     "source_head": source_head,
     "package_receipt_sha256": pin,
-    "payload_digest": digest.hexdigest(),
+    "source_tree": json.loads(verified)["source_tree"],
+    # The sealed manifest and the vector the rollback rule compares against.
+    "manifest_sha256": sealed["manifest_sha256"],
+    "payload_digest": sealed["payload_digest"],
+    "accepted_vector_digest": sealed["accepted_vector_digest"],
+    "release_payload_digest": digest.hexdigest(),
     "payload_files": len(files),
     "payload_file_modes": sorted({entry["mode"] for entry in files}),
     "verification": json.loads(verified),
