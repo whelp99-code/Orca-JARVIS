@@ -1,6 +1,7 @@
 import { JarvisError, progressFaultPoints, timestamp, type ProgressFaultPoint, type Row } from "./authority-db-base.js";
 import { GjcQuestionAuthorityDb } from "./gjc-question-store.js";
 import { isPersistenceTime } from "./personal-persistence-values.js";
+import type { ModelTransportCapture } from "./context-model-transport.js";
 import type {
 	ContextPersistenceInput,
 	RecommendationActionTransition,
@@ -29,6 +30,16 @@ export abstract class ProgressAuthorityDb extends GjcQuestionAuthorityDb {
 	}
 	persistContextSnapshot(value: ContextPersistenceInput, now = timestamp()): StoredContext {
 		return this.personalContext.persistContext(value, now);
+	}
+
+	persistAssembledContextSnapshot(input: unknown, evidence: ContextPersistenceInput["memory_evidence"], now = timestamp(), sessionId?: string): StoredContext {
+		return this.personalContext.persistAssembledContext(input, evidence, now, sessionId);
+	}
+	lastAssembledModelCapture(): ModelTransportCapture | undefined {
+		return this.personalContext.lastCapture;
+	}
+	assembledModelSendCount(): number {
+		return this.personalContext.modelTransport.sent.length;
 	}
 	persistRecommendation(value: RecommendationPersistenceInput, now = timestamp()): StoredRecommendation {
 		return this.personalContext.persistRecommendation(value, now);

@@ -143,7 +143,7 @@ export abstract class GjcConfigurationAuthorityDb extends AuthorityDbBase {
 			now,
 		);
 	}
-	createGjcDispatchFromTask(task: Record<string, unknown>, now = timestamp()): string {
+	assertGjcDispatchTask(task: Record<string, unknown>, now = timestamp()): void {
 		const required = [
 			"action",
 			"baseline",
@@ -169,29 +169,43 @@ export abstract class GjcConfigurationAuthorityDb extends AuthorityDbBase {
 			typeof task.idempotency_key !== "string"
 		)
 			throw new JarvisError("GJC_DISPATCH_SCHEMA_INVALID");
+		const config = this.gjcConfig();
+		if (!config?.operational || task.cwd !== config.canonical_cwd || task.session_id !== config.session_id)
+			throw new JarvisError("GJC_DISPATCH_NOT_AUTHORIZED");
 		const row = this.db
+			.prepare(
+				"SELECT c.id,c.authority_expires_at,w.state FROM continuation_acceptances c JOIN work_items w ON w.id=c.work_id WHERE c.id=?",
+			)
+			.get(task.continuation_id) as Row | undefined;
+		if (!row || row.state !== "continued" || String(row.authority_expires_at) <= now)
+			throw new JarvisError("GJC_DISPATCH_NOT_AUTHORIZED");
+		const full = this.db
 			.prepare(
 				`SELECT c.*,w.*,s.digest AS snapshot_digest FROM continuation_acceptances c JOIN work_items w ON
 				w.id=c.work_id JOIN census_snapshots s ON s.id=w.snapshot_id WHERE c.id=?`,
 			)
 			.get(task.continuation_id) as Row | undefined;
 		if (
-			!row ||
-			task.action !== row.action ||
-			task.baseline !== row.baseline ||
-			task.policy_hash !== row.policy_hash ||
-			task.census_snapshot_hash !== row.snapshot_digest ||
-			task.expiry !== row.authority_expires_at ||
-			task.lease_epoch !== row.lease_epoch ||
-			task.fencing_token !== row.fencing_token ||
-			task.scope_digest !== row.scope_digest ||
-			task.forbidden_digest !== row.forbidden_digest ||
-			task.budget_digest !== row.budget_digest ||
-			!same(task.scope, JSON.parse(String(row.scope_json))) ||
-			!same(task.forbidden_actions, JSON.parse(String(row.forbidden_json))) ||
-			!same(task.budget, JSON.parse(String(row.budget_json)))
+			!full ||
+			task.action !== full.action ||
+			task.baseline !== full.baseline ||
+			task.policy_hash !== full.policy_hash ||
+			task.census_snapshot_hash !== full.snapshot_digest ||
+			task.expiry !== full.authority_expires_at ||
+			task.lease_epoch !== full.lease_epoch ||
+			task.fencing_token !== full.fencing_token ||
+			task.scope_digest !== full.scope_digest ||
+			task.forbidden_digest !== full.forbidden_digest ||
+			task.budget_digest !== full.budget_digest ||
+			!same(task.scope, JSON.parse(String(full.scope_json))) ||
+			!same(task.forbidden_actions, JSON.parse(String(full.forbidden_json))) ||
+			!same(task.budget, JSON.parse(String(full.budget_json)))
 		)
 			throw new JarvisError("GJC_DISPATCH_NOT_AUTHORIZED");
+	}
+
+	createGjcDispatchFromTask(task: Record<string, unknown>, now = timestamp()): string {
+		this.assertGjcDispatchTask(task, now);
 		return this.createGjcDispatchFromContinuation(
 			String(task.continuation_id),
 			task,

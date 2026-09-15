@@ -7,6 +7,7 @@ import {
   ContextAssemblerError,
   parseContextAssemblerInput,
   type ContextAssemblerInput,
+  type ContextBudget,
   type MemoryEvidenceInput,
 } from "./context-assembler-input.js";
 import type { ContextPayloadV1, ContextSnapshotV1, ObservationEnvelopeV1 } from "./personal-contracts.js";
@@ -140,4 +141,67 @@ export function assemblePersonalContext(input: unknown): ContextSnapshotV1 {
     ),
   });
   return buildSnapshot(parsed, selection);
+}
+
+export type ModelMemoryDelivery = {
+  readonly memory_ref: string;
+  readonly source_id: string;
+  readonly version: string;
+  readonly excerpt: string;
+  readonly bytes: number;
+};
+
+export type ModelRequestV1 = {
+  readonly query: string;
+  readonly memories: readonly ModelMemoryDelivery[];
+  readonly omitted: readonly string[];
+  readonly budgets: ContextBudget;
+  readonly used_bytes: number;
+  readonly remaining_bytes: number;
+};
+
+export function assembleModelRequest(input: unknown): ModelRequestV1 {
+  const parsed = parseContextAssemblerInput(input);
+  const snapshot = assemblePersonalContext(parsed);
+  const included = new Set(snapshot.payload.included_memory_refs);
+  const memories: ModelMemoryDelivery[] = [];
+  const omitted = [...snapshot.payload.omissions];
+  let used = Buffer.byteLength(parsed.query, "utf8");
+  for (const item of parsed.memories) {
+    if (item.kind !== "evidence" || !included.has(item.memory_ref) || item.trust === "untrusted") {
+      continue;
+    }
+    const bytes = Buffer.byteLength(item.excerpt, "utf8");
+    if (used + bytes > parsed.budgets.max_total_bytes) {
+      omitted.push(item.memory_ref);
+      continue;
+    }
+    memories.push({
+      memory_ref: item.memory_ref,
+      source_id: item.source_id,
+      version: item.digest,
+      excerpt: item.excerpt,
+      bytes,
+    });
+    used += bytes;
+  }
+  const finish = (): ModelRequestV1 => ({
+    query: parsed.query,
+    memories,
+    omitted,
+    budgets: parsed.budgets,
+    used_bytes: used,
+    remaining_bytes: Math.max(0, parsed.budgets.max_total_bytes - used),
+  });
+  let request = finish();
+  while (Buffer.byteLength(JSON.stringify(request), "utf8") > parsed.budgets.max_total_bytes && memories.length > 0) {
+    const dropped = memories.pop();
+    if (dropped === undefined) {
+      break;
+    }
+    omitted.push(dropped.memory_ref);
+    used -= dropped.bytes;
+    request = finish();
+  }
+  return request;
 }

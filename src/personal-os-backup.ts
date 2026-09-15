@@ -1,12 +1,14 @@
 import { createHash, randomBytes } from "node:crypto";
 import {
   chmodSync,
+  constants,
   copyFileSync,
   existsSync,
   lstatSync,
   mkdirSync,
   readFileSync,
   realpathSync,
+  renameSync,
   rmSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
@@ -135,20 +137,122 @@ export async function backupProductionSqlite(input: {
   return performOnlineBackup(paths.sourcePath, destPath);
 }
 
+function quoteIdent(name: string): string {
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) throw new PersonalOsError("E_RESTORE_FAILED");
+  return name;
+}
+
+function logicalDigestFrom(db: Database.Database): string {
+  const hash = createHash("sha256");
+  const tables = db
+    .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%' ORDER BY name")
+    .all() as { readonly name: string }[];
+  for (const table of tables) {
+    hash.update(quoteIdent(table.name));
+    hash.update(JSON.stringify(db.prepare(`SELECT * FROM ${quoteIdent(table.name)}`).all()));
+  }
+  return hash.digest("hex");
+}
+
+function logicalDigest(path: string): string {
+  const db = new Database(path, { readonly: true, fileMustExist: true });
+  try {
+    return logicalDigestFrom(db);
+  } finally {
+    db.close();
+  }
+}
+
+function cloneFromBackup(dest: Database.Database, backupPath: string): void {
+  dest.prepare("ATTACH ? AS restore_src").run(backupPath);
+  try {
+    dest.pragma("foreign_keys = OFF");
+    dest.exec("BEGIN IMMEDIATE");
+    const destTables = dest
+      .prepare("SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'")
+      .all() as { readonly name: string }[];
+    for (const table of destTables) dest.exec(`DROP TABLE IF EXISTS ${quoteIdent(table.name)}`);
+    const objects = dest
+      .prepare(
+        `SELECT type, name, sql FROM restore_src.sqlite_master
+         WHERE sql IS NOT NULL AND name NOT LIKE 'sqlite_%'
+         ORDER BY CASE type WHEN 'table' THEN 0 ELSE 1 END, name`,
+      )
+      .all() as { readonly type: string; readonly name: string; readonly sql: string }[];
+    for (const object of objects) {
+      dest.exec(object.sql);
+      if (object.type === "table") {
+        dest.exec(`INSERT INTO ${quoteIdent(object.name)} SELECT * FROM restore_src.${quoteIdent(object.name)}`);
+      }
+    }
+    dest.exec("COMMIT");
+  } catch (error) {
+    if (dest.inTransaction) dest.exec("ROLLBACK");
+    throw error;
+  } finally {
+    dest.exec("DETACH restore_src");
+  }
+}
+
+function restoreExistingDest(backupPath: string, destPath: string): BackupResult {
+  let dest: Database.Database | undefined;
+  try {
+    dest = new Database(destPath, { fileMustExist: true });
+    dest.pragma("busy_timeout = 0");
+    dest.pragma("locking_mode = EXCLUSIVE");
+    dest.exec("BEGIN IMMEDIATE");
+    dest.exec("COMMIT");
+    cloneFromBackup(dest, backupPath);
+    dest.pragma("wal_checkpoint(TRUNCATE)");
+    const check = dest.pragma("quick_check", { simple: true });
+    if (check !== "ok") throw new PersonalOsError("E_RESTORE_FAILED");
+    if (logicalDigestFrom(dest) !== logicalDigest(backupPath)) throw new PersonalOsError("E_RESTORE_FAILED");
+    dest.close();
+    dest = undefined;
+    return { destPath, quick_check: "ok", ...digestFile(destPath) };
+  } catch (error) {
+    dest?.close();
+    if (error instanceof PersonalOsError) throw error;
+    throw new PersonalOsError("E_RESTORE_FAILED");
+  }
+}
+
 export function restoreSqlite(input: {
   readonly backupPath: string;
   readonly destPath: string;
 }): BackupResult {
   const backupPath = assertIsolatedFile(input.backupPath);
   const destPath = assertIsolatedFile(input.destPath);
-  mkdirSync(dirname(destPath), { recursive: true });
+  if (resolve(backupPath) === resolve(destPath)) throw new PersonalOsError("E_RESTORE_FAILED");
+  if (!existsSync(backupPath) || !lstatSync(backupPath).isFile()) throw new PersonalOsError("E_RESTORE_FAILED");
   try {
-    copyFileSync(backupPath, destPath);
+    if (quickCheck(backupPath) !== "ok") throw new PersonalOsError("E_RESTORE_FAILED");
   } catch (error) {
     if (error instanceof PersonalOsError) throw error;
     throw new PersonalOsError("E_RESTORE_FAILED");
   }
-  const check = quickCheck(destPath);
-  if (check !== "ok") throw new PersonalOsError("E_RESTORE_FAILED");
-  return { destPath, quick_check: check, ...digestFile(destPath) };
+  mkdirSync(dirname(destPath), { recursive: true });
+  if (existsSync(destPath)) return restoreExistingDest(backupPath, destPath);
+  const staging = join(dirname(destPath), `.restore-${randomBytes(8).toString("hex")}.sqlite`);
+  try {
+    copyFileSync(backupPath, staging);
+    chmodSync(staging, 0o600);
+    const check = quickCheck(staging);
+    if (check !== "ok") throw new PersonalOsError("E_RESTORE_FAILED");
+    try {
+      copyFileSync(staging, destPath, constants.COPYFILE_EXCL);
+    } catch (error) {
+      if (error instanceof Error && "code" in error && error.code === "EEXIST") {
+        throw new PersonalOsError("E_RESTORE_FAILED");
+      }
+      throw error;
+    }
+    chmodSync(destPath, 0o600);
+    if (logicalDigest(destPath) !== logicalDigest(backupPath)) throw new PersonalOsError("E_RESTORE_FAILED");
+    return { destPath, quick_check: check, ...digestFile(destPath) };
+  } catch (error) {
+    rmSync(staging, { force: true });
+    if (error instanceof PersonalOsError) throw error;
+    throw new PersonalOsError("E_RESTORE_FAILED");
+  }
 }

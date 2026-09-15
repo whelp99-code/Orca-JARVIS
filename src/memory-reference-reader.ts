@@ -36,6 +36,14 @@ export class MemoryReferenceReader {
     return this.submitChecked(reference, send);
   }
 
+  /** Re-check generation, privacy, and expiry without consuming the one local submission attempt. */
+  async revalidate(reference: CheckedMemoryReference): Promise<void> {
+    const submission = this.submissions.get(reference);
+    if (submission === undefined) throw new JarvisError("MEMORY_REFERENCE_SUBMISSION_INVALID");
+    const status = await this.submissionStatus();
+    this.validateSubmission(reference, submission, status);
+  }
+
   /** Durable session claim. The adapter must provide observed session/epoch identity. */
   async submitInSession<T>(reference: CheckedMemoryReference, send: (serialized: string) => Promise<T>,
     session: MemoryReferenceSession): Promise<T> {

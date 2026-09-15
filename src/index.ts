@@ -3,6 +3,7 @@ export * from "./memory-reference-context.js";
 export { MemoryReferenceDeliveries, type MemoryReferenceSession, type MemoryReferenceAttempt } from "./memory-reference-deliveries.js";
 export { MemoryReferenceReader, type MemoryReferenceReaderOptions, type CheckedMemoryReference } from "./memory-reference-reader.js";
 export { createProductionMemoryReference, type MemoryReferenceProductionOptions } from "./memory-reference-production.js";
+export { AssembledModelSession } from "./assembled-model-session.js";
 export * from "./core-api.js"; export * from "./daily-loop.js"; export * from "./morning-brief.js"; export * from "./memory-candidates.js";
 export * from "./morning-recommendation-source.js";
 export * from "./morning-brief-publisher.js";
@@ -16,10 +17,16 @@ export {
 	type RecommendationReadProjection, type ProjectedRecommendationAction, type RecommendationWarning,
 } from "./recommendations.js";
 export {
-	assemblePersonalContext, CONTEXT_ASSEMBLER_BUDGET_IMPOSSIBLE, CONTEXT_ASSEMBLER_INPUT_INVALID, ContextAssemblerError,
+	assemblePersonalContext, assembleModelRequest, CONTEXT_ASSEMBLER_BUDGET_IMPOSSIBLE, CONTEXT_ASSEMBLER_INPUT_INVALID, ContextAssemblerError,
 	type ContextAssemblerErrorCode, type ContextAssemblerInput, type ContextBudget,
 	type MemoryEvidenceInput, type MemoryGapInput, type MemoryInput,
+	type ModelMemoryDelivery, type ModelRequestV1,
 } from "./context-assembler.js";
+export {
+	prepareModelTransport, sendAssembledModelRequest, RecordingModelTransport, FileModelTransport,
+	CommandModelTransport,
+	type ModelTransport, type ModelTransportCapture, type ModelTransportResult,
+} from "./context-model-transport.js";
 export { CONTEXT_POLICY_CONFIG_INVALID, CONTEXT_POLICY_INPUT_INVALID, CONTEXT_POLICY_REASON_CODES, ContextPolicyError, evaluateContextPolicy,
 	type ContextPolicyDecision, type ContextPolicyErrorCode, type ContextPolicyReasonCode } from "./context-policy.js";
 export {

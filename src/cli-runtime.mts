@@ -23,6 +23,7 @@ import { executeStateCommand } from "./cli-state-commands.js";
 import { readRemoteAuditHistory } from "./remote-audit-history.js";
 import { AuthorityDb, JarvisError } from "./db.js";
 import { executeLocalTimeline, localTimelinePreflight } from "./cli-local-timeline.js";
+import { hostMemoryReferenceOptions } from "./cli-host-memory.js";
 
 const CLI_HELP =
   "JARVIS — agent-ops runtime\n"
@@ -55,6 +56,7 @@ const CLI_HELP =
   + "control check-task <plan.json>: check repository baseline and declared files without executing an agent\n"
   + "memory classify <input.json> <policy.json> [TASK_ID]: classify a bounded candidate; does not store memory\n"
   + "memory context <query> [--limit N] [--max_bytes N]: read bounded source-bound reference data; not a delivery receipt\n"
+  + "memory postcompact [event.json]: PostCompact JSON on stdin or file; reselect and send on configured model_transport\n"
   + "memory reconcile-scoped <outbox-id> --once [--worker ID]: reconcile one spent request using host-authenticated scoped configuration\n"
   + "memory stage-dispatch <candidate-id>: stage an approved memory candidate for control approval\n"
   + "memory outbox --once [--limit N]: dispatch queued writes and reconcile their stored results\n"
@@ -75,6 +77,10 @@ export async function execute(
   args: string[],
   dependencies: CliDependencies = {},
 ): Promise<Record<string, unknown>> {
+  dependencies = {
+    ...dependencies,
+    memoryReferenceOptions: dependencies.memoryReferenceOptions ?? hostMemoryReferenceOptions(),
+  };
   if (requestsHelp(args)) {
     console.log(CLI_HELP);
     return { ok: true, command: "help" };
