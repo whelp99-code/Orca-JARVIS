@@ -14,6 +14,8 @@ import {
 
 const MIGRATION = "038_memory_candidate_classification.sql";
 const TASK29_MIGRATION = "039_memory_outbox_saga.sql";
+// a6afd5a restored byte-identical 028_budgeted_evolution_memory.sql (applied 2026-08-21); the
+// restore is additional to the frozen baseline, so it stays out of this manifest and is pinned below.
 const BASELINE_MANIFEST_DIGEST = "fed3a674aa63174052b28f4268871373254719966a78563d3291f7e967034d82";
 
 function isRecord(value: unknown): value is Record<string, unknown> {

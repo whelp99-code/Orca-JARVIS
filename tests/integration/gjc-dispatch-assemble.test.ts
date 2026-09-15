@@ -797,16 +797,20 @@ function digestText(value: string): string {
 }
 
 function sameContentRecord(sid: string) {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-sibling omission of the identity fields
-  const { record_id: _id, record_digest: _digest, ...core } = REFERENCE_RECORD;
+  // Rest-sibling omission of the identity fields; the voids keep the bindings used.
+  const { record_id, record_digest, ...core } = REFERENCE_RECORD;
+  void record_id;
+  void record_digest;
   const next = { ...core, sid };
   const recordDigest = digestText(`second-brain/memory-record/v1\0${canonicalize(next)}`);
   return { ...next, record_id: `sbrecord:v1:${recordDigest.slice(7)}`, record_digest: recordDigest };
 }
 
 function sameSourceRecord(text: string, sid: string) {
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-sibling omission of the identity fields
-  const { record_id: _id, record_digest: _digest, ...core } = REFERENCE_RECORD;
+  // Rest-sibling omission of the identity fields; the voids keep the bindings used.
+  const { record_id, record_digest, ...core } = REFERENCE_RECORD;
+  void record_id;
+  void record_digest;
   const next = {
     ...core,
     sid,
