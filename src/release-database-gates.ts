@@ -130,6 +130,38 @@ export async function migrationVectorGate(dbPath: string, options: {
   }
 }
 
+/**
+ * The pending migrations a pre-activation rehearsal receipt has licensed, for the gates that read
+ * the same database through a check of their own and would otherwise repeat the vector's finding.
+ *
+ * It answers only from a migration-vector gate that passed on this receipt: pre-activation, nothing
+ * mismatched, nothing applied this release does not ship, and a non-empty pending set the receipt
+ * rehearsed onto this release's vector. Post-activation, an unlicensed vector, a checksum mismatch
+ * or an unsupported applied migration all yield `undefined`, so nothing is ever deferred on them.
+ */
+export function rehearsedPendingMigrations(
+  phase: ReleasePhase,
+  vector: ReleaseGate,
+): readonly string[] | undefined {
+  if (phase !== "pre-activation" || vector.name !== "migration-vector" || !vector.ok) return undefined;
+  const actual = typeof vector.actual === "object" && vector.actual !== null && !Array.isArray(vector.actual)
+    ? vector.actual as Record<string, unknown>
+    : undefined;
+  if (actual?.["accepted_via"] !== "rehearsal-receipt") return undefined;
+  const ids = (key: string): readonly string[] | undefined => {
+    const value = actual[key];
+    return Array.isArray(value) && value.every(entry => typeof entry === "string")
+      ? value as readonly string[]
+      : undefined;
+  };
+  const pending = ids("pending_migrations");
+  const mismatched = ids("checksum_mismatched");
+  const unsupported = ids("unsupported_applied");
+  if (pending === undefined || mismatched === undefined || unsupported === undefined) return undefined;
+  if (pending.length === 0 || mismatched.length > 0 || unsupported.length > 0) return undefined;
+  return pending;
+}
+
 /** Queued memory writes whose delivery is unresolved; activation may not run over an uncertain outbox. */
 export function uncertainOutboxGate(dbPath: string): ReleaseGate {
   try {

@@ -85,3 +85,37 @@ export function readOnly<T>(dbPath: string, fn: (db: Database.Database) => T): T
 export function hasTable(db: Database.Database, table: string): boolean {
   return Boolean(db.prepare("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?").get(table));
 }
+
+/** One health check as doctor reports it, read structurally so the contract loads no doctor. */
+export type HealthCheckFinding = {
+  readonly name: string;
+  readonly ok: boolean;
+  readonly actual: unknown;
+  readonly expected?: unknown;
+  readonly code?: string;
+};
+
+/**
+ * Whether one failed doctor check is nothing but the pending-but-rehearsed migration vector seen
+ * again through doctor's own reading of the same database.
+ *
+ * `database.migration_count` qualifies when its shortfall is exactly the pending set, so a count
+ * short for any other reason still fails. `database.migration_checksums` qualifies when the
+ * readiness assertion named one of those pending migrations: it walks the shipped migrations in
+ * order and reports the first unapplied one, and the migration-vector gate has already compared
+ * every applied migration's checksum against the shipped bytes, so a genuine mismatch or an
+ * unsupported history never reaches here. A readiness refusal naming no pending migration —
+ * recovery residue, an absent journal — is not explained by the rehearsal and still fails.
+ */
+export function deferredToRehearsal(check: HealthCheckFinding, pending: readonly string[]): boolean {
+  if (check.name === "database.migration_count") {
+    return check.code === "MIGRATIONS_PENDING"
+      && typeof check.actual === "number" && typeof check.expected === "number"
+      && check.expected - check.actual === pending.length;
+  }
+  if (check.name === "database.migration_checksums") {
+    return check.code === "MIGRATION_CHECKSUM_FAILED"
+      && typeof check.actual === "string" && pending.includes(check.actual);
+  }
+  return false;
+}

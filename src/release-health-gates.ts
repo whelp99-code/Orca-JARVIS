@@ -7,15 +7,18 @@ import {
 import { runDoctor } from "./doctor.js";
 import {
   DEFAULT_RELEASE_PHASE,
+  type HealthCheckFinding,
   type ReleaseGate,
   type ReleaseGateOptions,
   type ReleaseGateReport,
+  deferredToRehearsal,
   gate,
 } from "./release-gate-contract.js";
 import {
   foreignKeyCheckGate,
   migrationVectorGate,
   quickCheckGate,
+  rehearsedPendingMigrations,
   schedulerCursorGate,
   uncertainOutboxGate,
 } from "./release-database-gates.js";
@@ -44,6 +47,7 @@ export {
   readRehearsalReceipt,
   migrationVectorGate,
   quickCheckGate,
+  rehearsedPendingMigrations,
   schedulerCursorGate,
   shippedMigrationEntries,
   uncertainOutboxGate,
@@ -166,14 +170,34 @@ export async function mcpHandshakeGate(input: {
   return result;
 }
 
-async function doctorGate(options: ReleaseGateOptions, now: Date): Promise<ReleaseGate> {
+/**
+ * `doctor` over the release database. Doctor itself is unchanged and stays strict for its own
+ * callers: the phase lives here, in the gate. Pre-activation, against a migration-vector gate the
+ * rehearsal receipt licensed, the migration findings that are only that same pending vector are
+ * recorded as `deferred_to_rehearsal` and no longer fail the gate. Every other doctor failure
+ * still fails, and post-activation nothing is ever deferred.
+ */
+async function doctorGate(
+  options: ReleaseGateOptions,
+  now: Date,
+  rehearsedPending?: readonly string[],
+): Promise<ReleaseGate> {
   const db = new AuthorityDb(options.dbPath, undefined, { readonly: true, fileMustExist: true });
   try {
     const report = await runDoctor(db, now, options.capabilityProbe, options.secondBrainProbe);
-    return gate("doctor", report.ok, {
-      failed_checks: report.checks.filter(check => !check.ok).map(check => ({ name: check.name, code: check.code })),
+    const identify = (check: HealthCheckFinding): { name: string; code?: string } =>
+      ({ name: check.name, code: check.code });
+    const failures = report.checks.filter(check => !check.ok);
+    const deferred = rehearsedPending === undefined
+      ? []
+      : failures.filter(check => deferredToRehearsal(check, rehearsedPending));
+    const failed = failures.filter(check => !deferred.includes(check));
+    const ok = failed.length === 0;
+    return gate("doctor", ok, {
+      failed_checks: failed.map(identify),
+      ...(deferred.length === 0 ? {} : { deferred_to_rehearsal: deferred.map(identify) }),
       checks: report.checks.length,
-    }, report.ok ? undefined : "RELEASE_GATE_DOCTOR_FAILED");
+    }, ok ? undefined : "RELEASE_GATE_DOCTOR_FAILED");
   } catch {
     return gate("doctor", false, { failed_checks: null }, "RELEASE_GATE_DOCTOR_UNAVAILABLE");
   } finally {
@@ -199,12 +223,13 @@ function statusGate(dbPath: string): ReleaseGate {
 export async function runReleaseGates(options: ReleaseGateOptions): Promise<ReleaseGateReport> {
   const now = options.now ?? new Date();
   const phase = options.phase ?? DEFAULT_RELEASE_PHASE;
+  const vector = await migrationVectorGate(options.dbPath,
+    { phase, rehearsalReceiptPath: options.rehearsalReceiptPath });
   const gates: ReleaseGate[] = [
-    await migrationVectorGate(options.dbPath,
-      { phase, rehearsalReceiptPath: options.rehearsalReceiptPath }),
+    vector,
     quickCheckGate(options.dbPath),
     foreignKeyCheckGate(options.dbPath),
-    await doctorGate(options, now),
+    await doctorGate(options, now, rehearsedPendingMigrations(phase, vector)),
     statusGate(options.dbPath),
     await dashboardHealthGate({ url: options.dashboardUrl, timeoutMs: options.dashboardTimeoutMs }),
     await mcpHandshakeGate({
