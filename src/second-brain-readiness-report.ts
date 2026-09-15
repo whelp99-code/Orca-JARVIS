@@ -10,7 +10,8 @@ export type SecondBrainStage<State extends string, Reason extends string> = {
 };
 type ConfiguredStage = SecondBrainStage<
   "valid" | "missing" | "malformed" | "unknown",
-  "configuration_valid" | "configuration_missing" | "configuration_malformed" | "configuration_unavailable"
+  "configuration_valid" | "configuration_missing" | "configuration_malformed"
+    | "configuration_provider_result_key_missing" | "configuration_unavailable"
 >;
 type ProtocolStage = SecondBrainStage<
   "compatible" | "incompatible" | "unknown",

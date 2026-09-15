@@ -2,6 +2,11 @@ import { spawn, type ChildProcessWithoutNullStreams } from "node:child_process";
 
 export const SECOND_BRAIN_CONFIG_PYTHON = "/usr/bin/python3";
 export const SECOND_BRAIN_CONFIG_PYTHON_TIMEOUT_MS = 5_000;
+// RESULT_KEY_MISSING is a complete, well-formed configuration that names a provider result-signing
+// key id with no public key on file for it. The provider verifies its own signed results against
+// [provider_result_public_keys] before serving them, so without that entry a cancellation status
+// comes back MEMORY_CANCELLATION_RESULT_INVALID -- a signature error for a configuration omission.
+// Naming it here is what lets readiness fail closed with a reason an operator can act on.
 export const SECOND_BRAIN_CONFIG_PYTHON_SCRIPT = `import sys, tomllib
 raw = sys.stdin.buffer.read(65537)
 try:
@@ -11,7 +16,15 @@ try:
     root = value.get("vault_root") if isinstance(value, dict) else None
     if not isinstance(root, str) or not root:
         raise ValueError()
-    sys.stdout.write("VALID\\n")
+    signing = value.get("provider_signing_key_id")
+    if signing is None:
+        sys.stdout.write("VALID\\n")
+    elif not isinstance(signing, str) or not signing:
+        raise ValueError()
+    else:
+        keys = value.get("provider_result_public_keys")
+        entry = keys.get(signing) if isinstance(keys, dict) else None
+        sys.stdout.write("VALID\\n" if isinstance(entry, str) and entry else "RESULT_KEY_MISSING\\n")
 except (UnicodeDecodeError, tomllib.TOMLDecodeError, ValueError):
     sys.stdout.write("MALFORMED\\n")
 `;
@@ -40,12 +53,13 @@ export type SecondBrainConfigProcessResult =
 export type SecondBrainConfigProcessRunner = (
   request: SecondBrainConfigProcessRequest,
 ) => Promise<SecondBrainConfigProcessResult>;
-export type SecondBrainConfigParser = (bytes: Uint8Array) => Promise<"valid" | "malformed" | "unavailable">;
+export type SecondBrainConfigOutcome = "valid" | "malformed" | "result_key_missing" | "unavailable";
+export type SecondBrainConfigParser = (bytes: Uint8Array) => Promise<SecondBrainConfigOutcome>;
 
 export async function parseSecondBrainConfigWithPython(
   bytes: Uint8Array,
   runner: SecondBrainConfigProcessRunner = runSecondBrainConfigProcess,
-): Promise<"valid" | "malformed" | "unavailable"> {
+): Promise<SecondBrainConfigOutcome> {
   const result = await runner({
     command: SECOND_BRAIN_CONFIG_PYTHON,
     args: ["-I", "-c", SECOND_BRAIN_CONFIG_PYTHON_SCRIPT],
@@ -59,6 +73,7 @@ export async function parseSecondBrainConfigWithPython(
     return "unavailable";
   }
   if (result.stdout === "VALID\n") return "valid";
+  if (result.stdout === "RESULT_KEY_MISSING\n") return "result_key_missing";
   return result.stdout === "MALFORMED\n" ? "malformed" : "unavailable";
 }
 

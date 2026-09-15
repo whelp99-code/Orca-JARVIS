@@ -31,7 +31,7 @@ export type SecondBrainRefreshObservation =
 
 export type SecondBrainReadinessObservation = {
   readonly executable: "available" | "missing" | "unavailable";
-  readonly configuration: "valid" | "missing" | "malformed" | "unavailable";
+  readonly configuration: "valid" | "missing" | "malformed" | "result_key_missing" | "unavailable";
   readonly contract_digest: string | null;
   readonly protocol_version: string | null;
   readonly tools: readonly string[] | null;
@@ -166,9 +166,14 @@ export function evaluateSecondBrainReadiness(
   const at = now.toISOString();
   const installed = observation.executable === "available" ? checked("available", "executable_available", at)
     : observation.executable === "missing" ? checked("missing", "executable_missing", at) : checked("unknown", "resolver_unavailable", at);
+  // result_key_missing is a well-formed configuration with a hole in it: the provider signing key id
+  // it names has no public key on file, which surfaces later as MEMORY_CANCELLATION_RESULT_INVALID.
+  // It is reported under its own reason so the missing entry is diagnosable, and it is not valid.
   const configured = observation.configuration === "valid" ? checked("valid", "configuration_valid", at)
     : observation.configuration === "missing" ? checked("missing", "configuration_missing", at)
-      : observation.configuration === "malformed" ? checked("malformed", "configuration_malformed", at) : checked("unknown", "configuration_unavailable", at);
+      : observation.configuration === "result_key_missing"
+        ? checked("malformed", "configuration_provider_result_key_missing", at)
+        : observation.configuration === "malformed" ? checked("malformed", "configuration_malformed", at) : checked("unknown", "configuration_unavailable", at);
   const protocol_compatible = protocolStage(observation, at);
   const operational = operationalStage(observation, protocol_compatible.state === "compatible", at);
   const authorized = authorizationStage(observation, at);
