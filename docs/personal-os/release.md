@@ -57,6 +57,28 @@ unreadable or unparseable answer is a failure, never a skip.
 
 Rollback is allowed only when `exact-migration-vector`, `provider-contract`, and `sealed-manifest` match the target release. Otherwise emit `RELEASE_ROLLBACK_INCOMPATIBLE` and leave `current` unchanged.
 
+```sh
+node dist/src/cli.js release rollback --to <40-hex> --release-root <root> --db <db-path> [--dry-run]
+```
+
+The three inputs are read from the release root, never supplied by the caller:
+
+- `exact-migration-vector`: the migration vector of what is running now — the applied
+  `schema_migrations` of `--db` bound to the source commit/tree that `current`'s
+  `release.manifest.json` published — must appear in the target's
+  `release-compatibility.json` `accepted_vector_digests`.
+- `provider-contract`: the `provider_contract_digest` in the target's
+  `receipts/<40-hex>.json` must equal the payload digest of the published
+  `provider-releases/current` manifest.
+- `sealed-manifest`: the target's `release.manifest.json` must still hash to the
+  `manifest_sha256` its receipt pinned, and carry the receipt's `payload_digest`.
+
+Any disagreement, unreadable input or missing receipt raises the single documented
+`RELEASE_ROLLBACK_INCOMPATIBLE`; the refusal path performs no filesystem mutation, so `current`
+is left exactly where it was. `--dry-run` reports the same decision and never moves `current`.
+On allow, `current` is replaced by a relative symlink through an atomic rename. A `--release-root`
+inside a protected deployed root is refused with `E_PROTECTED_ROOT`.
+
 Owner gate for real activation: `production-activation-gate`.
 
 ## Isolated complete runtime package

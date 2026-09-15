@@ -4,7 +4,11 @@ import { join } from "node:path";
 import { parseArgs } from "node:util";
 import { z } from "zod";
 import { backupSqlite, restoreSqlite } from "./personal-os-backup.js";
-import { decideRollback, migrationVectorDigest } from "./personal-os-compatibility.js";
+import {
+  MIGRATION_VECTOR_CANONICAL_REF,
+  decideRollback,
+  migrationVectorDigest,
+} from "./personal-os-compatibility.js";
 import { PersonalOsError } from "./personal-os-errors.js";
 import { assertIsolatedRoot } from "./personal-os-protected-paths.js";
 import {
@@ -162,7 +166,7 @@ export async function runPersonalOsRehearsal(options: RehearsalOptions): Promise
     roots: fixtureRoots,
   }));
   const vector = migrationVectorDigest({
-    canonical_ref: "refs/heads/whelp99-code/jarvis-personal-operating-system-linux",
+    canonical_ref: MIGRATION_VECTOR_CANONICAL_REF,
     head: fixture.commit,
     tree: fixture.tree,
     migrations: migrationEntries(restore.destPath),

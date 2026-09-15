@@ -34,6 +34,8 @@ const CLI_HELP =
   + "release scheduler-cursor --db PATH: report the persisted cycle cursor and its daily_loop_runs consistency\n"
   + "release dashboard-health [--dashboard-url URL]: bounded-timeout GET of the configured dashboard health route\n"
   + "release mcp-handshake: real Second Brain stdio handshake honoring JARVIS_SECOND_BRAIN_LAUNCHER/CONFIG\n"
+  + "release rollback --to 40-HEX --release-root PATH --db PATH [--dry-run]: refuse unless exact-migration-vector, provider-contract and sealed-manifest match\n"
+  + "db migrate --rehearse DB_PATH: apply pending migrations to a scratch copy and gate it; the source database is never touched\n"
   + "timeline register|collect|hold|release TASK_ID --db PATH: manage local task snapshots (64 subjects maximum)\n"
   + "timeline admit-observation TASK_ID COLLECTION_ID --db PATH: persist an exact current local observation; no scheduling\n"
   + "timeline subjects --db PATH: list registered subjects and cached IDs; use snapshot to validate each collection\n"
@@ -123,6 +125,10 @@ export async function execute(
           "remote-audit-retention-limit": { type: "string" },
           "local-timeline-refresh": { type: "boolean" },
           "dashboard-url": { type: "string" },
+          to: { type: "string" },
+          "release-root": { type: "string" },
+          "dry-run": { type: "boolean" },
+          rehearse: { type: "string" },
         },
         allowPositionals: true,
         strict: true,
