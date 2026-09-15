@@ -120,6 +120,47 @@ describe("personal-OS systemd renderer", () => {
     }
   });
 
+  // Gap G5 of the cutover: the generator set ProtectHome=yes on the strength of JARVIS_SERVICE_USER
+  // alone, so a deployment that deliberately left the provider under /home (decision 1.1) had to
+  // override it by hand in a drop-in. ProtectHome now follows the provider roots, not the account.
+  it("derives ProtectHome and the provider write paths from where the provider roots resolve", () => {
+    // Given
+    const awayFromHome = productionRoots(SERVICE_ENVIRONMENT);
+    const providerUnderHome = productionRoots({
+      ...SERVICE_ENVIRONMENT,
+      JARVIS_PROVIDER_STATE_ROOT: "/home/jm/.local/state/second-brain",
+      JARVIS_PROVIDER_CONFIG: "/home/jm/.config/second-brain/config.toml",
+      JARVIS_PROVIDER_SHARE_ROOT: "/home/jm/.local/share/second-brain",
+    });
+
+    // When
+    const away = renderSystemdUnit({ id: "jm-jarvis.service", mode: "production", roots: awayFromHome });
+    const under = renderSystemdUnit({ id: "jm-jarvis.service", mode: "production", roots: providerUnderHome });
+    const underDashboard = renderSystemdUnit({
+      id: "jm-jarvis-dashboard.service", mode: "production", roots: providerUnderHome,
+    });
+
+    // Then
+    // Nothing configured inside a home: /home is invisible, and no provider tree is writable.
+    expect(away).toContain("ProtectHome=yes");
+    expect(away).not.toContain("second-brain");
+    // The provider stayed under /home, so the unit says read-only and names exactly the two trees
+    // the spawned MCP child writes — the config directory stays readable, never writable.
+    expect(under).toContain("ProtectHome=read-only");
+    expect(under).not.toContain("ProtectHome=yes");
+    expect(under).toContain(
+      "ReadWritePaths=/home/jm/.local/state/second-brain /home/jm/.local/share/second-brain");
+    expect(under).not.toContain("ReadWritePaths=/home/jm/.config/second-brain");
+    // Every unit of that deployment shares the /home visibility; only the authority spawns the
+    // provider child, so only the authority gets the provider write paths.
+    expect(underDashboard).toContain("ProtectHome=read-only");
+    expect(underDashboard).not.toContain("second-brain");
+    // The per-user installation is unchanged: read-only /home and no rendered provider write path.
+    const perUser = renderSystemdUnit({ id: "jm-jarvis.service", mode: "production", roots: productionRoots({}) });
+    expect(perUser).toContain("ProtectHome=read-only");
+    expect(perUser).not.toContain("second-brain");
+  });
+
   it("moves the provider units onto the configured provider roots and marker", () => {
     // Given / When
     const roots = productionRoots(SERVICE_ENVIRONMENT);
