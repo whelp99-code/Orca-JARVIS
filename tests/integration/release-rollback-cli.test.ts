@@ -1,5 +1,16 @@
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import {
+  copyFileSync,
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  readlinkSync,
+  rmSync,
+  symlinkSync,
+  writeFileSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
@@ -101,6 +112,35 @@ async function releaseRoot(overrides: {
 
 const current = (root: string): string => readlinkSync(join(root, "current"));
 
+/**
+ * A rollback target as it looks before sealed manifests: the migrations it ships, and neither a
+ * release-compatibility.json nor a receipt to qualify it with.
+ */
+function unqualifiedTarget(root: string, sha: string, migrations: readonly string[]): string {
+  const directory = join(root, "releases", sha);
+  mkdirSync(join(directory, "migrations"), { recursive: true });
+  for (const name of migrations) {
+    copyFileSync(join("migrations", name), join(directory, "migrations", name));
+  }
+  rmSync(join(directory, "release-compatibility.json"), { force: true });
+  rmSync(join(root, "receipts", `${sha}.json`), { force: true });
+  return directory;
+}
+
+function shippedMigrationNames(): readonly string[] {
+  return readdirSync("migrations").filter(name => name.endsWith(".sql")).sort();
+}
+
+/** A backup taken from a fully migrated database: its own applied vector is the shipped vector. */
+async function fixtureBackup(): Promise<string> {
+  const db = await migratedTestDatabase(tempDb());
+  const source = db.filename;
+  db.close();
+  const path = `${source}.backup`;
+  copyFileSync(source, path);
+  return path;
+}
+
 describe("release rollback", () => {
   it("allows a rollback whose vector, provider contract and sealed manifest all match", async () => {
     const fixture = await releaseRoot();
@@ -180,4 +220,95 @@ describe("release rollback", () => {
     }
     expect(current(fixture.root)).toBe(`releases/${CURRENT_SHA}`);
   });
+});
+
+describe("release rollback --restore-backup", () => {
+  it("restores the backup and switches current when the backup is on the target's vector", async () => {
+    const fixture = await releaseRoot();
+    unqualifiedTarget(fixture.root, TARGET_SHA, shippedMigrationNames());
+    const backup = await fixtureBackup();
+    const backupBytes = readFileSync(backup);
+
+    // The three qualification checks cannot pass for this target, so the ordinary form refuses.
+    await expect(execute(["release", "rollback", "--to", TARGET_SHA,
+      "--release-root", fixture.root, "--db", fixture.dbPath]))
+      .rejects.toMatchObject({ code: "RELEASE_ROLLBACK_INCOMPATIBLE" });
+
+    const preview = await execute(["release", "rollback", "--to", TARGET_SHA,
+      "--release-root", fixture.root, "--db", fixture.dbPath, "--restore-backup", backup, "--dry-run"]);
+    expect(preview).toMatchObject({
+      ok: true, command: "release.rollback", rollback: "restore", dry_run: true,
+      target_release: TARGET_SHA, current_target: `releases/${CURRENT_SHA}`,
+      backup: { path: backup, quick_check: "ok" },
+      database: { path: fixture.dbPath, restored: false, replaced: null },
+    });
+    const facts = preview as unknown as { target_vector: { digest: string; migrations: number; source: string };
+      backup: { vector_digest: string; applied_migrations: number }; systemd_order: string[] };
+    expect(facts.target_vector.digest).toBe(facts.backup.vector_digest);
+    expect(facts.target_vector).toMatchObject({ source: "migrations",
+      migrations: shippedMigrationNames().length });
+    expect(facts.backup.applied_migrations).toBe(shippedMigrationNames().length);
+    // It stops nothing itself; it prints the order the operator performs around it.
+    expect(facts.systemd_order[0]).toBe("systemctl --user stop jm-jarvis-dashboard.service");
+    expect(facts.systemd_order).toContain("systemctl --user start jm-jarvis.service");
+    expect(current(fixture.root)).toBe(`releases/${CURRENT_SHA}`);
+
+    const restored = await execute(["release", "rollback", "--to", TARGET_SHA,
+      "--release-root", fixture.root, "--db", fixture.dbPath, "--restore-backup", backup]);
+    expect(restored).toMatchObject({ rollback: "restore", dry_run: false,
+      current_target: `releases/${TARGET_SHA}`, database: { restored: true } });
+    expect(current(fixture.root)).toBe(`releases/${TARGET_SHA}`);
+    // The database is the backup's bytes, and the database it replaced is kept beside it.
+    expect(readFileSync(fixture.dbPath)).toEqual(backupBytes);
+    const replaced = (restored as unknown as { database: { replaced: string } }).database.replaced;
+    expect(replaced.startsWith(`${fixture.dbPath}.replaced-`)).toBe(true);
+    expect(existsSync(replaced)).toBe(true);
+    expect(existsSync(`${fixture.dbPath}-wal`)).toBe(false);
+    expect(readdirSync(join(replaced, "..")).filter(name => name.includes(".restore-"))).toEqual([]);
+  }, 60_000);
+
+  it("refuses a backup whose vector is not the target's, and an unusable backup", async () => {
+    const fixture = await releaseRoot();
+    const names = shippedMigrationNames();
+    unqualifiedTarget(fixture.root, TARGET_SHA, names.slice(0, names.length - 1));
+    const backup = await fixtureBackup();
+    const before = readFileSync(fixture.dbPath);
+    await expect(execute(["release", "rollback", "--to", TARGET_SHA,
+      "--release-root", fixture.root, "--db", fixture.dbPath, "--restore-backup", backup]))
+      .rejects.toMatchObject({ code: "RELEASE_RESTORE_VECTOR_MISMATCH" });
+    expect(current(fixture.root)).toBe(`releases/${CURRENT_SHA}`);
+    expect(readFileSync(fixture.dbPath)).toEqual(before);
+
+    const notADatabase = `${backup}.text`;
+    writeFileSync(notADatabase, "not a database\n");
+    unqualifiedTarget(fixture.root, TARGET_SHA, names);
+    await expect(execute(["release", "rollback", "--to", TARGET_SHA,
+      "--release-root", fixture.root, "--db", fixture.dbPath, "--restore-backup", notADatabase]))
+      .rejects.toMatchObject({ code: "RELEASE_RESTORE_BACKUP_UNUSABLE" });
+    await expect(execute(["release", "rollback", "--to", TARGET_SHA,
+      "--release-root", fixture.root, "--db", fixture.dbPath, "--restore-backup", `${backup}.absent`]))
+      .rejects.toMatchObject({ code: "RELEASE_RESTORE_BACKUP_UNAVAILABLE" });
+    expect(current(fixture.root)).toBe(`releases/${CURRENT_SHA}`);
+    expect(readFileSync(fixture.dbPath)).toEqual(before);
+  }, 60_000);
+
+  it("refuses a target that ships no migrations, an absent target and a protected root", async () => {
+    const fixture = await releaseRoot();
+    const backup = await fixtureBackup();
+    // The published fixture target carries a manifest and no migrations at all.
+    await expect(execute(["release", "rollback", "--to", TARGET_SHA,
+      "--release-root", fixture.root, "--db", fixture.dbPath, "--restore-backup", backup]))
+      .rejects.toMatchObject({ code: "RELEASE_RESTORE_TARGET_VECTOR_UNAVAILABLE" });
+    await expect(execute(["release", "rollback", "--to", "9".repeat(40),
+      "--release-root", fixture.root, "--db", fixture.dbPath, "--restore-backup", backup]))
+      .rejects.toMatchObject({ code: "RELEASE_RESTORE_TARGET_UNAVAILABLE" });
+    await expect(execute(["release", "rollback", "--to", TARGET_SHA,
+      "--release-root", PROTECTED_FIXTURE_ROOT, "--db", fixture.dbPath, "--restore-backup", backup]))
+      .rejects.toMatchObject({ code: "E_PROTECTED_ROOT" });
+    await expect(execute(["release", "rollback", "--to", TARGET_SHA,
+      "--release-root", PROTECTED_FIXTURE_ROOT, "--db", fixture.dbPath,
+      "--restore-backup", backup, "--production-root"]))
+      .rejects.toMatchObject({ code: "JARVIS_PRODUCTION_ACTIVATION_APPROVAL_REQUIRED" });
+    expect(current(fixture.root)).toBe(`releases/${CURRENT_SHA}`);
+  }, 60_000);
 });

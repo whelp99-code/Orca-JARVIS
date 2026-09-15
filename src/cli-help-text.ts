@@ -11,6 +11,8 @@ export const CLI_HELP =
   + "release mcp-handshake: real Second Brain stdio handshake honoring JARVIS_SECOND_BRAIN_LAUNCHER/CONFIG\n"
   + "release rollback --to 40-HEX --release-root PATH --db PATH [--dry-run] [--production-root]: refuse unless "
   + "exact-migration-vector, provider-contract and sealed-manifest match; --production-root needs the owner gate\n"
+  + "release rollback --to 40-HEX --release-root PATH --db PATH --restore-backup FILE [--dry-run]: restore a backup on the "
+  + "target's own migration vector and switch current; stops no service, prints the systemd order\n"
   + "db migrate --rehearse DB_PATH [--rehearsal-receipt PATH]: apply pending migrations to a scratch copy and gate it; "
   + "the source database is never touched\n"
   + "timeline register|collect|hold|release TASK_ID --db PATH: manage local task snapshots (64 subjects maximum)\n"

@@ -16,6 +16,7 @@ import {
 } from "./release-health-gates.js";
 import { runMigrationRehearsal } from "./release-migration-rehearsal.js";
 import { runReleaseRollback } from "./release-rollback.js";
+import { runReleaseRestore } from "./release-restore.js";
 
 export type ReleaseCommandDependencies = {
   readonly clock?: () => Date;
@@ -102,8 +103,23 @@ export async function executeReleaseGateCommand(
     if (positionals.length !== 2 || values.to === undefined || values["release-root"] === undefined) {
       throw new JarvisError("RELEASE_ROLLBACK_INPUT_INVALID");
     }
-    assertExactOptions(values, ["db", "json", "to", "release-root", "dry-run", "production-root"],
+    assertExactOptions(values,
+      ["db", "json", "to", "release-root", "dry-run", "production-root", "restore-backup"],
       "RELEASE_ROLLBACK_INPUT_INVALID");
+    // The restore form is the documented recovery for a target the three qualification checks
+    // cannot pass, so it answers on the backup's vector instead of on them.
+    if (values["restore-backup"] !== undefined) {
+      const restored = runReleaseRestore({
+        releaseRoot: values["release-root"],
+        dbPath: assertExistingDatabase(values.db),
+        to: values.to,
+        backupPath: values["restore-backup"],
+        dryRun: values["dry-run"] === true,
+        productionRoot: values["production-root"] === true,
+        now: dependencies.clock?.(),
+      });
+      return { ok: true, command: "release.rollback", ...restored };
+    }
     const result = runReleaseRollback({
       releaseRoot: values["release-root"],
       dbPath: assertExistingDatabase(values.db),

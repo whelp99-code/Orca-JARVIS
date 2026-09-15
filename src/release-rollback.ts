@@ -180,7 +180,7 @@ function fsyncDir(path: string): void {
 }
 
 /** Activation is a relative-current-symlink replaced by an atomic rename. */
-function activate(releaseRoot: string, sha: string): string {
+export function activateRelease(releaseRoot: string, sha: string): string {
   const currentTarget = `releases/${sha}`;
   const temporary = join(releaseRoot, `.current-rollback-${sha}-${process.pid}`);
   rmSync(temporary, { force: true });
@@ -251,7 +251,7 @@ export function runReleaseRollback(input: RollbackInput): RollbackResult {
     schema_version: 1,
     rollback: "allow",
     dry_run: input.dryRun,
-    current_target: input.dryRun ? `releases/${current}` : activate(releaseRoot, input.to),
+    current_target: input.dryRun ? `releases/${current}` : activateRelease(releaseRoot, input.to),
     facts,
   };
 }

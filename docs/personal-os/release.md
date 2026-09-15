@@ -167,6 +167,42 @@ evidence alone does not reach it: the flag is what names the root. Both refusals
 anything is read, so neither touches deployed state. With both, the root is read like any other and
 the same three checks decide the rollback.
 
+### An unqualified target: restore the backup {#rollback-restore}
+
+A release published before sealed manifests has no `release-compatibility.json` and its receipt no
+`provider_contract_digest`, so none of the three checks above can be satisfied and a pointer-only
+rollback is refused — correctly, because after the service's `ExecStartPre` migrate the database is
+no longer on that release's schema. The recovery is to restore the backup and move the pointer
+together, which is the second rollback form:
+
+```sh
+node dist/src/cli.js release rollback --to <40-hex> \
+  --release-root <root> --db <db-path> --restore-backup <backup-file> [--dry-run] [--production-root]
+```
+
+It answers on the backup instead of on the three checks:
+
+- the backup must pass `PRAGMA quick_check` (`RELEASE_RESTORE_BACKUP_UNUSABLE`), and be a regular
+  file (`RELEASE_RESTORE_BACKUP_UNAVAILABLE`);
+- the backup's own applied migration vector must equal the vector the **target release's shipped
+  migrations** describe — read from the target's `dist/migrations`, else its `migrations/`, which a
+  pre-manifest release still carries (`RELEASE_RESTORE_TARGET_VECTOR_UNAVAILABLE` when it ships
+  none). A backup at any other level is refused with `RELEASE_RESTORE_VECTOR_MISMATCH`, because the
+  target's own `ExecStartPre` would migrate it into a database that release was never run against.
+
+On allow it restores the database atomically: the backup is copied beside the destination,
+`quick_check`ed there, the database in place is renamed aside to `<db>.replaced-<utc>` together with
+its `-wal`/`-shm` sidecars, and only then does the checked copy take the database's name — so the
+replaced bytes are always kept and the restored database carries no stale sidecars. Then `current`
+is switched to the target by the same relative-symlink atomic rename as an activation.
+
+It stops and starts nothing itself. The result carries the order the operator performs around it as
+`systemd_order` — stop the dashboard, stop the authority, confirm both inactive, run this command,
+start the authority, start the dashboard — because a running authority would write to the database
+being replaced, and the pointer must be moved before the restart that re-runs `ExecStartPre`.
+`--dry-run` reports the same facts (both vector digests, the backup's `quick_check`, size and
+sha256) and touches nothing.
+
 Owner gate for real activation: `production-activation-gate`.
 
 ## Publishing a verified package {#publish}
