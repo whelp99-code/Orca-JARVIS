@@ -21,11 +21,21 @@ follow from it with `deployment render-units --out DIR`.
 | `JARVIS_BIN_ROOT` | `/home/jm/.local/bin` | generated units' `PATH` (per-user renders only) |
 | `JARVIS_NODE_BIN` | `/home/jm/.nvm/versions/node/v24.19.0/bin/node` | every generated unit's interpreter, and the publish scripts |
 | `JARVIS_SERVICE_USER` | unset | when set, units render as **system** units with `User=`/`Group=`, `ProtectHome=yes` and `WantedBy=multi-user.target` |
+| `JARVIS_DAILY_SERVICE_CONFIG` | unset | when set with the key below, `jm-jarvis.service` renders `service run … --input <path>` and the unit schedules the daily morning and evening phases |
+| `JARVIS_DAILY_CLOSEOUT_KEY` | unset | the Ed25519 closeout signing key (mode 0600, owned by the unit's account) that `--key-file` names |
 
 An override must be an absolute, already-canonical path, or resolution refuses with
 `E_DEPLOYMENT_ROOT` — these paths are *compared* (protected-root and production-backup checks), not
 just opened, so a path that normalises to something the operator did not write is refused rather
 than accepted.
+
+The two daily-loop variables are set together or not at all: `service run` refuses one flag without
+the other (`DAILY_LOOP_CONFIG_INVALID`), and resolution refuses half a configuration with
+`E_DEPLOYMENT_ROOT` rather than letting `Restart=always` become a crash loop. Unset is *off*: the
+rendered `ExecStart` carries no daily flags and the unit schedules no phase. Set is *load-bearing*:
+the service fails closed on those two inputs instead of silently running a day with no morning and
+no evening. Both paths must be readable by the unit's account, so keep them under
+`${JARVIS_STATE_ROOT}` (the authority's `ReadWritePaths`).
 
 `JARVIS_SERVICE_USER` exists for the retention/compaction lane. That lane can only prove exclusion
 when every same-UID process is the authority's own (`docs/local-retention-operations-proposal.md`),
