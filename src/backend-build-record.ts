@@ -9,6 +9,11 @@ const migration = z.object({ id: z.string().min(1).max(2048), checksum: z.string
 const manifest = z.object({
   schema_version: z.literal(1), kind: z.literal("jarvis-backend-build"),
   source: z.object({ head: z.string().regex(/^[0-9a-f]{40}$/).nullable(), dirty: z.boolean().nullable(),
+    // The committed tree and the tracked-only dirty flag a sealed release manifest is built from.
+    // Recorded beside head/dirty by the build, null on a checkout Git cannot answer for, and absent
+    // from a record written before the build began recording them. Still closed against anything else.
+    tree: z.string().regex(/^[0-9a-f]{40}$/).nullable().optional(),
+    tracked_dirty: z.boolean().nullable().optional(),
     input_digest: hash, input_file_count: count,
     toolchain: z.object({ node: z.string().regex(/^v\d+\.\d+\.\d+(?:[-+][\w.-]+)?$/),
       modules: z.string().regex(/^\d{1,6}$/), platform: z.string().regex(/^[a-z0-9_]{1,32}$/),
