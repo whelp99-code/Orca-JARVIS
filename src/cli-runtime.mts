@@ -93,6 +93,7 @@ export async function execute(args: string[], dependencies: CliDependencies = {}
           "rehearsal-receipt": { type: "string" },
           "production-root": { type: "boolean" },
           "restore-backup": { type: "string" },
+          "refresh-receipt": { type: "string" },
         },
         allowPositionals: true,
         strict: true,
@@ -109,6 +110,8 @@ export async function execute(args: string[], dependencies: CliDependencies = {}
   const readinessCommand = await tryExecuteSecondBrainReadinessCommand({ positionals: parsed.positionals,
     values: parsed.values, clock: dependencies.clock, secondBrainProbe: dependencies.secondBrainProbe });
   if (readinessCommand !== undefined) return readinessCommand;
+  // The receipt path is an input to the readiness probe and to nothing else.
+  if (values["refresh-receipt"] !== undefined) throw new JarvisError("SECOND_BRAIN_READINESS_INPUT_INVALID");
   // A rehearsal never migrates the database it was pointed at, so it cannot be a modifier on any
   // other command: the only accepted form returned above.
   if (values.rehearse !== undefined) throw new JarvisError("MIGRATION_REHEARSAL_INPUT_INVALID");

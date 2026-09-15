@@ -16,6 +16,10 @@ import {
   type SecondBrainHandshakeResult,
   type SecondBrainReadFacts,
 } from "./second-brain-readiness-read.js";
+import {
+  configuredRefreshReceiptPath,
+  secondBrainRefreshObservation,
+} from "./second-brain-readiness-refresh.js";
 import { SECOND_BRAIN_FROZEN_DIGEST } from "./second-brain-readiness.js";
 import type {
   SecondBrainProbeFailure,
@@ -125,6 +129,7 @@ export function boundedSecondBrainReadinessRunner(): SecondBrainReadinessRunner 
 function unavailableBase(
   executable: SecondBrainReadinessObservation["executable"],
   configuration: SecondBrainReadinessObservation["configuration"],
+  refresh: SecondBrainRefreshObservation,
 ): SecondBrainReadinessObservation {
   return {
     executable,
@@ -141,7 +146,9 @@ function unavailableBase(
     read_authorization: "unauthorized",
     write_authorization: "unauthorized",
     data_state: "unknown",
-    refresh: { kind: "missing" },
+    // A receipt is a file the provider left behind, not something the provider has to be running to
+    // answer for, so an unreachable provider does not erase the last refresh it published.
+    refresh,
   };
 }
 
@@ -199,13 +206,19 @@ function refreshObservation(
 
 export function runtimeSecondBrainReadinessProbe(
   runner: SecondBrainReadinessRunner = boundedSecondBrainReadinessRunner(),
+  receiptPath: string | undefined = configuredRefreshReceiptPath(),
 ): SecondBrainReadinessProbe {
   return {
     inspect: async () => {
+      const receipt = secondBrainRefreshObservation(receiptPath);
       const executable = await runner.executable();
-      if (executable !== "available") return unavailableBase(executable, "unavailable");
+      if (executable !== "available") {
+        return unavailableBase(executable, "unavailable", receipt ?? { kind: "missing" });
+      }
       const configuration = await runner.configuration();
-      if (configuration !== "valid") return unavailableBase(executable, configuration);
+      if (configuration !== "valid") {
+        return unavailableBase(executable, configuration, receipt ?? { kind: "missing" });
+      }
       const status = parseStatus(await runner.run("status"));
       const doctor = parseDoctor(await runner.run("doctor"));
       const handshake = parseHandshake(await runner.handshake());
@@ -234,13 +247,14 @@ export function runtimeSecondBrainReadinessProbe(
         channels_consistent: status.outcome === "ok" && doctor.outcome === "ok"
           && handshake.outcome === "ok",
         read_authorization: handshake.read.read,
-        // Readiness never attempts a write: a probe that proved write authorization would have
-        // performed one. The stage reports read_only until a non-mutating write-authorization
-        // surface exists on the provider.
-        write_authorization: "unauthorized",
+        // Readiness never attempts a write. The provider answers on its read surface instead, and a
+        // release that does not answer leaves the stage at read_only rather than guessing.
+        write_authorization: handshake.read.write ?? "unauthorized",
         authorization_consistent: true,
         data_state: handshake.read.data_state,
-        refresh: refreshObservation(status.legacy),
+        // The published receipt is the only completion evidence; the status line can prove an
+        // attempt and nothing more, so it is the fallback and never an override.
+        refresh: receipt ?? refreshObservation(status.legacy),
         last_successful_refresh_at: status.legacy?.last_successful_refresh_at ?? null,
       };
     },
