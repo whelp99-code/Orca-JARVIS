@@ -23,7 +23,7 @@ import { executeStateCommand } from "./cli-state-commands.js";
 import { readRemoteAuditHistory } from "./remote-audit-history.js";
 import { AuthorityDb, JarvisError } from "./db.js";
 import { executeLocalTimeline, localTimelinePreflight } from "./cli-local-timeline.js";
-import { hostMemoryReferenceOptions } from "./cli-host-memory.js";
+import { hostMemoryReferenceOptions, hostMemoryWithdrawalOptions } from "./cli-host-memory.js";
 import { executeReleaseGateCommand } from "./cli-release-commands.js";
 import { CLI_HELP } from "./cli-help-text.js";
 
@@ -39,7 +39,9 @@ const COMMAND_HANDLERS: readonly CliCommandHandler[] = [
 ];
 
 export async function execute(args: string[], dependencies: CliDependencies = {}): Promise<Record<string, unknown>> {
-  dependencies = { ...dependencies, memoryReferenceOptions: dependencies.memoryReferenceOptions ?? hostMemoryReferenceOptions() };
+  dependencies = { ...dependencies,
+    memoryReferenceOptions: dependencies.memoryReferenceOptions ?? hostMemoryReferenceOptions(),
+    memoryWithdrawalOptions: dependencies.memoryWithdrawalOptions ?? hostMemoryWithdrawalOptions() };
   if (requestsHelp(args)) {
     console.log(CLI_HELP);
     return { ok: true, command: "help" };

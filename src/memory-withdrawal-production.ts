@@ -8,11 +8,18 @@ import { createProductionMemoryReadFence } from "./memory-read-fence-production.
 import { createSecondBrainReadAdapter } from "./second-brain-adapter.js";
 import { createSecondBrainTransport } from "./second-brain-transport.js";
 import { SecondBrainEffectService } from "./second-brain-effect-service.js";
+import { composedMemoryEffectSigningIdentity,
+  type MemoryEffectSigningConfig } from "./second-brain-effect-service-production.js";
 
 export type MemoryWithdrawalProductionOptions = MemoryReferenceProductionOptions & {
   readonly provider_instance_id: string;
-  readonly signing_key_id: string;
-  readonly private_key: KeyObject;
+  /**
+   * An explicitly injected fixture signer. Absent in every production composition, which signs with
+   * the deployment's provisioned memory-effect identity instead.
+   */
+  readonly signing_key_id?: string;
+  readonly private_key?: KeyObject;
+  readonly signing?: MemoryEffectSigningConfig;
   readonly approval_window_ms?: number;
 };
 
@@ -26,16 +33,15 @@ export type MemoryWithdrawalProductionOptions = MemoryReferenceProductionOptions
 export function createProductionMemoryWithdrawal(
   authority: AuthorityDb, options: MemoryWithdrawalProductionOptions,
 ) {
-  if (options.private_key.asymmetricKeyType !== "ed25519"
-    || options.provider_instance_id.length === 0 || options.signing_key_id.length === 0) {
+  if (options.provider_instance_id.length === 0) {
     throw new JarvisError("MEMORY_WITHDRAWAL_CONFIG_INVALID");
   }
+  const identity = composedMemoryEffectSigningIdentity(options, "MEMORY_WITHDRAWAL_CONFIG_INVALID");
   const clock = options.clock ?? (() => new Date());
   const transport = options.transport ?? createSecondBrainTransport(options.transport_options);
   const effect = new SecondBrainEffectService({ authority, transport, clock,
     writer: { write: () => Promise.reject(new JarvisError("MEMORY_WITHDRAWAL_IS_READ_ONLY")) },
-    provider_instance_id: options.provider_instance_id,
-    signing_key_id: options.signing_key_id, private_key: options.private_key });
+    provider_instance_id: options.provider_instance_id, ...identity });
   const readFence = options.read_fence
     ?? createProductionMemoryReadFence(authority, options.read_fence_config)
     ?? effect.readFenceFactory();
