@@ -4,6 +4,7 @@ import { JarvisError } from "./jarvis-error.js";
 import { runtimeCapabilityProbe, runDoctor } from "./doctor.js";
 import { LiveSupervisor } from "./live-supervisor.js";
 import { buildSecondBrainReadiness, type SecondBrainReadinessProbe } from "./second-brain-readiness.js";
+import { configuredRefreshReceiptPath } from "./second-brain-readiness-refresh.js";
 import { runtimeSecondBrainReadinessProbe } from "./second-brain-readiness-runtime.js";
 
 export type CliReadinessCommandInput = {
@@ -95,16 +96,31 @@ export type CliSecondBrainReadinessInput = {
  * directory the operator happened to run from, whose zero applied migrations were then reported as
  * MIGRATIONS_PENDING. A probe that reads no authority state now creates none.
  */
+/**
+ * `--refresh-receipt PATH`: the receipt the provider publishes, for this probe only.
+ *
+ * Bounded the same way the daily loop bounds the path in its own configuration, so an operator
+ * cannot hand readiness something the loop would refuse to read.
+ */
+function receiptOption(value: unknown): string | undefined {
+  if (value === undefined) return configuredRefreshReceiptPath();
+  if (typeof value !== "string" || !value.startsWith("/") || value.length > 512
+    || value.includes("\0")) throw new JarvisError("SECOND_BRAIN_READINESS_INPUT_INVALID");
+  return value;
+}
+
 export async function tryExecuteSecondBrainReadinessCommand(
   input: CliSecondBrainReadinessInput,
 ): Promise<Record<string, unknown> | undefined> {
   if (input.positionals[0] !== "second-brain") return undefined;
   if (input.positionals[1] !== "readiness" || input.positionals.length !== 2
-    || Object.keys(input.values).some(key => key !== "json")) {
+    || Object.keys(input.values).some(key => key !== "json" && key !== "refresh-receipt")) {
     throw new JarvisError("SECOND_BRAIN_READINESS_INPUT_INVALID");
   }
+  // Validated whatever probe answers, so a malformed path is refused rather than ignored.
+  const receipt = receiptOption(input.values["refresh-receipt"]);
   const second_brain = await buildSecondBrainReadiness(
-    input.secondBrainProbe ?? runtimeSecondBrainReadinessProbe(),
+    input.secondBrainProbe ?? runtimeSecondBrainReadinessProbe(undefined, receipt),
     input.clock?.() ?? new Date(),
   );
   return { ok: true, command: "second-brain.readiness", second_brain };

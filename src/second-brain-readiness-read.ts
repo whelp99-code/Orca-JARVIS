@@ -14,6 +14,14 @@ import { SecondBrainTransportError, createSecondBrainTransport } from "./second-
  */
 export type SecondBrainReadFacts = {
   readonly read: "authorized" | "unauthorized";
+  /**
+   * What the provider says about writes, when it says anything.
+   *
+   * `sb_generation_status` reports `write_authorization` on releases that implement it. It is
+   * additive, so a provider that omits it leaves this `undefined` and the caller keeps reporting
+   * `unauthorized`: silence is never read as a grant.
+   */
+  readonly write?: "authorized" | "disabled" | "unauthorized";
   readonly contract_digest: string | null;
   readonly data_state: SecondBrainDataState;
 };
@@ -75,9 +83,25 @@ async function readFacts(
   const digest = outcome.value["contract_digest"];
   return {
     read: "authorized",
+    ...writeAuthorization(outcome.value),
     contract_digest: typeof digest === "string" && digest !== "" ? digest : null,
     data_state: generationState(outcome.value),
   };
+}
+
+/**
+ * The write grant the provider volunteered, read closed.
+ *
+ * Only the three values the provider contract names are accepted; anything else - a new value from
+ * an unnegotiated release, or a non-string - is left absent rather than guessed, so readiness fails
+ * closed on a provider it does not understand instead of inferring a permission.
+ */
+function writeAuthorization(
+  value: Readonly<Record<string, unknown>>,
+): Pick<SecondBrainReadFacts, "write"> {
+  const declared = value["write_authorization"];
+  return declared === "authorized" || declared === "disabled" || declared === "unauthorized"
+    ? { write: declared } : {};
 }
 
 /**
