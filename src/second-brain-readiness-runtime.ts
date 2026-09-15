@@ -1,5 +1,6 @@
 import { execFile } from "node:child_process";
 import { stat } from "node:fs/promises";
+import { dirname, join } from "node:path";
 import { probeSecondBrainConfiguration } from "./second-brain-readiness-config.js";
 import {
   attestedSecondBrainHandshake,
@@ -22,6 +23,22 @@ import {
 } from "./second-brain-transport.js";
 
 const SECOND_BRAIN_CLI = "/home/jm/.local/state/second-brain/app/current/bin/sb";
+
+/**
+ * An isolated provider installation is selected by JARVIS_SECOND_BRAIN_LAUNCHER/CONFIG, and when it
+ * is, nothing under the deployed installation is opened: the legacy `sb` CLI is resolved beside the
+ * configured launcher instead of under the deployed `app/current`.
+ */
+function configuredEndpoint(): {
+  readonly launcher: string;
+  readonly config: string;
+  readonly cli: string;
+} {
+  const launcher = process.env["JARVIS_SECOND_BRAIN_LAUNCHER"];
+  const config = process.env["JARVIS_SECOND_BRAIN_CONFIG"];
+  if (launcher === undefined) return { launcher: SECOND_BRAIN_LAUNCHER, config: SECOND_BRAIN_CONFIG, cli: SECOND_BRAIN_CLI };
+  return { launcher, config: config ?? SECOND_BRAIN_CONFIG, cli: join(dirname(launcher), "sb") };
+}
 const PROBE_TIMEOUT_MS = 5_000;
 const PROBE_MAX_BYTES = 2_048;
 
@@ -39,14 +56,15 @@ export interface SecondBrainReadinessRunner {
 }
 
 function commandResult(command: "status" | "doctor"): Promise<SecondBrainCommandResult> {
+  const endpoint = configuredEndpoint();
   return new Promise(resolve => {
-    execFile(SECOND_BRAIN_CLI, [command], {
+    execFile(endpoint.cli, [command], {
       encoding: "utf8",
       timeout: PROBE_TIMEOUT_MS,
       maxBuffer: PROBE_MAX_BYTES,
       killSignal: "SIGKILL",
       windowsHide: true,
-      env: { SB_CONFIG: SECOND_BRAIN_CONFIG, PATH: "/usr/bin:/bin", LANG: "C" },
+      env: { SB_CONFIG: endpoint.config, PATH: "/usr/bin:/bin", LANG: "C" },
     }, (error, stdout) => {
       if (error === null) {
         resolve({ kind: "ok", stdout });
@@ -75,17 +93,20 @@ export function boundedSecondBrainReadinessRunner(): SecondBrainReadinessRunner 
   return {
     executable: async () => {
       try {
-        const metadata = await stat(SECOND_BRAIN_LAUNCHER);
+        const metadata = await stat(configuredEndpoint().launcher);
         return metadata.isFile() && (metadata.mode & 0o111) !== 0 ? "available" : "missing";
       } catch (error) {
         if (!(error instanceof Error)) return "unavailable";
         return property(error, "code") === "ENOENT" ? "missing" : "unavailable";
       }
     },
-    configuration: () => probeSecondBrainConfiguration(SECOND_BRAIN_CONFIG),
+    configuration: () => probeSecondBrainConfiguration(configuredEndpoint().config),
     run: commandResult,
     handshake: async () => {
-      const transport = createSecondBrainTransport({ safeReadRetries: 0 });
+      const endpoint = configuredEndpoint();
+      const transport = createSecondBrainTransport({
+        launcherPath: endpoint.launcher, configPath: endpoint.config, safeReadRetries: 0,
+      });
       let result: SecondBrainHandshakeResult;
       try {
         await transport.restart();

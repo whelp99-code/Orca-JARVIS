@@ -107,6 +107,38 @@ inside a protected deployed root is refused with `E_PROTECTED_ROOT`.
 
 Owner gate for real activation: `production-activation-gate`.
 
+## Publishing a verified package {#publish}
+
+`ops/authority/publish-package-release.sh` publishes the package it was given. It does not rebuild
+from a worktree, so the bytes that were verified are the bytes that get published:
+
+```sh
+ops/authority/publish-package-release.sh \
+  --package <verified-package-root> \
+  --receipt-sha256 <independently-pinned-64-hex> \
+  --release-root <root> \
+  --db <db-path> [--backup-root <root>] [--dashboard-url URL] [--activate]
+```
+
+In order it: checks the owner gate when `--activate` was asked for (before publishing anything, so
+a refused activation leaves nothing half-published); runs `scripts/verify-runtime-package.mjs`
+against the candidate and the independently kept receipt hash; exclusively creates
+`<release-root>/releases/<40-hex source head>/` and copies the payload there with files 0644 and
+directories 0755 under `umask 0022`, because the task verifier rejects any published file with
+`mode & 0o022`; runs `release gates` against `--db` using the *published* CLI; runs the existing DB
+backup path (the production backup path when `--db` is the production authority database, the
+isolated one otherwise); and only then writes `<release-root>/receipts/<40-hex>.json` recording the
+verification, gate report, backup result and published payload modes.
+
+`current` is moved only when `--activate` is given *and*
+`JARVIS_PRODUCTION_ACTIVATION_APPROVAL=approved` is present — a relative symlink replaced by an
+atomic rename. Without `--activate` the release is published, gated and backed up, and `current` is
+left exactly where it was. A failing gate, a mismatched pin, or an already-published release id all
+refuse without activating. The release root, its `releases/` and its `receipts/` are 0700.
+
+`ops/authority/publish-verified-release.sh` is the older worktree-rebuild script and is left
+untouched.
+
 ## Isolated complete runtime package
 
 From the development checkout, with an existing scratch parent and a populated npm
