@@ -6,17 +6,24 @@ import { DailyLoopError } from "../../src/daily-loop-types.js";
 import { DailyServiceCycles } from "../../src/daily-service-cycles.js";
 import { generateKeyPairSync } from "node:crypto";
 import { dirname, join, resolve } from "node:path";
-import { afterEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 import { execute } from "../../src/cli.js";
 import { AuthorityDb } from "../../src/db.js";
 import { todayProjection } from "../../src/dashboard/personal-today.js";
-import { CLI_AT, dailyProductionChild, prepareDailyProductionChain } from "../fixtures/daily-production-chain.js";
+import { ABSENT_PROVIDER_ROOTS, CLI_AT, dailyProductionChild,
+  prepareDailyProductionChain } from "../fixtures/daily-production-chain.js";
 import { closeMemoryDatabase, type MemoryDatabase } from "../fixtures/memory-candidate-store.js";
 import { tempDb } from "../helpers.js";
 
 const roots: string[] = [];
 const chains: MemoryDatabase[] = [];
+// The morning policy resolves the deployed endpoint from the configured provider roots, so an
+// in-process run says "no provider" by pointing those roots at an installation that does not exist.
+beforeEach(() => {
+  for (const [name, value] of Object.entries(ABSENT_PROVIDER_ROOTS)) vi.stubEnv(name, value);
+});
 afterEach(() => {
+  vi.unstubAllEnvs();
   for (const database of chains.splice(0)) closeMemoryDatabase(database);
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
 });

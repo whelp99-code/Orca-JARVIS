@@ -14,6 +14,7 @@ import {
 type Used = { items: number; work: number; bytes: number };
 type Cost = Readonly<Used>;
 const MAX_DATE = 8_640_000_000_000_000;
+export const errorCode = (error: unknown): unknown => error instanceof Error ? Reflect.get(error, "code") : undefined;
 
 export class DailyControlLoop {
 	private readonly options: DailyLoopOptions;
@@ -174,15 +175,25 @@ export class DailyControlLoop {
 	}
 	private processRun(runId: string, completed: string[]): void {
 		if (completed.includes(runId) || this.store.steps(runId).length === 0) return;
+		let claim: DailyLoopClaim | undefined;
 		try {
-			const claim = this.store.claim({
+			claim = this.store.claim({
 				run_id: runId, owner_id: this.options.owner_id, at: this.now(), lease_ms: this.options.lease_ms,
 			}, this.options.recovery_window_ms);
 			if (this.finish(claim)) completed.push(runId);
 		} catch (error) {
 			if (error instanceof DailyLoopError && (error.code === "DAILY_LOOP_LEASE_ACTIVE" || error.code === "DAILY_LOOP_TERMINAL")) return;
+			// A step executor that refuses with a code of its own - the evening publication's closeout
+			// errors are not daily-loop errors - would otherwise leave this run claimed, with a live
+			// lease and no failure code, so no later cycle could reach it and nothing on record said
+			// why. The run is failed under the claim still held here, and the refusal keeps travelling.
+			if (claim !== undefined) this.abandon(claim, error);
 			throw error;
 		}
+	}
+	private abandon(claim: DailyLoopClaim, error: unknown): void {
+		// A lease or a run that already moved on cannot be failed here; the refusal still reports it.
+		try { this.store.fail(claim, "EXECUTION_FAILED", this.now(), errorCode(error)); } catch { /* terminal */ }
 	}
 	private due(): readonly string[] {
 		const at = this.now();

@@ -28,6 +28,37 @@ const GENERATED_IDS: readonly GeneratedUnitId[] = [
 ];
 
 describe("personal-OS systemd renderer", () => {
+  // The daily loop is scheduled by the unit only when the deployment configured its inputs. The
+  // generator inventing those paths would turn a host that never provisioned them into a crash
+  // loop, because `service run` refuses one flag without the other.
+  it("renders the daily loop's inputs only once the deployment configures them", () => {
+    // Given
+    const configured = { ...SERVICE_ENVIRONMENT,
+      JARVIS_DAILY_SERVICE_CONFIG: "/var/lib/jarvis-svc/state/orca-jarvis/daily/service-config.json",
+      JARVIS_DAILY_CLOSEOUT_KEY: "/var/lib/jarvis-svc/state/orca-jarvis/daily/daily-closeout.key" };
+
+    // When
+    const off = renderSystemdUnit({ id: "jm-jarvis.service", mode: "production", roots: productionRoots({}) });
+    const on = renderSystemdUnit({ id: "jm-jarvis.service", mode: "production", roots: productionRoots(configured) });
+
+    // Then
+    // Silently off, and visibly so: the flags are simply absent from the invocation.
+    expect(off).toContain("dist/src/cli.js service run --db /home/jm/.local/state/orca-jarvis/jarvis.sqlite\n");
+    expect(off).not.toContain("--input");
+    expect(off).not.toContain("--key-file");
+    // Configured, and therefore load-bearing: the service fails closed on these inputs.
+    expect(on).toContain(
+      "dist/src/cli.js service run --db /var/lib/jarvis-svc/state/orca-jarvis/jarvis.sqlite"
+      + " --input /var/lib/jarvis-svc/state/orca-jarvis/daily/service-config.json"
+      + " --key-file /var/lib/jarvis-svc/state/orca-jarvis/daily/daily-closeout.key",
+    );
+    // Half a configuration is refused where the operator can read it, not by a restarting unit.
+    for (const half of [{ JARVIS_DAILY_SERVICE_CONFIG: "/var/lib/jarvis-svc/daily/service-config.json" },
+      { JARVIS_DAILY_CLOSEOUT_KEY: "/var/lib/jarvis-svc/daily/daily-closeout.key" }]) {
+      expect(() => productionRoots({ ...SERVICE_ENVIRONMENT, ...half })).toThrow("E_DEPLOYMENT_ROOT");
+    }
+  });
+
   it("renders production jm-jarvis.service onto authority/current with loopback hardening", () => {
     // Given / When
     const unit = renderSystemdUnit({ id: "jm-jarvis.service", mode: "production", roots: productionRoots({}) });

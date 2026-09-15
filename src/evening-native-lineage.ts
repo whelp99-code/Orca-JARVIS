@@ -10,7 +10,15 @@ type Row = Record<string, string | null>;
 const columns = "target_digest,keyed_subject_digest,source_identity_digest,content_identity_digest,citation_identity_digest,source_context_id";
 const dependency = (row: Row): MemoryProjectionDependency => Object.fromEntries(Object.entries(row).filter(([, value]) => value !== null));
 
-/** Requires recorded control-payload provenance; legacy untracked task sources stay unavailable. */
+/**
+ * Requires recorded control-payload provenance; legacy untracked task sources stay unavailable.
+ *
+ * A same-day completion with no recorded projection dependency is an input error and not an
+ * abstention: the closeout it would go into is the record of what may later be suppressed, and a
+ * publication naming work whose provenance this database cannot follow could never be withdrawn.
+ * Narrowing the configured `repository_identities` is how an operator publishes without it - an
+ * empty scope publishes an honest empty closeout - so nothing is lost by refusing here.
+ */
 export function nativeEveningDependencies(db: AuthorityDb, source: ReturnType<typeof readEveningNativeSource>) {
   const projections = new MemoryProjectionAuthority(db);
   const result = new Map<string, MemoryProjectionDependency>();

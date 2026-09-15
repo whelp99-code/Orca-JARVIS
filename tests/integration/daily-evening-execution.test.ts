@@ -53,9 +53,14 @@ it.each(["signer", "lease", "budget"] as const)("does not publish after %s failu
   else await expect(loop.startup()).rejects.toThrow();
   expect(db.db.prepare("SELECT COUNT(*) AS n FROM native_evening_publications").get()).toEqual({ n: 0 });
   expect(db.db.prepare("SELECT COUNT(*) AS n FROM daily_loop_steps WHERE state='completed'").get()).toEqual({ n: 0 });
-  const row = db.db.prepare("SELECT state,failure_code FROM daily_loop_runs WHERE loop_date=?").get(kstLocalDate(at));
-  expect(row).toEqual(mode === "budget" ? { state: "failed", failure_code: "BUDGET_BYTES_EXHAUSTED" }
-    : { state: "claimed", failure_code: null });
+  const row = db.db.prepare(`SELECT state,failure_code,lease_owner FROM daily_loop_runs WHERE loop_date=?`)
+    .get(kstLocalDate(at));
+  // A refusal under a lease the cycle still holds fails the run and releases the lease, so the next
+  // cycle can reach it. An expired lease is the one case the holder cannot terminate: that run stays
+  // claimed until the lease runs out, which is exactly what it is for.
+  expect(row).toEqual(mode === "budget" ? { state: "failed", failure_code: "BUDGET_BYTES_EXHAUSTED", lease_owner: null }
+    : mode === "signer" ? { state: "failed", failure_code: "EXECUTION_FAILED", lease_owner: null }
+    : { state: "claimed", failure_code: null, lease_owner: "evening-test" });
 });
 
 it("publishes a populated report only after recorded source provenance is available", async () => {

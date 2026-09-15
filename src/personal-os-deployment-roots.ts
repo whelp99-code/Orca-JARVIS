@@ -22,6 +22,18 @@ export const DEFAULT_DEPLOYMENT_ROOTS = {
   nodeBin: "/home/jm/.nvm/versions/node/v24.19.0/bin/node",
 } as const;
 
+/**
+ * The configured daily-loop inputs. They have no default: `service run` refuses one flag without
+ * the other (DAILY_LOOP_CONFIG_INVALID), so naming a path a deployment has not provisioned would
+ * turn Restart=always into a crash loop. Unset means the unit runs without the daily loop - and
+ * says so, because the flags are simply absent from the rendered ExecStart. Once named, the inputs
+ * are load-bearing and the service fails closed on them rather than skipping the loop in silence.
+ */
+export const DAILY_SERVICE_VARIABLES = {
+  dailyServiceConfig: "JARVIS_DAILY_SERVICE_CONFIG",
+  dailyServiceKey: "JARVIS_DAILY_CLOSEOUT_KEY",
+} as const;
+
 export const DEPLOYMENT_ROOT_VARIABLES = {
   stateRoot: "JARVIS_STATE_ROOT",
   providerStateRoot: "JARVIS_PROVIDER_STATE_ROOT",
@@ -56,6 +68,8 @@ export type DeploymentRoots = {
   readonly providerLauncher: string;
   readonly providerCli: string;
   readonly providerMarker: string;
+  readonly dailyServiceConfig: string | undefined;
+  readonly dailyServiceKey: string | undefined;
 };
 
 function configuredPath(name: string, fallback: string, environment: DeploymentEnvironment): string {
@@ -69,6 +83,12 @@ function configuredPath(name: string, fallback: string, environment: DeploymentE
     throw new PersonalOsError("E_DEPLOYMENT_ROOT");
   }
   return value;
+}
+
+/** A path the deployment may name and usually does not. Validated exactly like a configured root. */
+function optionalPath(name: string, environment: DeploymentEnvironment): string | undefined {
+  if (environment[name] === undefined) return undefined;
+  return configuredPath(name, "", environment);
 }
 
 function configuredServiceUser(environment: DeploymentEnvironment): string | undefined {
@@ -89,7 +109,16 @@ export function resolveDeploymentRoots(
   const providerConfig = configuredPath(DEPLOYMENT_ROOT_VARIABLES.providerConfig,
     DEFAULT_DEPLOYMENT_ROOTS.providerConfig, environment);
   const providerCurrent = `${providerStateRoot}/app/current`;
+  const dailyServiceConfig = optionalPath(DAILY_SERVICE_VARIABLES.dailyServiceConfig, environment);
+  const dailyServiceKey = optionalPath(DAILY_SERVICE_VARIABLES.dailyServiceKey, environment);
+  // `service run` takes both inputs or neither, so half a configuration is refused where the
+  // operator can still read the error, not by a unit that restarts forever.
+  if ((dailyServiceConfig === undefined) !== (dailyServiceKey === undefined)) {
+    throw new PersonalOsError("E_DEPLOYMENT_ROOT");
+  }
   return {
+    dailyServiceConfig,
+    dailyServiceKey,
     stateRoot,
     providerStateRoot,
     providerConfig,

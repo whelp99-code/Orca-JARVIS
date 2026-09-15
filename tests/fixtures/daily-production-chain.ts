@@ -7,7 +7,8 @@
 // from the same stored evidence rather than from three differently-shaped fixtures.
 import { spawnSync } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
-import { chmodSync, existsSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { expect } from "vitest";
 import { ControlPlane } from "../../src/control-plane.js";
@@ -53,12 +54,36 @@ export const BINARY = resolve(process.cwd(), "dist/src/cli.js");
 export const HARNESS = resolve(process.cwd(), "dist/tests/fixtures/compiled-daily-cli.js");
 export const PROVIDER_CHILD = resolve(process.cwd(), "tests/fixtures/second-brain-mcp-child.mjs");
 
+/**
+ * Where a test's deployment roots point when it names no provider of its own.
+ *
+ * The morning policy resolves the deployed endpoint from the configured provider roots when no
+ * launcher is named, exactly as every other consumer does, so "no provider" can no longer be said
+ * by leaving the environment empty: it is said by pointing those roots at an installation that does
+ * not exist. Nothing under this path is ever created, and the provider this host has installed is
+ * never the one a test reaches.
+ */
+export const ABSENT_PROVIDER_ROOTS = {
+  JARVIS_PROVIDER_STATE_ROOT: join(tmpdir(), "jarvis-absent-provider"),
+  JARVIS_PROVIDER_CONFIG: join(tmpdir(), "jarvis-absent-provider", "config.toml"),
+} as const;
+
+/** The fixture provider installed where unset deployment roots look for it. */
+export function installProviderUnderRoots(root: string, providerConfig: string) {
+  const stateRoot = join(root, "provider-root");
+  mkdirSync(join(stateRoot, "app", "current", "bin"), { recursive: true });
+  const launcher = join(stateRoot, "app", "current", "bin", "second-brain-mcp");
+  chmodSync(PROVIDER_CHILD, 0o755);
+  symlinkSync(PROVIDER_CHILD, launcher);
+  return { launcher, environment: { JARVIS_PROVIDER_STATE_ROOT: stateRoot, JARVIS_PROVIDER_CONFIG: providerConfig } };
+}
+
 export const dailyProductionChild = (args: readonly string[], environment: Readonly<Record<string, string>> = {}) => {
   const inherited = { ...process.env };
   delete inherited["JARVIS_SECOND_BRAIN_LAUNCHER"];
   delete inherited["JARVIS_SECOND_BRAIN_CONFIG"];
   const result = spawnSync(process.execPath, [...args],
-    { encoding: "utf8", env: { ...inherited, ...environment } });
+    { encoding: "utf8", env: { ...inherited, ...ABSENT_PROVIDER_ROOTS, ...environment } });
   return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
 };
 

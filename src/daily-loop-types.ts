@@ -126,7 +126,10 @@ export type DailyLoopFailureCode =
 	| "DEADLINE_EXHAUSTED"
 	| "BUDGET_ITEMS_EXHAUSTED"
 	| "BUDGET_WORK_EXHAUSTED"
-	| "BUDGET_BYTES_EXHAUSTED";
+	| "BUDGET_BYTES_EXHAUSTED"
+	// A phase executor refused or failed under a held claim. The refusal's own code is not a
+	// daily-loop failure code, so it travels with the throw and on the run's checkpoint detail.
+	| "EXECUTION_FAILED";
 export type DailyLoopAdvance = "step_completed" | "all_completed" | "failed";
 export interface DailyLoopStepExecutor {
   advance(claim: DailyLoopClaim): DailyLoopAdvance;
