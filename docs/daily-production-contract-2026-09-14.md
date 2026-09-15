@@ -133,6 +133,31 @@ recommendation id the run itself produced:
 the reader side, the two-step run contract, the fail-closed configuration path and the exclusions
 the brief applies to a recommendation already on record. Its header says so.
 
+## The packaged probe, and what stands in for it inside `verify`
+
+`scripts/packaged-production-chain-probe.mjs` cannot be part of `npm run verify`, and this is not a
+policy choice. Its first argument is a `PACKAGE_ROOT`: it reads
+`<root>/runtime-package-receipt.json` and imports every product module from `<root>/dist/src`, so
+nothing resolves into the development checkout. That root is produced by
+`npm run product:package-electron`, which runs `product:install-electron` and downloads and installs
+an Electron runtime. `verify` runs on a tree that has only been built, has no package root, and must
+not acquire a network install step - so the probe has no argument to be given. It is reachable by
+name instead:
+
+    npm run probe:packaged-production -- <PACKAGE_ROOT> [RECEIPT_PATH]
+
+The four branches it asserts - produced 1 row / unauthorized 0 / unconfirmed 0 / providerless 0,
+each through a real child process against a real stdio provider - are pinned inside `verify` by
+`tests/integration/daily-morning-production.test.ts`, whose five cases are the same four plus the
+same-morning rerun. That file runs the compiled `dist/src/cli.js` module graph in its own process
+through `tests/fixtures/compiled-daily-cli.ts`, and `verify` reaches it through `npm test` ->
+`node scripts/run-tests.mjs backend`, whose glob is `tests/**/*.test.ts`.
+
+What the in-repo regression does not cover, and the probe therefore still earns: that the *packaged*
+module graph - the one a user runs - resolves `better-sqlite3` and the product modules from the
+package rather than from the checkout. That is a packaging property, not a production-chain
+property, and `round2-probe.json` is where it is recorded.
+
 ## Closure, and what it reaches
 
 A memory is closed when the owner hides the task it was derived from, or takes that
