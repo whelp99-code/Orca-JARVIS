@@ -35,6 +35,13 @@
 > anchor 키에서 읽어오며, 해당 키가 없거나 폐기됐거나 purpose가 다르거나 Ed25519가
 > 아니면 기존 `TASK_CERTIFICATION_BINDING_INVALID`로 fail-closed 거절한다. 핀이 없을 땐
 > 요청된 키 자신이 anchor가 되고, 구조 검사는 그대로 적용된다.
+>
+> **핀을 강제하지 않는 경계(실제 시도 후 되돌림):** sealed DB에서 핀이 없으면
+> 거절하는 규칙을 구현해 실제로 실행해 보았다. `initialize()`는 항상 sealing하고
+> 기존 certification suite는 아무도 이 핀을 설정하지 않으므로, 78개 중 36개가 실패했다
+> (`f2-trial.log`). 핀을 모든 fixture에 주입하는 것은 이 범위 밖이라 되돌렸다.
+> 그러므로 지금은 sealed 여부를 보지 않는다: 핀이 없으면 상수 대신 요청된 키에서
+> principal을 얻고, 운영은 핀을 설정해야 한다.
 > `src/task-certification-proof.ts`·`src/task-independent-verifier.ts`·
 > `src/authority-verification-store.ts`의 `independent-verifier` 바인딩은 이 변경 범위 밖이다.
 
