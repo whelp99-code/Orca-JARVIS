@@ -73,14 +73,8 @@ const COMMAND_HANDLERS: readonly CliCommandHandler[] = [
   executeStateCommand,
 ];
 
-export async function execute(
-  args: string[],
-  dependencies: CliDependencies = {},
-): Promise<Record<string, unknown>> {
-  dependencies = {
-    ...dependencies,
-    memoryReferenceOptions: dependencies.memoryReferenceOptions ?? hostMemoryReferenceOptions(),
-  };
+export async function execute(args: string[], dependencies: CliDependencies = {}): Promise<Record<string, unknown>> {
+  dependencies = { ...dependencies, memoryReferenceOptions: dependencies.memoryReferenceOptions ?? hostMemoryReferenceOptions() };
   if (requestsHelp(args)) {
     console.log(CLI_HELP);
     return { ok: true, command: "help" };
