@@ -3,6 +3,7 @@ export const CLI_HELP =
   "JARVIS — agent-ops runtime\n"
   + "Commands: init, db migrate/rebuild-projections, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, "
   + "observe, pre-gjc, capabilities, team, portfolio, status, daily, routing, release, second-brain, deployment\n"
+  + "status --db PATH [--json]: print the authority status report; --json is accepted and changes nothing\n"
   + "deployment roots: report every configured production path and which of them are still under /home; opens no database\n"
   + "deployment render-units --out DIR: write the generated systemd units for the configured roots into DIR\n"
   + "second-brain readiness [--json] [--refresh-receipt PATH]: probe the configured Second Brain endpoint only; opens no authority database\n"
