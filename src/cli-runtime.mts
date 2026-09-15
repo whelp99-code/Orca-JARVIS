@@ -58,7 +58,9 @@ const CLI_HELP =
   + "memory reconcile-scoped <outbox-id> --once [--worker ID]: reconcile one spent request using host-authenticated scoped configuration\n"
   + "memory stage-dispatch <candidate-id>: stage an approved memory candidate for control approval\n"
   + "memory outbox --once [--limit N]: dispatch queued writes and reconcile their stored results\n"
-  + "memory outbox list [--limit N]: inspect bounded memory delivery state";
+  + "memory outbox list [--limit N]: inspect bounded memory delivery state\n"
+  + "memory withdrawals: list derived memories a hidden task still has stored with the provider\n"
+  + "memory withdraw-prepare <candidate-id>: resolve one stored copy and prepare the owner-approval withdrawal command";
 
 const COMMAND_HANDLERS: readonly CliCommandHandler[] = [
   executeLocalTimeline,
