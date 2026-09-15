@@ -56,13 +56,19 @@ recorded in the report as `phase`.
   unknown `--phase` value are both `RELEASE_GATE_INPUT_INVALID`.
 - A checksum mismatch or an applied migration the release does not ship fails in **both** phases:
   neither is a pending migration, and no receipt licenses them.
+- The `doctor` gate reads the same database through doctor's own checks, so pre-activation it would
+  otherwise repeat the accepted pending vector as two failures of its own. Against a migration-vector
+  gate the receipt accepted, those two findings are listed under `deferred_to_rehearsal` in the
+  doctor gate's `actual` and no longer fail it; every other doctor failure still fails, and
+  post-activation nothing is ever deferred. `doctor` itself is unchanged and stays strict for its
+  own callers — the phase lives in the gate.
 
 | Gate | Command | What fails it |
 | --- | --- | --- |
 | `migration-vector` | `release gates` | checksum-mismatched or unsupported applied migrations in either phase; pending migrations post-activation, or pre-activation without a matching rehearsal receipt |
 | `quick-check` | `release gates` | `PRAGMA quick_check` other than `ok` |
 | `foreign-key-check` | `db foreign-key-check --db PATH` | any `PRAGMA foreign_key_check` row |
-| `doctor` | `doctor --db PATH` | any failing doctor check |
+| `doctor` | `doctor --db PATH` | any failing doctor check, except that pre-activation, against an accepted rehearsal receipt, `database.migration_count` and `database.migration_checksums` findings explained by the pending-but-rehearsed migrations are reported as `deferred_to_rehearsal` instead |
 | `status` | `status --json --db PATH` | unacknowledged outbox entries |
 | `dashboard-health` | `release dashboard-health [--dashboard-url URL]` | non-200, malformed, oversize, timeout, or a body that is not `status=ok`/`authority=ready` |
 | `mcp-handshake` | `release mcp-handshake` | any refusal of the real stdio handshake, or a negotiated protocol other than the pinned one |
