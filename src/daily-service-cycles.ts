@@ -3,8 +3,9 @@ import { readEveningCliInputs } from "./cli-evening-inputs.js";
 import { createStoredMorningDailyLoop, type DailyProductionPolicy } from "./daily-loop-morning-execution.js";
 import { dailyProductionPolicy } from "./daily-production-policy.js";
 import { createStoredNativeEveningDailyLoop } from "./daily-loop-evening-execution.js";
-import type { DailyControlLoop } from "./daily-loop-service.js";
-import { DailyLoopError, type DailyLoopCycleResult } from "./daily-loop-types.js";
+import { errorCode, type DailyControlLoop } from "./daily-loop-service.js";
+import { failureDetail } from "./daily-loop-store-input.js";
+import type { DailyLoopCycleResult } from "./daily-loop-types.js";
 import { JarvisError, type AuthorityDb } from "./db.js";
 
 type Phase = "morning" | "evening";
@@ -54,8 +55,11 @@ export class DailyServiceCycles {
       // "processed" describes the cycle, not successful artifact publication.
       return { status: "processed", result };
     } catch (error) {
-      return { status: "error", code: error instanceof DailyLoopError || error instanceof JarvisError
-        ? error.code : "DAILY_LOOP_SERVICE_ERROR" };
+      // Every phase refuses with a code, and not every one of those codes belongs to a DailyLoopError
+      // or a JarvisError: the evening publication refuses with an EveningCloseoutError. Flattening
+      // them all to one opaque service error left the operator with no reason to read at all, so any
+      // bounded code an error carries is reported as the reason this phase did not run.
+      return { status: "error", code: failureDetail(errorCode(error), "DAILY_LOOP_SERVICE_ERROR") };
     }
   }
 }

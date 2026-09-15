@@ -231,10 +231,15 @@ export function parseFailure(value: unknown): DailyLoopFailureCode {
 		value !== "DEADLINE_EXHAUSTED" &&
 		value !== "BUDGET_ITEMS_EXHAUSTED" &&
 		value !== "BUDGET_WORK_EXHAUSTED" &&
-		value !== "BUDGET_BYTES_EXHAUSTED"
+		value !== "BUDGET_BYTES_EXHAUSTED" &&
+		value !== "EXECUTION_FAILED"
 	)
 		return invalid();
 	return value;
+}
+/** A refusing executor's own error code, kept verbatim when it is one and named plainly when not. */
+export function failureDetail(value: unknown, fallback: string): string {
+	return typeof value === "string" && /^[A-Z][A-Z0-9_]{2,63}$/.test(value) ? value : fallback;
 }
 export function parseUncertain(value: unknown): DailyLoopUncertainReason {
 	return parseDailyLoopUncertainReason(value);

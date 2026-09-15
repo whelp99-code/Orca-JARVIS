@@ -5,8 +5,8 @@ import { parseDailyLoopClaim, parseDailyLoopInstant, parseDailyLoopRunId } from 
 import { claimDailyLoop } from "./daily-loop-claim.js";
 import { DailyLoopReadStore } from "./daily-loop-read.js";
 import { assertDailyLoopIntegrity } from "./daily-loop-integrity.js";
-import { parseFailure, parseStoreCheckpoint, parseStoreCompleteStep, parseStorePrepare, parseUncertain, type ParsedPrepareRunInput }
-  from "./daily-loop-store-input.js";
+import { failureDetail, parseFailure, parseStoreCheckpoint, parseStoreCompleteStep, parseStorePrepare, parseUncertain,
+  type ParsedPrepareRunInput } from "./daily-loop-store-input.js";
 import { DailyLoopError, type DailyLoopClaim, type DailyLoopPhase, type DailyLoopStep } from "./daily-loop-types.js";
 import { bindDailyLoopProjection } from "./memory-projection-bindings.js";
 import { canonicalDailyLoopKey, legacyDailyLoopKey } from "./daily-loop-time.js";
@@ -200,17 +200,22 @@ export class DailyLoopStore {
       return true;
     });
   }
-  fail(claimValue: unknown, codeValue: unknown, atValue: unknown): void {
-    this.terminate(parseDailyLoopClaim(claimValue), "failed", parseFailure(codeValue), parseDailyLoopInstant(atValue));
+  fail(claimValue: unknown, codeValue: unknown, atValue: unknown, detailValue?: unknown): void {
+    const code = parseFailure(codeValue);
+    // The checkpoint carries the reason the caller actually has, which for an executor refusal is
+    // its own code rather than the daily-loop failure code the run column can hold.
+    const detail = failureDetail(detailValue, code);
+    this.terminate(parseDailyLoopClaim(claimValue), "failed", code, parseDailyLoopInstant(atValue), detail);
   }
   uncertain(claimValue: unknown, reasonValue: unknown, atValue: unknown): void {
     const claim = parseDailyLoopClaim(claimValue); const at = parseDailyLoopInstant(atValue);
     this.terminate(claim, "uncertain", parseUncertain(reasonValue), at);
   }
-  private terminate(claim: DailyLoopClaim, state: "failed" | "uncertain", reason: string, at: Date): void {
+  private terminate(claim: DailyLoopClaim, state: "failed" | "uncertain", reason: string, at: Date,
+    detail: string = reason): void {
     this.tx(claim.run_id, () => {
       this.current(claim, at, state === "failed");
-      this.appendInside({ claim, step_id: null, state, detail: reason, at });
+      this.appendInside({ claim, step_id: null, state, detail, at });
       this.authority.db.prepare(
         "UPDATE daily_loop_runs SET state=?,failure_code=?,lease_owner=NULL,lease_expires_at=NULL,updated_at=? " +
         "WHERE run_id=? AND lease_owner=? AND lease_fence=?",
