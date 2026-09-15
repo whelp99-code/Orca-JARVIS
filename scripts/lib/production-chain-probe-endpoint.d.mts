@@ -10,4 +10,9 @@ export function probeInstants(environment?: NodeJS.ProcessEnv): {
   shifted(value: string): string;
   shift(ms: number): string;
 };
+export const SHIPPED_PROBE_PAGE: string;
+export const SHIPPED_PROBE_SID: string;
+export function probeArtifactDestination(environment?: NodeJS.ProcessEnv): {
+  readonly page_id: string; readonly sid: string;
+};
 export function providerlessEnvironment(environment?: NodeJS.ProcessEnv): NodeJS.ProcessEnv;

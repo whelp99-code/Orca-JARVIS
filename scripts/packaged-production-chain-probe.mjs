@@ -14,6 +14,10 @@
 //     development-checkout fixture child, and the receipt records
 //     provider_endpoint.kind "installed_release". Either alone is ignored. The providerless arm
 //     stays providerless in every case.
+//   PROBE_PAGE, PROBE_SID
+//     The page and section the probe's own settled write is recorded against. Against an installed
+//     provider they must name a destination that provider serves a record on, because the reference
+//     seam admits a record only where this database can show a settled write of its own there.
 //   PROBE_AT, PROBE_MEMORY_AT
 //     Move the injected morning instant (and with it every other harness-supplied instant, by the
 //     same delta). A real provider answers on the real wall clock and refuses a read fence minted
@@ -35,7 +39,8 @@ import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createTestEnvironment } from "./lib/test-environment.mjs";
-import { probeInstants, probeProviderEndpoint, providerlessEnvironment } from "./lib/production-chain-probe-endpoint.mjs";
+import { probeArtifactDestination, probeInstants, probeProviderEndpoint,
+  providerlessEnvironment } from "./lib/production-chain-probe-endpoint.mjs";
 
 assert.ok(process.argv[2], "PACKAGE_ROOT required");
 const root = resolve(process.argv[2]);
@@ -51,10 +56,13 @@ const load = name => import(pathToFileURL(join(root, "dist/src", name)).href);
 const instants = probeInstants();
 const { AT, CLI_AT, MEMORY_AT, shifted } = instants;
 const ENDPOINT = probeProviderEndpoint();
+// The injected instant's own local time in the daily loop's zone (KST, a fixed +09:00 offset), so
+// the morning phase is scheduled for the instant the run is measured at.
+const MORNING_LOCAL_TIME = new Date(Date.parse(AT) + 32_400_000).toISOString().slice(11, 16);
+assert.notEqual(MORNING_LOCAL_TIME, "21:30", "the injected instant is the evening phase's own local time");
 const TASK = "task:packaged-production";
-const PAGE = "wiki/example-alpha";
-const SID = "12345678";
-const ARTIFACT_LINE = "ExampleAlpha.[^12345678]";
+const { page_id: PAGE, sid: SID } = probeArtifactDestination();
+const ARTIFACT_LINE = `ExampleAlpha.[^${SID}]`;
 const sha = value => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 const ARTIFACT_DIGEST = sha(ARTIFACT_LINE);
 const shift = instants.shift;
@@ -298,10 +306,17 @@ try {
       assert.equal(counts("personal_context_snapshots"), 0);
       assert.equal(counts("personal_observations"), 2);
 
+      // Daily configuration version 3 names the morning local time, so the run is due at the
+      // instant this probe injects instead of only at the shipped 07:15. With the frozen instant
+      // the value computes to exactly "07:15", so the shipped run is unchanged; with a real
+      // provider -- which only honours a read fence issued near the real clock -- it is what makes
+      // the produced arm runnable at all, and it moves the schedule, never the clock.
       const input = join(directory, "daily.json");
-      writeFileSync(input, JSON.stringify({ schema_version: 1, time_zone: "Asia/Seoul", lease_ms: 300000,
+      writeFileSync(input, JSON.stringify({ schema_version: 3, time_zone: "Asia/Seoul", lease_ms: 300000,
         deadline_ms: 600000, recovery_window_ms: 600000, recovery_lookback_days: 2,
-        refresh_freshness_ms: 600000, budgets: { max_items: 8, max_work: 8, max_bytes: 8192 } }));
+        refresh_freshness_ms: 600000, morning_local_time: MORNING_LOCAL_TIME,
+        refresh_receipt_path: join(directory, "second-brain-refresh-receipt.json"),
+        budgets: { max_items: 8, max_work: 8, max_bytes: 8192 } }));
       return { path: db.filename, input, endpoint };
     } finally { db.close(); }
   }
@@ -355,6 +370,8 @@ try {
       ? { kind: ENDPOINT.kind, launcher: ENDPOINT.launcher, config: ENDPOINT.config }
       : { kind: ENDPOINT.kind },
     injected_instants: { AT, CLI_AT, MEMORY_AT, shift_ms: instants.shift_ms },
+    daily_config: { schema_version: 3, time_zone: "Asia/Seoul", morning_local_time: MORNING_LOCAL_TIME },
+    artifact_destination: { page_id: PAGE, sid: SID },
     scope: "packaged runtime: local + live observation -> owner-confirmed memory -> provider read through the reference seam -> context -> recommendation -> morning brief, through the packaged daily command",
     package_root: root, source: receipt.source,
     runtime: { node: process.version, better_sqlite3_resolved_from: sqlite,
@@ -362,14 +379,18 @@ try {
     real: ["local timeline observation admitted through the product collection path",
       "live Linux observation normalised and persisted through the product producer",
       "memory classified, confirmed by an owner-signed receipt through the control plane, written and settled through the outbox saga",
-      "memory read back from a real stdio provider child and admitted only through the reference seam",
+      ...(ENDPOINT.kind === "installed_release"
+        ? ["memory read back from an installed provider release over its own stdio contract and admitted only through the reference seam"]
+        : ["memory read back from a real stdio provider child and admitted only through the reference seam"]),
       ...(ENDPOINT.kind === "installed_release"
         ? ["provider target identity resolved through the packaged effect service, signing read fences with the deployment's provisioned memory-effect key"]
         : ["provider target identity resolved through the packaged effect service"]),
       "owner workflow authorization staged and decided through the control plane",
       "production and publication run by the packaged daily morning command as a child process"],
     isolated_fixture: ["decision and verifier anchors generated for this run",
-      "a provider child from the development checkout serving one page, stating no trust and no evidence kind",
+      ...(ENDPOINT.kind === "installed_release"
+        ? ["an isolated installation of a real provider release, serving its own vault"]
+        : ["a provider child from the development checkout serving one page, stating no trust and no evidence kind"]),
       "the provider's write acceptance and artifact observation for the one settled write",
       `fixed instant ${AT} injected through the packaged test entry`,
       ...(ENDPOINT.kind === "installed_release" ? []

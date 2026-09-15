@@ -6,6 +6,11 @@
 //   JARVIS_SECOND_BRAIN_LAUNCHER + JARVIS_SECOND_BRAIN_CONFIG
 //     Both set: every provider-using arm talks to that installed provider instead of the fixture
 //     child. Either one alone is ignored, because half an endpoint is not an endpoint.
+//   PROBE_PAGE / PROBE_SID
+//     The page and section the run's own settled write landed on. The probe stages that write
+//     itself, so with the fixture child it picks the destination; against an installed provider the
+//     destination has to be one that provider actually serves, or the reference seam correctly
+//     refuses to rest on the record (no settled write of ours on that page and section).
 //   PROBE_AT / PROBE_MEMORY_AT
 //     A real provider answers on the real wall clock and refuses a read fence minted far from it,
 //     so the injected morning instant has to be movable. PROBE_AT moves it, and every other
@@ -57,6 +62,23 @@ export function probeInstants(environment = process.env) {
     shifted,
     shift: ms => new Date(instant(at) + ms).toISOString(),
   };
+}
+
+export const SHIPPED_PROBE_PAGE = "wiki/example-alpha";
+export const SHIPPED_PROBE_SID = "12345678";
+
+/**
+ * The destination the probe's own settled write is recorded against, and the one the provider must
+ * serve a record on for the reference seam to admit it.
+ */
+export function probeArtifactDestination(environment = process.env) {
+  const page = environment.PROBE_PAGE ?? SHIPPED_PROBE_PAGE;
+  const sid = environment.PROBE_SID ?? SHIPPED_PROBE_SID;
+  if (typeof page !== "string" || !/^[a-z0-9][a-z0-9/_-]{0,127}$/.test(page)) {
+    throw new Error(`PROBE_PAGE_INVALID: ${page}`);
+  }
+  if (typeof sid !== "string" || !/^[0-9a-f]{8}$/.test(sid)) throw new Error(`PROBE_SID_INVALID: ${sid}`);
+  return { page_id: page, sid };
 }
 
 /** A copy of `environment` that names no provider, whatever the caller's shell exported. */

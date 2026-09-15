@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { SHIPPED_PROBE_AT, SHIPPED_PROBE_MEMORY_AT, probeInstants, probeProviderEndpoint,
+import { SHIPPED_PROBE_AT, SHIPPED_PROBE_MEMORY_AT, SHIPPED_PROBE_PAGE, SHIPPED_PROBE_SID,
+  probeArtifactDestination, probeInstants, probeProviderEndpoint,
   providerlessEnvironment } from "../../scripts/lib/production-chain-probe-endpoint.mjs";
 
 const PROBE = "scripts/packaged-production-chain-probe.mjs";
@@ -56,6 +57,29 @@ describe("packaged production chain probe instants", () => {
   });
 });
 
+describe("packaged production chain probe artifact destination", () => {
+  it("keeps the shipped page and section when nothing is injected", () => {
+    expect(probeArtifactDestination({}))
+      .toEqual({ page_id: SHIPPED_PROBE_PAGE, sid: SHIPPED_PROBE_SID });
+  });
+  it("takes the destination an installed provider actually serves", () => {
+    expect(probeArtifactDestination({ PROBE_PAGE: "wiki/next-steps", PROBE_SID: "321be1e0" }))
+      .toEqual({ page_id: "wiki/next-steps", sid: "321be1e0" });
+  });
+  it.each([
+    ["a page id with a traversal", { PROBE_PAGE: "../etc/passwd" }],
+    ["an empty page id", { PROBE_PAGE: "" }],
+  ])("refuses an unusable page id (%s)", (_name, environment) => {
+    expect(() => probeArtifactDestination(environment)).toThrow("PROBE_PAGE_INVALID");
+  });
+  it.each([
+    ["a section that is not 8 hex digits", { PROBE_SID: "12345" }],
+    ["a section with upper case", { PROBE_SID: "ABCDEF01" }],
+  ])("refuses an unusable section (%s)", (_name, environment) => {
+    expect(() => probeArtifactDestination(environment)).toThrow("PROBE_SID_INVALID");
+  });
+});
+
 describe("the shipped probe script", () => {
   const source = readFileSync(PROBE, "utf8");
   it("selects its endpoint and instants through the shared module", () => {
@@ -65,6 +89,11 @@ describe("the shipped probe script", () => {
   it("no longer hard-codes the frozen instants or generates an endpoint inline", () => {
     expect(source).not.toContain(`const AT = "${SHIPPED_PROBE_AT}"`);
     expect(source).not.toContain(`const MEMORY_AT = "${SHIPPED_PROBE_MEMORY_AT}"`);
+    expect(source).not.toContain(`const PAGE = "${SHIPPED_PROBE_PAGE}"`);
+  });
+  it("writes a daily configuration that names the morning local time", () => {
+    expect(source).toContain("schema_version: 3");
+    expect(source).toContain("morning_local_time: MORNING_LOCAL_TIME");
   });
   it("documents the environment it honours in its header", () => {
     const header = source.slice(0, source.indexOf("import "));
