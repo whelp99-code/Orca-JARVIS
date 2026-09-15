@@ -8,7 +8,6 @@ import {
   mkdirSync,
   readFileSync,
   realpathSync,
-  renameSync,
   rmSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";

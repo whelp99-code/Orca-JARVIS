@@ -97,7 +97,7 @@ describe("gjc.dispatch assemble envelope", () => {
   });
 
   it("does not send when production read_fence_config is unavailable", async () => {
-    const { database, db, source, config, provider } = await gjcProduct();
+    const { database, db, source } = await gjcProduct();
     const transport = new RecordingModelTransport();
     await expect(executeGjcCommand({
       args: [], values: {}, positionals: [], command: "gjc", subcommand: "dispatch",
@@ -795,6 +795,7 @@ function digestText(value: string): string {
 }
 
 function sameContentRecord(sid: string) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-sibling omission of the identity fields
   const { record_id: _id, record_digest: _digest, ...core } = REFERENCE_RECORD;
   const next = { ...core, sid };
   const recordDigest = digestText(`second-brain/memory-record/v1\0${canonicalize(next)}`);
@@ -802,6 +803,7 @@ function sameContentRecord(sid: string) {
 }
 
 function sameSourceRecord(text: string, sid: string) {
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars -- rest-sibling omission of the identity fields
   const { record_id: _id, record_digest: _digest, ...core } = REFERENCE_RECORD;
   const next = {
     ...core,
