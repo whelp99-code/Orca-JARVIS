@@ -1,7 +1,7 @@
-import { createHash, createPrivateKey, createPublicKey, type KeyObject } from "node:crypto";
-import { closeSync, constants, fstatSync, openSync, readSync } from "node:fs";
+import { createHash, createPublicKey, type KeyObject } from "node:crypto";
 import { isAbsolute } from "node:path";
 import { JarvisError, type AuthorityDb } from "./db.js";
+import { readEd25519PrivateKeyFile } from "./memory-signing-key-file.js";
 import { memoryReadHighWater, signMemoryReadFence } from "./memory-read-fence.js";
 import type { MemoryReadFenceV1 } from "./second-brain-effect-v2.js";
 import type { SecondBrainAdapterOptions } from "./second-brain-adapter-types.js";
@@ -24,20 +24,8 @@ function configuration(explicit?: MemoryReadFenceProductionConfig): MemoryReadFe
     || typeof values.private_key_path !== "string" || !isAbsolute(values.private_key_path)) return invalid();
   return values as MemoryReadFenceProductionConfig;
 }
-function privateKey(path: string) {
-  let fd: number | undefined; const bytes = Buffer.alloc(16_385);
-  try { try {
-    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-    const stat = fstatSync(fd);
-    if (!stat.isFile() || stat.nlink !== 1 || (stat.mode & 0o077) !== 0
-      || (process.getuid !== undefined && stat.uid !== process.getuid()) || stat.size < 1 || stat.size > 16_384) return invalid();
-    const length = readSync(fd, bytes, 0, bytes.length, 0);
-    if (length !== stat.size) return invalid();
-    const key = createPrivateKey(bytes.subarray(0, length));
-    if (key.asymmetricKeyType !== "ed25519") return invalid();
-    return key;
-  } finally { bytes.fill(0); if (fd !== undefined) closeSync(fd); }
-  } catch { return invalid(); }
+function privateKey(path: string): KeyObject {
+  return readEd25519PrivateKeyFile(path) ?? invalid();
 }
 
 /** Reads existing configuration and authority only. Never generates or registers keys,

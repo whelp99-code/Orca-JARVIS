@@ -2,6 +2,7 @@ import { canonicalize } from "./canonical.js";
 import { MemoryReferenceDeliveries, type MemoryReferenceSession } from "./memory-reference-deliveries.js";
 import { JarvisError, type AuthorityDb } from "./db.js";
 import { memoryReadPrivacyState, isMemoryReadSuppressed, type MemoryMembership } from "./memory-read-privacy.js";
+import { normalizeMemoryLexicalQuery } from "./memory-reference-query.js";
 import { prepareMemoryReference, MemoryReferenceError, type MemoryReferenceBudgets, type PreparedMemoryReference } from "./memory-reference-context.js";
 import type { SecondBrainReadAdapter, SecondBrainGenerationBinding } from "./second-brain-adapter-types.js";
 import type { SecondBrainOutcome } from "./second-brain-transport.js";
@@ -152,7 +153,9 @@ export class MemoryReferenceReader {
         vault_head: String(before.value["vault_head"]), vault_tree: String(before.value["vault_tree"]),
         tombstone_sequence: initial.tombstone_sequence, tombstone_set_root: initial.tombstone_set_root,
       };
-      outcome = await adapter.search(query);
+      // The provider matches every term literally, so the question's punctuation is dropped before
+      // it becomes a search. The reference below is still prepared over the query as asked.
+      outcome = await adapter.search(normalizeMemoryLexicalQuery(query));
       if (outcome.kind !== "current" && outcome.kind !== "no_data") {
         throw new JarvisError("MEMORY_REFERENCE_PROVIDER_UNAVAILABLE");
       }

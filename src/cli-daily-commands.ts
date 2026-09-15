@@ -5,6 +5,7 @@ import { constants, readFileSync } from "node:fs";
 import { open } from "node:fs/promises";
 import { commandNow, type CliCommandContext } from "./cli-command-context.js";
 import { DailyLoopError, type DailyLoopConfig } from "./daily-loop-types.js";
+import { parseDailyLoopMorningLocalTime } from "./daily-loop-input.js";
 import { createStoredMorningDailyLoop, type DailyProductionPolicy } from "./daily-loop-morning-execution.js";
 import { dailyLoopUsage, parseRefreshContextDetail } from "./daily-loop-usage.js";
 import { kstLocalDate } from "./daily-loop-time.js";
@@ -21,11 +22,12 @@ import { createProductionMemoryReference } from "./memory-reference-production.j
 
 const CONFIG_KEYS = ["schema_version", "time_zone", "lease_ms", "deadline_ms", "recovery_window_ms",
   "recovery_lookback_days", "refresh_freshness_ms", "budgets"];
-// Version 2 adds exactly one field. Version 1 keeps its own closed record, so a configuration that
-// never mentioned a provider receipt cannot acquire one by accident.
+// Each version adds exactly one field and keeps its own closed record, so a configuration that
+// never mentioned a provider receipt or a morning time cannot acquire one by accident.
 const CONFIG_SHAPES: Readonly<Record<number, string>> = {
   1: [...CONFIG_KEYS].sort().join(","),
   2: [...CONFIG_KEYS, "refresh_receipt_path"].sort().join(","),
+  3: [...CONFIG_KEYS, "refresh_receipt_path", "morning_local_time"].sort().join(","),
 };
 
 async function readConfig(path: string): Promise<{ daily: Omit<DailyLoopConfig, "owner_id">;
@@ -46,17 +48,20 @@ async function readConfig(path: string): Promise<{ daily: Omit<DailyLoopConfig, 
     const row = value as Record<string, unknown>;
     const { trusted_closeout_key: key, ...base } = row;
     const version = base["schema_version"];
-    if (version !== 1 && version !== 2) throw new Error("CONFIG_INVALID");
+    if (version !== 1 && version !== 2 && version !== 3) throw new Error("CONFIG_INVALID");
     if (Object.keys(base).sort().join(",") !== CONFIG_SHAPES[version]) throw new Error("CONFIG_INVALID");
     const closeoutKey = key === undefined ? undefined : parseTrustedCloseoutKey(key);
     const receiptPath = base["refresh_receipt_path"];
-    if (version === 2 && (typeof receiptPath !== "string" || !receiptPath.startsWith("/")
+    if (version >= 2 && (typeof receiptPath !== "string" || !receiptPath.startsWith("/")
       || receiptPath.length > 512 || receiptPath.includes("\0"))) throw new Error("CONFIG_INVALID");
+    // The schedule is validated here as well as by the loop, so a malformed time is a configuration
+    // error on this surface rather than a run that prepares nothing for an unexplained reason.
+    if (version === 3) parseDailyLoopMorningLocalTime(base["morning_local_time"]);
     const config = Object.fromEntries(Object.entries(base)
       .filter(([name]) => name !== "schema_version" && name !== "refresh_receipt_path"));
     // Factory validates before preparing runs.
     return { daily: config as Omit<DailyLoopConfig, "owner_id">, closeoutKey,
-      ...(version === 2 ? { refreshReceiptPath: String(receiptPath) } : {}) };
+      ...(version >= 2 ? { refreshReceiptPath: String(receiptPath) } : {}) };
   } catch { throw new JarvisError("DAILY_LOOP_CONFIG_INVALID"); }
 }
 

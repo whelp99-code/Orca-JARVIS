@@ -50,7 +50,7 @@ export type SecondBrainHandshakeResult =
   | { readonly kind: SecondBrainProbeFailure };
 export interface SecondBrainReadinessRunner {
   executable(): Promise<"available" | "missing" | "unavailable">;
-  configuration(): Promise<"valid" | "missing" | "malformed" | "unavailable">;
+  configuration(): Promise<SecondBrainReadinessObservation["configuration"]>;
   run(command: "status" | "doctor"): Promise<SecondBrainCommandResult>;
   handshake(): Promise<SecondBrainHandshakeResult>;
 }

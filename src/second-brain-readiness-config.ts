@@ -8,7 +8,7 @@ import {
 export const SECOND_BRAIN_CONFIG_MAX_BYTES = 65_536;
 const OPEN_FLAGS = constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK;
 
-export type SecondBrainConfigurationOutcome = "valid" | "missing" | "malformed" | "unavailable";
+export type SecondBrainConfigurationOutcome = "valid" | "missing" | "malformed" | "result_key_missing" | "unavailable";
 
 type ConfigurationMetadata = {
   readonly size: number;

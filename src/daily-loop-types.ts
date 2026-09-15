@@ -6,8 +6,18 @@ export type DailyLoopBudgets = {
 	readonly max_work: number;
 	readonly max_bytes: number;
 };
+/** The local time the morning phase is scheduled for, unless a configuration names another. */
+export const DAILY_LOOP_DEFAULT_MORNING_LOCAL_TIME = "07:15" as const;
+/** The evening phase's local time, which the morning phase may not be moved onto. */
+export const DAILY_LOOP_EVENING_LOCAL_TIME = "21:30" as const;
 export type DailyLoopConfig = {
 	readonly time_zone: "Asia/Seoul";
+	/**
+	 * Local HH:MM the morning phase is due at. Absent means the default above, so a deployment that
+	 * never named a time keeps the schedule it always had. This is configuration, not a clock
+	 * override: the instant a run is measured against is still the real one the caller supplies.
+	 */
+	readonly morning_local_time?: string;
 	readonly owner_id: string;
 	readonly lease_ms: number;
 	readonly deadline_ms: number;

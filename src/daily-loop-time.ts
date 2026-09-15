@@ -1,5 +1,6 @@
 import { createHash } from "node:crypto";
 import {
+	dailyLoopLocalTimeParts,
 	parseDailyLoopDate,
 	parseDailyLoopEvent,
 	parseDailyLoopFreshness,
@@ -64,13 +65,15 @@ export function canonicalDailyLoopKey(dateValue: unknown, phaseValue: unknown, e
     .update(JSON.stringify(parseDailyLoopIdentity(eventIdentity)), "utf8").digest("hex");
   return `daily:${parseDailyLoopDate(dateValue)}:in_day:event:v2:${hash}`;
 }
-export function classifyDailyLoopInstant(instantValue: unknown, inputValue: unknown): DailyLoopCalendarDecision {
+/** `morningLocalTime` is the configured local HH:MM; absent means the shipped morning time. */
+export function classifyDailyLoopInstant(instantValue: unknown, inputValue: unknown, morningLocalTime?: unknown): DailyLoopCalendarDecision {
 	const instant = parseDailyLoopInstant(instantValue);
 	const input = parseDailyLoopEvent(inputValue);
+	const morning = dailyLoopLocalTimeParts(morningLocalTime);
 	const eventInstant = input.kind === "event" ? new Date(input.occurred_at) : instant;
 	const local = localParts(eventInstant);
 	if (input.kind === "scheduled") {
-		if (local.hour === 7 && local.minute === 15 && local.second === 0 && local.millisecond === 0)
+		if (local.hour === morning.hour && local.minute === morning.minute && local.second === 0 && local.millisecond === 0)
 			return {
 				kind: "due",
 				local_date: local.date,

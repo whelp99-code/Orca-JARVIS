@@ -35,7 +35,7 @@ export class DailyControlLoop {
 	prepare(inputValue: unknown): DailyLoopPreparation {
 		const input = parseDailyLoopEvent(inputValue);
 		const now = this.now();
-		const decision = classifyDailyLoopInstant(now, input);
+		const decision = classifyDailyLoopInstant(now, input, this.options.morning_local_time);
 		if (decision.kind === "not_due") return decision;
 		if (decision.kind === "deferred") {
 			if (input.kind !== "event") throw new DailyLoopError("DAILY_LOOP_EVENT_INVALID");
@@ -191,7 +191,7 @@ export class DailyControlLoop {
 	async cycle(): Promise<DailyLoopCycleResult> {
 		const now = this.now();
 		const completed: string[] = [];
-		const scheduled = classifyDailyLoopInstant(now, { kind: "scheduled" });
+		const scheduled = classifyDailyLoopInstant(now, { kind: "scheduled" }, this.options.morning_local_time);
 		const prepared: DailyLoopPreparation[] = this.observedAt === null ? [] : this.recover(now, this.observedAt).prepared;
 		if (scheduled.kind !== "due" || (this.executionPhase !== undefined && scheduled.phase !== this.executionPhase)) {
 			prepared.unshift({ kind: "not_due" });
@@ -210,7 +210,7 @@ export class DailyControlLoop {
 		if (this.observedAt === null || at > this.observedAt) this.observedAt = at;
 	}
 	private recover(now: Date, after: Date | null) {
-		const { from, through, schedules } = dailyLoopSchedules(now, this.options.recovery_lookback_days, after);
+		const { from, through, schedules } = dailyLoopSchedules(now, this.options.recovery_lookback_days, after, this.options.morning_local_time);
 		const prepared: DailyLoopPreparation[] = [];
 		for (const due of schedules) {
 			if (this.executionPhase !== undefined && due.phase !== this.executionPhase) continue;

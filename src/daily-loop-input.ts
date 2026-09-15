@@ -1,4 +1,6 @@
 import {
+	DAILY_LOOP_DEFAULT_MORNING_LOCAL_TIME,
+	DAILY_LOOP_EVENING_LOCAL_TIME,
 	DailyLoopError,
 	type DailyLoopClaim,
 	type DailyLoopBudgets,
@@ -16,17 +18,27 @@ const fail = (code: ConstructorParameters<typeof DailyLoopError>[0]): never => {
 	throw new DailyLoopError(code);
 };
 
-function closedRecord(value: unknown, keys: readonly string[], code: ConstructorParameters<typeof DailyLoopError>[0]): Record<string, unknown> {
+/**
+ * A record with exactly `keys`, plus any of `optional`. Every required key must be present, no
+ * unknown key is tolerated, and an absent optional key reads as undefined.
+ */
+function closedRecord(
+	value: unknown,
+	keys: readonly string[],
+	code: ConstructorParameters<typeof DailyLoopError>[0],
+	optional: readonly string[] = [],
+): Record<string, unknown> {
 	try {
 		if (typeof value !== "object" || value === null || Array.isArray(value) || Object.getPrototypeOf(value) !== Object.prototype) return fail(code);
 		const actual = Reflect.ownKeys(value);
-		if (actual.length !== keys.length || actual.some((key) => typeof key !== "string" || !keys.includes(key))) return fail(code);
+		if (actual.some((key) => typeof key !== "string" || (!keys.includes(key) && !optional.includes(key)))) return fail(code);
+		if (keys.some((key) => !actual.includes(key))) return fail(code);
 		for (const key of actual) {
 			const descriptor = Object.getOwnPropertyDescriptor(value, key);
 			if (descriptor === undefined || descriptor.get !== undefined || descriptor.set !== undefined || !descriptor.enumerable || !("value" in descriptor))
 				return fail(code);
 		}
-		return Object.fromEntries(keys.map((key) => [key, Object.getOwnPropertyDescriptor(value, key)?.value]));
+		return Object.fromEntries([...keys, ...optional].map((key) => [key, Object.getOwnPropertyDescriptor(value, key)?.value]));
 	} catch (error) {
 		// no-excuse-ok: catch -- hostile proxy boundary
 		if (error instanceof DailyLoopError) throw error;
@@ -63,6 +75,23 @@ function text(value: unknown, maximum: number, code: ConstructorParameters<typeo
 		if (point === undefined || point < 32 || point === 127) return fail(code);
 	}
 	return value;
+}
+
+/**
+ * One local HH:MM a phase may be scheduled at. Absent means the shipped morning time; the evening
+ * time is refused so a configuration can never make one instant due as two phases.
+ */
+export function parseDailyLoopMorningLocalTime(value: unknown): string {
+	if (value === undefined) return DAILY_LOOP_DEFAULT_MORNING_LOCAL_TIME;
+	if (typeof value !== "string" || !/^([01][0-9]|2[0-3]):[0-5][0-9]$/.test(value) || value === DAILY_LOOP_EVENING_LOCAL_TIME) {
+		return fail("DAILY_LOOP_CONFIG_INVALID");
+	}
+	return value;
+}
+/** The same time as the hour and minute a calendar compares against. */
+export function dailyLoopLocalTimeParts(value: unknown): { readonly hour: number; readonly minute: number } {
+	const [hour, minute] = parseDailyLoopMorningLocalTime(value).split(":");
+	return { hour: Number(hour), minute: Number(minute) };
 }
 
 export function parseDailyLoopPhase(value: unknown): DailyLoopPhase {
@@ -222,6 +251,7 @@ export function parseDailyLoopOptions(value: unknown): DailyLoopOptions & { read
 			"refresh_reader",
 		],
 		"DAILY_LOOP_CONFIG_INVALID",
+		["morning_local_time"],
 	);
 	const budgets = parseDailyLoopBudgets(input["budgets"]);
 	const source = closedRecord(input["event_source"], ["drain"], "DAILY_LOOP_CONFIG_INVALID");
@@ -242,6 +272,7 @@ export function parseDailyLoopOptions(value: unknown): DailyLoopOptions & { read
 	if (lookback < Math.ceil(recoveryWindow / 86_400_000) + 1) return fail("DAILY_LOOP_CONFIG_INVALID");
 	return Object.freeze({
 		time_zone: "Asia/Seoul",
+		morning_local_time: parseDailyLoopMorningLocalTime(input["morning_local_time"]),
 		owner_id: text(input["owner_id"], 128, "DAILY_LOOP_CONFIG_INVALID"),
 		lease_ms: integer(input["lease_ms"], 1, 900_000, "DAILY_LOOP_CONFIG_INVALID"),
 		deadline_ms: integer(input["deadline_ms"], 0, 86_400_000, "DAILY_LOOP_CONFIG_INVALID"),

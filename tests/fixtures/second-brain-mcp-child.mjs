@@ -83,18 +83,30 @@ if (Array.isArray(config.schema4Pages)) {
         row.source_seed ?? row.sid, row)) };
   }
 }
-const schema4SearchRows = () => Object.entries(SCHEMA4_PAGES).flatMap(([pageId, page], pageIndex) =>
-  page.records.map((record, index) => ({
-    page_id: pageId, section: "Record", snippet: record.record_text.slice(0, 64),
-    score: 10 - pageIndex - index, record_id: record.record_id, record_digest: record.record_digest,
-  })));
+// The provider's lexical query contract, for a run that asked for it with schema4LexicalQuery.
+// Terms are whitespace-separated and every one of them must appear in the record text, compared
+// with whitespace removed and case folded -- so punctuation on a term is matched literally.
+const lexicalCompact = text => [...String(text).toLowerCase()].filter(char => !/\s/u.test(char)).join("");
+const lexicalMatch = (query, text) => {
+  const terms = String(query ?? "").split(/\s+/u).filter(Boolean);
+  const compact = lexicalCompact(text);
+  return terms.length > 0 && terms.every(term => compact.includes(lexicalCompact(term)));
+};
+const schema4SearchRows = args => Object.entries(SCHEMA4_PAGES).flatMap(([pageId, page], pageIndex) =>
+  page.records
+    .filter(record => config.schema4LexicalQuery !== true || lexicalMatch(args?.query, record.record_text))
+    .map((record, index) => ({
+      page_id: pageId, section: "Record", snippet: record.record_text.slice(0, 64),
+      score: 10 - pageIndex - index, record_id: record.record_id, record_digest: record.record_digest,
+    })));
+
 const schema4Response = (name, args) => {
   // The provider's own account of which generation it is serving. A reader compares this with the
   // generation carried by every record it received, so both come from the one constant here.
   if (name === "sb_generation_status") {
     return { schema_version: 1, pointer_health: "healthy", journal_health: "healthy", ...SCHEMA4_GENERATION };
   }
-  if (name === "sb_search") return { ...SCHEMA4_GENERATION, results: schema4SearchRows() };
+  if (name === "sb_search") return { ...SCHEMA4_GENERATION, results: schema4SearchRows(args) };
   // The target identity behind one record, which is what a consumer needs before anything may rest
   // on it. Every field is computed here from the record itself, and the digest binds all of them.
   if (name === "sb_resolve_memory_target") {
