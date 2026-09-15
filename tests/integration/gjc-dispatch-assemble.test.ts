@@ -644,32 +644,34 @@ describe("gjc.dispatch assemble envelope", () => {
     expect(result).toMatchObject({ ok: true, command: "gjc.dispatch" });
     expect(transport.sent).toHaveLength(1);
     const request = transport.sent[0]?.request;
-    expect(request?.memories.map(item => item.memory_ref).sort()).toEqual(["12345678", "87654321"]);
+    expect(request?.memories.map(item => item.memory_ref).sort()).toEqual(refsOf([REFERENCE_RECORD, second]));
     expect(new Set(request?.memories.map(item => item.source_id)).size).toBe(2);
     closeMemoryDatabase(database);
   });
 
   it("binds distinct records that share body and source to different evidence", async () => {
     const { database, db, source, config, provider } = await gjcProduct();
-    useRecords(provider, [REFERENCE_RECORD, sameContentRecord("87654321")]);
+    const twin = sameContentRecord("87654321");
+    useRecords(provider, [REFERENCE_RECORD, twin]);
     const transport = new RecordingModelTransport();
     const result = await executeGjcCommand(readerDispatch(db, source, config, provider, transport, "same-content"));
     expect(result).toMatchObject({ ok: true, command: "gjc.dispatch" });
-    expect(transport.sent[0]?.request.memories.map(item => item.memory_ref).sort()).toEqual(["12345678", "87654321"]);
+    expect(transport.sent[0]?.request.memories.map(item => item.memory_ref).sort()).toEqual(refsOf([REFERENCE_RECORD, twin]));
     const bindings = db.db.prepare("SELECT memory_ref, evidence_id FROM personal_context_memory_evidence").all() as Array<{ memory_ref: string; evidence_id: string }>;
-    expect(bindings.map(row => row.memory_ref).sort()).toEqual(["12345678", "87654321"]);
+    expect(bindings.map(row => row.memory_ref).sort()).toEqual(refsOf([REFERENCE_RECORD, twin]));
     expect(new Set(bindings.map(row => row.evidence_id)).size).toBe(2);
     closeMemoryDatabase(database);
   });
 
   it("keeps same-source different-body records on separate lineages", async () => {
     const { database, db, source, config, provider } = await gjcProduct();
-    useRecords(provider, [REFERENCE_RECORD, sameSourceRecord("Other body from the same source", "87654321")]);
+    const other = sameSourceRecord("Other body from the same source", "87654321");
+    useRecords(provider, [REFERENCE_RECORD, other]);
     const transport = new RecordingModelTransport();
     const result = await executeGjcCommand(readerDispatch(db, source, config, provider, transport, "same-source"));
     expect(result).toMatchObject({ ok: true });
     const memories = transport.sent[0]?.request.memories ?? [];
-    expect(memories.map(item => item.memory_ref).sort()).toEqual(["12345678", "87654321"]);
+    expect(memories.map(item => item.memory_ref).sort()).toEqual(refsOf([REFERENCE_RECORD, other]));
     expect(new Set(memories.map(item => item.version)).size).toBe(2);
     expect(new Set(memories.map(item => item.source_id)).size).toBe(1);
     closeMemoryDatabase(database);
@@ -726,7 +728,7 @@ describe("gjc.dispatch assemble envelope", () => {
     ).get() as { memory_count: number; evidence_count: number } | undefined;
     const bindings = db.db.prepare("SELECT memory_ref FROM personal_context_memory_evidence").all() as Array<{ memory_ref: string }>;
     expect(snapshot?.memory_count).toBe(2);
-    expect(bindings.map(row => row.memory_ref).sort()).toEqual(["12345678", "87654321"]);
+    expect(bindings.map(row => row.memory_ref).sort()).toEqual(refsOf([REFERENCE_RECORD, second]));
     expect(db.lastAssembledModelCapture()?.request.memories).toEqual(transport.sent[0]?.request.memories);
     expect(db.lastAssembledModelCapture()?.no_data).toBe(false);
     closeMemoryDatabase(database);
@@ -818,6 +820,9 @@ function sameSourceRecord(text: string, sid: string) {
   return { ...next, record_id: `sbrecord:v1:${recordDigest.slice(7)}`, record_digest: recordDigest };
 }
 
+function refsOf(records: ReadonlyArray<typeof REFERENCE_RECORD>): readonly string[] {
+  return records.map(record => record.record_id).sort();
+}
 function boundRecord(text: string, sid: string) {
   const core = {
     schema_version: REFERENCE_RECORD.schema_version,
