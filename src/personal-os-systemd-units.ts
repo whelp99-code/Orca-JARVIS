@@ -30,6 +30,12 @@ function executablePath(roots: RenderRoots): string {
     : `${dirname(roots.nodeBin)}:/usr/bin:/bin`;
 }
 
+/** The daily loop's flags, or nothing at all when the deployment configured no inputs for it. */
+function dailyInputs(roots: RenderRoots): string {
+  return roots.dailyServiceConfig === undefined || roots.dailyServiceKey === undefined ? ""
+    : ` --input ${roots.dailyServiceConfig} --key-file ${roots.dailyServiceKey}`;
+}
+
 export function jarvisService(roots: RenderRoots): string {
   return [
     "[Unit]",
@@ -45,7 +51,8 @@ export function jarvisService(roots: RenderRoots): string {
       `Environment=PATH=${executablePath(roots)}`,
       "Environment=NODE_ENV=production",
       `ExecStartPre=${roots.nodeBin} ${roots.authorityCurrent}/dist/src/cli.js db migrate --db ${roots.jarvisDb}`,
-      `ExecStart=${roots.nodeBin} ${roots.authorityCurrent}/dist/src/cli.js service run --db ${roots.jarvisDb}`,
+      `ExecStart=${roots.nodeBin} ${roots.authorityCurrent}/dist/src/cli.js service run --db ${roots.jarvisDb}`
+        + dailyInputs(roots),
       "Restart=always",
       "RestartSec=5",
       `ReadWritePaths=${dirname(roots.jarvisDb)}`,

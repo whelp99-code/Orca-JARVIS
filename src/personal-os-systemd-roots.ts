@@ -24,6 +24,16 @@ export type RenderRoots = {
   readonly binRoot: string;
   /** When set the unit is a system unit that runs as this account; unset renders a user unit. */
   readonly serviceUser?: string | undefined;
+  /**
+   * The daily loop's configured inputs. Both set renders `service run --input … --key-file …`;
+   * neither set renders the flag-less invocation, and the unit then schedules no daily phase. The
+   * generator never invents these paths: `service run` refuses one flag without the other, so a
+   * rendered flag naming a file the deployment has not provisioned would make Restart=always a
+   * crash loop. Configured means load-bearing - the service then fails closed on those inputs
+   * instead of silently running a day with no morning and no evening.
+   */
+  readonly dailyServiceConfig?: string | undefined;
+  readonly dailyServiceKey?: string | undefined;
 };
 
 /** The roots of the configured deployment — the /home/jm installation when nothing is set. */
@@ -42,6 +52,8 @@ export function productionRoots(environment?: DeploymentEnvironment): RenderRoot
     nodeBin: roots.nodeBin,
     binRoot: roots.binRoot,
     serviceUser: roots.serviceUser,
+    dailyServiceConfig: roots.dailyServiceConfig,
+    dailyServiceKey: roots.dailyServiceKey,
   };
 }
 
