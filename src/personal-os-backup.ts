@@ -13,10 +13,7 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { openUnderSwapAdmission } from "./authority-database-swap-barrier.js";
 import Database from "better-sqlite3";
-import {
-  type DeploymentEnvironment,
-  resolveDeploymentRoots,
-} from "./personal-os-deployment-roots.js";
+import { type DeploymentEnvironment, resolveDeploymentRoots } from "./personal-os-deployment-roots.js";
 import { PersonalOsError } from "./personal-os-errors.js";
 import { assertIsolatedFile } from "./personal-os-protected-paths.js";
 
