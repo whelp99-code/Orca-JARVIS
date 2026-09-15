@@ -13,7 +13,11 @@ export type {
 import { SECOND_BRAIN_PROTOCOL_VERSION } from "./second-brain-transport.js";
 
 export const SECOND_BRAIN_READINESS_VERSION = 1 as const;
-export const SECOND_BRAIN_FROZEN_DIGEST = "1406f97695970a099af2569ab93777b67603a2a2261b9f6d03646e430d6098fe" as const;
+// The digest of the frozen MCP contract this release ships (`contracts/second-brain-mcp-v1.json`
+// and its `.sha256` sidecar), which is also the value the provider reports as `contract_digest`
+// from `sb_generation_status`. The previous literal matched neither the shipped artifact nor any
+// canonicalization of it, so a correct provider could only ever be reported as `digest_mismatch`.
+export const SECOND_BRAIN_FROZEN_DIGEST = "ae2e4b4f41ade29e8781e47e60dad6ddb17ed8cea516b82ccd16454acd5dc3e0" as const;
 export const SECOND_BRAIN_FRESHNESS_MS = 24 * 60 * 60 * 1_000;
 export const SECOND_BRAIN_REQUIRED_TOOLS = [
   "sb_generation_status", "sb_open_conflicts", "sb_read_page", "sb_recent_changes", "sb_remember",
@@ -25,6 +29,9 @@ export type SecondBrainProbeOutcome = "ok" | SecondBrainProbeFailure;
 export type SecondBrainDataState = "ready" | "no_data" | "vault_absent" | "vault_locked" | "unavailable" | "unknown";
 export type SecondBrainRefreshObservation =
   | { readonly kind: "success"; readonly completed_at: string }
+  // A refresh attempt that succeeded without publishing a completion instant: the latest attempt
+  // is reportable, `last_successful_refresh` is not.
+  | { readonly kind: "success_attempted"; readonly attempted_at: string }
   | { readonly kind: "capped"; readonly attempted_at: string }
   | { readonly kind: "failed"; readonly attempted_at: string }
   | { readonly kind: "missing" };
@@ -155,7 +162,8 @@ function parseLatestAttempt(
   if (refresh.kind === "missing") return "missing";
   const value = refresh.kind === "success" ? refresh.completed_at : refresh.attempted_at;
   const parsed = parseSecondBrainInstant(value);
-  return parsed === undefined || !Number.isFinite(nowMs) || parsed.epoch_ms > nowMs ? "malformed" : refresh.kind;
+  if (parsed === undefined || !Number.isFinite(nowMs) || parsed.epoch_ms > nowMs) return "malformed";
+  return refresh.kind === "success_attempted" ? "success" : refresh.kind;
 }
 
 export function evaluateSecondBrainReadiness(

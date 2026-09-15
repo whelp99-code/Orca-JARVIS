@@ -2,7 +2,8 @@
 export const CLI_HELP =
   "JARVIS — agent-ops runtime\n"
   + "Commands: init, db migrate/rebuild-projections, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, "
-  + "observe, pre-gjc, capabilities, team, portfolio, status, daily, routing, release\n"
+  + "observe, pre-gjc, capabilities, team, portfolio, status, daily, routing, release, second-brain\n"
+  + "second-brain readiness [--json]: probe the configured Second Brain endpoint only; opens no authority database\n"
   + "release gates --db PATH [--dashboard-url URL] [--phase pre-activation --rehearsal-receipt PATH | "
   + "--phase post-activation]: run all nine health gates; exits 1 on any failure\n"
   + "db foreign-key-check --db PATH: PRAGMA foreign_key_check on a read-only open; any row fails\n"

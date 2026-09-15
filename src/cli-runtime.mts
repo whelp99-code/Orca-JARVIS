@@ -25,6 +25,7 @@ import { AuthorityDb, JarvisError } from "./db.js";
 import { executeLocalTimeline, localTimelinePreflight } from "./cli-local-timeline.js";
 import { hostMemoryReferenceOptions, hostMemoryWithdrawalOptions } from "./cli-host-memory.js";
 import { executeReleaseGateCommand } from "./cli-release-commands.js";
+import { tryExecuteSecondBrainReadinessCommand } from "./cli-readiness-commands.js";
 import { CLI_HELP } from "./cli-help-text.js";
 
 const COMMAND_HANDLERS: readonly CliCommandHandler[] = [
@@ -105,6 +106,9 @@ export async function execute(args: string[], dependencies: CliDependencies = {}
   const localTimeline = localTimelinePreflight(parsed.positionals, values);
   const gateCommand = await executeReleaseGateCommand(parsed.positionals, values, dependencies);
   if (gateCommand !== undefined) return gateCommand;
+  const readinessCommand = await tryExecuteSecondBrainReadinessCommand({ positionals: parsed.positionals,
+    values: parsed.values, clock: dependencies.clock, secondBrainProbe: dependencies.secondBrainProbe });
+  if (readinessCommand !== undefined) return readinessCommand;
   // A rehearsal never migrates the database it was pointed at, so it cannot be a modifier on any
   // other command: the only accepted form returned above.
   if (values.rehearse !== undefined) throw new JarvisError("MIGRATION_REHEARSAL_INPUT_INVALID");
