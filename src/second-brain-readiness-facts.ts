@@ -148,3 +148,33 @@ function dataStateValue(value: unknown): value is SecondBrainDataState {
   return value === "ready" || value === "no_data" || value === "vault_absent" || value === "vault_locked"
     || value === "unavailable" || value === "unknown";
 }
+
+export type SecondBrainDoctorReport = {
+  readonly operational: boolean;
+  readonly failed: readonly string[];
+};
+
+/**
+ * Parses the document `sb doctor --json` prints: a JSON array of `{name, status, detail}` checks.
+ *
+ * The previous parser accepted only empty output and called everything else malformed, so the
+ * deployed provider -- which prints its checks on every run -- could only ever be reported as
+ * `doctor_malformed`. Warnings stay operational because the provider warns about assets it does
+ * not need to serve a read; a single `fail` is not operational. `detail` is never read back: it
+ * carries vault and release paths, and only typed states cross this boundary.
+ */
+export function parseSecondBrainDoctorReport(text: string): SecondBrainDoctorReport | undefined {
+  const value = parseSecondBrainStrictJson(text.trim());
+  if (!Array.isArray(value) || value.length === 0) return undefined;
+  const failed: string[] = [];
+  const names = new Set<string>();
+  for (const entry of value) {
+    if (!record(entry) || typeof entry["name"] !== "string" || entry["name"] === ""
+      || names.has(entry["name"])) return undefined;
+    const status = entry["status"];
+    if (status !== "pass" && status !== "warn" && status !== "fail") return undefined;
+    names.add(entry["name"]);
+    if (status === "fail") failed.push(entry["name"]);
+  }
+  return { operational: failed.length === 0, failed: [...failed].sort() };
+}

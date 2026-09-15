@@ -101,7 +101,8 @@ describe("Second Brain readiness projections", () => {
   });
 
   it("projects actual producer facts identically through every public surface", async () => {
-    // Given: actual legacy status, empty doctor, and Task 10 handshake facts expose no authority or digest.
+    // Given: actual legacy status, a doctor channel that prints no parseable document, and Task 10
+    // handshake facts that expose no authority or contract digest.
     const runner: SecondBrainReadinessRunner = {
       executable: async () => "available",
       configuration: async () => "valid",
@@ -145,7 +146,7 @@ describe("Second Brain readiness projections", () => {
       expect(JSON.stringify(record(overview.second_brain))).toBe(JSON.stringify(expected));
       expect(record(record(expected.stages).protocol_compatible).reason).toBe("protocol_unknown");
       expect(record(record(expected.stages).operational)).toMatchObject({
-        state: "unavailable", reason: "probe_facts_missing",
+        state: "unavailable", reason: "doctor_malformed",
       });
       expect(record(record(expected.stages).data_state).state).toBe("unknown");
       expect(record(record(expected.stages).authorized).state).toBe("unauthorized");

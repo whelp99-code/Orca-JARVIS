@@ -3,11 +3,20 @@ import { stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { probeSecondBrainConfiguration } from "./second-brain-readiness-config.js";
 import {
-  attestedSecondBrainHandshake,
   parseSecondBrainHandshakeFacts,
   type SecondBrainHandshakeFacts,
 } from "./second-brain-readiness-handshake.js";
-import { parseSecondBrainLegacyStatus } from "./second-brain-readiness-facts.js";
+import {
+  parseSecondBrainDoctorReport,
+  parseSecondBrainLegacyStatus,
+} from "./second-brain-readiness-facts.js";
+import {
+  UNREAD_SECOND_BRAIN_FACTS,
+  attestedSecondBrainHandshakeRead,
+  type SecondBrainHandshakeResult,
+  type SecondBrainReadFacts,
+} from "./second-brain-readiness-read.js";
+import { SECOND_BRAIN_FROZEN_DIGEST } from "./second-brain-readiness.js";
 import type {
   SecondBrainProbeFailure,
   SecondBrainProbeOutcome,
@@ -15,12 +24,7 @@ import type {
   SecondBrainReadinessProbe,
   SecondBrainRefreshObservation,
 } from "./second-brain-readiness.js";
-import {
-  SECOND_BRAIN_CONFIG,
-  SECOND_BRAIN_LAUNCHER,
-  SecondBrainTransportError,
-  createSecondBrainTransport,
-} from "./second-brain-transport.js";
+import { SECOND_BRAIN_CONFIG, SECOND_BRAIN_LAUNCHER } from "./second-brain-transport.js";
 
 const SECOND_BRAIN_CLI = "/home/jm/.local/state/second-brain/app/current/bin/sb";
 
@@ -40,14 +44,26 @@ function configuredEndpoint(): {
   return { launcher, config: config ?? SECOND_BRAIN_CONFIG, cli: join(dirname(launcher), "sb") };
 }
 const PROBE_TIMEOUT_MS = 5_000;
-const PROBE_MAX_BYTES = 2_048;
+// The provider's JSON doctor report is one bounded document per configured check, so the ceiling
+// has to clear a real installation's checks. At 2 KiB the deployed release's own report was within
+// bytes of being reported as `oversize` instead of read.
+const PROBE_MAX_BYTES = 16_384;
 
 export type SecondBrainCommandResult =
   | { readonly kind: "ok"; readonly stdout: string }
   | { readonly kind: SecondBrainProbeFailure };
-export type SecondBrainHandshakeResult =
-  | { readonly kind: "ok"; readonly stdout: string; readonly facts?: SecondBrainHandshakeFacts }
-  | { readonly kind: SecondBrainProbeFailure };
+export type { SecondBrainHandshakeResult, SecondBrainReadFacts } from "./second-brain-readiness-read.js";
+
+/**
+ * The exact argument vector each probe runs.
+ *
+ * `doctor` is asked for its machine-readable document: the human `PASS name: detail` lines it
+ * prints by default are not a parseable contract, and treating them as one is what reported a
+ * healthy provider as `doctor_malformed`.
+ */
+export function secondBrainProbeArguments(command: "status" | "doctor"): readonly string[] {
+  return command === "doctor" ? ["doctor", "--json"] : ["status"];
+}
 export interface SecondBrainReadinessRunner {
   executable(): Promise<"available" | "missing" | "unavailable">;
   configuration(): Promise<SecondBrainReadinessObservation["configuration"]>;
@@ -58,7 +74,7 @@ export interface SecondBrainReadinessRunner {
 function commandResult(command: "status" | "doctor"): Promise<SecondBrainCommandResult> {
   const endpoint = configuredEndpoint();
   return new Promise(resolve => {
-    execFile(endpoint.cli, [command], {
+    execFile(endpoint.cli, [...secondBrainProbeArguments(command)], {
       encoding: "utf8",
       timeout: PROBE_TIMEOUT_MS,
       maxBuffer: PROBE_MAX_BYTES,
@@ -102,36 +118,8 @@ export function boundedSecondBrainReadinessRunner(): SecondBrainReadinessRunner 
     },
     configuration: () => probeSecondBrainConfiguration(configuredEndpoint().config),
     run: commandResult,
-    handshake: async () => {
-      const endpoint = configuredEndpoint();
-      const transport = createSecondBrainTransport({
-        launcherPath: endpoint.launcher, configPath: endpoint.config, safeReadRetries: 0,
-      });
-      let result: SecondBrainHandshakeResult;
-      try {
-        await transport.restart();
-        const facts = attestedSecondBrainHandshake(transport.diagnostics());
-        result = facts === undefined ? { kind: "malformed" } : { kind: "ok", stdout: "", facts };
-      } catch (error) {
-        if (!(error instanceof SecondBrainTransportError)) throw error;
-        result = { kind: transportFailure(error) };
-      }
-      try {
-        await transport.close();
-      } catch (error) {
-        if (!(error instanceof SecondBrainTransportError)) throw error;
-        return { kind: "unavailable" };
-      }
-      return result;
-    },
+    handshake: () => attestedSecondBrainHandshakeRead(configuredEndpoint()),
   };
-}
-
-function transportFailure(error: SecondBrainTransportError): SecondBrainProbeFailure {
-  if (error.code === "SECOND_BRAIN_STARTUP_TIMEOUT") return "timeout";
-  if (error.code === "SECOND_BRAIN_OVERSIZE_FRAME") return "oversize";
-  if (error.code === "SECOND_BRAIN_CHILD_EXIT") return "crash";
-  return "malformed";
 }
 
 function unavailableBase(
@@ -168,18 +156,32 @@ function parseStatus(result: SecondBrainCommandResult): StatusProbe {
   return legacy === undefined ? { outcome: "malformed", legacy } : { outcome: "ok", legacy };
 }
 
-function parseDoctor(result: SecondBrainCommandResult): SecondBrainProbeOutcome {
-  if (result.kind !== "ok") return result.kind;
-  return result.stdout.trim() === "" ? "ok" : "malformed";
+type DoctorProbe = {
+  readonly outcome: SecondBrainProbeOutcome;
+  readonly operational: boolean | null;
+};
+
+function parseDoctor(result: SecondBrainCommandResult): DoctorProbe {
+  if (result.kind !== "ok") return { outcome: result.kind, operational: null };
+  const report = parseSecondBrainDoctorReport(result.stdout);
+  return report === undefined
+    ? { outcome: "malformed", operational: null }
+    : { outcome: "ok", operational: report.operational };
 }
 
 function parseHandshake(result: SecondBrainHandshakeResult): {
   readonly outcome: SecondBrainProbeOutcome;
   readonly facts: SecondBrainHandshakeFacts | undefined;
+  readonly read: SecondBrainReadFacts;
 } {
-  if (result.kind !== "ok") return { outcome: result.kind, facts: undefined };
+  if (result.kind !== "ok") {
+    return { outcome: result.kind, facts: undefined, read: UNREAD_SECOND_BRAIN_FACTS };
+  }
   const facts = result.facts ?? parseSecondBrainHandshakeFacts(result.stdout);
-  return facts === undefined ? { outcome: "malformed", facts } : { outcome: "ok", facts };
+  const read = result.read ?? UNREAD_SECOND_BRAIN_FACTS;
+  return facts === undefined
+    ? { outcome: "malformed", facts, read }
+    : { outcome: "ok", facts, read };
 }
 
 function refreshObservation(
@@ -187,8 +189,11 @@ function refreshObservation(
 ): SecondBrainRefreshObservation {
   const attempt = legacy?.latest_refresh_attempt;
   if (attempt === null || attempt === undefined) return { kind: "missing" };
-  // A successful stage log has no refresh completion timestamp or whole-run proof.
-  if (attempt.kind === "success") return { kind: "missing" };
+  // A successful stage log carries the stage's started_at, not a refresh completion timestamp or a
+  // whole-run proof, so it can never become `last_successful_refresh`. Reporting it as `missing`
+  // also erased the attempt: an operator could not tell a provider that never ran from one whose
+  // hourly run succeeded. The attempt is kept, and the success timestamp stays absent.
+  if (attempt.kind === "success") return { kind: "success_attempted", attempted_at: attempt.at };
   return { kind: attempt.kind, attempted_at: attempt.at };
 }
 
@@ -205,27 +210,36 @@ export function runtimeSecondBrainReadinessProbe(
       const doctor = parseDoctor(await runner.run("doctor"));
       const handshake = parseHandshake(await runner.handshake());
       const facts = handshake.facts;
+      const schemas = handshake.read.contract_digest !== null
+        && handshake.read.contract_digest === SECOND_BRAIN_FROZEN_DIGEST;
       return {
         executable,
         configuration,
-        contract_digest: null,
+        // The digest the provider itself reports for the contract it implements, compared against
+        // the frozen artifact this release validated its tools/list against.
+        contract_digest: handshake.read.contract_digest,
         protocol_version: facts?.protocol_version ?? null,
         tools: facts?.tools ?? null,
-        schemas_compatible: facts?.input_schemas_compatible === true
-          && facts.output_schemas_compatible === true,
-        input_schemas_compatible: facts?.input_schemas_compatible ?? null,
-        output_schemas_compatible: facts?.output_schemas_compatible ?? null,
+        schemas_compatible: schemas,
+        // A provider reporting the frozen contract's own digest declares the frozen input and
+        // output schemas; the transport separately refused to reach `ready` unless the live
+        // tools/list matched that same artifact.
+        input_schemas_compatible: facts === undefined ? null : schemas,
+        output_schemas_compatible: facts === undefined ? null : schemas,
         status: status.outcome,
-        doctor,
+        doctor: doctor.outcome,
         handshake: handshake.outcome,
-        status_operational: null,
-        doctor_operational: null,
-        channels_consistent: status.outcome === "ok" && doctor === "ok" && handshake.outcome === "ok",
-        read_authorization: "unauthorized",
+        status_operational: status.outcome === "ok" ? true : null,
+        doctor_operational: doctor.operational,
+        channels_consistent: status.outcome === "ok" && doctor.outcome === "ok"
+          && handshake.outcome === "ok",
+        read_authorization: handshake.read.read,
+        // Readiness never attempts a write: a probe that proved write authorization would have
+        // performed one. The stage reports read_only until a non-mutating write-authorization
+        // surface exists on the provider.
         write_authorization: "unauthorized",
         authorization_consistent: true,
-        data_state: status.outcome === "ok" ? status.legacy?.data_state ?? "unknown"
-          : status.outcome === "malformed" ? "unknown" : "unavailable",
+        data_state: handshake.read.data_state,
         refresh: refreshObservation(status.legacy),
         last_successful_refresh_at: status.legacy?.last_successful_refresh_at ?? null,
       };

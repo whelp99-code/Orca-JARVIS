@@ -36,7 +36,11 @@ function actualProducerRunner(
     configuration: async () => "valid",
     run: async command => command === "status"
       ? { kind: "ok", stdout: status }
-      : { kind: "ok", stdout: "" },
+      : { kind: "ok", stdout: JSON.stringify([
+      { name: "python", status: "pass", detail: "app 1.0.0" },
+      { name: "vault", status: "pass", detail: "mode=0o500" },
+      { name: "scheduler-assets", status: "warn", detail: "deploy/systemd" },
+    ]) },
     handshake: async () => ({ kind: "ok", stdout: ACTUAL_TASK10_HANDSHAKE }),
   };
 }
@@ -48,10 +52,10 @@ describe("actual Second Brain producer contracts", () => {
       contract_digest: null,
       protocol_version: SECOND_BRAIN_PROTOCOL_VERSION,
       tools: SECOND_BRAIN_REQUIRED_TOOLS,
-      input_schemas_compatible: true,
-      output_schemas_compatible: null,
-      status_operational: null,
-      doctor_operational: null,
+      input_schemas_compatible: false,
+      output_schemas_compatible: false,
+      status_operational: true,
+      doctor_operational: true,
       read_authorization: "unauthorized",
       write_authorization: "unauthorized",
       data_state: "unknown",
@@ -61,15 +65,15 @@ describe("actual Second Brain producer contracts", () => {
       readiness: "unavailable",
       stages: {
         protocol_compatible: { state: "unknown", reason: "protocol_unknown" },
-        operational: { state: "unavailable", reason: "probe_facts_missing" },
+        operational: { state: "blocked", reason: "protocol_incompatible" },
         authorized: { state: "unauthorized" },
       },
     });
   });
 
   it.each([
-    ["2026-08-28T11:00:00Z run fixture ok pages=1 conflicts=0 errors=0", "missing", null],
-    ["2026-08-28T11:00:00Z run fixture ok pages=0 conflicts=0 errors=0", "missing", null],
+    ["2026-08-28T11:00:00Z run fixture ok pages=1 conflicts=0 errors=0", "success_attempted", null],
+    ["2026-08-28T11:00:00Z run fixture ok pages=0 conflicts=0 errors=0", "success_attempted", null],
     ["no runs", "missing", null],
   ])("keeps historical status %s out of current data state", async (status, attempt, success) => {
     const observation = await runtimeSecondBrainReadinessProbe(actualProducerRunner(status)).inspect();
@@ -81,7 +85,7 @@ describe("actual Second Brain producer contracts", () => {
   it("does not treat the producer's stage start timestamp as refresh completion", async () => {
     // pipeline._run_locked logs `started`; its ledger records a separate `finished_at`.
     const observation = await runtimeSecondBrainReadinessProbe(actualProducerRunner()).inspect();
-    expect(observation.refresh).toEqual({ kind: "missing" });
+    expect(observation.refresh).toEqual({ kind: "success_attempted", attempted_at: "2026-08-28T11:00:00.000Z" });
     expect(observation.last_successful_refresh_at).toBeNull();
     const report = evaluateSecondBrainReadiness(observation, NOW);
     expect(report.stages.last_successful_refresh.state).toBe("missing");

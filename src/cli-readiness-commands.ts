@@ -1,5 +1,6 @@
 import { buildCapabilityMatrix, type CapabilityProbe } from "./capabilities.js";
 import type { AuthorityDb } from "./db.js";
+import { JarvisError } from "./jarvis-error.js";
 import { runtimeCapabilityProbe, runDoctor } from "./doctor.js";
 import { LiveSupervisor } from "./live-supervisor.js";
 import { buildSecondBrainReadiness, type SecondBrainReadinessProbe } from "./second-brain-readiness.js";
@@ -75,4 +76,36 @@ export async function tryExecuteReadinessCommand(
     shadow_only: !liveResume && !gjcEnabled,
     matrix,
   };
+}
+
+export type CliSecondBrainReadinessInput = {
+  readonly positionals: readonly string[];
+  readonly values: Readonly<Record<string, unknown>>;
+  readonly clock: (() => Date) | undefined;
+  readonly secondBrainProbe: SecondBrainReadinessProbe | undefined;
+};
+
+/**
+ * `second-brain readiness`: the capability probe, with no authority database involved.
+ *
+ * Readiness observes the provider endpoint and nothing else, so this answers before any database
+ * path is resolved. It used to have no command at all, and the invocation fell through to the
+ * database-backed dispatch, where an omitted `--db` resolves to the cwd-relative default
+ * `jarvis-authority.sqlite` (src/authority-db-base.ts) -- an empty file created next to whatever
+ * directory the operator happened to run from, whose zero applied migrations were then reported as
+ * MIGRATIONS_PENDING. A probe that reads no authority state now creates none.
+ */
+export async function tryExecuteSecondBrainReadinessCommand(
+  input: CliSecondBrainReadinessInput,
+): Promise<Record<string, unknown> | undefined> {
+  if (input.positionals[0] !== "second-brain") return undefined;
+  if (input.positionals[1] !== "readiness" || input.positionals.length !== 2
+    || Object.keys(input.values).some(key => key !== "json")) {
+    throw new JarvisError("SECOND_BRAIN_READINESS_INPUT_INVALID");
+  }
+  const second_brain = await buildSecondBrainReadiness(
+    input.secondBrainProbe ?? runtimeSecondBrainReadinessProbe(),
+    input.clock?.() ?? new Date(),
+  );
+  return { ok: true, command: "second-brain.readiness", second_brain };
 }

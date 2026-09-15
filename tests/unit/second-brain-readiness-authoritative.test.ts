@@ -52,7 +52,11 @@ function actualContractRunner(failure?: {
       ? { kind: failure.kind }
       : command === "status"
         ? { kind: "ok", stdout: "2026-08-28T11:00:00Z run fixture ok pages=1 conflicts=0 errors=0" }
-        : { kind: "ok", stdout: "" },
+        : { kind: "ok", stdout: JSON.stringify([
+      { name: "python", status: "pass", detail: "app 1.0.0" },
+      { name: "vault", status: "pass", detail: "mode=0o500" },
+      { name: "scheduler-assets", status: "warn", detail: "deploy/systemd" },
+    ]) },
     handshake: async () => failure?.channel === "handshake"
       ? { kind: failure.kind }
       : {
@@ -93,12 +97,14 @@ const AUTHORIZATION_CASES: readonly (readonly [
 ];
 
 describe("authoritative Second Brain readiness boundaries", () => {
-  it("keeps actual successful processes unavailable when operational facts are absent", async () => {
+  it("keeps actual successful processes out of operational when the contract is unattested", async () => {
+    // Given: every probe answers, but no read established the provider's own contract digest.
     const report = evaluateSecondBrainReadiness(
       await runtimeSecondBrainReadinessProbe(actualContractRunner()).inspect(),
       NOW,
     );
-    expect(report.stages.operational).toMatchObject({ state: "unavailable", reason: "probe_facts_missing" });
+    // Then: succeeding processes are never green on their own.
+    expect(report.stages.operational).toMatchObject({ state: "blocked", reason: "protocol_incompatible" });
     expect(report.stages.authorized.state).toBe("unauthorized");
     expect(report.readiness).toBe("unavailable");
   });
