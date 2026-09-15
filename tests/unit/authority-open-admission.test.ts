@@ -13,6 +13,7 @@ const NOT_A_LIVE_AUTHORITY: Readonly<Record<string, string>> = {
   "local-observation-retention-operation.ts": "the candidate being built, which is not live yet",
   "local-observation-retention-swap.ts": "the swap's lock probe, taken while it holds the barrier",
   "personal-os-backup.ts": "the backup copy at the destination path, never the source",
+  "release-restore.ts": "the backup file and the checked restore copy beside it, never the database in place",
 };
 
 function sources(root: string): string[] {

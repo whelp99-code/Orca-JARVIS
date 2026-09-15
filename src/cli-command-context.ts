@@ -68,6 +68,10 @@ export type CliValues = {
   readonly "release-root"?: string;
   readonly "dry-run"?: boolean;
   readonly rehearse?: string;
+  readonly phase?: string;
+  readonly "rehearsal-receipt"?: string;
+  readonly "production-root"?: boolean;
+  readonly "restore-backup"?: string;
 };
 
 export type CliCommandContext = {
@@ -125,6 +129,10 @@ export function normalizeCliValues(
     "release-root": stringValue(value["release-root"]),
     "dry-run": booleanValue(value["dry-run"]),
     rehearse: stringValue(value.rehearse),
+    phase: stringValue(value.phase),
+    "rehearsal-receipt": stringValue(value["rehearsal-receipt"]),
+    "production-root": booleanValue(value["production-root"]),
+    "restore-backup": stringValue(value["restore-backup"]),
   };
 }
 

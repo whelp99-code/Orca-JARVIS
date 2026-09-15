@@ -22,11 +22,26 @@ export type ReleaseGate = {
   readonly ok: boolean;
   readonly actual: unknown;
   readonly code?: string;
+  /**
+   * A gate that has nothing to judge on this deployment passes and says so, so an operator reads
+   * the reason out of the report instead of inferring it from a pass.
+   */
+  readonly not_applicable?: true;
 };
+
+/**
+ * Which side of the service restart the gates are being run on. `jm-jarvis.service` migrates the
+ * database in ExecStartPre, so before activation a pending-migration vector is the expected state
+ * and is accepted only against a rehearsal receipt; after activation nothing may still be pending.
+ */
+export const RELEASE_PHASES = ["pre-activation", "post-activation"] as const;
+export type ReleasePhase = (typeof RELEASE_PHASES)[number];
+export const DEFAULT_RELEASE_PHASE: ReleasePhase = "post-activation";
 
 export type ReleaseGateReport = {
   readonly schema_version: 1;
   readonly ok: boolean;
+  readonly phase: ReleasePhase;
   readonly checked_at: string | null;
   readonly database: string;
   readonly gates: readonly ReleaseGate[];
@@ -35,6 +50,8 @@ export type ReleaseGateReport = {
 
 export type ReleaseGateOptions = {
   readonly dbPath: string;
+  readonly phase?: ReleasePhase;
+  readonly rehearsalReceiptPath?: string;
   readonly now?: Date;
   readonly dashboardUrl?: string;
   readonly dashboardTimeoutMs?: number;
@@ -47,6 +64,11 @@ export type ReleaseGateOptions = {
 
 export function gate(name: ReleaseGateName, ok: boolean, actual: unknown, code?: string): ReleaseGate {
   return code === undefined ? { name, ok, actual } : { name, ok, actual, code };
+}
+
+/** A pass that carries why there was nothing to judge; it never hides a reading that did happen. */
+export function notApplicable(name: ReleaseGateName, reason: string, actual: object): ReleaseGate {
+  return { name, ok: true, actual: { ...actual, applicable: false, reason }, not_applicable: true };
 }
 
 /** Every database gate answers from its own read-only connection; none of them may write. */

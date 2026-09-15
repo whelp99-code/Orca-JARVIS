@@ -4,15 +4,19 @@ import type { CliValues } from "./cli-command-context.js";
 import { JarvisError } from "./db.js";
 import type { SecondBrainReadinessProbe } from "./second-brain-readiness.js";
 import {
+  DEFAULT_RELEASE_PHASE,
+  RELEASE_PHASES,
   dashboardHealthGate,
   foreignKeyCheckGate,
   mcpHandshakeGate,
   runReleaseGates,
   schedulerCursorGate,
   type ReleaseGate,
+  type ReleasePhase,
 } from "./release-health-gates.js";
 import { runMigrationRehearsal } from "./release-migration-rehearsal.js";
 import { runReleaseRollback } from "./release-rollback.js";
+import { runReleaseRestore } from "./release-restore.js";
 
 export type ReleaseCommandDependencies = {
   readonly clock?: () => Date;
@@ -42,6 +46,13 @@ function assertExistingDatabase(path: string | undefined): string {
   return path;
 }
 
+function releasePhase(value: string | undefined): ReleasePhase {
+  if (value === undefined) return DEFAULT_RELEASE_PHASE;
+  const found = RELEASE_PHASES.find(phase => phase === value);
+  if (found === undefined) throw new JarvisError("RELEASE_GATE_INPUT_INVALID");
+  return found;
+}
+
 function single(command: string, gate: ReleaseGate): Record<string, unknown> {
   return { ok: gate.ok, command, gate, ...(gate.ok ? {} : { exit_code: 1 }) };
 }
@@ -59,8 +70,12 @@ export async function executeReleaseGateCommand(
   const [command, subcommand] = positionals;
   if (command === "db" && subcommand === "migrate" && values.rehearse !== undefined) {
     if (positionals.length !== 2) throw new JarvisError("MIGRATION_REHEARSAL_INPUT_INVALID");
-    assertExactOptions(values, ["rehearse", "json"], "MIGRATION_REHEARSAL_INPUT_INVALID");
-    const result = await runMigrationRehearsal({ sourcePath: values.rehearse });
+    assertExactOptions(values, ["rehearse", "json", "rehearsal-receipt"], "MIGRATION_REHEARSAL_INPUT_INVALID");
+    const result = await runMigrationRehearsal({
+      sourcePath: values.rehearse,
+      receiptPath: values["rehearsal-receipt"],
+      now: dependencies.clock?.(),
+    });
     return { command: "db.migrate.rehearse", ...result, ...(result.ok ? {} : { exit_code: 1 }) };
   }
   if (command === "db" && subcommand === "foreign-key-check") {
@@ -88,20 +103,45 @@ export async function executeReleaseGateCommand(
     if (positionals.length !== 2 || values.to === undefined || values["release-root"] === undefined) {
       throw new JarvisError("RELEASE_ROLLBACK_INPUT_INVALID");
     }
-    assertExactOptions(values, ["db", "json", "to", "release-root", "dry-run"], "RELEASE_ROLLBACK_INPUT_INVALID");
+    assertExactOptions(values,
+      ["db", "json", "to", "release-root", "dry-run", "production-root", "restore-backup"],
+      "RELEASE_ROLLBACK_INPUT_INVALID");
+    // The restore form is the documented recovery for a target the three qualification checks
+    // cannot pass, so it answers on the backup's vector instead of on them.
+    if (values["restore-backup"] !== undefined) {
+      const restored = runReleaseRestore({
+        releaseRoot: values["release-root"],
+        dbPath: assertExistingDatabase(values.db),
+        to: values.to,
+        backupPath: values["restore-backup"],
+        dryRun: values["dry-run"] === true,
+        productionRoot: values["production-root"] === true,
+        now: dependencies.clock?.(),
+      });
+      return { ok: true, command: "release.rollback", ...restored };
+    }
     const result = runReleaseRollback({
       releaseRoot: values["release-root"],
       dbPath: assertExistingDatabase(values.db),
       to: values.to,
       dryRun: values["dry-run"] === true,
+      productionRoot: values["production-root"] === true,
     });
     return { ok: true, command: "release.rollback", ...result };
   }
   if (subcommand === "gates") {
     if (positionals.length !== 2) throw new JarvisError("RELEASE_GATE_INPUT_INVALID");
-    assertExactOptions(values, ["db", "json", "dashboard-url"]);
+    assertExactOptions(values, ["db", "json", "dashboard-url", "phase", "rehearsal-receipt"]);
+    const phase = releasePhase(values.phase);
+    // A rehearsal receipt licenses only a pre-activation vector; offering one post-activation is a
+    // misunderstanding of what is being gated, not an input the gate quietly ignores.
+    if (values["rehearsal-receipt"] !== undefined && phase !== "pre-activation") {
+      throw new JarvisError("RELEASE_GATE_INPUT_INVALID");
+    }
     const report = await runReleaseGates({
       dbPath: assertExistingDatabase(values.db),
+      phase,
+      rehearsalReceiptPath: values["rehearsal-receipt"],
       now: dependencies.clock?.(),
       dashboardUrl: values["dashboard-url"],
       capabilityProbe: dependencies.capabilityProbe,

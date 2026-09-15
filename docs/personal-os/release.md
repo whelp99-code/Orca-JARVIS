@@ -27,22 +27,46 @@ All nine run together from the packaged CLI. The aggregate prints one JSON repor
 when any gate fails, so a caller branches on process status without parsing the report:
 
 ```sh
-node dist/src/cli.js release gates --db <db-path> [--dashboard-url URL]
+node dist/src/cli.js release gates --db <db-path> [--dashboard-url URL] \
+  [--phase pre-activation --rehearsal-receipt <path> | --phase post-activation]
 ```
 
 Each gate answers from its own read-only connection and none of them migrate, so `release gates`
 runs before migrations are applied and reports pending migrations instead of requiring them.
 
+### Phases {#gate-phases}
+
+`jm-jarvis.service` applies the pending migrations in its own `ExecStartPre`, so the two sides of
+the restart are not the same question and `release gates` takes an explicit `--phase`. The phase is
+recorded in the report as `phase`.
+
+- `--phase post-activation` (the default, so an unphased call is the strict one): `migration-vector`
+  requires zero pending migrations and an applied vector equal to the release's own shipped vector.
+- `--phase pre-activation --rehearsal-receipt <path>`: the pending migrations are exactly the ones
+  the service is about to apply, so they are the expected state. The gate passes when the receipt
+  written by `db migrate --rehearse` shows that *this* database rehearsed onto *this* release's
+  vector: the receipt's `source_vector_digest` equals the database's current applied-vector digest,
+  its `target_vector_digest` equals the release's expected vector digest, and its checks report
+  `quick_check: "ok"` with `foreign_key_violations: 0`. The passing gate records
+  `accepted_via: "rehearsal-receipt"` and the receipt it accepted.
+- Pre-activation without a receipt is `RELEASE_GATE_REHEARSAL_RECEIPT_REQUIRED`; an unreadable,
+  malformed or failed receipt is `RELEASE_GATE_REHEARSAL_RECEIPT_INVALID`; a receipt for another
+  database or another release is `RELEASE_GATE_REHEARSAL_VECTOR_MISMATCH`; failed rehearsal checks
+  are `RELEASE_GATE_REHEARSAL_CHECKS_FAILED`. A `--rehearsal-receipt` offered post-activation and an
+  unknown `--phase` value are both `RELEASE_GATE_INPUT_INVALID`.
+- A checksum mismatch or an applied migration the release does not ship fails in **both** phases:
+  neither is a pending migration, and no receipt licenses them.
+
 | Gate | Command | What fails it |
 | --- | --- | --- |
-| `migration-vector` | `release gates` | pending, checksum-mismatched or unsupported applied migrations |
+| `migration-vector` | `release gates` | checksum-mismatched or unsupported applied migrations in either phase; pending migrations post-activation, or pre-activation without a matching rehearsal receipt |
 | `quick-check` | `release gates` | `PRAGMA quick_check` other than `ok` |
 | `foreign-key-check` | `db foreign-key-check --db PATH` | any `PRAGMA foreign_key_check` row |
 | `doctor` | `doctor --db PATH` | any failing doctor check |
 | `status` | `status --json --db PATH` | unacknowledged outbox entries |
 | `dashboard-health` | `release dashboard-health [--dashboard-url URL]` | non-200, malformed, oversize, timeout, or a body that is not `status=ok`/`authority=ready` |
 | `mcp-handshake` | `release mcp-handshake` | any refusal of the real stdio handshake, or a negotiated protocol other than the pinned one |
-| `scheduler-cursor` | `release scheduler-cursor --db PATH` | absent cursor, `applied_count` other than `last_completed`, or a cursor behind the completed `daily_loop_runs` |
+| `scheduler-cursor` | `release scheduler-cursor --db PATH` | `applied_count` other than `last_completed`, a cursor behind the completed `daily_loop_runs`, or an absent cursor while `PERSONAL_OS_CONTROL_CHANNEL` is configured |
 | `uncertain-outbox` | `release gates` | any `uncertain` memory outbox or daily loop row |
 
 `dashboard-health` GETs `/api/v1/health` on the configured loopback endpoint (`127.0.0.1:4173`,
@@ -52,6 +76,14 @@ reports the negotiated protocol version and the contract profile; it honours
 `JARVIS_SECOND_BRAIN_LAUNCHER` and `JARVIS_SECOND_BRAIN_CONFIG`, so an isolated provider can be
 gated without touching a deployed installation. Every gate fails closed: an unreachable,
 unreadable or unparseable answer is a failure, never a skip.
+
+`personal_os_cycle_cursor` is created by no migration — only `service run` creates it, lazily, and
+only when `PERSONAL_OS_CONTROL_CHANNEL` is set. On a deployment that configures no control channel
+the table therefore never exists and there is no cursor that can be wrong: `scheduler-cursor`
+reports `not_applicable: true` with `control_channel_configured: false` and the reason in its own
+`actual`, and passes. With a control channel configured the table is promised, so an absent cursor
+is still `RELEASE_GATE_SCHEDULER_CURSOR_ABSENT`, and a cursor that exists is always judged. That is
+the only applicability exemption among the nine gates.
 
 ## Migration rehearsal {#migration-rehearsal}
 
@@ -64,7 +96,7 @@ migration has already been attempted.
 A rehearsal must therefore pass before activation:
 
 ```sh
-node dist/src/cli.js db migrate --rehearse <db-path>
+node dist/src/cli.js db migrate --rehearse <db-path> [--rehearsal-receipt <out-path>]
 ```
 
 It copies the database and its `-wal`/`-shm` sidecars into a private scratch directory (`TMPDIR`),
@@ -74,6 +106,15 @@ level before and after, and the source's digest. The source database is only eve
 hashed before and after, a rehearsal that observed any change to it fails with
 `MIGRATION_REHEARSAL_SOURCE_MUTATED` instead of reporting a result, and the scratch copy is removed
 when the rehearsal ends. The rehearsal exits `1` if any of the three gates on the copy fails.
+
+With `--rehearsal-receipt <out-path>` it also writes the receipt a pre-activation gate run reads,
+created exclusively and 0600 so an existing receipt is never replaced
+(`MIGRATION_REHEARSAL_RECEIPT_UNWRITABLE`). The receipt records `kind: "migration-rehearsal"`, the
+source observation, `source_vector_digest` (the vector the source database is on) and
+`target_vector_digest` (the vector the rehearsed migration landed on), the applied migration list,
+the before/after levels, and `checks` holding `quick_check`, `foreign_key_violations` and
+`migration_vector_ok`. Those are the fields `release gates --phase pre-activation` matches; see
+[phases](#gate-phases).
 
 A real deployment can be many migrations behind its packaged release, so the rehearsal is what
 tells you whether the `ExecStartPre` migrate a restart is about to run would succeed — never
@@ -105,8 +146,62 @@ The three inputs are read from the release root, never supplied by the caller:
 Any disagreement, unreadable input or missing receipt raises the single documented
 `RELEASE_ROLLBACK_INCOMPATIBLE`; the refusal path performs no filesystem mutation, so `current`
 is left exactly where it was. `--dry-run` reports the same decision and never moves `current`.
-On allow, `current` is replaced by a relative symlink through an atomic rename. A `--release-root`
-inside a protected deployed root is refused with `E_PROTECTED_ROOT`.
+On allow, `current` is replaced by a relative symlink through an atomic rename.
+
+### The production root {#rollback-production-root}
+
+Rollback is a production command, so the deployed authority root is reachable — but only when it is
+asked for by name and the owner is present:
+
+```sh
+node dist/src/cli.js release rollback --to <40-hex> \
+  --release-root /home/jm/.local/state/orca-jarvis/authority \
+  --db <db-path> --production-root [--dry-run]
+```
+
+`--production-root` requires the same owner production-activation-gate evidence the publish
+`--activate` requires: `JARVIS_PRODUCTION_ACTIVATION_APPROVAL=approved` in the owner's own
+interactive shell, else `JARVIS_PRODUCTION_ACTIVATION_APPROVAL_REQUIRED`. Without the flag a
+`--release-root` inside a protected deployed root is still refused with `E_PROTECTED_ROOT`, and the
+evidence alone does not reach it: the flag is what names the root. Both refusals are decided before
+anything is read, so neither touches deployed state. With both, the root is read like any other and
+the same three checks decide the rollback.
+
+### An unqualified target: restore the backup {#rollback-restore}
+
+A release published before sealed manifests has no `release-compatibility.json` and its receipt no
+`provider_contract_digest`, so none of the three checks above can be satisfied and a pointer-only
+rollback is refused — correctly, because after the service's `ExecStartPre` migrate the database is
+no longer on that release's schema. The recovery is to restore the backup and move the pointer
+together, which is the second rollback form:
+
+```sh
+node dist/src/cli.js release rollback --to <40-hex> \
+  --release-root <root> --db <db-path> --restore-backup <backup-file> [--dry-run] [--production-root]
+```
+
+It answers on the backup instead of on the three checks:
+
+- the backup must pass `PRAGMA quick_check` (`RELEASE_RESTORE_BACKUP_UNUSABLE`), and be a regular
+  file (`RELEASE_RESTORE_BACKUP_UNAVAILABLE`);
+- the backup's own applied migration vector must equal the vector the **target release's shipped
+  migrations** describe — read from the target's `dist/migrations`, else its `migrations/`, which a
+  pre-manifest release still carries (`RELEASE_RESTORE_TARGET_VECTOR_UNAVAILABLE` when it ships
+  none). A backup at any other level is refused with `RELEASE_RESTORE_VECTOR_MISMATCH`, because the
+  target's own `ExecStartPre` would migrate it into a database that release was never run against.
+
+On allow it restores the database atomically: the backup is copied beside the destination,
+`quick_check`ed there, the database in place is renamed aside to `<db>.replaced-<utc>` together with
+its `-wal`/`-shm` sidecars, and only then does the checked copy take the database's name — so the
+replaced bytes are always kept and the restored database carries no stale sidecars. Then `current`
+is switched to the target by the same relative-symlink atomic rename as an activation.
+
+It stops and starts nothing itself. The result carries the order the operator performs around it as
+`systemd_order` — stop the dashboard, stop the authority, confirm both inactive, run this command,
+start the authority, start the dashboard — because a running authority would write to the database
+being replaced, and the pointer must be moved before the restart that re-runs `ExecStartPre`.
+`--dry-run` reports the same facts (both vector digests, the backup's `quick_check`, size and
+sha256) and touches nothing.
 
 Owner gate for real activation: `production-activation-gate`.
 
@@ -120,18 +215,43 @@ ops/authority/publish-package-release.sh \
   --package <verified-package-root> \
   --receipt-sha256 <independently-pinned-64-hex> \
   --release-root <root> \
-  --db <db-path> [--backup-root <root>] [--dashboard-url URL] [--activate]
+  --db <db-path> [--backup-root <root>] [--dashboard-url URL] \
+  [--rehearsal-receipt <path>] [--stage-parent <dir>] [--activate]
 ```
 
 In order it: checks the owner gate when `--activate` was asked for (before publishing anything, so
 a refused activation leaves nothing half-published); runs `scripts/verify-runtime-package.mjs`
-against the candidate and the independently kept receipt hash; exclusively creates
-`<release-root>/releases/<40-hex source head>/` and copies the payload there with files 0644 and
-directories 0755 under `umask 0022`, because the task verifier rejects any published file with
-`mode & 0o022`; runs `release gates` against `--db` using the *published* CLI; runs the existing DB
-backup path (the production backup path when `--db` is the production authority database, the
-isolated one otherwise); and only then writes `<release-root>/receipts/<40-hex>.json` recording the
-verification, gate report, backup result and published payload modes.
+against the candidate and the independently kept receipt hash; assembles and seals the payload on a
+stage with files 0644 and directories 0755 under `umask 0022`, because the task verifier rejects any
+published file with `mode & 0o022`; runs `release gates` against `--db` using the *staged* CLI —
+that is, the candidate's own gates; runs the existing DB backup path (the production backup path
+when `--db` is the production authority database, the isolated one otherwise); moves the sealed
+stage into `<release-root>/releases/<40-hex source head>/` with one rename; activates when asked;
+and only then writes `<release-root>/receipts/<40-hex>.json` recording the verification, gate
+report, backup result and published payload modes.
+
+The gates and the backup run **before** the rename, so a failing gate or a failing backup publishes
+nothing at all and the retry is the same command. With `--rehearsal-receipt <path>` the gates run as
+`--phase pre-activation` against that receipt (see [phases](#gate-phases)), which is the phase that
+applies while the service has not yet run its `ExecStartPre` migrate; without it they run
+`--phase post-activation`.
+
+### An interrupted publish {#unpublish}
+
+A release directory is complete only once its receipt exists. A directory without its receipt is an
+interrupted publish (a crash or a kill between the rename and the receipt), and publishing that
+release id again refuses with `PACKAGE_RELEASE_INCOMPLETE_PUBLISH`, naming the removal command in
+its message — as opposed to `PACKAGE_RELEASE_ALREADY_PUBLISHED`, which is what a *receipted* release
+raises.
+
+```sh
+ops/authority/publish-package-release.sh --unpublish <40-hex> --release-root <root>
+```
+
+That mode takes nothing else. It removes only a never-activated, receipt-less release directory:
+`PACKAGE_RELEASE_UNPUBLISH_ACTIVE` if `current` points at it, `PACKAGE_RELEASE_UNPUBLISH_RECEIPT_PRESENT`
+if a receipt exists, `PACKAGE_RELEASE_UNPUBLISH_ABSENT` if there is no such directory. It never
+touches `current`, any receipt, any backup or any other release.
 
 The release is assembled and sealed on a stage and moved in with one rename, because the manifest
 library refuses to write inside a deployed root. `--stage-parent` (default
@@ -156,7 +276,7 @@ invented provenance. Publishing never reads the checkout for provenance itself.
 `JARVIS_PRODUCTION_ACTIVATION_APPROVAL=approved` is present — a relative symlink replaced by an
 atomic rename. Without `--activate` the release is published, gated and backed up, and `current` is
 left exactly where it was. A failing gate, a mismatched pin, or an already-published release id all
-refuse without activating. The release root, its `releases/` and its `receipts/` are 0700.
+refuse without publishing or activating. The release root, its `releases/` and its `receipts/` are 0700.
 
 `ops/authority/publish-verified-release.sh` is the older worktree-rebuild script and is left
 untouched.

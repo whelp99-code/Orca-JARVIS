@@ -146,8 +146,21 @@ describe("release health gate CLIs", () => {
     const absent = await migratedTestDatabase(tempDb());
     const absentPath = absent.filename;
     absent.close();
-    expect(await execute(["release", "scheduler-cursor", "--db", absentPath]))
-      .toMatchObject({ ok: false, exit_code: 1, gate: { code: "RELEASE_GATE_SCHEDULER_CURSOR_ABSENT" } });
+    // No cursor table and no control channel configured: the cursor is not applicable, not broken.
+    expect(await execute(["release", "scheduler-cursor", "--db", absentPath])).toMatchObject({
+      ok: true,
+      gate: { name: "scheduler-cursor", ok: true, not_applicable: true,
+        actual: { cursor: null, control_channel_configured: false,
+          reason: "personal_os_cycle_cursor is created by service run under PERSONAL_OS_CONTROL_CHANNEL" } },
+    });
+    // A configured control channel is a promise the cursor exists, so its absence is a failure.
+    process.env["PERSONAL_OS_CONTROL_CHANNEL"] = join(scratch(), "cycle.sock");
+    try {
+      expect(await execute(["release", "scheduler-cursor", "--db", absentPath]))
+        .toMatchObject({ ok: false, exit_code: 1, gate: { code: "RELEASE_GATE_SCHEDULER_CURSOR_ABSENT" } });
+    } finally {
+      delete process.env["PERSONAL_OS_CONTROL_CHANNEL"];
+    }
     const drifted = new Database(path);
     try {
       drifted.prepare("UPDATE personal_os_cycle_cursor SET last_completed=5, applied_count=2 WHERE k=1").run();
@@ -178,7 +191,8 @@ describe("release health gate CLIs", () => {
     expect((broken["report"] as { failed: string[] }).failed).toContain("dashboard-health");
   }, 60_000);
 
-  it("reports pending migrations instead of requiring them", async () => {
+  /** A database behind its shipped migrations, as a real deployment is before activation. */
+  function behindDatabase(): string {
     const path = join(scratch(), "old.sqlite");
     const db = new Database(path);
     try {
@@ -186,6 +200,94 @@ describe("release health gate CLIs", () => {
     } finally {
       db.close();
     }
+    return path;
+  }
+
+  /** The isolated provider, so no gate run here touches the deployed installation. */
+  function isolatedProvider(): void {
+    const provider = fixture();
+    process.env["JARVIS_SECOND_BRAIN_LAUNCHER"] = provider.launcher;
+    process.env["JARVIS_SECOND_BRAIN_CONFIG"] = provider.config;
+  }
+
+  const vectorGate = (report: unknown): { ok: boolean; code?: string; actual: Record<string, unknown> } => {
+    const gates = (report as { gates: Array<{ name: string; ok: boolean; code?: string;
+      actual: Record<string, unknown> }> }).gates;
+    const found = gates.find(item => item.name === "migration-vector");
+    if (found === undefined) throw new Error("migration-vector gate absent from the report");
+    return found;
+  };
+
+  it("writes a rehearsal receipt carrying the source and target vectors and the checks", async () => {
+    isolatedProvider();
+    const receiptPath = join(scratch(), "rehearsal.json");
+    const rehearsed = await execute(["db", "migrate", "--rehearse", behindDatabase(),
+      "--rehearsal-receipt", receiptPath]);
+    expect(rehearsed).toMatchObject({ command: "db.migrate.rehearse", ok: true, receipt: receiptPath,
+      checks: { quick_check: "ok", foreign_key_violations: 0, migration_vector_ok: true } });
+    const receipt = JSON.parse(readFileSync(receiptPath, "utf8"));
+    expect(receipt).toMatchObject({ schema_version: 1, kind: "migration-rehearsal", ok: true,
+      source_vector_digest: rehearsed["source_vector_digest"],
+      target_vector_digest: rehearsed["target_vector_digest"],
+      recorded_at: expect.any(String) });
+    expect(receipt.applied_migrations.length).toBeGreaterThan(40);
+    expect(receipt.source_vector_digest).not.toBe(receipt.target_vector_digest);
+    // The receipt is created exclusively, so a second rehearsal cannot replace it.
+    await expect(execute(["db", "migrate", "--rehearse", behindDatabase(), "--rehearsal-receipt", receiptPath]))
+      .rejects.toMatchObject({ code: "MIGRATION_REHEARSAL_RECEIPT_UNWRITABLE" });
+  }, 120_000);
+
+  it("accepts a pending vector pre-activation only against this database's rehearsal receipt", async () => {
+    isolatedProvider();
+    const path = behindDatabase();
+    const url = await healthServer({ schema_version: 1, status: "ok", authority: "ready" });
+    const args = ["release", "gates", "--db", path, "--dashboard-url", url];
+
+    // Post-activation is the default and nothing may still be pending.
+    const post = await execute([...args, "--phase", "post-activation"], probes);
+    expect((post["report"] as { phase: string }).phase).toBe("post-activation");
+    expect(vectorGate(post["report"])).toMatchObject({ ok: false, code: "MIGRATIONS_PENDING" });
+
+    // Pre-activation without a receipt is refused: the pending vector is unlicensed, not accepted.
+    const bare = await execute([...args, "--phase", "pre-activation"], probes);
+    expect(vectorGate(bare["report"]))
+      .toMatchObject({ ok: false, code: "RELEASE_GATE_REHEARSAL_RECEIPT_REQUIRED" });
+
+    const receiptPath = join(scratch(), "rehearsal.json");
+    await execute(["db", "migrate", "--rehearse", path, "--rehearsal-receipt", receiptPath]);
+    const passing = await execute([...args, "--phase", "pre-activation",
+      "--rehearsal-receipt", receiptPath], probes);
+    expect(vectorGate(passing["report"])).toMatchObject({ ok: true, actual: {
+      phase: "pre-activation", accepted_via: "rehearsal-receipt" } });
+    // Only the migration vector is licensed by the receipt; this bare fixture still fails the
+    // gates that need a real authority database, and the aggregate reports them.
+    expect((passing["report"] as { failed: string[] }).failed).not.toContain("migration-vector");
+    expect((passing["report"] as { phase: string }).phase).toBe("pre-activation");
+
+    // A rehearsal of another database starts from another vector and licenses nothing here.
+    const otherReceipt = join(scratch(), "other.json");
+    await execute(["db", "migrate", "--rehearse", await migrated(), "--rehearsal-receipt", otherReceipt]);
+    const foreign = await execute([...args, "--phase", "pre-activation",
+      "--rehearsal-receipt", otherReceipt], probes);
+    expect(vectorGate(foreign["report"]))
+      .toMatchObject({ ok: false, code: "RELEASE_GATE_REHEARSAL_VECTOR_MISMATCH" });
+
+    // An unreadable receipt fails closed.
+    const missing = await execute([...args, "--phase", "pre-activation",
+      "--rehearsal-receipt", join(scratch(), "absent.json")], probes);
+    expect(vectorGate(missing["report"]))
+      .toMatchObject({ ok: false, code: "RELEASE_GATE_REHEARSAL_RECEIPT_INVALID" });
+
+    // A receipt is meaningless post-activation, and an unknown phase is not a phase.
+    await expect(execute([...args, "--rehearsal-receipt", receiptPath]))
+      .rejects.toMatchObject({ code: "RELEASE_GATE_INPUT_INVALID" });
+    await expect(execute([...args, "--phase", "whenever"]))
+      .rejects.toMatchObject({ code: "RELEASE_GATE_INPUT_INVALID" });
+  }, 300_000);
+
+  it("reports pending migrations instead of requiring them", async () => {
+    isolatedProvider();
+    const path = behindDatabase();
     const gates = await execute(["release", "gates", "--db", path], probes);
     const report = gates["report"] as { gates: Array<{ name: string; ok: boolean; code?: string;
       actual: Record<string, unknown> }> };
