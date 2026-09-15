@@ -10,7 +10,7 @@ import {
   rmSync,
   symlinkSync,
 } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import Database from "better-sqlite3";
 import { openUnderSwapAdmission } from "./authority-database-swap-barrier.js";
 import { JarvisError } from "./db.js";
@@ -24,6 +24,8 @@ import { MANIFEST_NAME } from "./personal-os-release-manifest.js";
 import { assertIsolatedRoot } from "./personal-os-protected-paths.js";
 
 const HEX40 = /^[0-9a-f]{40}$/;
+/** The same owner gate the publish `--activate` requires; rollback is the same production act. */
+export const PRODUCTION_ACTIVATION_APPROVAL_ENV = "JARVIS_PRODUCTION_ACTIVATION_APPROVAL" as const;
 const HEX64 = /^[0-9a-f]{64}$/;
 export const RELEASE_COMPATIBILITY_NAME = "release-compatibility.json" as const;
 
@@ -194,16 +196,37 @@ export type RollbackInput = {
   readonly dbPath: string;
   readonly to: string;
   readonly dryRun: boolean;
+  /** Rollback is a production command: the protected authority root is allowed only on request. */
+  readonly productionRoot?: boolean;
+  readonly ownerApproval?: string;
 };
+
+/**
+ * An isolated root needs nothing. The deployed authority root is reachable only when the caller
+ * asked for it by name and carries the owner production-activation-gate evidence, and that is
+ * decided before anything is read, so a refusal touches no deployed state at all.
+ */
+export function rollbackReleaseRoot(input: {
+  readonly releaseRoot: string;
+  readonly productionRoot?: boolean;
+  readonly ownerApproval?: string;
+}): string {
+  if (input.productionRoot !== true) return assertIsolatedRoot(input.releaseRoot);
+  const approval = input.ownerApproval ?? process.env[PRODUCTION_ACTIVATION_APPROVAL_ENV];
+  if (approval !== "approved") throw new JarvisError("JARVIS_PRODUCTION_ACTIVATION_APPROVAL_REQUIRED");
+  return resolve(input.releaseRoot);
+}
 
 /**
  * Rollback is allowed only when exact-migration-vector, provider-contract and sealed-manifest all
  * match the target release. Otherwise this refuses with RELEASE_ROLLBACK_INCOMPATIBLE and leaves
  * `current` exactly where it was: the refusal path performs no filesystem mutation at all.
+ *
+ * The release root must be isolated unless `productionRoot` was asked for with the owner gate.
  */
 export function runReleaseRollback(input: RollbackInput): RollbackResult {
   if (!HEX40.test(input.to)) throw new JarvisError("RELEASE_ROLLBACK_INPUT_INVALID");
-  const releaseRoot = assertIsolatedRoot(input.releaseRoot);
+  const releaseRoot = rollbackReleaseRoot(input);
   const current = activeRelease(releaseRoot);
   // `current` must itself be a published release; a pointer into nothing is not a state to roll
   // back from, even though the vector compared below is the target's.

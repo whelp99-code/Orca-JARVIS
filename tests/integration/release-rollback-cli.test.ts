@@ -17,6 +17,11 @@ const TREE = "b".repeat(40);
 const CURRENT_SHA = "1".repeat(40);
 const TARGET_SHA = "2".repeat(40);
 const PROVIDER_SHA = "3".repeat(40);
+/**
+ * A path assertIsolatedRoot treats as protected because it is inside PROTECTED_ROOTS[0], and which
+ * exists nowhere: every assertion here refuses before reading, so no deployed state is touched.
+ */
+const PROTECTED_FIXTURE_ROOT = "/home/jm/.local/state/orca-jarvis/absent-rollback-fixture-root";
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -149,7 +154,30 @@ describe("release rollback", () => {
   it("refuses a protected release root instead of touching a deployed one", async () => {
     const fixture = await releaseRoot();
     await expect(execute(["release", "rollback", "--to", TARGET_SHA,
-      "--release-root", "/home/jm/.local/state/orca-jarvis/authority", "--db", fixture.dbPath]))
+      "--release-root", PROTECTED_FIXTURE_ROOT, "--db", fixture.dbPath]))
       .rejects.toMatchObject({ code: "E_PROTECTED_ROOT" });
+  });
+
+  it("reaches a protected root only with --production-root and the owner gate", async () => {
+    const fixture = await releaseRoot();
+    delete process.env["JARVIS_PRODUCTION_ACTIVATION_APPROVAL"];
+    // The flag alone is not the evidence; the refusal is decided before anything is read.
+    await expect(execute(["release", "rollback", "--to", TARGET_SHA,
+      "--release-root", PROTECTED_FIXTURE_ROOT, "--db", fixture.dbPath, "--production-root"]))
+      .rejects.toMatchObject({ code: "JARVIS_PRODUCTION_ACTIVATION_APPROVAL_REQUIRED" });
+    // And the evidence alone is not the request: the flag is what names the protected root.
+    process.env["JARVIS_PRODUCTION_ACTIVATION_APPROVAL"] = "approved";
+    try {
+      await expect(execute(["release", "rollback", "--to", TARGET_SHA,
+        "--release-root", PROTECTED_FIXTURE_ROOT, "--db", fixture.dbPath]))
+        .rejects.toMatchObject({ code: "E_PROTECTED_ROOT" });
+      // With both, the root is read like any other and the same three checks decide.
+      const allowed = await execute(["release", "rollback", "--to", TARGET_SHA,
+        "--release-root", fixture.root, "--db", fixture.dbPath, "--production-root", "--dry-run"]);
+      expect(allowed).toMatchObject({ ok: true, rollback: "allow", dry_run: true });
+    } finally {
+      delete process.env["JARVIS_PRODUCTION_ACTIVATION_APPROVAL"];
+    }
+    expect(current(fixture.root)).toBe(`releases/${CURRENT_SHA}`);
   });
 });

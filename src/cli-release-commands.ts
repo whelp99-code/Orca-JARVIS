@@ -102,12 +102,14 @@ export async function executeReleaseGateCommand(
     if (positionals.length !== 2 || values.to === undefined || values["release-root"] === undefined) {
       throw new JarvisError("RELEASE_ROLLBACK_INPUT_INVALID");
     }
-    assertExactOptions(values, ["db", "json", "to", "release-root", "dry-run"], "RELEASE_ROLLBACK_INPUT_INVALID");
+    assertExactOptions(values, ["db", "json", "to", "release-root", "dry-run", "production-root"],
+      "RELEASE_ROLLBACK_INPUT_INVALID");
     const result = runReleaseRollback({
       releaseRoot: values["release-root"],
       dbPath: assertExistingDatabase(values.db),
       to: values.to,
       dryRun: values["dry-run"] === true,
+      productionRoot: values["production-root"] === true,
     });
     return { ok: true, command: "release.rollback", ...result };
   }

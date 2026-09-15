@@ -59,7 +59,7 @@ recorded in the report as `phase`.
 
 | Gate | Command | What fails it |
 | --- | --- | --- |
-| `migration-vector` | `release gates` | pending, checksum-mismatched or unsupported applied migrations |
+| `migration-vector` | `release gates` | checksum-mismatched or unsupported applied migrations in either phase; pending migrations post-activation, or pre-activation without a matching rehearsal receipt |
 | `quick-check` | `release gates` | `PRAGMA quick_check` other than `ok` |
 | `foreign-key-check` | `db foreign-key-check --db PATH` | any `PRAGMA foreign_key_check` row |
 | `doctor` | `doctor --db PATH` | any failing doctor check |
@@ -146,8 +146,26 @@ The three inputs are read from the release root, never supplied by the caller:
 Any disagreement, unreadable input or missing receipt raises the single documented
 `RELEASE_ROLLBACK_INCOMPATIBLE`; the refusal path performs no filesystem mutation, so `current`
 is left exactly where it was. `--dry-run` reports the same decision and never moves `current`.
-On allow, `current` is replaced by a relative symlink through an atomic rename. A `--release-root`
-inside a protected deployed root is refused with `E_PROTECTED_ROOT`.
+On allow, `current` is replaced by a relative symlink through an atomic rename.
+
+### The production root {#rollback-production-root}
+
+Rollback is a production command, so the deployed authority root is reachable — but only when it is
+asked for by name and the owner is present:
+
+```sh
+node dist/src/cli.js release rollback --to <40-hex> \
+  --release-root /home/jm/.local/state/orca-jarvis/authority \
+  --db <db-path> --production-root [--dry-run]
+```
+
+`--production-root` requires the same owner production-activation-gate evidence the publish
+`--activate` requires: `JARVIS_PRODUCTION_ACTIVATION_APPROVAL=approved` in the owner's own
+interactive shell, else `JARVIS_PRODUCTION_ACTIVATION_APPROVAL_REQUIRED`. Without the flag a
+`--release-root` inside a protected deployed root is still refused with `E_PROTECTED_ROOT`, and the
+evidence alone does not reach it: the flag is what names the root. Both refusals are decided before
+anything is read, so neither touches deployed state. With both, the root is read like any other and
+the same three checks decide the rollback.
 
 Owner gate for real activation: `production-activation-gate`.
 
