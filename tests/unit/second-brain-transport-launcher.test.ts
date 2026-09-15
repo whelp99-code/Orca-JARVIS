@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process"; import { copyFileSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os"; import { join } from "node:path"; import { afterEach, describe, expect, it } from "vitest"; import { SECOND_BRAIN_CONFIG,
-  SECOND_BRAIN_FRAME_BYTES, SECOND_BRAIN_LAUNCHER, SECOND_BRAIN_PROTOCOL_VERSION, createSecondBrainTransport, type SecondBrainExecFile,
+import { tmpdir } from "node:os"; import { join } from "node:path"; import { afterEach, describe, expect, it } from "vitest"; import { secondBrainConfig,
+  SECOND_BRAIN_FRAME_BYTES, secondBrainLauncher, SECOND_BRAIN_PROTOCOL_VERSION, createSecondBrainTransport, type SecondBrainExecFile,
   type SecondBrainExecFileOptions, } from "../../src/second-brain-transport.js";
 import { ManualTimers, cleanupFixtures, fixture, options } from "../fixtures/second-brain-transport-harness.js";
 const transports: Array<{ close(): Promise<void> }> = []; afterEach(async () => { await Promise.all(transports.splice(0).map((item) => item.close()));
@@ -10,7 +10,7 @@ const transports: Array<{ close(): Promise<void> }> = []; afterEach(async () => 
     const runner: SecondBrainExecFile = (file, args, childOptions) => { launches.push({ file, args, options: childOptions });
       return execFile(file, [...args], childOptions); }; const transport = createSecondBrainTransport(options(value, { execFile: runner }));
     transports.push(transport); await expect(transport.call("sb_open_conflicts", {})).resolves.toMatchObject({ kind: "data" });
-    expect({ launcher: SECOND_BRAIN_LAUNCHER, config: SECOND_BRAIN_CONFIG, protocol: SECOND_BRAIN_PROTOCOL_VERSION, bytes: SECOND_BRAIN_FRAME_BYTES }).toEqual({
+    expect({ launcher: secondBrainLauncher(), config: secondBrainConfig(), protocol: SECOND_BRAIN_PROTOCOL_VERSION, bytes: SECOND_BRAIN_FRAME_BYTES }).toEqual({
       launcher: "/home/jm/.local/state/second-brain/app/current/bin/second-brain-mcp", config: "/home/jm/.config/second-brain/config.toml",
       protocol: "2025-11-25", bytes: 1_048_576, }); expect(launches).toHaveLength(1); expect(launches[0]?.args).toEqual([]);
     expect(launches[0]?.options).toMatchObject({ shell: false, env: { SB_CONFIG: value.config, SB_MCP_CONTRACT_PROFILE: "task32-schema4" }, windowsHide: true,

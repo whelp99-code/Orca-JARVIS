@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
-  PRODUCTION_BACKUP_ROOT,
-  PRODUCTION_BACKUP_SOURCE,
+  productionBackupRoot,
+  productionBackupSource,
   type BackupResult,
 } from "../../src/personal-os-backup.js";
 import { runBackupCli } from "../../src/personal-os-backup-cli.js";
@@ -19,8 +19,8 @@ describe("personal-OS backup CLI", () => {
     const lines: string[] = [];
     let productionInput: { readonly sourcePath: string; readonly backupRoot: string; readonly now?: Date } | undefined;
     const result = await runBackupCli([
-      "--db", PRODUCTION_BACKUP_SOURCE,
-      "--backup-root", PRODUCTION_BACKUP_ROOT,
+      "--db", productionBackupSource(),
+      "--backup-root", productionBackupRoot(),
       "--production",
     ], {
       productionBackup: async input => { productionInput = input; return RESULT; },
@@ -31,8 +31,8 @@ describe("personal-OS backup CLI", () => {
 
     expect(result).toBe(RESULT);
     expect(productionInput).toEqual({
-      sourcePath: PRODUCTION_BACKUP_SOURCE,
-      backupRoot: PRODUCTION_BACKUP_ROOT,
+      sourcePath: productionBackupSource(),
+      backupRoot: productionBackupRoot(),
       now: new Date("2026-09-03T00:00:00.000Z"),
     });
     expect(JSON.parse(lines[0] ?? "{}")).toMatchObject({ ok: true, mode: "production", quick_check: "ok" });

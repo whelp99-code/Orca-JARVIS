@@ -1,8 +1,8 @@
 import { describe, expect, it } from "vitest";
 import {
   assertProductionBackupPaths,
-  PRODUCTION_BACKUP_ROOT,
-  PRODUCTION_BACKUP_SOURCE,
+  productionBackupRoot,
+  productionBackupSource,
   productionBackupDestination,
 } from "../../src/personal-os-backup.js";
 import { PersonalOsError } from "../../src/personal-os-errors.js";
@@ -10,14 +10,14 @@ import { PersonalOsError } from "../../src/personal-os-errors.js";
 describe("personal-OS production backup boundary", () => {
   it("accepts only the exact production DB and backup root", () => {
     expect(assertProductionBackupPaths({
-      sourcePath: PRODUCTION_BACKUP_SOURCE,
-      backupRoot: PRODUCTION_BACKUP_ROOT,
-    })).toEqual({ sourcePath: PRODUCTION_BACKUP_SOURCE, backupRoot: PRODUCTION_BACKUP_ROOT });
+      sourcePath: productionBackupSource(),
+      backupRoot: productionBackupRoot(),
+    })).toEqual({ sourcePath: productionBackupSource(), backupRoot: productionBackupRoot() });
 
     for (const input of [
-      { sourcePath: `${PRODUCTION_BACKUP_SOURCE}.copy`, backupRoot: PRODUCTION_BACKUP_ROOT },
-      { sourcePath: PRODUCTION_BACKUP_SOURCE, backupRoot: `${PRODUCTION_BACKUP_ROOT}/nested` },
-      { sourcePath: "/tmp/jarvis.sqlite", backupRoot: PRODUCTION_BACKUP_ROOT },
+      { sourcePath: `${productionBackupSource()}.copy`, backupRoot: productionBackupRoot() },
+      { sourcePath: productionBackupSource(), backupRoot: `${productionBackupRoot()}/nested` },
+      { sourcePath: "/tmp/jarvis.sqlite", backupRoot: productionBackupRoot() },
     ]) {
       expect(() => assertProductionBackupPaths(input)).toThrow(PersonalOsError);
     }

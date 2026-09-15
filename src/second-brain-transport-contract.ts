@@ -1,4 +1,5 @@
 import { secondBrainScopedContractDigest } from "./second-brain-scoped-contract-digest.js";
+export { secondBrainConfig, secondBrainLauncher } from "./second-brain-endpoint.js";
 import { createHash } from "node:crypto";
 import type { ChildProcess } from "node:child_process";
 import { readFileSync } from "node:fs";
@@ -7,8 +8,6 @@ import { consumeSecondBrainContract } from "./second-brain-contract.js";
 import { inspectFrozenSchemas } from "./second-brain-frozen.js";
 import { parseSecondBrainStrictJson } from "./second-brain-strict-json.js";
 
-export const SECOND_BRAIN_LAUNCHER = "/home/jm/.local/state/second-brain/app/current/bin/second-brain-mcp";
-export const SECOND_BRAIN_CONFIG = "/home/jm/.config/second-brain/config.toml";
 export const SECOND_BRAIN_PROTOCOL_VERSION = "2025-11-25";
 export const SECOND_BRAIN_CONTRACT_PROFILE = "task32-schema4" as const;
 export type SecondBrainContractProfile = "scoped-request-status-v1" |

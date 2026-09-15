@@ -1,9 +1,14 @@
 import { resolve } from "node:path";
+import {
+  type DeploymentEnvironment,
+  resolveDeploymentRoots,
+} from "./personal-os-deployment-roots.js";
 import { PersonalOsError } from "./personal-os-errors.js";
 
-export const PRODUCTION_DATABASE_PATHS = [
-  "/home/jm/.local/state/orca-jarvis/jarvis.sqlite",
-] as const;
+/** The live authority databases this process must never open, in the configured deployment. */
+export function productionDatabasePaths(environment?: DeploymentEnvironment): readonly string[] {
+  return [resolveDeploymentRoots(environment).jarvisDb];
+}
 
 export type ProductionDatabaseLane = {
   readonly schema_version: 1;
@@ -16,7 +21,7 @@ export type ProductionDatabaseLane = {
 
 function isProductionDatabase(path: string): boolean {
   const resolved = resolve(path);
-  return PRODUCTION_DATABASE_PATHS.some((root) => resolved === root || resolved.startsWith(`${root}-`));
+  return productionDatabasePaths().some((root) => resolved === root || resolved.startsWith(`${root}-`));
 }
 
 export class ProductionDatabaseLaneGuard {

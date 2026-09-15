@@ -24,9 +24,7 @@ import type {
   SecondBrainReadinessProbe,
   SecondBrainRefreshObservation,
 } from "./second-brain-readiness.js";
-import { SECOND_BRAIN_CONFIG, SECOND_BRAIN_LAUNCHER } from "./second-brain-transport.js";
-
-const SECOND_BRAIN_CLI = "/home/jm/.local/state/second-brain/app/current/bin/sb";
+import { resolveDeploymentRoots } from "./personal-os-deployment-roots.js";
 
 /**
  * An isolated provider installation is selected by JARVIS_SECOND_BRAIN_LAUNCHER/CONFIG, and when it
@@ -38,10 +36,11 @@ function configuredEndpoint(): {
   readonly config: string;
   readonly cli: string;
 } {
+  const roots = resolveDeploymentRoots();
   const launcher = process.env["JARVIS_SECOND_BRAIN_LAUNCHER"];
   const config = process.env["JARVIS_SECOND_BRAIN_CONFIG"];
-  if (launcher === undefined) return { launcher: SECOND_BRAIN_LAUNCHER, config: SECOND_BRAIN_CONFIG, cli: SECOND_BRAIN_CLI };
-  return { launcher, config: config ?? SECOND_BRAIN_CONFIG, cli: join(dirname(launcher), "sb") };
+  if (launcher === undefined) return { launcher: roots.providerLauncher, config: roots.providerConfig, cli: roots.providerCli };
+  return { launcher, config: config ?? roots.providerConfig, cli: join(dirname(launcher), "sb") };
 }
 const PROBE_TIMEOUT_MS = 5_000;
 // The provider's JSON doctor report is one bounded document per configured check, so the ceiling

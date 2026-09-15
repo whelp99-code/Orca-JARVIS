@@ -3,8 +3,8 @@ import { realpathSync } from "node:fs";
 import { frozenArgumentsMatch, inspectFrozenSchemas, snapshotArguments } from "./second-brain-frozen.js";
 import { parseSecondBrainStrictJson } from "./second-brain-strict-json.js";
 import {
-	SECOND_BRAIN_CONFIG, SECOND_BRAIN_CONTRACT_PROFILE, SECOND_BRAIN_DEADLINES,
-	SECOND_BRAIN_FRAME_BYTES, SECOND_BRAIN_LAUNCHER, SECOND_BRAIN_LIMITS,
+	SECOND_BRAIN_CONTRACT_PROFILE, SECOND_BRAIN_DEADLINES,
+	SECOND_BRAIN_FRAME_BYTES, SECOND_BRAIN_LIMITS, secondBrainConfig, secondBrainLauncher,
 	SECOND_BRAIN_PROTOCOL_VERSION, SECOND_BRAIN_READ_METHODS as READ_METHODS,
 	SECOND_BRAIN_WRITE_METHOD as WRITE_METHOD, SecondBrainTransportError,
 	isSecondBrainReadMethod as isRead, loadSecondBrainContract, normalizeSecondBrainOutcome,
@@ -22,8 +22,8 @@ import {
 import { snapshotMemoryScopedWriteArguments } from "./memory-scoped-write-codec.js";
 import { snapshotMemoryWriteArguments } from "./memory-effect-write-request.js";
 export {
-	SECOND_BRAIN_CONFIG, SECOND_BRAIN_CONTRACT_PROFILE, SECOND_BRAIN_DEADLINES,
-	SECOND_BRAIN_FRAME_BYTES, SECOND_BRAIN_LAUNCHER, SECOND_BRAIN_LIMITS,
+	SECOND_BRAIN_CONTRACT_PROFILE, SECOND_BRAIN_DEADLINES,
+	SECOND_BRAIN_FRAME_BYTES, SECOND_BRAIN_LIMITS, secondBrainConfig, secondBrainLauncher,
 	SECOND_BRAIN_PROTOCOL_VERSION, SecondBrainTransportError,
 	normalizeSecondBrainToolSchemas,
 } from "./second-brain-transport-contract.js";
@@ -52,7 +52,7 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 	private readonly shutdownGrace: number;
 	private readonly contract: unknown;
 	private readonly report?: (diagnostic: SecondBrainDiagnostic) => void; constructor(options: SecondBrainTransportOptions) {
-		this.launcher = options.launcherPath ?? SECOND_BRAIN_LAUNCHER; this.config = options.configPath ?? SECOND_BRAIN_CONFIG; this.run = options.execFile ??
+		this.launcher = options.launcherPath ?? secondBrainLauncher(); this.config = options.configPath ?? secondBrainConfig(); this.run = options.execFile ??
 			((file, args, childOptions) => nodeExecFile(file, [...args], childOptions)); this.resolvePath = options.realpath ?? realpathSync;
 		this.timers = options.timers ?? { set: (callback, delay) => setTimeout(callback, delay), clear: (handle) => clearTimeout(handle), };
 		this.now = options.clock ?? Date.now; this.deadlines = options.deadlines ?? SECOND_BRAIN_DEADLINES; this.retries = options.safeReadRetries ?? 1;
