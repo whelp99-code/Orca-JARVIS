@@ -6,6 +6,8 @@ import { assertIsolatedRoot } from "./personal-os-protected-paths.js";
 import {
   type GeneratedUnitId,
   UNIT_INVENTORY,
+  isolatedRenderRoots,
+  productionRoots,
   renderSystemdUnit,
 } from "./personal-os-systemd.js";
 
@@ -20,10 +22,12 @@ export const CONFIG_ARTIFACTS = [
 ] as const;
 
 const ATTEMPT_MARKERS = ["/dev/shm", "/Volumes/DevSpace"] as const;
-const PRODUCTION_MARKERS = [
-  "/home/jm/.local/state/orca-jarvis",
-  "/home/jm/.local/state/second-brain",
-] as const;
+
+/** The deployed roots a fixture render must never name, whichever deployment is configured. */
+function productionMarkers(): readonly string[] {
+  const roots = productionRoots();
+  return [roots.jarvisDb.slice(0, roots.jarvisDb.lastIndexOf("/")), roots.providerState];
+}
 
 export type NativeAnalyzeResult = {
   readonly command: readonly string[];
@@ -57,6 +61,7 @@ function inventoryIds(): readonly string[] {
 function isGeneratedUnitId(id: string): id is GeneratedUnitId {
   switch (id) {
     case "jm-jarvis.service":
+    case "jm-jarvis-dashboard.service":
     case "jm-jarvis-backup.service":
     case "jm-jarvis-backup.timer":
     case "jm-second-brain-backup.service":
@@ -74,9 +79,10 @@ function countMarkers(text: string, markers: readonly string[]): number {
 }
 
 function fixtureText(productionText: string, fixturePathRoot: string): string {
+  const [authorityRoot, providerRoot] = productionMarkers();
   return productionText
-    .replaceAll("/home/jm/.local/state/orca-jarvis", `${fixturePathRoot}/orca-jarvis`)
-    .replaceAll("/home/jm/.local/state/second-brain", `${fixturePathRoot}/second-brain`);
+    .replaceAll(String(authorityRoot), `${fixturePathRoot}/orca-jarvis`)
+    .replaceAll(String(providerRoot), `${fixturePathRoot}/second-brain`);
 }
 
 export function nativeSystemdAnalyzeVerify(unitPaths: readonly string[]): NativeAnalyzeResult {
@@ -109,13 +115,7 @@ export function runNativeSystemdVerify(input: {
   const unitsDir = join(isolatedRoot, "units");
   mkdirSync(unitsDir, { recursive: true });
   const fixturePathRoot = join(input.worktree, "test/fixtures/personal-os/runtime-root");
-  const fixtureRoots = {
-    authorityCurrent: join(fixturePathRoot, "authority/current"),
-    jarvisDb: join(fixturePathRoot, "jarvis.sqlite"),
-    backupRoot: join(fixturePathRoot, "backups"),
-    providerCurrent: join(fixturePathRoot, "provider/current"),
-    providerState: join(fixturePathRoot, "provider"),
-  };
+  const fixtureRoots = isolatedRenderRoots({ root: fixturePathRoot });
   const fixturePaths: string[] = [];
   let fixture_production_paths = 0;
   let production_attempt_paths = 0;
@@ -127,7 +127,7 @@ export function runNativeSystemdVerify(input: {
       ? renderSystemdUnit({ id, mode: "fixture", roots: fixtureRoots })
       : fixtureText(productionText, fixturePathRoot);
     const rendered = generated.replaceAll(`${fixtureRoots.providerCurrent}/bin/sb`, "/bin/true");
-    fixture_production_paths += countMarkers(rendered, PRODUCTION_MARKERS);
+    fixture_production_paths += countMarkers(rendered, productionMarkers());
     const fixturePath = join(unitsDir, id);
     writeFileSync(fixturePath, rendered);
     fixturePaths.push(fixturePath);

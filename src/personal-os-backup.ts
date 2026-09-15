@@ -13,11 +13,20 @@ import {
 import { dirname, join, resolve } from "node:path";
 import { openUnderSwapAdmission } from "./authority-database-swap-barrier.js";
 import Database from "better-sqlite3";
+import {
+  type DeploymentEnvironment,
+  resolveDeploymentRoots,
+} from "./personal-os-deployment-roots.js";
 import { PersonalOsError } from "./personal-os-errors.js";
 import { assertIsolatedFile } from "./personal-os-protected-paths.js";
 
-export const PRODUCTION_BACKUP_SOURCE = "/home/jm/.local/state/orca-jarvis/jarvis.sqlite" as const;
-export const PRODUCTION_BACKUP_ROOT = "/home/jm/.local/state/orca-jarvis/backups" as const;
+/** The live authority database and the backup root beside it, in the configured deployment. */
+export function productionBackupSource(environment?: DeploymentEnvironment): string {
+  return resolveDeploymentRoots(environment).jarvisDb;
+}
+export function productionBackupRoot(environment?: DeploymentEnvironment): string {
+  return resolveDeploymentRoots(environment).backupRoot;
+}
 const PRODUCTION_BACKUP_ENTROPY_BYTES = 8;
 
 export type BackupResult = {
@@ -80,21 +89,23 @@ export async function backupSqlite(input: {
 export function assertProductionBackupPaths(input: {
   readonly sourcePath: string;
   readonly backupRoot: string;
-}): { readonly sourcePath: typeof PRODUCTION_BACKUP_SOURCE; readonly backupRoot: typeof PRODUCTION_BACKUP_ROOT } {
-  if (resolve(input.sourcePath) !== PRODUCTION_BACKUP_SOURCE || resolve(input.backupRoot) !== PRODUCTION_BACKUP_ROOT) {
+}): { readonly sourcePath: string; readonly backupRoot: string } {
+  const sourcePath = productionBackupSource();
+  const backupRoot = productionBackupRoot();
+  if (resolve(input.sourcePath) !== sourcePath || resolve(input.backupRoot) !== backupRoot) {
     throw new PersonalOsError("E_BACKUP_PATH");
   }
-  return { sourcePath: PRODUCTION_BACKUP_SOURCE, backupRoot: PRODUCTION_BACKUP_ROOT };
+  return { sourcePath, backupRoot };
 }
 
 export function productionBackupDestination(now: Date, entropy: Buffer): string {
   if (!Number.isFinite(now.getTime())) throw new PersonalOsError("E_CLOCK_INVALID");
   if (entropy.byteLength !== PRODUCTION_BACKUP_ENTROPY_BYTES) throw new PersonalOsError("E_BACKUP_PATH");
   const stamp = now.toISOString().replaceAll("-", "").replaceAll(":", "").replace(".", "");
-  return join(PRODUCTION_BACKUP_ROOT, `jarvis-${stamp}-${entropy.toString("hex")}.sqlite`);
+  return join(productionBackupRoot(), `jarvis-${stamp}-${entropy.toString("hex")}.sqlite`);
 }
 
-function secureProductionSource(sourcePath: typeof PRODUCTION_BACKUP_SOURCE): void {
+function secureProductionSource(sourcePath: string): void {
   try {
     const uid = process.getuid?.();
     const stat = lstatSync(sourcePath);
@@ -108,7 +119,7 @@ function secureProductionSource(sourcePath: typeof PRODUCTION_BACKUP_SOURCE): vo
   }
 }
 
-function secureProductionRoot(backupRoot: typeof PRODUCTION_BACKUP_ROOT): void {
+function secureProductionRoot(backupRoot: string): void {
   try {
     const uid = process.getuid?.();
     if (uid === undefined) throw new PersonalOsError("E_BACKUP_PATH");

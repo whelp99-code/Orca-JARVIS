@@ -13,7 +13,7 @@ import {
 } from "./personal-os-cycle-channel.js";
 import { PersonalOsError } from "./personal-os-errors.js";
 import { assertIsolatedRoot } from "./personal-os-protected-paths.js";
-import { renderSystemdUnit } from "./personal-os-systemd.js";
+import { isolatedRenderRoots, renderSystemdUnit } from "./personal-os-systemd.js";
 import { waitForCycleReady } from "./personal-os-cycle-ready.js";
 
 export type ProcessStressInput = {
@@ -122,13 +122,11 @@ export async function runPersonalOsProcessStress(input: ProcessStressInput): Pro
   const unit = renderSystemdUnit({
     id: "jm-jarvis.service",
     mode: "fixture",
-    roots: {
+    roots: isolatedRenderRoots({
+      root: isolatedRoot,
       authorityCurrent: input.worktree,
       jarvisDb: dbPath,
-      backupRoot: join(isolatedRoot, "backups"),
-      providerCurrent: join(isolatedRoot, "provider/current"),
-      providerState: join(isolatedRoot, "provider"),
-    },
+    }),
   });
   const argv = parseExecStart(unit);
   const authority = new AuthorityDb(dbPath);

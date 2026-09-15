@@ -18,7 +18,7 @@ import {
 import { assertMigratedSchema, migrateRehearsalSqlite, writeRehearsalPayload } from "./personal-os-rehearsal-payload.js";
 import { writeReleaseManifest } from "./personal-os-release-manifest.js";
 import { publishRelease } from "./personal-os-release-publish.js";
-import { PRODUCTION_ROOTS, renderSystemdUnit } from "./personal-os-systemd.js";
+import { isolatedRenderRoots, productionRoots, renderSystemdUnit } from "./personal-os-systemd.js";
 import Database from "better-sqlite3";
 
 const HEX40 = /^[0-9a-f]{40}$/;
@@ -152,13 +152,12 @@ export async function runPersonalOsRehearsal(options: RehearsalOptions): Promise
     restorePath: restore.destPath,
     production: production_database,
   });
-  const fixtureRoots = {
+  const fixtureRoots = isolatedRenderRoots({
+    root: join(releaseRoot, "state"),
     authorityCurrent: join(releaseRoot, "current"),
     jarvisDb: dbPath,
-    backupRoot: join(releaseRoot, "state/backups"),
     providerCurrent: join(releaseRoot, "provider-releases/current"),
-    providerState: join(releaseRoot, "state/provider"),
-  };
+  });
   mkdirSync(join(releaseRoot, "units"), { recursive: true });
   writeFileSync(join(releaseRoot, "units/jm-jarvis.service"), renderSystemdUnit({
     id: "jm-jarvis.service",
@@ -195,7 +194,7 @@ export async function runPersonalOsRehearsal(options: RehearsalOptions): Promise
     production_unit_sample: renderSystemdUnit({
       id: "jm-jarvis-backup.timer",
       mode: "production",
-      roots: PRODUCTION_ROOTS,
+      roots: productionRoots(),
     }).includes("OnCalendar=*:0/15"),
   };
   mkdirSync(join(releaseRoot, "handoff"), { recursive: true });
