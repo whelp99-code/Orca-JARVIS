@@ -98,6 +98,41 @@ The collection receipt is the one source that cannot go missing: it is the immut
 still current is likewise unreachable without writing to the store's own table, so that case is
 pinned at the instant where both hold.
 
+## Fixtures: which ones the production acceptance may rest on
+
+Two fixtures declare evidence kinds and insert a recommendation row directly, and both are marked at
+the top of the file as **engine / read-surface fixtures**:
+
+- `tests/fixtures/local-observation-chain.ts` - hand-built `linux_live_fact`,
+  `user_confirmed_principle` and `owner_decision` policy facts, declared context evidence `kind`s,
+  and `new Recommendations(db).create(...)` with declared `linux_evidence` kinds;
+- `tests/fixtures/recommendation-fixture.ts` - declared `context_observation` / `confirmed_memory`
+  context evidence, consumed by roughly twenty recommendation and brief suites.
+
+They are the right input for the consumption side. A brief reader, the recommendation read
+semantics, the evidence-binding and lifecycle surfaces and the daily loop's publish-only path all
+need a recommendation on record to read, and no provider is involved in reading one. What they
+cannot do is stand as evidence that the producer works: a row a fixture inserted says nothing about
+`produceStoredDailyRecommendation`, and a declared `linux_live_fact` says nothing about the citation
+contract that decides what may be cited as one.
+
+So the §7.3 process-level production acceptance uses neither. It rests on
+`tests/fixtures/daily-production-chain.ts`, which inserts no recommendation and no context - it
+asserts both tables are empty before the run - and every case binds an assertion to the
+recommendation id the run itself produced:
+
+| §7.3 case | Where | Binds to |
+| --- | --- | --- |
+| normal path | `daily-morning-production.test.ts` | produced id in the published brief detail |
+| same-instant rerun / other-process restart | `daily-morning-production.test.ts` | same produced id, one reconcile, same `brief_id` |
+| two competing services | `daily-service-cycles.test.ts` | one produced id, one reconcile |
+| configured service, provider present / absent | `daily-service-cycles.test.ts` | produced id / zero rows |
+| hold, quarantine, expiry, snapshot missing, source missing, replacement, capped | `daily-morning-production-validity.test.ts` | produced id, or zero rows and zero contexts |
+
+`tests/integration/daily-morning-cli-process.test.ts` stays as the publish-only process regression -
+the reader side, the two-step run contract, the fail-closed configuration path and the exclusions
+the brief applies to a recommendation already on record. Its header says so.
+
 ## Closure, and what it reaches
 
 A memory is closed when the owner hides the task it was derived from, or takes that

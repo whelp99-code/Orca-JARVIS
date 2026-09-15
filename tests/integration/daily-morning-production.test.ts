@@ -17,10 +17,19 @@ const prepared = async (options: { readonly ownerDecision: "confirm" | "reject";
 
 const reopen = (path: string) => {
   const db = new AuthorityDb(path);
-  const rows = Number(db.db.prepare("SELECT COUNT(*) FROM personal_recommendations").pluck().get());
+  const ids = db.db.prepare("SELECT recommendation_id FROM personal_recommendations ORDER BY recommendation_id")
+    .pluck().all() as string[];
   const brief = (todayProjection(db, new Date(CLI_AT)) as Record<string, unknown>)["brief"] as Record<string, unknown>;
+  // What the run's own published brief actually carries, so an assertion can bind to the id the
+  // run produced rather than to a row a fixture put there. §7.3 / B3.
+  const detail = String(db.db.prepare(
+    `SELECT detail_json FROM daily_loop_steps WHERE step_key='morning_reconcile' AND state='completed'
+     ORDER BY updated_at DESC LIMIT 1`).pluck().get());
+  const reconciles = Number(db.db.prepare(
+    "SELECT COUNT(*) FROM daily_loop_steps WHERE step_key='morning_reconcile' AND state='completed'")
+    .pluck().get());
   db.close();
-  return { rows, brief };
+  return { rows: ids.length, ids, brief, detail, reconciles };
 };
 
 // The product is supposed to produce the recommendation, not read one a fixture inserted. With the
@@ -35,6 +44,8 @@ it("produces a recommendation from stored evidence through the compiled daily CL
   const after = reopen(f.path);
   expect(after.rows).toBe(1);
   expect(after.brief).toMatchObject({ item_count: 1 });
+  // The published brief names the row this run produced. No fixture inserted a recommendation here.
+  expect(after.detail).toContain(after.ids[0]);
 }, 120_000);
 
 // One morning produces once. A second invocation for the same local date must not leave a second
@@ -45,12 +56,23 @@ it("produces once for the day when the same morning is run again", async () => {
   expect(first.stderr).toBe("");
   expect(first.status).toBe(0);
 
+  const published = reopen(f.path);
+  expect(published.ids).toHaveLength(1);
+
+  // A separate process, restarted against the same database and the same local date.
   const again = child([HARNESS, f.path, f.input, CLI_AT_AGAIN], f.provider);
   expect(again.status).toBe(0);
+  expect(JSON.parse(again.stdout).completed_run_ids).toEqual([]);
 
   const after = reopen(f.path);
   expect(after.rows).toBe(1);
   expect(after.brief).toMatchObject({ item_count: 1 });
+  // Still the same produced row, still published once: the restart neither produced a second
+  // recommendation nor republished a different one.
+  expect(after.ids).toEqual(published.ids);
+  expect(after.brief["brief_id"]).toBe(published.brief["brief_id"]);
+  expect(after.detail).toContain(published.ids[0]);
+  expect(after.reconciles).toBe(1);
 }, 120_000);
 
 // The same provider and the same confirmed memory, in a database where the owner authorized no

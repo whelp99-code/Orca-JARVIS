@@ -10,6 +10,20 @@ import { admitLocalTimelineObservation } from "../../src/local-timeline-observat
 import { localObservationChain, LOCAL_CHAIN_TASK_ID } from "../fixtures/local-observation-chain.js";
 import { tempDb } from "../helpers.js";
 
+// The publish-only process regression: the reader side, the two-step run contract, the fail-closed
+// configuration path and the current-validity exclusions the brief applies to a recommendation
+// already on record. It runs with no provider configured, so `dailyProductionPolicy` returns no
+// memory reference and production short-circuits - the recommendation it publishes is the one
+// `tests/fixtures/local-observation-chain.ts` inserted, which is why this file is not the §7.3
+// production acceptance.
+//
+// That acceptance is `tests/integration/daily-morning-production.test.ts` (normal, same-instant
+// rerun, other-process restart, providerless and unauthorized) and
+// `tests/integration/daily-morning-production-validity.test.ts` (hold, quarantine, expiry, snapshot
+// missing, source missing, replacement, capped), plus the competing-services case in
+// `tests/integration/daily-service-cycles.test.ts`. Every one of those binds to a recommendation id
+// the run itself produced.
+//
 // Same instants as the in-process daily CLI test: the morning schedule fires only at
 // 07:15:00.000 KST and config/personal-os-policy.json is effective from 2026-08-28T00:00:00.000Z.
 const MORNING_KST_0715 = "2026-08-28T22:15:00.000Z";

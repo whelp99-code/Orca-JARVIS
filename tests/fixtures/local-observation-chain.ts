@@ -1,3 +1,25 @@
+// Engine / read-surface fixture. NOT a production-path fixture.
+//
+// This file builds a stored chain - source, collection, admitted observation, cited context,
+// recommendation - by declaring the evidence kinds and the recommendation row directly
+// (`policyFact` at the `linux_live_fact` / `user_confirmed_principle` / `owner_decision` classes,
+// the context evidence `kind`s, and `new Recommendations(db).create(...)` with hand-declared
+// `linux_evidence` kinds). That is legitimate material for the consumption side: the brief reader,
+// the recommendation read semantics, the availability and lifecycle surfaces and the daily loop's
+// publish-only path all need a recommendation on record to read, and building one here is how they
+// get one without a provider.
+//
+// What it is not, and must never be counted as, is evidence that the product's producer works. A
+// recommendation this file inserted proves nothing about `produceStoredDailyRecommendation`, and a
+// hand-declared `linux_live_fact` proves nothing about the citation contract that decides what may
+// be cited as one (§7.1.1, §7.1.4).
+//
+// The §7.3 process-level production acceptance therefore does not use this file. It lives in
+// `tests/integration/daily-morning-production.test.ts` and
+// `tests/integration/daily-morning-production-validity.test.ts`, over
+// `tests/fixtures/daily-production-chain.ts`, which inserts no recommendation and no context and
+// asserts both tables are empty before the run. See the "Fixtures" section of
+// `docs/daily-production-contract-2026-09-14.md`.
 import type { AuthorityDb } from "../../src/db.js";
 import { LocalTimelineSnapshotStore } from "../../src/local-timeline-snapshot-store.js";
 import { ObservationRefreshStore } from "../../src/observation-refresh-store.js";

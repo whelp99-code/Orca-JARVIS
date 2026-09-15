@@ -1,5 +1,5 @@
 import { rmSync, writeFileSync } from "node:fs";
-import { spawnSync } from "node:child_process";
+import { spawn, spawnSync } from "node:child_process";
 import { pathToFileURL } from "node:url";
 import { DailyControlLoop } from "../../src/daily-loop-service.js";
 import { DailyLoopError } from "../../src/daily-loop-types.js";
@@ -167,6 +167,9 @@ const produced = (path: string, at: string, date: string) => {
       phases: db.db.prepare(
         "SELECT phase,state FROM daily_loop_runs WHERE loop_date=? ORDER BY phase").all(date),
       evening: Number(db.db.prepare("SELECT COUNT(*) FROM native_evening_publications").pluck().get()),
+      reconciles: Number(db.db.prepare(
+        "SELECT COUNT(*) FROM daily_loop_steps WHERE step_key='morning_reconcile' AND state='completed'")
+        .pluck().get()),
     };
   } finally { db.close(); }
 };
@@ -228,3 +231,41 @@ it("continues evening publication when the producing morning executor fails", as
     } finally { db.close(); }
   } finally { fail.mockRestore(); }
 }, 120_000);
+
+/** The same compiled `service once`, started concurrently, so the two really do compete. */
+const serviceRace = (args: readonly string[], at: string, environment: Readonly<Record<string, string>>) =>
+  new Promise<{ status: number | null; stdout: string; stderr: string }>(done => {
+    const inherited = { ...process.env };
+    delete inherited["JARVIS_SECOND_BRAIN_LAUNCHER"];
+    delete inherited["JARVIS_SECOND_BRAIN_CONFIG"];
+    const process_ = spawn(process.execPath, ["--input-type=module", "-e",
+      `import { execute } from ${JSON.stringify(pathToFileURL(resolve("dist/src/cli.js")).href)};
+       process.stdout.write(JSON.stringify(await execute(JSON.parse(process.argv[1]),
+         { clock: () => new Date(process.argv[2]) })));`,
+      JSON.stringify(args), at], { env: { ...inherited, ...environment } });
+    let stdout = ""; let stderr = "";
+    process_.stdout.setEncoding("utf8"); process_.stderr.setEncoding("utf8");
+    process_.stdout.on("data", chunk => { stdout += chunk; });
+    process_.stderr.on("data", chunk => { stderr += chunk; });
+    process_.on("close", status => done({ status, stdout, stderr }));
+  });
+
+// §7.3: two competing services. Both are started for the same morning against the same database at
+// the same instant, and the lease decides. Whichever wins, the day has exactly one recommendation
+// and one reconcile, and the published brief carries the row that was actually produced.
+it("lets two competing services produce exactly one recommendation for the morning", async () => {
+  const f = await productionService();
+
+  const [first, second] = await Promise.all([
+    serviceRace(f.args, CLI_AT, f.provider), serviceRace(f.args, CLI_AT, f.provider)]);
+
+  // A loser reports a lease failure; neither may crash.
+  for (const run of [first, second]) expect([0, 2]).toContain(run.status);
+  expect([first.status, second.status]).toContain(0);
+  const after = produced(f.path, CLI_AT, MORNING_DATE);
+  expect(after.rows).toHaveLength(1);
+  expect(after.brief).toMatchObject({ state: "ready", item_count: 1 });
+  expect(after.detail).toContain(after.rows[0]);
+  expect(after.reconciles).toBe(1);
+  expect(after.phases).toEqual([{ phase: "morning", state: "completed" }]);
+}, 180_000);
