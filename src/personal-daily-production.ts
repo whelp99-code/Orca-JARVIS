@@ -4,6 +4,7 @@ import type { ContextAssemblerInput, MemoryEvidenceInput, MemoryInput } from "./
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
 import { readCurrentLocalTimelineObservation } from "./local-timeline-observation.js";
+import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import type { PreparedMemoryReference } from "./memory-reference-context.js";
 import { classifyAssembledCitations } from "./personal-context-citation-contract.js";
 import { produceDailyRecommendation } from "./personal-context-production.js";
@@ -60,6 +61,12 @@ function ownerWorkflowAuthorization(authority: AuthorityDb, subject: string, now
  * A local timeline collection is asked whether it still matches its source, the way the context
  * store asks before it will accept one: an observation whose cache moved on is left out here rather
  * than refused later, so a replaced collection withholds the run instead of failing it.
+ *
+ * Every observation, whatever its source, is also asked of the projection authority. The collection
+ * seams already refuse a suppressed observation when they are the ones being read, but a stored row
+ * read straight out of `personal_observations` reaches none of them - so without this, a quarantined
+ * or suppressed observation could still be cited as a current Linux fact and published in the
+ * morning brief. Nothing may rest on a projection the owner has taken away.
  */
 function currentObservations(authority: AuthorityDb, now: Date): readonly ObservationEnvelopeV1[] {
   const rows = authority.db.prepare(
@@ -67,7 +74,9 @@ function currentObservations(authority: AuthorityDb, now: Date): readonly Observ
      WHERE expires_at>? ORDER BY observed_at,observation_id LIMIT 64`).all(now.toISOString()) as
     { observation_id: string; source_id: string; canonical_envelope_json: string }[];
   const observations: ObservationEnvelopeV1[] = [];
+  const projections = new MemoryProjectionAuthority(authority);
   for (const row of rows) {
+    if (projections.isProjectionIdSuppressed(row.observation_id)) continue;
     if (row.source_id === LOCAL_TIMELINE_SOURCE) {
       try { readCurrentLocalTimelineObservation({ db: authority.db }, row.observation_id, () => now); }
       catch (error) { if (error instanceof JarvisError) continue; throw error; }

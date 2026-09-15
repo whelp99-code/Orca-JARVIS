@@ -62,6 +62,42 @@ therefore only these two, and they are the producer's responsibility to satisfy 
 
 `tests/unit/daily-production-contract.test.ts` pins both boundaries.
 
+## Which current-validity conditions are production inputs
+
+§7.2.3 and §7.2.5 name hold, quarantine, expiry, snapshot missing, real source missing, replacement
+and capped collection. On the production path they do not all mean the same thing, because the local
+task-timeline collection is an advisory source: §7.1.2 keeps it out of `linux_live_fact`, so
+`produceStoredDailyRecommendation` filters the citable set down to live facts and the local
+collection can never be the one an action's `current_evidence_ref` points at.
+
+So a condition on the local collection is not a condition on a production input. With a provider
+present, an authorized workflow and a confirmed memory on record, a held, cleared, deleted, replaced
+or capped local collection leaves the run **producing** from the live observation beside it. The
+local observation is dropped from `currentObservations` - it is genuinely no longer current, and
+`tests/integration/daily-morning-production-validity.test.ts` asserts that before each run - but the
+run still has a fact to cite. That is correct, not a gap: promoting the local collection to a
+production input is exactly the renaming §7.1.2 forbids.
+
+The conditions that do withhold, before any context is assembled or stored:
+
+| Condition on a production input | Outcome |
+| --- | --- |
+| Every stored observation past its own window | `withheld: no_current_observation`, 0 contexts, 0 recommendations |
+| The cited observation's projection quarantined or suppressed | `withheld: no_current_observation`, 0 contexts, 0 recommendations |
+| The memory candidate behind the principle quarantined | `withheld: no_confirmed_principle`, 0 contexts, 0 recommendations |
+| The task that memory was derived from closed by the owner | `withheld: no_confirmed_principle`, 0 contexts, 0 recommendations |
+
+`currentObservations` asks the projection authority about every stored observation, whatever its
+source. The collection seams already refuse a suppressed observation when they are the ones being
+read, but the producer reads `personal_observations` directly and reaches none of them - without
+that question a quarantined observation could still be cited as a current Linux fact and published.
+
+The collection receipt is the one source that cannot go missing: it is the immutable manifest
+`collectedObservation` reads, and the product refuses to delete it
+(`OBSERVATION_REFRESH_IMMUTABLE`). A cleared local snapshot at an instant where the observations are
+still current is likewise unreachable without writing to the store's own table, so that case is
+pinned at the instant where both hold.
+
 ## Closure, and what it reaches
 
 A memory is closed when the owner hides the task it was derived from, or takes that
