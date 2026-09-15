@@ -7,6 +7,19 @@
 // child answering as a provider does, and what it returns only becomes evidence if this database
 // can show a settled write of ours on that destination, the owner's confirmation for that content,
 // and the resolved target identity a later forget would reach the artifact through.
+//
+// Environment. Nothing below is required; the defaults are the run this script shipped with.
+//   JARVIS_SECOND_BRAIN_LAUNCHER, JARVIS_SECOND_BRAIN_CONFIG
+//     Both set: the provider-using arms read through that installed provider instead of the
+//     development-checkout fixture child, and the receipt records
+//     provider_endpoint.kind "installed_release". Either alone is ignored. The providerless arm
+//     stays providerless in every case.
+//   PROBE_AT, PROBE_MEMORY_AT
+//     Move the injected morning instant (and with it every other harness-supplied instant, by the
+//     same delta). A real provider answers on the real wall clock and refuses a read fence minted
+//     far from it, so a real-provider run has to inject a real instant. The packaged binary still
+//     carries no clock override.
+// See scripts/lib/production-chain-probe-endpoint.mjs for the exact contract.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
 import { generateKeyPairSync, createHash, randomBytes } from "node:crypto";
@@ -15,6 +28,7 @@ import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "
 import { join, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { createTestEnvironment } from "./lib/test-environment.mjs";
+import { probeInstants, probeProviderEndpoint, providerlessEnvironment } from "./lib/production-chain-probe-endpoint.mjs";
 
 assert.ok(process.argv[2], "PACKAGE_ROOT required");
 const root = resolve(process.argv[2]);
@@ -25,16 +39,18 @@ const load = name => import(pathToFileURL(join(root, "dist/src", name)).href);
 // 2026-08-28T00:00:00.000Z. The packaged binary exposes no clock override and must not gain one, so
 // the fixed instant reaches it the way the runtime already supports: through execute()'s
 // dependencies, in the test entry the package ships.
-const AT = "2026-08-28T22:15:00.000Z";
-const CLI_AT = "2026-08-28T22:15:00.005Z";
-const MEMORY_AT = "2026-08-28T12:00:00.000Z";
+// The instants, and the provider this run reads through. Both come from the environment contract
+// documented in the header; with an empty environment they are the shipped frozen run.
+const instants = probeInstants();
+const { AT, CLI_AT, MEMORY_AT, shifted } = instants;
+const ENDPOINT = probeProviderEndpoint();
 const TASK = "task:packaged-production";
 const PAGE = "wiki/example-alpha";
 const SID = "12345678";
 const ARTIFACT_LINE = "ExampleAlpha.[^12345678]";
 const sha = value => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 const ARTIFACT_DIGEST = sha(ARTIFACT_LINE);
-const shift = ms => new Date(Date.parse(AT) + ms).toISOString();
+const shift = instants.shift;
 const PROVIDER_CHILD = resolve("tests/fixtures/second-brain-mcp-child.mjs");
 const LIVE_SOURCE = "src:pos:v1:orca:local";
 
@@ -101,8 +117,8 @@ try {
       references: [{ kind: "inference_evidence",
         identifier: { namespace: "inference_evidence", id: sha("packaged-inference-evidence").slice(7), version: 1 },
         evidence_digest: sha("packaged-inference-evidence-digest"),
-        observed_at: "2026-08-28T11:00:00.000Z", fresh_until: "2026-08-28T13:00:00.000Z",
-        expires_at: "2026-08-29T12:00:00.000Z" }] },
+        observed_at: shifted("2026-08-28T11:00:00.000Z"), fresh_until: shifted("2026-08-28T13:00:00.000Z"),
+        expires_at: shifted("2026-08-29T12:00:00.000Z") }] },
     second_brain: { state: "available" }, conflict: { state: "none", references: [] },
   };
 
@@ -118,8 +134,8 @@ try {
   const observed = { kind: "current", checked_at: MEMORY_AT, evidence: [{ kind: "memory", page_id: PAGE,
     sid: SID, source_ref: "synthetic:ExampleAlpha", source_id: "src:pos:v1:second-brain:primary",
     source_version: "sb/0.1.0|v1|fixture", sensitivity: "personal", observed_at: MEMORY_AT,
-    valid_at: MEMORY_AT, freshness: { state: "fresh", checked_at: MEMORY_AT, fresh_until: "2026-08-28T13:00:00.000Z" },
-    expires_at: "2026-08-29T12:00:00.000Z", trust: "untrusted", authority: "none",
+    valid_at: MEMORY_AT, freshness: { state: "fresh", checked_at: MEMORY_AT, fresh_until: shifted("2026-08-28T13:00:00.000Z") },
+    expires_at: shifted("2026-08-29T12:00:00.000Z"), trust: "untrusted", authority: "none",
     excerpt: ARTIFACT_LINE, content_digest: ARTIFACT_DIGEST, omission: null, record: null }] };
   const reader = { search: () => Promise.resolve(observed), readPage: () => Promise.resolve(observed),
     recentChanges: () => Promise.resolve(observed), openConflicts: () => Promise.resolve(observed) };
@@ -148,6 +164,8 @@ try {
   };
 
   function provider(directory, contract) {
+    // An installed provider is an endpoint this run was given, not one it creates.
+    if (ENDPOINT.kind === "installed_release") return ENDPOINT;
     chmodSync(PROVIDER_CHILD, 0o755);
     const launcher = join(directory, "second-brain-mcp");
     const config = join(directory, "provider-config.json");
@@ -155,7 +173,7 @@ try {
     writeFileSync(config, JSON.stringify({ adapterScenario: "schema4", contractPath: contract,
       schema4Pages: [{ page_id: PAGE, sensitivity: "personal", updated: "2026-08-28",
         records: [{ sid: SID, text: "ExampleAlpha", valid_from: "2026-08-28T00:00:00.000Z" }] }] }));
-    return { launcher, config };
+    return { kind: "development_checkout_fixture_child", launcher, config };
   }
 
   async function prepare(label, options) {
@@ -275,9 +293,8 @@ try {
 
   async function run(label, options) {
     const prepared = await prepare(label, options);
-    const environment = { ...process.env };
-    delete environment.JARVIS_SECOND_BRAIN_LAUNCHER;
-    delete environment.JARVIS_SECOND_BRAIN_CONFIG;
+    // The providerless arm must name no provider even when the shell exported one.
+    const environment = providerlessEnvironment();
     if (options.provider !== false) {
       environment.JARVIS_SECOND_BRAIN_LAUNCHER = prepared.endpoint.launcher;
       environment.JARVIS_SECOND_BRAIN_CONFIG = prepared.endpoint.config;
@@ -319,6 +336,10 @@ try {
   assert.equal(providerless.recommendation_rows, 0);
 
   const result = {
+    provider_endpoint: ENDPOINT.kind === "installed_release"
+      ? { kind: ENDPOINT.kind, launcher: ENDPOINT.launcher, config: ENDPOINT.config }
+      : { kind: ENDPOINT.kind },
+    injected_instants: { AT, CLI_AT, MEMORY_AT, shift_ms: instants.shift_ms },
     scope: "packaged runtime: local + live observation -> owner-confirmed memory -> provider read through the reference seam -> context -> recommendation -> morning brief, through the packaged daily command",
     package_root: root, source: receipt.source,
     runtime: { node: process.version, better_sqlite3_resolved_from: sqlite,
@@ -333,7 +354,9 @@ try {
     isolated_fixture: ["decision and verifier anchors generated for this run",
       "a provider child from the development checkout serving one page, stating no trust and no evidence kind",
       "the provider's write acceptance and artifact observation for the one settled write",
-      "fixed instant 2026-08-28T22:15:00.000Z injected through the packaged test entry"],
+      `fixed instant ${AT} injected through the packaged test entry`,
+      ...(ENDPOINT.kind === "installed_release" ? []
+        : ["the provider endpoint is the development-checkout fixture child"])],
     not_exercised: ["no operator key", "no Second Brain release process", "no native model call"],
     produced, unauthorized, unconfirmed, providerless, deployment_ready: false,
   };
