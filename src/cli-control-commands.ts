@@ -18,6 +18,9 @@ import { executeMemoryIntake } from "./cli-memory-intake.js";
 import { executeMemoryReference } from "./cli-memory-reference.js";
 import { executeMemoryPostcompact } from "./cli-gjc-commands.js";
 import { executeMemoryScopedReconcile } from "./cli-memory-scoped-reconcile.js";
+import {
+  executeMemoryWithdrawalList, executeMemoryWithdrawalPrepare,
+} from "./cli-memory-withdrawal.js";
 import { stageMemoryRememberDispatch } from "./memory-remember-dispatch.js";
 import { taskExecutionReadiness } from "./task-execution-runtime.js";
 import { pageControlCommands } from "./control-command-page.js";
@@ -30,6 +33,8 @@ export async function executeControlCommand(
   if (command === "memory" && subcommand === "context") return executeMemoryReference(context);
   if (command === "memory" && subcommand === "postcompact") return executeMemoryPostcompact(context);
   if (command === "memory" && subcommand === "reconcile-scoped") return executeMemoryScopedReconcile(context);
+  if (command === "memory" && subcommand === "withdrawals") return executeMemoryWithdrawalList(context);
+  if (command === "memory" && subcommand === "withdraw-prepare") return executeMemoryWithdrawalPrepare(context);
   if (command === "memory" && subcommand === "stage-dispatch" && argument) {
     const roots = bindMemoryCandidateSpools(db, context.dependencies.memoryOutboxOptions);
     return { ok: true, command: "memory.stage-dispatch",

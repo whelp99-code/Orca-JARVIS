@@ -9,6 +9,7 @@ import type { MemoryOutboxProductionOptions } from "./memory-outbox-production.j
 import type { MemoryReferenceProductionOptions } from "./memory-reference-production.js";
 import type { ScopedMemoryProductionOptions } from "./memory-scoped-production.js";
 import type { ScopedReconcileProductionOptions } from "./memory-scoped-reconcile-production.js";
+import type { MemoryWithdrawalProductionOptions } from "./memory-withdrawal-production.js";
 
 export type CliDependencies = {
   readonly orcaRunner?: OrcaRunner;
@@ -25,6 +26,8 @@ export type CliDependencies = {
   /** Host-authenticated session and explicit policy; never derived from CLI claims. */
   readonly scopedMemoryReferenceOptions?: ScopedMemoryProductionOptions;
   readonly scopedMemoryReconcileOptions?: ScopedReconcileProductionOptions;
+  /** Provider identity and read-fence key for resolving what a hidden task still has stored. */
+  readonly memoryWithdrawalOptions?: MemoryWithdrawalProductionOptions;
 };
 
 export type CliValues = {

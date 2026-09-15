@@ -137,12 +137,22 @@ export function memoriesAwaitingTaskWithdrawal(
   const resolved = authority.db.prepare(
     `SELECT target_id,target_digest FROM memory_resolved_target_metadata
      WHERE source_identity_digest=? ORDER BY target_id LIMIT 1`);
+  // A withdrawal that took effect leaves an active suppression of the target it acted on, and the
+  // identity that ties that suppression back to this candidate is the same source identity - not
+  // the content identity, which the provider computes over the record text while this database
+  // computes its own over the candidate material. Asking by source identity is what lets a
+  // completed withdrawal leave the list; the content clause above still covers material suppressed
+  // by its own content identity, which is how a restore-time block is recorded.
+  const withdrawn = authority.db.prepare(
+    "SELECT 1 FROM memory_suppressions WHERE state='active' AND source_identity_digest=?").pluck();
   return rows.flatMap(row => {
     if (row === null || typeof row !== "object") return [];
     const taskId = String(Reflect.get(row, "task_id"));
     if (!taskSuppressed(authority, taskId)) return [];
     const candidateId = String(Reflect.get(row, "candidate_id"));
-    const target = resolved.get(memoryCandidateSourceIdentity(candidateId));
+    const sourceIdentity = memoryCandidateSourceIdentity(candidateId);
+    if (withdrawn.get(sourceIdentity) === 1) return [];
+    const target = resolved.get(sourceIdentity);
     const named = target === null || target === undefined || typeof target !== "object"
       ? undefined : target as { target_id: unknown; target_digest: unknown };
     return [{ candidate_id: candidateId, task_id: taskId,
