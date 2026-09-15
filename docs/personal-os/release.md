@@ -4,8 +4,35 @@ This is the executable-procedure source for Linux JARVIS/Second Brain releases. 
 
 ## Roots {#roots}
 
-- `jarvis-authority-releases` = `/home/jm/.local/state/orca-jarvis/authority/releases/<40-hex>`
-- `provider-app-releases` = `/home/jm/.local/state/second-brain/app/releases/<40-hex>`
+Every root below is *derived*, not fixed. `src/personal-os-deployment-roots.ts` resolves all of
+them from the environment, and the values shown are what an unset environment produces — the
+per-user installation that runs today. Report what a given build actually resolved with
+`node dist/src/cli.js deployment roots` (it opens no database), and render the systemd units that
+follow from it with `deployment render-units --out DIR`.
+
+| Variable | Default | Reaches |
+| --- | --- | --- |
+| `JARVIS_STATE_ROOT` | `/home/jm/.local/state/orca-jarvis` | authority DB, backups, `authority/current`, `control-center/current`, protected roots, the publish scripts' production-DB test |
+| `JARVIS_PROVIDER_STATE_ROOT` | `/home/jm/.local/state/second-brain` | provider `app/current`, the MCP launcher, the `sb` CLI, request queue |
+| `JARVIS_PROVIDER_CONFIG` | `/home/jm/.config/second-brain/config.toml` | `SB_CONFIG`, and the `request-executor.enabled` marker beside it |
+| `JARVIS_PROVIDER_SHARE_ROOT` | `/home/jm/.local/share/second-brain` | provider maintenance `ReadWritePaths` |
+| `JARVIS_SHARE_ROOT` | `/home/jm/.local/share/jarvis` | protected roots |
+| `JARVIS_CONFIG_ROOT` | `/home/jm/.config` | protected roots (`systemd`, `orca-jarvis`) |
+| `JARVIS_BIN_ROOT` | `/home/jm/.local/bin` | generated units' `PATH` (per-user renders only) |
+| `JARVIS_NODE_BIN` | `/home/jm/.nvm/versions/node/v24.19.0/bin/node` | every generated unit's interpreter, and the publish scripts |
+| `JARVIS_SERVICE_USER` | unset | when set, units render as **system** units with `User=`/`Group=`, `ProtectHome=yes` and `WantedBy=multi-user.target` |
+
+An override must be an absolute, already-canonical path, or resolution refuses with
+`E_DEPLOYMENT_ROOT` — these paths are *compared* (protected-root and production-backup checks), not
+just opened, so a path that normalises to something the operator did not write is refused rather
+than accepted.
+
+`JARVIS_SERVICE_USER` exists for the retention/compaction lane. That lane can only prove exclusion
+when every same-UID process is the authority's own (`docs/local-retention-operations-proposal.md`),
+which means running under a dedicated account whose state is not in anyone's home.
+
+- `jarvis-authority-releases` = `${JARVIS_STATE_ROOT}/authority/releases/<40-hex>` (default `/home/jm/.local/state/orca-jarvis/authority/releases/<40-hex>`)
+- `provider-app-releases` = `${JARVIS_PROVIDER_STATE_ROOT}/app/releases/<40-hex>` (default `/home/jm/.local/state/second-brain/app/releases/<40-hex>`)
 - Activation is a `relative-current-symlink` updated by `atomic-rename`
 
 Rehearsal command (isolated `--release-root` only):

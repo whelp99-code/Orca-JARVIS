@@ -51,7 +51,10 @@ contract working, not a defect to code around.
 1. **A dedicated user.** Run the authority under an account that owns nothing else. Every process
    that user owns is then the product's own, and the unreadable set is empty by construction. Costs a
    service account, file ownership migration, and whatever else currently runs as this user losing
-   access.
+   access. The product side of this is in place: every production root is resolved from the
+   environment (`JARVIS_STATE_ROOT` and friends, `docs/personal-os/release.md` §Roots), and setting
+   `JARVIS_SERVICE_USER` renders the units as system units running as that account. What remains is
+   the host work — creating the account, moving the state, installing the units — which needs root.
 2. **A PID namespace.** Run it where `/proc` shows only its own processes. Same effect, no account
    change. This host cannot enter one unprivileged - the measurement above - so it needs either
    privilege at start-up or a container runtime.

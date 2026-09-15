@@ -7,7 +7,8 @@ if [[ "${JARVIS_PRODUCTION_ACTIVATION_APPROVAL:-}" != "approved" ]]; then
 fi
 
 readonly WORKTREE="${1:-/home/jm/orca/projects/Orca-JARVIS}"
-readonly RUNTIME_ROOT="${JARVIS_CONTROL_CENTER_RUNTIME_ROOT:-/home/jm/.local/state/orca-jarvis/control-center}"
+readonly STATE_ROOT="${JARVIS_STATE_ROOT:-/home/jm/.local/state/orca-jarvis}"
+readonly RUNTIME_ROOT="${JARVIS_CONTROL_CENTER_RUNTIME_ROOT:-${STATE_ROOT}/control-center}"
 readonly NODE_BIN="${JARVIS_NODE_BIN:-/home/jm/.nvm/versions/node/v24.19.0/bin/node}"
 readonly VERIFIER="${RUNTIME_ROOT}/release-verifier.mjs"
 readonly NATIVE="node_modules/better-sqlite3/build/Release/better_sqlite3.node"

@@ -21,14 +21,20 @@
 set -euo pipefail
 umask 0022
 
-readonly OWNER_GATE="JARVIS_PRODUCTION_ACTIVATION_APPROVAL"
-readonly PRODUCTION_DB="/home/jm/.local/state/orca-jarvis/jarvis.sqlite"
-readonly PRODUCTION_BACKUP_ROOT="/home/jm/.local/state/orca-jarvis/backups"
-
 fail() {
   printf '%s\n' "$1" >&2
   exit "${2:-1}"
 }
+
+readonly OWNER_GATE="JARVIS_PRODUCTION_ACTIVATION_APPROVAL"
+# The one place this script learns where production lives. JARVIS_STATE_ROOT is the same variable
+# the product resolves its roots from (src/personal-os-deployment-roots.ts), so a deployment moved
+# to a service account is recognised as production here too — and the `--production` backup path
+# below is still selected only for that deployment's own database, never for a copy of it.
+readonly JARVIS_STATE_ROOT="${JARVIS_STATE_ROOT:-/home/jm/.local/state/orca-jarvis}"
+[[ "${JARVIS_STATE_ROOT}" = /* ]] || fail 'PACKAGE_RELEASE_STATE_ROOT_INVALID' 2
+readonly PRODUCTION_DB="${JARVIS_STATE_ROOT}/jarvis.sqlite"
+readonly PRODUCTION_BACKUP_ROOT="${JARVIS_STATE_ROOT}/backups"
 
 PACKAGE=""
 PIN=""

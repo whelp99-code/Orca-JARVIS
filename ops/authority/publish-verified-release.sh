@@ -7,8 +7,9 @@ if [[ "${JARVIS_PRODUCTION_ACTIVATION_APPROVAL:-}" != "approved" ]]; then
 fi
 
 readonly WORKTREE="${1:-/home/jm/orca/projects/Orca-JARVIS}"
-readonly RUNTIME_ROOT="${JARVIS_AUTHORITY_RUNTIME_ROOT:-/home/jm/.local/state/orca-jarvis/authority}"
-readonly CONTROL_ROOT="${JARVIS_CONTROL_CENTER_RUNTIME_ROOT:-/home/jm/.local/state/orca-jarvis/control-center}"
+readonly STATE_ROOT="${JARVIS_STATE_ROOT:-/home/jm/.local/state/orca-jarvis}"
+readonly RUNTIME_ROOT="${JARVIS_AUTHORITY_RUNTIME_ROOT:-${STATE_ROOT}/authority}"
+readonly CONTROL_ROOT="${JARVIS_CONTROL_CENTER_RUNTIME_ROOT:-${STATE_ROOT}/control-center}"
 readonly NODE_BIN="${JARVIS_NODE_BIN:-/home/jm/.nvm/versions/node/v24.19.0/bin/node}"
 readonly CONTROL_VERIFIER="${CONTROL_ROOT}/release-verifier.mjs"
 readonly CURRENT="${RUNTIME_ROOT}/current"
