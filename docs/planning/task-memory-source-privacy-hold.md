@@ -207,3 +207,40 @@ refresh receipt와 마찬가지로 아직 계약이 없다.
 JARVIS 측에서 이번에 끝낸 것은 그 앞까지다: 어떤 후보가 어떤 task에서 나왔고, 아직 suppression이 없고,
 어느 `target_id`/`target_digest`를 겨냥해야 하는지(`memoriesAwaitingTaskWithdrawal`). 남은 것은
 provider 재해석 계약과 그 응답을 위 타입으로 옮기는 어댑터이며, 후자는 전자 없이는 실행해볼 수 없다.
+
+### 저장분 철회가 실제로 동작한다 — 2026-09-15
+
+위 2026-09-11 항목의 "provider 재해석 계약이 없다"는 결론은 **사실이 아니었다**. 재확인한 결과 provider는
+이미 그 읽기를 구현하고 있고 frozen 계약에 선언되어 있다. 따라서 이번에 provider 변경은 없다.
+
+| 확인한 곳 | 결과 |
+|---|---|
+| `contracts/second-brain-mcp-v5.json`(`schema_version` 7)의 `tools.sb_resolve_memory_target` | 선언되어 있음. 요청 `record_id`/`record_digest`/`generation_id`/`generation_manifest_digest`(+선택 `read_fence`), `additionalProperties:false` |
+| 같은 항목의 `happy.raw_response` | `vault_head`·`vault_tree`·`page_id`·`page_blob_oid`·`citation_span_start`/`_end`·`valid_from`/`valid_until` 포함 24개 필드 전부 |
+| provider `sb/targets.py:resolve_memory_target` | 위 필드를 커밋된 blob에서 계산하고 `target_digest`가 전부를 묶음 |
+| provider `sb/mcp.py:1149` | 계약 profile ≥4면 `sb_resolve_memory_record`, 그 이하면 page/exact_record 선택자를 같은 도구 이름으로 노출 |
+
+즉 공백은 provider 쪽이 아니라 **자비스 쪽에 그 읽기를 호출하는 제품 경로가 없었다는 것**이었다.
+`SecondBrainEffectService.resolveTarget`은 이미 있었지만 호출자는 테스트뿐이었다.
+
+이번에 닫은 것:
+
+- `MemoryWithdrawalEffect`(`src/memory-withdrawal-effect.ts`)가 `memoriesAwaitingTaskWithdrawal`의 각
+  항목에 대해 정착된 outbox 행의 목적지(`expected_page_id`/`expected_sid`)를 읽고, 기존 bounded read로
+  그 레코드를 찾아, provider 읽기로 target을 다시 해석한다. 실패는 전부 닫는 방향이다: 기록된
+  `target_id`/`target_digest`와 다르면 거부(페이지가 변한 경우도 같은 검사로 거부된다), 후보의 source
+  identity가 아니면 거부, 읽은 레코드의 content/citation identity와 다르면 거부, 만료면 거부, 계약에 없는
+  필드는 공용 target 파서가 먼저 거부한다.
+- 준비는 기존 `MemoryDeletionSaga.prepare()`(또는 `MemoryLifecycleService.prepareDeletion`)로 넘긴다.
+  scope는 target에서 파생하며 새 승인 체계나 provider 삭제 합성은 없다.
+- `memoriesAwaitingTaskWithdrawal`이 완료된 철회를 목록에서 빼도록 고쳤다. 기존 content identity 비교는
+  provider가 레코드 본문으로 계산하는 값과 이 DB가 후보 재료로 계산하는 값이 달라 절대 맞지 않았다.
+  연결되는 것은 쓰기가 실어 보낸 source identity다.
+- CLI: `memory withdrawals`(DB만 읽음), `memory withdraw-prepare <candidate-id>`.
+
+회귀: `tests/integration/memory-withdrawal-effect.test.ts`. 숨긴 task → 실제 정착된 저장분 → 재해석 →
+준비 → 서명 receipt 승인 → 실제 deletion saga dispatch → 목록이 빈다. 음성: 다른 target 거부, 페이지 변경
+후 거부, 계약 외 필드 거부, 승인 철회 시 dispatch 0.
+
+남은 외부 항목은 provider 증명 관측(`observer.deletion`)이며, 이는 철회 준비·승인·전송과 별개의 기존
+잔여다. 운영 배포·push는 하지 않았다.
