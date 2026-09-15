@@ -27,11 +27,35 @@ All nine run together from the packaged CLI. The aggregate prints one JSON repor
 when any gate fails, so a caller branches on process status without parsing the report:
 
 ```sh
-node dist/src/cli.js release gates --db <db-path> [--dashboard-url URL]
+node dist/src/cli.js release gates --db <db-path> [--dashboard-url URL] \
+  [--phase pre-activation --rehearsal-receipt <path> | --phase post-activation]
 ```
 
 Each gate answers from its own read-only connection and none of them migrate, so `release gates`
 runs before migrations are applied and reports pending migrations instead of requiring them.
+
+### Phases {#gate-phases}
+
+`jm-jarvis.service` applies the pending migrations in its own `ExecStartPre`, so the two sides of
+the restart are not the same question and `release gates` takes an explicit `--phase`. The phase is
+recorded in the report as `phase`.
+
+- `--phase post-activation` (the default, so an unphased call is the strict one): `migration-vector`
+  requires zero pending migrations and an applied vector equal to the release's own shipped vector.
+- `--phase pre-activation --rehearsal-receipt <path>`: the pending migrations are exactly the ones
+  the service is about to apply, so they are the expected state. The gate passes when the receipt
+  written by `db migrate --rehearse` shows that *this* database rehearsed onto *this* release's
+  vector: the receipt's `source_vector_digest` equals the database's current applied-vector digest,
+  its `target_vector_digest` equals the release's expected vector digest, and its checks report
+  `quick_check: "ok"` with `foreign_key_violations: 0`. The passing gate records
+  `accepted_via: "rehearsal-receipt"` and the receipt it accepted.
+- Pre-activation without a receipt is `RELEASE_GATE_REHEARSAL_RECEIPT_REQUIRED`; an unreadable,
+  malformed or failed receipt is `RELEASE_GATE_REHEARSAL_RECEIPT_INVALID`; a receipt for another
+  database or another release is `RELEASE_GATE_REHEARSAL_VECTOR_MISMATCH`; failed rehearsal checks
+  are `RELEASE_GATE_REHEARSAL_CHECKS_FAILED`. A `--rehearsal-receipt` offered post-activation and an
+  unknown `--phase` value are both `RELEASE_GATE_INPUT_INVALID`.
+- A checksum mismatch or an applied migration the release does not ship fails in **both** phases:
+  neither is a pending migration, and no receipt licenses them.
 
 | Gate | Command | What fails it |
 | --- | --- | --- |
@@ -72,7 +96,7 @@ migration has already been attempted.
 A rehearsal must therefore pass before activation:
 
 ```sh
-node dist/src/cli.js db migrate --rehearse <db-path>
+node dist/src/cli.js db migrate --rehearse <db-path> [--rehearsal-receipt <out-path>]
 ```
 
 It copies the database and its `-wal`/`-shm` sidecars into a private scratch directory (`TMPDIR`),
@@ -82,6 +106,15 @@ level before and after, and the source's digest. The source database is only eve
 hashed before and after, a rehearsal that observed any change to it fails with
 `MIGRATION_REHEARSAL_SOURCE_MUTATED` instead of reporting a result, and the scratch copy is removed
 when the rehearsal ends. The rehearsal exits `1` if any of the three gates on the copy fails.
+
+With `--rehearsal-receipt <out-path>` it also writes the receipt a pre-activation gate run reads,
+created exclusively and 0600 so an existing receipt is never replaced
+(`MIGRATION_REHEARSAL_RECEIPT_UNWRITABLE`). The receipt records `kind: "migration-rehearsal"`, the
+source observation, `source_vector_digest` (the vector the source database is on) and
+`target_vector_digest` (the vector the rehearsed migration landed on), the applied migration list,
+the before/after levels, and `checks` holding `quick_check`, `foreign_key_violations` and
+`migration_vector_ok`. Those are the fields `release gates --phase pre-activation` matches; see
+[phases](#gate-phases).
 
 A real deployment can be many migrations behind its packaged release, so the rehearsal is what
 tells you whether the `ExecStartPre` migrate a restart is about to run would succeed — never

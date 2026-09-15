@@ -29,9 +29,19 @@ export type ReleaseGate = {
   readonly not_applicable?: true;
 };
 
+/**
+ * Which side of the service restart the gates are being run on. `jm-jarvis.service` migrates the
+ * database in ExecStartPre, so before activation a pending-migration vector is the expected state
+ * and is accepted only against a rehearsal receipt; after activation nothing may still be pending.
+ */
+export const RELEASE_PHASES = ["pre-activation", "post-activation"] as const;
+export type ReleasePhase = (typeof RELEASE_PHASES)[number];
+export const DEFAULT_RELEASE_PHASE: ReleasePhase = "post-activation";
+
 export type ReleaseGateReport = {
   readonly schema_version: 1;
   readonly ok: boolean;
+  readonly phase: ReleasePhase;
   readonly checked_at: string | null;
   readonly database: string;
   readonly gates: readonly ReleaseGate[];
@@ -40,6 +50,8 @@ export type ReleaseGateReport = {
 
 export type ReleaseGateOptions = {
   readonly dbPath: string;
+  readonly phase?: ReleasePhase;
+  readonly rehearsalReceiptPath?: string;
   readonly now?: Date;
   readonly dashboardUrl?: string;
   readonly dashboardTimeoutMs?: number;

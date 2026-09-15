@@ -5,7 +5,13 @@ import {
   DASHBOARD_HEALTH_URL,
 } from "./dashboard-runtime-config.js";
 import { runDoctor } from "./doctor.js";
-import { type ReleaseGate, type ReleaseGateOptions, type ReleaseGateReport, gate } from "./release-gate-contract.js";
+import {
+  DEFAULT_RELEASE_PHASE,
+  type ReleaseGate,
+  type ReleaseGateOptions,
+  type ReleaseGateReport,
+  gate,
+} from "./release-gate-contract.js";
 import {
   foreignKeyCheckGate,
   migrationVectorGate,
@@ -23,6 +29,9 @@ import {
 
 export {
   RELEASE_GATE_NAMES,
+  RELEASE_PHASES,
+  DEFAULT_RELEASE_PHASE,
+  type ReleasePhase,
   type ReleaseGate,
   type ReleaseGateName,
   type ReleaseGateOptions,
@@ -30,7 +39,9 @@ export {
 } from "./release-gate-contract.js";
 export {
   type MigrationEntryObservation,
+  type RehearsalAcceptance,
   foreignKeyCheckGate,
+  readRehearsalReceipt,
   migrationVectorGate,
   quickCheckGate,
   schedulerCursorGate,
@@ -187,8 +198,10 @@ function statusGate(dbPath: string): ReleaseGate {
 /** Runs all nine gates. The aggregate is not ok unless every gate is ok. */
 export async function runReleaseGates(options: ReleaseGateOptions): Promise<ReleaseGateReport> {
   const now = options.now ?? new Date();
+  const phase = options.phase ?? DEFAULT_RELEASE_PHASE;
   const gates: ReleaseGate[] = [
-    await migrationVectorGate(options.dbPath),
+    await migrationVectorGate(options.dbPath,
+      { phase, rehearsalReceiptPath: options.rehearsalReceiptPath }),
     quickCheckGate(options.dbPath),
     foreignKeyCheckGate(options.dbPath),
     await doctorGate(options, now),
@@ -204,6 +217,7 @@ export async function runReleaseGates(options: ReleaseGateOptions): Promise<Rele
   return {
     schema_version: 1,
     ok: failed.length === 0,
+    phase,
     checked_at: Number.isFinite(now.getTime()) ? now.toISOString() : null,
     database: options.dbPath,
     gates,
