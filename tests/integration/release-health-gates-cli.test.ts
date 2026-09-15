@@ -1,8 +1,9 @@
 import { execFile } from "node:child_process";
 import { createServer, type Server } from "node:http";
-import { mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { copyFileSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { promisify } from "node:util";
 import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
@@ -17,8 +18,11 @@ import { ensureCycleCursor } from "../../src/personal-os-cycle-channel.js";
 import { passiveSecondBrainReadinessProbe } from "../../src/second-brain-readiness.js";
 import { runtimeCapabilityProbe } from "../../src/doctor.js";
 import { cleanupFixtures, fixture } from "../fixtures/second-brain-transport-harness.js";
+import { AuthorityDb } from "../../src/db.js";
 import { migratedTestDatabase } from "../fixtures/migrated-database.js";
 import { tempDb } from "../helpers.js";
+
+const SHIPPED = fileURLToPath(new URL("../../migrations/", import.meta.url));
 
 const run = promisify(execFile);
 const roots: string[] = [];
@@ -295,6 +299,98 @@ describe("release health gate CLIs", () => {
     expect(vector).toMatchObject({ ok: false, code: "MIGRATIONS_PENDING" });
     expect((vector?.actual["pending_migrations"] as string[]).length).toBeGreaterThan(40);
   }, 60_000);
+
+  /**
+   * A real authority database left at an older migration level, as a deployment is before its unit
+   * migrates in ExecStartPre: every migration up to `count` genuinely applied, the rest pending.
+   */
+  async function databaseAtLevel(count: number): Promise<{ readonly path: string; readonly applied: number }> {
+    const root = scratch();
+    const partial = join(root, "migrations");
+    mkdirSync(partial, { recursive: true });
+    const selected = readdirSync(SHIPPED).filter(name => name.endsWith(".sql")).sort().slice(0, count);
+    for (const name of selected) copyFileSync(join(SHIPPED, name), join(partial, name));
+    const path = join(root, "old-authority.sqlite");
+    const db = new AuthorityDb(path, partial);
+    try {
+      await db.migrate();
+      ensureCycleCursor(db.db);
+    } finally {
+      db.close();
+    }
+    return { path, applied: selected.length };
+  }
+
+  const doctorGateOf = (report: unknown): { ok: boolean; code?: string; actual: Record<string, unknown> } => {
+    const gates = (report as { gates: Array<{ name: string; ok: boolean; code?: string;
+      actual: Record<string, unknown> }> }).gates;
+    const found = gates.find(item => item.name === "doctor");
+    if (found === undefined) throw new Error("doctor gate absent from the report");
+    return found;
+  };
+  const names = (value: unknown): string[] =>
+    ((value ?? []) as Array<{ name: string }>).map(entry => entry.name);
+
+  it("defers doctor's rehearsed migration findings pre-activation and never post-activation", async () => {
+    isolatedProvider();
+    const fixture = await databaseAtLevel(60);
+    const url = await healthServer({ schema_version: 1, status: "ok", authority: "ready" });
+    const args = ["release", "gates", "--db", fixture.path, "--dashboard-url", url];
+    const receiptPath = join(scratch(), "rehearsal.json");
+    await execute(["db", "migrate", "--rehearse", fixture.path, "--rehearsal-receipt", receiptPath]);
+
+    // Pre-activation, the receipt licenses the pending vector, and doctor's two readings of that
+    // same vector are recorded as deferred instead of failing the gate.
+    const pre = await execute([...args, "--phase", "pre-activation",
+      "--rehearsal-receipt", receiptPath], probes);
+    expect(vectorGate(pre["report"])).toMatchObject({ ok: true, actual: { accepted_via: "rehearsal-receipt" } });
+    const preDoctor = doctorGateOf(pre["report"]);
+    expect(names(preDoctor.actual["deferred_to_rehearsal"]).sort())
+      .toEqual(["database.migration_checksums", "database.migration_count"]);
+    expect(preDoctor.actual["failed_checks"]).toEqual([]);
+    expect(preDoctor).toMatchObject({ ok: true });
+    expect(preDoctor.code).toBeUndefined();
+    expect((pre["report"] as { failed: string[] }).failed).not.toContain("doctor");
+    expect(pre).toMatchObject({ ok: true });
+
+    // The same database post-activation defers nothing: the migrations are simply not applied.
+    const post = await execute([...args, "--phase", "post-activation"], probes);
+    const postDoctor = doctorGateOf(post["report"]);
+    expect(postDoctor).toMatchObject({ ok: false, code: "RELEASE_GATE_DOCTOR_FAILED" });
+    expect(postDoctor.actual["deferred_to_rehearsal"]).toBeUndefined();
+    expect(names(postDoctor.actual["failed_checks"]).sort())
+      .toEqual(["database.migration_checksums", "database.migration_count"]);
+    expect((post["report"] as { failed: string[] }).failed).toContain("doctor");
+  }, 300_000);
+
+  it("still fails pre-activation on a doctor failure the rehearsal does not explain", async () => {
+    isolatedProvider();
+    const fixture = await databaseAtLevel(60);
+    const url = await healthServer({ schema_version: 1, status: "ok", authority: "ready" });
+    const receiptPath = join(scratch(), "rehearsal.json");
+    await execute(["db", "migrate", "--rehearse", fixture.path, "--rehearsal-receipt", receiptPath]);
+    // A defect of its own, unrelated to the migration level: a live runtime whose last run
+    // recorded an error. Its heartbeat is fresh, so only service.last_error is wrong.
+    const db = new Database(fixture.path);
+    try {
+      const now = new Date().toISOString();
+      db.prepare("INSERT INTO gjc_runtime_status(id,pid,last_heartbeat_at,last_error_code,updated_at)"
+        + " VALUES(1,?,?,'SERVICE_BROKEN',?)").run(process.pid, now, now);
+    } finally {
+      db.close();
+    }
+    const pre = await execute(["release", "gates", "--db", fixture.path, "--dashboard-url", url,
+      "--phase", "pre-activation", "--rehearsal-receipt", receiptPath], probes);
+    const doctor = doctorGateOf(pre["report"]);
+    expect(doctor).toMatchObject({ ok: false, code: "RELEASE_GATE_DOCTOR_FAILED" });
+    expect(names(doctor.actual["failed_checks"])).toContain("service.last_error");
+    // The migration findings are still deferred; only the unexplained failure fails the gate.
+    expect(names(doctor.actual["failed_checks"]))
+      .not.toContain("database.migration_count");
+    expect(names(doctor.actual["deferred_to_rehearsal"]).sort())
+      .toEqual(["database.migration_checksums", "database.migration_count"]);
+    expect((pre["report"] as { failed: string[] }).failed).toContain("doctor");
+  }, 300_000);
 
   it("refuses unknown options and a missing database instead of creating one", async () => {
     await expect(execute(["release", "gates"])).rejects.toMatchObject({ code: "RELEASE_GATE_INPUT_INVALID" });
