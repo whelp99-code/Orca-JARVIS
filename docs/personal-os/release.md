@@ -53,6 +53,32 @@ reports the negotiated protocol version and the contract profile; it honours
 gated without touching a deployed installation. Every gate fails closed: an unreachable,
 unreadable or unparseable answer is a failure, never a skip.
 
+## Migration rehearsal {#migration-rehearsal}
+
+`jm-jarvis.service` runs `db migrate` in `ExecStartPre`, so every restart of the authority applies
+whatever migrations are pending against the real database, before `service run` starts. That is the
+unit's behaviour and this procedure does not change it. What it means is that the migration is not
+a separate, cancellable step at activation time: by the time a restart has been requested, the
+migration has already been attempted.
+
+A rehearsal must therefore pass before activation:
+
+```sh
+node dist/src/cli.js db migrate --rehearse <db-path>
+```
+
+It copies the database and its `-wal`/`-shm` sidecars into a private scratch directory (`TMPDIR`),
+applies the pending migrations to the copy, and gates the copy with `quick-check`,
+`foreign-key-check` and the `migration-vector` check. It reports the migrations it applied, the
+level before and after, and the source's digest. The source database is only ever read: it is
+hashed before and after, a rehearsal that observed any change to it fails with
+`MIGRATION_REHEARSAL_SOURCE_MUTATED` instead of reporting a result, and the scratch copy is removed
+when the rehearsal ends. The rehearsal exits `1` if any of the three gates on the copy fails.
+
+A real deployment can be many migrations behind its packaged release, so the rehearsal is what
+tells you whether the `ExecStartPre` migrate a restart is about to run would succeed — never
+activate a release whose rehearsal has not passed against the database that release will migrate.
+
 ## Rollback {#rollback}
 
 Rollback is allowed only when `exact-migration-vector`, `provider-contract`, and `sealed-manifest` match the target release. Otherwise emit `RELEASE_ROLLBACK_INCOMPATIBLE` and leave `current` unchanged.

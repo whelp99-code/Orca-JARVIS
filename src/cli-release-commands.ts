@@ -11,6 +11,7 @@ import {
   schedulerCursorGate,
   type ReleaseGate,
 } from "./release-health-gates.js";
+import { runMigrationRehearsal } from "./release-migration-rehearsal.js";
 import { runReleaseRollback } from "./release-rollback.js";
 
 export type ReleaseCommandDependencies = {
@@ -21,9 +22,13 @@ export type ReleaseCommandDependencies = {
 
 const DB_GATE_KEYS = ["db", "json"] as const;
 
-function assertExactOptions(values: CliValues, allowed: readonly string[]): void {
+function assertExactOptions(
+  values: CliValues,
+  allowed: readonly string[],
+  code = "RELEASE_GATE_INPUT_INVALID",
+): void {
   for (const [key, value] of Object.entries(values)) {
-    if (value !== undefined && !allowed.includes(key)) throw new JarvisError("RELEASE_GATE_INPUT_INVALID");
+    if (value !== undefined && !allowed.includes(key)) throw new JarvisError(code);
   }
 }
 
@@ -52,6 +57,12 @@ export async function executeReleaseGateCommand(
   dependencies: ReleaseCommandDependencies = {},
 ): Promise<Record<string, unknown> | undefined> {
   const [command, subcommand] = positionals;
+  if (command === "db" && subcommand === "migrate" && values.rehearse !== undefined) {
+    if (positionals.length !== 2) throw new JarvisError("MIGRATION_REHEARSAL_INPUT_INVALID");
+    assertExactOptions(values, ["rehearse", "json"], "MIGRATION_REHEARSAL_INPUT_INVALID");
+    const result = await runMigrationRehearsal({ sourcePath: values.rehearse });
+    return { command: "db.migrate.rehearse", ...result, ...(result.ok ? {} : { exit_code: 1 }) };
+  }
   if (command === "db" && subcommand === "foreign-key-check") {
     if (positionals.length !== 2) throw new JarvisError("RELEASE_GATE_INPUT_INVALID");
     assertExactOptions(values, DB_GATE_KEYS);
@@ -77,7 +88,7 @@ export async function executeReleaseGateCommand(
     if (positionals.length !== 2 || values.to === undefined || values["release-root"] === undefined) {
       throw new JarvisError("RELEASE_ROLLBACK_INPUT_INVALID");
     }
-    assertExactOptions(values, ["db", "json", "to", "release-root", "dry-run"]);
+    assertExactOptions(values, ["db", "json", "to", "release-root", "dry-run"], "RELEASE_ROLLBACK_INPUT_INVALID");
     const result = runReleaseRollback({
       releaseRoot: values["release-root"],
       dbPath: assertExistingDatabase(values.db),

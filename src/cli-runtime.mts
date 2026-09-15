@@ -142,6 +142,9 @@ export async function execute(
   const localTimeline = localTimelinePreflight(parsed.positionals, values);
   const gateCommand = await executeReleaseGateCommand(parsed.positionals, values, dependencies);
   if (gateCommand !== undefined) return gateCommand;
+  // A rehearsal never migrates the database it was pointed at, so it cannot be a modifier on any
+  // other command: the only accepted form returned above.
+  if (values.rehearse !== undefined) throw new JarvisError("MIGRATION_REHEARSAL_INPUT_INVALID");
   if (values["local-timeline-refresh"] !== undefined
     && (command !== "service" || !["once", "run"].includes(subcommand ?? "") || !values.db)) {
     throw new JarvisError("LOCAL_COLLECTION_CONFIG_INVALID");
