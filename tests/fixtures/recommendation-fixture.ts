@@ -1,3 +1,14 @@
+// Engine / read-surface fixture. NOT a production-path fixture.
+//
+// The context evidence `kind`s here (`context_observation`, `confirmed_memory`) and the
+// recommendation row this file creates are declared, not derived. About twenty recommendation and
+// brief suites consume it to test read semantics - ranking provenance, brief generation, evidence
+// binding, lifecycle and availability - and for that a declared record is the right input.
+//
+// It is not evidence that the producer works, and no production acceptance may rest on it. The
+// §7.3 production acceptance uses `tests/fixtures/daily-production-chain.ts` instead, which makes
+// the product produce the row. See the "Fixtures" section of
+// `docs/daily-production-contract-2026-09-14.md`.
 import { createHash } from "node:crypto";
 import {
   canonicalPersonalContractHash,

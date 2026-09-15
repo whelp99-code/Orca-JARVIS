@@ -28,9 +28,22 @@ export type DailyProductionPolicy = {
   readonly memory_reference?: PreparedMemoryReference;
 };
 
+/**
+ * Either the policy this run produces under, or where to ask for it when the step reaches it.
+ *
+ * A one-shot command reads the provider once and hands the result over. A long-running service
+ * cannot: it would then produce every morning against the read it made the morning it started. So
+ * it hands over the question instead, and re-derives the answer before each morning phase - the
+ * provider read still happens outside the step's transaction, in the service's own async cycle.
+ */
+export type DailyProductionSource = DailyProductionPolicy | (() => DailyProductionPolicy | undefined);
+
+const productionPolicy = (source?: DailyProductionSource): DailyProductionPolicy | undefined =>
+  typeof source === "function" ? source() : source;
+
 /** Explicit morning composition. Unimplemented phases fail instead of emitting placeholder success. */
 export function createStoredMorningDailyLoop(authority: AuthorityDb, optionsValue: DailyLoopOptions,
-  closeoutKeyValue?: TrustedCloseoutKey, production?: DailyProductionPolicy): DailyControlLoop {
+  closeoutKeyValue?: TrustedCloseoutKey, production?: DailyProductionSource): DailyControlLoop {
   const closeoutKey = closeoutKeyValue === undefined ? undefined : parseTrustedCloseoutKey(closeoutKeyValue);
   const parsed = parseDailyLoopOptions(optionsValue); let lastAt: Date | null = null;
   const options: DailyLoopOptions = { ...parsed, clock: () => {
@@ -46,7 +59,7 @@ export function createStoredMorningDailyLoop(authority: AuthorityDb, optionsValu
 class StoredMorningSteps implements DailyLoopStepExecutor {
   constructor(private readonly authority: AuthorityDb, private readonly store: DailyLoopStore,
     private readonly options: DailyLoopOptions, private readonly closeoutKey?: TrustedCloseoutKey,
-    private readonly production?: DailyProductionPolicy) {}
+    private readonly production?: DailyProductionSource) {}
 
   complete(claimValue: DailyLoopClaim): void {
     const claim = parseDailyLoopClaim(claimValue);
@@ -112,11 +125,12 @@ class StoredMorningSteps implements DailyLoopStepExecutor {
             // here rather than as its own step keeps the two-step run contract every reader and
             // recovery path already asserts, and withholding is a result the publisher then
             // reports as an abstention rather than a failure.
-            if (this.production !== undefined) {
+            const production = productionPolicy(this.production);
+            if (production !== undefined) {
               produceStoredDailyRecommendation(this.authority, { now: now(),
-                policy: this.production.policy, policy_decision_ref: this.production.policy_decision_ref,
-                ...(this.production.memory_reference === undefined
-                  ? {} : { memory_reference: this.production.memory_reference }) });
+                policy: production.policy, policy_decision_ref: production.policy_decision_ref,
+                ...(production.memory_reference === undefined
+                  ? {} : { memory_reference: production.memory_reference }) });
             }
             new MorningBriefPublisher(this.authority, now).publish(claim, 1_048_576);
           } else {
