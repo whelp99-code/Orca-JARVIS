@@ -1,11 +1,11 @@
-import { resolve } from "node:path";
 import { parseBoundedStrictJson } from "./strict-json.js";
 import { randomUUID } from "node:crypto";
-import { constants, readFileSync } from "node:fs";
+import { constants } from "node:fs";
 import { open } from "node:fs/promises";
 import { commandNow, type CliCommandContext } from "./cli-command-context.js";
 import { DailyLoopError, type DailyLoopConfig } from "./daily-loop-types.js";
-import { createStoredMorningDailyLoop, type DailyProductionPolicy } from "./daily-loop-morning-execution.js";
+import { createStoredMorningDailyLoop } from "./daily-loop-morning-execution.js";
+import { dailyProductionPolicy } from "./daily-production-policy.js";
 import { dailyLoopUsage, parseRefreshContextDetail } from "./daily-loop-usage.js";
 import { kstLocalDate } from "./daily-loop-time.js";
 import { JarvisError, type AuthorityDb } from "./db.js";
@@ -16,8 +16,6 @@ import { executeEveningCommand } from "./cli-evening-command.js";
 import { SecondBrainRefreshReceiptReader } from "./second-brain-refresh-receipt.js";
 import { parseTrustedCloseoutKey } from "./evening-closeout-crypto.js";
 import type { TrustedCloseoutKey } from "./evening-closeout-types.js";
-import { parsePersonalOsPolicy } from "./personal-os-policy.js";
-import { createProductionMemoryReference } from "./memory-reference-production.js";
 
 const CONFIG_KEYS = ["schema_version", "time_zone", "lease_ms", "deadline_ms", "recovery_window_ms",
   "recovery_lookback_days", "refresh_freshness_ms", "budgets"];
@@ -58,38 +56,6 @@ async function readConfig(path: string): Promise<{ daily: Omit<DailyLoopConfig, 
     return { daily: config as Omit<DailyLoopConfig, "owner_id">, closeoutKey,
       ...(version === 2 ? { refreshReceiptPath: String(receiptPath) } : {}) };
   } catch { throw new JarvisError("DAILY_LOOP_CONFIG_INVALID"); }
-}
-
-/**
- * What the morning run may rest on when it produces, read from the policy document this deployment
- * ships. A deployment without one produces nothing rather than inventing a policy, and the run still
- * publishes whatever is already on record.
- */
-async function dailyProductionPolicy(db: AuthorityDb, clock: () => Date): Promise<DailyProductionPolicy | undefined> {
-  let policy: unknown;
-  let decisionRef: string;
-  try {
-    policy = JSON.parse(readFileSync(resolve(process.cwd(), "config/personal-os-policy.json"), "utf8"));
-    decisionRef = `policy:linux:${parsePersonalOsPolicy(policy).policy_id}:daily-morning`;
-  } catch { return undefined; }
-  // A deployment that names no memory provider is not a broken one: it produces nothing that rests
-  // on a memory and still publishes what is already on record. Reaching for a default launcher path
-  // here would start the operational provider on a host that never asked for it.
-  if (process.env["JARVIS_SECOND_BRAIN_LAUNCHER"] === undefined) {
-    return { policy, policy_decision_ref: decisionRef };
-  }
-  const runtime = createProductionMemoryReference(db, { clock });
-  try {
-    // A successful read has already awaited the transport shutdown before its final check.
-    const reference = await runtime.reader.read("What should happen next?",
-      { max_records: 8, max_record_bytes: 4_096, max_bytes: 32_768 }, runtime.close);
-    return { policy, policy_decision_ref: decisionRef, memory_reference: reference };
-  } catch {
-    // An unavailable or refused provider withholds the memory, and the run reports that as an
-    // abstention. Failing the whole morning because a read did not come back would be worse.
-    await runtime.close().catch(() => undefined);
-    return { policy, policy_decision_ref: decisionRef };
-  }
 }
 
 export async function executeDailyCommand(context: CliCommandContext): Promise<Record<string, unknown> | undefined> {

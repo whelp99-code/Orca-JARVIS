@@ -32,6 +32,25 @@ or stored for a run with nothing to propose.
   `{ action, subject }` binding `ownerGateDecided` passes; selection still goes through
   `ownerGateDecided`, so that unbound citation cannot change which action is selected.
 
+## Which surfaces produce
+
+Both morning surfaces produce, and both derive the policy the same way, from
+`src/daily-production-policy.ts`: the shipped `config/personal-os-policy.json`, the decision
+reference built from its `policy_id`, and the provider read this deployment names through
+`JARVIS_SECOND_BRAIN_LAUNCHER` / `JARVIS_SECOND_BRAIN_CONFIG`.
+
+- `daily morning --once` (`src/cli-daily-commands.ts`) reads the policy once for the run it is
+  about to make and hands the result to `createStoredMorningDailyLoop`.
+- the configured service, `service once` and `service run` (`src/daily-service-cycles.ts`), hands
+  over the question instead of the answer and re-derives it before each morning phase. A service
+  that has been up for a week must not produce against the provider read it made the day it
+  started. The read stays in the async cycle; the step is still one synchronous transaction.
+
+A deployment that names no provider produces nothing on either surface and still publishes what is
+already on record - that is an abstention, not a failure, and it does not stop the evening phase.
+`tests/integration/daily-service-cycles.test.ts` pins both service outcomes (one produced row, and
+zero rows with no provider) through the compiled build in its own process.
+
 ## Minimum facts
 
 `context_policy_input.evidence` may legitimately be empty - `src/context-policy-input.ts` accepts an
