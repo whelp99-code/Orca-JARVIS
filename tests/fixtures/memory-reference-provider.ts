@@ -1,6 +1,6 @@
-import { createHash } from "node:crypto";
+import { createHash, verify, type KeyObject } from "node:crypto";
 import { canonicalize } from "../../src/canonical.js";
-import { MEMORY_TOMBSTONE_GENESIS_ROOT } from "../../src/second-brain-effect-v2.js";
+import { MEMORY_READ_FENCE_SIGNATURE_DOMAIN, MEMORY_TOMBSTONE_GENESIS_ROOT } from "../../src/second-brain-effect-v2.js";
 import type { SecondBrainMethod, SecondBrainOutcome, SecondBrainTransport } from "../../src/second-brain-transport.js";
 
 export const REFERENCE_NOW = new Date("2026-08-31T03:30:00.000Z");
@@ -79,6 +79,24 @@ export function referenceTargetFor(page: ReferencePage): Readonly<Record<string,
   return { ...core, target_id: `sbtarget:v1:${targetDigest.slice(7)}`, target_digest: targetDigest };
 }
 
+/**
+ * Whether a provider provisioned with exactly these keys would honour this fence.
+ *
+ * A real provider verifies the signature against the public key its own configuration names for
+ * that key id, so a fence signed by a key the deployment never provisioned is refused however
+ * well-formed it is. Same check here, computed from the fence itself.
+ */
+export function fenceAuthorized(fence: unknown, keys: ReadonlyMap<string, KeyObject>): boolean {
+  if (typeof fence !== "object" || fence === null || Array.isArray(fence)) return false;
+  const { signature, ...unsigned } = fence as Record<string, unknown>;
+  const key = keys.get(String(unsigned["signing_key_id"]));
+  if (key === undefined || typeof signature !== "string") return false;
+  try {
+    return verify(null, Buffer.from(MEMORY_READ_FENCE_SIGNATURE_DOMAIN + canonicalize(unsigned)),
+      key, Buffer.from(signature, "base64url"));
+  } catch { return false; }
+}
+
 export class MemoryReferenceProvider implements SecondBrainTransport {
   readonly calls: Array<{ method: SecondBrainMethod; args: Readonly<Record<string, unknown>> }> = [];
   statuses = 0;
@@ -86,11 +104,17 @@ export class MemoryReferenceProvider implements SecondBrainTransport {
   empty = false;
   onCall?: (method: SecondBrainMethod) => void | Promise<void>;
   statusOverrides: Readonly<Record<string, unknown>> = {};
+  /** Key ids this provider is provisioned with. When set, a fence naming anything else is refused. */
+  authorizedFenceKeys?: ReadonlyMap<string, KeyObject>;
   constructor(private readonly page: ReferencePage = DEFAULT_PAGE) {}
   async call(method: SecondBrainMethod, args: Readonly<Record<string, unknown>>): Promise<SecondBrainOutcome> {
     this.calls.push({ method, args });
     if (method === "sb_generation_status") this.statuses++;
     await this.onCall?.(method);
+    if (this.authorizedFenceKeys !== undefined && args["read_fence"] !== undefined && args["read_fence"] !== null
+      && !fenceAuthorized(args["read_fence"], this.authorizedFenceKeys)) {
+      return { kind: "error", code: "TOMBSTONE_FENCE_REQUIRED" };
+    }
     if (method === "sb_generation_status") return { kind: "data", value: { schema_version: 1,
       ...REFERENCE_GENERATION, pointer_health: "healthy", journal_health: "healthy", ...this.statusOverrides } };
     if (method === "sb_search") return { kind: "data", value: { ...REFERENCE_GENERATION, results: this.empty ? [] : [{

@@ -19,6 +19,13 @@
 //     same delta). A real provider answers on the real wall clock and refuses a read fence minted
 //     far from it, so a real-provider run has to inject a real instant. The packaged binary still
 //     carries no clock override.
+//   JARVIS_MEMORY_EFFECT_SIGNING_KEY_ID, JARVIS_MEMORY_EFFECT_PRIVATE_KEY_PATH
+//     The deployment's provisioned JARVIS memory-effect identity. Read by the packaged product
+//     itself, not by this script: with an installed provider the effect service is built through
+//     createProductionSecondBrainEffectService and refuses to exist without them, because a real
+//     provider only honours a read fence signed by a key its own configuration authorizes. The
+//     fixture-child arms sign with a key generated for this process, which is only ever enough for
+//     a fixture.
 // See scripts/lib/production-chain-probe-endpoint.mjs for the exact contract.
 import assert from "node:assert/strict";
 import { spawnSync } from "node:child_process";
@@ -77,6 +84,7 @@ try {
   const { createDashboardSession } = await load("dashboard/session.js");
   const { createSecondBrainTransport } = await load("second-brain-transport.js");
   const { SecondBrainEffectService } = await load("second-brain-effect-service.js");
+  const { createProductionSecondBrainEffectService } = await load("second-brain-effect-service-production.js");
   const { createProductionMemoryReference } = await load("memory-reference-production.js");
   const { todayProjection } = await load("dashboard/personal-today.js");
   const policy = JSON.parse(readFileSync(join(root, "config/personal-os-policy.json"), "utf8"));
@@ -264,10 +272,17 @@ try {
           assert.ok(first, "provider record required");
           const status = await transport.call("sb_generation_status", { read_fence: null });
           assert.equal(status.kind, "data");
-          const effect = new SecondBrainEffectService({ authority: db, transport,
+          // An installed provider only honours a fence signed by a key its own configuration
+          // authorizes, so the effect service is built through the product's own production factory
+          // and signs with the deployment's provisioned memory-effect key. The ephemeral key below
+          // is reachable only on the explicitly-fixture path.
+          const service = { authority: db, transport,
             writer: { write: () => Promise.reject(new Error("probe performs no memory effect write")) },
-            clock: () => new Date(CLI_AT), provider_instance_id: String(status.value.provider_instance_id),
-            signing_key_id: "memory-effect-packaged", private_key: generateKeyPairSync("ed25519").privateKey });
+            clock: () => new Date(CLI_AT), provider_instance_id: String(status.value.provider_instance_id) };
+          const effect = ENDPOINT.kind === "installed_release"
+            ? createProductionSecondBrainEffectService(service)
+            : new SecondBrainEffectService({ ...service, signing_key_id: "memory-effect-packaged",
+              private_key: generateKeyPairSync("ed25519").privateKey });
           const resolved = await effect.resolveTarget({ record_id: first.record.record_id,
             record_digest: first.record.record_digest, generation_id: String(status.value.generation_id),
             generation_manifest_digest: String(status.value.generation_manifest_digest) });
@@ -348,7 +363,9 @@ try {
       "live Linux observation normalised and persisted through the product producer",
       "memory classified, confirmed by an owner-signed receipt through the control plane, written and settled through the outbox saga",
       "memory read back from a real stdio provider child and admitted only through the reference seam",
-      "provider target identity resolved through the packaged effect service",
+      ...(ENDPOINT.kind === "installed_release"
+        ? ["provider target identity resolved through the packaged effect service, signing read fences with the deployment's provisioned memory-effect key"]
+        : ["provider target identity resolved through the packaged effect service"]),
       "owner workflow authorization staged and decided through the control plane",
       "production and publication run by the packaged daily morning command as a child process"],
     isolated_fixture: ["decision and verifier anchors generated for this run",
@@ -356,7 +373,8 @@ try {
       "the provider's write acceptance and artifact observation for the one settled write",
       `fixed instant ${AT} injected through the packaged test entry`,
       ...(ENDPOINT.kind === "installed_release" ? []
-        : ["the provider endpoint is the development-checkout fixture child"])],
+        : ["the provider endpoint is the development-checkout fixture child",
+          "memory-effect read fences signed with a key generated for this process"])],
     not_exercised: ["no operator key", "no Second Brain release process", "no native model call"],
     produced, unauthorized, unconfirmed, providerless, deployment_ready: false,
   };
