@@ -27,6 +27,7 @@ import { hostMemoryReferenceOptions, hostMemoryWithdrawalOptions } from "./cli-h
 import { executeReleaseGateCommand } from "./cli-release-commands.js";
 import { tryExecuteSecondBrainReadinessCommand } from "./cli-readiness-commands.js";
 import { CLI_HELP } from "./cli-help-text.js";
+import { tryExecuteDeploymentCommand } from "./cli-deployment-commands.js";
 
 const COMMAND_HANDLERS: readonly CliCommandHandler[] = [
   executeLocalTimeline,
@@ -93,6 +94,7 @@ export async function execute(args: string[], dependencies: CliDependencies = {}
           "rehearsal-receipt": { type: "string" },
           "production-root": { type: "boolean" },
           "restore-backup": { type: "string" },
+          out: { type: "string" },
         },
         allowPositionals: true,
         strict: true,
@@ -103,6 +105,10 @@ export async function execute(args: string[], dependencies: CliDependencies = {}
   })();
   const [command, subcommand, argument, fourth, fifth, sixth] = parsed.positionals;
   const values = normalizeCliValues(parsed.values);
+  // Reported and rendered before anything opens a database: these are the paths a database would
+  // be opened at, so they have to be answerable when that open would fail.
+  const deployment = tryExecuteDeploymentCommand({ positionals: parsed.positionals, values: parsed.values });
+  if (deployment !== undefined) return deployment;
   const localTimeline = localTimelinePreflight(parsed.positionals, values);
   const gateCommand = await executeReleaseGateCommand(parsed.positionals, values, dependencies);
   if (gateCommand !== undefined) return gateCommand;
