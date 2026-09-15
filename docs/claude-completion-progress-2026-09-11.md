@@ -1,5 +1,37 @@
 # 완료 작업 진행 원장 — 2026-09-11
 
+> **현재 판정 — 2026-09-15 R3:** `IN_PROGRESS`. 아래 2026-09-14 R2-1 이하 모든 블록은 **당시 기록**이며 삭제하지 않는다. 이 블록이 현재다.
+>
+> **통합 branch(실측):** `integration/routing-approval-ui-main` = `codex/routing-approval-ui` + `main@8745ce7` + `feat/withdrawal-effect` + `feat/release-gaps` + `feat/real-provider-chain` + `feat/unit-a-service-production`. HEAD `93783fb`, tree `b2be8c70`. 전체 gate run 4 rc=0, 635파일/4,387테스트, `2026-09-15T05:15:26Z`→`05:43:33Z`, 로그 sha256 `223a1c47e3f3ae34921ec8e6f8f6e65bd6d70c9ec4ddaa0646f3f280312ec327`(`/home/jm/.cache/jarvis-integration-20260915/`). 제외: run 1 rc=1(기존 main 결함), run 3 rc=1(build-metadata strict schema, `93783fb`로 수정).
+>
+> **A:** `VERIFIED` — 독립 재리뷰 `/home/jm/.cache/jarvis-codex-claim-review-20260911-4ztfcjp6/monitor-repair-20260913T0601/unitA-promotion-review-20260915-r2.md`(B1 `91c92c2`, B2 `dcad4df` — 격리 관측 fail-open 수정 포함, B3 `7be40f0`, `f2fc866`). 실 provider probe receipt `/home/jm/.cache/jarvis-real-provider-20260915/probe-receipt.json`(생산 1/1, 그 외 0), `d3ca9e1`, `daily morning --once` 커버; `service once`는 gate 내 커버.
+>
+> **B:** `VERIFIED` — 양성 통제가 이제 제품의 prepare/stage dispatch 경로를 실제로 통과(`ad1299b`), IO 중 숨김 회귀(`fbed510`), 모든 reader 일치(`caa68c1`/`920b574`/`7ec72be`/`8638f48`), settle된 후보에 결속된 seam 확인(`5bd9c52`).
+>
+> **M4.2-withdrawal-effect:** 내부, `VERIFIED` — provider 계약 `sb_resolve_memory_target`은 이미 존재(`contracts/second-brain-mcp-v5.json`); JARVIS adapter `src/memory-withdrawal-effect.ts` + CLI `memory withdrawals`/`memory withdraw-prepare`(`f565b40`, `288528d`, `3d65b38`, `3f11aa1`); 남은 것은 provider 쪽 증명 관측(reconcile → settled) 하나뿐.
+>
+> **격리 Second Brain 설치:** 완료, `/home/jm/.cache/jarvis-isolated-second-brain-20260915/RECEIPT.md`(release `2ccf0267…` 최신 운영 release와 byte 일치; 모든 read 메서드, write settle, scope, generation, cancellation을 provider 서명 결과로 확인; 격리 유지).
+>
+> **실 provider 격차 수정(`feat/real-provider-chain`):** probe가 `JARVIS_SECOND_BRAIN_LAUNCHER`/`CONFIG`를 따름, memory-effect 서명 키 provisioning(`MEMORY_EFFECT_SIGNING_KEY_UNCONFIGURED` fail-closed), lexical query 정규화, daily config v3 `morning_local_time`, provider result-key preflight.
+>
+> **릴리스 도구(`feat/release-gaps`):** gate CLI들 + `release gates`, `release rollback`, `db migrate --rehearse`, 검증자 principal을 고정 anchor에서 파생(`JARVIS_TASK_VERIFIER_KEY_ID`), `publish-package-release.sh` + sealed manifest; 후속 branch `feat/release-gaps-2`(진행 중)는 gate phase, publish 순서/unpublish, production-root rollback, backup restore를 추가.
+>
+> **lane 배포 경계:** 결정 기록됨 `/home/jm/.cache/jarvis-ops-decisions-20260915/DECISION-lane-boundary-20260915.md` — 기본 거절 유지; 활성화는 전용 service user가 필요(동일 UID 프로세스 17개 관측 불가로 실측); 운영자 provisioning = `EXTERNAL_INPUT_REQUIRED`(operator).
+>
+> **남은 외부/운영 항목:** M5 실행자 env(기존 `jm-verifier-root-v1`을 새 규칙 아래 사용 가능; env drop-in + probe + 승인 업무 1건 실행이 운영 단계로 남음); 프로덕션 릴리스 활성화 대기(`RELEASE-EXEC-PLAN-20260915.md`); Second Brain 프로덕션 config에 `[provider_result_public_keys]`/`[jarvis_public_keys]` 및 release 활성화 필요; Codex CLI 재로그인(`CODEX-RECOVERY-20260915.md`).
+>
+> **상태:** 활성화와 M5 업무 실행이 이루어지고 receipt로 확인되기까지 `IN_PROGRESS`. `deployment_ready`는 그때까지 `false`.
+>
+> **A–D 판정(2026-09-15 R3, 실측 기준):**
+>
+> | 단위 | 상태 | 근거 / 남은 것 |
+> |---|---|---|
+> | A. 실제 assembler → 추천·brief 생산 경로 | `VERIFIED` | 독립 재리뷰(`unitA-promotion-review-20260915-r2.md`)로 승격. 실 provider probe receipt가 `daily morning --once` 커버, `service once`는 gate 내 커버 |
+> | B. 저장된 파생 기억의 현재 재사용 차단 | `VERIFIED` | 양성 통제가 실제 prepare/stage dispatch 경로 통과(`ad1299b`), IO 중 숨김 회귀(`fbed510`), reader 4곳 일치, settle된 후보에 결속된 seam 확인(`5bd9c52`) |
+> | C. 최종 패키지의 프로세스 인수 | `VERIFIED` (격리 provider 제외) | 격리 Second Brain 설치 완료 및 receipt 확보로 이전 유일 외부 항목 해소. `deployment_ready=false` 유지(활성화 대기) |
+> | D. 최종 제출·원장 | `IN_PROGRESS` | A·B·C는 닫혔으나 프로덕션 릴리스 활성화와 M5 업무 실행·receipt가 남아 있어 최종 상태를 올리지 않는다 |
+
+
 > **현재 판정 — 2026-09-14 R2-1 정정:** `IN_PROGRESS`. 아래 2026-09-13 블록과 단위 표는 **당시 기록**이며 삭제하지 않는다. 이 블록이 현재다. 회신서 상단 2026-09-14 블록이 정본이다.
 >
 > | 단위 | 상태 | 근거 / 남은 것 |
