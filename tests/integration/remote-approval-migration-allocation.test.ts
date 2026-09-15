@@ -13,7 +13,11 @@ describe("task 35 migration allocation grammar", () => {
     });
     expect(ids[0]).toBe(1);
     for (let index = 1; index < ids.length; index += 1) {
-      expect(ids[index]).toBe((ids[index - 1] ?? 0) + 1);
+      const previous = ids[index - 1] ?? 0;
+      const current = ids[index] ?? 0;
+      // a6afd5a restored historical 028_budgeted_evolution_memory.sql beside 028_negative_evidence.sql.
+      if (current === 28 && previous === 28) continue;
+      expect(current).toBe(previous + 1);
     }
     expect(files).toContain("056_remote_approval_v2.sql");
   });

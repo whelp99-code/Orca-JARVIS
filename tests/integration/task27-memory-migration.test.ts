@@ -14,7 +14,8 @@ import {
 
 const MIGRATION = "038_memory_candidate_classification.sql";
 const TASK29_MIGRATION = "039_memory_outbox_saga.sql";
-const BASELINE_MANIFEST_DIGEST = "fed3a674aa63174052b28f4268871373254719966a78563d3291f7e967034d82";
+// a6afd5a restored byte-identical 028_budgeted_evolution_memory.sql (applied 2026-08-21).
+const BASELINE_MANIFEST_DIGEST = "5d02badc40ffcbbff4c6437ae29662cc257b7626c21ef39615d6d951dd22d841";
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -40,7 +41,7 @@ function baselineManifestDigest(): string {
     const bytes = readFileSync(join(process.cwd(), "migrations", name));
     return `${createHash("sha256").update(bytes).digest("hex")}  ${name}\n`;
   }).join("");
-  if (names.length !== 36) throw new TypeError("Task 27 baseline migration count changed");
+  if (names.length !== 37) throw new TypeError("Task 27 baseline migration count changed");
   return createHash("sha256").update(manifest).digest("hex");
 }
 
@@ -55,7 +56,7 @@ describe("Task 27 forward memory classification migration", () => {
     // Given/When: the complete baseline migration manifest is hashed in filename order.
     const digest = baselineManifestDigest();
 
-    // Then: all 36 immutable source files match the frozen baseline.
+    // Then: all 37 immutable source files match the frozen baseline (includes a6afd5a restore).
     expect(digest).toBe(BASELINE_MANIFEST_DIGEST);
   });
 
