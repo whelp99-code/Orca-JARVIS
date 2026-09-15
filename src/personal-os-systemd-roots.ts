@@ -25,6 +25,12 @@ export type RenderRoots = {
   /** When set the unit is a system unit that runs as this account; unset renders a user unit. */
   readonly serviceUser?: string | undefined;
   /**
+   * The Claude task executor the authority may spawn. A configured deployment defaults it under the
+   * bin root, because the installed executor otherwise sits inside the interactive user's 0750 home
+   * where a service account cannot reach it. Unset renders no executor environment at all.
+   */
+  readonly taskClaudePath?: string | undefined;
+  /**
    * The daily loop's configured inputs. Both set renders `service run --input … --key-file …`;
    * neither set renders the flag-less invocation, and the unit then schedules no daily phase. The
    * generator never invents these paths: `service run` refuses one flag without the other, so a
@@ -52,6 +58,7 @@ export function productionRoots(environment?: DeploymentEnvironment): RenderRoot
     nodeBin: roots.nodeBin,
     binRoot: roots.binRoot,
     serviceUser: roots.serviceUser,
+    taskClaudePath: roots.taskClaudePath,
     dailyServiceConfig: roots.dailyServiceConfig,
     dailyServiceKey: roots.dailyServiceKey,
   };

@@ -47,6 +47,32 @@ describe("deployment roots", () => {
     expect(Object.keys(DEPLOYMENT_ROOT_VARIABLES)).toContain("stateRoot");
   });
 
+  // Gap G3 of the cutover: the task executor was pinned by absolute path inside the interactive
+  // user's 0750 home, so a nologin service account could never reach it and the runbook had to
+  // omit the variable entirely. The executor is now a deployment root with a bin-root default.
+  it("defaults the task executor under the bin root exactly when a service account is configured", () => {
+    // Given / When / Then
+    // An unconfigured per-user installation gets no default: its executor is whatever its own
+    // drop-in already says, and inventing a path here would change a running installation.
+    expect(resolveDeploymentRoots({}).taskClaudePath).toBeUndefined();
+    // A configured deployment reaches the executor through the same world-readable bin root its
+    // unit PATH already names, not through the user's home.
+    expect(resolveDeploymentRoots(SERVICE_ENVIRONMENT).taskClaudePath).toBe("/opt/jarvis-runtime/bin/claude");
+    // An explicit path always wins, including for the per-user installation.
+    expect(resolveDeploymentRoots({ JARVIS_TASK_CLAUDE_PATH: "/opt/other/claude" }).taskClaudePath)
+      .toBe("/opt/other/claude");
+    expect(resolveDeploymentRoots({ ...SERVICE_ENVIRONMENT, JARVIS_TASK_CLAUDE_PATH: "/opt/other/claude" })
+      .taskClaudePath).toBe("/opt/other/claude");
+    // Empty means unconfigured here, exactly as the executor registry already reads it.
+    expect(resolveDeploymentRoots({ ...SERVICE_ENVIRONMENT, JARVIS_TASK_CLAUDE_PATH: "" }).taskClaudePath)
+      .toBe("/opt/jarvis-runtime/bin/claude");
+    // A named executor is still a path, held to the same rules as every other root.
+    for (const value of ["relative/claude", "/opt/./claude", "/opt/../opt/claude"]) {
+      expect(() => resolveDeploymentRoots({ JARVIS_TASK_CLAUDE_PATH: value })).toThrow("E_DEPLOYMENT_ROOT");
+    }
+    expect(Object.keys(DEPLOYMENT_ROOT_VARIABLES)).toContain("taskClaudePath");
+  });
+
   it("moves every derived path when the service-user variables are set", () => {
     // Given / When
     const roots = resolveDeploymentRoots(SERVICE_ENVIRONMENT);

@@ -43,7 +43,19 @@ export const DEPLOYMENT_ROOT_VARIABLES = {
   configRoot: "JARVIS_CONFIG_ROOT",
   binRoot: "JARVIS_BIN_ROOT",
   nodeBin: "JARVIS_NODE_BIN",
+  taskClaudePath: "JARVIS_TASK_CLAUDE_PATH",
 } as const;
+
+/**
+ * The task executor is a deployment path like any other, and it was the one path the cutover could
+ * not carry: the installed executor is pinned inside the interactive user's 0750 home, which a
+ * `nologin` service account cannot traverse. A configured deployment therefore defaults it to
+ * `<JARVIS_BIN_ROOT>/claude` — the same world-readable bin root the unit's PATH already names — so
+ * the operator's job is to put the binary there rather than to widen an ACL over `~/.local/share`.
+ * An unconfigured per-user installation keeps no default at all: its executor is whatever the
+ * existing drop-in says, and inventing a path there would change a running installation.
+ */
+export const TASK_EXECUTOR_BIN_NAME = "claude" as const;
 
 /** The account the generated system units run as; unset means the current per-user installation. */
 export const SERVICE_USER_VARIABLE = "JARVIS_SERVICE_USER" as const;
@@ -60,6 +72,7 @@ export type DeploymentRoots = {
   readonly binRoot: string;
   readonly nodeBin: string;
   readonly serviceUser: string | undefined;
+  readonly taskClaudePath: string | undefined;
   readonly jarvisDb: string;
   readonly backupRoot: string;
   readonly authorityCurrent: string;
@@ -109,6 +122,15 @@ export function resolveDeploymentRoots(
   const providerConfig = configuredPath(DEPLOYMENT_ROOT_VARIABLES.providerConfig,
     DEFAULT_DEPLOYMENT_ROOTS.providerConfig, environment);
   const providerCurrent = `${providerStateRoot}/app/current`;
+  const binRoot = configuredPath(DEPLOYMENT_ROOT_VARIABLES.binRoot,
+    DEFAULT_DEPLOYMENT_ROOTS.binRoot, environment);
+  const serviceUser = configuredServiceUser(environment);
+  // The executor registry already treats an empty JARVIS_TASK_CLAUDE_PATH as "not configured"
+  // (probeClaudeTaskAuthentication, createClaudeRuntime), so the roots read it the same way rather
+  // than refusing an environment the rest of the product accepts.
+  const configuredExecutor = environment[DEPLOYMENT_ROOT_VARIABLES.taskClaudePath]
+    ? configuredPath(DEPLOYMENT_ROOT_VARIABLES.taskClaudePath, "", environment)
+    : undefined;
   const dailyServiceConfig = optionalPath(DAILY_SERVICE_VARIABLES.dailyServiceConfig, environment);
   const dailyServiceKey = optionalPath(DAILY_SERVICE_VARIABLES.dailyServiceKey, environment);
   // `service run` takes both inputs or neither, so half a configuration is refused where the
@@ -128,11 +150,12 @@ export function resolveDeploymentRoots(
       DEFAULT_DEPLOYMENT_ROOTS.authorityShareRoot, environment),
     configRoot: configuredPath(DEPLOYMENT_ROOT_VARIABLES.configRoot,
       DEFAULT_DEPLOYMENT_ROOTS.configRoot, environment),
-    binRoot: configuredPath(DEPLOYMENT_ROOT_VARIABLES.binRoot,
-      DEFAULT_DEPLOYMENT_ROOTS.binRoot, environment),
+    binRoot,
     nodeBin: configuredPath(DEPLOYMENT_ROOT_VARIABLES.nodeBin,
       DEFAULT_DEPLOYMENT_ROOTS.nodeBin, environment),
-    serviceUser: configuredServiceUser(environment),
+    serviceUser,
+    taskClaudePath: configuredExecutor
+      ?? (serviceUser === undefined ? undefined : `${binRoot}/${TASK_EXECUTOR_BIN_NAME}`),
     jarvisDb: `${stateRoot}/jarvis.sqlite`,
     backupRoot: `${stateRoot}/backups`,
     authorityCurrent: `${stateRoot}/authority/current`,
