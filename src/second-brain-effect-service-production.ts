@@ -58,3 +58,38 @@ export function createProductionSecondBrainEffectService(
   const { signing, ...rest } = options;
   return new SecondBrainEffectService({ ...rest, ...readMemoryEffectSigningIdentity(signing) });
 }
+
+/**
+ * Signing material a composition was handed explicitly.
+ *
+ * Only a caller that has decided it is talking to a fixture supplies one: a production composition
+ * leaves both fields absent and gets the deployment's provisioned identity, or a refusal.
+ */
+export type MemoryEffectSignerInjection = {
+  readonly signing_key_id?: string;
+  readonly private_key?: KeyObject;
+  readonly signing?: MemoryEffectSigningConfig;
+};
+
+/**
+ * The identity a production composition signs memory-effect fences with.
+ *
+ * Absent injection is not a licence to mint a key: it resolves to the provisioned identity through
+ * readMemoryEffectSigningIdentity, so a deployment that provisioned none is refused with
+ * MEMORY_EFFECT_SIGNING_KEY_UNCONFIGURED instead of signing a fence no provider can verify. An
+ * injected signer is the fixture path and keeps its own composition's refusal code.
+ */
+export function composedMemoryEffectSigningIdentity(
+  injected: MemoryEffectSignerInjection | undefined, invalid: string,
+): MemoryEffectSigningIdentity {
+  const keyId = injected?.signing_key_id;
+  const privateKey = injected?.private_key;
+  if (keyId === undefined && privateKey === undefined) {
+    return readMemoryEffectSigningIdentity(injected?.signing);
+  }
+  if (typeof keyId !== "string" || keyId.length === 0 || privateKey === undefined
+    || privateKey.asymmetricKeyType !== "ed25519") {
+    throw new JarvisError(invalid);
+  }
+  return { signing_key_id: keyId, private_key: privateKey };
+}

@@ -30,6 +30,8 @@ import type { MemorySagaRuntime } from "./memory-saga-runtime.js";
 import { createSecondBrainWriteRequestAdapter } from "./second-brain-write-adapter.js";
 import { SecondBrainStatusObservationSource } from "./second-brain-lifecycle-observations.js";
 import { SecondBrainEffectService } from "./second-brain-effect-service.js";
+import { composedMemoryEffectSigningIdentity,
+  type MemoryEffectSigningConfig } from "./second-brain-effect-service-production.js";
 import { createSecondBrainTransport } from "./second-brain-transport.js";
 
 export type ProductionMemoryLifecycleConfig = {
@@ -37,8 +39,13 @@ export type ProductionMemoryLifecycleConfig = {
   readonly launcher_path: string;
   readonly provider_config_path: string;
   readonly contract_path: string;
-  readonly signing_key_id: string;
-  readonly private_key: KeyObject;
+  /**
+   * An explicitly injected fixture signer. Absent in every production composition, which signs with
+   * the deployment's provisioned memory-effect identity instead.
+   */
+  readonly signing_key_id?: string;
+  readonly private_key?: KeyObject;
+  readonly signing?: MemoryEffectSigningConfig;
   readonly subject_key: Buffer;
   readonly layout: MemoryRuntimeLayout;
   readonly observation_source?: MemoryLifecycleObservationSource;
@@ -145,17 +152,19 @@ export function createProductionMemoryLifecycleService(
   databaseRuntime: AuthorityDatabaseRuntime,
   config: ProductionMemoryLifecycleConfig,
 ): MemoryLifecycleService {
-  if (config.private_key.asymmetricKeyType !== "ed25519" || config.subject_key.byteLength < 32
-    || config.provider_instance_id.length === 0 || config.signing_key_id.length === 0) {
+  if (config.subject_key.byteLength < 32 || config.provider_instance_id.length === 0) {
     throw new JarvisError("MEMORY_LIFECYCLE_CONFIG_INVALID");
   }
+  // Resolved before a provider process exists: the correction, deletion and export sagas all sign
+  // with this identity, and a deployment that provisioned none must be refused rather than sign
+  // cancellations and tombstone fences with a key the installed provider cannot verify.
+  const identity = composedMemoryEffectSigningIdentity(config, "MEMORY_LIFECYCLE_CONFIG_INVALID");
   const authority = databaseRuntime.authorityDb();
   const transport = createSecondBrainTransport({ launcherPath: config.launcher_path,
     configPath: config.provider_config_path, contractPath: config.contract_path });
   const writer = createSecondBrainWriteRequestAdapter(transport, authority, config.clock);
   const provider = new SecondBrainEffectService({ authority, transport, writer,
-    clock: config.clock, provider_instance_id: config.provider_instance_id,
-    signing_key_id: config.signing_key_id, private_key: config.private_key });
+    clock: config.clock, provider_instance_id: config.provider_instance_id, ...identity });
   const observer = new ProductionMemoryLifecycleObserver({ authority, provider,
     observations: config.observation_source ?? new SecondBrainStatusObservationSource(provider),
     clock: config.clock });
@@ -165,8 +174,8 @@ export function createProductionMemoryLifecycleService(
   const barriers = new MemoryLifecycleBarriers(authority,
     new NoopMemoryLifecycleBarrierSink());
   const runtime: MemorySagaRuntime = { authority, spool_root: config.layout.spool_root,
-    writer, provider, signing_key_id: config.signing_key_id,
-    private_key: config.private_key, subject_key: Buffer.from(config.subject_key),
+    writer, provider, signing_key_id: identity.signing_key_id,
+    private_key: identity.private_key, subject_key: Buffer.from(config.subject_key),
     clock: config.clock, observer, compactor, barriers };
   return new ProductionMemoryLifecycleService(runtime, async () => {
     await transport.close();
