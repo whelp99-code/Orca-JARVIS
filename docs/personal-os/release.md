@@ -23,6 +23,36 @@ packaged CLI/health gates are required separately.
 
 Before/after activation or rollback: `migration-vector` `quick-check` `foreign-key-check` `doctor` `status` `dashboard-health` `mcp-handshake` `scheduler-cursor` `uncertain-outbox`
 
+All nine run together from the packaged CLI. The aggregate prints one JSON report and exits `1`
+when any gate fails, so a caller branches on process status without parsing the report:
+
+```sh
+node dist/src/cli.js release gates --db <db-path> [--dashboard-url URL]
+```
+
+Each gate answers from its own read-only connection and none of them migrate, so `release gates`
+runs before migrations are applied and reports pending migrations instead of requiring them.
+
+| Gate | Command | What fails it |
+| --- | --- | --- |
+| `migration-vector` | `release gates` | pending, checksum-mismatched or unsupported applied migrations |
+| `quick-check` | `release gates` | `PRAGMA quick_check` other than `ok` |
+| `foreign-key-check` | `db foreign-key-check --db PATH` | any `PRAGMA foreign_key_check` row |
+| `doctor` | `doctor --db PATH` | any failing doctor check |
+| `status` | `status --json --db PATH` | unacknowledged outbox entries |
+| `dashboard-health` | `release dashboard-health [--dashboard-url URL]` | non-200, malformed, oversize, timeout, or a body that is not `status=ok`/`authority=ready` |
+| `mcp-handshake` | `release mcp-handshake` | any refusal of the real stdio handshake, or a negotiated protocol other than the pinned one |
+| `scheduler-cursor` | `release scheduler-cursor --db PATH` | absent cursor, `applied_count` other than `last_completed`, or a cursor behind the completed `daily_loop_runs` |
+| `uncertain-outbox` | `release gates` | any `uncertain` memory outbox or daily loop row |
+
+`dashboard-health` GETs `/api/v1/health` on the configured loopback endpoint (`127.0.0.1:4173`,
+pinned by `config/dashboard-runtime.schema.json`) with a bounded timeout and a bounded body.
+`mcp-handshake` performs a real handshake through the Second Brain stdio transport contract and
+reports the negotiated protocol version and the contract profile; it honours
+`JARVIS_SECOND_BRAIN_LAUNCHER` and `JARVIS_SECOND_BRAIN_CONFIG`, so an isolated provider can be
+gated without touching a deployed installation. Every gate fails closed: an unreachable,
+unreadable or unparseable answer is a failure, never a skip.
+
 ## Rollback {#rollback}
 
 Rollback is allowed only when `exact-migration-vector`, `provider-contract`, and `sealed-manifest` match the target release. Otherwise emit `RELEASE_ROLLBACK_INCOMPATIBLE` and leave `current` unchanged.
