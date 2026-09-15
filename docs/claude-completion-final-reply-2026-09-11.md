@@ -1,5 +1,13 @@
 # 최종 검증 회신서 — 2026-09-11
 
+> **현재 판정 — 2026-09-15 R4 (운영 활성화):** 상태는 `ACTIVATED_WITH_EXTERNAL_INPUT_REQUIRED`. 아래 R3 이하 블록은 당시 기록이다.
+>
+> - 릴리스 라인: `integration/routing-approval-ui-main` (= main). 활성 authority 릴리스 `c4a2487…` (이전 `ac54426…`도 동일 절차로 활성화됨), control-center `artifact-4cbfbae5…`. gate 9차 rc=0 638파일/4,414테스트 (`/home/jm/.cache/jarvis-integration-20260915/gate-result-run9.json`). 패키지 receipt pin `03cf4f0f…`, 예행 receipt 0 pending, 사전·사후 gate 9/9, 백업 3건(활성화 전후).
+> - 운영 DB migration 81→103 적용(ac54426 재시작 시 22개). Second Brain config에 공개키 테이블 3개 적용(`.bak-20260915T094022Z`). drop-in `20-task-executor.conf`, `30-memory-effect.conf` 설치.
+> - M5: 소유자 서명 workflow.register/start/task-execute 3건 `completed`, 실행자 커밋 `a7b2222`(스크래치 repo), 독립 verifier `jm-verifier-root-v1` 서명 검증 (`/home/jm/.cache/jarvis-m5-20260915/RECEIPT.md`).
+> - 대시보드 Second Brain readiness: `degraded`(read_only, refresh receipt 없음). 남은 외부 입력: provider의 `daily-refresh-receipt-v1` 발행과 비파괴 write-authorization 표면, retention lane 전용 사용자 provisioning(operator), Codex CLI 재로그인(operator). 이 넷이 닫히기 전에는 전체 완료가 아니다.
+
+
 > **현재 판정 — 2026-09-15 R3:** `IN_PROGRESS`. 아래 2026-09-14 R2-1 이하 모든 블록은 **당시 기록**이며 삭제하지 않는다. 이 블록이 현재다.
 >
 > **통합 branch(실측):** `integration/routing-approval-ui-main` = `codex/routing-approval-ui` + `main@8745ce7` + `feat/withdrawal-effect` + `feat/release-gaps` + `feat/real-provider-chain` + `feat/unit-a-service-production`. HEAD `93783fb`, tree `b2be8c70`. 전체 gate run 4 rc=0, 635파일/4,387테스트, `2026-09-15T05:15:26Z`→`05:43:33Z`, 로그 sha256 `223a1c47e3f3ae34921ec8e6f8f6e65bd6d70c9ec4ddaa0646f3f280312ec327`(`/home/jm/.cache/jarvis-integration-20260915/`). 제외: run 1 rc=1(기존 main 결함), run 3 rc=1(build-metadata strict schema, `93783fb`로 수정).
