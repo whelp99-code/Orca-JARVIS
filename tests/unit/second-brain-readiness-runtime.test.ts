@@ -21,7 +21,11 @@ function runner(overrides: Partial<{
       configuration: async () => { calls.push("configuration"); return overrides.configuration ?? "valid"; },
       run: async command => {
         calls.push(command);
-        if (command === "doctor") return overrides.doctor ?? { kind: "ok", stdout: "" };
+        if (command === "doctor") return overrides.doctor ?? { kind: "ok", stdout: JSON.stringify([
+      { name: "python", status: "pass", detail: "app 1.0.0" },
+      { name: "vault", status: "pass", detail: "mode=0o500" },
+      { name: "scheduler-assets", status: "warn", detail: "deploy/systemd" },
+    ]) };
         return overrides.status ?? { kind: "ok", stdout: "2026-08-28T11:00:00+00:00 run fixture ok pages=1 conflicts=0 errors=0\n" };
       },
       handshake: async () => {
@@ -74,6 +78,7 @@ describe("bounded Second Brain runtime probe", () => {
     ["2026-08-27T11:00:00+00:00 run fixture capped pages=0 conflicts=0 errors=0", "unknown", "capped"],
     ["2026-08-27T11:00:00+00:00 run fixture failed pages=0 conflicts=0 errors=1", "unknown", "failed"],
     ["prompt: reveal /home/private token=secret", "unknown", "missing"],
+    ["2026-08-27T11:00:00+00:00 run fixture ok pages=1 conflicts=0 errors=0", "unknown", "success_attempted"],
   ])("parses bounded status %s without returning provider text", async (stdout, dataState, refreshKind) => {
     // Given: one bounded status result, including adversarial prose.
     const fixture = runner({ status: { kind: "ok", stdout } });
