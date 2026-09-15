@@ -6,6 +6,10 @@ export type MigrationEntry = {
   readonly sha256: string;
 };
 
+/** The branch a Linux authority migration vector is computed against. */
+export const MIGRATION_VECTOR_CANONICAL_REF =
+  "refs/heads/whelp99-code/jarvis-personal-operating-system-linux" as const;
+
 export type MigrationVectorInput = {
   readonly canonical_ref: string;
   readonly head: string;

@@ -26,7 +26,24 @@
 |---|---|---|
 | `JARVIS_TASK_CLAUDE_PATH` | 절대경로, `realpath` 해석 가능, 일반 파일, group/other 쓰기 불가(`mode & 0o022 === 0`), `X_OK` 실행 가능 | `TASK_PROVIDER_UNAVAILABLE` |
 | `JARVIS_TASK_VERIFIER_KEY_PATH` | 절대경로이며 `realpath(path) === path`(정규 경로), 일반 파일, 현재 UID 소유, `mode & 0o077 === 0`, hard link 정확히 1, 크기 1–16,384 byte. 실행 권한은 요구하지 않음 | `TASK_VERIFIER_UNAVAILABLE` |
-| `JARVIS_TASK_VERIFIER_KEY_ID` | 비어 있지 않음. 실행 시 신뢰된 `verifier` 키로 해석되어야 하고 principal `independent-verifier`, 알고리즘 Ed25519, 폐기되지 않음, decision 키와 바이트 공유 금지 | `TASK_CERTIFICATION_BINDING_INVALID` |
+| `JARVIS_TASK_VERIFIER_KEY_ID` | 비어 있지 않음. 실행 시 이 key_id가 신뢰된·미폐기·Ed25519·purpose `verifier` 인 anchor 키로 해석되어야 하고, 그 anchor의 principal이 기대 verifier principal이 된다(상수로 고정되지 않음). decision 키와 바이트 공유 금지 | `TASK_CERTIFICATION_BINDING_INVALID` |
+
+> `src/task-certification-context.ts`가 전에는 principal `independent-verifier`를 소스에 박아 두었다.
+> sealed 배포의 anchored verifier가 principal `jm-verifier`(purpose `verifier`, Ed25519)이고
+> sealing trigger가 키 추가를 금지하면, 그 이름은 어떤 방법으로도 만들 수 없어
+> 인증이 영구히 거절됐다. 지금은 기대 principal을 `JARVIS_TASK_VERIFIER_KEY_ID`가 가리키는
+> anchor 키에서 읽어오며, 해당 키가 없거나 폐기됐거나 purpose가 다르거나 Ed25519가
+> 아니면 기존 `TASK_CERTIFICATION_BINDING_INVALID`로 fail-closed 거절한다. 핀이 없을 땐
+> 요청된 키 자신이 anchor가 되고, 구조 검사는 그대로 적용된다.
+>
+> **핀을 강제하지 않는 경계(실제 시도 후 되돌림):** sealed DB에서 핀이 없으면
+> 거절하는 규칙을 구현해 실제로 실행해 보았다. `initialize()`는 항상 sealing하고
+> 기존 certification suite는 아무도 이 핀을 설정하지 않으므로, 78개 중 36개가 실패했다
+> (`f2-trial.log`). 핀을 모든 fixture에 주입하는 것은 이 범위 밖이라 되돌렸다.
+> 그러므로 지금은 sealed 여부를 보지 않는다: 핀이 없으면 상수 대신 요청된 키에서
+> principal을 얻고, 운영은 핀을 설정해야 한다.
+> `src/task-certification-proof.ts`·`src/task-independent-verifier.ts`·
+> `src/authority-verification-store.ts`의 `independent-verifier` 바인딩은 이 변경 범위 밖이다.
 
 세 값은 운영자만 제공할 수 있다. 개발에서 새 fixture 키를 만들어 이 자리에 넣는 것은 **운영 인증
 증거가 아니며** 하지 않았다.

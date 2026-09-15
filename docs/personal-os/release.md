@@ -23,11 +23,143 @@ packaged CLI/health gates are required separately.
 
 Before/after activation or rollback: `migration-vector` `quick-check` `foreign-key-check` `doctor` `status` `dashboard-health` `mcp-handshake` `scheduler-cursor` `uncertain-outbox`
 
+All nine run together from the packaged CLI. The aggregate prints one JSON report and exits `1`
+when any gate fails, so a caller branches on process status without parsing the report:
+
+```sh
+node dist/src/cli.js release gates --db <db-path> [--dashboard-url URL]
+```
+
+Each gate answers from its own read-only connection and none of them migrate, so `release gates`
+runs before migrations are applied and reports pending migrations instead of requiring them.
+
+| Gate | Command | What fails it |
+| --- | --- | --- |
+| `migration-vector` | `release gates` | pending, checksum-mismatched or unsupported applied migrations |
+| `quick-check` | `release gates` | `PRAGMA quick_check` other than `ok` |
+| `foreign-key-check` | `db foreign-key-check --db PATH` | any `PRAGMA foreign_key_check` row |
+| `doctor` | `doctor --db PATH` | any failing doctor check |
+| `status` | `status --json --db PATH` | unacknowledged outbox entries |
+| `dashboard-health` | `release dashboard-health [--dashboard-url URL]` | non-200, malformed, oversize, timeout, or a body that is not `status=ok`/`authority=ready` |
+| `mcp-handshake` | `release mcp-handshake` | any refusal of the real stdio handshake, or a negotiated protocol other than the pinned one |
+| `scheduler-cursor` | `release scheduler-cursor --db PATH` | absent cursor, `applied_count` other than `last_completed`, or a cursor behind the completed `daily_loop_runs` |
+| `uncertain-outbox` | `release gates` | any `uncertain` memory outbox or daily loop row |
+
+`dashboard-health` GETs `/api/v1/health` on the configured loopback endpoint (`127.0.0.1:4173`,
+pinned by `config/dashboard-runtime.schema.json`) with a bounded timeout and a bounded body.
+`mcp-handshake` performs a real handshake through the Second Brain stdio transport contract and
+reports the negotiated protocol version and the contract profile; it honours
+`JARVIS_SECOND_BRAIN_LAUNCHER` and `JARVIS_SECOND_BRAIN_CONFIG`, so an isolated provider can be
+gated without touching a deployed installation. Every gate fails closed: an unreachable,
+unreadable or unparseable answer is a failure, never a skip.
+
+## Migration rehearsal {#migration-rehearsal}
+
+`jm-jarvis.service` runs `db migrate` in `ExecStartPre`, so every restart of the authority applies
+whatever migrations are pending against the real database, before `service run` starts. That is the
+unit's behaviour and this procedure does not change it. What it means is that the migration is not
+a separate, cancellable step at activation time: by the time a restart has been requested, the
+migration has already been attempted.
+
+A rehearsal must therefore pass before activation:
+
+```sh
+node dist/src/cli.js db migrate --rehearse <db-path>
+```
+
+It copies the database and its `-wal`/`-shm` sidecars into a private scratch directory (`TMPDIR`),
+applies the pending migrations to the copy, and gates the copy with `quick-check`,
+`foreign-key-check` and the `migration-vector` check. It reports the migrations it applied, the
+level before and after, and the source's digest. The source database is only ever read: it is
+hashed before and after, a rehearsal that observed any change to it fails with
+`MIGRATION_REHEARSAL_SOURCE_MUTATED` instead of reporting a result, and the scratch copy is removed
+when the rehearsal ends. The rehearsal exits `1` if any of the three gates on the copy fails.
+
+A real deployment can be many migrations behind its packaged release, so the rehearsal is what
+tells you whether the `ExecStartPre` migrate a restart is about to run would succeed — never
+activate a release whose rehearsal has not passed against the database that release will migrate.
+
 ## Rollback {#rollback}
 
 Rollback is allowed only when `exact-migration-vector`, `provider-contract`, and `sealed-manifest` match the target release. Otherwise emit `RELEASE_ROLLBACK_INCOMPATIBLE` and leave `current` unchanged.
 
+```sh
+node dist/src/cli.js release rollback --to <40-hex> --release-root <root> --db <db-path> [--dry-run]
+```
+
+The three inputs are read from the release root, never supplied by the caller:
+
+- `exact-migration-vector`: the vector the target expects — the target's own sealed
+  source commit/tree from its `release.manifest.json`, bound to the `schema_migrations`
+  applied to `--db` right now — must appear in the target's `release-compatibility.json`
+  `accepted_vector_digests`. The target's identity is what the vector is bound to, not the
+  running release's: the target accepted exactly this vector when it was published, so it
+  matches only while the database is still at that schema. Binding the running release
+  instead could never match a target published before that release existed.
+- `provider-contract`: the `provider_contract_digest` in the target's
+  `receipts/<40-hex>.json` must equal the payload digest of the published
+  `provider-releases/current` manifest.
+- `sealed-manifest`: the target's `release.manifest.json` must still hash to the
+  `manifest_sha256` its receipt pinned, and carry the receipt's `payload_digest`.
+
+Any disagreement, unreadable input or missing receipt raises the single documented
+`RELEASE_ROLLBACK_INCOMPATIBLE`; the refusal path performs no filesystem mutation, so `current`
+is left exactly where it was. `--dry-run` reports the same decision and never moves `current`.
+On allow, `current` is replaced by a relative symlink through an atomic rename. A `--release-root`
+inside a protected deployed root is refused with `E_PROTECTED_ROOT`.
+
 Owner gate for real activation: `production-activation-gate`.
+
+## Publishing a verified package {#publish}
+
+`ops/authority/publish-package-release.sh` publishes the package it was given. It does not rebuild
+from a worktree, so the bytes that were verified are the bytes that get published:
+
+```sh
+ops/authority/publish-package-release.sh \
+  --package <verified-package-root> \
+  --receipt-sha256 <independently-pinned-64-hex> \
+  --release-root <root> \
+  --db <db-path> [--backup-root <root>] [--dashboard-url URL] [--activate]
+```
+
+In order it: checks the owner gate when `--activate` was asked for (before publishing anything, so
+a refused activation leaves nothing half-published); runs `scripts/verify-runtime-package.mjs`
+against the candidate and the independently kept receipt hash; exclusively creates
+`<release-root>/releases/<40-hex source head>/` and copies the payload there with files 0644 and
+directories 0755 under `umask 0022`, because the task verifier rejects any published file with
+`mode & 0o022`; runs `release gates` against `--db` using the *published* CLI; runs the existing DB
+backup path (the production backup path when `--db` is the production authority database, the
+isolated one otherwise); and only then writes `<release-root>/receipts/<40-hex>.json` recording the
+verification, gate report, backup result and published payload modes.
+
+The release is assembled and sealed on a stage and moved in with one rename, because the manifest
+library refuses to write inside a deployed root. `--stage-parent` (default
+`<worktree>/.runtime-tmp`) must be on the same filesystem as the release root. Sealing writes, into
+the release:
+
+- `release-compatibility.json` — `accepted_vector_digests` holding the migration vector of `--db`
+  bound to the release's own committed source identity, which is what a later
+  `release rollback --to <this release>` compares against.
+- `release.manifest.json` — written by the product's own manifest library from the committed
+  provenance the package receipt carried, with a sidecar pinning its hash.
+
+That provenance comes from the checkout that built the package: `scripts/package-authority-runtime.mjs`
+records `source.tree` and `source.tracked_dirty` beside `source.head` in `dist/build-metadata.json`
+and in `runtime-package-receipt.json`, and records the manifest's committed fields (commit, tree,
+first parent, subject, commit timestamp, `git archive HEAD` digest) as `release_source` in the
+receipt. A package built where no checkout can answer for HEAD carries none of this, and publishing
+refuses it with `PACKAGE_RELEASE_SOURCE_TREE_ABSENT` rather than sealing a manifest against
+invented provenance. Publishing never reads the checkout for provenance itself.
+
+`current` is moved only when `--activate` is given *and*
+`JARVIS_PRODUCTION_ACTIVATION_APPROVAL=approved` is present — a relative symlink replaced by an
+atomic rename. Without `--activate` the release is published, gated and backed up, and `current` is
+left exactly where it was. A failing gate, a mismatched pin, or an already-published release id all
+refuse without activating. The release root, its `releases/` and its `receipts/` are 0700.
+
+`ops/authority/publish-verified-release.sh` is the older worktree-rebuild script and is left
+untouched.
 
 ## Isolated complete runtime package
 

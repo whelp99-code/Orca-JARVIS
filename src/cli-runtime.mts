@@ -24,11 +24,19 @@ import { readRemoteAuditHistory } from "./remote-audit-history.js";
 import { AuthorityDb, JarvisError } from "./db.js";
 import { executeLocalTimeline, localTimelinePreflight } from "./cli-local-timeline.js";
 import { hostMemoryReferenceOptions } from "./cli-host-memory.js";
+import { executeReleaseGateCommand } from "./cli-release-commands.js";
 
 const CLI_HELP =
   "JARVIS — agent-ops runtime\n"
   + "Commands: init, db migrate/rebuild-projections, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, "
-  + "observe, pre-gjc, capabilities, team, portfolio, status, daily, routing\n"
+  + "observe, pre-gjc, capabilities, team, portfolio, status, daily, routing, release\n"
+  + "release gates --db PATH [--dashboard-url URL]: run all nine pre/post-activation health gates; exits 1 on any failure\n"
+  + "db foreign-key-check --db PATH: PRAGMA foreign_key_check on a read-only open; any row fails\n"
+  + "release scheduler-cursor --db PATH: report the persisted cycle cursor and its daily_loop_runs consistency\n"
+  + "release dashboard-health [--dashboard-url URL]: bounded-timeout GET of the configured dashboard health route\n"
+  + "release mcp-handshake: real Second Brain stdio handshake honoring JARVIS_SECOND_BRAIN_LAUNCHER/CONFIG\n"
+  + "release rollback --to 40-HEX --release-root PATH --db PATH [--dry-run]: refuse unless exact-migration-vector, provider-contract and sealed-manifest match\n"
+  + "db migrate --rehearse DB_PATH: apply pending migrations to a scratch copy and gate it; the source database is never touched\n"
   + "timeline register|collect|hold|release TASK_ID --db PATH: manage local task snapshots (64 subjects maximum)\n"
   + "timeline admit-observation TASK_ID COLLECTION_ID --db PATH: persist an exact current local observation; no scheduling\n"
   + "timeline subjects --db PATH: list registered subjects and cached IDs; use snapshot to validate each collection\n"
@@ -118,6 +126,11 @@ export async function execute(args: string[], dependencies: CliDependencies = {}
           "memory-review-cleanup-limit": { type: "string" },
           "remote-audit-retention-limit": { type: "string" },
           "local-timeline-refresh": { type: "boolean" },
+          "dashboard-url": { type: "string" },
+          to: { type: "string" },
+          "release-root": { type: "string" },
+          "dry-run": { type: "boolean" },
+          rehearse: { type: "string" },
         },
         allowPositionals: true,
         strict: true,
@@ -129,6 +142,11 @@ export async function execute(args: string[], dependencies: CliDependencies = {}
   const [command, subcommand, argument, fourth, fifth, sixth] = parsed.positionals;
   const values = normalizeCliValues(parsed.values);
   const localTimeline = localTimelinePreflight(parsed.positionals, values);
+  const gateCommand = await executeReleaseGateCommand(parsed.positionals, values, dependencies);
+  if (gateCommand !== undefined) return gateCommand;
+  // A rehearsal never migrates the database it was pointed at, so it cannot be a modifier on any
+  // other command: the only accepted form returned above.
+  if (values.rehearse !== undefined) throw new JarvisError("MIGRATION_REHEARSAL_INPUT_INVALID");
   if (values["local-timeline-refresh"] !== undefined
     && (command !== "service" || !["once", "run"].includes(subcommand ?? "") || !values.db)) {
     throw new JarvisError("LOCAL_COLLECTION_CONFIG_INVALID");

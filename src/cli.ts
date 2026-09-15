@@ -8,6 +8,12 @@ export { execute } from "./cli-runtime.mjs";
 
 function output(value: object): void {
   process.stdout.write(`${JSON.stringify({ version: 1, ...value })}\n`);
+  // A command that reports a gate verdict opts into a non-zero exit by returning exit_code, so the
+  // caller can branch on process status without parsing the report the command still printed.
+  const requested = Reflect.get(value, "exit_code");
+  if (typeof requested === "number" && Number.isInteger(requested) && requested > 0) {
+    process.exitCode = requested;
+  }
 }
 
 function isDirectRun(): boolean {

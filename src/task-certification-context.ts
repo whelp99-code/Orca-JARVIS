@@ -14,12 +14,49 @@ const publicBytes = (pem: string) => {
   if (key.asymmetricKeyType !== "ed25519") return certificationInvalid();
   return key.export({ type: "spki", format: "der" });
 };
-export function taskCertificationVerifierKey(authority: AuthorityDb, keyId: string): string {
+/** The deployment pins which anchored key names the verifier principal. */
+export const TASK_VERIFIER_KEY_ID_ENV = "JARVIS_TASK_VERIFIER_KEY_ID" as const;
+
+type AnchoredVerifierKey = {
+  readonly public_key_pem: string;
+  readonly principal_id: string;
+  readonly algorithm: string;
+};
+
+/**
+ * A trusted, unrevoked, Ed25519 anchor carrying the `verifier` purpose. Missing, revoked,
+ * wrong-purpose and non-Ed25519 all leave by the same door, so nothing about the anchor set is
+ * learned from which refusal came back.
+ */
+function anchoredVerifierKey(authority: AuthorityDb, keyId: string): AnchoredVerifierKey {
   const key = authority.db.prepare(`SELECT k.public_key_pem,k.principal_id,k.algorithm FROM trusted_authority_keys k
     JOIN authority_key_purposes p ON p.key_id=k.key_id WHERE k.key_id=? AND p.purpose='verifier'`)
-    .get(keyId) as { public_key_pem: string; principal_id: string; algorithm: string } | undefined;
-  if (!key || key.principal_id !== "independent-verifier" || key.algorithm !== "Ed25519"
-    || authority.db.prepare("SELECT 1 FROM authority_revocations WHERE reference=?").get(keyId)) return certificationInvalid();
+    .get(keyId) as AnchoredVerifierKey | undefined;
+  if (!key || key.algorithm !== "Ed25519"
+    || authority.db.prepare("SELECT 1 FROM authority_revocations WHERE reference=?").get(keyId)) {
+    return certificationInvalid();
+  }
+  // Refuses a PEM that is not actually an Ed25519 public key, whatever the column claims.
+  publicBytes(key.public_key_pem);
+  return key;
+}
+
+/**
+ * The verifier principal a certification must be signed for. It is read from the anchored key the
+ * deployment pinned through JARVIS_TASK_VERIFIER_KEY_ID, never from a name compiled in here: a
+ * sealed deployment cannot add a key to match a constant, and its anchored verifier may legitimately
+ * be principal `jm-verifier` rather than `independent-verifier`. With no pin configured the anchor
+ * is the requested key itself, which still has to satisfy every structural check.
+ */
+export function taskCertificationVerifierPrincipal(authority: AuthorityDb, requestedKeyId: string): string {
+  const configured = process.env[TASK_VERIFIER_KEY_ID_ENV];
+  return anchoredVerifierKey(authority, configured ?? requestedKeyId).principal_id;
+}
+
+export function taskCertificationVerifierKey(authority: AuthorityDb, keyId: string): string {
+  const expected = taskCertificationVerifierPrincipal(authority, keyId);
+  const key = anchoredVerifierKey(authority, keyId);
+  if (key.principal_id !== expected) return certificationInvalid();
   const bytes = publicBytes(key.public_key_pem);
   const decisions = authority.db.prepare(`SELECT k.public_key_pem FROM trusted_authority_keys k
     JOIN authority_key_purposes p ON p.key_id=k.key_id WHERE p.purpose='decision'`).all() as Array<{ public_key_pem: string }>;

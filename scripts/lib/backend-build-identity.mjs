@@ -47,18 +47,60 @@ export function backendSourceIdentity(root) {
   const files = fileIdentity(root, INPUT_ROOTS);
   const git = args => execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
   let head = null;
+  let tree = null;
   let dirty = null;
+  let tracked_dirty = null;
   try {
     if (realpathSync(git(["rev-parse", "--show-toplevel"])) === realpathSync(root)) {
       const candidate = git(["rev-parse", "HEAD"]);
       if (/^[0-9a-f]{40}$/.test(candidate)) head = candidate;
+      // The committed tree of HEAD. A release manifest needs it, and it is only ever read from
+      // the checkout that is actually here: no checkout, no tree, and downstream refuses.
+      const committed = git(["rev-parse", "HEAD^{tree}"]);
+      if (/^[0-9a-f]{40}$/.test(committed)) tree = committed;
       dirty = git(["status", "--porcelain", "--untracked-files=all"]).length !== 0;
+      tracked_dirty = git(["status", "--porcelain", "--untracked-files=no"]).length !== 0;
     }
   } catch { /* Source archives and installations without Git retain null identity fields. */ }
   const compiler = JSON.parse(readFileSync(resolve(root, "node_modules/typescript/package.json"), "utf8")).version;
-  return { head, dirty, input_digest: files.digest, input_file_count: files.file_count,
+  return { head, tree, dirty, tracked_dirty, input_digest: files.digest, input_file_count: files.file_count,
     toolchain: { node: process.version, modules: process.versions.modules, platform: process.platform,
       arch: process.arch, typescript: compiler } };
+}
+
+/**
+ * The committed provenance a sealed release manifest needs, read from the checkout that produced
+ * the package. It returns null when there is no checkout here, so a package built from a source
+ * archive carries no provenance rather than an invented one, and publishing refuses later.
+ */
+export function releaseSourceIdentity(root) {
+  const git = args => execFileSync("git", args, { cwd: root, encoding: "utf8", stdio: ["ignore", "pipe", "ignore"] }).trim();
+  try {
+    if (realpathSync(git(["rev-parse", "--show-toplevel"])) !== realpathSync(root)) return null;
+    const commit = git(["rev-parse", "HEAD"]);
+    const tree = git(["rev-parse", "HEAD^{tree}"]);
+    if (!/^[0-9a-f]{40}$/.test(commit) || !/^[0-9a-f]{40}$/.test(tree)) return null;
+    let first_parent;
+    try {
+      first_parent = git(["rev-parse", "HEAD^"]);
+    } catch {
+      first_parent = "0".repeat(40);
+    }
+    if (!/^[0-9a-f]{40}$/.test(first_parent)) return null;
+    const archive = execFileSync("git", ["archive", "HEAD"],
+      { cwd: root, maxBuffer: 256 * 1024 * 1024, stdio: ["ignore", "pipe", "ignore"] });
+    return {
+      commit,
+      tree,
+      first_parent,
+      subject: git(["log", "-1", "--format=%s", "HEAD"]),
+      commit_timestamp: git(["show", "-s", "--format=%cI", "HEAD"]),
+      commit_epoch: Number(git(["show", "-s", "--format=%ct", "HEAD"])),
+      archive_digest: createHash("sha256").update(archive).digest("hex"),
+    };
+  } catch {
+    return null;
+  }
 }
 
 /** Seal only generated staging files, then identify their final on-disk modes. */

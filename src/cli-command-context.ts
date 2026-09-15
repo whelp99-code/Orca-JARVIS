@@ -63,6 +63,11 @@ export type CliValues = {
   readonly "memory-review-cleanup-limit"?: string;
   readonly "remote-audit-retention-limit"?: string;
   readonly "local-timeline-refresh"?: boolean;
+  readonly "dashboard-url"?: string;
+  readonly to?: string;
+  readonly "release-root"?: string;
+  readonly "dry-run"?: boolean;
+  readonly rehearse?: string;
 };
 
 export type CliCommandContext = {
@@ -115,6 +120,11 @@ export function normalizeCliValues(
     "memory-review-cleanup-limit": stringValue(value["memory-review-cleanup-limit"]),
     "remote-audit-retention-limit": stringValue(value["remote-audit-retention-limit"]),
     "local-timeline-refresh": booleanValue(value["local-timeline-refresh"]),
+    "dashboard-url": stringValue(value["dashboard-url"]),
+    to: stringValue(value.to),
+    "release-root": stringValue(value["release-root"]),
+    "dry-run": booleanValue(value["dry-run"]),
+    rehearse: stringValue(value.rehearse),
   };
 }
 
