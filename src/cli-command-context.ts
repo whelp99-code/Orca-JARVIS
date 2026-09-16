@@ -73,6 +73,7 @@ export type CliValues = {
   readonly "production-root"?: boolean;
   readonly "restore-backup"?: string;
   readonly "refresh-receipt"?: string;
+  readonly spool?: string;
 };
 
 export type CliCommandContext = {
@@ -135,6 +136,7 @@ export function normalizeCliValues(
     "production-root": booleanValue(value["production-root"]),
     "restore-backup": stringValue(value["restore-backup"]),
     "refresh-receipt": stringValue(value["refresh-receipt"]),
+    spool: stringValue(value.spool),
   };
 }
 

@@ -4,6 +4,23 @@ Status: Mac LaunchAgent/`/Volumes/DevSpace` LOCAL install steps below are `HISTO
 
 The portfolio dashboard uses one source-owned collector per host. JM-SERVER accepts LOCAL reports only through a restricted SSH key whose forced command is the LOCAL ingest wrapper.
 
+## The JM-SERVER collector is split in two
+
+Collection and ingest are separate units, because they must be able to run as different accounts.
+`portfolio collect --spool DIR` reads the host through `orca-ide` and writes one signed envelope
+into the spool; it opens no database, so it stays with the interactive user who owns the GUI
+session it reads. `portfolio ingest --spool DIR --db PATH` opens the authority database, verifies
+each envelope and consumes it once — the spool's `processed/` directory is the digest ledger, and a
+refused envelope is quarantined under `refused/` and reported by name and code.
+
+- `ops/portfolio/jm-portfolio-collector.sh` + `jm-jarvis-portfolio-collector.service`/`.timer`
+- `ops/portfolio/jm-portfolio-ingest.sh` + `jm-jarvis-portfolio-ingest.service`/`.timer`
+- Spool root: `JARVIS_PORTFOLIO_SPOOL_ROOT`, default `<JARVIS_SHARE_ROOT>/portfolio-spool`.
+
+`readPortfolioHmacKey` requires mode `0600` owned by the reading account, so when the two halves
+run as different accounts each holds its own copy of the same key bytes. Installing both units
+under one account is the per-host default and needs no second copy.
+
 ## Secret and identity boundaries
 
 - LOCAL signing key: `/Volumes/DevSpace/Orca-JARVIS/.jarvis-runtime/secrets/portfolio-local.key`.

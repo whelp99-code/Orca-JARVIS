@@ -1,0 +1,11 @@
+[Unit]
+Description=Ingest spooled JM-SERVER portfolio envelopes every minute
+
+[Timer]
+OnBootSec=50s
+OnUnitActiveSec=60s
+AccuracySec=5s
+Unit=jm-jarvis-portfolio-ingest.service
+
+[Install]
+WantedBy=timers.target

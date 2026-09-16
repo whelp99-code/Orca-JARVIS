@@ -1,22 +1,10 @@
-import { execFile as execFileCallback } from "node:child_process";
-import { readFile } from "node:fs/promises";
 import { fileURLToPath } from "node:url";
-import { promisify } from "node:util";
 import { parseArgs } from "node:util";
 import { readPortfolioHmacKey } from "./portfolio-auth.js";
-import {
-  collectPortfolioEnvelope,
-  type CollectorCommandRunner,
-  type PortfolioCollectorInput,
-} from "./portfolio-collector.js";
+import { collectPortfolioEnvelope } from "./portfolio-collector.js";
+import { portfolioCollectorInput } from "./portfolio-collector-input.js";
 import type { PortfolioEnvironment } from "./portfolio-contracts.js";
-
-const execFile = promisify(execFileCallback);
-const COMMAND_TIMEOUT_MS = 30_000;
-const COMMAND_MAX_BUFFER = 1_000_000;
-const DEFAULT_ORCA_BIN = "orca";
-const DEFAULT_GH_BIN = "gh";
-const DEFAULT_GIT_BIN = "git";
+import { writePortfolioSpoolFile } from "./portfolio-spool.js";
 
 export async function main(argv: readonly string[]): Promise<void> {
   const { values, positionals } = parseArgs({
@@ -29,6 +17,7 @@ export async function main(argv: readonly string[]): Promise<void> {
       "orca-bin": { type: "string" },
       "gh-bin": { type: "string" },
       "git-bin": { type: "string" },
+      spool: { type: "string" },
     },
     allowPositionals: false,
     strict: true,
@@ -39,34 +28,25 @@ export async function main(argv: readonly string[]): Promise<void> {
   const scopeFile = source === "local" ? requireFile(values["scope-file"]) : null;
   const statusFile = source === "local" ? requireFile(values["status-file"]) : null;
   const key = await readPortfolioHmacKey(values["key-file"]);
-  const input: PortfolioCollectorInput = {
+  const input = portfolioCollectorInput({
     source,
     scopeFile,
     statusFile,
-    orcaRunner: commandRunner(values["orca-bin"] ?? DEFAULT_ORCA_BIN),
-    ghRunner: commandRunner(values["gh-bin"] ?? DEFAULT_GH_BIN),
-    gitRunner: commandRunner(values["git-bin"] ?? DEFAULT_GIT_BIN),
-    readFile: (path) => readFile(path, "utf8"),
-    clock: () => new Date(),
-  };
+    orcaBin: values["orca-bin"],
+    ghBin: values["gh-bin"],
+    gitBin: values["git-bin"],
+  });
   const envelope = await collectPortfolioEnvelope(input, key);
-  process.stdout.write(`${JSON.stringify(envelope)}\n`);
-}
-
-function commandRunner(bin: string): CollectorCommandRunner {
-  return async (args) => {
-    try {
-      const { stdout } = await execFile(bin, args, {
-        encoding: "utf8",
-        maxBuffer: COMMAND_MAX_BUFFER,
-        windowsHide: true,
-        timeout: COMMAND_TIMEOUT_MS,
-      });
-      return stdout;
-    } catch {
-      throw new Error("COLLECTOR_COMMAND_FAILED");
-    }
-  };
+  const bytes = `${JSON.stringify(envelope)}\n`;
+  // With `--spool` the envelope is handed over through the filesystem instead of a pipe, so the
+  // process that ingests it - and opens the authority database - need not be this one's child
+  // (cutover gap G4). Without it the entrypoint behaves exactly as it always did.
+  if (typeof values.spool === "string") {
+    if (values.spool.length === 0 || !values.spool.startsWith("/")) throw new Error("COLLECTOR_USAGE_INVALID");
+    await writePortfolioSpoolFile(values.spool, Buffer.from(bytes, "utf8"));
+    return;
+  }
+  process.stdout.write(bytes);
 }
 
 function parseSource(value: string | undefined): PortfolioEnvironment {

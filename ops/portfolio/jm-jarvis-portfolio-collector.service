@@ -1,5 +1,5 @@
 [Unit]
-Description=Collect and ingest JM-SERVER portfolio status
+Description=Collect JM-SERVER portfolio status into the spool
 
 [Service]
 Type=oneshot
@@ -10,4 +10,4 @@ NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/jm/.local/state/orca-jarvis
+ReadWritePaths=/home/jm/.local/share/jarvis/portfolio-spool

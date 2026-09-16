@@ -8,6 +8,7 @@ import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { readPortfolioHmacKey, verifyPortfolioAuthenticatedReport } from "./dashboard/portfolio-auth.js";
 import { PortfolioProjection } from "./dashboard/portfolio-projection.js";
 import { readPortfolioStdin } from "./dashboard/portfolio-stdin.js";
+import { ingestPortfolioSpool } from "./cli-portfolio-spool.js";
 import { runtimeCapabilityProbe } from "./doctor.js";
 import { planTeamProposal, type TeamProposalRequestV1 } from "./team-proposal.js";
 
@@ -58,6 +59,15 @@ export async function executeBootstrapCommand(
     if (source !== "local" && source !== "jm-server") throw new JarvisError("PORTFOLIO_SOURCE_INVALID");
     if (values["key-file"] === undefined) throw new JarvisError("PORTFOLIO_AUTH_REQUIRED");
     const key = await readPortfolioHmacKey(values["key-file"]);
+    // The spooled form of the same command: the collector no longer pipes into this process,
+    // because it may not open this database (cutover gap G4). Consuming a directory of signed
+    // envelopes is idempotent; consuming a pipe is a single shot and stays one.
+    if (values.spool !== undefined) {
+      if (!values.spool.startsWith("/")) throw new JarvisError("PORTFOLIO_SPOOL_INPUT_INVALID");
+      return { ok: true, command: "portfolio.ingest", ...await ingestPortfolioSpool({
+        directory: values.spool, source, key,
+        projection: new PortfolioProjection(db), now: commandNow(context) }) };
+    }
     const input = await (dependencies.readStdin ?? readPortfolioStdin)();
     const verified = verifyPortfolioAuthenticatedReport(input, key, source);
     const payload = verified.kind === "report" ? verified.report : verified.error;
