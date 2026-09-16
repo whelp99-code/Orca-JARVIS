@@ -38,14 +38,14 @@ function hardening(roots: RenderRoots): readonly string[] {
   ];
 }
 
-function serviceBlock(roots: RenderRoots, lines: readonly string[]): string {
+export function serviceBlock(roots: RenderRoots, lines: readonly string[]): string {
   const identity = roots.serviceUser === undefined
     ? []
     : [`User=${roots.serviceUser}`, `Group=${roots.serviceUser}`];
   return `${[...identity, ...lines, ...hardening(roots)].join("\n")}\n`;
 }
 
-function executablePath(roots: RenderRoots): string {
+export function executablePath(roots: RenderRoots): string {
   return roots.serviceUser === undefined
     ? `${dirname(roots.nodeBin)}:${roots.binRoot}:/usr/bin:/bin`
     : `${dirname(roots.nodeBin)}:/usr/bin:/bin`;

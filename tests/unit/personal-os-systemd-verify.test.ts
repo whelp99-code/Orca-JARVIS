@@ -44,7 +44,7 @@ describe("personal-OS native systemd-analyze verify", () => {
 
     // Then
     const inventory = [...UNIT_INVENTORY.jarvis, ...UNIT_INVENTORY.provider];
-    expect(inventory).toHaveLength(13);
+    expect(inventory).toHaveLength(15);
     expect(receipt.production_units_missing).toBe(0);
     expect(receipt.fixture_units_missing).toBe(0);
     expect(receipt.config_artifacts_missing).toBe(0);

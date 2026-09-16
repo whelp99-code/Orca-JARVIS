@@ -15,6 +15,9 @@ const SERVICE_ENVIRONMENT = {
   JARVIS_PROVIDER_STATE_ROOT: "/var/lib/jarvis-svc/state/second-brain",
   JARVIS_PROVIDER_CONFIG: "/var/lib/jarvis-svc/config/second-brain/config.toml",
   JARVIS_PROVIDER_SHARE_ROOT: "/var/lib/jarvis-svc/share/second-brain",
+  // The authority's own share root is where the portfolio spool defaults, so a deployment that
+  // leaves it unset leaves the collector unit naming the interactive user's home.
+  JARVIS_SHARE_ROOT: "/var/lib/jarvis-svc/share/jarvis",
   JARVIS_CONFIG_ROOT: "/var/lib/jarvis-svc/config",
   JARVIS_BIN_ROOT: "/opt/jarvis-runtime/bin",
   JARVIS_NODE_BIN: "/opt/jarvis-runtime/bin/node",
@@ -25,6 +28,9 @@ const GENERATED_IDS: readonly GeneratedUnitId[] = [
   "jm-jarvis.service", "jm-jarvis-dashboard.service", "jm-jarvis-backup.service",
   "jm-jarvis-backup.timer", "jm-second-brain-backup.service", "jm-second-brain-backup.timer",
   "jm-second-brain-requests.service", "jm-second-brain-requests.path",
+  "jm-jarvis-phone-gateway.service", "jm-jarvis-portfolio-collector.service",
+  "jm-jarvis-portfolio-collector.timer", "jm-jarvis-portfolio-ingest.service",
+  "jm-jarvis-portfolio-ingest.timer",
 ];
 
 describe("personal-OS systemd renderer", () => {
@@ -159,6 +165,55 @@ describe("personal-OS systemd renderer", () => {
     const perUser = renderSystemdUnit({ id: "jm-jarvis.service", mode: "production", roots: productionRoots({}) });
     expect(perUser).toContain("ProtectHome=read-only");
     expect(perUser).not.toContain("second-brain");
+  });
+
+  // Gap G7 of the cutover: the phone gateway and the portfolio units were in the inventory with no
+  // renderer, so they could not follow the configured roots and had to be repointed by hand.
+  it("renders the gateway and both portfolio halves from the configured roots", () => {
+    // Given
+    const roots = productionRoots({ ...SERVICE_ENVIRONMENT,
+      JARVIS_PORTFOLIO_SPOOL_ROOT: "/var/lib/jarvis-svc/spool/portfolio" });
+
+    // When
+    const render = (id: GeneratedUnitId) => renderSystemdUnit({ id, mode: "production", roots });
+    const gateway = render("jm-jarvis-phone-gateway.service");
+    const collector = render("jm-jarvis-portfolio-collector.service");
+    const ingest = render("jm-jarvis-portfolio-ingest.service");
+
+    // Then
+    // The gateway opens no database - it proxies loopback 4173 and serves static assets - so it
+    // stays a user unit, and reads the release from the world-readable runtime beside the bin root
+    // rather than from the service account's private state.
+    expect(gateway).toContain("--upstream http://127.0.0.1:4173");
+    expect(gateway).toContain("--static-root /opt/jarvis-runtime/dist/dashboard");
+    expect(gateway).toContain("WorkingDirectory=/opt/jarvis-runtime");
+    expect(gateway).not.toContain("User=");
+    expect(gateway).not.toContain("--db");
+    // The collector reads the interactive user's own GUI session, so it also stays a user unit -
+    // and it opens no database either: it writes one signed envelope into the shared spool.
+    expect(collector).toContain("portfolio collect --spool /var/lib/jarvis-svc/spool/portfolio");
+    expect(collector).toContain("--orca-bin /opt/jarvis-runtime/bin/orca-ide");
+    expect(collector).toContain("ReadWritePaths=/var/lib/jarvis-svc/spool/portfolio");
+    expect(collector).not.toContain("User=");
+    expect(collector).not.toContain("--db");
+    // Only the ingest half opens the authority database, and only it runs as the service account.
+    expect(ingest).toContain("User=jarvis-svc");
+    expect(ingest).toContain(
+      "portfolio ingest --spool /var/lib/jarvis-svc/spool/portfolio --source jm-server"
+      + " --key-file /var/lib/jarvis-svc/config/orca-jarvis/portfolio-jm.key"
+      + " --db /var/lib/jarvis-svc/state/orca-jarvis/jarvis.sqlite");
+    expect(ingest).toContain(
+      "ReadWritePaths=/var/lib/jarvis-svc/state/orca-jarvis /var/lib/jarvis-svc/spool/portfolio");
+    // Neither user unit names a path inside the interactive home; %h is how a user unit spells its
+    // own per-user secret, and it is the only home reference either of them carries.
+    for (const unit of [gateway, collector]) expect(unit).not.toContain("/home/");
+    expect(gateway).toContain("EnvironmentFile=%h/.config/orca-jarvis/phone-gateway.env");
+    expect(collector).toContain("--key-file %h/.config/orca-jarvis/portfolio-jm.key");
+    // The spool defaults under the authority share root when the deployment does not name one.
+    expect(render("jm-jarvis-portfolio-ingest.timer")).toContain("OnUnitActiveSec=60s");
+    expect(renderSystemdUnit({ id: "jm-jarvis-portfolio-collector.service", mode: "production",
+      roots: productionRoots(SERVICE_ENVIRONMENT) }))
+      .toContain("--spool /var/lib/jarvis-svc/share/jarvis/portfolio-spool");
   });
 
   it("moves the provider units onto the configured provider roots and marker", () => {

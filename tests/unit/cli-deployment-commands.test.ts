@@ -67,7 +67,7 @@ describe("deployment CLI", () => {
 
     // Then
     const units = Reflect.get(result ?? {}, "units") as ReadonlyArray<Record<string, unknown>>;
-    expect(units).toHaveLength(9);
+    expect(units).toHaveLength(14);
     expect(units.filter(unit => unit["names_home"] === true)).toEqual([]);
     expect(Reflect.get(result ?? {}, "service_user")).toBe("jarvis-svc");
     for (const unit of units) {

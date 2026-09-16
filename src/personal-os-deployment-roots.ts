@@ -44,6 +44,7 @@ export const DEPLOYMENT_ROOT_VARIABLES = {
   binRoot: "JARVIS_BIN_ROOT",
   nodeBin: "JARVIS_NODE_BIN",
   taskClaudePath: "JARVIS_TASK_CLAUDE_PATH",
+  portfolioSpoolRoot: "JARVIS_PORTFOLIO_SPOOL_ROOT",
 } as const;
 
 /**
@@ -73,6 +74,14 @@ export type DeploymentRoots = {
   readonly nodeBin: string;
   readonly serviceUser: string | undefined;
   readonly taskClaudePath: string | undefined;
+  /**
+   * The portfolio spool: the one directory two accounts share. The collector writes into it as the
+   * interactive user whose GUI session it reads, and the ingest consumes it as the account that
+   * owns the authority database, so a deployment that splits those accounts has to name a place
+   * both can reach and cannot leave it inside either one's private state.
+   */
+  readonly portfolioSpoolRoot: string;
+  readonly orcaCliRoot: string;
   readonly jarvisDb: string;
   readonly backupRoot: string;
   readonly authorityCurrent: string;
@@ -125,6 +134,8 @@ export function resolveDeploymentRoots(
   const binRoot = configuredPath(DEPLOYMENT_ROOT_VARIABLES.binRoot,
     DEFAULT_DEPLOYMENT_ROOTS.binRoot, environment);
   const serviceUser = configuredServiceUser(environment);
+  const authorityShareRoot = configuredPath(DEPLOYMENT_ROOT_VARIABLES.authorityShareRoot,
+    DEFAULT_DEPLOYMENT_ROOTS.authorityShareRoot, environment);
   // The executor registry already treats an empty JARVIS_TASK_CLAUDE_PATH as "not configured"
   // (probeClaudeTaskAuthentication, createClaudeRuntime), so the roots read it the same way rather
   // than refusing an environment the rest of the product accepts.
@@ -146,8 +157,10 @@ export function resolveDeploymentRoots(
     providerConfig,
     providerShareRoot: configuredPath(DEPLOYMENT_ROOT_VARIABLES.providerShareRoot,
       DEFAULT_DEPLOYMENT_ROOTS.providerShareRoot, environment),
-    authorityShareRoot: configuredPath(DEPLOYMENT_ROOT_VARIABLES.authorityShareRoot,
-      DEFAULT_DEPLOYMENT_ROOTS.authorityShareRoot, environment),
+    authorityShareRoot,
+    portfolioSpoolRoot: configuredPath(DEPLOYMENT_ROOT_VARIABLES.portfolioSpoolRoot,
+      `${authorityShareRoot}/portfolio-spool`, environment),
+    orcaCliRoot: `${stateRoot}/orca-cli`,
     configRoot: configuredPath(DEPLOYMENT_ROOT_VARIABLES.configRoot,
       DEFAULT_DEPLOYMENT_ROOTS.configRoot, environment),
     binRoot,

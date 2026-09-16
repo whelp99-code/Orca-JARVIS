@@ -1,0 +1,22 @@
+[Unit]
+Description=Ingest spooled JM-SERVER portfolio envelopes into the authority
+After=jm-jarvis.service
+Wants=jm-jarvis.service
+
+[Service]
+Type=oneshot
+WorkingDirectory=/home/jm/.local/state/orca-jarvis/authority/current
+Environment=PATH=/home/jm/.nvm/versions/node/v24.19.0/bin:/home/jm/.local/bin:/usr/bin:/bin
+Environment=NODE_ENV=production
+ExecStart=/home/jm/.nvm/versions/node/v24.19.0/bin/node /home/jm/.local/state/orca-jarvis/authority/current/dist/src/cli.js portfolio ingest --spool /home/jm/.local/share/jarvis/portfolio-spool --source jm-server --key-file /home/jm/.config/orca-jarvis/portfolio-jm.key --db /home/jm/.local/state/orca-jarvis/jarvis.sqlite
+TimeoutStartSec=50s
+ReadWritePaths=/home/jm/.local/state/orca-jarvis /home/jm/.local/share/jarvis/portfolio-spool
+UMask=0077
+NoNewPrivileges=true
+PrivateTmp=true
+ProtectSystem=strict
+ProtectHome=read-only
+RestrictSUIDSGID=true
+LockPersonality=true
+SystemCallArchitectures=native
+

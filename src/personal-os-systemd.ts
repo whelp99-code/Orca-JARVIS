@@ -7,6 +7,13 @@ export {
 import type { RenderMode, RenderRoots } from "./personal-os-systemd-roots.js";
 import { TASK_EXECUTOR_DROPIN_ID, taskExecutorDropIn } from "./personal-os-systemd-dropins.js";
 import {
+  phoneGatewayService,
+  portfolioCollectorService,
+  portfolioCollectorTimer,
+  portfolioIngestService,
+  portfolioIngestTimer,
+} from "./personal-os-systemd-satellite-units.js";
+import {
   backupService,
   backupTimer,
   dashboardService,
@@ -26,6 +33,8 @@ export const UNIT_INVENTORY = {
     "jm-jarvis-backup.timer",
     "jm-jarvis-portfolio-collector.service",
     "jm-jarvis-portfolio-collector.timer",
+    "jm-jarvis-portfolio-ingest.service",
+    "jm-jarvis-portfolio-ingest.timer",
   ],
   provider: [
     "jm-second-brain-refresh.service",
@@ -51,6 +60,11 @@ export type GeneratedUnitId =
   | typeof TASK_EXECUTOR_DROPIN_ID
   | "jm-jarvis.service"
   | "jm-jarvis-dashboard.service"
+  | "jm-jarvis-phone-gateway.service"
+  | "jm-jarvis-portfolio-collector.service"
+  | "jm-jarvis-portfolio-collector.timer"
+  | "jm-jarvis-portfolio-ingest.service"
+  | "jm-jarvis-portfolio-ingest.timer"
   | "jm-jarvis-backup.service"
   | "jm-jarvis-backup.timer"
   | "jm-second-brain-backup.service"
@@ -70,6 +84,16 @@ export function renderSystemdUnit(input: {
       return jarvisService(input.roots);
     case "jm-jarvis-dashboard.service":
       return dashboardService(input.roots);
+    case "jm-jarvis-phone-gateway.service":
+      return phoneGatewayService(input.roots);
+    case "jm-jarvis-portfolio-collector.service":
+      return portfolioCollectorService(input.roots);
+    case "jm-jarvis-portfolio-collector.timer":
+      return portfolioCollectorTimer();
+    case "jm-jarvis-portfolio-ingest.service":
+      return portfolioIngestService(input.roots);
+    case "jm-jarvis-portfolio-ingest.timer":
+      return portfolioIngestTimer();
     case "jm-jarvis-backup.service":
       return backupService(input.roots, input.mode);
     case "jm-jarvis-backup.timer":

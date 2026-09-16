@@ -1,6 +1,6 @@
 # Dual-host portfolio collectors
 
-Status: Mac LaunchAgent/`/Volumes/DevSpace` LOCAL install steps below are `HISTORICAL_NON_EXECUTABLE`. Do not `launchctl` bootstrap a Mac portfolio agent from this file. Linux collector units: `deploy/jm-jarvis-portfolio-collector.service` and `deploy/jm-jarvis-portfolio-collector.timer`. Linux authority docs: `docs/personal-os/operations.md`.
+Status: Mac LaunchAgent/`/Volumes/DevSpace` LOCAL install steps below are `HISTORICAL_NON_EXECUTABLE`. Do not `launchctl` bootstrap a Mac portfolio agent from this file. Linux portfolio units: `deploy/jm-jarvis-portfolio-collector.service`/`.timer` (collect) and `deploy/jm-jarvis-portfolio-ingest.service`/`.timer` (ingest). Those four, and `deploy/jm-jarvis-phone-gateway.service`, are rendered from the deployment roots by `deployment render-units`, so a configured deployment installs the rendered output rather than editing them. Linux authority docs: `docs/personal-os/operations.md`.
 
 The portfolio dashboard uses one source-owned collector per host. JM-SERVER accepts LOCAL reports only through a restricted SSH key whose forced command is the LOCAL ingest wrapper.
 

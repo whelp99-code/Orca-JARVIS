@@ -1,15 +1,17 @@
 [Unit]
-Description=Collect and ingest JM-SERVER portfolio status
+Description=Collect JM-SERVER portfolio status into the spool
 
 [Service]
 Type=oneshot
+WorkingDirectory=/home/jm/.local/state/orca-jarvis/control-center/current
 Environment=ORCA_EXTRACTED_APPDIR=/home/jm/.local/state/orca-jarvis/orca-cli/current
 Environment=PATH=/home/jm/.local/state/orca-jarvis/orca-cli/current/usr/bin:/home/jm/.local/state/orca-jarvis/orca-cli/bin:/home/jm/.nvm/versions/node/v24.19.0/bin:/home/jm/.local/bin:/usr/bin:/bin
-ExecStart=/bin/bash /home/jm/.local/state/orca-jarvis/control-center/bin/jm-portfolio-collector.sh
+Environment=NODE_ENV=production
+ExecStart=/home/jm/.nvm/versions/node/v24.19.0/bin/node /home/jm/.local/state/orca-jarvis/control-center/current/dist/src/cli.js portfolio collect --spool /home/jm/.local/share/jarvis/portfolio-spool --source jm-server --key-file %h/.config/orca-jarvis/portfolio-jm.key --orca-bin /home/jm/.local/bin/orca-ide --git-bin /usr/bin/git
 TimeoutStartSec=50s
 UMask=0077
 NoNewPrivileges=true
 PrivateTmp=true
 ProtectSystem=strict
 ProtectHome=read-only
-ReadWritePaths=/home/jm/.local/state/orca-jarvis
+ReadWritePaths=/home/jm/.local/share/jarvis/portfolio-spool

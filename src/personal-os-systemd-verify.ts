@@ -62,6 +62,11 @@ function isGeneratedUnitId(id: string): id is GeneratedUnitId {
   switch (id) {
     case "jm-jarvis.service":
     case "jm-jarvis-dashboard.service":
+    case "jm-jarvis-phone-gateway.service":
+    case "jm-jarvis-portfolio-collector.service":
+    case "jm-jarvis-portfolio-collector.timer":
+    case "jm-jarvis-portfolio-ingest.service":
+    case "jm-jarvis-portfolio-ingest.timer":
     case "jm-jarvis-backup.service":
     case "jm-jarvis-backup.timer":
     case "jm-second-brain-backup.service":
