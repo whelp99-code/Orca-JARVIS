@@ -64,32 +64,32 @@ export function discoverOpenInodeHolders(
   for (const entry of readdirSync("/proc", { withFileTypes: true })) {
     if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) continue;
     const pid = Number(entry.name);
-    if (!Number.isSafeInteger(pid) || pid < 1 || !ownedProcess(pid)) continue;
-    let startToken: string;
+    if (!Number.isSafeInteger(pid) || pid < 1) continue;
     try {
-      startToken = processStartToken(pid);
+      // Every /proc read below can race a process that exits between the readdir above and the
+      // inspection here. `ownedProcess` used to be called outside this try, so that race threw
+      // straight out of this function instead of being classified below.
+      if (!ownedProcess(pid)) continue;
+      const startToken = processStartToken(pid);
+      const process = { pid, start_token: startToken };
+      const count = processOpenInodeCount(process, device, inode);
+      if (count.descriptors === 0) continue;
+      holders.push(process);
+      if (count.writable !== 0) writable.push(process);
+      fdCount += count.descriptors;
     } catch (error) {
-      if (error instanceof ProcessObservationError && !processExists(pid)) continue;
-      throw error;
-    }
-    const process = { pid, start_token: startToken };
-    let count: OpenInodeCount;
-    try {
-      count = processOpenInodeCount(process, device, inode);
-    } catch (error) {
-      if (error instanceof ProcessObservationError && denied(error)
-        && !requiredPids.has(pid)) {
-        // Not skipped quietly: a process this cannot read is a hole in the answer, and the caller
-        // that is about to replace a file has to be told rather than left to assume.
-        unprovable.push(pid);
-        continue;
+      if (error instanceof ProcessObservationError) {
+        // The process vanished mid-scan: that is absence, not a hole in the answer.
+        if (gone(error)) continue;
+        if (denied(error) && !requiredPids.has(pid)) {
+          // Not skipped quietly: a process this cannot read is a hole in the answer, and the
+          // caller that is about to replace a file has to be told rather than left to assume.
+          unprovable.push(pid);
+          continue;
+        }
       }
       throw error;
     }
-    if (count.descriptors === 0) continue;
-    holders.push(process);
-    if (count.writable !== 0) writable.push(process);
-    fdCount += count.descriptors;
   }
   return { holders, writable_holders: writable, fd_count: fdCount, unprovable };
 }
@@ -126,7 +126,7 @@ function processOpenInodeCount(
   try {
     descriptors = readdirSync(`/proc/${process.pid}/fd`);
   } catch (error) {
-    if (missing(error) && !processExists(process.pid)) return { descriptors: 0, writable: 0 };
+    // Classified by the caller: a vanished process is absence, an unreadable one is a hole.
     throw new ProcessObservationError(process.pid, error);
   }
   let count = 0;
@@ -138,7 +138,9 @@ function processOpenInodeCount(
       count += 1;
       if (descriptorWritable(process.pid, descriptor)) writable += 1;
     } catch (error) {
-      if (missing(error)) continue;
+      // This one descriptor closed mid-scan; the process and its other descriptors may still
+      // be live, so this is skipped rather than failing the whole process observation.
+      if (goneCode(error)) continue;
       throw new ProcessObservationError(process.pid, error);
     }
   }
@@ -149,27 +151,38 @@ function ownedProcess(pid: number): boolean {
   try {
     return statSync(`/proc/${pid}`).uid === effectiveUserId();
   } catch (error) {
-    if (missing(error)) return false;
+    // Classified by the caller: a vanished process is absence, an unreadable one is a hole.
     throw new ProcessObservationError(pid, error);
   }
 }
 
-function processExists(pid: number): boolean {
-  try {
-    statSync(`/proc/${pid}`);
-    return true;
-  } catch (error) {
-    if (missing(error)) return false;
-    throw new ProcessObservationError(pid, error);
-  }
+/**
+ * Whether an fs error means the process/descriptor it names is simply gone - the ordinary result
+ * of a race between enumerating /proc and inspecting one of its entries, not a failure to answer.
+ * ESRCH cannot come from these filesystem calls today, but is included so every place in this file
+ * that classifies a vanished process agrees with the ENOENT/ESRCH-is-absent rule used elsewhere for
+ * PIDs that exited (see the test-runtime process helper), rather than drifting from it.
+ */
+function goneCode(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  const code = Reflect.get(error, "code");
+  return code === "ENOENT" || code === "ESRCH";
 }
 
-function missing(error: unknown): boolean {
-  return error instanceof Error && Reflect.get(error, "code") === "ENOENT";
+/** Whether a `ProcessObservationError` was caused by the observed process having vanished. */
+function gone(error: ProcessObservationError): boolean {
+  return goneCode(error.cause);
 }
 
+/**
+ * Whether a `ProcessObservationError` was caused by a permission failure - a process this user
+ * owns but cannot read, which fails closed as `unprovable` rather than being skipped like an
+ * absent one.
+ */
 function denied(error: ProcessObservationError): boolean {
-  return error.cause instanceof Error && Reflect.get(error.cause, "code") === "EACCES";
+  if (!(error.cause instanceof Error)) return false;
+  const code = Reflect.get(error.cause, "code");
+  return code === "EACCES" || code === "EPERM";
 }
 
 export class ProcessObservationError extends Error {
