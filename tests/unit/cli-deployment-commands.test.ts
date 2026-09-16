@@ -9,7 +9,7 @@ afterEach(() => {
   for (const path of scratch.splice(0)) rmSync(path, { recursive: true, force: true });
   for (const name of ["JARVIS_STATE_ROOT", "JARVIS_PROVIDER_STATE_ROOT", "JARVIS_PROVIDER_CONFIG",
     "JARVIS_PROVIDER_SHARE_ROOT", "JARVIS_SHARE_ROOT", "JARVIS_CONFIG_ROOT", "JARVIS_BIN_ROOT",
-    "JARVIS_NODE_BIN", "JARVIS_SERVICE_USER"]) {
+    "JARVIS_NODE_BIN", "JARVIS_SERVICE_USER", "JARVIS_TASK_CLAUDE_PATH"]) {
     delete process.env[name];
   }
 });
@@ -67,7 +67,7 @@ describe("deployment CLI", () => {
 
     // Then
     const units = Reflect.get(result ?? {}, "units") as ReadonlyArray<Record<string, unknown>>;
-    expect(units).toHaveLength(8);
+    expect(units).toHaveLength(14);
     expect(units.filter(unit => unit["names_home"] === true)).toEqual([]);
     expect(Reflect.get(result ?? {}, "service_user")).toBe("jarvis-svc");
     for (const unit of units) {
@@ -76,6 +76,51 @@ describe("deployment CLI", () => {
       expect(readFileSync(path, "utf8")).not.toContain("/home/");
     }
     expect(readFileSync(join(out, "jm-jarvis.service"), "utf8")).toContain("User=jarvis-svc");
+  });
+
+  // Gap G3: the executor drop-in and the operator step that fills it in are generated from the
+  // roots, so neither can be left to a hand-written conf the product cannot see.
+  it("renders the task-executor drop-in under the bin root and the operator step beside it", () => {
+    // Given
+    serviceEnvironment();
+    const out = mkdtempSync(join(tmpdir(), "jarvis-units-"));
+    scratch.push(out);
+
+    // When
+    const result = tryExecuteDeploymentCommand({
+      positionals: ["deployment", "render-units"], values: { out },
+    });
+
+    // Then
+    expect(result).toMatchObject({ task_claude_path: "/opt/jarvis-runtime/bin/claude" });
+    const dropIn = readFileSync(join(out, "jm-jarvis.service.d/20-task-executor.conf"), "utf8");
+    expect(dropIn).toContain("Environment=JARVIS_TASK_CLAUDE_PATH=/opt/jarvis-runtime/bin/claude");
+    expect(dropIn).not.toContain("/home/");
+    // The drop-in is installed as `<unit>.d/<name>.conf`, so the generator writes that directory.
+    expect(statSync(join(out, "jm-jarvis.service.d")).isDirectory()).toBe(true);
+    // The step no unit can carry: copy the versioned executor into the bin root, and re-pin it.
+    const readme = readFileSync(join(out, "README.md"), "utf8");
+    expect(readme).toContain("install -m 0755 -o jarvis-svc -g jarvis-svc");
+    expect(readme).toContain("/opt/jarvis-runtime/bin/claude");
+    expect(readme).toContain("Repeat the copy on every");
+    expect(readme).toContain("routing probe-runtime claude-code");
+  });
+
+  it("renders an inert executor drop-in for a deployment that configures no executor", () => {
+    // Given
+    const out = mkdtempSync(join(tmpdir(), "jarvis-units-"));
+    scratch.push(out);
+
+    // When
+    const result = tryExecuteDeploymentCommand({
+      positionals: ["deployment", "render-units"], values: { out },
+    });
+
+    // Then
+    expect(result).toMatchObject({ task_claude_path: null });
+    const dropIn = readFileSync(join(out, "jm-jarvis.service.d/20-task-executor.conf"), "utf8");
+    expect(dropIn).not.toContain("Environment=JARVIS_TASK_CLAUDE_PATH");
+    expect(dropIn).toContain("this drop-in sets nothing");
   });
 
   it("refuses a render without an absolute output directory and a roots call with one", () => {

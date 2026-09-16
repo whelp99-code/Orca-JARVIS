@@ -5,6 +5,14 @@ export {
   productionRoots,
 } from "./personal-os-systemd-roots.js";
 import type { RenderMode, RenderRoots } from "./personal-os-systemd-roots.js";
+import { TASK_EXECUTOR_DROPIN_ID, taskExecutorDropIn } from "./personal-os-systemd-dropins.js";
+import {
+  phoneGatewayService,
+  portfolioCollectorService,
+  portfolioCollectorTimer,
+  portfolioIngestService,
+  portfolioIngestTimer,
+} from "./personal-os-systemd-satellite-units.js";
 import {
   backupService,
   backupTimer,
@@ -25,6 +33,8 @@ export const UNIT_INVENTORY = {
     "jm-jarvis-backup.timer",
     "jm-jarvis-portfolio-collector.service",
     "jm-jarvis-portfolio-collector.timer",
+    "jm-jarvis-portfolio-ingest.service",
+    "jm-jarvis-portfolio-ingest.timer",
   ],
   provider: [
     "jm-second-brain-refresh.service",
@@ -36,9 +46,25 @@ export const UNIT_INVENTORY = {
   ],
 } as const;
 
+export {
+  RENDERED_UNITS_README_ID,
+  TASK_EXECUTOR_DROPIN_ID,
+  renderedUnitsReadme,
+} from "./personal-os-systemd-dropins.js";
+
+/**
+ * Every artifact the generator can write. The drop-in is a generated file like the units are: the
+ * executor path it carries follows the deployment roots, so it cannot be left hand-written.
+ */
 export type GeneratedUnitId =
+  | typeof TASK_EXECUTOR_DROPIN_ID
   | "jm-jarvis.service"
   | "jm-jarvis-dashboard.service"
+  | "jm-jarvis-phone-gateway.service"
+  | "jm-jarvis-portfolio-collector.service"
+  | "jm-jarvis-portfolio-collector.timer"
+  | "jm-jarvis-portfolio-ingest.service"
+  | "jm-jarvis-portfolio-ingest.timer"
   | "jm-jarvis-backup.service"
   | "jm-jarvis-backup.timer"
   | "jm-second-brain-backup.service"
@@ -52,10 +78,22 @@ export function renderSystemdUnit(input: {
   readonly roots: RenderRoots;
 }): string {
   switch (input.id) {
+    case TASK_EXECUTOR_DROPIN_ID:
+      return taskExecutorDropIn(input.roots);
     case "jm-jarvis.service":
       return jarvisService(input.roots);
     case "jm-jarvis-dashboard.service":
       return dashboardService(input.roots);
+    case "jm-jarvis-phone-gateway.service":
+      return phoneGatewayService(input.roots);
+    case "jm-jarvis-portfolio-collector.service":
+      return portfolioCollectorService(input.roots);
+    case "jm-jarvis-portfolio-collector.timer":
+      return portfolioCollectorTimer();
+    case "jm-jarvis-portfolio-ingest.service":
+      return portfolioIngestService(input.roots);
+    case "jm-jarvis-portfolio-ingest.timer":
+      return portfolioIngestTimer();
     case "jm-jarvis-backup.service":
       return backupService(input.roots, input.mode);
     case "jm-jarvis-backup.timer":

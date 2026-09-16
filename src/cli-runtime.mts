@@ -28,6 +28,8 @@ import { executeReleaseGateCommand } from "./cli-release-commands.js";
 import { tryExecuteSecondBrainReadinessCommand } from "./cli-readiness-commands.js";
 import { CLI_HELP } from "./cli-help-text.js";
 import { tryExecuteDeploymentCommand } from "./cli-deployment-commands.js";
+import { tryExecutePortfolioCollectCommand } from "./cli-portfolio-collect.js";
+import { CLI_OPTIONS } from "./cli-option-table.js";
 
 const COMMAND_HANDLERS: readonly CliCommandHandler[] = [
   executeLocalTimeline,
@@ -52,51 +54,7 @@ export async function execute(args: string[], dependencies: CliDependencies = {}
     try {
       return parseArgs({
         args,
-        options: {
-          db: { type: "string" },
-          decision_public: { type: "string" },
-          decision_key_id: { type: "string" },
-          decision_principal: { type: "string" },
-          verifier_public: { type: "string" },
-          verifier_key_id: { type: "string" },
-          verifier_principal: { type: "string" },
-          json: { type: "boolean" },
-          once: { type: "boolean" },
-          crash: { type: "string" },
-          worktree: { type: "string" },
-          bindings: { type: "string" },
-          limit: { type: "string" },
-          cursor: { type: "string" },
-          all: { type: "boolean" },
-          max_pages: { type: "string" },
-          max_bytes: { type: "string" },
-          interval_ms: { type: "string" },
-          "interval-ms": { type: "string" },
-          environments: { type: "string" },
-          live_resume: { type: "boolean" },
-          session_id: { type: "string" },
-          input: { type: "string" },
-          idempotency_key: { type: "string" },
-          allow_mutation: { type: "boolean" },
-          worker: { type: "string" },
-          source: { type: "string" },
-          "key-file": { type: "string" },
-          "memory-review-cleanup-root": { type: "string" },
-          "memory-review-cleanup-limit": { type: "string" },
-          "remote-audit-retention-limit": { type: "string" },
-          "local-timeline-refresh": { type: "boolean" },
-          "dashboard-url": { type: "string" },
-          to: { type: "string" },
-          "release-root": { type: "string" },
-          "dry-run": { type: "boolean" },
-          rehearse: { type: "string" },
-          phase: { type: "string" },
-          "rehearsal-receipt": { type: "string" },
-          "production-root": { type: "boolean" },
-          "restore-backup": { type: "string" },
-          "refresh-receipt": { type: "string" },
-          out: { type: "string" },
-        },
+        options: CLI_OPTIONS,
         allowPositionals: true,
         strict: true,
       });
@@ -110,6 +68,18 @@ export async function execute(args: string[], dependencies: CliDependencies = {}
   // be opened at, so they have to be answerable when that open would fail.
   const deployment = tryExecuteDeploymentCommand({ positionals: parsed.positionals, values: parsed.values });
   if (deployment !== undefined) return deployment;
+  // Collection reads the local host and writes a signed spool file. It opens no database, and it
+  // is answered here so it cannot: the collector runs as the interactive user whose GUI session it
+  // reads, while the authority database belongs to the service account (cutover gap G4).
+  const collected = await tryExecutePortfolioCollectCommand({
+    positionals: parsed.positionals, values: parsed.values });
+  if (collected !== undefined) return collected;
+  // The collector's own flags belong to the portfolio commands and to nothing else.
+  const collectorFlags: readonly (keyof typeof parsed.values)[] =
+    ["spool", "orca-bin", "gh-bin", "git-bin", "scope-file", "status-file"];
+  if (collectorFlags.some(key => parsed.values[key] !== undefined) && command !== "portfolio") {
+    throw new JarvisError("PORTFOLIO_SPOOL_INPUT_INVALID");
+  }
   const localTimeline = localTimelinePreflight(parsed.positionals, values);
   const gateCommand = await executeReleaseGateCommand(parsed.positionals, values, dependencies);
   if (gateCommand !== undefined) return gateCommand;

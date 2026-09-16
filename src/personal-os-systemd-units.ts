@@ -1,5 +1,24 @@
-import { dirname } from "node:path";
+import { dirname, resolve } from "node:path";
 import type { RenderMode, RenderRoots } from "./personal-os-systemd-roots.js";
+
+/**
+ * The provider roots that are still inside a home directory. The cutover may leave the Second Brain
+ * provider under the interactive user's home (its config carries eight absolute paths and one
+ * source rooted in the user's own notes), and the authority spawns the provider's MCP child. When
+ * that is the configuration, `ProtectHome=yes` would make the service unstartable, so the generator
+ * says read-only and names the trees instead of leaving an operator to discover it in a drop-in.
+ */
+export function providerRootsUnderHome(roots: RenderRoots): readonly string[] {
+  return [roots.providerState, roots.providerShare, roots.providerConfig]
+    .filter(path => resolve(path).startsWith("/home/"));
+}
+
+/** The provider trees a unit must be able to write when the provider stayed under /home. */
+function providerWritePaths(roots: RenderRoots): readonly string[] {
+  return roots.serviceUser !== undefined && providerRootsUnderHome(roots).length > 0
+    ? [`ReadWritePaths=${roots.providerState} ${roots.providerShare}`]
+    : [];
+}
 
 function hardening(roots: RenderRoots): readonly string[] {
   return [
@@ -9,22 +28,24 @@ function hardening(roots: RenderRoots): readonly string[] {
     "ProtectSystem=strict",
     // A service account keeps its state outside every home directory, so /home can be made
     // invisible rather than merely read-only. That is the difference between a unit that happens
-    // not to read the interactive user's files and one that cannot.
-    roots.serviceUser === undefined ? "ProtectHome=read-only" : "ProtectHome=yes",
+    // not to read the interactive user's files and one that cannot — and it holds only while no
+    // configured provider root is still inside a home.
+    roots.serviceUser === undefined || providerRootsUnderHome(roots).length > 0
+      ? "ProtectHome=read-only" : "ProtectHome=yes",
     "RestrictSUIDSGID=true",
     "LockPersonality=true",
     "SystemCallArchitectures=native",
   ];
 }
 
-function serviceBlock(roots: RenderRoots, lines: readonly string[]): string {
+export function serviceBlock(roots: RenderRoots, lines: readonly string[]): string {
   const identity = roots.serviceUser === undefined
     ? []
     : [`User=${roots.serviceUser}`, `Group=${roots.serviceUser}`];
   return `${[...identity, ...lines, ...hardening(roots)].join("\n")}\n`;
 }
 
-function executablePath(roots: RenderRoots): string {
+export function executablePath(roots: RenderRoots): string {
   return roots.serviceUser === undefined
     ? `${dirname(roots.nodeBin)}:${roots.binRoot}:/usr/bin:/bin`
     : `${dirname(roots.nodeBin)}:/usr/bin:/bin`;
@@ -56,6 +77,9 @@ export function jarvisService(roots: RenderRoots): string {
       "Restart=always",
       "RestartSec=5",
       `ReadWritePaths=${dirname(roots.jarvisDb)}`,
+      // The authority spawns the provider's MCP child, which writes into the provider's request
+      // and share trees. Rendered, not hand-written, so it cannot disagree with ProtectHome above.
+      ...providerWritePaths(roots),
       "RestrictAddressFamilies=AF_UNIX AF_INET AF_INET6",
       "IPAddressDeny=any",
       "IPAddressAllow=localhost",

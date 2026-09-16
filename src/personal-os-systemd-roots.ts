@@ -22,8 +22,19 @@ export type RenderRoots = {
   readonly providerMarker: string;
   readonly nodeBin: string;
   readonly binRoot: string;
+  readonly configRoot: string;
+  /** The handoff directory the portfolio collector writes and the portfolio ingest consumes. */
+  readonly portfolioSpool: string;
+  /** Where the packaged Orca CLI the collector drives is unpacked. */
+  readonly orcaCliRoot: string;
   /** When set the unit is a system unit that runs as this account; unset renders a user unit. */
   readonly serviceUser?: string | undefined;
+  /**
+   * The Claude task executor the authority may spawn. A configured deployment defaults it under the
+   * bin root, because the installed executor otherwise sits inside the interactive user's 0750 home
+   * where a service account cannot reach it. Unset renders no executor environment at all.
+   */
+  readonly taskClaudePath?: string | undefined;
   /**
    * The daily loop's configured inputs. Both set renders `service run --input … --key-file …`;
    * neither set renders the flag-less invocation, and the unit then schedules no daily phase. The
@@ -51,7 +62,11 @@ export function productionRoots(environment?: DeploymentEnvironment): RenderRoot
     providerMarker: roots.providerMarker,
     nodeBin: roots.nodeBin,
     binRoot: roots.binRoot,
+    configRoot: roots.configRoot,
+    portfolioSpool: roots.portfolioSpoolRoot,
+    orcaCliRoot: roots.orcaCliRoot,
     serviceUser: roots.serviceUser,
+    taskClaudePath: roots.taskClaudePath,
     dailyServiceConfig: roots.dailyServiceConfig,
     dailyServiceKey: roots.dailyServiceKey,
   };
@@ -82,5 +97,8 @@ export function isolatedRenderRoots(input: {
     providerMarker: `${root}/provider/request-executor.enabled`,
     nodeBin: process.execPath,
     binRoot: `${root}/bin`,
+    configRoot: `${root}/config`,
+    portfolioSpool: `${root}/portfolio-spool`,
+    orcaCliRoot: `${root}/orca-cli`,
   };
 }

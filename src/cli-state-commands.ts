@@ -43,7 +43,10 @@ export async function executeStateCommand(
     db.recordVerification(JSON.parse(await readFile(argument, "utf8")));
     return { ok: true, verification: "recorded" };
   }
-  if (command === "status" && values.json) return { ok: true, ...db.status() };
+  // `status` prints the same JSON report with or without `--json`: the CLI has exactly one output
+  // format, so gating the only command that reported it on the flag answered UNKNOWN_COMMAND to a
+  // command `--help` lists. The flag is kept accepted so existing callers and units do not change.
+  if (command === "status" && subcommand === undefined) return { ok: true, ...db.status() };
   const shadow = new PreGjcShadow(db);
   if (command === "approval" && subcommand === "list") {
     const questions = db.db

@@ -1,5 +1,5 @@
 import { mkdirSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { dirname, join } from "node:path";
 import {
   DEPLOYMENT_ROOT_VARIABLES,
   SERVICE_USER_VARIABLE,
@@ -8,14 +8,23 @@ import {
 import { JarvisError } from "./jarvis-error.js";
 import {
   type GeneratedUnitId,
+  RENDERED_UNITS_README_ID,
+  TASK_EXECUTOR_DROPIN_ID,
   productionRoots,
   renderSystemdUnit,
+  renderedUnitsReadme,
 } from "./personal-os-systemd.js";
 
 /** The units this command can render. The rest of the inventory is installed, not generated. */
 const RENDERABLE: readonly GeneratedUnitId[] = [
   "jm-jarvis.service",
+  TASK_EXECUTOR_DROPIN_ID,
   "jm-jarvis-dashboard.service",
+  "jm-jarvis-phone-gateway.service",
+  "jm-jarvis-portfolio-collector.service",
+  "jm-jarvis-portfolio-collector.timer",
+  "jm-jarvis-portfolio-ingest.service",
+  "jm-jarvis-portfolio-ingest.timer",
   "jm-jarvis-backup.service",
   "jm-jarvis-backup.timer",
   "jm-second-brain-backup.service",
@@ -60,14 +69,24 @@ export function tryExecuteDeploymentCommand(input: {
   const units = RENDERABLE.map((id) => {
     const text = renderSystemdUnit({ id, mode: "production", roots });
     const path = join(out, id);
+    // A drop-in is a file inside `<unit>.d/`, so the generator creates that directory too and the
+    // output tree is the one an operator installs, not a flat list they have to rearrange.
+    if (id.includes("/")) mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
     writeFileSync(path, text, { mode: 0o644 });
     return { id, path, bytes: Buffer.byteLength(text), names_home: text.includes("/home/") };
   });
+  // The operator step the units cannot carry themselves - copying the versioned task executor into
+  // the bin root, and re-pinning it on upgrade - is written beside them, from the same roots.
+  const readme = renderedUnitsReadme({ roots, unitIds: RENDERABLE });
+  const readmePath = join(out, RENDERED_UNITS_README_ID);
+  writeFileSync(readmePath, readme, { mode: 0o644 });
   return {
     ok: true,
     command: "deployment.render-units",
     out,
     service_user: roots.serviceUser ?? null,
+    task_claude_path: roots.taskClaudePath ?? null,
+    readme: readmePath,
     units,
   };
 }
