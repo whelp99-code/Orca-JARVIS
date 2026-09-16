@@ -193,6 +193,10 @@ describe("personal-OS systemd renderer", () => {
     // and it opens no database either: it writes one signed envelope into the shared spool.
     expect(collector).toContain("portfolio collect --spool /var/lib/jarvis-svc/spool/portfolio");
     expect(collector).toContain("--orca-bin /opt/jarvis-runtime/bin/orca-ide");
+    // The packaged Orca CLI belongs to the interactive user, not to the authority's account, so a
+    // user unit names it relative to its own home rather than through the authority's state root.
+    expect(collector).toContain("Environment=ORCA_EXTRACTED_APPDIR=%h/.local/state/orca-jarvis/orca-cli/current");
+    expect(collector).not.toContain("/var/lib/jarvis-svc/state/orca-jarvis/orca-cli");
     expect(collector).toContain("ReadWritePaths=/var/lib/jarvis-svc/spool/portfolio");
     expect(collector).not.toContain("User=");
     expect(collector).not.toContain("--db");

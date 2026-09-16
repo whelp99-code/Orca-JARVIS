@@ -24,6 +24,16 @@ function runtimeRoot(roots: RenderRoots): string {
 }
 
 /**
+ * The packaged Orca CLI the collector drives. When the authority has its own account, the roots
+ * describe *that* account's trees and not the interactive user's, so a user unit cannot read the
+ * Orca CLI from them - it names the running user's own installation with `%h`, exactly as it names
+ * that user's signing key. A single-account deployment shares one tree and uses the root directly.
+ */
+function userOrcaCliRoot(roots: RenderRoots): string {
+  return roots.serviceUser === undefined ? roots.orcaCliRoot : "%h/.local/state/orca-jarvis/orca-cli";
+}
+
+/**
  * A user unit keeps the deployment's bin root on PATH - it is where `orca-ide` lives - unlike the
  * system units, which deliberately drop it. A deployment whose interpreter already sits in the bin
  * root would otherwise name it twice.
@@ -85,8 +95,9 @@ export function portfolioCollectorService(roots: RenderRoots): string {
     "[Service]",
     "Type=oneshot",
     `WorkingDirectory=${runtime}`,
-    `Environment=ORCA_EXTRACTED_APPDIR=${roots.orcaCliRoot}/current`,
-    `Environment=PATH=${roots.orcaCliRoot}/current/usr/bin:${roots.orcaCliRoot}/bin:${userPath(roots)}`,
+    `Environment=ORCA_EXTRACTED_APPDIR=${userOrcaCliRoot(roots)}/current`,
+    `Environment=PATH=${userOrcaCliRoot(roots)}/current/usr/bin:${userOrcaCliRoot(roots)}/bin`
+      + `:${userPath(roots)}`,
     "Environment=NODE_ENV=production",
     // Collection opens no database: it signs one envelope and writes it into the spool, so this
     // unit is never a holder of jarvis.sqlite and never blocks the retention lane's exclusion.
