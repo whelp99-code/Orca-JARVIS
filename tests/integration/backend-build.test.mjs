@@ -133,7 +133,11 @@ describe("backend build publication", () => {
     const root = fixture();
     const owner = spawn(process.execPath, ["--input-type=module", "-e",
       "import Database from './node_modules/better-sqlite3/lib/index.js'; "
-      + "const db=new Database('dist/.backend-build-lock.sqlite',{timeout:0}); db.exec('BEGIN EXCLUSIVE'); "
+      // The handle is reachable for the process's whole life on purpose. A local binding is
+      // collectable the moment the statement finishes, and better-sqlite3 closes a finalized
+      // database - which drops the very lock this case exists to hold.
+      + "globalThis.owner=new Database('dist/.backend-build-lock.sqlite',{timeout:0}); "
+      + "globalThis.owner.exec('BEGIN EXCLUSIVE'); "
       + "console.log('BUILD_LOCK_HELD'); process.stdin.resume();"], { cwd: root });
     try {
       const [chunk] = await Promise.race([once(owner.stdout, "data"),
