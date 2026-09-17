@@ -40,6 +40,7 @@ export const CLI_HELP =
   + "daily evening --once --db PATH --input CONFIG --key-file PATH: publish stored native completions; automatic operation held\n"
   + "service once/run --db PATH --local-timeline-refresh: collect registered local task snapshots at most once per minute\n"
   + "service once/run --remote-audit-retention-limit N: enable one bounded remote-audit batch per UTC date (1-1000)\n"
+  + "service once/run --local-retention-config PATH: open the destructive local-observation rebuild on a 6h window; unset is off\n"
   + "service once/run --memory-review-cleanup-root PATH [--memory-review-cleanup-limit N]: clean eligible review files; existing private root, limit 1-1000\n"
   + "runtime identity [--db PATH]: observe this CLI build and persisted daemon identity without migrating the DB\n"
   + "report task-performance FROM TO --db PATH: current-state execution cohort metrics; no policy promotion\n"

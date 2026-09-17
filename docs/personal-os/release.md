@@ -41,6 +41,20 @@ no evening. Both paths must be readable by the unit's account, so keep them unde
 when every same-UID process is the authority's own (`docs/local-retention-operations-proposal.md`),
 which means running under a dedicated account whose state is not in anyone's home.
 
+Proving exclusion is necessary and not sufficient: the lane also needs an entry point.
+`service once|run --local-retention-config PATH` is the only one. Unset is *off* - no swap runtime
+is built, the process registers nothing, and no window opens; the rendered `ExecStart` carries no
+such flag, so a deployment that does nothing gets nothing. Set is *load-bearing* and fails closed on
+a relative path, on any command but `service once|run`, and inside a control-channel cycle
+(`LOCAL_RETENTION_CONFIG_INVALID`). The document it names is the closed two-field record
+`{"schema_version":1,"retain_ms":N}` with `retain_ms` between 5 minutes and 365 days; keep it under
+`${JARVIS_STATE_ROOT}` so the unit's `ReadWritePaths` already covers it. The window is fixed at six
+hours and is not a flag - the span the operator chooses is the retained one, and a destructive
+rebuild earns no second knob. Each cycle claims that window before it attempts anything, so asking
+on every tick still yields one attempt per window, and every outcome but `failed` - including the
+refusal to replace a database the process could not prove it alone holds - is reported as the lane's
+own answer on `service.local-retention`.
+
 - `jarvis-authority-releases` = `${JARVIS_STATE_ROOT}/authority/releases/<40-hex>` (default `/home/jm/.local/state/orca-jarvis/authority/releases/<40-hex>`)
 - `provider-app-releases` = `${JARVIS_PROVIDER_STATE_ROOT}/app/releases/<40-hex>` (default `/home/jm/.local/state/second-brain/app/releases/<40-hex>`)
 - Activation is a `relative-current-symlink` updated by `atomic-rename`

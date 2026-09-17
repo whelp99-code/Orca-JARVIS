@@ -39,6 +39,7 @@ export const CLI_OPTIONS = {
   "memory-review-cleanup-limit": { type: "string" },
   "remote-audit-retention-limit": { type: "string" },
   "local-timeline-refresh": { type: "boolean" },
+  "local-retention-config": { type: "string" },
   "dashboard-url": { type: "string" },
   to: { type: "string" },
   "release-root": { type: "string" },

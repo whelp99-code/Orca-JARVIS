@@ -131,6 +131,15 @@ export class AuthorityDatabaseRuntime {
     return discoverOpenInodeHolders(device, inode, this.registeredProcesses());
   }
 
+  /**
+   * Withdraw this process from the registry without touching the database. A caller that opened the
+   * authority and merely built a runtime over it releases its record this way; `close` is for the
+   * owner of both.
+   */
+  releaseRegistry(): void {
+    this.registry.close();
+  }
+
   close(): Promise<void> {
     if (this.activeLeases !== 0 || this.quiescing) {
       return Promise.reject(new JarvisError("AUTHORITY_DATABASE_BUSY"));

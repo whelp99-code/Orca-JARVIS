@@ -63,6 +63,7 @@ export type CliValues = {
   readonly "memory-review-cleanup-limit"?: string;
   readonly "remote-audit-retention-limit"?: string;
   readonly "local-timeline-refresh"?: boolean;
+  readonly "local-retention-config"?: string;
   readonly "dashboard-url"?: string;
   readonly to?: string;
   readonly "release-root"?: string;
@@ -126,6 +127,7 @@ export function normalizeCliValues(
     "memory-review-cleanup-limit": stringValue(value["memory-review-cleanup-limit"]),
     "remote-audit-retention-limit": stringValue(value["remote-audit-retention-limit"]),
     "local-timeline-refresh": booleanValue(value["local-timeline-refresh"]),
+    "local-retention-config": stringValue(value["local-retention-config"]),
     "dashboard-url": stringValue(value["dashboard-url"]),
     to: stringValue(value.to),
     "release-root": stringValue(value["release-root"]),

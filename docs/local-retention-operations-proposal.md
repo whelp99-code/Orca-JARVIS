@@ -69,6 +69,21 @@ is why nothing here blocks on it.
 **EXTERNAL_INPUT_REQUIRED (operator):** which of the three options this deployment takes, and if it
 is (1) or (2), the account or runtime to use.
 
+### Answered on this host, 2026-09-16: option 1
+
+The authority runs as `jarvis-svc` out of `/var/lib/jarvis-svc/state/orca-jarvis`. Measured against
+the live database as that account, the hole the table above recorded is gone:
+
+| Measurement | Before (2026-09-14, uid 1000) | After (2026-09-16, jarvis-svc) |
+| --- | --- | --- |
+| owned but unreadable | 15 | **0** |
+| `exclusion.provable` | false | **true** |
+
+A second decision follows from the first and is separate: proving exclusion only makes the lane
+*able* to run. Reaching it needs `service once|run --local-retention-config PATH`
+(`docs/personal-os/release.md`), and leaving that unset keeps this host on option 3 - nothing is
+removed and nothing is destroyed - until the operator writes a retention document and names it.
+
 Everything else in this area is closed internally: the refusal, its preservation guarantees, the
 distinct `unprovable` outcome with the unreadable process ids, the command that reports them, and
 the regressions that pin all of it.

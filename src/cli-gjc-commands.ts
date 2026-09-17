@@ -8,6 +8,7 @@ import { LiveSupervisor, type LiveSupervisorCycle } from "./live-supervisor.js";
 import { PreGjcShadow } from "./pre-gjc-shadow.js";
 import { PERSONAL_OS_CONTROL_CHANNEL_ENV, servePersonalOsCycleChannel } from "./personal-os-cycle-channel.js";
 import { configuredMemoryReviewCleanup } from "./cli-memory-review-cleanup.js";
+import { configuredLocalRetention } from "./cli-local-retention.js";
 import { RemoteAuditService } from "./remote-audit-service.js";
 import { DailyServiceCycles } from "./daily-service-cycles.js";
 import { PersonalOsRuntime } from "./personal-os-runtime.js";
@@ -34,6 +35,7 @@ export async function executeGjcCommand(
     || process.env[PERSONAL_OS_CONTROL_CHANNEL_ENV])) throw new JarvisError("REMOTE_AUDIT_RETENTION_CONFIG_INVALID");
   const audit = rawAuditLimit === undefined ? undefined : new RemoteAuditService(db.db, Number(rawAuditLimit), () => commandNow(context));
   const cleanup = configuredMemoryReviewCleanup(context);
+  const retention = configuredLocalRetention(context);
   let daily: DailyServiceCycles | undefined;
   if (command === "service" && (values.input !== undefined || values["key-file"] !== undefined)) {
     if (!["once", "run"].includes(subcommand ?? "") || !values.input || !values["key-file"]
@@ -66,6 +68,7 @@ export async function executeGjcCommand(
   let lastDailyOutput: string | undefined;
   let lastCleanupOutput: string | undefined;
   let lastAuditOutput: string | undefined;
+  let lastRetentionOutput: string | undefined;
   const once = async () => {
     let local_collection;
     try { local_collection = localCollector?.cycle(); }
@@ -103,8 +106,19 @@ export async function executeGjcCommand(
         lastDailyOutput = serialized;
       }
     }
+    const local_retention = await retention?.cycle();
+    if (local_retention !== undefined && subcommand === "run" && !values.once) {
+      const serialized = JSON.stringify(local_retention);
+      if (serialized !== lastRetentionOutput) {
+        // Every status but `failed` is an answer the lane is allowed to give, including the refusal
+        // to replace a database it could not prove it alone holds.
+        outputSync({ ok: local_retention.status !== "failed", command: "service.local-retention", ...local_retention });
+        lastRetentionOutput = serialized;
+      }
+    }
     const result = await service.once(commandNow(context).toISOString());
-    return { ...result, ...(local_collection === undefined ? {} : { local_collection }),
+    return { ...result, ...(local_retention === undefined ? {} : { local_retention }),
+      ...(local_collection === undefined ? {} : { local_collection }),
       ...(remote_audit_retention === undefined ? {} : { remote_audit_retention }),
       ...(memory_review_cleanup === undefined ? {} : { memory_review_cleanup }), ...(phases === undefined ? {} : { daily: {
       scope: "stored-local-sources", provider_refresh: "unavailable", phases,
@@ -211,7 +225,7 @@ export async function executeGjcCommand(
     }
     return undefined;
   } finally {
-    try { cleanup?.close(); } finally { service.close(); }
+    try { try { cleanup?.close(); } finally { retention?.close(); } } finally { service.close(); }
   }
 }
 
