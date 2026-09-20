@@ -1,0 +1,13 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orca-jarvis.local/contracts/integration/v1/approval-ref.schema.json",
+  "title": "ApprovalRef",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["approval_id", "digest"],
+  "properties": {
+    "approval_id": { "type": "string", "minLength": 1 },
+    "digest": { "type": "string", "pattern": "^sha256:[0-9a-f]{64}$" },
+    "issued_at": { "type": "string", "format": "date-time" }
+  }
+}

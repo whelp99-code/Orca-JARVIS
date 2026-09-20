@@ -1,0 +1,54 @@
+{
+  "schema_version": 1,
+  "kind": "core5_k01_baseline",
+  "read_only": true,
+  "note": "Locked K01 baseline. Do not fetch remotes to refresh this record.",
+  "recorded_for": "core5-k01-j06",
+  "repos": [
+    {
+      "name": "Orca-JARVIS",
+      "path": "/home/jm/orca/projects/Orca-JARVIS",
+      "head": "82dc6f388df077b2544713aeae2f5d6741fb9b03",
+      "branch": "main",
+      "ahead": 0,
+      "behind": 0,
+      "dirty_tracked": 9,
+      "untracked": 19
+    },
+    {
+      "name": "AI-CRM+PM",
+      "path": "/home/jm/orca/projects/AI-CRM+PM",
+      "head": "c57c938fc5549a04eb3e6f115505517ecf82022a",
+      "branch": "pilot/cwos-pilot-01",
+      "ahead": 1,
+      "behind": 0,
+      "dirty": true
+    },
+    {
+      "name": "second-brain-app",
+      "path": "/home/jm/orca/projects/second-brain-app",
+      "head": "8e9491aec02aeeff60672ebd51c624ae8fc5e81d",
+      "branch": "codex/shared-memory-completion-20260907",
+      "ahead": 0,
+      "behind": 35,
+      "dirty": true
+    },
+    {
+      "name": "mail-intelligence",
+      "path": "/home/jm/orca/projects/mail-intelligence",
+      "head": "4bd87f15ab6fe0d6f46c949a6d48a26306c92dfb",
+      "branch": "main",
+      "ahead": 1,
+      "behind": 0,
+      "untracked": 4
+    },
+    {
+      "name": "shipping-harness",
+      "path": "/home/jm/orca/projects/shipping-harness",
+      "head": "5bf999b1731d47e6ddff4862ad8d58abef049f5c",
+      "branch": "main",
+      "upstream": null,
+      "untracked": 1
+    }
+  ]
+}

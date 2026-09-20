@@ -1,0 +1,26 @@
+{
+  "schema_version": 1,
+  "operation_id": "op:mail.read:inbox-summary",
+  "attempt_id": "att:01",
+  "lease_fence": "fence:7",
+  "capability": "mail.read",
+  "payload": { "mailbox": "inbox", "limit": 5 },
+  "caller": {
+    "principal": "operator:test",
+    "workspace": "ws:jarvis-shadow",
+    "purpose": "read_mail_metadata",
+    "expiry": "2027-01-01T00:00:00.000Z",
+    "audience": "jarvis.integration"
+  },
+  "evidence_refs": [
+    {
+      "kind": "caller_attestation",
+      "digest": "sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ],
+  "approval_ref": {
+    "approval_id": "appr:1",
+    "digest": "sha256:bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb",
+    "issued_at": "2026-09-20T00:00:00.000Z"
+  }
+}

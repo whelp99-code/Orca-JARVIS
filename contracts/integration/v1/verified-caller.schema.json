@@ -1,0 +1,15 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orca-jarvis.local/contracts/integration/v1/verified-caller.schema.json",
+  "title": "VerifiedCallerContext",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["principal", "workspace", "purpose", "expiry", "audience"],
+  "properties": {
+    "principal": { "type": "string", "minLength": 1 },
+    "workspace": { "type": "string", "minLength": 1 },
+    "purpose": { "type": "string", "minLength": 1 },
+    "expiry": { "type": "string", "format": "date-time" },
+    "audience": { "type": "string", "minLength": 1 }
+  }
+}
