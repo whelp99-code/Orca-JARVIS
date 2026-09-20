@@ -15,6 +15,15 @@ export {
 export { applyCancellation, decideCancellation, type CancelDecision, type ExternalEffectWindow } from "./cancellation.js";
 export { SyntheticReadOnlyExecutor } from "./synthetic-read-executor.js";
 export {
+  MAIL_DRAFT_CARD_STATES,
+  cardStateFromMailDraft,
+  mailReviewHref,
+  type MailDraftCardState,
+  type MailDraftObservation,
+} from "./mail-draft-card.js";
+export { Core5MailDraftStore, type MailDraftRef } from "./mail-draft-store.js";
+export { Core5MailDraftGateway, type MailDraftCard, type MailDraftHttp } from "./mail-draft-gateway.js";
+export {
   loadIntegrationFixture,
   loadIntegrationSchema,
   parseApprovalRef,

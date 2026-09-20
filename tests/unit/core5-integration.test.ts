@@ -184,13 +184,13 @@ describe("core5 J06 cancellation and synthetic executor", () => {
 });
 
 describe("core5 J04 hold", () => {
-  it("is recorded and absent from the product path", () => {
+  it("records Mail M04 unblocked and keeps mail.send off the product path", () => {
     const hold = fileURLToPath(new URL("../../docs/core5/J04-HOLD.md", import.meta.url));
     expect(existsSync(hold)).toBe(true);
-    expect(readFileSync(hold, "utf8")).toMatch(/\*\*Blocked on:\*\* Mail M04/);
+    expect(readFileSync(hold, "utf8")).toMatch(/unblocked by Mail M04/);
     const productIndex = readFileSync(fileURLToPath(new URL("../../src/index.ts", import.meta.url)), "utf8");
-    expect(productIndex).not.toMatch(/J04|mail\.send|core5\/J04/i);
-    expect(existsSync(fileURLToPath(new URL("../../src/integration/j04.ts", import.meta.url)))).toBe(false);
+    expect(productIndex).not.toMatch(/mail\.send/);
+    expect(existsSync(fileURLToPath(new URL("../../docs/core5/J04.md", import.meta.url)))).toBe(true);
   });
 });
 

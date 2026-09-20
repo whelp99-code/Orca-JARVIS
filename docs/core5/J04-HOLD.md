@@ -1,13 +1,11 @@
 # J04 HOLD
 
-**Status:** blocked  
-**Blocked on:** Mail M04  
-**Product path:** absent — do not register, export, or activate J04 from JARVIS runtime.
-
-J04 is not implemented on this branch. Live Mail send / outbound activation stays out of the Core5 integration registry until Mail M04 lands.
+**Status:** unblocked by Mail M04 (`6a9c26f` on `core5-m01-m04`)  
+**Landed:** see [`J04.md`](./J04.md) — JARVIS draft create + GET + card states.  
+**Still Mail-owned:** human auth, CSRF, origin, digest, approve, cancel, Graph send.
 
 Do not:
 
 - register `mail.send`
 - flip personal-connector `mail.configured` to true
-- ship a J04 module on the product path
+- approve or send from JARVIS
