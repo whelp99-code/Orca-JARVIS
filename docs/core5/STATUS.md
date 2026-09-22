@@ -16,7 +16,7 @@
 - J05: DBOS comparison remains explicitly not adopted.
 - J06: cancellation distinguishes `CANCELLED` from `CANCELLED_AFTER_POSSIBLE_EFFECT`; synthetic executor is read-only.
 - K04: blocked on a real allowed test-account mail→CRM→memory→human-approval journey (not synthesizable). No cross-repo acceptance is asserted.
-- K05/H06: blocked on K04 plus H02 Docker/`CORE5_POSTGRES_IMAGE` and H03 authenticated review UI.
+- K05/H06: H06 CLI is fail-closed (`NOT_SHIPPABLE`, process exit 2) until owner gates in shipping `docs/core5/OWNER_APPROVAL.md`: Docker+image digest, authenticated review UI, real accounts, then push/activate.
 
 ## Product-fixable follow-through
 
