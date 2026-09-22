@@ -79,7 +79,7 @@ describe("core5 J01 capability registry", () => {
     const registry = new Core5CapabilityRegistry({});
     expect(registry.enabled()).toBe(false);
     expect(registry.list().map(item => item.id)).toEqual([...CORE5_INTEGRATION_CAPABILITIES]);
-    expect(registry.list().every(item => item.enabled === false && item.live_send === false)).toBe(true);
+    expect(registry.list().every(item => item.enabled === false && item.status === "blocked" && item.live_send === false)).toBe(true);
     expectCode(() => registry.get("mail.send"), "CORE5_LIVE_SEND_NOT_REGISTERED");
     expect(registry.personalMailConfigured()).toBe(false);
     expect(personalConnectorDefinition("mail").configured).toBe(false);
@@ -90,6 +90,18 @@ describe("core5 J01 capability registry", () => {
     expect(registry.requireEnabled("mail.read").live_send).toBe(false);
     expectCode(() => registry.get("mail.send"), "CORE5_LIVE_SEND_NOT_REGISTERED");
     expect(personalConnectorDefinition("mail").configured).toBe(false);
+  });
+
+  it("surfaces a project capability as degraded or blocked", () => {
+    const registry = new Core5CapabilityRegistry({
+      CORE5_INTEGRATION_ENABLED: "1",
+      CORE5_CAPABILITY_STATUS_CWOS_STATE: "degraded",
+      CORE5_CAPABILITY_STATUS_MEMORY_READ: "blocked",
+    });
+    expect(registry.get("cwos.state").status).toBe("degraded");
+    expect(registry.get("memory.read").status).toBe("blocked");
+    expect(registry.get("mail.read").status).toBe("available");
+    expectCode(() => registry.requireEnabled("memory.read"), "CORE5_CAPABILITY_BLOCKED");
   });
 });
 
