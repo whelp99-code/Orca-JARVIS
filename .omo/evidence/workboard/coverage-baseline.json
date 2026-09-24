@@ -1,5 +1,5 @@
 {
-  "observed_at": "2026-09-24T03:32:16.890849+00:00",
+  "observed_at": "2026-09-24T03:35:07.139949+00:00",
   "source_ids": [
     "linux:claude:local",
     "linux:codex:local",
@@ -218,6 +218,6 @@
   "limitations": [
     "Orca CLI hostScope omits Mac; Mac remains a separate denominator source.",
     "Worktree IDs represent workspaces, terminal handles represent terminals; no inferred session alias or zero-work conclusion.",
-    "Metadata-only counts do not imply live work or known purpose; unsupported sources have unknown totals."
+    "File/session roster counts do not imply current work or known purpose; current_work_total remains unknown. Unsupported sources have unknown totals."
   ]
 }

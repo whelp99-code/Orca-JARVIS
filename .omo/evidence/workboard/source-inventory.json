@@ -1,5 +1,5 @@
 {
-  "observed_at": "2026-09-24T03:32:16.890849+00:00",
+  "observed_at": "2026-09-24T03:35:07.139949+00:00",
   "sources": [
     {
       "id": "linux:orca-worktrees:local",
@@ -16,7 +16,10 @@
       "failure_reason": null,
       "observed_session_count": null,
       "total": 27,
-      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+      "total_kind": "file_roster",
+      "current_work_total": null,
+      "session_ids": null,
+      "observed_at": "2026-09-24T03:35:07.139949+00:00"
     },
     {
       "id": "mac:orca-worktrees:local",
@@ -33,7 +36,10 @@
       "failure_reason": null,
       "observed_session_count": null,
       "total": 13,
-      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+      "total_kind": "file_roster",
+      "current_work_total": null,
+      "session_ids": null,
+      "observed_at": "2026-09-24T03:35:07.139949+00:00"
     },
     {
       "id": "mac:orca-terminals:local",
@@ -50,7 +56,10 @@
       "failure_reason": null,
       "observed_session_count": 6,
       "total": 6,
-      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+      "total_kind": "file_roster",
+      "current_work_total": null,
+      "session_ids": null,
+      "observed_at": "2026-09-24T03:35:07.139949+00:00"
     },
     {
       "id": "linux:orca-terminals:local",
@@ -67,7 +76,10 @@
       "failure_reason": null,
       "observed_session_count": 19,
       "total": 19,
-      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+      "total_kind": "file_roster",
+      "current_work_total": null,
+      "session_ids": null,
+      "observed_at": "2026-09-24T03:35:07.139949+00:00"
     },
     {
       "id": "linux:codex:local",
@@ -84,7 +96,10 @@
       "failure_reason": null,
       "observed_session_count": 153,
       "total": 153,
-      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+      "total_kind": "file_roster",
+      "current_work_total": null,
+      "session_ids": null,
+      "observed_at": "2026-09-24T03:35:07.139949+00:00"
     },
     {
       "id": "linux:claude:local",
@@ -101,43 +116,218 @@
       "failure_reason": null,
       "observed_session_count": 273,
       "total": 273,
-      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+      "total_kind": "file_roster",
+      "current_work_total": null,
+      "session_ids": null,
+      "observed_at": "2026-09-24T03:35:07.139949+00:00"
     },
     {
       "id": "linux:omo:local",
       "source_key": "linux:omo:local",
       "persistent_instance": "linux:omo:default",
       "namespace_generation": "initial",
-      "enumeration_method": "project marker directory discovery (not session enumeration)",
+      "enumeration_method": "coding-agent-sessions list --platform oh-my-pi --limit 100000 (65s bound)",
       "covered_paths": [
-        "$HOME/orca/projects/*/.omo",
-        "$HOME/orca/workspaces/*/.omo"
+        "$HOME/.omp/agent/sessions"
       ],
-      "page_completeness": "unsupported",
-      "capability": "project-scoped session metadata; no adapter yet",
-      "status": "unsupported",
-      "failure_reason": "22 project stores discovered; session identities not enumerated",
-      "observed_session_count": null,
-      "total": null,
-      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+      "page_completeness": "complete",
+      "capability": "read-only historical session roster; not current work",
+      "status": "live",
+      "failure_reason": null,
+      "observed_session_count": 14,
+      "total": 14,
+      "total_kind": "file_roster",
+      "current_work_total": null,
+      "session_ids": [
+        "01a05b9a-56c3-74ef-aa6c-2bda44610661",
+        "01a05a37-6167-75d5-b81b-09d8a5ffef7f",
+        "01a051c1-8713-7075-a58d-44200ea92bd0",
+        "01a04e24-629c-753e-a1ee-beeda8542eea",
+        "01a04def-aabe-7592-bd19-c2346ed967b0",
+        "01a04de7-53c6-7771-a1c3-480182ca9c3f",
+        "01a04de6-4b22-7018-af92-8d6d95c5907e",
+        "01a04dd9-3a46-7757-b8ee-905176ac68e7",
+        "01a04dd6-a105-70bd-a26b-8d4495b16965",
+        "01a04dd4-841d-73b6-926b-f72ed7ecb8dd",
+        "01a04cb2-b973-7758-84e2-0bdd715104c7",
+        "01a04bb9-c705-7038-90cb-432501620f8a",
+        "01a04bb9-122c-7000-9765-4948605cbcb7",
+        "01a04ba7-175b-7000-be87-d4c591e990f4"
+      ],
+      "observed_at": "2026-09-24T03:35:07.139949+00:00"
     },
     {
       "id": "linux:senpi:local",
       "source_key": "linux:senpi:local",
       "persistent_instance": "linux:senpi:default",
       "namespace_generation": "initial",
-      "enumeration_method": "project marker directory discovery (not session enumeration)",
+      "enumeration_method": "coding-agent-sessions list --platform senpi --limit 100000 (65s bound)",
       "covered_paths": [
-        "$HOME/orca/projects/*/.senpi",
-        "$HOME/orca/workspaces/*/.senpi"
+        "$HOME/.omo/agent/sessions"
       ],
-      "page_completeness": "unsupported",
-      "capability": "project-scoped session metadata; no adapter yet",
-      "status": "unsupported",
-      "failure_reason": "6 project stores discovered; session identities not enumerated",
-      "observed_session_count": null,
-      "total": null,
-      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+      "page_completeness": "complete",
+      "capability": "read-only historical session roster; not current work",
+      "status": "live",
+      "failure_reason": null,
+      "observed_session_count": 109,
+      "total": 109,
+      "total_kind": "file_roster",
+      "current_work_total": null,
+      "session_ids": [
+        "01a0cd13-7817-7539-9833-f03eee353d55.history",
+        "01a0d07a-4409-73cc-8509-cc87426e8cf4",
+        "01a0cf12-02a4-78d0-a68e-8759fa75d02b",
+        "01a0ce43-e872-7b50-adc6-37de94aefcf0.history",
+        "01a0ce53-01d1-732c-8441-584d3b56c51e.history",
+        "01a0ce5e-7dcb-7d93-a4fb-d36318b884a3",
+        "01a0ce53-01d1-732c-8441-584d3b56c51e",
+        "01a0ce43-e872-7b50-adc6-37de94aefcf0",
+        "01a0cd06-e94c-70f9-891e-212bd34f698c.history",
+        "01a0cd13-7817-7539-9833-f03eee353d55",
+        "01a0cd06-e94c-70f9-891e-212bd34f698c",
+        "01a0cce8-879e-7b55-a776-452c5967a3fa",
+        "01a0cc9e-2976-77c2-9fd9-9be7529d62a7",
+        "01a0c7cf-473a-72ac-a867-29255dbddefc.history",
+        "01a0c7cf-473a-72ac-a867-29255dbddefc",
+        "01a0c2b5-8bb8-7d93-a2f6-62c094e12066",
+        "01a0c1e2-bd95-7529-a9d2-1562b8a485ef",
+        "01a0c193-0c3b-70d6-9f1a-b4795af15b83",
+        "01a0c149-d259-76f1-98ce-54a70baeb5a0",
+        "01a0bf53-2312-76e5-b4ac-396932df3d57",
+        "01a0bdd9-6933-714c-8b2e-819195d33b40.history",
+        "01a0bf35-a413-7696-a78e-a0332f1be60f",
+        "01a0bf35-3327-7f91-b3ee-bfc7528d74dd",
+        "01a0bf00-6b48-7cb6-8b87-6c18a9049da7",
+        "01a0bdd9-6933-714c-8b2e-819195d33b40",
+        "01a0bdd3-027b-74e5-ab86-be2ab2ed714e",
+        "01a09de1-e62d-7b91-8752-dc2646365c1f.history",
+        "01a09de1-e62d-7b91-8752-dc2646365c1f",
+        "01a09dd0-85ea-770c-b084-387aa21deda6",
+        "01a0995e-aa65-7258-9de9-b6f934be3474",
+        "01a08b0b-45c2-7f40-b491-c8633bdb668f.history",
+        "01a09072-a2e4-7a6b-b760-dfc80d0f7235",
+        "01a08b0c-9c8b-7045-b701-a99e49aca556",
+        "01a08b0b-45c2-7f40-b491-c8633bdb668f",
+        "01a08948-cef0-7505-9898-ffdd5dbe432c",
+        "01a0893f-1b7d-7630-8681-9d69ef8d7a3f",
+        "01a07b27-0649-785e-b5fe-a970b9f4f405",
+        "01a07aa9-44e6-7d41-8070-55b606eb1c54",
+        "01a0767b-e6b7-7c30-bc25-4c3ea7e8784b",
+        "01a07212-04e0-7126-8ca4-4b0b04df4349",
+        "01a06c7e-f0df-7227-8c0e-b3f68694333d",
+        "01a06c71-966d-7f2d-9a6a-e7259284d527",
+        "01a06c69-abe1-7e57-8eef-591e8dcdbd08",
+        "01a06c5c-b6a2-790a-861a-ae84880b9c8e",
+        "01a06c4a-b48f-7228-9e02-4620b089b078",
+        "01a06c47-7581-7307-9553-8e36d4dbbc30",
+        "01a06c47-7577-70ee-90b5-3d52eabbd587",
+        "01a06c2c-b8f5-7539-993b-8d78d1a30c34",
+        "01a066b5-b34c-782c-8c0e-6c63e8a204c4",
+        "01a05cfb-cfcd-78c8-b035-b1b736ef0dd4.history",
+        "01a05cfb-cfcd-78c8-b035-b1b736ef0dd4",
+        "01a05cb8-bed1-7d07-81c1-09d1593ca89d",
+        "01a05c0a-1e40-7e53-81e2-409453c93f50",
+        "01a05745-64b5-725e-a3b3-e743fb11ce4e",
+        "01a05743-601c-7be7-832d-e3761cfad037",
+        "01a05740-b675-7360-8cda-d4fcee31b9f3",
+        "01a05734-8961-7126-8355-7d9b03523b4d",
+        "01a05317-e0f9-77eb-b7e7-8998b3483345",
+        "01a052f7-40cb-705f-89fb-949d927631b7",
+        "01a052f0-7c09-7910-98a5-b1b869189cf9",
+        "01a052ee-578a-7342-bdf6-6d6bf0661884",
+        "01a052c9-90c9-7cf6-8088-701709f6d405",
+        "01a052c9-1991-7a49-821e-a7d4ce77cb27",
+        "01a04dfc-9fdd-7acc-b8b0-c462ec1ddea6",
+        "01a04df9-55e7-7aa4-8fad-7cc24ca97013",
+        "01a04df9-0ff8-7d59-89bb-83f8dee4947c",
+        "01a04de0-bb66-7b87-8d73-1218d4cf3e2a",
+        "01a04b98-ae8c-7530-8b92-534377c78b0f",
+        "01a048e7-d669-7f73-afa1-e9206256f0c2",
+        "01a0484a-72ea-73ce-8650-196690c26943",
+        "01a04322-7466-78b5-9de3-88babb632c0f.history",
+        "01a0439a-c824-7a7a-b3b6-861527f41da0",
+        "01a04398-f1ba-70be-b71d-6c824559f143",
+        "01a04349-3126-705d-b4b8-69dd5331f95f",
+        "01a04322-7466-78b5-9de3-88babb632c0f",
+        "01a02ea9-4ad8-7358-b3b8-fb50bf05e8dc.history",
+        "01a039c4-e371-7c88-976c-17146dfa2a2b.history",
+        "01a03a51-a5c0-7cbf-b2ea-94f109f69658",
+        "01a03a20-8bd6-72d7-8bc7-8d66a867e409",
+        "01a03a1d-d93c-7e75-a5d7-6a846e62d941",
+        "01a039c4-e371-7c88-976c-17146dfa2a2b",
+        "01a02f09-3347-7e93-9a07-119f74cca9a2",
+        "01a02f09-2fbc-7b48-bab1-b5890f95162d",
+        "01a02f09-2bc8-7267-9456-465831ab2a42",
+        "01a02f09-283e-737f-9dfb-ddcc1b96422a",
+        "01a02f09-242d-72a9-9316-060d267ef0b9",
+        "01a02f09-2067-799b-b7c8-e4ae0b49aa32",
+        "01a02f09-1c46-7bd6-9e1e-5b5dfe6ea629",
+        "01a02f09-1895-70ac-9538-609f55681f54",
+        "01a02f09-14a3-71dc-b28e-d7cd9833086f",
+        "01a02f09-1123-7ff1-b036-662355ea6101",
+        "01a02f09-0c84-7c28-8801-4bc215a2ccdf",
+        "01a02f09-0541-7a21-92f4-2792e0169984",
+        "01a02f09-0128-7e81-a2ea-f6d8553ecd13",
+        "01a02f08-fd50-7d1e-9ed6-a05e59cdad38",
+        "01a02f08-f93b-7601-96e9-bd26bfe0fbc3",
+        "01a02ea9-4ad8-7358-b3b8-fb50bf05e8dc",
+        "01a014fb-5e1a-78bc-b725-1028877e1fff.history",
+        "01a01f97-8e2c-75cd-ac2e-847a82a90129",
+        "01a014fb-5e1a-78bc-b725-1028877e1fff",
+        "01a00e3e-b722-75eb-a7be-20f008527103",
+        "01a000a8-faa3-71dd-a797-7e593bfe2a9a.history",
+        "01a000af-6aeb-7c94-a3ed-1e82c30e10b7.history",
+        "01a00563-bd1b-7e11-a0f1-09f5a43cb950",
+        "01a000b2-609a-7246-908c-06831eb786e3",
+        "01a000af-6aeb-7c94-a3ed-1e82c30e10b7",
+        "01a000a8-faa3-71dd-a797-7e593bfe2a9a",
+        "01a000a1-0ca8-7f6b-abaa-0eceb677a048",
+        "01a00098-38c2-7af6-8ae0-c2160fa71a75"
+      ],
+      "observed_at": "2026-09-24T03:35:07.139949+00:00"
+    },
+    {
+      "id": "linux:cursor-agent:local",
+      "source_key": "linux:cursor-agent:local",
+      "persistent_instance": "linux:cursor-agent:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "coding-agent-sessions list --platform cursor-cli --limit 100000 (65s bound)",
+      "covered_paths": [
+        "$HOME/.cursor/chats"
+      ],
+      "page_completeness": "complete",
+      "capability": "read-only historical session roster; not current work",
+      "status": "live",
+      "failure_reason": null,
+      "observed_session_count": 22,
+      "total": 22,
+      "total_kind": "file_roster",
+      "current_work_total": null,
+      "session_ids": [
+        "f9a326d2-5f11-4274-b607-7a68730e7b8c",
+        "be259c59-c129-46a9-ba17-339c0e33c4b7",
+        "bad6a4a1-9018-44be-9592-c985f1de526c",
+        "08df5d30-c711-4f21-ad34-495a46eed5a4",
+        "d63b4fab-6d18-4cd3-b446-ca0152b5dd5c",
+        "78dc03c6-ff7f-48f7-ad39-fb3142bc6e03",
+        "fb497a1b-bab7-4eed-8d04-5f4a3928f042",
+        "7780b202-2f0b-4dbc-a1f7-257a7991a5ce",
+        "cd93b22c-da6c-4344-92de-fb9c52ec9443",
+        "115bf8c4-5f1e-4b83-b7db-b279a2f14a83",
+        "cd9e63cf-8d68-4fd9-b100-654415375aa9",
+        "0e9f0061-a994-43f3-8564-26fec2db37dd",
+        "88db9c81-4941-4b64-ac85-baa01d2c6f4f",
+        "dcc029f0-9c82-4f94-a4a0-9c4b8779291f",
+        "59ad6d6c-c7e0-4c3a-b74c-d65ac8f22a3f",
+        "a26395cd-2d92-4f34-bcdc-a92cf9cd2edf",
+        "9b9b391a-58b5-497f-9377-9725031452d7",
+        "ade1d149-6624-4a3a-9bc1-3b95bae96a0c",
+        "238b7127-fc45-411b-93c0-ff847c1b4599",
+        "9224bcb7-d3d8-4993-8952-50bb0107d4e4",
+        "22e75fd9-d9a7-4007-8e1a-4ad9d9facc16",
+        "d429e0a9-32a0-4e11-8940-971d97d0017d"
+      ],
+      "observed_at": "2026-09-24T03:35:07.139949+00:00"
     },
     {
       "id": "mac:codex:local",
@@ -154,7 +344,10 @@
       "failure_reason": null,
       "observed_session_count": 1782,
       "total": 1782,
-      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+      "total_kind": "file_roster",
+      "current_work_total": null,
+      "session_ids": null,
+      "observed_at": "2026-09-24T03:35:07.139949+00:00"
     },
     {
       "id": "mac:claude:local",
@@ -171,7 +364,10 @@
       "failure_reason": null,
       "observed_session_count": 1245,
       "total": 1245,
-      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+      "total_kind": "file_roster",
+      "current_work_total": null,
+      "session_ids": null,
+      "observed_at": "2026-09-24T03:35:07.139949+00:00"
     },
     {
       "id": "mac:codex-desktop:local",
@@ -188,7 +384,10 @@
       "failure_reason": "application present; no bounded session enumeration supported",
       "observed_session_count": null,
       "total": null,
-      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+      "total_kind": null,
+      "current_work_total": null,
+      "session_ids": null,
+      "observed_at": "2026-09-24T03:35:07.139949+00:00"
     },
     {
       "id": "mac:claude-desktop:local",
@@ -205,7 +404,10 @@
       "failure_reason": "application present; no bounded session enumeration supported",
       "observed_session_count": null,
       "total": null,
-      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+      "total_kind": null,
+      "current_work_total": null,
+      "session_ids": null,
+      "observed_at": "2026-09-24T03:35:07.139949+00:00"
     },
     {
       "id": "mac:omo:local",
@@ -222,7 +424,10 @@
       "failure_reason": "no session store identified",
       "observed_session_count": null,
       "total": null,
-      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+      "total_kind": null,
+      "current_work_total": null,
+      "session_ids": null,
+      "observed_at": "2026-09-24T03:35:07.139949+00:00"
     },
     {
       "id": "mac:senpi:local",
@@ -239,7 +444,10 @@
       "failure_reason": "no session store identified",
       "observed_session_count": null,
       "total": null,
-      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+      "total_kind": null,
+      "current_work_total": null,
+      "session_ids": null,
+      "observed_at": "2026-09-24T03:35:07.139949+00:00"
     },
     {
       "id": "linux:mail:local",
@@ -256,7 +464,10 @@
       "failure_reason": "no consented metadata API/session enumeration configured",
       "observed_session_count": null,
       "total": null,
-      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+      "total_kind": null,
+      "current_work_total": null,
+      "session_ids": null,
+      "observed_at": "2026-09-24T03:35:07.139949+00:00"
     },
     {
       "id": "linux:crm:local",
@@ -273,7 +484,10 @@
       "failure_reason": "no consented metadata API/session enumeration configured",
       "observed_session_count": null,
       "total": null,
-      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+      "total_kind": null,
+      "current_work_total": null,
+      "session_ids": null,
+      "observed_at": "2026-09-24T03:35:07.139949+00:00"
     },
     {
       "id": "mac:mail:local",
@@ -290,7 +504,10 @@
       "failure_reason": "no consented metadata API/session enumeration configured",
       "observed_session_count": null,
       "total": null,
-      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+      "total_kind": null,
+      "current_work_total": null,
+      "session_ids": null,
+      "observed_at": "2026-09-24T03:35:07.139949+00:00"
     },
     {
       "id": "mac:crm:local",
@@ -307,24 +524,10 @@
       "failure_reason": "no consented metadata API/session enumeration configured",
       "observed_session_count": null,
       "total": null,
-      "observed_at": "2026-09-24T03:32:16.890849+00:00"
-    },
-    {
-      "id": "linux:cursor-agent:local",
-      "source_key": "linux:cursor-agent:local",
-      "persistent_instance": "linux:cursor-agent:default",
-      "namespace_generation": "initial",
-      "enumeration_method": "local application-data directory discovery",
-      "covered_paths": [
-        "$HOME/.local/share/cursor-agent"
-      ],
-      "page_completeness": "unsupported",
-      "capability": "session enumeration unsupported",
-      "status": "unsupported",
-      "failure_reason": "local store present; no session ID reader configured",
-      "observed_session_count": null,
-      "total": null,
-      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+      "total_kind": null,
+      "current_work_total": null,
+      "session_ids": null,
+      "observed_at": "2026-09-24T03:35:07.139949+00:00"
     },
     {
       "id": "mac:chatgpt-to-codex:local",
@@ -341,7 +544,10 @@
       "failure_reason": "application present; no session ID reader configured",
       "observed_session_count": null,
       "total": null,
-      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+      "total_kind": null,
+      "current_work_total": null,
+      "session_ids": null,
+      "observed_at": "2026-09-24T03:35:07.139949+00:00"
     }
   ],
   "orca_terminal_ids": [

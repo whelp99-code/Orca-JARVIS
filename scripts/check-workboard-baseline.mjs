@@ -21,6 +21,11 @@ export function check(inventory, coverage, config) {
       assert(Number.isInteger(source.total) && source.total >= 0, `complete scan missing total: ${source.id}`);
     }
     assert(source.observed_session_count === null || Number.isInteger(source.observed_session_count) && source.observed_session_count >= 0, `invalid observed count: ${source.id}`);
+    assert(source.total === null || ['file_roster', 'current_work'].includes(source.total_kind), `total kind missing: ${source.id}`);
+    assert(source.current_work_total === null || source.total_kind === 'current_work' && Number.isInteger(source.current_work_total) && source.current_work_total >= 0, `unfiltered current work claimed: ${source.id}`);
+    if (source.session_ids !== null) {
+      assert(Array.isArray(source.session_ids) && source.session_ids.length === source.total && new Set(source.session_ids).size === source.total, `session roster disagrees with total: ${source.id}`);
+    }
   }
   assert.deepEqual([...coverage.source_ids].sort(), [...ids].sort(), 'discovered sources and denominator disagree');
   assert.deepEqual([...config.source_ids].sort(), [...ids].sort(), 'configured sources and denominator disagree');
