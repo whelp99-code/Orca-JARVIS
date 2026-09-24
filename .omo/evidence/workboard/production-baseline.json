@@ -1,5 +1,5 @@
 {
-  "observed_at": "2026-09-24T03:32:16.890849+00:00",
+  "observed_at": "2026-09-24T03:35:07.139949+00:00",
   "plan_source_baseline": "242f69689e26277bcbd6427d01ac4352c308d570",
   "production_authority_current_readlink": "releases/ef49ba0dda37eb3b93e1306eba1ea6e8bf7ade9c",
   "baseline_mismatch": "production authority release differs from plan source baseline; no retarget or deployment performed",

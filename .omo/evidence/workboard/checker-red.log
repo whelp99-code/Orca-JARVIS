@@ -1,18 +1,20 @@
-node:fs:622
-  return binding.open(
-                 ^
+Fixture: first source failed with permission denied while total was falsely set to 0.
+node:internal/modules/run_main:107
+    triggerUncaughtException(
+    ^
 
-Error: ENOENT: no such file or directory, open '/home/jm/orca/workspaces/Orca-JARVIS/purpose-workboard/.omo/evidence/workboard/source-inventory.json'
-    at Object.openSync (node:fs:622:18)
-    at readFileSync (node:fs:488:35)
-    at file:///home/jm/orca/workspaces/Orca-JARVIS/purpose-workboard/scripts/check-workboard-baseline.mjs:50:30
+AssertionError [ERR_ASSERTION]: incomplete scan counted as zero: linux:orca-worktrees:local
+    at check (file:///home/jm/orca/workspaces/Orca-JARVIS/purpose-workboard/scripts/check-workboard-baseline.mjs:18:7)
+    at file:///home/jm/orca/workspaces/Orca-JARVIS/purpose-workboard/scripts/check-workboard-baseline.mjs:61:1
     at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
     at async node:internal/modules/esm/loader:643:26
     at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
-  errno: -2,
-  code: 'ENOENT',
-  syscall: 'open',
-  path: '/home/jm/orca/workspaces/Orca-JARVIS/purpose-workboard/.omo/evidence/workboard/source-inventory.json'
+  generatedMessage: false,
+  code: 'ERR_ASSERTION',
+  actual: false,
+  expected: true,
+  operator: '==',
+  diff: 'simple'
 }
 
 Node.js v24.19.0

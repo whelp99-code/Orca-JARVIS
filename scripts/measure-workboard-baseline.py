@@ -47,7 +47,7 @@ def workspace_id(value):
     return hashlib.sha256(value.encode()).hexdigest()
 
 # No account names, raw prompts, previews, logs, tokens or full paths are serialized.
-def source(host, app, method, paths, capability, *, status='live', count=None, reason=None, completeness='complete', instance='default', generation='initial'):
+def source(host, app, method, paths, capability, *, status='live', count=None, reason=None, completeness='complete', instance='default', generation='initial', session_ids=None):
     key = f'{host}:{app}:local'
     if status != 'live' or completeness != 'complete':
         count = None
@@ -55,7 +55,8 @@ def source(host, app, method, paths, capability, *, status='live', count=None, r
     return dict(id=key, source_key=key, persistent_instance=f'{host}:{app}:{instance}', namespace_generation=generation,
                 enumeration_method=method, covered_paths=paths, page_completeness=completeness,
                 capability=capability, status=status, failure_reason=reason, observed_session_count=count,
-                total=count, observed_at=NOW)
+                total=count, total_kind='file_roster' if count is not None else None,
+                current_work_total=None, session_ids=session_ids, observed_at=NOW)
 
 sources = []
 wt = (worktrees or {}).get('worktrees', [])
@@ -83,16 +84,28 @@ for app, path in [('codex', '.codex/sessions'), ('claude', '.claude/projects')]:
     n, error = local_jsonl(path)
     sources.append(source('linux', app, 'read-only filesystem jsonl name enumeration', [f'$HOME/{path}'], 'session-file metadata only', status='inaccessible' if error else 'live', count=n, reason=error, completeness='failed' if error else 'complete'))
 
-# OmO and Senpi sessions are project scoped. A repository marker is not a session count.
-for app in ('omo', 'senpi'):
-    markers = []
-    for base in (home / 'orca/projects', home / 'orca/workspaces'):
-        if base.exists():
-            for project in base.iterdir():
-                marker = project / f'.{app}'
-                if marker.is_dir():
-                    markers.append(marker)
-    sources.append(source('linux', app, 'project marker directory discovery (not session enumeration)', [f'$HOME/orca/projects/*/.{app}', f'$HOME/orca/workspaces/*/.{app}'], 'project-scoped session metadata; no adapter yet', status='unsupported', reason=f'{len(markers)} project stores discovered; session identities not enumerated', completeness='unsupported'))
+finder = '/home/jm/.nvm/versions/node/v24.19.0/lib/node_modules/omo-ai/plugin/skills/coding-agent-sessions/scripts/find-agent-sessions.py'
+for app, platform, store in [('omo', 'oh-my-pi', '$HOME/.omp/agent/sessions'),
+                              ('senpi', 'senpi', '$HOME/.omo/agent/sessions'),
+                              ('cursor-agent', 'cursor-cli', '$HOME/.cursor/chats')]:
+    rc, output, error = run(['python3', finder, 'list', '--platform', platform, '--limit', '100000', '--workers', '4'], 65)
+    ids = None
+    if rc == 0:
+        try:
+            roster = json.loads(output)
+            rows = roster['results']
+            ids = [row['id'] for row in rows]
+            if roster['count'] != len(ids) or any(not isinstance(id, str) or not id for id in ids) or len(ids) != len(set(ids)) or any(row['platform'] != platform for row in rows):
+                raise ValueError('incomplete or duplicate finder roster')
+        except (ValueError, KeyError, TypeError) as exc:
+            error = f'finder malformed roster: {exc}'
+    else:
+        error = f'finder exit {rc}: {error}'
+    sources.append(source('linux', app, f'coding-agent-sessions list --platform {platform} --limit 100000 (65s bound)',
+                          [store], 'read-only historical session roster; not current work',
+                          status='live' if ids is not None else 'inaccessible', count=len(ids) if ids is not None else None,
+                          reason=None if ids is not None else error, completeness='complete' if ids is not None else 'failed',
+                          session_ids=ids))
 
 remote_script = """import json,os,glob
 h=os.path.expanduser('~')
@@ -111,7 +124,6 @@ for app in ('codex-desktop', 'claude-desktop', 'omo', 'senpi'):
 for host in ('linux', 'mac'):
     for app in ('mail', 'crm'):
         sources.append(source(host, app, 'application/process discovery; no mailbox or CRM API credentials read', ['existing work metadata only'], 'existing-work metadata read only; no intake', status='unsupported' if host == 'linux' or mac else 'inaccessible', reason='no consented metadata API/session enumeration configured' if host == 'linux' or mac else mac_failure, completeness='unsupported' if host == 'linux' or mac else 'failed'))
-sources.append(source('linux', 'cursor-agent', 'local application-data directory discovery', ['$HOME/.local/share/cursor-agent'], 'session enumeration unsupported', status='unsupported', reason='local store present; no session ID reader configured', completeness='unsupported'))
 sources.append(source('mac', 'chatgpt-to-codex', 'SSH application/process discovery', ['/Applications/ChatGPT To Codex.app'], 'existing-work metadata only', status='unsupported' if mac else 'inaccessible', reason='application present; no session ID reader configured' if mac else mac_failure, completeness='unsupported' if mac else 'failed'))
 
 terminal_ids = sorted(t['handle'] for t in tr)
@@ -134,7 +146,7 @@ mac_lookup = {workspace_id(w['worktreeId']): w for w in mac_wt}
 mac_explained = [dict(id=id, reason=('Mac worktree has no terminal in terminal list; workspace status '+str(mac_lookup[id].get('status')) if id in mac_wt_ids else 'Mac terminal has orphaned or out-of-scope worktree; retain terminal identity')) for id in sorted(mac_wt_ids ^ mac_term_wt_ids)]
 coverage = dict(observed_at=NOW, source_ids=sorted(s['id'] for s in sources), orca_cli_terminal_ids=terminal_ids, mac_orca_cli_terminal_ids=sorted(t['handle'] for t in mac_tr),
                 independent_enumerations=[dict(name='orca-terminal-vs-worktree-metadata', first_method='orca-ide worktree ps --json', second_method='orca-ide terminal list --json', first_ids=sorted(wt_ids), second_ids=sorted(term_wt_ids), explained_differences=explained), dict(name='mac-orca-terminal-vs-worktree-metadata', first_method='orca-ide worktree ps --environment MAC --json', second_method='orca-ide terminal list --environment MAC --json', first_ids=sorted(mac_wt_ids), second_ids=sorted(mac_term_wt_ids), explained_differences=mac_explained)],
-                limitations=['Orca CLI hostScope omits Mac; Mac remains a separate denominator source.', 'Worktree IDs represent workspaces, terminal handles represent terminals; no inferred session alias or zero-work conclusion.', 'Metadata-only counts do not imply live work or known purpose; unsupported sources have unknown totals.'])
+                limitations=['Orca CLI hostScope omits Mac; Mac remains a separate denominator source.', 'Worktree IDs represent workspaces, terminal handles represent terminals; no inferred session alias or zero-work conclusion.', 'File/session roster counts do not imply current work or known purpose; current_work_total remains unknown. Unsupported sources have unknown totals.'])
 inv = dict(observed_at=NOW, sources=sources, orca_terminal_ids=terminal_ids, orca_worktree_ids=sorted(wt_ids), mac_orca_terminal_ids=sorted(t['handle'] for t in mac_tr), mac_orca_worktree_ids=sorted(mac_wt_ids),
            identity_contract='source_key host+app+opaque local installation scope; persistent_instance stable across process restart; namespace_generation initial until account/store reset, which requires new generation. No personal account identifier stored.',
            observation_contract='No last_successful_observation stored in task 1; failed reads must not refresh one when added later.')
