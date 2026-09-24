@@ -1,3 +1,4 @@
+import type { WorkboardActions } from "../workboard/actions.js";
 import { parseNativeEveningSourceConfig, type NativeEveningSourceConfig } from "../evening-native-source.js";
 import type { TrustedCloseoutKey } from "../evening-closeout-types.js";
 import { realpathSync } from "node:fs";
@@ -81,6 +82,7 @@ export type DashboardServerOptions = {
   readonly ownerInbox?: import("../owner-inbox.js").OwnerInbox;
   readonly assertionCheck?: import("../owner-inbox.js").AssertionCheck;
   readonly enrollmentCheck?: import("../owner-inbox-enrollment.js").EnrollmentCheck;
+  readonly workboardActions?: WorkboardActions;
 };
 
 type RequestContext = {
@@ -104,6 +106,7 @@ type RequestContext = {
   readonly ownerInbox?: import("../owner-inbox.js").OwnerInbox;
   readonly assertionCheck?: import("../owner-inbox.js").AssertionCheck;
   readonly enrollmentCheck?: import("../owner-inbox-enrollment.js").EnrollmentCheck;
+  readonly workboardActions?: WorkboardActions;
 };
 
 export function createDashboardServer(options: DashboardServerOptions): DashboardServer & {
@@ -154,6 +157,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
       ownerInbox: options.ownerInbox,
       assertionCheck: options.assertionCheck,
       enrollmentCheck: options.enrollmentCheck,
+      workboardActions: options.workboardActions,
     });
     requests.add(pending);
     void pending.then(() => requests.delete(pending), () => requests.delete(pending));
@@ -222,6 +226,7 @@ async function handleRequest(input: RequestContext): Promise<void> {
       assertionCheck: input.assertionCheck,
       enrollmentCheck: input.enrollmentCheck,
       now: input.clock(),
+      workboardActions: input.workboardActions,
     })) {
       return;
     }

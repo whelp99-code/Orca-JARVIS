@@ -119,7 +119,7 @@ function ControlCenter({
     <OperationalShell connectionState={state.connectionState}>
       <Routes>
         <Route path="/" element={today} />
-        <Route path="/workboard" element={<WorkboardRoute load={client.workboard} />} />
+        <Route path="/workboard" element={<WorkboardRoute load={client.workboard} actionClient={liveAuthorityClient.workboardActions} />} />
         <Route path="/memory" element={memory} />
         <Route path="/overview" element={<OverviewRoute state={state} store={store} />} />
         <Route

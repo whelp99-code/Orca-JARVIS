@@ -1,0 +1,21 @@
+npm notice run orca-jarvis-shadow@0.1.0 prebuild
+npm notice run npm run runtime:check
+npm notice run orca-jarvis-shadow@0.1.0 runtime:check
+npm notice run node scripts/assert-runtime.mjs
+JARVIS_RUNTIME_OK node=v24.19.0 abi=137
+npm notice run orca-jarvis-shadow@0.1.0 build
+npm notice run npm run build:backend && npm run build:dashboard
+npm notice run orca-jarvis-shadow@0.1.0 build:backend
+npm notice run node scripts/build-backend.mjs
+{"event":"backend_build_recorded","source_head":"1ed3e1154bb9b68fffdd064ffc003289b1439150","source_dirty":true,"input_digest":"sha256:946f80a6408922df07516ba1c6f4f0013ce28dce01b06898d3aa70418d85b151","artifact_digest":"sha256:489f258522adee54af275adaaf6c7a7bfccda4147285706cc130dee6224ddd03","artifact_files":1571,"migration_count":108}
+npm notice run orca-jarvis-shadow@0.1.0 build:dashboard
+npm notice run vite build --config dashboard/vite.config.ts
+vite v7.3.6 building client environment for production...
+transforming...
+✓ 182 modules transformed.
+rendering chunks...
+computing gzip size...
+../dist/dashboard/index.html                   1.73 kB │ gzip:   0.98 kB
+../dist/dashboard/assets/index-Bs3HEc_M.css   33.26 kB │ gzip:   5.68 kB
+../dist/dashboard/assets/index-Bke5Oeo_.js   469.46 kB │ gzip: 136.87 kB
+✓ built in 1.33s

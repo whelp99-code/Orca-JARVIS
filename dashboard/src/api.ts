@@ -1,3 +1,4 @@
+import { capabilitySchema } from "../../src/workboard/action-contracts.js";
 import type { ActionLevel } from "../../src/control-plane.js";
 import type {
   AgentListResponse,
@@ -286,6 +287,7 @@ function isWorkboardGroup(value: unknown): value is WorkboardGroup {
 
 function isWorkboardCard(value: unknown): value is WorkboardCard {
   return isRecord(value) && typeof value.work_id === "string" && typeof value.summary === "string"
+    && (value.action_capability === undefined || capabilitySchema.safeParse(value.action_capability).success)
     && isRecord(value.source) && typeof value.source.host === "string"
     && typeof value.source.app === "string" && typeof value.source.scope === "string"
     && isMember(value.disposition, WORK_DISPOSITIONS) && isMember(value.attempt_execution, WORK_ATTEMPTS)

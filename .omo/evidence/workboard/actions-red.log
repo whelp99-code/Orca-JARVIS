@@ -1,0 +1,206 @@
+JARVIS_TEST_PROFILE integration
+
+ RUN  v3.2.7 /home/jm/orca/workspaces/Orca-JARVIS/purpose-workboard
+
+ ❯ tests/integration/workboard-actions.test.ts (9 tests | 9 failed) 179ms
+   × durable exact workboard intent > double submit sends once and independently reads one source receipt 46ms
+     → WORKBOARD_SOURCE_UNAVAILABLE
+   × durable exact workboard intent > request replaced after dialog opened is not sent 28ms
+     → promise resolved "{ …(4) }" instead of rejecting
+   × durable exact workboard intent > expired request is not sent 16ms
+     → promise resolved "{ …(4) }" instead of rejecting
+   × durable exact workboard intent > lost ack persists uncertain intent and blocks a replacement request id 14ms
+     → promise rejected "TypeError: fetch failed" instead of resolving
+   × durable exact workboard intent > restart/reconnect rereads source receipt without sending again 17ms
+     → promise rejected "Error: WORKBOARD_SOURCE_UNAVAILABLE" instead of resolving
+   × durable exact workboard intent > sessionId change invalidates the open dialog 17ms
+     → promise resolved "{ …(4) }" instead of rejecting
+   × durable exact workboard intent > attemptId change invalidates the open dialog 14ms
+     → promise resolved "{ …(4) }" instead of rejecting
+   × durable exact workboard intent > specVersion change invalidates the open dialog 13ms
+     → promise resolved "{ …(4) }" instead of rejecting
+   × durable exact workboard intent > purposeVersion change invalidates the open dialog 13ms
+     → promise resolved "{ …(4) }" instead of rejecting
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 9 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/integration/workboard-actions.test.ts > durable exact workboard intent > double submit sends once and independently reads one source receipt
+Error: WORKBOARD_SOURCE_UNAVAILABLE
+ ❯ StructuredActions.request src/workboard/adapters/structured-actions.ts:31:29
+     29|       body: body === undefined ? undefined : JSON.stringify(body), sig…
+     30|     });
+     31|     if (!response.ok) throw new Error("WORKBOARD_SOURCE_UNAVAILABLE");
+       |                             ^
+     32|     return response.json();
+     33|   }
+ ❯ StructuredActions.send src/workboard/adapters/structured-actions.ts:19:5
+ ❯ WorkboardActions.submit src/workboard/actions.ts:20:5
+ ❯ tests/integration/workboard-actions.test.ts:32:21
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/9]⎯
+
+ FAIL  tests/integration/workboard-actions.test.ts > durable exact workboard intent > request replaced after dialog opened is not sent
+AssertionError: promise resolved "{ …(4) }" instead of rejecting
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- Error {[39m
+[32m-   "message": "rejected promise",[39m
+[31m+ {[39m
+[31m+   "error": null,[39m
+[31m+   "intentId": "ef38f369-ca23-4b40-a2fc-0b514b1d4650",[39m
+[31m+   "receipt": {[39m
+[31m+     "binding": {[39m
+[31m+       "attemptId": "attempt:1",[39m
+[31m+       "purposeVersion": 1,[39m
+[31m+       "sessionId": "session:fixture",[39m
+[31m+       "sourceId": "fixture:structured:v1",[39m
+[31m+       "specVersion": "spec:1",[39m
+[31m+       "taskId": "task:fixture",[39m
+[31m+       "workId": "work:fixture",[39m
+[31m+     },[39m
+[31m+     "intentId": "ef38f369-ca23-4b40-a2fc-0b514b1d4650",[39m
+[31m+     "operation": "approve",[39m
+[31m+     "receiptId": "receipt:ef38f369-ca23-4b40-a2fc-0b514b1d4650",[39m
+[31m+     "requestDigest": "sha256:22ec52d5d836d42adefc32cc6e23ccaa768c93f883e34276a729826908ded68a",[39m
+[31m+     "requestId": "request:replacement",[39m
+[31m+     "sourceState": "running",[39m
+[31m+   },[39m
+[31m+   "status": "settled",[39m
+[2m  }[22m
+
+ ❯ tests/integration/workboard-actions.test.ts:41:54
+     39|     const f = await fixture(); const p = await f.actions.prepare(f.bin…
+     40|     f.agent.state.current.requestId = "request:replacement";
+     41|     await expect(f.actions.submit(p.token, "approve")).rejects.toThrow…
+       |                                                      ^
+     42|     expect(f.agent.state.sends).toHaveLength(0);
+     43|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/9]⎯
+
+ FAIL  tests/integration/workboard-actions.test.ts > durable exact workboard intent > expired request is not sent
+AssertionError: promise resolved "{ …(4) }" instead of rejecting
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- Error {[39m
+[32m-   "message": "rejected promise",[39m
+[31m+ {[39m
+[31m+   "error": null,[39m
+[31m+   "intentId": "c8d5846d-6816-4d6b-86bb-220f193c2c29",[39m
+[31m+   "receipt": {[39m
+[31m+     "binding": {[39m
+[31m+       "attemptId": "attempt:1",[39m
+[31m+       "purposeVersion": 1,[39m
+[31m+       "sessionId": "session:fixture",[39m
+[31m+       "sourceId": "fixture:structured:v1",[39m
+[31m+       "specVersion": "spec:1",[39m
+[31m+       "taskId": "task:fixture",[39m
+[31m+       "workId": "work:fixture",[39m
+[31m+     },[39m
+[31m+     "intentId": "c8d5846d-6816-4d6b-86bb-220f193c2c29",[39m
+[31m+     "operation": "approve",[39m
+[31m+     "receiptId": "receipt:c8d5846d-6816-4d6b-86bb-220f193c2c29",[39m
+[31m+     "requestDigest": "sha256:3717aa44b2c1ae3a2f34624c205691202d457e9ff09b77d2a7379dabc2c56dbd",[39m
+[31m+     "requestId": "request:1",[39m
+[31m+     "sourceState": "running",[39m
+[31m+   },[39m
+[31m+   "status": "settled",[39m
+[2m  }[22m
+
+ ❯ tests/integration/workboard-actions.test.ts:46:54
+     44|   it("expired request is not sent", async () => {
+     45|     const f = await fixture(); const p = await f.actions.prepare(f.bin…
+     46|     await expect(f.actions.submit(p.token, "approve")).rejects.toThrow…
+       |                                                      ^
+     47|     expect(f.agent.state.sends).toHaveLength(0);
+     48|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/9]⎯
+
+ FAIL  tests/integration/workboard-actions.test.ts > durable exact workboard intent > lost ack persists uncertain intent and blocks a replacement request id
+AssertionError: promise rejected "TypeError: fetch failed" instead of resolving
+ ❯ tests/integration/workboard-actions.test.ts:52:54
+     50|     const f = await fixture(); const p = await f.actions.prepare(f.bin…
+     51|     f.agent.state.lostAck = true; f.agent.state.hideReceipts = true;
+     52|     await expect(f.actions.submit(p.token, "approve")).resolves.toMatc…
+       |                                                      ^
+     53|     f.agent.state.current.requestId = "request:replacement";
+     54|     await expect(f.actions.prepare(f.binding.workId)).rejects.toThrow(…
+
+Caused by: TypeError: fetch failed
+Caused by: SocketError: other side closed
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯
+Serialized Error: { code: 'UND_ERR_SOCKET', socket: { localAddress: '127.0.0.1', localPort: 33676, remoteAddress: '127.0.0.1', remotePort: 46057, remoteFamily: 'IPv4', timeout: undefined, bytesWritten: 1375, bytesRead: 892 } }
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[4/9]⎯
+
+ FAIL  tests/integration/workboard-actions.test.ts > durable exact workboard intent > restart/reconnect rereads source receipt without sending again
+AssertionError: promise rejected "Error: WORKBOARD_SOURCE_UNAVAILABLE" instead of resolving
+ ❯ tests/integration/workboard-actions.test.ts:61:53
+     59|     const f = await fixture(); const p = await f.actions.prepare(f.bin…
+     60|     await f.actions.submit(p.token, "reject"); f.restart();
+     61|     await expect(f.actions.submit(p.token, "reject")).resolves.toMatch…
+       |                                                     ^
+     62|     expect(f.agent.state.sends).toHaveLength(1);
+     63|     expect(f.actions.journal.all()).toHaveLength(1);
+
+Caused by: Error: WORKBOARD_SOURCE_UNAVAILABLE
+ ❯ StructuredActions.request src/workboard/adapters/structured-actions.ts:31:29
+ ❯ StructuredActions.send src/workboard/adapters/structured-actions.ts:19:5
+ ❯ WorkboardActions.submit src/workboard/actions.ts:20:5
+ ❯ tests/integration/workboard-actions.test.ts:61:5
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[5/9]⎯
+
+ FAIL  tests/integration/workboard-actions.test.ts > durable exact workboard intent > sessionId change invalidates the open dialog
+ FAIL  tests/integration/workboard-actions.test.ts > durable exact workboard intent > attemptId change invalidates the open dialog
+ FAIL  tests/integration/workboard-actions.test.ts > durable exact workboard intent > specVersion change invalidates the open dialog
+ FAIL  tests/integration/workboard-actions.test.ts > durable exact workboard intent > purposeVersion change invalidates the open dialog
+AssertionError: promise resolved "{ …(4) }" instead of rejecting
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- Error {[39m
+[32m-   "message": "rejected promise",[39m
+[31m+ {[39m
+[31m+   "error": null,[39m
+[31m+   "intentId": "2a0e78fb-65c4-4b0c-9be7-8f8735bf8223",[39m
+[31m+   "receipt": {[39m
+[31m+     "binding": {[39m
+[31m+       "attemptId": "attempt:1",[39m
+[31m+       "purposeVersion": 1,[39m
+[31m+       "sessionId": "session:fixture",[39m
+[31m+       "sourceId": "fixture:structured:v1",[39m
+[31m+       "specVersion": "spec:1",[39m
+[31m+       "taskId": "task:fixture",[39m
+[31m+       "workId": "work:fixture",[39m
+[31m+     },[39m
+[31m+     "intentId": "2a0e78fb-65c4-4b0c-9be7-8f8735bf8223",[39m
+[31m+     "operation": "approve",[39m
+[31m+     "receiptId": "receipt:2a0e78fb-65c4-4b0c-9be7-8f8735bf8223",[39m
+[31m+     "requestDigest": "sha256:3717aa44b2c1ae3a2f34624c205691202d457e9ff09b77d2a7379dabc2c56dbd",[39m
+[31m+     "requestId": "request:1",[39m
+[31m+     "sourceState": "running",[39m
+[31m+   },[39m
+[31m+   "status": "settled",[39m
+[2m  }[22m
+
+ ❯ tests/integration/workboard-actions.test.ts:68:54
+     66|     const f = await fixture(); const p = await f.actions.prepare(f.bin…
+     67|     if (field === "purposeVersion") f.binding[field] = 2; else f.bindi…
+     68|     await expect(f.actions.submit(p.token, "approve")).rejects.toThrow…
+       |                                                      ^
+     69|     expect(f.agent.state.sends).toHaveLength(0);
+     70|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[6/9]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  9 failed (9)
+   Start at  13:43:31
+   Duration  449ms (transform 68ms, setup 0ms, collect 103ms, tests 179ms, environment 0ms, prepare 50ms)
