@@ -13,6 +13,12 @@ import type {
   TaskListResponse,
 } from "../../src/dashboard/read-model.js";
 import type { TerminalLogResponse } from "../../src/dashboard/terminal-reader.js";
+import type {
+  WorkboardCard,
+  WorkboardEvidenceItem,
+  WorkboardGroup,
+  WorkboardResponse,
+} from "../../src/dashboard/workboard-routes.js";
 import { isPortfolioOverview } from "./portfolio-guard.js";
 import { isRuntimeIdentity, isDaemonRuntimeIdentity } from "./runtime-guard.js";
 import type { DashboardSurface } from "./surface.js";
@@ -33,6 +39,7 @@ export type DashboardClient = {
   readonly controlRequests: (signal?: AbortSignal, cursor?: string) => Promise<ControlRequestListResponse>;
   readonly task: (taskId: string) => Promise<TaskDetailResponse>;
   readonly agentLogs: (agentId: string) => Promise<TerminalLogResponse>;
+  readonly workboard: (signal?: AbortSignal) => Promise<WorkboardResponse>;
 };
 
 export class DashboardApiError extends Error {
@@ -52,6 +59,11 @@ const TASK_KINDS = ["work", "command", "workflow", "agent", "recommendation"] as
 const EVENT_SOURCES = ["work", "control", "workflow", "gjc", "verification", "progress"] as const;
 const EVENT_KINDS = ["status", "command", "approval", "workflow", "agent", "verification", "evidence", "system"] as const;
 const ACTION_LEVELS = [0, 1, 2, 3, 4, 5] as const;
+const WORK_DISPOSITIONS = ["running", "waiting", "blocked", "failed", "paused", "claimed_done", "verified", "unknown"] as const;
+const WORK_ATTEMPTS = ["running", "waiting", "stopped", "unknown"] as const;
+const WORK_DELIVERIES = ["none", "cancel_requested", "delivering", "delivered", "uncertain"] as const;
+const WORK_WAIT_KINDS = ["user_decision", "dependency", "long_running", "verification"] as const;
+const PURPOSE_STATUSES = ["confirmed", "proposed", "unknown"] as const;
 const LIST_LIMIT = 500;
 
 export function createDashboardClient(surface: DashboardSurface = "local"): DashboardClient {
@@ -67,6 +79,7 @@ export function createDashboardClient(surface: DashboardSurface = "local"): Dash
       `/api/v1/agents/${encodeURIComponent(agentId)}/logs?limit=${String(LIST_LIMIT)}`,
       isTerminalLog,
     ),
+    workboard: (signal) => readJson("/api/v1/workboard", isWorkboard, signal),
   };
 }
 
@@ -258,6 +271,45 @@ function isEvent(value: unknown): value is TaskDetailEvent {
     && (value.status === null || typeof value.status === "string") && "payload" in value
     && isStringArray(value.evidence_refs) && typeof value.created_at === "string"
     && typeof value.sequence === "number";
+}
+
+function isWorkboard(value: unknown): value is WorkboardResponse {
+  return isRecord(value) && value.schema_version === 1 && typeof value.generated_at === "string"
+    && typeof value.collected === "boolean"
+    && isArrayOf(value.attention, isWorkboardCard) && isArrayOf(value.groups, isWorkboardGroup);
+}
+
+function isWorkboardGroup(value: unknown): value is WorkboardGroup {
+  return isRecord(value) && isNullable(value.project_id, "string") && isNullable(value.purpose, "string")
+    && isMember(value.status, PURPOSE_STATUSES) && isArrayOf(value.works, isWorkboardCard);
+}
+
+function isWorkboardCard(value: unknown): value is WorkboardCard {
+  return isRecord(value) && typeof value.work_id === "string" && typeof value.summary === "string"
+    && isRecord(value.source) && typeof value.source.host === "string"
+    && typeof value.source.app === "string" && typeof value.source.scope === "string"
+    && isMember(value.disposition, WORK_DISPOSITIONS) && isMember(value.attempt_execution, WORK_ATTEMPTS)
+    && isMember(value.action_delivery, WORK_DELIVERIES)
+    && (value.freshness === "fresh" || value.freshness === "unconfirmed")
+    && (value.rank === null || value.rank === 0 || value.rank === 1 || value.rank === 2 || value.rank === 3)
+    && isStringArray(value.reasons)
+    && (value.wait_kind === null || isMember(value.wait_kind, WORK_WAIT_KINDS))
+    && isNullable(value.wait_reason, "string") && isNullable(value.wait_started_at, "string")
+    && isNullable(value.deadline_at, "string") && isNullable(value.impact, "number")
+    && typeof value.actions_enabled === "boolean" && isNullable(value.warning, "string")
+    && typeof value.source_at === "string" && isNullable(value.observed_at, "string")
+    && isRecord(value.purpose) && isNullable(value.purpose.project_id, "string")
+    && isNullable(value.purpose.text, "string") && isMember(value.purpose.status, PURPOSE_STATUSES)
+    && isNullable(value.purpose.why, "string") && typeof value.purpose.needs_reconfirmation === "boolean"
+    && isArrayOf(value.evidence, isWorkboardEvidence);
+}
+
+function isWorkboardEvidence(value: unknown): value is WorkboardEvidenceItem {
+  return isRecord(value) && typeof value.label === "string" && typeof value.value === "string";
+}
+
+function isNullable(value: unknown, type: "string" | "number"): boolean {
+  return value === null || typeof value === type;
 }
 
 function isActionLevel(value: unknown): value is ActionLevel {

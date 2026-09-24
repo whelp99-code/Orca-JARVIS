@@ -26,6 +26,7 @@ import { TodayRoute, type PersonalRuntime } from "./today-route.js";
 import type { createDashboardStore, DashboardState, ResourceState } from "./store.js";
 import { useDetailResource } from "./use-detail-resource.js";
 import { TaskExecutionPanel } from "./task-execution-panel.js";
+import { WorkboardRoute } from "./workboard/page.js";
 
 type DashboardStore = ReturnType<typeof createDashboardStore>;
 type RootClient = Omit<DashboardClient, "agentLogs"> & Readonly<{
@@ -118,6 +119,7 @@ function ControlCenter({
     <OperationalShell connectionState={state.connectionState}>
       <Routes>
         <Route path="/" element={today} />
+        <Route path="/workboard" element={<WorkboardRoute load={client.workboard} />} />
         <Route path="/memory" element={memory} />
         <Route path="/overview" element={<OverviewRoute state={state} store={store} />} />
         <Route
