@@ -1,11 +1,13 @@
 import type Database from "better-sqlite3";
+import { readFileSync } from "node:fs";
+import { resolve } from "node:path";
 import type { ActionCapability } from "../workboard/action-contracts.js";
 import type { WorkboardActions } from "../workboard/actions.js";
 import type { ServerResponse } from "node:http";
 import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
 import { writeDashboardJson } from "./http.js";
 import type { AttentionItem, AttentionRow } from "../workboard/attention.js";
-import { readWorkboard } from "../workboard/projection.js";
+import { readWorkboard, type SourceCoverageRow } from "../workboard/projection.js";
 import type { ActionDelivery, AttemptExecution, Disposition } from "../workboard/state.js";
 
 /**
@@ -59,12 +61,19 @@ export type WorkboardGroup = {
   readonly status: WorkboardPurposeStatus;
   readonly works: readonly WorkboardCard[];
 };
+export type WorkboardSourceCoverage = {
+  readonly id: string;
+  readonly classification: "current_work" | "unknown_current_work_coverage";
+  readonly reason: string | null;
+  readonly current_work_total: number | null;
+};
 export type WorkboardResponse = {
   readonly schema_version: typeof DASHBOARD_SCHEMA_VERSION;
   readonly generated_at: string;
   readonly collected: boolean;
   readonly attention: readonly WorkboardCard[];
   readonly groups: readonly WorkboardGroup[];
+  readonly sources: readonly WorkboardSourceCoverage[];
 };
 
 type WorkRow = AttentionRow & {
@@ -98,9 +107,33 @@ export function tryHandleWorkboardRead(input: WorkboardReadInput): boolean {
   return true;
 }
 
+const sourceConfig = JSON.parse(readFileSync(resolve("config/workboard-sources.json"), "utf8")) as {
+  source_ids: string[]; coverage_limitations: Record<string, string>;
+};
+const missingObservation = "현재 작업 관측 결과가 아직 등록되지 않았습니다.";
+
+function sourceCoverage(rows: readonly SourceCoverageRow[]): WorkboardSourceCoverage[] {
+  const byId = new Map<string, SourceCoverageRow>();
+  for (const row of rows) {
+    const id = sourceConfig.source_ids.find(id => row.source_key === id || row.source_key.startsWith(`${id}:`))
+      ?? row.source_key.split(":").slice(0, -1).join(":");
+    byId.set(id, row);
+  }
+  return [...new Set([...sourceConfig.source_ids, ...byId.keys()])].map(id => {
+    const row = byId.get(id);
+    const total = row?.current_work_total ?? null;
+    return {
+      id,
+      classification: total === null ? "unknown_current_work_coverage" : "current_work",
+      reason: total === null ? row?.warning ?? sourceConfig.coverage_limitations[id] ?? missingObservation : null,
+      current_work_total: total,
+    };
+  });
+}
+
 export function readWorkboardResponse(db: Database.Database, now: Date, actions?: WorkboardActions): WorkboardResponse {
   const generated_at = now.toISOString();
-  if (!tablesPresent(db)) return { schema_version: DASHBOARD_SCHEMA_VERSION, generated_at, collected: false, attention: [], groups: [] };
+  if (!tablesPresent(db)) return { schema_version: DASHBOARD_SCHEMA_VERSION, generated_at, collected: false, attention: [], groups: [], sources: sourceCoverage([]) };
   return db.transaction((): WorkboardResponse => {
     const projection = readWorkboard(db, now);
     const purposes = loadPurposes(db);
@@ -115,6 +148,7 @@ export function readWorkboardResponse(db: Database.Database, now: Date, actions?
       collected: true,
       attention: projection.attention.flatMap(item => { const card = cards.get(item.workId); return card === undefined ? [] : [card]; }),
       groups: groupByPurpose([...cards.values()]),
+      sources: sourceCoverage(projection.sources),
     };
   })();
 }

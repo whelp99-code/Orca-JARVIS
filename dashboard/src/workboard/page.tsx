@@ -4,6 +4,7 @@ import type {
   WorkboardGroup,
   WorkboardPurposeStatus,
   WorkboardResponse,
+  WorkboardSourceCoverage,
 } from "../../../src/dashboard/workboard-routes.js";
 import { classifyDashboardError } from "../api.js";
 import type { WorkboardActionClient } from "../authority-api.js";
@@ -26,6 +27,8 @@ const text = {
   leadEmpty: "지금 당신이 처리할 일이 없습니다",
   byPurpose: "목적별 진행 상황",
   groupsEmpty: "관측된 작업이 없습니다",
+  coverage: "관측 범위를 확인하지 못한 곳",
+  coverageNote: "아래 원천의 현재 작업 수는 알 수 없습니다. 관측된 작업만으로 전체 수집이 끝났다고 판단할 수 없습니다.",
   countUnit: "건",
   project: "프로젝트",
   why: "왜",
@@ -106,6 +109,7 @@ export function WorkboardPage({ data, now, onRefresh, actionClient }: WorkboardP
   const at = (now ?? (() => new Date()))();
   const leadId = useId();
   const purposeId = useId();
+  const coverageId = useId();
   return (
     <section className="page-frame dashboard-main workboard-page" aria-label={text.title}>
       <header className="workboard-heading">
@@ -147,8 +151,33 @@ export function WorkboardPage({ data, now, onRefresh, actionClient }: WorkboardP
           </div>
         )}
       </section>
+      <section className="workboard-section" aria-labelledby={coverageId}>
+        <h2 id={coverageId}>{text.coverage}</h2>
+        <p>{text.coverageNote}</p>
+        <ul className="workboard-group-list">
+          {data.sources.filter(source => source.classification !== "current_work").map(source => (
+            <li key={source.id}>
+              <strong>{sourceLabel(source.id)}</strong>: {source.reason}
+              <Evidence items={[{ label: "관측 원천", value: source.id }]} />
+            </li>
+          ))}
+        </ul>
+      </section>
     </section>
   );
+}
+
+const sourceApps: Readonly<Record<string, string>> = {
+  "claude": "Claude", "codex": "Codex", "omo": "OmO", "senpi": "Senpi",
+  "cursor-agent": "Cursor 에이전트", "claude-desktop": "Claude 데스크톱",
+  "codex-desktop": "Codex 데스크톱", "chatgpt-to-codex": "ChatGPT-Codex",
+  "orca-terminals": "Orca 터미널", "orca-worktrees": "Orca 작업 공간",
+  "mail": "메일", "crm": "CRM",
+};
+
+function sourceLabel(id: WorkboardSourceCoverage["id"]): string {
+  const [host, app] = id.split(":");
+  return `${host === "mac" ? "Mac" : host === "linux" ? "Linux" : host ?? "원천"} ${sourceApps[app ?? ""] ?? app ?? "알 수 없는 앱"}`;
 }
 
 function PurposeGroup({ group, at, actionClient }: Readonly<{ group: WorkboardGroup; at: Date; actionClient?: WorkboardActionClient }>) {

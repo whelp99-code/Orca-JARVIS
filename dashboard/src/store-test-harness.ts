@@ -228,7 +228,7 @@ function createClient() {
       calls.agentLogs += 1;
       return logs;
     },
-    workboard: async () => ({ schema_version: 1 as const, generated_at: "2026-08-18T00:00:00.000Z", collected: false, attention: [], groups: [] }),
+    workboard: async () => ({ schema_version: 1 as const, generated_at: "2026-08-18T00:00:00.000Z", collected: false, attention: [], groups: [], sources: [] }),
   };
 }
 
