@@ -1,0 +1,8 @@
+PASS fixture: unreachable Mac removed rejected
+PASS fixture: source dropped from inventory and coverage rejected
+PASS fixture: permission denied counted as zero rejected
+PASS fixture: new source omitted rejected
+PASS fixture: missing source id rejected
+PASS fixture: failed scan disguised as empty live list rejected
+PASS fixture: unexplained independent difference rejected
+GREEN: baseline and seven fail-closed fixtures passed; stale observation N/A: task 1 does not store last_successful_observation; action/race/UI classes N/A: no ingest or dispatch exists.

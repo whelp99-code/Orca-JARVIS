@@ -1,0 +1,422 @@
+{
+  "observed_at": "2026-09-24T03:32:16.890849+00:00",
+  "sources": [
+    {
+      "id": "linux:orca-worktrees:local",
+      "source_key": "linux:orca-worktrees:local",
+      "persistent_instance": "linux:orca-worktrees:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "orca-ide worktree ps --json (bounded)",
+      "covered_paths": [
+        "Orca Linux environment; Mac omitted by CLI hostScope"
+      ],
+      "page_completeness": "complete",
+      "capability": "read-only worktree metadata, not sessions",
+      "status": "live",
+      "failure_reason": null,
+      "observed_session_count": null,
+      "total": 27,
+      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+    },
+    {
+      "id": "mac:orca-worktrees:local",
+      "source_key": "mac:orca-worktrees:local",
+      "persistent_instance": "mac:orca-worktrees:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "orca-ide worktree ps --environment MAC --json (bounded)",
+      "covered_paths": [
+        "Orca Mac environment; other runtime hosts omitted by CLI hostScope"
+      ],
+      "page_completeness": "complete",
+      "capability": "read-only worktrees metadata",
+      "status": "live",
+      "failure_reason": null,
+      "observed_session_count": null,
+      "total": 13,
+      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+    },
+    {
+      "id": "mac:orca-terminals:local",
+      "source_key": "mac:orca-terminals:local",
+      "persistent_instance": "mac:orca-terminals:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "orca-ide terminal list --environment MAC --json (bounded)",
+      "covered_paths": [
+        "Orca Mac environment; other runtime hosts omitted by CLI hostScope"
+      ],
+      "page_completeness": "complete",
+      "capability": "read-only terminals metadata",
+      "status": "live",
+      "failure_reason": null,
+      "observed_session_count": 6,
+      "total": 6,
+      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+    },
+    {
+      "id": "linux:orca-terminals:local",
+      "source_key": "linux:orca-terminals:local",
+      "persistent_instance": "linux:orca-terminals:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "orca-ide terminal list --json (bounded)",
+      "covered_paths": [
+        "Orca Linux terminal environment; other runtime hosts omitted by CLI hostScope"
+      ],
+      "page_completeness": "complete",
+      "capability": "read-only terminal metadata",
+      "status": "live",
+      "failure_reason": null,
+      "observed_session_count": 19,
+      "total": 19,
+      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+    },
+    {
+      "id": "linux:codex:local",
+      "source_key": "linux:codex:local",
+      "persistent_instance": "linux:codex:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "read-only filesystem jsonl name enumeration",
+      "covered_paths": [
+        "$HOME/.codex/sessions"
+      ],
+      "page_completeness": "complete",
+      "capability": "session-file metadata only",
+      "status": "live",
+      "failure_reason": null,
+      "observed_session_count": 153,
+      "total": 153,
+      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+    },
+    {
+      "id": "linux:claude:local",
+      "source_key": "linux:claude:local",
+      "persistent_instance": "linux:claude:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "read-only filesystem jsonl name enumeration",
+      "covered_paths": [
+        "$HOME/.claude/projects"
+      ],
+      "page_completeness": "complete",
+      "capability": "session-file metadata only",
+      "status": "live",
+      "failure_reason": null,
+      "observed_session_count": 273,
+      "total": 273,
+      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+    },
+    {
+      "id": "linux:omo:local",
+      "source_key": "linux:omo:local",
+      "persistent_instance": "linux:omo:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "project marker directory discovery (not session enumeration)",
+      "covered_paths": [
+        "$HOME/orca/projects/*/.omo",
+        "$HOME/orca/workspaces/*/.omo"
+      ],
+      "page_completeness": "unsupported",
+      "capability": "project-scoped session metadata; no adapter yet",
+      "status": "unsupported",
+      "failure_reason": "22 project stores discovered; session identities not enumerated",
+      "observed_session_count": null,
+      "total": null,
+      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+    },
+    {
+      "id": "linux:senpi:local",
+      "source_key": "linux:senpi:local",
+      "persistent_instance": "linux:senpi:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "project marker directory discovery (not session enumeration)",
+      "covered_paths": [
+        "$HOME/orca/projects/*/.senpi",
+        "$HOME/orca/workspaces/*/.senpi"
+      ],
+      "page_completeness": "unsupported",
+      "capability": "project-scoped session metadata; no adapter yet",
+      "status": "unsupported",
+      "failure_reason": "6 project stores discovered; session identities not enumerated",
+      "observed_session_count": null,
+      "total": null,
+      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+    },
+    {
+      "id": "mac:codex:local",
+      "source_key": "mac:codex:local",
+      "persistent_instance": "mac:codex:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "SSH read-only jsonl name enumeration (8s connect, 14s total)",
+      "covered_paths": [
+        "$HOME/.codex/sessions"
+      ],
+      "page_completeness": "complete",
+      "capability": "session-file metadata only",
+      "status": "live",
+      "failure_reason": null,
+      "observed_session_count": 1782,
+      "total": 1782,
+      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+    },
+    {
+      "id": "mac:claude:local",
+      "source_key": "mac:claude:local",
+      "persistent_instance": "mac:claude:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "SSH read-only jsonl name enumeration (8s connect, 14s total)",
+      "covered_paths": [
+        "$HOME/.claude/projects"
+      ],
+      "page_completeness": "complete",
+      "capability": "session-file metadata only",
+      "status": "live",
+      "failure_reason": null,
+      "observed_session_count": 1245,
+      "total": 1245,
+      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+    },
+    {
+      "id": "mac:codex-desktop:local",
+      "source_key": "mac:codex-desktop:local",
+      "persistent_instance": "mac:codex-desktop:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "SSH app/store discovery only; no Mac terminal session API",
+      "covered_paths": [
+        "$HOME/Library/Application Support (metadata only)"
+      ],
+      "page_completeness": "unsupported",
+      "capability": "discovery only; no session enumeration",
+      "status": "unsupported",
+      "failure_reason": "application present; no bounded session enumeration supported",
+      "observed_session_count": null,
+      "total": null,
+      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+    },
+    {
+      "id": "mac:claude-desktop:local",
+      "source_key": "mac:claude-desktop:local",
+      "persistent_instance": "mac:claude-desktop:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "SSH app/store discovery only; no Mac terminal session API",
+      "covered_paths": [
+        "$HOME/Library/Application Support (metadata only)"
+      ],
+      "page_completeness": "unsupported",
+      "capability": "discovery only; no session enumeration",
+      "status": "unsupported",
+      "failure_reason": "application present; no bounded session enumeration supported",
+      "observed_session_count": null,
+      "total": null,
+      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+    },
+    {
+      "id": "mac:omo:local",
+      "source_key": "mac:omo:local",
+      "persistent_instance": "mac:omo:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "SSH app/store discovery only; no Mac terminal session API",
+      "covered_paths": [
+        "$HOME/.config and project-local markers"
+      ],
+      "page_completeness": "unsupported",
+      "capability": "discovery only; no session enumeration",
+      "status": "unsupported",
+      "failure_reason": "no session store identified",
+      "observed_session_count": null,
+      "total": null,
+      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+    },
+    {
+      "id": "mac:senpi:local",
+      "source_key": "mac:senpi:local",
+      "persistent_instance": "mac:senpi:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "SSH app/store discovery only; no Mac terminal session API",
+      "covered_paths": [
+        "$HOME/.config and project-local markers"
+      ],
+      "page_completeness": "unsupported",
+      "capability": "discovery only; no session enumeration",
+      "status": "unsupported",
+      "failure_reason": "no session store identified",
+      "observed_session_count": null,
+      "total": null,
+      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+    },
+    {
+      "id": "linux:mail:local",
+      "source_key": "linux:mail:local",
+      "persistent_instance": "linux:mail:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "application/process discovery; no mailbox or CRM API credentials read",
+      "covered_paths": [
+        "existing work metadata only"
+      ],
+      "page_completeness": "unsupported",
+      "capability": "existing-work metadata read only; no intake",
+      "status": "unsupported",
+      "failure_reason": "no consented metadata API/session enumeration configured",
+      "observed_session_count": null,
+      "total": null,
+      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+    },
+    {
+      "id": "linux:crm:local",
+      "source_key": "linux:crm:local",
+      "persistent_instance": "linux:crm:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "application/process discovery; no mailbox or CRM API credentials read",
+      "covered_paths": [
+        "existing work metadata only"
+      ],
+      "page_completeness": "unsupported",
+      "capability": "existing-work metadata read only; no intake",
+      "status": "unsupported",
+      "failure_reason": "no consented metadata API/session enumeration configured",
+      "observed_session_count": null,
+      "total": null,
+      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+    },
+    {
+      "id": "mac:mail:local",
+      "source_key": "mac:mail:local",
+      "persistent_instance": "mac:mail:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "application/process discovery; no mailbox or CRM API credentials read",
+      "covered_paths": [
+        "existing work metadata only"
+      ],
+      "page_completeness": "unsupported",
+      "capability": "existing-work metadata read only; no intake",
+      "status": "unsupported",
+      "failure_reason": "no consented metadata API/session enumeration configured",
+      "observed_session_count": null,
+      "total": null,
+      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+    },
+    {
+      "id": "mac:crm:local",
+      "source_key": "mac:crm:local",
+      "persistent_instance": "mac:crm:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "application/process discovery; no mailbox or CRM API credentials read",
+      "covered_paths": [
+        "existing work metadata only"
+      ],
+      "page_completeness": "unsupported",
+      "capability": "existing-work metadata read only; no intake",
+      "status": "unsupported",
+      "failure_reason": "no consented metadata API/session enumeration configured",
+      "observed_session_count": null,
+      "total": null,
+      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+    },
+    {
+      "id": "linux:cursor-agent:local",
+      "source_key": "linux:cursor-agent:local",
+      "persistent_instance": "linux:cursor-agent:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "local application-data directory discovery",
+      "covered_paths": [
+        "$HOME/.local/share/cursor-agent"
+      ],
+      "page_completeness": "unsupported",
+      "capability": "session enumeration unsupported",
+      "status": "unsupported",
+      "failure_reason": "local store present; no session ID reader configured",
+      "observed_session_count": null,
+      "total": null,
+      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+    },
+    {
+      "id": "mac:chatgpt-to-codex:local",
+      "source_key": "mac:chatgpt-to-codex:local",
+      "persistent_instance": "mac:chatgpt-to-codex:default",
+      "namespace_generation": "initial",
+      "enumeration_method": "SSH application/process discovery",
+      "covered_paths": [
+        "/Applications/ChatGPT To Codex.app"
+      ],
+      "page_completeness": "unsupported",
+      "capability": "existing-work metadata only",
+      "status": "unsupported",
+      "failure_reason": "application present; no session ID reader configured",
+      "observed_session_count": null,
+      "total": null,
+      "observed_at": "2026-09-24T03:32:16.890849+00:00"
+    }
+  ],
+  "orca_terminal_ids": [
+    "term_037ece28-449f-4392-a4ed-a1bd605f34ea",
+    "term_0f3c793d-f2b9-4b5c-a8ed-3756c4ad569f",
+    "term_12b89d60-e983-4ac0-9fae-fb7bb15274d3",
+    "term_26c2a8d9-8860-4846-8402-0879cce67eb2",
+    "term_2e33c462-d835-48bf-9480-aa0b58e20218",
+    "term_36420b0e-9568-47d1-82eb-6e08becb7cfa",
+    "term_475dd2b1-a46b-498c-829b-e410dc852dde",
+    "term_51c500f3-0e22-4a87-9523-240fb92c702f",
+    "term_55466e7d-95b0-4816-bb2a-ec91ed179040",
+    "term_589a7ef4-58b1-4620-975a-ce66f97c7ee6",
+    "term_5ba08f5c-6f00-470d-b57a-43f63b7abcaf",
+    "term_732a901d-331d-4b92-9ac5-e8fc49fd7923",
+    "term_746220e9-69c4-4caa-986f-ed25f414c8b5",
+    "term_ac529739-2edc-4f01-892b-451c343e7129",
+    "term_b6b0258d-4933-496d-98d0-198ac99a7127",
+    "term_c1b7457e-761e-477a-9fd6-64a1b89f9a06",
+    "term_c446253d-4254-41c9-9c67-ca0cbacbda12",
+    "term_fd032e31-3154-4960-82c6-d91a4bdd4a31",
+    "term_fd516765-2fcf-4d5f-8263-a77d42a11de0"
+  ],
+  "orca_worktree_ids": [
+    "0024ce26eb99f0d5d596afd626be03803b973574a7c05c2135199b14b1694887",
+    "06b848413856bd0c6d344f99a4da1726a40997147e1321fd8f6623cfc5cf1e03",
+    "0f55c6ca3bc46c8badeb635c28579db5002185cad6de3ee56cb40e51e7c2a41a",
+    "145bde744bb7ace9aa129367c324c30226d9a481f1e87bf547226018ea6abedb",
+    "14746f0a9f521024b897bb135d674c27540971c1068bdea3eacb3f453b7b2ebf",
+    "17eecb40ac4b3ac552e41cd616735ec378b8ae1e0bbab44e14c35e7e72e095ef",
+    "1875560153f93fde590c7d300d9a58e147b69025130c11088789d6b884dbb3b3",
+    "24590bfd62f8a06bab31d224de432c33d12d0c35a209f3f28730993a49b27346",
+    "33e909deb7d3f46a18ba1f63be7e3bd101a2095cbbd56ab3a2bd676d37f79c8f",
+    "4f35113814a00a0fbf8d33b98c784dc5bad059f512f47304a4c12f491769dc9b",
+    "68ffcfd5121cf1eb8423fc84e81949f403cba53d41eccc12701753e8f1ffe4ca",
+    "692a1e10ea8a1a0098fb5415935cde080bba05b50095088d1166d77c5e5cea1a",
+    "6c9567142ded3dc2408499e54947df0a3caeb3a900095cdba9934ef101ac93a7",
+    "719b92b69f71de3708f7dc2955e810a6df2cb2a136d70a5829daa1801be96187",
+    "7a10d918f8c898db666f6280ed1cbc24a9793f6375a6c45ad5e8a9f2a2eccbb0",
+    "7e98a80aa24dacdcc099453253e3c12b3924311be31cb50e33e5813e7b6ac500",
+    "8799ad2690cc6d7051ddadf6d84f6be0aa1b572737b138e182d5f4a4093c387c",
+    "8822dd2384c223c89bbdc049629645ef2d6b2ec2aa6c56af21efd5de56edbd08",
+    "a443868b8fb691e949ad931b5df49e5dba42a2ff4a5826960b26bca85345e2dc",
+    "aa17a70064c8d449b8c932ce201a6dd57275bda47a0a70cbafc71e6d7d7262ec",
+    "b718043783940d8d20747e3008f83b63355aa1ea5a4b220d78a971b381131622",
+    "bf09d77df24558d458cf95d3a1d617148b771754b5d7a18ea17990f0b51c12b6",
+    "c5978b07b68279ff7944db31238cd5074f0b9e92d2625079ad31ce917ff7a168",
+    "ccd1401899b53dadead969db43aa317c8f1d872f2ae94f0cd1d95c13ef2c390f",
+    "d95ba0ab76f7a6bb83d257879326fdbcf68a04f8e7ca0a8b354ae7f3d5502367",
+    "e50adf8874b821b6115d9fb2141a1136c25de314ba1ec1b9f06ff1e5e4b07510",
+    "ff419219c705e5f9dbcaf60a362f8653876f55bf8d4086acdff8cbb88e1a5b91"
+  ],
+  "mac_orca_terminal_ids": [
+    "term_0ab515b2-51bf-42f8-9b6a-397a5539a3ad",
+    "term_1dcc1e58-2ea1-40b3-88ea-e7547e5bb460",
+    "term_24bcf2b2-684b-47fc-a8c6-b9cc54195c59",
+    "term_74f8a6bd-7428-4a07-ac9b-3bfffe084711",
+    "term_99844ab4-39e1-4f76-bc5d-493e4ee02e57",
+    "term_cbae6dd1-1079-4ec8-bb6f-edd9a0c195f5"
+  ],
+  "mac_orca_worktree_ids": [
+    "077298f385af3d934c6b4976774e1a7efd6627ddcf32e00accdf32fb47592bfb",
+    "1e9643818784223eac3b0b02cdeddc0b7c9c89338e3474642a466577ef6551ac",
+    "40dd9b12314e71a142da64956542abb4021e80eddebde31e80970dc73b24b912",
+    "46223d60c998444de5870f4ac1bcf947b94f451531855d812d115dfdd6908886",
+    "5e4cac2e754ab5313eb9626ae6579f8eaa61b8c9a55fb61db610ef22d68593e0",
+    "70921a1e4dd764d82064edacc87c6e7296662b8fdd04d962791afa057ef15b72",
+    "8cc3f5014929a69c546b69c856a48c63a45838e39b629cc8330159e7f3aa643c",
+    "9c293a3c88ee63bad4915e607f1d688b7edeb91e86e4767fd4271f49ebc0c4d4",
+    "afb7a4fa84ec9d0369a558f886e12470eee79052eeae0c92435f5101d618706e",
+    "d9cac127a607ae96b0fdb60c01d6fc132b2bddaa4d0c62667604397a23768b45",
+    "f50a6baa0f4a42dfca5d6e5479d3db08030d9bd19f66ce49975017daf019c633",
+    "f7a5fb5c2865786e5b63cbcb453ecd8abac0ad18223ee803d9f1392918d95353",
+    "fc461587b641255fef13eaaae6b6d67d7b5c88bfd5a91cc6cbec8252afac9bb0"
+  ],
+  "identity_contract": "source_key host+app+opaque local installation scope; persistent_instance stable across process restart; namespace_generation initial until account/store reset, which requires new generation. No personal account identifier stored.",
+  "observation_contract": "No last_successful_observation stored in task 1; failed reads must not refresh one when added later."
+}

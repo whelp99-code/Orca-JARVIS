@@ -1,0 +1,38 @@
+{
+  "checks": [
+    {
+      "command": "orca-ide worktree ps --json",
+      "fresh_count": 27,
+      "inventory_count": 27,
+      "difference_ids": [],
+      "truncated": false,
+      "coverage_note": "Cross-surface worktree differences explicitly explained in coverage-baseline.json"
+    },
+    {
+      "command": "orca-ide terminal list --json",
+      "fresh_count": 19,
+      "inventory_count": 19,
+      "difference_ids": [],
+      "truncated": false,
+      "coverage_note": "Cross-surface worktree differences explicitly explained in coverage-baseline.json"
+    },
+    {
+      "command": "orca-ide worktree ps --environment MAC --json",
+      "fresh_count": 13,
+      "inventory_count": 13,
+      "difference_ids": [],
+      "truncated": false,
+      "coverage_note": "Cross-surface worktree differences explicitly explained in coverage-baseline.json"
+    },
+    {
+      "command": "orca-ide terminal list --environment MAC --json",
+      "fresh_count": 6,
+      "inventory_count": 6,
+      "difference_ids": [],
+      "truncated": false,
+      "coverage_note": "Cross-surface worktree differences explicitly explained in coverage-baseline.json"
+    }
+  ],
+  "linux_cross_surface_explanations": 11,
+  "mac_cross_surface_explanations": 9
+}

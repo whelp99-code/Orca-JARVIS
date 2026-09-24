@@ -1,0 +1,30 @@
+{
+  "schema_version": 1,
+  "source_ids": [
+    "linux:claude:local",
+    "linux:codex:local",
+    "linux:crm:local",
+    "linux:cursor-agent:local",
+    "linux:mail:local",
+    "linux:omo:local",
+    "linux:orca-terminals:local",
+    "linux:orca-worktrees:local",
+    "linux:senpi:local",
+    "mac:chatgpt-to-codex:local",
+    "mac:claude-desktop:local",
+    "mac:claude:local",
+    "mac:codex-desktop:local",
+    "mac:codex:local",
+    "mac:crm:local",
+    "mac:mail:local",
+    "mac:omo:local",
+    "mac:orca-terminals:local",
+    "mac:orca-worktrees:local",
+    "mac:senpi:local"
+  ],
+  "scope": "metadata only; no secrets or personal account values",
+  "runtime_root": ".runtime-tmp/workboard",
+  "test_db": ".runtime-tmp/workboard/db/workboard.sqlite",
+  "production_authority": "read-only",
+  "mac_transport": "SSH read-only; bounded connect timeout; no credentials stored"
+}

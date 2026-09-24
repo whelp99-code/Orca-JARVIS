@@ -1,0 +1,18 @@
+node:fs:622
+  return binding.open(
+                 ^
+
+Error: ENOENT: no such file or directory, open '/home/jm/orca/workspaces/Orca-JARVIS/purpose-workboard/.omo/evidence/workboard/source-inventory.json'
+    at Object.openSync (node:fs:622:18)
+    at readFileSync (node:fs:488:35)
+    at file:///home/jm/orca/workspaces/Orca-JARVIS/purpose-workboard/scripts/check-workboard-baseline.mjs:50:30
+    at ModuleJob.run (node:internal/modules/esm/module_job:439:25)
+    at async node:internal/modules/esm/loader:643:26
+    at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:101:5) {
+  errno: -2,
+  code: 'ENOENT',
+  syscall: 'open',
+  path: '/home/jm/orca/workspaces/Orca-JARVIS/purpose-workboard/.omo/evidence/workboard/source-inventory.json'
+}
+
+Node.js v24.19.0
