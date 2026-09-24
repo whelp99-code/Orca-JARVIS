@@ -37,6 +37,7 @@ Rules:
 | Title | `--type-title` | Route heading |
 | Count | `--type-count` | Primary numeric status |
 | Panel | `--type-panel` | Panel and subsection headings |
+| Lead | `--type-lead` | The one line a card must be read by (workboard "why") |
 | Body | `--type-body` | Forms and body copy |
 | Small | `--type-sm` | Supporting copy and controls |
 | Extra small | `--type-xs` | Labels and machine metadata |
@@ -45,7 +46,7 @@ Primary text uses `--font-sans`; identifiers, digests, timestamps, and command v
 
 ## 4. Spacing & Layout
 
-All spacing derives from the 4px base tokens `--space-1` through `--space-10`. `--size-page` bounds the page frame, `--size-reading` bounds forms and readable supporting content, and `--size-textarea` gives multiline interview controls a stable minimum editing area.
+All spacing derives from the 4px base tokens `--space-1` through `--space-10`. `--size-page` bounds the page frame, `--size-reading` bounds forms and readable supporting content, `--size-textarea` gives multiline interview controls a stable minimum editing area, and `--size-fact-min` is the narrowest column a labelled fact (where/who/how) may occupy before the fact grid stacks.
 
 The document owns vertical scrolling. The operational shell uses StyleGallery's sticky-header pattern with no nested scroll container: https://github.com/changeroa/StyleGallery/blob/main/patterns/viewport-shell/sticky-header.md. Primary navigation remains visible while main content and the attribution footer stay in semantic source order. Proposal creation uses StyleGallery's supporting-pane pattern for a primary interview beside supplemental preview output, with no nested scroll container: https://github.com/changeroa/StyleGallery/blob/main/patterns/split-sidebar/supporting-pane.md. The panes use an overflow-safe intrinsic grid and reflow to one readable column when narrow. DOM order remains interview first, preview second.
 
@@ -132,13 +133,23 @@ The document owns vertical scrolling. The operational shell uses StyleGallery's 
 - **Layout**: document scroll owner; Results/Detail and Candidates/Effects use overflow-safe two-column grids above 40rem and preserve source/focus order when stacked.
 - **Privacy**: no query in URL/storage, no memory-derived links or HTML, and no path/download/clipboard surface.
 
+### Purpose Workboard
+- **Structure**: heading, then two sections in fixed source order: items needing the user (ordered list, queue order) and work grouped by project purpose. Every card reads top-down as why, what, where/who/how facts, the user's action, and a closed evidence disclosure.
+- **States**: loading, load error, not collected, empty queue, empty groups, urgency tones (now/soon/watch/none), purpose confirmed/proposed/unknown, evidence open/closed, reconfirmation required.
+- **Spacing**: `--space-1` through `--space-6`; card accent uses `--border-accent`; fact columns use `--size-fact-min`.
+- **Typography**: the why line uses `--type-lead` and is the largest text on a card; what uses `--type-body`; facts and actions use `--type-sm`; labels and evidence use `--type-xs` in `--font-mono`.
+- **Accessibility**: native headings, `ol`/`ul`, `dl`, `time`, and a real button with `aria-expanded`/`aria-controls` for evidence. Unknown purpose is announced verbatim as 목적 확인 필요; unsupported actions say 원천에서 처리 instead of rendering an inert button.
+- **Privacy of identifiers**: digests, session/attempt keys, source generations, and raw refs render only inside the opened evidence disclosure, never in the default DOM.
+- **Motion**: none.
+- **Layout**: document scroll owner; lead cards use an asymmetric two-column area grid at 64rem and above and stack below; purpose groups use the existing auto-fit card grid; everything wraps with `overflow-wrap: anywhere`.
+
 ## 6. Motion & Interaction
 
 Motion intensity is low. State changes are immediate and no automatic animation is used. Hover, active, and focus feedback communicate affordance without moving layout. Any future non-essential motion must animate only transform or opacity and honor `prefers-reduced-motion`.
 
 ## 7. Depth & Surface
 
-Strategy: borders-only. Surface hierarchy uses `--color-canvas`, `--color-surface`, and `--color-surface-raised`; `--border-width`, `--color-border`, and `--color-border-strong` provide separation. No box shadows or decorative glows.
+Strategy: borders-only. Surface hierarchy uses `--color-canvas`, `--color-surface`, and `--color-surface-raised`; `--border-width`, `--color-border`, and `--color-border-strong` provide separation. A single inline-start accent of `--border-accent` in a semantic color marks urgency on workboard cards. No box shadows or decorative glows.
 
 ## 8. Accessibility Constraints & Accepted Debt
 
