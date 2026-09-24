@@ -1,3 +1,4 @@
+import type { WorkboardActions } from "../workboard/actions.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CapabilityProbe } from "../capabilities.js";
 import type { AuthorityDb } from "../db.js";
@@ -57,6 +58,7 @@ export type DashboardApiInput = {
   readonly executorFactory?: DashboardExecutorFactory;
   readonly memoryRuntime: MemoryRuntime;
   readonly remoteApproval?: RemoteApprovalService;
+  readonly workboardActions?: WorkboardActions;
 };
 
 type LogsRoute =
@@ -91,7 +93,7 @@ export async function tryHandleDashboardApi(input: DashboardApiInput): Promise<b
     return true;
   }
   if (tryHandleWorkboardRead({ db: input.db.db, path: input.path, response: input.response,
-    requestId: input.requestId, now: input.clock() })) return true;
+    requestId: input.requestId, now: input.clock(), actions: input.workboardActions })) return true;
   if (await tryHandleDashboardLogs(input)) return true;
   if (await tryHandleMemoryRead({ path: input.path, url: input.url, request: input.request,
     response: input.response, requestId: input.requestId, session: input.session,

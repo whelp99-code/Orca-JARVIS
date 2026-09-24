@@ -1,3 +1,4 @@
+import type { WorkboardActions } from "../workboard/actions.js";
 import { parseNativeEveningSourceConfig, type NativeEveningSourceConfig } from "../evening-native-source.js";
 import type { TrustedCloseoutKey } from "../evening-closeout-types.js";
 import { realpathSync } from "node:fs";
@@ -83,6 +84,7 @@ export type DashboardServerOptions = {
   readonly memoryReconcileTick?: () => void;
   readonly remoteApproval?: RemoteApprovalService;
   readonly remoteApprovalPolicyPath?: string;
+  readonly workboardActions?: WorkboardActions;
 };
 
 type RequestContext = {
@@ -103,6 +105,7 @@ type RequestContext = {
   readonly executorFactory?: DashboardExecutorFactory;
   readonly memoryRuntime: MemoryRuntime;
   readonly remoteApproval?: RemoteApprovalService;
+  readonly workboardActions?: WorkboardActions;
 };
 
 export function createDashboardServer(options: DashboardServerOptions): DashboardServer & {
@@ -150,6 +153,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
       executorFactory: options.executorFactory,
       memoryRuntime,
       remoteApproval,
+      workboardActions: options.workboardActions,
     });
     requests.add(pending);
     void pending.then(() => requests.delete(pending), () => requests.delete(pending));
@@ -210,6 +214,7 @@ async function handleRequest(input: RequestContext): Promise<void> {
       executorFactory: input.executorFactory,
       memoryRuntime: input.memoryRuntime,
       remoteApproval: input.remoteApproval,
+      workboardActions: input.workboardActions,
     })) {
       return;
     }

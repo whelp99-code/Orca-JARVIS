@@ -91,7 +91,7 @@ function ControlCenter({
           <TodayRoute runtime={personalRuntime} overview={state.overview} approvals={state.approvals}
             authorityClient={liveAuthorityClient} authorityConnection={state.connectionState} />
         )} />
-        <Route path="/workboard" element={<WorkboardRoute load={client.workboard} />} />
+        <Route path="/workboard" element={<WorkboardRoute load={client.workboard} actionClient={liveAuthorityClient.workboardActions} />} />
         <Route path="/memory" element={<MemoryRoute runtime={memoryRuntime} />} />
         <Route path="/overview" element={<OverviewRoute state={state} store={store} />} />
         <Route

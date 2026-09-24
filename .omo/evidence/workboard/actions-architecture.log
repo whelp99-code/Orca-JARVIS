@@ -1,0 +1,3 @@
+npm notice run orca-jarvis-shadow@0.1.0 architecture:check
+npm notice run node scripts/check-runtime-imports.mjs
+{"ok":true,"scope":"static_internal_esm","modules":753,"edges":2764,"cycles":[]}

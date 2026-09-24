@@ -1,0 +1,16 @@
+JARVIS_TEST_PROFILE backend
+
+ RUN  v3.2.7 /home/jm/orca/workspaces/Orca-JARVIS/purpose-workboard
+
+ ✓ tests/integration/dashboard-api.test.ts (6 tests) 3952ms
+   ✓ dashboard HTTP overview walking skeleton > serves health with authority ready and a request id without mutating the database  690ms
+   ✓ dashboard HTTP overview walking skeleton > shows an unobserved registration as a risk with zero live agents without mutating the database  683ms
+   ✓ dashboard HTTP overview walking skeleton > serves the fixture html at the root and at a deep task route  657ms
+   ✓ dashboard HTTP overview walking skeleton > returns a typed 404 envelope for an unknown api route  657ms
+   ✓ dashboard HTTP overview walking skeleton > rejects a non-loopback host header with a safe 403 envelope  628ms
+   ✓ dashboard HTTP overview walking skeleton > binds an ephemeral loopback port, exposes the concrete origin, and closes deterministically  634ms
+
+ Test Files  1 passed (1)
+      Tests  6 passed (6)
+   Start at  14:00:02
+   Duration  8.68s (transform 2.97s, setup 0ms, collect 4.53s, tests 3.95s, environment 0ms, prepare 56ms)

@@ -1,4 +1,6 @@
 import type Database from "better-sqlite3";
+import type { ActionCapability } from "../workboard/action-contracts.js";
+import type { WorkboardActions } from "../workboard/actions.js";
 import type { ServerResponse } from "node:http";
 import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
 import { writeDashboardJson } from "./http.js";
@@ -24,6 +26,7 @@ export type WorkboardWaitKind = NonNullable<AttentionRow["wait_kind"]>;
 export type WorkboardEvidenceItem = { readonly label: string; readonly value: string };
 export type WorkboardCard = {
   readonly work_id: string;
+  readonly action_capability?: ActionCapability;
   readonly summary: string;
   readonly source: { readonly host: string; readonly app: string; readonly scope: string };
   readonly disposition: Disposition;
@@ -82,19 +85,20 @@ export type WorkboardReadInput = {
   readonly response: ServerResponse;
   readonly requestId: string;
   readonly now: Date;
+  readonly actions?: WorkboardActions;
 };
 
 export function tryHandleWorkboardRead(input: WorkboardReadInput): boolean {
   if (input.path !== WORKBOARD_PATH) return false;
   writeDashboardJson(input.response, {
     status: 200,
-    body: readWorkboardResponse(input.db, input.now),
+    body: readWorkboardResponse(input.db, input.now, input.actions),
     requestId: input.requestId,
   });
   return true;
 }
 
-export function readWorkboardResponse(db: Database.Database, now: Date): WorkboardResponse {
+export function readWorkboardResponse(db: Database.Database, now: Date, actions?: WorkboardActions): WorkboardResponse {
   const generated_at = now.toISOString();
   if (!tablesPresent(db)) return { schema_version: DASHBOARD_SCHEMA_VERSION, generated_at, collected: false, attention: [], groups: [] };
   return db.transaction((): WorkboardResponse => {
@@ -102,7 +106,8 @@ export function readWorkboardResponse(db: Database.Database, now: Date): Workboa
     const purposes = loadPurposes(db);
     const cards = new Map<string, WorkboardCard>();
     for (const row of projection.works as Array<WorkRow & { attention: AttentionItem }>) {
-      cards.set(row.work_id, toCard(row, row.attention, purposes));
+      const card = toCard(row, row.attention, purposes);
+      cards.set(row.work_id, actions ? { ...card, action_capability: actions.capability(row.work_id) } : card);
     }
     return {
       schema_version: DASHBOARD_SCHEMA_VERSION,

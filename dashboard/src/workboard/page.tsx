@@ -6,6 +6,8 @@ import type {
   WorkboardResponse,
 } from "../../../src/dashboard/workboard-routes.js";
 import { classifyDashboardError } from "../api.js";
+import type { WorkboardActionClient } from "../authority-api.js";
+import { WorkboardActionSlot } from "./action-slot.js";
 
 /** Exact copy required by the workboard contract. */
 export const UNKNOWN_PURPOSE = "목적 확인 필요";
@@ -62,10 +64,11 @@ type View =
 
 export type WorkboardRouteProps = Readonly<{
   load: (signal?: AbortSignal) => Promise<WorkboardResponse>;
+  actionClient?: WorkboardActionClient;
   now?: () => Date;
 }>;
 
-export function WorkboardRoute({ load, now }: WorkboardRouteProps) {
+export function WorkboardRoute({ load, now, actionClient }: WorkboardRouteProps) {
   const [view, setView] = useState<View>({ kind: "loading" });
   const [attempt, setAttempt] = useState(0);
   useEffect(() => {
@@ -86,7 +89,7 @@ export function WorkboardRoute({ load, now }: WorkboardRouteProps) {
     case "error":
       return <RouteState message={`${text.loadFailed}: ${view.message}`} onRetry={reload} />;
     case "ready":
-      return <WorkboardPage data={view.data} now={now} onRefresh={reload} />;
+      return <WorkboardPage data={view.data} now={now} onRefresh={reload} actionClient={actionClient} />;
     default:
       return assertNever(view);
   }
@@ -96,9 +99,10 @@ export type WorkboardPageProps = Readonly<{
   data: WorkboardResponse;
   now?: () => Date;
   onRefresh?: () => void;
+  actionClient?: WorkboardActionClient;
 }>;
 
-export function WorkboardPage({ data, now, onRefresh }: WorkboardPageProps) {
+export function WorkboardPage({ data, now, onRefresh, actionClient }: WorkboardPageProps) {
   const at = (now ?? (() => new Date()))();
   const leadId = useId();
   const purposeId = useId();
@@ -125,7 +129,7 @@ export function WorkboardPage({ data, now, onRefresh }: WorkboardPageProps) {
         ) : (
           <ol className="workboard-lead-list">
             {data.attention.map((card) => (
-              <li key={card.work_id}><Card card={card} at={at} /></li>
+              <li key={card.work_id}><Card card={card} at={at} actionClient={actionClient} /></li>
             ))}
           </ol>
         )}
@@ -139,7 +143,7 @@ export function WorkboardPage({ data, now, onRefresh }: WorkboardPageProps) {
           <p className="empty-state" role="status">{text.groupsEmpty}</p>
         ) : (
           <div className="workboard-groups">
-            {data.groups.map((group) => <PurposeGroup key={group.project_id ?? ""} group={group} at={at} />)}
+            {data.groups.map((group) => <PurposeGroup key={group.project_id ?? ""} group={group} at={at} actionClient={actionClient} />)}
           </div>
         )}
       </section>
@@ -147,7 +151,7 @@ export function WorkboardPage({ data, now, onRefresh }: WorkboardPageProps) {
   );
 }
 
-function PurposeGroup({ group, at }: Readonly<{ group: WorkboardGroup; at: Date }>) {
+function PurposeGroup({ group, at, actionClient }: Readonly<{ group: WorkboardGroup; at: Date; actionClient?: WorkboardActionClient }>) {
   const headingId = useId();
   return (
     <section className="workboard-group" aria-labelledby={headingId} data-status={group.status}>
@@ -158,13 +162,13 @@ function PurposeGroup({ group, at }: Readonly<{ group: WorkboardGroup; at: Date 
         <span className="workboard-count">{group.works.length}{text.countUnit}</span>
       </div>
       <ul className="workboard-group-list">
-        {group.works.map((card) => <li key={card.work_id}><Card card={card} at={at} /></li>)}
+        {group.works.map((card) => <li key={card.work_id}><Card card={card} at={at} actionClient={actionClient} /></li>)}
       </ul>
     </section>
   );
 }
 
-function Card({ card, at }: Readonly<{ card: WorkboardCard; at: Date }>) {
+function Card({ card, at, actionClient }: Readonly<{ card: WorkboardCard; at: Date; actionClient?: WorkboardActionClient }>) {
   const why = card.purpose.why ?? card.purpose.text;
   const action = userAction(card);
   return (
@@ -198,9 +202,7 @@ function Card({ card, at }: Readonly<{ card: WorkboardCard; at: Date }>) {
       </dl>
       <div className="wb-action">
         <p className="wb-action-title"><span className="wb-label">{text.action}</span>{action.title}</p>
-        {action.effect === null ? null : (
-          <span className="wb-source-chip">{action.effect} · {HANDLE_AT_SOURCE}</span>
-        )}
+        <WorkboardActionSlot card={card} client={actionClient} fallback={action.effect} />
       </div>
       <Evidence items={card.evidence} />
     </article>
@@ -262,7 +264,7 @@ function purposeTone(status: WorkboardPurposeStatus): Urgency {
   }
 }
 
-/** Names what the user must do; nothing here can be sent from the board yet, so every effect routes to the source. */
+/** The action slot separately enforces structured capability and freshness. */
 function userAction(card: WorkboardCard): { title: string; effect: string | null } {
   if (card.purpose.needs_reconfirmation) return { title: text.reconfirm, effect: "목적 다시 확인" };
   if (card.reasons.includes("user_decision")) {

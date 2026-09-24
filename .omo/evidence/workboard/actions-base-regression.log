@@ -1,0 +1,59 @@
+JARVIS_TEST_PROFILE backend
+
+ RUN  v3.2.7 /home/jm/orca/workspaces/Orca-JARVIS/purpose-workboard/.runtime-tmp/workboard/base-test-xN1COc
+
+ ❯ tests/integration/dashboard-api.test.ts (6 tests | 2 failed) 7566ms
+   × dashboard HTTP overview walking skeleton > serves health with authority ready and a request id without mutating the database 2501ms
+     → expected 500 to be 200 // Object.is equality
+   × dashboard HTTP overview walking skeleton > shows an unobserved registration as a risk with zero live agents without mutating the database 2476ms
+     → expected 500 to be 200 // Object.is equality
+   ✓ dashboard HTTP overview walking skeleton > serves the fixture html at the root and at a deep task route  668ms
+   ✓ dashboard HTTP overview walking skeleton > returns a typed 404 envelope for an unknown api route  649ms
+   ✓ dashboard HTTP overview walking skeleton > rejects a non-loopback host header with a safe 403 envelope  630ms
+   ✓ dashboard HTTP overview walking skeleton > binds an ephemeral loopback port, exposes the concrete origin, and closes deterministically  639ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/integration/dashboard-api.test.ts > dashboard HTTP overview walking skeleton > serves health with authority ready and a request id without mutating the database
+AssertionError: expected 500 to be 200 // Object.is equality
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 200[39m
+[31m+ 500[39m
+
+ ❯ tests/integration/dashboard-api.test.ts:59:35
+     57|     try {
+     58|       const response = await request(`${origin}/api/v1/health`);
+     59|       expect(response.statusCode).toBe(200);
+       |                                   ^
+     60|       const body = parseJson(await response.body.text());
+     61|       expect(body).toMatchObject({ schema_version: 1, status: "ok", au…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/2]⎯
+
+ FAIL  tests/integration/dashboard-api.test.ts > dashboard HTTP overview walking skeleton > shows an unobserved registration as a risk with zero live agents without mutating the database
+AssertionError: expected 500 to be 200 // Object.is equality
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 200[39m
+[31m+ 500[39m
+
+ ❯ tests/integration/dashboard-api.test.ts:82:35
+     80|     try {
+     81|       const response = await request(`${origin}/api/v1/overview`);
+     82|       expect(response.statusCode).toBe(200);
+       |                                   ^
+     83|       const body = parseJson(await response.body.text()) as OverviewRe…
+     84|       expect(body.schema_version).toBe(1);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/2]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  2 failed | 4 passed (6)
+   Start at  13:58:20
+   Duration  11.89s (transform 2.75s, setup 0ms, collect 4.14s, tests 7.57s, environment 0ms, prepare 54ms)

@@ -1,0 +1,269 @@
+{
+  "kind": "disposable-ui-and-route-qa",
+  "production_before": "releases/ef49ba0dda37eb3b93e1306eba1ea6e8bf7ade9c",
+  "dashboard_origin": "http://127.0.0.1:39925",
+  "source_endpoint": "http://127.0.0.1:41717/",
+  "cases": [
+    {
+      "operation": "approve",
+      "confirmationText": "시험 작업 승인 후 실행 재개disposable fixture agent · fixture workspace only이 승인을 보내면 원천에서 즉시 실행을 재개합니다.{\n  \"command\": \"fixture-only:resume\",\n  \"agent\": \"disposable-agent\"\n}확인 후 보내기취소",
+      "result": {
+        "intentId": "df57cd09-536b-440c-afc1-08a17ec57b1d",
+        "status": "settled",
+        "receipt": {
+          "binding": {
+            "attemptId": "[\"[\\\"jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242\\\",\\\"term_a1b2c3\\\"]\",\"incarnation-1\"]",
+            "purposeVersion": 1,
+            "sessionId": "term_a1b2c3",
+            "sourceId": "jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242",
+            "specVersion": "spec-rev-3",
+            "taskId": "task-1",
+            "workId": "[\"[\\\"jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242\\\",\\\"term_a1b2c3\\\"]\",\"task:task-1\"]"
+          },
+          "intentId": "df57cd09-536b-440c-afc1-08a17ec57b1d",
+          "operation": "approve",
+          "receiptId": "receipt:df57cd09-536b-440c-afc1-08a17ec57b1d",
+          "requestDigest": "sha256:a4a2c7b9f29de2144b2dfa1c8ddc4e4999cae4612f0d3d857ae00df4ed1690cf",
+          "requestId": "manual:approve",
+          "sourceState": "running"
+        },
+        "error": null
+      },
+      "repeated_click": {
+        "status": 200,
+        "body": {
+          "intentId": "df57cd09-536b-440c-afc1-08a17ec57b1d",
+          "status": "settled",
+          "receipt": {
+            "binding": {
+              "attemptId": "[\"[\\\"jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242\\\",\\\"term_a1b2c3\\\"]\",\"incarnation-1\"]",
+              "purposeVersion": 1,
+              "sessionId": "term_a1b2c3",
+              "sourceId": "jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242",
+              "specVersion": "spec-rev-3",
+              "taskId": "task-1",
+              "workId": "[\"[\\\"jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242\\\",\\\"term_a1b2c3\\\"]\",\"task:task-1\"]"
+            },
+            "intentId": "df57cd09-536b-440c-afc1-08a17ec57b1d",
+            "operation": "approve",
+            "receiptId": "receipt:df57cd09-536b-440c-afc1-08a17ec57b1d",
+            "requestDigest": "sha256:a4a2c7b9f29de2144b2dfa1c8ddc4e4999cae4612f0d3d857ae00df4ed1690cf",
+            "requestId": "manual:approve",
+            "sourceState": "running"
+          },
+          "error": null
+        }
+      },
+      "sends": 1
+    },
+    {
+      "operation": "reject",
+      "confirmationText": "시험 요청 거절disposable fixture agent · fixture workspace only표시한 요청과 범위에만 이 결정을 보냅니다.{\n  \"command\": \"fixture-only:resume\",\n  \"agent\": \"disposable-agent\"\n}확인 후 보내기취소",
+      "result": {
+        "intentId": "4b1291ac-8d80-40ef-8bb9-e10d7ea35b3c",
+        "status": "settled",
+        "receipt": {
+          "binding": {
+            "attemptId": "[\"[\\\"jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242\\\",\\\"term_a1b2c3\\\"]\",\"incarnation-1\"]",
+            "purposeVersion": 1,
+            "sessionId": "term_a1b2c3",
+            "sourceId": "jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242",
+            "specVersion": "spec-rev-3",
+            "taskId": "task-1",
+            "workId": "[\"[\\\"jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242\\\",\\\"term_a1b2c3\\\"]\",\"task:task-1\"]"
+          },
+          "intentId": "4b1291ac-8d80-40ef-8bb9-e10d7ea35b3c",
+          "operation": "reject",
+          "receiptId": "receipt:4b1291ac-8d80-40ef-8bb9-e10d7ea35b3c",
+          "requestDigest": "sha256:1938995882d94cae877302a2bb5448ddf8fa4befdf900190d6e2db7ef33f8cc5",
+          "requestId": "manual:reject",
+          "sourceState": "rejected"
+        },
+        "error": null
+      },
+      "repeated_click": {
+        "status": 200,
+        "body": {
+          "intentId": "4b1291ac-8d80-40ef-8bb9-e10d7ea35b3c",
+          "status": "settled",
+          "receipt": {
+            "binding": {
+              "attemptId": "[\"[\\\"jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242\\\",\\\"term_a1b2c3\\\"]\",\"incarnation-1\"]",
+              "purposeVersion": 1,
+              "sessionId": "term_a1b2c3",
+              "sourceId": "jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242",
+              "specVersion": "spec-rev-3",
+              "taskId": "task-1",
+              "workId": "[\"[\\\"jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242\\\",\\\"term_a1b2c3\\\"]\",\"task:task-1\"]"
+            },
+            "intentId": "4b1291ac-8d80-40ef-8bb9-e10d7ea35b3c",
+            "operation": "reject",
+            "receiptId": "receipt:4b1291ac-8d80-40ef-8bb9-e10d7ea35b3c",
+            "requestDigest": "sha256:1938995882d94cae877302a2bb5448ddf8fa4befdf900190d6e2db7ef33f8cc5",
+            "requestId": "manual:reject",
+            "sourceState": "rejected"
+          },
+          "error": null
+        }
+      },
+      "sends": 1
+    }
+  ],
+  "journal": [
+    {
+      "error": null,
+      "intentId": "df57cd09-536b-440c-afc1-08a17ec57b1d",
+      "operation": "approve",
+      "receipt": {
+        "binding": {
+          "attemptId": "[\"[\\\"jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242\\\",\\\"term_a1b2c3\\\"]\",\"incarnation-1\"]",
+          "purposeVersion": 1,
+          "sessionId": "term_a1b2c3",
+          "sourceId": "jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242",
+          "specVersion": "spec-rev-3",
+          "taskId": "task-1",
+          "workId": "[\"[\\\"jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242\\\",\\\"term_a1b2c3\\\"]\",\"task:task-1\"]"
+        },
+        "intentId": "df57cd09-536b-440c-afc1-08a17ec57b1d",
+        "operation": "approve",
+        "receiptId": "receipt:df57cd09-536b-440c-afc1-08a17ec57b1d",
+        "requestDigest": "sha256:a4a2c7b9f29de2144b2dfa1c8ddc4e4999cae4612f0d3d857ae00df4ed1690cf",
+        "requestId": "manual:approve",
+        "sourceState": "running"
+      },
+      "request": {
+        "attemptId": "[\"[\\\"jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242\\\",\\\"term_a1b2c3\\\"]\",\"incarnation-1\"]",
+        "capabilityVersion": "conditional-v1",
+        "effects": [
+          {
+            "label": "시험 작업 승인 후 실행 재개",
+            "operation": "approve",
+            "resumesExecution": true
+          },
+          {
+            "label": "시험 요청 거절",
+            "operation": "reject",
+            "resumesExecution": false
+          }
+        ],
+        "expiresAt": "2026-09-24T09:15:00.000Z",
+        "payload": {
+          "agent": "disposable-agent",
+          "command": "fixture-only:resume"
+        },
+        "payloadDigest": "sha256:9afbde1ecf89c5de2a3c8600a8677d8c3c1153f9f0853e0a729e9676891a8b46",
+        "purposeVersion": 1,
+        "requestId": "manual:approve",
+        "revision": "rev:1",
+        "scope": "fixture workspace only",
+        "sessionId": "term_a1b2c3",
+        "sourceId": "jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242",
+        "specVersion": "spec-rev-3",
+        "target": "disposable fixture agent",
+        "taskId": "task-1",
+        "workId": "[\"[\\\"jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242\\\",\\\"term_a1b2c3\\\"]\",\"task:task-1\"]"
+      },
+      "requestDigest": "sha256:a4a2c7b9f29de2144b2dfa1c8ddc4e4999cae4612f0d3d857ae00df4ed1690cf",
+      "status": "settled"
+    },
+    {
+      "error": null,
+      "intentId": "4b1291ac-8d80-40ef-8bb9-e10d7ea35b3c",
+      "operation": "reject",
+      "receipt": {
+        "binding": {
+          "attemptId": "[\"[\\\"jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242\\\",\\\"term_a1b2c3\\\"]\",\"incarnation-1\"]",
+          "purposeVersion": 1,
+          "sessionId": "term_a1b2c3",
+          "sourceId": "jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242",
+          "specVersion": "spec-rev-3",
+          "taskId": "task-1",
+          "workId": "[\"[\\\"jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242\\\",\\\"term_a1b2c3\\\"]\",\"task:task-1\"]"
+        },
+        "intentId": "4b1291ac-8d80-40ef-8bb9-e10d7ea35b3c",
+        "operation": "reject",
+        "receiptId": "receipt:4b1291ac-8d80-40ef-8bb9-e10d7ea35b3c",
+        "requestDigest": "sha256:1938995882d94cae877302a2bb5448ddf8fa4befdf900190d6e2db7ef33f8cc5",
+        "requestId": "manual:reject",
+        "sourceState": "rejected"
+      },
+      "request": {
+        "attemptId": "[\"[\\\"jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242\\\",\\\"term_a1b2c3\\\"]\",\"incarnation-1\"]",
+        "capabilityVersion": "conditional-v1",
+        "effects": [
+          {
+            "label": "시험 작업 승인 후 실행 재개",
+            "operation": "approve",
+            "resumesExecution": true
+          },
+          {
+            "label": "시험 요청 거절",
+            "operation": "reject",
+            "resumesExecution": false
+          }
+        ],
+        "expiresAt": "2026-09-24T09:15:00.000Z",
+        "payload": {
+          "agent": "disposable-agent",
+          "command": "fixture-only:resume"
+        },
+        "payloadDigest": "sha256:9afbde1ecf89c5de2a3c8600a8677d8c3c1153f9f0853e0a729e9676891a8b46",
+        "purposeVersion": 1,
+        "requestId": "manual:reject",
+        "revision": "rev:1",
+        "scope": "fixture workspace only",
+        "sessionId": "term_a1b2c3",
+        "sourceId": "jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242",
+        "specVersion": "spec-rev-3",
+        "target": "disposable fixture agent",
+        "taskId": "task-1",
+        "workId": "[\"[\\\"jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242\\\",\\\"term_a1b2c3\\\"]\",\"task:task-1\"]"
+      },
+      "requestDigest": "sha256:1938995882d94cae877302a2bb5448ddf8fa4befdf900190d6e2db7ef33f8cc5",
+      "status": "settled"
+    }
+  ],
+  "cleanup": {
+    "browser_closed": true,
+    "dashboard_closed": true,
+    "fixture_agent_closed": true,
+    "disposable_db_removed": true
+  },
+  "source_receipts": [
+    {
+      "receiptId": "receipt:df57cd09-536b-440c-afc1-08a17ec57b1d",
+      "intentId": "df57cd09-536b-440c-afc1-08a17ec57b1d",
+      "requestId": "manual:approve",
+      "requestDigest": "sha256:a4a2c7b9f29de2144b2dfa1c8ddc4e4999cae4612f0d3d857ae00df4ed1690cf",
+      "operation": "approve",
+      "binding": {
+        "sourceId": "jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242",
+        "workId": "[\"[\\\"jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242\\\",\\\"term_a1b2c3\\\"]\",\"task:task-1\"]",
+        "taskId": "task-1",
+        "sessionId": "term_a1b2c3",
+        "attemptId": "[\"[\\\"jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242\\\",\\\"term_a1b2c3\\\"]\",\"incarnation-1\"]",
+        "purposeVersion": 1,
+        "specVersion": "spec-rev-3"
+      },
+      "sourceState": "running"
+    },
+    {
+      "receiptId": "receipt:4b1291ac-8d80-40ef-8bb9-e10d7ea35b3c",
+      "intentId": "4b1291ac-8d80-40ef-8bb9-e10d7ea35b3c",
+      "requestId": "manual:reject",
+      "requestDigest": "sha256:1938995882d94cae877302a2bb5448ddf8fa4befdf900190d6e2db7ef33f8cc5",
+      "operation": "reject",
+      "binding": {
+        "sourceId": "jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242",
+        "workId": "[\"[\\\"jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242\\\",\\\"term_a1b2c3\\\"]\",\"task:task-1\"]",
+        "taskId": "task-1",
+        "sessionId": "term_a1b2c3",
+        "attemptId": "[\"[\\\"jm-workstation:orca:orca-jarvis/purpose-workboard:boot-7f3a-PID-4242\\\",\\\"term_a1b2c3\\\"]\",\"incarnation-1\"]",
+        "purposeVersion": 1,
+        "specVersion": "spec-rev-3"
+      },
+      "sourceState": "rejected"
+    }
+  ],
+  "production_after": "releases/ef49ba0dda37eb3b93e1306eba1ea6e8bf7ade9c"
+}

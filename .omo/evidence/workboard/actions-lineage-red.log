@@ -1,0 +1,81 @@
+JARVIS_TEST_PROFILE integration
+
+ RUN  v3.2.7 /home/jm/orca/workspaces/Orca-JARVIS/purpose-workboard
+
+ ❯ tests/integration/workboard-actions.test.ts (25 tests | 1 failed | 24 skipped) 70ms
+   ↓ durable exact workboard intent > stop is executable only as an explicit source request
+   ↓ durable exact workboard intent > resume is executable only as an explicit source request
+   ↓ durable exact workboard intent > redirect is executable only as an explicit source request
+   ↓ durable exact workboard intent > double submit sends once and independently reads one source receipt
+   ↓ durable exact workboard intent > request replaced after dialog opened is not sent
+   ↓ durable exact workboard intent > expired request is not sent
+   ↓ durable exact workboard intent > lost ack persists uncertain intent and blocks a replacement request id
+   ↓ durable exact workboard intent > restart/reconnect rereads source receipt without sending again
+   ↓ durable exact workboard intent > lost ACK survives restart, blocks a new id and later reconciles only the old receipt
+   ↓ durable exact workboard intent > journal commit precedes the observable send and a crash-before-send is never replayed
+   ↓ durable exact workboard intent > the endpoint observes the durable intent before processing its effect
+   ↓ durable exact workboard intent > source revision replacement requires a new dialog
+   ↓ durable exact workboard intent > source capabilityVersion replacement requires a new dialog
+   ↓ durable exact workboard intent > source expiresAt replacement requires a new dialog
+   ↓ durable exact workboard intent > source payload replacement requires a new dialog
+   ↓ durable exact workboard intent > source-side conditional compare closes a replacement race after preflight
+   ↓ durable exact workboard intent > a contradictory second decision cannot replace the first one
+   × durable exact workboard intent > an old receipt is not replaced by a newer uncertain intent on the same work 69ms
+     → expected { …(4) } to deeply equal { …(4) }
+   ↓ durable exact workboard intent > purpose edits preserve approved request bytes and digest
+   ↓ durable exact workboard intent > an old-attempt completion claim cannot settle the new action
+   ↓ durable exact workboard intent > unsupported operations and prose requests never dispatch
+   ↓ durable exact workboard intent > sessionId change invalidates the open dialog
+   ↓ durable exact workboard intent > attemptId change invalidates the open dialog
+   ↓ durable exact workboard intent > specVersion change invalidates the open dialog
+   ↓ durable exact workboard intent > purposeVersion change invalidates the open dialog
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/integration/workboard-actions.test.ts > durable exact workboard intent > an old receipt is not replaced by a newer uncertain intent on the same work
+AssertionError: expected { …(4) } to deeply equal { …(4) }
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[2m  {[22m
+[2m    "error": null,[22m
+[32m-   "intentId": "5e9cdb52-7643-4979-8733-ff8ff7dad672",[39m
+[32m-   "receipt": {[39m
+[32m-     "binding": {[39m
+[32m-       "attemptId": "attempt:1",[39m
+[32m-       "purposeVersion": 1,[39m
+[32m-       "sessionId": "session:fixture",[39m
+[32m-       "sourceId": "fixture:structured:v1",[39m
+[32m-       "specVersion": "spec:1",[39m
+[32m-       "taskId": "task:fixture",[39m
+[32m-       "workId": "work:fixture",[39m
+[32m-     },[39m
+[32m-     "intentId": "5e9cdb52-7643-4979-8733-ff8ff7dad672",[39m
+[32m-     "operation": "approve",[39m
+[32m-     "receiptId": "receipt:5e9cdb52-7643-4979-8733-ff8ff7dad672",[39m
+[32m-     "requestDigest": "sha256:3717aa44b2c1ae3a2f34624c205691202d457e9ff09b77d2a7379dabc2c56dbd",[39m
+[32m-     "requestId": "request:1",[39m
+[32m-     "sourceState": "running",[39m
+[32m-   },[39m
+[32m-   "status": "settled",[39m
+[31m+   "intentId": "5b104a84-8f68-42c7-aa33-5f63f3129ea1",[39m
+[31m+   "receipt": null,[39m
+[31m+   "status": "uncertain",[39m
+[2m  }[22m
+
+ ❯ tests/integration/workboard-actions.test.ts:130:58
+    128|     const next = await f.actions.prepare(f.binding.workId); f.agent.st…
+    129|     expect((await f.actions.submit(next.token, "reject")).status).toBe…
+    130|     expect(await f.actions.submit(old.token, "approve")).toEqual(origi…
+       |                                                          ^
+    131|     expect(f.agent.state.sends).toHaveLength(2);
+    132|   });
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  1 failed | 24 skipped (25)
+   Start at  14:04:43
+   Duration  337ms (transform 75ms, setup 0ms, collect 113ms, tests 70ms, environment 0ms, prepare 44ms)

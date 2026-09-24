@@ -1,0 +1,53 @@
+JARVIS_TEST_PROFILE backend
+
+ RUN  v3.2.7 /home/jm/orca/workspaces/Orca-JARVIS/purpose-workboard
+
+ ✓ tests/integration/workboard-actions.test.ts (21 tests) 386ms
+ ❯ tests/integration/dashboard-api.test.ts (6 tests | 1 failed) 11620ms
+   ✓ dashboard HTTP overview walking skeleton > serves health with authority ready and a request id without mutating the database  4057ms
+   × dashboard HTTP overview walking skeleton > shows an unobserved registration as a risk with zero live agents without mutating the database 5005ms
+     → Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+   ✓ dashboard HTTP overview walking skeleton > serves the fixture html at the root and at a deep task route  636ms
+   ✓ dashboard HTTP overview walking skeleton > returns a typed 404 envelope for an unknown api route  657ms
+   ✓ dashboard HTTP overview walking skeleton > rejects a non-loopback host header with a safe 403 envelope  631ms
+   ✓ dashboard HTTP overview walking skeleton > binds an ephemeral loopback port, exposes the concrete origin, and closes deterministically  630ms
+ ✓ tests/integration/dashboard-authority.test.ts (6 tests) 885ms
+   ✓ dashboard receipt-bound decide and execute > approves and rejects pending requests from valid externally signed receipts  627ms
+ ✓ tests/unit/workboard-attention.test.ts (7 tests) 11ms
+ ✓ tests/integration/workboard-action-routes.test.ts (6 tests) 4114ms
+   ✓ workboard action route boundary > rejects missing CSRF before preparing or sending  701ms
+   ✓ workboard action route boundary > approves then rejects distinct disposable requests; repeated click sends neither twice  752ms
+   ✓ workboard action route boundary > GET capabilities is read-only and never contacts the source  671ms
+   ✓ workboard action route boundary > purpose changes in the real projection reject an open dialog without mutating its digest  655ms
+   ✓ workboard action route boundary > JARVIS approve uses a signed Control Plane receipt and does not execute  673ms
+   ✓ workboard action route boundary > JARVIS reject uses a signed Control Plane receipt and does not execute  661ms
+ ✓ tests/integration/dashboard-session.test.ts (2 tests) 695ms
+   ✓ dashboard local session > returns one stable no-store token per server without mutating authority  693ms
+ ✓ tests/integration/workboard-ingest.test.ts (4 tests) 86ms
+ ✓ tests/unit/workboard-purpose.test.ts (5 tests) 15ms
+stdout | tests/integration/workboard-current-work.test.ts > bounded current-work collection > compares a read-only Linux collection with ingested current-work identities
+CURRENT_WORK_MANUAL_QA {"sources":[{"source":"linux:codex:local:initial","coverage":"unknown","ingested":0,"currentIds":[],"reason":"current manifest unavailable"},{"source":"linux:claude:local:initial","coverage":"complete","ingested":3,"currentIds":["01a0d196-c1e5-7b2a-9376-d8b832480618","01a0d1af-71dc-7f22-98b0-618b94f59dbc","d69d8c4d-7fe2-4509-b44d-b49f7779546f"]},{"source":"linux:omo:local:initial","coverage":"unknown","ingested":0,"currentIds":[],"reason":"current manifest unavailable"},{"source":"linux:senpi:local:initial","coverage":"unknown","ingested":0,"currentIds":[],"reason":"current manifest unavailable"}],"ingestedIds":["01a0d196-c1e5-7b2a-9376-d8b832480618","01a0d1af-71dc-7f22-98b0-618b94f59dbc","d69d8c4d-7fe2-4509-b44d-b49f7779546f"],"duplicateWorkIdCount":0}
+
+ ✓ tests/integration/workboard-current-work.test.ts (3 tests) 12ms
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/integration/dashboard-api.test.ts > dashboard HTTP overview walking skeleton > shows an unobserved registration as a risk with zero live agents without mutating the database
+Error: Test timed out in 5000ms.
+If this is a long-running test, pass a timeout value as the last argument or configure it globally with "testTimeout".
+ ❯ tests/integration/dashboard-api.test.ts:72:3
+     70|   });
+     71|
+     72|   it("shows an unobserved registration as a risk with zero live agents…
+       |   ^
+     73|     const db = await migratedDb();
+     74|     await registerAgent(db);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 8 passed (9)
+      Tests  1 failed | 59 passed (60)
+   Start at  13:56:49
+   Duration  24.86s (transform 2.68s, setup 0ms, collect 5.77s, tests 17.82s, environment 1ms, prepare 360ms)

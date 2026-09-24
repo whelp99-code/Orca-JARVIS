@@ -1,3 +1,4 @@
+import { preparedSchema, resultSchema, type ActionOperation, type ActionResult, type PreparedAction } from "../../src/workboard/action-contracts.js";
 import type { StoredControlCommand } from "../../src/control-plane.js";
 import type { DashboardTaskExecution } from "../../src/dashboard/task-execution-read.js";
 import type { PrepareTaskExecutionRequest, PreparedDashboardTaskExecution, StageDashboardTaskExecutionRequest, DashboardTaskReadiness } from "../../src/dashboard/task-execution-service.js";
@@ -26,6 +27,12 @@ export type AuthorityMutationClient = Readonly<{
   cancelTask: (taskId: string, request: CancelRequest) => Promise<StoredControlCommand>;
   retryRequest: (sourceRequestId: string, request: RetryRequest) => Promise<StoredControlCommand>;
   taskExecution?: TaskExecutionClient;
+  workboardActions?: WorkboardActionClient;
+}>;
+export type WorkboardActionClient = Readonly<{
+  prepare: (workId: string) => Promise<PreparedAction>;
+  submit: (token: string, operation: ActionOperation, authorityReceipt?: unknown) => Promise<ActionResult>;
+  reconcile: (intentId: string) => Promise<ActionResult>;
 }>;
 export type TaskExecutionClient = Readonly<{
   read: (taskId: string, signal?: AbortSignal) => Promise<DashboardTaskExecution>;
@@ -73,6 +80,14 @@ export function createAuthorityMutationClient(
     return await postJson(input, await csrfToken());
   }
   return {
+    workboardActions: {
+      prepare: workId => mutate({ path: "/api/v1/workboard/actions/prepare", body: { workId },
+        parse: value => { const p = preparedSchema.safeParse(value); return p.success && p.data.request.workId === workId ? p.data : undefined; } }),
+      submit: (token, operation, authorityReceipt) => mutate({ path: "/api/v1/workboard/actions/submit", body: { token, operation, authorityReceipt },
+        parse: value => { const p = resultSchema.safeParse(value); return p.success ? p.data : undefined; } }),
+      reconcile: intentId => mutate({ path: "/api/v1/workboard/actions/reconcile", body: { intentId },
+        parse: value => { const p = resultSchema.safeParse(value); return p.success && p.data.intentId === intentId ? p.data : undefined; } }),
+    },
     decideRequest: async (requestId, body) => await mutate({
       path: `/api/v1/control/requests/${encodeURIComponent(requestId)}/decision`,
       body,

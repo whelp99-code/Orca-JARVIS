@@ -1,3 +1,5 @@
+import type { WorkboardActions } from "../workboard/actions.js";
+import { tryHandleWorkboardAction } from "./workboard-action-routes.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CapabilityProbe } from "../capabilities.js";
 import type { AuthorityDb } from "../db.js";
@@ -33,6 +35,7 @@ export type DashboardPostInput = {
   readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
   readonly executorFactory?: DashboardExecutorFactory;
   readonly memoryRuntime: MemoryRuntime;
+  readonly workboardActions?: WorkboardActions;
 };
 
 export async function tryHandleDashboardPost(input: DashboardPostInput): Promise<boolean> {
@@ -52,6 +55,7 @@ export async function tryHandleDashboardPost(input: DashboardPostInput): Promise
     default:
       return assertNever(parsed);
   }
+  if (await tryHandleWorkboardAction({ ...input, body: parsed.value })) return true;
   if (await tryHandleMemoryMutation({ path: input.path, body: parsed.value,
     response: input.response, requestId: input.requestId, runtime: input.memoryRuntime,
     hub: input.hub })) return true;
