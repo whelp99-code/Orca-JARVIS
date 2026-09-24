@@ -1,0 +1,270 @@
+{
+  "schema_version": 1,
+  "observed_at": "2026-09-24T03:44:35.881Z",
+  "test_db": ".runtime-tmp/workboard/db/workboard.sqlite",
+  "manual_qa": {
+    "command": "orca-ide terminal list --json",
+    "listed_terminal_handles": [
+      "term_12b89d60-e983-4ac0-9fae-fb7bb15274d3",
+      "term_26c2a8d9-8860-4846-8402-0879cce67eb2",
+      "term_55466e7d-95b0-4816-bb2a-ec91ed179040",
+      "term_ac529739-2edc-4f01-892b-451c343e7129",
+      "term_037ece28-449f-4392-a4ed-a1bd605f34ea",
+      "term_fd032e31-3154-4960-82c6-d91a4bdd4a31",
+      "term_fd516765-2fcf-4d5f-8263-a77d42a11de0",
+      "term_c1b7457e-761e-477a-9fd6-64a1b89f9a06",
+      "term_2e33c462-d835-48bf-9480-aa0b58e20218",
+      "term_5ba08f5c-6f00-470d-b57a-43f63b7abcaf",
+      "term_36420b0e-9568-47d1-82eb-6e08becb7cfa",
+      "term_589a7ef4-58b1-4620-975a-ce66f97c7ee6",
+      "term_0f3c793d-f2b9-4b5c-a8ed-3756c4ad569f",
+      "term_b6b0258d-4933-496d-98d0-198ac99a7127",
+      "term_c446253d-4254-41c9-9c67-ca0cbacbda12",
+      "term_746220e9-69c4-4caa-986f-ed25f414c8b5",
+      "term_475dd2b1-a46b-498c-829b-e410dc852dde",
+      "term_732a901d-331d-4b92-9ac5-e8fc49fd7923",
+      "term_51c500f3-0e22-4a87-9523-240fb92c702f"
+    ],
+    "ingested_terminal_handles": [
+      "term_12b89d60-e983-4ac0-9fae-fb7bb15274d3",
+      "term_26c2a8d9-8860-4846-8402-0879cce67eb2",
+      "term_55466e7d-95b0-4816-bb2a-ec91ed179040",
+      "term_ac529739-2edc-4f01-892b-451c343e7129",
+      "term_037ece28-449f-4392-a4ed-a1bd605f34ea",
+      "term_fd032e31-3154-4960-82c6-d91a4bdd4a31",
+      "term_fd516765-2fcf-4d5f-8263-a77d42a11de0",
+      "term_c1b7457e-761e-477a-9fd6-64a1b89f9a06",
+      "term_2e33c462-d835-48bf-9480-aa0b58e20218",
+      "term_5ba08f5c-6f00-470d-b57a-43f63b7abcaf",
+      "term_36420b0e-9568-47d1-82eb-6e08becb7cfa",
+      "term_589a7ef4-58b1-4620-975a-ce66f97c7ee6",
+      "term_0f3c793d-f2b9-4b5c-a8ed-3756c4ad569f",
+      "term_b6b0258d-4933-496d-98d0-198ac99a7127",
+      "term_c446253d-4254-41c9-9c67-ca0cbacbda12",
+      "term_746220e9-69c4-4caa-986f-ed25f414c8b5",
+      "term_475dd2b1-a46b-498c-829b-e410dc852dde",
+      "term_732a901d-331d-4b92-9ac5-e8fc49fd7923",
+      "term_51c500f3-0e22-4a87-9523-240fb92c702f"
+    ],
+    "explained_differences": [],
+    "duplicate_work_id_count": 0,
+    "pass": true
+  },
+  "coverage_diff": {
+    "baseline": ".omo/evidence/workboard/source-inventory.json",
+    "current_work_total_baseline": null,
+    "source_rows": [
+      {
+        "source_key": "linux:orca-worktrees:local",
+        "inventory_total": 27,
+        "inventory_total_kind": "file_roster",
+        "inventory_current_work_total": null,
+        "coverage": "unknown",
+        "ingested_current_work": 0,
+        "explanation": "roster not filtered to current work; coverage unknown"
+      },
+      {
+        "source_key": "mac:orca-worktrees:local",
+        "inventory_total": 13,
+        "inventory_total_kind": "file_roster",
+        "inventory_current_work_total": null,
+        "coverage": "unknown",
+        "ingested_current_work": 0,
+        "explanation": "roster not filtered to current work; coverage unknown"
+      },
+      {
+        "source_key": "mac:orca-terminals:local",
+        "inventory_total": 6,
+        "inventory_total_kind": "file_roster",
+        "inventory_current_work_total": null,
+        "coverage": "unknown",
+        "ingested_current_work": 0,
+        "explanation": "roster not filtered to current work; coverage unknown"
+      },
+      {
+        "source_key": "linux:orca-terminals:local",
+        "inventory_total": 19,
+        "inventory_total_kind": "file_roster",
+        "inventory_current_work_total": null,
+        "coverage": "unknown",
+        "ingested_current_work": 19,
+        "explanation": "roster not filtered to current work; coverage unknown"
+      },
+      {
+        "source_key": "linux:codex:local",
+        "inventory_total": 153,
+        "inventory_total_kind": "file_roster",
+        "inventory_current_work_total": null,
+        "coverage": "unknown",
+        "ingested_current_work": 0,
+        "explanation": "roster not filtered to current work; coverage unknown"
+      },
+      {
+        "source_key": "linux:claude:local",
+        "inventory_total": 273,
+        "inventory_total_kind": "file_roster",
+        "inventory_current_work_total": null,
+        "coverage": "unknown",
+        "ingested_current_work": 0,
+        "explanation": "roster not filtered to current work; coverage unknown"
+      },
+      {
+        "source_key": "linux:omo:local",
+        "inventory_total": 14,
+        "inventory_total_kind": "file_roster",
+        "inventory_current_work_total": null,
+        "coverage": "unknown",
+        "ingested_current_work": 0,
+        "explanation": "roster not filtered to current work; coverage unknown"
+      },
+      {
+        "source_key": "linux:senpi:local",
+        "inventory_total": 109,
+        "inventory_total_kind": "file_roster",
+        "inventory_current_work_total": null,
+        "coverage": "unknown",
+        "ingested_current_work": 0,
+        "explanation": "roster not filtered to current work; coverage unknown"
+      },
+      {
+        "source_key": "linux:cursor-agent:local",
+        "inventory_total": 22,
+        "inventory_total_kind": "file_roster",
+        "inventory_current_work_total": null,
+        "coverage": "unknown",
+        "ingested_current_work": 0,
+        "explanation": "roster not filtered to current work; coverage unknown"
+      },
+      {
+        "source_key": "mac:codex:local",
+        "inventory_total": 1782,
+        "inventory_total_kind": "file_roster",
+        "inventory_current_work_total": null,
+        "coverage": "unknown",
+        "ingested_current_work": 0,
+        "explanation": "roster not filtered to current work; coverage unknown"
+      },
+      {
+        "source_key": "mac:claude:local",
+        "inventory_total": 1245,
+        "inventory_total_kind": "file_roster",
+        "inventory_current_work_total": null,
+        "coverage": "unknown",
+        "ingested_current_work": 0,
+        "explanation": "roster not filtered to current work; coverage unknown"
+      },
+      {
+        "source_key": "mac:codex-desktop:local",
+        "inventory_total": null,
+        "inventory_total_kind": null,
+        "inventory_current_work_total": null,
+        "coverage": "unknown",
+        "ingested_current_work": 0,
+        "explanation": "roster not filtered to current work; coverage unknown"
+      },
+      {
+        "source_key": "mac:claude-desktop:local",
+        "inventory_total": null,
+        "inventory_total_kind": null,
+        "inventory_current_work_total": null,
+        "coverage": "unknown",
+        "ingested_current_work": 0,
+        "explanation": "roster not filtered to current work; coverage unknown"
+      },
+      {
+        "source_key": "mac:omo:local",
+        "inventory_total": null,
+        "inventory_total_kind": null,
+        "inventory_current_work_total": null,
+        "coverage": "unknown",
+        "ingested_current_work": 0,
+        "explanation": "roster not filtered to current work; coverage unknown"
+      },
+      {
+        "source_key": "mac:senpi:local",
+        "inventory_total": null,
+        "inventory_total_kind": null,
+        "inventory_current_work_total": null,
+        "coverage": "unknown",
+        "ingested_current_work": 0,
+        "explanation": "roster not filtered to current work; coverage unknown"
+      },
+      {
+        "source_key": "linux:mail:local",
+        "inventory_total": null,
+        "inventory_total_kind": null,
+        "inventory_current_work_total": null,
+        "coverage": "unknown",
+        "ingested_current_work": 0,
+        "explanation": "roster not filtered to current work; coverage unknown"
+      },
+      {
+        "source_key": "linux:crm:local",
+        "inventory_total": null,
+        "inventory_total_kind": null,
+        "inventory_current_work_total": null,
+        "coverage": "unknown",
+        "ingested_current_work": 0,
+        "explanation": "roster not filtered to current work; coverage unknown"
+      },
+      {
+        "source_key": "mac:mail:local",
+        "inventory_total": null,
+        "inventory_total_kind": null,
+        "inventory_current_work_total": null,
+        "coverage": "unknown",
+        "ingested_current_work": 0,
+        "explanation": "roster not filtered to current work; coverage unknown"
+      },
+      {
+        "source_key": "mac:crm:local",
+        "inventory_total": null,
+        "inventory_total_kind": null,
+        "inventory_current_work_total": null,
+        "coverage": "unknown",
+        "ingested_current_work": 0,
+        "explanation": "roster not filtered to current work; coverage unknown"
+      },
+      {
+        "source_key": "mac:chatgpt-to-codex:local",
+        "inventory_total": null,
+        "inventory_total_kind": null,
+        "inventory_current_work_total": null,
+        "coverage": "unknown",
+        "ingested_current_work": 0,
+        "explanation": "roster not filtered to current work; coverage unknown"
+      }
+    ],
+    "unknown_sources": [
+      "linux:orca-worktrees:local",
+      "mac:orca-worktrees:local",
+      "mac:orca-terminals:local",
+      "linux:orca-terminals:local",
+      "linux:codex:local",
+      "linux:claude:local",
+      "linux:omo:local",
+      "linux:senpi:local",
+      "linux:cursor-agent:local",
+      "mac:codex:local",
+      "mac:claude:local",
+      "mac:codex-desktop:local",
+      "mac:claude-desktop:local",
+      "mac:omo:local",
+      "mac:senpi:local",
+      "linux:mail:local",
+      "linux:crm:local",
+      "mac:mail:local",
+      "mac:crm:local",
+      "mac:chatgpt-to-codex:local"
+    ],
+    "note": "All 20 task-1 sources have null current_work_total. File rosters are not a current-work denominator. Only 19 currently enumerated Linux Orca terminal handles were ingested; unfiltered and inaccessible sources remain unknown."
+  },
+  "boundaries": {
+    "authority_work_items_written": false,
+    "live_supervisor_bindings_written": false,
+    "raw_preview_stored": false
+  },
+  "production_authority_current_readlink": "releases/ef49ba0dda37eb3b93e1306eba1ea6e8bf7ade9c",
+  "red_evidence": ".omo/evidence/workboard/ingest-red.log",
+  "green_evidence": ".omo/evidence/workboard/ingest-test.log"
+}

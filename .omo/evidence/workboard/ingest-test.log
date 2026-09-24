@@ -1,0 +1,11 @@
+npm notice run orca-jarvis-shadow@0.1.0 npx
+npm notice run 'vitest' run tests/integration/workboard-ingest.test.ts
+
+ RUN  v3.2.7 /home/jm/orca/workspaces/Orca-JARVIS/purpose-workboard
+
+ ✓ tests/integration/workboard-ingest.test.ts (4 tests) 79ms
+
+ Test Files  1 passed (1)
+      Tests  4 passed (4)
+   Start at  12:45:25
+   Duration  916ms (transform 474ms, setup 0ms, collect 682ms, tests 79ms, environment 0ms, prepare 45ms)

@@ -1,0 +1,77 @@
+npm notice run orca-jarvis-shadow@0.1.0 npx
+npm notice run 'vitest' run tests/integration/workboard-ingest.test.ts
+
+ RUN  v3.2.7 /home/jm/orca/workspaces/Orca-JARVIS/purpose-workboard
+
+ ❯ tests/integration/workboard-ingest.test.ts (3 tests | 3 failed) 10ms
+   × workboard ingest identity > deduplicates and orders events; rejects conflicts and malformed events 8ms
+     → expected [] to have a length of 1 but got +0
+   × workboard ingest identity > ignores PID/title for identity, splits native tasks in the same repo, and preserves attempts 1ms
+     → expected [] to have a length of 3 but got +0
+   × workboard ingest identity > aliases only explicit cross-app session relations and retains parent-child work 1ms
+     → expected [] to have a length of 3 but got +0
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 3 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/integration/workboard-ingest.test.ts > workboard ingest identity > deduplicates and orders events; rejects conflicts and malformed events
+AssertionError: expected [] to have a length of 1 but got +0
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 1[39m
+[31m+ 0[39m
+
+ ❯ tests/integration/workboard-ingest.test.ts:25:29
+     23|       store.ingest(event("e1", 1, "session-a", "task-1", { state: "run…
+     24|       store.ingest(event("e2", 2, "session-a", "task-1", { state: "wai…
+     25|       expect(store.works()).toHaveLength(1);
+       |                             ^
+     26|       expect(store.works()[0]).toMatchObject({ state: "waiting" });
+     27|       expect(() => store.ingest(event("e2", 2, "session-a", "task-1", …
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/3]⎯
+
+ FAIL  tests/integration/workboard-ingest.test.ts > workboard ingest identity > ignores PID/title for identity, splits native tasks in the same repo, and preserves attempts
+AssertionError: expected [] to have a length of 3 but got +0
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 3[39m
+[31m+ 0[39m
+
+ ❯ tests/integration/workboard-ingest.test.ts:38:29
+     36|       store.ingest(event("c", 1, "session-b", "task-2", { pid: 321 }));
+     37|       store.ingest(event("d", 3, "session-a", "task-3"));
+     38|       expect(store.works()).toHaveLength(3);
+       |                             ^
+     39|       expect(store.sessions().filter(s => s.session_id === "session-a"…
+     40|       expect(new Set(store.works().map(w => w.work_id)).size).toBe(3);
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/3]⎯
+
+ FAIL  tests/integration/workboard-ingest.test.ts > workboard ingest identity > aliases only explicit cross-app session relations and retains parent-child work
+AssertionError: expected [] to have a length of 3 but got +0
+
+[32m- Expected[39m
+[31m+ Received[39m
+
+[32m- 3[39m
+[31m+ 0[39m
+
+ ❯ tests/integration/workboard-ingest.test.ts:53:29
+     51|       store.ingest(event("c", 1, "mirror", null, { source: { ...source…
+     52|       store.ingest(event("d", 1, "guess", null, { source: { ...source,…
+     53|       expect(store.works()).toHaveLength(3);
+       |                             ^
+     54|       const root = store.works().find(w => w.session_id === "root");
+     55|       expect(store.works().find(w => w.task_id === "task-child")?.pare…
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/3]⎯
+
+
+ Test Files  1 failed (1)
+      Tests  3 failed (3)
+   Start at  12:40:10
+   Duration  197ms (transform 32ms, setup 0ms, collect 34ms, tests 10ms, environment 0ms, prepare 44ms)
