@@ -32,7 +32,32 @@ describe("workboard projection route", () => {
     const db = new Database(":memory:");
     try {
       db.pragma("query_only = ON");
-      expect(readWorkboardResponse(db, NOW)).toEqual({ schema_version: 1, generated_at: NOW.toISOString(), collected: false, attention: [], groups: [] });
+      const data = readWorkboardResponse(db, NOW);
+      expect(data).toMatchObject({ schema_version: 1, generated_at: NOW.toISOString(), collected: false, attention: [], groups: [] });
+      expect(data.sources).toHaveLength(20);
+      expect(data.sources.every(source => source.current_work_total === null && source.reason !== null)).toBe(true);
+    } finally {
+      db.close();
+    }
+  });
+
+  it("shows a source with no work row and its coverage reason without calling it zero work", () => {
+    const db = openWorkboardFixture();
+    const id = "mac:codex-desktop:local";
+    const reason = "application present; no bounded session enumeration supported";
+    try {
+      db.prepare("INSERT INTO workboard_sources(source_key,coverage,warning) VALUES(?,?,?)")
+        .run(`${id}:initial`, "unknown", reason);
+      db.pragma("query_only = ON");
+      const data = readWorkboardResponse(db, NOW);
+      expect(data.sources).toContainEqual(expect.objectContaining({ id, classification: "unknown_current_work_coverage", reason, current_work_total: null }));
+      expect(data.sources.filter(source => source.classification === "unknown_current_work_coverage")).toHaveLength(21);
+      const { container } = render(<WorkboardPage data={data} now={() => NOW} />);
+      const section = screen.getByRole("region", { name: "관측 범위를 확인하지 못한 곳" });
+      expect(section).toHaveTextContent("Mac Codex 데스크톱");
+      expect(section).toHaveTextContent(reason);
+      expect(section).not.toHaveTextContent("0건");
+      expect(container.innerHTML).not.toContain(id);
     } finally {
       db.close();
     }

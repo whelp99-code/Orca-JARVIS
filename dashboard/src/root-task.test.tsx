@@ -155,7 +155,7 @@ function createClient(failures: ResourceFailure = {}) {
         pending.reject = reject;
       });
     },
-    workboard: async () => ({ schema_version: 1 as const, generated_at: "2026-08-18T00:00:00.000Z", collected: false, attention: [], groups: [] }),
+    workboard: async () => ({ schema_version: 1 as const, generated_at: "2026-08-18T00:00:00.000Z", collected: false, attention: [], groups: [], sources: [] }),
   } satisfies DashboardClient;
   return { client, counts, taskIds, pending };
 }
