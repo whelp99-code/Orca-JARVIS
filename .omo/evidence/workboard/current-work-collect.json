@@ -1,0 +1,31 @@
+{
+  "task": "st_01a0d186",
+  "red": {
+    "command": "npx vitest run tests/integration/workboard-current-work.test.ts --maxWorkers=2",
+    "result": "1 failed, 1 passed; AssertionError: expected +0 to be 1; tests/integration/workboard-current-work.test.ts:25:34; exit 1",
+    "condition": "stub collector returned zero for the live session"
+  },
+  "green": {
+    "command": "npx vitest run tests/integration/workboard-current-work.test.ts --maxWorkers=2",
+    "output": "Test Files 1 passed (1); Tests 3 passed (3); exit 0",
+    "related": "npx vitest run tests/integration/workboard-ingest.test.ts --maxWorkers=2: Test Files 1 passed (1); Tests 4 passed (4); exit 0"
+  },
+  "manual_comparison": {
+    "method": "Read-only collection via linuxCurrentSources into in-memory WorkboardStore, compare collected currentIds to ingested session IDs and count duplicate work_ids; no production DB opened",
+    "sources": [
+      { "source": "linux:codex:local:initial", "coverage": "unknown", "count": 0, "reason": "current manifest unavailable; historical roster excluded" },
+      { "source": "linux:claude:local:initial", "coverage": "complete", "count": 1 },
+      { "source": "linux:omo:local:initial", "coverage": "unknown", "count": 0, "reason": "current manifest unavailable; historical roster excluded" },
+      { "source": "linux:senpi:local:initial", "coverage": "unknown", "count": 0, "reason": "current manifest unavailable; historical roster excluded" }
+    ],
+    "collected_current_ids": ["d69d8c4d-7fe2-4509-b44d-b49f7779546f"],
+    "ingested_current_ids": ["d69d8c4d-7fe2-4509-b44d-b49f7779546f"],
+    "duplicate_work_id_count": 0
+  },
+  "production_symlink": {
+    "path": "/home/jm/.local/state/orca-jarvis/authority/current",
+    "readlink": "releases/ef49ba0dda37eb3b93e1306eba1ea6e8bf7ade9c"
+  },
+  "validation_note": "Changed adapter diagnostics clean; integration test LSP timed out twice. tsc --noEmit reports TS2532 in concurrent tests/unit/workboard-attention.test.ts lines 76, 80, 82, not in scoped files. Build omitted because it writes dist outside allowed new-file scope.",
+  "DoneClaim": "Current-work collector ingests only bounded live Claude metadata or explicitly marked current manifests with live PID, never historical transcript rosters; repeated session observations preserve one work_id. Readable Claude source compared equal with in-memory ingested IDs and zero duplicates. Unsupported current metadata is coverage unknown; no commit, production DB access, or production changes."
+}

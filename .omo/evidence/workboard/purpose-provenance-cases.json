@@ -1,0 +1,33 @@
+{
+  "scope": "workboard purpose binding; isolated SQLite projection; no production changes",
+  "cases": [
+    { "name": "no purpose", "expectation": "unknown and visible; cannot stage action without confirmed purpose", "result": "passed" },
+    { "name": "two conflicting goals", "expectation": "neither explicit request silently chosen", "result": "passed" },
+    { "name": "malicious log instruction", "expectation": "raw log rejected as purpose and binding evidence", "result": "passed" },
+    { "name": "owner correction", "expectation": "owner goal outranks issue and agent summary; late candidate cannot overwrite it", "result": "passed" },
+    { "name": "purpose version change during work", "expectation": "new immutable version; running work flagged; old action preflight invalid; existing approved digest untouched; new action references latest version and spec revision", "result": "passed" }
+  ],
+  "red": {
+    "command": "node scripts/run-tests.mjs unit tests/unit/workboard-purpose.test.ts",
+    "exit_code": 1,
+    "result": "4 failed, 1 passed (5)",
+    "assertion_failure": "malicious log instruction: AssertionError: expected [Function] to throw an error; Received: undefined (tests/unit/workboard-purpose.test.ts:36)",
+    "also": "owner correction: AssertionError: expected status proposed and Issue goal; Received status unknown and purpose null (line 46)"
+  },
+  "green": {
+    "command": "node scripts/run-tests.mjs unit tests/unit/workboard-purpose.test.ts",
+    "exit_code": 0,
+    "result": "1 test file passed; 5 tests passed",
+    "final_run": "2026-09-24"
+  },
+  "build": {
+    "command": "npm run build:backend",
+    "exit_code": 1,
+    "unrelated_concurrent_worker_errors": [
+      "tests/unit/workboard-attention.test.ts(77,22): TS2532 Object is possibly undefined",
+      "tests/unit/workboard-attention.test.ts(81,14): TS2532 Object is possibly undefined",
+      "tests/unit/workboard-attention.test.ts(83,14): TS2532 Object is possibly undefined"
+    ]
+  },
+  "assumption": "confirm() is called only after the owner is authenticated upstream; purpose store does not infer owner identity from raw text or logs"
+}
