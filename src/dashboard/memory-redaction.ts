@@ -9,6 +9,11 @@ const SAFE_ORIGIN_LABEL = "Memory provider";
 /** Human labels only: letters, digits, spaces, and light punctuation. Paths, schemes, and control characters fail. */
 const ORIGIN_LABEL = /^[\p{L}\p{N}][\p{L}\p{N} .,'&()-]{0,63}$/u;
 const NO_LINEAGE: MemoryRecordLineage = { forgotten: false, superseded_by: null, history: [] };
+/** Bidi embedding/override/isolate controls can reverse how provider text reads; they never render. */
+const BIDI_CONTROLS = /[\u202A-\u202E\u2066-\u2069]/gu;
+function plainText(value: string | null): string | null {
+  return value === null ? null : value.replace(BIDI_CONTROLS, "");
+}
 
 export function safeOriginLabel(label: string): string {
   return ORIGIN_LABEL.test(label) ? label : SAFE_ORIGIN_LABEL;
@@ -28,7 +33,7 @@ export function projectMemoryRecord(input: {
   const privateTier = input.evidence.sensitivity === "sensitive"
     || input.evidence.sensitivity === "restricted";
   const superseded = lineage.superseded_by !== null;
-  const excerpt = privateTier || superseded ? null : input.evidence.excerpt;
+  const excerpt = privateTier || superseded ? null : plainText(input.evidence.excerpt);
   const title = privateTier ? REDACTED : superseded ? SUPERSEDED_TITLE : titleFrom(excerpt);
   const originLabel = privateTier ? "Private source" : safeOriginLabel(binding.origin_label);
   const originRevision = privateTier ? null : input.tokens.revision("origin", input.sessionId,
