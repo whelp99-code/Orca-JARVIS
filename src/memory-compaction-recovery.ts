@@ -1,3 +1,4 @@
+import { z } from "zod";
 import { createHash } from "node:crypto";
 import { readFileSync, statSync } from "node:fs";
 import { canonicalize } from "./canonical.js";
@@ -43,17 +44,42 @@ export async function recoverMemoryCompaction(
             r.logical_source_digest,r.logical_result_digest,r.physical_scan_digest,r.created_at,
             i.provider_manifest_digest,i.provider_inventory_json,i.reingress_guards_json
      FROM memory_compaction_runs r JOIN memory_compaction_inputs i ON i.purge_id=r.purge_id
-     WHERE r.purge_id=? AND r.state='reconciling'`,
+     WHERE r.purge_id=? AND r.state IN ('reconciling','completed')`,
   ).get(purgeId));
-  const oldInode = runtime.observeOldInode(BigInt(row.source_device), BigInt(row.source_inode));
-  const oldFdCount = oldInode.fd_count;
-  if (oldFdCount !== 0) return { state: "reconciling", old_fd_count: oldFdCount };
+  const completed = authority.db.prepare(
+    `SELECT c.* FROM memory_compaction_receipts c
+     JOIN memory_purge_jobs j ON j.purge_id=c.purge_id AND j.state='completed'
+       AND j.compaction_receipt_digest=c.receipt_digest AND j.scan_errors=0 AND j.plaintext_matches=0
+     JOIN memory_compaction_runs r ON r.purge_id=c.purge_id AND r.state='completed'
+       AND r.swap_receipt_digest=c.receipt_digest AND r.integrity_check='ok' AND r.foreign_key_error_count=0
+       AND r.reader_drain_digest=c.reader_drain_digest
+     JOIN memory_surface_catalog_manifests m ON m.purge_id=c.purge_id
+       AND m.manifest_digest=c.surface_manifest_digest AND m.omission_count=0 AND m.error_count=0 AND m.match_count=0
+       AND m.expected_surface_count=70 AND m.observed_surface_count=70
+     WHERE c.purge_id=? AND c.old_database_disposed=1 AND c.wal_disposed=1 AND c.shm_disposed=1 AND c.journal_disposed=1`,
+  ).get(purgeId);
+  const receipt = completed === undefined ? undefined : z.object({
+    purge_id: z.string(), source_database_digest: z.string(), result_database_digest: z.string(),
+    surface_manifest_digest: z.string(), backup_disposal_digest: z.string(), reader_drain_digest: z.string(),
+    compacted_at: z.string(), receipt_digest: z.string(),
+  }).parse(completed);
+  if (receipt !== undefined) {
+    const { receipt_digest, ...body } = receipt;
+    if (digest(body) !== receipt_digest) throw new JarvisError("MEMORY_COMPACTION_RECOVERY_INVALID");
+  } else if (authority.db.prepare("SELECT 1 FROM memory_compaction_runs WHERE purge_id=? AND state='completed'").get(purgeId)) {
+    throw new JarvisError("MEMORY_COMPACTION_RECOVERY_INVALID");
+  }
+  // Completed disposal is durable evidence. Its freed inode can already belong to a new WAL;
+  // scanning that inode again would mistake unrelated new descriptors for retired readers.
+  const oldInode = receipt === undefined
+    ? runtime.observeOldInode(BigInt(row.source_device), BigInt(row.source_inode))
+    : { fd_count: 0, holders: [] };
+  if (oldInode.fd_count !== 0) return { state: "reconciling", old_fd_count: oldInode.fd_count };
   const active = statSync(authority.filename, { bigint: true });
-  const readerDrainDigest = digest({ purge_id: purgeId,
+  const readerDrainDigest = receipt?.reader_drain_digest ?? digest({ purge_id: purgeId,
     source_device: row.source_device, source_inode: row.source_inode,
-    old_fd_count: 0, holders: oldInode.holders,
-    acknowledged_generation: row.result_generation });
-  for (const process of runtime.registeredProcesses()) {
+    old_fd_count: 0, holders: oldInode.holders, acknowledged_generation: row.result_generation });
+  if (receipt === undefined) for (const process of runtime.registeredProcesses()) {
     authority.db.prepare(
       `INSERT OR IGNORE INTO memory_reader_drain_observations(
         purge_id,process_id,process_start_token,database_device,database_inode,
@@ -67,7 +93,7 @@ export async function recoverMemoryCompaction(
     guards: parseCompleteReingressGuardObservations(parseJson(row.reingress_guards_json)),
   });
   const resultDigest = digest(readFileSync(authority.filename));
-  const receiptDigest = completeCompaction(authority, {
+  const receiptDigest = receipt?.receipt_digest ?? completeCompaction(authority, {
     purge_id: purgeId, source_generation: row.source_generation,
     result_generation: row.result_generation, source_device: row.source_device,
     source_inode: row.source_inode, source_digest: row.logical_source_digest,

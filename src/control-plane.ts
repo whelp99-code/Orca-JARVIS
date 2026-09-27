@@ -135,7 +135,15 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
         source: worker, subject: requestId, correlation_id: requestId, causation_id: `evt:${requestId}:approved`,
         payload: { receipt_id: row.receipt_id, fence, lease_expires_at: leaseExpires }, created_at: at, }); result = { request_id: requestId,
         receipt_id: String(row.receipt_id), action: action.action, action_level: action.action_level, target: action.target, args: action.args,
-        command_digest: String(row.command_digest), reversible: Boolean(row.reversible), fence, lease_expires_at: leaseExpires, }; }); tx();
+        command_digest: String(row.command_digest), reversible: Boolean(row.reversible), fence, lease_expires_at: leaseExpires, }; });
+    try { tx.immediate(); }
+    catch (error) {
+      if (error instanceof Error && "code" in error
+        && (error.code === "SQLITE_BUSY" || error.code === "SQLITE_BUSY_SNAPSHOT")) {
+        throw new JarvisError("CONTROL_CLAIM_RACE");
+      }
+      throw error;
+    }
     if (!result) throw new JarvisError("CONTROL_CLAIM_FAILED"); return result; } settle( requestId: string, fence: number,
     outcome: { state: "completed" | "failed" | "uncertain"; effect_type: string; payload: unknown; failure_code?: string }, now = new Date(), ): void {
     const nowMs = finiteDate(now, "CONTROL_SETTLE_INVALID");

@@ -1,8 +1,11 @@
+import { z } from "zod";
+import { resumeMemoryDestructiveEffect } from "./memory-destructive-recovery.js";
+import { recoverOrCompactMemory } from "./memory-compaction-resume.js";
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./db.js";
 import type { ClaimedControlCommand, ControlCommandRequestInput } from "./control-plane.js";
-import { ControlPlane } from "./control-plane.js";
+import { reconcileDeletionControl } from "./memory-deletion-control.js";
 import { MemoryDeletionDispatcher } from "./memory-deletion-dispatch.js";
 import { MemoryDeletionStore, type MemoryDeletionRecord } from "./memory-deletion-store.js";
 import type { MemoryDeletionSagaOptions, PrepareMemoryDeletionInput } from "./memory-deletion-types.js";
@@ -21,12 +24,10 @@ export class MemoryDeletionSaga {
   private readonly store: MemoryDeletionStore;
   private readonly spool: MemoryEffectSpool;
   private readonly dispatcher: MemoryDeletionDispatcher;
-  private readonly control: ControlPlane;
   constructor(private readonly options: MemoryDeletionSagaOptions) {
     this.store = new MemoryDeletionStore(options.authority);
     this.spool = new MemoryEffectSpool(options.spool_root, options.authority);
     this.dispatcher = new MemoryDeletionDispatcher(options);
-    this.control = new ControlPlane(options.authority);
   }
   async prepare(input: PrepareMemoryDeletionInput): Promise<ControlCommandRequestInput> {
     if (input.targets.length < 1 || input.targets.length > 64 || !sameMemoryGeneration(input.targets)
@@ -85,12 +86,27 @@ export class MemoryDeletionSaga {
   }
 
   async reconcile(id: string): Promise<MemoryDeletionRecord> {
-    const row = this.store.get(id); if (row === undefined) throw new JarvisError("MEMORY_DELETION_NOT_FOUND");
+    let row = this.store.get(id); if (row === undefined) throw new JarvisError("MEMORY_DELETION_NOT_FOUND");
     if (row.state === "settled") return row;
+    if ((row.state === "queued" || row.state === "applying") && row.lane_id !== null) {
+      await resumeMemoryDestructiveEffect(this.options, row.lane_id);
+      row = this.store.get(id);
+      if (row === undefined) throw new JarvisError("MEMORY_DELETION_NOT_FOUND");
+    }
     if (row.request_id === null || row.request_digest === null || row.envelope_digest === null
       || row.provider_idempotency_key === null || row.delegation_id === null || row.delegation_digest === null
       || row.provider_instance_id === null || row.tombstone_sequence === null
       || row.tombstone_set_root === null) return row;
+    if (row.state === "provider_proved") {
+      const job = this.options.authority.db.prepare(
+        `SELECT purge_id FROM memory_purge_jobs WHERE lane='deletion' AND lane_id=?
+         AND target_manifest_digest=? AND scope_digest=? AND tombstone_sequence=? AND tombstone_set_root=?`,
+      ).get(row.lane_id, row.target_manifest_digest, row.scope_digest, row.tombstone_sequence, row.tombstone_set_root);
+      if (job !== undefined) {
+        const recovered = await this.options.compactor.recover(z.object({ purge_id: z.string() }).parse(job).purge_id);
+        return "state" in recovered ? row : this.complete(id, recovered.compaction_receipt_digest);
+      }
+    }
     const observed = await this.options.observer.deletion(row);
     if (observed.kind === "not_proved") return row;
     const proof = observed.proof;
@@ -103,27 +119,28 @@ export class MemoryDeletionSaga {
     await this.options.barriers.reach({ barrier_id: "jarvis_proof_observation",
       lane_id: row.lane_id ?? "", request_id: row.request_id,
       tombstone_sequence: row.tombstone_sequence, now });
-    const compaction = await this.options.compactor.compact({ lane: "deletion",
+    const purgeDigest = await recoverOrCompactMemory(this.options, { lane: "deletion",
       lane_id: row.lane_id ?? "", target_manifest_digest: row.target_manifest_digest,
       scope_digest: row.scope_digest, tombstone: { sequence: row.tombstone_sequence,
         set_root: row.tombstone_set_root }, provider_inventory: observed.provider_inventory,
       reingress_guards: observed.reingress_guards });
+    if (purgeDigest === undefined) return this.store.get(id) ?? row;
     await this.options.barriers.reach({ barrier_id: "before_settlement_commit",
       lane_id: row.lane_id ?? "", request_id: row.request_id,
       tombstone_sequence: row.tombstone_sequence, now });
-    const settled = this.store.settle(id, compaction.compaction_receipt_digest, now);
-    this.options.authority.db.prepare(
-      "UPDATE memory_effect_preparations SET state='consumed',updated_at=? WHERE lane_id=? AND state='approved'",
-    ).run(now.toISOString(), row.lane_id);
-    const control = this.options.authority.db.prepare(
-      "SELECT state,lease_fence FROM control_command_requests WHERE request_id=?",
-    ).get(row.control_request_id) as { readonly state: string; readonly lease_fence: number } | undefined;
-    if (control?.state === "claimed" && row.control_request_id !== null) this.control.settle(
-      row.control_request_id, control.lease_fence, { state: "completed",
-        effect_type: "memory.deletion.settled", payload: { deletion_id: id,
-          proof_digest: proof.proof_digest,
-          purge_receipt_digest: compaction.compaction_receipt_digest } }, now);
-    return settled;
+    return this.complete(id, purgeDigest);
+  }
+
+  private complete(id: string, purgeDigest: string): MemoryDeletionRecord {
+    const now = this.options.clock();
+    return this.options.authority.db.transaction(() => {
+      const settled = this.store.settle(id, purgeDigest, now);
+      reconcileDeletionControl(this.options.authority, settled, now);
+      this.options.authority.db.prepare(
+        "UPDATE memory_effect_preparations SET state='consumed',updated_at=? WHERE lane_id=? AND state='approved'",
+      ).run(now.toISOString(), settled.lane_id);
+      return settled;
+    }).immediate();
   }
 
 }

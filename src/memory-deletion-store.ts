@@ -153,6 +153,11 @@ export class MemoryDeletionStore {
   }, now: Date): void {
     const at = now.toISOString();
     this.authority.db.transaction(() => {
+      const row = this.required(id);
+      if (row.state === "provider_proved" || row.state === "settled") {
+        if (row.provider_proof_digest !== proof.proof_digest) throw new JarvisError("MEMORY_DELETION_REPLAY_CONFLICT");
+        return;
+      }
       this.authority.db.prepare(
         `INSERT INTO memory_deletion_proofs(
           deletion_id,proof_id,proof_digest,provider_release_sha,result_generation_id,
