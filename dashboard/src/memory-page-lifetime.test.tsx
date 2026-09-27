@@ -50,6 +50,21 @@ it("removes selected detail and draft when private results are cleared", async (
   act(() => store.stop());
 });
 
+it("retires a staging announcement with its search generation so expiry is announced", async () => {
+  // Given a staged forget whose outcome is announced in the atomic status region
+  const { store, client } = await fixture();
+  client.forget = async () => ({ schema_version: 1, state: "pending_approval", request_id: "request-one",
+    action: "forget", message: "staged" });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Stage forgetting" })); });
+  expect(document.querySelector("p.memory-status")).toHaveTextContent("Pending owner approval");
+  // When the status freshness window lapses and clears that generation
+  await act(async () => { vi.advanceTimersByTime(60_000); });
+  // Then the region announces the expiry instead of the announcement it has outlived
+  expect(document.body.textContent).toContain("Memory status expired");
+  expect(document.body.textContent).not.toContain("Pending owner approval");
+  act(() => store.stop());
+});
+
 it("expires search results and selection at their own freshness deadline", async () => {
   const { store } = await fixture();
   act(() => vi.advanceTimersByTime(10_000));

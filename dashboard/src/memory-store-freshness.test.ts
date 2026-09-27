@@ -1,6 +1,6 @@
 import { afterEach, expect, it, vi } from "vitest";
 import type { MemoryClient } from "./memory-api.js";
-import { createMemoryStore, SEARCH_UNAVAILABLE_MESSAGE, STATUS_UNAVAILABLE_MESSAGE } from "./memory-store.js";
+import { createMemoryStore, RELOAD_FAILED_MESSAGE, SEARCH_UNAVAILABLE_MESSAGE, STATUS_UNAVAILABLE_MESSAGE } from "./memory-store.js";
 import type { MemorySearch, MemoryStatus } from "./memory-types.js";
 
 afterEach(() => { vi.useRealTimers(); });
@@ -23,11 +23,15 @@ const result = (at: number, state = "ready", privacyEpoch = 0): MemorySearch => 
 function fixture() {
   vi.useFakeTimers(); now = t0; vi.setSystemTime(now);
   const calls = { status: 0, conflicts: 0, search: 0 };
+  const panel = (resource: string) => ({ schema_version: 1, resource, generated_at: new Date(now).toISOString(),
+    state: "ready", privacy_epoch: 0, items: [], truncated: false, page: { limit: 20, returned: 0, has_more: false, next_cursor: null } });
   const client = {
     status: async () => { calls.status += 1; return status(now); },
     search: async () => { calls.search += 1; return result(now); },
-    conflicts: async () => { calls.conflicts += 1; return undefined; },
-    candidates: async () => undefined, effects: async () => undefined, rememberProgress: async () => undefined,
+    conflicts: async () => { calls.conflicts += 1; return panel("memory-conflicts"); },
+    candidates: async () => panel("memory-candidates"), effects: async () => panel("memory-effects"),
+    rememberProgress: async () => ({ schema_version: 1, resource: "memory-remember-progress",
+      generated_at: new Date(now).toISOString(), has_more: false, items: [] }),
   } as unknown as MemoryClient;
   const store = createMemoryStore({ client, clock: () => now, eventSourceFactory: () => ({
     onopen: null, onerror: null, addEventListener: () => {}, close: () => {}, removeEventListener: () => {} }) });
@@ -41,22 +45,46 @@ function fixture() {
   return { store, client, calls, advance, started };
 }
 
-it("searches after the status freshness window by obtaining a fresh status without a full reload", async () => {
+it("searches after the status freshness window by re-reading the whole surface, never a page reload", async () => {
   // Given a loaded surface that has sat idle past its 60 s status freshness
   const { store, calls, advance, started } = fixture();
   await started();
   expect(calls).toEqual({ status: 1, conflicts: 1, search: 0 });
   advance(65_000);
-  expect(store.getSnapshot().status?.state).toBe("stale");
+  const expired = store.getSnapshot();
+  expect(expired.status?.state).toBe("stale");
+  expect(expired.conflicts).toBeUndefined();
+  expect(expired.reloading).not.toBe(true);
   // When the owner searches
   await store.search("fixture");
-  // Then a bounded status read was taken, the search succeeded, and nothing else reloaded
+  // Then the status, every panel, and the results are current again
   const snapshot = store.getSnapshot();
   expect(snapshot.status?.state).toBe("ready");
   expect(snapshot.status?.fresh_until).toBe(new Date(now + 60_000).toISOString());
   expect(snapshot.search?.items).toHaveLength(1);
+  expect(snapshot.conflicts?.resource).toBe("memory-conflicts");
+  expect(snapshot.candidates?.resource).toBe("memory-candidates");
+  expect(snapshot.effects?.resource).toBe("memory-effects");
   expect(snapshot.message).toBeUndefined();
-  expect(calls).toEqual({ status: 2, conflicts: 1, search: 1 });
+  expect(calls).toEqual({ status: 2, conflicts: 2, search: 1 });
+  store.stop();
+});
+
+it("keeps the surface and marks panels not loaded when a reload fails after the first load", async () => {
+  // Given a loaded surface whose next reload fails
+  const { store, client, started } = fixture();
+  await started();
+  client.conflicts = async () => { throw new Error("MEMORY_REQUEST_FAILED"); };
+  // When the surface reloads
+  await store.load();
+  // Then the page stays up with its status, the panels are explicitly not loaded, and the failure is announced
+  const snapshot = store.getSnapshot();
+  expect(snapshot.state).toBe("ready");
+  expect(snapshot.status).toBeDefined();
+  expect(snapshot.conflicts).toBeUndefined();
+  expect(snapshot.candidates).toBeUndefined();
+  expect(snapshot.reloading).not.toBe(true);
+  expect(snapshot.message).toBe(RELOAD_FAILED_MESSAGE);
   store.stop();
 });
 
@@ -87,6 +115,7 @@ it("announces a failed status refresh instead of refusing silently", async () =>
   // Then no search request left, the surface stayed up, and the failure was announced
   expect(calls.search).toBe(0);
   expect(store.getSnapshot().state).toBe("ready");
+  expect(store.getSnapshot().status?.state).toBe("stale");
   expect(store.getSnapshot().message).toBe(STATUS_UNAVAILABLE_MESSAGE);
   store.stop();
 });
@@ -130,6 +159,26 @@ it("refreshes the current search across a same-epoch reload without a new select
   expect(store.getSnapshot().search?.items).toHaveLength(1);
   expect(calls).toEqual({ status: 2, conflicts: 2, search: 2 });
   expect(store.getSnapshot().search_revision).toBe(generation);
+  store.stop();
+});
+
+it("reads the surface a bounded number of times when the provider itself reports a stale status", async () => {
+  // Given a surface with results whose status route now answers with an already-expired status
+  const { store, client, calls, started } = fixture();
+  await started();
+  await store.search("fixture");
+  client.status = async () => {
+    calls.status += 1;
+    if (calls.status > 8) throw new Error("MEMORY_REQUEST_FAILED");
+    return { ...status(now), state: "stale", mutations_enabled: false };
+  };
+  calls.status = 0;
+  // When the surface reloads, as an SSE frame or Refresh memory does
+  await store.load();
+  // Then the reload read the status once and did not re-enter itself to chase freshness
+  expect(calls.status).toBe(1);
+  expect(store.getSnapshot().state).toBe("ready");
+  expect(store.getSnapshot().status?.state).toBe("stale");
   store.stop();
 });
 

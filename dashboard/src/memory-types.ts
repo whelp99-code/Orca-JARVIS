@@ -64,6 +64,8 @@ export type MemorySnapshot = { readonly state: "loading" | "ready" | "error"; re
   readonly clear_revision?: number;
   /** Owner-initiated search generation; a same-epoch reload refreshes results without advancing it. */
   readonly search_revision?: number;
+  /** A panel reload is in flight; panels without data are loading rather than not loaded. */
+  readonly reloading?: boolean;
   readonly search?: MemorySearch; readonly conflicts?: MemoryConflicts;
   readonly candidates?: MemoryCandidates; readonly effects?: MemoryEffects;
   readonly review?: MemoryCandidateReview; readonly progress?: MemoryRememberProgress;

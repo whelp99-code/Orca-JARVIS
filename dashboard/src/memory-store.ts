@@ -7,6 +7,7 @@ import type { EventSourceLike } from "./store-types.js";
 const MEMORY_TOPICS = new Set(["memory.records.v1", "memory.conflicts.v1", "memory.candidates.v1",
   "memory.effects.v1", "memory.privacy.v1", "memory.status.v1"]);
 export const STATUS_UNAVAILABLE_MESSAGE = "Memory status unavailable. Try again.";
+export const RELOAD_FAILED_MESSAGE = "Memory panels could not be reloaded. Use Refresh memory.";
 export const SEARCH_UNAVAILABLE_MESSAGE = "Search unavailable. Try again.";
 export const SEARCH_CHANGED_MESSAGE = "Memory changed or expired. Search again.";
 type Options = { readonly client: MemoryClient; readonly eventSourceFactory: (url: string) => EventSourceLike;
@@ -41,26 +42,25 @@ export function createMemoryStore(options: Options) {
         state: "stale", mutations_enabled: false } });
     }, delay);
   }
-  /** A bounded status read: the fresh read token every search and mutation is checked against. */
+  /**
+   * The fresh read token every search is checked against. An expired status means every panel was
+   * cleared with it, so freshness is restored by re-reading the whole surface, never status alone.
+   */
   async function ensureFreshStatus(): Promise<MemoryStatus | undefined> {
     const previous = snapshot.status;
     if (fresh(previous)) return previous;
     const token = lifecycle;
-    try {
-      const status = await options.client.status();
-      if (token !== lifecycle) return undefined;
-      if (previous !== undefined && previous.privacy_epoch !== status.privacy_epoch) clearPrivate();
-      assign({ ...snapshot, state: "ready", status, message: undefined }); scheduleFreshness(status);
-      return status;
-    } catch {
-      if (token === lifecycle) assign({ ...snapshot, message: STATUS_UNAVAILABLE_MESSAGE });
-      return undefined;
-    }
+    await load();
+    if (token !== lifecycle) return undefined;
+    const status = snapshot.status;
+    if (snapshot.state === "ready" && snapshot.message === undefined && fresh(status)) return status;
+    if (snapshot.state === "ready") assign({ ...snapshot, message: STATUS_UNAVAILABLE_MESSAGE });
+    return undefined;
   }
   async function load(): Promise<void> {
     activeReview?.abort(); activeReview = undefined;
     if (reviewTimer !== undefined) clearTimeout(reviewTimer);
-    assign({ ...snapshot, review: undefined, reviewMessage: undefined });
+    assign({ ...snapshot, review: undefined, reviewMessage: undefined, reloading: true });
     activeLoad?.abort(); const controller = new AbortController(); activeLoad = controller;
     const generation = ++epoch;
     try {
@@ -73,10 +73,15 @@ export function createMemoryStore(options: Options) {
       const query = sameEpoch ? lastQuery : undefined; lastQuery = query;
       assign({ state: "ready", status, conflicts, candidates, effects, progress,
         search: query === undefined ? undefined : snapshot.search }); scheduleFreshness(status);
-      if (query !== undefined) await run(query);
+      if (query !== undefined) await run(query, false);
     } catch (error) {
       if (generation !== epoch || controller.signal.aborted) return;
-      assign({ state: "error", message: error instanceof Error ? error.message : "Memory unavailable" });
+      if (snapshot.status === undefined) {
+        assign({ state: "error", message: error instanceof Error ? error.message : "Memory unavailable" }); return;
+      }
+      // A surface that was already up stays up; its panels are explicitly not loaded, never "none".
+      assign({ ...snapshot, conflicts: undefined, candidates: undefined, effects: undefined, progress: undefined,
+        reloading: false, message: RELOAD_FAILED_MESSAGE });
     } finally { if (activeLoad === controller) activeLoad = undefined; }
   }
   /** An owner-initiated search: a new selection generation for the page. */
@@ -84,8 +89,9 @@ export function createMemoryStore(options: Options) {
     searchRevision += 1;
     await run(query);
   }
-  async function run(query: string): Promise<void> {
-    const status = await ensureFreshStatus();
+  /** `reload` is false inside a reload: the surface takes the status it just read rather than re-entering. */
+  async function run(query: string, reload = true): Promise<void> {
+    const status = reload ? await ensureFreshStatus() : fresh(snapshot.status) ? snapshot.status : undefined;
     if (status === undefined) return;
     lastQuery = query;
     active?.abort(); const controller = new AbortController(); active = controller; const generation = ++epoch;

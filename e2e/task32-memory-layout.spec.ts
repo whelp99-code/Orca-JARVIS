@@ -19,8 +19,14 @@ test("provider read states render cleanly at every accepted viewport", async ({ 
       const label = `${mode}@${String(viewport.width)}`;
       if (mode === "current") await expect(page.getByRole("button", { name: /Project Atlas/ })).toBeVisible();
       if (mode === "no_data") await expect(page.getByText("No visible memory records")).toBeVisible();
-      if (mode === "stale") await expect(page.getByText(/stale evidence/)).toBeVisible();
-      if (mode === "offline") await expect(page.getByText(/provider offline/).first()).toBeVisible();
+      if (mode === "stale") {
+        await expect(page.getByText(/stale evidence/).first()).toBeVisible();
+        await expect(memory.badge()).toHaveText("stale");
+      }
+      if (mode === "offline") {
+        await expect(page.getByText(/provider offline/).first()).toBeVisible();
+        await expect(page.getByRole("region", { name: "Conflicts" }).getByText("No unresolved conflicts")).toHaveCount(0);
+      }
       expect(await memory.overflow(), `${label} overflow`).toBe(0);
       await memory.axeClean(label);
       await page.screenshot({ path: testInfo.outputPath(`09-${label}.png`), fullPage: true });

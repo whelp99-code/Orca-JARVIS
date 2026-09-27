@@ -1,10 +1,14 @@
 import "@testing-library/jest-dom/vitest";
 import { cleanup, render, screen, within } from "@testing-library/react";
 import { afterEach, describe, expect, it } from "vitest";
+import { MemoryCandidates } from "./memory-candidates.js";
+import { MemoryConflicts } from "./memory-conflicts.js";
 import { MemoryEffects } from "./memory-effects.js";
 import { providerState } from "./memory-page.js";
 import { MemorySearch } from "./memory-search.js";
-import type { MemoryEffects as EffectPage, MemorySearch as SearchPage, MemorySnapshot } from "./memory-types.js";
+import type { MemoryClient } from "./memory-api.js";
+import type { MemoryConflicts as ConflictPage, MemoryEffects as EffectPage, MemorySearch as SearchPage,
+  MemorySnapshot } from "./memory-types.js";
 
 afterEach(cleanup);
 const at = "2026-09-08T00:00:00.000Z";
@@ -37,13 +41,46 @@ describe("MemorySearch provider states", () => {
   });
 });
 
+describe("panel load states", () => {
+  const conflicts = (state: string): ConflictPage => ({ schema_version: 1, resource: "memory-conflicts",
+    generated_at: at, state, privacy_epoch: 0, items: [], truncated: false });
+  const client = {} as MemoryClient;
+  it("renders a panel that is not loaded as not loaded, never as none", () => {
+    render(<><MemoryConflicts value={undefined} pending={false} />
+      <MemoryCandidates value={undefined} pending={false} client={client} enabled={false}
+        onReview={async () => {}} onChanged={() => {}} />
+      <MemoryEffects value={undefined} pending={false} /></>);
+    expect(screen.queryByText("No unresolved conflicts")).not.toBeInTheDocument();
+    expect(screen.queryByText("No reviewable candidates")).not.toBeInTheDocument();
+    expect(screen.queryByText(/No active/)).not.toBeInTheDocument();
+    expect(screen.getAllByText(/Not loaded/)).toHaveLength(3);
+  });
+  it("announces a panel that is reloading as busy", () => {
+    render(<MemoryConflicts value={undefined} pending={true} />);
+    expect(screen.getByRole("status")).toHaveTextContent(/Loading/);
+    expect(screen.queryByText(/Not loaded/)).not.toBeInTheDocument();
+  });
+  it("never presents an offline conflicts read as no conflicts", () => {
+    render(<MemoryConflicts value={conflicts("offline")} pending={false} />);
+    expect(screen.queryByText("No unresolved conflicts")).not.toBeInTheDocument();
+    expect(screen.getByRole("status")).toHaveTextContent(/provider offline/i);
+  });
+  it("keeps the plain empty state for a current read with no conflicts", () => {
+    render(<MemoryConflicts value={conflicts("no_data")} pending={false} />);
+    expect(screen.getByText("No unresolved conflicts")).toBeVisible();
+  });
+});
+
 describe("providerState", () => {
+  it("reports a stale provider read distinctly from an expired status", () => {
+    expect(providerState({ ...ready, search: search("stale", ["stale"]) })).toBe("stale");
+    expect(providerState({ ...ready, status: { ...ready.status!, state: "stale", mutations_enabled: false } })).toBe("expired");
+  });
   it("derives offline from the latest read even when the status route is ready", () => {
     expect(providerState({ ...ready, search: search("offline", ["offline"]) })).toBe("offline");
     expect(providerState({ ...ready, conflicts: { schema_version: 1, resource: "memory-conflicts",
       generated_at: at, state: "offline", privacy_epoch: 0, items: [], truncated: false } })).toBe("offline");
     expect(providerState(ready)).toBe("ready");
-    expect(providerState({ ...ready, status: { ...ready.status!, state: "stale", mutations_enabled: false } })).toBe("stale");
     expect(providerState({ ...ready, status: { ...ready.status!, contract_schema: 3, mutations_enabled: false } })).toBe("incompatible");
   });
 });
@@ -59,7 +96,7 @@ describe("MemoryEffects lifecycles", () => {
         { request_id: "memui:control:v1:export", operation: "export", state: "completed", failure_code: null,
           updated_at: at, proof_state: "verified", export_lifecycle: null }],
       page: { limit: 20, returned: 3, has_more: true, next_cursor: null } };
-    render(<MemoryEffects value={value} />);
+    render(<MemoryEffects value={value} pending={false} />);
     const list = screen.getByRole("list", { name: "Memory effect lifecycles" });
     const rows = within(list).getAllByRole("listitem");
     expect(rows).toHaveLength(3);

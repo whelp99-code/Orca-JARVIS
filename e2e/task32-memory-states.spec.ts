@@ -172,25 +172,55 @@ for (const mode of ["offline", "unavailable"] as const satisfies readonly Provid
   });
 }
 
-test("search still works after the page has idled past the 60 s status freshness window", async ({ page }, testInfo) => {
+test("search after a 60 s idle restores every panel, never leaving them empty", async ({ page }, testInfo) => {
   test.setTimeout(150_000);
   const memory = new MemoryPageDriver(page, fixture);
   const requests: string[] = [];
   page.on("request", request => { if (request.url().includes("/api/v1/memory/")) requests.push(new URL(request.url()).pathname); });
-  // Given a page that idles until its status goes stale (time itself is the behavior under test)
+  const conflicts = page.getByRole("region", { name: "Conflicts" });
+  const candidates = page.getByRole("region", { name: "Candidates" });
+  // Given a surface with one conflict, two candidates, and a pending forget lifecycle
   await memory.open();
   await expect(memory.badge()).toHaveText("ready");
-  await expect(memory.badge()).toHaveText("stale", { timeout: 75_000 });
+  await memory.search();
+  await page.getByRole("button", { name: new RegExp(DELETED) }).click();
+  await memory.detail().getByRole("checkbox").check();
+  await memory.detail().getByRole("button", { name: "Stage forgetting" }).click();
+  await expect(memory.status()).toHaveText("Pending owner approval");
+  await expect(conflicts.getByText("[REDACTED]")).toBeVisible();
+  await expect(candidates.getByRole("button", { name: "Review candidate" })).toHaveCount(2);
+  await expect(memory.lifecycles().getByText("Forgetting")).toBeVisible();
+  // When the page idles until its status goes stale (time itself is the behavior under test)
+  await expect(memory.badge()).toHaveText("expired", { timeout: 75_000 });
   await expect(memory.status()).toContainText("Memory status expired");
+  // Then no panel claims "none": each says it is not loaded
+  await expect(conflicts.getByText(/Not loaded/)).toBeVisible();
+  await expect(candidates.getByText(/Not loaded/)).toBeVisible();
+  await expect(page.getByRole("region", { name: "Effects and privacy receipts" }).getByText(/Not loaded/)).toBeVisible();
+  expect(await page.content()).not.toContain("No unresolved conflicts");
+  expect(await page.content()).not.toContain("No reviewable candidates");
+  await page.screenshot({ path: testInfo.outputPath("12-idle-expired-1440.png"), fullPage: true });
   requests.length = 0;
   // When the owner searches
   await memory.search();
-  // Then a fresh status was obtained, results rendered, and the panels were not reloaded
+  // Then the whole surface is re-read: status fresh, results rendered, every panel back with fixture counts
   await expect(page.getByRole("button", { name: /Project Atlas/ })).toBeVisible();
   await expect(memory.badge()).toHaveText("ready");
-  expect(requests).toEqual(["/api/v1/memory/status", "/api/v1/memory/search"]);
-  await page.screenshot({ path: testInfo.outputPath("12-idle-65s-search-1440.png"), fullPage: true });
-  // And the explicit refresh control is reachable
+  await expect(conflicts.getByText("[REDACTED]")).toBeVisible();
+  await expect(candidates.getByRole("button", { name: "Review candidate" })).toHaveCount(2);
+  await expect(memory.lifecycles().getByText("Forgetting")).toBeVisible();
+  expect(await page.content()).not.toContain("Not loaded");
+  expect(requests).toContain("/api/v1/memory/status");
+  expect(requests).toContain("/api/v1/memory/conflicts");
+  expect(requests).toContain("/api/v1/memory/search");
+  expect(requests.filter(path => path === "/api/v1/memory/search")).toHaveLength(1);
+  for (const viewport of [{ width: 1440, height: 1024 }, { width: 640, height: 900 }, { width: 390, height: 844 }]) {
+    await page.setViewportSize(viewport);
+    expect(await memory.overflow(), `overflow at ${String(viewport.width)}`).toBe(0);
+    await page.screenshot({ path: testInfo.outputPath(`12-idle-65s-search-${String(viewport.width)}.png`), fullPage: true });
+  }
+  await memory.axeClean("idle then search");
+  // And the explicit refresh control still works
   await memory.refresh();
   await expect(memory.badge()).toHaveText("ready");
 });

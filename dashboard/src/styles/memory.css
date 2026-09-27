@@ -4,7 +4,7 @@
 .memory-heading { display: flex; align-items: end; justify-content: space-between; gap: var(--space-4); }
 .memory-heading-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
 .memory-heading .freshness-badge[data-freshness="ready"] { color: var(--color-success); }
-.memory-heading .freshness-badge[data-freshness="stale"],
+.memory-heading .freshness-badge[data-freshness="stale"], .memory-heading .freshness-badge[data-freshness="expired"],
 .memory-heading .freshness-badge[data-freshness="incompatible"] { color: var(--color-warning); }
 .memory-heading .freshness-badge[data-freshness="offline"],
 .memory-heading .freshness-badge[data-freshness="unavailable"] { color: var(--color-danger); }
