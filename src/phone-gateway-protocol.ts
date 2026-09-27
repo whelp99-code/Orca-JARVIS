@@ -5,8 +5,7 @@ export const PHONE_GATEWAY_TARGET = "http://127.0.0.1:4176" as const;
 export const PHONE_SERVE_HTTPS_FLAG = "--https=8444" as const;
 export const CSRF_HEADER = "x-jarvis-csrf";
 export const FORBIDDEN_HEADERS = new Set([
-  "forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto",
-  "x-real-ip", "via", "proxy-authorization",
+  "forwarded", "x-real-ip", "via", "proxy-authorization",
 ]);
 export const SECURITY = {
   "Strict-Transport-Security": "max-age=31536000",
