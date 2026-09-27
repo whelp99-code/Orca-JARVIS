@@ -24,9 +24,10 @@ export type PersonalSnapshot =
   | { readonly status: "error"; readonly connectionState: ConnectionState; readonly error: ApiError };
 export type PersonalStore = ReturnType<typeof createPersonalStore>;
 
+/** No `eventSourceFactory` means no live stream: the phone gateway proxies reads only. */
 type Options = Readonly<{
   client: PersonalClient;
-  eventSourceFactory: (url: string) => EventSourceLike;
+  eventSourceFactory?: (url: string) => EventSourceLike;
 }>;
 
 const PERSONAL_TOPICS = new Set([
@@ -73,8 +74,9 @@ export function createPersonalStore(options: Options) {
       assign({ status: "stale", connectionState: "reconnecting", data: snapshot.data,
         error: classifyDashboardError(new TypeError("offline")) });
     }
-    source = options.eventSourceFactory("/api/v1/events");
+    source = options.eventSourceFactory?.("/api/v1/events");
     serverRevision = undefined;
+    if (source === undefined) { void refresh(); return; }
     source.addEventListener("snapshot", (event) => { frame(token, "snapshot", event); });
     source.addEventListener("reconcile", (event) => { frame(token, "reconcile", event); });
     source.onopen = () => {

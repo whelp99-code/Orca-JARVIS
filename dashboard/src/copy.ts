@@ -15,6 +15,7 @@ export const copy = {
   liveUpdates: "실시간",
   connected: "연결됨",
   disconnected: "끊김",
+  readOnly: "읽기 전용",
   cards: {
     work: "지금 하는 일",
     agents: "에이전트",

@@ -3,6 +3,7 @@ import { advancesPersonalRevision, parsePersonalSseFrame,
 import type { MemoryClient } from "./memory-api.js";
 import type { MemorySnapshot, MemoryStatus } from "./memory-types.js";
 import type { EventSourceLike } from "./store-types.js";
+import type { DashboardSurface } from "./surface.js";
 
 const MEMORY_TOPICS = new Set(["memory.records.v1", "memory.conflicts.v1", "memory.candidates.v1",
   "memory.effects.v1", "memory.privacy.v1", "memory.status.v1"]);
@@ -10,8 +11,9 @@ export const STATUS_UNAVAILABLE_MESSAGE = "Memory status unavailable. Try again.
 export const RELOAD_FAILED_MESSAGE = "Memory panels could not be reloaded. Use Refresh memory.";
 export const SEARCH_UNAVAILABLE_MESSAGE = "Search unavailable. Try again.";
 export const SEARCH_CHANGED_MESSAGE = "Memory changed or expired. Search again.";
-type Options = { readonly client: MemoryClient; readonly eventSourceFactory: (url: string) => EventSourceLike;
-  readonly clock?: () => number };
+/** No `eventSourceFactory` means no live stream: the phone gateway proxies reads only. */
+type Options = { readonly client: MemoryClient; readonly eventSourceFactory?: (url: string) => EventSourceLike;
+  readonly clock?: () => number; readonly surface?: DashboardSurface };
 export type MemoryStore = ReturnType<typeof createMemoryStore>;
 export function createMemoryStore(options: Options) {
   let snapshot: MemorySnapshot = { state: "loading" };
@@ -26,6 +28,7 @@ export function createMemoryStore(options: Options) {
   let reviewTimer: ReturnType<typeof setTimeout> | undefined;
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   const listeners = new Set<() => void>(); const clock = options.clock ?? Date.now;
+  const phone = options.surface === "phone";
   const assign = (value: MemorySnapshot): void => {
     snapshot = { ...value, view_revision: epoch, clear_revision: clearRevision, search_revision: searchRevision };
     for (const listener of listeners) listener();
@@ -64,9 +67,11 @@ export function createMemoryStore(options: Options) {
     activeLoad?.abort(); const controller = new AbortController(); activeLoad = controller;
     const generation = ++epoch;
     try {
+      // The gateway exposes status, conflicts and search only; candidate and effect panels stay unread.
       const [status, conflicts, candidates, effects, progress] = await Promise.all([
         options.client.status(), options.client.conflicts(controller.signal),
-        options.client.candidates(), options.client.effects(), options.client.rememberProgress()]);
+        phone ? undefined : options.client.candidates(), phone ? undefined : options.client.effects(),
+        phone ? undefined : options.client.rememberProgress()]);
       if (generation !== epoch || controller.signal.aborted) return;
       const sameEpoch = snapshot.status?.privacy_epoch === status.privacy_epoch;
       if (!sameEpoch && snapshot.search !== undefined) clearRevision += 1;
@@ -152,9 +157,9 @@ export function createMemoryStore(options: Options) {
   }
   function start(): void {
     if (running) return; running = true; const token = ++lifecycle; serverRevision = undefined;
-    source = options.eventSourceFactory("/api/v1/events");
-    source.addEventListener("snapshot", event => { void frame(token, "snapshot", event); });
-    source.addEventListener("reconcile", event => { void frame(token, "reconcile", event); });
+    source = options.eventSourceFactory?.("/api/v1/events");
+    source?.addEventListener("snapshot", event => { void frame(token, "snapshot", event); });
+    source?.addEventListener("reconcile", event => { void frame(token, "reconcile", event); });
     void load();
   }
   function stop(): void {

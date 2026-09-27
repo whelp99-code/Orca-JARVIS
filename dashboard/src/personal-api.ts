@@ -5,6 +5,7 @@ import {
 } from "./personal-closed.js";
 import { parseHealthItem } from "./personal-health-parser.js";
 import { requestPersonalJson } from "./personal-http.js";
+import type { DashboardSurface } from "./surface.js";
 import type {
   AcceptedAction,
   Citation,
@@ -38,7 +39,13 @@ const ACCEPT_KEYS = ["schema_version", "recommendation_id", "action_rank", "requ
 
 type SessionLoader = () => Promise<SessionResponse>;
 
-export function createPersonalClient(loadSession: SessionLoader): PersonalClient {
+export function createPersonalClient(loadSession: SessionLoader, surface: DashboardSurface = "local"): PersonalClient {
+  /** The gateway requires the phone CSRF token on reads too; the local origin needs none. */
+  const get = async (path: string, signal?: AbortSignal): Promise<unknown> => {
+    const headers: Record<string, string> = { Accept: "application/json" };
+    if (surface === "phone") headers["X-JARVIS-CSRF"] = (await loadSession()).csrf_token;
+    return await requestPersonalJson(path, { headers, signal });
+  };
   return {
     today: async (signal) => parseToday(await get("/api/v1/today", signal)),
     decisions: async (signal) => parsePage(await get("/api/v1/decision-inbox?limit=100", signal), "decision-inbox", parseDecision),
@@ -55,10 +62,6 @@ export function createPersonalClient(loadSession: SessionLoader): PersonalClient
       }));
     },
   };
-}
-
-async function get(path: string, signal?: AbortSignal): Promise<unknown> {
-  return await requestPersonalJson(path, { headers: { Accept: "application/json" }, signal });
 }
 
 export function parseToday(value: unknown): TodayResponse {

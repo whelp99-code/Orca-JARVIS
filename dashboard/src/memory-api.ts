@@ -33,13 +33,13 @@ export function createMemoryClient(loadSession: SessionLoader) {
     return value;
   }
   async function post(path: string, body: unknown, signal?: AbortSignal): Promise<unknown> {
-    return request(path, { method: "POST", headers: { "Content-Type": "application/json" },
+    return request(path, { method: "POST", headers: { "Content-Type": "application/json; charset=utf-8" },
       body: JSON.stringify(body), signal });
   }
   return {
     status: async () => MemoryStatusSchema.parse(await request("/api/v1/memory/status")),
     conflicts: async (signal?: AbortSignal) => MemoryConflictsSchema.parse(await request(
-      "/api/v1/memory/conflicts?state=unresolved&limit=20", { signal })),
+      "/api/v1/memory/conflicts?limit=20", { signal })),
     candidates: async () => {
       const pages = await Promise.all(["awaiting_confirmation", "approved"].map(async state =>
         MemoryCandidatesSchema.parse(await request(`/api/v1/memory/candidates?state=${state}&limit=20`))));

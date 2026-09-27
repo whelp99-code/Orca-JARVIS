@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type FormEvent } from "react";
 import type { MemoryClient } from "./memory-api.js";
 import { memoryCommandFailure, PENDING_APPROVAL_MESSAGE, type MemoryCommandOutcome } from "./memory-messages.js";
 import type { MemoryRecord, MemoryRecordHistoryEntry } from "./memory-types.js";
+import { useSurface } from "./surface.js";
 
 export type MemoryDetailOutcome = MemoryCommandOutcome;
 type Action = "correct" | "forget" | "export";
@@ -18,6 +19,7 @@ export function MemoryDetail({ record, client, enabled, onOutcome }: Readonly<{ 
   const [replacement, setReplacement] = useState(""); const [acknowledged, setAcknowledged] = useState(false);
   const [busy, setBusy] = useState<Action>();
   const pending = useRef(false); const mounted = useRef(true);
+  const phone = useSurface() === "phone";
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   if (record === undefined) return <section className="panel" aria-labelledby="memory-detail-heading">
     <header className="panel-header"><h2 id="memory-detail-heading">Detail</h2></header>
@@ -69,6 +71,7 @@ export function MemoryDetail({ record, client, enabled, onOutcome }: Readonly<{ 
           onClick={() => { void stage("export", () => client.exportRecord(record.record_token, record.record_revision)); }}>
           {busy === "export" ? "Staging JSON export" : "Stage JSON export"}</button>}</div></fieldset>
       : <p className="empty-state">{superseded ? "No actions apply to a superseded record."
+        : phone ? "Changes are staged from the Linux control center, not from the phone."
         : "Changes are unavailable until the provider is current."}</p>}
     </div></section>;
 }

@@ -15,6 +15,7 @@ import type {
 import type { TerminalLogResponse } from "../../src/dashboard/terminal-reader.js";
 import { isPortfolioOverview } from "./portfolio-guard.js";
 import { isRuntimeIdentity, isDaemonRuntimeIdentity } from "./runtime-guard.js";
+import type { DashboardSurface } from "./surface.js";
 
 export type ApiErrorKind = "offline" | "forbidden" | "not_found" | "server";
 export type ApiError = {
@@ -53,9 +54,9 @@ const EVENT_KINDS = ["status", "command", "approval", "workflow", "agent", "veri
 const ACTION_LEVELS = [0, 1, 2, 3, 4, 5] as const;
 const LIST_LIMIT = 500;
 
-export function createDashboardClient(): DashboardClient {
+export function createDashboardClient(surface: DashboardSurface = "local"): DashboardClient {
   return {
-    session: () => readJson("/api/v1/session", isSession),
+    session: surface === "phone" ? phoneSession() : () => readJson("/api/v1/session", isSession),
     overview: (signal) => readJson("/api/v1/overview", isOverview, signal),
     tasks: (signal) => readJson(`/api/v1/tasks?limit=${String(LIST_LIMIT)}`, isTaskList, signal),
     agents: (signal) => readJson("/api/v1/agents", isAgentList, signal),
@@ -81,6 +82,18 @@ export function classifyDashboardError(error: unknown): ApiError {
     return { kind, code: kind.toUpperCase(), message: error.message, request_id: "" };
   }
   return { kind: "server", code: "INTERNAL_ERROR", message: "Internal error", request_id: "" };
+}
+
+/**
+ * The gateway mints a new session and cookie on every call to its session route, so
+ * concurrent reads must share one bootstrap or their cookies and CSRF tokens cross.
+ */
+function phoneSession(): () => Promise<SessionResponse> {
+  let pending: Promise<SessionResponse> | undefined;
+  return () => {
+    pending ??= readJson("/api/v1/phone/session", isSession).catch((error: unknown) => { pending = undefined; throw error; });
+    return pending;
+  };
 }
 
 async function readJson<T>(path: string, parse: (value: unknown) => value is T, signal?: AbortSignal): Promise<T> {

@@ -7,6 +7,7 @@ import { MemoryEffects } from "./memory-effects.js";
 import { MemorySearch } from "./memory-search.js";
 import type { MemoryStore } from "./memory-store.js";
 import { memoryResourceState, type MemoryResourceState, type MemorySnapshot } from "./memory-types.js";
+import { useSurface } from "./surface.js";
 
 /** What the badge names: the provider state of the latest read, or `expired` when the status token lapsed. */
 export type MemoryProviderBadge = MemoryResourceState | "expired";
@@ -38,6 +39,8 @@ export function MemoryPage({ store, client }: Readonly<{ store: MemoryStore; cli
   /** An outcome speaks for one search generation; when that generation ends the region reverts to provider copy. */
   const [announced, setAnnounced] = useState<{ revision?: number; message: string }>({ message: "" });
   const [refreshing, setRefreshing] = useState(false);
+  // The phone gateway proxies status, conflicts and search only; every memory change is a Linux owner command.
+  const phone = useSurface() === "phone";
   const selected = snapshot.state === "ready"
     ? snapshot.search?.items.find(item => item.record_revision === selectedRevision) : undefined;
   useEffect(() => { store.start(); return () => store.stop(); }, [store]);
@@ -52,7 +55,7 @@ export function MemoryPage({ store, client }: Readonly<{ store: MemoryStore; cli
   if (snapshot.state === "error") return <div className="page-frame route-state"><section role="alert">
     <h1>Memory</h1><p>{snapshot.message}</p></section></div>;
   const provider = providerState(snapshot);
-  const mutable = provider === "ready" && snapshot.status?.mutations_enabled === true;
+  const mutable = !phone && provider === "ready" && snapshot.status?.mutations_enabled === true;
   const refresh = (): void => {
     if (refreshing) return;
     setRefreshing(true); setAnnounced({ message: "" });
@@ -87,11 +90,11 @@ export function MemoryPage({ store, client }: Readonly<{ store: MemoryStore; cli
       key={`${snapshot.search_revision ?? 0}:${selected?.record_revision ?? "empty"}`}
       record={selected} client={client} enabled={mutable} onOutcome={settle} /></div>
     <MemoryConflicts value={snapshot.conflicts} pending={snapshot.reloading === true} />
-    <div className="memory-secondary"><MemoryCandidates pending={snapshot.reloading === true}
+    {phone ? null : <div className="memory-secondary"><MemoryCandidates pending={snapshot.reloading === true}
       key={`${snapshot.status?.privacy_epoch ?? 0}:${snapshot.candidates === undefined ? "cleared" : "loaded"}`}
       value={snapshot.candidates} review={snapshot.review}
       reviewMessage={snapshot.reviewMessage} client={client} enabled={mutable}
       onReview={store.review} onChanged={() => {
         if (store.getSnapshot().candidates === snapshot.candidates) void store.load(); }} />
-      <MemoryEffects value={snapshot.effects} pending={snapshot.reloading === true} progress={snapshot.progress} /></div></div>;
+      <MemoryEffects value={snapshot.effects} pending={snapshot.reloading === true} progress={snapshot.progress} /></div>}</div>;
 }
