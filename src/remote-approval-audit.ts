@@ -46,6 +46,46 @@ export function recordRemoteAudit(
 }
 
 
+export type RegistrationRejectionAudit = {
+  readonly ceremonyId: string;
+  readonly correlationId: string;
+  readonly principalId: string | null;
+  readonly origin: string;
+  readonly rpId: string;
+  readonly now: Date;
+  readonly outcome: "rejected" | "expired";
+  readonly reason: string;
+};
+
+/** One committed remote audit for a registration-verify rejection. Digests only; no ceremony challenge or key material. */
+export function writeRegistrationRejectionAudit(store: RemoteApprovalStore, input: RegistrationRejectionAudit): void {
+  const at = input.now.toISOString();
+  const distinct = randomBytes(4).toString("hex");
+  const token = `${at}:${distinct}`;
+  store.insertAudit({
+    event_id: `remote:reg:${sha256Prefixed(input.ceremonyId).slice(7, 23)}:${input.outcome}:${distinct}`,
+    event_type: `remote.${input.outcome}`,
+    subject_kind: "credential",
+    subject_id: sha256Prefixed(input.ceremonyId),
+    principal_id: input.principalId,
+    correlation_id: input.correlationId,
+    event_digest: sha256Prefixed(`reg:${input.ceremonyId}:${input.outcome}:${token}`),
+    created_at: at,
+    outcome: input.outcome,
+    reason_code: input.reason,
+    credential_digest_prefix: null,
+    request_digest: null,
+    command_digest: null,
+    binding_digest: null,
+    assertion_digest: null,
+    counter_disposition: "not_checked",
+    up: null,
+    uv: null,
+    origin_digest: sha256Prefixed(input.origin),
+    rp_id_digest: sha256Prefixed(input.rpId),
+  });
+}
+
 export function writeRemoteAudit(
   store: RemoteApprovalStore,
   challenge: ChallengeRow,

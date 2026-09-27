@@ -7,6 +7,7 @@ import { RemoteEnrollmentStore } from "./remote-approval-enrollment-store.js";
 import { RemoteApprovalError, REMOTE_ERROR_CODES } from "./remote-approval-errors.js";
 import { parseAttestationCredential, parseBeginRequestBody, parseVerifyBody } from "./remote-approval-parse.js";
 import type { RemoteApprovalService } from "./remote-approval.js";
+import { admitRegistrationVerify, recordRegistrationRejectionAudit } from "./remote-approval-registration-rejection.js";
 import type { RemoteIngressContextV1 } from "./remote-approval-types.js";
 import { verifyAttestationCrypto } from "./remote-approval-webauthn.js";
 
@@ -97,19 +98,10 @@ export async function verifyRegistration(
   service.requireIngress(ingress, `/api/v1/security/webauthn/registrations/${ceremonyId}/verify`, "POST");
   const at = now.toISOString();
   const store = enrollments(service);
-  const reserve = service.options.db.db.transaction(() => {
-    store.expireRegistrations(at);
-    const row = store.ceremony(ceremonyId);
-    if (!row) throw new RemoteApprovalError(REMOTE_ERROR_CODES.REMOTE_APPROVAL_UNAVAILABLE, "missing");
-    if (row.state !== "issued") throw new RemoteApprovalError(REMOTE_ERROR_CODES.REMOTE_APPROVAL_NOT_APPLICABLE, row.state);
-    if (row.gateway_session_digest !== ingress.gateway_session_digest) {
-      throw new RemoteApprovalError(REMOTE_ERROR_CODES.REMOTE_SESSION_REQUIRED, "session");
-    }
-    if (Date.parse(row.expires_at) <= now.getTime()) throw new RemoteApprovalError(REMOTE_ERROR_CODES.REMOTE_CEREMONY_REJECTED, "expired");
+  const ceremony = admitRegistrationVerify({ service, ceremonyId, ingress, now });
+  service.options.db.db.transaction(() => {
     store.reserveRegistration(ceremonyId, at, new Date(now.getTime() + service.options.policy.remote_approval.verification_reservation_ttl_seconds * 1000).toISOString());
-    return row;
-  });
-  const ceremony = reserve.immediate();
+  }).immediate();
   try {
     const parsed = parseSecondBrainStrictJsonBytes(rawBody);
     if (parsed === undefined) throw new RemoteApprovalError(REMOTE_ERROR_CODES.REMOTE_REQUEST_INVALID, "json");
@@ -166,8 +158,10 @@ export async function verifyRegistration(
     commit.immediate();
     return { schema_version: 1, credential_id: credentialId, activation_request_id: activationId };
   } catch (error) {
+    const reason = error instanceof RemoteApprovalError ? error.reason : "verify";
     service.options.db.db.transaction(() => {
-      store.finishRegistration(ceremonyId, "rejected", error instanceof RemoteApprovalError ? error.reason : "verify");
+      store.finishRegistration(ceremonyId, "rejected", reason);
+      recordRegistrationRejectionAudit({ service, ceremonyId, row: ceremony, now, outcome: "rejected", reason });
     }).immediate();
     rethrow(error);
   }

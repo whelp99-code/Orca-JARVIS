@@ -64,10 +64,11 @@ function admitIngress(input: {
 }
 
 /**
- * Every gateway-admitted path must resolve to a locally staged ControlPlane
- * request whose stored identity still matches its command digest. A registration
- * verify carries the ceremony id, so it binds through the ceremony row to the
- * local enrollment that issued it.
+ * Issuing options still requires a staged request whose stored identity matches
+ * its command digest. Verify of an existing approval challenge is admitted so
+ * the binding check can reject a later arg tamper. Registration verify is
+ * admitted so every ceremony rejection, including an unknown id, can be audited;
+ * the handler re-checks the enrollment binding before any credential write.
  */
 function lookupStaged(db: AuthorityDb, path: string, now: Date): boolean {
   if (path === "/api/v1/security/webauthn/credentials") return true;
@@ -77,7 +78,9 @@ function lookupStaged(db: AuthorityDb, path: string, now: Date): boolean {
   if (challengeId !== undefined) {
     const row = db.db.prepare("SELECT request_id FROM webauthn_approval_challenges_v2 WHERE challenge_id=?").get(challengeId) as
       { request_id: string } | undefined;
-    return row !== undefined && consistentRequest(db, row.request_id, now);
+    if (row === undefined) return false;
+    if (path.endsWith("/verify")) return true;
+    return consistentRequest(db, row.request_id, now);
   }
   const registration = registrationFrom(path);
   if (registration === undefined) return false;
@@ -86,17 +89,20 @@ function lookupStaged(db: AuthorityDb, path: string, now: Date): boolean {
       const begin = enrollmentBeginRequest(db, registration.enrollmentId);
       return begin !== undefined && consistentRequest(db, begin, now);
     }
-    case "verify": {
-      const ceremony = db.db.prepare(
-        "SELECT enrollment_id, begin_request_id FROM webauthn_registration_ceremonies_v2 WHERE ceremony_id=?",
-      ).get(registration.ceremonyId) as { enrollment_id: string; begin_request_id: string } | undefined;
-      if (ceremony === undefined) return false;
-      const begin = enrollmentBeginRequest(db, ceremony.enrollment_id);
-      return begin !== undefined && begin === ceremony.begin_request_id && consistentRequest(db, begin, now);
-    }
+    case "verify":
+      return true;
     default:
       return assertNever(registration);
   }
+}
+
+export function registrationCeremonyBound(
+  db: AuthorityDb,
+  ceremony: { readonly enrollment_id: string; readonly begin_request_id: string },
+  now: Date,
+): boolean {
+  const begin = enrollmentBeginRequest(db, ceremony.enrollment_id);
+  return begin !== undefined && begin === ceremony.begin_request_id && consistentRequest(db, begin, now);
 }
 
 function enrollmentBeginRequest(db: AuthorityDb, enrollmentId: string): string | undefined {
