@@ -1,0 +1,69 @@
+{
+  "task": "task-30-final-remediation-deletion-terminal-refusal",
+  "base": "bda38be4a71b74391adfd5a3b6f43f8c06c4a861",
+  "head": "9fd779aa5e95f66409dfbb8d5093e21857a54d40",
+  "commits": [
+    "9fd779aa5e95f66409dfbb8d5093e21857a54d40"
+  ],
+  "files": [
+    "migrations/097_memory_deletion_terminal_refusal.sql",
+    "src/approved-memory-execution.ts",
+    "src/memory-deletion-control.ts",
+    "src/memory-deletion-dispatch.ts",
+    "src/memory-deletion-saga.ts",
+    "src/memory-deletion-store.ts",
+    "src/memory-lifecycle-service-types.ts",
+    "src/migration-store.ts",
+    "tests/integration/memory-deletion-saga.test.ts",
+    "tests/integration/memory-deletion-terminal-migration.test.ts",
+    "tests/integration/memory-deletion-terminal-refusal.test.ts"
+  ],
+  "red": {
+    "deletion_refused_before_fix": "tests/integration/memory-deletion-saga.test.ts expected state conflict, received reconciling, before the saga consumed the observer refusal"
+  },
+  "green": {
+    "deletion_saga": "5 passed, including refused-before-effect, restart settle-once, stale preflight with zero frames, and mid-apply failure staying reconciling",
+    "deletion_migration": "2 passed: fresh journal checksum and upgrade preserving deletion rows byte-for-byte",
+    "deletion_recovery": "7 passed",
+    "crash_and_post_send": "memory-remediation-crash 4/4, memory-post-frame-recovery 4/4, memory-jarvis-crash-barriers 3/3",
+    "correction_lane": "memory-correction-saga 2/2",
+    "four_effect_lifecycle": "memory-real-process-driver 1/1 with wheel 9ba7d55312f097ca06c0fc9e5d8e6a0c452ad261f0b49111c07a1afa50462a06",
+    "real_provider_refusal": "1 passed: one deletion attempt, provider journal failed/claimed observed through the real MCP status call, lane conflict, control failed once, second reconcile sends nothing",
+    "memory_migration_control_filter": "1196 passed after dist rebuild; the one pre-rebuild failure was MIGRATION_VERSION_UNSUPPORTED from a stale dist missing 097",
+    "lint": "eslint --max-warnings=0 exit 0",
+    "typecheck": "tsc backend, dashboard, and e2e exit 0",
+    "architecture_check": "cycles 0, modules 728, edges 2732",
+    "build": "backend migration_count 104, dashboard vite built"
+  },
+  "migration": {
+    "file": "097_memory_deletion_terminal_refusal.sql",
+    "journal_id": "097_memory_deletion_terminal_refusal.sql",
+    "live_table": "memory_deletion_effect_requests",
+    "note": "042 created memory_deletion_requests and 045 renamed it to memory_deletion_effect_requests. The legacy memory_deletion_requests table already had failed. The rebuild adds conflict and reconciling:conflict on the live effect table, events, attempts, and proofs, then VACUUMs so freelist pages do not change serialize() after a rolled-back write.",
+    "fresh_db": "schema_migrations checksum equals the file sha256 and the transition trigger contains reconciling:conflict",
+    "upgrade": "requested row, event, and attempt copied from a database stopped at 096 were byte-identical after 097"
+  },
+  "counts": {
+    "focused_deletion_and_lifecycle_passed": 18,
+    "memory_migration_control_passed": 1196,
+    "verify_passed": 2120,
+    "verify_timeout_failures": 9,
+    "cleanup": 0,
+    "session_records_deleted": 0,
+    "production_changes": 0
+  },
+  "verify": {
+    "command": "npm run verify with TASK30_PROVIDER_WHEEL=9ba7d55312f097ca06c0fc9e5d8e6a0c452ad261f0b49111c07a1afa50462a06 TASK30_PROVIDER_SHA=ef6a774d15344b3771aeb62093f77325eaa18d8d",
+    "node": "v24.19.0",
+    "result": "lint, architecture, typecheck, and build passed. npm test reported 2120 passed and 9 failed, every failure a 5000ms timeout.",
+    "timeout_classification": "runbook, microloops, and negative-evidence also time out at 5000ms on main d2c0947 (ancestor 086a097, identical test files) and pass when the timeout is 20000ms. They are load flakes, not this change. log: /tmp/task30-deletion-verify.log"
+  },
+  "notes": [
+    "The shared observer already marks failed/expired before the apply phase as refused. The deletion saga now ends that observation in conflict and settles the control failed exactly once.",
+    "A mid-apply failure (phase staging) stays reconciling and is not resent.",
+    "Preflight runs before the first deletion frame and before the tombstone commit. Resume of an already-authorized queued deletion does not call the provider again: the crash worker treats that call as unexpected, and post-send SIGKILL remains one frame.",
+    "An organic post-send deletion refusal could not be induced on ef6a774 without B3b. CLI remember after accept raises TOMBSTONE_SET_STALE; mutating the sealed generation raises GENERATION_SPLIT_BRAIN. The real-provider test therefore writes the same failed/claimed journal state the provider records and observes it through the real status call. The read-wedge itself was not worked around.",
+    "memory-deletion-store.ts is 224 pure lines and memory-deletion-dispatch.ts is 207, both in the warning band. No further lines were added.",
+    "engineering-map docs:sync hook printed rc=1 and did not block the commit."
+  ]
+}
