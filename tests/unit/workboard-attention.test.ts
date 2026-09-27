@@ -69,7 +69,7 @@ describe("workboard attention", () => {
       new WorkboardStore(db);
       db.exec(readFileSync(resolve("migrations/101_workboard_attention.sql"), "utf8"));
       const { readWorkboard } = await import("../../src/workboard/projection.js");
-      expect(readWorkboard(db, clock(0))).toEqual({ works: [], attention: [] });
+      expect(readWorkboard(db, clock(0))).toEqual({ works: [], attention: [], sources: [] });
       const store = new WorkboardStore(db);
       store.ingest({ source: { host: "h", app: "a", scope: "s", generation: "g" }, eventId: "e", sequence: 1,
         sessionId: "session", incarnation: "one", taskId: null, receivedAt: origin, sourceAt: origin,
