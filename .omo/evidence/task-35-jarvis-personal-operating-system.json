@@ -1,0 +1,55 @@
+{
+  "schema_version": 1,
+  "task": 35,
+  "title": "Bind remote approvals to WebAuthn and existing ControlPlane receipts",
+  "verdict": "candidate",
+  "base": "48287b6eb6122d746380278618871ea729b0e525",
+  "head": "c525cbe472df524446d166bdad4282269d73938c",
+  "branch": "task-35-remediation",
+  "worktree": "/home/jm/orca/workspaces/Orca-JARVIS/task-35-remediation",
+  "enrollment_origin_policy": {
+    "decision": "local-session-only",
+    "citation": "docs/personal-os/contracts.md remote approval table: principal absent -> active is local Linux ControlPlane owner enrollment only; remote self-enrollment has no authority",
+    "gateway_behavior": "The security page shows that enrollment is unavailable on the gateway origin and does not call the local enrollment route from that origin. Registration and approval ceremonies still submit server-issued options to Linux."
+  },
+  "blockers": {
+    "B1": "early-phase rejections audit in their own transaction; expired challenges are marked terminal",
+    "B2": "shipped security page calls navigator.credentials.create and navigator.credentials.get; credential list and revocation staging use the Linux API; the client does not mint or verify receipts",
+    "B3": "compose loads the sealed decision signing key through readEd25519PrivateKeyFile; readiness is ready only on a matching key, otherwise signer_unconfigured, signer_unsealed, or signer_mismatch; the resolver looks up the staged ControlPlane request; the phone gateway proxies /api/v1/remote-approvals/*, registration ceremonies, credential reads, and /security"
+  },
+  "gate_notes": {
+    "audit_flags": "rejection audits record authenticator up/uv bits when an assertion body is present; missing UV is uv=0",
+    "policy_ttl": "challenge, registration, reservation, begin, and activation expiries read the parsed policy fields",
+    "prose_pins": "removed the source-text pin in remote-approval-task36-receipts.test.ts"
+  },
+  "red": {
+    "expired_audit": "fail-closed expiry returned no audit row and left the challenge issued",
+    "replay_audit": "control-plane replay left the audit count at 1",
+    "uv_flags": "missing-UV audit stored uv=1",
+    "readiness": "compose readiness reason was signer with no configured key",
+    "security_page": "createBrowserSecurityClient resolved options without calling navigator.credentials.get",
+    "gateway_route": "GET /security was not an allowed phone route"
+  },
+  "green": {
+    "backend_related": "15 files, 84 tests passed",
+    "dashboard": "3 files, 8 tests passed, zero React warnings in the run output",
+    "playwright": "4 passed in e2e/remote-approval-page.spec.ts using CDP WebAuthn.enable and addVirtualAuthenticator; ceremonies were page-driven",
+    "lint": "eslint --max-warnings=0 passed",
+    "typecheck": "tsc --noEmit, dashboard, and e2e passed",
+    "architecture": "check-runtime-imports ok, cycles 0",
+    "build": "backend 1545 artifacts, 103 migrations; dashboard built"
+  },
+  "qa": {
+    "tool": "Playwright remote-chromium plus CDP WebAuthn.enable and WebAuthn.addVirtualAuthenticator (UV true)",
+    "happy": "security page enroll then approve one staged recommendation; one receipt; one executor claim; second claim refused",
+    "failures": ["modified-arg", "replay", "expired", "missing-UV", "wrong-owner", "wrong-origin", "wrong-RP", "revoked", "gateway-session-without-assertion"],
+    "touch_id": "not tested; real Touch ID is outside this automated gate",
+    "screenshots": [
+      ".omo/evidence/task-35-remediation/playwright-output/remote-approval-page-enrol-e0841-n-through-the-security-page-remote-chromium/happy-approved.png",
+      ".omo/evidence/task-35-remediation/playwright-output/remote-approval-page-rejec-1fbd7-y-session-without-a-receipt-remote-chromium/failures.png"
+    ]
+  },
+  "preexisting": "dashboard-policy-startup health probes can time out at 5000ms because api-routes falls back to the runtime Second Brain probe. Not changed and not counted as a Task 35 failure.",
+  "production_changes": 0,
+  "listeners_4173_4176": "pre-existing; not modified"
+}
