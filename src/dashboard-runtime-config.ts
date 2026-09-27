@@ -4,6 +4,10 @@ export const DASHBOARD_RUNTIME_PORT = 4173 as const;
 export const DASHBOARD_HEALTH_ROUTE = "/api/v1/health" as const;
 export const DASHBOARD_HEALTH_URL =
   `http://${DASHBOARD_RUNTIME_HOST}:${DASHBOARD_RUNTIME_PORT}${DASHBOARD_HEALTH_ROUTE}` as const;
-/** A health probe reads a bounded body from a loopback route; it never follows a redirect off host. */
-export const DASHBOARD_HEALTH_TIMEOUT_MS = 2_000 as const;
+/**
+ * A health probe reads a bounded body from a loopback route; it never follows a redirect off host.
+ * `/api/v1/health` waits on sequential Second Brain readiness probes. Production reads take
+ * 5.3-6.3s, so the shared budget is 8s.
+ */
+export const DASHBOARD_HEALTH_TIMEOUT_MS = 8_000 as const;
 export const DASHBOARD_HEALTH_MAX_BYTES = 65_536 as const;
