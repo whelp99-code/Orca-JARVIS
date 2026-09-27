@@ -1,24 +1,44 @@
-.memory-page { display: grid; gap: var(--space-6); padding-block: var(--space-6); }
+.memory-page { display: grid; gap: var(--space-6); padding-block: var(--space-6);
+  /* CJK stays whole at word boundaries; only an unbroken token longer than the line may split. */
+  word-break: keep-all; overflow-wrap: anywhere; }
 .memory-heading { display: flex; align-items: end; justify-content: space-between; gap: var(--space-4); }
+.memory-heading-controls { display: flex; flex-wrap: wrap; align-items: center; gap: var(--space-3); }
+.memory-heading .freshness-badge[data-freshness="ready"] { color: var(--color-success); }
+.memory-heading .freshness-badge[data-freshness="stale"],
+.memory-heading .freshness-badge[data-freshness="incompatible"] { color: var(--color-warning); }
+.memory-heading .freshness-badge[data-freshness="offline"],
+.memory-heading .freshness-badge[data-freshness="unavailable"] { color: var(--color-danger); }
 .memory-status { min-block-size: var(--size-control); border: var(--border-width) solid var(--color-border);
   padding: var(--space-3); background: var(--color-surface); color: var(--color-text-muted); }
 .memory-primary, .memory-secondary { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--space-4); }
+.memory-search form { display: grid; gap: var(--space-2); padding: var(--space-4) var(--space-4) 0; }
 .memory-form-row, .memory-actions { display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: end; }
 .memory-form-row input { flex: 1 1 min(24rem, 100%); }
 .memory-record-button { display: grid; inline-size: 100%; min-inline-size: 0; gap: var(--space-1);
   border: 0; padding: 0; background: transparent; color: inherit; text-align: start; }
-.memory-record-button span, .memory-record-button small, .memory-detail p { overflow-wrap: anywhere; word-break: keep-all; }
+.memory-record-button[data-history-state="superseded"] strong { color: var(--color-text-dim); }
+.memory-result-state { padding: var(--space-3) var(--space-4); color: var(--color-warning); font-size: var(--type-sm); }
+.memory-result-state[data-result-state="offline"], .memory-result-state[data-result-state="unavailable"],
+.memory-result-state[data-result-state="incompatible"] { color: var(--color-danger); }
 .memory-detail { display: grid; gap: var(--space-4); }
+.panel-body.memory-detail { padding: var(--space-4); }
+.memory-detail h3 { font-size: var(--type-panel); font-weight: var(--weight-medium); }
 .memory-detail form, .memory-detail fieldset { display: grid; gap: var(--space-2); }
 .memory-detail textarea { min-block-size: var(--size-textarea); }
+.memory-detail dd[data-history-state="superseded"] { color: var(--color-warning); }
+.memory-history { margin: 0; padding: 0; list-style: none; }
+.memory-history .record { display: grid; gap: var(--space-1); padding: var(--space-3); }
+.memory-history time, .memory-history small { color: var(--color-text-dim); font-family: var(--font-mono); font-size: var(--type-sm); }
+.memory-history-empty { color: var(--color-text-dim); font-size: var(--type-sm); }
 .memory-review-text { white-space: pre-wrap; }
-.memory-secondary .record, .memory-secondary [role="status"] { overflow-wrap: anywhere; min-inline-size: 0; }
+.memory-secondary .record, .memory-secondary [role="status"] { min-inline-size: 0; }
 .memory-secondary .record { display: grid; gap: var(--space-2); padding: var(--space-3); }
 .conflict-list, .conflict-list ol { display: grid; gap: var(--space-3); margin: 0; padding: 0; list-style: none; }
 .conflict-list > li { display: grid; gap: var(--space-2); }
 .conflict-list ol { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 .conflict-list ol > li { display: grid; gap: var(--space-1); border-inline-start: var(--border-width) solid var(--color-border);
-  padding-inline-start: var(--space-3); overflow-wrap: anywhere; }
+  padding-inline-start: var(--space-3); }
 @media (max-width: 40rem) { .memory-primary, .memory-secondary, .conflict-list ol {
     grid-template-columns: minmax(0, 1fr); }
   .memory-heading { align-items: start; flex-direction: column; } }
+.memory-page small { font-size: var(--type-sm); }

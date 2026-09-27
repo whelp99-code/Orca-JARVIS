@@ -6,13 +6,18 @@ import type { EventSourceLike } from "./store-types.js";
 
 const MEMORY_TOPICS = new Set(["memory.records.v1", "memory.conflicts.v1", "memory.candidates.v1",
   "memory.effects.v1", "memory.privacy.v1", "memory.status.v1"]);
+export const STATUS_UNAVAILABLE_MESSAGE = "Memory status unavailable. Try again.";
+export const SEARCH_UNAVAILABLE_MESSAGE = "Search unavailable. Try again.";
+export const SEARCH_CHANGED_MESSAGE = "Memory changed or expired. Search again.";
 type Options = { readonly client: MemoryClient; readonly eventSourceFactory: (url: string) => EventSourceLike;
   readonly clock?: () => number };
 export type MemoryStore = ReturnType<typeof createMemoryStore>;
 export function createMemoryStore(options: Options) {
   let snapshot: MemorySnapshot = { state: "loading" };
   let epoch = 0; let lifecycle = 0; let running = false;
-  let clearRevision = 0;
+  let clearRevision = 0; let searchRevision = 0;
+  /** Last owner query, held in memory only so a same-epoch reload can refresh results and history. */
+  let lastQuery: string | undefined;
   let active: AbortController | undefined; let activeLoad: AbortController | undefined;
   let activeReview: AbortController | undefined;
   let source: EventSourceLike | undefined; let serverRevision: PersonalSseRevision | undefined;
@@ -21,9 +26,11 @@ export function createMemoryStore(options: Options) {
   let searchTimer: ReturnType<typeof setTimeout> | undefined;
   const listeners = new Set<() => void>(); const clock = options.clock ?? Date.now;
   const assign = (value: MemorySnapshot): void => {
-    snapshot = { ...value, view_revision: epoch, clear_revision: clearRevision };
+    snapshot = { ...value, view_revision: epoch, clear_revision: clearRevision, search_revision: searchRevision };
     for (const listener of listeners) listener();
   };
+  const fresh = (status: MemoryStatus | undefined): boolean =>
+    status !== undefined && status.state !== "stale" && Date.parse(status.fresh_until) > clock();
   function scheduleFreshness(status: MemoryStatus): void {
     if (freshTimer !== undefined) clearTimeout(freshTimer);
     const token = lifecycle; const delay = Math.max(0, Date.parse(status.fresh_until) - clock());
@@ -33,6 +40,22 @@ export function createMemoryStore(options: Options) {
       assign({ ...snapshot, state: "ready", status: { ...snapshot.status,
         state: "stale", mutations_enabled: false } });
     }, delay);
+  }
+  /** A bounded status read: the fresh read token every search and mutation is checked against. */
+  async function ensureFreshStatus(): Promise<MemoryStatus | undefined> {
+    const previous = snapshot.status;
+    if (fresh(previous)) return previous;
+    const token = lifecycle;
+    try {
+      const status = await options.client.status();
+      if (token !== lifecycle) return undefined;
+      if (previous !== undefined && previous.privacy_epoch !== status.privacy_epoch) clearPrivate();
+      assign({ ...snapshot, state: "ready", status, message: undefined }); scheduleFreshness(status);
+      return status;
+    } catch {
+      if (token === lifecycle) assign({ ...snapshot, message: STATUS_UNAVAILABLE_MESSAGE });
+      return undefined;
+    }
   }
   async function load(): Promise<void> {
     activeReview?.abort(); activeReview = undefined;
@@ -45,13 +68,26 @@ export function createMemoryStore(options: Options) {
         options.client.status(), options.client.conflicts(controller.signal),
         options.client.candidates(), options.client.effects(), options.client.rememberProgress()]);
       if (generation !== epoch || controller.signal.aborted) return;
-      assign({ state: "ready", status, conflicts, candidates, effects, progress }); scheduleFreshness(status);
+      const sameEpoch = snapshot.status?.privacy_epoch === status.privacy_epoch;
+      if (!sameEpoch && snapshot.search !== undefined) clearRevision += 1;
+      const query = sameEpoch ? lastQuery : undefined; lastQuery = query;
+      assign({ state: "ready", status, conflicts, candidates, effects, progress,
+        search: query === undefined ? undefined : snapshot.search }); scheduleFreshness(status);
+      if (query !== undefined) await run(query);
     } catch (error) {
       if (generation !== epoch || controller.signal.aborted) return;
       assign({ state: "error", message: error instanceof Error ? error.message : "Memory unavailable" });
     } finally { if (activeLoad === controller) activeLoad = undefined; }
   }
+  /** An owner-initiated search: a new selection generation for the page. */
   async function search(query: string): Promise<void> {
+    searchRevision += 1;
+    await run(query);
+  }
+  async function run(query: string): Promise<void> {
+    const status = await ensureFreshStatus();
+    if (status === undefined) return;
+    lastQuery = query;
     active?.abort(); const controller = new AbortController(); active = controller; const generation = ++epoch;
     if (searchTimer !== undefined) clearTimeout(searchTimer); searchTimer = undefined;
     assign({ ...snapshot, search: undefined, message: undefined });
@@ -59,25 +95,24 @@ export function createMemoryStore(options: Options) {
       const search = await options.client.search(query, controller.signal);
       if (generation !== epoch || controller.signal.aborted) return;
       const remaining = Date.parse(search.fresh_until) - clock();
-      if (snapshot.status === undefined || snapshot.status.state !== "ready"
-        || search.privacy_epoch !== snapshot.status.privacy_epoch
+      if (!fresh(snapshot.status) || search.privacy_epoch !== snapshot.status?.privacy_epoch
         || !Number.isFinite(remaining) || remaining <= 0) {
         clearPrivate();
-        assign({ ...snapshot, message: "Memory changed or expired. Refresh before searching again." });
+        assign({ ...snapshot, message: SEARCH_CHANGED_MESSAGE });
         return;
       }
       assign({ ...snapshot, state: "ready", search });
       searchTimer = setTimeout(() => {
         if (snapshot.search === search) clearPrivate();
       }, Math.min(remaining, 60_000));
-    } catch (error) {
+    } catch {
       if (controller.signal.aborted || generation !== epoch) return;
       clearPrivate();
-      assign({ state: "error", message: error instanceof Error ? error.message : "Search unavailable" });
+      assign({ ...snapshot, message: SEARCH_UNAVAILABLE_MESSAGE });
     }
   }
   function clearPrivate(): void {
-    clearRevision += 1;
+    clearRevision += 1; searchRevision += 1; lastQuery = undefined;
     if (searchTimer !== undefined) clearTimeout(searchTimer); searchTimer = undefined;
     activeReview?.abort(); activeReview = undefined;
     if (reviewTimer !== undefined) clearTimeout(reviewTimer); reviewTimer = undefined;

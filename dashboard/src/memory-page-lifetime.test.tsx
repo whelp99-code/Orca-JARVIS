@@ -17,7 +17,7 @@ const result: MemorySearch = { schema_version: 1, resource: "memory-search", sta
     retention: { source: "policy", days: 30, expires_at: new Date(now + 100_000).toISOString() },
     freshness: "fresh", provenance: { source_class: "memory", owner_class: "provider_owned",
       origin_label: "Fixture", origin_revision: "origin-one" }, conflict_state: "none", history_state: "current",
-    actions: ["inspect", "correct", "forget", "export"] }] };
+    superseded_by: null, history: [], actions: ["inspect", "correct", "forget", "export"] }] };
 
 async function fixture() {
   vi.useFakeTimers(); vi.setSystemTime(now);
@@ -78,7 +78,7 @@ it("does not repopulate a late search after status freshness expires", async () 
   let resolve!: (value: MemorySearch) => void;
   client.search = () => new Promise(done => { resolve = done; });
   let pending!: Promise<void>;
-  act(() => { pending = store.search("late"); });
+  await act(async () => { pending = store.search("late"); });
   act(() => vi.advanceTimersByTime(60_000));
   await act(async () => {
     resolve({ ...result, fresh_until: new Date(now + 120_000).toISOString() }); await pending;
