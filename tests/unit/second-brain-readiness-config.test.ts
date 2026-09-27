@@ -6,6 +6,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import * as readinessRuntime from "../../src/second-brain-readiness-runtime.js";
+import { producerConfigOutcomes } from "../fixtures/second-brain-config-oracle.js";
 
 const VALID = 'vault_root = "/safe/vault"\n';
 
@@ -99,14 +100,22 @@ describe("pinned Second Brain configuration descriptor", () => {
     }
   });
 
-  it("parses complete TOML against the repository-owned provider configuration corpus", async () => {
+  it("parses complete TOML and preserves independent producer acceptance and resolved vaults", async () => {
     const root = mkdtempSync(join(tmpdir(), "second-brain-config-corpus-"));
     try {
+      const authorities = producerConfigOutcomes(CORPUS.map(item => item.text));
       for (const [index, item] of CORPUS.entries()) {
         const path = join(root, `${String(index)}.toml`);
         writeFileSync(path, item.text);
         const outcome = await configurationProbe()(path);
         expect(outcome, item.name).toBe(item.accepted ? "valid" : "malformed");
+        if (item.accepted) {
+          expect(authorities[index], item.name).toEqual({ tomllib: true, producer: true, vault: item.vault });
+        }
+        if (outcome === "valid") {
+          expect(authorities[index]?.tomllib, item.name).toBe(true);
+          expect(authorities[index]?.producer, item.name).toBe(true);
+        }
       }
     } finally {
       rmSync(root, { recursive: true, force: true });
