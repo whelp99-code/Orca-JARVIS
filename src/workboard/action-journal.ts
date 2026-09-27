@@ -39,7 +39,9 @@ export class ActionJournal {
     return row ? JSON.parse(row.value) as Intent : null;
   }
   pending(workId: string): Intent | null {
-    const row = this.db.prepare("SELECT value FROM workboard_action_intents WHERE work_id=? AND status='uncertain'").get(workId) as { value: string } | undefined;
+    const row = this.db.prepare(
+      "SELECT value FROM workboard_action_intents WHERE work_id=? AND status='uncertain'",
+    ).get(workId) as { value: string } | undefined;
     return row ? JSON.parse(row.value) as Intent : null;
   }
   reserve(request: ActionRequest, requestDigest: string, operation: ActionOperation): { intent: Intent; created: boolean } {

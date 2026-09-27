@@ -2,7 +2,8 @@ export type Source = { host: string; app: string; scope: string; generation: str
 export type SessionRelation = { source: Source; sessionId: string };
 export type WorkEvent = {
   source: Source; eventId: string; sequence: number; sessionId: string; incarnation: string;
-  taskId: string | null; receivedAt: string; sourceAt: string; state: "running" | "waiting" | "blocked" | "failed" | "paused" | "claimed_done" | "verified" | "unknown";
+  taskId: string | null; receivedAt: string; sourceAt: string;
+  state: "running" | "waiting" | "blocked" | "failed" | "paused" | "claimed_done" | "verified" | "unknown";
   summary: string; evidenceRef: string; repo?: string; pid?: number; title?: string;
   parent?: SessionRelation; alias?: SessionRelation;
 };
