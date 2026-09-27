@@ -6,7 +6,7 @@ import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./db.js";
 import type { ClaimedControlCommand, ControlCommandRequestInput } from "./control-plane.js";
-import { reconcileDeletionControl } from "./memory-deletion-control.js";
+import { reconcileDeletionControl, refuseDeletionControl } from "./memory-deletion-control.js";
 import { MemoryDeletionDispatcher } from "./memory-deletion-dispatch.js";
 import { MemoryDeletionStore, type MemoryDeletionRecord } from "./memory-deletion-store.js";
 import type { MemoryDeletionSagaOptions, PrepareMemoryDeletionInput } from "./memory-deletion-types.js";
@@ -89,6 +89,12 @@ export class MemoryDeletionSaga {
   async reconcile(id: string): Promise<MemoryDeletionRecord> {
     let row = this.store.get(id); if (row === undefined) throw new JarvisError("MEMORY_DELETION_NOT_FOUND");
     if (row.state === "settled") return row;
+    if (row.state === "conflict") {
+      if (row.failure_code !== null) {
+        refuseDeletionControl(this.options.authority, row, row.failure_code, this.options.clock());
+      }
+      return row;
+    }
     if ((row.state === "queued" || row.state === "applying") && row.lane_id !== null) {
       await resumeMemoryDestructiveEffect(this.options, row.lane_id);
       row = this.store.get(id);
@@ -109,7 +115,9 @@ export class MemoryDeletionSaga {
       }
     }
     const observed = await this.options.observer.deletion(row);
-    if (observed.kind === "not_proved") return row;
+    if (observed.kind === "not_proved") {
+      return observed.refused === true ? await this.refuse(row, observed.code) : row;
+    }
     const proof = observed.proof;
     const now = this.options.clock();
     if (row.spool_locator !== null) {
@@ -136,6 +144,21 @@ export class MemoryDeletionSaga {
       lane_id: row.lane_id ?? "", request_id: row.request_id,
       tombstone_sequence: row.tombstone_sequence, now });
     return this.complete(id, purgeDigest);
+  }
+
+  /** The provider decided against this request before any effect, so the lane ends here. */
+  private async refuse(record: MemoryDeletionRecord, code: string): Promise<MemoryDeletionRecord> {
+    const now = this.options.clock();
+    if (record.spool_locator !== null) {
+      if (record.spool_digest === null || record.lane_id === null) {
+        throw new JarvisError("MEMORY_DELETION_SPOOL_MISSING");
+      }
+      await this.spool.remove(record.lane_id, record.spool_locator, record.spool_digest,
+        "terminal_failure", now);
+    }
+    const refused = this.store.refuse(record.deletion_id, code, now);
+    refuseDeletionControl(this.options.authority, refused, code, now);
+    return refused;
   }
 
   private complete(id: string, purgeDigest: string): MemoryDeletionRecord {

@@ -18,10 +18,11 @@ export async function executeApprovedMemoryCommand(
     }
     case "deletion": {
       const completed = executed.state === "settled";
+      const refused = executed.state === "conflict";
       return { request_id: command.request_id, action: command.action,
-        state: completed ? "completed" : "uncertain",
+        state: completed ? "completed" : refused ? "failed" : "uncertain",
         result: { deletion_id: executed.id, state: executed.state },
-        ...(completed ? {} : { failure_code: "MEMORY_DELETION_RECONCILING" }) };
+        ...(completed ? {} : { failure_code: refused ? "MEMORY_DELETION_REFUSED" : "MEMORY_DELETION_RECONCILING" }) };
     }
     case "export": {
       const completed = executed.state === "available";
