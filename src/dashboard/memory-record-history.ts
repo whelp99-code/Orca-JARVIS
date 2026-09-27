@@ -48,6 +48,12 @@ export function memoryRecordLineage(
      JOIN memory_surface_target_versions t ON t.target_version_digest=f.target_version_digest
      WHERE ${TARGET_MATCH} ORDER BY a.updated_at DESC,a.attempt_id LIMIT ?`,
   ).all(...match, MEMORY_HISTORY_LIMIT) as AttemptRow[];
+  // Forgotten is an exact existence question, never bounded by the history window.
+  const forgotten = authority.db.prepare(
+    `SELECT 1 FROM memory_surface_suppressions s
+     JOIN memory_surface_target_versions t ON t.target_version_digest=s.target_version_digest
+     WHERE s.operation='forget' AND ${TARGET_MATCH} LIMIT 1`,
+  ).get(...match);
   const legacy = authority.db.prepare(
     `SELECT 1 FROM memory_suppressions WHERE state='active' AND (
       target_digest IN (?,?) OR source_identity_digest IN (?,?)
@@ -62,7 +68,7 @@ export function memoryRecordLineage(
   ].sort((left, right) => right.at.localeCompare(left.at) || left.request_id.localeCompare(right.request_id))
     .slice(0, MEMORY_HISTORY_LIMIT);
   return {
-    forgotten: legacy !== undefined || suppressions.some(row => row.operation === "forget"),
+    forgotten: forgotten !== undefined || legacy !== undefined,
     superseded_by: suppressions.find(row => row.operation === "correct")?.control_request_id ?? null,
     history,
   };
