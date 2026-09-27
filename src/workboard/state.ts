@@ -13,6 +13,10 @@ export type AttentionState = AttentionEvent & { lastProgressReceivedAt: string |
 
 export function applyAttentionEvent(previous: AttentionState | null, event: AttentionEvent): AttentionState {
   if (previous && event.sequence <= previous.sequence) return previous;
-  return { ...event, lastProgressReceivedAt: event.progress && (!previous || Date.parse(event.receivedAt) >= Date.parse(previous.lastProgressReceivedAt ?? event.receivedAt))
-    ? event.receivedAt : previous?.lastProgressReceivedAt ?? null };
+  const progressed = event.progress && (!previous
+    || Date.parse(event.receivedAt) >= Date.parse(previous.lastProgressReceivedAt ?? event.receivedAt));
+  const lastProgressReceivedAt = progressed
+    ? event.receivedAt
+    : previous?.lastProgressReceivedAt ?? null;
+  return { ...event, lastProgressReceivedAt };
 }
