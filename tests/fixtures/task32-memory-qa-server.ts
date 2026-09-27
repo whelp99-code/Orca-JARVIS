@@ -1,5 +1,5 @@
 import { randomBytes } from "node:crypto";
-import { chmodSync, closeSync, mkdirSync, mkdtempSync, openSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, closeSync, mkdirSync, mkdtempSync, openSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { request } from "undici";
@@ -7,6 +7,7 @@ import { AuthorityDb } from "../../src/db.js";
 import { createSecondBrainReadAdapter } from "../../src/second-brain-adapter.js";
 import { createSecondBrainTransport, type SecondBrainTransport } from "../../src/second-brain-transport.js";
 import { createDashboardServer } from "../../src/dashboard/server.js";
+import { writeSecondBrainFixtureLauncher } from "./second-brain-transport-harness.js";
 import { seedForgottenRemovals, seedTask32QaRows } from "./task32-memory-qa-seed.js";
 
 /**
@@ -30,14 +31,13 @@ function providerRoot(root: string, scenario: Task32QaScenario): {
   readonly launcher: string; readonly config: string;
 } {
   const target = resolve("tests/fixtures/second-brain-mcp-child.mjs");
-  chmodSync(target, 0o755);
   const launcher = join(root, "second-brain-mcp");
   const config = join(root, "provider-config.json");
   const control = join(root, "provider-control");
   const receipt = join(root, "provider-receipt");
   closeSync(openSync(control, "w"));
   closeSync(openSync(receipt, "w"));
-  symlinkSync(target, launcher);
+  writeSecondBrainFixtureLauncher(launcher, target);
   writeFileSync(config, JSON.stringify({ control, receipt,
     adapterScenario: scenario === "no-data" ? "no-data" : "schema4",
     schema4Conflicts: scenario === "conflicts" }));

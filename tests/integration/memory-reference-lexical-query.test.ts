@@ -1,4 +1,4 @@
-import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { randomBytes } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -7,6 +7,7 @@ import { createProductionMemoryReference } from "../../src/memory-reference-prod
 import { normalizeMemoryLexicalQuery } from "../../src/memory-reference-query.js";
 import { createSecondBrainTransport } from "../../src/second-brain-transport.js";
 import { closeMemoryDatabase, memoryDatabase, type MemoryDatabase } from "../fixtures/memory-candidate-store.js";
+import { writeSecondBrainFixtureLauncher } from "../fixtures/second-brain-transport-harness.js";
 
 const PROVIDER_CHILD = resolve(process.cwd(), "tests/fixtures/second-brain-mcp-child.mjs");
 const PAGE = "wiki/next-steps";
@@ -28,9 +29,8 @@ async function provider(text: string) {
   const database = await memoryDatabase(); databases.push(database);
   const root = mkdtempSync(join(tmpdir(), "jarvis-lexical-query-")); roots.push(root);
   writeFileSync(join(root, "memory-projection.key"), randomBytes(32), { mode: 0o600 });
-  chmodSync(PROVIDER_CHILD, 0o755);
   const launcher = join(root, "second-brain-mcp");
-  symlinkSync(PROVIDER_CHILD, launcher);
+  writeSecondBrainFixtureLauncher(launcher, PROVIDER_CHILD);
   const config = join(root, "provider-config.json");
   writeFileSync(config, JSON.stringify({ adapterScenario: "schema4", schema4LexicalQuery: true,
     schema4Pages: [{ page_id: PAGE, sensitivity: "personal", updated: "2026-08-31",
