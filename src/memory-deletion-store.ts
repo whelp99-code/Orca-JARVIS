@@ -167,7 +167,7 @@ export class MemoryDeletionStore {
         proof.result_generation_id, proof.surface_manifest_digest, proof.proof_json, at);
       const changed = this.authority.db.prepare(
         `UPDATE memory_deletion_effect_requests SET state='provider_proved',provider_proof_digest=?,
-         surface_manifest_digest=?,failure_code=NULL,updated_at=?
+         surface_manifest_digest=?,spool_locator=NULL,failure_code=NULL,updated_at=?
          WHERE deletion_id=? AND state='reconciling'`,
       ).run(proof.proof_digest, proof.surface_manifest_digest, at, id);
       if (changed.changes !== 1) throw new JarvisError("MEMORY_DELETION_TRANSITION_INVALID");

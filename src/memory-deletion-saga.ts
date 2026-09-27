@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { MemoryDestructiveDispatchCursor } from "./memory-destructive-dispatch.js";
 import { resumeMemoryDestructiveEffect } from "./memory-destructive-recovery.js";
 import { recoverOrCompactMemory } from "./memory-compaction-resume.js";
 import { createHash } from "node:crypto";
@@ -96,7 +97,7 @@ export class MemoryDeletionSaga {
     if (row.request_id === null || row.request_digest === null || row.envelope_digest === null
       || row.provider_idempotency_key === null || row.delegation_id === null || row.delegation_digest === null
       || row.provider_instance_id === null || row.tombstone_sequence === null
-      || row.tombstone_set_root === null) return row;
+      || row.tombstone_set_root === null || row.lane_id === null) return row;
     if (row.state === "provider_proved") {
       const job = this.options.authority.db.prepare(
         `SELECT purge_id FROM memory_purge_jobs WHERE lane='deletion' AND lane_id=?
@@ -111,11 +112,17 @@ export class MemoryDeletionSaga {
     if (observed.kind === "not_proved") return row;
     const proof = observed.proof;
     const now = this.options.clock();
+    if (row.spool_locator !== null) {
+      if (row.spool_digest === null) throw new JarvisError("MEMORY_DELETION_SPOOL_MISSING");
+      await this.spool.remove(row.lane_id, row.spool_locator, row.spool_digest, "status_reconciled", now);
+    }
     this.store.proved(id, { proof_id: proof.proof_id, proof_digest: proof.proof_digest,
       provider_release_sha: proof.provider_release_sha,
       result_generation_id: observed.generation.generation_id,
       surface_manifest_digest: proof.surface_manifest_digest,
       proof_json: canonicalize(proof) }, now);
+    const cursor = new MemoryDestructiveDispatchCursor(this.options.authority);
+    if (cursor.active().active_lane_id === row.lane_id) cursor.accepted(row.lane_id, now);
     await this.options.barriers.reach({ barrier_id: "jarvis_proof_observation",
       lane_id: row.lane_id ?? "", request_id: row.request_id,
       tombstone_sequence: row.tombstone_sequence, now });

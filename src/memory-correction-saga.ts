@@ -1,3 +1,4 @@
+import { MemoryDestructiveDispatchCursor } from "./memory-destructive-dispatch.js";
 import { resumeMemoryDestructiveEffect } from "./memory-destructive-recovery.js";
 import { recoverOrCompactMemory } from "./memory-compaction-resume.js";
 import { candidateTaskSourceClosed } from "./memory-candidate-task-source.js";
@@ -157,12 +158,16 @@ export class MemoryCorrectionSaga {
     if (observed.kind === "not_proved") return record;
     const proof = observed.proof;
     const now = this.options.clock();
+    if (record.spool_locator !== null) await this.spool.remove(record.lane_id, record.spool_locator,
+      record.spool_digest, "status_reconciled", now);
     this.store.providerProved(correctionId, { proof_id: proof.proof_id,
       proof_digest: proof.proof_digest, provider_release_sha: proof.provider_release_sha,
       result_generation_id: observed.generation.generation_id,
       surface_manifest_digest: proof.surface_manifest_digest,
       artifact_manifest_digest: observed.replacement.artifact_manifest_digest,
       proof_json: canonicalize(proof) }, now);
+    const cursor = new MemoryDestructiveDispatchCursor(this.options.authority);
+    if (cursor.active().active_lane_id === record.lane_id) cursor.accepted(record.lane_id, now);
     await this.options.barriers.reach({ barrier_id: "jarvis_proof_observation",
       lane_id: record.lane_id, request_id: record.request_id,
       tombstone_sequence: record.tombstone_sequence, now });

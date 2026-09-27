@@ -176,7 +176,7 @@ export class MemoryCorrectionStore {
         proof.proof_json, at);
       this.authority.db.prepare(
         `UPDATE memory_correction_requests SET state='provider_proved',provider_proof_digest=?,
-         surface_manifest_digest=?,failure_code=NULL,updated_at=? WHERE correction_id=? AND state='reconciling'`,
+         surface_manifest_digest=?,spool_locator=NULL,failure_code=NULL,updated_at=? WHERE correction_id=? AND state='reconciling'`,
       ).run(proof.proof_digest, proof.surface_manifest_digest, at, correctionId);
       this.event(correctionId, "provider_proved", now, proof.proof_digest);
     }).immediate();

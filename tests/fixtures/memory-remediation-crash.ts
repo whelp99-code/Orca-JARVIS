@@ -13,14 +13,15 @@ const resultSchema = z.object({ kind: z.literal("recovered"), result: z.object({
 
 export async function runRecoveryCrash(input: {
   readonly lane: "correction" | "deletion";
-  readonly barrier: "jarvis_suppression_tombstone_commit" | "before_settlement_commit";
+  readonly barrier: "jarvis_suppression_tombstone_commit" | "before_settlement_commit" | "provider_accepted_before_local_persistence";
+  readonly status?: "pending" | "proved";
 }) {
   const root = mkdtempSync(join(tmpdir(), "task30-remediation-crash-"));
   const descriptor = join(root, "descriptor.json");
   const channels: ReturnType<typeof start>[] = [];
   function start(mode: "hold" | "recover") {
     const child = spawn(process.execPath, [resolve("dist/tests/fixtures/memory-remediation-crash-worker.js"),
-      mode, descriptor, input.lane, input.barrier], { env: { PATH: "/usr/bin:/bin", HOME: root } });
+      mode, descriptor, input.lane, input.barrier, input.status ?? "proved"], { env: { PATH: "/usr/bin:/bin", HOME: root } });
     const lines = createInterface({ input: child.stdout });
     let stderr = "";
     child.stderr.on("data", chunk => { stderr += String(chunk); });
@@ -31,16 +32,30 @@ export async function runRecoveryCrash(input: {
   }
   try {
     const first = start("hold"); channels.push(first);
-    const [event] = await first.output;
+    const [event] = await Promise.race([first.output, first.closed.then(() => { throw new Error(`WORKER_EXITED:${first.stderr()}`); })]);
     z.object({ kind: z.literal("barrier"), barrier_id: z.literal(input.barrier) }).parse(JSON.parse(String(event)));
     first.child.kill("SIGKILL");
     const killed = await first.closed;
     if (killed[1] !== "SIGKILL") throw new Error(`CRASH_NOT_CONFIRMED:${first.stderr()}`);
     const restarted = start("recover"); channels.push(restarted);
-    const [line] = await restarted.output;
+    const [line] = await Promise.race([restarted.output, restarted.closed.then(() => { throw new Error(`RECOVERY_EXITED:${restarted.stderr()}`); })]);
     const exited = await restarted.closed;
     if (exited[0] !== 0) throw new Error(`RECOVERY_FAILED:${restarted.stderr()}`);
-    return resultSchema.parse(JSON.parse(String(line)));
+    const value: unknown = JSON.parse(String(line));
+    if (input.barrier === "provider_accepted_before_local_persistence") return z.object({
+      kind: z.literal("recovered"), result: z.object({ ok: z.literal(true), command: z.literal("memory.lifecycle") }),
+      rows: z.array(z.object({ state: z.string(), request_id: z.string(), request_digest: z.string(),
+        envelope_digest: z.string(), delegation_id: z.string(), delegation_digest: z.string(),
+        expires_at: z.string(), dispatch_fence: z.number(), tombstone_sequence: z.number() })).length(1),
+      recovered: z.array(z.string()), tombstones: z.number(), purges: z.number(), frames: z.number(), effects: z.number(),
+      effect_rows: z.object({ count: z.number() }), redemption_rows: z.object({ count: z.number() }),
+      status_reads: z.number(), accepted_through: z.number(), reconciled_spools: z.number(),
+      attempt_rows: z.number(), original_request: z.object({
+        request_id: z.string(), request_digest: z.string(), envelope_digest: z.string(), expires_at: z.string(),
+        delegation: z.object({ delegation_id: z.string(), delegation_digest: z.string(), signing_key_id: z.string() }),
+      }),
+    }).parse(value);
+    return resultSchema.parse(value);
   } finally {
     for (const channel of channels) {
       channel.lines.close();

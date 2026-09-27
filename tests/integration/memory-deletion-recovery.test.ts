@@ -32,7 +32,7 @@ describe("production deletion restart recovery", () => {
         .toEqual({ accepted_through_sequence: 2 });
     } finally { await f.close(); }
   });
-  it.each(["queued", "applying"] as const)("resumes %s under the original permanent tombstone", async state => {
+  it.each(["queued", "applying", "cursor_spent"] as const)("recovers %s without spending a second dispatch fence", async state => {
     // Given: persisted deletion authority with its receipt already redeemed.
     const f = await deletionPreparedFixture();
     try {
@@ -43,21 +43,22 @@ describe("production deletion restart recovery", () => {
       const before = store.get("deletion:recovery");
       if (before?.lane_id === null || before?.request_digest === null || before?.tombstone_sequence === null
         || before === undefined) throw new Error("DELETION_IDENTITY_MISSING");
-      if (state === "applying") {
+      if (state !== "queued") {
         new MemoryDestructiveDispatchCursor(f.db).claim({ lane: "deletion", lane_id: before.lane_id,
           request_digest: before.request_digest, sequence: before.tombstone_sequence }, f.runtime.clock());
-        store.begin(before.deletion_id, f.runtime.clock());
+        if (state === "applying") store.begin(before.deletion_id, f.runtime.clock());
       }
       f.setTime(new Date(f.runtime.clock().getTime() + 1_000));
       // When: only production reconciliation runs after restart.
       await new ProductionMemoryLifecycleService(f.runtime, async () => undefined).reconcilePending(10);
-      // Then: it resumes once, without appending a tombstone or requiring another owner approval.
-      expect(store.get(before.deletion_id)?.state).toBe("reconciling");
+      // Then: only an unspent queued cursor may send; ambiguity stays observation-only.
+      expect(store.get(before.deletion_id)?.state).toBe(state === "cursor_spent" ? "queued" : "reconciling");
       expect(f.writer.calls.map(request => ({ request_id: request.request_id, envelope_digest: request.envelope_digest,
-        idempotency_key: request.idempotency_key }))).toEqual([{ request_id: before.request_id,
-        envelope_digest: before.envelope_digest, idempotency_key: before.provider_idempotency_key }]);
+        idempotency_key: request.idempotency_key }))).toEqual(state === "queued" ? [{ request_id: before.request_id,
+        envelope_digest: before.envelope_digest, idempotency_key: before.provider_idempotency_key }] : []);
       expect(f.db.db.prepare("SELECT count(*) AS count FROM memory_tombstone_chain").get()).toEqual({ count: 1 });
-      expect(f.db.db.prepare("SELECT count(*) AS count FROM memory_deletion_attempts").get()).toEqual({ count: 1 });
+      expect(f.db.db.prepare("SELECT count(*) AS count FROM memory_deletion_attempts").get())
+        .toEqual({ count: state === "cursor_spent" ? 0 : 1 });
     } finally { await f.close(); }
   });
 
