@@ -1,3 +1,5 @@
+import { DASHBOARD_HEALTH_TIMEOUT_MS } from "./dashboard-runtime-config.js";
+
 export const LOOPBACK = "127.0.0.1" as const;
 export const PHONE_GATEWAY_PORT = 4176 as const;
 export const PHONE_PUBLIC_HTTPS_PORT = 8444 as const;
@@ -36,7 +38,7 @@ export const PHONE_GATEWAY_LIMITS = {
   concurrentUpstream: 8,
   connectTimeoutMs: 1000,
   totalTimeoutMs: 10_000,
-  healthTimeoutMs: 2000,
+  healthTimeoutMs: DASHBOARD_HEALTH_TIMEOUT_MS,
 } as const;
 
 export const PHONE_ERROR_CODES = {
