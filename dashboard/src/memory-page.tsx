@@ -60,9 +60,18 @@ export function MemoryPage({ store, client }: Readonly<{ store: MemoryStore; cli
   };
   const settle = (outcome: MemoryDetailOutcome): void => {
     if (store.getSnapshot().search_revision !== snapshot.search_revision) return;
+    if (outcome.kind === "stale") {
+      // The rejection is proof these rows are out of date, so drop them and re-read rather than keep
+      // listing a record the provider may already have forgotten. The reason is re-announced against
+      // the generation the clear opens, otherwise it would be discarded with the rows it explains.
+      setSelectedRevision(undefined);
+      store.clearPrivate();
+      setAnnounced({ revision: store.getSnapshot().search_revision, message: outcome.message });
+      void store.load();
+      return;
+    }
     setAnnounced({ revision: snapshot.search_revision, message: outcome.message });
     if (outcome.kind === "staged") { setSelectedRevision(undefined); void store.load(); }
-    else if (outcome.kind === "stale") { setSelectedRevision(undefined); }
   };
   return <div className="page-frame dashboard-main memory-page"><header className="memory-heading">
     <div><p className="today-kicker">USER-CONTROLLED MEMORY</p><h1>Memory</h1></div>

@@ -3,7 +3,7 @@ import { act, cleanup, fireEvent, render, screen } from "@testing-library/react"
 import { afterEach, expect, it, vi } from "vitest";
 import { MemoryPage } from "./memory-page.js";
 import { createMemoryStore } from "./memory-store.js";
-import type { MemoryClient } from "./memory-api.js";
+import { MemoryRequestError, type MemoryClient } from "./memory-api.js";
 import type { MemorySearch } from "./memory-types.js";
 
 afterEach(() => { cleanup(); vi.useRealTimers(); });
@@ -62,6 +62,24 @@ it("retires a staging announcement with its search generation so expiry is annou
   // Then the region announces the expiry instead of the announcement it has outlived
   expect(document.body.textContent).toContain("Memory status expired");
   expect(document.body.textContent).not.toContain("Pending owner approval");
+  act(() => store.stop());
+});
+
+it("drops the stale rows a rejected command just proved out of date", async () => {
+  // Given a staged forget the provider rejects because the record moved under us
+  const { store, client } = await fixture();
+  client.forget = async () => { throw new MemoryRequestError("MEMORY_SELECTION_STALE", 409); };
+  let reloads = 0;
+  const status = await client.status();
+  client.status = async () => { reloads += 1; return status; };
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Stage forgetting" })); });
+  // Then the record it was acting on is no longer listed with its excerpt, and the surface is re-read
+  expect(document.body.textContent).not.toContain("Private fixture body");
+  expect(store.getSnapshot().search).toBeUndefined();
+  expect(reloads).toBe(1);
+  // And the owner is still told why, rather than the rejection being swallowed by the clear
+  expect(document.querySelector("p.memory-status"))
+    .toHaveTextContent("This record changed since it was loaded");
   act(() => store.stop());
 });
 
