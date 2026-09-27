@@ -16,10 +16,25 @@
   gap: var(--space-3);
 }
 
+.portfolio-heading {
+  flex-wrap: wrap;
+}
+
+.portfolio-heading-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--space-3);
+}
+
 .portfolio-heading > p,
 .portfolio-updated {
   color: var(--color-text-muted);
   font-size: var(--type-sm);
+}
+
+.portfolio-lead {
+  flex-basis: 100%;
 }
 
 .portfolio-eyebrow {

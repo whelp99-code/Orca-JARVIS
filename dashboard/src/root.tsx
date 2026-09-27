@@ -166,7 +166,7 @@ function OverviewRoute({ state, store }: Readonly<{ state: DashboardState; store
       );
     case "success":
     case "empty":
-      return <App overview={state.overview.data} />;
+      return <App overview={state.overview.data} onRefresh={() => store.refreshOverview()} />;
     default:
       return assertNever(state.overview);
   }

@@ -7,6 +7,7 @@ import { DaemonRuntimeStatus } from "./daemon-runtime-status.js";
 
 type AppProps = Readonly<{
   overview: OverviewResponse;
+  onRefresh?: () => void | Promise<void>;
 }>;
 
 type PanelProps = Readonly<{
@@ -15,7 +16,7 @@ type PanelProps = Readonly<{
   children: ReactNode;
 }>;
 
-export default function App({ overview }: AppProps) {
+export default function App({ overview, onRefresh }: AppProps) {
   const activeWorkCount = overview.cards.find(card => card.id === "active-work")?.value ?? 0;
   const statusCards = [
     {
@@ -72,7 +73,7 @@ export default function App({ overview }: AppProps) {
           ))}
         </section>
 
-        <PortfolioStatus portfolio={overview.portfolio} />
+        <PortfolioStatus portfolio={overview.portfolio} onRefresh={onRefresh} />
         <RuntimeStatus runtime={overview.runtime} />
         <DaemonRuntimeStatus daemon={overview.daemon_identity} />
 

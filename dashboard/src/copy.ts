@@ -47,6 +47,9 @@ export const copy = {
       offline: "끊김",
     },
     updated: "갱신",
+    lastUpdated: "마지막 갱신",
+    refresh: "지금 갱신",
+    refreshing: "불러오는 중",
     metrics: [
       ["작업 폴더", "worktree_count"],
       ["터미널", "terminal_count"],
