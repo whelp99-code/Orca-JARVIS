@@ -6,6 +6,18 @@ import { MemoryCandidatesSchema, MemoryConflictsSchema, MemoryEffectsSchema,
 
 type SessionLoader = () => Promise<SessionResponse>;
 export type MemoryClient = ReturnType<typeof createMemoryClient>;
+const ERROR_CODE = /^[A-Z][A-Z0-9_]{2,63}$/u;
+/** A non-2xx Memory response. Only the machine code crosses into the UI; the raw message never renders. */
+export class MemoryRequestError extends Error {
+  constructor(readonly code: string, readonly status: number) { super(code); this.name = "MemoryRequestError"; }
+}
+function errorCode(value: unknown): string {
+  const error = typeof value === "object" && value !== null ? Reflect.get(value, "error") : undefined;
+  const code = typeof error === "object" && error !== null ? Reflect.get(error, "code") : undefined;
+  return typeof code === "string" && ERROR_CODE.test(code) ? code : "MEMORY_REQUEST_FAILED";
+}
+const EFFECT_OPERATIONS = ["correct", "forget", "export"] as const;
+const EFFECT_STATES = ["pending_approval", "applying", "completed"] as const;
 export function createMemoryClient(loadSession: SessionLoader) {
   async function request(path: string, init: RequestInit = {}): Promise<unknown> {
     const session = await loadSession();
@@ -17,7 +29,7 @@ export function createMemoryClient(loadSession: SessionLoader) {
       if (error instanceof ResponseBodyTooLargeError) throw new Error("MEMORY_RESPONSE_TOO_LARGE");
       throw error;
     }
-    if (!response.ok) throw new Error("MEMORY_REQUEST_FAILED");
+    if (!response.ok) throw new MemoryRequestError(errorCode(value), response.status);
     return value;
   }
   async function post(path: string, body: unknown, signal?: AbortSignal): Promise<unknown> {
@@ -47,14 +59,16 @@ export function createMemoryClient(loadSession: SessionLoader) {
     rememberProgress: async () => MemoryRememberProgressSchema.parse(await request(
       "/api/v1/memory/remember-progress?limit=20")),
     effects: async () => {
-      const states = ["pending_approval", "applying", "completed", "available"] as const;
-      const pages = await Promise.all(states.map(async state => MemoryEffectsSchema.parse(
-        await request(`/api/v1/memory/effects?operation=export&state=${state}&limit=20`))));
-      const items = pages.flatMap(page => page.items).slice(0, 100);
+      const queries = [...EFFECT_OPERATIONS.flatMap(operation => EFFECT_STATES.map(state => ({ operation, state }))),
+        { operation: "export", state: "available" }];
+      const pages = await Promise.all(queries.map(async query => MemoryEffectsSchema.parse(await request(
+        `/api/v1/memory/effects?operation=${query.operation}&state=${query.state}&limit=20`))));
+      const items = pages.flatMap(page => page.items)
+        .sort((left, right) => right.updated_at.localeCompare(left.updated_at)).slice(0, 100);
       const first = pages[0];
       if (first === undefined) throw new Error("MEMORY_REQUEST_FAILED");
-      return { ...first, items, page: { limit: 20, returned: items.length, has_more: false,
-        next_cursor: null } };
+      return { ...first, items, page: { limit: 20, returned: items.length,
+        has_more: pages.some(page => page.page.has_more), next_cursor: null } };
     },
     search: async (query: string, signal?: AbortSignal) => MemorySearchSchema.parse(await post(
       "/api/v1/memory/search", { schema_version: 1, query, limit: 20 }, signal)),

@@ -25,7 +25,7 @@ describe("candidate review actions", () => {
     let finish!: (value: unknown) => void;
     const decision = vi.fn(() => new Promise(resolve => { finish = resolve; }));
     const client = { candidateDecision: decision } as unknown as MemoryClient;
-    const props = { value, client, enabled: true, onReview, onChanged };
+    const props = { value, pending: false, client, enabled: true, onReview, onChanged };
     const rendered = render(<MemoryCandidates {...props} />);
     expect(screen.queryByText(review.statement)).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "Prepare confirmation" })).not.toBeInTheDocument();
@@ -41,7 +41,7 @@ describe("candidate review actions", () => {
     expect(onChanged).toHaveBeenCalledOnce();
   });
   it("never labels approval or acceptance as stored", () => {
-    render(<MemoryEffects progress={{ schema_version: 1, resource: "memory-remember-progress", generated_at: "now",
+    render(<MemoryEffects pending={false} progress={{ schema_version: 1, resource: "memory-remember-progress", generated_at: "now",
       has_more: false, items: [{ request_id: "pending-command", state: "approved", outbox_state: "queued",
         failure_code: null, stored: false }, { request_id: "done-command", state: "completed",
         outbox_state: "settled", failure_code: null, stored: true }] }} />);
@@ -51,7 +51,7 @@ describe("candidate review actions", () => {
   it("does not refresh private state when a prepared command responds after the view was closed", async () => {
     const onChanged = vi.fn(); let finish!: (value: unknown) => void;
     const client = { candidateDecision: () => new Promise(resolve => { finish = resolve; }) } as unknown as MemoryClient;
-    const rendered = render(<MemoryCandidates value={value} review={review} client={client}
+    const rendered = render(<MemoryCandidates pending={false} value={value} review={review} client={client}
       enabled onReview={async () => {}} onChanged={onChanged} />);
     fireEvent.click(screen.getByRole("button", { name: "Prepare confirmation" })); rendered.unmount();
     await act(async () => { finish({ request_id: "persisted-command", state: "pending_approval" }); });

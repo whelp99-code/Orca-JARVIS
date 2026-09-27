@@ -1,0 +1,61 @@
+npm notice run orca-jarvis-shadow@0.1.0 npx
+npm notice run 'vitest' run --config dashboard/vite.config.ts --no-file-parallelism
+
+ RUN  v3.2.7 /home/jm/orca/workspaces/Orca-JARVIS/task-32-remediation/dashboard
+
+ ✓ src/task-execution-panel.test.tsx (13 tests) 1968ms
+   ✓ task execution screen > invalidates the preview on relationship edits and displays the submitted lineage for approval  712ms
+   ✓ task execution screen > prepares explicit inputs, invalidates an edited preview, then follows approval to durable result  333ms
+ ✓ src/proposal-page.test.tsx (5 tests) 1728ms
+   ✓ proposal interview and receipt-bound task staging > previews the normalized request and exposes the ready proposal  562ms
+   ✓ proposal interview and receipt-bound task staging > stages the ready proposal with deterministic identifiers and deadline  411ms
+   ✓ proposal interview and receipt-bound task staging > renders blocked capability reasons without exposing task staging  304ms
+   ✓ proposal interview and receipt-bound task staging > offers retry after a transport error without losing interview input  371ms
+ ✓ src/task-template-proposal.test.tsx (4 tests) 476ms
+   ✓ previews server-compiled scope, invalidates edits, and preserves a single request after an uncertain response  332ms
+ ✓ src/authority-controls.test.tsx (22 tests) 398ms
+ ✓ src/memory-page-lifetime.test.tsx (6 tests) 366ms
+ ✓ src/memory-detail.test.tsx (6 tests) 250ms
+ ✓ src/root-task.test.tsx (2 tests) 229ms
+ ✓ src/today-page.test.tsx (8 tests) 269ms
+ ✓ src/app.test.tsx (7 tests) 304ms
+ ✓ src/operational-shell.test.tsx (6 tests) 256ms
+ ✓ src/root.test.tsx (3 tests) 243ms
+ ✓ src/root-agent.test.tsx (3 tests) 247ms
+ ✓ src/root-approvals.test.tsx (5 tests) 233ms
+ ✓ src/task-control.test.tsx (8 tests) 216ms
+ ✓ src/task-routing-summary.test.tsx (3 tests) 216ms
+ ✓ src/memory-candidates.test.tsx (4 tests) 138ms
+ ✓ src/read-pages.test.tsx (11 tests) 197ms
+ ✓ src/pages/security-page.test.tsx (1 test) 183ms
+ ✓ src/memory-surface-states.test.tsx (6 tests) 125ms
+ ✓ src/components/task-graph.test.tsx (4 tests) 165ms
+ ✓ src/memory-conflicts.test.tsx (2 tests) 125ms
+ ✓ src/portfolio-status.test.tsx (3 tests) 145ms
+ ✓ src/daemon-runtime-status.test.tsx (35 tests) 144ms
+ ✓ src/runtime-status.test.tsx (18 tests) 137ms
+ ✓ src/pages/approvals-page.test.tsx (2 tests) 122ms
+ ✓ src/approval-pagination.test.tsx (4 tests) 128ms
+ ✓ src/components/terminal-log.test.tsx (4 tests) 130ms
+ ✓ src/components/timeline-panel.test.tsx (4 tests) 129ms
+ ✓ src/store-coalescing.test.ts (5 tests) 71ms
+ ✓ src/memory-api.test.ts (2 tests) 42ms
+ ✓ src/personal-store.test.ts (15 tests) 26ms
+ ✓ src/personal-api.test.ts (18 tests) 19ms
+ ✓ src/response-budget.test.ts (8 tests) 14ms
+ ✓ src/authority-api.test.ts (6 tests) 14ms
+ ✓ src/memory-store-freshness.test.ts (7 tests) 11ms
+ ✓ src/task-execution-api.test.ts (4 tests) 9ms
+ ✓ src/store-reconnect.test.ts (2 tests) 8ms
+ ✓ src/store-sse.test.ts (8 tests) 9ms
+ ✓ src/store-recovery.test.ts (4 tests) 7ms
+ ✓ src/task-execution-resource.test.ts (3 tests) 7ms
+ ✓ src/store-resources.test.ts (1 test) 4ms
+ ✓ src/portfolio-guard.test.ts (3 tests) 2ms
+
+ Test Files  42 passed (42)
+      Tests  285 passed (285)
+   Start at  03:26:53
+   Duration  40.34s (transform 671ms, setup 0ms, collect 4.60s, tests 9.51s, environment 20.10s, prepare 1.79s)
+
+dashboard exit 0

@@ -1,0 +1,260 @@
+{
+ "schema_version": 1,
+ "task": "task-32-jarvis-personal-operating-system",
+ "code_head": "16c421a",
+ "base": "48287b6eb6122d746380278618871ea729b0e525",
+ "screenshots": 30,
+ "traces": 11,
+ "files": [
+  {
+   "path": "logs/architecture-check.log",
+   "bytes": 206,
+   "sha256": "bcf9409d22d4545246725637265729d6f8c51e1a3a5f9a6af99222b4f2be7900"
+  },
+  {
+   "path": "logs/build.log",
+   "bytes": 1293,
+   "sha256": "00abbb673f2237c01b8e53e3d1aee488acf81567265ba2aa3b8063bed8a69f6a"
+  },
+  {
+   "path": "logs/lint.log",
+   "bytes": 197,
+   "sha256": "be244bf435fbc00f2c32138448ba42d832ac1d04b0f34b5f05bfe2f08628c521"
+  },
+  {
+   "path": "logs/typecheck.log",
+   "bytes": 175,
+   "sha256": "59ccf5b16fe84645e369011111fa5d7376a09eab732877595b081a593bdb7cba"
+  },
+  {
+   "path": "logs/vitest-backend-memory.log",
+   "bytes": 4036,
+   "sha256": "5cbbecc4ff97ad33e26275070fe566300ac5e1e6b574ba3587c89cc296605566"
+  },
+  {
+   "path": "logs/vitest-dashboard-full.log",
+   "bytes": 3442,
+   "sha256": "02ae5da9cae9729d764f64bc8cfb9d30926b1acc91ea1263c630f8f0b058018b"
+  },
+  {
+   "path": "logs/vitest-unit-memory.log",
+   "bytes": 685,
+   "sha256": "3e06a5113d53d429ab57623a74756dfb2be92d7de6414ab3241e189072604c52"
+  },
+  {
+   "path": "playwright/.last-run.json",
+   "bytes": 45,
+   "sha256": "91d1c43004802cd49950d78eb11c8fa7d05da8ffffe219a8b13b2f561bc00903"
+  },
+  {
+   "path": "playwright/task32-memory-Memory-route-9f312--at-every-accepted-viewport-memory-chromium/attachments/memory-1440-5d28050f7a84118429ebe2d0a1df8270278547b3.png",
+   "bytes": 202110,
+   "sha256": "ce387814b113188610803fc897a3dda6b3f47516422c21ebb61b4546fa9af9b8"
+  },
+  {
+   "path": "playwright/task32-memory-Memory-route-9f312--at-every-accepted-viewport-memory-chromium/attachments/memory-390-5e4f067af1686f603d8d2b6d6a49b089d052a49c.png",
+   "bytes": 191861,
+   "sha256": "28762ed479aec96b9afee4104497fd066b150497a3c105f92b9c0dc8ceedf32b"
+  },
+  {
+   "path": "playwright/task32-memory-Memory-route-9f312--at-every-accepted-viewport-memory-chromium/attachments/memory-640-86d72bdc6d1aa10eec0602acd10228e6f23723f0.png",
+   "bytes": 196775,
+   "sha256": "c03ae5e8db33792573f96920e196318aec360e364703455c77cb6ff5c45d725e"
+  },
+  {
+   "path": "playwright/task32-memory-Memory-route-9f312--at-every-accepted-viewport-memory-chromium/memory-1440.png",
+   "bytes": 202110,
+   "sha256": "ce387814b113188610803fc897a3dda6b3f47516422c21ebb61b4546fa9af9b8"
+  },
+  {
+   "path": "playwright/task32-memory-Memory-route-9f312--at-every-accepted-viewport-memory-chromium/memory-390.png",
+   "bytes": 191861,
+   "sha256": "28762ed479aec96b9afee4104497fd066b150497a3c105f92b9c0dc8ceedf32b"
+  },
+  {
+   "path": "playwright/task32-memory-Memory-route-9f312--at-every-accepted-viewport-memory-chromium/memory-640.png",
+   "bytes": 196775,
+   "sha256": "c03ae5e8db33792573f96920e196318aec360e364703455c77cb6ff5c45d725e"
+  },
+  {
+   "path": "playwright/task32-memory-Memory-route-9f312--at-every-accepted-viewport-memory-chromium/trace.zip",
+   "bytes": 4380268,
+   "sha256": "af298199ef49d4d4d06c9acf3068b1d4013922801876f144dfd94d119c786e5b"
+  },
+  {
+   "path": "playwright/task32-memory-layout-CJK-l-26bb7-syllable-breaks-or-overflow-memory-chromium/10-cjk-390.png",
+   "bytes": 254262,
+   "sha256": "8a3ab9669e8203e8896c737bd2415253645cd850f385fe8a777796091cad9cc4"
+  },
+  {
+   "path": "playwright/task32-memory-layout-CJK-l-26bb7-syllable-breaks-or-overflow-memory-chromium/trace.zip",
+   "bytes": 1376096,
+   "sha256": "f10637d413858b3bcfbd3cf7bc8639bfed816c2b24c51f8c588f065ca03544b1"
+  },
+  {
+   "path": "playwright/task32-memory-layout-Memor-a1168-ble-with-the-keyboard-alone-memory-chromium/11-keyboard-1440.png",
+   "bytes": 151943,
+   "sha256": "c5ee705b9c8dc85050c4e50bd40d62db98d44638fcf8f20b1c51c35a5fcd6c7b"
+  },
+  {
+   "path": "playwright/task32-memory-layout-Memor-a1168-ble-with-the-keyboard-alone-memory-chromium/trace.zip",
+   "bytes": 1041129,
+   "sha256": "3ee70858751f8004a69d085f71f37d2543974145fef4909e5ca934b111c2ec3f"
+  },
+  {
+   "path": "playwright/task32-memory-layout-provi-afafe--at-every-accepted-viewport-memory-chromium/09-current@1440.png",
+   "bytes": 151990,
+   "sha256": "18b8502feb2e9d8d0060e58ead084730384ea984d653a32456678e10577e09c7"
+  },
+  {
+   "path": "playwright/task32-memory-layout-provi-afafe--at-every-accepted-viewport-memory-chromium/09-current@390.png",
+   "bytes": 143942,
+   "sha256": "e0c778a67333776c3e223a6440f9008318b2f814fffdec2cbfa8b925f28aa636"
+  },
+  {
+   "path": "playwright/task32-memory-layout-provi-afafe--at-every-accepted-viewport-memory-chromium/09-current@640.png",
+   "bytes": 147705,
+   "sha256": "f239cac28f8fdb01c2357327f1ef0c7926a59042fdae87e44561639e77f16547"
+  },
+  {
+   "path": "playwright/task32-memory-layout-provi-afafe--at-every-accepted-viewport-memory-chromium/09-no_data@1440.png",
+   "bytes": 80633,
+   "sha256": "6ffd59afe16b18036143b6ece3436b95388415a169d99668d0bcec85de0f151c"
+  },
+  {
+   "path": "playwright/task32-memory-layout-provi-afafe--at-every-accepted-viewport-memory-chromium/09-no_data@390.png",
+   "bytes": 76237,
+   "sha256": "299c18c2f3c497c5399e8b4741f1d526d80cf2999aedef2be92d527f24d879ac"
+  },
+  {
+   "path": "playwright/task32-memory-layout-provi-afafe--at-every-accepted-viewport-memory-chromium/09-no_data@640.png",
+   "bytes": 77796,
+   "sha256": "14e02128f621a4aa1a02beef57755faee99314b278015e4429c6966d1d69177e"
+  },
+  {
+   "path": "playwright/task32-memory-layout-provi-afafe--at-every-accepted-viewport-memory-chromium/09-offline@1440.png",
+   "bytes": 86293,
+   "sha256": "735b91c1a53189036b0ad24f0b498fb3057d77bf0d9b128cc5f003d1ff4a05d2"
+  },
+  {
+   "path": "playwright/task32-memory-layout-provi-afafe--at-every-accepted-viewport-memory-chromium/09-offline@390.png",
+   "bytes": 82735,
+   "sha256": "00c99f358bbfb97da0d5b9e5c777e771dc93c17e9428c06f8330595b63e09bee"
+  },
+  {
+   "path": "playwright/task32-memory-layout-provi-afafe--at-every-accepted-viewport-memory-chromium/09-offline@640.png",
+   "bytes": 83469,
+   "sha256": "8779360ec64bb907c855fddf8a85f461f91cd8c7f04b4572e09660785cddfab1"
+  },
+  {
+   "path": "playwright/task32-memory-layout-provi-afafe--at-every-accepted-viewport-memory-chromium/09-stale@1440.png",
+   "bytes": 157158,
+   "sha256": "79530b8f2c9cb9b146e2344ce7b7437f67229db2762f2d8b2faaa5773a6219b1"
+  },
+  {
+   "path": "playwright/task32-memory-layout-provi-afafe--at-every-accepted-viewport-memory-chromium/09-stale@390.png",
+   "bytes": 149326,
+   "sha256": "54a8b3af000d930c4139c2af7530c0517bebbf1c59f2e75451c63705f074ccc0"
+  },
+  {
+   "path": "playwright/task32-memory-layout-provi-afafe--at-every-accepted-viewport-memory-chromium/09-stale@640.png",
+   "bytes": 152035,
+   "sha256": "15fc59b878bda4c3ce6651a4219e8a0cc475e90e54b53297ad751e635e29629b"
+  },
+  {
+   "path": "playwright/task32-memory-layout-provi-afafe--at-every-accepted-viewport-memory-chromium/trace.zip",
+   "bytes": 14700931,
+   "sha256": "4ff81f38468d38b74484738c642dcfd1de2c1b350d4fab2928257cf1e30475f1"
+  },
+  {
+   "path": "playwright/task32-memory-states-delet-db3ff-rs-after-an-approved-forget-memory-chromium/07-deleted-sentinel-absent-1440.png",
+   "bytes": 151493,
+   "sha256": "73737389602be010aaa501ff3b7d68ee587838b23453b378f4f68152618262f7"
+  },
+  {
+   "path": "playwright/task32-memory-states-delet-db3ff-rs-after-an-approved-forget-memory-chromium/trace.zip",
+   "bytes": 645436,
+   "sha256": "8a7f585c229f8c0004d90118bc6d284173251e95b2eefde1317e018cd18339fc"
+  },
+  {
+   "path": "playwright/task32-memory-states-happy-1c1b7-erve-superseded-then-forget-memory-chromium/01-detail-citation-1440.png",
+   "bytes": 200124,
+   "sha256": "7327bd07f8e2b03f415cac5567f7ab74baea24f3c4caf753b099ae3fca3d5b4a"
+  },
+  {
+   "path": "playwright/task32-memory-states-happy-1c1b7-erve-superseded-then-forget-memory-chromium/02-correction-staged-1440.png",
+   "bytes": 221312,
+   "sha256": "8516a19c42b97ce043dd5ad3a02b12ff7e3bd860ec5a3e31d6965e465c0b7a20"
+  },
+  {
+   "path": "playwright/task32-memory-states-happy-1c1b7-erve-superseded-then-forget-memory-chromium/03-superseded-1440.png",
+   "bytes": 240860,
+   "sha256": "cccab41bbe4ad3d3ae4f0ca99d35930604a0d3efe08f0584ffa7455dc70be30c"
+  },
+  {
+   "path": "playwright/task32-memory-states-happy-1c1b7-erve-superseded-then-forget-memory-chromium/04-forget-staged-1440.png",
+   "bytes": 169787,
+   "sha256": "f556b2f5a58bd0cff1b22cefee4bb1a7bb70fa156b409e089ef5a692776bffcc"
+  },
+  {
+   "path": "playwright/task32-memory-states-happy-1c1b7-erve-superseded-then-forget-memory-chromium/05-after-forget-1440.png",
+   "bytes": 161534,
+   "sha256": "c58dfe90178b48cc4b58b788416b15f36c6b1af3ede82fbdb36da91faf83fe1d"
+  },
+  {
+   "path": "playwright/task32-memory-states-happy-1c1b7-erve-superseded-then-forget-memory-chromium/trace.zip",
+   "bytes": 2815603,
+   "sha256": "340645ca460c86594b7b204604969dee8f5022ae1ac3ec5ba0816e957947392d"
+  },
+  {
+   "path": "playwright/task32-memory-states-offli-200aa-r-presented-as-empty-memory-memory-chromium/08-offline-1440.png",
+   "bytes": 86273,
+   "sha256": "c830a6a8f632977f3a822f9f35a217732b2a238e29e061396597102ada16f6a7"
+  },
+  {
+   "path": "playwright/task32-memory-states-offli-200aa-r-presented-as-empty-memory-memory-chromium/trace.zip",
+   "bytes": 1289285,
+   "sha256": "d41df1e72022e8fccce93ed30c0c14d55d61af2dedcd57481b08b646669edf0e"
+  },
+  {
+   "path": "playwright/task32-memory-states-searc-e4687-0-s-status-freshness-window-memory-chromium/12-idle-65s-search-1440.png",
+   "bytes": 124980,
+   "sha256": "903bdd8543d126391ce5d9c35e58f3292d8fd5ef74abc97a5d305aefb135fa9b"
+  },
+  {
+   "path": "playwright/task32-memory-states-searc-e4687-0-s-status-freshness-window-memory-chromium/trace.zip",
+   "bytes": 461607,
+   "sha256": "c7b3d1e76678d2590b0823f40e78f481f765f6f3a6e24258fa61adfc71b3fab3"
+  },
+  {
+   "path": "playwright/task32-memory-states-stale-4f26b-sarmed-without-a-page-error-memory-chromium/trace.zip",
+   "bytes": 473635,
+   "sha256": "b3c4baeee19f945d6b1f6ff655e9d70eb9de50ff651f72bafb7d6e772cfa7512"
+  },
+  {
+   "path": "playwright/task32-memory-states-unaut-78cd1--in-the-DOM-and-on-the-wire-memory-chromium/06-sensitive-redacted-1440.png",
+   "bytes": 188315,
+   "sha256": "6b523795735f9a75bcf6342ac24594012f3b813aaedc8852f6b3085620709c03"
+  },
+  {
+   "path": "playwright/task32-memory-states-unaut-78cd1--in-the-DOM-and-on-the-wire-memory-chromium/trace.zip",
+   "bytes": 419450,
+   "sha256": "61d771524d566abc8b64826dd1f3f6bd08d030daf6026d9e47bce59fc78c5411"
+  },
+  {
+   "path": "playwright/task32-memory-states-unava-860cf-r-presented-as-empty-memory-memory-chromium/08-unavailable-1440.png",
+   "bytes": 83335,
+   "sha256": "e6e5cea2d3d4d92dfeee2749b4d2edb67eeb05d429355ea29ba222a6fc26b09e"
+  },
+  {
+   "path": "playwright/task32-memory-states-unava-860cf-r-presented-as-empty-memory-memory-chromium/trace.zip",
+   "bytes": 1291067,
+   "sha256": "d25833b6ba595b512588a8a7075f8c0c6b1b80240a1d8bf0376d8c924e3f1f1a"
+  },
+  {
+   "path": "playwright-run.log",
+   "bytes": 1731,
+   "sha256": "fef71502945fab73da5c1cb1733b895fca6b478fc7be97d002569cb86180beb7"
+  }
+ ]
+}

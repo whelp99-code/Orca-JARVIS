@@ -1,33 +1,35 @@
 import type { MemoryCandidates as CandidatePage } from "./memory-types.js";
 import type { MemoryCandidateReview } from "./memory-types.js";
 import type { MemoryClient } from "./memory-api.js";
+import { MemoryPanelUnloaded } from "./memory-panel-state.js";
 import { useEffect, useRef, useState } from "react";
-export function MemoryCandidates({ value, review, reviewMessage, client, enabled, onReview, onChanged }:
-  Readonly<{ value?: CandidatePage; review?: MemoryCandidateReview; reviewMessage?: string;
+export function MemoryCandidates({ value, pending, review, reviewMessage, client, enabled, onReview, onChanged }:
+  Readonly<{ value?: CandidatePage; pending: boolean; review?: MemoryCandidateReview; reviewMessage?: string;
     client: MemoryClient; enabled: boolean; onReview: (id: string) => Promise<void>; onChanged: () => void }>) {
   const [message, setMessage] = useState(""); const [busy, setBusy] = useState(false);
-  const pending = useRef(false);
+  const inFlight = useRef(false);
   const mounted = useRef(false);
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   async function stage(id: string, decision?: "confirm" | "reject"): Promise<void> {
-    if (pending.current || !enabled) return;
+    if (inFlight.current || !enabled) return;
     if (decision !== undefined && (review?.candidate_id !== id || Date.parse(review.expires_at) <= Date.now())) {
       setMessage("Review expired. Open the candidate again."); return;
     }
-    pending.current = true; setBusy(true);
+    inFlight.current = true; setBusy(true);
     try {
       const result = decision === undefined ? await client.candidateDispatch(id)
         : await client.candidateDecision(id, review!.review_digest, decision);
       if (!mounted.current) return;
       setMessage(`Command ${result.request_id}: ${result.state}. Continue in Approvals.`); onChanged();
     } catch { if (mounted.current) setMessage("Command could not be prepared. Refresh the candidate and check its state."); }
-    finally { pending.current = false; if (mounted.current) setBusy(false); }
+    finally { inFlight.current = false; if (mounted.current) setBusy(false); }
   }
   return <section className="panel" aria-labelledby="memory-candidates-heading"><header className="panel-header">
     <h2 id="memory-candidates-heading">Candidates</h2></header><div className="panel-body">
     <p role="status">{message || reviewMessage}</p>
     {message && <a href="/approvals">Open Approvals</a>}
-    {value === undefined || value.items.length === 0 ? <p className="empty-state">No reviewable candidates</p>
+    {value === undefined ? <MemoryPanelUnloaded pending={pending} />
+      : value.items.length === 0 ? <p className="empty-state">No reviewable candidates</p>
       : <ul className="record-list">{value.items.map(item => <li className="record" key={item.candidate_revision}>
         <strong>{item.kind}</strong><span>{item.operation} / {item.sensitivity}</span>
         <small>{item.kind === "inference" ? "Owner confirmation required" : item.reason} / {item.retention.days} days</small>

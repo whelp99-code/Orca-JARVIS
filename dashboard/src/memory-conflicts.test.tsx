@@ -15,7 +15,7 @@ const value: ConflictPage = { schema_version: 1, resource: "memory-conflicts",
 
 describe("MemoryConflicts", () => {
   it("renders two metadata-only sides in source order", () => {
-    render(<MemoryConflicts value={value} />);
+    render(<MemoryConflicts value={value} pending={false} />);
     expect(screen.getByRole("heading", { level: 2, name: "Conflicts" })).toBeVisible();
     const sides = screen.getByRole("list", { name: "Conflict sides" });
     expect(within(sides).getAllByRole("listitem")).toHaveLength(2);
@@ -25,7 +25,7 @@ describe("MemoryConflicts", () => {
   });
 
   it("does not synthesize private side text or controls", () => {
-    render(<MemoryConflicts value={value} />);
+    render(<MemoryConflicts value={value} pending={false} />);
     expect(document.body.textContent).not.toContain("TASK32_PRIVATE_CANARY");
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
     expect(screen.queryByRole("link")).not.toBeInTheDocument();

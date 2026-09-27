@@ -1,0 +1,16 @@
+
+Running 11 tests using 1 worker
+
+  ✓   1 [memory-chromium] › e2e/task32-memory-layout.spec.ts:10:1 › provider read states render cleanly at every accepted viewport (18.2s)
+  ✓   2 [memory-chromium] › e2e/task32-memory-layout.spec.ts:31:1 › CJK long text wraps at 390px without mid-syllable breaks or overflow (3.0s)
+  ✓   3 [memory-chromium] › e2e/task32-memory-layout.spec.ts:57:1 › Memory search and correction are operable with the keyboard alone (1.9s)
+  ✓   4 [memory-chromium] › e2e/task32-memory-states.spec.ts:15:1 › happy path: search, inspect citation, correct, observe superseded, then forget (4.0s)
+  ✓   5 [memory-chromium] › e2e/task32-memory-states.spec.ts:85:1 › unauthorized sensitive read stays redacted in the DOM and on the wire (1.6s)
+  ✓   6 [memory-chromium] › e2e/task32-memory-states.spec.ts:101:1 › stale selection is rejected, announced safely, and disarmed without a page error (1.6s)
+  ✓   7 [memory-chromium] › e2e/task32-memory-states.spec.ts:139:1 › deleted sentinel never renders after an approved forget (1.9s)
+  ✓   8 [memory-chromium] › e2e/task32-memory-states.spec.ts:159:3 › offline provider is announced and never presented as empty memory (2.4s)
+  ✓   9 [memory-chromium] › e2e/task32-memory-states.spec.ts:159:3 › unavailable provider is announced and never presented as empty memory (2.4s)
+  ✓  10 [memory-chromium] › e2e/task32-memory-states.spec.ts:175:1 › search still works after the page has idled past the 60 s status freshness window (1.0m)
+  ✓  11 [memory-chromium] › e2e/task32-memory.spec.ts:18:1 › Memory route stays private, accessible, and overflow-safe at every accepted viewport (4.8s)
+
+  11 passed (1.8m)

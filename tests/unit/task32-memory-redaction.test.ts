@@ -23,4 +23,15 @@ describe("Task 32 Memory projection redaction", () => {
     expect(JSON.stringify(value)).not.toContain("source_identity_full");
     expect(JSON.stringify(value)).not.toContain("private statement");
   });
+
+  it("strips bidi override controls from provider text before projection", () => {
+    const tokens = new MemoryTokenCache(Buffer.alloc(32, 9), () => TASK32_NOW);
+    const value = projectMemoryRecord({
+      evidence: task32Evidence({ excerpt: "safe \u202Elive\u202C text \u2066inline\u2069" }),
+      tokens, sessionId: "owner-session", privacyEpoch: 0, now: TASK32_NOW,
+    });
+    expect(value?.excerpt).toBe("safe live text inline");
+    expect(value?.title).toBe("safe live text inline");
+    expect(JSON.stringify(value)).not.toMatch(/[\u202A-\u202E\u2066-\u2069]/u);
+  });
 });

@@ -1,11 +1,20 @@
 import { z } from "zod";
 const retention = z.object({ source: z.literal("policy"), days: z.number().int(), expires_at: z.string() }).strict();
+const historyEntry = z.object({ operation: z.enum(["correct", "forget", "export"]), state: z.string(),
+  request_id: z.string(), receipt_id: z.string().nullable(), at: z.string() }).strict();
 const record = z.object({ record_token: z.string(), record_revision: z.string(), title: z.string(),
   excerpt: z.string().nullable(), citation: z.string(), sensitivity: z.string(), retention,
   freshness: z.string(), provenance: z.object({ source_class: z.literal("memory"), owner_class: z.string(),
     origin_label: z.string(), origin_revision: z.string().nullable() }).strict(),
   conflict_state: z.enum(["none", "unresolved"]), history_state: z.enum(["current", "superseded"]),
+  superseded_by: z.string().nullable(), history: z.array(historyEntry).max(8),
   actions: z.array(z.enum(["inspect", "correct", "forget", "export"])) }).strict();
+/** Provider read states the surface renders distinctly; anything else renders as unavailable. */
+export const MEMORY_RESOURCE_STATES = ["ready", "stale", "no_data", "offline", "unavailable", "incompatible"] as const;
+export type MemoryResourceState = (typeof MEMORY_RESOURCE_STATES)[number];
+export function memoryResourceState(value: string): MemoryResourceState {
+  return (MEMORY_RESOURCE_STATES as readonly string[]).includes(value) ? value as MemoryResourceState : "unavailable";
+}
 export const MemoryStatusSchema = z.object({ schema_version: z.literal(1), resource: z.literal("memory-status"),
   state: z.string(), privacy_epoch: z.number().int(), checked_at: z.string(), fresh_until: z.string(),
   contract_schema: z.union([z.literal(3), z.literal(4)]).nullable(), mutations_enabled: z.boolean() }).strict();
@@ -33,6 +42,7 @@ export const MemoryEffectsSchema = z.object({ schema_version: z.literal(1), reso
 export type MemoryStatus = z.infer<typeof MemoryStatusSchema>;
 export type MemorySearch = z.infer<typeof MemorySearchSchema>;
 export type MemoryRecord = z.infer<typeof record>;
+export type MemoryRecordHistoryEntry = z.infer<typeof historyEntry>;
 export type MemoryConflicts = z.infer<typeof MemoryConflictsSchema>;
 export type MemoryCandidates = z.infer<typeof MemoryCandidatesSchema>;
 export type MemoryEffects = z.infer<typeof MemoryEffectsSchema>;
@@ -52,6 +62,10 @@ export type MemorySnapshot = { readonly state: "loading" | "ready" | "error"; re
   /** Local store generation, never a provider or authority claim. */
   readonly view_revision?: number;
   readonly clear_revision?: number;
+  /** Owner-initiated search generation; a same-epoch reload refreshes results without advancing it. */
+  readonly search_revision?: number;
+  /** A panel reload is in flight; panels without data are loading rather than not loaded. */
+  readonly reloading?: boolean;
   readonly search?: MemorySearch; readonly conflicts?: MemoryConflicts;
   readonly candidates?: MemoryCandidates; readonly effects?: MemoryEffects;
   readonly review?: MemoryCandidateReview; readonly progress?: MemoryRememberProgress;
