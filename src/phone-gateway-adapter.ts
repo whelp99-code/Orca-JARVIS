@@ -148,7 +148,17 @@ async function upstreamJson(input: {
     });
     req.setTimeout(input.timeoutMs, () => { req.destroy(); resolve({ kind: "error" }); });
     req.on("socket", socket => {
-      socket.setTimeout(PHONE_GATEWAY_LIMITS.connectTimeoutMs, () => { req.destroy(); });
+      // setTimeout(ms, cb) leaves the callback installed, so a 1s connect budget must not
+      // remain as the idle timeout for a slow authority health body.
+      socket.on("timeout", () => { req.destroy(); });
+      if (socket.connecting) {
+        socket.setTimeout(PHONE_GATEWAY_LIMITS.connectTimeoutMs);
+        socket.once("connect", () => {
+          queueMicrotask(() => { socket.setTimeout(input.timeoutMs); });
+        });
+        return;
+      }
+      socket.setTimeout(input.timeoutMs);
     });
     req.on("error", () => resolve({ kind: "error" }));
     if (input.body !== undefined) req.end(input.body);

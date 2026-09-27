@@ -1,0 +1,68 @@
+### readyz through Serve-identical proxy with 3s authority health
+{"status":200,"code":"ok","elapsed_ms":3010}
+
+### session bootstrap through proxy
+{"status":200,"code":"ok","cookie_prefix":"__Host-jarvis-phone=0T4i","csrf_present":true,"origin":"https://jarvis-fixture.example.invalid:8444"}
+
+### Today shell
+{"status":200,"h1":true}
+
+### Memory shell
+{"status":200,"h1":true}
+
+### Today data
+{"status":200,"body":"{\"schema_version\":1,\"resource\":\"today\",\"state\":\"no_data\",\"items\":[]}"}
+
+### Memory status
+{"status":200,"body":"{\"schema_version\":1,\"state\":\"unavailable\",\"mutations_enabled\":false}"}
+
+### Memory conflicts
+{"status":200,"body":"{\"schema_version\":1,\"items\":[]}"}
+
+### spoofed X-Forwarded-For
+{"status":403,"code":"PHONE_FORWARDED_HEADER_FORBIDDEN"}
+
+### http proto
+{"status":403,"code":"PHONE_FORWARDED_HEADER_FORBIDDEN"}
+
+### extra Forwarded
+{"status":403,"code":"PHONE_FORWARDED_HEADER_FORBIDDEN"}
+
+### extra X-Real-IP
+{"status":403,"code":"PHONE_FORWARDED_HEADER_FORBIDDEN"}
+
+### extra Via
+{"status":403,"code":"PHONE_FORWARDED_HEADER_FORBIDDEN"}
+
+### wrong X-Forwarded-Host
+{"status":403,"code":"PHONE_FORWARDED_HEADER_FORBIDDEN"}
+
+### duplicate X-Forwarded-For
+{"status":403,"code":"PHONE_FORWARDED_HEADER_FORBIDDEN"}
+
+### forbidden terminal
+{"status":404,"code":"PHONE_ROUTE_NOT_FOUND"}
+
+### forbidden agent logs
+{"status":404,"code":"PHONE_ROUTE_NOT_FOUND"}
+
+### forbidden raw memory
+{"status":404,"code":"PHONE_ROUTE_NOT_FOUND"}
+
+### direct missing identity
+{"status":401,"code":"PHONE_IDENTITY_REQUIRED"}
+
+### direct wrong owner
+{"status":403,"code":"PHONE_PRINCIPAL_FORBIDDEN"}
+
+### direct wrong host
+{"status":403,"code":"PHONE_HOST_FORBIDDEN"}
+
+### origin mismatch
+{"status":403,"code":"PHONE_ORIGIN_FORBIDDEN"}
+
+### non-loopback peer
+{"status":403,"code":"PHONE_PROXY_REQUIRED"}
+
+### listeners
+{"gateway_port":39179,"authority_port":42729,"proxy_ports":{"good":35557,"spoofed":38133,"httpProto":39885,"extraForwarded":45739,"extraRealIp":34947,"extraVia":45961,"wrongForwardedHost":38433,"duplicateFor":36219}}

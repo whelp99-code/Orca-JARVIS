@@ -1,3 +1,5 @@
+import { DASHBOARD_HEALTH_TIMEOUT_MS } from "./dashboard-runtime-config.js";
+
 export const LOOPBACK = "127.0.0.1" as const;
 export const PHONE_GATEWAY_PORT = 4176 as const;
 export const PHONE_PUBLIC_HTTPS_PORT = 8444 as const;
@@ -5,8 +7,7 @@ export const PHONE_GATEWAY_TARGET = "http://127.0.0.1:4176" as const;
 export const PHONE_SERVE_HTTPS_FLAG = "--https=8444" as const;
 export const CSRF_HEADER = "x-jarvis-csrf";
 export const FORBIDDEN_HEADERS = new Set([
-  "forwarded", "x-forwarded-for", "x-forwarded-host", "x-forwarded-proto",
-  "x-real-ip", "via", "proxy-authorization",
+  "forwarded", "x-real-ip", "via", "proxy-authorization",
 ]);
 export const SECURITY = {
   "Strict-Transport-Security": "max-age=31536000",
@@ -37,7 +38,7 @@ export const PHONE_GATEWAY_LIMITS = {
   concurrentUpstream: 8,
   connectTimeoutMs: 1000,
   totalTimeoutMs: 10_000,
-  healthTimeoutMs: 2000,
+  healthTimeoutMs: DASHBOARD_HEALTH_TIMEOUT_MS,
 } as const;
 
 export const PHONE_ERROR_CODES = {
