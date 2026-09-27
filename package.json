@@ -14,7 +14,7 @@
   },
   "scripts": {
     "build": "npm run build:backend && npm run build:dashboard",
-    "lint": "eslint src tests dashboard e2e playwright.config.ts playwright.remote.config.ts --max-warnings=0",
+    "lint": "eslint src tests dashboard e2e playwright.config.ts playwright.remote.config.ts playwright.task32.config.ts --max-warnings=0",
     "pretest": "npm run build",
     "test": "node scripts/run-tests.mjs backend && node scripts/run-tests.mjs dashboard",
     "acceptance:pre-gjc": "node scripts/run-tests.mjs acceptance",
@@ -29,6 +29,7 @@
     "build:dashboard": "vite build --config dashboard/vite.config.ts",
     "build:fixtures": "npm run build:backend",
     "test:e2e": "npm run build && node scripts/run-tests.mjs e2e",
+    "test:e2e:memory": "playwright test --config playwright.task32.config.ts",
     "test:e2e:production-smoke": "JARVIS_E2E_NO_FIXTURE=1 playwright test e2e/production-smoke.spec.ts",
     "ops:cleanup-test-artifacts": "node ops/cleanup-test-artifacts.mjs --production --apply",
     "product:install-electron": "install-electron",
