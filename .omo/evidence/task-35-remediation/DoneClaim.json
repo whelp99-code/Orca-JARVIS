@@ -3,9 +3,10 @@
   "task": 35,
   "status": "candidate",
   "base": "82dc6f388df077b2544713aeae2f5d6741fb9b03",
-  "merged_main": "086a097",
-  "merge_commit": "6b96e3a3e71dbb94ae08cecd0f15284da79cf968",
-  "head": "a9484ab2448e3ba6cca69729ea78b4d7d7adfe61",
+  "merged_main": "8a8c5c1f1771d7f0befdd3648385ff4e794b098e",
+  "merge_commit": "92f36f174c64423f9f2ad025b16b7ed163b10fbb",
+  "fix_commit": "cde719152652dba391d1e05edecca4a093df0e85",
+  "head": "92f36f174c64423f9f2ad025b16b7ed163b10fbb",
   "tree": "task-35-remediation",
   "worktree": "/home/jm/orca/workspaces/Orca-JARVIS/task-35-remediation",
   "gate_blockers_fixed": {
@@ -29,9 +30,19 @@
       "fix": "dashboard/src/security-client.ts uses shared jsonFetch/jsonPost that always sets x-jarvis-csrf and fetches the token from /api/v1/phone/session when on the gateway origin",
       "test": "tests/integration/remote-approval-gateway-production.test.ts lists credentials on the gateway origin; dashboard/src/pages/security-client-list.test.ts"
     },
+    "B3-R2": {
+      "symptom": "forged, other-owner, expired, and replayed registration verify created no credential but wrote zero remote.% audit rows; expiry rolled back so the ceremony stayed issued",
+      "fix": "verifyRegistration commits expiry in its own transaction, then every registration-verify rejection including an unknown ceremony id writes one typed remote audit row in a committed transaction and still fails closed with no credential",
+      "test": "tests/integration/remote-approval-gateway-production.test.ts through createPhoneGatewayServer and the production composer"
+    },
+    "B5-R": {
+      "symptom": "args tampered after options made consistentRequest fail, so verify returned 401 REMOTE_SESSION_REQUIRED with zero audit rows",
+      "fix": "options issuance still requires the digest check; verify of an existing challenge is admitted so translateReservedAssertion's binding check returns 403 binding with one audit row and zero receipts",
+      "test": "tests/integration/remote-approval-gateway-production.test.ts modified-arg approval verify through createPhoneGatewayServer"
+    },
     "cheap_note_1_consistentRequest": {
-      "fix": "src/remote-approval-ingress.ts consistentRequest recomputes controlCommandDigest from stored action/action_level/target/args/reversible/requested_by/requested_at/expires_at/nonce and compares to command_digest, and checks expiry > now",
-      "test": "tests/integration/remote-approval-gateway-production.test.ts refuses tampered args"
+      "fix": "src/remote-approval-ingress.ts consistentRequest still recomputes controlCommandDigest when issuing options and for requests without an existing challenge",
+      "test": "tests/integration/remote-approval-gateway-production.test.ts refuses tampered args at options"
     },
     "cheap_note_2_up_uv": {
       "fix": "src/remote-approval.ts records parsed up/uv (assertionAuditFlags from authenticatorData) on the early-rejection audit write when an assertion exists",
@@ -64,19 +75,22 @@
     "cheap_note_2": "missing-UV audit stored uv=1 before assertionAuditFlags",
     "cheap_note_3": "rejected key file reported signer_unconfigured before signerSource"
   },
+  "round3": {
+    "merged_main": "8a8c5c1 Task 32 Memory surface, real merge 92f36f1, no conflicts; security page and memory files both present",
+    "dashboard_policy_startup": "same 2 timeouts at 5000ms on this head and on archive of 48287b6 (creates the default service; rejects missing/malformed policy). The other 2 tests passed on both. Pre-existing. Not caused by this change."
+  },
   "green": {
-    "targeted_backend_files": 5,
-    "targeted_backend_tests": 11,
-    "targeted_backend_note": "remote-approval-gateway-production, phone-gateway-security-assets, remote-approval-control-plane, remote-approval-compose-readiness, remote-approval-policy-ttl all pass in isolation",
-    "approved_executor_isolated": "11 passed at testTimeout=30000; the 5s timeouts in the full sharded run were CPU contention on the shared host (load ~4-5, 42 users), a pre-existing environmental signature, not a code regression",
-    "dashboard_files": 40,
-    "dashboard_tests": 267,
+    "targeted_backend_files": 11,
+    "targeted_backend_tests": 91,
+    "targeted_backend_note": "rerun on merge 92f36f1: production gateway, security assets, compose readiness, control plane, policy TTL, fail-closed, gateway resolver, phone-gateway unit, serve-header unit and integration, readiness",
+    "dashboard_files": 44,
+    "dashboard_tests": 297,
     "react_warnings": 0,
-    "playwright_remote": "9 passed (incl. 2 new e2e/remote-approval-gateway-page.spec.ts through the production composer + real gateway)",
-    "lint": "pass (--max-warnings=0)",
-    "typecheck": "pass",
-    "architecture_check": "pass",
-    "build": "pass (dist/dashboard/manifest.json emitted; backend 1553 files, 103 migrations)"
+    "playwright_remote": "9 passed on merge 92f36f1 with PLAYWRIGHT_BROWSERS_PATH set; Node 24.19.0",
+    "lint": "pass (--max-warnings=0) on merge 92f36f1",
+    "typecheck": "pass on merge 92f36f1",
+    "architecture_check": "pass on merge 92f36f1 (734 modules, 2753 edges, 0 cycles)",
+    "build": "pass on merge 92f36f1 (dist/dashboard/manifest.json emitted; backend 1557 files, 103 migrations)"
   },
   "manual_qa": {
     "surface": "shipped /security page over fixture TLS through the real phone gateway with the production composer, CDP virtual authenticator, page-driven ceremonies only",
