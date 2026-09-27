@@ -1,6 +1,8 @@
 import { createHash, randomBytes } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
+import * as readinessRuntime from "../../src/second-brain-readiness-runtime.js";
+import { passiveSecondBrainReadinessProbe } from "../../src/second-brain-readiness.js";
 import { canonicalize } from "../../src/canonical.js";
 import {
   AuthorityDb,
@@ -68,6 +70,9 @@ describe("memory projection source readers", () => {
     const db = new AuthorityDb(tempDb());
     await db.migrate();
     const canary = `projection-${randomBytes(32).toString("hex")}`;
+    // Only the external host probe is substituted; all eleven projection readers remain real.
+    const readiness = vi.spyOn(readinessRuntime, "runtimeSecondBrainReadinessProbe")
+      .mockReturnValue(passiveSecondBrainReadinessProbe());
     try {
       db.db.prepare(
         `INSERT INTO memory_resolved_target_metadata(
@@ -185,6 +190,7 @@ describe("memory projection source readers", () => {
         notification_canary: false, timeline_visible: false, control_visible: false,
         state_canary: false });
     } finally {
+      readiness.mockRestore();
       db.close();
     }
   });
