@@ -10,6 +10,7 @@ import {
 const fixtureEntry = resolve("dist/tests/fixtures/dashboard-http-server.js");
 const staticRoot = resolve("dist/dashboard");
 const noFixture = process.env.JARVIS_E2E_NO_FIXTURE === "1";
+const seededPort1440 = Number(process.env.JARVIS_E2E_SEEDED_PORT_1440 ?? SEEDED_PORT_1440);
 
 function fixtureCommand(port: number, emptyPort?: number): string {
   const metadata = resolve(`.tmp-e2e/seeded-${String(port)}.json`);
@@ -48,8 +49,8 @@ export default defineConfig({
   },
   webServer: noFixture ? undefined : [
     {
-      command: fixtureCommand(SEEDED_PORT_1440, EMPTY_PORT),
-      url: `http://${FIXTURE_HOST}:${String(SEEDED_PORT_1440)}/api/v1/health`,
+      command: fixtureCommand(seededPort1440, EMPTY_PORT),
+      url: `http://${FIXTURE_HOST}:${String(seededPort1440)}/api/v1/health`,
       reuseExistingServer: false,
       timeout: 120_000,
     },
@@ -66,7 +67,7 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1440, height: 1000 },
-        baseURL: `http://${FIXTURE_HOST}:${String(SEEDED_PORT_1440)}`,
+        baseURL: `http://${FIXTURE_HOST}:${String(seededPort1440)}`,
       },
     },
     {
