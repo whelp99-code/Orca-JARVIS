@@ -182,6 +182,22 @@ export class MemoryCorrectionStore {
     }).immediate();
   }
 
+  /** Ends a lane the provider decided against before any effect. Records no proof and no purge. */
+  refuse(correctionId: string, code: string, now: Date): MemoryCorrectionRecord {
+    const at = now.toISOString();
+    this.authority.db.transaction(() => {
+      const row = this.required(correctionId);
+      if (row.state === "conflict") return;
+      if (row.state !== "reconciling") throw new JarvisError("MEMORY_CORRECTION_TRANSITION_INVALID");
+      this.authority.db.prepare(
+        `UPDATE memory_correction_requests SET state='conflict',failure_code=?,spool_locator=NULL,
+         updated_at=? WHERE correction_id=? AND state='reconciling'`,
+      ).run(code, at, correctionId);
+      this.event(correctionId, "conflict", now);
+    }).immediate();
+    return this.required(correctionId);
+  }
+
   settle(correctionId: string, purgeReceiptDigest: string, now: Date): MemoryCorrectionRecord {
     const at = now.toISOString();
     this.authority.db.transaction(() => {

@@ -43,6 +43,43 @@ export function reconcileCorrectionControl(authority: AuthorityDb, correctionId:
   }).immediate();
 }
 
+/**
+ * Settles the control as failed for a correction the provider refused before any effect. There is
+ * no proof and no purge to bind, so the payload carries identity and the refusal code only.
+ */
+export function refuseCorrectionControl(authority: AuthorityDb, correctionId: string,
+  failureCode: string, now: Date): boolean {
+  return authority.db.transaction(() => {
+    const record = authority.db.prepare("SELECT * FROM memory_correction_requests WHERE correction_id=?")
+      .get(correctionId) as CorrectionControlRow | undefined;
+    if (!record) return invalid();
+    const row = authority.db.prepare("SELECT * FROM control_command_requests WHERE request_id=?")
+      .get(record.control_request_id) as Record<string, unknown> | undefined;
+    if (!row) return invalid();
+    if (!["claimed", "uncertain"].includes(String(row.state))) return false;
+    let fence: number;
+    try { ({ fence } = correctionCommandAuthority(authority, record, row)); } catch { return invalid(); }
+    const requestId = record.control_request_id; const at = now.toISOString();
+    const payload = { schema_version: 1, correction_id: correctionId, lane_id: record.lane_id,
+      request_digest: record.request_digest, failure_code: failureCode, refused_at: at };
+    const encoded = canonicalize(payload);
+    const effectId = `effect:${hash({ requestId, fence, outcome: "failed", payload }).slice(7)}`;
+    authority.db.prepare("INSERT INTO control_command_effects(effect_id,request_id,effect_type,payload_json,payload_digest,created_at) VALUES(?,?,?,?,?,?)")
+      .run(effectId, requestId, "memory.correction.refused", encoded, hash(encoded), at);
+    const changed = authority.db.prepare(`UPDATE control_command_requests SET state='failed',completed_at=?,
+      failure_code=?,lease_owner=NULL,lease_expires_at=NULL WHERE request_id=? AND state=? AND lease_fence=?`)
+      .run(at, failureCode, requestId, row.state, fence);
+    if (changed.changes !== 1) throw new JarvisError("CONTROL_STALE_FENCE");
+    authority.db.prepare("UPDATE memory_effect_preparations SET state='consumed',updated_at=? WHERE lane_id=? AND state='approved'")
+      .run(at, record.lane_id);
+    new ControlPlane(authority).emit({ event_id: `evt:${requestId}:failed:${fence}`,
+      event_type: "control.command.failed", source: "jarvis-memory-correction", subject: requestId,
+      correlation_id: requestId, causation_id: `evt:${requestId}:claimed:${fence}`,
+      payload: { effect_id: effectId, failure_code: failureCode }, created_at: at });
+    return true;
+  }).immediate();
+}
+
 export function reconcileCorrectionControls(authority: AuthorityDb, now: Date, limit: number) {
   if (!Number.isSafeInteger(limit) || limit < 1 || limit > 256) throw new JarvisError("MEMORY_LIFECYCLE_LIMIT_INVALID");
   try { return authority.db.transaction(() => {

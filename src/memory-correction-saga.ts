@@ -9,7 +9,7 @@ import { JarvisError } from "./db.js";
 import type { ClaimedControlCommand, ControlCommandRequestInput } from "./control-plane.js";
 import { captureCorrectionControlBinding, type CorrectionControlRow } from "./memory-correction-control-binding.js";
 import { correctionCompactionProof } from "./memory-correction-compaction-proof.js";
-import { reconcileCorrectionControl } from "./memory-correction-control.js";
+import { reconcileCorrectionControl, refuseCorrectionControl } from "./memory-correction-control.js";
 import { MemoryCorrectionDispatcher } from "./memory-correction-dispatcher.js";
 import { MemoryCorrectionStore, type MemoryCorrectionRecord } from "./memory-correction-store.js";
 import type { MemoryCorrectionSagaOptions, PrepareMemoryCorrectionInput } from "./memory-correction-types.js";
@@ -155,7 +155,9 @@ export class MemoryCorrectionSaga {
       }
     }
     const observed = await this.options.observer.correction(record);
-    if (observed.kind === "not_proved") return record;
+    if (observed.kind === "not_proved") {
+      return observed.refused === true ? await this.refuse(record, observed.code) : record;
+    }
     const proof = observed.proof;
     const now = this.options.clock();
     if (record.spool_locator !== null) await this.spool.remove(record.lane_id, record.spool_locator,
@@ -182,6 +184,18 @@ export class MemoryCorrectionSaga {
       lane_id: record.lane_id, request_id: record.request_id,
       tombstone_sequence: record.tombstone_sequence, now: this.options.clock() });
     return this.complete(correctionId, purgeDigest);
+  }
+
+  /** The provider decided against this request before any effect, so the lane ends here. */
+  private async refuse(record: MemoryCorrectionRecord, code: string): Promise<MemoryCorrectionRecord> {
+    const now = this.options.clock();
+    if (record.spool_locator !== null) {
+      await this.spool.remove(record.lane_id, record.spool_locator, record.spool_digest,
+        "terminal_failure", now);
+    }
+    const refused = this.store.refuse(record.correction_id, code, now);
+    refuseCorrectionControl(this.options.authority, record.correction_id, code, now);
+    return refused;
   }
 
   private complete(correctionId: string, purgeDigest: string): MemoryCorrectionRecord {
