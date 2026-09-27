@@ -1,0 +1,15 @@
+npm notice run orca-jarvis-shadow@0.1.0 npx
+npm notice run 'vitest' run --no-file-parallelism tests/unit/task32-memory-redaction.test.ts tests/unit/task32-memory-token-cache.test.ts tests/unit/memory-reference-context.test.ts
+
+ RUN  v3.2.7 /home/jm/orca/workspaces/Orca-JARVIS/task-32-remediation
+
+ ✓ tests/unit/memory-reference-context.test.ts (25 tests) 74ms
+ ✓ tests/unit/task32-memory-token-cache.test.ts (2 tests) 5ms
+ ✓ tests/unit/task32-memory-redaction.test.ts (1 test) 4ms
+
+ Test Files  3 passed (3)
+      Tests  28 passed (28)
+   Start at  03:26:52
+   Duration  1.16s (transform 460ms, setup 0ms, collect 654ms, tests 83ms, environment 0ms, prepare 131ms)
+
+unit exit 0

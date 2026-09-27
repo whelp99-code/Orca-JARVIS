@@ -1,0 +1,43 @@
+npm notice run orca-jarvis-shadow@0.1.0 npx
+npm notice run 'vitest' run --no-file-parallelism tests/integration/task32-http-routes.test.ts tests/integration/task32-memory-runtime.test.ts tests/integration/memory-candidate-ui.test.ts tests/integration/task32-effect-intent-concurrency.test.ts tests/integration/task32-sse.test.ts tests/integration/task32-schema4-read.test.ts tests/integration/task32-export-lifecycle.test.ts tests/integration/task32-tombstone-membership.test.ts tests/integration/task32-memory-history.test.ts tests/integration/task32-semantic-attempt-restage.test.ts tests/integration/task32-provenance-authority.test.ts tests/integration/memory-read-fence-production.test.ts
+
+ RUN  v3.2.7 /home/jm/orca/workspaces/Orca-JARVIS/task-32-remediation
+
+ ✓ tests/integration/memory-candidate-ui.test.ts (8 tests) 1131ms
+   ✓ owner candidate review and storage preparation HTTP > blocks a quarantined candidate before-approval  609ms
+ ✓ tests/integration/task32-memory-runtime.test.ts (2 tests) 1075ms
+   ✓ Task 32 bound Memory runtime > projects conflict sides without private text  545ms
+   ✓ Task 32 bound Memory runtime > stages an exact record-bound forget and suppresses it at owner approval  529ms
+ ✓ tests/integration/task32-http-routes.test.ts (7 tests) 3623ms
+   ✓ Task 32 Memory HTTP boundary > migrates the three dynamically allocated content-free authority slots  529ms
+   ✓ Task 32 Memory HTTP boundary > requires current owner CSRF on Memory GET routes and emits private headers  522ms
+   ✓ Task 32 Memory HTTP boundary > rejects duplicate keys and malformed UTF-8 before any Memory behavior  515ms
+   ✓ Task 32 Memory HTTP boundary > classifies prohibited query and correction content before provider or spool effects  514ms
+   ✓ Task 32 Memory HTTP boundary > maps a 65,537-byte Memory body to the frozen request-too-large taxonomy  526ms
+   ✓ Task 32 Memory HTTP boundary > exposes exactly twelve bounded routes without vault browsing or downloads  508ms
+   ✓ Task 32 Memory HTTP boundary > stages a candidate confirmation instead of returning MEMORY_REVIEW_UNAVAILABLE  509ms
+ ✓ tests/integration/memory-read-fence-production.test.ts (15 tests) 876ms
+   ✓ production signed memory read fences > preserves long provider and dotted key IDs from the existing canonical text contract  530ms
+ ✓ tests/integration/task32-memory-history.test.ts (5 tests) 2626ms
+   ✓ Task 32 Memory record history > reports a current record with an empty bounded history before any owner command  539ms
+   ✓ Task 32 Memory record history > shows a staged correction in the record history while it awaits approval  520ms
+   ✓ Task 32 Memory record history > marks an approved correction as superseded with its receipt and hides the old content  526ms
+   ✓ Task 32 Memory record history > never returns a forgotten record, not even as history  525ms
+   ✓ Task 32 Memory record history > replaces a path-like provider origin label with a safe label  516ms
+ ✓ tests/integration/task32-schema4-read.test.ts (2 tests) 7ms
+ ✓ tests/integration/task32-semantic-attempt-restage.test.ts (1 test) 513ms
+   ✓ Task 32 semantic attempt restage > creates one generation-2 successor linked to an expired predecessor  512ms
+ ✓ tests/integration/task32-provenance-authority.test.ts (1 test) 509ms
+   ✓ Task 32 provider profile authority > keeps exact schema 3 read-only and enables staging only for schema 4  508ms
+ ✓ tests/integration/task32-sse.test.ts (1 test) 4ms
+ ✓ tests/integration/task32-export-lifecycle.test.ts (1 test) 509ms
+   ✓ Task 32 export lifecycle > keeps export availability metadata digest-only and monotonic  508ms
+ ✓ tests/integration/task32-tombstone-membership.test.ts (1 test) 3ms
+ ✓ tests/integration/task32-effect-intent-concurrency.test.ts (1 test) 2ms
+
+ Test Files  12 passed (12)
+      Tests  45 passed (45)
+   Start at  03:26:24
+   Duration  20.97s (transform 2.73s, setup 0ms, collect 8.32s, tests 10.88s, environment 1ms, prepare 493ms)
+
+backend exit 0

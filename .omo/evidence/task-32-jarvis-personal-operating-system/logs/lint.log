@@ -1,0 +1,3 @@
+npm notice run orca-jarvis-shadow@0.1.0 lint
+npm notice run eslint src tests dashboard e2e playwright.config.ts playwright.remote.config.ts playwright.task32.config.ts --max-warnings=0
+lint exit 0

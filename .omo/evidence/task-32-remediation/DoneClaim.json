@@ -1,0 +1,97 @@
+{
+  "schema_version": 1,
+  "task": "Task 32 remediation: Memory search, conflict, correction, and privacy surface",
+  "plan": ".omo/plans/jarvis-personal-operating-system.md:458-465",
+  "gate_report": ".omo/evidence/task-32-acceptance-gate.md",
+  "worktree": {
+    "path": "/home/jm/orca/workspaces/Orca-JARVIS/task-32-remediation",
+    "orca_worktree_id": "f9b2a8dc-2eb5-4877-ae2a-0ddfbb0c8963::/home/jm/orca/workspaces/Orca-JARVIS/task-32-remediation",
+    "branch": "task-32-remediation"
+  },
+  "git": {
+    "base": "48287b6eb6122d746380278618871ea729b0e525",
+    "code_head": "16c421af4ebff0f2a13b779e084dd431036a8a1e",
+    "code_tree": "81e0558d0daf915cdee9028d16a8cd9e440ed351",
+    "commits": [
+      "856c9e8 feat(dashboard): add user-controlled memory surface",
+      "16c421a test(e2e): run the Task 32 memory specs on an in-repo fixture",
+      "<next> docs(evidence): record Task 32 remediation evidence and DoneClaim"
+    ],
+    "amend": 0, "rebase": 0, "push": 0, "deploy": 0, "restart": 0
+  },
+  "files": {
+    "changed": 29, "insertions": 1587, "deletions": 221,
+    "backend": ["src/dashboard/memory-contracts.ts", "src/dashboard/memory-record-history.ts",
+      "src/dashboard/memory-redaction.ts", "src/dashboard/memory-read-service.ts"],
+    "dashboard": ["dashboard/DESIGN.md", "dashboard/src/memory-api.ts", "dashboard/src/memory-detail.tsx",
+      "dashboard/src/memory-effects.tsx", "dashboard/src/memory-messages.ts", "dashboard/src/memory-page.tsx",
+      "dashboard/src/memory-search.tsx", "dashboard/src/memory-store.ts", "dashboard/src/memory-types.ts",
+      "dashboard/src/styles/memory.css"],
+    "tests": ["tests/integration/task32-memory-history.test.ts", "dashboard/src/memory-api.test.ts",
+      "dashboard/src/memory-detail.test.tsx", "dashboard/src/memory-store-freshness.test.ts",
+      "dashboard/src/memory-surface-states.test.tsx", "dashboard/src/memory-page-lifetime.test.tsx"],
+    "e2e": ["tests/fixtures/memory-surface-fixture.ts", "e2e/task32-memory-fixture.ts", "e2e/task32-memory-page.ts",
+      "e2e/task32-memory.spec.ts", "e2e/task32-memory-states.spec.ts", "e2e/task32-memory-layout.spec.ts",
+      "playwright.task32.config.ts", "package.json", "tsconfig.e2e.json"],
+    "untouched_by_instruction": ["src/remote-approval*", "dashboard/src/pages/security-page*", "phone-gateway routes",
+      "migrations/", "contracts/", "deploy/", "ops/"]
+  },
+  "blockers": {
+    "B1": { "fix": "search obtains a fresh bounded status when the prior one expired (no full reload); explicit Refresh memory control",
+      "red": "dashboard/src/memory-store-freshness.test.ts: 5 of 7 failed on HEAD 48287b6 (stash run)",
+      "green": "7/7; Playwright real 65 s idle then search: only /status + /search requested, results rendered" },
+    "B2": { "fix": "authority-derived history_state, superseded_by, bounded history (attempts + suppressions with receipts and timestamps); superseded records render metadata-only; forgotten never returned",
+      "red": "tests/integration/task32-memory-history.test.ts: 4 of 5 failed on HEAD; dashboard/src/memory-detail.test.tsx: 6/6 failed on HEAD",
+      "green": "5/5 and 6/6; Playwright happy path observes superseded record with receipt, old text absent" },
+    "B3": { "fix": "effects client reads correct/forget/export x pending_approval/applying/completed (+export available), honest has_more",
+      "red": "dashboard/src/memory-api.test.ts and memory-surface-states.test.tsx failed on HEAD",
+      "green": "green; Playwright shows Forgetting/Correction lifecycles" },
+    "B4": { "fix": "capability gate (mutations_enabled + record.actions), busy state, one command per activation, typed MemoryRequestError mapped to safe copy, announced via the atomic status region",
+      "red": "memory-detail.test.tsx double click sent 2 commands, no typed outcome on HEAD",
+      "green": "green; Playwright stale-selection: 404 announced, 0 export commands, 0 page errors; double clicks -> n:1 in authority" },
+    "B5": { "fix": "search/status render offline, unavailable, stale, incompatible from the latest read; never as empty",
+      "red": "memory-surface-states.test.tsx failed on HEAD",
+      "green": "green; Playwright offline/unavailable badge + copy, 'No visible memory records' absent" },
+    "B6": { "fix": ".memory-page { word-break: keep-all; overflow-wrap: anywhere }",
+      "red": "layout spec computed-style assertion (keep-all on Detail h3) fails on HEAD",
+      "green": "green; 10-cjk-390.png inspected: words whole, overflow 0" },
+    "origin_label": { "fix": "safeOriginLabel allow-list; path-like labels become 'Memory provider'",
+      "red": "task32-memory-history.test.ts last case failed on HEAD", "green": "green; '/vault/' absent from DOM" },
+    "e2e_reproducibility": { "fix": "in-repo fixture + playwright.task32.config.ts + npm run test:e2e:memory; privacy spec submits the query and asserts URL/history/storage/request URLs",
+      "green": "11/11 passed from the repository alone" }
+  },
+  "verification": {
+    "lint": { "command": "npm run lint", "exit": 0 },
+    "typecheck": { "command": "npm run typecheck", "exit": 0 },
+    "architecture_check": { "command": "npm run architecture:check", "exit": 0, "cycles": 0 },
+    "build": { "command": "npm run build", "exit": 0 },
+    "dashboard_vitest_full": { "files": 42, "tests": 285, "failed": 0, "react_warnings": 0 },
+    "backend_integration_memory": { "files": 12, "tests": 45, "failed": 0,
+      "spec": "task32-http-routes, task32-memory-runtime, memory-candidate-ui, task32-effect-intent-concurrency, task32-sse, task32-schema4-read, task32-export-lifecycle, task32-tombstone-membership, task32-memory-history, task32-semantic-attempt-restage, task32-provenance-authority, memory-read-fence-production" },
+    "backend_unit_memory": { "files": 3, "tests": 28, "failed": 0 },
+    "playwright": { "config": "playwright.task32.config.ts", "browser": "chromium (Desktop Chrome)", "tests": 11, "failed": 0,
+      "viewports": [1440, 640, 390], "axe_violations": 0, "horizontal_overflow": 0,
+      "query_in_url_history_storage_or_request_urls": false, "trace": "on" }
+  },
+  "qa_scenarios": {
+    "happy": "search -> inspect citation/provenance/history -> correct (double click, 1 command) -> Linux approve -> superseded record with receipt, old text absent -> provider apply -> new record current -> forget (double click, 1 command) -> approve -> gone",
+    "failure": ["unauthorized sensitive read (canary absent from DOM and wire)", "stale digest (404 MEMORY_SELECTION_STALE announced, selection disarmed, 0 page errors)",
+      "duplicate click (n:1 in authority)", "offline provider (announced, never empty)", "unavailable provider", "deleted sentinel never rendered after approved forget",
+      "keyboard-only search + correction", "CJK long text at 390 px", "idle 65 s then search"]
+  },
+  "adversarial_classes": ["duplicate/concurrent click", "stale selection after out-of-band owner forget with no memory SSE topic",
+    "60 s idle status expiry", "provider offline / unavailable / stale / no_data", "restricted canary on DOM and wire",
+    "forgotten record re-served by the provider", "path-like provider origin label", "CJK long text plus long ASCII identifier at 390/640/1440",
+    "keyboard-only", "query persistence in URL, history, storage, request URLs", "raw API error message rendering"],
+  "design": { "design_md_updated": true, "tokens_only": true, "new_raw_colors": 0, "motion_added": 0 },
+  "evidence": { "dir": ".omo/evidence/task-32-jarvis-personal-operating-system/", "screenshots": 30, "traces": 11, "manifest": "manifest.json" },
+  "gaps": [
+    "visual-qa dual-oracle subagent passes were not dispatched: this session has no task/subagent tool; screenshots were inspected directly and the candidate is handed to independent review",
+    "the real Linux Second Brain provider was not exercised (by constraint); supersession semantics are derived from the authority's suppression and attempt tables, not from provider fields (the MCP read contract carries none)",
+    "post-commit hook engineering-map docs:sync reported rc=1 (pre-existing stale-head entries across unrelated projects); commits landed"
+  ],
+  "cleanup": { "fixture_processes_left": 0, "browsers_left": 0, "tmp_residue_removed": "47 /tmp/jarvis-test-* from this session's test runs, /tmp/t32-* scratch", "left": "shared /tmp/playwright-transform-cache-1000" },
+  "wip": 0,
+  "production_changes": 0,
+  "session_records_deleted": 0
+}
