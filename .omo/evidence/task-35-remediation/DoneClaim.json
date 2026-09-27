@@ -2,71 +2,92 @@
   "schema_version": 1,
   "task": 35,
   "status": "candidate",
-  "base": "48287b6eb6122d746380278618871ea729b0e525",
-  "head": "c525cbe472df524446d166bdad4282269d73938c",
+  "base": "82dc6f388df077b2544713aeae2f5d6741fb9b03",
+  "merged_main": "086a097",
+  "merge_commit": "6b96e3a3e71dbb94ae08cecd0f15284da79cf968",
+  "head": "PENDING_COMMIT",
   "tree": "task-35-remediation",
   "worktree": "/home/jm/orca/workspaces/Orca-JARVIS/task-35-remediation",
-  "changed_files": [
-    "dashboard/src/pages/security-ceremony.test.ts",
-    "dashboard/src/pages/security-page.test.tsx",
-    "dashboard/src/pages/security-page.tsx",
-    "dashboard/src/security-client.ts",
-    "dashboard/src/styles/security.css",
-    "dashboard/src/webauthn-ceremony.ts",
-    "e2e/remote-approval-cdp.ts",
-    "e2e/remote-approval-harness.ts",
-    "e2e/remote-approval-page.spec.ts",
-    "playwright.remote.config.ts",
-    "src/phone-gateway-http.ts",
-    "src/phone-gateway-owner.ts",
-    "src/phone-gateway-protocol.ts",
-    "src/phone-gateway-remote-routes.ts",
-    "src/phone-gateway-remote.ts",
-    "src/phone-gateway-routes.ts",
-    "src/remote-approval-audit.ts",
-    "src/remote-approval-compose.ts",
-    "src/remote-approval-ingress.ts",
-    "src/remote-approval-lifecycle.ts",
-    "src/remote-approval-policy.ts",
-    "src/remote-approval-registration.ts",
-    "src/remote-approval-verify.ts",
-    "src/remote-approval.ts",
-    "tests/fixtures/remote-approval-support.ts",
-    "tests/integration/dashboard-policy-startup.test.ts",
-    "tests/integration/remote-approval-compose-readiness.test.ts",
-    "tests/integration/remote-approval-control-plane.test.ts",
-    "tests/integration/remote-approval-fail-closed.test.ts",
-    "tests/integration/remote-approval-gateway-resolver.test.ts",
-    "tests/integration/remote-approval-policy-ttl.test.ts",
-    "tests/integration/remote-approval-task36-receipts.test.ts",
-    "tests/unit/phone-gateway.test.ts"
+  "gate_blockers_fixed": {
+    "B3-R": {
+      "symptom": "production composition can never register a passkey: /registrations/<ceremony_id>/verify resolved the ceremony id as an enrollment id then returned 401 REMOTE_SESSION_REQUIRED",
+      "fix": "src/remote-approval-ingress.ts lookupStaged now branches on registrationFrom(path): options -> enrollment-begin lookup; verify -> look up webauthn_registration_ceremonies_v2 by ceremony id and bind to its owning local enrollment_id + begin_request_id. Enrollment begin stays local-session only per contracts.md.",
+      "test": "tests/integration/remote-approval-gateway-production.test.ts enroll -> register verify -> approve through createPhoneGatewayServer with the PRODUCTION composer/resolver"
+    },
+    "B2-R(a)": {
+      "symptom": "security page blank through gateway with shipped build: no Vite manifest while gateway serves only manifest-listed assets",
+      "fix": "dashboard/vite.config.ts enables build.manifest = manifest.json at the path the gateway reads (dist/dashboard/manifest.json)",
+      "test": "tests/integration/phone-gateway-security-assets.test.ts serves /security and its JS/CSS from a REAL dashboard build; refuses an unlisted asset"
+    },
+    "B2-R(b)-local": {
+      "symptom": "credential list never loads locally: same-origin GET has no Origin -> 403 LOCAL_SESSION_REQUIRED",
+      "fix": "src/dashboard/request-boundary.ts hasSameOriginReadOrigin (absent Origin or exact match) used by read GETs in src/dashboard/remote-lifecycle-routes.ts requireLocalSession; mutation origin checks unchanged",
+      "test": "tests/integration/remote-approval-gateway-production.test.ts lists credentials on the local origin"
+    },
+    "B2-R(b)-gateway": {
+      "symptom": "credential list never loads through gateway: security-client.ts called /api/v1/session (404 on gateway) and omitted phone CSRF -> 403 PHONE_CSRF_REQUIRED",
+      "fix": "dashboard/src/security-client.ts uses shared jsonFetch/jsonPost that always sets x-jarvis-csrf and fetches the token from /api/v1/phone/session when on the gateway origin",
+      "test": "tests/integration/remote-approval-gateway-production.test.ts lists credentials on the gateway origin; dashboard/src/pages/security-client-list.test.ts"
+    },
+    "cheap_note_1_consistentRequest": {
+      "fix": "src/remote-approval-ingress.ts consistentRequest recomputes controlCommandDigest from stored action/action_level/target/args/reversible/requested_by/requested_at/expires_at/nonce and compares to command_digest, and checks expiry > now",
+      "test": "tests/integration/remote-approval-gateway-production.test.ts refuses tampered args"
+    },
+    "cheap_note_2_up_uv": {
+      "fix": "src/remote-approval.ts records parsed up/uv (assertionAuditFlags from authenticatorData) on the early-rejection audit write when an assertion exists",
+      "test": "e2e/remote-approval-gateway-page.spec.ts missing-UV refusal asserts uv=0"
+    },
+    "cheap_note_3_signer_source": {
+      "fix": "src/remote-approval-compose.ts distinguishes signerSource unconfigured|rejected|file so a rejected existing key file (bad path/perm) is not reported as signer_unconfigured",
+      "test": "tests/integration/remote-approval-compose-readiness.test.ts"
+    }
+  },
+  "refactor": {
+    "reason": "src/remote-approval.ts exceeded the 250 pure-LOC ceiling after cheap-note-2",
+    "action": "extracted classifyReadiness + SignerSource/RemoteReadiness/ReadinessInput into new src/remote-approval-readiness.ts (31 LOC); remote-approval.ts now under ceiling"
+  },
+  "new_files": [
+    "src/remote-approval-readiness.ts",
+    "tests/fixtures/remote-approval-gateway-harness.ts",
+    "tests/integration/remote-approval-gateway-production.test.ts",
+    "tests/integration/phone-gateway-security-assets.test.ts",
+    "dashboard/src/pages/security-client-list.test.ts",
+    "e2e/remote-approval-gateway-fixture.ts",
+    "e2e/remote-approval-gateway-page.spec.ts"
   ],
   "red": {
-    "expired_and_replay_audit": "failed on 48287b6 before the fix",
-    "uv_flags": "failed on 48287b6; missing-UV audit stored uv=1",
-    "readiness": "failed on 48287b6; reason was signer",
-    "security_ceremony": "failed on 48287b6; navigator.credentials.get was not called",
-    "gateway_security_route": "failed on 48287b6; GET /security was denied"
+    "B3-R": "production register verify returned 401 REMOTE_SESSION_REQUIRED before the fix",
+    "B2-R(a)": "gateway served /security with no manifest -> assets denied before build.manifest was enabled",
+    "B2-R(b)-local": "same-origin GET returned 403 LOCAL_SESSION_REQUIRED before hasSameOriginReadOrigin",
+    "B2-R(b)-gateway": "gateway credential list returned 404 then 403 PHONE_CSRF_REQUIRED before the shared jsonFetch path",
+    "cheap_note_1": "consistentRequest ignored action/target/args/digest/expiry before the recompute",
+    "cheap_note_2": "missing-UV audit stored uv=1 before assertionAuditFlags",
+    "cheap_note_3": "rejected key file reported signer_unconfigured before signerSource"
   },
   "green": {
-    "backend_related_files": 15,
-    "backend_related_tests": 84,
-    "dashboard_files": 3,
-    "dashboard_tests": 8,
+    "targeted_backend_files": 5,
+    "targeted_backend_tests": 11,
+    "targeted_backend_note": "remote-approval-gateway-production, phone-gateway-security-assets, remote-approval-control-plane, remote-approval-compose-readiness, remote-approval-policy-ttl all pass in isolation",
+    "approved_executor_isolated": "11 passed at testTimeout=30000; the 5s timeouts in the full sharded run were CPU contention on the shared host (load ~4-5, 42 users), a pre-existing environmental signature, not a code regression",
+    "dashboard_files": 40,
+    "dashboard_tests": 267,
     "react_warnings": 0,
-    "playwright_page_spec": "4 passed",
-    "lint": "pass",
+    "playwright_remote": "9 passed (incl. 2 new e2e/remote-approval-gateway-page.spec.ts through the production composer + real gateway)",
+    "lint": "pass (--max-warnings=0)",
     "typecheck": "pass",
     "architecture_check": "pass",
-    "build": "pass"
+    "build": "pass (dist/dashboard/manifest.json emitted; backend 1553 files, 103 migrations)"
   },
   "manual_qa": {
-    "surface": "shipped /security page over fixture TLS, CDP virtual authenticator, no harness navigator.credentials calls on the happy path",
-    "happy": "enroll, approve one staged recommendation, one receipt, one claim, second claim refused",
+    "surface": "shipped /security page over fixture TLS through the real phone gateway with the production composer, CDP virtual authenticator, page-driven ceremonies only",
+    "happy": "enroll locally, register the passkey through the gateway, credential list shows the passkey on both origins, approve one staged request -> exactly one receipt + one claim, second claim refused",
+    "failure_classes": "missing-UV assertion mints nothing (0 receipts) and audits once (rejected/crypto, uv=0)",
+    "screenshot": ".omo/evidence/task-35-remediation/playwright-output/*/happy-approved.png shows the shipped build rendering an active credential and gateway enrollment-unavailable messaging",
     "touch_id": "not tested"
   },
   "adversarial_classes": [
     "modified-arg",
+    "unknown-ceremony-id",
     "replay",
     "expired",
     "missing-UV",

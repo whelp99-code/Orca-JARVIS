@@ -23,7 +23,10 @@ export type PhoneEnvFiles = {
   readonly key: Buffer;
 };
 
-export function makePhoneHome(root = mkdtempSync(join(tmpdir(), "jarvis-phone-"))): PhoneEnvFiles {
+export function makePhoneHome(
+  root = mkdtempSync(join(tmpdir(), "jarvis-phone-")),
+  origin: string = FIXTURE_ORIGIN,
+): PhoneEnvFiles {
   const configDir = join(root, ".config", "orca-jarvis");
   mkdirSync(configDir, { recursive: true });
   const key = Buffer.alloc(32, 7);
@@ -32,7 +35,7 @@ export function makePhoneHome(root = mkdtempSync(join(tmpdir(), "jarvis-phone-")
   chmodSync(keyFile, 0o600);
   const envFile = join(configDir, "phone-gateway.env");
   writeFileSync(envFile, [
-    `JARVIS_PHONE_PUBLIC_ORIGIN=${FIXTURE_ORIGIN}`,
+    `JARVIS_PHONE_PUBLIC_ORIGIN=${origin}`,
     `JARVIS_PHONE_OWNER_LOGIN=${FIXTURE_LOGIN}`,
     `JARVIS_PHONE_SESSION_KEY_FILE=${keyFile}`,
     "",

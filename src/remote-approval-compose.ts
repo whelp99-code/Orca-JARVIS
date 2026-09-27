@@ -39,7 +39,7 @@ export function composeRemoteApproval(db: AuthorityDb, options: {
   const sealed = sealedDecision(db);
   const keyPath = options.decisionKeyPath ?? process.env.JARVIS_DECISION_SIGNING_KEY_FILE;
   const loaded = keyPath === undefined ? undefined : readEd25519PrivateKeyFile(keyPath);
-  const signerConfigured = loaded !== undefined;
+  const signerSource = keyPath === undefined ? "unconfigured" : loaded === undefined ? "rejected" : "file";
   const signer = new ControlReceiptSigner(
     loaded ?? generateKeyPairSync("ed25519").privateKey,
     sealed?.key_id ?? "unready-decision",
@@ -54,7 +54,7 @@ export function composeRemoteApproval(db: AuthorityDb, options: {
     origin,
     rpId,
     signer,
-    signerConfigured,
+    signerSource,
     resolver: createProductionIngressResolver({
       db, key: ingressKey, origin, now: () => new Date(),
       nonceTtlSeconds: policy.remote_approval.ingress_nonce_ttl_seconds,

@@ -19,7 +19,7 @@ describe("remote approval policy TTL", () => {
       const service = new RemoteApprovalService({
         db, control: new ControlPlane(db), origin: REMOTE_ORIGIN, rpId: REMOTE_RP_ID,
         signer: new ControlReceiptSigner(localKey(db), "decision-test", "test-operator"),
-        signerConfigured: true, resolver: createFixtureResolver(),
+        signerSource: "file", resolver: createFixtureResolver(),
         policy: { owner_principal: parsed.owner_principal, remote_approval: { ...parsed.remote_approval, challenge_ttl_seconds: 60 } },
       });
       const staged = new ControlPlane(db).stage(workflowRequest("ttl-60", now), now);

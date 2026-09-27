@@ -1,6 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import type { IncomingMessage } from "node:http";
-import { canonicalize } from "./canonical.js";
+import { controlCommandDigest } from "./control-plane-contract.js";
 import type { AuthorityDb } from "./db.js";
 import { ingressMac, sha256Prefixed } from "./remote-approval-crypto.js";
 import type { RemoteIngressContextV1, RemoteIngressResolver } from "./remote-approval-types.js";
@@ -48,7 +48,7 @@ function admitIngress(input: {
   const issued = Date.parse(envelope.issued_at);
   if (!Number.isFinite(issued) || Math.abs(now.getTime() - issued) > input.nonceTtlSeconds * 1000) return null;
   if (!consumeNonce(input.db, envelope, now, input.nonceTtlSeconds)) return null;
-  if (!lookupStaged(input.db, path)) return null;
+  if (!lookupStaged(input.db, path, now)) return null;
   return {
     schema_version: 1,
     trust_mode: "gateway",
@@ -63,39 +63,74 @@ function admitIngress(input: {
   };
 }
 
-function lookupStaged(db: AuthorityDb, path: string): boolean {
+/**
+ * Every gateway-admitted path must resolve to a locally staged ControlPlane
+ * request whose stored identity still matches its command digest. A registration
+ * verify carries the ceremony id, so it binds through the ceremony row to the
+ * local enrollment that issued it.
+ */
+function lookupStaged(db: AuthorityDb, path: string, now: Date): boolean {
   if (path === "/api/v1/security/webauthn/credentials") return true;
   const requestId = requestIdFrom(path);
-  if (requestId !== undefined) return consistentRequest(db, requestId);
+  if (requestId !== undefined) return consistentRequest(db, requestId, now);
   const challengeId = challengeIdFrom(path);
   if (challengeId !== undefined) {
     const row = db.db.prepare("SELECT request_id FROM webauthn_approval_challenges_v2 WHERE challenge_id=?").get(challengeId) as
       { request_id: string } | undefined;
-    return row !== undefined && consistentRequest(db, row.request_id);
+    return row !== undefined && consistentRequest(db, row.request_id, now);
   }
-  const enrollmentId = enrollmentIdFrom(path);
-  if (enrollmentId === undefined) return false;
-  const rows = db.db.prepare(
-    "SELECT args_json FROM control_command_requests WHERE action='remote.credential.enroll.begin'",
-  ).all() as Array<{ args_json: string }>;
-  return rows.some(row => {
-    const args = JSON.parse(row.args_json) as { enrollment_id?: string };
-    return args.enrollment_id === enrollmentId;
-  });
+  const registration = registrationFrom(path);
+  if (registration === undefined) return false;
+  switch (registration.kind) {
+    case "options": {
+      const begin = enrollmentBeginRequest(db, registration.enrollmentId);
+      return begin !== undefined && consistentRequest(db, begin, now);
+    }
+    case "verify": {
+      const ceremony = db.db.prepare(
+        "SELECT enrollment_id, begin_request_id FROM webauthn_registration_ceremonies_v2 WHERE ceremony_id=?",
+      ).get(registration.ceremonyId) as { enrollment_id: string; begin_request_id: string } | undefined;
+      if (ceremony === undefined) return false;
+      const begin = enrollmentBeginRequest(db, ceremony.enrollment_id);
+      return begin !== undefined && begin === ceremony.begin_request_id && consistentRequest(db, begin, now);
+    }
+    default:
+      return assertNever(registration);
+  }
 }
 
-function consistentRequest(db: AuthorityDb, requestId: string): boolean {
+function enrollmentBeginRequest(db: AuthorityDb, enrollmentId: string): string | undefined {
+  const rows = db.db.prepare(
+    "SELECT request_id, args_json FROM control_command_requests WHERE action='remote.credential.enroll.begin'",
+  ).all() as Array<{ request_id: string; args_json: string }>;
+  const owner = rows.find(row => (JSON.parse(row.args_json) as { enrollment_id?: string }).enrollment_id === enrollmentId);
+  return owner?.request_id;
+}
+
+type StagedRow = {
+  request_id: string; action: string; action_level: number; target_json: string; args_json: string; command_digest: string;
+  reversible: number; requested_by: string; requested_at: string; expires_at: string; nonce: string;
+};
+
+/** The stored action/target/args/principal/expiry must still hash to the staged command digest, and the request must be live. */
+function consistentRequest(db: AuthorityDb, requestId: string, now: Date): boolean {
   const row = db.db.prepare(
-    "SELECT action, target_json, args_json, command_digest, requested_by, expires_at FROM control_command_requests WHERE request_id=?",
-  ).get(requestId) as {
-    action: string; target_json: string; args_json: string; command_digest: string; requested_by: string; expires_at: string;
-  } | undefined;
+    "SELECT request_id, action, action_level, target_json, args_json, command_digest, reversible, requested_by, requested_at, expires_at, nonce"
+    + " FROM control_command_requests WHERE request_id=?",
+  ).get(requestId) as StagedRow | undefined;
   if (row === undefined || row.action.length === 0 || row.requested_by.length === 0) return false;
-  if (!row.command_digest.startsWith("sha256:") || !Number.isFinite(Date.parse(row.expires_at))) return false;
+  const expires = Date.parse(row.expires_at);
+  if (!Number.isFinite(expires) || expires <= now.getTime()) return false;
   const target = JSON.parse(row.target_json) as unknown;
   const args = JSON.parse(row.args_json) as unknown;
   if (typeof target !== "object" || target === null || typeof args !== "object" || args === null) return false;
-  return sha256Prefixed(canonicalize(target)).length > 0 && sha256Prefixed(canonicalize(args)).length > 0;
+  const level = row.action_level;
+  if (level !== 1 && level !== 2 && level !== 3) return false;
+  return controlCommandDigest({
+    schema_version: 1, request_id: row.request_id, action: row.action, action_level: level,
+    target: target as Record<string, unknown>, args: args as Record<string, unknown>, reversible: row.reversible === 1,
+    requested_by: row.requested_by, requested_at: row.requested_at, expires_at: row.expires_at, nonce: row.nonce,
+  }) === row.command_digest;
 }
 
 function consumeNonce(db: AuthorityDb, envelope: Envelope, now: Date, ttlSeconds: number): boolean {
@@ -170,7 +205,17 @@ function challengeIdFrom(path: string): string | undefined {
   return match?.[1];
 }
 
-function enrollmentIdFrom(path: string): string | undefined {
-  const match = /^\/api\/v1\/security\/webauthn\/registrations\/([^/]+)\/(?:options|verify)$/.exec(path);
-  return match?.[1];
+type RegistrationPath =
+  | { readonly kind: "options"; readonly enrollmentId: string }
+  | { readonly kind: "verify"; readonly ceremonyId: string };
+
+function registrationFrom(path: string): RegistrationPath | undefined {
+  const match = /^\/api\/v1\/security\/webauthn\/registrations\/([^/]+)\/(options|verify)$/.exec(path);
+  const id = match?.[1];
+  if (id === undefined) return undefined;
+  return match?.[2] === "options" ? { kind: "options", enrollmentId: id } : { kind: "verify", ceremonyId: id };
+}
+
+function assertNever(value: never): never {
+  throw new Error(`unexpected registration path ${JSON.stringify(value)}`);
 }

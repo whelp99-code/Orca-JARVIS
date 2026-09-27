@@ -39,4 +39,18 @@ describe("production remote approval composition", () => {
       db.close();
     }
   });
+
+  it("reports a configured key file the loader rejected apart from no configuration", async () => {
+    const db = await initialized();
+    try {
+      const pem = localKey(db).export({ type: "pkcs8", format: "pem" }).toString();
+      const loose = keyFile(pem);
+      chmodSync(loose, 0o644);
+      expect(composeRemoteApproval(db, { decisionKeyPath: loose }).readiness()).toEqual({ remote_ready: false, reason: "signer_rejected" });
+      expect(composeRemoteApproval(db, { decisionKeyPath: "relative/decision.pem" }).readiness()).toEqual({ remote_ready: false, reason: "signer_rejected" });
+      expect(composeRemoteApproval(db, { decisionKeyPath: join(loose, "..", "absent.pem") }).readiness()).toEqual({ remote_ready: false, reason: "signer_rejected" });
+    } finally {
+      db.close();
+    }
+  });
 });

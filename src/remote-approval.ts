@@ -6,6 +6,7 @@ import { bindingChallenge, sha256Prefixed } from "./remote-approval-crypto.js";
 import { RemoteApprovalError, REMOTE_ERROR_CODES } from "./remote-approval-errors.js";
 import { parseDecisionBody } from "./remote-approval-parse.js";
 import type { RemoteApprovalPolicy } from "./remote-approval-policy.js";
+import { classifyReadiness, type RemoteReadiness, type SignerSource } from "./remote-approval-readiness.js";
 import { ControlReceiptSigner } from "./remote-approval-signer.js";
 import { RemoteApprovalStore, type ChallengeRow } from "./remote-approval-store.js";
 import {
@@ -23,7 +24,7 @@ export type RemoteApprovalServiceOptions = Readonly<{
   origin: string;
   rpId: string;
   signer: ControlReceiptSigner;
-  signerConfigured: boolean;
+  signerSource: SignerSource;
   resolver: RemoteIngressResolver;
 }>;
 
@@ -44,19 +45,12 @@ export class RemoteApprovalService {
     this.lastMs = ms;
   }
 
-  readiness(now = new Date()): { readonly remote_ready: boolean; readonly reason: string | null } {
-    const counts = this.store.quarantineCounts();
-    if (counts.remote_principals_count + counts.webauthn_credentials_count + counts.webauthn_challenges_count + counts.webauthn_assertions_count !== 0) {
-      return { remote_ready: false, reason: "legacy_quarantine" };
-    }
-    if (!this.options.signerConfigured) return { remote_ready: false, reason: "signer_unconfigured" };
-    const sealed = this.store.sealedDecision(this.options.signer.keyId);
-    if (!sealed) return { remote_ready: false, reason: "signer_unsealed" };
-    if (sealed.principal_id !== this.options.signer.principalId || sealed.public_key_pem !== this.options.signer.spkiPem()) {
-      return { remote_ready: false, reason: "signer_mismatch" };
-    }
-    this.clock(now);
-    return { remote_ready: true, reason: null };
+  readiness(now = new Date()): RemoteReadiness {
+    const classified = classifyReadiness({
+      store: this.store, signer: this.options.signer, signerSource: this.options.signerSource,
+    });
+    if (classified.remote_ready) this.clock(now);
+    return classified;
   }
 
   recover(now = new Date()): void { this.store.recoverVerifying(this.nowIso(now)); }
@@ -191,7 +185,7 @@ export class RemoteApprovalService {
     const early = this.earlyRejection(row, ingress, now);
     if (early !== undefined) {
       this.options.db.db.transaction(() => {
-        writeRemoteAudit(this.store, row, now, early.outcome, early.reason);
+        writeRemoteAudit(this.store, row, now, early.outcome, early.reason, assertionAuditFlags(rawBody));
       }).immediate();
       throw new RemoteApprovalError(early.code, early.reason);
     }

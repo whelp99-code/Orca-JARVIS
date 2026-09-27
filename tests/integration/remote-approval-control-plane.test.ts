@@ -78,8 +78,11 @@ describe("remote approval ControlPlane translation", () => {
       });
       expect(replay.statusCode).toBe(409);
       expect((db.db.prepare("SELECT COUNT(*) AS n FROM control_command_receipts WHERE request_id=?").get(staged.request_id) as { n: number }).n).toBe(1);
-      const audits = db.db.prepare("SELECT COUNT(*) AS n FROM personal_operation_audit_events WHERE correlation_id=? AND event_type LIKE 'remote.%'").get(staged.request_id) as { n: number };
-      expect(audits.n).toBeGreaterThan(1);
+      const audits = db.db.prepare(
+        "SELECT outcome, reason_code, up, uv FROM personal_operation_audit_events WHERE correlation_id=? AND event_type LIKE 'remote.%' ORDER BY outcome",
+      ).all(staged.request_id) as Array<{ outcome: string; reason_code: string; up: number | null; uv: number | null }>;
+      expect(audits.map(row => [row.outcome, row.reason_code])).toEqual([["rejected", "consumed"], ["translated", "translated"]]);
+      expect(audits.map(row => [row.up, row.uv])).toEqual([[1, 1], [1, 1]]);
       expect(localKey(db)).toBeTruthy();
     } finally {
       server.close();

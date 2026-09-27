@@ -250,7 +250,7 @@ function composeService(db: AuthorityDb, origin: string): RemoteApprovalService 
   const policy = parsePersonalOsPolicy(JSON.parse(readFileSync("config/personal-os-policy.json", "utf8")));
   const signer = new ControlReceiptSigner(localKey(db), "decision-test", "test-operator");
   return new RemoteApprovalService({
-    db, control: new ControlPlane(db), policy, origin, rpId: FIXTURE_RP_ID, signer, signerConfigured: true,
+    db, control: new ControlPlane(db), policy, origin, rpId: FIXTURE_RP_ID, signer, signerSource: "file",
     resolver: (request, body): RemoteIngressContextV1 | null => {
       const path = requestPath(request.url);
       if (path === undefined) return null;

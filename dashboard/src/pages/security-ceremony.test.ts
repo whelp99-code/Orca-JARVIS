@@ -13,6 +13,9 @@ describe("browser security client ceremonies", () => {
     });
     vi.stubGlobal("navigator", { credentials: { get, create: vi.fn() } });
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (String(url) === "/api/v1/session") {
+        return { ok: true, json: async () => ({ schema_version: 1, csrf_token: "local-token-aaaaaaaaaaaaaaaaaaaaaaaaaaaa" }) };
+      }
       if (String(url).endsWith("/options")) {
         return {
           ok: true,

@@ -3,10 +3,13 @@
   "task": 35,
   "title": "Bind remote approvals to WebAuthn and existing ControlPlane receipts",
   "verdict": "candidate",
-  "base": "48287b6eb6122d746380278618871ea729b0e525",
-  "head": "c525cbe472df524446d166bdad4282269d73938c",
+  "base": "82dc6f388df077b2544713aeae2f5d6741fb9b03",
+  "merged_main": "086a097",
+  "merge_commit": "6b96e3a3e71dbb94ae08cecd0f15284da79cf968",
+  "head": "PENDING_COMMIT",
   "branch": "task-35-remediation",
   "worktree": "/home/jm/orca/workspaces/Orca-JARVIS/task-35-remediation",
+  "merge_note": "Task 34 gateway Serve-header/readiness fix (086a097) merged into this branch as a real merge commit (6b96e3a); phone-gateway and remote suites rerun after resolving conflicts preserving both sides.",
   "enrollment_origin_policy": {
     "decision": "local-session-only",
     "citation": "docs/personal-os/contracts.md remote approval table: principal absent -> active is local Linux ControlPlane owner enrollment only; remote self-enrollment has no authority",
@@ -17,6 +20,14 @@
     "B2": "shipped security page calls navigator.credentials.create and navigator.credentials.get; credential list and revocation staging use the Linux API; the client does not mint or verify receipts",
     "B3": "compose loads the sealed decision signing key through readEd25519PrivateKeyFile; readiness is ready only on a matching key, otherwise signer_unconfigured, signer_unsealed, or signer_mismatch; the resolver looks up the staged ControlPlane request; the phone gateway proxies /api/v1/remote-approvals/*, registration ceremonies, credential reads, and /security"
   },
+  "remediation_blockers": {
+    "B3-R": "FIXED: production /registrations/<ceremony_id>/verify resolved the ceremony id as an enrollment id and returned 401 REMOTE_SESSION_REQUIRED. remote-approval-ingress lookupStaged now branches on registrationFrom(path); verify looks up webauthn_registration_ceremonies_v2 by ceremony id and binds to its owning local enrollment_id + begin_request_id. Enrollment begin stays local-session only. Proven end-to-end enroll -> register verify -> approve through createPhoneGatewayServer with the production composer/resolver.",
+    "B2-R(a)": "FIXED: gateway served /security with no Vite manifest so manifest-listed asset serving denied every asset. dashboard/vite.config.ts enables build.manifest=manifest.json at dist/dashboard/manifest.json; a gateway test serves /security and its JS/CSS from a real dashboard build.",
+    "B2-R(b)-local": "FIXED: same-origin GET has no Origin header so requireLocalSession returned 403 LOCAL_SESSION_REQUIRED. hasSameOriginReadOrigin (absent or exact-match Origin) now gates read GETs; mutation origin checks unchanged.",
+    "B2-R(b)-gateway": "FIXED: security-client called /api/v1/session (404 on gateway) and omitted the phone CSRF token so listing returned 403 PHONE_CSRF_REQUIRED. security-client.ts now uses one shared jsonFetch/jsonPost path that always sets x-jarvis-csrf, fetching the token from /api/v1/phone/session on the gateway origin.",
+    "cheap_notes": "consistentRequest recomputes controlCommandDigest from stored action/action_level/target/args/reversible/requested_by/requested_at/expires_at/nonce and compares to command_digest plus checks expiry>now; up/uv recorded on the early-rejection audit when an assertion exists; compose distinguishes signerSource unconfigured|rejected|file so a rejected key file is not reported as signer_unconfigured."
+  },
+  "refactor": "src/remote-approval.ts crossed the 250 pure-LOC ceiling after recording up/uv; classifyReadiness plus SignerSource/RemoteReadiness/ReadinessInput extracted into new src/remote-approval-readiness.ts (31 LOC), bringing remote-approval.ts back under the ceiling.",
   "gate_notes": {
     "audit_flags": "rejection audits record authenticator up/uv bits when an assertion body is present; missing UV is uv=0",
     "policy_ttl": "challenge, registration, reservation, begin, and activation expiries read the parsed policy fields",
@@ -31,18 +42,19 @@
     "gateway_route": "GET /security was not an allowed phone route"
   },
   "green": {
-    "backend_related": "15 files, 84 tests passed",
-    "dashboard": "3 files, 8 tests passed, zero React warnings in the run output",
-    "playwright": "4 passed in e2e/remote-approval-page.spec.ts using CDP WebAuthn.enable and addVirtualAuthenticator; ceremonies were page-driven",
+    "targeted_backend": "5 files, 11 tests passed in isolation: remote-approval-gateway-production, phone-gateway-security-assets, remote-approval-control-plane, remote-approval-compose-readiness, remote-approval-policy-ttl",
+    "approved_executor_isolated": "11 passed at testTimeout=30000; the 5s timeouts seen in the full sharded run were CPU contention on the shared host (load ~4-5, 42 users) at DB init, a pre-existing environmental signature, not a code regression",
+    "dashboard": "40 files, 267 tests passed, zero React warnings in the run output; includes new dashboard/src/pages/security-client-list.test.ts",
+    "playwright": "9 passed using CDP WebAuthn.enable and addVirtualAuthenticator; ceremonies page-driven; includes 2 new e2e/remote-approval-gateway-page.spec.ts through the real phone gateway with the production composer",
     "lint": "eslint --max-warnings=0 passed",
     "typecheck": "tsc --noEmit, dashboard, and e2e passed",
     "architecture": "check-runtime-imports ok, cycles 0",
-    "build": "backend 1545 artifacts, 103 migrations; dashboard built"
+    "build": "backend 1553 artifacts, 103 migrations; dashboard built with dist/dashboard/manifest.json"
   },
   "qa": {
     "tool": "Playwright remote-chromium plus CDP WebAuthn.enable and WebAuthn.addVirtualAuthenticator (UV true)",
-    "happy": "security page enroll then approve one staged recommendation; one receipt; one executor claim; second claim refused",
-    "failures": ["modified-arg", "replay", "expired", "missing-UV", "wrong-owner", "wrong-origin", "wrong-RP", "revoked", "gateway-session-without-assertion"],
+    "happy": "security page enroll locally, register the passkey through the gateway, credential list shows the passkey on both origins, approve one staged recommendation; one receipt; one executor claim; second claim refused",
+    "failures": ["modified-arg", "unknown-ceremony-id", "replay", "expired", "missing-UV", "wrong-owner", "wrong-origin", "wrong-RP", "revoked", "gateway-session-without-assertion"],
     "touch_id": "not tested; real Touch ID is outside this automated gate",
     "screenshots": [
       ".omo/evidence/task-35-remediation/playwright-output/remote-approval-page-enrol-e0841-n-through-the-security-page-remote-chromium/happy-approved.png",

@@ -1,99 +1,82 @@
 import type { SecurityClient, SecurityCredential } from "./pages/security-page.js";
-import { assertPasskey, createPasskey } from "./webauthn-ceremony.js";
+import { assertPasskey, createPasskey, gatewayOrigin } from "./webauthn-ceremony.js";
 
-let phoneToken: string | undefined;
-
-async function phoneCsrf(): Promise<string | undefined> {
-  if (document.querySelector("meta[name='jarvis-phone-mode']") === null) return undefined;
-  if (phoneToken !== undefined) return phoneToken;
-  const session = await fetch("/api/v1/phone/session");
-  if (!session.ok) return undefined;
-  const parsed = await session.json() as { csrf_token?: string };
-  phoneToken = parsed.csrf_token;
-  return phoneToken;
-}
-
-async function jsonFetch(path: string, init?: RequestInit): Promise<{ readonly ok: boolean; readonly body: Record<string, unknown> }> {
-  const headers = new Headers(init?.headers);
-  if (init?.body !== undefined && !headers.has("content-type")) headers.set("content-type", "application/json; charset=utf-8");
-  const token = await phoneCsrf();
-  if (token !== undefined) headers.set("x-jarvis-csrf", token);
-  const response = await fetch(path, { ...init, headers });
-  const body = await response.json() as Record<string, unknown> & { error?: { message?: string } };
-  if (!response.ok) throw new Error(body.error?.message ?? "Remote approval unavailable");
-  return { ok: true, body };
+/** Phone origin: the gateway session token. Local origin: the loopback dashboard session token. */
+async function fetchCsrfToken(): Promise<string> {
+  const response = await fetch(gatewayOrigin() ? "/api/v1/phone/session" : "/api/v1/session");
+  const parsed = await response.json() as { csrf_token?: string };
+  if (!response.ok || parsed.csrf_token === undefined) throw new Error("Remote approval unavailable");
+  return parsed.csrf_token;
 }
 
 export function createBrowserSecurityClient(): SecurityClient {
+  let token: Promise<string> | undefined;
+  const csrfToken = (): Promise<string> => {
+    token ??= fetchCsrfToken().catch((error: unknown) => { token = undefined; throw error; });
+    return token;
+  };
+  async function jsonFetch(path: string, init?: RequestInit): Promise<Record<string, unknown>> {
+    const headers = new Headers(init?.headers);
+    if (init?.body !== undefined && !headers.has("content-type")) headers.set("content-type", "application/json; charset=utf-8");
+    headers.set("x-jarvis-csrf", await csrfToken());
+    const response = await fetch(path, { ...init, headers });
+    const body = await response.json() as Record<string, unknown> & { error?: { message?: string } };
+    if (!response.ok) throw new Error(body.error?.message ?? "Remote approval unavailable");
+    return body;
+  }
+  const jsonPost = (path: string, body: unknown): Promise<Record<string, unknown>> =>
+    jsonFetch(path, { method: "POST", body: JSON.stringify(body) });
   return {
     async listCredentials() {
-      const session = await (await fetch("/api/v1/session")).json() as { csrf_token?: string };
-      const response = await fetch("/api/v1/security/webauthn/credentials", {
-        headers: session.csrf_token === undefined ? {} : { "x-jarvis-csrf": session.csrf_token },
-      });
-      const body = await response.json() as { items?: SecurityCredential[]; error?: { message: string } };
-      if (!response.ok || body.items === undefined) throw new Error(body.error?.message ?? "Remote approval unavailable");
-      return { items: body.items };
+      const body = await jsonFetch("/api/v1/security/webauthn/credentials");
+      if (!Array.isArray(body.items)) throw new Error("Remote approval unavailable");
+      return { items: body.items as SecurityCredential[] };
     },
     async beginEnrollment() {
-      const session = await (await fetch("/api/v1/session")).json() as { csrf_token: string };
-      const response = await fetch("/api/v1/security/webauthn/enrollments", {
-        method: "POST",
-        headers: { "content-type": "application/json; charset=utf-8", "x-jarvis-csrf": session.csrf_token },
-        body: JSON.stringify({ schema_version: 1 }),
-      });
-      const body = await response.json() as { enrollment_id?: string; request_id?: string; error?: { message: string } };
-      if (!response.ok || body.enrollment_id === undefined) throw new Error(body.error?.message ?? "Remote approval unavailable");
-      return { enrollment_id: body.enrollment_id, request_id: body.request_id };
+      const body = await jsonPost("/api/v1/security/webauthn/enrollments", { schema_version: 1 });
+      if (typeof body.enrollment_id !== "string") throw new Error("Remote approval unavailable");
+      return { enrollment_id: body.enrollment_id, request_id: typeof body.request_id === "string" ? body.request_id : undefined };
     },
     async registerPasskey(enrollmentId, beginRequestId) {
-      const options = await jsonFetch(`/api/v1/security/webauthn/registrations/${encodeURIComponent(enrollmentId)}/options`, {
-        method: "POST",
-        body: JSON.stringify({ schema_version: 1, begin_request_id: beginRequestId }),
+      const options = await jsonPost(`/api/v1/security/webauthn/registrations/${encodeURIComponent(enrollmentId)}/options`, {
+        schema_version: 1, begin_request_id: beginRequestId,
       });
-      const publicKey = options.body.options;
+      const publicKey = options.options;
       if (typeof publicKey !== "object" || publicKey === null) throw new Error("Remote approval unavailable");
       const credential = await createPasskey(publicKey as Record<string, unknown>);
-      const ceremonyId = String(options.body.ceremony_id);
-      const verified = await jsonFetch(`/api/v1/security/webauthn/registrations/${encodeURIComponent(ceremonyId)}/verify`, {
-        method: "POST",
-        body: JSON.stringify({ schema_version: 1, credential }),
+      const ceremonyId = String(options.ceremony_id);
+      const verified = await jsonPost(`/api/v1/security/webauthn/registrations/${encodeURIComponent(ceremonyId)}/verify`, {
+        schema_version: 1, credential,
       });
-      return { credential_id: String(verified.body.credential_id), activation_request_id: String(verified.body.activation_request_id) };
+      return { credential_id: String(verified.credential_id), activation_request_id: String(verified.activation_request_id) };
     },
     async stageRevocation(credentialId) {
-      const session = await (await fetch("/api/v1/session")).json() as { csrf_token: string };
-      const response = await fetch(`/api/v1/security/webauthn/credentials/${encodeURIComponent(credentialId)}/revocation-requests`, {
-        method: "POST",
-        headers: { "content-type": "application/json; charset=utf-8", "x-jarvis-csrf": session.csrf_token },
-        body: JSON.stringify({ schema_version: 1, reason: "owner" }),
+      const body = await jsonPost(`/api/v1/security/webauthn/credentials/${encodeURIComponent(credentialId)}/revocation-requests`, {
+        schema_version: 1, reason: "owner",
       });
-      const body = await response.json() as { request_id?: string; error?: { message: string } };
-      if (!response.ok || body.request_id === undefined) throw new Error(body.error?.message ?? "Remote approval unavailable");
+      if (typeof body.request_id !== "string") throw new Error("Remote approval unavailable");
       return { request_id: body.request_id };
     },
     async loadRequest(requestId) {
       const loaded = await jsonFetch(`/api/v1/remote-approvals/${encodeURIComponent(requestId)}`);
-      return loaded.body as Awaited<ReturnType<SecurityClient["loadRequest"]>>;
+      return loaded as Awaited<ReturnType<SecurityClient["loadRequest"]>>;
     },
     async decideRemote(requestId, decision) {
-      const issued = await jsonFetch(`/api/v1/remote-approvals/${encodeURIComponent(requestId)}/options`, {
-        method: "POST",
-        body: JSON.stringify({ schema_version: 1, decision }),
+      const issued = await jsonPost(`/api/v1/remote-approvals/${encodeURIComponent(requestId)}/options`, {
+        schema_version: 1, decision,
       });
-      const challengeId = String(issued.body.challenge_id);
-      const options = issued.body.options;
+      const challengeId = String(issued.challenge_id);
+      const options = issued.options;
       if (typeof options !== "object" || options === null) throw new Error("Remote approval unavailable");
       const credential = await assertPasskey(options as Record<string, unknown>);
-      const verified = await jsonFetch(`/api/v1/remote-approvals/${encodeURIComponent(challengeId)}/verify`, {
-        method: "POST",
-        body: JSON.stringify({ schema_version: 1, credential }),
+      const verified = await jsonPost(`/api/v1/remote-approvals/${encodeURIComponent(challengeId)}/verify`, {
+        schema_version: 1, credential,
       });
       const status = await jsonFetch(`/api/v1/remote-approvals/${encodeURIComponent(challengeId)}/status`);
       return {
         challenge_id: challengeId,
-        outcome: String(status.body.state),
-        receipt_id: typeof verified.body.receipt_id === "string" ? verified.body.receipt_id : undefined,
+        outcome: String(status.state),
+        receipt_id: typeof verified.receipt_id === "string" ? verified.receipt_id : undefined,
       };
     },
   };

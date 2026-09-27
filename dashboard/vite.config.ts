@@ -8,6 +8,8 @@ export default defineConfig({
   build: {
     outDir: fileURLToPath(new URL("../dist/dashboard", import.meta.url)),
     emptyOutDir: true,
+    // The phone gateway serves only manifest-listed assets (src/phone-gateway-http.ts loadAssetNames).
+    manifest: "manifest.json",
   },
   test: {
     environment: "jsdom",

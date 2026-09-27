@@ -2,7 +2,7 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: ["remote-approval.spec.ts", "remote-approval-page.spec.ts"],
+  testMatch: ["remote-approval.spec.ts", "remote-approval-page.spec.ts", "remote-approval-gateway-page.spec.ts"],
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,
