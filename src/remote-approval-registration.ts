@@ -58,7 +58,7 @@ export function issueRegistrationOptions(
     const nonce = randomBytes(32);
     challengeB64 = base64url(randomBytes(32));
     const expires = new Date(Math.min(
-      now.getTime() + 300_000,
+      now.getTime() + service.options.policy.remote_approval.registration_ttl_seconds * 1000,
       Date.parse(String(request.expires_at)),
       Date.parse(receipt.expires_at),
     )).toISOString();
@@ -82,7 +82,7 @@ export function issueRegistrationOptions(
       rp: { id: service.options.rpId, name: "JARVIS" },
       user: { id: base64url(owner.user_handle), name: "JARVIS owner", displayName: "JARVIS owner" },
       pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -8 }],
-      timeout: 300000,
+      timeout: service.options.policy.remote_approval.registration_ttl_seconds * 1000,
       attestation: "none",
       excludeCredentials: store.liveCredentialIds().map(id => ({ type: "public-key", id })),
       authenticatorSelection: { residentKey: "required", userVerification: "required" },
@@ -106,7 +106,7 @@ export async function verifyRegistration(
       throw new RemoteApprovalError(REMOTE_ERROR_CODES.REMOTE_SESSION_REQUIRED, "session");
     }
     if (Date.parse(row.expires_at) <= now.getTime()) throw new RemoteApprovalError(REMOTE_ERROR_CODES.REMOTE_CEREMONY_REJECTED, "expired");
-    store.reserveRegistration(ceremonyId, at, new Date(now.getTime() + 30_000).toISOString());
+    store.reserveRegistration(ceremonyId, at, new Date(now.getTime() + service.options.policy.remote_approval.verification_reservation_ttl_seconds * 1000).toISOString());
     return row;
   });
   const ceremony = reserve.immediate();
@@ -131,7 +131,7 @@ export async function verifyRegistration(
     if (!owner || owner.principal_id !== ceremony.principal_id) {
       throw new RemoteApprovalError(REMOTE_ERROR_CODES.REMOTE_CEREMONY_REJECTED, "principal");
     }
-    const activateExpires = new Date(now.getTime() + 600_000).toISOString();
+    const activateExpires = new Date(now.getTime() + service.options.policy.remote_approval.activation_ttl_seconds * 1000).toISOString();
     const activationId = `rca_${randomBytes(16).toString("hex")}`;
     const commit = service.options.db.db.transaction(() => {
       if (service.store.tombstoneMatch(digest, keyDigest) || service.store.liveCredentialDigestMatch(digest, keyDigest)) {

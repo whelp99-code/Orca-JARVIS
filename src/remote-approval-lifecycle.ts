@@ -7,7 +7,7 @@ import { RemoteApprovalError, REMOTE_ERROR_CODES } from "./remote-approval-error
 import type { RemoteApprovalService } from "./remote-approval.js";
 
 function iso(now: Date): string { return now.toISOString(); }
-function plus(now: Date, ms: number): string { return new Date(now.getTime() + ms).toISOString(); }
+function plus(now: Date, seconds: number): string { return new Date(now.getTime() + seconds * 1000).toISOString(); }
 
 function rethrow(error: unknown): never {
   if (error instanceof RemoteApprovalError) throw error;
@@ -53,7 +53,7 @@ export function beginEnrollment(service: RemoteApprovalService, now: Date): { sc
       reversible: false,
       requested_by: service.options.policy.owner_principal,
       requested_at: iso(now),
-      expires_at: plus(now, 600_000),
+      expires_at: plus(now, service.options.policy.remote_approval.begin_ttl_seconds),
       nonce: `nbn_${randomBytes(16).toString("hex")}`,
     }, now);
   } catch (error) {
@@ -115,7 +115,7 @@ export function stageCredentialRevoke(
       },
       args: { schema_version: 1, reason_digest: sha256Prefixed(reason) },
       reversible: false, requested_by: service.options.policy.owner_principal,
-      requested_at: iso(now), expires_at: plus(now, 600_000), nonce: `ncr_${randomBytes(16).toString("hex")}`,
+      requested_at: iso(now), expires_at: plus(now, service.options.policy.remote_approval.activation_ttl_seconds), nonce: `ncr_${randomBytes(16).toString("hex")}`,
     }, now);
   } catch (error) {
     rethrow(error);
@@ -150,7 +150,7 @@ export function stagePrincipalRevoke(service: RemoteApprovalService, reason: str
       target: { principal_id: owner.principal_id, user_handle_digest: owner.user_handle_digest },
       args: { schema_version: 1, reason_digest: sha256Prefixed(reason) },
       reversible: false, requested_by: service.options.policy.owner_principal,
-      requested_at: iso(now), expires_at: plus(now, 600_000), nonce: `npr_${randomBytes(16).toString("hex")}`,
+      requested_at: iso(now), expires_at: plus(now, service.options.policy.remote_approval.activation_ttl_seconds), nonce: `npr_${randomBytes(16).toString("hex")}`,
     }, now);
   } catch (error) {
     rethrow(error);

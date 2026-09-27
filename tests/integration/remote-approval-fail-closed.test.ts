@@ -74,6 +74,12 @@ function receipts(db: Awaited<ReturnType<typeof initialized>>): number {
   return (db.db.prepare("SELECT COUNT(*) AS n FROM control_command_receipts").get() as { n: number }).n;
 }
 
+function auditRows(db: Awaited<ReturnType<typeof initialized>>, requestId: string): Array<{ outcome: string; uv: number | null; up: number | null }> {
+  return db.db.prepare(
+    "SELECT outcome, uv, up FROM personal_operation_audit_events WHERE correlation_id=? AND event_type LIKE 'remote.%'",
+  ).all(requestId) as Array<{ outcome: string; uv: number | null; up: number | null }>;
+}
+
 describe("remote approval fail-closed HTTP crypto", () => {
   it("rejects an assertion bound to the wrong origin and mints no receipt", async () => {
     const ctx = await primed("fail-origin");
@@ -84,6 +90,7 @@ describe("remote approval fail-closed HTTP crypto", () => {
       });
       expect(await verify(ctx.host, ctx.challengeId, credential)).toBeGreaterThanOrEqual(400);
       expect(receipts(ctx.db)).toBe(0);
+      expect(auditRows(ctx.db, "fail-origin").length).toBeGreaterThan(0);
     } finally {
       ctx.server.close();
       ctx.db.close();
@@ -99,6 +106,7 @@ describe("remote approval fail-closed HTTP crypto", () => {
       });
       expect(await verify(ctx.host, ctx.challengeId, credential)).toBeGreaterThanOrEqual(400);
       expect(receipts(ctx.db)).toBe(0);
+      expect(auditRows(ctx.db, "fail-rpid").length).toBeGreaterThan(0);
     } finally {
       ctx.server.close();
       ctx.db.close();
@@ -115,6 +123,7 @@ describe("remote approval fail-closed HTTP crypto", () => {
       });
       expect(await verify(ctx.host, ctx.challengeId, credential)).toBeGreaterThanOrEqual(400);
       expect(receipts(ctx.db)).toBe(0);
+      expect(auditRows(ctx.db, "fail-principal").length).toBeGreaterThan(0);
     } finally {
       ctx.server.close();
       ctx.db.close();
@@ -130,6 +139,7 @@ describe("remote approval fail-closed HTTP crypto", () => {
       });
       expect(await verify(ctx.host, ctx.challengeId, credential)).toBeGreaterThanOrEqual(400);
       expect(receipts(ctx.db)).toBe(0);
+      expect(auditRows(ctx.db, "fail-uv")).toEqual([expect.objectContaining({ uv: 0, up: 1 })]);
     } finally {
       ctx.server.close();
       ctx.db.close();
@@ -144,8 +154,11 @@ describe("remote approval fail-closed HTTP crypto", () => {
         authenticator: ctx.authenticator, rpId: REMOTE_RP_ID, origin: REMOTE_ORIGIN,
         challengeB64: ctx.challengeB64, counter: 1,
       });
-      expect(await verify(ctx.host, ctx.challengeId, credential)).toBeGreaterThanOrEqual(400);
+      expect(await verify(ctx.host, ctx.challengeId, credential)).toBe(409);
       expect(receipts(ctx.db)).toBe(0);
+      expect(auditRows(ctx.db, "fail-expiry")).toEqual([expect.objectContaining({ outcome: "expired" })]);
+      const state = ctx.db.db.prepare("SELECT state FROM webauthn_approval_challenges_v2 WHERE challenge_id=?").get(ctx.challengeId) as { state: string };
+      expect(state.state).toBe("expired");
     } finally {
       ctx.server.close();
       ctx.db.close();
@@ -182,6 +195,7 @@ describe("remote approval fail-closed HTTP crypto", () => {
       });
       expect(await verify(host, optionsBody.challenge_id, credential)).toBeGreaterThanOrEqual(400);
       expect(receipts(db)).toBe(0);
+      expect(auditRows(db, "fail-counter").length).toBeGreaterThan(0);
       const row = db.db.prepare("SELECT sign_count,state FROM webauthn_credentials_v2 WHERE credential_id=?").get(authenticator.credentialIdB64) as { sign_count: number; state: string };
       expect(row).toEqual({ sign_count: 5, state: "active" });
     } finally {

@@ -59,7 +59,7 @@ export function phoneHtml(title: string): string {
     "<meta name=\"jarvis-phone-mode\" content=\"1\"/><title>JARVIS</title></head>",
     "<body><a class=\"skip-link\" href=\"#main-content\">skip</a>",
     "<header><nav aria-label=\"Phone\"><a href=\"/\">Today</a>",
-    "<a href=\"/memory\">Memory</a></nav></header>",
+    "<a href=\"/memory\">Memory</a><a href=\"/security\">Security</a></nav></header>",
     `<main id="main-content"><h1>${title}</h1></main></body></html>`,
   ].join("");
 }

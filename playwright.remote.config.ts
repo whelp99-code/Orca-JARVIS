@@ -2,14 +2,14 @@ import { defineConfig, devices } from "@playwright/test";
 
 export default defineConfig({
   testDir: "./e2e",
-  testMatch: "remote-approval.spec.ts",
+  testMatch: ["remote-approval.spec.ts", "remote-approval-page.spec.ts"],
   fullyParallel: false,
   workers: 1,
   timeout: 60_000,
   expect: { timeout: 10_000 },
   retries: 0,
   reporter: [["list"]],
-  outputDir: ".omo/evidence/task-35-remediation-v3/playwright-output",
+  outputDir: ".omo/evidence/task-35-remediation/playwright-output",
   use: {
     trace: "retain-on-failure",
     screenshot: "only-on-failure",

@@ -33,7 +33,7 @@ it("loads the source policy without trusting the current directory", async () =>
     await db.migrate(); process.chdir(root);
     const service = composition.composeRemoteApproval(db);
     expect(service.options.policy.owner_principal).toBe("principal:owner");
-    expect(service.readiness()).toEqual({ remote_ready: false, reason: "signer" });
+    expect(service.readiness()).toEqual({ remote_ready: false, reason: "signer_unconfigured" });
   } finally { process.chdir(previous); db.close(); rmSync(root, { recursive: true, force: true }); }
 });
 

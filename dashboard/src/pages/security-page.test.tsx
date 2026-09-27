@@ -9,7 +9,9 @@ afterEach(cleanup);
 function client(): SecurityClient {
   return {
     listCredentials: vi.fn(async () => ({ items: [] })),
-    beginEnrollment: vi.fn(async () => ({ enrollment_id: "enroll-1" })),
+    beginEnrollment: vi.fn(async () => ({ enrollment_id: "enroll-1", request_id: "begin-1" })),
+    registerPasskey: vi.fn(async () => ({ credential_id: "cred-1", activation_request_id: "act-1" })),
+    stageRevocation: vi.fn(async () => ({ request_id: "revoke-1" })),
     loadRequest: vi.fn(async () => ({
       request_id: "request-1", action: "workflow.start", action_level: 2,
       command_digest: "sha256:aa", target_digest: "sha256:bb", args_digest: "sha256:cc",

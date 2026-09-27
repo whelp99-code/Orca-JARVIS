@@ -36,6 +36,7 @@ export class RemoteApprovalFixture {
     private readonly dashboard: DashboardServer,
     private readonly tls: HttpsServer,
     private readonly certDir: string,
+    readonly clock: { current: Date; pinned: boolean },
   ) {}
 
   static async start(): Promise<RemoteApprovalFixture> {
@@ -61,14 +62,15 @@ export class RemoteApprovalFixture {
     const db = await initialized();
     const session = createDashboardSession();
     const service = composeService(db, origin);
+    const clock = { current: new Date(), pinned: false };
     const dashboard = createDashboardServer({
       db, staticRoot: resolve("dist/dashboard"), host: "127.0.0.1", port: 0,
-      sessionStore: session, remoteApproval: service,
+      sessionStore: session, remoteApproval: service, clock: () => clock.pinned ? clock.current : new Date(),
     });
     routing.httpPort = dashboard.address.port;
     return new RemoteApprovalFixture(
       origin, tlsAddress.port, `127.0.0.1:${String(dashboard.address.port)}`,
-      db, new ControlPlane(db), service, session, dashboard, tls, certDir,
+      db, new ControlPlane(db), service, session, dashboard, tls, certDir, clock,
     );
   }
 
@@ -123,8 +125,66 @@ export class RemoteApprovalFixture {
     return (this.db.db.prepare("SELECT COUNT(*) AS n FROM control_command_receipts WHERE request_id=?").get(requestId) as { n: number }).n;
   }
 
+  private now(): Date {
+    return this.clock.pinned ? this.clock.current : new Date();
+  }
+
   claim(requestId: string) {
-    return this.control.claim(requestId, "remote-e2e-worker", new Date());
+    return this.control.claim(requestId, "remote-e2e-worker", this.now());
+  }
+
+  stage(id: string) {
+    const now = this.now();
+    return this.control.stage(workflowRequest(id, now), now);
+  }
+
+  async beginEnrollment(): Promise<{ readonly enrollment_id: string; readonly request_id: string }> {
+    const began = await this.localPost("/api/v1/security/webauthn/enrollments", { schema_version: 1 });
+    return { enrollment_id: text(began, "enrollment_id"), request_id: text(began, "request_id") };
+  }
+
+  async approveLocal(requestId: string): Promise<void> {
+    await this.localPost(`/api/v1/control/requests/${requestId}/decision`, {
+      schema_version: 1, receipt: this.approve(requestId),
+    });
+  }
+
+  async activateCredential(credentialId: string, requestId: string): Promise<void> {
+    await this.localPost(`/api/v1/security/webauthn/credentials/${credentialId}/activate`, {
+      schema_version: 1, receipt: this.approve(requestId),
+    });
+  }
+
+  pendingCredential(): { readonly credential_id: string; readonly activation_request_id: string } {
+    return this.db.db.prepare(
+      "SELECT credential_id, activation_request_id FROM webauthn_credentials_v2 WHERE state='pending' ORDER BY created_at DESC LIMIT 1",
+    ).get() as { credential_id: string; activation_request_id: string };
+  }
+
+  auditCount(requestId: string): number {
+    return (this.db.db.prepare(
+      "SELECT COUNT(*) AS n FROM personal_operation_audit_events WHERE correlation_id=? AND event_type LIKE 'remote.%'",
+    ).get(requestId) as { n: number }).n;
+  }
+
+  async revoke(credentialId: string): Promise<void> {
+    const staged = await this.localPost(`/api/v1/security/webauthn/credentials/${credentialId}/revocation-requests`, {
+      schema_version: 1, reason: "lost device",
+    });
+    const requestId = text(staged, "request_id");
+    await this.localPost(`/api/v1/security/webauthn/credentials/${credentialId}/revoke`, {
+      schema_version: 1, receipt: this.approve(requestId),
+    });
+  }
+
+  tamperArgs(requestId: string): void {
+    this.db.db.exec("DROP TRIGGER IF EXISTS control_request_identity_immutable");
+    const row = this.db.db.prepare("SELECT args_json FROM control_command_requests WHERE request_id=?").get(requestId) as { args_json: string };
+    const args = JSON.parse(row.args_json) as { budget?: { max_tokens?: number } };
+    const budget = args.budget ?? {};
+    budget.max_tokens = (budget.max_tokens ?? 1) + 1;
+    args.budget = budget;
+    this.db.db.prepare("UPDATE control_command_requests SET args_json=? WHERE request_id=?").run(JSON.stringify(args), requestId);
   }
 
   async close(): Promise<void> {
@@ -144,7 +204,7 @@ export class RemoteApprovalFixture {
   private approve(requestId: string) {
     const row = this.control.list().find(item => item.request_id === requestId);
     if (row === undefined) throw new Error("request");
-    const now = new Date();
+    const now = this.clock.pinned ? this.clock.current : new Date();
     return signCommandApproval({
       schema_version: 1, receipt_id: `rcpt-${row.request_id}`, request_id: row.request_id,
       decision: "approve", command_digest: row.command_digest, signer_principal_id: "test-operator",
@@ -190,7 +250,7 @@ function composeService(db: AuthorityDb, origin: string): RemoteApprovalService 
   const policy = parsePersonalOsPolicy(JSON.parse(readFileSync("config/personal-os-policy.json", "utf8")));
   const signer = new ControlReceiptSigner(localKey(db), "decision-test", "test-operator");
   return new RemoteApprovalService({
-    db, control: new ControlPlane(db), policy, origin, rpId: FIXTURE_RP_ID, signer,
+    db, control: new ControlPlane(db), policy, origin, rpId: FIXTURE_RP_ID, signer, signerConfigured: true,
     resolver: (request, body): RemoteIngressContextV1 | null => {
       const path = requestPath(request.url);
       if (path === undefined) return null;

@@ -11,13 +11,13 @@ export type RemoteApprovalPolicy = Readonly<{
   schema_version: 1;
   allowed_actions: readonly typeof REMOTE_ALLOWED_ACTIONS[number][];
   max_action_level: 3;
-  begin_ttl_seconds: 600;
-  registration_ttl_seconds: 300;
-  challenge_ttl_seconds: 300;
-  activation_ttl_seconds: 600;
-  pending_credential_ttl_seconds: 600;
-  verification_reservation_ttl_seconds: 30;
-  ingress_nonce_ttl_seconds: 30;
+  begin_ttl_seconds: number;
+  registration_ttl_seconds: number;
+  challenge_ttl_seconds: number;
+  activation_ttl_seconds: number;
+  pending_credential_ttl_seconds: number;
+  verification_reservation_ttl_seconds: number;
+  ingress_nonce_ttl_seconds: number;
   audit_retention_days: 365;
   active_credential_cap: 5;
   pending_credential_cap: 2;
@@ -68,13 +68,13 @@ export function parseRemoteApprovalPolicy(value: unknown): RemoteApprovalPolicy 
     schema_version: 1,
     allowed_actions: REMOTE_ALLOWED_ACTIONS,
     max_action_level: exactInt(input.max_action_level, 3) as 3,
-    begin_ttl_seconds: exactInt(input.begin_ttl_seconds, 600) as 600,
-    registration_ttl_seconds: exactInt(input.registration_ttl_seconds, 300) as 300,
-    challenge_ttl_seconds: exactInt(input.challenge_ttl_seconds, 300) as 300,
-    activation_ttl_seconds: exactInt(input.activation_ttl_seconds, 600) as 600,
-    pending_credential_ttl_seconds: exactInt(input.pending_credential_ttl_seconds, 600) as 600,
-    verification_reservation_ttl_seconds: exactInt(input.verification_reservation_ttl_seconds, 30) as 30,
-    ingress_nonce_ttl_seconds: exactInt(input.ingress_nonce_ttl_seconds, 30) as 30,
+    begin_ttl_seconds: exactInt(input.begin_ttl_seconds, 600),
+    registration_ttl_seconds: exactInt(input.registration_ttl_seconds, 300),
+    challenge_ttl_seconds: exactInt(input.challenge_ttl_seconds, 300),
+    activation_ttl_seconds: exactInt(input.activation_ttl_seconds, 600),
+    pending_credential_ttl_seconds: exactInt(input.pending_credential_ttl_seconds, 600),
+    verification_reservation_ttl_seconds: exactInt(input.verification_reservation_ttl_seconds, 30),
+    ingress_nonce_ttl_seconds: exactInt(input.ingress_nonce_ttl_seconds, 30),
     audit_retention_days: exactInt(input.audit_retention_days, 365) as 365,
     active_credential_cap: exactInt(input.active_credential_cap, 5) as 5,
     pending_credential_cap: exactInt(input.pending_credential_cap, 2) as 2,

@@ -8,9 +8,11 @@ import { RemoteApprovalError, REMOTE_ERROR_CODES } from "./remote-approval-error
 import type { AuthorityDb } from "./db.js";
 import type { ControlPlane } from "./control-plane.js";
 import { parseAssertionCredential, parseVerifyBody } from "./remote-approval-parse.js";
+import type { RemoteApprovalPolicy } from "./remote-approval-policy.js";
 import type { ControlReceiptSigner } from "./remote-approval-signer.js";
-import { RemoteApprovalStore, type ChallengeRow, type CredentialRow } from "./remote-approval-store.js";
+import { RemoteApprovalStore, type ChallengeRow } from "./remote-approval-store.js";
 import { REMOTE_ALLOWED_ACTIONS, type RemoteIngressContextV1 } from "./remote-approval-types.js";
+import { recordRemoteAudit, type AuditFlags } from "./remote-approval-audit.js";
 import { verifyAssertionCrypto } from "./remote-approval-webauthn.js";
 
 export type EligibleCommand = {
@@ -66,47 +68,13 @@ export function loadEligibleRequest(store: RemoteApprovalStore, requestId: strin
   };
 }
 
-function audit(
-  store: RemoteApprovalStore,
-  challenge: ChallengeRow,
-  now: Date,
-  outcome: string,
-  reason: string,
-  credential: CredentialRow | null,
-  counter: string,
-  assertionDigest: string | null,
-): void {
-  const at = now.toISOString();
-  store.insertAudit({
-    event_id: `remote:${challenge.challenge_id}:${outcome}:${at}`,
-    event_type: `remote.${outcome}`,
-    subject_kind: "challenge",
-    subject_id: sha256Prefixed(challenge.challenge_id),
-    principal_id: challenge.remote_principal_id,
-    correlation_id: challenge.request_id,
-    event_digest: sha256Prefixed(`${challenge.challenge_id}:${outcome}:${at}`),
-    created_at: at,
-    outcome,
-    reason_code: reason,
-    credential_digest_prefix: credential ? credential.credential_id_digest.slice(7, 23) : null,
-    request_digest: sha256Prefixed(challenge.request_id),
-    command_digest: challenge.command_digest,
-    binding_digest: challenge.binding_digest,
-    assertion_digest: assertionDigest,
-    counter_disposition: counter,
-    up: 1,
-    uv: 1,
-    origin_digest: sha256Prefixed(challenge.origin),
-    rp_id_digest: sha256Prefixed(challenge.rp_id),
-  });
-}
-
 export type RemoteApprovalVerifyDeps = Readonly<{
   db: AuthorityDb;
   control: ControlPlane;
   origin: string;
   rpId: string;
   signer: ControlReceiptSigner;
+  policy: { readonly remote_approval: RemoteApprovalPolicy };
 }>;
 
 export async function translateReservedAssertion(
@@ -139,6 +107,7 @@ export async function translateReservedAssertion(
     counter: credential.sign_count,
   });
   const flags = assertion.authenticatorData[32] ?? 0;
+  const auditFlags: AuditFlags = { up: (flags & 0x01) === 0 ? 0 : 1, uv: (flags & 0x04) === 0 ? 0 : 1 };
   const returnedBackup = { eligible: ((flags & 0x08) !== 0 ? 1 : 0) as 0 | 1, state: ((flags & 0x10) !== 0 ? 1 : 0) as 0 | 1 };
   const backup = evaluateBackup({ eligible: credential.backup_eligible as 0 | 1, state: credential.backup_state as 0 | 1 }, returnedBackup);
   if (backup.kind === "reject") throw new RemoteApprovalError(REMOTE_ERROR_CODES.REMOTE_CEREMONY_REJECTED, backup.reason);
@@ -168,7 +137,11 @@ export async function translateReservedAssertion(
   const assertionDigest = sha256Prefixed(
     Buffer.concat([assertion.rawId, assertion.clientDataJSON, assertion.authenticatorData, assertion.signature]),
   );
-  const expires = new Date(Math.min(now.getTime() + 300_000, Date.parse(challenge.expires_at), Date.parse(request.expires_at))).toISOString();
+  const expires = new Date(Math.min(
+    now.getTime() + options.policy.remote_approval.challenge_ttl_seconds * 1000,
+    Date.parse(challenge.expires_at),
+    Date.parse(request.expires_at),
+  )).toISOString();
   if (Date.parse(expires) <= now.getTime()) throw new RemoteApprovalError(REMOTE_ERROR_CODES.REMOTE_CEREMONY_REJECTED, "receipt_expiry");
   const receiptId = remoteReceiptId({
     assertion_digest: assertionDigest,
@@ -236,12 +209,9 @@ export async function translateReservedAssertion(
       translated_at: issued,
     });
     store.finishChallenge(challenge.challenge_id, "consumed", "translated");
-    audit(store, challenge, now, "translated", "translated", credential, counter.disposition, assertionDigest);
+    recordRemoteAudit(store, challenge, now, "translated", "translated", credential, counter.disposition, assertionDigest, auditFlags, "");
   });
   tx.immediate();
   return { receipt_id: receiptId, request_id: challenge.request_id, decision: challenge.decision };
 }
 
-export function writeRemoteAudit(store: RemoteApprovalStore, challenge: ChallengeRow, now: Date, outcome: string, reason: string): void {
-  audit(store, challenge, now, outcome, reason, null, "not_checked", null);
-}
