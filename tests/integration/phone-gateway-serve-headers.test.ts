@@ -26,7 +26,10 @@ function staticRoot(): string {
   const root = mkdtempSync(join(tmpdir(), "jarvis-phone-static-"));
   roots.push(root);
   mkdirSync(join(root, "assets"));
-  writeFileSync(join(root, "index.html"), "<!doctype html><div id=\"root\"></div>");
+  writeFileSync(join(root, "index.html"), [
+    "<!doctype html><html><head><title>fixture</title></head>",
+    "<body><div id=\"root\"></div><script type=\"module\" src=\"/assets/app.js\"></script></body></html>",
+  ].join(""));
   writeFileSync(join(root, "assets", "app.js"), "globalThis.__PHONE__=1;");
   writeFileSync(join(root, "manifest.json"), JSON.stringify({ "index.html": { file: "assets/app.js" } }));
   return root;
@@ -113,7 +116,7 @@ describe("gateway replay of Tailscale Serve headers", () => {
     }
   });
 
-  it("serves Today and Memory shells after a Serve-header session", async () => {
+  it("serves the release document for Today and Memory after a Serve-header session", async () => {
     const { gateway, authority } = await boot();
     try {
       const origin = `http://127.0.0.1:${String(gateway.address.port)}`;
@@ -129,8 +132,11 @@ describe("gateway replay of Tailscale Serve headers", () => {
       const memory = await request(`${origin}/memory`, { headers: shellHeaders });
       expect(today.statusCode).toBe(200);
       expect(memory.statusCode).toBe(200);
-      expect(await today.body.text()).toContain("<h1>Today</h1>");
-      expect(await memory.body.text()).toContain("<h1>Memory</h1>");
+      const todayHtml = await today.body.text();
+      const memoryHtml = await memory.body.text();
+      expect(todayHtml).toContain("<meta name=\"jarvis-phone-mode\" content=\"1\"");
+      expect(todayHtml).toContain("src=\"/assets/app.js\"");
+      expect(memoryHtml).toBe(todayHtml);
     } finally {
       gateway.close();
       await authority.close();

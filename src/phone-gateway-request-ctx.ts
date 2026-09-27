@@ -16,6 +16,8 @@ export type PhoneGatewayRequestCtx = {
   readonly adapter: PhoneAuthorityReadAdapter;
   readonly staticRoot: string;
   readonly assets: ReadonlySet<string>;
+  /** Built dashboard index.html with the phone-mode marker; undefined when the release has none. */
+  readonly document: string | undefined;
   readonly now: () => number;
   readonly audit: (line: string) => void;
   readonly upstream: string;

@@ -12,6 +12,7 @@ export type PhoneIssueResult =
   | {
     readonly kind: "issued";
     readonly cookieId: string;
+    readonly idHmac: Buffer;
     readonly csrfToken: string;
     readonly setCookie: string;
     readonly expiresAt: number;
@@ -77,6 +78,7 @@ export function createPhoneGatewaySessionStore(input: {
       return {
         kind: "issued",
         cookieId,
+        idHmac: Buffer.from(idHmac),
         csrfToken,
         setCookie: serializeCookie(cookieId, maxAge),
         expiresAt: now + PHONE_IDLE_MS,

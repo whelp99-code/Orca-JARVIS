@@ -52,16 +52,29 @@ export function writeHtml(response: ServerResponse, requestId: string, html: str
   response.end(html);
 }
 
-export function phoneHtml(title: string): string {
-  return [
-    "<!doctype html><html lang=\"ko\"><head><meta charset=\"utf-8\"/>",
-    "<meta name=\"viewport\" content=\"width=device-width, initial-scale=1\"/>",
-    "<meta name=\"jarvis-phone-mode\" content=\"1\"/><title>JARVIS</title></head>",
-    "<body><a class=\"skip-link\" href=\"#main-content\">skip</a>",
-    "<header><nav aria-label=\"Phone\"><a href=\"/\">Today</a>",
-    "<a href=\"/memory\">Memory</a><a href=\"/security\">Security</a></nav></header>",
-    `<main id="main-content"><h1>${title}</h1></main></body></html>`,
-  ].join("");
+export const PHONE_MODE_META = "<meta name=\"jarvis-phone-mode\" content=\"1\"/>";
+
+/**
+ * The built dashboard document, marked for phone mode. Undefined (the shell answers
+ * 503) when the release has no document or it references an asset the manifest
+ * does not list, because the gateway would refuse that asset anyway.
+ */
+export function loadPhoneDocument(root: string, assets: ReadonlySet<string>): string | undefined {
+  let html: string;
+  try {
+    html = readFileSync(join(root, "index.html"), "utf8");
+  } catch (error) {
+    if (error instanceof Error) return undefined;
+    throw error;
+  }
+  if (Buffer.byteLength(html) > PHONE_GATEWAY_LIMITS.html || !html.includes("<head>")) return undefined;
+  for (const match of html.matchAll(/<(?:script|link)\b[^>]*\s(?:src|href)="([^"]*)"/g)) {
+    const reference = match[1] ?? "";
+    if (reference.startsWith("data:")) continue;
+    const name = assetName(reference);
+    if (name === undefined || !assets.has(name)) return undefined;
+  }
+  return html.replace("<head>", `<head>${PHONE_MODE_META}`);
 }
 
 export function retryAfter(response: ServerResponse, seconds: number): void {
