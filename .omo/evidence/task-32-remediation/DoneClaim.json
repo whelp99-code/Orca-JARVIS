@@ -2,7 +2,8 @@
   "schema_version": 1,
   "task": "Task 32 remediation: Memory search, conflict, correction, and privacy surface",
   "plan": ".omo/plans/jarvis-personal-operating-system.md:458-465",
-  "gate_report": ".omo/evidence/task-32-acceptance-gate.md",
+  "gate_report": ".omo/evidence/task-32-remediation-gate.md",
+  "round": "delta remediation of G1 (blocker) plus N1, N6, N3, N4 from the REJECT at 8271217",
   "worktree": {
     "path": "/home/jm/orca/workspaces/Orca-JARVIS/task-32-remediation",
     "orca_worktree_id": "f9b2a8dc-2eb5-4877-ae2a-0ddfbb0c8963::/home/jm/orca/workspaces/Orca-JARVIS/task-32-remediation",
@@ -10,87 +11,120 @@
   },
   "git": {
     "base": "48287b6eb6122d746380278618871ea729b0e525",
-    "code_head": "16c421af4ebff0f2a13b779e084dd431036a8a1e",
-    "code_tree": "81e0558d0daf915cdee9028d16a8cd9e440ed351",
-    "commits": [
-      "856c9e8 feat(dashboard): add user-controlled memory surface",
-      "16c421a test(e2e): run the Task 32 memory specs on an in-repo fixture",
-      "<next> docs(evidence): record Task 32 remediation evidence and DoneClaim"
+    "gate_head": "8271217f4be1ef0e1dd65055d5818e8cb31d1a0d",
+    "head": "2f3ea7099f0f4292c424379664a75ffc4d5d6ded",
+    "tree": "fc6dab35c09dcaaf87bb428c9ee7790f43e8b02e",
+    "new_commits": [
+      "e077034 fix(memory): neutralize bidi controls in projected provider text",
+      "3d9f7bd fix(memory): decide forgotten by exact existence, not the history window",
+      "01b8cba fix(dashboard): never present unread memory panels as empty or current",
+      "2f3ea70 merge: bring main 086a097 into task-32-remediation"
     ],
+    "merge": {
+      "commit": "2f3ea7099f0f4292c424379664a75ffc4d5d6ded",
+      "strategy": "--no-ff ort, real merge commit",
+      "parents": ["01b8cba3675034e7383105b9b4545e975b866ce7", "086a0971ec4b803a332de56e205b2dd616b524a3"],
+      "conflicts": 0,
+      "merged_in": "10 files (phone-gateway serve headers, task 34 evidence)"
+    },
+    "worktree_clean": true,
     "amend": 0, "rebase": 0, "push": 0, "deploy": 0, "restart": 0
   },
   "files": {
-    "changed": 29, "insertions": 1587, "deletions": 221,
-    "backend": ["src/dashboard/memory-contracts.ts", "src/dashboard/memory-record-history.ts",
-      "src/dashboard/memory-redaction.ts", "src/dashboard/memory-read-service.ts"],
-    "dashboard": ["dashboard/DESIGN.md", "dashboard/src/memory-api.ts", "dashboard/src/memory-detail.tsx",
-      "dashboard/src/memory-effects.tsx", "dashboard/src/memory-messages.ts", "dashboard/src/memory-page.tsx",
-      "dashboard/src/memory-search.tsx", "dashboard/src/memory-store.ts", "dashboard/src/memory-types.ts",
-      "dashboard/src/styles/memory.css"],
-    "tests": ["tests/integration/task32-memory-history.test.ts", "dashboard/src/memory-api.test.ts",
-      "dashboard/src/memory-detail.test.tsx", "dashboard/src/memory-store-freshness.test.ts",
-      "dashboard/src/memory-surface-states.test.tsx", "dashboard/src/memory-page-lifetime.test.tsx"],
-    "e2e": ["tests/fixtures/memory-surface-fixture.ts", "e2e/task32-memory-fixture.ts", "e2e/task32-memory-page.ts",
-      "e2e/task32-memory.spec.ts", "e2e/task32-memory-states.spec.ts", "e2e/task32-memory-layout.spec.ts",
-      "playwright.task32.config.ts", "package.json", "tsconfig.e2e.json"],
-    "untouched_by_instruction": ["src/remote-approval*", "dashboard/src/pages/security-page*", "phone-gateway routes",
-      "migrations/", "contracts/", "deploy/", "ops/"]
+    "delta_vs_gate_head_excluding_evidence": { "changed": 27, "insertions": 690, "deletions": 92 },
+    "backend": ["src/dashboard/memory-record-history.ts", "src/dashboard/memory-redaction.ts"],
+    "dashboard": ["dashboard/DESIGN.md", "dashboard/src/memory-panel-state.tsx (new)",
+      "dashboard/src/memory-store.ts", "dashboard/src/memory-page.tsx", "dashboard/src/memory-conflicts.tsx",
+      "dashboard/src/memory-candidates.tsx", "dashboard/src/memory-effects.tsx",
+      "dashboard/src/memory-types.ts", "dashboard/src/styles/memory.css"],
+    "tests": ["dashboard/src/memory-store-freshness.test.ts", "dashboard/src/memory-page-lifetime.test.tsx",
+      "dashboard/src/memory-surface-states.test.tsx", "dashboard/src/memory-conflicts.test.tsx",
+      "dashboard/src/memory-candidates.test.tsx", "tests/unit/task32-memory-redaction.test.ts"],
+    "e2e": ["e2e/task32-memory-states.spec.ts", "e2e/task32-memory-layout.spec.ts"],
+    "untouched_by_instruction": ["migrations/", "contracts/", "deploy/", "ops/", "src/remote-approval*"]
   },
-  "blockers": {
-    "B1": { "fix": "search obtains a fresh bounded status when the prior one expired (no full reload); explicit Refresh memory control",
-      "red": "dashboard/src/memory-store-freshness.test.ts: 5 of 7 failed on HEAD 48287b6 (stash run)",
-      "green": "7/7; Playwright real 65 s idle then search: only /status + /search requested, results rendered" },
-    "B2": { "fix": "authority-derived history_state, superseded_by, bounded history (attempts + suppressions with receipts and timestamps); superseded records render metadata-only; forgotten never returned",
-      "red": "tests/integration/task32-memory-history.test.ts: 4 of 5 failed on HEAD; dashboard/src/memory-detail.test.tsx: 6/6 failed on HEAD",
-      "green": "5/5 and 6/6; Playwright happy path observes superseded record with receipt, old text absent" },
-    "B3": { "fix": "effects client reads correct/forget/export x pending_approval/applying/completed (+export available), honest has_more",
-      "red": "dashboard/src/memory-api.test.ts and memory-surface-states.test.tsx failed on HEAD",
-      "green": "green; Playwright shows Forgetting/Correction lifecycles" },
-    "B4": { "fix": "capability gate (mutations_enabled + record.actions), busy state, one command per activation, typed MemoryRequestError mapped to safe copy, announced via the atomic status region",
-      "red": "memory-detail.test.tsx double click sent 2 commands, no typed outcome on HEAD",
-      "green": "green; Playwright stale-selection: 404 announced, 0 export commands, 0 page errors; double clicks -> n:1 in authority" },
-    "B5": { "fix": "search/status render offline, unavailable, stale, incompatible from the latest read; never as empty",
-      "red": "memory-surface-states.test.tsx failed on HEAD",
-      "green": "green; Playwright offline/unavailable badge + copy, 'No visible memory records' absent" },
-    "B6": { "fix": ".memory-page { word-break: keep-all; overflow-wrap: anywhere }",
-      "red": "layout spec computed-style assertion (keep-all on Detail h3) fails on HEAD",
-      "green": "green; 10-cjk-390.png inspected: words whole, overflow 0" },
-    "origin_label": { "fix": "safeOriginLabel allow-list; path-like labels become 'Memory provider'",
-      "red": "task32-memory-history.test.ts last case failed on HEAD", "green": "green; '/vault/' absent from DOM" },
-    "e2e_reproducibility": { "fix": "in-repo fixture + playwright.task32.config.ts + npm run test:e2e:memory; privacy spec submits the query and asserts URL/history/storage/request URLs",
-      "green": "11/11 passed from the repository alone" }
+  "findings": {
+    "G1": {
+      "severity": "blocker",
+      "observation": "After 60 s idle the freshness timer cleared Conflicts, Candidates, and Effects, and the search path restored only status and results, so the page showed badge `ready` with 'No unresolved conflicts' (fixture has 1), 'No reviewable candidates' (has 2), and no pending forget lifecycle until a manual Refresh.",
+      "fix": "ensureFreshStatus() now re-reads the whole surface via load() instead of status alone, so a search on an expired status repopulates every panel. Independently, a panel with no data renders an explicit not-loaded state (MemoryPanelUnloaded: 'Not loaded. Use Refresh memory to read this panel.', or 'Loading' while a reload is in flight) instead of its empty-state copy, so an unread panel can never read as 'none' by any path.",
+      "red": "e2e idle spec rewritten to assert fixture counts after idle-then-search; dashboard/src/memory-store-freshness.test.ts 'searches after the status freshness window by re-reading the whole surface'",
+      "green": "e2e 11/11; real browser at 1440/640/390 shows 1 conflict, 2 candidates, and 'Forgetting / Pending owner approval' restored after a 65 s idle then search"
+    },
+    "G1_regression_found_and_fixed": {
+      "severity": "blocker introduced by the G1 fix, caught before handoff",
+      "observation": "load() tail-calls run(lastQuery), and run() called ensureFreshStatus(), which calls load(). A provider that answers with a status it already reports stale (MemoryStatus.state is an open string) drove unbounded re-entry: the RED test measured 9 status reads for one reload before a throw-guard stopped it.",
+      "fix": "run(query, reload=false) inside a reload takes the status just read rather than re-entering; the surface then self-heals through the freshness timer.",
+      "red": "dashboard/src/memory-store-freshness.test.ts 'reads the surface a bounded number of times when the provider itself reports a stale status': expected 1, received 9",
+      "green": "1 status read per reload"
+    },
+    "N1": {
+      "observation": "With the provider offline the Conflicts panel still said 'No unresolved conflicts', against the candidate's own DESIGN.md line 'offline or unavailable is never presented as an empty result'.",
+      "fix": "MemoryConflicts renders offline, unavailable, and incompatible reads as danger-ramp copy keyed by memoryResourceState, and keeps the empty state only for a current read.",
+      "green": "layout spec asserts 0 occurrences of 'No unresolved conflicts' in the offline Conflicts region; 09-offline@390.png inspected"
+    },
+    "N6": {
+      "observation": "A provider-reported stale read left the badge at `ready`; only the Search panel notice mentioned staleness.",
+      "fix": "The badge now separates `expired` (our 60 s status token lapsed) from `stale` (the provider reported stale evidence); a provider stale read propagates to the badge with its own copy, and both sit on the warning ramp. Mutations stay off the ready path.",
+      "green": "layout spec asserts badge text 'stale' in the stale state; 09-stale@1440.png inspected"
+    },
+    "N3": {
+      "observation": "memory-record-history.ts derived `forgotten` from the 8 most recent suppressions, where the prior check was an unbounded EXISTS; with more than 8 later correction suppressions sharing an identity, a forgotten record would render as a 'Superseded record' row.",
+      "fix": "A dedicated bounded existence query (operation='forget' ... LIMIT 1) answers it exactly, independent of MEMORY_HISTORY_LIMIT.",
+      "green": "backend memory integration 97/97, unit 6/6"
+    },
+    "N4": {
+      "observation": "Bidi control characters from the provider (U+202E) were rendered, so 'evil' displayed as 'live'.",
+      "fix": "The projection strips bidi embedding, override, and isolate controls (U+202A-U+202E, U+2066-U+2069) from excerpt and derived title.",
+      "red": "tests/unit/task32-memory-redaction.test.ts 'strips bidi override controls from provider text before projection'",
+      "green": "green"
+    },
+    "announcement_lifetime": {
+      "found_by": "real-browser rerun of the rewritten idle spec after the G1 fix",
+      "observation": "The single atomic status region kept a staging announcement ('Pending owner approval') across the freshness expiry, hiding the 'Memory status expired' copy: the same family of defect as G1 (an outcome the surface had outlived presented as current).",
+      "fix": "An outcome is held with the search generation that produced it; expiry, a privacy-epoch change, or a new search retires it and the region reverts to provider copy. Recorded in DESIGN.md.",
+      "red": "dashboard/src/memory-page-lifetime.test.tsx 'retires a staging announcement with its search generation so expiry is announced'",
+      "green": "green; 12-idle-expired-1440.png shows badge `expired`, expiry copy, and three not-loaded panels"
+    }
   },
   "verification": {
+    "runtime": { "node": "v24.19.0 (.node-version pin)", "npm": "12.0.2",
+      "note": "the ambient shell resolved node v24.5.0, where node:net BoundSocket does not exist and 25 backend integration tests fail to construct the dashboard server; all recorded runs use the pinned 24.19.0" },
+    "post_merge_head": "2f3ea7099f0f4292c424379664a75ffc4d5d6ded",
     "lint": { "command": "npm run lint", "exit": 0 },
     "typecheck": { "command": "npm run typecheck", "exit": 0 },
-    "architecture_check": { "command": "npm run architecture:check", "exit": 0, "cycles": 0 },
+    "architecture_check": { "command": "npm run architecture:check", "exit": 0, "modules": 728, "edges": 2731, "cycles": 0 },
     "build": { "command": "npm run build", "exit": 0 },
-    "dashboard_vitest_full": { "files": 42, "tests": 285, "failed": 0, "react_warnings": 0 },
-    "backend_integration_memory": { "files": 12, "tests": 45, "failed": 0,
-      "spec": "task32-http-routes, task32-memory-runtime, memory-candidate-ui, task32-effect-intent-concurrency, task32-sse, task32-schema4-read, task32-export-lifecycle, task32-tombstone-membership, task32-memory-history, task32-semantic-attempt-restage, task32-provenance-authority, memory-read-fence-production" },
-    "backend_unit_memory": { "files": 3, "tests": 28, "failed": 0 },
-    "playwright": { "config": "playwright.task32.config.ts", "browser": "chromium (Desktop Chrome)", "tests": 11, "failed": 0,
-      "viewports": [1440, 640, 390], "axe_violations": 0, "horizontal_overflow": 0,
-      "query_in_url_history_storage_or_request_urls": false, "trace": "on" }
+    "dashboard_vitest_full": { "command": "node scripts/run-tests.mjs dashboard", "files": 42, "tests": 293, "failed": 0, "react_warnings": 0 },
+    "backend_integration_memory": { "files": 37, "tests": 97, "failed": 0,
+      "spec": "task32-*, memory-candidate-ui, memory-read-fence-production, memory-dashboard-read-lifetime, memory-correction-suppression, memory-correction-citation, personal-operations-memory" },
+    "backend_unit_memory": { "files": 4, "tests": 6, "failed": 0, "spec": "task32-*, memory-suppression" },
+    "merge_sanity_phone_gateway": { "tests": 84, "failed": 0, "note": "suites brought in by the main merge" },
+    "playwright": { "command": "npm run test:e2e:memory", "config": "playwright.task32.config.ts",
+      "browser": "chromium headless shell 1234", "tests": 11, "failed": 0,
+      "idle_wait_seconds": 65, "viewports": [1440, 640, 390], "axe_violations": 0, "horizontal_overflow": 0 },
+    "screenshots_inspected": [
+      "12-idle-expired-1440.png: badge `expired`, 'Memory status expired...', three panels 'Not loaded', no empty-state copy, staging announcement retired",
+      "12-idle-65s-search-1440.png: badge `ready`, 1 conflict, 2 candidates, 'Forgetting / Pending owner approval'",
+      "12-idle-65s-search-640.png and -390.png: every panel restored, CJK wraps whole words, no overflow",
+      "09-offline@390.png: Conflicts announces the offline provider, never 'No unresolved conflicts'",
+      "09-stale@1440.png: badge `stale` with provider-stale copy, no mutation controls"
+    ]
   },
-  "qa_scenarios": {
-    "happy": "search -> inspect citation/provenance/history -> correct (double click, 1 command) -> Linux approve -> superseded record with receipt, old text absent -> provider apply -> new record current -> forget (double click, 1 command) -> approve -> gone",
-    "failure": ["unauthorized sensitive read (canary absent from DOM and wire)", "stale digest (404 MEMORY_SELECTION_STALE announced, selection disarmed, 0 page errors)",
-      "duplicate click (n:1 in authority)", "offline provider (announced, never empty)", "unavailable provider", "deleted sentinel never rendered after approved forget",
-      "keyboard-only search + correction", "CJK long text at 390 px", "idle 65 s then search"]
+  "idle_e2e_test": {
+    "file": "e2e/task32-memory-states.spec.ts",
+    "was": "asserted requests == [status, search], which pinned the defect as intended behavior",
+    "now": "stages a forget so a pending lifecycle exists, asserts each panel reads 'Not loaded' while expired with 'No unresolved conflicts' and 'No reviewable candidates' absent from the page, then asserts after search that conflicts, candidates, and the Forgetting lifecycle are back at fixture counts with exactly one search request, plus overflow 0 at three viewports and axe clean"
   },
-  "adversarial_classes": ["duplicate/concurrent click", "stale selection after out-of-band owner forget with no memory SSE topic",
-    "60 s idle status expiry", "provider offline / unavailable / stale / no_data", "restricted canary on DOM and wire",
-    "forgotten record re-served by the provider", "path-like provider origin label", "CJK long text plus long ASCII identifier at 390/640/1440",
-    "keyboard-only", "query persistence in URL, history, storage, request URLs", "raw API error message rendering"],
   "design": { "design_md_updated": true, "tokens_only": true, "new_raw_colors": 0, "motion_added": 0 },
-  "evidence": { "dir": ".omo/evidence/task-32-jarvis-personal-operating-system/", "screenshots": 30, "traces": 11, "manifest": "manifest.json" },
   "gaps": [
-    "visual-qa dual-oracle subagent passes were not dispatched: this session has no task/subagent tool; screenshots were inspected directly and the candidate is handed to independent review",
-    "the real Linux Second Brain provider was not exercised (by constraint); supersession semantics are derived from the authority's suppression and attempt tables, not from provider fields (the MCP read contract carries none)",
-    "post-commit hook engineering-map docs:sync reported rc=1 (pre-existing stale-head entries across unrelated projects); commits landed"
+    "the real Linux Second Brain provider was not exercised (by constraint); supersession and origin_label semantics remain derived from the authority tables",
+    "the `incompatible` provider state is still not producible by the fixture, so it is covered by unit render tests rather than end to end",
+    "visual-qa dual-oracle subagents were not dispatched; screenshots were inspected directly",
+    "post-commit hook engineering-map docs:sync reports rc=1 (pre-existing, unrelated projects); commits landed"
   ],
-  "cleanup": { "fixture_processes_left": 0, "browsers_left": 0, "tmp_residue_removed": "47 /tmp/jarvis-test-* from this session's test runs, /tmp/t32-* scratch", "left": "shared /tmp/playwright-transform-cache-1000" },
+  "cleanup": { "fixture_processes_left": 0, "browsers_left": 0, "tmp_residue": 0,
+    "note": "Playwright and gate logs were written under /tmp/t32gate and removed; production ports 4173-4176, units, and the Second Brain vault were never contacted" },
   "wip": 0,
   "production_changes": 0,
   "session_records_deleted": 0
