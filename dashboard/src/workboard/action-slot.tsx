@@ -17,7 +17,8 @@ export function WorkboardActionSlot({ card, client, fallback }: {
   const [submitted, setSubmitted] = useState(false);
   const capability = card.action_capability;
   const pending = outcome ?? capability?.pending;
-  const available = client && capability?.available && card.actions_enabled && card.freshness === "fresh" && !card.purpose.needs_reconfirmation;
+  const available = client && capability?.available && card.actions_enabled && card.freshness === "fresh"
+    && card.purpose.status === "confirmed" && !card.purpose.needs_reconfirmation;
   async function run(action: () => Promise<void>) {
     if (busyRef.current) return;
     busyRef.current = true; setBusy(true); setError(null);

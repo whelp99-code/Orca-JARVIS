@@ -37,11 +37,13 @@ export class PurposeStore {
     nonempty(project); nonempty(text); nonempty(ref);
     return this.db.transaction(() => {
       const old = this.latest(project);
-      if (old?.text === text) return asPurpose(old);
-      const next = (old?.version ?? 0) + 1;
-      this.db.prepare("INSERT INTO workboard_purposes(project_id,version,text,source_kind,source_ref) VALUES(?,?,?,?,?)")
-        .run(project, next, text, "owner", ref);
-      return { project_id: project, version: next, text, source: { kind: "owner" as const, ref } };
+      const purpose = old?.text === text ? asPurpose(old) : this.insertPurpose(project, (old?.version ?? 0) + 1, text, ref);
+      // A bind made before any owner purpose stored a null version. Pin it to this confirmation
+      // so later revisions invalidate, and preflight can see purpose_version === latest.
+      this.db.prepare(`UPDATE workboard_purpose_bindings SET purpose_version=?
+        WHERE project_id=? AND purpose_version IS NULL AND evidence_kind IN ('owner','explicit_request')`)
+        .run(purpose.version, project);
+      return purpose;
     })();
   }
   bind(work: string, project: string, why: string, proof: PurposeEvidence, work_spec_revision: string): void {
@@ -89,6 +91,11 @@ export class PurposeStore {
     const current = this.actionRef(ref.work_id);
     if (current.purpose_version !== ref.purpose_version || current.work_spec_revision !== ref.work_spec_revision)
       throw new Error("WORKBOARD_PURPOSE_RECONFIRM_REQUIRED");
+  }
+  private insertPurpose(project: string, version: number, text: string, ref: string): Purpose {
+    this.db.prepare("INSERT INTO workboard_purposes(project_id,version,text,source_kind,source_ref) VALUES(?,?,?,?,?)")
+      .run(project, version, text, "owner", ref);
+    return { project_id: project, version, text, source: { kind: "owner", ref } };
   }
   private latest(project: string): PurposeRow | undefined {
     return this.db.prepare("SELECT * FROM workboard_purposes WHERE project_id=? ORDER BY version DESC LIMIT 1").get(project) as PurposeRow | undefined;

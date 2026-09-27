@@ -1,5 +1,6 @@
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
+import { readActionBinding } from "../../src/workboard/actions.js";
 import { WorkboardStore } from "../../src/workboard/store.js";
 import { PurposeStore } from "../../src/workboard/purpose-store.js";
 import { sessionKey, workKey } from "../../src/workboard/contracts.js";
@@ -67,9 +68,24 @@ describe("workboard purpose provenance", () => {
     expect(after).toMatchObject({ purpose_version: 2, work_spec_revision: "spec:2" });
     expect(() => purpose.assertCurrent(before)).toThrow("WORKBOARD_PURPOSE_RECONFIRM_REQUIRED");
     expect(() => purpose.assertCurrent(after)).not.toThrow();
+    expect(readActionBinding(db, work, new Date("2026-09-24T00:02:00Z")).purposeVersion).toBe(2);
     expect(db.prepare("SELECT digest FROM approved_action_fixture").get()).toEqual({ digest: "sha256:approved-action" });
     expect(db.prepare("SELECT version,text FROM workboard_purposes WHERE project_id=? ORDER BY version").all("project"))
       .toEqual([{ version: 1, text: "First goal" }, { version: 2, text: "Revised goal" }]);
+    db.close();
+  });
+  it("pins a pre-confirm binding so the confirmed purpose can be acted on, then invalidates the next revision", () => {
+    const { db, purpose } = opened();
+    const now = new Date("2026-09-24T00:02:00Z");
+    purpose.propose("project", "Issue goal", { kind: "explicit_request", ref: "issue:1" });
+    purpose.bind(work, "project", "Implement issue", { kind: "explicit_request", ref: "issue:1" }, "spec:1");
+    expect(() => readActionBinding(db, work, now)).toThrow("WORKBOARD_BINDING_CHANGED");
+    purpose.confirm("project", "Owner goal", "owner:1");
+    expect(purpose.actionRef(work)).toMatchObject({ purpose_version: 1, work_spec_revision: "spec:1" });
+    expect(readActionBinding(db, work, now)).toMatchObject({ purposeVersion: 1, specVersion: "spec:1" });
+    purpose.confirm("project", "Revised goal", "owner:2");
+    expect(() => readActionBinding(db, work, now)).toThrow("WORKBOARD_BINDING_CHANGED");
+    expect(() => purpose.actionRef(work)).toThrow("WORKBOARD_PURPOSE_RECONFIRM_REQUIRED");
     db.close();
   });
 });
