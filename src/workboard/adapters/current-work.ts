@@ -44,7 +44,7 @@ export function collectCurrentWork(store: WorkboardStore, sources: CurrentSource
   return sources.map(config => {
     const source = sourceKey(config.source);
     try {
-      if (!existsSync(config.directory)) return { source, coverage: "unknown", ingested: 0, currentIds: [], reason: "current metadata unavailable" };
+      if (!existsSync(config.directory)) throw new Error("current metadata unavailable");
       const files = config.kind === "claude-live" ? readdirSync(config.directory).filter(f => f.endsWith(".json")) : ["current.json"];
       if (files.length > MAX_FILES) throw new Error("current metadata exceeds file bound");
       const events: WorkEvent[] = [];
@@ -62,11 +62,17 @@ export function collectCurrentWork(store: WorkboardStore, sources: CurrentSource
         }
       }
       // Reject an ambiguous snapshot before any ingest; repeated .history identities coalesce.
+      // One transaction: a later ingest failure must not keep earlier rows or move the source clock.
       const unique = new Map(events.map(event => [event.sessionId, event]));
-      for (const event of unique.values()) store.ingest(event);
+      store.db.transaction(() => {
+        for (const event of unique.values()) store.ingest(event);
+      })();
       return { source, coverage: "complete", ingested: unique.size, currentIds: [...unique.keys()] };
     } catch (error) {
-      return { source, coverage: "unknown", ingested: 0, currentIds: [], reason: error instanceof Error ? error.message : String(error) };
+      const reason = error instanceof Error ? error.message : String(error);
+      const warning = reason.slice(0, 256);
+      if (warning.length > 0) store.outage(source, warning);
+      return { source, coverage: "unknown", ingested: 0, currentIds: [], reason };
     }
   });
 }

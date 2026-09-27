@@ -1,6 +1,7 @@
 import type Database from "better-sqlite3";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import type { ActionCapability } from "../workboard/action-contracts.js";
 import type { WorkboardActions } from "../workboard/actions.js";
 import type { ServerResponse } from "node:http";
@@ -96,9 +97,40 @@ export function tryHandleWorkboardRead(input: WorkboardReadInput): boolean {
   return true;
 }
 
-const sourceConfig = JSON.parse(readFileSync(resolve("config/workboard-sources.json"), "utf8")) as {
-  source_ids: string[]; coverage_limitations: Record<string, string>;
-};
+type WorkboardSourceConfig = { source_ids: string[]; coverage_limitations: Record<string, string> };
+
+function parseSourceConfig(path: string): WorkboardSourceConfig {
+  return JSON.parse(readFileSync(path, "utf8")) as WorkboardSourceConfig;
+}
+
+function moduleDirectory(): string | undefined {
+  try {
+    const url = import.meta.url;
+    if (!url.startsWith("file:")) return undefined;
+    return dirname(fileURLToPath(url));
+  } catch {
+    return undefined;
+  }
+}
+
+/** Node loads the file next to this module. A non-file module URL keeps the repo cwd path used by dashboard tests. */
+function loadSourceConfig(): WorkboardSourceConfig {
+  const directory = moduleDirectory();
+  const candidates = directory === undefined ? [resolve("config/workboard-sources.json")] : [
+    join(directory, "../../config/workboard-sources.json"),
+    join(directory, "../workboard-sources.json"),
+  ];
+  let missing: unknown;
+  for (const path of candidates) {
+    try { return parseSourceConfig(path); }
+    catch (error) {
+      if ((error as { code?: string }).code !== "ENOENT") throw error;
+      missing = error;
+    }
+  }
+  throw missing;
+}
+const sourceConfig = loadSourceConfig();
 const missingObservation = "현재 작업 관측 결과가 아직 등록되지 않았습니다.";
 
 function sourceCoverage(rows: readonly SourceCoverageRow[]): WorkboardSourceCoverage[] {

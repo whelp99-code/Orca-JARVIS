@@ -34,6 +34,15 @@ it("submits the reviewed token and operation once while awaiting the exact resul
   expect(screen.queryByRole("dialog")).toBeNull();
   expect(screen.getByRole("status")).toBeInTheDocument();
 });
+it("does not expose source effects until the owner purpose is confirmed", () => {
+  const c = card(); const client: WorkboardActionClient = { prepare: vi.fn(), submit: vi.fn(), reconcile: vi.fn() };
+  const proposed = { ...c, purpose: { ...c.purpose, status: "proposed" as const } };
+  const { container, rerender } = render(<WorkboardActionSlot card={proposed} client={client} fallback="source" />);
+  expect(container.querySelector("[data-operation]")).toBeNull();
+  rerender(<WorkboardActionSlot card={{ ...c, purpose: { ...c.purpose, status: "unknown" } }} client={client} fallback="source" />);
+  expect(container.querySelector("[data-operation]")).toBeNull();
+  expect(client.prepare).not.toHaveBeenCalled();
+});
 it("does not expose source effects when the observation is stale or the protocol is unavailable", () => {
   const c = card(); const client: WorkboardActionClient = { prepare: vi.fn(), submit: vi.fn(), reconcile: vi.fn() };
   const { container, rerender } = render(<WorkboardActionSlot card={{ ...c, freshness: "unconfirmed" }} client={client} fallback="source" />);
