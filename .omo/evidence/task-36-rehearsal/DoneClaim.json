@@ -1,0 +1,45 @@
+{
+  "kind": "DoneClaim",
+  "task_id": "st_01a0e56b",
+  "status": "ready_for_review",
+  "scope": "Task 36 isolated release and recovery rehearsal",
+  "repository": "/home/jm/orca/projects/Orca-JARVIS",
+  "worktree": "/home/jm/orca/workspaces/Orca-JARVIS/task-36-rehearsal",
+  "orca_worktree_id": "f9b2a8dc-2eb5-4877-ae2a-0ddfbb0c8963::/home/jm/orca/workspaces/Orca-JARVIS/task-36-rehearsal",
+  "branch": "task-36-rehearsal",
+  "base": "81a5410fd9acd933da215ce8bf3fe869569b44a0",
+  "head": "adacfea4c0059d18497ce498bcc90d09dd6e86ab",
+  "commit": {
+    "sha": "adacfea4c0059d18497ce498bcc90d09dd6e86ab",
+    "subject": "docs(operations): prove personal OS release and recovery"
+  },
+  "production_changes": 0,
+  "live_path_mutation": 0,
+  "push": false,
+  "deploy": false,
+  "mac_electron_qa": "not_in_worker_scope",
+  "phone_browser_qa": "not_in_worker_scope",
+  "provider_wheel_sha256": "dcffa57bd011d59f0993583fee435413ebb0fb293fb3de941b567cca8e70e762",
+  "provider_source": {
+    "path": "/home/jm/orca/workspaces/second-brain-app/task-30-b3b",
+    "head": "7336527bb1040c42b5ae5c33136f22ea33abb88b"
+  },
+  "evidence": ".omo/evidence/task-36-jarvis-personal-operating-system/",
+  "cli": {
+    "happy_exit": 0,
+    "scenario_exits": 0,
+    "sentinel": "PERSONAL_OS_REHEARSAL_OK",
+    "runtime_validation": "performed",
+    "deployment_ready": false
+  },
+  "out_of_scope": [
+    "Mac Electron client QA",
+    "phone browser QA",
+    "production activation",
+    "live migration",
+    "sign",
+    "notarize",
+    "push",
+    "merge"
+  ]
+}
