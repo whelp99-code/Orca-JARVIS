@@ -575,10 +575,10 @@ describe("Task 30 real built-process lifecycle", () => {
       if (staleTargetRead.kind !== "current" || forgottenRead.kind !== "current") {
         throw new Error("TASK30_STALE_READ_FENCED");
       }
-      expect(staleTargetRead.evidence.every(item => !item.excerpt.includes(old) && !item.excerpt.includes(corrected)))
-        .toBe(true);
-      expect(forgottenRead.evidence.every(item => !item.excerpt.includes(old) && !item.excerpt.includes(corrected)))
-        .toBe(true);
+      expect(staleTargetRead.evidence.every(item => item.excerpt === null
+        || (!item.excerpt.includes(old) && !item.excerpt.includes(corrected)))).toBe(true);
+      expect(forgottenRead.evidence.every(item => item.excerpt === null
+        || (!item.excerpt.includes(old) && !item.excerpt.includes(corrected)))).toBe(true);
       await lifecycle.reconcilePending(10);
       expect(authority.db.prepare(
         "SELECT state FROM memory_correction_requests WHERE correction_id=?",
