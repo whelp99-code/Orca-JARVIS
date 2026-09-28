@@ -141,6 +141,9 @@ export function parseDailyLoopOptions(value: unknown): DailyLoopOptions & { read
 	const drain = source["drain"];
 	const read = reader["read"];
 	if (typeof clock !== "function" || typeof drain !== "function" || typeof read !== "function") return fail("DAILY_LOOP_CONFIG_INVALID");
+	const providedWait = Reflect.get(clock, "wait");
+	const wrappedClock = () => parseDailyLoopInstant(Reflect.apply(clock, undefined, []));
+	if (typeof providedWait === "function") Object.assign(wrappedClock, { wait: providedWait });
 	const recoveryWindow = integer(input["recovery_window_ms"], 0, 2_592_000_000, "DAILY_LOOP_CONFIG_INVALID");
 	const lookback = integer(input["recovery_lookback_days"], 1, 31, "DAILY_LOOP_CONFIG_INVALID");
 	if (lookback < Math.ceil(recoveryWindow / 86_400_000) + 1) return fail("DAILY_LOOP_CONFIG_INVALID");
@@ -154,7 +157,7 @@ export function parseDailyLoopOptions(value: unknown): DailyLoopOptions & { read
 		recovery_lookback_days: lookback,
 		refresh_freshness_ms: integer(input["refresh_freshness_ms"], 0, 86_400_000, "DAILY_LOOP_CONFIG_INVALID"),
 		budgets,
-		clock: () => parseDailyLoopInstant(Reflect.apply(clock, undefined, [])),
+		clock: wrappedClock,
 		event_source: Object.freeze({
 			drain: () => Reflect.apply(drain, undefined, []),
 		}),

@@ -36,6 +36,18 @@ export function beforeMorningAssemblyDeadline(at: Date): boolean {
   return at.getTime() < kstInstant(kstLocalDate(at), 7, 20).getTime();
 }
 
+export type MorningHoldClock = (() => Date) & { readonly wait: (ms: number) => Promise<void> };
+
+/** The oneshot waits on this clock. A caller-supplied `wait` moves virtual time; a live clock sleeps. */
+export function bindMorningHold(clock: () => Date, live: boolean): MorningHoldClock {
+  const provided = Reflect.get(clock, "wait");
+  if (typeof provided === "function") {
+    return Object.assign(() => clock(), { wait: (ms: number) => Reflect.apply(provided, clock, [ms]) as Promise<void> });
+  }
+  if (live) return Object.assign(clock, { wait: (ms: number) => new Promise<void>(resolve => { setTimeout(resolve, ms); }) });
+  return Object.assign(() => clock(), { wait: () => Promise.resolve() });
+}
+
 /** First observation of the local date wins, so a later 07:15 cycle cannot move an earlier subscription. */
 export function installMorningRefreshSubscription(authority: AuthorityDb, at: Date): Date {
   const date = kstLocalDate(at);

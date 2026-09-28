@@ -173,11 +173,16 @@ export class DailyControlLoop {
 		used.work += cost.work;
 		used.bytes += cost.bytes;
 	}
-	private processRun(runId: string, completed: string[]): void {
+	private async processRun(runId: string, completed: string[]): Promise<void> {
 		if (completed.includes(runId) || this.store.steps(runId).length === 0) return;
 		let claim: DailyLoopClaim | undefined;
 		try {
-			if (this.stepExecutor?.defer?.(this.now())) return;
+			if (this.stepExecutor?.defer?.(this.now())) {
+				const refresh = this.stepExecutor.awaitRefresh;
+				if (refresh === undefined) return;
+				await refresh.call(this.stepExecutor, this.now());
+				if (this.stepExecutor.defer?.(this.now())) return;
+			}
 			claim = this.store.claim({
 				run_id: runId, owner_id: this.options.owner_id, at: this.now(), lease_ms: this.options.lease_ms,
 			}, this.options.recovery_window_ms);
@@ -214,8 +219,8 @@ export class DailyControlLoop {
 		const events = this.executionPhase === undefined || this.executionPhase === "in_day"
 			? parseDailyLoopEvents(this.options.event_source.drain()) : [];
 		for (const event of events) prepared.push(this.prepare(event));
-		for (const runId of this.due()) this.processRun(runId, completed);
-		this.observe(now);
+		for (const runId of this.due()) await this.processRun(runId, completed);
+		this.observe(this.now());
 		return { prepared, completed_run_ids: completed };
 	}
 	private observe(at: Date): void {
@@ -239,8 +244,8 @@ export class DailyControlLoop {
 		const now = this.now();
 		const { from, through, prepared } = this.recover(now, null);
 		const completed: string[] = [];
-		for (const runId of this.due()) this.processRun(runId, completed);
-		this.observe(now);
+		for (const runId of this.due()) await this.processRun(runId, completed);
+		this.observe(this.now());
 		return {
 			prepared,
 			completed_run_ids: completed,

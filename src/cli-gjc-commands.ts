@@ -11,6 +11,7 @@ import { configuredMemoryReviewCleanup } from "./cli-memory-review-cleanup.js";
 import { configuredLocalRetention } from "./cli-local-retention.js";
 import { RemoteAuditService } from "./remote-audit-service.js";
 import { DailyServiceCycles } from "./daily-service-cycles.js";
+import { installMorningRefreshSubscription } from "./morning-operating-brief.js";
 import { PersonalOsRuntime } from "./personal-os-runtime.js";
 import { LocalTimelineRefreshService } from "./local-timeline-refresh-service.js";
 import { CYCLE_READY_TYPE } from "./personal-os-cycle-ready.js";
@@ -202,6 +203,7 @@ export async function executeGjcCommand(
       return { ok: true, command: "service.once", ...(await once()) };
     }
     if (command === "service" && subcommand === "run") {
+      installMorningRefreshSubscription(db, commandNow(context));
       const control = process.env[PERSONAL_OS_CONTROL_CHANNEL_ENV];
       if (control !== undefined && control.length > 0) {
         await servePersonalOsCycleChannel({ db: db.db, socketPath: control,

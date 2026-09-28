@@ -135,6 +135,7 @@ export interface DailyLoopStepExecutor {
   advance(claim: DailyLoopClaim): DailyLoopAdvance;
   complete(claim: DailyLoopClaim): void;
   defer?(at: Date): boolean;
+  awaitRefresh?(at: Date): Promise<void>;
 }
 export type DailyLoopUncertainReason = "EXECUTION_OUTCOME_UNCERTAIN";
 export type DailyLoopErrorCode =

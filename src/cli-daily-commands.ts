@@ -2,7 +2,7 @@ import { parseBoundedStrictJson } from "./strict-json.js";
 import { randomUUID } from "node:crypto";
 import { constants } from "node:fs";
 import { open } from "node:fs/promises";
-import { commandNow, type CliCommandContext } from "./cli-command-context.js";
+import type { CliCommandContext } from "./cli-command-context.js";
 import { DailyLoopError, type DailyLoopConfig } from "./daily-loop-types.js";
 import { parseDailyLoopMorningLocalTime } from "./daily-loop-input.js";
 import { createStoredMorningDailyLoop } from "./daily-loop-morning-execution.js";
@@ -16,7 +16,7 @@ import { verifyMorningBriefResult } from "./morning-brief-artifact.js";
 import { executeEveningCommand } from "./cli-evening-command.js";
 import { SecondBrainRefreshReceiptReader } from "./second-brain-refresh-receipt.js";
 import {
-  beforeMorningAssemblyDeadline, installMorningRefreshSubscription, loadMorningOperatingBrief, morningRefreshSubscription,
+  beforeMorningAssemblyDeadline, bindMorningHold, installMorningRefreshSubscription, loadMorningOperatingBrief, morningRefreshSubscription,
   refreshSubscriptionOnTime,
 } from "./morning-operating-brief.js";
 import { parseTrustedCloseoutKey } from "./evening-closeout-crypto.js";
@@ -74,21 +74,21 @@ export async function executeDailyCommand(context: CliCommandContext): Promise<R
     || context.values.once !== true || !context.values.db || !context.values.input) throw new JarvisError("DAILY_LOOP_CONFIG_INVALID");
   const config = await readConfig(context.values.input);
   try {
-    const clock = () => commandNow(context);
+    const bound = bindMorningHold(context.dependencies.clock ?? (() => new Date()), context.dependencies.clock === undefined);
     let subscribed = false;
-    const morningClock = () => {
-      const at = clock();
+    const morningClock = Object.assign(() => {
+      const at = bound();
       if (!subscribed) { subscribed = true; installMorningRefreshSubscription(context.db, at); }
       return at;
-    };
+    }, { wait: bound.wait });
     // The loop takes a plain closed record, so the adapter is delegated to rather than handed over.
     const receipts = new SecondBrainRefreshReceiptReader(config.refreshReceiptPath);
     const loop = createStoredMorningDailyLoop(context.db, { ...config.daily, owner_id: `daily-morning:${process.pid}:${randomUUID()}`,
       clock: morningClock, event_source: { drain: () => [] },
       refresh_reader: { read: (at: Date) => receipts.read(at) } },
-    config.closeoutKey, await dailyProductionPolicy(context.db, clock));
+    config.closeoutKey, await dailyProductionPolicy(context.db, bound));
     const result = await loop.startup();
-    const at = clock();
+    const at = bound();
     if (kstLocalDate(at) !== result.recovery_through_date) throw new JarvisError("DAILY_LOOP_STALE_LEASE");
     return { ok: true, command: "daily.morning", local_date: kstLocalDate(at), observed_at: at.toISOString(), scope: "stored-local-sources",
       automatic_operation: "hold", ...morningResult(context.db, at, config.closeoutKey), ...result };

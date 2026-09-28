@@ -3,7 +3,7 @@ import { DailyControlLoop } from "./daily-loop-service.js";
 import { DailyLoopStore } from "./daily-loop-store.js";
 import { parseDailyLoopClaim, parseDailyLoopOptions } from "./daily-loop-input.js";
 import { assertDailyLoopIntegrity } from "./daily-loop-integrity.js";
-import { evaluateRefreshContext, kstLocalDate } from "./daily-loop-time.js";
+import { evaluateRefreshContext, kstInstant, kstLocalDate } from "./daily-loop-time.js";
 import { DailyLoopError, type DailyLoopAdvance, type DailyLoopClaim,
   type DailyLoopOptions, type DailyLoopStepExecutor } from "./daily-loop-types.js";
 import { DailyBudgetExceeded, dailyLoopUsage, dailyUsageExhausted } from "./daily-loop-usage.js";
@@ -50,11 +50,14 @@ export function createStoredMorningDailyLoop(authority: AuthorityDb, optionsValu
   closeoutKeyValue?: TrustedCloseoutKey, production?: DailyProductionSource): DailyControlLoop {
   const closeoutKey = closeoutKeyValue === undefined ? undefined : parseTrustedCloseoutKey(closeoutKeyValue);
   const parsed = parseDailyLoopOptions(optionsValue); let lastAt: Date | null = null;
-  const options: DailyLoopOptions = { ...parsed, clock: () => {
+  const monotonic = () => {
     const at = parsed.clock();
     if (lastAt !== null && at < lastAt) throw new DailyLoopError("DAILY_LOOP_STALE_LEASE");
     lastAt = at; return at;
-  } };
+  };
+  const parsedWait = Reflect.get(parsed.clock, "wait");
+  if (typeof parsedWait === "function") Object.assign(monotonic, { wait: parsedWait });
+  const options: DailyLoopOptions = { ...parsed, clock: monotonic };
   const store = new DailyLoopStore(authority);
   return new DailyControlLoop(store, options,
     new StoredMorningSteps(authority, store, options, closeoutKey, production), "morning", true);
@@ -77,6 +80,20 @@ class StoredMorningSteps implements DailyLoopStepExecutor {
     if (subscribedAt === undefined || !refreshSubscriptionOnTime(subscribedAt, at) || !beforeMorningAssemblyDeadline(at)) return false;
     const reasons = morningRefreshReasons(at, this.options.refresh_reader.read(at), this.options.refresh_freshness_ms, true);
     return reasons.some(reason => reason !== "refresh_subscription_late");
+  }
+
+  async awaitRefresh(): Promise<void> {
+    const wait = Reflect.get(this.options.clock, "wait");
+    if (typeof wait !== "function") return;
+    let at = this.options.clock();
+    while (this.defer(at)) {
+      const remaining = kstInstant(kstLocalDate(at), 7, 20).getTime() - at.getTime();
+      if (remaining <= 0) return;
+      await Reflect.apply(wait, this.options.clock, [Math.min(30_000, remaining)]);
+      const next = this.options.clock();
+      if (next.getTime() <= at.getTime()) return;
+      at = next;
+    }
   }
 
   complete(claimValue: DailyLoopClaim): void {

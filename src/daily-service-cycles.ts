@@ -7,7 +7,7 @@ import { errorCode, type DailyControlLoop } from "./daily-loop-service.js";
 import { failureDetail } from "./daily-loop-store-input.js";
 import type { DailyLoopCycleResult } from "./daily-loop-types.js";
 import { JarvisError, type AuthorityDb } from "./db.js";
-import { installMorningRefreshSubscription, loadMorningOperatingBrief } from "./morning-operating-brief.js";
+import { bindMorningHold, installMorningRefreshSubscription, loadMorningOperatingBrief } from "./morning-operating-brief.js";
 import { kstLocalDate } from "./daily-loop-time.js";
 
 type Phase = "morning" | "evening";
@@ -23,7 +23,8 @@ export class DailyServiceCycles {
     private readonly refreshProduction: () => Promise<void>) {}
 
   static async fromFiles(db: AuthorityDb, configPath: string, keyPath: string, clock: () => Date): Promise<DailyServiceCycles> {
-    const config = await readEveningCliInputs(configPath, keyPath, `daily-service:${process.pid}:${randomUUID()}`, clock);
+    const bound = bindMorningHold(clock, false);
+    const config = await readEveningCliInputs(configPath, keyPath, `daily-service:${process.pid}:${randomUUID()}`, bound);
     // The configured service produces under the same policy the `daily morning` command produces
     // under, derived from the same configured sources: the shipped policy document, the decision
     // reference built from it, and the provider read this deployment names. A deployment that names
@@ -33,8 +34,8 @@ export class DailyServiceCycles {
     // that ran for a week would otherwise be producing against the provider read it made on the day
     // it was started. The read is IO and stays out here, in the async cycle, never inside the step.
     let production: DailyProductionPolicy | undefined;
-    installMorningRefreshSubscription(db, clock());
-    return new DailyServiceCycles(db, clock, {
+    installMorningRefreshSubscription(db, bound());
+    return new DailyServiceCycles(db, bound, {
       morning: createStoredMorningDailyLoop(db, config.options, config.trusted, () => production),
       evening: createStoredNativeEveningDailyLoop(db, config.options, config.source, config.trusted, config.signer),
     }, async () => { production = await dailyProductionPolicy(db, clock); });

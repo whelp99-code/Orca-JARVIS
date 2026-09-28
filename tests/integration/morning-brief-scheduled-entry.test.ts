@@ -11,6 +11,7 @@ const MAC_AUTOMATION = "960f1c65-7f57-47e3-88f5-80bc5964ee7e";
 const AT_0650 = new Date("2026-08-27T21:50:00.000Z");
 const AT_0715 = new Date("2026-08-27T22:15:00.000Z");
 const AT_0720 = new Date("2026-08-27T22:20:00.000Z");
+const BEFORE_0700 = Date.parse("2026-08-27T22:00:00.000Z");
 const SECTION_KEYS = ["now", "blocked", "decisions", "next_3", "workers", "risks"] as const;
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -54,61 +55,77 @@ function subscription(path: string): string | undefined {
   } finally { db.close(); }
 }
 
-it("installs the refresh subscription from the morning CLI before 07:00 and holds the 07:15 run", async () => {
-  const f = await cliFixture();
-  const armed = await execute(f.args, { clock: () => AT_0650 });
-  expect(armed).toMatchObject({ ok: true, command: "daily.morning", brief: null });
-  expect(Date.parse(subscription(f.path) ?? "")).toBeLessThan(Date.parse("2026-08-27T22:00:00.000Z"));
-  expect(count(f.path, "notification_intents")).toBe(0);
-  const held = await execute(f.args, { clock: () => AT_0715 });
-  expect(held).toMatchObject({ ok: true, held_for_refresh: true, operating_brief: null, brief: null });
-  expect(count(f.path, "notification_intents")).toBe(0);
-  const db = new AuthorityDb(f.path);
-  try {
-    expect(db.db.prepare("SELECT state FROM daily_loop_steps WHERE step_key='morning_reconcile'").get()).toEqual({ state: "pending" });
-  } finally { db.close(); }
-});
+/** Virtual clock. `wait` is the only way time moves, so a oneshot cannot return before 07:20 without sleeping. */
+function holdingClock(start: Date): { readonly now: () => Date; readonly wait: (ms: number) => Promise<void>; readonly at: () => Date } {
+  let at = start;
+  return {
+    now: () => at,
+    at: () => at,
+    wait: (ms: number) => { at = new Date(at.getTime() + ms); return Promise.resolve(); },
+  };
+}
 
-it("emits the cited brief from the morning CLI only once the 07:20 bound is reached", async () => {
-  const left = await cliFixture();
-  const right = await cliFixture();
-  for (const f of [left, right]) {
-    await execute(f.args, { clock: () => AT_0650 });
-    await execute(f.args, { clock: () => AT_0715 });
-  }
-  const published = await execute(left.args, { clock: () => AT_0720 });
-  const twin = await execute(right.args, { clock: () => AT_0720 });
-  const brief = published["operating_brief"] as { sections: Record<string, unknown>; canonical_digest: string; context_readiness: string; degradation_reasons: string[] };
+type OperatingBrief = {
+  readonly refresh_subscription: string;
+  readonly canonical_digest: string;
+  readonly context_readiness: string;
+  readonly degradation_reasons: readonly string[];
+  readonly sections: { readonly next_3: readonly unknown[] };
+};
+
+function assertBrief(brief: OperatingBrief, digest?: string): void {
+  expect(brief.refresh_subscription).toBe("before_07:00");
   expect(brief.context_readiness).not.toBe("ready");
   expect(brief.degradation_reasons).toContain("no_data");
   for (const key of SECTION_KEYS) expect(brief.sections).toHaveProperty(key);
-  expect(Array.isArray(brief.sections["next_3"]) ? brief.sections["next_3"].length : 0).toBeLessThanOrEqual(3);
-  expect(brief.canonical_digest).toBe((twin["operating_brief"] as { canonical_digest: string }).canonical_digest);
-  expect(count(left.path, "notification_intents")).toBe(1);
-  expect(count(left.path, "workflow_runs")).toBe(0);
-  expect(count(left.path, "control_command_requests")).toBe(0);
+  expect(brief.sections.next_3.length).toBeLessThanOrEqual(3);
+  if (digest !== undefined) expect(brief.canonical_digest).toBe(digest);
+}
+
+it("one 07:15 morning command waits until 07:20 after the daily service subscribed", async () => {
+  const f = await cliFixture();
+  await execute(["service", "run", "--once", "--db", f.path], { clock: () => AT_0650 });
+  expect(Date.parse(subscription(f.path) ?? "")).toBeLessThan(BEFORE_0700);
+  const clock = holdingClock(AT_0715);
+  const started = Date.now();
+  const published = await execute(f.args, { clock: Object.assign(clock.now, { wait: clock.wait }) });
+  expect(Date.now() - started).toBeLessThan(1_000);
+  expect(clock.at().getTime()).toBeGreaterThanOrEqual(AT_0720.getTime());
+  expect(published).toMatchObject({ ok: true, command: "daily.morning", run: { state: "completed" } });
+  expect(published["held_for_refresh"]).toBeUndefined();
+  const brief = published["operating_brief"] as OperatingBrief;
+  assertBrief(brief);
+  expect(count(f.path, "notification_intents")).toBe(1);
+  expect(count(f.path, "workflow_runs")).toBe(0);
+  expect(count(f.path, "control_command_requests")).toBe(0);
   expect(JSON.stringify(published)).not.toContain(MAC_AUTOMATION);
+  expect(Date.parse(subscription(f.path) ?? "")).toBeLessThan(BEFORE_0700);
 });
 
-it("holds the daily service morning cycle until 07:20 after a subscription installed before 07:00", async () => {
-  const f = await serviceFixture();
-  let at = AT_0650;
+it("one 07:15 daily-service cycle waits until 07:20 and matches the morning digest", async () => {
+  const left = await serviceFixture();
+  const right = await cliFixture();
   try {
-    const cycles = await DailyServiceCycles.fromFiles(f.db, f.input, f.key, () => at);
-    await cycles.cycle();
-    expect(Date.parse(subscription(f.path) ?? "")).toBeLessThan(Date.parse("2026-08-27T22:00:00.000Z"));
+    await execute(["service", "run", "--once", "--db", right.path], { clock: () => AT_0650 });
+    const rightClock = holdingClock(AT_0715);
+    const twin = await execute(right.args, { clock: Object.assign(rightClock.now, { wait: rightClock.wait }) });
+    let at = AT_0650;
+    const wait = (ms: number) => { at = new Date(at.getTime() + ms); return Promise.resolve(); };
+    const clock = Object.assign(() => at, { wait });
+    const cycles = await DailyServiceCycles.fromFiles(left.db, left.input, left.key, clock);
+    expect(Date.parse(subscription(left.path) ?? "")).toBeLessThan(BEFORE_0700);
     at = AT_0715;
-    const held = await cycles.cycle();
-    expect(held.morning).toMatchObject({ status: "processed", operating_brief: null, result: { completed_run_ids: [] } });
-    expect(f.db.db.prepare("SELECT state FROM daily_loop_steps WHERE step_key='morning_reconcile'").get()).toEqual({ state: "pending" });
-    at = AT_0720;
+    const started = Date.now();
     const published = await cycles.cycle();
-    expect(published.morning.status).toBe("processed");
-    const brief = published.morning.status === "processed" ? published.morning.operating_brief : null;
-    expect(brief).toMatchObject({ context_readiness: "no_data" });
-    for (const key of SECTION_KEYS) expect(brief?.sections).toHaveProperty(key);
-    expect(brief?.sections.next_3.length).toBeLessThanOrEqual(3);
-    expect(f.db.db.prepare("SELECT COUNT(*) AS n FROM notification_intents").get()).toEqual({ n: 1 });
-    expect(f.db.db.prepare("SELECT COUNT(*) AS n FROM workflow_runs").get()).toEqual({ n: 0 });
-  } finally { f.db.close(); }
+    expect(Date.now() - started).toBeLessThan(1_000);
+    expect(at.getTime()).toBeGreaterThanOrEqual(AT_0720.getTime());
+    const brief = published.morning.status === "processed" ? published.morning.operating_brief ?? null : null;
+    if (brief === null) throw new Error("MORNING_BRIEF_MISSING");
+    assertBrief(brief, (twin["operating_brief"] as OperatingBrief).canonical_digest);
+    expect(left.db.db.prepare("SELECT COUNT(*) AS n FROM notification_intents").get()).toEqual({ n: 1 });
+    expect(left.db.db.prepare("SELECT COUNT(*) AS n FROM workflow_runs").get()).toEqual({ n: 0 });
+    expect(left.db.db.prepare(`SELECT s.state FROM daily_loop_steps s
+      JOIN daily_loop_runs r ON r.run_id=s.run_id
+      WHERE s.step_key='morning_reconcile' AND r.loop_date='2026-08-28'`).get()).toEqual({ state: "completed" });
+  } finally { left.db.close(); }
 });
