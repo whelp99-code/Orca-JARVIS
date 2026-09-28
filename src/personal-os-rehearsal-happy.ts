@@ -14,6 +14,7 @@ import { backupAndCheck, cloneDatabase, quickCheck, seedFixtureDatabase } from "
 import { loadRehearsalFixture } from "./personal-os-rehearsal-fixture.js";
 import { leaseGates, runIsolatedGates, runPackagedDoctor } from "./personal-os-rehearsal-gates.js";
 import { runFixtureLoop } from "./personal-os-rehearsal-loop.js";
+import { observeNoDataBoot } from "./personal-os-rehearsal-nodata.js";
 import { handshakeProvider, installProviderRelease, replayTombstoneGeneration } from "./personal-os-rehearsal-provider.js";
 import { migrateRehearsalSqlite } from "./personal-os-rehearsal-payload.js";
 import { activateCurrent, assembleRehearsalRelease, placeRelease, writeReleaseReceipt } from "./personal-os-rehearsal-release.js";
@@ -70,7 +71,15 @@ export async function runHappyRehearsal(
   const hand = await handshakeProvider(provider);
   stages.push(stageResult("mcp-handshake", hand.ok, hand));
   if (!hand.ok) return failed(stages, times, lane.receipt(), null, provider.payloadDigest);
-  stages.push(stageResult("no-data-boot", true, { data_state: "no_data", mac_connected: false }));
+  const noData = await observeNoDataBoot({
+    cliPath: join(placed.release, "dist/src/cli.js"),
+    install: provider,
+    vaultRoot: join(releaseRoot, "provider-share/vault"),
+  });
+  stages.push(stageResult("no-data-boot", noData.data_state === "no_data" && noData.booted, noData));
+  if (noData.data_state !== "no_data" || !noData.booted) {
+    return failed(stages, times, lane.receipt(), null, provider.payloadDigest);
+  }
   const baseline = join(releaseRoot, "state/fixture-generation/jarvis.sqlite");
   const clone = join(releaseRoot, "state/jarvis/jarvis.sqlite");
   lane.inspect(clone, "open");

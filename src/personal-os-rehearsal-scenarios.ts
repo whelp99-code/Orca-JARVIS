@@ -15,6 +15,7 @@ import {
 import { currentTarget } from "./personal-os-rehearsal-release.js";
 import { rehearseRollbackBranch } from "./personal-os-rehearsal-rollback.js";
 import { PersonalOsError } from "./personal-os-errors.js";
+import { RemoteApprovalError } from "./remote-approval-errors.js";
 import { RemoteApprovalService } from "./remote-approval.js";
 import { ControlPlane } from "./control-plane.js";
 import { signCommandApproval } from "./control-plane-contract.js";
@@ -156,21 +157,30 @@ export async function expiredPasskey(input: {
       issued_at: at.toISOString(),
     };
     const issued = service.issueOptions(staged.request_id, { schema_version: 1, decision: "approve" }, ingress, at);
-    const later = new Date(at.getTime() + 3_600_000);
-    let rejected = false;
+    const later = new Date(at.getTime() + policy.remote_approval.challenge_ttl_seconds * 1000 + 1000);
     try {
       await service.verify(issued.challenge_id, Buffer.from("{}"), {
         ...ingress,
-        canonical_path: `/api/v1/remote-approvals/${issued.challenge_id}`,
+        canonical_path: `/api/v1/remote-approvals/${issued.challenge_id}/verify`,
       }, later);
+      throw new PersonalOsError("E_REHEARSAL_GATE");
     } catch (error) {
-      if (!(error instanceof Error)) throw error;
-      rejected = true;
+      if (error instanceof PersonalOsError) throw error;
+      if (!(error instanceof RemoteApprovalError) || error.reason !== "expired"
+        || error.code !== "REMOTE_APPROVAL_NOT_APPLICABLE") throw error;
     }
-    const receipts = Number((db.db.prepare(
+    const challenge = db.db.prepare(
+      "SELECT state, terminal_reason FROM webauthn_approval_challenges_v2 WHERE challenge_id=?",
+    ).get(issued.challenge_id) as { state: string; terminal_reason: string | null } | undefined;
+    const audits = db.db.prepare(
+      "SELECT COUNT(*) AS n FROM personal_operation_audit_events WHERE outcome='expired' AND reason_code='expired'",
+    ).get() as { n: number };
+    const receipts = db.db.prepare(
       "SELECT COUNT(*) AS n FROM control_command_receipts WHERE request_id=?",
-    ).get(staged.request_id) as { n: number }).n);
-    if (!rejected || receipts !== 0) throw new PersonalOsError("E_REHEARSAL_GATE");
+    ).get(staged.request_id) as { n: number };
+    if (challenge?.state !== "expired" || challenge.terminal_reason !== "expired" || audits.n !== 1 || receipts.n !== 0) {
+      throw new PersonalOsError("E_REHEARSAL_GATE");
+    }
     return ok("expired-passkey", "fail-closed", { unavailable: unavailable("remote_approval", "expired") });
   } finally {
     db.close();

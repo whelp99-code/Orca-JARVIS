@@ -1,6 +1,11 @@
+import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
+import Database from "better-sqlite3";
 import { afterEach, describe, expect, it } from "vitest";
+import { PersonalOsError } from "../../src/personal-os-errors.js";
 import { runPersonalOsRehearsal } from "../../src/personal-os-rehearsal.js";
+import { installProviderRelease } from "../../src/personal-os-rehearsal-provider.js";
+import { finishNoDataScenario } from "../../src/personal-os-rehearsal-scenario-run.js";
 import { personalOsScratch, removeScratch } from "../fixtures/personal-os-scratch.js";
 
 const FIXTURE = join(process.cwd(), "test/fixtures/personal-os/full-loop.json");
@@ -40,9 +45,26 @@ describe("personal-OS rehearsal scenarios", () => {
   });
 
   it("fails closed on an expired passkey and mints no receipt", async () => {
-    const result = await scenario("expired-passkey");
+    const releaseRoot = personalOsScratch("jarvis-task36-scenario-");
+    scratchRoots.push(releaseRoot);
+    const result = await runPersonalOsRehearsal({
+      fixturePath: FIXTURE, clock: CLOCK, releaseRoot, scenario: "expired-passkey",
+    });
+    if (result.rehearsal !== "PERSONAL_OS_REHEARSAL_SCENARIO_OK") throw new Error(JSON.stringify(result));
     expect(result.outcome).toBe("fail-closed");
-    expect(result.unavailable).toMatchObject({ capability: "remote_approval" });
+    expect(result.unavailable).toMatchObject({ capability: "remote_approval", reason: "expired" });
+    const db = new Database(join(releaseRoot, "state/jarvis.sqlite"), { readonly: true, fileMustExist: true });
+    const challenge = db.prepare(
+      "SELECT state, terminal_reason FROM webauthn_approval_challenges_v2",
+    ).get() as { state: string; terminal_reason: string | null };
+    const audits = db.prepare(
+      "SELECT COUNT(*) AS n FROM personal_operation_audit_events WHERE outcome='expired' AND reason_code='expired'",
+    ).get() as { n: number };
+    const receipts = db.prepare("SELECT COUNT(*) AS n FROM control_command_receipts").get() as { n: number };
+    db.close();
+    expect(challenge).toEqual({ state: "expired", terminal_reason: "expired" });
+    expect(audits.n).toBe(1);
+    expect(receipts.n).toBe(0);
   });
 
   it("completes the fixture loop while the Mac client is disconnected", async () => {
@@ -53,6 +75,16 @@ describe("personal-OS rehearsal scenarios", () => {
   it("handshakes an empty provider vault as no_data", async () => {
     const result = await scenario("second-brain-no-data");
     expect(result.outcome).toBe("no_data");
+  });
+
+  it("fails second-brain-no-data when a vault page is planted", async () => {
+    const releaseRoot = personalOsScratch("jarvis-task36-plant-");
+    scratchRoots.push(releaseRoot);
+    const provider = installProviderRelease({ releaseRoot });
+    const page = join(releaseRoot, "provider-share/vault/wiki/has-data.md");
+    mkdirSync(join(page, ".."), { recursive: true });
+    writeFileSync(page, "NOT-EMPTY-VAULT\n");
+    await expect(finishNoDataScenario(provider)).rejects.toBeInstanceOf(PersonalOsError);
   });
 
   it("marks second brain unavailable when the launcher is missing", async () => {

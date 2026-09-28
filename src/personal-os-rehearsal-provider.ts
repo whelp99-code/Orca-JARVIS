@@ -18,6 +18,7 @@ export type ProviderInstall = {
   readonly sourceCommit: string;
   readonly launcher: string;
   readonly configPath: string;
+  readonly vaultRoot: string;
   readonly payloadDigest: string;
   readonly currentTarget: string;
   readonly venv: string;
@@ -111,6 +112,7 @@ export function installProviderRelease(input: {
     sourceCommit: PROVIDER_SOURCE_COMMIT,
     launcher: join(placed.release, "bin/second-brain-mcp"),
     configPath,
+    vaultRoot: join(share, "vault"),
     payloadDigest: written.manifest.payload_digest,
     currentTarget,
     venv,

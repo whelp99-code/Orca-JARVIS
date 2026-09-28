@@ -11,7 +11,8 @@ import {
 import { seedFixtureDatabase } from "./personal-os-rehearsal-database.js";
 import { loadRehearsalFixture } from "./personal-os-rehearsal-fixture.js";
 import { runFixtureLoop } from "./personal-os-rehearsal-loop.js";
-import { handshakeProvider, installProviderRelease, replayTombstoneGeneration } from "./personal-os-rehearsal-provider.js";
+import { observeNoDataBoot } from "./personal-os-rehearsal-nodata.js";
+import { installProviderRelease, replayTombstoneGeneration, type ProviderInstall } from "./personal-os-rehearsal-provider.js";
 import { activateCurrent } from "./personal-os-rehearsal-release.js";
 import { pinProviderContract } from "./personal-os-rehearsal-rollback.js";
 import {
@@ -38,7 +39,7 @@ export async function runRehearsalScenario(
     case "second-brain-offline":
       return offlineLauncher(releaseRoot, scenario);
     case "second-brain-no-data":
-      return emptyVault(releaseRoot, scenario);
+      return emptyVault(releaseRoot);
     case "delete-sentinel":
       return tombstoneReplay(releaseRoot, scenario, "sentinel-absent");
     case "restore-tombstone":
@@ -81,14 +82,18 @@ async function offlineLauncher(releaseRoot: string, scenario: "second-brain-offl
   };
 }
 
-async function emptyVault(releaseRoot: string, scenario: "second-brain-no-data"): Promise<ScenarioResult> {
-  const provider = installProviderRelease({ releaseRoot });
-  const hand = await handshakeProvider(provider);
-  if (!hand.ok) throw new PersonalOsError("E_REHEARSAL_GATE");
+export async function finishNoDataScenario(install: ProviderInstall): Promise<ScenarioResult> {
+  const observed = await observeNoDataBoot({ install });
+  if (observed.data_state !== "no_data" || observed.page_count !== 0) throw new PersonalOsError("E_REHEARSAL_GATE");
   return {
-    ok: true, rehearsal: "PERSONAL_OS_REHEARSAL_SCENARIO_OK", scenario, outcome: "no_data",
-    unavailable: null, events: ZERO_EVENTS, live_path_mutation: false, current_after: provider.currentTarget,
+    ok: true, rehearsal: "PERSONAL_OS_REHEARSAL_SCENARIO_OK", scenario: "second-brain-no-data",
+    outcome: observed.data_state,
+    unavailable: null, events: ZERO_EVENTS, live_path_mutation: false, current_after: install.currentTarget,
   };
+}
+
+async function emptyVault(releaseRoot: string): Promise<ScenarioResult> {
+  return finishNoDataScenario(installProviderRelease({ releaseRoot }));
 }
 
 async function tombstoneReplay(

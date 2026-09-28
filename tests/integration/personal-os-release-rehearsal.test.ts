@@ -85,6 +85,10 @@ describe("personal-OS release rehearsal", () => {
     expect(result.live_path_mutation).toBe(false);
     expect(result.client_qa.linux_phone_gateway).toBe("http://127.0.0.1:4176");
     expect(result.client_qa.mac_electron_qa).toBe("not_in_worker_scope");
+    if (!("stages" in result)) throw new Error("happy stages missing");
+    const boot = result.stages.find(item => item.name === "no-data-boot");
+    expect(boot?.ok).toBe(true);
+    expect(boot?.actual).toMatchObject({ data_state: "no_data", page_count: 0, booted: true });
     expect(result.current_target).toMatch(/^releases\/[0-9a-f]{40}$/);
     expect(existsSync(join(releaseRoot, "current", "dist/src/cli.js"))).toBe(true);
     expect(existsSync(join(releaseRoot, "units", "jm-jarvis.service"))).toBe(true);
