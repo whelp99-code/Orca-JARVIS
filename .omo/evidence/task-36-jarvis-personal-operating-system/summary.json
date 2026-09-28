@@ -1,0 +1,25 @@
+{
+  "schema_version": 1,
+  "command": "node scripts/personal-os-release-rehearsal.mjs --fixture test/fixtures/personal-os/full-loop.json --clock 2026-08-27T07:15:00+09:00 --release-root <tmp>/authority --json",
+  "node": "v24.19.0",
+  "provider_wheel_sha256": "dcffa57bd011d59f0993583fee435413ebb0fb293fb3de941b567cca8e70e762",
+  "provider_source_commit": "7336527bb1040c42b5ae5c33136f22ea33abb88b",
+  "exits": {
+    "happy": 0,
+    "second-brain-no-data": 0,
+    "second-brain-offline": 0,
+    "mac-disconnected": 0,
+    "schema-incompatible-rollback": 0,
+    "jm-server-offline": 0,
+    "crash-after-dispatch": 0,
+    "lost-memory-response": 0,
+    "expired-passkey": 0,
+    "delete-sentinel": 0,
+    "restore-tombstone": 0,
+    "rollback": 0
+  },
+  "live_path_mutation": [],
+  "mac_electron_qa": "not_in_worker_scope",
+  "phone_browser_qa": "not_in_worker_scope",
+  "preexisting_5s_timeouts": "not observed in the focused rehearsal suite or the CLI evidence run"
+}
