@@ -1,4 +1,4 @@
-// allow: SIZE_OK — one indivisible four-operation real-process lifecycle scenario.
+// allow: SIZE_OK — one indivisible real-process lifecycle: four proved effects, then the organic stale correction that requires that settled provider.
 import { withProvableExclusion } from "../fixtures/provable-exclusion.js";
 import { execFileSync } from "node:child_process";
 import { createHash, createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
@@ -105,9 +105,21 @@ function providerApply(root: string, config: string, site: string): Readonly<Rec
   }
   return value as Readonly<Record<string, unknown>>;
 }
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function providerHighWater(providerRoot: string): { readonly replica: unknown; readonly rows: unknown } {
+  const journal = new Database(join(providerRoot, "requests", "journal.db"), { readonly: true });
+  try {
+    return {
+      replica: journal.prepare("SELECT sequence, set_root FROM tombstone_replica ORDER BY sequence DESC LIMIT 1").get(),
+      rows: journal.prepare("SELECT operation, state, phase, fence FROM requests ORDER BY accepted_at").all(),
+    };
+  } finally { journal.close(); }
+}
 
 describe("Task 30 real built-process lifecycle", () => {
-  it("runs one approved remember and three proof-bound effects through the real MCP child", async () => {
+  it("settles four proved effects, then ends an organic stale correction as conflict", async () => {
     const wheel = required(PROVIDER_WHEEL, "TASK30_PROVIDER_WHEEL_REQUIRED");
     const python = required(PYTHON, "TASK30_PROVIDER_PYTHON_REQUIRED");
     const providerSha = required(PROVIDER_SHA, "TASK30_PROVIDER_SHA_REQUIRED");
@@ -473,6 +485,115 @@ describe("Task 30 real built-process lifecycle", () => {
           { operation: "forget", state: "proved", phase: "proved", fence: 1 },
         ]);
       } finally { providerJournal.close(); }
+      // The provider must refuse this superseded target itself. Writing the journal here would
+      // hide a provider that no longer produces EFFECT_PRIOR_STALE.
+      const staleCandidate = classify("correct", `${corrected} again`,
+        `stale-${randomBytes(6).toString("hex")}`);
+      expect(staleCandidate.state).toBe("awaiting_confirmation");
+      const staleConfirm: ControlCommandRequestInput = { schema_version: 1,
+        request_id: `control:confirm:${randomBytes(8).toString("hex")}`,
+        action: "memory.confirm", action_level: 3,
+        target: { candidate_id: staleCandidate.candidate_id,
+          candidate_digest: staleCandidate.candidate_digest,
+          classification_digest: staleCandidate.classification_digest },
+        args: { schema_version: 1, operation: "correct",
+          evidence_digest: memoryOutboxHash("memory-outbox-event", { id: staleCandidate.candidate_id }) },
+        reversible: false, requested_by: "principal:owner",
+        requested_at: clockValue.toISOString(),
+        expires_at: new Date(clockValue.getTime() + 10 * 60_000).toISOString(),
+        nonce: `confirm:${randomBytes(8).toString("hex")}` };
+      approve(staleConfirm);
+      expect(await executor().execute(staleConfirm.request_id, "task30-stale-confirm", clockValue))
+        .toMatchObject({ state: "completed" });
+      const staleAction = await lifecycle.prepareCorrection({
+        control_request_id: `control:stale:${randomBytes(8).toString("hex")}`,
+        candidate_id: staleCandidate.candidate_id, provider_instance_id: PROVIDER_ID,
+        targets: [targetOld], scope: scope(targetOld, "none"), content: `${corrected} again`,
+        requested_at: clockValue, expires_at: new Date(clockValue.getTime() + 10 * 60_000),
+        nonce: `stale:${randomBytes(8).toString("hex")}` });
+      approve(staleAction);
+      const staleSend = await executor(lifecycle).execute(staleAction.request_id, "task30-stale", clockValue);
+      expect(staleSend).toMatchObject({ state: "uncertain", failure_code: "MEMORY_CORRECTION_RECONCILING" });
+      const staleResult = staleSend.result;
+      const staleCorrectionIdValue = isRecord(staleResult) ? staleResult["correction_id"] : undefined;
+      if (typeof staleCorrectionIdValue !== "string") throw new Error("TASK30_STALE_CORRECTION_ID_MISSING");
+      const staleCorrectionId = staleCorrectionIdValue;
+      let providerRefusal: Readonly<Record<string, unknown>>;
+      try {
+        providerRefusal = providerApply(root, config, site);
+      } catch (error) {
+        const stdout = error instanceof Error && "stdout" in error ? String(error.stdout) : "";
+        const stderr = error instanceof Error && "stderr" in error ? String(error.stderr) : "";
+        let parsed: unknown;
+        try { parsed = JSON.parse(stdout); }
+        catch { throw new Error(`TASK30_PROVIDER_RESULT_INVALID:${stderr.slice(-400)}`); }
+        if (!isRecord(parsed)) throw new Error("TASK30_PROVIDER_RESULT_INVALID");
+        providerRefusal = parsed;
+      }
+      expect(providerRefusal).toMatchObject({
+        state: "failed", phase: "claimed", code: "EFFECT_PRIOR_STALE" });
+      clockValue = new Date();
+      await lifecycle.reconcilePending(10);
+      expect(authority.db.prepare(
+        "SELECT state, failure_code FROM memory_correction_requests WHERE correction_id=?",
+      ).get(staleCorrectionId)).toEqual({ state: "conflict", failure_code: "MEMORY_PROVIDER_FAILED" });
+      expect(authority.db.prepare(
+        "SELECT state, failure_code FROM control_command_requests WHERE request_id=?",
+      ).get(staleAction.request_id)).toEqual({ state: "failed", failure_code: "MEMORY_PROVIDER_FAILED" });
+      expect(authority.db.prepare(
+        "SELECT COUNT(*) AS count FROM control_command_effects WHERE request_id=? AND effect_type='memory.correction.refused'",
+      ).get(staleAction.request_id)).toEqual({ count: 1 });
+      expect(authority.db.prepare(
+        "SELECT COUNT(*) AS count FROM memory_correction_attempts WHERE correction_id=?",
+      ).get(staleCorrectionId)).toEqual({ count: 1 });
+      const refusedCorrection = providerHighWater(providerRoot);
+      expect(refusedCorrection.rows).toEqual([
+        { operation: "remember", state: "proved", phase: "proved", fence: 1 },
+        { operation: "correct", state: "proved", phase: "proved", fence: 1 },
+        { operation: "export", state: "proved", phase: "proved", fence: 1 },
+        { operation: "forget", state: "proved", phase: "proved", fence: 1 },
+        { operation: "correct", state: "failed", phase: "claimed", fence: 1 },
+      ]);
+      const chain = authority.db.prepare(
+        "SELECT sequence, set_root FROM memory_tombstone_chain ORDER BY sequence DESC LIMIT 1").get();
+      expect(refusedCorrection.replica).toEqual(chain);
+      const manifest: unknown = JSON.parse(readFileSync(
+        join(realpathSync(join(providerRoot, "share", "vault")), "generation.json"), "utf8"));
+      if (!isRecord(manifest)) throw new Error("TASK30_ACTIVE_MANIFEST_INVALID");
+      const sequence = manifest["tombstone_sequence"];
+      const setRoot = manifest["tombstone_set_root"];
+      if (typeof sequence !== "number" || typeof setRoot !== "string") {
+        throw new Error("TASK30_ACTIVE_MANIFEST_INVALID");
+      }
+      expect({ sequence, set_root: setRoot }).toEqual(chain);
+      const staleTargetRead = await reader.search(old);
+      const forgottenRead = await reader.search(corrected);
+      const unrelatedRead = await reader.search("Task");
+      expect(staleTargetRead.kind).toBe("current");
+      expect(forgottenRead.kind).toBe("current");
+      expect(unrelatedRead.kind).toBe("current");
+      if (staleTargetRead.kind !== "current" || forgottenRead.kind !== "current") {
+        throw new Error("TASK30_STALE_READ_FENCED");
+      }
+      expect(staleTargetRead.evidence.every(item => !item.excerpt.includes(old) && !item.excerpt.includes(corrected)))
+        .toBe(true);
+      expect(forgottenRead.evidence.every(item => !item.excerpt.includes(old) && !item.excerpt.includes(corrected)))
+        .toBe(true);
+      await lifecycle.reconcilePending(10);
+      expect(authority.db.prepare(
+        "SELECT state FROM memory_correction_requests WHERE correction_id=?",
+      ).get(staleCorrectionId)).toEqual({ state: "conflict" });
+      expect(authority.db.prepare(
+        "SELECT COUNT(*) AS count FROM memory_correction_attempts WHERE correction_id=?",
+      ).get(staleCorrectionId)).toEqual({ count: 1 });
+      expect(authority.db.prepare(
+        "SELECT COUNT(*) AS count FROM control_command_effects WHERE request_id=? AND effect_type='memory.correction.refused'",
+      ).get(staleAction.request_id)).toEqual({ count: 1 });
+      expect(providerHighWater(providerRoot).rows).toEqual(refusedCorrection.rows);
+      // A stale deletion never reaches this provider. Dispatch preflights the target and
+      // throws MEMORY_DELETION_TARGET_STALE, so an organic EFFECT_PRIOR_STALE forget would
+      // require injecting the journal. The shipped deletion-refusal test covers that injected
+      // observation; this lifecycle does not.
       expect(regularFiles(join(providerRoot, "exports")).filter(path => path.endsWith("memory.json")))
         .toEqual([]);
       expect(readdirSync(join(providerRoot, "share", "vault-generations"), { withFileTypes: true })
