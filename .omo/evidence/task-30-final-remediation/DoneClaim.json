@@ -1,69 +1,99 @@
 {
-  "task": "task-30-final-remediation-deletion-terminal-refusal",
-  "base": "bda38be4a71b74391adfd5a3b6f43f8c06c4a861",
-  "head": "9fd779aa5e95f66409dfbb8d5093e21857a54d40",
+  "task": "task-30-final-candidate",
+  "base": "7c798e12eeec352b2dfae6a365af7f28c72ccdf0",
+  "merged_main": "d2c09476bc2d0f307c110788bab4af0afc1fd819",
+  "code_head": "41350dccd4fdb1b44fa6f2697e4035fc4514baa2",
+  "code_tree": "85ea2fdd192a650759e5cfc8a7152a6e0424d8ce",
   "commits": [
-    "9fd779aa5e95f66409dfbb8d5093e21857a54d40"
+    {
+      "sha": "5880a440867dc249ea5718b655a8860758599523",
+      "parents": [
+        "7c798e12eeec352b2dfae6a365af7f28c72ccdf0",
+        "d2c09476bc2d0f307c110788bab4af0afc1fd819"
+      ],
+      "subject": "merge: bring main d2c0947 into task-30-final-remediation"
+    },
+    {
+      "sha": "9654a87c26cb1912d52994fa1e8b0c9511cdde07",
+      "subject": "test: pin the provider oracle to the 7336527 wheel"
+    },
+    {
+      "sha": "e8b15d9f1dcb6b6a8e0fda0575409030e2c7ddf4",
+      "subject": "test: refuse a stale correction through the real provider"
+    },
+    {
+      "sha": "41350dccd4fdb1b44fa6f2697e4035fc4514baa2",
+      "subject": "test: narrow nullable search excerpts in the stale-correction gate"
+    }
   ],
-  "files": [
-    "migrations/097_memory_deletion_terminal_refusal.sql",
-    "src/approved-memory-execution.ts",
-    "src/memory-deletion-control.ts",
-    "src/memory-deletion-dispatch.ts",
-    "src/memory-deletion-saga.ts",
-    "src/memory-deletion-store.ts",
-    "src/memory-lifecycle-service-types.ts",
-    "src/migration-store.ts",
-    "tests/integration/memory-deletion-saga.test.ts",
-    "tests/integration/memory-deletion-terminal-migration.test.ts",
-    "tests/integration/memory-deletion-terminal-refusal.test.ts"
-  ],
-  "red": {
-    "deletion_refused_before_fix": "tests/integration/memory-deletion-saga.test.ts expected state conflict, received reconciling, before the saga consumed the observer refusal"
-  },
-  "green": {
-    "deletion_saga": "5 passed, including refused-before-effect, restart settle-once, stale preflight with zero frames, and mid-apply failure staying reconciling",
-    "deletion_migration": "2 passed: fresh journal checksum and upgrade preserving deletion rows byte-for-byte",
-    "deletion_recovery": "7 passed",
-    "crash_and_post_send": "memory-remediation-crash 4/4, memory-post-frame-recovery 4/4, memory-jarvis-crash-barriers 3/3",
-    "correction_lane": "memory-correction-saga 2/2",
-    "four_effect_lifecycle": "memory-real-process-driver 1/1 with wheel 9ba7d55312f097ca06c0fc9e5d8e6a0c452ad261f0b49111c07a1afa50462a06",
-    "real_provider_refusal": "1 passed: one deletion attempt, provider journal failed/claimed observed through the real MCP status call, lane conflict, control failed once, second reconcile sends nothing",
-    "memory_migration_control_filter": "1196 passed after dist rebuild; the one pre-rebuild failure was MIGRATION_VERSION_UNSUPPORTED from a stale dist missing 097",
-    "lint": "eslint --max-warnings=0 exit 0",
-    "typecheck": "tsc backend, dashboard, and e2e exit 0",
-    "architecture_check": "cycles 0, modules 728, edges 2732",
-    "build": "backend migration_count 104, dashboard vite built"
+  "provider_pair": {
+    "jarvis_code_head": "41350dccd4fdb1b44fa6f2697e4035fc4514baa2",
+    "jarvis_tree": "85ea2fdd192a650759e5cfc8a7152a6e0424d8ce",
+    "second_brain_head": "7336527bb1040c42b5ae5c33136f22ea33abb88b",
+    "second_brain_worktree": "/home/jm/orca/workspaces/second-brain-app/task-30-b3b",
+    "wheel": "/tmp/task30-final-sb-wheel/second_brain-1.0.7-py3-none-any.whl",
+    "wheel_sha256": "dcffa57bd011d59f0993583fee435413ebb0fb293fb3de941b567cca8e70e762",
+    "python": "/tmp/task30-final-py/bin/python",
+    "node": "v24.19.0"
   },
   "migration": {
     "file": "097_memory_deletion_terminal_refusal.sql",
     "journal_id": "097_memory_deletion_terminal_refusal.sql",
-    "live_table": "memory_deletion_effect_requests",
-    "note": "042 created memory_deletion_requests and 045 renamed it to memory_deletion_effect_requests. The legacy memory_deletion_requests table already had failed. The rebuild adds conflict and reconciling:conflict on the live effect table, events, attempts, and proofs, then VACUUMs so freelist pages do not change serialize() after a rolled-back write.",
-    "fresh_db": "schema_migrations checksum equals the file sha256 and the transition trigger contains reconciling:conflict",
-    "upgrade": "requested row, event, and attempt copied from a database stopped at 096 were byte-identical after 097"
+    "sha256": "49709eddb60130740749b4f8e52853ccf3ef3cb71421be85004049c28ecb918e",
+    "collision": "none. Main d2c0947 added no migration at or above 097. Filename set is unique. Pre-existing duplicate prefixes remain 028, 072, 073, 074, 075, 079, 080."
+  },
+  "organic_b3": {
+    "test": "tests/integration/memory-real-process-driver.test.ts",
+    "result": "passed inside npm run verify, 20788ms, after the excerpt narrowing commit",
+    "provider": "apply-requests stdout state=failed phase=claimed code=EFFECT_PRIOR_STALE. The test does not write the provider journal.",
+    "lane": "memory_correction_requests state=conflict failure_code=MEMORY_PROVIDER_FAILED",
+    "control": "control_command_requests state=failed failure_code=MEMORY_PROVIDER_FAILED; memory.correction.refused effect count stays 1",
+    "resend": "memory_correction_attempts stays 1 and the provider journal rows are unchanged after a second reconcilePending",
+    "reads": "search(old), search(corrected), and search(Task) are current; forgotten text is absent from excerpts",
+    "high_water": "memory_tombstone_chain latest row equals tombstone_replica latest row equals active share/vault/generation.json tombstone_sequence and tombstone_set_root",
+    "deletion": "Not added. A deletion of the already-forgotten target throws MEMORY_DELETION_TARGET_STALE in memory-deletion-dispatch.ts before any provider frame. An organic EFFECT_PRIOR_STALE forget cannot be produced without journal injection. The injected observation remains tests/integration/memory-deletion-terminal-refusal.test.ts, which passed in this verify (1 test, 3564ms)."
+  },
+  "verify": {
+    "command": "npm run verify",
+    "node": "v24.19.0 abi=137",
+    "env": "TASK30_PROVIDER_WHEEL sha256 dcffa57bd011d59f0993583fee435413ebb0fb293fb3de941b567cca8e70e762 TASK30_PROVIDER_SHA=7336527bb1040c42b5ae5c33136f22ea33abb88b",
+    "log": "/tmp/task30-final-verify.log",
+    "runtime": "JARVIS_RUNTIME_OK",
+    "lint": "eslint --max-warnings=0 exit 0",
+    "architecture": "cycles 0, modules 735, edges 2755",
+    "typecheck": "tsc backend, dashboard, and e2e exit 0",
+    "build": "backend and dashboard vite built",
+    "backend_shard_1": "24 failed, 2121 passed, 2145 tests",
+    "backend_shard_2": "9 failed, 2129 passed, 2138 tests",
+    "npm_test_exit": 1,
+    "dashboard_separate": "44 files, 297 passed, exit 0. npm test did not reach dashboard because the backend shards failed.",
+    "acceptance_separate": "exit 0, aggregate_status stopped, completion_promoted true, gjc_dispatched false",
+    "smoke_separate": "exit 0",
+    "classification": "The 31 timeout failures are the same test names that fail at 5000ms on main d2c0947 (doctor isolation 4 plus the other 27 in /tmp/task30-main-timeouts.log). Timeouts were not raised. The two assertion failures are reviewability: task12 offenders are identical on committed main and this head (phone-gateway-remote.ts max 166, remote-approval-lifecycle.ts max 164, remote-approval-registration.ts max 170, remote-approval.ts max 165). personal-context on main also fails control-plane.ts at 246 pure lines; this head is 240 and is not an offender."
+  },
+  "focused": {
+    "files": "13 passed, 1 failed",
+    "tests": "51 passed, 1 failed",
+    "failure": "personal-context-remediation reviewability, same four Task 35 line-length offenders as committed main",
+    "log": "/tmp/task30-focused.log"
   },
   "counts": {
-    "focused_deletion_and_lifecycle_passed": 18,
-    "memory_migration_control_passed": 1196,
-    "verify_passed": 2120,
-    "verify_timeout_failures": 9,
+    "focused_passed": 51,
+    "focused_failed_preexisting": 1,
+    "verify_backend_passed": 4250,
+    "verify_backend_timeout_failures": 31,
+    "verify_backend_reviewability_failures": 2,
+    "dashboard_passed": 297,
     "cleanup": 0,
     "session_records_deleted": 0,
     "production_changes": 0
   },
-  "verify": {
-    "command": "npm run verify with TASK30_PROVIDER_WHEEL=9ba7d55312f097ca06c0fc9e5d8e6a0c452ad261f0b49111c07a1afa50462a06 TASK30_PROVIDER_SHA=ef6a774d15344b3771aeb62093f77325eaa18d8d",
-    "node": "v24.19.0",
-    "result": "lint, architecture, typecheck, and build passed. npm test reported 2120 passed and 9 failed, every failure a 5000ms timeout.",
-    "timeout_classification": "runbook, microloops, and negative-evidence also time out at 5000ms on main d2c0947 (ancestor 086a097, identical test files) and pass when the timeout is 20000ms. They are load flakes, not this change. log: /tmp/task30-deletion-verify.log"
-  },
   "notes": [
-    "The shared observer already marks failed/expired before the apply phase as refused. The deletion saga now ends that observation in conflict and settles the control failed exactly once.",
-    "A mid-apply failure (phase staging) stays reconciling and is not resent.",
-    "Preflight runs before the first deletion frame and before the tombstone commit. Resume of an already-authorized queued deletion does not call the provider again: the crash worker treats that call as unexpected, and post-send SIGKILL remains one frame.",
-    "An organic post-send deletion refusal could not be induced on ef6a774 without B3b. CLI remember after accept raises TOMBSTONE_SET_STALE; mutating the sealed generation raises GENERATION_SPLIT_BRAIN. The real-provider test therefore writes the same failed/claimed journal state the provider records and observes it through the real status call. The read-wedge itself was not worked around.",
-    "memory-deletion-store.ts is 224 pure lines and memory-deletion-dispatch.ts is 207, both in the warning band. No further lines were added.",
-    "engineering-map docs:sync hook printed rc=1 and did not block the commit."
+    "Merge was a real merge commit, not a rebase. No conflicts. Migration 097 did not collide.",
+    "The only provider wheel pin in the tree is tests/fixtures/second-brain-config-oracle.ts. Its tomllib and load_config checks are unchanged. No release-integration fixture pins a wheel or commit.",
+    "Installed sb/config.py bytes match the wheel member. Second Brain worktree left clean at 7336527.",
+    "memory-real-process-driver.test.ts is 615 pure lines with the existing SIZE_OK mark. The stale refusal is part of the same indivisible lifecycle.",
+    "engineering-map docs:sync hook printed rc=1 and did not block the commits.",
+    "No amend, rebase, push, deploy, or session-record deletion."
   ]
 }
