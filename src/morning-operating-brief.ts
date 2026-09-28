@@ -36,6 +36,36 @@ export function beforeMorningAssemblyDeadline(at: Date): boolean {
   return at.getTime() < kstInstant(kstLocalDate(at), 7, 20).getTime();
 }
 
+/** First observation of the local date wins, so a later 07:15 cycle cannot move an earlier subscription. */
+export function installMorningRefreshSubscription(authority: AuthorityDb, at: Date): Date {
+  const date = kstLocalDate(at);
+  authority.db.prepare(
+    "INSERT INTO morning_refresh_subscriptions(local_date, subscribed_at) VALUES (?, ?) ON CONFLICT(local_date) DO NOTHING",
+  ).run(date, at.toISOString());
+  return morningRefreshSubscription(authority, at) ?? at;
+}
+
+export function morningRefreshSubscription(authority: AuthorityDb, at: Date): Date | undefined {
+  const row = authority.db.prepare(
+    "SELECT subscribed_at FROM morning_refresh_subscriptions WHERE local_date=?",
+  ).get(kstLocalDate(at)) as { subscribed_at: string } | undefined;
+  return row === undefined ? undefined : new Date(row.subscribed_at);
+}
+
+export function persistMorningOperatingBrief(authority: AuthorityDb, briefId: string, operations: MorningOperatingBrief): void {
+  authority.db.prepare(
+    "INSERT INTO morning_operating_publications(brief_id, operations_json) VALUES (?, ?)",
+  ).run(briefId, JSON.stringify(operations));
+}
+
+export function loadMorningOperatingBrief(authority: AuthorityDb, briefId: string): MorningOperatingBrief | null {
+  const row = authority.db.prepare(
+    "SELECT operations_json FROM morning_operating_publications WHERE brief_id=?",
+  ).get(briefId) as { operations_json: string } | undefined;
+  if (row === undefined) return null;
+  return JSON.parse(row.operations_json) as MorningOperatingBrief;
+}
+
 export function refreshSubscriptionOnTime(subscribedAt: Date, at: Date): boolean {
   return subscribedAt.getTime() < kstInstant(kstLocalDate(at), 7, 0).getTime();
 }

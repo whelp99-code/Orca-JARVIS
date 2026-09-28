@@ -134,6 +134,7 @@ export type DailyLoopAdvance = "step_completed" | "all_completed" | "failed" | "
 export interface DailyLoopStepExecutor {
   advance(claim: DailyLoopClaim): DailyLoopAdvance;
   complete(claim: DailyLoopClaim): void;
+  defer?(at: Date): boolean;
 }
 export type DailyLoopUncertainReason = "EXECUTION_OUTCOME_UNCERTAIN";
 export type DailyLoopErrorCode =

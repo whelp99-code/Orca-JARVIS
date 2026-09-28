@@ -177,6 +177,7 @@ export class DailyControlLoop {
 		if (completed.includes(runId) || this.store.steps(runId).length === 0) return;
 		let claim: DailyLoopClaim | undefined;
 		try {
+			if (this.stepExecutor?.defer?.(this.now())) return;
 			claim = this.store.claim({
 				run_id: runId, owner_id: this.options.owner_id, at: this.now(), lease_ms: this.options.lease_ms,
 			}, this.options.recovery_window_ms);

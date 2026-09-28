@@ -15,6 +15,10 @@ import { assertDailyLoopIntegrity } from "./daily-loop-integrity.js";
 import { verifyMorningBriefResult } from "./morning-brief-artifact.js";
 import { executeEveningCommand } from "./cli-evening-command.js";
 import { SecondBrainRefreshReceiptReader } from "./second-brain-refresh-receipt.js";
+import {
+  beforeMorningAssemblyDeadline, installMorningRefreshSubscription, loadMorningOperatingBrief, morningRefreshSubscription,
+  refreshSubscriptionOnTime,
+} from "./morning-operating-brief.js";
 import { parseTrustedCloseoutKey } from "./evening-closeout-crypto.js";
 import type { TrustedCloseoutKey } from "./evening-closeout-types.js";
 
@@ -71,10 +75,16 @@ export async function executeDailyCommand(context: CliCommandContext): Promise<R
   const config = await readConfig(context.values.input);
   try {
     const clock = () => commandNow(context);
+    let subscribed = false;
+    const morningClock = () => {
+      const at = clock();
+      if (!subscribed) { subscribed = true; installMorningRefreshSubscription(context.db, at); }
+      return at;
+    };
     // The loop takes a plain closed record, so the adapter is delegated to rather than handed over.
     const receipts = new SecondBrainRefreshReceiptReader(config.refreshReceiptPath);
     const loop = createStoredMorningDailyLoop(context.db, { ...config.daily, owner_id: `daily-morning:${process.pid}:${randomUUID()}`,
-      clock, event_source: { drain: () => [] },
+      clock: morningClock, event_source: { drain: () => [] },
       refresh_reader: { read: (at: Date) => receipts.read(at) } },
     config.closeoutKey, await dailyProductionPolicy(context.db, clock));
     const result = await loop.startup();
@@ -112,6 +122,11 @@ function morningResult(db: AuthorityDb, at: Date, closeoutKey?: TrustedCloseoutK
     if (row.state === "uncertain") throw new JarvisError("DAILY_LOOP_OUTCOME_UNCERTAIN");
     if (row.state === "failed") throw new JarvisError(`DAILY_LOOP_${row.failure_code}`);
     if (row.state !== "completed") {
+      const subscribedAt = morningRefreshSubscription(db, at);
+      if (subscribedAt !== undefined && refreshSubscriptionOnTime(subscribedAt, at) && beforeMorningAssemblyDeadline(at)) {
+        return { provider_refresh: "unavailable", run: { run_id: row.run_id, state: row.state, failure_code: null },
+          brief: null, operating_brief: null, held_for_refresh: true, usage: dailyLoopUsage(db, date, closeoutKey) };
+      }
       if (timestamp >= row.expires_at) throw new JarvisError("DAILY_LOOP_DEADLINE_EXHAUSTED");
       throw new JarvisError(row.lease_expires_at !== null && timestamp < row.lease_expires_at
         ? "DAILY_LOOP_LEASE_ACTIVE" : "DAILY_LOOP_STALE_LEASE");
@@ -135,6 +150,7 @@ function morningResult(db: AuthorityDb, at: Date, closeoutKey?: TrustedCloseoutK
     return { provider_refresh: PROVIDER_REFRESH[refresh.reason],
       run: { run_id: row.run_id, state: row.state, failure_code: row.failure_code },
       brief: { brief_id: brief.brief_id, state: brief.context_readiness, item_count: items.length },
+      operating_brief: loadMorningOperatingBrief(db, brief.brief_id),
       usage: dailyLoopUsage(db, date, closeoutKey) };
   }).deferred();
 }

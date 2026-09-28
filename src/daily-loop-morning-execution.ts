@@ -9,7 +9,10 @@ import { DailyLoopError, type DailyLoopAdvance, type DailyLoopClaim,
 import { DailyBudgetExceeded, dailyLoopUsage, dailyUsageExhausted } from "./daily-loop-usage.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { MorningBriefPublisher } from "./morning-brief-publisher.js";
-import type { MorningAssemblyOptions } from "./morning-operating-brief.js";
+import {
+  beforeMorningAssemblyDeadline, morningRefreshReasons, morningRefreshSubscription,
+  refreshSubscriptionOnTime, type MorningAssemblyOptions,
+} from "./morning-operating-brief.js";
 import type { PreparedMemoryReference } from "./memory-reference-context.js";
 import { produceStoredDailyRecommendation } from "./personal-daily-production.js";
 import { parseTrustedCloseoutKey } from "./evening-closeout-crypto.js";
@@ -54,13 +57,27 @@ export function createStoredMorningDailyLoop(authority: AuthorityDb, optionsValu
   } };
   const store = new DailyLoopStore(authority);
   return new DailyControlLoop(store, options,
-    new StoredMorningSteps(authority, store, options, {}, closeoutKey, production), "morning", true);
+    new StoredMorningSteps(authority, store, options, closeoutKey, production), "morning", true);
 }
 
 class StoredMorningSteps implements DailyLoopStepExecutor {
+  private refreshSeen = false;
+  private refreshValue: unknown = null;
   constructor(private readonly authority: AuthorityDb, private readonly store: DailyLoopStore,
-    private readonly options: DailyLoopOptions, private readonly assembly: MorningAssemblyOptions,
+    private readonly options: DailyLoopOptions,
     private readonly closeoutKey?: TrustedCloseoutKey, private readonly production?: DailyProductionSource) {}
+
+  private assembly(at: Date): MorningAssemblyOptions {
+    const subscribedAt = morningRefreshSubscription(this.authority, at);
+    return { freshnessMs: this.options.refresh_freshness_ms, ...(subscribedAt === undefined ? {} : { subscribedAt }) };
+  }
+
+  defer(at: Date): boolean {
+    const subscribedAt = this.assembly(at).subscribedAt;
+    if (subscribedAt === undefined || !refreshSubscriptionOnTime(subscribedAt, at) || !beforeMorningAssemblyDeadline(at)) return false;
+    const reasons = morningRefreshReasons(at, this.options.refresh_reader.read(at), this.options.refresh_freshness_ms, true);
+    return reasons.some(reason => reason !== "refresh_subscription_late");
+  }
 
   complete(claimValue: DailyLoopClaim): void {
     const claim = parseDailyLoopClaim(claimValue);
@@ -134,12 +151,19 @@ class StoredMorningSteps implements DailyLoopStepExecutor {
                 ...(production.memory_reference === undefined
                   ? {} : { memory_reference: production.memory_reference }) });
             }
-            const publication = new MorningBriefPublisher(this.authority, now, {
-              subscribedAt: this.assembly.subscribedAt, freshnessMs: this.options.refresh_freshness_ms,
-            }).publish(claim, 1_048_576);
-            if (publication.held) { held = true; return; }
+            const publishAt = (at: Date) => new MorningBriefPublisher(this.authority, () => at, this.assembly(at))
+              .publish(claim, 1_048_576, undefined, this.refreshSeen ? this.refreshValue : null);
+            let cursor = now();
+            let publication = publishAt(cursor);
+            while (publication.held) {
+              const next = now();
+              if (next.getTime() <= cursor.getTime()) { held = true; return; }
+              cursor = next;
+              publication = publishAt(cursor);
+            }
           } else {
-            const refresh = this.options.refresh_reader.read(at); const completedAt = now();
+            this.refreshValue = this.options.refresh_reader.read(at); this.refreshSeen = true;
+            const refresh = this.refreshValue; const completedAt = now();
             const detail = evaluateRefreshContext(refresh, completedAt, this.options.refresh_freshness_ms);
             this.store.completeStep({ claim, step, detail, at: completedAt });
           }

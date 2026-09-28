@@ -13,7 +13,7 @@ import { bindMorningPublication, morningPublicationDependencies, MorningPublicat
   from "./morning-publication-lineage.js";
 import {
   beforeMorningAssemblyDeadline, citedMorningOperations, CITED_ACTION_CAP, morningRefreshReasons, persistCitedNotification,
-  refreshSubscriptionOnTime, type MorningAssemblyOptions, type MorningOperatingBrief,
+  persistMorningOperatingBrief, refreshSubscriptionOnTime, type MorningAssemblyOptions, type MorningOperatingBrief,
 } from "./morning-operating-brief.js";
 
 export { MorningPublicationError } from "./morning-publication-lineage.js";
@@ -39,10 +39,11 @@ export class MorningBriefPublisher {
       const maxActions = maxActionsValue === undefined ? CITED_ACTION_CAP : integer(maxActionsValue, 1, CITED_ACTION_CAP);
       return this.authority.db.transaction(() => {
         const at = parseDailyLoopInstant(this.clock()); const timestamp = at.toISOString();
-        const subscribedAt = this.assembly.subscribedAt ?? at;
-        const subscriptionOnTime = refreshSubscriptionOnTime(subscribedAt, at);
+        const subscribedAt = this.assembly.subscribedAt;
+        const subscriptionOnTime = subscribedAt !== undefined && refreshSubscriptionOnTime(subscribedAt, at);
         const reasons = morningRefreshReasons(at, refreshValue, this.assembly.freshnessMs ?? 1_200_000, subscriptionOnTime);
-        if (this.assembly.subscribedAt !== undefined && beforeMorningAssemblyDeadline(at) && reasons.length > 0) return unpublished(true);
+        const refreshBlocking = reasons.some(reason => reason !== "refresh_subscription_late");
+        if (subscriptionOnTime && beforeMorningAssemblyDeadline(at) && refreshBlocking) return unpublished(true);
         const projections = new MemoryProjectionAuthority(this.authority); projections.assertReady();
         assertDailyLoopIntegrity(this.authority, claim.run_id);
         const run = this.authority.db.prepare("SELECT * FROM daily_loop_runs WHERE run_id=?").get(claim.run_id) as
@@ -92,6 +93,7 @@ export class MorningBriefPublisher {
           { kind: "morning_brief", id: brief.brief_id, component_id: brief.brief_id },
         ], dependencies, completedAt);
         const operations = citedMorningOperations(this.authority, brief, completedAt, reasons, subscriptionOnTime);
+        persistMorningOperatingBrief(this.authority, brief.brief_id, operations);
         persistCitedNotification(this.authority, brief, lineage, completedAt.toISOString());
         assertDailyLoopIntegrity(this.authority, claim.run_id);
         return { published: true, held: false, brief_id: brief.brief_id, source_items: items.length,

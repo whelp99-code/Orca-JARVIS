@@ -74,7 +74,7 @@ describe("cited morning operating brief", () => {
 
   it("holds publication until 07:20 when the refresh has not completed", async () => {
     const { db, claim } = await morningRun(AT_0710);
-    const result = new MorningBriefPublisher(db, () => AT_0710, { subscribedAt: AT_0710 }).publish(claim, 1_048_576);
+    const result = new MorningBriefPublisher(db, () => AT_0710, { subscribedAt: AT_0650 }).publish(claim, 1_048_576);
     expect(result).toMatchObject({ published: false, held: true });
     expect(db.db.prepare("SELECT state FROM daily_loop_steps").get()).toEqual({ state: "pending" });
   });
