@@ -60,6 +60,20 @@ export async function setBogusSignature(
   });
 }
 
+export async function setUserVerified(authenticator: VirtualAuthenticator, verified: boolean): Promise<void> {
+  await authenticator.cdp.send("WebAuthn.setUserVerified", {
+    authenticatorId: authenticator.authenticatorId,
+    isUserVerified: verified,
+  });
+}
+
+export async function setBadUv(authenticator: VirtualAuthenticator, bad: boolean): Promise<void> {
+  await authenticator.cdp.send("WebAuthn.setResponseOverrideBits", {
+    authenticatorId: authenticator.authenticatorId,
+    isBadUV: bad,
+  });
+}
+
 export async function createResidentCredential(
   page: Page, options: Record<string, unknown>,
 ): Promise<CredentialJson> {

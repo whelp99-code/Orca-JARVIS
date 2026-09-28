@@ -124,6 +124,26 @@ export function hasExactMutationOrigin(
   return found === expected;
 }
 
+/**
+ * Same-origin GET reads: browsers omit `Origin` on same-origin fetches, and a
+ * cross-origin request that carries the custom CSRF header is CORS-mode, which
+ * always sends `Origin`. So an absent header or the exact origin is same-origin;
+ * anything else is foreign. Mutations keep `hasExactMutationOrigin`.
+ */
+export function hasSameOriginReadOrigin(
+  request: Pick<IncomingMessage, "rawHeaders">,
+  expected: string,
+): boolean {
+  let found: string | undefined;
+  for (let index = 0; index < request.rawHeaders.length; index += 2) {
+    const name = request.rawHeaders[index];
+    if (name?.toLowerCase() !== "origin") continue;
+    if (found !== undefined) return false;
+    found = request.rawHeaders[index + 1];
+  }
+  return found === undefined || found === expected;
+}
+
 function isJsonContentType(header: string | readonly string[] | undefined): boolean {
   const value = headerValue(header);
   if (value === undefined) return false;

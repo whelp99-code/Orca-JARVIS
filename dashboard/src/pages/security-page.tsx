@@ -1,28 +1,44 @@
 import { useState } from "react";
 import "../styles/security.css";
+import { gatewayOrigin } from "../webauthn-ceremony.js";
+
+export type SecurityCredential = {
+  readonly credential_id_prefix: string;
+  readonly state: string;
+};
 
 export type SecurityClient = {
-  readonly listCredentials: () => Promise<{ readonly items: readonly { readonly credential_id_prefix: string; readonly state: string }[] }>;
-  readonly beginEnrollment: () => Promise<{ readonly enrollment_id: string }>;
+  readonly listCredentials: () => Promise<{ readonly items: readonly SecurityCredential[] }>;
+  readonly beginEnrollment: () => Promise<{ readonly enrollment_id: string; readonly request_id?: string }>;
+  readonly registerPasskey: (enrollmentId: string, beginRequestId: string) => Promise<{ readonly credential_id: string; readonly activation_request_id: string }>;
+  readonly stageRevocation: (credentialId: string) => Promise<{ readonly request_id: string }>;
   readonly loadRequest: (requestId: string) => Promise<{
     readonly request_id: string; readonly action: string; readonly action_level: number;
     readonly command_digest: string; readonly target_digest: string; readonly args_digest: string;
     readonly requested_at: string; readonly expires_at: string; readonly status: string;
     readonly target: unknown; readonly args: unknown;
   }>;
-  readonly decideRemote: (requestId: string, decision: "approve" | "reject") => Promise<{ readonly challenge_id: string }>;
+  readonly decideRemote: (requestId: string, decision: "approve" | "reject") => Promise<{
+    readonly challenge_id: string; readonly outcome?: string; readonly receipt_id?: string;
+  }>;
 };
 
 export type SecurityPageProps = Readonly<{
   client: SecurityClient;
+  enrollmentOrigin?: "local" | "gateway";
 }>;
 
-export function SecurityPage({ client }: SecurityPageProps) {
+export function SecurityPage({ client, enrollmentOrigin = gatewayOrigin() ? "gateway" : "local" }: SecurityPageProps) {
   const [requestId, setRequestId] = useState("");
+  const [enrollmentId, setEnrollmentId] = useState("");
+  const [beginRequestId, setBeginRequestId] = useState("");
+  const [credentialId, setCredentialId] = useState("");
+  const [credentials, setCredentials] = useState<readonly SecurityCredential[]>([]);
   const [review, setReview] = useState<Awaited<ReturnType<SecurityClient["loadRequest"]>> | null>(null);
   const [status, setStatus] = useState("Passkeys stay on this device. Linux verifies and mints the receipt.");
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
+  const localEnrollment = enrollmentOrigin === "local";
 
   async function run(action: () => Promise<void>): Promise<void> {
     setBusy(true);
@@ -37,20 +53,63 @@ export function SecurityPage({ client }: SecurityPageProps) {
   }
 
   return (
-    <section className="page-frame dashboard-main security-page" aria-label="Security">
+    <section className="page-frame dashboard-main security-page" aria-label="Security" data-enrollment-origin={enrollmentOrigin}>
       <h1>보안</h1>
       <p className="security-lead">Remote approval requires a passkey assertion. A session cookie is never enough.</p>
+      <p className="security-note" role="note">Passkey enrollment starts only in the local owner session. Remote self-enrollment has no authority.</p>
       <p className="security-status" role="status">{status}</p>
       {error === null ? null : <p className="security-alert" role="alert">{error}</p>}
 
       <section className="panel" aria-labelledby="enroll-title">
         <h2 id="enroll-title">Owner passkey</h2>
-        <button type="button" className="security-action" disabled={busy} onClick={() => {
+        {localEnrollment ? null : <p role="status">Enrollment is unavailable on the gateway origin.</p>}
+        <button type="button" className="security-action" disabled={busy || !localEnrollment} onClick={() => {
           void run(async () => {
             const began = await client.beginEnrollment();
+            setEnrollmentId(began.enrollment_id);
+            setBeginRequestId(began.request_id ?? "");
             setStatus(`Enrollment staged ${began.enrollment_id}`);
           });
         }}>Begin enrollment</button>
+        <label className="security-label">
+          Enrollment ID
+          <input value={enrollmentId} onChange={event => setEnrollmentId(event.target.value)} autoComplete="off" />
+        </label>
+        <label className="security-label">
+          Begin request ID
+          <input value={beginRequestId} onChange={event => setBeginRequestId(event.target.value)} autoComplete="off" />
+        </label>
+        <button type="button" className="security-action" disabled={busy || enrollmentId.length === 0 || beginRequestId.length === 0} onClick={() => {
+          void run(async () => {
+            const registered = await client.registerPasskey(enrollmentId, beginRequestId);
+            setCredentialId(registered.credential_id);
+            setStatus(`Passkey registered ${registered.credential_id}. Activation ${registered.activation_request_id} waits for the local owner receipt.`);
+          });
+        }}>Register passkey</button>
+        <button type="button" className="security-action" disabled={busy} onClick={() => {
+          void run(async () => {
+            const listed = await client.listCredentials();
+            setCredentials(listed.items);
+            setStatus(listed.items.length === 0 ? "No passkeys" : `Listed ${String(listed.items.length)} passkeys`);
+          });
+        }}>Refresh credentials</button>
+        {credentials.length === 0 ? <p className="empty-state">No passkeys listed</p> : (
+          <ul className="security-credentials">
+            {credentials.map(item => (
+              <li key={item.credential_id_prefix}><span className="mono">{item.credential_id_prefix}</span> {item.state}</li>
+            ))}
+          </ul>
+        )}
+        <label className="security-label">
+          Credential ID
+          <input value={credentialId} onChange={event => setCredentialId(event.target.value)} autoComplete="off" />
+        </label>
+        <button type="button" className="security-action" disabled={busy || !localEnrollment || credentialId.length === 0} onClick={() => {
+          void run(async () => {
+            const staged = await client.stageRevocation(credentialId);
+            setStatus(`Revocation staged ${staged.request_id}`);
+          });
+        }}>Stage revocation</button>
       </section>
 
       <section className="panel" aria-labelledby="review-title">
@@ -71,14 +130,14 @@ export function SecurityPage({ client }: SecurityPageProps) {
             void run(async () => {
               if (review === null) return;
               const decided = await client.decideRemote(review.request_id, "approve");
-              setStatus(`Challenge ${decided.challenge_id}`);
+              setStatus(decided.outcome === undefined ? `Challenge ${decided.challenge_id}` : `Decision ${decided.outcome}`);
             });
           }}>Approve</button>
           <button type="button" className="security-action" disabled={busy || review === null} onClick={() => {
             void run(async () => {
               if (review === null) return;
               const decided = await client.decideRemote(review.request_id, "reject");
-              setStatus(`Challenge ${decided.challenge_id}`);
+              setStatus(decided.outcome === undefined ? `Challenge ${decided.challenge_id}` : `Decision ${decided.outcome}`);
             });
           }}>Reject</button>
         </div>
@@ -98,37 +157,5 @@ export function SecurityPage({ client }: SecurityPageProps) {
   );
 }
 
-export function createBrowserSecurityClient(): SecurityClient {
-  return {
-    async listCredentials() {
-      return { items: [] };
-    },
-    async beginEnrollment() {
-      const session = await (await fetch("/api/v1/session")).json() as { csrf_token: string };
-      const response = await fetch("/api/v1/security/webauthn/enrollments", {
-        method: "POST",
-        headers: { "content-type": "application/json", "x-jarvis-csrf": session.csrf_token },
-        body: JSON.stringify({ schema_version: 1 }),
-      });
-      const body = await response.json() as { enrollment_id?: string; error?: { message: string } };
-      if (!response.ok || body.enrollment_id === undefined) throw new Error(body.error?.message ?? "Remote approval unavailable");
-      return { enrollment_id: body.enrollment_id };
-    },
-    async loadRequest(requestId) {
-      const response = await fetch(`/api/v1/remote-approvals/${encodeURIComponent(requestId)}`);
-      const body = await response.json() as Awaited<ReturnType<SecurityClient["loadRequest"]>> & { error?: { message: string } };
-      if (!response.ok) throw new Error(body.error?.message ?? "Remote approval unavailable");
-      return body;
-    },
-    async decideRemote(requestId, decision) {
-      const response = await fetch(`/api/v1/remote-approvals/${encodeURIComponent(requestId)}/options`, {
-        method: "POST",
-        headers: { "content-type": "application/json" },
-        body: JSON.stringify({ schema_version: 1, decision }),
-      });
-      const body = await response.json() as { challenge_id?: string; error?: { message: string } };
-      if (!response.ok || body.challenge_id === undefined) throw new Error(body.error?.message ?? "Remote approval unavailable");
-      return { challenge_id: body.challenge_id };
-    },
-  };
-}
+
+export { createBrowserSecurityClient } from "../security-client.js";

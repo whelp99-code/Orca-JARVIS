@@ -1,0 +1,121 @@
+{
+  "schema_version": 1,
+  "task": 35,
+  "status": "candidate",
+  "base": "82dc6f388df077b2544713aeae2f5d6741fb9b03",
+  "merged_main": "8a8c5c1f1771d7f0befdd3648385ff4e794b098e",
+  "merge_commit": "92f36f174c64423f9f2ad025b16b7ed163b10fbb",
+  "fix_commit": "cde719152652dba391d1e05edecca4a093df0e85",
+  "head": "92f36f174c64423f9f2ad025b16b7ed163b10fbb",
+  "tree": "task-35-remediation",
+  "worktree": "/home/jm/orca/workspaces/Orca-JARVIS/task-35-remediation",
+  "gate_blockers_fixed": {
+    "B3-R": {
+      "symptom": "production composition can never register a passkey: /registrations/<ceremony_id>/verify resolved the ceremony id as an enrollment id then returned 401 REMOTE_SESSION_REQUIRED",
+      "fix": "src/remote-approval-ingress.ts lookupStaged now branches on registrationFrom(path): options -> enrollment-begin lookup; verify -> look up webauthn_registration_ceremonies_v2 by ceremony id and bind to its owning local enrollment_id + begin_request_id. Enrollment begin stays local-session only per contracts.md.",
+      "test": "tests/integration/remote-approval-gateway-production.test.ts enroll -> register verify -> approve through createPhoneGatewayServer with the PRODUCTION composer/resolver"
+    },
+    "B2-R(a)": {
+      "symptom": "security page blank through gateway with shipped build: no Vite manifest while gateway serves only manifest-listed assets",
+      "fix": "dashboard/vite.config.ts enables build.manifest = manifest.json at the path the gateway reads (dist/dashboard/manifest.json)",
+      "test": "tests/integration/phone-gateway-security-assets.test.ts serves /security and its JS/CSS from a REAL dashboard build; refuses an unlisted asset"
+    },
+    "B2-R(b)-local": {
+      "symptom": "credential list never loads locally: same-origin GET has no Origin -> 403 LOCAL_SESSION_REQUIRED",
+      "fix": "src/dashboard/request-boundary.ts hasSameOriginReadOrigin (absent Origin or exact match) used by read GETs in src/dashboard/remote-lifecycle-routes.ts requireLocalSession; mutation origin checks unchanged",
+      "test": "tests/integration/remote-approval-gateway-production.test.ts lists credentials on the local origin"
+    },
+    "B2-R(b)-gateway": {
+      "symptom": "credential list never loads through gateway: security-client.ts called /api/v1/session (404 on gateway) and omitted phone CSRF -> 403 PHONE_CSRF_REQUIRED",
+      "fix": "dashboard/src/security-client.ts uses shared jsonFetch/jsonPost that always sets x-jarvis-csrf and fetches the token from /api/v1/phone/session when on the gateway origin",
+      "test": "tests/integration/remote-approval-gateway-production.test.ts lists credentials on the gateway origin; dashboard/src/pages/security-client-list.test.ts"
+    },
+    "B3-R2": {
+      "symptom": "forged, other-owner, expired, and replayed registration verify created no credential but wrote zero remote.% audit rows; expiry rolled back so the ceremony stayed issued",
+      "fix": "verifyRegistration commits expiry in its own transaction, then every registration-verify rejection including an unknown ceremony id writes one typed remote audit row in a committed transaction and still fails closed with no credential",
+      "test": "tests/integration/remote-approval-gateway-production.test.ts through createPhoneGatewayServer and the production composer"
+    },
+    "B5-R": {
+      "symptom": "args tampered after options made consistentRequest fail, so verify returned 401 REMOTE_SESSION_REQUIRED with zero audit rows",
+      "fix": "options issuance still requires the digest check; verify of an existing challenge is admitted so translateReservedAssertion's binding check returns 403 binding with one audit row and zero receipts",
+      "test": "tests/integration/remote-approval-gateway-production.test.ts modified-arg approval verify through createPhoneGatewayServer"
+    },
+    "cheap_note_1_consistentRequest": {
+      "fix": "src/remote-approval-ingress.ts consistentRequest still recomputes controlCommandDigest when issuing options and for requests without an existing challenge",
+      "test": "tests/integration/remote-approval-gateway-production.test.ts refuses tampered args at options"
+    },
+    "cheap_note_2_up_uv": {
+      "fix": "src/remote-approval.ts records parsed up/uv (assertionAuditFlags from authenticatorData) on the early-rejection audit write when an assertion exists",
+      "test": "e2e/remote-approval-gateway-page.spec.ts missing-UV refusal asserts uv=0"
+    },
+    "cheap_note_3_signer_source": {
+      "fix": "src/remote-approval-compose.ts distinguishes signerSource unconfigured|rejected|file so a rejected existing key file (bad path/perm) is not reported as signer_unconfigured",
+      "test": "tests/integration/remote-approval-compose-readiness.test.ts"
+    }
+  },
+  "refactor": {
+    "reason": "src/remote-approval.ts exceeded the 250 pure-LOC ceiling after cheap-note-2",
+    "action": "extracted classifyReadiness + SignerSource/RemoteReadiness/ReadinessInput into new src/remote-approval-readiness.ts (31 LOC); remote-approval.ts now under ceiling"
+  },
+  "new_files": [
+    "src/remote-approval-readiness.ts",
+    "tests/fixtures/remote-approval-gateway-harness.ts",
+    "tests/integration/remote-approval-gateway-production.test.ts",
+    "tests/integration/phone-gateway-security-assets.test.ts",
+    "dashboard/src/pages/security-client-list.test.ts",
+    "e2e/remote-approval-gateway-fixture.ts",
+    "e2e/remote-approval-gateway-page.spec.ts"
+  ],
+  "red": {
+    "B3-R": "production register verify returned 401 REMOTE_SESSION_REQUIRED before the fix",
+    "B2-R(a)": "gateway served /security with no manifest -> assets denied before build.manifest was enabled",
+    "B2-R(b)-local": "same-origin GET returned 403 LOCAL_SESSION_REQUIRED before hasSameOriginReadOrigin",
+    "B2-R(b)-gateway": "gateway credential list returned 404 then 403 PHONE_CSRF_REQUIRED before the shared jsonFetch path",
+    "cheap_note_1": "consistentRequest ignored action/target/args/digest/expiry before the recompute",
+    "cheap_note_2": "missing-UV audit stored uv=1 before assertionAuditFlags",
+    "cheap_note_3": "rejected key file reported signer_unconfigured before signerSource"
+  },
+  "round3": {
+    "merged_main": "8a8c5c1 Task 32 Memory surface, real merge 92f36f1, no conflicts; security page and memory files both present",
+    "dashboard_policy_startup": "same 2 timeouts at 5000ms on this head and on archive of 48287b6 (creates the default service; rejects missing/malformed policy). The other 2 tests passed on both. Pre-existing. Not caused by this change."
+  },
+  "green": {
+    "targeted_backend_files": 11,
+    "targeted_backend_tests": 91,
+    "targeted_backend_note": "rerun on merge 92f36f1: production gateway, security assets, compose readiness, control plane, policy TTL, fail-closed, gateway resolver, phone-gateway unit, serve-header unit and integration, readiness",
+    "dashboard_files": 44,
+    "dashboard_tests": 297,
+    "react_warnings": 0,
+    "playwright_remote": "9 passed on merge 92f36f1 with PLAYWRIGHT_BROWSERS_PATH set; Node 24.19.0",
+    "lint": "pass (--max-warnings=0) on merge 92f36f1",
+    "typecheck": "pass on merge 92f36f1",
+    "architecture_check": "pass on merge 92f36f1 (734 modules, 2753 edges, 0 cycles)",
+    "build": "pass on merge 92f36f1 (dist/dashboard/manifest.json emitted; backend 1557 files, 103 migrations)"
+  },
+  "manual_qa": {
+    "surface": "shipped /security page over fixture TLS through the real phone gateway with the production composer, CDP virtual authenticator, page-driven ceremonies only",
+    "happy": "enroll locally, register the passkey through the gateway, credential list shows the passkey on both origins, approve one staged request -> exactly one receipt + one claim, second claim refused",
+    "failure_classes": "missing-UV assertion mints nothing (0 receipts) and audits once (rejected/crypto, uv=0)",
+    "screenshot": ".omo/evidence/task-35-remediation/playwright-output/*/happy-approved.png shows the shipped build rendering an active credential and gateway enrollment-unavailable messaging",
+    "touch_id": "not tested"
+  },
+  "adversarial_classes": [
+    "modified-arg",
+    "unknown-ceremony-id",
+    "replay",
+    "expired",
+    "missing-UV",
+    "wrong-owner",
+    "wrong-origin",
+    "wrong-RP",
+    "revoked",
+    "gateway-session-without-assertion"
+  ],
+  "cleanup": {
+    "processes": 0,
+    "ports": 0,
+    "temp": 0
+  },
+  "product_wip": 0,
+  "production_changes": 0
+}

@@ -181,6 +181,12 @@ describe("phone core route table", () => {
       ["GET", "/memory", ""],
       ["GET", "/NOTICE-ARGO.txt", ""],
       ["GET", "/assets/app.js", ""],
+      ["GET", "/security", ""],
+      ["GET", "/api/v1/remote-approvals/req-1", ""],
+      ["POST", "/api/v1/remote-approvals/req-1/options", ""],
+      ["POST", "/api/v1/remote-approvals/rch_1/verify", ""],
+      ["GET", "/api/v1/remote-approvals/rch_1/status", ""],
+      ["GET", "/api/v1/security/webauthn/credentials", ""],
       ["GET", "/api/v1/today", ""],
       ["GET", "/api/v1/decision-inbox", "?limit=20"],
       ["GET", "/api/v1/notification-intents", "?limit=1&cursor=abc"],
@@ -210,7 +216,7 @@ describe("phone core route table", () => {
       ["POST", "/api/v1/memory/candidates/x/decision", ""],
       ["GET", "/assets/../package.json", ""],
       ["GET", "/assets/app.js.map", ""],
-      ["GET", "/security", ""],
+      ["POST", "/api/v1/security/webauthn/enrollments", ""],
       ["GET", "/memory/", ""],
     ] as const;
     for (const [method, path, query] of denied) {

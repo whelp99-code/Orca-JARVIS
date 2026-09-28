@@ -14,7 +14,7 @@ import { RemoteApprovalError, remoteErrorBody, REMOTE_ERROR_CODES } from "../rem
 import { parseReasonBody, parseSchemaBody } from "../remote-approval-parse.js";
 import type { RemoteApprovalService } from "../remote-approval.js";
 import { DASHBOARD_ERROR_CODES, writeDashboardError, writeDashboardJson } from "./http.js";
-import { hasExactMutationOrigin, readJsonPost, writePostBoundaryError } from "./request-boundary.js";
+import { hasSameOriginReadOrigin, readJsonPost, writePostBoundaryError } from "./request-boundary.js";
 import { sessionMatchesCsrf, type DashboardSessionStore } from "./session.js";
 
 export type RemoteLifecycleRouteInput = {
@@ -148,9 +148,10 @@ async function handlePost(
   }
 }
 
+/** Read authentication: the local session CSRF token from a same-origin request. */
 function requireLocalSession(input: RemoteLifecycleRouteInput): void {
   const csrf = typeof input.request.headers["x-jarvis-csrf"] === "string" ? input.request.headers["x-jarvis-csrf"] : undefined;
-  if (!hasExactMutationOrigin(input.request, input.origin) || !sessionMatchesCsrf(input.session, csrf)) {
+  if (!hasSameOriginReadOrigin(input.request, input.origin) || !sessionMatchesCsrf(input.session, csrf)) {
     writeDashboardError(input.response, {
       status: 403, code: DASHBOARD_ERROR_CODES.LOCAL_SESSION_REQUIRED, requestId: input.requestId,
     });

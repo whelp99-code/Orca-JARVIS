@@ -258,7 +258,7 @@ export class RemoteApprovalStore {
   }
 
   insertAudit(row: {
-    event_id: string; event_type: string; subject_kind: string; subject_id: string; principal_id: string;
+    event_id: string; event_type: string; subject_kind: string; subject_id: string; principal_id: string | null;
     correlation_id: string; event_digest: string; created_at: string; outcome: string; reason_code: string;
     credential_digest_prefix: string | null; request_digest: string | null; command_digest: string | null;
     binding_digest: string | null; assertion_digest: string | null; counter_disposition: string;

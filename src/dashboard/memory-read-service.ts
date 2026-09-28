@@ -7,6 +7,7 @@ import { memoryReadPrivacyState, isMemoryReadSuppressed } from "../memory-read-p
 import type { SecondBrainEvidence, SecondBrainReadAdapter } from "../second-brain-adapter-types.js";
 import type { DashboardSessionStore } from "./session.js";
 import { MemoryTokenCache, type MemoryTokenAuthority } from "./memory-token-cache.js";
+import { memoryRecordLineage, type MemoryRecordLineage } from "./memory-record-history.js";
 import { projectMemoryRecord } from "./memory-redaction.js";
 import { listMemoryEffects, outcomeOmissions, outcomeState, privateSensitivity, readEvidence,
   sameGeneration } from "./memory-read-projection.js";
@@ -53,18 +54,20 @@ export class MemoryReadService {
     const outcome = await this.adapter.search(query);
     return this.withStableSurface(initial, final => {
       const allEvidence = readEvidence(outcome);
-      const visible = allEvidence.filter(item => !this.suppressed(item));
+      // Forgotten records never leave the authority; superseded ones stay as metadata-only history.
+      const visible = allEvidence.map(item => ({ item, lineage: this.lineage(item) }))
+        .filter(entry => !entry.lineage.forgotten);
       const evidence = visible.slice(0, limit);
       const sessionId = final.owner_session_id!;
-      const items = evidence.map(item => projectMemoryRecord({ evidence: item, tokens: this.tokens,
+      const items = evidence.map(entry => projectMemoryRecord({ evidence: entry.item, tokens: this.tokens,
         sessionId, sessionIncarnation: final.session_incarnation, privacyEpoch: final.privacy_epoch,
-        policyDigest: final.policy_digest, now }))
+        policyDigest: final.policy_digest, now, lineage: entry.lineage }))
         .filter(item => item !== undefined);
       const forgotten = visible.length === 0 && allEvidence.length > 0;
       return { schema_version: 1, resource: "memory-search", generated_at: now.toISOString(),
         state: forgotten ? "no_data" : outcomeState(outcome), query_revision: this.tokens.revision("query", sessionId, query),
         resource_revision: this.tokens.revision("resource", sessionId, `search\0${String(final.privacy_epoch)}\0${final.membership_revision}`),
-        privacy_epoch: final.privacy_epoch, provider_generation: evidence[0]?.record?.generation.generation_id ?? null,
+        privacy_epoch: final.privacy_epoch, provider_generation: evidence[0]?.item.record?.generation.generation_id ?? null,
         items, truncated: evidence.length < visible.length,
         omissions: forgotten ? ["privacy_filtered"] : outcomeOmissions(outcome),
         checked_at: now.toISOString(), fresh_until: this.freshUntil(now) };
@@ -83,9 +86,10 @@ export class MemoryReadService {
       const evidence = readEvidence(outcome).find(item => item.record?.record_id === selection.record_id
         && item.record.record_digest === selection.record_digest
         && sameGeneration(item, selection));
-      const item = evidence === undefined || this.suppressed(evidence) ? undefined : projectMemoryRecord({
+      const item = evidence === undefined ? undefined : projectMemoryRecord({
         evidence, tokens: this.tokens, sessionId, sessionIncarnation: final.session_incarnation,
-        privacyEpoch: final.privacy_epoch, policyDigest: final.policy_digest, now: this.clock() });
+        privacyEpoch: final.privacy_epoch, policyDigest: final.policy_digest, now: this.clock(),
+        lineage: this.lineage(evidence) });
       return item === undefined ? undefined : { schema_version: 1, resource: "memory-record-detail",
         privacy_epoch: final.privacy_epoch, item, conflicts: [], history: [], effect_counts: { total: 0 } };
     });
@@ -111,6 +115,10 @@ export class MemoryReadService {
 
   private suppressed(evidence: SecondBrainEvidence): boolean {
     return isMemoryReadSuppressed(this.authority, evidence, (kind, value) => this.tokens.membership(kind, value));
+  }
+
+  private lineage(evidence: SecondBrainEvidence): MemoryRecordLineage {
+    return memoryRecordLineage(this.authority, evidence, (kind, value) => this.tokens.membership(kind, value));
   }
 
   private freshUntil(now: Date): string { return new Date(now.getTime() + 60_000).toISOString(); }

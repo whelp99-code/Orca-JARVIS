@@ -57,6 +57,7 @@ export function createRemoteService(db: AuthorityDb): RemoteApprovalService {
     origin: REMOTE_ORIGIN,
     rpId: REMOTE_RP_ID,
     signer,
+    signerSource: "file",
     resolver: createFixtureResolver(),
   });
 }

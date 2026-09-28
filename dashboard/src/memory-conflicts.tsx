@@ -1,15 +1,27 @@
-import type { MemoryConflicts as ConflictPage } from "./memory-types.js";
+import { MemoryPanelUnloaded } from "./memory-panel-state.js";
+import { memoryResourceState, type MemoryConflicts as ConflictPage } from "./memory-types.js";
 
-export function MemoryConflicts({ value }: Readonly<{ value?: ConflictPage }>) {
+const STATE_COPY: Readonly<Record<string, string>> = {
+  offline: "Memory provider offline. Conflicts cannot be read until it reconnects.",
+  unavailable: "Memory provider unavailable. Conflicts cannot be read right now.",
+  incompatible: "Memory provider incompatible. Conflicts cannot be read right now.",
+};
+export function MemoryConflicts({ value, pending }: Readonly<{ value?: ConflictPage; pending: boolean }>) {
   return <section className="panel" aria-labelledby="memory-conflicts-heading">
     <header className="panel-header"><h2 id="memory-conflicts-heading">Conflicts</h2></header>
-    <div className="panel-body">{value === undefined || value.items.length === 0
-      ? <p className="empty-state">No unresolved conflicts</p>
-      : <ul className="conflict-list">{value.items.map(item => <li key={item.conflict_revision}>
-        <strong>{item.subject}</strong><span className="state-label">{item.state}</span>
-        <ol aria-label="Conflict sides">{item.sides.map((side, index) => <li
-          key={`${item.conflict_revision}-${String(index)}`}><span>Side {String(index + 1)}</span>
-          <span>{side.sensitivity}</span><small>{side.citation}</small></li>)}</ol>
-      </li>)}</ul>}</div>
+    <div className="panel-body"><ConflictBody value={value} pending={pending} /></div>
   </section>;
+}
+function ConflictBody({ value, pending }: Readonly<{ value?: ConflictPage; pending: boolean }>) {
+  if (value === undefined) return <MemoryPanelUnloaded pending={pending} />;
+  const copy = STATE_COPY[memoryResourceState(value.state)];
+  if (copy !== undefined) return <p className="memory-result-state" role="status"
+    data-result-state={memoryResourceState(value.state)}>{copy}</p>;
+  if (value.items.length === 0) return <p className="empty-state">No unresolved conflicts</p>;
+  return <ul className="conflict-list">{value.items.map(item => <li key={item.conflict_revision}>
+    <strong>{item.subject}</strong><span className="state-label">{item.state}</span>
+    <ol aria-label="Conflict sides">{item.sides.map((side, index) => <li
+      key={`${item.conflict_revision}-${String(index)}`}><span>Side {String(index + 1)}</span>
+      <span>{side.sensitivity}</span><small>{side.citation}</small></li>)}</ol>
+  </li>)}</ul>;
 }

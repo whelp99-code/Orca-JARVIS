@@ -8,6 +8,7 @@ import {
 import { authenticateTailnetOwner, headerValues, isTrustedServeRequest } from "./phone-gateway-config.js";
 import { matchPhoneRoute } from "./phone-gateway-routes.js";
 import { phoneHtml, retryAfter, writeAsset, writeHtml, writeJson, writePhoneGatewayError } from "./phone-gateway-http.js";
+import { servePhoneRemoteRoute } from "./phone-gateway-remote.js";
 import { readPostBody, validateMemoryBody } from "./phone-gateway-body.js";
 import type { DispatchUpdate, PhoneGatewayRequestCtx } from "./phone-gateway-request-ctx.js";
 import { createPhoneMemorySessionSource } from "./dashboard/memory-session-source.js";
@@ -139,6 +140,10 @@ async function serveMatchedRoute(
 ): Promise<void> {
   const { isAuthenticated, rejectAuthentication, stillAuthenticated, refreshCookie } =
     phoneRequestAuthentication(ctx, cookieHeader, idHmac, requestId, update);
+  if (matched.routeClass === "security" || matched.routeClass === "remote_approval") {
+    await servePhoneRemoteRoute(ctx, method, path, matched, isAuthenticated, stillAuthenticated, refreshCookie, requestId, update);
+    return;
+  }
   if (matched.routeClass === "shell") {
     refreshCookie();
     writeHtml(ctx.response, requestId, phoneHtml(path === "/memory" ? "Memory" : "Today"));
