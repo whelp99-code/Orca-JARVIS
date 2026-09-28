@@ -5,7 +5,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
 
-const pinnedWheel = "da2859ee89569f147ae19b3c82998cd439c640ac419e3452d07110b92732319c";
+const pinnedWheel = "dcffa57bd011d59f0993583fee435413ebb0fb293fb3de941b567cca8e70e762";
 const oracle = `import hashlib, json, pathlib, sys, tomllib, zipfile
 assert sys.prefix != sys.base_prefix, "ISOLATED_PROVIDER_VENV_REQUIRED"
 from pydantic import TypeAdapter

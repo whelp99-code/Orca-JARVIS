@@ -16,6 +16,11 @@ export type {
 export type NotProved = {
   readonly kind: "not_proved";
   readonly code: string;
+  /**
+   * Set only when the provider decided against the request before its apply phase began, so the
+   * lane may stop reconciling. Absence means the outcome is still uncertain and must not be ended.
+   */
+  readonly refused?: true;
 };
 
 export type VerifiedGenerationObservation = {

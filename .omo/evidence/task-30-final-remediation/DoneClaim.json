@@ -1,0 +1,99 @@
+{
+  "task": "task-30-final-candidate",
+  "base": "7c798e12eeec352b2dfae6a365af7f28c72ccdf0",
+  "merged_main": "d2c09476bc2d0f307c110788bab4af0afc1fd819",
+  "code_head": "41350dccd4fdb1b44fa6f2697e4035fc4514baa2",
+  "code_tree": "85ea2fdd192a650759e5cfc8a7152a6e0424d8ce",
+  "commits": [
+    {
+      "sha": "5880a440867dc249ea5718b655a8860758599523",
+      "parents": [
+        "7c798e12eeec352b2dfae6a365af7f28c72ccdf0",
+        "d2c09476bc2d0f307c110788bab4af0afc1fd819"
+      ],
+      "subject": "merge: bring main d2c0947 into task-30-final-remediation"
+    },
+    {
+      "sha": "9654a87c26cb1912d52994fa1e8b0c9511cdde07",
+      "subject": "test: pin the provider oracle to the 7336527 wheel"
+    },
+    {
+      "sha": "e8b15d9f1dcb6b6a8e0fda0575409030e2c7ddf4",
+      "subject": "test: refuse a stale correction through the real provider"
+    },
+    {
+      "sha": "41350dccd4fdb1b44fa6f2697e4035fc4514baa2",
+      "subject": "test: narrow nullable search excerpts in the stale-correction gate"
+    }
+  ],
+  "provider_pair": {
+    "jarvis_code_head": "41350dccd4fdb1b44fa6f2697e4035fc4514baa2",
+    "jarvis_tree": "85ea2fdd192a650759e5cfc8a7152a6e0424d8ce",
+    "second_brain_head": "7336527bb1040c42b5ae5c33136f22ea33abb88b",
+    "second_brain_worktree": "/home/jm/orca/workspaces/second-brain-app/task-30-b3b",
+    "wheel": "/tmp/task30-final-sb-wheel/second_brain-1.0.7-py3-none-any.whl",
+    "wheel_sha256": "dcffa57bd011d59f0993583fee435413ebb0fb293fb3de941b567cca8e70e762",
+    "python": "/tmp/task30-final-py/bin/python",
+    "node": "v24.19.0"
+  },
+  "migration": {
+    "file": "097_memory_deletion_terminal_refusal.sql",
+    "journal_id": "097_memory_deletion_terminal_refusal.sql",
+    "sha256": "49709eddb60130740749b4f8e52853ccf3ef3cb71421be85004049c28ecb918e",
+    "collision": "none. Main d2c0947 added no migration at or above 097. Filename set is unique. Pre-existing duplicate prefixes remain 028, 072, 073, 074, 075, 079, 080."
+  },
+  "organic_b3": {
+    "test": "tests/integration/memory-real-process-driver.test.ts",
+    "result": "passed inside npm run verify, 20788ms, after the excerpt narrowing commit",
+    "provider": "apply-requests stdout state=failed phase=claimed code=EFFECT_PRIOR_STALE. The test does not write the provider journal.",
+    "lane": "memory_correction_requests state=conflict failure_code=MEMORY_PROVIDER_FAILED",
+    "control": "control_command_requests state=failed failure_code=MEMORY_PROVIDER_FAILED; memory.correction.refused effect count stays 1",
+    "resend": "memory_correction_attempts stays 1 and the provider journal rows are unchanged after a second reconcilePending",
+    "reads": "search(old), search(corrected), and search(Task) are current; forgotten text is absent from excerpts",
+    "high_water": "memory_tombstone_chain latest row equals tombstone_replica latest row equals active share/vault/generation.json tombstone_sequence and tombstone_set_root",
+    "deletion": "Not added. A deletion of the already-forgotten target throws MEMORY_DELETION_TARGET_STALE in memory-deletion-dispatch.ts before any provider frame. An organic EFFECT_PRIOR_STALE forget cannot be produced without journal injection. The injected observation remains tests/integration/memory-deletion-terminal-refusal.test.ts, which passed in this verify (1 test, 3564ms)."
+  },
+  "verify": {
+    "command": "npm run verify",
+    "node": "v24.19.0 abi=137",
+    "env": "TASK30_PROVIDER_WHEEL sha256 dcffa57bd011d59f0993583fee435413ebb0fb293fb3de941b567cca8e70e762 TASK30_PROVIDER_SHA=7336527bb1040c42b5ae5c33136f22ea33abb88b",
+    "log": "/tmp/task30-final-verify.log",
+    "runtime": "JARVIS_RUNTIME_OK",
+    "lint": "eslint --max-warnings=0 exit 0",
+    "architecture": "cycles 0, modules 735, edges 2755",
+    "typecheck": "tsc backend, dashboard, and e2e exit 0",
+    "build": "backend and dashboard vite built",
+    "backend_shard_1": "24 failed, 2121 passed, 2145 tests",
+    "backend_shard_2": "9 failed, 2129 passed, 2138 tests",
+    "npm_test_exit": 1,
+    "dashboard_separate": "44 files, 297 passed, exit 0. npm test did not reach dashboard because the backend shards failed.",
+    "acceptance_separate": "exit 0, aggregate_status stopped, completion_promoted true, gjc_dispatched false",
+    "smoke_separate": "exit 0",
+    "classification": "The 31 timeout failures are the same test names that fail at 5000ms on main d2c0947 (doctor isolation 4 plus the other 27 in /tmp/task30-main-timeouts.log). Timeouts were not raised. The two assertion failures are reviewability: task12 offenders are identical on committed main and this head (phone-gateway-remote.ts max 166, remote-approval-lifecycle.ts max 164, remote-approval-registration.ts max 170, remote-approval.ts max 165). personal-context on main also fails control-plane.ts at 246 pure lines; this head is 240 and is not an offender."
+  },
+  "focused": {
+    "files": "13 passed, 1 failed",
+    "tests": "51 passed, 1 failed",
+    "failure": "personal-context-remediation reviewability, same four Task 35 line-length offenders as committed main",
+    "log": "/tmp/task30-focused.log"
+  },
+  "counts": {
+    "focused_passed": 51,
+    "focused_failed_preexisting": 1,
+    "verify_backend_passed": 4250,
+    "verify_backend_timeout_failures": 31,
+    "verify_backend_reviewability_failures": 2,
+    "dashboard_passed": 297,
+    "cleanup": 0,
+    "session_records_deleted": 0,
+    "production_changes": 0
+  },
+  "notes": [
+    "Merge was a real merge commit, not a rebase. No conflicts. Migration 097 did not collide.",
+    "The only provider wheel pin in the tree is tests/fixtures/second-brain-config-oracle.ts. Its tomllib and load_config checks are unchanged. No release-integration fixture pins a wheel or commit.",
+    "Installed sb/config.py bytes match the wheel member. Second Brain worktree left clean at 7336527.",
+    "memory-real-process-driver.test.ts is 615 pure lines with the existing SIZE_OK mark. The stale refusal is part of the same indivisible lifecycle.",
+    "engineering-map docs:sync hook printed rc=1 and did not block the commits.",
+    "No amend, rebase, push, deploy, or session-record deletion."
+  ]
+}

@@ -10,6 +10,7 @@ import { MemorySurfaceAuthority } from "./memory-surface-authority.js"; export {
 } from "./control-plane-contract.js"; const validOutcomeStates = new Set(["completed", "failed", "uncertain"]);
 import { memoryOutboxControlProof } from "./memory-outbox-control-proof.js";
 import { validateMemoryCandidateScopeProposal } from "./memory-candidate-scope.js";
+import { runImmediate } from "./sqlite-contention.js";
 function finiteDate(date: Date, code: string): number { const time = date.getTime(); if (!Number.isFinite(time)) throw new JarvisError(code); return time; }
 function finiteIso(value: string): number { const time = Date.parse(value); return Number.isFinite(time) ? time : Number.NaN; } export class ControlPlane {
   constructor(private readonly authority: AuthorityDb) {}
@@ -136,14 +137,7 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
         payload: { receipt_id: row.receipt_id, fence, lease_expires_at: leaseExpires }, created_at: at, }); result = { request_id: requestId,
         receipt_id: String(row.receipt_id), action: action.action, action_level: action.action_level, target: action.target, args: action.args,
         command_digest: String(row.command_digest), reversible: Boolean(row.reversible), fence, lease_expires_at: leaseExpires, }; });
-    try { tx.immediate(); }
-    catch (error) {
-      if (error instanceof Error && "code" in error
-        && (error.code === "SQLITE_BUSY" || error.code === "SQLITE_BUSY_SNAPSHOT")) {
-        throw new JarvisError("CONTROL_CLAIM_RACE");
-      }
-      throw error;
-    }
+    runImmediate(tx, "CONTROL_CLAIM_RACE");
     if (!result) throw new JarvisError("CONTROL_CLAIM_FAILED"); return result; } settle( requestId: string, fence: number,
     outcome: { state: "completed" | "failed" | "uncertain"; effect_type: string; payload: unknown; failure_code?: string }, now = new Date(), ): void {
     const nowMs = finiteDate(now, "CONTROL_SETTLE_INVALID");

@@ -18,6 +18,7 @@ import {
   type SecondBrainWriteRequestAdapter,
 } from "../../src/index.js";
 import { MemoryCorrectionSaga } from "../../src/memory-correction-saga.js";
+import { ProductionMemoryLifecycleObserver } from "../../src/memory-lifecycle-observer.js";
 import { registerMemoryEffectDelegationKey } from "../../src/memory-effect-delegation.js";
 import { isMemorySuppressed } from "../../src/memory-suppression.js";
 import { subscribeMemorySuppression } from "../../src/memory-suppression-events.js";
@@ -216,6 +217,90 @@ describe("proof-bound memory correction saga", () => {
       ).get()).toEqual({ active_lane_id: null, accepted_through_sequence: 1 });
       db.close();
       expect(readFileSync(db.filename).includes(Buffer.from(corrected, "utf8"))).toBe(false);
+    } finally {
+      if (db.db.open) closeMemoryDatabase(database);
+      else {
+        rmSync(database.root, { recursive: true, force: true });
+        rmSync(database.anchorsRoot, { recursive: true, force: true });
+      }
+    }
+  });
+
+  it("ends a correction the provider refused before any effect instead of reconciling forever", async () => {
+    const database = await memoryDatabase();
+    const db = database.authority;
+    const corrected = `corrected-${randomUUID()}-${randomUUID()}`;
+    const writer = new AcceptedWriter();
+    try {
+      const candidateInput = verifiedMemoryInput({ authority_id: "task30-refused",
+        idempotency_key: "candidate:task30:refused", operation: "correct",
+        subject: "Runtime memory", statement: "Prior runtime value" });
+      insertMemoryVerification(db, memoryVerificationPayload(candidateInput));
+      const candidate = new MemoryCandidateStore(db, memoryPolicy(), () => NOW).classify(candidateInput);
+      const control = new ControlPlane(db);
+      const confirmation: ControlCommandRequestInput = { schema_version: 1,
+        request_id: "task30-refused-confirm", action: "memory.confirm", action_level: 3,
+        target: { candidate_id: candidate.candidate_id, candidate_digest: candidate.candidate_digest,
+          classification_digest: candidate.classification_digest },
+        args: { schema_version: 1, operation: "correct",
+          evidence_digest: `sha256:${"b".repeat(64)}` }, reversible: false,
+        requested_by: "principal:owner", requested_at: NOW.toISOString(), expires_at: EXPIRES,
+        nonce: "nonce:task30-refused-confirm" };
+      approve(control, confirmation, localKey(db));
+      expect((await new ApprovedCommandExecutor(db, undefined, undefined, {}, () => NOW)
+        .execute(confirmation.request_id, "task30-refused-confirm", NOW)).state).toBe("completed");
+      registerMemoryEffectDelegationKey(db, { key_id: "jarvis:fixture",
+        principal_id: "principal:owner",
+        public_key_pem: createPublicKey(privateKey).export({ format: "pem", type: "spki" }).toString(),
+        valid_from: NOW.toISOString(), valid_until: "2026-08-29T12:00:00.000Z" }, NOW);
+      // The provider journalled the request, then refused it before the apply phase began.
+      const transport: SecondBrainTransport = {
+        call: async (method: SecondBrainMethod): Promise<SecondBrainOutcome> => method === "sb_request_status"
+          ? { kind: "data", value: { schema_version: 1, request_id: writer.calls[0]?.request_id,
+            state: "failed", phase: "claimed", fence: 1 } }
+          : { kind: "data", value: { schema_version: 1, provider_instance_id: "provider:fixture",
+            provider_release_sha: "a".repeat(40), generation_id: target().generation_id,
+            generation_manifest_digest: target().generation_manifest_digest,
+            vault_head: target().vault_head, vault_tree: target().vault_tree,
+            tombstone_sequence: 0,
+            tombstone_set_root: "sha256:7fb694c8abb7c9a4477aa38381c49446493bc4da1c01b50690c1db5b2c20b9d3",
+            pointer_health: "healthy", journal_health: "healthy",
+            features: ["memory_effect_write_v2"] } },
+        restart: async () => undefined, close: async () => undefined, diagnostics: () => [],
+      };
+      const provider = new SecondBrainEffectService({ authority: db, transport, writer,
+        clock: () => NOW, provider_instance_id: "provider:fixture",
+        signing_key_id: "jarvis:fixture", private_key: privateKey, nonce: () => "task30-refused" });
+      const spoolRoot = join(mkdtempSync(join(tmpdir(), "jarvis-task30-refused-")), "memory-effects");
+      const saga = new MemoryCorrectionSaga({ authority: db, spool_root: spoolRoot,
+        writer, provider, signing_key_id: "jarvis:fixture", private_key: privateKey,
+        subject_key: Buffer.alloc(32, 3), clock: () => NOW,
+        observer: new ProductionMemoryLifecycleObserver({ authority: db, provider,
+          observations: { observe: () => Promise.reject(new Error("TEST_OBSERVATION_MUST_NOT_RUN")) },
+          clock: () => NOW }),
+        compactor: unreachableMemoryCompactor, barriers: noopMemoryBarriers(db) });
+      const action = await saga.prepare({ control_request_id: "task30-refused",
+        candidate_id: candidate.candidate_id, provider_instance_id: "provider:fixture",
+        targets: [target()], scope: scope(), content: corrected, requested_at: NOW,
+        expires_at: new Date(EXPIRES), nonce: "nonce:task30-refused" });
+      approve(control, action, localKey(db));
+      const claimed = control.claim(action.request_id, "task30-refused", NOW);
+      const dispatched = await saga.dispatch(claimed);
+      expect(writer.calls).toHaveLength(1);
+
+      const settled = await saga.reconcile(dispatched.correction_id);
+
+      // The lane is terminal, so no later reconcile pass keeps re-observing a decided request.
+      expect(settled.state).toBe("conflict");
+      expect(settled.failure_code).toBe("MEMORY_PROVIDER_FAILED");
+      expect(db.db.prepare("SELECT state,failure_code FROM control_command_requests WHERE request_id=?")
+        .get(action.request_id)).toEqual({ state: "failed", failure_code: "MEMORY_PROVIDER_FAILED" });
+      expect(db.db.prepare(
+        "SELECT event_type FROM memory_correction_events WHERE correction_id=? ORDER BY sequence DESC LIMIT 1",
+      ).get(dispatched.correction_id)).toEqual({ event_type: "conflict" });
+      // Refusal is observation, not a second write: no replay and no renewed provider frame.
+      expect(await saga.reconcile(dispatched.correction_id)).toMatchObject({ state: "conflict" });
+      expect(writer.calls).toHaveLength(1);
     } finally {
       if (db.db.open) closeMemoryDatabase(database);
       else {
