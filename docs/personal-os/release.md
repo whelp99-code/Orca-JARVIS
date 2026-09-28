@@ -61,12 +61,23 @@ own answer on `service.local-retention`.
 
 Rehearsal command (isolated `--release-root` only):
 
-This rehearsal validates fixture backup/restore and the release pointer mechanism.
-Its payload contains selected files, not a complete executable application. An OK
-result is not deployment readiness: output explicitly reports deployment_ready=false,
-runtime_payload=incomplete and runtime_validation=not_performed. Do not activate
-this fixture payload in production. Complete runtime packaging and execution of the
-packaged CLI/health gates are required separately.
+`PERSONAL_OS_REHEARSAL_OK` is emitted only after the isolated root has built a
+checksummed JARVIS release, rendered hardened units that point at `authority/current`
+without installing them, migrated a cloned fixture database, activated the isolated
+`current` symlink, and passed `quick_check`, `jarvis doctor --json`, dashboard health,
+scheduler/lease, a real Second Brain MCP handshake, and the uncertain-outbox gate.
+The same run proves no-data boot, Mac-disconnected brief → virtual approval → worker
+→ verification → fixture artifact → closeout → restart, backup → destroy → new-generation
+restore with tombstone replay, and both rollback branches. `deployment_ready` stays
+false because production activation is skipped. `--scenario <name>` runs one of
+`second-brain-no-data`, `second-brain-offline`, `mac-disconnected`,
+`schema-incompatible-rollback`, `jm-server-offline`, `crash-after-dispatch`,
+`lost-memory-response`, `expired-passkey`, `delete-sentinel`, `restore-tombstone`,
+or `rollback`. Each scenario reports unauthorized, duplicate, stale-authoritative,
+and deletion-leak counts. Mac Electron QA and phone QA are not part of this command;
+the JSON names the Linux dashboard `127.0.0.1:4173` and phone gateway `127.0.0.1:4176`
+/ tailnet `8444` endpoints those steps target. Do not point `--release-root` at a
+protected production root.
 
 `personal-os-rehearsal` = `node scripts/personal-os-release-rehearsal.mjs --fixture test/fixtures/personal-os/full-loop.json --clock 2026-08-27T07:15:00+09:00 --release-root <isolated> --json`
 

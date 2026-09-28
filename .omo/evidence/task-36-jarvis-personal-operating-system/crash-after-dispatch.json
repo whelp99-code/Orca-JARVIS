@@ -1,0 +1,1 @@
+{"ok":true,"rehearsal":"PERSONAL_OS_REHEARSAL_SCENARIO_OK","scenario":"crash-after-dispatch","outcome":"claimed","unavailable":null,"events":{"unauthorized":0,"duplicate":0,"stale_authoritative":0,"deletion_leak":0},"live_path_mutation":false,"current_after":null}
