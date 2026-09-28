@@ -9,6 +9,7 @@ import { DailyLoopError, type DailyLoopAdvance, type DailyLoopClaim,
 import { DailyBudgetExceeded, dailyLoopUsage, dailyUsageExhausted } from "./daily-loop-usage.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { MorningBriefPublisher } from "./morning-brief-publisher.js";
+import type { MorningAssemblyOptions } from "./morning-operating-brief.js";
 import type { PreparedMemoryReference } from "./memory-reference-context.js";
 import { produceStoredDailyRecommendation } from "./personal-daily-production.js";
 import { parseTrustedCloseoutKey } from "./evening-closeout-crypto.js";
@@ -53,13 +54,13 @@ export function createStoredMorningDailyLoop(authority: AuthorityDb, optionsValu
   } };
   const store = new DailyLoopStore(authority);
   return new DailyControlLoop(store, options,
-    new StoredMorningSteps(authority, store, options, closeoutKey, production), "morning", true);
+    new StoredMorningSteps(authority, store, options, {}, closeoutKey, production), "morning", true);
 }
 
 class StoredMorningSteps implements DailyLoopStepExecutor {
   constructor(private readonly authority: AuthorityDb, private readonly store: DailyLoopStore,
-    private readonly options: DailyLoopOptions, private readonly closeoutKey?: TrustedCloseoutKey,
-    private readonly production?: DailyProductionSource) {}
+    private readonly options: DailyLoopOptions, private readonly assembly: MorningAssemblyOptions,
+    private readonly closeoutKey?: TrustedCloseoutKey, private readonly production?: DailyProductionSource) {}
 
   complete(claimValue: DailyLoopClaim): void {
     const claim = parseDailyLoopClaim(claimValue);
@@ -118,6 +119,7 @@ class StoredMorningSteps implements DailyLoopStepExecutor {
         if (next < lastAt || kstLocalDate(next) !== run["loop_date"]) throw new DailyLoopError("DAILY_LOOP_STALE_LEASE");
         lastAt = next; return next;
       };
+      let held = false;
       try {
         this.authority.db.transaction(() => {
           if (step.step_key === "morning_reconcile") {
@@ -132,7 +134,10 @@ class StoredMorningSteps implements DailyLoopStepExecutor {
                 ...(production.memory_reference === undefined
                   ? {} : { memory_reference: production.memory_reference }) });
             }
-            new MorningBriefPublisher(this.authority, now).publish(claim, 1_048_576);
+            const publication = new MorningBriefPublisher(this.authority, now, {
+              subscribedAt: this.assembly.subscribedAt, freshnessMs: this.options.refresh_freshness_ms,
+            }).publish(claim, 1_048_576);
+            if (publication.held) { held = true; return; }
           } else {
             const refresh = this.options.refresh_reader.read(at); const completedAt = now();
             const detail = evaluateRefreshContext(refresh, completedAt, this.options.refresh_freshness_ms);
@@ -147,6 +152,7 @@ class StoredMorningSteps implements DailyLoopStepExecutor {
         if (!(error instanceof DailyBudgetExceeded)) throw error;
         this.store.fail(claim, error.code, now()); return "failed";
       }
+      if (held) return "waiting";
       return "step_completed";
     }).immediate();
   }

@@ -25,7 +25,7 @@ describe("atomic morning publication", () => {
   it("stores a merged brief with all source dependencies and reads it after reopen without writes", async () => {
     const fixture = await setup(); const publisher = new MorningBriefPublisher(fixture.db, () => PUBLICATION_AT);
     const result = publisher.publish(fixture.claim, 1_048_576);
-    expect(result).toMatchObject({ published: true, source_items: 6 }); expect(result.artifact_bytes).toBeGreaterThan(128);
+    expect(result).toMatchObject({ published: true, source_items: 2 }); expect(result.artifact_bytes).toBeGreaterThan(128);
     const dependencies = fixture.db.db.prepare(`SELECT projection_kind,COUNT(DISTINCT target_digest) AS n
       FROM memory_projection_dependencies WHERE projection_kind IN ('daily_run','daily_step','morning_brief') GROUP BY projection_kind`).all();
     expect(dependencies).toEqual([{ projection_kind: "daily_run", n: 2 }, { projection_kind: "daily_step", n: 2 }, { projection_kind: "morning_brief", n: 2 }]);

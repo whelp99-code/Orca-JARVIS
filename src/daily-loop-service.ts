@@ -6,7 +6,7 @@ import { DailyLoopStore } from "./daily-loop-store.js";
 import { classifyDailyLoopInstant, evaluateRefreshContext, kstLocalDate } from "./daily-loop-time.js";
 import { dailyLoopSchedules, dailyLoopSteps } from "./daily-loop-schedules.js";
 import {
-  DAILY_LOOP_PHASES, DailyLoopError, type DailyLoopClaim, type DailyLoopCycleResult, type DailyLoopDue, type DailyLoopFailureCode,
+  DAILY_LOOP_PHASES, DailyLoopError, type DailyLoopAdvance, type DailyLoopClaim, type DailyLoopCycleResult, type DailyLoopDue, type DailyLoopFailureCode,
   type DailyLoopPhase,
   type DailyLoopOptions, type DailyLoopPreparation, type DailyLoopStep, type DailyLoopStepExecutor,
 } from "./daily-loop-types.js";
@@ -95,7 +95,7 @@ export class DailyControlLoop {
 	runNext(claimValue: unknown): boolean {
 		return this.advance(parseDailyLoopClaim(claimValue)) === "step_completed";
 	}
-	private advance(claim: DailyLoopClaim): "step_completed" | "all_completed" | "failed" {
+	private advance(claim: DailyLoopClaim): DailyLoopAdvance {
 		if (this.stepExecutor !== undefined) return this.stepExecutor.advance(claim);
 		const at = this.now();
 		if (this.options.deadline_ms === 0 || at.getTime() >= Date.parse(claim.deadline_at)) {
@@ -131,7 +131,7 @@ export class DailyControlLoop {
 		const claim = parseDailyLoopClaim(claimValue);
 		let outcome: ReturnType<DailyControlLoop["advance"]>;
 		do { outcome = this.advance(claim); } while (outcome === "step_completed");
-		if (outcome === "failed") return false;
+		if (outcome === "failed" || outcome === "waiting") return false;
 		if (this.stepExecutor !== undefined) this.stepExecutor.complete(claim);
 		else this.store.complete(claim, this.now());
 		return true;

@@ -39,7 +39,7 @@ export async function buildCurrentState(
 }
 
 /** Synchronous DB projection after asynchronous health observations have completed. */
-export function currentStateFromDoctor(db: AuthorityDb, doctor: DoctorReport,
+export function currentStateFromDoctor(db: AuthorityDb, doctor: Pick<DoctorReport, "ok" | "checks">,
   now: Date, options: CurrentStateOptions = {}): CurrentStateProjection {
   const projections = new MemoryProjectionAuthority(db);
   projections.assertReady();
