@@ -12,12 +12,13 @@ import { ControlReceiptSigner } from "./remote-approval-signer.js";
 
 const PLACEHOLDER_ORIGIN = "https://remote-approval.invalid";
 
-function sealedDecision(db: AuthorityDb): { key_id: string; principal_id: string } | undefined {
+function sealedDecision(db: AuthorityDb, ownerPrincipal: string): { key_id: string; principal_id: string } | undefined {
   return db.db.prepare(
     `SELECT k.key_id, k.principal_id FROM trusted_authority_keys k
      JOIN authority_key_purposes p ON p.key_id=k.key_id
-     WHERE p.purpose='decision' LIMIT 1`,
-  ).get() as { key_id: string; principal_id: string } | undefined;
+     WHERE p.purpose='decision'
+     ORDER BY CASE WHEN k.principal_id=? THEN 0 ELSE 1 END, k.key_id LIMIT 1`,
+  ).get(ownerPrincipal) as { key_id: string; principal_id: string } | undefined;
 }
 
 export function composeRemoteApproval(db: AuthorityDb, options: {
@@ -36,7 +37,7 @@ export function composeRemoteApproval(db: AuthorityDb, options: {
       rpId = "remote-approval.invalid";
     }
   }
-  const sealed = sealedDecision(db);
+  const sealed = sealedDecision(db, policy.owner_principal);
   const keyPath = options.decisionKeyPath ?? process.env.JARVIS_DECISION_SIGNING_KEY_FILE;
   const loaded = keyPath === undefined ? undefined : readEd25519PrivateKeyFile(keyPath);
   const signerSource = keyPath === undefined ? "unconfigured" : loaded === undefined ? "rejected" : "file";
