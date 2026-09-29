@@ -1,3 +1,6 @@
+import { MemoryDestructiveDispatchCursor } from "./memory-destructive-dispatch.js";
+import { resumeMemoryDestructiveEffect } from "./memory-destructive-recovery.js";
+import { recoverOrCompactMemory } from "./memory-compaction-resume.js";
 import { candidateTaskSourceClosed } from "./memory-candidate-task-source.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { createHash, randomUUID } from "node:crypto";
@@ -6,7 +9,7 @@ import { JarvisError } from "./db.js";
 import type { ClaimedControlCommand, ControlCommandRequestInput } from "./control-plane.js";
 import { captureCorrectionControlBinding, type CorrectionControlRow } from "./memory-correction-control-binding.js";
 import { correctionCompactionProof } from "./memory-correction-compaction-proof.js";
-import { reconcileCorrectionControl } from "./memory-correction-control.js";
+import { reconcileCorrectionControl, refuseCorrectionControl } from "./memory-correction-control.js";
 import { MemoryCorrectionDispatcher } from "./memory-correction-dispatcher.js";
 import { MemoryCorrectionStore, type MemoryCorrectionRecord } from "./memory-correction-store.js";
 import type { MemoryCorrectionSagaOptions, PrepareMemoryCorrectionInput } from "./memory-correction-types.js";
@@ -125,8 +128,13 @@ export class MemoryCorrectionSaga {
   }
 
   async reconcile(correctionId: string): Promise<MemoryCorrectionRecord> {
-    const record = this.store.get(correctionId);
+    let record = this.store.get(correctionId);
     if (record === undefined) throw new JarvisError("MEMORY_CORRECTION_NOT_FOUND");
+    if (record.state === "queued" || record.state === "dispatching") {
+      await resumeMemoryDestructiveEffect(this.options, record.lane_id);
+      record = this.store.get(correctionId);
+      if (record === undefined) throw new JarvisError("MEMORY_CORRECTION_NOT_FOUND");
+    }
     if (record.state === "conflict") return record;
     if (record.state === "settled") {
       reconcileCorrectionControl(this.options.authority, correctionId, this.options.clock());
@@ -135,31 +143,59 @@ export class MemoryCorrectionSaga {
     captureCorrectionControlBinding(this.options.authority, record as CorrectionControlRow);
     if (record.state === "provider_proved") {
       const completed = correctionCompactionProof(this.options.authority, record as CorrectionControlRow, this.options.clock());
-      if (completed) return this.complete(correctionId, completed.digest);
+      if (completed) {
+        const job = this.options.authority.db.prepare("SELECT purge_id FROM memory_purge_jobs WHERE lane='correction' AND lane_id=?")
+          .get(record.lane_id);
+        if (typeof job !== "object" || job === null || !("purge_id" in job) || typeof job.purge_id !== "string") {
+          throw new JarvisError("MEMORY_COMPACTION_NOT_FOUND");
+        }
+        const recovered = await this.options.compactor.recover(job.purge_id);
+        if ("state" in recovered) return record;
+        return this.complete(correctionId, recovered.compaction_receipt_digest);
+      }
     }
     const observed = await this.options.observer.correction(record);
-    if (observed.kind === "not_proved") return record;
+    if (observed.kind === "not_proved") {
+      return observed.refused === true ? await this.refuse(record, observed.code) : record;
+    }
     const proof = observed.proof;
     const now = this.options.clock();
+    if (record.spool_locator !== null) await this.spool.remove(record.lane_id, record.spool_locator,
+      record.spool_digest, "status_reconciled", now);
     this.store.providerProved(correctionId, { proof_id: proof.proof_id,
       proof_digest: proof.proof_digest, provider_release_sha: proof.provider_release_sha,
       result_generation_id: observed.generation.generation_id,
       surface_manifest_digest: proof.surface_manifest_digest,
       artifact_manifest_digest: observed.replacement.artifact_manifest_digest,
       proof_json: canonicalize(proof) }, now);
+    const cursor = new MemoryDestructiveDispatchCursor(this.options.authority);
+    if (cursor.active().active_lane_id === record.lane_id) cursor.accepted(record.lane_id, now);
     await this.options.barriers.reach({ barrier_id: "jarvis_proof_observation",
       lane_id: record.lane_id, request_id: record.request_id,
       tombstone_sequence: record.tombstone_sequence, now });
     const priorPurge = correctionCompactionProof(this.options.authority, record as CorrectionControlRow, this.options.clock());
-    const purgeDigest = priorPurge?.digest ?? (await this.options.compactor.compact({ lane: "correction",
+    const purgeDigest = priorPurge?.digest ?? await recoverOrCompactMemory(this.options, { lane: "correction",
       lane_id: record.lane_id, target_manifest_digest: record.target_manifest_digest,
       scope_digest: record.scope_digest, tombstone: { sequence: record.tombstone_sequence,
         set_root: record.tombstone_set_root }, provider_inventory: observed.provider_inventory,
-      reingress_guards: observed.reingress_guards })).compaction_receipt_digest;
+      reingress_guards: observed.reingress_guards });
+    if (purgeDigest === undefined) return this.store.get(correctionId) ?? record;
     await this.options.barriers.reach({ barrier_id: "before_settlement_commit",
       lane_id: record.lane_id, request_id: record.request_id,
       tombstone_sequence: record.tombstone_sequence, now: this.options.clock() });
     return this.complete(correctionId, purgeDigest);
+  }
+
+  /** The provider decided against this request before any effect, so the lane ends here. */
+  private async refuse(record: MemoryCorrectionRecord, code: string): Promise<MemoryCorrectionRecord> {
+    const now = this.options.clock();
+    if (record.spool_locator !== null) {
+      await this.spool.remove(record.lane_id, record.spool_locator, record.spool_digest,
+        "terminal_failure", now);
+    }
+    const refused = this.store.refuse(record.correction_id, code, now);
+    refuseCorrectionControl(this.options.authority, record.correction_id, code, now);
+    return refused;
   }
 
   private complete(correctionId: string, purgeDigest: string): MemoryCorrectionRecord {

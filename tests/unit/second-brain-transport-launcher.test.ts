@@ -1,5 +1,5 @@
-import { execFile } from "node:child_process"; import { copyFileSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os"; import { join } from "node:path"; import { afterEach, describe, expect, it } from "vitest"; import { secondBrainConfig,
+import { execFile } from "node:child_process"; import { copyFileSync, mkdtempSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os"; import { join, resolve } from "node:path"; import { afterEach, describe, expect, it } from "vitest"; import { secondBrainConfig,
   SECOND_BRAIN_FRAME_BYTES, secondBrainLauncher, SECOND_BRAIN_PROTOCOL_VERSION, createSecondBrainTransport, type SecondBrainExecFile,
   type SecondBrainExecFileOptions, } from "../../src/second-brain-transport.js";
 import { ManualTimers, cleanupFixtures, fixture, options } from "../fixtures/second-brain-transport-harness.js";
@@ -57,15 +57,30 @@ const transports: Array<{ close(): Promise<void> }> = []; afterEach(async () => 
       // Then: a fresh child completes initialize and tools/list before serving the call.
       await expect(transport.call("sb_search", { query: "second" })).resolves.toMatchObject({ kind: "data" }); expect(launches).toBe(2);
       expect(transport.diagnostics().filter((item) => item.code === "SECOND_BRAIN_STARTED")).toHaveLength(1); } });
-  it("loads only the digest-verified shipped contract independent of cwd", async () => { const cwd = process.cwd(); const missingRoot = mkdtempSync(join(tmpdir(), "sb-missing-launcher-")); process.chdir(tmpdir()); try {
-      const transport = createSecondBrainTransport({ launcherPath: join(missingRoot, "second-brain-mcp") }); transports.push(transport);
-      await expect(transport.call("sb_search", { query: "x" })).rejects.toMatchObject({ code: "SECOND_BRAIN_DISCOVERY_FAILED" }); } finally {
-      process.chdir(cwd); rmSync(missingRoot, { recursive: true, force: true }); } const root = mkdtempSync(join(tmpdir(), "second-brain-contract-tamper-")); const contract = join(root, "contract.json");
+  it("loads the shipped contract from unrelated cwd without discovering any installed launcher", async () => {
+    // Given: a run-owned executable/config and a discovery guard, even if production is installed.
+    const cwd = process.cwd();
+    const value = fixture({ contractPath: resolve("contracts/second-brain-mcp-v1.json") });
+    const discoveries: string[] = [];
+    const transport = createSecondBrainTransport(options(value, { realpath: path => {
+      discoveries.push(path);
+      if (path !== value.launcher) throw new Error("PRODUCTION_LAUNCHER_DISCOVERY_FORBIDDEN");
+      return realpathSync(path);
+    } }));
+    transports.push(transport);
+    process.chdir(tmpdir());
+    try {
+      // When: a real handshake and request run outside the repository.
+      await expect(transport.call("sb_search", { query: "synthetic" })).resolves.toMatchObject({ kind: "data" });
+      // Then: only the injected executable was discovered and executed.
+      expect(discoveries).toEqual([value.launcher]);
+    } finally { process.chdir(cwd); }
+    const root = mkdtempSync(join(tmpdir(), "second-brain-contract-tamper-")); const contract = join(root, "contract.json");
     copyFileSync("contracts/second-brain-mcp-v1.json", contract); copyFileSync("contracts/second-brain-mcp-v1.json.sha256", `${contract}.sha256`);
     const bytes = readFileSync(contract); bytes[0] = bytes[0] === 123 ? 91 : 123; writeFileSync(contract, bytes);
-    expect(() => createSecondBrainTransport({ contractPath: contract })).toThrowError("SECOND_BRAIN_CONTRACT_MISMATCH");
+    expect(() => createSecondBrainTransport(options(value, { contractPath: contract }))).toThrowError("SECOND_BRAIN_CONTRACT_MISMATCH");
     copyFileSync("contracts/second-brain-mcp-v1.json", contract); rmSync(`${contract}.sha256`);
-    expect(() => createSecondBrainTransport({ contractPath: contract })).toThrowError("SECOND_BRAIN_CONTRACT_MISMATCH");
+    expect(() => createSecondBrainTransport(options(value, { contractPath: contract }))).toThrowError("SECOND_BRAIN_CONTRACT_MISMATCH");
     rmSync(root, { recursive: true, force: true }); }); it("buffers partial frames and keeps injection-shaped arguments inert", async () => {
     const partial = fixture({ mode: "partial" }); const transport = createSecondBrainTransport(options(partial)); transports.push(transport);
     await expect(transport.call("sb_search", { query: "$(touch /tmp/task10-injected);;" })).resolves.toMatchObject({ kind: "data" });

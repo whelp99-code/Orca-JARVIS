@@ -126,6 +126,35 @@ describe("owner candidate review and storage preparation HTTP", () => {
     } finally { f.close(); }
   });
 
+  it("stages a fresh confirmation when the pending request expires", async () => {
+    const f = await fixture();
+    try {
+      const path = `candidates/${encodeURIComponent(f.candidate.candidate_id)}`;
+      const review = await f.call(path);
+      const decision = { schema_version: 2, intent_id: `memui:intent:v1:${"a".repeat(64)}`,
+        operation: "remember", decision: "confirm", review_digest: review.body["review_digest"] };
+      const first = await f.call(`${path}/actions/stage-decision`, decision);
+      expect(first.status).toBe(202);
+      const control = new ControlPlane(f.database.authority);
+      const command = control.get(first.body["request_id"]);
+      if (command === undefined) throw new Error("command missing");
+      f.now.setTime(Date.parse(command.expires_at) + 1);
+
+      const second = await f.call(`${path}/actions/stage-decision`, {
+        ...decision, intent_id: `memui:intent:v1:${"b".repeat(64)}` });
+      expect(second.status).toBe(202);
+      expect(second.body["request_id"]).not.toBe(first.body["request_id"]);
+      expect(control.get(first.body["request_id"])?.state).toBe("cancelled");
+      expect(f.database.authority.db.prepare(
+        "SELECT attempt_generation,state FROM memory_candidate_decision_attempts ORDER BY attempt_generation",
+      ).all()).toEqual([
+        { attempt_generation: 1, state: "expired" },
+        { attempt_generation: 2, state: "staged" },
+      ]);
+      expect(Date.parse(String(control.get(second.body["request_id"])?.expires_at))).toBeGreaterThan(f.now.getTime());
+    } finally { f.close(); }
+  });
+
   it("keeps the next approved candidate reachable after twenty commands were prepared", async () => {
     const f = await fixture();
     try {

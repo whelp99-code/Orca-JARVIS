@@ -1,3 +1,4 @@
+import { useState } from "react";
 import type {
   PortfolioHostOverview,
   PortfolioOverview,
@@ -5,9 +6,13 @@ import type {
 } from "../../src/dashboard/portfolio-contracts.js";
 import { copy, freshnessLabel, hostLabel, milestoneStateLabel } from "./copy.js";
 
-type PortfolioStatusProps = Readonly<{ portfolio: PortfolioOverview }>;
+type PortfolioStatusProps = Readonly<{
+  portfolio: PortfolioOverview;
+  onRefresh?: () => void | Promise<void>;
+}>;
 
-export function PortfolioStatus({ portfolio }: PortfolioStatusProps) {
+export function PortfolioStatus({ portfolio, onRefresh }: PortfolioStatusProps) {
+  const updatedAt = latestHostUpdatedAt(portfolio);
   return (
     <section className="portfolio-panel" aria-labelledby="portfolio-status-title">
       <header className="portfolio-heading">
@@ -15,7 +20,18 @@ export function PortfolioStatus({ portfolio }: PortfolioStatusProps) {
           <p className="portfolio-eyebrow">{copy.portfolio.kicker}</p>
           <h2 id="portfolio-status-title">{copy.portfolio.title}</h2>
         </div>
-        <p>{copy.portfolio.lead}</p>
+        <div className="portfolio-heading-actions">
+          {updatedAt === null
+            ? null
+            : (
+              <p className="portfolio-updated">
+                {copy.portfolio.lastUpdated}{" "}
+                <time dateTime={updatedAt}>{formatTimestamp(updatedAt)}</time>
+              </p>
+            )}
+          {onRefresh ? <PortfolioRefreshButton onRefresh={onRefresh} /> : null}
+        </div>
+        <p className="portfolio-lead">{copy.portfolio.lead}</p>
       </header>
 
       <div className="portfolio-hosts">
@@ -105,6 +121,28 @@ function PortfolioProgress({ summary }: Readonly<{ summary: PortfolioSummaryOver
       </section>
     </div>
   );
+}
+
+function PortfolioRefreshButton({ onRefresh }: Readonly<{ onRefresh: () => void | Promise<void> }>) {
+  const [busy, setBusy] = useState(false);
+  return (
+    <button type="button" disabled={busy} aria-busy={busy} onClick={() => {
+      const result = onRefresh();
+      if (result && typeof result.then === "function") {
+        setBusy(true);
+        void result.finally(() => setBusy(false));
+      }
+    }}>{busy ? copy.portfolio.refreshing : copy.portfolio.refresh}</button>
+  );
+}
+
+function latestHostUpdatedAt(portfolio: PortfolioOverview): string | null {
+  let latest: string | null = null;
+  for (const host of portfolio.hosts) {
+    if (host.updated_at === null) continue;
+    if (latest === null || host.updated_at > latest) latest = host.updated_at;
+  }
+  return latest;
 }
 
 function formatTimestamp(value: string): string {

@@ -1,8 +1,8 @@
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, realpathSync } from "node:fs";
 import { isAbsolute, join, sep } from "node:path";
+import { serveForwardedHeadersAllowed } from "./phone-gateway-serve-headers.js";
 import {
-  FORBIDDEN_HEADERS,
   LOOPBACK,
   PHONE_GATEWAY_TARGET,
   PHONE_PUBLIC_HTTPS_PORT,
@@ -95,11 +95,8 @@ export function isTrustedServeRequest(
   if (logins.length !== 1 || logins[0] === undefined || logins[0].length === 0) {
     return { ok: false, code: PHONE_ERROR_CODES.PHONE_IDENTITY_REQUIRED };
   }
-  for (let index = 0; index < request.rawHeaders.length; index += 2) {
-    const name = request.rawHeaders[index]?.toLowerCase();
-    if (name !== undefined && FORBIDDEN_HEADERS.has(name)) {
-      return { ok: false, code: PHONE_ERROR_CODES.PHONE_FORWARDED_HEADER_FORBIDDEN };
-    }
+  if (!serveForwardedHeadersAllowed(request.rawHeaders, expectedHost)) {
+    return { ok: false, code: PHONE_ERROR_CODES.PHONE_FORWARDED_HEADER_FORBIDDEN };
   }
   return { ok: true, login: logins[0] };
 }

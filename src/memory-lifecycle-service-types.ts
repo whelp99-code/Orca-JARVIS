@@ -8,7 +8,7 @@ export type MemoryLifecycleExecution =
       readonly state: "approved" | "queued" | "dispatching" | "reconciling" | "provider_proved" | "settled" | "conflict";
       readonly request_digest?: string }
   | { readonly kind: "deletion"; readonly id: string;
-      readonly state: "requested" | "approved" | "suppressed" | "queued" | "applying" | "reconciling" | "provider_proved" | "settled" }
+      readonly state: "requested" | "approved" | "suppressed" | "queued" | "applying" | "reconciling" | "provider_proved" | "settled" | "conflict" }
   | { readonly kind: "export"; readonly id: string;
       readonly state: "requested" | "approved" | "queued" | "writing" | "provider_proved" | "available" | "expired" | "invalidated" };
 

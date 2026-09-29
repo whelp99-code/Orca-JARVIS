@@ -130,10 +130,21 @@ export type DailyLoopFailureCode =
 	// A phase executor refused or failed under a held claim. The refusal's own code is not a
 	// daily-loop failure code, so it travels with the throw and on the run's checkpoint detail.
 	| "EXECUTION_FAILED";
-export type DailyLoopAdvance = "step_completed" | "all_completed" | "failed";
+export type DailyLoopAdvance = "step_completed" | "all_completed" | "failed" | "waiting";
 export interface DailyLoopStepExecutor {
   advance(claim: DailyLoopClaim): DailyLoopAdvance;
   complete(claim: DailyLoopClaim): void;
+  defer?(at: Date): boolean;
+  awaitRefresh?(at: Date): Promise<void>;
+}
+
+/** Waits out a refresh hold. True means the caller must leave the run unclaimed. */
+export async function awaitDeferredRefresh(executor: DailyLoopStepExecutor, now: () => Date): Promise<boolean> {
+  if (!executor.defer?.(now())) return false;
+  const refresh = executor.awaitRefresh;
+  if (refresh === undefined) return true;
+  await refresh.call(executor, now());
+  return executor.defer?.(now()) === true;
 }
 export type DailyLoopUncertainReason = "EXECUTION_OUTCOME_UNCERTAIN";
 export type DailyLoopErrorCode =

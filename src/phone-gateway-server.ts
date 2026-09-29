@@ -14,7 +14,7 @@ import {
 } from "./phone-gateway-protocol.js";
 import { parseUpstream } from "./phone-gateway-config.js";
 import { createPhoneAuthorityReadAdapter, createPhoneRateLimiter } from "./phone-gateway-adapter.js";
-import { loadAssetNames, writePhoneGatewayError } from "./phone-gateway-http.js";
+import { loadAssetNames, loadPhoneDocument, writePhoneGatewayError } from "./phone-gateway-http.js";
 import { dispatchRequest } from "./phone-gateway-dispatch.js";
 import type { PhoneGatewayRequestCtx } from "./phone-gateway-request-ctx.js";
 import { createPhoneMemoryContext, type PhoneMemoryContextOptions } from "./phone-memory-context.js";
@@ -44,6 +44,7 @@ export function createPhoneGatewayServer(options: {
   if (upstreamUrl === undefined) throw new PhoneGatewayError(PHONE_ERROR_CODES.PHONE_NOT_READY);
   const staticRoot = realpathSync(options.staticRoot);
   const assets = loadAssetNames(staticRoot);
+  const document = loadPhoneDocument(staticRoot, assets);
   const now = options.now ?? Date.now;
   const memoryReconcile = options.memoryReconcile === undefined ? undefined
     : createPhoneMemoryReconcile(options.memoryReconcile, () => new Date(now()));
@@ -60,7 +61,7 @@ export function createPhoneGatewayServer(options: {
   const httpServer = createServer((request, response) => {
     void handleRequest({
       request, response, config: options.config, sessions, limiter, adapter,
-      staticRoot, assets, now, audit, upstream: upstreamUrl,
+      staticRoot, assets, document, now, audit, upstream: upstreamUrl,
       memoryReconcile, memoryReconcileAgentId: options.memoryReconcile?.agent_id,
       memoryProviderVerifier, memoryProviderAgentId: options.memoryProviderVerifier?.agent_id,
       memoryContext, memoryAgentId: options.memoryContext?.agent_id, memoryProfile: options.memoryContext?.memory.profile,

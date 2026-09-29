@@ -14,6 +14,15 @@ export const MEMORY_ERROR_CODES = ["MEMORY_INPUT_INVALID", "MEMORY_REQUEST_TOO_L
   "MEMORY_PROVIDER_SPLIT_BRAIN", "MEMORY_EFFECT_SERVICE_UNAVAILABLE"] as const;
 export type MemoryErrorCode = (typeof MEMORY_ERROR_CODES)[number];
 export type MemoryResourceState = "ready" | "stale" | "no_data" | "offline" | "unavailable" | "incompatible";
+/** One authority-side event on a record: an owner command attempt or an approved suppression. */
+export type MemoryRecordHistoryEntry = {
+  readonly operation: "correct" | "forget" | "export";
+  /** Effect attempt state, or `suppressed` once an approval receipt made it effective. */
+  readonly state: string;
+  readonly request_id: string;
+  readonly receipt_id: string | null;
+  readonly at: string;
+};
 export type MemoryPublicRecord = {
   readonly record_token: string; readonly record_revision: string; readonly title: string;
   readonly excerpt: string | null; readonly citation: string; readonly sensitivity: string;
@@ -21,5 +30,7 @@ export type MemoryPublicRecord = {
   readonly freshness: string; readonly provenance: { readonly source_class: "memory";
     readonly owner_class: string; readonly origin_label: string; readonly origin_revision: string | null };
   readonly conflict_state: "none" | "unresolved"; readonly history_state: "current" | "superseded";
+  readonly superseded_by: string | null;
+  readonly history: readonly MemoryRecordHistoryEntry[];
   readonly actions: readonly ("inspect" | "correct" | "forget" | "export")[];
 };

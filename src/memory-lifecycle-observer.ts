@@ -34,6 +34,20 @@ function isNotProved(value: MemoryDispositionProofV1 | NotProved): value is NotP
   return "kind" in value && value.kind === "not_proved";
 }
 
+/** Provider states that are decided rather than pending, and cannot later become proved. */
+const DECIDED_STATES = new Set(["failed", "expired"]);
+/** Phases in which the provider has claimed the request but not begun changing the vault. */
+const UNAPPLIED_PHASES = new Set([null, undefined, "claimed"]);
+
+/**
+ * A decided state alone is not enough to end a lane: the provider can fail partway through an
+ * apply, and that outcome stays uncertain. Only refuse when its phase proves nothing was written.
+ */
+function refusedBeforeEffect(state: string, phase: unknown): boolean {
+  return DECIDED_STATES.has(state)
+    && UNAPPLIED_PHASES.has(phase === null || phase === undefined ? phase : String(phase));
+}
+
 export class ProductionMemoryLifecycleObserver implements MemoryLifecycleObserver {
   constructor(private readonly options: ProductionMemoryLifecycleObserverOptions) {}
 
@@ -95,11 +109,17 @@ export class ProductionMemoryLifecycleObserver implements MemoryLifecycleObserve
   private async proof(expected: MemoryProofExpectation): Promise<MemoryDispositionProofV1 | NotProved> {
     const status = await this.options.provider.requestStatus(expected.request_id);
     switch (status.kind) {
-      case "data":
-        if (status.value.state !== "proved") return { kind: "not_proved",
-          code: `MEMORY_PROVIDER_${String(status.value.state).toUpperCase()}` };
+      case "data": {
+        const state = String(status.value.state);
+        if (state !== "proved") {
+          const code = `MEMORY_PROVIDER_${state.toUpperCase()}`;
+          return refusedBeforeEffect(state, status.value.phase)
+            ? { kind: "not_proved", code, refused: true }
+            : { kind: "not_proved", code };
+        }
         return verifyMemoryDispositionProof(this.options.authority,
           status.value.proof, expected, this.options.clock());
+      }
       case "invalid": case "unavailable": case "uncertain":
         return { kind: "not_proved", code: status.code };
       default:

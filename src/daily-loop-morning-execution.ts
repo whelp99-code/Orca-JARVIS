@@ -3,12 +3,16 @@ import { DailyControlLoop } from "./daily-loop-service.js";
 import { DailyLoopStore } from "./daily-loop-store.js";
 import { parseDailyLoopClaim, parseDailyLoopOptions } from "./daily-loop-input.js";
 import { assertDailyLoopIntegrity } from "./daily-loop-integrity.js";
-import { evaluateRefreshContext, kstLocalDate } from "./daily-loop-time.js";
+import { evaluateRefreshContext, kstInstant, kstLocalDate } from "./daily-loop-time.js";
 import { DailyLoopError, type DailyLoopAdvance, type DailyLoopClaim,
   type DailyLoopOptions, type DailyLoopStepExecutor } from "./daily-loop-types.js";
 import { DailyBudgetExceeded, dailyLoopUsage, dailyUsageExhausted } from "./daily-loop-usage.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { MorningBriefPublisher } from "./morning-brief-publisher.js";
+import {
+  beforeMorningAssemblyDeadline, morningRefreshReasons, morningRefreshSubscription,
+  refreshSubscriptionOnTime, type MorningAssemblyOptions,
+} from "./morning-operating-brief.js";
 import type { PreparedMemoryReference } from "./memory-reference-context.js";
 import { produceStoredDailyRecommendation } from "./personal-daily-production.js";
 import { parseTrustedCloseoutKey } from "./evening-closeout-crypto.js";
@@ -46,20 +50,51 @@ export function createStoredMorningDailyLoop(authority: AuthorityDb, optionsValu
   closeoutKeyValue?: TrustedCloseoutKey, production?: DailyProductionSource): DailyControlLoop {
   const closeoutKey = closeoutKeyValue === undefined ? undefined : parseTrustedCloseoutKey(closeoutKeyValue);
   const parsed = parseDailyLoopOptions(optionsValue); let lastAt: Date | null = null;
-  const options: DailyLoopOptions = { ...parsed, clock: () => {
+  const monotonic = () => {
     const at = parsed.clock();
     if (lastAt !== null && at < lastAt) throw new DailyLoopError("DAILY_LOOP_STALE_LEASE");
     lastAt = at; return at;
-  } };
+  };
+  const parsedWait = Reflect.get(parsed.clock, "wait");
+  if (typeof parsedWait === "function") Object.assign(monotonic, { wait: parsedWait });
+  const options: DailyLoopOptions = { ...parsed, clock: monotonic };
   const store = new DailyLoopStore(authority);
   return new DailyControlLoop(store, options,
     new StoredMorningSteps(authority, store, options, closeoutKey, production), "morning", true);
 }
 
 class StoredMorningSteps implements DailyLoopStepExecutor {
+  private refreshSeen = false;
+  private refreshValue: unknown = null;
   constructor(private readonly authority: AuthorityDb, private readonly store: DailyLoopStore,
-    private readonly options: DailyLoopOptions, private readonly closeoutKey?: TrustedCloseoutKey,
-    private readonly production?: DailyProductionSource) {}
+    private readonly options: DailyLoopOptions,
+    private readonly closeoutKey?: TrustedCloseoutKey, private readonly production?: DailyProductionSource) {}
+
+  private assembly(at: Date): MorningAssemblyOptions {
+    const subscribedAt = morningRefreshSubscription(this.authority, at);
+    return { freshnessMs: this.options.refresh_freshness_ms, ...(subscribedAt === undefined ? {} : { subscribedAt }) };
+  }
+
+  defer(at: Date): boolean {
+    const subscribedAt = this.assembly(at).subscribedAt;
+    if (subscribedAt === undefined || !refreshSubscriptionOnTime(subscribedAt, at) || !beforeMorningAssemblyDeadline(at)) return false;
+    const reasons = morningRefreshReasons(at, this.options.refresh_reader.read(at), this.options.refresh_freshness_ms, true);
+    return reasons.some(reason => reason !== "refresh_subscription_late");
+  }
+
+  async awaitRefresh(): Promise<void> {
+    const wait = Reflect.get(this.options.clock, "wait");
+    if (typeof wait !== "function") return;
+    let at = this.options.clock();
+    while (this.defer(at)) {
+      const remaining = kstInstant(kstLocalDate(at), 7, 20).getTime() - at.getTime();
+      if (remaining <= 0) return;
+      await Reflect.apply(wait, this.options.clock, [Math.min(30_000, remaining)]);
+      const next = this.options.clock();
+      if (next.getTime() <= at.getTime()) return;
+      at = next;
+    }
+  }
 
   complete(claimValue: DailyLoopClaim): void {
     const claim = parseDailyLoopClaim(claimValue);
@@ -118,6 +153,7 @@ class StoredMorningSteps implements DailyLoopStepExecutor {
         if (next < lastAt || kstLocalDate(next) !== run["loop_date"]) throw new DailyLoopError("DAILY_LOOP_STALE_LEASE");
         lastAt = next; return next;
       };
+      let held = false;
       try {
         this.authority.db.transaction(() => {
           if (step.step_key === "morning_reconcile") {
@@ -132,9 +168,19 @@ class StoredMorningSteps implements DailyLoopStepExecutor {
                 ...(production.memory_reference === undefined
                   ? {} : { memory_reference: production.memory_reference }) });
             }
-            new MorningBriefPublisher(this.authority, now).publish(claim, 1_048_576);
+            const publishAt = (at: Date) => new MorningBriefPublisher(this.authority, () => at, this.assembly(at))
+              .publish(claim, 1_048_576, undefined, this.refreshSeen ? this.refreshValue : null);
+            let cursor = now();
+            let publication = publishAt(cursor);
+            while (publication.held) {
+              const next = now();
+              if (next.getTime() <= cursor.getTime()) { held = true; return; }
+              cursor = next;
+              publication = publishAt(cursor);
+            }
           } else {
-            const refresh = this.options.refresh_reader.read(at); const completedAt = now();
+            this.refreshValue = this.options.refresh_reader.read(at); this.refreshSeen = true;
+            const refresh = this.refreshValue; const completedAt = now();
             const detail = evaluateRefreshContext(refresh, completedAt, this.options.refresh_freshness_ms);
             this.store.completeStep({ claim, step, detail, at: completedAt });
           }
@@ -147,6 +193,7 @@ class StoredMorningSteps implements DailyLoopStepExecutor {
         if (!(error instanceof DailyBudgetExceeded)) throw error;
         this.store.fail(claim, error.code, now()); return "failed";
       }
+      if (held) return "waiting";
       return "step_completed";
     }).immediate();
   }

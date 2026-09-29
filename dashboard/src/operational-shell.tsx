@@ -2,6 +2,7 @@ import type { ReactNode } from "react";
 import { NavLink } from "react-router-dom";
 import { copy } from "./copy.js";
 import type { ConnectionState } from "./store.js";
+import { useSurface } from "./surface.js";
 
 type OperationalShellProps = Readonly<{
   connectionState: ConnectionState;
@@ -18,6 +19,8 @@ const NAV_ITEMS = [
   { label: copy.nav.approvals, to: "/approvals" },
   { label: copy.nav.security, to: "/security" },
 ] as const;
+/** The routes the phone gateway serves; every other path is a gateway 404. */
+const PHONE_NAV_ITEMS = NAV_ITEMS.filter(item => item.to === "/" || item.to === "/memory" || item.to === "/security");
 
 const CONNECTION_LABELS = {
   connecting: "연결 중",
@@ -29,13 +32,18 @@ const CONNECTION_LABELS = {
 const ARGO_REVISION = "de874c1254da8fe170ad7de9c82f11c626349847";
 
 export function OperationalShell({ connectionState, children }: OperationalShellProps) {
+  const phone = useSurface() === "phone";
+  const items = phone ? PHONE_NAV_ITEMS : NAV_ITEMS;
+  // The phone has no authority stream: it is read-only by design, not disconnected.
+  const state = phone ? "readonly" : connectionState;
+  const label = phone ? copy.readOnly : CONNECTION_LABELS[connectionState];
   return (
     <div className="operational-shell">
       <a className="skip-link" href="#main-content">{copy.skip}</a>
       <header className="control-nav">
         <div className="page-frame control-nav-inner">
           <nav className="primary-nav" aria-label={copy.navLabel}>
-            {NAV_ITEMS.map((item) => (
+            {items.map((item) => (
               <NavLink end={item.to === "/"} key={item.to} to={item.to}>
                 {item.label}
               </NavLink>
@@ -43,14 +51,14 @@ export function OperationalShell({ connectionState, children }: OperationalShell
           </nav>
           <div
             className="connection-state shell-connection"
-            data-state={connectionState}
+            data-state={state}
             role="status"
             aria-label={copy.liveUpdates}
             aria-live="polite"
             aria-atomic="true"
           >
             <span className="connection-icon" aria-hidden="true" />
-            <span>{CONNECTION_LABELS[connectionState]}</span>
+            <span>{label}</span>
           </div>
         </div>
       </header>

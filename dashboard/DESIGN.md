@@ -61,7 +61,8 @@ The document owns vertical scrolling. The operational shell uses StyleGallery's 
 
 ### Operational Shell
 - **Structure**: skip link, sticky header with primary navigation and canonical connection state, one main landmark, and attribution footer.
-- **States**: live, reconnecting, offline, current route, keyboard focus.
+- **States**: live, reconnecting, offline, read-only (phone), current route, keyboard focus.
+- **Surfaces**: the same build serves the loopback control center (`local`) and the tailnet phone gateway (`phone`, marked by the gateway's `jarvis-phone-mode` meta). On the phone the navigation offers only Today, Memory and Security, the state pill reads `읽기 전용` with the `--color-info` dot (`data-state="readonly"`), no authority stream opens, and every mutation control is absent: the phone is read-only by design, never "disconnected".
 - **Spacing**: `--space-1` through `--space-4`; navigation and controls use `--size-nav` and `--size-control`.
 - **Accessibility**: skip link targets the programmatically focusable main landmark; navigation follows route order; state is politely announced; footer links to the shipped notice.
 - **Motion**: none.
@@ -117,20 +118,26 @@ The document owns vertical scrolling. The operational shell uses StyleGallery's 
 
 ### Today Decision Surface
 - **Structure**: six semantic panels in fixed source order: NOW, BLOCKED, DECISIONS, NEXT 3, WORKERS, RISKS.
-- **States**: loading, live, stale, offline, blocked, staging, accepted, and validation error.
+- **States**: loading, live, stale, offline, blocked, staging, accepted, validation error, and read-only (phone: a status banner replaces the stale alert, the approvals link and worker/risk authority data are not rendered, and no action is enabled).
 - **Spacing**: `--space-1` through `--space-6`; action rows use existing Record List and Form Control geometry.
 - **Accessibility**: native headings, lists, `details`/`summary`, `time`, buttons, status, and alert semantics; cached data never enables mutation.
 - **Motion**: none; async controls swap labels and disabled state immediately.
 - **Layout**: StyleGallery `ram-grid` inside the existing sticky-header shell; document owns scrolling and source/focus order is unchanged at every width.
 
 ### Memory Control Surface
-- **Structure**: heading/status, bounded Search, Results/Detail, Conflicts, Candidates, then Effects and privacy receipts in fixed DOM order.
-- **States**: loading, ready, no data, stale, offline, incompatible, sensitive-redacted, pending approval, applying, verified complete, and forgotten removal.
-- **Spacing**: `--space-1` through `--space-6`; forms, records, panels, and status reuse existing primitives.
-- **Accessibility**: persistent labels, native buttons/checkbox/fieldset, one atomic live status, initiator-safe focus, and no subject-revealing accessible names for redacted records.
+- **Structure**: heading with provider badge and a `Refresh memory` button, one atomic live status, bounded Search, Results/Detail, Conflicts, Candidates, then Effects and privacy receipts in fixed DOM order.
+- **States**: loading, ready, no data, expired (status token lapsed), stale (provider reported stale evidence), offline, unavailable, incompatible, not loaded, sensitive-redacted, superseded, staging (busy), pending approval, applying, verified complete, and forgotten removal. The badge and status copy derive from the latest provider read, never from the status route alone; offline, unavailable, or stale is never presented as an empty result or as `ready`, and a panel whose data was cleared or could not be read renders an explicit "Not loaded" state (or "Loading" while a reload is in flight), never its empty-state copy.
+- **Detail**: title, excerpt (or redaction/supersession copy), an `identity-list` of Citation, Provenance (safe label / owner class), Sensitivity, Retention with native `time`, Freshness, and History (`current` or `superseded` plus the superseding request); then a bounded `Record history` ordered list (operation, state, request id, receipt id, `time`), and finally the correction form and Privacy actions.
+- **Actions**: correct/forget/export render only when the status route enables mutations and the record lists the action; a staging action swaps its label, disables its siblings, and dispatches exactly one command per activation. Superseded records expose no actions. On the phone surface no action renders and the Candidates and Effects panels are omitted: the gateway proxies status, conflicts and search only, and every memory change is staged from the Linux control center.
+- **Announcements**: staged, stale-selection, prohibited-content, and transport outcomes are announced through the single atomic status region using safe copy keyed by machine code; raw API messages never render. An outcome speaks only for the search generation that produced it, so expiry, a privacy-epoch change, or a new search retires it and the region reverts to provider copy rather than reporting an outcome the surface has outlived.
+- **Freshness**: the status read token expires after 60 s; expiry clears every panel and marks them not loaded. Searching on an expired status re-reads the whole surface (status and every panel) before querying, and `Refresh memory` does the same on demand. A same-epoch reload refreshes results and history in place; a privacy-epoch change clears private results, drafts, and selection immediately. A reload that fails after the surface is up keeps the surface, marks the panels not loaded, and announces the failure.
+- **Color**: badge text uses `--color-success` (ready), `--color-warning` (expired, stale, incompatible), `--color-danger` (offline, unavailable); result and conflict notices follow the same ramp. State is text plus color, never color alone.
+- **Spacing**: `--space-1` through `--space-6`; forms, records, panels, and status reuse existing primitives; the Detail body and search form inset by `--space-4`.
+- **Typography**: the Detail title uses `--type-panel`; metadata and history identifiers use `--font-mono` at `--type-sm`; CJK text keeps whole words (`word-break: keep-all`) and only unbroken tokens longer than a line may wrap anywhere.
+- **Accessibility**: persistent labels, native buttons/checkbox/fieldset, one atomic live status, initiator-safe focus, `aria-busy` on staging regions, and no subject-revealing accessible names for redacted records.
 - **Motion**: none; privacy removal and authority state changes are immediate.
 - **Layout**: document scroll owner; Results/Detail and Candidates/Effects use overflow-safe two-column grids above 40rem and preserve source/focus order when stacked.
-- **Privacy**: no query in URL/storage, no memory-derived links or HTML, and no path/download/clipboard surface.
+- **Privacy**: no query in URL/storage, no memory-derived links or HTML, no path/download/clipboard surface, and provider origin labels that look like paths or URIs are replaced with a safe label.
 
 ## 6. Motion & Interaction
 

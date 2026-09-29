@@ -178,6 +178,7 @@ export async function correctionPreparedFixture(resolved?: { target: ResolvedMem
   approve(control, action, localKey(db));
   const claim = control.claim(action.request_id, "fixture", NOW);
   return { database, db, root, control, action, claim, candidate, writer, saga, runtime, databaseRuntime,
+    target: resolvedTarget, scope: resolved?.scope ?? scope(),
     setTime: (now: Date) => { current = now; },
     setObservation: (value: CorrectionLifecycleObservation) => { observation = value; },
     close: async () => { await databaseRuntime.close(); closeMemoryDatabase(database); rmSync(root,{recursive:true,force:true}); } };
@@ -187,7 +188,8 @@ export async function correctionControlFixture() {
   try { return { ...fixture, record: await fixture.saga.dispatch(fixture.claim) }; }
   catch (error) { await fixture.close(); throw error; }
 }
-export function correctionObservation(fixture: Awaited<ReturnType<typeof correctionControlFixture>>): CorrectionLifecycleObservation {
+export function correctionObservation(fixture: Pick<Awaited<ReturnType<typeof correctionControlFixture>>,
+  "db" | "record"> & { readonly writer: { readonly calls: readonly MemoryEffectWriteRequestV2[] } }): CorrectionLifecycleObservation {
   const request = fixture.writer.calls[0];
   if (!request) throw new Error("NO_DISPATCH");
   const tombstoneDelta = request.tombstone_chain_delta[0];

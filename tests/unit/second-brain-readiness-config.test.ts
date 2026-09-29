@@ -6,9 +6,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import * as readinessRuntime from "../../src/second-brain-readiness-runtime.js";
+import { producerConfigOutcomes } from "../fixtures/second-brain-config-oracle.js";
 
 const VALID = 'vault_root = "/safe/vault"\n';
-const PRODUCER_ROOT = "/home/jm/orca/workspaces/second-brain-app/jarvis-personal-operating-system";
 
 type CorpusCase = {
   readonly name: string;
@@ -100,10 +100,10 @@ describe("pinned Second Brain configuration descriptor", () => {
     }
   });
 
-  it("parses complete TOML and never accepts bytes rejected by tomllib or the producer", async () => {
+  it("parses complete TOML and preserves independent producer acceptance and resolved vaults", async () => {
     const root = mkdtempSync(join(tmpdir(), "second-brain-config-corpus-"));
     try {
-      const authorities = producerOutcomes(CORPUS);
+      const authorities = producerConfigOutcomes(CORPUS.map(item => item.text));
       for (const [index, item] of CORPUS.entries()) {
         const path = join(root, `${String(index)}.toml`);
         writeFileSync(path, item.text);
@@ -198,48 +198,3 @@ describe("pinned Second Brain configuration descriptor", () => {
     }
   });
 });
-
-type AuthorityOutcome = { readonly tomllib: boolean; readonly producer: boolean; readonly vault?: string };
-
-function producerOutcomes(cases: readonly CorpusCase[]): readonly AuthorityOutcome[] {
-  const script = `
-import json, pathlib, tempfile, tomllib
-from sb.config import load_config
-cases = json.loads(input())
-out = []
-with tempfile.TemporaryDirectory() as root:
-    for index, text in enumerate(cases):
-        path = pathlib.Path(root) / f"{index}.toml"
-        path.write_text(text, encoding="utf-8")
-        toml_ok = producer_ok = False
-        vault = None
-        try:
-            tomllib.loads(text)
-            toml_ok = True
-        except Exception:
-            pass
-        try:
-            vault = load_config(path).vault_root
-            producer_ok = True
-        except Exception:
-            pass
-        out.append({"tomllib": toml_ok, "producer": producer_ok, "vault": vault})
-print(json.dumps(out, ensure_ascii=False))
-`;
-  const output = execFileSync("python3", ["-c", script], {
-    encoding: "utf8",
-    env: { ...process.env, PYTHONPATH: PRODUCER_ROOT },
-    input: `${JSON.stringify(cases.map(item => item.text))}\n`,
-  });
-  const parsed: unknown = JSON.parse(output);
-  if (!Array.isArray(parsed)) throw new TypeError("producer corpus result required");
-  return parsed.map(value => {
-    if (typeof value !== "object" || value === null) throw new TypeError("producer corpus row required");
-    const tomllib = Reflect.get(value, "tomllib");
-    const producer = Reflect.get(value, "producer");
-    const vault = Reflect.get(value, "vault");
-    if (typeof tomllib !== "boolean" || typeof producer !== "boolean"
-      || (vault !== null && typeof vault !== "string")) throw new TypeError("producer corpus row malformed");
-    return { tomllib, producer, ...(typeof vault === "string" ? { vault } : {}) };
-  });
-}

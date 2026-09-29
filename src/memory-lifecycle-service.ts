@@ -1,3 +1,4 @@
+import { z } from "zod";
 import type { KeyObject } from "node:crypto";
 import type { ClaimedControlCommand, ControlCommandRequestInput } from "./control-plane.js";
 import { JarvisError } from "./db.js";
@@ -57,6 +58,8 @@ export class ProductionMemoryLifecycleService implements MemoryLifecycleService 
   private readonly deletion: MemoryDeletionSaga;
   private readonly exportSaga: MemoryExportSaga;
   private readonly exports: MemoryExportStore;
+  // The coordinator serializes recovery with live sends; dispatching is not a crash while its send is in flight.
+  private pending: Promise<void> = Promise.resolve();
 
   constructor(
     private readonly runtime: MemorySagaRuntime,
@@ -80,7 +83,11 @@ export class ProductionMemoryLifecycleService implements MemoryLifecycleService 
     return this.exportSaga.prepare(input);
   }
 
-  async execute(command: ClaimedControlCommand): Promise<MemoryLifecycleExecution> {
+  execute(command: ClaimedControlCommand): Promise<MemoryLifecycleExecution> {
+    return this.exclusive(() => this.executeOnce(command));
+  }
+
+  private async executeOnce(command: ClaimedControlCommand): Promise<MemoryLifecycleExecution> {
     switch (command.action) {
       case "memory.outbox.dispatch": {
         if (command.args.schema_version !== 3) throw new JarvisError("MEMORY_LIFECYCLE_ACTION_INVALID");
@@ -104,26 +111,35 @@ export class ProductionMemoryLifecycleService implements MemoryLifecycleService 
     }
   }
 
-  async reconcilePending(limit: number): Promise<MemoryLifecycleCycle> {
+  reconcilePending(limit: number): Promise<MemoryLifecycleCycle> {
+    return this.exclusive(() => this.reconcilePendingOnce(limit));
+  }
+
+  private async reconcilePendingOnce(limit: number): Promise<MemoryLifecycleCycle> {
     if (!Number.isSafeInteger(limit) || limit < 1 || limit > 256) {
       throw new JarvisError("MEMORY_LIFECYCLE_LIMIT_INVALID");
     }
     const controlRecovery = reconcileCorrectionControls(this.runtime.authority, this.runtime.clock(), limit);
     let corrections = 0; let deletions = 0; let exports = 0;
-    const correctionIds = this.runtime.authority.db.prepare(
-      `SELECT correction_id FROM memory_correction_requests
-       WHERE state IN ('reconciling','provider_proved') ORDER BY updated_at LIMIT ?`,
-    ).all(limit) as Array<{ readonly correction_id: string }>;
-    for (const row of correctionIds) {
-      await this.correction.reconcile(row.correction_id); corrections += 1;
-    }
-    const remainingAfterCorrections = Math.max(0, limit - corrections);
-    const deletionIds = this.runtime.authority.db.prepare(
-      `SELECT deletion_id FROM memory_deletion_effect_requests
-       WHERE state IN ('reconciling','provider_proved') ORDER BY updated_at LIMIT ?`,
-    ).all(remainingAfterCorrections) as Array<{ readonly deletion_id: string }>;
-    for (const row of deletionIds) {
-      await this.deletion.reconcile(row.deletion_id); deletions += 1;
+    // Recovery follows the same global tombstone order as first dispatch, not lane priority.
+    const pending = z.array(z.object({ lane: z.enum(["correction", "deletion"]), id: z.string() })).parse(
+      this.runtime.authority.db.prepare(
+        `SELECT 'correction' AS lane,correction_id AS id,tombstone_sequence,updated_at
+         FROM memory_correction_requests WHERE state IN ('queued','dispatching','reconciling','provider_proved')
+         UNION ALL
+         SELECT 'deletion' AS lane,deletion_id AS id,tombstone_sequence,updated_at
+         FROM memory_deletion_effect_requests WHERE state IN ('queued','applying','reconciling','provider_proved')
+         ORDER BY tombstone_sequence,updated_at LIMIT ?`,
+      ).all(limit));
+    for (const row of pending) {
+      switch (row.lane) {
+        case "correction": await this.correction.reconcile(row.id); corrections += 1; break;
+        case "deletion": await this.deletion.reconcile(row.id); deletions += 1; break;
+        default: {
+          const unreachable: never = row.lane;
+          throw new JarvisError("MEMORY_LIFECYCLE_ACTION_INVALID", String(unreachable));
+        }
+      }
     }
     const remaining = Math.max(0, limit - corrections - deletions);
     const exportIds = this.runtime.authority.db.prepare(
@@ -144,7 +160,16 @@ export class ProductionMemoryLifecycleService implements MemoryLifecycleService 
   }
 
   close(): Promise<void> {
-    return this.closeRuntime();
+    return this.exclusive(this.closeRuntime);
+  }
+
+  private async exclusive<T>(operation: () => Promise<T>): Promise<T> {
+    const previous = this.pending;
+    const next = Promise.withResolvers<void>();
+    this.pending = next.promise;
+    await previous;
+    try { return await operation(); }
+    finally { next.resolve(); }
   }
 }
 

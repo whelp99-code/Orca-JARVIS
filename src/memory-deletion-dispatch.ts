@@ -25,6 +25,7 @@ import {
   type ResolvedMemoryTargetV2,
 } from "./second-brain-effect-v2.js";
 import type { SecondBrainWriteOutcome } from "./second-brain-adapter-types.js";
+import type { SecondBrainEffectService } from "./second-brain-effect-service.js";
 
 const hash = (domain: string, value: unknown): string => `sha256:${createHash("sha256")
   .update(domain).update(canonicalize(value)).digest("hex")}`;
@@ -78,6 +79,7 @@ export class MemoryDeletionDispatcher {
     if (receipt === undefined) throw new JarvisError("MEMORY_DELETION_AUTHORITY_INVALID");
     const firstTarget = targets[0];
     if (firstTarget === undefined) throw new JarvisError("MEMORY_DELETION_TARGET_MISSING");
+    await assertDeletionTargetsCurrent(this.options.provider, targets);
     const prepared = this.preparations.prepare({ lane_id: laneId,
       provider_high_water: await this.providerHighWater(preparation),
       tombstone: { operation: "forget", lane_id: laneId, targets,
@@ -186,4 +188,29 @@ export class MemoryDeletionDispatcher {
     this.store.uncertain(row.deletion_id,
       "code" in outcome ? outcome.code : "MEMORY_DELETION_UNCERTAIN", now);
   }
+}
+
+/**
+ * Fail closed before a deletion frame when the provider proves the target generation moved.
+ * An unreadable status is not proof of staleness: the already-authorized resume must still
+ * send its one frame, and the first dispatch's own high-water check still fails closed.
+ */
+export async function assertDeletionTargetsCurrent(
+  provider: SecondBrainEffectService,
+  targets: readonly ResolvedMemoryTargetV2[],
+): Promise<void> {
+  const status = await provider.generationStatus();
+  if (status.kind !== "data") return;
+  const generationId = status.value["generation_id"];
+  const manifest = status.value["generation_manifest_digest"];
+  const head = status.value["vault_head"];
+  const tree = status.value["vault_tree"];
+  if (typeof generationId !== "string" || typeof manifest !== "string"
+    || typeof head !== "string" || typeof tree !== "string") {
+    throw new JarvisError("MEMORY_DELETION_TARGET_STALE");
+  }
+  const current = targets.every(target => target.generation_id === generationId
+    && target.generation_manifest_digest === manifest
+    && target.vault_head === head && target.vault_tree === tree);
+  if (!current) throw new JarvisError("MEMORY_DELETION_TARGET_STALE");
 }

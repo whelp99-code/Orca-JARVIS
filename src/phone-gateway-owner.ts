@@ -7,7 +7,9 @@ import {
 } from "./phone-gateway-protocol.js";
 import { authenticateTailnetOwner, headerValues, isTrustedServeRequest } from "./phone-gateway-config.js";
 import { matchPhoneRoute } from "./phone-gateway-routes.js";
-import { phoneHtml, retryAfter, writeAsset, writeHtml, writeJson, writePhoneGatewayError } from "./phone-gateway-http.js";
+import { retryAfter, writeAsset, writeHtml, writeJson, writePhoneGatewayError } from "./phone-gateway-http.js";
+import { bootstrapDocumentSession } from "./phone-gateway-navigation.js";
+import { servePhoneRemoteRoute } from "./phone-gateway-remote.js";
 import { readPostBody, validateMemoryBody } from "./phone-gateway-body.js";
 import type { DispatchUpdate, PhoneGatewayRequestCtx } from "./phone-gateway-request-ctx.js";
 import { createPhoneMemorySessionSource } from "./dashboard/memory-session-source.js";
@@ -110,38 +112,41 @@ async function handleAuthedRoute(
     update({ outcome: "allowed", code: "ok", status: 200 });
     return;
   }
-  if (auth.kind !== "ok") {
-    ctx.response.setHeader("Set-Cookie", ctx.sessions.expireCookie());
-    writePhoneGatewayError(ctx.response, { code: PHONE_ERROR_CODES.PHONE_SESSION_REQUIRED, requestId });
-    update({ code: PHONE_ERROR_CODES.PHONE_SESSION_REQUIRED, status: 401 });
-    return;
-  }
+  const session = auth.kind === "ok"
+    ? { idHmac: auth.idHmac, cookieHeader: cookieHeaders[0] }
+    : bootstrapDocumentSession(ctx, method, matched.routeClass, requestId, update);
+  if (session === undefined) return;
   if (matched.needsCsrf) {
     const csrfValues = headerValues(ctx.request.rawHeaders, CSRF_HEADER);
-    if (csrfValues.length !== 1 || csrfValues[0] === undefined || !ctx.sessions.csrfMatches(auth.csrfHmac, csrfValues[0])) {
+    if (auth.kind !== "ok" || csrfValues.length !== 1 || csrfValues[0] === undefined
+      || !ctx.sessions.csrfMatches(auth.csrfHmac, csrfValues[0])) {
       writePhoneGatewayError(ctx.response, { code: PHONE_ERROR_CODES.PHONE_CSRF_REQUIRED, requestId });
       update({ code: PHONE_ERROR_CODES.PHONE_CSRF_REQUIRED, status: 403 });
       return;
     }
   }
-  await serveMatchedRoute(ctx, method, path, matched, auth.idHmac, cookieHeaders[0], requestId, update);
+  await serveMatchedRoute(ctx, method, path, matched, session.idHmac, session.cookieHeader, requestId, update);
 }
 
-async function serveMatchedRoute(
-  ctx: PhoneGatewayRequestCtx,
-  method: string,
-  path: string,
+async function serveMatchedRoute(ctx: PhoneGatewayRequestCtx, method: string, path: string,
   matched: Extract<ReturnType<typeof matchPhoneRoute>, { readonly kind: "ok" }>,
-  idHmac: Buffer,
-  cookieHeader: string | undefined,
-  requestId: string,
+  idHmac: Buffer, cookieHeader: string | undefined, requestId: string,
   update: (value: DispatchUpdate) => void,
 ): Promise<void> {
   const { isAuthenticated, rejectAuthentication, stillAuthenticated, refreshCookie } =
     phoneRequestAuthentication(ctx, cookieHeader, idHmac, requestId, update);
+  if (matched.routeClass === "security" || matched.routeClass === "remote_approval") {
+    await servePhoneRemoteRoute(ctx, method, path, matched, isAuthenticated, stillAuthenticated, refreshCookie, requestId, update);
+    return;
+  }
   if (matched.routeClass === "shell") {
+    if (ctx.document === undefined) {
+      writePhoneGatewayError(ctx.response, { code: PHONE_ERROR_CODES.PHONE_NOT_READY, requestId });
+      update({ code: PHONE_ERROR_CODES.PHONE_NOT_READY, status: 503 });
+      return;
+    }
     refreshCookie();
-    writeHtml(ctx.response, requestId, phoneHtml(path === "/memory" ? "Memory" : "Today"));
+    writeHtml(ctx.response, requestId, ctx.document);
     update({ outcome: "allowed", code: "ok", status: 200 });
     return;
   }

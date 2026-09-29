@@ -272,3 +272,7 @@ h1 {
 .connection-state[data-state="offline"] .connection-icon {
   background: var(--color-danger);
 }
+
+.connection-state[data-state="readonly"] .connection-icon {
+  background: var(--color-info);
+}

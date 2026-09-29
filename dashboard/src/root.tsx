@@ -19,6 +19,7 @@ import { createBrowserSecurityClient, SecurityPage } from "./pages/security-page
 import { TaskDetailPage } from "./pages/task-detail-page.js";
 import { TaskListPage } from "./pages/task-list-page.js";
 import { ProposalPage } from "./proposal-page.js";
+import { SurfaceContext, type DashboardSurface } from "./surface.js";
 import { TodayRoute, type PersonalRuntime } from "./today-route.js";
 import type { createDashboardStore, DashboardState, ResourceState } from "./store.js";
 import { useDetailResource } from "./use-detail-resource.js";
@@ -36,6 +37,7 @@ type ControlCenterRootProps = Readonly<{
   personalRuntime?: PersonalRuntime;
   memoryRuntime?: MemoryClientRuntime;
   initialPath?: string;
+  surface?: DashboardSurface;
 }>;
 export function ControlCenterRoot({
   store,
@@ -45,16 +47,20 @@ export function ControlCenterRoot({
   personalRuntime,
   memoryRuntime,
   initialPath,
+  surface = "local",
 }: ControlCenterRootProps) {
   const content = (
-    <ControlCenter
-      store={store}
-      client={client}
-      authorityClient={authorityClient}
-      authorityIdFactory={authorityIdFactory}
-      personalRuntime={personalRuntime}
-      memoryRuntime={memoryRuntime}
-    />
+    <SurfaceContext.Provider value={surface}>
+      <ControlCenter
+        store={store}
+        client={client}
+        authorityClient={authorityClient}
+        authorityIdFactory={authorityIdFactory}
+        personalRuntime={personalRuntime}
+        memoryRuntime={memoryRuntime}
+        surface={surface}
+      />
+    </SurfaceContext.Provider>
   );
   return initialPath === undefined ? (
     <BrowserRouter>{content}</BrowserRouter>
@@ -70,27 +76,46 @@ function ControlCenter({
   authorityIdFactory,
   personalRuntime,
   memoryRuntime,
-}: Omit<ControlCenterRootProps, "initialPath">) {
+  surface,
+}: Omit<ControlCenterRootProps, "initialPath"> & Readonly<{ surface: DashboardSurface }>) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const proposalClient = useMemo(() => createProposalMutationClient(client.session), [client]);
   const liveAuthorityClient = useMemo(
     () => authorityClient ?? createAuthorityMutationClient(client.session),
     [authorityClient, client],
   );
+  const phone = surface === "phone";
 
+  // The gateway proxies no overview, task, agent or approval route and no event stream.
   useEffect(() => {
+    if (phone) return undefined;
     store.start();
     return () => store.stop();
-  }, [store]);
+  }, [store, phone]);
 
+  const today = (
+    <TodayRoute runtime={personalRuntime} overview={state.overview} approvals={state.approvals}
+      authorityClient={liveAuthorityClient} authorityConnection={state.connectionState} />
+  );
+  const memory = <MemoryRoute runtime={memoryRuntime} />;
+  const security = <SecurityPage client={createBrowserSecurityClient()} />;
+  if (phone) {
+    return (
+      <OperationalShell connectionState={state.connectionState}>
+        <Routes>
+          <Route path="/" element={today} />
+          <Route path="/memory" element={memory} />
+          <Route path="/security" element={security} />
+          <Route path="*" element={<NotFoundPage />} />
+        </Routes>
+      </OperationalShell>
+    );
+  }
   return (
     <OperationalShell connectionState={state.connectionState}>
       <Routes>
-        <Route path="/" element={(
-          <TodayRoute runtime={personalRuntime} overview={state.overview} approvals={state.approvals}
-            authorityClient={liveAuthorityClient} authorityConnection={state.connectionState} />
-        )} />
-        <Route path="/memory" element={<MemoryRoute runtime={memoryRuntime} />} />
+        <Route path="/" element={today} />
+        <Route path="/memory" element={memory} />
         <Route path="/overview" element={<OverviewRoute state={state} store={store} />} />
         <Route
           path="/tasks"
@@ -142,7 +167,7 @@ function ControlCenter({
             />
           )}
         />
-        <Route path="/security" element={<SecurityPage client={createBrowserSecurityClient()} />} />
+        <Route path="/security" element={security} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </OperationalShell>
@@ -166,7 +191,7 @@ function OverviewRoute({ state, store }: Readonly<{ state: DashboardState; store
       );
     case "success":
     case "empty":
-      return <App overview={state.overview.data} />;
+      return <App overview={state.overview.data} onRefresh={() => store.refreshOverview()} />;
     default:
       return assertNever(state.overview);
   }

@@ -1,10 +1,11 @@
 import type { ReactNode } from "react";
-import type { OverviewAgent, OverviewApproval, OverviewResponse } from "../../src/dashboard/read-model.js";
+import type { OverviewAgent, OverviewApproval, OverviewResponse, OverviewRisk } from "../../src/dashboard/read-model.js";
 import type { AuthorityMutationClient } from "./authority-api.js";
 import { AuthorityControls } from "./authority-controls.js";
-import type { PersonalClient } from "./personal-api.js";
+import type { NotificationItem, PersonalClient } from "./personal-api.js";
 import type { PersonalSnapshot } from "./personal-store.js";
 import { RecommendationAction } from "./recommendation-action.js";
+import { useSurface } from "./surface.js";
 
 type Props = Readonly<{
   snapshot: PersonalSnapshot;
@@ -49,7 +50,9 @@ function TodayContent({
   snapshot, overview, approvals, client, authorityClient, authorityConnected = true, onRefresh,
 }: ContentProps) {
   const { today, decisions, notifications, health } = snapshot.data;
-  const authorityAvailable = snapshot.status === "success" && snapshot.connectionState === "live" && authorityConnected;
+  // The phone gateway proxies personal reads only: no authority stream, overview, approvals or mutations.
+  const phone = useSurface() === "phone";
+  const authorityAvailable = !phone && snapshot.status === "success" && snapshot.connectionState === "live" && authorityConnected;
   const recommendationActionable = authorityAvailable && today.state === "ready"
     && decisions.state === "ready" && health.state !== "offline";
   return (
@@ -61,7 +64,9 @@ function TodayContent({
         </div>
         <p className="freshness-badge" data-freshness={today.state}>{today.state}</p>
       </header>
-      {snapshot.status === "stale" || snapshot.connectionState !== "live" || !authorityConnected ? (
+      {phone ? (
+        <p className="today-alert" role="status">Read-only phone view. Owner actions are taken in the Linux control center.</p>
+      ) : snapshot.status === "stale" || snapshot.connectionState !== "live" || !authorityConnected ? (
         <p className="today-alert" role="alert">Cached data is not authoritative. Actions are disabled until Linux reconnects.</p>
       ) : null}
       <div className="today-grid">
@@ -95,7 +100,7 @@ function TodayContent({
           </ul>
         </Section>
         <Section id="today-decisions" title="DECISIONS" tone="info">
-          <a href="/approvals">승인 목록 전체 보기</a>
+          {phone ? null : <a href="/approvals">승인 목록 전체 보기</a>}
           {decisions.items.length === 0 && approvals.length === 0 ? <p className="empty-state">No owner decisions</p> : null}
           <ul className="record-list">
             {decisions.items.map((decision) => (
@@ -128,21 +133,13 @@ function TodayContent({
           )}
         </Section>
         <Section id="today-workers" title="WORKERS">
-          <WorkerList agents={overview?.agents ?? []} />
+          {phone ? <p className="empty-state">Worker state is not served to the phone.</p>
+            : <WorkerList agents={overview?.agents ?? []} />}
         </Section>
         <Section id="today-risks" title="RISKS" tone="danger">
-          <ul className="record-list">
-            {(overview?.risks ?? []).map((risk) => (
-              <li className="record" key={risk.id}>
-                <p className="severity-label">{risk.severity}</p>
-                <p>{risk.message}</p>
-              </li>
-            ))}
-            {notifications.items.filter((item) => item.state !== "delivered").map((item) => (
-              <li className="record" key={item.intent_id}>{item.urgency}: {item.preview}</li>
-            ))}
-            {snapshot.connectionState === "live" ? null : <li className="record">Live updates disconnected</li>}
-          </ul>
+          <RiskList risks={phone ? [] : overview?.risks ?? []}
+            notifications={notifications.items.filter((item) => item.state !== "delivered")}
+            disconnected={!phone && snapshot.connectionState !== "live"} />
         </Section>
       </div>
     </div>
@@ -188,6 +185,27 @@ function NamedList({ title, values, empty }: Readonly<{
         <ul className="blocked-list">{values.map((value) => <li key={value}>{value}</li>)}</ul>
       )}
     </details>
+  );
+}
+function RiskList({ risks, notifications, disconnected }: Readonly<{
+  risks: readonly OverviewRisk[]; notifications: readonly NotificationItem[]; disconnected: boolean;
+}>) {
+  if (risks.length === 0 && notifications.length === 0 && !disconnected) {
+    return <p className="empty-state">No open risks or undelivered notifications</p>;
+  }
+  return (
+    <ul className="record-list">
+      {risks.map((risk) => (
+        <li className="record" key={risk.id}>
+          <p className="severity-label">{risk.severity}</p>
+          <p>{risk.message}</p>
+        </li>
+      ))}
+      {notifications.map((item) => (
+        <li className="record" key={item.intent_id}>{item.urgency}: {item.preview}</li>
+      ))}
+      {disconnected ? <li className="record">Live updates disconnected</li> : null}
+    </ul>
   );
 }
 function WorkerList({ agents }: Readonly<{ agents: readonly OverviewAgent[] }>) {

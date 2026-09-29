@@ -1,4 +1,4 @@
-// allow: SIZE_OK — one indivisible four-operation real-process lifecycle scenario.
+// allow: SIZE_OK — one indivisible real-process lifecycle: four proved effects, then the organic stale correction that requires that settled provider.
 import { withProvableExclusion } from "../fixtures/provable-exclusion.js";
 import { execFileSync } from "node:child_process";
 import { createHash, createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
@@ -28,6 +28,7 @@ import { MemoryCandidateStore } from "../../src/memory-candidate-store.js";
 import { registerMemoryEffectDelegationKey,
   registerMemoryProviderProofKey } from "../../src/memory-effect-delegation.js";
 import { createProductionMemoryLifecycleService } from "../../src/memory-lifecycle-service.js";
+import { memoryRememberArtifact } from "../../src/memory-remember-artifact.js";
 import { MemoryOutboxService } from "../../src/memory-outbox.js";
 import { memoryOutboxHash } from "../../src/memory-outbox-values.js";
 import { sanitizeMemoryRestoreCandidate } from "../../src/memory-restore-high-water.js";
@@ -43,10 +44,10 @@ import { closeMemoryDatabase, insertMemoryVerification, memoryDatabase,
 import { memoryPolicy, verifiedMemoryInput } from "../fixtures/memory-candidate-fixture.js";
 import { localKey } from "../helpers.js";
 
-const PROVIDER = "/home/jm/orca/workspaces/second-brain-app/jarvis-personal-operating-system";
-const PROVIDER_WHEEL = process.env["TASK30_PROVIDER_WHEEL"]
-  ?? `${PROVIDER}/dist/second_brain-0.1.0-py3-none-any.whl`;
-const PYTHON = `${PROVIDER}/.venv/bin/python`;
+// This cross-process gate consumes explicitly injected build artifacts, never a host installation.
+const PROVIDER_SHA = process.env["TASK30_PROVIDER_SHA"];
+const PROVIDER_WHEEL = process.env["TASK30_PROVIDER_WHEEL"];
+const PYTHON = process.env["TASK30_PROVIDER_PYTHON"];
 const CONTRACT = "contracts/second-brain-mcp-v1.json";
 const JARVIS_KEY_ID = "jarvis:task30:real-process";
 const PROVIDER_KEY_ID = "provider:task30:real-process";
@@ -60,9 +61,6 @@ function key(seed: number) {
 }
 function hash(domain: string, value: unknown): string {
   return `sha256:${createHash("sha256").update(domain).update(canonicalize(value)).digest("hex")}`;
-}
-function sha(value: string): string {
-  return `sha256:${createHash("sha256").update(value).digest("hex")}`;
 }
 function required<T>(value: T | undefined, code: string): T {
   if (value === undefined) throw new Error(code);
@@ -96,9 +94,10 @@ function expectAbsent(root: string, needles: readonly Buffer[]): void {
   }
 }
 function providerApply(root: string, config: string, site: string): Readonly<Record<string, unknown>> {
-  const output = execFileSync(PYTHON, ["-m", "sb.cli", "apply-requests", "--once"], {
+  const output = execFileSync(required(PYTHON, "TASK30_PROVIDER_PYTHON_REQUIRED"), ["-m", "sb.cli", "apply-requests", "--once"], {
     cwd: root, encoding: "utf8", timeout: 120_000,
-    env: { ...process.env, PYTHONPATH: site, SB_CONFIG: config },
+    env: { HOME: root, XDG_CONFIG_HOME: join(root, "config"), XDG_DATA_HOME: join(root, "data"),
+      XDG_STATE_HOME: join(root, "state"), PATH: `${root}/bin:/usr/bin:/bin`, PYTHONPATH: site, SB_CONFIG: config },
   });
   const value: unknown = JSON.parse(output);
   if (typeof value !== "object" || value === null || Array.isArray(value)) {
@@ -106,15 +105,29 @@ function providerApply(root: string, config: string, site: string): Readonly<Rec
   }
   return value as Readonly<Record<string, unknown>>;
 }
+function isRecord(value: unknown): value is Readonly<Record<string, unknown>> {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+function providerHighWater(providerRoot: string): { readonly replica: unknown; readonly rows: unknown } {
+  const journal = new Database(join(providerRoot, "requests", "journal.db"), { readonly: true });
+  try {
+    return {
+      replica: journal.prepare("SELECT sequence, set_root FROM tombstone_replica ORDER BY sequence DESC LIMIT 1").get(),
+      rows: journal.prepare("SELECT operation, state, phase, fence FROM requests ORDER BY accepted_at").all(),
+    };
+  } finally { journal.close(); }
+}
 
 describe("Task 30 real built-process lifecycle", () => {
-  it("runs one approved remember and three proof-bound effects through the real MCP child", async () => {
-    const wheel = PROVIDER_WHEEL;
+  it("settles four proved effects, then ends an organic stale correction as conflict", async () => {
+    const wheel = required(PROVIDER_WHEEL, "TASK30_PROVIDER_WHEEL_REQUIRED");
+    const python = required(PYTHON, "TASK30_PROVIDER_PYTHON_REQUIRED");
+    const providerSha = required(PROVIDER_SHA, "TASK30_PROVIDER_SHA_REQUIRED");
+    const sqliteCli = required(process.env["TASK30_SQLITE_CLI"], "TASK30_SQLITE_CLI_REQUIRED");
     expect(existsSync(wheel), "provider writer must run uv build before this gate").toBe(true);
-    const providerSha = execFileSync("git", ["rev-parse", "HEAD"], {
-      cwd: PROVIDER, encoding: "utf8",
-    }).trim();
     expect(providerSha).toMatch(/^[0-9a-f]{40}$/);
+    expect(existsSync(python), "inject an isolated Python runtime").toBe(true);
+    expect(existsSync(sqliteCli), "inject the SQLite executable fixture").toBe(true);
     const root = mkdtempSync(join(tmpdir(), "task30-real-process-"));
     const site = join(root, "site");
     const providerRoot = join(root, "provider");
@@ -122,7 +135,12 @@ describe("Task 30 real built-process lifecycle", () => {
     const restoreRoot = join(root, "restore");
     mkdirSync(site, { mode: 0o700 });
     mkdirSync(providerRoot, { mode: 0o700 });
-    execFileSync(PYTHON, ["-m", "zipfile", "-e", wheel, site], { cwd: root });
+    mkdirSync(join(root, "bin"), { mode: 0o700 });
+    cpSync(sqliteCli, join(root, "bin", "sqlite3"));
+    chmodSync(join(root, "bin", "sqlite3"), 0o700);
+    execFileSync(python, ["-m", "zipfile", "-e", wheel, site], {
+      cwd: root, env: { HOME: root, PATH: "/usr/bin:/bin" },
+    });
     const jarvisKey = key(0); const providerKey = key(32);
     const jarvisPublic = createPublicKey(jarvisKey).export({ format: "jwk" }).x;
     if (jarvisPublic === undefined) throw new Error("TASK30_JARVIS_KEY_INVALID");
@@ -145,7 +163,7 @@ describe("Task 30 real built-process lifecycle", () => {
     ].join("\n"), { mode: 0o600 });
     chmodSync(config, 0o600);
     const launcher = join(root, "second-brain-mcp");
-    writeFileSync(launcher, `#!/bin/sh\nexport PYTHONPATH=${site}\nexec ${PYTHON} -m sb.mcp\n`, { mode: 0o700 });
+    writeFileSync(launcher, `#!/bin/sh\nexport HOME='${root}' PATH='${root}/bin:/usr/bin:/bin'\nexport XDG_CONFIG_HOME='${root}/config' XDG_DATA_HOME='${root}/data' XDG_STATE_HOME='${root}/state'\nexport PYTHONPATH='${site}'\nexec '${python.replaceAll("'", "'\\''")}' -m sb.mcp\n`, { mode: 0o700 });
     chmodSync(launcher, 0o700);
 
     const database = await memoryDatabase();
@@ -181,7 +199,7 @@ describe("Task 30 real built-process lifecycle", () => {
       const provider = new SecondBrainEffectService({ authority, transport, writer, clock,
         provider_instance_id: PROVIDER_ID, signing_key_id: JARVIS_KEY_ID,
         private_key: jarvisKey, nonce: () => `task30-${randomBytes(8).toString("hex")}` });
-      const reader = createSecondBrainReadAdapter({ transport,
+      const reader = createSecondBrainReadAdapter({ transport, contract_profile: "schema4",
         budgets: { max_hits: 16, max_excerpt_bytes: 4_096,
           max_total_bytes: 65_536, max_page_bytes: 1_048_576 },
         clock, max_age_ms: 86_400_000, expiry_ms: 2 * 86_400_000,
@@ -243,8 +261,6 @@ describe("Task 30 real built-process lifecycle", () => {
 
       const rememberCandidate = classify("remember", old, `remember-${randomBytes(6).toString("hex")}`);
       expect(rememberCandidate.state).toBe("approved");
-      const sid = createHash("sha256").update(rememberCandidate.candidate_id).digest("hex").slice(0, 16);
-      const oldRecord = `${old} [^${sid}]`;
       const rememberedContent = old;
       const createdAt = clockValue.toISOString();
       const requestExpires = new Date(clockValue.getTime() + 10 * 60_000).toISOString();
@@ -271,7 +287,9 @@ describe("Task 30 real built-process lifecycle", () => {
       const requestDigest = hash("orca-jarvis/memory-write-request/v1\0", base);
       const rememberRequest: SecondBrainWriteRequestV1 = { ...base,
         request_id: `memreq:pos:v1:${requestDigest.slice(7)}`, request_digest: requestDigest };
-      const pageId = `wiki/memory-${createHash("sha256").update(rememberedContent).digest("hex").slice(0, 16)}`;
+      const expectedArtifact = memoryRememberArtifact(rememberRequest).artifact;
+      const pageId = expectedArtifact.page_id;
+      const sid = expectedArtifact.sid;
       const rememberAction: ControlCommandRequestInput = { schema_version: 1,
         request_id: `control:remember:${randomBytes(8).toString("hex")}`,
         action: "memory.outbox.dispatch", action_level: 3,
@@ -279,7 +297,7 @@ describe("Task 30 real built-process lifecycle", () => {
           candidate_digest: rememberCandidate.candidate_digest,
           classification_digest: rememberCandidate.classification_digest },
         args: { schema_version: 2, request: rememberRequest,
-          expected_artifact: { page_id: pageId, sid, source_digest: sha(oldRecord) } },
+          expected_artifact: expectedArtifact },
         reversible: false, requested_by: "principal:owner", requested_at: createdAt,
         expires_at: new Date(clockValue.getTime() + 12 * 60_000).toISOString(),
         nonce: `remember:${randomBytes(8).toString("hex")}` };
@@ -292,12 +310,12 @@ describe("Task 30 real built-process lifecycle", () => {
       expect(firstRemember.dispatched).toBe(1);
       expect(authority.db.prepare("SELECT outcome,outcome_code FROM memory_outbox_attempts WHERE outbox_id=?")
         .get(queued.outbox_id)).toEqual({ outcome: "accepted", outcome_code: "PROVIDER_ACCEPTED" });
-      expect(outbox.get(queued.outbox_id)?.state).toBe("reconciling");
+      expect(outbox.get(queued.outbox_id)?.state, JSON.stringify(outbox.get(queued.outbox_id))).toBe("reconciling");
       expect(providerApply(root, config, site)).toMatchObject({ state: "proved", code: "PROVIDER_PROVED" });
       clockValue = new Date();
       await transport.restart();
       const settledRemember = await outbox.runOnce("task30-remember-reconcile", 1);
-      expect(settledRemember.settled).toBe(1);
+      expect(settledRemember.settled, JSON.stringify({ cycle: settledRemember, outbox: outbox.get(queued.outbox_id) })).toBe(1);
       const rememberRow = outbox.get(queued.outbox_id);
       expect(rememberRow?.state).toBe("settled");
       control.settle(rememberAction.request_id, claimedRemember.fence, { state: "completed",
@@ -367,7 +385,13 @@ describe("Task 30 real built-process lifecycle", () => {
       expectAbsent(preCorrectionBackup, [oldNeedle]);
       expectAbsent(providerRoot, [oldNeedle]);
 
-      const targetCorrected = await resolveBoundTarget(pageId, sid);
+      // The corrected provider result must still pass the consumer's citation boundary.
+      const correctedRead = await reader.search(corrected);
+      expect(correctedRead.kind).toBe("current");
+      if (correctedRead.kind !== "current") throw new Error("TASK30_CORRECTION_CITATION_INVALID");
+      expect(correctedRead.evidence).toMatchObject([{ page_id: pageId, excerpt: corrected }]);
+      const correctedEvidence = required(correctedRead.evidence[0], "TASK30_CORRECTION_EVIDENCE_MISSING");
+      const targetCorrected = await resolveBoundTarget(pageId, correctedEvidence.sid);
       const exportId = `memexp:v1:${randomBytes(12).toString("hex")}`;
       const exportAction = await lifecycle.prepareExport({ export_id: exportId,
         correlation_id: `corr:${randomBytes(12).toString("hex")}`,
@@ -461,6 +485,115 @@ describe("Task 30 real built-process lifecycle", () => {
           { operation: "forget", state: "proved", phase: "proved", fence: 1 },
         ]);
       } finally { providerJournal.close(); }
+      // The provider must refuse this superseded target itself. Writing the journal here would
+      // hide a provider that no longer produces EFFECT_PRIOR_STALE.
+      const staleCandidate = classify("correct", `${corrected} again`,
+        `stale-${randomBytes(6).toString("hex")}`);
+      expect(staleCandidate.state).toBe("awaiting_confirmation");
+      const staleConfirm: ControlCommandRequestInput = { schema_version: 1,
+        request_id: `control:confirm:${randomBytes(8).toString("hex")}`,
+        action: "memory.confirm", action_level: 3,
+        target: { candidate_id: staleCandidate.candidate_id,
+          candidate_digest: staleCandidate.candidate_digest,
+          classification_digest: staleCandidate.classification_digest },
+        args: { schema_version: 1, operation: "correct",
+          evidence_digest: memoryOutboxHash("memory-outbox-event", { id: staleCandidate.candidate_id }) },
+        reversible: false, requested_by: "principal:owner",
+        requested_at: clockValue.toISOString(),
+        expires_at: new Date(clockValue.getTime() + 10 * 60_000).toISOString(),
+        nonce: `confirm:${randomBytes(8).toString("hex")}` };
+      approve(staleConfirm);
+      expect(await executor().execute(staleConfirm.request_id, "task30-stale-confirm", clockValue))
+        .toMatchObject({ state: "completed" });
+      const staleAction = await lifecycle.prepareCorrection({
+        control_request_id: `control:stale:${randomBytes(8).toString("hex")}`,
+        candidate_id: staleCandidate.candidate_id, provider_instance_id: PROVIDER_ID,
+        targets: [targetOld], scope: scope(targetOld, "none"), content: `${corrected} again`,
+        requested_at: clockValue, expires_at: new Date(clockValue.getTime() + 10 * 60_000),
+        nonce: `stale:${randomBytes(8).toString("hex")}` });
+      approve(staleAction);
+      const staleSend = await executor(lifecycle).execute(staleAction.request_id, "task30-stale", clockValue);
+      expect(staleSend).toMatchObject({ state: "uncertain", failure_code: "MEMORY_CORRECTION_RECONCILING" });
+      const staleResult = staleSend.result;
+      const staleCorrectionIdValue = isRecord(staleResult) ? staleResult["correction_id"] : undefined;
+      if (typeof staleCorrectionIdValue !== "string") throw new Error("TASK30_STALE_CORRECTION_ID_MISSING");
+      const staleCorrectionId = staleCorrectionIdValue;
+      let providerRefusal: Readonly<Record<string, unknown>>;
+      try {
+        providerRefusal = providerApply(root, config, site);
+      } catch (error) {
+        const stdout = error instanceof Error && "stdout" in error ? String(error.stdout) : "";
+        const stderr = error instanceof Error && "stderr" in error ? String(error.stderr) : "";
+        let parsed: unknown;
+        try { parsed = JSON.parse(stdout); }
+        catch { throw new Error(`TASK30_PROVIDER_RESULT_INVALID:${stderr.slice(-400)}`); }
+        if (!isRecord(parsed)) throw new Error("TASK30_PROVIDER_RESULT_INVALID");
+        providerRefusal = parsed;
+      }
+      expect(providerRefusal).toMatchObject({
+        state: "failed", phase: "claimed", code: "EFFECT_PRIOR_STALE" });
+      clockValue = new Date();
+      await lifecycle.reconcilePending(10);
+      expect(authority.db.prepare(
+        "SELECT state, failure_code FROM memory_correction_requests WHERE correction_id=?",
+      ).get(staleCorrectionId)).toEqual({ state: "conflict", failure_code: "MEMORY_PROVIDER_FAILED" });
+      expect(authority.db.prepare(
+        "SELECT state, failure_code FROM control_command_requests WHERE request_id=?",
+      ).get(staleAction.request_id)).toEqual({ state: "failed", failure_code: "MEMORY_PROVIDER_FAILED" });
+      expect(authority.db.prepare(
+        "SELECT COUNT(*) AS count FROM control_command_effects WHERE request_id=? AND effect_type='memory.correction.refused'",
+      ).get(staleAction.request_id)).toEqual({ count: 1 });
+      expect(authority.db.prepare(
+        "SELECT COUNT(*) AS count FROM memory_correction_attempts WHERE correction_id=?",
+      ).get(staleCorrectionId)).toEqual({ count: 1 });
+      const refusedCorrection = providerHighWater(providerRoot);
+      expect(refusedCorrection.rows).toEqual([
+        { operation: "remember", state: "proved", phase: "proved", fence: 1 },
+        { operation: "correct", state: "proved", phase: "proved", fence: 1 },
+        { operation: "export", state: "proved", phase: "proved", fence: 1 },
+        { operation: "forget", state: "proved", phase: "proved", fence: 1 },
+        { operation: "correct", state: "failed", phase: "claimed", fence: 1 },
+      ]);
+      const chain = authority.db.prepare(
+        "SELECT sequence, set_root FROM memory_tombstone_chain ORDER BY sequence DESC LIMIT 1").get();
+      expect(refusedCorrection.replica).toEqual(chain);
+      const manifest: unknown = JSON.parse(readFileSync(
+        join(realpathSync(join(providerRoot, "share", "vault")), "generation.json"), "utf8"));
+      if (!isRecord(manifest)) throw new Error("TASK30_ACTIVE_MANIFEST_INVALID");
+      const sequence = manifest["tombstone_sequence"];
+      const setRoot = manifest["tombstone_set_root"];
+      if (typeof sequence !== "number" || typeof setRoot !== "string") {
+        throw new Error("TASK30_ACTIVE_MANIFEST_INVALID");
+      }
+      expect({ sequence, set_root: setRoot }).toEqual(chain);
+      const staleTargetRead = await reader.search(old);
+      const forgottenRead = await reader.search(corrected);
+      const unrelatedRead = await reader.search("Task");
+      expect(staleTargetRead.kind).toBe("current");
+      expect(forgottenRead.kind).toBe("current");
+      expect(unrelatedRead.kind).toBe("current");
+      if (staleTargetRead.kind !== "current" || forgottenRead.kind !== "current") {
+        throw new Error("TASK30_STALE_READ_FENCED");
+      }
+      expect(staleTargetRead.evidence.every(item => item.excerpt === null
+        || (!item.excerpt.includes(old) && !item.excerpt.includes(corrected)))).toBe(true);
+      expect(forgottenRead.evidence.every(item => item.excerpt === null
+        || (!item.excerpt.includes(old) && !item.excerpt.includes(corrected)))).toBe(true);
+      await lifecycle.reconcilePending(10);
+      expect(authority.db.prepare(
+        "SELECT state FROM memory_correction_requests WHERE correction_id=?",
+      ).get(staleCorrectionId)).toEqual({ state: "conflict" });
+      expect(authority.db.prepare(
+        "SELECT COUNT(*) AS count FROM memory_correction_attempts WHERE correction_id=?",
+      ).get(staleCorrectionId)).toEqual({ count: 1 });
+      expect(authority.db.prepare(
+        "SELECT COUNT(*) AS count FROM control_command_effects WHERE request_id=? AND effect_type='memory.correction.refused'",
+      ).get(staleAction.request_id)).toEqual({ count: 1 });
+      expect(providerHighWater(providerRoot).rows).toEqual(refusedCorrection.rows);
+      // A stale deletion never reaches this provider. Dispatch preflights the target and
+      // throws MEMORY_DELETION_TARGET_STALE, so an organic EFFECT_PRIOR_STALE forget would
+      // require injecting the journal. The shipped deletion-refusal test covers that injected
+      // observation; this lifecycle does not.
       expect(regularFiles(join(providerRoot, "exports")).filter(path => path.endsWith("memory.json")))
         .toEqual([]);
       expect(readdirSync(join(providerRoot, "share", "vault-generations"), { withFileTypes: true })

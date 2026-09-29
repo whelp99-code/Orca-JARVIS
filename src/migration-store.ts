@@ -66,6 +66,9 @@ export class MigrationStore {
             "INSERT INTO schema_migrations(id,checksum,applied_at) VALUES(?,?,?)",
           ).run(migration.id, migration.digest, new Date().toISOString());
         }).immediate();
+        // The deletion-lane rebuild returns dropped pages to the freelist. A later rolled-back
+        // write would otherwise change those free-page bytes, which serialize() observes.
+        if (migration.id === "097_memory_deletion_terminal_refusal.sql") this.database.exec("VACUUM");
       }
     }
     recovery.restorePreservedKeys();

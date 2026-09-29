@@ -6,6 +6,7 @@ import { bindingChallenge, sha256Prefixed } from "./remote-approval-crypto.js";
 import { RemoteApprovalError, REMOTE_ERROR_CODES } from "./remote-approval-errors.js";
 import { parseDecisionBody } from "./remote-approval-parse.js";
 import type { RemoteApprovalPolicy } from "./remote-approval-policy.js";
+import { classifyReadiness, type RemoteReadiness, type SignerSource } from "./remote-approval-readiness.js";
 import { ControlReceiptSigner } from "./remote-approval-signer.js";
 import { RemoteApprovalStore, type ChallengeRow } from "./remote-approval-store.js";
 import {
@@ -13,7 +14,8 @@ import {
   type RemoteIngressContextV1,
   type RemoteIngressResolver,
 } from "./remote-approval-types.js";
-import { loadEligibleRequest, translateReservedAssertion, writeRemoteAudit } from "./remote-approval-verify.js";
+import { assertionAuditFlags, writeRemoteAudit } from "./remote-approval-audit.js";
+import { loadEligibleRequest, translateReservedAssertion } from "./remote-approval-verify.js";
 
 export type RemoteApprovalServiceOptions = Readonly<{
   db: AuthorityDb;
@@ -22,6 +24,7 @@ export type RemoteApprovalServiceOptions = Readonly<{
   origin: string;
   rpId: string;
   signer: ControlReceiptSigner;
+  signerSource: SignerSource;
   resolver: RemoteIngressResolver;
 }>;
 
@@ -42,17 +45,12 @@ export class RemoteApprovalService {
     this.lastMs = ms;
   }
 
-  readiness(now = new Date()): { readonly remote_ready: boolean; readonly reason: string | null } {
-    const counts = this.store.quarantineCounts();
-    if (counts.remote_principals_count + counts.webauthn_credentials_count + counts.webauthn_challenges_count + counts.webauthn_assertions_count !== 0) {
-      return { remote_ready: false, reason: "legacy_quarantine" };
-    }
-    const sealed = this.store.sealedDecision(this.options.signer.keyId);
-    if (!sealed || sealed.principal_id !== this.options.signer.principalId || sealed.public_key_pem !== this.options.signer.spkiPem()) {
-      return { remote_ready: false, reason: "signer" };
-    }
-    this.clock(now);
-    return { remote_ready: true, reason: null };
+  readiness(now = new Date()): RemoteReadiness {
+    const classified = classifyReadiness({
+      store: this.store, signer: this.options.signer, signerSource: this.options.signerSource,
+    });
+    if (classified.remote_ready) this.clock(now);
+    return classified;
   }
 
   recover(now = new Date()): void { this.store.recoverVerifying(this.nowIso(now)); }
@@ -138,7 +136,10 @@ export class RemoteApprovalService {
       const owner = this.ensureOwner(now);
       const challengeId = `rch_${randomBytes(16).toString("hex")}`;
       const nonce = randomBytes(32).toString("base64url");
-      const expires = new Date(Math.min(now.getTime() + 300_000, Date.parse(request.expires_at))).toISOString();
+      const expires = new Date(Math.min(
+        now.getTime() + this.options.policy.remote_approval.challenge_ttl_seconds * 1000,
+        Date.parse(request.expires_at),
+      )).toISOString();
       const binding: RemoteApprovalBindingV1 = {
         schema_version: 1, challenge_id: challengeId, request_id: requestId, decision,
         command_digest: request.command_digest as `sha256:${string}`, action: request.action, action_level: request.action_level,
@@ -162,7 +163,8 @@ export class RemoteApprovalService {
     return {
       challenge_id: challenge.challenge_id,
       options: {
-        challenge: challenge.challenge_b64, rpId: this.options.rpId, timeout: 300000,
+        challenge: challenge.challenge_b64, rpId: this.options.rpId,
+        timeout: this.options.policy.remote_approval.challenge_ttl_seconds * 1000,
         userVerification: "required", allowCredentials: [],
       },
     };
@@ -177,28 +179,69 @@ export class RemoteApprovalService {
     this.requireReady(now);
     this.requireIngress(ingress, `/api/v1/remote-approvals/${challengeId}/verify`, "POST");
     const at = this.nowIso(now);
-    const reserve = this.options.db.db.transaction(() => {
-      this.store.expireChallenges(at);
-      const row = this.store.challenge(challengeId);
-      if (!row) throw new RemoteApprovalError(REMOTE_ERROR_CODES.REMOTE_APPROVAL_UNAVAILABLE, "missing");
-      if (row.state !== "issued") throw new RemoteApprovalError(REMOTE_ERROR_CODES.REMOTE_APPROVAL_NOT_APPLICABLE, row.state);
-      if (row.gateway_session_digest !== ingress.gateway_session_digest || row.gateway_owner_digest !== ingress.gateway_owner_digest) {
-        throw new RemoteApprovalError(REMOTE_ERROR_CODES.REMOTE_SESSION_REQUIRED, "session");
+    this.commitExpiry(challengeId, at, now);
+    const row = this.store.challenge(challengeId);
+    if (!row) throw new RemoteApprovalError(REMOTE_ERROR_CODES.REMOTE_APPROVAL_UNAVAILABLE, "missing");
+    const early = this.earlyRejection(row, ingress, now);
+    if (early !== undefined) {
+      this.options.db.db.transaction(() => {
+        writeRemoteAudit(this.store, row, now, early.outcome, early.reason, assertionAuditFlags(rawBody));
+      }).immediate();
+      throw new RemoteApprovalError(early.code, early.reason);
+    }
+    const reserveWindow = this.options.policy.remote_approval.verification_reservation_ttl_seconds * 1000;
+    const challenge = this.options.db.db.transaction(() => {
+      const live = this.store.challenge(challengeId);
+      if (!live || live.state !== "issued") {
+        throw new RemoteApprovalError(REMOTE_ERROR_CODES.REMOTE_APPROVAL_NOT_APPLICABLE, live?.state ?? "missing");
       }
-      if (Date.parse(row.expires_at) <= now.getTime()) throw new RemoteApprovalError(REMOTE_ERROR_CODES.REMOTE_CEREMONY_REJECTED, "expired");
-      this.store.reserveChallenge(challengeId, at, new Date(now.getTime() + 30_000).toISOString());
-      return row;
-    });
-    const challenge = reserve.immediate();
+      this.store.reserveChallenge(challengeId, at, new Date(now.getTime() + reserveWindow).toISOString());
+      return live;
+    }).immediate();
     try {
       return await translateReservedAssertion(this.options, this.store, challenge, rawBody, ingress, now);
     } catch (error) {
+      const reason = error instanceof RemoteApprovalError ? error.reason : "verify";
       this.options.db.db.transaction(() => {
-        this.store.finishChallenge(challengeId, "rejected", error instanceof RemoteApprovalError ? error.reason : "verify");
-        writeRemoteAudit(this.store, challenge, now, "rejected", error instanceof RemoteApprovalError ? error.reason : "verify");
+        this.store.finishChallenge(challengeId, "rejected", reason);
+        writeRemoteAudit(this.store, challenge, now, "rejected", reason, assertionAuditFlags(rawBody));
       }).immediate();
       throw error instanceof RemoteApprovalError ? error : new RemoteApprovalError(REMOTE_ERROR_CODES.REMOTE_CEREMONY_REJECTED, "verify");
     }
+  }
+
+  private commitExpiry(challengeId: string, at: string, now: Date): void {
+    this.options.db.db.transaction(() => {
+      this.store.expireChallenges(at);
+      const current = this.store.challenge(challengeId);
+      if (current !== undefined && (current.state === "issued" || current.state === "verifying")
+        && Date.parse(current.expires_at) <= now.getTime()) {
+        this.options.db.db.prepare(
+          "UPDATE webauthn_approval_challenges_v2 SET state='expired', terminal_reason='expired' WHERE challenge_id=? AND state IN ('issued','verifying')",
+        ).run(challengeId);
+      }
+    }).immediate();
+  }
+
+  private earlyRejection(
+    row: ChallengeRow,
+    ingress: RemoteIngressContextV1,
+    now: Date,
+  ): {
+    readonly code: (typeof REMOTE_ERROR_CODES)[keyof typeof REMOTE_ERROR_CODES];
+    readonly reason: string;
+    readonly outcome: "expired" | "rejected";
+  } | undefined {
+    if (row.state === "expired" || Date.parse(row.expires_at) <= now.getTime()) {
+      return { code: REMOTE_ERROR_CODES.REMOTE_APPROVAL_NOT_APPLICABLE, reason: "expired", outcome: "expired" };
+    }
+    if (row.state !== "issued") {
+      return { code: REMOTE_ERROR_CODES.REMOTE_APPROVAL_NOT_APPLICABLE, reason: row.state, outcome: "rejected" };
+    }
+    if (row.gateway_session_digest !== ingress.gateway_session_digest || row.gateway_owner_digest !== ingress.gateway_owner_digest) {
+      return { code: REMOTE_ERROR_CODES.REMOTE_SESSION_REQUIRED, reason: "session", outcome: "rejected" };
+    }
+    return undefined;
   }
 
   status(challengeId: string, ingress: RemoteIngressContextV1, now: Date): Record<string, unknown> {

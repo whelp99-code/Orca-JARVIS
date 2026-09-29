@@ -4,7 +4,7 @@ import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./db.js";
 
 const hash = (value: unknown): string => `sha256:${createHash("sha256").update(canonicalize(value)).digest("hex")}`;
-export type MemoryDeletionState = "requested" | "approved" | "suppressed" | "queued" | "applying" | "reconciling" | "provider_proved" | "settled";
+export type MemoryDeletionState = "requested" | "approved" | "suppressed" | "queued" | "applying" | "reconciling" | "provider_proved" | "settled" | "conflict";
 export type MemoryDeletionRecord = {
   readonly deletion_id: string; readonly lane_id: string | null; readonly correlation_id: string;
   readonly idempotency_key: string; readonly provider_instance_id: string | null;
@@ -19,6 +19,7 @@ export type MemoryDeletionRecord = {
   readonly spool_locator: string | null; readonly spool_digest: string | null;
   readonly dispatch_fence: number; readonly provider_proof_digest: string | null;
   readonly surface_manifest_digest: string | null; readonly purge_receipt_digest: string | null;
+  readonly failure_code: string | null;
   readonly expires_at: string; readonly updated_at: string;
 };
 
@@ -94,7 +95,7 @@ export class MemoryDeletionStore {
     return this.authority.db.transaction(() => {
       const row = this.required(id);
       if (row.state !== "queued" || row.request_digest === null) {
-        if (["applying", "reconciling", "provider_proved", "settled"].includes(row.state)) return row;
+        if (["applying", "reconciling", "provider_proved", "settled", "conflict"].includes(row.state)) return row;
         throw new JarvisError("MEMORY_DELETION_TRANSITION_INVALID");
       }
       const at = now.toISOString();
@@ -153,6 +154,11 @@ export class MemoryDeletionStore {
   }, now: Date): void {
     const at = now.toISOString();
     this.authority.db.transaction(() => {
+      const row = this.required(id);
+      if (row.state === "provider_proved" || row.state === "settled") {
+        if (row.provider_proof_digest !== proof.proof_digest) throw new JarvisError("MEMORY_DELETION_REPLAY_CONFLICT");
+        return;
+      }
       this.authority.db.prepare(
         `INSERT INTO memory_deletion_proofs(
           deletion_id,proof_id,proof_digest,provider_release_sha,result_generation_id,
@@ -162,12 +168,28 @@ export class MemoryDeletionStore {
         proof.result_generation_id, proof.surface_manifest_digest, proof.proof_json, at);
       const changed = this.authority.db.prepare(
         `UPDATE memory_deletion_effect_requests SET state='provider_proved',provider_proof_digest=?,
-         surface_manifest_digest=?,failure_code=NULL,updated_at=?
+         surface_manifest_digest=?,spool_locator=NULL,failure_code=NULL,updated_at=?
          WHERE deletion_id=? AND state='reconciling'`,
       ).run(proof.proof_digest, proof.surface_manifest_digest, at, id);
       if (changed.changes !== 1) throw new JarvisError("MEMORY_DELETION_TRANSITION_INVALID");
       this.event(id, "provider_proved", now, proof.proof_digest);
     }).immediate();
+  }
+  /** Ends a lane the provider decided against before any effect. Records no proof and no purge. */
+  refuse(id: string, code: string, now: Date): MemoryDeletionRecord {
+    const at = now.toISOString();
+    this.authority.db.transaction(() => {
+      const row = this.required(id);
+      if (row.state === "conflict") return;
+      if (row.state !== "reconciling") throw new JarvisError("MEMORY_DELETION_TRANSITION_INVALID");
+      const changed = this.authority.db.prepare(
+        `UPDATE memory_deletion_effect_requests SET state='conflict',failure_code=?,spool_locator=NULL,
+         updated_at=? WHERE deletion_id=? AND state='reconciling'`,
+      ).run(code, at, id);
+      if (changed.changes !== 1) throw new JarvisError("MEMORY_DELETION_TRANSITION_INVALID");
+      this.event(id, "conflict", now);
+    }).immediate();
+    return this.required(id);
   }
   settle(id: string, purgeReceipt: string, now: Date): MemoryDeletionRecord {
     const at = now.toISOString();

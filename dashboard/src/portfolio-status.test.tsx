@@ -1,6 +1,6 @@
 import "@testing-library/jest-dom/vitest";
-import { render, screen, within } from "@testing-library/react";
-import { describe, expect, it } from "vitest";
+import { fireEvent, render, screen, within } from "@testing-library/react";
+import { describe, expect, it, vi } from "vitest";
 import type { PortfolioOverview } from "../../src/dashboard/portfolio-contracts.js";
 import { copy } from "./copy.js";
 import { PortfolioStatus } from "./portfolio-status.js";
@@ -86,11 +86,21 @@ describe("Portfolio Status", () => {
     expect(within(section).getByText(copy.portfolio.freshness.live)).toBeInTheDocument();
     expect(within(section).getByText(copy.portfolio.freshness.stale)).toBeInTheDocument();
     expect(section.querySelector("time")?.dateTime).toBe("2026-08-20T00:00:00.000Z");
+    expect(within(section).queryByRole("button")).toBeNull();
     expect(within(section).getByText("4")).toBeInTheDocument();
     expect(within(section).getByText("11")).toBeInTheDocument();
     expect(within(section).getByText("Control center")).toBeInTheDocument();
     expect(within(section).getByText(copy.portfolio.milestoneState.in_progress)).toBeInTheDocument();
     expect(within(section).getByText("Approve live resume")).toBeInTheDocument();
+  });
+
+  it("refresh control uses the latest host clock and invokes onRefresh", () => {
+    const onRefresh = vi.fn();
+    render(<PortfolioStatus portfolio={live} onRefresh={onRefresh} />);
+    const section = screen.getByRole("region", { name: copy.portfolio.title });
+    expect(section.querySelector("time")?.dateTime).toBe("2026-08-20T00:00:00.000Z");
+    fireEvent.click(within(section).getByRole("button"));
+    expect(onRefresh).toHaveBeenCalledTimes(1);
   });
 
   it("renders unseen and unavailable states when hosts have no snapshot", () => {

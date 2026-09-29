@@ -3,6 +3,7 @@ import {
   PHONE_GATEWAY_LIMITS,
   type PhoneRouteMatch,
 } from "./phone-gateway-protocol.js";
+import { knownRemoteMethods, matchRemotePhoneRoute } from "./phone-gateway-remote-routes.js";
 
 export function matchPhoneRoute(input: {
   readonly method: string;
@@ -76,6 +77,8 @@ export function matchPhoneRoute(input: {
       return route("memory_detail", method, input.path, "", PHONE_GATEWAY_LIMITS.memoryDetailResponse, true, true, true);
     }
   }
+  const remote = matchRemotePhoneRoute(method, input.path, query);
+  if (remote !== undefined) return remote;
   return { kind: "not_found" };
 }
 
@@ -115,6 +118,8 @@ function knownMethods(path: string): readonly string[] | undefined {
   ]);
   const hit = exact.get(path);
   if (hit !== undefined) return hit;
+  const remote = knownRemoteMethods(path);
+  if (remote !== undefined) return remote;
   if (path.startsWith("/assets/")) return ["GET", "HEAD"];
   if (path.startsWith("/api/v1/recommendations/") && !path.slice("/api/v1/recommendations/".length).includes("/")) {
     return ["GET"];

@@ -1,0 +1,73 @@
+{
+  "task": "task-34-remediation",
+  "base": "48287b6eb6122d746380278618871ea729b0e525",
+  "head": "facd756e0e550ce111d1f40ccfeeb32b89d2fad7",
+  "tree": "8f0ecade0cdfb97b701963445aca0b267c037457",
+  "commits": [
+    "47f6dcdefd1895ec8576cc9104b081640134683a",
+    "facd756e0e550ce111d1f40ccfeeb32b89d2fad7"
+  ],
+  "files": [
+    "src/dashboard-runtime-config.ts",
+    "src/phone-gateway-adapter.ts",
+    "src/phone-gateway-config.ts",
+    "src/phone-gateway-protocol.ts",
+    "src/phone-gateway-serve-headers.ts",
+    "tests/integration/phone-gateway-readiness.test.ts",
+    "tests/integration/phone-gateway-serve-headers.test.ts",
+    "tests/unit/phone-gateway-serve-headers.test.ts"
+  ],
+  "avoided": ["src/phone-gateway-routes.ts"],
+  "red": {
+    "serve_header_unit": "4 accept cases failed PHONE_FORWARDED_HEADER_FORBIDDEN before the fix",
+    "serve_header_gateway": "GET /api/v1/phone/session with the Serve trio returned 403 PHONE_FORWARDED_HEADER_FORBIDDEN",
+    "readiness": "6.5s fixture /api/v1/health returned 503 PHONE_NOT_READY in 1039ms"
+  },
+  "green": {
+    "phone_gateway_and_session": "99 passed",
+    "remote": "56 passed (22 unit, 34 integration)",
+    "lint": "npm run lint exit 0",
+    "typecheck": "npm run typecheck exit 0",
+    "architecture_check": "cycles 0, modules 727, edges 2730",
+    "build": "backend_build_recorded artifact_files 1543; dashboard vite built",
+    "dashboard_tests": "not run; dashboard sources not touched"
+  },
+  "counts": {
+    "phone_gateway_and_session_passed": 99,
+    "remote_passed": 56,
+    "red_product_failures_before_fix": 3,
+    "cleanup": 0,
+    "wip": 0,
+    "production_changes": 0
+  },
+  "qa": {
+    "surface": "ephemeral loopback gateway plus a local reverse proxy injecting Tailscale Serve 1.102.2 headers",
+    "production_listeners": "untouched; 127.0.0.1:4176 still pid 3462770",
+    "readyz_slow_health_ms": 3010,
+    "readyz": 200,
+    "session": 200,
+    "today_shell_h1": true,
+    "memory_shell_h1": true,
+    "today_data": "200 no_data",
+    "memory_status": "200 unavailable mutations_enabled false",
+    "memory_conflicts": "200 items []",
+    "transcript": ".omo/evidence/task-34-remediation/manual-qa.txt"
+  },
+  "adversarial_classes": [
+    "spoofed X-Forwarded-For outside 100.64.0.0/10 and fd7a:115c:a1e0::/48",
+    "wrong X-Forwarded-Host",
+    "X-Forwarded-Proto http and HTTPS",
+    "duplicate and comma-separated X-Forwarded-For",
+    "incomplete Serve trio",
+    "extra Forwarded, X-Real-IP, Via, Proxy-Authorization, unknown X-Forwarded-*",
+    "ipv4-mapped client address",
+    "non-loopback peer",
+    "missing identity, wrong owner, wrong Host, mismatched Origin",
+    "forbidden terminal, agent logs, and raw memory routes"
+  ],
+  "notes": [
+    "Evidence transcripts named Serve's X-Forwarded-For/Host/Proto and the tailnet addresses; they did not capture loopback header bytes. Acceptance follows tailscaled 1.102.2 addProxyForwardedHeaders.",
+    "No cheap authority liveness route exists. /api/v1/health awaits sequential Second Brain probes. DASHBOARD_HEALTH_TIMEOUT_MS was 2000 and is now the 8s shared budget. The 1s socket timeout is connect-only.",
+    "engineering-map docs:sync hook printed rc=1 and did not block either commit or dirty tracked files."
+  ]
+}

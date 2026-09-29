@@ -93,10 +93,11 @@ input: MemoryCandidateDecisionInput,
     ? host.correctionSelection(input, authority.privacy_epoch)
     : undefined;
   const active = host.options.authority.db.prepare(
-    `SELECT f.decision,a.control_request_id FROM memory_candidate_decision_attempts a
+    `SELECT f.decision,a.attempt_id,a.control_request_id FROM memory_candidate_decision_attempts a
      JOIN memory_candidate_decision_families f ON f.family_digest=a.family_digest
      WHERE f.candidate_id=? AND a.state IN ('staged','approved')`,
-  ).get(row.candidate_id) as { readonly decision: "confirm" | "reject"; readonly control_request_id: string } | undefined;
+  ).get(row.candidate_id) as { readonly decision: "confirm" | "reject";
+    readonly attempt_id: string; readonly control_request_id: string } | undefined;
   if (active !== undefined && active.decision !== input.decision) {
     throw new JarvisError("MEMORY_STATE_CONFLICT");
   }
@@ -109,9 +110,13 @@ input: MemoryCandidateDecisionInput,
     `SELECT attempt_id,attempt_generation,state FROM memory_candidate_decision_attempts
      WHERE family_digest=? ORDER BY attempt_generation DESC LIMIT 1`,
   ).get(family) as { readonly attempt_id: string; readonly attempt_generation: number; readonly state: string } | undefined;
-  if (active !== undefined && prior !== undefined && ["staged", "approved"].includes(prior.state)) {
-    const existing = host.control.get(active.control_request_id);
-    if (existing !== undefined) return existing;
+  const existing = active !== undefined && prior !== undefined && ["staged", "approved"].includes(prior.state)
+    ? host.control.get(active.control_request_id) : undefined;
+  if (active !== undefined && (existing === undefined || active.attempt_id !== prior?.attempt_id)) {
+    throw new JarvisError("MEMORY_STATE_CONFLICT");
+  }
+  if (existing !== undefined && (existing.state !== "pending" || Date.parse(existing.expires_at) > now.getTime())) {
+    return existing;
   }
   const generation = (prior?.attempt_generation ?? 0) + 1;
   const attemptId = `memui:candidate-attempt:v1:${hash("orca-jarvis/memory-ui-candidate-attempt/v1\0", {
@@ -126,6 +131,18 @@ input: MemoryCandidateDecisionInput,
   });
   return host.options.authority.db.transaction(() => {
     requireVisible();
+    if (existing !== undefined && active !== undefined) {
+      const current = host.control.get(existing.request_id);
+      if (current?.state !== "pending" || Date.parse(current.expires_at) > now.getTime()) {
+        throw new JarvisError("MEMORY_STATE_CONFLICT");
+      }
+      host.control.cancel({ request_id: current.request_id, reason: "confirmation-window-expired",
+        actor: "jarvis-memory-control", revoked_at: at }, now);
+      const expired = host.options.authority.db.prepare(
+        "UPDATE memory_candidate_decision_attempts SET state='expired',updated_at=? WHERE attempt_id=? AND state='staged'",
+      ).run(at, active.attempt_id);
+      if (expired.changes !== 1) throw new JarvisError("MEMORY_STATE_CONFLICT");
+    }
     host.options.authority.db.prepare(
       `INSERT OR IGNORE INTO memory_candidate_decision_families(
         family_digest,candidate_id,candidate_digest,classification_digest,decision,content_digest,created_at

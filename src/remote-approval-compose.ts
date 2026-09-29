@@ -4,26 +4,28 @@ import { isAbsolute } from "node:path";
 import { fileURLToPath } from "node:url";
 import { ControlPlane } from "./control-plane.js";
 import { JarvisError, type AuthorityDb } from "./db.js";
+import { readEd25519PrivateKeyFile } from "./memory-signing-key-file.js";
 import { parsePersonalOsPolicy } from "./personal-os-policy.js";
 import { RemoteApprovalService } from "./remote-approval.js";
+import { createProductionIngressResolver } from "./remote-approval-ingress.js";
 import { ControlReceiptSigner } from "./remote-approval-signer.js";
-import type { RemoteIngressResolver } from "./remote-approval-types.js";
 
 const PLACEHOLDER_ORIGIN = "https://remote-approval.invalid";
 
-function sealedDecision(db: AuthorityDb): { key_id: string; principal_id: string } | undefined {
+function sealedDecision(db: AuthorityDb, ownerPrincipal: string): { key_id: string; principal_id: string } | undefined {
   return db.db.prepare(
     `SELECT k.key_id, k.principal_id FROM trusted_authority_keys k
      JOIN authority_key_purposes p ON p.key_id=k.key_id
-     WHERE p.purpose='decision' LIMIT 1`,
-  ).get() as { key_id: string; principal_id: string } | undefined;
+     WHERE p.purpose='decision'
+     ORDER BY CASE WHEN k.principal_id=? THEN 0 ELSE 1 END, k.key_id LIMIT 1`,
+  ).get(ownerPrincipal) as { key_id: string; principal_id: string } | undefined;
 }
 
-function productionResolver(): RemoteIngressResolver {
-  return () => null;
-}
-
-export function composeRemoteApproval(db: AuthorityDb, options: { readonly policyPath?: string } = {}): RemoteApprovalService {
+export function composeRemoteApproval(db: AuthorityDb, options: {
+  readonly policyPath?: string;
+  readonly decisionKeyPath?: string;
+  readonly ingressKeyPath?: string;
+} = {}): RemoteApprovalService {
   const policy = readPolicy(options.policyPath);
   const origin = process.env.JARVIS_REMOTE_PUBLIC_ORIGIN ?? PLACEHOLDER_ORIGIN;
   let rpId = process.env.JARVIS_REMOTE_RP_ID;
@@ -35,13 +37,17 @@ export function composeRemoteApproval(db: AuthorityDb, options: { readonly polic
       rpId = "remote-approval.invalid";
     }
   }
-  const sealed = sealedDecision(db);
-  const pair = generateKeyPairSync("ed25519");
+  const sealed = sealedDecision(db, policy.owner_principal);
+  const keyPath = options.decisionKeyPath ?? process.env.JARVIS_DECISION_SIGNING_KEY_FILE;
+  const loaded = keyPath === undefined ? undefined : readEd25519PrivateKeyFile(keyPath);
+  const signerSource = keyPath === undefined ? "unconfigured" : loaded === undefined ? "rejected" : "file";
   const signer = new ControlReceiptSigner(
-    pair.privateKey,
+    loaded ?? generateKeyPairSync("ed25519").privateKey,
     sealed?.key_id ?? "unready-decision",
     sealed?.principal_id ?? "unready",
   );
+  const ingressPath = options.ingressKeyPath ?? process.env.JARVIS_REMOTE_INGRESS_KEY_FILE;
+  const ingressKey = ingressPath === undefined ? undefined : readKeyBytes(ingressPath);
   return new RemoteApprovalService({
     db,
     control: new ControlPlane(db),
@@ -49,8 +55,28 @@ export function composeRemoteApproval(db: AuthorityDb, options: { readonly polic
     origin,
     rpId,
     signer,
-    resolver: productionResolver(),
+    signerSource,
+    resolver: createProductionIngressResolver({
+      db, key: ingressKey, origin, now: () => new Date(),
+      nonceTtlSeconds: policy.remote_approval.ingress_nonce_ttl_seconds,
+    }),
   });
+}
+
+function readKeyBytes(path: string): Buffer | undefined {
+  if (!isAbsolute(path)) return undefined;
+  let fd: number | undefined;
+  try {
+    fd = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+    const stat = fstatSync(fd);
+    if (!stat.isFile() || stat.nlink !== 1 || stat.size !== 32 || (stat.mode & 0o077) !== 0) return undefined;
+    const bytes = Buffer.alloc(32);
+    if (readSync(fd, bytes, 0, 32, 0) !== 32) return undefined;
+    return bytes;
+  } catch (error) {
+    if (error instanceof Error) return undefined;
+    throw error;
+  } finally { if (fd !== undefined) closeSync(fd); }
 }
 
 function readPolicy(explicitPath: string | undefined) {

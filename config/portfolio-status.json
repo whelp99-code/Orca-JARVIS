@@ -20,6 +20,42 @@
     {
       "title": "위키 권한 결정",
       "state": "in_progress"
+    },
+    {
+      "title": "second-brain-app",
+      "state": "in_progress"
+    },
+    {
+      "title": "shipping-harness",
+      "state": "in_progress"
+    },
+    {
+      "title": "jmai-os-pack",
+      "state": "in_progress"
+    },
+    {
+      "title": "공공기관 데이터 대시보드",
+      "state": "in_progress"
+    },
+    {
+      "title": "Astra advisor",
+      "state": "in_progress"
+    },
+    {
+      "title": "JM Business OS",
+      "state": "in_progress"
+    },
+    {
+      "title": "Orca-JARVIS",
+      "state": "in_progress"
+    },
+    {
+      "title": "BLRO 웹사이트 워크스페이스",
+      "state": "in_progress"
+    },
+    {
+      "title": "sangfor-engineer-mcp",
+      "state": "in_progress"
     }
   ],
   "blockers": []
