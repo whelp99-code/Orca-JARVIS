@@ -59,5 +59,6 @@ export const CLI_HELP =
   + "  Second Brain tombstone replica before any read fence may use its head\n"
   + "memory outbox --once [--limit N]: dispatch queued writes and reconcile their stored results\n"
   + "memory outbox list [--limit N]: inspect bounded memory delivery state\n"
+  + "control execute <request-id>: run an approved memory.outbox.abandon-not-delivered command\n"
   + "memory withdrawals: list derived memories a hidden task still has stored with the provider\n"
   + "memory withdraw-prepare <candidate-id>: resolve one stored copy and prepare the owner-approval withdrawal command";

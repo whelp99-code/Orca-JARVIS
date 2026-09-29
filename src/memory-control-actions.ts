@@ -87,6 +87,14 @@ function inlineDispatchBound(
     && request.classification_digest === target.classification_digest;
 }
 
+export function memoryOutboxAbandonNotDelivered(input: RuntimeControlActionInput): void {
+  requireOnly(input.target, ["outbox_id"]);
+  requireOnly(input.args, ["schema_version", "outbox_id"]);
+  const outboxId = requireString(input.args, "outbox_id");
+  if (input.args.schema_version !== 1 || input.target.outbox_id !== outboxId
+    || !/^memout:pos:v2:[0-9a-f]{64}$/.test(outboxId)) throw new JarvisError("CONTROL_ARGS_MISMATCH");
+}
+
 export function memoryOutboxDispatch(input: RuntimeControlActionInput): void {
   if (input.args.schema_version === 1) { memorySurfaceEffect(input, "correct"); return; }
   requireOnly(input.target, ["candidate_id", "candidate_digest", "classification_digest"]);

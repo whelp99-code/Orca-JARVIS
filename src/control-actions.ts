@@ -1,7 +1,7 @@
 import { JarvisError } from "./db.js";
 import { validateMemoryScopeReviewAction } from "./memory-candidate-scope.js";
 import { memoryAuthority, memoryConfirm, memoryDedicatedEffect,
-  memoryGenerationRollback, memoryOutboxDispatch } from "./memory-control-actions.js";
+  memoryGenerationRollback, memoryOutboxAbandonNotDelivered, memoryOutboxDispatch } from "./memory-control-actions.js";
 import { REMOTE_LIFECYCLE_ACTIONS } from "./remote-approval-actions.js";
 import { validateTaskExecutionAction } from "./task-execution-plan.js";
 import { controlWorkflowRunInput } from "./control-workflow-input.js";
@@ -193,6 +193,8 @@ const descriptors: Record<string, Descriptor> = {
   "memory.confirm": { action: "memory.confirm", minimum_level: 3, executable: false, validate: memoryConfirm },
   "memory.scope.review": { action: "memory.scope.review", minimum_level: 3, executable: false, validate: validateMemoryScopeReviewAction },
   "memory.outbox.dispatch": { action: "memory.outbox.dispatch", minimum_level: 3, executable: true, validate: memoryOutboxDispatch },
+  "memory.outbox.abandon-not-delivered": { action: "memory.outbox.abandon-not-delivered", minimum_level: 3,
+    executable: true, validate: memoryOutboxAbandonNotDelivered },
   "memory.delete": { action: "memory.delete", minimum_level: 3, executable: true, validate: input => memoryDedicatedEffect(input, "deletion") },
   "memory.export": { action: "memory.export", minimum_level: 3, executable: true, validate: input => memoryDedicatedEffect(input, "export") },
   "memory.generation.rollback": { action: "memory.generation.rollback", minimum_level: 4, executable: true, validate: memoryGenerationRollback },

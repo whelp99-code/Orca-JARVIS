@@ -1,5 +1,6 @@
 import { resolve } from "node:path";
 import { executeApprovedMemoryCommand } from "./approved-memory-execution.js";
+import { abandonUndeliveredOutbox } from "./memory-outbox-abandon.js";
 import { executeApprovedTaskRequest } from "./approved-task-execution.js";
 import type { TaskExecutionRuntime } from "./task-execution-runtime.js";
 import { AuthorityDb, JarvisError } from "./db.js";
@@ -205,6 +206,12 @@ export class ApprovedCommandExecutor {
         return { request_id: requestId, action: command.action, state,
           result: { outbox_id: saga.outbox_id, state: saga.state },
           ...failure };
+      }
+      if (command.action === "memory.outbox.abandon-not-delivered") {
+        const closed = abandonUndeliveredOutbox(this.authority, command, now);
+        this.control.settle(requestId, command.fence, { state: "completed",
+          effect_type: "memory.outbox.abandoned_not_delivered", payload: closed }, this.clock());
+        return { request_id: requestId, action: command.action, state: "completed", result: closed };
       }
       if (command.action === "memory.delete" || command.action === "memory.export") {
         validateControlAction(command, { enforceMinimumLevel: true,
