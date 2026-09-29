@@ -1,6 +1,5 @@
 import { createPublicKey, verify, type KeyObject } from "node:crypto";
 import { JarvisError, type AuthorityDb } from "./db.js";
-import { recomputeStoredHead } from "./provider-tombstone-replica-learn.js";
 import { canonicalize } from "./canonical.js";
 import {
   MEMORY_TOMBSTONE_GENESIS_ROOT, memoryEffectDigest, type MemoryTombstoneChainEntryV2,
@@ -173,6 +172,26 @@ export function providerTombstoneReplicaDigest(replica: ProviderTombstoneReplica
 }
 
 type HeadRow = { provider_instance_id: string; sequence: number; set_root: string; signing_key_id: string; replica_digest: string };
+
+export function recomputeStoredHead(authority: AuthorityDb, provider: string): ProviderTombstoneHighWater {
+  const rows = authority.db.prepare(
+    `SELECT sequence,tombstone_id,operation,lane_id,target_manifest_digest,scope_digest,authority_receipt_digest,
+      payload_digest,keyed_subject_digest,effective_at,previous_root,set_root
+     FROM provider_tombstone_replica_entries WHERE provider_instance_id=? ORDER BY sequence`,
+  ).all(provider) as MemoryTombstoneChainEntryV2[];
+  const head = authority.db.prepare(
+    "SELECT sequence,set_root,signing_key_id,replica_digest FROM provider_tombstone_replica_heads WHERE provider_instance_id=?",
+  ).get(provider) as { sequence: number; set_root: string; signing_key_id: string; replica_digest: string } | undefined;
+  if (head === undefined) fail("PROVIDER_TOMBSTONE_REPLICA_STALE");
+  const verified = verifyProviderTombstoneChain(rows, head);
+  const targets = authority.db.prepare(
+    "SELECT sequence FROM provider_tombstone_replica_targets WHERE provider_instance_id=?",
+  ).all(provider) as Array<{ sequence: number }>;
+  const covered = new Set(targets.map(target => target.sequence));
+  if (rows.some(entry => !covered.has(entry.sequence))) fail("PROVIDER_TOMBSTONE_REPLICA_INVALID");
+  if (!DIGEST.test(head.replica_digest) || head.signing_key_id.length === 0) fail("PROVIDER_TOMBSTONE_REPLICA_STALE");
+  return verified;
+}
 
 export function verifiedProviderTombstoneHighWater(authority: AuthorityDb): ProviderTombstoneHighWater & {
   readonly provider_instance_id: string | null;

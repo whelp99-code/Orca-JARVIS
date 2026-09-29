@@ -1,18 +1,14 @@
 import type { KeyObject } from "node:crypto";
 import { JarvisError, type AuthorityDb } from "./db.js";
-import { type MemoryTombstoneChainEntryV2 } from "./second-brain-effect-v2.js";
 import {
-  providerTombstoneReplicaDigest, verifyProviderTombstoneChain, verifyProviderTombstoneReplica,
+  providerTombstoneReplicaDigest, recomputeStoredHead, verifyProviderTombstoneChain, verifyProviderTombstoneReplica,
   type ProviderTombstoneHighWater,
 } from "./provider-tombstone-replica.js";
 
-const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/;
 function fail(code: string): never {
   throw new JarvisError(code, code);
 }
-type EntryRow = MemoryTombstoneChainEntryV2 & { provider_instance_id: string };
-type HeadRow = { sequence: number; set_root: string; signing_key_id: string; replica_digest: string };
 
 export function learnProviderTombstoneReplica(authority: AuthorityDb, value: unknown,
   keys: ReadonlyMap<string, KeyObject | string>, learnedAt: string,
@@ -80,25 +76,6 @@ export function learnProviderTombstoneReplica(authority: AuthorityDb, value: unk
   })();
 }
 
-export function recomputeStoredHead(authority: AuthorityDb, provider: string): ProviderTombstoneHighWater {
-  const rows = authority.db.prepare(
-    `SELECT sequence,tombstone_id,operation,lane_id,target_manifest_digest,scope_digest,authority_receipt_digest,
-      payload_digest,keyed_subject_digest,effective_at,previous_root,set_root
-     FROM provider_tombstone_replica_entries WHERE provider_instance_id=? ORDER BY sequence`,
-  ).all(provider) as EntryRow[];
-  const head = authority.db.prepare(
-    "SELECT sequence,set_root,signing_key_id,replica_digest FROM provider_tombstone_replica_heads WHERE provider_instance_id=?",
-  ).get(provider) as HeadRow | undefined;
-  if (head === undefined) fail("PROVIDER_TOMBSTONE_REPLICA_STALE");
-  const verified = verifyProviderTombstoneChain(rows, head);
-  const targets = authority.db.prepare(
-    "SELECT sequence FROM provider_tombstone_replica_targets WHERE provider_instance_id=?",
-  ).all(provider) as Array<{ sequence: number }>;
-  const covered = new Set(targets.map(target => target.sequence));
-  if (rows.some(entry => !covered.has(entry.sequence))) fail("PROVIDER_TOMBSTONE_REPLICA_INVALID");
-  if (!DIGEST.test(head.replica_digest) || head.signing_key_id.length === 0) fail("PROVIDER_TOMBSTONE_REPLICA_STALE");
-  return verified;
-}
 
 /** Verified provider head, or genesis when this authority has not learned one.
  * Never returns a head that was not recomputed from stored links. */
