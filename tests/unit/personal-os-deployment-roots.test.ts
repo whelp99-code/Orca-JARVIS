@@ -110,10 +110,21 @@ describe("deployment roots", () => {
 
   it("points the Second Brain launcher and config at the configured provider roots", () => {
     // Given / When / Then
-    expect(secondBrainLauncher(SERVICE_ENVIRONMENT))
+    expect(secondBrainLauncher(SERVICE_ENVIRONMENT, {}))
       .toBe("/var/lib/jarvis-svc/state/second-brain/app/current/bin/second-brain-mcp");
-    expect(secondBrainConfig(SERVICE_ENVIRONMENT)).toBe("/var/lib/jarvis-svc/config/second-brain/config.toml");
-    expect(secondBrainLauncher({})).toBe("/home/jm/.local/state/second-brain/app/current/bin/second-brain-mcp");
-    expect(secondBrainConfig({})).toBe("/home/jm/.config/second-brain/config.toml");
+    expect(secondBrainConfig(SERVICE_ENVIRONMENT, {})).toBe("/var/lib/jarvis-svc/config/second-brain/config.toml");
+    expect(secondBrainLauncher({}, {})).toBe("/home/jm/.local/state/second-brain/app/current/bin/second-brain-mcp");
+    expect(secondBrainConfig({}, {})).toBe("/home/jm/.config/second-brain/config.toml");
+  });
+
+  it("uses the bridge launcher when JARVIS_SECOND_BRAIN_LAUNCHER is set", () => {
+    const env = {
+      JARVIS_SECOND_BRAIN_LAUNCHER: "/opt/jarvis-runtime/bin/second-brain-mcp",
+      JARVIS_SECOND_BRAIN_CONFIG: "/var/lib/jarvis-svc/config/second-brain/config.toml",
+    };
+    expect(secondBrainLauncher(SERVICE_ENVIRONMENT, env)).toBe("/opt/jarvis-runtime/bin/second-brain-mcp");
+    expect(secondBrainConfig(SERVICE_ENVIRONMENT, env)).toBe("/var/lib/jarvis-svc/config/second-brain/config.toml");
+    expect(secondBrainLauncher(SERVICE_ENVIRONMENT, { JARVIS_SECOND_BRAIN_LAUNCHER: "" }))
+      .toBe("/var/lib/jarvis-svc/state/second-brain/app/current/bin/second-brain-mcp");
   });
 });
