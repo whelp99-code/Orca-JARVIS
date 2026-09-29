@@ -1,7 +1,7 @@
 import type { KeyObject } from "node:crypto";
 import { JarvisError, type AuthorityDb } from "./db.js";
 import {
-  providerTombstoneReplicaDigest, recomputeStoredHead, verifyProviderTombstoneChain, verifyProviderTombstoneReplica,
+  providerTombstoneReplicaDigest, recomputeStoredHead, verifyProviderTombstoneReplica,
   type ProviderTombstoneHighWater,
 } from "./provider-tombstone-replica.js";
 
