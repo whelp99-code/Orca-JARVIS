@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { JarvisError, type AuthorityDb } from "./db.js";
-import type { ClaimedControlCommand } from "./control-plane.js";
+import { ControlPlane, type ClaimedControlCommand } from "./control-plane.js";
 
 const PRE_DELIVERY = new Set([
   "SECOND_BRAIN_DISCOVERY_FAILED", "SECOND_BRAIN_START_FAILED", "SECOND_BRAIN_CHILD_EXIT",
@@ -63,4 +63,12 @@ export function abandonUndeliveredOutbox(authority: AuthorityDb, command: Claime
     if (changed !== 1) throw new JarvisError("MEMORY_OUTBOX_ABANDON_REFUSED");
     return { outbox_id: outboxId, state: "abandoned_not_delivered" as const };
   }).immediate();
+}
+
+export function executeAbandonedNotDelivered(authority: AuthorityDb, control: ControlPlane,
+  command: ClaimedControlCommand, requestId: string, now: Date, completedAt: Date) {
+  const closed = abandonUndeliveredOutbox(authority, command, now);
+  control.settle(requestId, command.fence, { state: "completed",
+    effect_type: "memory.outbox.abandoned_not_delivered", payload: closed }, completedAt);
+  return { request_id: requestId, action: command.action, state: "completed" as const, result: closed };
 }

@@ -18,8 +18,10 @@ export function stageControlCommand(authority: AuthorityDb, input: ControlComman
       !isRecord(input.target) || !isRecord(input.args) || typeof input.reversible !== "boolean" || !nonempty(input.requested_by) || !nonempty(input.nonce) ||
       !Number.isFinite(requested) || !Number.isFinite(expires) || requested > nowMs || expires <= nowMs || expires <= requested ||
       expires - requested > 24 * 60 * 60_000 ) throw new JarvisError("CONTROL_COMMAND_INVALID"); validateControlAction(input);
-    if (["memory.outbox.dispatch", "memory.outbox.abandon-not-delivered", "memory.delete", "memory.export", "memory.generation.rollback"].includes(input.action) && input.reversible)
-      throw new JarvisError("CONTROL_COMMAND_INVALID"); const digest = controlCommandDigest(input); const targetJson = canonicalize(input.target);
+    const irreversible = ["memory.outbox.dispatch", "memory.outbox.abandon-not-delivered", "memory.delete",
+      "memory.export", "memory.generation.rollback"];
+    if (irreversible.includes(input.action) && input.reversible) throw new JarvisError("CONTROL_COMMAND_INVALID");
+    const digest = controlCommandDigest(input); const targetJson = canonicalize(input.target);
     const argsJson = canonicalize(input.args); const at = now.toISOString();
     if (input.action === "memory.scope.review") {
       const proposal = validateMemoryCandidateScopeProposal(authority, input.args.proposal, now);
