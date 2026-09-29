@@ -214,4 +214,3 @@ export async function translateReservedAssertion(
   tx.immediate();
   return { receipt_id: receiptId, request_id: challenge.request_id, decision: challenge.decision };
 }
-

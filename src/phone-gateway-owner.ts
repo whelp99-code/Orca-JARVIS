@@ -128,14 +128,9 @@ async function handleAuthedRoute(
   await serveMatchedRoute(ctx, method, path, matched, session.idHmac, session.cookieHeader, requestId, update);
 }
 
-async function serveMatchedRoute(
-  ctx: PhoneGatewayRequestCtx,
-  method: string,
-  path: string,
+async function serveMatchedRoute(ctx: PhoneGatewayRequestCtx, method: string, path: string,
   matched: Extract<ReturnType<typeof matchPhoneRoute>, { readonly kind: "ok" }>,
-  idHmac: Buffer,
-  cookieHeader: string | undefined,
-  requestId: string,
+  idHmac: Buffer, cookieHeader: string | undefined, requestId: string,
   update: (value: DispatchUpdate) => void,
 ): Promise<void> {
   const { isAuthenticated, rejectAuthentication, stillAuthenticated, refreshCookie } =

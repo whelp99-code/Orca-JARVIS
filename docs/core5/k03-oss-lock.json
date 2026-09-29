@@ -1,0 +1,201 @@
+{
+  "schema_version": 1,
+  "kind": "core5_k03_oss_lock",
+  "recorded_at": "2026-09-20T13:33:00.000Z",
+  "branch": "whelp99-code/core5-k01-j06",
+  "package_lock": "package-lock.json lockfileVersion 3",
+  "production_engine_change": false,
+  "new_production_deps_added": false,
+  "candidates": [
+    {
+      "id": "jose",
+      "purpose": "JWS/JWT crypto used transitively by MCP SDK; Core5 caller attestations may reuse, not a direct dep",
+      "status": "in_lockfile_transitive",
+      "in_package_json": false,
+      "duplicate_of": "@modelcontextprotocol/sdk",
+      "version": "6.2.12",
+      "git_commit": "505a55b8f73536082367b2614cb77e927ba96ec1",
+      "license": "MIT",
+      "resolved": "https://registry.npmjs.org/jose/-/jose-6.2.12.tgz",
+      "integrity": "sha512-9NiFmJEex0sy2Dk58j2UGBSHgUs2ypF9eZSu4L6vjOX3Dp96Sw1F3uL+H+D1sx02jZZdzUT0HgvCy59CuvXcWw==",
+      "image_digest": null,
+      "shipping_runtime": false
+    },
+    {
+      "id": "zod",
+      "purpose": "runtime schema parsing",
+      "status": "production_direct",
+      "in_package_json": true,
+      "package_json_range": "4.1.5",
+      "version": "4.1.5",
+      "git_commit": "780cf57167cbf3902efab68f19fa21ca09cb9dd6",
+      "license": "MIT",
+      "resolved": "https://registry.npmjs.org/zod/-/zod-4.1.5.tgz",
+      "integrity": "sha512-rcUUZqlLJgBC33IT3PNMgsCq6TzLQEG/Ei/KTCU0PedSWRMAXoOUN+4t/0H+Q8bdnLPdqUYnvboJT0bn/229qg==",
+      "image_digest": null,
+      "shipping_runtime": true
+    },
+    {
+      "id": "better-sqlite3",
+      "purpose": "authority SQLite",
+      "status": "production_direct",
+      "in_package_json": true,
+      "package_json_range": "^12.2.0",
+      "version": "12.11.1",
+      "git_commit": "4cbc39ca582fecb6b51dd920dfdd338ba4b72230",
+      "license": "MIT",
+      "resolved": "https://registry.npmjs.org/better-sqlite3/-/better-sqlite3-12.11.1.tgz",
+      "integrity": "sha512-dq9AtApgg5PGFtBzPFSBl3HZQjHok5gaQCM6zh2Yk0aSmDCs1CbnVI8/HgASQkNKsWFpseIO9beg5xxpYhbIfA==",
+      "image_digest": null,
+      "shipping_runtime": true
+    },
+    {
+      "id": "@modelcontextprotocol/sdk",
+      "purpose": "MCP client/server; pulls jose",
+      "status": "production_direct",
+      "in_package_json": true,
+      "package_json_range": "1.30.0",
+      "version": "1.30.0",
+      "git_commit": "2d889f2b329e46680ec9bdd565de4616c497825a",
+      "license": "MIT",
+      "resolved": "https://registry.npmjs.org/@modelcontextprotocol/sdk/-/sdk-1.30.0.tgz",
+      "integrity": "sha512-xKd8OIzlqNzcqcNumGAa6g+PW2kjD5vrpcKOnfldAUPP3j7lnqMPwlTXQm8gF+UwH72z0lqaRbjr9hqGz0eITA==",
+      "image_digest": null,
+      "shipping_runtime": true
+    },
+    {
+      "id": "@simplewebauthn/server",
+      "purpose": "WebAuthn verification",
+      "status": "production_direct",
+      "in_package_json": true,
+      "package_json_range": "^13.3.3",
+      "version": "13.3.3",
+      "git_commit": "6f9a2d49f6bd0b1f53faccc5cd4188ac930af2af",
+      "license": "MIT",
+      "resolved": "https://registry.npmjs.org/@simplewebauthn/server/-/server-13.3.3.tgz",
+      "integrity": "sha512-LelX/lcy5cjc15A86i/aNxHhB5eU7dd20QsbP0VLAf9e38+SLlsnqCCyecx3xqfGofhmX05h1J9fKRYWxw+luA==",
+      "image_digest": null,
+      "shipping_runtime": true
+    },
+    {
+      "id": "clamav",
+      "purpose": "attachment malware scan — least-privilege sidecar only, never in Node process",
+      "status": "proposed_not_installed",
+      "in_package_json": false,
+      "version": "1.5 (clamav/clamav:1.5-debian)",
+      "git_commit": null,
+      "license": "GPL-2.0-only",
+      "resolved": "docker.io/clamav/clamav:1.5-debian",
+      "integrity": null,
+      "image_digest": "sha256:cc16781fe005e49de6a8fc1231b63b265f74b18fc2a6347c670c35716914c3b6",
+      "image_digest_observed_at": "2026-09-14T07:19:33.405334Z",
+      "shipping_runtime": false
+    },
+    {
+      "id": "docling",
+      "purpose": "document parse/convert — least-privilege process notes only",
+      "status": "proposed_not_installed",
+      "in_package_json": false,
+      "version": "2.129.0",
+      "git_commit": null,
+      "license": "MIT",
+      "resolved": "https://files.pythonhosted.org/packages/docling/docling-2.129.0-py3-none-any.whl",
+      "integrity": "sha256:9541a7dcd80f24cbe73033c9b72240d0760b392b18ce45ea8165014fc9f6cbcb",
+      "image_digest": null,
+      "shipping_runtime": false
+    },
+    {
+      "id": "opentelemetry",
+      "purpose": "traces/metrics export; JS API observed latest, collector image optional sidecar",
+      "status": "proposed_not_installed",
+      "in_package_json": false,
+      "version": "@opentelemetry/api 1.9.1 + collector-contrib 0.161.0",
+      "git_commit": "7e74509a4d848e94b2970b5262dd3e8efeed0a2",
+      "license": "Apache-2.0",
+      "resolved": "https://registry.npmjs.org/@opentelemetry/api/-/api-1.9.1.tgz",
+      "integrity": "sha512-gLyJlPHPZYdAk1JENA9LeHejZe1Ti77/pTeFm/nMXmQH/HFZlcS/O2XJB+L8fkbrNSqhdtlvjBVjxwUYanNH5Q==",
+      "image_digest": "sha256:fd328de2552466ad78385e1b1289c3f2402b1c45f265b252aab1955b42845ac1",
+      "image_ref": "docker.io/otel/opentelemetry-collector-contrib:0.161.0",
+      "shipping_runtime": false
+    },
+    {
+      "id": "dbos",
+      "purpose": "durable workflow engine — J05 ADR not adopted; do not add",
+      "status": "proposed_not_adopted",
+      "in_package_json": false,
+      "version": "@dbos-inc/dbos-sdk 5.0.2",
+      "git_commit": "1cf44a1dacc359316f75898ae7ed7a65302f4919",
+      "license": "MIT",
+      "resolved": "https://registry.npmjs.org/@dbos-inc/dbos-sdk/-/dbos-sdk-5.0.2.tgz",
+      "integrity": "sha512-I5yH/rYlvBaQKG13sDa9CRQINvyedG8P6XJGzM0Z7yriApKGknbY+/lhyeTgEb721GNb0tb4dYFTVu+99gQoFw==",
+      "image_digest": null,
+      "shipping_runtime": false
+    },
+    {
+      "id": "vitest",
+      "purpose": "unit/integration test runner — outside Shipping runtime",
+      "status": "dev_direct",
+      "in_package_json": true,
+      "package_json_range": "^3.2.4",
+      "version": "3.2.7",
+      "git_commit": "c0c203db7ae2948536ad54f93e3a2b168334e245",
+      "license": "MIT",
+      "resolved": "https://registry.npmjs.org/vitest/-/vitest-3.2.7.tgz",
+      "integrity": "sha512-KrxIJ62Fd89gfysR4WotlgZABiz2dqFPgqGzX7s+CwsqLFomRH7777ZcrOD6+WVAh7khPQP41A+BKbpcJFrdEg==",
+      "image_digest": null,
+      "shipping_runtime": false
+    },
+    {
+      "id": "@playwright/test",
+      "purpose": "E2E test toolchain — outside Shipping runtime",
+      "status": "dev_direct",
+      "in_package_json": true,
+      "package_json_range": "1.62.1",
+      "version": "1.62.1",
+      "git_commit": "26a9e470a7b3c7822084b09fb7f13902c5f37b51",
+      "license": "Apache-2.0",
+      "resolved": "https://registry.npmjs.org/@playwright/test/-/test-1.62.1.tgz",
+      "integrity": "sha512-DTcUc8qii+cpHvtOwggMtBRMjKZHXYWdw8syRYu2vtzuq4Wxphqq4NfCs5Zt44L6mA8rfDfj+PHnxFc/FeK6mQ==",
+      "image_digest": null,
+      "shipping_runtime": false
+    }
+  ],
+  "external_calls": [
+    {
+      "service": "npmjs registry",
+      "purpose": "install-time package fetch only",
+      "runtime_allowed": false,
+      "cost": "0 USD / Core5 request"
+    },
+    {
+      "service": "ClamAV signature CDN",
+      "purpose": "freshclam if a sidecar is ever run",
+      "runtime_allowed": false,
+      "cost": "0 USD; network only if operator enables sidecar (not enabled)"
+    },
+    {
+      "service": "Docling / IBM cloud document APIs",
+      "purpose": "none — local process only if ever adopted",
+      "runtime_allowed": false,
+      "cost": "0 USD; no model tokens"
+    },
+    {
+      "service": "OpenTelemetry backends / vendors",
+      "purpose": "none — loopback export only if ever adopted",
+      "runtime_allowed": false,
+      "cost": "0 USD"
+    },
+    {
+      "service": "DBOS Cloud",
+      "purpose": "none — not adopted (J05)",
+      "runtime_allowed": false,
+      "cost": "0 USD"
+    },
+    {
+      "service": "hosted LLM / embedding APIs",
+      "purpose": "none for Core5 integration path",
+      "runtime_allowed": false,
+      "cost": "0 USD / 0 tokens"
+    }
+  ]
+}

@@ -28,7 +28,10 @@ export async function servePhoneRemoteRoute(
       return;
     }
     refreshCookie();
-    writeHtml(ctx.response, requestId, html.includes("jarvis-phone-mode") ? html : html.replace("<head>", "<head><meta name=\"jarvis-phone-mode\" content=\"1\"/>"));
+    const marked = html.includes("jarvis-phone-mode")
+      ? html
+      : html.replace("<head>", "<head><meta name=\"jarvis-phone-mode\" content=\"1\"/>");
+    writeHtml(ctx.response, requestId, marked);
     update({ outcome: "allowed", code: "ok", status: 200 });
     return;
   }
@@ -81,7 +84,10 @@ async function proxySigned(
     headers["Content-Type"] = "application/json; charset=utf-8";
     headers["Content-Length"] = String(body.byteLength);
   }
-  const result = await rawRequest({ host: LOOPBACK, port: Number(url.port), path, method, headers, body: Buffer.from(body), cap: PHONE_GATEWAY_LIMITS.jsonResponse });
+  const result = await rawRequest({
+    host: LOOPBACK, port: Number(url.port), path, method, headers,
+    body: Buffer.from(body), cap: PHONE_GATEWAY_LIMITS.jsonResponse,
+  });
   if (result === undefined || !PASSTHROUGH.has(result.status)) return undefined;
   let parsed: unknown;
   try { parsed = JSON.parse(result.text); } catch (error) {

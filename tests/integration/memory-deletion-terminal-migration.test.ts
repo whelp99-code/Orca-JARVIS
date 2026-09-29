@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { cpSync, mkdtempSync, readFileSync, rmSync } from "node:fs";
+import { cpSync, mkdtempSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -45,7 +45,8 @@ describe("deletion terminal-refusal migration", () => {
   });
 
   it("preserves existing deletion rows byte-for-byte when upgrading from the prior migration", async () => {
-    const priorMigrations = migrationCopy([MIGRATION]);
+    const priorMigrations = migrationCopy(readdirSync(join(process.cwd(), "migrations"))
+      .filter(file => file.endsWith(".sql") && file > PRIOR));
     const prior = new AuthorityDb(tempDb(), priorMigrations);
     try {
       await prior.migrate();
@@ -84,6 +85,31 @@ describe("deletion terminal-refusal migration", () => {
     } finally {
       prior.close();
       rmSync(join(priorMigrations, ".."), { recursive: true, force: true });
+    }
+  });
+
+  it("upgrades an already migrated Core5 database without rewriting its journal", async () => {
+    const pending = [MIGRATION, "098_morning_refresh_subscription.sql", "098_owner_decision_key_enrollment.sql"];
+    const coreMigrations = migrationCopy(pending);
+    const db = new AuthorityDb(tempDb(), coreMigrations);
+    const coreIds = ["097_core5_integration_operations.sql", "098_core5_mail_draft_refs.sql"];
+    const journal = (id: string) => db.db.prepare("SELECT id,checksum FROM schema_migrations WHERE id=?").get(id);
+    try {
+      await db.migrate();
+      const before = coreIds.map(journal);
+      expect(before).toEqual(coreIds.map(id => ({ id, checksum: checksum(id) })));
+      for (const id of pending) {
+        cpSync(join(process.cwd(), "migrations", id), join(coreMigrations, id));
+      }
+      await db.migrate();
+      await db.assertMigrationsReady();
+      expect(coreIds.map(journal)).toEqual(before);
+      expect(pending.map(journal)).toEqual(pending.map(id => ({ id, checksum: checksum(id) })));
+      expect(db.db.pragma("quick_check", { simple: true })).toBe("ok");
+      expect(db.db.pragma("foreign_key_check")).toEqual([]);
+    } finally {
+      db.close();
+      rmSync(join(coreMigrations, ".."), { recursive: true, force: true });
     }
   });
 });

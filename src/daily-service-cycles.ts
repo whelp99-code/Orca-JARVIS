@@ -11,7 +11,11 @@ import { bindMorningHold, installMorningRefreshSubscription, loadMorningOperatin
 import { kstLocalDate } from "./daily-loop-time.js";
 
 type Phase = "morning" | "evening";
-type PhaseCycle = { readonly status: "processed"; readonly result: DailyLoopCycleResult; readonly operating_brief?: ReturnType<typeof loadMorningOperatingBrief> }
+type PhaseCycle = {
+  readonly status: "processed";
+  readonly result: DailyLoopCycleResult;
+  readonly operating_brief?: ReturnType<typeof loadMorningOperatingBrief>;
+}
   | { readonly status: "error"; readonly code: string };
 
 /** Concrete stored-source executors; no placeholder steps or external provider calls. */

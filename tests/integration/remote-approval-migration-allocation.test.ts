@@ -23,6 +23,8 @@ describe("task 35 migration allocation grammar", () => {
       ["075_daily_event_identity.sql", "075_memory_cancellation_local_compaction.sql"],
       ["079_memory_scoped_completion_observations.sql", "079_task_execution_read_indexes.sql"],
       ["080_memory_late_subject_suppression.sql", "080_memory_scoped_settlements.sql"],
+      ["097_core5_integration_operations.sql", "097_memory_deletion_terminal_refusal.sql"],
+      ["098_core5_mail_draft_refs.sql", "098_morning_refresh_subscription.sql", "098_owner_decision_key_enrollment.sql"],
     ]);
     expect(files).toContain("056_remote_approval_v2.sql");
   });

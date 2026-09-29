@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orca-jarvis.local/contracts/integration/v1/execution-result.schema.json",
+  "title": "ExecutionResult",
+  "description": "TIMEOUT and UNCERTAIN are neither success nor fail. Cancellation may record possible external effect.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "operation_id", "attempt_id", "lease_fence", "status"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "operation_id": { "type": "string", "minLength": 1 },
+    "attempt_id": { "type": "string", "minLength": 1 },
+    "lease_fence": { "type": "string", "minLength": 1 },
+    "status": {
+      "type": "string",
+      "enum": [
+        "SUCCESS",
+        "FAIL",
+        "TIMEOUT",
+        "UNCERTAIN",
+        "CANCELLED",
+        "CANCELLED_AFTER_POSSIBLE_EFFECT"
+      ]
+    },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "$ref": "evidence-ref.schema.json" }
+    },
+    "error_code": { "type": "string" }
+  }
+}

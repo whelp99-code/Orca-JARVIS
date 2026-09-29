@@ -1,0 +1,13 @@
+{
+  "schema_version": 1,
+  "operation_id": "op:mail.read:inbox-summary",
+  "attempt_id": "att:01",
+  "lease_fence": "fence:7",
+  "status": "SUCCESS",
+  "evidence_refs": [
+    {
+      "kind": "synthetic_read",
+      "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc"
+    }
+  ]
+}

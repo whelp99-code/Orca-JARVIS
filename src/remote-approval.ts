@@ -227,7 +227,11 @@ export class RemoteApprovalService {
     row: ChallengeRow,
     ingress: RemoteIngressContextV1,
     now: Date,
-  ): { readonly code: (typeof REMOTE_ERROR_CODES)[keyof typeof REMOTE_ERROR_CODES]; readonly reason: string; readonly outcome: "expired" | "rejected" } | undefined {
+  ): {
+    readonly code: (typeof REMOTE_ERROR_CODES)[keyof typeof REMOTE_ERROR_CODES];
+    readonly reason: string;
+    readonly outcome: "expired" | "rejected";
+  } | undefined {
     if (row.state === "expired" || Date.parse(row.expires_at) <= now.getTime()) {
       return { code: REMOTE_ERROR_CODES.REMOTE_APPROVAL_NOT_APPLICABLE, reason: "expired", outcome: "expired" };
     }

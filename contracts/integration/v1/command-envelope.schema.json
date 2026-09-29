@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orca-jarvis.local/contracts/integration/v1/command-envelope.schema.json",
+  "title": "CommandEnvelope",
+  "description": "JARVIS-owned execution envelope. operation_id is the logical action; attempt_id and lease_fence are separate. Does not own Mail send, CRM state, or SB memory writes.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "operation_id", "attempt_id", "lease_fence", "capability", "payload", "caller"],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "operation_id": { "type": "string", "minLength": 1, "description": "Logical action identity" },
+    "attempt_id": { "type": "string", "minLength": 1, "description": "Distinct from operation_id" },
+    "lease_fence": { "type": "string", "minLength": 1, "description": "Distinct from operation_id and attempt_id" },
+    "capability": {
+      "type": "string",
+      "enum": [
+        "mail.read",
+        "mail.draft",
+        "mail.status",
+        "cwos.command",
+        "cwos.state",
+        "memory.request",
+        "memory.status",
+        "memory.read"
+      ]
+    },
+    "payload": { "type": "object" },
+    "caller": { "$ref": "verified-caller.schema.json" },
+    "evidence_refs": {
+      "type": "array",
+      "items": { "$ref": "evidence-ref.schema.json" }
+    },
+    "approval_ref": { "$ref": "approval-ref.schema.json" }
+  }
+}

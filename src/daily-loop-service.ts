@@ -6,7 +6,8 @@ import { DailyLoopStore } from "./daily-loop-store.js";
 import { classifyDailyLoopInstant, evaluateRefreshContext, kstLocalDate } from "./daily-loop-time.js";
 import { dailyLoopSchedules, dailyLoopSteps } from "./daily-loop-schedules.js";
 import {
-  DAILY_LOOP_PHASES, DailyLoopError, type DailyLoopAdvance, type DailyLoopClaim, type DailyLoopCycleResult, type DailyLoopDue, type DailyLoopFailureCode,
+  DAILY_LOOP_PHASES, DailyLoopError, awaitDeferredRefresh, type DailyLoopAdvance, type DailyLoopClaim,
+  type DailyLoopCycleResult, type DailyLoopDue, type DailyLoopFailureCode,
   type DailyLoopPhase,
   type DailyLoopOptions, type DailyLoopPreparation, type DailyLoopStep, type DailyLoopStepExecutor,
 } from "./daily-loop-types.js";
@@ -177,12 +178,7 @@ export class DailyControlLoop {
 		if (completed.includes(runId) || this.store.steps(runId).length === 0) return;
 		let claim: DailyLoopClaim | undefined;
 		try {
-			if (this.stepExecutor?.defer?.(this.now())) {
-				const refresh = this.stepExecutor.awaitRefresh;
-				if (refresh === undefined) return;
-				await refresh.call(this.stepExecutor, this.now());
-				if (this.stepExecutor.defer?.(this.now())) return;
-			}
+			if (this.stepExecutor !== undefined && await awaitDeferredRefresh(this.stepExecutor, () => this.now())) return;
 			claim = this.store.claim({
 				run_id: runId, owner_id: this.options.owner_id, at: this.now(), lease_ms: this.options.lease_ms,
 			}, this.options.recovery_window_ms);
@@ -220,7 +216,7 @@ export class DailyControlLoop {
 			? parseDailyLoopEvents(this.options.event_source.drain()) : [];
 		for (const event of events) prepared.push(this.prepare(event));
 		for (const runId of this.due()) await this.processRun(runId, completed);
-		this.observe(this.now());
+		this.observe(now);
 		return { prepared, completed_run_ids: completed };
 	}
 	private observe(at: Date): void {

@@ -100,7 +100,10 @@ export async function verifyRegistration(
   const store = enrollments(service);
   const ceremony = admitRegistrationVerify({ service, ceremonyId, ingress, now });
   service.options.db.db.transaction(() => {
-    store.reserveRegistration(ceremonyId, at, new Date(now.getTime() + service.options.policy.remote_approval.verification_reservation_ttl_seconds * 1000).toISOString());
+    const reservedUntil = new Date(
+      now.getTime() + service.options.policy.remote_approval.verification_reservation_ttl_seconds * 1000,
+    ).toISOString();
+    store.reserveRegistration(ceremonyId, at, reservedUntil);
   }).immediate();
   try {
     const parsed = parseSecondBrainStrictJsonBytes(rawBody);

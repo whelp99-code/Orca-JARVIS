@@ -1,0 +1,5 @@
+{
+  "kind": "synthetic_read",
+  "digest": "sha256:cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
+  "uri": "jarvis://integration/synthetic/read"
+}

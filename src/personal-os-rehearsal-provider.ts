@@ -80,8 +80,13 @@ export function installProviderRelease(input: {
   const bin = join(stage, "bin");
   mkdirSync(bin, { recursive: true });
   const python = join(venv, "bin/python");
-  const preamble = `#!/bin/sh\nset -eu\nexport HOME="${share}"\nexport XDG_STATE_HOME="${state}"\nexport XDG_DATA_HOME="${share}"\nexport XDG_CONFIG_HOME="${configDir}"\nexport SB_CONFIG="${configPath}"\n`;
-  script(join(bin, "second-brain-mcp"), `${preamble}export SB_MCP_CONTRACT_PROFILE="\${SB_MCP_CONTRACT_PROFILE:-task32-schema4}"\nexec ${JSON.stringify(python)} -m sb.mcp "$@"\n`);
+  const preamble = [
+    "#!/bin/sh", "set -eu", `export HOME="${share}"`, `export XDG_STATE_HOME="${state}"`,
+    `export XDG_DATA_HOME="${share}"`, `export XDG_CONFIG_HOME="${configDir}"`,
+    `export SB_CONFIG="${configPath}"`, "",
+  ].join("\n");
+  const profile = "export SB_MCP_CONTRACT_PROFILE=\"${SB_MCP_CONTRACT_PROFILE:-task32-schema4}\"\n";
+  script(join(bin, "second-brain-mcp"), `${preamble}${profile}exec ${JSON.stringify(python)} -m sb.mcp "$@"\n`);
   script(join(bin, "sb"), `${preamble}exec ${JSON.stringify(python)} -m sb.cli "$@"\n`);
   writeFileSync(join(stage, "wheel.sha256"), `${wheelSha256}  ${wheelName}\n`);
   const written = writeReleaseManifest({
@@ -192,4 +197,3 @@ print(json.dumps({"ok": leak == 0 and resurrected and active.is_symlink(), "dele
                   "activated_after_replay": active.is_symlink(), "resurrected_before_replay": resurrected,
                   "forget_commit": forgotten, "replay_commit": replayed}))
 `;
-
