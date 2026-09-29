@@ -38,7 +38,9 @@ CREATE TABLE provider_tombstone_replica_targets (
   page_content_digest TEXT NOT NULL CHECK(page_content_digest GLOB 'sha256:[0-9a-f]*' AND length(page_content_digest)=71),
   PRIMARY KEY(provider_instance_id, sequence, target_digest)
 );
-CREATE TRIGGER provider_tombstone_replica_heads_immutable_update BEFORE UPDATE ON provider_tombstone_replica_heads
+CREATE TRIGGER provider_tombstone_replica_heads_extension_only BEFORE UPDATE ON provider_tombstone_replica_heads
+WHEN NEW.provider_instance_id!=OLD.provider_instance_id OR NEW.sequence<=OLD.sequence
+  OR NEW.signing_key_id!=OLD.signing_key_id
 BEGIN SELECT RAISE(ABORT, 'immutable provider tombstone replica'); END;
 CREATE TRIGGER provider_tombstone_replica_heads_immutable_delete BEFORE DELETE ON provider_tombstone_replica_heads
 BEGIN SELECT RAISE(ABORT, 'immutable provider tombstone replica'); END;

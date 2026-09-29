@@ -71,7 +71,10 @@ describe("provider tombstone replica verification", () => {
       expect(learnProviderTombstoneReplica(db, signed, map, AT)).toEqual({ sequence: 1, set_root: first.set_root });
       const second = link(2, first.set_root, DIGEST("1"));
       const extended = document([first, second], { sequence: 2, set_root: second.set_root }, keys.privateKey);
-      expect(() => learnProviderTombstoneReplica(db, extended, map, AT)).toThrowError(new JarvisError("PROVIDER_TOMBSTONE_REPLICA_CONFLICT"));
+      expect(learnProviderTombstoneReplica(db, extended, map, AT)).toEqual({ sequence: 2, set_root: second.set_root });
+      const fork = link(1, MEMORY_TOMBSTONE_GENESIS_ROOT, DIGEST("8"));
+      const forked = document([fork], { sequence: 1, set_root: fork.set_root }, keys.privateKey);
+      expect(() => learnProviderTombstoneReplica(db, forked, map, AT)).toThrowError(new JarvisError("PROVIDER_TOMBSTONE_REPLICA_CONFLICT"));
     } finally { db.close(); }
   });
 });
