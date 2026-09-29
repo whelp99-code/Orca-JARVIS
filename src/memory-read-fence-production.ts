@@ -2,7 +2,7 @@ import { createHash, createPublicKey, type KeyObject } from "node:crypto";
 import { isAbsolute } from "node:path";
 import { JarvisError, type AuthorityDb } from "./db.js";
 import { readEd25519PrivateKeyFile } from "./memory-signing-key-file.js";
-import { memoryReadHighWater, signMemoryReadFence } from "./memory-read-fence.js";
+import { memoryReadHighWater, signObservedMemoryReadFence } from "./memory-read-fence.js";
 import type { MemoryReadFenceV1 } from "./second-brain-effect-v2.js";
 import type { SecondBrainAdapterOptions } from "./second-brain-adapter-types.js";
 
@@ -49,7 +49,7 @@ export function createProductionMemoryReadAuthorization(authority: AuthorityDb, 
         || !(Date.parse(row.valid_from) <= at.getTime() && at.getTime() < Date.parse(row.valid_until))) {
         throw new JarvisError("MEMORY_READ_FENCE_KEY_UNAVAILABLE");
       }
-      const fence = signMemoryReadFence({ ...config, private_key: key,
+      const fence = signObservedMemoryReadFence(authority, { ...config, private_key: key,
         fence_ttl_ms: Math.min(60_000, Date.parse(row.valid_until) - at.getTime()) },
       purpose, memoryReadHighWater(authority), at);
       return { fence, private_key: key };

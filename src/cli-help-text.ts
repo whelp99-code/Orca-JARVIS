@@ -55,6 +55,7 @@ export const CLI_HELP =
   + "memory postcompact [event.json]: PostCompact JSON on stdin or file; reselect and send on configured model_transport\n"
   + "memory reconcile-scoped <outbox-id> --once [--worker ID]: reconcile one spent request using host-authenticated scoped configuration\n"
   + "memory stage-dispatch <candidate-id>: stage an approved memory candidate for control approval\n"
+  + "memory learn-provider-tombstones <replica.json> --key-file PEM: verify and record a signed Second Brain tombstone replica before any read fence may use its head\n"
   + "memory outbox --once [--limit N]: dispatch queued writes and reconcile their stored results\n"
   + "memory outbox list [--limit N]: inspect bounded memory delivery state\n"
   + "memory withdrawals: list derived memories a hidden task still has stored with the provider\n"
