@@ -24,11 +24,13 @@ import {
 import { stageMemoryRememberDispatch } from "./memory-remember-dispatch.js";
 import { taskExecutionReadiness } from "./task-execution-runtime.js";
 import { pageControlCommands } from "./control-command-page.js";
+import { learnProviderTombstonesFromFile } from "./cli-provider-tombstone-replica.js";
 
 export async function executeControlCommand(
   context: CliCommandContext,
 ): Promise<Record<string, unknown> | undefined> {
   const { command, subcommand, argument, values, db } = context;
+  if (command === "memory" && subcommand === "learn-provider-tombstones") return learnProviderTombstonesFromFile(context);
   if (command === "memory" && subcommand === "classify") return executeMemoryIntake(context);
   if (command === "memory" && subcommand === "context") return executeMemoryReference(context);
   if (command === "memory" && subcommand === "postcompact") return executeMemoryPostcompact(context);

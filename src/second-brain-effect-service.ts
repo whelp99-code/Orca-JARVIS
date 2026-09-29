@@ -6,7 +6,7 @@ import { parseResolvedMemoryTarget,
   type MemoryReadFenceV1, type ResolvedMemoryTargetV2 } from "./second-brain-effect-v2.js";
 import type { SecondBrainOutcome, SecondBrainTransport } from "./second-brain-transport.js";
 import { SecondBrainTransportError } from "./second-brain-transport.js";
-import { memoryReadHighWater, signMemoryReadFence } from "./memory-read-fence.js";
+import { memoryReadHighWater, signObservedMemoryReadFence } from "./memory-read-fence.js";
 
 export type SecondBrainEffectServiceOptions = {
   readonly authority: AuthorityDb; readonly transport: SecondBrainTransport;
@@ -46,7 +46,7 @@ export class SecondBrainEffectService {
   }
   private fence(purpose: "memory_read" | "memory_status" | "memory_resolve",
     high: { readonly sequence: number; readonly set_root: string }, at: Date): MemoryReadFenceV1 {
-    return signMemoryReadFence({ ...this.options, fence_ttl_ms: this.ttl }, purpose, high, at);
+    return signObservedMemoryReadFence(this.options.authority, { ...this.options, fence_ttl_ms: this.ttl }, purpose, high, at);
   }
   readFence(purpose: "memory_read" | "memory_status" | "memory_resolve", at = this.options.clock()): MemoryReadFenceV1 {
     return this.fence(purpose, this.highWater(), at);

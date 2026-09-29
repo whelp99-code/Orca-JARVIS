@@ -1,6 +1,7 @@
 import { JarvisError, type AuthorityDb } from "./db.js";
 import type { SecondBrainEvidence } from "./second-brain-adapter-types.js";
 import { memoryReadHighWater } from "./memory-read-fence.js";
+import { providerTombstoneSuppresses } from "./provider-tombstone-replica.js";
 
 export type MemoryMembership = (kind: "source" | "content" | "citation" | "record", value: string) => string;
 export type MemoryReadPrivacyState = {
@@ -61,5 +62,9 @@ export function isMemoryReadSuppressed(
         OR content_identity_digest IN (?,?) OR citation_identity_digest IN (?,?)) LIMIT 1`,
     ).get(record.record_digest, record.record_id, record.source_identity_full, sourceMembership,
       record.content_identity_full, contentMembership, record.citation_identity_full, citationMembership);
-    return legacy !== undefined;
+    if (legacy !== undefined) return true;
+    return providerTombstoneSuppresses(authority, [
+      record.record_digest, record.record_id, record.source_identity_full, record.content_identity_full,
+      record.citation_identity_full,
+    ]);
   }

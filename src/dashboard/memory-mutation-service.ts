@@ -9,6 +9,7 @@ import { stageMemoryRememberDispatch } from "../memory-remember-dispatch.js";
 import { readCandidateReview } from "./memory-candidate-review.js";
 import type { DashboardSessionStore } from "./session.js";
 import { MemoryTokenCache, type MemoryTokenAuthority, type MemoryTokenSelection } from "./memory-token-cache.js";
+import { memoryReadHighWater } from "../memory-read-fence.js";
 import { stageMemoryCandidateDecision,
   type MemoryCandidateDecisionInput } from "./memory-candidate-decision-staging.js";
 
@@ -159,16 +160,14 @@ export class MemoryMutationService {
     const row = this.options.authority.db.prepare(
       `SELECT privacy_epoch,policy_digest FROM memory_surface_authority WHERE singleton_id=1`,
     ).get() as { readonly privacy_epoch: number; readonly policy_digest: string | null };
-    const high = this.options.authority.db.prepare(
-      "SELECT sequence,set_root FROM memory_tombstone_chain ORDER BY sequence DESC LIMIT 1",
-    ).get() as { readonly sequence: number; readonly set_root: string } | undefined;
+    const high = memoryReadHighWater(this.options.authority);
     const sessionId = this.options.session.authenticatedSessionId();
     return {
       owner_session_id: sessionId, session_incarnation: sessionId,
       privacy_epoch: privacyEpoch ?? row.privacy_epoch,
       policy_digest: row.policy_digest ?? undefined,
-      tombstone_sequence: high?.sequence ?? 0,
-      tombstone_set_root: high?.set_root,
+      tombstone_sequence: high.sequence,
+      tombstone_set_root: high.set_root,
     };
   }
 
