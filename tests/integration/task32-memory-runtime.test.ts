@@ -5,6 +5,7 @@ import { dirname, join } from "node:path";
 import { request } from "undici";
 import { afterEach, describe, expect, it } from "vitest";
 import { ControlPlane, signCommandApproval, type CommandApprovalReceipt } from "../../src/control-plane.js";
+import { MEMORY_TOMBSTONE_GENESIS_ROOT } from "../../src/second-brain-effect-v2-contract.js";
 import type { SecondBrainEvidence, SecondBrainReadAdapter,
   SecondBrainReadOutcome } from "../../src/second-brain-adapter-types.js";
 import { AuthorityDb } from "../../src/db.js";
@@ -34,7 +35,7 @@ function evidence(sensitivity: "personal" | "restricted", suffix: string): Secon
       generation: { provider_instance_id: "provider:task32", generation_id: `sbgen:v1:${"e".repeat(64)}`,
         generation_manifest_digest: `sha256:${"f".repeat(64)}`, vault_head: "1".repeat(40),
         vault_tree: "2".repeat(40), tombstone_sequence: 0,
-        tombstone_set_root: `sha256:${"3".repeat(64)}` } } };
+        tombstone_set_root: MEMORY_TOMBSTONE_GENESIS_ROOT } } };
 }
 class RuntimeAdapter implements SecondBrainReadAdapter {
   readonly contract_profile = "schema4" as const;

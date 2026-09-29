@@ -2,7 +2,7 @@ import { readFileSync } from "node:fs";
 import { createPublicKey } from "node:crypto";
 import { JarvisError } from "./db.js";
 import type { CliCommandContext } from "./cli-command-context.js";
-import { learnProviderTombstoneReplica } from "./provider-tombstone-replica.js";
+import { learnProviderTombstoneReplica } from "./provider-tombstone-replica-learn.js";
 
 export async function learnProviderTombstonesFromFile(context: CliCommandContext): Promise<Record<string, unknown>> {
   const path = context.argument;

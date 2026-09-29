@@ -5,9 +5,10 @@ import { AuthorityDb } from "../../src/db.js";
 import { JarvisError } from "../../src/jarvis-error.js";
 import { MEMORY_TOMBSTONE_GENESIS_ROOT } from "../../src/second-brain-effect-v2.js";
 import {
-  PROVIDER_TOMBSTONE_REPLICA_DOMAIN, learnProviderTombstoneReplica, providerTombstoneLinkRoot,
+  PROVIDER_TOMBSTONE_REPLICA_DOMAIN, providerTombstoneLinkRoot,
   verifyProviderTombstoneChain, verifyProviderTombstoneReplica, type ProviderTombstoneReplica,
 } from "../../src/provider-tombstone-replica.js";
+import { learnProviderTombstoneReplica } from "../../src/provider-tombstone-replica-learn.js";
 import { tempDb } from "../helpers.js";
 
 const AT = "2026-09-27T01:02:03.000Z";

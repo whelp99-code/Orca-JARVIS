@@ -6,6 +6,7 @@ import { MemoryMutationService } from "../../src/dashboard/memory-mutation-servi
 import { MemoryTokenCache } from "../../src/dashboard/memory-token-cache.js";
 import { createDashboardSession } from "../../src/dashboard/session.js";
 import { AuthorityDb } from "../../src/db.js";
+import { MEMORY_TOMBSTONE_GENESIS_ROOT } from "../../src/second-brain-effect-v2-contract.js";
 import { MemoryCorrectionSpool } from "../../src/memory-correction-spool.js";
 import type { SecondBrainEvidence } from "../../src/second-brain-adapter-types.js";
 import { tempDb } from "../helpers.js";
@@ -36,7 +37,7 @@ function evidence(): SecondBrainEvidence {
       generation: { provider_instance_id: "provider:spool", generation_id: `sbgen:v1:${"d".repeat(64)}`,
         generation_manifest_digest: `sha256:${"e".repeat(64)}`, vault_head: "1".repeat(40),
         vault_tree: "2".repeat(40), tombstone_sequence: 0,
-        tombstone_set_root: `sha256:${"f".repeat(64)}` } } };
+        tombstone_set_root: MEMORY_TOMBSTONE_GENESIS_ROOT } } };
 }
 
 describe("Task 32 correction spool publication", () => {
