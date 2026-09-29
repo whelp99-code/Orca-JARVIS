@@ -2,7 +2,7 @@ import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import type { AuthorityDb } from "./db.js";
 import { evaluateRefreshContext, kstInstant, kstLocalDate } from "./daily-loop-time.js";
-import type { MorningBriefItem, MorningBriefResult } from "./morning-brief-types.js";
+import type { MorningBriefResult } from "./morning-brief-types.js";
 import type { MorningRecommendationLineage } from "./morning-recommendation-source.js";
 import { NotificationIntentStore } from "./notification-intent-store.js";
 import type { OwnerDecisionQueueEntry } from "./notification-intent-types.js";

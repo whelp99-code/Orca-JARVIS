@@ -268,10 +268,11 @@ export function cachedSecondBrainReadinessProbe(
   now: () => Date = () => new Date(),
 ): SecondBrainReadinessProbe {
   let cached: { at: number; value: SecondBrainReadinessObservation } | undefined;
-  let inflight: Promise<void> | undefined;
-  const refresh = (): Promise<void> => {
+  let inflight: Promise<SecondBrainReadinessObservation> | undefined;
+  const refresh = (): Promise<SecondBrainReadinessObservation> => {
     inflight ??= inner.inspect().then((value) => {
       cached = { at: now().getTime(), value };
+      return value;
     }).finally(() => {
       inflight = undefined;
     });
@@ -285,9 +286,7 @@ export function cachedSecondBrainReadinessProbe(
         void refresh();
         return cached.value;
       }
-      await refresh();
-      if (cached === undefined) throw new Error("SECOND_BRAIN_READINESS_CACHE_EMPTY");
-      return cached.value;
+      return await refresh();
     },
   };
 }
