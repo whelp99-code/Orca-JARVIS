@@ -9,10 +9,17 @@ import {
  * account talks to that account's provider installation instead of the interactive user's.
  * JARVIS_SECOND_BRAIN_LAUNCHER/CONFIG still override both, and still select an isolated provider.
  */
-export function secondBrainLauncher(environment?: DeploymentEnvironment): string {
-  return resolveDeploymentRoots(environment).providerLauncher;
+function configuredOverride(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  const value = env[name];
+  return typeof value === "string" && value.length > 0 ? value : undefined;
 }
 
-export function secondBrainConfig(environment?: DeploymentEnvironment): string {
-  return resolveDeploymentRoots(environment).providerConfig;
+export function secondBrainLauncher(environment?: DeploymentEnvironment, env: NodeJS.ProcessEnv = process.env): string {
+  return configuredOverride(env, "JARVIS_SECOND_BRAIN_LAUNCHER")
+    ?? resolveDeploymentRoots(environment).providerLauncher;
+}
+
+export function secondBrainConfig(environment?: DeploymentEnvironment, env: NodeJS.ProcessEnv = process.env): string {
+  return configuredOverride(env, "JARVIS_SECOND_BRAIN_CONFIG")
+    ?? resolveDeploymentRoots(environment).providerConfig;
 }
