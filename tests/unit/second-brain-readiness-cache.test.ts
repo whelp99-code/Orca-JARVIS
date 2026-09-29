@@ -1,6 +1,6 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
-import { cachedSecondBrainReadinessProbe } from "../../src/second-brain-readiness-runtime.js";
+import { cachedSecondBrainReadinessProbe } from "../../src/second-brain-readiness-cache.js";
 import type { SecondBrainReadinessObservation } from "../../src/second-brain-readiness.js";
 
 const observation = (data_state: SecondBrainReadinessObservation["data_state"]): SecondBrainReadinessObservation => ({

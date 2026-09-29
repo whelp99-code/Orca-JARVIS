@@ -7,7 +7,7 @@ import type { RemoteApprovalService } from "../remote-approval.js";
 import { tryHandleRemoteLifecycleRoutes } from "./remote-lifecycle-routes.js";
 import { tryHandleRemoteAuthRoutes } from "./remote-auth-routes.js";
 import { buildSecondBrainReadiness, type SecondBrainReadinessProbe } from "../second-brain-readiness.js";
-import { cachedRuntimeSecondBrainReadinessProbe } from "../second-brain-readiness-runtime.js";
+import { cachedRuntimeSecondBrainReadinessProbe } from "../second-brain-readiness-cache.js";
 import { DASHBOARD_SCHEMA_VERSION, ID_LIMIT } from "./contracts.js";
 import type { ReconcileHub } from "./events.js";
 import {
