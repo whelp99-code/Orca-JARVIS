@@ -5,6 +5,9 @@ import { fileURLToPath } from "node:url";
 
 const require = createRequire(import.meta.url);
 export const ELECTRON_VERSION = "44.0.0";
+// Live /api/v1/health measured 6.4s while it waited on Second Brain inspect. Warm health is cached;
+// this budget still covers a cold miss and the production process that has not loaded that cache.
+export const ELECTRON_HEALTH_TIMEOUT_MS = 10_000;
 export const ELECTRON_BUNDLE_ID = "com.jmpark.orca-jarvis";
 export const ELECTRON_PROTOCOL_SCHEME = "jarvis";
 

@@ -260,4 +260,42 @@ export function runtimeSecondBrainReadinessProbe(
   };
 }
 
+export const SECOND_BRAIN_READINESS_CACHE_TTL_MS = 30_000;
+
+export function cachedSecondBrainReadinessProbe(
+  inner: SecondBrainReadinessProbe,
+  ttlMs = SECOND_BRAIN_READINESS_CACHE_TTL_MS,
+  now: () => Date = () => new Date(),
+): SecondBrainReadinessProbe {
+  let cached: { at: number; value: SecondBrainReadinessObservation } | undefined;
+  let inflight: Promise<void> | undefined;
+  const refresh = (): Promise<void> => {
+    inflight ??= inner.inspect().then((value) => {
+      cached = { at: now().getTime(), value };
+    }).finally(() => {
+      inflight = undefined;
+    });
+    return inflight;
+  };
+  return {
+    inspect: async () => {
+      const age = cached === undefined ? Number.POSITIVE_INFINITY : now().getTime() - cached.at;
+      if (cached !== undefined && age < ttlMs) return cached.value;
+      if (cached !== undefined) {
+        void refresh();
+        return cached.value;
+      }
+      await refresh();
+      if (cached === undefined) throw new Error("SECOND_BRAIN_READINESS_CACHE_EMPTY");
+      return cached.value;
+    },
+  };
+}
+
+let sharedHealthProbe: SecondBrainReadinessProbe | undefined;
+export function cachedRuntimeSecondBrainReadinessProbe(): SecondBrainReadinessProbe {
+  sharedHealthProbe ??= cachedSecondBrainReadinessProbe(runtimeSecondBrainReadinessProbe());
+  return sharedHealthProbe;
+}
+
 export { probeSecondBrainConfiguration } from "./second-brain-readiness-config.js";

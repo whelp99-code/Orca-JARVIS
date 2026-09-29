@@ -7,7 +7,7 @@ import type { RemoteApprovalService } from "../remote-approval.js";
 import { tryHandleRemoteLifecycleRoutes } from "./remote-lifecycle-routes.js";
 import { tryHandleRemoteAuthRoutes } from "./remote-auth-routes.js";
 import { buildSecondBrainReadiness, type SecondBrainReadinessProbe } from "../second-brain-readiness.js";
-import { runtimeSecondBrainReadinessProbe } from "../second-brain-readiness-runtime.js";
+import { cachedRuntimeSecondBrainReadinessProbe } from "../second-brain-readiness-runtime.js";
 import { DASHBOARD_SCHEMA_VERSION, ID_LIMIT } from "./contracts.js";
 import type { ReconcileHub } from "./events.js";
 import {
@@ -78,7 +78,7 @@ export async function tryHandleDashboardApi(input: DashboardApiInput): Promise<b
   if (tryHandleDashboardSession(input)) return true;
   if (tryHandleDashboardSse(input)) return true;
   if (input.path === "/api/v1/health") {
-    await writeHealth(input.db, input.response, input.requestId, input.clock(), input.secondBrainProbe ?? runtimeSecondBrainReadinessProbe());
+    await writeHealth(input.db, input.response, input.requestId, input.clock(), input.secondBrainProbe ?? cachedRuntimeSecondBrainReadinessProbe());
     return true;
   }
   if (input.path === "/api/v1/overview") {

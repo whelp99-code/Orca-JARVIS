@@ -3,7 +3,7 @@ import { spawn } from "node:child_process";
 import { request } from "undici";
 import { packageElectronApp } from "./lib/package-electron-app.mjs";
 import { ElectronDeepLinkError, parseJarvisDeepLink } from "./lib/electron-deep-link.mjs";
-import { ElectronClientError, parseElectronClientConfig, resolveElectronBinary } from "./lib/electron-shell.mjs";
+import { ELECTRON_HEALTH_TIMEOUT_MS, ElectronClientError, parseElectronClientConfig, resolveElectronBinary } from "./lib/electron-shell.mjs";
 
 function fail(code) {
   process.stderr.write(`${code}\n`);
@@ -20,8 +20,8 @@ try {
   const config = parseElectronClientConfig();
   try {
     const response = await request(`${config.authority_url}/api/v1/health`, {
-      headersTimeout: 2_000,
-      bodyTimeout: 2_000,
+      headersTimeout: ELECTRON_HEALTH_TIMEOUT_MS,
+      bodyTimeout: ELECTRON_HEALTH_TIMEOUT_MS,
       maxRedirections: 0,
     });
     await response.body.dump();
