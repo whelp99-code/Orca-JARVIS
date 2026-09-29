@@ -7,6 +7,7 @@ import { ControlPlane, signCommandApproval, type CommandApprovalReceipt } from "
 import { AuthorityDb } from "../../src/db.js";
 import { createDashboardServer } from "../../src/dashboard/server.js";
 import { bindExternal, externalAnchors, localKey, tempDb } from "../helpers.js";
+import { MEMORY_TOMBSTONE_GENESIS_ROOT } from "../../src/second-brain-effect-v2-contract.js";
 import { TASK32_NOW, Task32ReadAdapter, task32Evidence } from "../fixtures/task32-memory-test-support.js";
 
 const roots: string[] = [];
@@ -23,9 +24,9 @@ async function fixture(originLabel = "Second Brain") {
   bindExternal(db, anchors);
   const root = mkdtempSync(join(tmpdir(), "task32-memory-history-")); roots.push(root);
   writeFileSync(join(root, "index.html"), "<!doctype html><div id=\"root\"></div>");
-  const target = task32Evidence({ suffix: "1" });
+  const target = task32Evidence({ suffix: "1", tombstoneSetRoot: MEMORY_TOMBSTONE_GENESIS_ROOT });
   const labeled = { ...target, record: { ...target.record!, origin_label: originLabel } };
-  const other = { ...task32Evidence({ suffix: "2", excerpt: OTHER_TEXT }),
+  const other = { ...task32Evidence({ suffix: "2", excerpt: OTHER_TEXT, tombstoneSetRoot: MEMORY_TOMBSTONE_GENESIS_ROOT }),
     record: { ...task32Evidence({ suffix: "2" }).record!, source_identity_full: "9".repeat(64),
       content_identity_full: "8".repeat(64), citation_identity_full: "7".repeat(64) } };
   const server = createDashboardServer({ db, staticRoot: root, host: "127.0.0.1", port: 0,

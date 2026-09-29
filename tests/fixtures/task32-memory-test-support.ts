@@ -1,11 +1,9 @@
 import type { SecondBrainEvidence, SecondBrainReadAdapter,
   SecondBrainReadOutcome } from "../../src/second-brain-adapter-types.js";
-import { MEMORY_TOMBSTONE_GENESIS_ROOT } from "../../src/second-brain-effect-v2-contract.js";
-
 export const TASK32_NOW = new Date("2026-09-01T00:00:00.000Z");
 
 type EvidenceOptions = { readonly suffix?: string; readonly sensitivity?: "personal" | "restricted";
-  readonly excerpt?: string | null; readonly tombstoneSequence?: number };
+  readonly excerpt?: string | null; readonly tombstoneSequence?: number; readonly tombstoneSetRoot?: string };
 export function task32Evidence(options: EvidenceOptions = {}): SecondBrainEvidence {
   const suffix = options.suffix ?? "1";
   const sensitivity = options.sensitivity ?? "personal";
@@ -27,7 +25,7 @@ export function task32Evidence(options: EvidenceOptions = {}): SecondBrainEviden
         generation_id: `sbgen:v1:${"e".repeat(64)}`,
         generation_manifest_digest: `sha256:${"f".repeat(64)}`, vault_head: "1".repeat(40),
         vault_tree: "2".repeat(40), tombstone_sequence: options.tombstoneSequence ?? 0,
-        tombstone_set_root: MEMORY_TOMBSTONE_GENESIS_ROOT } } };
+        tombstone_set_root: options.tombstoneSetRoot ?? `sha256:${"3".repeat(64)}` } } };
 }
 
 export class Task32ReadAdapter implements SecondBrainReadAdapter {

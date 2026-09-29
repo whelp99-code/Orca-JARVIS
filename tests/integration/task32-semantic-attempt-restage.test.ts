@@ -3,6 +3,7 @@ import { MemoryMutationService } from "../../src/dashboard/memory-mutation-servi
 import { MemoryTokenCache } from "../../src/dashboard/memory-token-cache.js";
 import { createDashboardSession } from "../../src/dashboard/session.js";
 import { AuthorityDb } from "../../src/db.js";
+import { MEMORY_TOMBSTONE_GENESIS_ROOT } from "../../src/second-brain-effect-v2-contract.js";
 import { TASK32_NOW, task32Evidence } from "../fixtures/task32-memory-test-support.js";
 import { tempDb } from "../helpers.js";
 
@@ -17,7 +18,7 @@ describe("Task 32 semantic attempt restage", () => {
     const session = createDashboardSession("owner-session");
     const tokens = new MemoryTokenCache(Buffer.alloc(32, 5), () => now);
     const service = new MemoryMutationService({ authority, tokens, session, clock: () => now });
-    const firstToken = tokens.issue(task32Evidence(), session.authenticatedSessionId(), 0);
+    const firstToken = tokens.issue(task32Evidence({ tombstoneSetRoot: MEMORY_TOMBSTONE_GENESIS_ROOT }), session.authenticatedSessionId(), 0);
     if (firstToken === undefined) throw new TypeError("first token required");
     const first = await service.stageEffect({ operation: "export", intent_id: INTENT_A,
       token: firstToken.token, record_revision: firstToken.record_revision, payload: { format: "json" } });
@@ -29,7 +30,7 @@ describe("Task 32 semantic attempt restage", () => {
       "UPDATE control_command_requests SET state='cancelled',completed_at=?,failure_code='MEMORY_INTENT_EXPIRED' WHERE request_id=?",
     ).run("2026-09-01T00:15:00.000Z", first.request_id);
     now = new Date(TASK32_NOW.getTime() + 1);
-    const successorToken = tokens.issue(task32Evidence(), session.authenticatedSessionId(), 0);
+    const successorToken = tokens.issue(task32Evidence({ tombstoneSetRoot: MEMORY_TOMBSTONE_GENESIS_ROOT }), session.authenticatedSessionId(), 0);
     if (successorToken === undefined) throw new TypeError("successor token required");
     // When
     const successor = await service.stageEffect({ operation: "export", intent_id: INTENT_B,
