@@ -10,9 +10,24 @@ const transports: Array<{ close(): Promise<void> }> = []; afterEach(async () => 
     const runner: SecondBrainExecFile = (file, args, childOptions) => { launches.push({ file, args, options: childOptions });
       return execFile(file, [...args], childOptions); }; const transport = createSecondBrainTransport(options(value, { execFile: runner }));
     transports.push(transport); await expect(transport.call("sb_open_conflicts", {})).resolves.toMatchObject({ kind: "data" });
-    expect({ launcher: secondBrainLauncher(), config: secondBrainConfig(), protocol: SECOND_BRAIN_PROTOCOL_VERSION, bytes: SECOND_BRAIN_FRAME_BYTES }).toEqual({
-      launcher: "/home/jm/.local/state/second-brain/app/current/bin/second-brain-mcp", config: "/home/jm/.config/second-brain/config.toml",
-      protocol: "2025-11-25", bytes: 1_048_576, }); expect(launches).toHaveLength(1); expect(launches[0]?.args).toEqual([]);
+    const saved = {
+      JARVIS_PROVIDER_STATE_ROOT: process.env["JARVIS_PROVIDER_STATE_ROOT"],
+      JARVIS_SECOND_BRAIN_LAUNCHER: process.env["JARVIS_SECOND_BRAIN_LAUNCHER"],
+      JARVIS_SECOND_BRAIN_CONFIG: process.env["JARVIS_SECOND_BRAIN_CONFIG"],
+    };
+    delete process.env["JARVIS_PROVIDER_STATE_ROOT"];
+    delete process.env["JARVIS_SECOND_BRAIN_LAUNCHER"];
+    delete process.env["JARVIS_SECOND_BRAIN_CONFIG"];
+    try {
+      expect({ launcher: secondBrainLauncher(), config: secondBrainConfig(), protocol: SECOND_BRAIN_PROTOCOL_VERSION, bytes: SECOND_BRAIN_FRAME_BYTES }).toEqual({
+        launcher: "/home/jm/.local/state/second-brain/app/current/bin/second-brain-mcp", config: "/home/jm/.config/second-brain/config.toml",
+        protocol: "2025-11-25", bytes: 1_048_576, });
+    } finally {
+      for (const [key, value] of Object.entries(saved)) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+    } expect(launches).toHaveLength(1); expect(launches[0]?.args).toEqual([]);
     expect(launches[0]?.options).toMatchObject({ shell: false, env: { SB_CONFIG: value.config, SB_MCP_CONTRACT_PROFILE: "task32-schema4" }, windowsHide: true,
     }); expect(Object.keys(launches[0]?.options.env ?? {}).sort()).toEqual(["SB_CONFIG", "SB_MCP_CONTRACT_PROFILE"]); });
   it("freezes a realpath per generation and discovers a symlink swap only after restart", async () => { const first = fixture(); const second = fixture();
