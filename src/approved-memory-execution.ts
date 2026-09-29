@@ -1,6 +1,7 @@
 import type { ApprovedExecutionResult } from "./approved-executor-types.js";
 import type { ClaimedControlCommand } from "./control-plane.js";
 import type { MemoryLifecycleService } from "./memory-lifecycle-service-types.js";
+export { executeAbandonedNotDelivered } from "./memory-outbox-abandon.js";
 
 export async function executeApprovedMemoryCommand(
   service: Pick<MemoryLifecycleService, "execute">,

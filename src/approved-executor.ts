@@ -1,5 +1,5 @@
 import { resolve } from "node:path";
-import { executeApprovedMemoryCommand } from "./approved-memory-execution.js";
+import { executeAbandonedNotDelivered, executeApprovedMemoryCommand } from "./approved-memory-execution.js";
 import { executeApprovedTaskRequest } from "./approved-task-execution.js";
 import type { TaskExecutionRuntime } from "./task-execution-runtime.js";
 import { AuthorityDb, JarvisError } from "./db.js";
@@ -189,8 +189,7 @@ export class ApprovedCommandExecutor {
         const state = completed ? "completed" : failed ? "failed" : "uncertain";
         const failure = completed ? {} : { failure_code: failed
           ? saga.failure_code ?? "MEMORY_OUTBOX_FAILED" : "MEMORY_OUTBOX_RECONCILING" };
-        // A slow observation may outlive our lease. The recovery cycle can
-        // already have recorded its terminal proof before returning here.
+        // A slow observation may outlive our lease. Recovery may already have recorded its proof.
         const recorded = this.control.get(requestId);
         if (recorded?.state === state && (state === "completed" || state === "failed")) {
           return { request_id: requestId, action: command.action, state,
@@ -206,6 +205,8 @@ export class ApprovedCommandExecutor {
           result: { outbox_id: saga.outbox_id, state: saga.state },
           ...failure };
       }
+      if (command.action === "memory.outbox.abandon-not-delivered") return executeAbandonedNotDelivered(
+        this.authority, this.control, command, requestId, now, this.clock());
       if (command.action === "memory.delete" || command.action === "memory.export") {
         validateControlAction(command, { enforceMinimumLevel: true,
           levelErrorCode: "APPROVED_ACTION_LEVEL_TOO_LOW" });

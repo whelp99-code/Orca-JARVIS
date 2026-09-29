@@ -176,7 +176,9 @@ export class MemoryOutboxStore {
     const at = iso(now); const until = new Date(now.getTime() + leaseMs).toISOString();
     return this.authority.db.transaction(() => {
       const row = this.authority.db.prepare(
-        `SELECT * FROM memory_outbox WHERE request_profile='legacy' AND state='reconciling' AND (lease_owner IS NULL OR lease_expires_at<=?)
+        `SELECT * FROM memory_outbox WHERE request_profile='legacy' AND state='reconciling'
+         AND outbox_id NOT IN (SELECT outbox_id FROM memory_outbox_not_delivered)
+         AND (lease_owner IS NULL OR lease_expires_at<=?)
          ORDER BY updated_at,outbox_id LIMIT 1`,
       ).get(at);
       if (row === undefined) return undefined;
