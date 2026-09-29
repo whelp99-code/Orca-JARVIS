@@ -22,6 +22,11 @@ export function createTestEnvironment(env = process.env) {
     if (root) rmSync(root, { recursive: true, force: true });
     throw new Error("TEST_TMPDIR_UNAVAILABLE", { cause: error });
   }
-  return { root, env: { ...env, TMPDIR: root, TMP: root, TEMP: root },
-    cleanup: () => rmSync(root, { recursive: true, force: true }) };
+  const child = { ...env, TMPDIR: root, TMP: root, TEMP: root };
+  // An unset provider root used to resolve to the host Second Brain and spend about 6s per lookup.
+  // Leave this path uncreated so a test that did not name a provider fails closed instead.
+  if (!child.JARVIS_PROVIDER_STATE_ROOT?.trim()) {
+    child.JARVIS_PROVIDER_STATE_ROOT = join(root, "absent-second-brain-state");
+  }
+  return { root, env: child, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
