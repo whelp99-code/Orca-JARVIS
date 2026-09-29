@@ -3,7 +3,7 @@ import { JarvisError, type AuthorityDb } from "./db.js";
 import { type MemoryTombstoneChainEntryV2 } from "./second-brain-effect-v2.js";
 import {
   providerTombstoneReplicaDigest, verifyProviderTombstoneChain, verifyProviderTombstoneReplica,
-  type ProviderTombstoneHighWater, type ProviderTombstoneReplica,
+  type ProviderTombstoneHighWater,
 } from "./provider-tombstone-replica.js";
 
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
