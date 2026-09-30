@@ -8,6 +8,7 @@ import { readEd25519PrivateKeyFile } from "./memory-signing-key-file.js";
 import { parsePersonalOsPolicy } from "./personal-os-policy.js";
 import { RemoteApprovalService } from "./remote-approval.js";
 import { createProductionIngressResolver } from "./remote-approval-ingress.js";
+import { OwnerInbox } from "./owner-inbox.js";
 import { ControlReceiptSigner } from "./remote-approval-signer.js";
 
 const PLACEHOLDER_ORIGIN = "https://remote-approval.invalid";
@@ -61,6 +62,21 @@ export function composeRemoteApproval(db: AuthorityDb, options: {
       nonceTtlSeconds: policy.remote_approval.ingress_nonce_ttl_seconds,
     }),
   });
+}
+
+export function composeOwnerInbox(db: AuthorityDb, options: {
+  readonly decisionKeyPath?: string;
+} = {}): OwnerInbox {
+  const policy = readPolicy(undefined);
+  const sealed = sealedDecision(db, policy.owner_principal);
+  const keyPath = options.decisionKeyPath ?? process.env.JARVIS_DECISION_SIGNING_KEY_FILE;
+  const loaded = keyPath === undefined ? undefined : readEd25519PrivateKeyFile(keyPath);
+  const signer = new ControlReceiptSigner(
+    loaded ?? generateKeyPairSync("ed25519").privateKey,
+    sealed?.key_id ?? "unready-decision",
+    sealed?.principal_id ?? "unready",
+  );
+  return new OwnerInbox(db, signer, loaded !== undefined && sealed !== undefined);
 }
 
 function readKeyBytes(path: string): Buffer | undefined {

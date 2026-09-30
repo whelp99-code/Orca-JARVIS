@@ -48,9 +48,9 @@ describe("ApprovalsPage", () => {
 
     // Then
     expect(screen.getByText(REQUEST.request_id)).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "Signed receipt JSON" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Submit signed receipt" })).toBeEnabled();
-    expect(screen.queryByRole("button", { name: "Retry" })).not.toBeInTheDocument();
+    expect(screen.getByRole("textbox", { name: "서명 영수증" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "서명 제출" })).toBeEnabled();
+    expect(screen.queryByRole("button", { name: "다시 시도" })).not.toBeInTheDocument();
   });
 
   it("invokes onRetry once from a keyboard-operable Retry control", async () => {
@@ -60,7 +60,7 @@ describe("ApprovalsPage", () => {
     render(<ApprovalsPage state={retryableError} client={createClient()} onRetry={onRetry} />);
 
     // When
-    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
 
     // Then
     expect(onRetry).toHaveBeenCalledTimes(1);

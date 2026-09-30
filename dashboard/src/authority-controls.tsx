@@ -118,17 +118,17 @@ export function AuthorityControls({
   return (
     <article className="authority-controls">
       <dl className="identity-list" aria-label="Request evidence">
-        <div><dt>Request</dt><dd>{request.request_id}</dd></div>
-        <div><dt>Action</dt><dd>{request.action}</dd></div>
-        <div><dt>Level</dt><dd>Level {request.action_level}</dd></div>
-        <div><dt>State</dt><dd>{request.state}</dd></div>
+        <div><dt>요청</dt><dd>{request.request_id}</dd></div>
+        <div><dt>할 일</dt><dd>{request.action}</dd></div>
+        <div><dt>단계</dt><dd>{request.action_level}단계</dd></div>
+        <div><dt>상태</dt><dd>{request.state}</dd></div>
       </dl>
       {taskDetailRequired ? <p>파일·검사·전송 상태를 확인하고 작업 상세에서 승인·실행하세요. <Link
         to={request.task_id ? `/tasks/${encodeURIComponent(request.task_id)}` : "/tasks"}>작업 실행 상세 열기</Link></p> : null}
       {request.state === "pending" && !decisionComplete && !taskDetailRequired ? (
         <form className="control-form" onSubmit={submitReceipt}>
           <label className="form-field">
-            <span>Signed receipt JSON</span>
+            <span>서명 영수증</span>
             <textarea
               required
               disabled={!enabled}
@@ -136,17 +136,17 @@ export function AuthorityControls({
               onChange={(event) => { setReceiptJson(event.target.value); }}
             />
           </label>
-          <button type="submit" disabled={busy}>Submit signed receipt</button>
+          <button type="submit" disabled={busy}>서명 제출</button>
         </form>
       ) : null}
       {request.state === "approved" && !executionComplete && !taskDetailRequired ? (
         <button type="button" disabled={busy} onClick={() => { void execute(); }}>
-          Execute approved request
+          승인된 요청 실행
         </button>
       ) : null}
       {request.state === "failed" && request.action !== "task.execute" && !retryComplete && !replanRequired && request.retry_status !== "not_allowed" ? (
         <button type="button" disabled={busy} onClick={() => { void retry(); }}>
-          Retry failed request
+          실패한 요청 다시 시도
         </button>
       ) : null}
       {request.state === "failed" && replanRequired ? (
@@ -180,7 +180,7 @@ function OperationMessage({ operation }: Readonly<{ operation: Operation }>) {
       const action = operation.action;
       switch (action) {
         case "receipt":
-          return <p className="control-error" role="alert">Signed receipt must be valid JSON</p>;
+          return <p className="control-error" role="alert">서명 영수증은 올바른 JSON이어야 합니다</p>;
         case "decision":
           return <p className="control-error" role="alert">Unable to submit signed receipt</p>;
         case "execution":
@@ -211,7 +211,7 @@ function PendingRequest({ command }: Readonly<{ command: StoredControlCommand }>
       <dl className="identity-list">
         <div><dt>Request</dt><dd>{command.request_id}</dd></div>
         <div><dt>Action</dt><dd>{command.action}</dd></div>
-        <div><dt>Level</dt><dd>Level {command.action_level}</dd></div>
+        <div><dt>단계</dt><dd>{command.action_level}단계</dd></div>
         <div><dt>State</dt><dd>{command.state}</dd></div>
       </dl>
     </section>

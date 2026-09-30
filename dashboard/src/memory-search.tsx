@@ -17,10 +17,10 @@ export function MemorySearch({ result, onSearch, onSelect }: Readonly<{ result?:
   };
   return <section className="panel memory-search" aria-labelledby="memory-search-heading">
     <header className="panel-header"><h2 id="memory-search-heading">Search</h2></header>
-    <div className="panel-body"><form onSubmit={submit}><label htmlFor="memory-query">Memory query</label>
+    <div className="panel-body"><form onSubmit={submit}><label htmlFor="memory-query">기억 검색</label>
       <div className="memory-form-row"><input id="memory-query" autoComplete="off" value={query}
         onChange={event => setQuery(event.currentTarget.value)} required maxLength={512} />
-      <button type="submit" disabled={searching} aria-busy={searching}>{searching ? "Searching memory" : "Search memory"}</button></div></form>
+      <button type="submit" disabled={searching} aria-busy={searching}>{searching ? "검색 중" : "기억 검색"}</button></div></form>
       {result === undefined ? <p className="empty-state">Search uses bounded cited records.</p> : <MemoryResults result={result} onSelect={onSelect} />}
     </div></section>;
 }

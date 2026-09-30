@@ -15,6 +15,7 @@ import {
   writeDashboardError,
   writeDashboardJson,
 } from "./http.js";
+import { tryHandleOwnerInbox } from "./owner-inbox-routes.js";
 import { tryHandleDashboardPost } from "./post-routes.js";
 import { tryHandleMemoryRead } from "./memory-read-routes.js";
 import type { MemoryRuntime } from "./memory-runtime.js";
@@ -56,6 +57,7 @@ export type DashboardApiInput = {
   readonly executorFactory?: DashboardExecutorFactory;
   readonly memoryRuntime: MemoryRuntime;
   readonly remoteApproval?: RemoteApprovalService;
+  readonly ownerInbox?: import("../owner-inbox.js").OwnerInbox;
 };
 
 type LogsRoute =
@@ -73,6 +75,7 @@ export async function tryHandleDashboardApi(input: DashboardApiInput): Promise<b
     if (await tryHandleRemoteLifecycleRoutes(remote)) return true;
     if (await tryHandleRemoteAuthRoutes(remote)) return true;
   }
+  if (await tryHandleOwnerInbox(input)) return true;
   if (input.request.method === "POST") return tryHandleDashboardPost(input);
   if (await tryHandleTaskExecution(input)) return true;
   if (tryHandleDashboardSession(input)) return true;

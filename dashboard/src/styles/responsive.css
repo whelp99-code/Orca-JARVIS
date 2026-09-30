@@ -30,11 +30,16 @@
   }
 
   .primary-nav {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
   }
 
   .control-nav a {
-    padding-inline: var(--space-2);
+    flex: 0 0 auto;
+    min-block-size: var(--size-control);
+    padding-inline: var(--space-3);
   }
 
   .shell-connection {

@@ -118,7 +118,7 @@ describe("phone surface", () => {
     render(<ControlCenterRoot store={store} client={client} initialPath="/" surface="phone" />);
     // Then only Today, Memory and Security are offered and no authority stream is opened
     const nav = screen.getByRole("navigation", { name: "주요 메뉴" });
-    expect(within(nav).getAllByRole("link").map(link => link.getAttribute("href"))).toEqual(["/", "/memory", "/security"]);
+    expect(within(nav).getAllByRole("link").map(link => link.getAttribute("href"))).toEqual(["/", "/memory", "/approvals", "/security"]);
     expect(session).not.toHaveBeenCalled();
     expect(sources).toEqual([]);
     expect(screen.getByRole("status", { name: "실시간" })).toHaveAttribute("data-state", "readonly");
@@ -130,8 +130,8 @@ describe("phone surface", () => {
     const store = createMemoryStore({ client, clock: () => T0, surface: "phone" });
     render(<SurfaceContext.Provider value="phone"><MemoryPage store={store} client={client} /></SurfaceContext.Provider>);
     await act(async () => { await settled(); });
-    fireEvent.change(screen.getByLabelText("Memory query"), { target: { value: "fixture" } });
-    fireEvent.click(screen.getByRole("button", { name: "Search memory" }));
+    fireEvent.change(screen.getByLabelText("기억 검색"), { target: { value: "fixture" } });
+    fireEvent.click(screen.getByRole("button", { name: "기억 검색" }));
     await act(async () => { await settled(); });
     // When the record is selected
     fireEvent.click(screen.getByRole("button", { name: /Fixture title/ }));

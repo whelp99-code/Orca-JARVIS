@@ -32,7 +32,7 @@ async function fixture() {
     addEventListener: (name, listener) => { events.set(name, listener); }, close: () => {}, removeEventListener: () => {},
   }) });
   await act(async () => { render(<MemoryPage store={store} client={client} />); });
-  fireEvent.change(screen.getByLabelText("Memory query"), { target: { value: "Private query fixture" } });
+  fireEvent.change(screen.getByLabelText("기억 검색"), { target: { value: "Private query fixture" } });
   await act(async () => { await store.search("fixture"); });
   fireEvent.click(screen.getByRole("button", { name: /Private fixture title/ }));
   fireEvent.change(screen.getByLabelText("Replacement"), { target: { value: "Private correction draft" } });
@@ -45,7 +45,7 @@ it("removes selected detail and draft when private results are cleared", async (
   act(() => store.clearPrivate());
   expect(document.body.textContent).not.toContain("Private fixture");
   expect(screen.queryByDisplayValue("Private correction draft")).not.toBeInTheDocument();
-  expect(screen.getByLabelText("Memory query")).toHaveValue("");
+  expect(screen.getByLabelText("기억 검색")).toHaveValue("");
   expect(screen.queryByRole("button", { name: "Stage forgetting" })).not.toBeInTheDocument();
   act(() => store.stop());
 });
@@ -149,7 +149,7 @@ it("clears a private SSE view before its replacement load completes", async () =
   }) })));
   expect(store.getSnapshot().search).toBeUndefined();
   expect(screen.queryByDisplayValue("Private correction draft")).not.toBeInTheDocument();
-  expect(screen.getByLabelText("Memory query")).toHaveValue("");
+  expect(screen.getByLabelText("기억 검색")).toHaveValue("");
   await act(async () => { resolve({ ...status, privacy_epoch: 1 }); });
   expect(store.getSnapshot().status?.privacy_epoch).toBe(1);
   expect(document.body.textContent).not.toContain("Private fixture");

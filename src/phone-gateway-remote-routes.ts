@@ -2,6 +2,8 @@ import { PHONE_GATEWAY_LIMITS, type PhoneRouteMatch } from "./phone-gateway-prot
 
 export function knownRemoteMethods(path: string): readonly string[] | undefined {
   if (path === "/security") return ["GET"];
+  if (path === "/api/v1/owner-inbox") return ["GET"];
+  if (path === "/api/v1/owner-inbox/decide") return ["POST"];
   if (path === "/api/v1/security/webauthn/credentials") return ["GET"];
   if (/^\/api\/v1\/remote-approvals\/[^/]+$/.test(path)) return ["GET"];
   if (/^\/api\/v1\/remote-approvals\/[^/]+\/options$/.test(path)) return ["POST"];
@@ -15,9 +17,16 @@ export function knownRemoteMethods(path: string): readonly string[] | undefined 
 export function matchRemotePhoneRoute(method: string, path: string, query: string): PhoneRouteMatch | undefined {
   if (query !== "") return undefined;
   const id = remoteId(path);
-  if (id === undefined && path !== "/security" && path !== "/api/v1/security/webauthn/credentials") return undefined;
+  if (id === undefined && path !== "/security" && path !== "/api/v1/security/webauthn/credentials"
+    && path !== "/api/v1/owner-inbox" && path !== "/api/v1/owner-inbox/decide") return undefined;
   if (path === "/security" && method === "GET") {
     return ok("security", "GET", path, PHONE_GATEWAY_LIMITS.html, true, false, false);
+  }
+  if (path === "/api/v1/owner-inbox" && method === "GET") {
+    return ok("remote_approval", "GET", path, PHONE_GATEWAY_LIMITS.jsonResponse, true, true, true);
+  }
+  if (path === "/api/v1/owner-inbox/decide" && method === "POST") {
+    return ok("remote_approval", "POST", path, PHONE_GATEWAY_LIMITS.jsonResponse, true, true, true);
   }
   if (path === "/api/v1/security/webauthn/credentials" && method === "GET") {
     return ok("credential_read", "GET", path, PHONE_GATEWAY_LIMITS.jsonResponse, true, true, true);

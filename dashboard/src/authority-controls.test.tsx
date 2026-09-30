@@ -93,9 +93,9 @@ describe("receipt-bound authority controls", () => {
     render(<MemoryRouter><AuthorityControls request={{ ...BASE_REQUEST, action: "task.execute", state, task_id: "task/a" }}
       client={current.client} /></MemoryRouter>);
     expect(screen.getByRole("link", { name: "작업 실행 상세 열기" })).toHaveAttribute("href", "/tasks/task%2Fa");
-    expect(screen.queryByRole("button", { name: "Execute approved request" })).not.toBeInTheDocument();
-    expect(screen.queryByLabelText("Signed receipt JSON")).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Retry failed request" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "승인된 요청 실행" })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText("서명 영수증")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "실패한 요청 다시 시도" })).not.toBeInTheDocument();
     expect(current.executeRequest).not.toHaveBeenCalled(); expect(current.decideRequest).not.toHaveBeenCalled();
   });
 
@@ -106,11 +106,11 @@ describe("receipt-bound authority controls", () => {
 
     // Then
     expect(screen.getByText(BASE_REQUEST.action)).toBeInTheDocument();
-    expect(screen.getByText("Level 2")).toBeInTheDocument();
+    expect(screen.getByText("2단계")).toBeInTheDocument();
     expect(screen.getByText(BASE_REQUEST.request_id)).toBeInTheDocument();
     expect(screen.getByText("pending")).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "Signed receipt JSON" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Submit signed receipt" })).toBeEnabled();
+    expect(screen.getByRole("textbox", { name: "서명 영수증" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "서명 제출" })).toBeEnabled();
   });
 
   it("disables every receipt input when the canonical resource is stale", async () => {
@@ -119,8 +119,8 @@ describe("receipt-bound authority controls", () => {
     const { user } = renderControls(BASE_REQUEST, current.client, false);
 
     // Then: neither keyboard nor pointer submission can cross the mutation seam.
-    expect(screen.getByRole("textbox", { name: "Signed receipt JSON" })).toBeDisabled();
-    const submit = screen.getByRole("button", { name: "Submit signed receipt" });
+    expect(screen.getByRole("textbox", { name: "서명 영수증" })).toBeDisabled();
+    const submit = screen.getByRole("button", { name: "서명 제출" });
     expect(submit).toBeDisabled();
     await user.click(submit);
     expect(current.decideRequest).not.toHaveBeenCalled();
@@ -146,12 +146,12 @@ describe("receipt-bound authority controls", () => {
       state,
     });
     const { user } = renderControls(BASE_REQUEST, current.client);
-    const textarea = screen.getByRole("textbox", { name: "Signed receipt JSON" });
+    const textarea = screen.getByRole("textbox", { name: "서명 영수증" });
     await user.click(textarea);
     await user.paste(receiptJson);
 
     // When
-    await user.click(screen.getByRole("button", { name: "Submit signed receipt" }));
+    await user.click(screen.getByRole("button", { name: "서명 제출" }));
 
     // Then
     expect(current.decideRequest).toHaveBeenCalledOnce();
@@ -169,15 +169,15 @@ describe("receipt-bound authority controls", () => {
     const malformed = `{"signature":"${PRIVATE_SIGNATURE}"`;
     const current = createClient();
     const { user } = renderControls(BASE_REQUEST, current.client);
-    const textarea = screen.getByRole("textbox", { name: "Signed receipt JSON" });
+    const textarea = screen.getByRole("textbox", { name: "서명 영수증" });
     await user.click(textarea);
     await user.paste(malformed);
 
     // When
-    await user.click(screen.getByRole("button", { name: "Submit signed receipt" }));
+    await user.click(screen.getByRole("button", { name: "서명 제출" }));
 
     // Then
-    expect(screen.getByRole("alert")).toHaveTextContent("Signed receipt must be valid JSON");
+    expect(screen.getByRole("alert")).toHaveTextContent("서명 영수증은 올바른 JSON이어야 합니다");
     expect(textarea).toHaveValue(malformed);
     expect(current.decideRequest).not.toHaveBeenCalled();
     expect(current.executeRequest).not.toHaveBeenCalled();
@@ -198,12 +198,12 @@ describe("receipt-bound authority controls", () => {
     const current = createClient();
     current.decideRequest.mockRejectedValue(error);
     const { user } = renderControls(BASE_REQUEST, current.client);
-    const textarea = screen.getByRole("textbox", { name: "Signed receipt JSON" });
+    const textarea = screen.getByRole("textbox", { name: "서명 영수증" });
     await user.click(textarea);
     await user.paste(receiptJson);
 
     // When
-    await user.click(screen.getByRole("button", { name: "Submit signed receipt" }));
+    await user.click(screen.getByRole("button", { name: "서명 제출" }));
 
     // Then
     const alert = await screen.findByRole("alert");
@@ -211,7 +211,7 @@ describe("receipt-bound authority controls", () => {
     expect(alert).not.toHaveTextContent(SIGNED_RECEIPT.receipt_id);
     expect(alert).not.toHaveTextContent(PRIVATE_SIGNATURE);
     expect(textarea).toHaveValue(receiptJson);
-    expect(screen.getByRole("button", { name: "Submit signed receipt" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "서명 제출" })).toBeEnabled();
     expect(current.decideRequest).toHaveBeenCalledOnce();
   });
 
@@ -233,13 +233,13 @@ describe("receipt-bound authority controls", () => {
     const { user } = renderControls(requestIn("approved"), current.client);
 
     // When
-    await user.click(screen.getByRole("button", { name: "Execute approved request" }));
+    await user.click(screen.getByRole("button", { name: "승인된 요청 실행" }));
 
     // Then
     expect(current.executeRequest).toHaveBeenCalledOnce();
     expect(current.executeRequest).toHaveBeenCalledWith(BASE_REQUEST.request_id);
     expect(await screen.findByRole(role)).toHaveTextContent(`Execution ${state}`);
-    expect(screen.queryByRole("button", { name: "Retry failed request" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "실패한 요청 다시 시도" })).not.toBeInTheDocument();
   });
 
   it.each(["pending", "rejected"])("does not execute a %s request", (state) => {
@@ -248,7 +248,7 @@ describe("receipt-bound authority controls", () => {
     renderControls(requestIn(state), current.client);
 
     // Then
-    expect(screen.queryByRole("button", { name: "Execute approved request" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "승인된 요청 실행" })).not.toBeInTheDocument();
     expect(current.executeRequest).not.toHaveBeenCalled();
   });
 
@@ -259,7 +259,7 @@ describe("receipt-bound authority controls", () => {
     const { user, idFactory } = renderControls(requestIn("failed"), current.client);
 
     // When
-    await user.click(screen.getByRole("button", { name: "Retry failed request" }));
+    await user.click(screen.getByRole("button", { name: "실패한 요청 다시 시도" }));
 
     // Then
     expect(current.retryRequest).toHaveBeenCalledWith(BASE_REQUEST.request_id, {
@@ -271,14 +271,14 @@ describe("receipt-bound authority controls", () => {
     const pending = await screen.findByRole("region", { name: "Pending request" });
     expect(pending).toHaveTextContent(IDS.request_id);
     expect(pending).toHaveTextContent(BASE_REQUEST.action);
-    expect(pending).toHaveTextContent("Level 2");
+    expect(pending).toHaveTextContent("2단계");
     expect(pending).toHaveTextContent("pending");
   });
 
   it("guides an expired workflow to a new proposal without calling retry", () => {
     const current = createClient();
     renderControls({ ...requestIn("failed"), retry_status: "replan_required" }, current.client);
-    expect(screen.queryByRole("button", { name: "Retry failed request" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "실패한 요청 다시 시도" })).not.toBeInTheDocument();
     expect(screen.getByRole("link", { name: "새 작업 제안" })).toHaveAttribute("href", "/proposals");
     expect(screen.getByRole("status")).toHaveTextContent("새 승인을 받아주세요");
     expect(current.retryRequest).not.toHaveBeenCalled();
@@ -289,9 +289,9 @@ describe("receipt-bound authority controls", () => {
     current.retryRequest.mockRejectedValue(new DashboardApiError({ kind: "server",
       code: "RETRY_REPLAN_REQUIRED", message: "private response must not render", request_id: "api-request" }));
     const { user } = renderControls({ ...requestIn("failed"), retry_status: "allowed" }, current.client);
-    await user.click(screen.getByRole("button", { name: "Retry failed request" }));
+    await user.click(screen.getByRole("button", { name: "실패한 요청 다시 시도" }));
     expect(await screen.findByRole("link", { name: "새 작업 제안" })).toHaveAttribute("href", "/proposals");
-    expect(screen.queryByRole("button", { name: "Retry failed request" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "실패한 요청 다시 시도" })).not.toBeInTheDocument();
     expect(document.body).not.toHaveTextContent("private response must not render");
     expect(current.retryRequest).toHaveBeenCalledOnce();
   });
@@ -299,7 +299,7 @@ describe("receipt-bound authority controls", () => {
   it("hides retry for a nonexecutable failed command", () => {
     const current = createClient();
     renderControls({ ...requestIn("failed"), retry_status: "not_allowed" }, current.client);
-    expect(screen.queryByRole("button", { name: "Retry failed request" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "실패한 요청 다시 시도" })).not.toBeInTheDocument();
   });
 
   it.each(["pending", "approved", "rejected", "completed"])("does not retry a %s request", (state) => {
@@ -308,7 +308,7 @@ describe("receipt-bound authority controls", () => {
     renderControls(requestIn(state), current.client);
 
     // Then
-    expect(screen.queryByRole("button", { name: "Retry failed request" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "실패한 요청 다시 시도" })).not.toBeInTheDocument();
     expect(current.retryRequest).not.toHaveBeenCalled();
   });
 });

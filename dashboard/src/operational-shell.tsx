@@ -20,7 +20,7 @@ const NAV_ITEMS = [
   { label: copy.nav.security, to: "/security" },
 ] as const;
 /** The routes the phone gateway serves; every other path is a gateway 404. */
-const PHONE_NAV_ITEMS = NAV_ITEMS.filter(item => item.to === "/" || item.to === "/memory" || item.to === "/security");
+const PHONE_NAV_ITEMS = NAV_ITEMS.filter(item => item.to === "/" || item.to === "/memory" || item.to === "/approvals" || item.to === "/security");
 
 const CONNECTION_LABELS = {
   connecting: "연결 중",
