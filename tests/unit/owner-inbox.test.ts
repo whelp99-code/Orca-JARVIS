@@ -47,18 +47,28 @@ describe("owner inbox", () => {
     const inbox = new OwnerInbox(db, new ControlReceiptSigner(localKey(db), "decision-test", "test-operator"), true, () => NOW);
     expect(inbox.list().map(item => item.request_id)).toEqual(["req-confirm"]);
     expect(JSON.stringify(inbox.list())).not.toContain("PRIVATE");
-    const decided = inbox.decide({
+    db.db.prepare("INSERT INTO owner_inbox_credentials(credential_id, public_key, counter, created_at) VALUES(?,?,?,?)").run("cred-1", Buffer.from("pk"), 0, NOW.toISOString());
+    const issued = inbox.issueChallenge({ request_id: "req-confirm", decision: "approve", command_digest: digest, session_id: "session-1" });
+    const decided = await inbox.decide({
       request_id: "req-confirm", decision: "approve", command_digest: digest, session_id: "session-1",
+      challenge_id: issued.challenge_id,
+      assertion: { id: "cred-1", clientDataJSON: "", authenticatorData: "", signature: "", userHandle: "" },
+      origin: "http://127.0.0.1:4173", rpId: "127.0.0.1",
+      check: async () => ({ ok: true, newCounter: 1 }),
     });
     expect(decided).toEqual({ request_id: "req-confirm", state: "approved" });
     expect(inbox.list()).toEqual([]);
     const audit = db.db.prepare("SELECT fact_type, subject_id FROM audit_facts WHERE subject_id=?").get("req-confirm") as {
       fact_type: string;
     };
-    expect(audit.fact_type).toBe("owner_inbox_decision");
-    expect(() => inbox.decide({
+    expect(audit.fact_type).toBe("owner_inbox_attempt");
+    await expect(inbox.decide({
       request_id: "req-confirm", decision: "approve", command_digest: digest, session_id: "session-1",
-    })).toThrow(JarvisError);
+      challenge_id: issued.challenge_id,
+      assertion: { id: "cred-1", clientDataJSON: "", authenticatorData: "", signature: "", userHandle: "" },
+      origin: "http://127.0.0.1:4173", rpId: "127.0.0.1",
+      check: async () => ({ ok: true, newCounter: 2 }),
+    })).rejects.toThrow(/OWNER_INBOX_REPLAY/);
   });
 
   it("refuses a mismatched digest, a forbidden action, a missing session, and an unconfigured key", async () => {
@@ -66,19 +76,24 @@ describe("owner inbox", () => {
     const digest = insert(db, request("req-confirm", "memory.confirm"));
     insert(db, request("req-other", "workflow.start"));
     const inbox = new OwnerInbox(db, new ControlReceiptSigner(localKey(db), "decision-test", "test-operator"), true, () => NOW);
-    expect(() => inbox.decide({
+    await expect(inbox.decide({
       request_id: "req-confirm", decision: "approve", command_digest: "sha256:nope", session_id: "session-1",
-    })).toThrow(/OWNER_INBOX_DIGEST_MISMATCH/);
-    expect(() => inbox.decide({
+      challenge_id: "missing", assertion: undefined, origin: "http://127.0.0.1", rpId: "127.0.0.1", check: async () => ({ ok: false }),
+    })).rejects.toThrow(/OWNER_INBOX_DIGEST_MISMATCH/);
+    await expect(inbox.decide({
       request_id: "req-other", decision: "approve", command_digest: digest, session_id: "session-1",
-    })).toThrow(/OWNER_INBOX_DIGEST_MISMATCH|OWNER_INBOX_ACTION_FORBIDDEN/);
-    expect(() => inbox.decide({
+      challenge_id: "missing", assertion: undefined, origin: "http://127.0.0.1", rpId: "127.0.0.1", check: async () => ({ ok: false }),
+    })).rejects.toThrow(/OWNER_INBOX_ACTION_FORBIDDEN/);
+    await expect(inbox.decide({
       request_id: "req-confirm", decision: "reject", command_digest: digest, session_id: "",
-    })).toThrow(/OWNER_INBOX_IDENTITY_REQUIRED/);
+      challenge_id: "missing", assertion: undefined, origin: "http://127.0.0.1", rpId: "127.0.0.1", check: async () => ({ ok: false }),
+    })).rejects.toThrow(/OWNER_INBOX_IDENTITY_REQUIRED/);
     const unready = new OwnerInbox(db, new ControlReceiptSigner(localKey(db), "decision-test", "test-operator"), false, () => NOW);
-    expect(() => unready.decide({
+    await expect(unready.decide({
       request_id: "req-confirm", decision: "approve", command_digest: digest, session_id: "session-1",
-    })).toThrow(/OWNER_INBOX_UNCONFIGURED/);
+      challenge_id: "missing", assertion: { id: "x", clientDataJSON: "", authenticatorData: "", signature: "", userHandle: "" },
+      origin: "http://127.0.0.1", rpId: "127.0.0.1", check: async () => ({ ok: true, newCounter: 1 }),
+    })).rejects.toThrow(/OWNER_INBOX_UNCONFIGURED/);
     expect(db.db.prepare("SELECT state FROM control_command_requests WHERE request_id='req-confirm'").get()).toEqual({ state: "pending" });
   });
 });

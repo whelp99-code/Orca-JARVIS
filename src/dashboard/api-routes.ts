@@ -58,6 +58,7 @@ export type DashboardApiInput = {
   readonly memoryRuntime: MemoryRuntime;
   readonly remoteApproval?: RemoteApprovalService;
   readonly ownerInbox?: import("../owner-inbox.js").OwnerInbox;
+  readonly assertionCheck?: import("../owner-inbox.js").AssertionCheck;
 };
 
 type LogsRoute =

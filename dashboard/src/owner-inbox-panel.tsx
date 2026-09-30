@@ -48,24 +48,68 @@ export function OwnerInboxPanel() {
   async function decide(item: Item, decision: "approve" | "reject"): Promise<void> {
     const confirmed = window.confirm(`${decision === "approve" ? "이 요청만 승인합니다." : "이 요청만 거절합니다."}\n${item.summary}\n${item.command_digest}`);
     if (!confirmed) return;
+    if (typeof navigator.credentials?.get !== "function") {
+      setNotice("이 기기에는 패스키가 없습니다. 휴대폰에서 한 번 등록한 뒤에만 승인할 수 있습니다.");
+      return;
+    }
     setBusyId(item.request_id);
     setNotice("");
     try {
       const csrf = await csrfToken(phone);
-      const response = await fetch("/api/v1/owner-inbox/decide", {
+      const challengeResponse = await fetch("/api/v1/owner-inbox/challenge", {
         method: "POST",
         credentials: "same-origin",
         headers: { Accept: "application/json", "Content-Type": "application/json", "X-JARVIS-CSRF": csrf },
         body: JSON.stringify({
+          schema_version: 1,
           request_id: item.request_id,
           decision,
           command_digest: item.command_digest,
         }),
       });
-      setNotice(response.ok ? (decision === "approve" ? "승인했습니다." : "거절했습니다.") : "처리하지 못했습니다. 다시 확인하세요.");
+      if (!challengeResponse.ok) {
+        setNotice("패스키 확인을 시작하지 못했습니다.");
+        return;
+      }
+      const challengeBody = await challengeResponse.json() as { challenge_id?: string; challenge?: string };
+      if (typeof challengeBody.challenge !== "string" || typeof challengeBody.challenge_id !== "string") {
+        setNotice("패스키 확인을 시작하지 못했습니다.");
+        return;
+      }
+      const assertion = await navigator.credentials.get({
+        publicKey: {
+          challenge: Uint8Array.from(bytesFrom(challengeBody.challenge)).buffer,
+          timeout: 60_000,
+          userVerification: "required",
+        },
+      });
+      if (!(assertion instanceof PublicKeyCredential) || !(assertion.response instanceof AuthenticatorAssertionResponse)) {
+        setNotice("패스키 확인이 취소되었습니다.");
+        return;
+      }
+      const response = await fetch("/api/v1/owner-inbox/decide", {
+        method: "POST",
+        credentials: "same-origin",
+        headers: { Accept: "application/json", "Content-Type": "application/json", "X-JARVIS-CSRF": csrf },
+        body: JSON.stringify({
+          schema_version: 1,
+          request_id: item.request_id,
+          decision,
+          command_digest: item.command_digest,
+          challenge_id: challengeBody.challenge_id,
+          assertion: {
+            id: assertion.id,
+            clientDataJSON: textFrom(assertion.response.clientDataJSON),
+            authenticatorData: textFrom(assertion.response.authenticatorData),
+            signature: textFrom(assertion.response.signature),
+            userHandle: assertion.response.userHandle === null ? "" : textFrom(assertion.response.userHandle),
+          },
+        }),
+      });
+      setNotice(response.ok ? (decision === "approve" ? "승인했습니다." : "거절했습니다.") : "패스키 확인 뒤에만 처리됩니다.");
       await load();
     } catch {
-      setNotice("처리하지 못했습니다. 다시 확인하세요.");
+      setNotice("패스키 확인 뒤에만 처리됩니다.");
     } finally {
       setBusyId(undefined);
     }
@@ -95,6 +139,18 @@ export function OwnerInboxPanel() {
       </div>
     </section>
   );
+}
+
+function bytesFrom(value: string): Uint8Array {
+  const padded = value.replace(/-/g, "+").replace(/_/g, "/");
+  const binary = atob(padded + "=".repeat((4 - padded.length % 4) % 4));
+  return Uint8Array.from(binary, (char) => char.charCodeAt(0));
+}
+
+function textFrom(bytes: ArrayBuffer): string {
+  let binary = "";
+  for (const byte of new Uint8Array(bytes)) binary += String.fromCharCode(byte);
+  return btoa(binary).replace(/\+/g, "-").replace(/\//g, "_").replace(/=+$/g, "");
 }
 
 async function csrfToken(phone: boolean): Promise<string> {

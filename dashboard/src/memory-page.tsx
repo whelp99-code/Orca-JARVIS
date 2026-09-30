@@ -1,5 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
-import { copy } from "./copy.js";
+import { copy, stateLabel } from "./copy.js";
 import type { MemoryClient } from "./memory-api.js";
 import { MemoryCandidates } from "./memory-candidates.js";
 import { MemoryConflicts } from "./memory-conflicts.js";
@@ -79,7 +79,7 @@ export function MemoryPage({ store, client }: Readonly<{ store: MemoryStore; cli
   };
   return <div className="page-frame dashboard-main memory-page"><header className="memory-heading">
     <div><p className="today-kicker">내가 통제하는 기억</p><h1>{copy.pages.memory}</h1></div>
-    <div className="memory-heading-controls"><p className="freshness-badge" data-freshness={provider}>{provider}</p>
+    <div className="memory-heading-controls"><p className="freshness-badge" data-freshness={provider}>{stateLabel(provider)}</p>
       <button type="button" onClick={refresh} disabled={refreshing} aria-busy={refreshing}>
         {refreshing ? "기억을 다시 불러오는 중" : "기억 새로고침"}</button></div></header>
     <p className="memory-status" role="status" tabIndex={-1} aria-live="polite" aria-atomic="true">

@@ -80,6 +80,18 @@ async function handleAuthedRoute(
     return;
   }
   update({ routeClass: matched.routeClass });
+  if (method === "OPTIONS" && path.startsWith("/api/v1/owner-inbox")) {
+    ctx.response.writeHead(204, {
+      Allow: "GET, POST, OPTIONS",
+      "Access-Control-Allow-Origin": ctx.config.publicOrigin,
+      "Access-Control-Allow-Credentials": "true",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "content-type, x-jarvis-csrf",
+    });
+    ctx.response.end();
+    update({ outcome: "allowed", code: "ok", status: 204 });
+    return;
+  }
   const ownerHex = ctx.config.ownerDigest.toString("hex").slice(0, 16);
   if (auth.kind !== "ok") {
     const limited = ctx.limiter.takePreSession(ownerHex);

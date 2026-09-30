@@ -19,6 +19,18 @@ export async function servePhoneRemoteRoute(
   requestId: string,
   update: (value: DispatchUpdate) => void,
 ): Promise<void> {
+  if (method === "OPTIONS" && path.startsWith("/api/v1/owner-inbox")) {
+    ctx.response.writeHead(204, {
+      Allow: "GET, POST, OPTIONS",
+      "Access-Control-Allow-Origin": ctx.config.publicOrigin,
+      "Access-Control-Allow-Credentials": "true",
+      "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
+      "Access-Control-Allow-Headers": "content-type, x-jarvis-csrf",
+    });
+    ctx.response.end();
+    update({ outcome: "allowed", code: "ok", status: 204 });
+    return;
+  }
   if (matched.routeClass === "security") {
     const html = await proxyDocument(ctx.upstream, path);
     if (!stillAuthenticated()) return;

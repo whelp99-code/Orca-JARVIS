@@ -27,7 +27,7 @@ describe("MemorySearch provider states", () => {
 
   it("announces an unavailable provider distinctly from no data", () => {
     render(<MemorySearch result={search("unavailable", ["provider_unavailable"])} onSearch={async () => {}} onSelect={() => {}} />);
-    expect(screen.getByRole("status")).toHaveTextContent(/provider unavailable/i);
+    expect(screen.getByRole("status")).toHaveTextContent(/사용할 수 없습니다/);
   });
 
   it("explains privacy-withheld results without claiming the memory is empty", () => {

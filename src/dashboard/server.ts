@@ -83,6 +83,8 @@ export type DashboardServerOptions = {
   readonly memoryReconcileTick?: () => void;
   readonly remoteApproval?: RemoteApprovalService;
   readonly remoteApprovalPolicyPath?: string;
+  readonly ownerInbox?: import("../owner-inbox.js").OwnerInbox;
+  readonly assertionCheck?: import("../owner-inbox.js").AssertionCheck;
 };
 
 type RequestContext = {
@@ -103,6 +105,8 @@ type RequestContext = {
   readonly executorFactory?: DashboardExecutorFactory;
   readonly memoryRuntime: MemoryRuntime;
   readonly remoteApproval?: RemoteApprovalService;
+  readonly ownerInbox?: import("../owner-inbox.js").OwnerInbox;
+  readonly assertionCheck?: import("../owner-inbox.js").AssertionCheck;
 };
 
 export function createDashboardServer(options: DashboardServerOptions): DashboardServer & {
@@ -150,6 +154,8 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
       executorFactory: options.executorFactory,
       memoryRuntime,
       remoteApproval,
+      ownerInbox: options.ownerInbox,
+      assertionCheck: options.assertionCheck,
     });
     requests.add(pending);
     void pending.then(() => requests.delete(pending), () => requests.delete(pending));
@@ -185,6 +191,11 @@ async function handleRequest(input: RequestContext): Promise<void> {
     }
     const path = requestPath(input.request.url);
     const method = input.request.method;
+    if (path !== undefined && method === "OPTIONS" && (path === "/api/v1/owner-inbox" || path === "/api/v1/owner-inbox/decide" || path === "/api/v1/owner-inbox/challenge")) {
+      const { writePreflight } = await import("./owner-inbox-routes.js");
+      writePreflight(input.response, input.origin);
+      return;
+    }
     if (path === undefined || (method !== "GET" && method !== "POST")) {
       input.request.resume();
       writeDashboardError(input.response, { status: 404, code: DASHBOARD_ERROR_CODES.NOT_FOUND, requestId });
@@ -210,6 +221,8 @@ async function handleRequest(input: RequestContext): Promise<void> {
       executorFactory: input.executorFactory,
       memoryRuntime: input.memoryRuntime,
       remoteApproval: input.remoteApproval,
+      ownerInbox: input.ownerInbox,
+      assertionCheck: input.assertionCheck,
     })) {
       return;
     }

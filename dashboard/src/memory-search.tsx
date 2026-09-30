@@ -5,7 +5,7 @@ import { memoryResourceState, type MemoryRecord, type MemoryResourceState,
 const STATE_COPY: Record<Exclude<MemoryResourceState, "ready" | "no_data">, string> = {
   stale: "The provider reported stale evidence. Results may be out of date.",
   offline: "Memory provider offline. Results are unavailable until it reconnects.",
-  unavailable: "Memory provider unavailable. Results cannot be read right now.",
+  unavailable: "기억 제공자를 사용할 수 없습니다.",
   incompatible: "Memory provider incompatible. Results cannot be read right now.",
 };
 export function MemorySearch({ result, onSearch, onSelect }: Readonly<{ result?: MemorySearchResult;

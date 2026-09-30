@@ -169,6 +169,7 @@ const STATE_LABELS: Readonly<Record<string, string>> = {
   critical: "심각",
   loading: "불러오는 중",
   error: "오류",
+  unavailable: "사용할 수 없음",
 };
 
 const ACTION_LABELS: Readonly<Record<string, string>> = {
