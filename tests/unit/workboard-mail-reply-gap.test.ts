@@ -3,7 +3,7 @@ import Database from "better-sqlite3";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { WorkboardStore } from "../../src/workboard/store.js";
-import { projectMailReplyGaps } from "../../src/workboard/adapters/mail-reply-gap.js";
+import { MAIL_REPLY_GAP_BASE_URL, projectMailReplyGaps } from "../../src/workboard/adapters/mail-reply-gap.js";
 import { readWorkboard } from "../../src/workboard/projection.js";
 
 function store(): WorkboardStore {
@@ -38,6 +38,18 @@ describe("mail reply-gap projection", () => {
     expect(after.attention).toHaveLength(0);
     const ledger = board.db.prepare("SELECT COUNT(*) AS n FROM workboard_events").get() as { n: number };
     expect(ledger.n).toBe(2);
+  });
+
+  it("defaults the message link to the tailnet Mail Intelligence URL", () => {
+    const board = store();
+    const linked = projectMailReplyGaps(board, {
+      observedAt: "2026-10-01T00:00:00.000Z",
+      open: [{ id: "536", subject: "reply", receivedAt: "2026-09-22T07:00:03.000Z" }],
+    });
+    expect(linked.opened).toBe(1);
+    const row = readWorkboard(board.db, new Date("2026-10-01T00:01:00.000Z")).works[0] as { evidence_ref?: string };
+    expect(row.evidence_ref).toBe(`${MAIL_REPLY_GAP_BASE_URL}/#m=536`);
+    expect(MAIL_REPLY_GAP_BASE_URL).toBe("http://jm-acloud.alpines-goldeye.ts.net:3010");
   });
 
   it("rejects a snapshot that would hide the mail link", () => {

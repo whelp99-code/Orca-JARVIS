@@ -6,9 +6,11 @@ import type { WorkboardStore } from "../store.js";
 
 /** Mail Intelligence reply-gap projection. Collectors own this table set; the dashboard stays read-only. */
 export const MAIL_REPLY_GAP_SOURCE = { host: "linux", app: "mail", scope: "reply-gap", generation: "v1" } as const;
+/** Phone-reachable Mail Intelligence. Override per snapshot; loopback is not reachable off-box. */
+export const MAIL_REPLY_GAP_BASE_URL = "http://jm-acloud.alpines-goldeye.ts.net:3010";
 
 export type ReplyGapItem = { id: string; subject: string; receivedAt: string };
-export type ReplyGapSnapshot = { observedAt: string; baseUrl: string; open: ReplyGapItem[] };
+export type ReplyGapSnapshot = { observedAt: string; baseUrl?: string; open: ReplyGapItem[] };
 export type ReplyGapResult = { source: string; opened: number; closed: number; openIds: string[] };
 
 const SOURCE_KEY = sourceKey(MAIL_REPLY_GAP_SOURCE);
@@ -49,8 +51,9 @@ function eventFor(item: ReplyGapItem, snapshot: ReplyGapSnapshot, kind: "open" |
 
 function validateSnapshot(snapshot: ReplyGapSnapshot): void {
   if (!Number.isFinite(Date.parse(snapshot.observedAt))) throw new Error("MAIL_REPLY_GAP_OBSERVATION_INVALID");
+  const baseUrl = snapshot.baseUrl ?? MAIL_REPLY_GAP_BASE_URL;
   let url: URL;
-  try { url = new URL(snapshot.baseUrl); } catch { throw new Error("MAIL_REPLY_GAP_LINK_INVALID"); }
+  try { url = new URL(baseUrl); } catch { throw new Error("MAIL_REPLY_GAP_LINK_INVALID"); }
   if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("MAIL_REPLY_GAP_LINK_INVALID");
   if (url.username || url.password) throw new Error("MAIL_REPLY_GAP_LINK_INVALID");
   if (!Array.isArray(snapshot.open)) throw new Error("MAIL_REPLY_GAP_SNAPSHOT_INVALID");
@@ -71,6 +74,7 @@ function validateSnapshot(snapshot: ReplyGapSnapshot): void {
  */
 export function projectMailReplyGaps(store: WorkboardStore, snapshot: ReplyGapSnapshot): ReplyGapResult {
   validateSnapshot(snapshot);
+  snapshot = { ...snapshot, baseUrl: snapshot.baseUrl ?? MAIL_REPLY_GAP_BASE_URL };
   const openIds = snapshot.open.map(item => item.id);
   const openTokens = new Set(snapshot.open.map(item => taskToken(item.id)));
   return store.db.transaction(() => {

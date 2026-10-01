@@ -10,10 +10,14 @@ function snapshotFrom(path: string): ReplyGapSnapshot {
   catch { throw new JarvisError("MAIL_REPLY_GAP_SNAPSHOT_INVALID"); }
   if (parsed === null || typeof parsed !== "object" || Array.isArray(parsed)) throw new JarvisError("MAIL_REPLY_GAP_SNAPSHOT_INVALID");
   const value = parsed as Record<string, unknown>;
-  if (value.schema !== 1 || typeof value.observedAt !== "string" || typeof value.baseUrl !== "string" || !Array.isArray(value.open)) {
+  if (value.schema !== 1 || typeof value.observedAt !== "string" || (value.baseUrl !== undefined && typeof value.baseUrl !== "string") || !Array.isArray(value.open)) {
     throw new JarvisError("MAIL_REPLY_GAP_SNAPSHOT_INVALID");
   }
-  return { observedAt: value.observedAt, baseUrl: value.baseUrl, open: value.open as ReplyGapSnapshot["open"] };
+  return {
+    observedAt: value.observedAt,
+    baseUrl: typeof value.baseUrl === "string" ? value.baseUrl : undefined,
+    open: value.open as ReplyGapSnapshot["open"],
+  };
 }
 
 /** `workboard ingest-reply-gap FILE --db PATH` — collector ingest, not a dashboard write route. */
