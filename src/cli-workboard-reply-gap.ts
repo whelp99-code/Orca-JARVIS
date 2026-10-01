@@ -20,6 +20,15 @@ function snapshotFrom(path: string): ReplyGapSnapshot {
   };
 }
 
+/** Credential-shaped fragments only. Paths and ENOENT text stay so the failure is diagnosable. */
+function diagnostic(error: unknown): string {
+  const message = error instanceof Error ? error.message : "unknown";
+  return message
+    .replace(/Bearer\s+\S+/giu, "Bearer [redacted]")
+    .replace(/(password|token|secret|authorization|api[_-]?key)\s*[=:]\s*\S+/giu, "$1=[redacted]")
+    .slice(0, 400);
+}
+
 /** `workboard ingest-reply-gap FILE --db PATH` — collector ingest, not a dashboard write route. */
 export async function tryExecuteWorkboardReplyGap(context: CliCommandContext): Promise<Record<string, unknown> | undefined> {
   if (context.command !== "workboard" || context.subcommand !== "ingest-reply-gap") return undefined;
@@ -29,7 +38,8 @@ export async function tryExecuteWorkboardReplyGap(context: CliCommandContext): P
     return { ok: true, command: "workboard.ingest-reply-gap", ...result };
   } catch (error) {
     if (error instanceof JarvisError) throw error;
-    const code = error instanceof Error && error.message.startsWith("MAIL_REPLY_GAP_") ? error.message : "MAIL_REPLY_GAP_SNAPSHOT_INVALID";
-    throw new JarvisError(code);
+    if (error instanceof Error && error.message.startsWith("MAIL_REPLY_GAP_")) throw new JarvisError(error.message);
+    process.stderr.write(`workboard ingest-reply-gap: ${diagnostic(error)}\n`);
+    throw new JarvisError("WORKBOARD_INGEST_FAILED");
   }
 }

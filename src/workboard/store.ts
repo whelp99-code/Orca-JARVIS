@@ -1,12 +1,16 @@
 import type Database from "better-sqlite3";
 import { createHash } from "node:crypto";
 import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
+import { dirname, join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { attemptKey, sessionKey, sourceKey, validateEvent, workKey, type WorkEvent } from "./contracts.js";
+
+// Compiled module is dist/src/workboard; source is src/workboard. Both sit two levels above migrations/.
+const projectionMigration = join(dirname(fileURLToPath(import.meta.url)), "../../migrations/099_workboard_projection.sql");
 
 export class WorkboardStore {
   constructor(readonly db: Database.Database) {
-    db.exec(readFileSync(resolve("migrations/099_workboard_projection.sql"), "utf8"));
+    db.exec(readFileSync(projectionMigration, "utf8"));
   }
 
   ingest(input: unknown): "inserted" | "replayed" {
