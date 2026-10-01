@@ -9,7 +9,7 @@ import { ControlPlane, type ControlCommandRequestInput } from "../../src/control
 import { createDashboardServer } from "../../src/dashboard/server.js";
 import { DEFAULT_AGENTOPS_LOOP } from "../../src/loopgraph.js";
 import { externalDelegateBatchDigest } from "../../src/external-delegate.js";
-import { OWNER_INBOX_MANUAL_WAIT, OwnerInbox } from "../../src/owner-inbox.js";
+import { OWNER_INBOX_EXTERNAL_DONE, OWNER_INBOX_MANUAL_WAIT, OwnerInbox } from "../../src/owner-inbox.js";
 import { ControlReceiptSigner } from "../../src/remote-approval-signer.js";
 import { initialized, localKey, snapshot } from "../helpers.js";
 import { approvedTaskFixture } from "../fixtures/approved-task-fixture.js";
@@ -206,7 +206,7 @@ describe("owner inbox executes every action that has an executor", () => {
       }
       const waiting = live.inbox.list().filter(item => item.manual_wait);
       expect(waiting.length).toBeGreaterThan(0);
-      expect(waiting.every(item => item.summary === OWNER_INBOX_MANUAL_WAIT)).toBe(true);
+      expect(waiting.every(item => item.summary === (item.action === "external.delegate" ? OWNER_INBOX_EXTERNAL_DONE : OWNER_INBOX_MANUAL_WAIT))).toBe(true);
       expect(waiting.map(item => item.action)).toContain("git.push");
       const again = db.db.prepare("SELECT COUNT(*) AS n FROM control_command_redemptions WHERE request_id='inbox:memory.delete'").get() as { n: number };
       expect(again.n).toBe(1);

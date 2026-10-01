@@ -142,4 +142,53 @@ describe("external.delegate", () => {
       delete process.env.JARVIS_EXTERNAL_DELEGATE_TOKEN_FILE;
     }
   });
+
+  it("consumes an item once and rejects an expired receipt", async () => {
+    const db = await initialized();
+    const control = new ControlPlane(db);
+    const staged = control.stage(stagedInput(), NOW);
+    const inbox = new OwnerInbox(db, new ControlReceiptSigner(localKey(db), "decision-test", "test-operator"), true, () => NOW);
+    db.db.prepare("INSERT INTO owner_inbox_credentials(credential_id, public_key, counter, created_at) VALUES(?,?,?,?)").run("cred-1", Buffer.from("pk"), 0, NOW.toISOString());
+    const issued = inbox.issueChallenge({ request_id: staged.request_id, decision: "approve", command_digest: staged.command_digest, session_id: "session-1" });
+    await inbox.decide({
+      request_id: staged.request_id, decision: "approve", command_digest: staged.command_digest, session_id: "session-1",
+      challenge_id: issued.challenge_id,
+      assertion: { id: "cred-1", clientDataJSON: "", authenticatorData: "", signature: "", userHandle: "" },
+      origin: "http://127.0.0.1", rpId: "127.0.0.1", check: async () => ({ ok: true, newCounter: 1 }),
+    });
+    const root = mkdtempSync(join(tmpdir(), "delegate-use-"));
+    const tokenFile = join(root, "token");
+    writeFileSync(tokenFile, "t".repeat(40));
+    chmodSync(tokenFile, 0o600);
+    process.env.JARVIS_EXTERNAL_DELEGATE_TOKEN_FILE = tokenFile;
+    writeFileSync(join(root, "index.html"), "<!doctype html>");
+    const server = createDashboardServer({ db, staticRoot: root, host: "127.0.0.1", port: 0, clock: () => NOW });
+    const origin = `http://127.0.0.1:${server.address.port}`;
+    const headers = { host: new URL(origin).host, "content-type": "application/json", "x-jarvis-delegate-token": "t".repeat(40) };
+    const digest = items()[0]?.payload_digest ?? "";
+    const consume = () => request(`${origin}/api/v1/internal/external-delegate/${staged.request_id}/consume`, {
+      method: "POST", headers, body: JSON.stringify({ item_digest: digest }),
+    });
+    try {
+      const [first, second] = await Promise.all([consume(), consume()]);
+      const codes = [first.statusCode, second.statusCode].sort();
+      expect(codes).toEqual([200, 409]);
+    } finally {
+      server.close();
+    }
+    const later = new Date(NOW.getTime() + 31 * 60_000);
+    const expiredServer = createDashboardServer({ db, staticRoot: root, host: "127.0.0.1", port: 0, clock: () => later });
+    const expiredOrigin = `http://127.0.0.1:${expiredServer.address.port}`;
+    try {
+      const expired = await request(`${expiredOrigin}/api/v1/internal/external-delegate/${staged.request_id}/consume`, {
+        method: "POST",
+        headers: { ...headers, host: new URL(expiredOrigin).host },
+        body: JSON.stringify({ item_digest: items()[1]?.payload_digest }),
+      });
+      expect(expired.statusCode).toBe(404);
+    } finally {
+      expiredServer.close();
+      delete process.env.JARVIS_EXTERNAL_DELEGATE_TOKEN_FILE;
+    }
+  });
 });

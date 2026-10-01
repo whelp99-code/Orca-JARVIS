@@ -152,12 +152,42 @@ function consume(db: AuthorityDb, requestId: string, body: Record<string, unknow
   const digest = body.item_digest;
   if (typeof digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(digest)) throw new DelegateError(400, "DELEGATE_INVALID");
   const row = db.db.prepare(
-    "SELECT state, args_json FROM control_command_requests WHERE request_id = ? AND action = 'external.delegate'",
-  ).get(requestId) as { state: string; args_json: string } | undefined;
-  if (row === undefined || row.state !== "approved") throw new DelegateError(404, "DELEGATE_NOT_FOUND");
+    "SELECT state, args_json, expires_at FROM control_command_requests WHERE request_id = ? AND action = 'external.delegate'",
+  ).get(requestId) as { state: string; args_json: string; expires_at: string } | undefined;
+  if (row === undefined || row.state !== "approved" || Date.parse(row.expires_at) <= now.getTime()) {
+    throw new DelegateError(404, "DELEGATE_NOT_FOUND");
+  }
   const args = JSON.parse(row.args_json) as { items?: Array<{ payload_digest?: string }> };
   if (!args.items?.some(item => item.payload_digest === digest)) throw new DelegateError(404, "DELEGATE_NOT_FOUND");
-  if (usedDigests(db, requestId).includes(digest)) throw new DelegateError(409, "DELEGATE_ITEM_USED");
+  const receipt = db.db.prepare(
+    "SELECT payload_json, expires_at FROM control_command_receipts WHERE request_id = ? AND decision = 'approve'",
+  ).get(requestId) as { payload_json: string; expires_at: string } | undefined;
+  if (receipt === undefined || Date.parse(receipt.expires_at) <= now.getTime()) throw new DelegateError(404, "DELEGATE_NOT_FOUND");
+  const signed = JSON.parse(receipt.payload_json) as { status?: string; decision?: string; not_before?: string; expires_at?: string };
+  const notBefore = Date.parse(String(signed.not_before));
+  const expires = Date.parse(String(signed.expires_at));
+  if (signed.status !== "issued" || signed.decision !== "approve" || !Number.isFinite(notBefore) || !Number.isFinite(expires)
+    || notBefore > now.getTime() || expires <= now.getTime()) {
+    throw new DelegateError(404, "DELEGATE_NOT_FOUND");
+  }
+  const receiptId = typeof (JSON.parse(receipt.payload_json) as { receipt_id?: string }).receipt_id === "string"
+    ? (JSON.parse(receipt.payload_json) as { receipt_id: string }).receipt_id : "";
+  if (receiptId.length === 0) throw new DelegateError(404, "DELEGATE_NOT_FOUND");
+  db.db.exec(`CREATE TABLE IF NOT EXISTS external_delegate_item_uses (
+    receipt_id TEXT NOT NULL,
+    item_digest TEXT NOT NULL,
+    request_id TEXT NOT NULL,
+    used_at TEXT NOT NULL,
+    PRIMARY KEY (receipt_id, item_digest)
+  )`);
+  try {
+    db.db.prepare("INSERT INTO external_delegate_item_uses(receipt_id, item_digest, request_id, used_at) VALUES(?,?,?,?)").run(
+      receiptId, digest, requestId, now.toISOString(),
+    );
+  } catch (error) {
+    if (String(error).includes("UNIQUE") || String(error).includes("constraint")) throw new DelegateError(409, "DELEGATE_ITEM_USED");
+    throw error;
+  }
   db.db.prepare("INSERT INTO audit_facts(fact_type,subject_id,payload_json,created_at) VALUES(?,?,?,?)").run(
     "external_delegate_item_use", requestId, JSON.stringify({ item_digest: digest }), now.toISOString(),
   );
@@ -177,13 +207,10 @@ function auditLowRisk(db: AuthorityDb, body: Record<string, unknown>, now: Date)
 }
 
 function usedDigests(db: AuthorityDb, requestId: string): string[] {
-  const rows = db.db.prepare(
-    "SELECT payload_json FROM audit_facts WHERE fact_type = 'external_delegate_item_use' AND subject_id = ?",
-  ).all(requestId) as Array<{ payload_json: string }>;
-  return rows.map(row => {
-    const parsed = JSON.parse(row.payload_json) as { item_digest?: string };
-    return parsed.item_digest ?? "";
-  }).filter(value => value.length > 0);
+  const table = db.db.prepare("SELECT name FROM sqlite_master WHERE type = 'table' AND name = 'external_delegate_item_uses'").get();
+  if (table === undefined) return [];
+  const rows = db.db.prepare("SELECT item_digest FROM external_delegate_item_uses WHERE request_id = ?").all(requestId) as Array<{ item_digest: string }>;
+  return rows.map(row => row.item_digest);
 }
 
 function trustBody(db: AuthorityDb): { key_id: string; spki_pem: string } {

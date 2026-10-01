@@ -32,7 +32,10 @@ export function parseExternalDelegateItems(value: unknown): readonly ExternalDel
   if (!Array.isArray(value) || value.length < 1 || value.length > EXTERNAL_DELEGATE_MAX_ITEMS) {
     throw new JarvisError("CONTROL_ARGS_MISMATCH");
   }
-  return value.map(parseItem);
+  const items = value.map(parseItem);
+  const digests = items.map(item => item.payload_digest);
+  if (new Set(digests).size !== digests.length) throw new JarvisError("CONTROL_ARGS_MISMATCH");
+  return items;
 }
 
 function parseItem(value: unknown): ExternalDelegateItem {

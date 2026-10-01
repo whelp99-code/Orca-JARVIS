@@ -206,11 +206,11 @@ function BatchLines({ items }: Readonly<{ items: readonly BatchLine[] }>) {
   return (
     <>
       <ol className={open && items.length > 6 ? "batch-list expanded" : "batch-list"} data-batch="true">
-        {shown.map(batch => (
-          <li key={batch.payload_digest}>
+        {shown.map((batch, index) => (
+          <li key={index}>
             <strong>{KIND_LABEL[batch.action_kind] ?? "외부 요청"}</strong>
-            {batch.action_kind === "mail.send" && batch.mail_to && batch.mail_subject ? (
-              <p className="record-meta">확인된 수신자 {batch.mail_to} · 제목 {batch.mail_subject}</p>
+            {batch.action_kind === "mail.send" ? (
+              <p className="record-meta">확인된 초안 · {batch.summary}</p>
             ) : (
               <p className="record-meta">윤비서 작성 요약 · {batch.summary}</p>
             )}
