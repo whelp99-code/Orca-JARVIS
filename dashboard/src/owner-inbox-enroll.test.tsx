@@ -31,6 +31,17 @@ afterEach(() => {
 });
 
 describe("owner inbox enrollment", () => {
+  it("hides passkey enrollment when the server already has a credential", async () => {
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => {
+      if (url === "/api/v1/session") return json(200, { csrf_token: "csrf-1" });
+      return inbox(true);
+    }));
+    render(<OwnerInboxPanel />);
+    expect(await screen.findByText("대기 중인 승인이 없습니다")).toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "패스키 등록" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "등록하기" })).not.toBeInTheDocument();
+  });
+
   it("registers a passkey with the one-time code and the server challenge", async () => {
     class PublicKeyCredential {}
     class AuthenticatorAttestationResponse {}

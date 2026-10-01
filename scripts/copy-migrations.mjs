@@ -4,6 +4,7 @@ import process from "node:process";
 const output = process.argv[2] ?? "dist";
 await mkdir(join(output, "src"), { recursive: true });
 await cp("config/personal-os-policy.json", join(output, "src", "personal-os-policy.json"));
+await cp("config/workboard-sources.json", join(output, "src", "workboard-sources.json"));
 await rm(join(output, "migrations"), { recursive: true, force: true });
 await mkdir(join(output, "migrations"), { recursive: true });
 await cp("migrations", join(output, "migrations"), { recursive: true });

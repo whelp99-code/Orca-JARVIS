@@ -1,0 +1,154 @@
+{
+  "observed_at": "2026-09-24T05:14:38.119Z",
+  "comparison": "fresh read-only collector into disposable in-memory projection, plus independent bounded orca-ide metadata reads; source universe checked against discovered inventory and configured denominator",
+  "source_count": 20,
+  "sources": [
+    {
+      "id": "linux:orca-worktrees:local",
+      "classification": "unknown_current_work_coverage",
+      "current_work_total": null,
+      "metadata_count": 21,
+      "reason": "workspace/terminal roster does not establish active current work"
+    },
+    {
+      "id": "mac:orca-worktrees:local",
+      "classification": "unknown_current_work_coverage",
+      "current_work_total": null,
+      "metadata_count": 9,
+      "reason": "workspace/terminal roster does not establish active current work"
+    },
+    {
+      "id": "mac:orca-terminals:local",
+      "classification": "unknown_current_work_coverage",
+      "current_work_total": null,
+      "metadata_count": 4,
+      "reason": "workspace/terminal roster does not establish active current work"
+    },
+    {
+      "id": "linux:orca-terminals:local",
+      "classification": "unknown_current_work_coverage",
+      "current_work_total": null,
+      "metadata_count": 20,
+      "reason": "workspace/terminal roster does not establish active current work"
+    },
+    {
+      "id": "linux:codex:local",
+      "classification": "unknown_current_work_coverage",
+      "current_work_total": null,
+      "current_ids": [],
+      "reason": "current manifest unavailable",
+      "projected_ids": []
+    },
+    {
+      "id": "linux:claude:local",
+      "classification": "current_work",
+      "current_work_total": 1,
+      "current_ids": [
+        "d69d8c4d-7fe2-4509-b44d-b49f7779546f"
+      ],
+      "reason": null,
+      "projected_ids": [
+        "d69d8c4d-7fe2-4509-b44d-b49f7779546f"
+      ]
+    },
+    {
+      "id": "linux:omo:local",
+      "classification": "unknown_current_work_coverage",
+      "current_work_total": null,
+      "current_ids": [],
+      "reason": "current manifest unavailable",
+      "projected_ids": []
+    },
+    {
+      "id": "linux:senpi:local",
+      "classification": "unknown_current_work_coverage",
+      "current_work_total": null,
+      "current_ids": [],
+      "reason": "current manifest unavailable",
+      "projected_ids": []
+    },
+    {
+      "id": "linux:cursor-agent:local",
+      "classification": "unknown_current_work_coverage",
+      "current_work_total": null,
+      "reason": "No verified bounded current-work metadata reader; historical file/application discovery is not current work"
+    },
+    {
+      "id": "mac:codex:local",
+      "classification": "unknown_current_work_coverage",
+      "current_work_total": null,
+      "reason": "No verified bounded current-work metadata reader; historical file/application discovery is not current work"
+    },
+    {
+      "id": "mac:claude:local",
+      "classification": "unknown_current_work_coverage",
+      "current_work_total": null,
+      "reason": "No verified bounded current-work metadata reader; historical file/application discovery is not current work"
+    },
+    {
+      "id": "mac:codex-desktop:local",
+      "classification": "unknown_current_work_coverage",
+      "current_work_total": null,
+      "reason": "application present; no bounded session enumeration supported"
+    },
+    {
+      "id": "mac:claude-desktop:local",
+      "classification": "unknown_current_work_coverage",
+      "current_work_total": null,
+      "reason": "application present; no bounded session enumeration supported"
+    },
+    {
+      "id": "mac:omo:local",
+      "classification": "unknown_current_work_coverage",
+      "current_work_total": null,
+      "reason": "no session store identified"
+    },
+    {
+      "id": "mac:senpi:local",
+      "classification": "unknown_current_work_coverage",
+      "current_work_total": null,
+      "reason": "no session store identified"
+    },
+    {
+      "id": "linux:mail:local",
+      "classification": "unknown_current_work_coverage",
+      "current_work_total": null,
+      "reason": "no consented metadata API/session enumeration configured"
+    },
+    {
+      "id": "linux:crm:local",
+      "classification": "unknown_current_work_coverage",
+      "current_work_total": null,
+      "reason": "no consented metadata API/session enumeration configured"
+    },
+    {
+      "id": "mac:mail:local",
+      "classification": "unknown_current_work_coverage",
+      "current_work_total": null,
+      "reason": "no consented metadata API/session enumeration configured"
+    },
+    {
+      "id": "mac:crm:local",
+      "classification": "unknown_current_work_coverage",
+      "current_work_total": null,
+      "reason": "no consented metadata API/session enumeration configured"
+    },
+    {
+      "id": "mac:chatgpt-to-codex:local",
+      "classification": "unknown_current_work_coverage",
+      "current_work_total": null,
+      "reason": "application present; no session ID reader configured"
+    }
+  ],
+  "collected_keys": [
+    "[\"linux:claude:local:initial\",\"d69d8c4d-7fe2-4509-b44d-b49f7779546f\"]"
+  ],
+  "projected_keys": [
+    "[\"linux:claude:local:initial\",\"d69d8c4d-7fe2-4509-b44d-b49f7779546f\"]"
+  ],
+  "duplicate_work_id_count": 0,
+  "repo_path_merge_count": 0,
+  "repo_path_merge_basis": "work IDs encode source, session, task; collector supplies no repo-path aliases",
+  "production_before": "releases/ef49ba0dda37eb3b93e1306eba1ea6e8bf7ade9c",
+  "production_after": "releases/ef49ba0dda37eb3b93e1306eba1ea6e8bf7ade9c"
+}

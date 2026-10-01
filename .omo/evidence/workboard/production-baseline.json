@@ -1,0 +1,48 @@
+{
+  "observed_at": "2026-09-24T03:35:07.139949+00:00",
+  "plan_source_baseline": "242f69689e26277bcbd6427d01ac4352c308d570",
+  "production_authority_current_readlink": "releases/ef49ba0dda37eb3b93e1306eba1ea6e8bf7ade9c",
+  "baseline_mismatch": "production authority release differs from plan source baseline; no retarget or deployment performed",
+  "production_db": {
+    "path": "/home/jm/.local/state/orca-jarvis/jarvis.sqlite",
+    "size_bytes": 4411392,
+    "operation": "stat only; never copied or opened"
+  },
+  "main_checkout": {
+    "head": "e536ad4a1c2992a6afcb77be89f05fa65151324c",
+    "state": "dirty; not used as base"
+  },
+  "isolated_worktree": {
+    "base": "242f69689e26277bcbd6427d01ac4352c308d570",
+    "branch": "whelp99-code/purpose-workboard",
+    "test_db_path": "/home/jm/orca/workspaces/Orca-JARVIS/purpose-workboard/.runtime-tmp/workboard/db/workboard.sqlite",
+    "test_db_exists": false,
+    "runtime_dirs": [
+      "db",
+      "spool",
+      "keys",
+      "policy"
+    ]
+  },
+  "ports": {
+    "4173": "listening",
+    "4174": "listening",
+    "4176": "listening",
+    "4180": "not_listening"
+  },
+  "running_relevant_user_services": [
+    "action-hub.service",
+    "jarvis-side-notch-gateway.service",
+    "jarvis-side-notch-mail-browser-relay.service",
+    "jm-ai-action-hub-worker.service",
+    "jm-browser-ops.service",
+    "jm-jarvis-phone-gateway.service",
+    "jmai-grok-action-hub-gateway.service",
+    "jmai-grok-action-hub-skill.service",
+    "jmmw.service",
+    "orca-gui.service"
+  ],
+  "service_measurement_failure": null,
+  "mac_ssh_status": "reachable read-only",
+  "protection": "No production DB open/copy, migration, symlink edit, process restart, or port binding."
+}

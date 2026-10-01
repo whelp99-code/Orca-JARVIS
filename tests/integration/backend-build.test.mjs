@@ -29,6 +29,7 @@ function fixture() {
   }, include: ["src/**/*"] }));
   writeFileSync(join(root, "src/index.ts"), "export const answer: number = 42;\n");
   writeFileSync(join(root, "config/personal-os-policy.json"), '{"fixture":"policy"}\n');
+  writeFileSync(join(root, "config/workboard-sources.json"), '{"source_ids":[]}\n');
   writeFileSync(join(root, "src/entry.mts"), "export const marker = 'esm';\n");
   writeFileSync(join(root, "migrations/001_fixture.sql"), "CREATE TABLE fixture(value TEXT);\n");
   for (const name of contractFiles) cpSync(join("contracts", name), join(root, "contracts", name));
@@ -66,6 +67,8 @@ describe("backend build publication", () => {
     ]));
     expect(readFileSync(join(root, "dist/src/personal-os-policy.json"), "utf8"))
       .toBe(readFileSync(join(root, "config/personal-os-policy.json"), "utf8"));
+    expect(readFileSync(join(root, "dist/src/workboard-sources.json"), "utf8"))
+      .toBe(readFileSync(join(root, "config/workboard-sources.json"), "utf8"));
     expect(existsSync(join(root, "dist/src/orphan.js"))).toBe(false);
     expect(readFileSync(join(root, "dist/dashboard/index.html"), "utf8")).toBe("independent dashboard\n");
     expect(execFileSync(process.execPath, ["--input-type=module", "-e",

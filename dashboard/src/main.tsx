@@ -14,6 +14,7 @@ import "./styles/responsive.css";
 import "./styles/portfolio.css";
 import "./styles/today.css";
 import "./styles/memory.css";
+import "./styles/workboard.css";
 
 class DashboardInitializationError extends Error {
   readonly name = "DashboardInitializationError";

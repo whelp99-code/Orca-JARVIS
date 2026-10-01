@@ -1,6 +1,6 @@
 import { execFile } from "node:child_process";
 import { createHash } from "node:crypto";
-import { chmodSync, closeSync, mkdtempSync, openSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { closeSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { canonicalize } from "../../src/canonical.js";
@@ -25,10 +25,14 @@ export function writeRequest(extra: Readonly<Record<string, unknown>> = {}): Rea
   }
   return { request };
 }
+export function writeSecondBrainFixtureLauncher(launcher: string, target: string): void {
+  writeFileSync(launcher, `#!/bin/sh\nexec "${process.execPath}" "${target}" "$@"\n`, { mode: 0o700 });
+}
 export function fixture(settings: Readonly<Record<string, unknown>> = {}): Fixture {
-  const root = mkdtempSync(join(tmpdir(), "second-brain-transport-")); const target = resolve("tests/fixtures/second-brain-mcp-child.mjs"); chmodSync(target, 0o755);
+  const root = mkdtempSync(join(tmpdir(), "second-brain-transport-")); const target = resolve("tests/fixtures/second-brain-mcp-child.mjs");
   const launcher = join(root, "second-brain-mcp"); const config = join(root, "config.json"); const control = join(root, "control"); const receipt = join(root, "receipt");
-  closeSync(openSync(control, "w")); closeSync(openSync(receipt, "w")); symlinkSync(target, launcher); writeFileSync(config, JSON.stringify({ control, receipt, ...settings }));
+  closeSync(openSync(control, "w")); closeSync(openSync(receipt, "w")); writeSecondBrainFixtureLauncher(launcher, target);
+  writeFileSync(config, JSON.stringify({ control, receipt, ...settings }));
   return { root, launcher, config, control, receipt };
 }
 type ReceiptState = { count: number; readonly waiters: Array<{ readonly count: number; readonly resolve: () => void }> };

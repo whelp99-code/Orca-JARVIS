@@ -1,0 +1,74 @@
+{
+  "url": "http://127.0.0.1:4180/workboard",
+  "captured_at": "2026-09-24T04:24:00.094Z",
+  "viewports": {
+    "390": {
+      "viewport": {
+        "width": 390,
+        "height": 844
+      },
+      "why": true,
+      "what": true,
+      "where": true,
+      "who": true,
+      "how": true,
+      "action": true,
+      "action_routes_to_source": true,
+      "evidence_closed_by_default": true,
+      "why_is_largest_line": true,
+      "font_sizes_px": {
+        "why": 20,
+        "what": 15,
+        "fact": 13,
+        "action": 13
+      },
+      "unknown_purpose_text_present": true,
+      "default_html_has_sha256": false,
+      "default_html_has_term_": false,
+      "default_html_has_pid": false,
+      "horizontal_page_overflow": false,
+      "cards_exceed_viewport": false,
+      "text_overflow_elements": [],
+      "card_count": 7,
+      "lead_card_count": 3,
+      "group_count": 3,
+      "document_height": 4421,
+      "text_overflows": false,
+      "console_errors": []
+    },
+    "1440": {
+      "viewport": {
+        "width": 1440,
+        "height": 1000
+      },
+      "why": true,
+      "what": true,
+      "where": true,
+      "who": true,
+      "how": true,
+      "action": true,
+      "action_routes_to_source": true,
+      "evidence_closed_by_default": true,
+      "why_is_largest_line": true,
+      "font_sizes_px": {
+        "why": 20,
+        "what": 15,
+        "fact": 13,
+        "action": 13
+      },
+      "unknown_purpose_text_present": true,
+      "default_html_has_sha256": false,
+      "default_html_has_term_": false,
+      "default_html_has_pid": false,
+      "horizontal_page_overflow": false,
+      "cards_exceed_viewport": false,
+      "text_overflow_elements": [],
+      "card_count": 7,
+      "lead_card_count": 3,
+      "group_count": 3,
+      "document_height": 2762,
+      "text_overflows": false,
+      "console_errors": []
+    }
+  }
+}

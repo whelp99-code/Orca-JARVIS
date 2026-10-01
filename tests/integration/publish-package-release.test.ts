@@ -2,7 +2,6 @@ import { createHash } from "node:crypto";
 import { execFileSync, spawn, spawnSync, type ChildProcess } from "node:child_process";
 import { createServer } from "node:http";
 import {
-  chmodSync,
   closeSync,
   existsSync,
   lstatSync,
@@ -24,6 +23,7 @@ import { execute } from "../../src/cli-runtime.mjs";
 import { AuthorityDb } from "../../src/db.js";
 import { ensureCycleCursor } from "../../src/personal-os-cycle-channel.js";
 import { runtimeDependencyIdentity } from "../../src/personal-os-release-manifest.js";
+import { writeSecondBrainFixtureLauncher } from "../fixtures/second-brain-transport-harness.js";
 import { tempDb } from "../helpers.js";
 
 const SCRIPT = "ops/authority/publish-package-release.sh";
@@ -152,13 +152,12 @@ async function healthServer(): Promise<string> {
 function fixtureProvider(): { launcher: string; config: string } {
   const root = scratch("publish-provider-");
   const target = resolve("tests/fixtures/second-brain-mcp-child.mjs");
-  chmodSync(target, 0o755);
   const launcher = join(root, "second-brain-mcp");
   const control = join(root, "control");
   const receipt = join(root, "receipt");
   closeSync(openSync(control, "w"));
   closeSync(openSync(receipt, "w"));
-  symlinkSync(target, launcher);
+  writeSecondBrainFixtureLauncher(launcher, target);
   const config = join(root, "config.json");
   writeFileSync(config, JSON.stringify({ control, receipt }));
   return { launcher, config };

@@ -1,0 +1,231 @@
+{
+  "kind": "disposable structured endpoint only",
+  "endpoint": "http://127.0.0.1:43665/",
+  "phases": [
+    {
+      "progress": {
+        "state": "running",
+        "request_id": "verify:approve",
+        "source_request_reads_before": 0
+      },
+      "waiting": {
+        "state": "approval_wait",
+        "request_id": "verify:approve",
+        "allowed": [
+          "approve",
+          "reject",
+          "redirect"
+        ]
+      },
+      "outcome": {
+        "intentId": "e93514b5-4cc2-4017-8bee-9738309d61ec",
+        "status": "settled",
+        "receipt": {
+          "binding": {
+            "attemptId": "attempt:1",
+            "purposeVersion": 1,
+            "sessionId": "session:fixture",
+            "sourceId": "fixture:structured:v1",
+            "specVersion": "spec:1",
+            "taskId": "task:fixture",
+            "workId": "work:fixture"
+          },
+          "intentId": "e93514b5-4cc2-4017-8bee-9738309d61ec",
+          "operation": "approve",
+          "receiptId": "receipt:e93514b5-4cc2-4017-8bee-9738309d61ec",
+          "requestDigest": "sha256:35352502892df2c067d85ed1075827ae28ba0b564150e439c3e33c0c52b7abf1",
+          "requestId": "verify:approve",
+          "sourceState": "running"
+        },
+        "error": null
+      },
+      "send_count": 1,
+      "source_receipt_reads_at_settlement": 1,
+      "reread_same_receipt": true
+    },
+    {
+      "progress": {
+        "state": "running",
+        "request_id": "verify:reject",
+        "source_request_reads_before": 2
+      },
+      "waiting": {
+        "state": "approval_wait",
+        "request_id": "verify:reject",
+        "allowed": [
+          "approve",
+          "reject",
+          "redirect"
+        ]
+      },
+      "outcome": {
+        "intentId": "a632b3fd-9883-408b-a594-7faea69b3c87",
+        "status": "settled",
+        "receipt": {
+          "binding": {
+            "attemptId": "attempt:1",
+            "purposeVersion": 1,
+            "sessionId": "session:fixture",
+            "sourceId": "fixture:structured:v1",
+            "specVersion": "spec:1",
+            "taskId": "task:fixture",
+            "workId": "work:fixture"
+          },
+          "intentId": "a632b3fd-9883-408b-a594-7faea69b3c87",
+          "operation": "reject",
+          "receiptId": "receipt:a632b3fd-9883-408b-a594-7faea69b3c87",
+          "requestDigest": "sha256:53e77d220844cf88c13d445f3156605a6bd6f266c4e7fd661e7fdd33627bddc2",
+          "requestId": "verify:reject",
+          "sourceState": "rejected"
+        },
+        "error": null
+      },
+      "send_count": 1,
+      "source_receipt_reads_at_settlement": 1,
+      "reread_same_receipt": true
+    },
+    {
+      "progress": {
+        "state": "running",
+        "request_id": "verify:redirect-after-rejection",
+        "source_request_reads_before": 4
+      },
+      "waiting": {
+        "state": "approval_wait",
+        "request_id": "verify:redirect-after-rejection",
+        "allowed": [
+          "approve",
+          "reject",
+          "redirect"
+        ]
+      },
+      "outcome": {
+        "intentId": "06b34371-e1c9-43d4-842d-e9c34f163b4a",
+        "status": "settled",
+        "receipt": {
+          "binding": {
+            "attemptId": "attempt:1",
+            "purposeVersion": 1,
+            "sessionId": "session:fixture",
+            "sourceId": "fixture:structured:v1",
+            "specVersion": "spec:1",
+            "taskId": "task:fixture",
+            "workId": "work:fixture"
+          },
+          "intentId": "06b34371-e1c9-43d4-842d-e9c34f163b4a",
+          "operation": "redirect",
+          "receiptId": "receipt:06b34371-e1c9-43d4-842d-e9c34f163b4a",
+          "requestDigest": "sha256:24b6a0b06a25a55b1e478520c1f33cabf1f300e71cc9a7f983f490245a7d46c2",
+          "requestId": "verify:redirect-after-rejection",
+          "sourceState": "running"
+        },
+        "error": null
+      },
+      "send_count": 1,
+      "source_receipt_reads_at_settlement": 1,
+      "reread_same_receipt": true
+    }
+  ],
+  "production_before": "releases/ef49ba0dda37eb3b93e1306eba1ea6e8bf7ade9c",
+  "uncertain_restart": {
+    "intent_id": "d14ad1f6-e1ba-4020-9ebd-7ceeda7d818c",
+    "status": "uncertain",
+    "sends": 1,
+    "replacement_blocked": true,
+    "original_receipt_hidden": true,
+    "reconciled_receipt": {
+      "binding": {
+        "attemptId": "attempt:1",
+        "purposeVersion": 1,
+        "sessionId": "session:fixture",
+        "sourceId": "fixture:structured:v1",
+        "specVersion": "spec:1",
+        "taskId": "task:fixture",
+        "workId": "work:fixture"
+      },
+      "intentId": "d14ad1f6-e1ba-4020-9ebd-7ceeda7d818c",
+      "operation": "approve",
+      "receiptId": "receipt:d14ad1f6-e1ba-4020-9ebd-7ceeda7d818c",
+      "requestDigest": "sha256:c21e340296d4b67c3e94996a2bd1b0dcf578234922ea3fae541c9ff4a302b9d5",
+      "requestId": "verify:uncertain",
+      "sourceState": "running"
+    },
+    "final_sends": 1
+  },
+  "total_sends": 4,
+  "source_receipts": [
+    {
+      "receiptId": "receipt:e93514b5-4cc2-4017-8bee-9738309d61ec",
+      "intentId": "e93514b5-4cc2-4017-8bee-9738309d61ec",
+      "requestId": "verify:approve",
+      "requestDigest": "sha256:35352502892df2c067d85ed1075827ae28ba0b564150e439c3e33c0c52b7abf1",
+      "operation": "approve",
+      "binding": {
+        "sourceId": "fixture:structured:v1",
+        "workId": "work:fixture",
+        "taskId": "task:fixture",
+        "sessionId": "session:fixture",
+        "attemptId": "attempt:1",
+        "purposeVersion": 1,
+        "specVersion": "spec:1"
+      },
+      "sourceState": "running"
+    },
+    {
+      "receiptId": "receipt:a632b3fd-9883-408b-a594-7faea69b3c87",
+      "intentId": "a632b3fd-9883-408b-a594-7faea69b3c87",
+      "requestId": "verify:reject",
+      "requestDigest": "sha256:53e77d220844cf88c13d445f3156605a6bd6f266c4e7fd661e7fdd33627bddc2",
+      "operation": "reject",
+      "binding": {
+        "sourceId": "fixture:structured:v1",
+        "workId": "work:fixture",
+        "taskId": "task:fixture",
+        "sessionId": "session:fixture",
+        "attemptId": "attempt:1",
+        "purposeVersion": 1,
+        "specVersion": "spec:1"
+      },
+      "sourceState": "rejected"
+    },
+    {
+      "receiptId": "receipt:06b34371-e1c9-43d4-842d-e9c34f163b4a",
+      "intentId": "06b34371-e1c9-43d4-842d-e9c34f163b4a",
+      "requestId": "verify:redirect-after-rejection",
+      "requestDigest": "sha256:24b6a0b06a25a55b1e478520c1f33cabf1f300e71cc9a7f983f490245a7d46c2",
+      "operation": "redirect",
+      "binding": {
+        "sourceId": "fixture:structured:v1",
+        "workId": "work:fixture",
+        "taskId": "task:fixture",
+        "sessionId": "session:fixture",
+        "attemptId": "attempt:1",
+        "purposeVersion": 1,
+        "specVersion": "spec:1"
+      },
+      "sourceState": "running"
+    },
+    {
+      "receiptId": "receipt:d14ad1f6-e1ba-4020-9ebd-7ceeda7d818c",
+      "intentId": "d14ad1f6-e1ba-4020-9ebd-7ceeda7d818c",
+      "requestId": "verify:uncertain",
+      "requestDigest": "sha256:c21e340296d4b67c3e94996a2bd1b0dcf578234922ea3fae541c9ff4a302b9d5",
+      "operation": "approve",
+      "binding": {
+        "sourceId": "fixture:structured:v1",
+        "workId": "work:fixture",
+        "taskId": "task:fixture",
+        "sessionId": "session:fixture",
+        "attemptId": "attempt:1",
+        "purposeVersion": 1,
+        "specVersion": "spec:1"
+      },
+      "sourceState": "running"
+    }
+  ],
+  "production_after": "releases/ef49ba0dda37eb3b93e1306eba1ea6e8bf7ade9c",
+  "cleanup": {
+    "disposable_journal_removed": true,
+    "endpoint_closed": true
+  }
+}

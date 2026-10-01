@@ -1,0 +1,28 @@
+{
+  "task": "workboard attention queue",
+  "red": {
+    "command": "./node_modules/.bin/vitest run tests/unit/workboard-attention.test.ts --maxWorkers=2",
+    "result": "7 failed, 0 passed (exit 1)",
+    "assertionFailure": "179/180-second freshness: expected { freshness: 'unconfirmed', rank: 2, actionsEnabled: false }, received { freshness: 'fresh', rank: null, actionsEnabled: true }",
+    "otherAssertionFailures": ["10-minute progress gap", "explicit long wait reason", "cancel requested while source claims completion", "delayed older event rollback", "attention rank ordering"],
+    "missingMigrationBeforeImplementation": "ENOENT: migrations/101_workboard_attention.sql"
+  },
+  "green": {
+    "command": "./node_modules/.bin/vitest run tests/unit/workboard-attention.test.ts --maxWorkers=2 && ./node_modules/.bin/tsc --noEmit",
+    "result": "7 passed (exit 0); tsc passed",
+    "build": "npm run build:backend passed",
+    "manual": "Built readWorkboard against an in-memory SQLite store: claimed_done projected as rank 3 verification_wait and not verified."
+  },
+  "matrix": [
+    {"case": "179 seconds since last successful observation", "expected": "fresh, snapshot actions enabled"},
+    {"case": "180 seconds since last successful observation", "expected": "unconfirmed, actions disabled, observation gap"},
+    {"case": "failed scan heartbeat", "expected": "warning retained, last successful observation unchanged, no failed disposition"},
+    {"case": "599/600 seconds since progress, observation still fresh", "expected": "no stall / stall suspected, never automatic failure or restart"},
+    {"case": "explicit long wait", "expected": "reason retained alongside stall suspicion"},
+    {"case": "cancel request during completion claim", "expected": "delivery and disposition separate; verification still required"},
+    {"case": "source clock skew and delayed lower sequence", "expected": "received clock determines freshness; older event cannot overwrite disposition or progress"},
+    {"case": "valid decision, blocked, gap, verification", "expected": "queue ordered by rank, then known deadline, impact, wait start and stable ID"}
+  ],
+  "assumptions": ["Only structured decision_valid=1 qualifies for decision rank; unvalidated text is not actionable.", "Collectors supply progress metadata independently; when missing, the work row's receipt time is the initial progress baseline."],
+  "risks": ["The collector is not wired to write workboard_attention metadata in this task's allowed files; without it, optional progress/wait/action facts are unavailable and the receipt timestamp is used as a baseline.", "The future UI/action path must preflight actions at delivery, not rely solely on read-model actionsEnabled."]
+}

@@ -1,0 +1,36 @@
+JARVIS_TEST_PROFILE dashboard
+
+ RUN  v3.2.7 /home/jm/orca/workspaces/Orca-JARVIS/purpose-workboard/dashboard
+
+ ✓ src/workboard/page.test.tsx (7 tests) 337ms
+ ✓ src/root.test.tsx (3 tests) 248ms
+ ✓ src/authority-api.test.ts (6 tests) 12ms
+ ❯ src/workboard/action-slot.test.tsx (3 tests | 1 failed) 156ms
+   ✓ submits the reviewed token and operation once while awaiting the exact result signal 141ms
+   ✓ does not expose source effects when the observation is stale or the protocol is unavailable 6ms
+   × extends the existing mutation client with the same CSRF boundary and exact body 8ms
+     → Dashboard request failed
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 1 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  src/workboard/action-slot.test.tsx > extends the existing mutation client with the same CSRF boundary and exact body
+DashboardApiError: Dashboard request failed
+ ❯ safeError src/authority-api.ts:300:10
+    298|
+    299| function safeError(kind: ApiErrorKind, code: string, responseRequestId…
+    300|   return new DashboardApiError({ kind, code, message: SAFE_MESSAGES[ki…
+       |          ^
+    301| }
+    302|
+ ❯ loadCsrfToken src/authority-api.ts:164:13
+ ❯ csrfToken src/authority-api.ts:73:14
+ ❯ mutate src/authority-api.ts:80:34
+ ❯ src/workboard/action-slot.test.tsx:50:10
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/1]⎯
+
+
+ Test Files  1 failed | 3 passed (4)
+      Tests  1 failed | 18 passed (19)
+   Start at  13:56:49
+   Duration  4.47s (transform 439ms, setup 0ms, collect 1.05s, tests 754ms, environment 2.04s, prepare 183ms)

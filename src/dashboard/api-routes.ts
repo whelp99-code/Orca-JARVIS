@@ -1,3 +1,4 @@
+import type { WorkboardActions } from "../workboard/actions.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CapabilityProbe } from "../capabilities.js";
 import type { AuthorityDb } from "../db.js";
@@ -26,6 +27,7 @@ import { tryHandleDashboardRead } from "./read-routes.js";
 import { tryHandleTaskExecution } from "./task-execution-routes.js";
 import { tryHandleDashboardSession, type DashboardSessionStore } from "./session.js";
 import { tryHandleDashboardSse } from "./sse-route.js";
+import { tryHandleWorkboardRead } from "./workboard-routes.js";
 import type { DashboardTerminalReader, TerminalLogResult } from "./terminal-reader.js";
 
 const LOG_LIMIT_MIN = 1;
@@ -61,6 +63,7 @@ export type DashboardApiInput = {
   readonly assertionCheck?: import("../owner-inbox.js").AssertionCheck;
   readonly enrollmentCheck?: import("../owner-inbox-enrollment.js").EnrollmentCheck;
   readonly now?: Date;
+  readonly workboardActions?: WorkboardActions;
 };
 
 type LogsRoute =
@@ -95,6 +98,8 @@ export async function tryHandleDashboardApi(input: DashboardApiInput): Promise<b
     });
     return true;
   }
+  if (tryHandleWorkboardRead({ db: input.db.db, path: input.path, response: input.response,
+    requestId: input.requestId, now: input.clock(), actions: input.workboardActions })) return true;
   if (await tryHandleDashboardLogs(input)) return true;
   if (await tryHandleMemoryRead({ path: input.path, url: input.url, request: input.request,
     response: input.response, requestId: input.requestId, session: input.session,
