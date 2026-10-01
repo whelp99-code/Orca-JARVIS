@@ -8,7 +8,7 @@ import { composeOwnerInbox } from "../remote-approval-compose.js";
 import { verifyAssertionCrypto } from "../remote-approval-webauthn.js";
 import type { RemoteApprovalService } from "../remote-approval.js";
 import { DASHBOARD_ERROR_CODES, writeDashboardError, writeDashboardJson } from "./http.js";
-import { hasExactMutationOrigin } from "./request-boundary.js";
+import { hasExactMutationOrigin, hasSameOriginReadOrigin } from "./request-boundary.js";
 import { sessionMatchesCsrf, type DashboardSessionStore } from "./session.js";
 import { parseSecondBrainStrictJsonBytes } from "../second-brain-strict-json.js";
 
@@ -121,7 +121,10 @@ function admit(input: {
   path: string;
 }, body: Buffer, method: "GET" | "POST"): string | undefined {
   const csrf = header(input.request.headers[CSRF]);
-  const local = hasExactMutationOrigin(input.request, input.origin) && sessionMatchesCsrf(input.session, csrf);
+  const sameOrigin = method === "GET"
+    ? hasSameOriginReadOrigin(input.request, input.origin)
+    : hasExactMutationOrigin(input.request, input.origin);
+  const local = sameOrigin && sessionMatchesCsrf(input.session, csrf);
   const ingress = input.remoteApproval?.resolver(input.request, body) ?? null;
   if (local && ingress) return undefined;
   if (local && csrf !== undefined) return `local:${createHash("sha256").update(csrf).digest("hex")}`;
