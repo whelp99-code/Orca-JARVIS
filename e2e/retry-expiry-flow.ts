@@ -20,6 +20,8 @@ export async function expiredRetryFlow(page: Page, testInfo: TestInfo): Promise<
   try {
     await page.goto(`${origin}/approvals`);
     await waitLive(page);
+    const tools = page.locator("details.admin-tools");
+    if (await tools.count() > 0 && await tools.getAttribute("open") === null) await tools.locator("summary").click();
     const control = page.locator("article.authority-controls").filter({ hasText: IDS.failedRetry });
     await expect(control.getByRole("button", { name: "Retry failed request" })).toHaveCount(0);
     await expect(control.getByRole("status")).toContainText("새 승인을 받아주세요");
@@ -28,7 +30,7 @@ export async function expiredRetryFlow(page: Page, testInfo: TestInfo): Promise<
     await capture(page, testInfo, "retry-replan-required");
     await control.getByRole("link", { name: "새 작업 제안" }).click();
     await expect(page).toHaveURL(`${origin}/proposals`);
-    await expect(page.getByRole("heading", { name: "New proposal" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "새 제안" })).toBeVisible();
     expect(changes()).toEqual(before);
 
     const session = await page.request.get(`${origin}/api/v1/session`);

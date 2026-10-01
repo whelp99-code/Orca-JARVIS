@@ -39,9 +39,9 @@ test("work relationship edits invalidate preview and persist for approval after 
     await page.getByLabel("이전 요청 ID").fill(ready.prior_id);
     await page.getByRole("button", { name: "계획 준비", exact: true }).click();
     await page.getByRole("button", { name: "검토한 계획 승인 요청" }).click();
-    await expect(page.getByLabel("Signed receipt JSON")).toBeVisible();
+    await expect(page.getByLabel("서명 영수증")).toBeVisible();
     await page.reload();
-    const pending = page.getByRole("article", { name: /^실행 요청 / }).filter({ has: page.getByLabel("Signed receipt JSON") });
+    const pending = page.getByRole("article", { name: /^실행 요청 / }).filter({ has: page.getByLabel("서명 영수증") });
     await expect(pending).toContainText("기존 업무 재작업");
     await expect(pending).toContainText(ready.prior_id);
     await expect(pending).toContainText(ready.prior_digest);

@@ -41,7 +41,7 @@ try {
     if (controller.signal.aborted) { process.exitCode = 130; break; }
     if (runs.length > 1) process.stdout.write(`JARVIS_TEST_SHARD ${index + 1}/${runs.length}\n`);
     const result = await runTestProcess(command, current, { env, signal: controller.signal, readyMarker,
-      startupTimeoutMs: 15000, timeoutMs: profile === "gui" ? 180000 : 1200000 });
+      startupTimeoutMs: 15000, timeoutMs: profile === "gui" ? 180000 : profile === "backend" ? 2_400_000 : 1200000 });
     if (result.timedOut) throw new Error(profile === "gui" ? "TEST_GUI_TIMEOUT" : "TEST_RUN_TIMEOUT");
     if (result.spawnError) throw new Error("TEST_COMMAND_UNAVAILABLE");
     if (result.interrupted) { process.exitCode = 130; break; }

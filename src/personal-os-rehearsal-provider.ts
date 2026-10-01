@@ -1,7 +1,9 @@
 import { createHash } from "node:crypto";
 import { spawnSync } from "node:child_process";
-import { chmodSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
 import { join } from "node:path";
+import { fileURLToPath } from "node:url";
 import { PersonalOsError } from "./personal-os-errors.js";
 import {
   FORGOTTEN_SENTINEL,
@@ -38,11 +40,31 @@ function script(path: string, body: string): void {
   chmodSync(path, 0o700);
 }
 
+const PROVIDER_BUNDLE = fileURLToPath(new URL("../vendor/task30-provider.bundle", import.meta.url));
+let vendoredSource: string | undefined;
+
+/** Prefer an explicit checkout, then the owner worktree, then the vendored pin. CI has no /home/jm path. */
+export function resolveProviderSource(sourceRoot?: string): string {
+  if (sourceRoot !== undefined) return sourceRoot;
+  const fromEnv = process.env["JARVIS_REHEARSAL_PROVIDER_SOURCE"];
+  if (fromEnv !== undefined && fromEnv !== "") return fromEnv;
+  if (existsSync(PROVIDER_SOURCE_DEFAULT)) return PROVIDER_SOURCE_DEFAULT;
+  if (vendoredSource !== undefined && existsSync(join(vendoredSource, ".git"))) return vendoredSource;
+  if (!existsSync(PROVIDER_BUNDLE)) throw new PersonalOsError("E_REHEARSAL_GATE");
+  const root = mkdtempSync(join(tmpdir(), "task30-provider-source-"));
+  const cloned = spawnSync("git", ["clone", "--quiet", PROVIDER_BUNDLE, root], { encoding: "utf8" });
+  if (cloned.status !== 0) throw new PersonalOsError("E_REHEARSAL_GATE");
+  const checked = spawnSync("git", ["-C", root, "checkout", "--quiet", PROVIDER_SOURCE_COMMIT], { encoding: "utf8" });
+  if (checked.status !== 0) throw new PersonalOsError("E_REHEARSAL_GATE");
+  vendoredSource = root;
+  return root;
+}
+
 export function installProviderRelease(input: {
   readonly releaseRoot: string;
   readonly sourceRoot?: string;
 }): ProviderInstall {
-  const source = input.sourceRoot ?? process.env["JARVIS_REHEARSAL_PROVIDER_SOURCE"] ?? PROVIDER_SOURCE_DEFAULT;
+  const source = resolveProviderSource(input.sourceRoot);
   const head = spawnSync("git", ["-C", source, "rev-parse", "HEAD"], { encoding: "utf8" });
   if (head.status !== 0 || head.stdout.trim() !== PROVIDER_SOURCE_COMMIT) throw new PersonalOsError("E_REHEARSAL_GATE");
   const wheelDir = join(input.releaseRoot, "wheel-build");

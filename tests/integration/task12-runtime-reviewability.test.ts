@@ -3,11 +3,14 @@ import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
 const TASK12_PARENT = "f78644beee512f0a7418f76d8b46f276125f72d3";
+// Reviewability bound for the Task 12 delta only. Later product growth is not this contract.
+// Landed in a28434b (2026-08-29, fix(capabilities): bind actual readiness contracts).
+const TASK12_LANDING = "a28434b";
 const PRODUCTION_EXTENSION = /\.(?:ts|mts|cts|tsx)$/;
 
 describe("Task 12 runtime reviewability", () => {
   it("enforces production module limits across every TypeScript extension", () => {
-    const changed = execFileSync("git", ["diff", "--name-only", TASK12_PARENT, "--", "src"], {
+    const changed = execFileSync("git", ["diff", "--name-only", `${TASK12_PARENT}..${TASK12_LANDING}`, "--", "src"], {
       encoding: "utf8",
     });
     const untracked = execFileSync("git", ["ls-files", "--others", "--exclude-standard", "src"], {

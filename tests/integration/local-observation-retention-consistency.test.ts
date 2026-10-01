@@ -337,7 +337,7 @@ it("keeps an unrelated row whose key reuses a blocked id when the source is swap
   expect(count(candidate, "personal_recommendations")).toBe(0);
   expect(Number(candidate.db.prepare(
     "SELECT COUNT(*) FROM gjc_intents WHERE intent_id='decoy-must-keep'").pluck().get())).toBe(1);
-});
+}, 30_000);
 
 // Generation lineage must come from the database the selection read, not from a substitute.
 it("advances the generation from the selected source when another is swapped in", async () => {

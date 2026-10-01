@@ -4,6 +4,7 @@ import { mkdtempSync, readFileSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { z } from "zod";
+import { task30Python, task30Wheel } from "./task30-provider-runtime.js";
 
 const pinnedWheel = "dcffa57bd011d59f0993583fee435413ebb0fb293fb3de941b567cca8e70e762";
 const oracle = `import hashlib, json, pathlib, sys, tomllib, zipfile
@@ -37,9 +38,11 @@ print(json.dumps(rows, ensure_ascii=False))
 
 /** Independent stdlib and pinned-provider interpretations, not a second implementation of config rules. */
 export function producerConfigOutcomes(cases: readonly string[]) {
-  const python = process.env["TASK30_PROVIDER_PYTHON"];
-  const wheel = process.env["TASK30_PROVIDER_WHEEL"];
-  if (python === undefined || wheel === undefined) throw new Error("TASK30_ISOLATED_PROVIDER_ORACLE_REQUIRED");
+  const envPython = process.env["TASK30_PROVIDER_PYTHON"];
+  const envWheel = process.env["TASK30_PROVIDER_WHEEL"];
+  if ((envPython === undefined) !== (envWheel === undefined)) throw new Error("TASK30_ISOLATED_PROVIDER_ORACLE_REQUIRED");
+  const python = envPython ?? task30Python();
+  const wheel = envWheel ?? task30Wheel();
   if (createHash("sha256").update(readFileSync(wheel)).digest("hex") !== pinnedWheel) {
     throw new Error("TASK30_PROVIDER_ORACLE_WHEEL_MISMATCH");
   }

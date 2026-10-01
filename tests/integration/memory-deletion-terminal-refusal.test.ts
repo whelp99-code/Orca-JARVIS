@@ -22,11 +22,9 @@ import type { SecondBrainWriteRequestV1 } from "../../src/second-brain-adapter-t
 import { closeMemoryDatabase, insertMemoryVerification, memoryDatabase, memoryVerificationPayload } from "../fixtures/memory-candidate-store.js";
 import { memoryPolicy, verifiedMemoryInput } from "../fixtures/memory-candidate-fixture.js";
 import { withProvableExclusion } from "../fixtures/provable-exclusion.js";
+import { TASK30_PROVIDER_SHA, task30Python, task30Sqlite, task30Wheel } from "../fixtures/task30-provider-runtime.js";
 import { localKey } from "../helpers.js";
 
-const PROVIDER_SHA = process.env["TASK30_PROVIDER_SHA"];
-const PROVIDER_WHEEL = process.env["TASK30_PROVIDER_WHEEL"];
-const PYTHON = process.env["TASK30_PROVIDER_PYTHON"];
 const PROVIDER_ID = "provider:task30:deletion-refusal";
 const JARVIS_KEY_ID = "jarvis:task30:deletion-refusal";
 const PROVIDER_KEY_ID = "provider:task30:deletion-refusal";
@@ -40,16 +38,12 @@ function key(seed: number) {
 function hash(domain: string, value: unknown): string {
   return `sha256:${createHash("sha256").update(domain).update(canonicalize(value)).digest("hex")}`;
 }
-function required<T>(value: T | undefined, code: string): T {
-  if (value === undefined) throw new Error(code);
-  return value;
-}
 describe("real-provider deletion terminal refusal", () => {
   it("ends a deletion the provider refused after one frame, including after restart", async () => {
-    const wheel = required(PROVIDER_WHEEL, "TASK30_PROVIDER_WHEEL_REQUIRED");
-    const python = required(PYTHON, "TASK30_PROVIDER_PYTHON_REQUIRED");
-    const providerSha = required(PROVIDER_SHA, "TASK30_PROVIDER_SHA_REQUIRED");
-    const sqliteCli = required(process.env["TASK30_SQLITE_CLI"], "TASK30_SQLITE_CLI_REQUIRED");
+    const wheel = process.env["TASK30_PROVIDER_WHEEL"] ?? task30Wheel();
+    const python = process.env["TASK30_PROVIDER_PYTHON"] ?? task30Python();
+    const providerSha = process.env["TASK30_PROVIDER_SHA"] ?? TASK30_PROVIDER_SHA;
+    const sqliteCli = task30Sqlite();
     expect(existsSync(wheel)).toBe(true);
     const root = mkdtempSync(join(tmpdir(), "task30-deletion-refusal-"));
     const site = join(root, "site");
