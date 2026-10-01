@@ -1,5 +1,10 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { request } from "undici";
 import { describe, expect, it } from "vitest";
 import { ApprovedCommandExecutor } from "../../src/approved-executor.js";
+import { createDashboardServer } from "../../src/dashboard/server.js";
+import { OwnerInbox } from "../../src/owner-inbox.js";
 import { ControlPlane, signCommandApproval } from "../../src/control-plane.js";
 import { carryNonSensitiveConfirm } from "../../src/memory-confirm-carry.js";
 import { MemoryCandidateDispatchSpool } from "../../src/memory-candidate-dispatch-spool.js";
@@ -12,7 +17,7 @@ import { MemoryCandidateStore } from "../../src/memory-candidate-store.js";
 import { localKey } from "../helpers.js";
 import { join } from "node:path";
 
-async function ready(): Promise<{ fixture: OutboxFixture; confirmId: string; signer: ControlReceiptSigner }> {
+async function ready(approve = true): Promise<{ fixture: OutboxFixture; confirmId: string; signer: ControlReceiptSigner; commandDigest: string }> {
   const fixture = await outboxFixture();
   const roots = {
     review: join(fixture.database.root, "candidate-review"),
@@ -43,7 +48,7 @@ async function ready(): Promise<{ fixture: OutboxFixture; confirmId: string; sig
     reversible: false, requested_by: "principal:owner", requested_at: OUTBOX_NOW.toISOString(),
     expires_at: "2026-08-31T03:45:00.000Z", nonce: `nonce:${confirmId}`,
   }, OUTBOX_NOW);
-  control.decide(signCommandApproval({
+  if (approve) control.decide(signCommandApproval({
     schema_version: 1, receipt_id: "confirm-receipt", request_id: confirmId, decision: "approve",
     command_digest: staged.command_digest, signer_principal_id: "principal:owner",
     authenticated_session_id: "owner-session", key_id: "decision-test", algorithm: "Ed25519",
@@ -51,7 +56,7 @@ async function ready(): Promise<{ fixture: OutboxFixture; confirmId: string; sig
     expires_at: staged.expires_at, nonce: "confirm-receipt-nonce", max_uses: 1, status: "issued",
   }, localKey(fixture.database.authority)), OUTBOX_NOW);
   return {
-    fixture, confirmId,
+    fixture, confirmId, commandDigest: staged.command_digest,
     signer: new ControlReceiptSigner(localKey(fixture.database.authority), "decision-test", "principal:owner"),
   };
 }
@@ -136,5 +141,52 @@ describe("one owner approval carries a non-sensitive remember", () => {
       expect(executed.failure_code).toBe("APPROVED_COMMAND_FAILED");
       expect(fixture.writer.calls).toHaveLength(0);
     } finally { closeMemoryDatabase(fixture.database); }
+  });
+
+  it("drives inbox decide through the real executor to one bound write", async () => {
+    const { fixture, confirmId, signer, commandDigest } = await ready(false);
+    const root = mkdtempSync(join(tmpdir(), "carry-inbox-"));
+    writeFileSync(join(root, "index.html"), "<!doctype html>");
+    const inbox = new OwnerInbox(fixture.database.authority, signer, true, () => OUTBOX_NOW);
+    fixture.database.authority.db.prepare(
+      "INSERT INTO owner_inbox_credentials(credential_id, public_key, counter, created_at) VALUES(?,?,?,?)",
+    ).run("test-pass", Buffer.from("pk"), 0, OUTBOX_NOW.toISOString());
+    const server = createDashboardServer({
+      db: fixture.database.authority, staticRoot: root, host: "127.0.0.1", port: 0, clock: () => OUTBOX_NOW,
+      ownerInbox: inbox,
+      assertionCheck: async () => ({ ok: true, newCounter: 1 }),
+      executorFactory: () => new ApprovedCommandExecutor(
+        fixture.database.authority, undefined, undefined, {}, () => OUTBOX_NOW, fixture.service,
+      ),
+    });
+    try {
+      const origin = `http://127.0.0.1:${server.address.port}`;
+      const session = await request(`${origin}/api/v1/session`);
+      const sessionBody = await session.body.json() as { csrf_token: string };
+      const cookie = String(session.headers["set-cookie"] ?? "").split(";")[0] ?? "";
+      const headers = {
+        origin, host: new URL(origin).host, "content-type": "application/json",
+        "x-jarvis-csrf": sessionBody.csrf_token, cookie,
+      };
+      const challenge = await request(`${origin}/api/v1/owner-inbox/challenge`, {
+        method: "POST", headers, body: JSON.stringify({
+          schema_version: 1, request_id: confirmId, decision: "approve", command_digest: commandDigest,
+        }),
+      });
+      const challengeBody = await challenge.body.json() as { challenge_id: string };
+      const decided = await request(`${origin}/api/v1/owner-inbox/decide`, {
+        method: "POST", headers, body: JSON.stringify({
+          schema_version: 1, request_id: confirmId, decision: "approve", command_digest: commandDigest,
+          challenge_id: challengeBody.challenge_id,
+          assertion: { id: "test-pass", clientDataJSON: "", authenticatorData: "", signature: "", userHandle: "" },
+        }),
+      });
+      expect(decided.statusCode).toBe(200);
+      expect(fixture.writer.calls).toHaveLength(1);
+      expect(fixture.writer.calls[0]?.candidate_digest).toBe(fixture.request.candidate_digest);
+    } finally {
+      server.close();
+      closeMemoryDatabase(fixture.database);
+    }
   });
 });
