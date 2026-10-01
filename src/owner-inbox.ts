@@ -56,7 +56,13 @@ export type OwnerInboxItem = Readonly<{
   needs_review: boolean;
   failure_code: string | null;
   batch_summary?: string;
-  batch_items?: readonly { action_kind: string; summary: string; payload_digest: string }[];
+  batch_items?: readonly {
+    action_kind: string;
+    summary: string;
+    payload_digest: string;
+    mail_to?: string;
+    mail_subject?: string;
+  }[];
 }>;
 
 const ACTION_SUMMARY: Readonly<Record<string, string>> = {
@@ -304,7 +310,7 @@ function itemOf(row: Row, expired: boolean): OwnerInboxItem {
 function externalDisplay(row: Row): {
   summary: string;
   batch_summary: string;
-  batch_items: { action_kind: string; summary: string; payload_digest: string }[];
+  batch_items: { action_kind: string; summary: string; payload_digest: string; mail_to?: string; mail_subject?: string }[];
 } | undefined {
   if (row.action !== "external.delegate" || row.args_json === undefined) return undefined;
   let parsed: unknown;
@@ -314,10 +320,19 @@ function externalDisplay(row: Row): {
   const batchSummary = typeof args.batch_summary === "string" ? args.batch_summary : "";
   const items = Array.isArray(args.items) ? args.items.flatMap(item => {
     if (typeof item !== "object" || item === null) return [];
-    const rowItem = item as { action_kind?: unknown; summary?: unknown; payload_digest?: unknown };
+    const rowItem = item as { action_kind?: unknown; summary?: unknown; payload_digest?: unknown; mail_to?: unknown; mail_subject?: unknown };
     if (typeof rowItem.action_kind !== "string" || typeof rowItem.summary !== "string" || typeof rowItem.payload_digest !== "string") return [];
-    return [{ action_kind: rowItem.action_kind, summary: rowItem.summary, payload_digest: rowItem.payload_digest }];
+    return [{
+      action_kind: rowItem.action_kind,
+      summary: rowItem.summary,
+      payload_digest: rowItem.payload_digest,
+      ...(typeof rowItem.mail_to === "string" ? { mail_to: rowItem.mail_to } : {}),
+      ...(typeof rowItem.mail_subject === "string" ? { mail_subject: rowItem.mail_subject } : {}),
+    }];
   }) : [];
-  const kinds = items.map(item => item.action_kind).join(", ") || "batch";
-  return { summary: `외부: ${kinds} — ${batchSummary}`, batch_summary: batchSummary, batch_items: items };
+  return {
+    summary: `윤비서 요청 · ${items.length}건 묶음 · 30분 내 승인`,
+    batch_summary: batchSummary,
+    batch_items: items,
+  };
 }

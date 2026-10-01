@@ -49,7 +49,7 @@ describe("external.delegate", () => {
     const staged = control.stage(stagedInput(), NOW);
     const inbox = new OwnerInbox(db, new ControlReceiptSigner(localKey(db), "decision-test", "test-operator"), true, () => NOW);
     const listed = inbox.list().find(item => item.request_id === staged.request_id);
-    expect(listed?.summary).toBe("외부: mail.send, payment — 두 건");
+    expect(listed?.summary).toBe("윤비서 요청 · 2건 묶음 · 30분 내 승인");
     expect(listed?.batch_items).toHaveLength(2);
     db.db.prepare("INSERT INTO owner_inbox_credentials(credential_id, public_key, counter, created_at) VALUES(?,?,?,?)")
       .run("cred-1", Buffer.from("pk"), 0, NOW.toISOString());

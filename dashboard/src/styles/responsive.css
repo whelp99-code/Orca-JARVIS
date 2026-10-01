@@ -32,6 +32,11 @@
   min-inline-size: 0;
 }
 
+.batch-list.expanded {
+  max-block-size: 22rem;
+  overflow: auto;
+}
+
 @media (max-width: 40rem) {
   .operational-shell,
   .operational-shell-main,
