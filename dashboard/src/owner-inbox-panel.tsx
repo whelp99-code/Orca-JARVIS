@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import { formatKst } from "./copy.js";
+import { actionLabel, formatKst } from "./copy.js";
 import { useSurface } from "./surface.js";
 
 type Item = Readonly<{
@@ -130,7 +130,7 @@ export function OwnerInboxPanel() {
             <li className="record" key={item.request_id}>
               <p className="record-title">{item.summary}</p>
               {item.expired ? <p className="record-meta">만료됨. 이 요청은 더 이상 승인할 수 없습니다.</p> : null}
-              <p className="record-meta">{item.action}</p>
+              <p className="record-meta">{actionLabel(item.action)}</p>
               <p className="record-meta"><time dateTime={item.expires_at}>유효 {formatKst(item.expires_at)}</time></p>
               <p className="record-meta">{item.command_digest}</p>
               <button type="button" disabled={item.expired || busyId === item.request_id} onClick={() => { void decide(item, "approve"); }}>승인</button>
