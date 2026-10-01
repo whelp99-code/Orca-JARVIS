@@ -30,7 +30,7 @@ export async function expiredRetryFlow(page: Page, testInfo: TestInfo): Promise<
     await capture(page, testInfo, "retry-replan-required");
     await control.getByRole("link", { name: "새 작업 제안" }).click();
     await expect(page).toHaveURL(`${origin}/proposals`);
-    await expect(page.getByRole("heading", { name: "New proposal" })).toBeVisible();
+    await expect(page.getByRole("heading", { name: "새 제안" })).toBeVisible();
     expect(changes()).toEqual(before);
 
     const session = await page.request.get(`${origin}/api/v1/session`);
