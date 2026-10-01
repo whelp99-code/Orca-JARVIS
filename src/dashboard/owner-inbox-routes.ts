@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { JarvisError, type AuthorityDb } from "../db.js";
-import { enrollOwnerPasskey, readEnrollmentChallenge, type EnrollmentCheck } from "../owner-inbox-enrollment.js";
+import { enrollOwnerPasskey, readEnrollmentChallenge, rejectEnrollmentOrigin, type EnrollmentCheck } from "../owner-inbox-enrollment.js";
 import { writeOwnerInboxPreflight } from "../owner-inbox-preflight.js";
 import { OwnerInbox, type AssertionCheck, type InboxAssertion, type OwnerInboxDecision } from "../owner-inbox.js";
 import { composeOwnerInbox } from "../remote-approval-compose.js";
@@ -46,8 +46,9 @@ export async function tryHandleOwnerInbox(input: Readonly<{
   if (input.path !== "/api/v1/owner-inbox" && method !== "POST") return methodError(input);
   const raw = method === "POST" ? await readBody(input.request) : Buffer.alloc(0);
   if (raw === undefined) return invalid(input);
-  const sessionId = admit(input, raw, method === "POST" ? "POST" : "GET");
-  if (sessionId === undefined) return coded(input, 401, DASHBOARD_ERROR_CODES.OWNER_INBOX_IDENTITY_REQUIRED);
+  const admitted = admit(input, raw, method === "POST" ? "POST" : "GET");
+  if (admitted === undefined) return coded(input, 401, DASHBOARD_ERROR_CODES.OWNER_INBOX_IDENTITY_REQUIRED);
+  const sessionId = admitted.id;
   const inbox = input.ownerInbox ?? composeOwnerInbox(input.db);
   try {
     if (method === "GET") {
@@ -59,8 +60,9 @@ export async function tryHandleOwnerInbox(input: Readonly<{
       return true;
     }
     const body = parseSecondBrainStrictJsonBytes(raw);
+    const ceremony = ceremonyOrigin(input, admitted);
     if (input.path.endsWith("/enroll")) {
-      const enrolled = await enrollFrom(input, body);
+      const enrolled = await enrollFrom(input, body, ceremony);
       writeDashboardJson(input.response, { status: 200, requestId: input.requestId, body: { schema_version: 1, ...enrolled } });
       return true;
     }
@@ -77,8 +79,8 @@ export async function tryHandleOwnerInbox(input: Readonly<{
       ...parsed,
       session_id: sessionId,
       check: input.assertionCheck ?? productionCheck,
-      origin: input.origin,
-      rpId: new URL(input.origin).hostname,
+      origin: ceremony.origin,
+      rpId: ceremony.rpId,
     });
     writeDashboardJson(input.response, { status: 200, requestId: input.requestId, body: { schema_version: 1, ...result } });
   } catch (error) {
@@ -117,13 +119,15 @@ const productionCheck: AssertionCheck = async (input) => {
   }
 };
 
+type Admission = { readonly id: string; readonly publicOrigin?: string };
+
 function admit(input: {
   request: IncomingMessage;
   origin: string;
   session: DashboardSessionStore;
   remoteApproval?: RemoteApprovalService;
   path: string;
-}, body: Buffer, method: "GET" | "POST"): string | undefined {
+}, body: Buffer, method: "GET" | "POST"): Admission | undefined {
   const csrf = header(input.request.headers[CSRF]);
   const sameOrigin = method === "GET"
     ? hasSameOriginReadOrigin(input.request, input.origin)
@@ -131,28 +135,39 @@ function admit(input: {
   const local = sameOrigin && sessionMatchesCsrf(input.session, csrf);
   const ingress = input.remoteApproval?.resolver(input.request, body) ?? null;
   if (local && ingress) return undefined;
-  if (local && csrf !== undefined) return `local:${createHash("sha256").update(csrf).digest("hex")}`;
-  if (ingress && ingress.request_method === method && ingress.canonical_path === input.path) return ingress.gateway_session_digest;
+  if (local && csrf !== undefined) return { id: `local:${createHash("sha256").update(csrf).digest("hex")}` };
+  if (ingress && ingress.request_method === method && ingress.canonical_path === input.path) {
+    return { id: ingress.gateway_session_digest, publicOrigin: ingress.public_origin };
+  }
   return undefined;
 }
 
-async function enrollFrom(input: {
+function ceremonyOrigin(input: {
   request: IncomingMessage;
   db: AuthorityDb;
   origin: string;
+  now?: Date;
+}, admitted: Admission): { readonly origin: string; readonly rpId: string } {
+  if (admitted.publicOrigin !== undefined) {
+    return { origin: admitted.publicOrigin, rpId: new URL(admitted.publicOrigin).hostname };
+  }
+  const expected = process.env.JARVIS_OWNER_INBOX_ORIGIN ?? input.origin;
+  const sent = header(input.request.headers.origin) ?? input.origin;
+  if (sent !== expected) rejectEnrollmentOrigin(input.db, input.now ?? new Date());
+  return { origin: expected, rpId: new URL(expected).hostname };
+}
+
+async function enrollFrom(input: {
+  db: AuthorityDb;
   enrollmentCheck?: EnrollmentCheck;
   now?: Date;
-}, body: unknown): Promise<{ credential_id: string } | EnrollmentOptions> {
+}, body: unknown, ceremony: { readonly origin: string; readonly rpId: string }): Promise<{ credential_id: string } | EnrollmentOptions> {
   if (!record(body) || body.schema_version !== 1 || typeof body.enrollment_code !== "string" || body.enrollment_code.length === 0) {
     throw new JarvisError("OWNER_INBOX_INVALID");
   }
-  const sent = header(input.request.headers.origin) ?? input.origin;
-  const expected = process.env.JARVIS_OWNER_INBOX_ORIGIN ?? input.origin;
-  if (sent !== expected) throw new JarvisError("OWNER_INBOX_ORIGIN_MISMATCH");
-  const rpId = new URL(expected).hostname;
   if (body.phase === "options") {
     const challenge = readEnrollmentChallenge(input.db, body.enrollment_code, input.now);
-    return registrationOptions(challenge, rpId);
+    return registrationOptions(challenge, ceremony.rpId);
   }
   if (!record(body.attestation)) throw new JarvisError("OWNER_INBOX_WEBAUTHN_REQUIRED");
   const attestation = body.attestation;
@@ -163,9 +178,9 @@ async function enrollFrom(input: {
       clientDataJSON: String(attestation.clientDataJSON ?? ""),
       attestationObject: String(attestation.attestationObject ?? ""),
     },
-    origin: sent,
-    expectedOrigin: expected,
-    rpId,
+    origin: ceremony.origin,
+    expectedOrigin: ceremony.origin,
+    rpId: ceremony.rpId,
     check: input.enrollmentCheck,
     now: input.now,
   });

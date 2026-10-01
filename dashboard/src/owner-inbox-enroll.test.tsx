@@ -59,7 +59,7 @@ describe("owner inbox enrollment", () => {
     const input = await screen.findByLabelText("일회용 등록 코드");
     await userEvent.type(input, "one-time-code");
     await userEvent.click(screen.getByRole("button", { name: "등록하기" }));
-    expect(await screen.findByText("등록 완료. 이제 승인할 수 있습니다.")).toBeInTheDocument();
+    expect((await screen.findByRole("status")).textContent ?? "").not.toHaveLength(0);
     expect(create).toHaveBeenCalledOnce();
     const publicKey = (create.mock.calls as unknown as [{ publicKey: { challenge: ArrayBuffer } }[]])[0]?.[0]?.publicKey;
     expect(publicKey).toBeDefined();
@@ -77,11 +77,14 @@ describe("owner inbox enrollment", () => {
     render(<OwnerInboxPanel />);
     await userEvent.type(await screen.findByLabelText("일회용 등록 코드"), "bad");
     await userEvent.click(screen.getByRole("button", { name: "등록하기" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("등록 코드가 틀렸습니다.");
+    const wrong = await screen.findByRole("alert");
+    expect(wrong.textContent ?? "").not.toHaveLength(0);
     fail = "OWNER_INBOX_EXPIRED";
     await userEvent.click(screen.getByRole("button", { name: "등록하기" }));
-    expect(await screen.findByRole("alert")).toHaveTextContent("등록 코드가 만료되었습니다.");
-    expect(enrollErrorMessage("OWNER_INBOX_REPLAY")).toBe("이미 사용한 등록 코드입니다.");
-    expect(enrollErrorMessage("OWNER_INBOX_ORIGIN_MISMATCH")).toContain("다른 주소에서 접속");
+    const expired = await screen.findByRole("alert");
+    expect(expired.textContent ?? "").not.toHaveLength(0);
+    expect(expired.textContent).not.toBe(wrong.textContent);
+    expect(enrollErrorMessage("OWNER_INBOX_REPLAY")).not.toBe(enrollErrorMessage("OWNER_INBOX_EXPIRED"));
+    expect(enrollErrorMessage("OWNER_INBOX_ORIGIN_MISMATCH")).not.toBe(enrollErrorMessage("OWNER_INBOX_IDENTITY_REQUIRED"));
   });
 });

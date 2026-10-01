@@ -97,6 +97,10 @@ function findCode(db: AuthorityDb, code: string): { used_at: string | null; expi
   ).get(sha(code)) as { used_at: string | null; expires_at: string; challenge: string } | undefined;
 }
 
+export function rejectEnrollmentOrigin(db: AuthorityDb, now = new Date()): never {
+  return fail(db, "OWNER_INBOX_ORIGIN_MISMATCH", now);
+}
+
 function fail(db: AuthorityDb, code: string, now: Date): never {
   audit(db, "failure", code, now);
   throw new JarvisError(code);

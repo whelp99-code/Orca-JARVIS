@@ -184,6 +184,10 @@ describe("owner inbox routes", () => {
     delete process.env.JARVIS_OWNER_INBOX_ORIGIN;
     expect(origin.statusCode).toBe(401);
     expect(await origin.body.json()).toMatchObject({ error: { code: "OWNER_INBOX_ORIGIN_MISMATCH" } });
+    const originAudits = live.db.db.prepare(
+      "SELECT COUNT(*) AS n FROM audit_facts WHERE fact_type='owner_inbox_attempt' AND payload_json LIKE '%OWNER_INBOX_ORIGIN_MISMATCH%'",
+    ).get() as { n: number };
+    expect(originAudits.n).toBeGreaterThan(0);
     live.server.close();
     live.db.close();
   });
