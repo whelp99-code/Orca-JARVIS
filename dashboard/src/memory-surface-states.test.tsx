@@ -21,7 +21,7 @@ const ready: MemorySnapshot = { state: "ready", status: { schema_version: 1, res
 describe("MemorySearch provider states", () => {
   it("never presents an offline provider as an empty result", () => {
     render(<MemorySearch result={search("offline", ["offline"])} onSearch={async () => {}} onSelect={() => {}} />);
-    expect(screen.queryByText("No visible memory records")).not.toBeInTheDocument();
+    expect(screen.queryByText("보이는 기억이 없습니다")).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(/provider offline/i);
   });
 
@@ -37,7 +37,7 @@ describe("MemorySearch provider states", () => {
 
   it("keeps the plain empty state for a genuinely empty current read", () => {
     render(<MemorySearch result={search("ready")} onSearch={async () => {}} onSelect={() => {}} />);
-    expect(screen.getByText("No visible memory records")).toBeVisible();
+    expect(screen.getByText("보이는 기억이 없습니다")).toBeVisible();
   });
 });
 
@@ -50,7 +50,7 @@ describe("panel load states", () => {
       <MemoryCandidates value={undefined} pending={false} client={client} enabled={false}
         onReview={async () => {}} onChanged={() => {}} />
       <MemoryEffects value={undefined} pending={false} /></>);
-    expect(screen.queryByText("No unresolved conflicts")).not.toBeInTheDocument();
+    expect(screen.queryByText("풀리지 않은 충돌이 없습니다")).not.toBeInTheDocument();
     expect(screen.queryByText("No reviewable candidates")).not.toBeInTheDocument();
     expect(screen.queryByText(/No active/)).not.toBeInTheDocument();
     expect(screen.getAllByText(/Not loaded/)).toHaveLength(3);
@@ -62,12 +62,12 @@ describe("panel load states", () => {
   });
   it("never presents an offline conflicts read as no conflicts", () => {
     render(<MemoryConflicts value={conflicts("offline")} pending={false} />);
-    expect(screen.queryByText("No unresolved conflicts")).not.toBeInTheDocument();
+    expect(screen.queryByText("풀리지 않은 충돌이 없습니다")).not.toBeInTheDocument();
     expect(screen.getByRole("status")).toHaveTextContent(/provider offline/i);
   });
   it("keeps the plain empty state for a current read with no conflicts", () => {
     render(<MemoryConflicts value={conflicts("no_data")} pending={false} />);
-    expect(screen.getByText("No unresolved conflicts")).toBeVisible();
+    expect(screen.getByText("풀리지 않은 충돌이 없습니다")).toBeVisible();
   });
 });
 

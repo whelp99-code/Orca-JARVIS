@@ -25,14 +25,14 @@ export function MemoryCandidates({ value, pending, review, reviewMessage, client
     finally { inFlight.current = false; if (mounted.current) setBusy(false); }
   }
   return <section className="panel" aria-labelledby="memory-candidates-heading"><header className="panel-header">
-    <h2 id="memory-candidates-heading">Candidates</h2></header><div className="panel-body">
+    <h2 id="memory-candidates-heading">후보</h2></header><div className="panel-body">
     <p role="status">{message || reviewMessage}</p>
     {message && <a href="/approvals">Open Approvals</a>}
     {value === undefined ? <MemoryPanelUnloaded pending={pending} />
-      : value.items.length === 0 ? <p className="empty-state">No reviewable candidates</p>
+      : value.items.length === 0 ? <p className="empty-state">확인할 후보가 없습니다</p>
       : <ul className="record-list">{value.items.map(item => <li className="record" key={item.candidate_revision}>
         <strong>{item.kind}</strong><span>{item.operation} / {item.sensitivity}</span>
-        <small>{item.kind === "inference" ? "Owner confirmation required" : item.reason} / {item.retention.days} days</small>
+        <small>{item.kind === "inference" ? "소유자 확인이 필요합니다" : item.reason} / {item.retention.days} days</small>
         {item.actions.includes("inspect") && <button type="button" disabled={busy || !enabled}
           onClick={() => { void onReview(item.candidate_id); }}>Review candidate</button>}
         {item.actions.includes("stage_dispatch") && <button type="button" disabled={busy || !enabled}

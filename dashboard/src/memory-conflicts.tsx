@@ -8,7 +8,7 @@ const STATE_COPY: Readonly<Record<string, string>> = {
 };
 export function MemoryConflicts({ value, pending }: Readonly<{ value?: ConflictPage; pending: boolean }>) {
   return <section className="panel" aria-labelledby="memory-conflicts-heading">
-    <header className="panel-header"><h2 id="memory-conflicts-heading">Conflicts</h2></header>
+    <header className="panel-header"><h2 id="memory-conflicts-heading">충돌</h2></header>
     <div className="panel-body"><ConflictBody value={value} pending={pending} /></div>
   </section>;
 }
@@ -17,7 +17,7 @@ function ConflictBody({ value, pending }: Readonly<{ value?: ConflictPage; pendi
   const copy = STATE_COPY[memoryResourceState(value.state)];
   if (copy !== undefined) return <p className="memory-result-state" role="status"
     data-result-state={memoryResourceState(value.state)}>{copy}</p>;
-  if (value.items.length === 0) return <p className="empty-state">No unresolved conflicts</p>;
+  if (value.items.length === 0) return <p className="empty-state">풀리지 않은 충돌이 없습니다</p>;
   return <ul className="conflict-list">{value.items.map(item => <li key={item.conflict_revision}>
     <strong>{item.subject}</strong><span className="state-label">{item.state}</span>
     <ol aria-label="Conflict sides">{item.sides.map((side, index) => <li

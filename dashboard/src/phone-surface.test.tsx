@@ -142,6 +142,6 @@ describe("phone surface", () => {
     expect(screen.queryByRole("textbox", { name: "Replacement" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Candidates" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Effects and privacy receipts" })).not.toBeInTheDocument();
-    expect(within(screen.getByRole("region", { name: "Detail" })).queryByRole("button")).not.toBeInTheDocument();
+    expect(within(screen.getByRole("region", { name: "내용" })).queryByRole("button")).not.toBeInTheDocument();
   });
 });

@@ -21,7 +21,7 @@ export function MemorySearch({ result, onSearch, onSelect }: Readonly<{ result?:
       <div className="memory-form-row"><input id="memory-query" autoComplete="off" value={query}
         onChange={event => setQuery(event.currentTarget.value)} required maxLength={512} />
       <button type="submit" disabled={searching} aria-busy={searching}>{searching ? "검색 중" : "기억 검색"}</button></div></form>
-      {result === undefined ? <p className="empty-state">Search uses bounded cited records.</p> : <MemoryResults result={result} onSelect={onSelect} />}
+      {result === undefined ? <p className="empty-state">검색은 출처가 있는 기록만 봅니다.</p> : <MemoryResults result={result} onSelect={onSelect} />}
     </div></section>;
 }
 
@@ -33,7 +33,7 @@ function MemoryResults({ result, onSelect }: Readonly<{ result: MemorySearchResu
       return <p className="memory-result-state" role="status" data-result-state={state}>{STATE_COPY[state]}</p>;
     case "ready": case "stale": case "no_data": {
       if (result.items.length === 0) return <p className="empty-state" data-result-state={state}>
-        {withheld ? "Matching records are withheld by owner privacy decisions." : "No visible memory records"}</p>;
+        {withheld ? "Matching records are withheld by owner privacy decisions." : "보이는 기억이 없습니다"}</p>;
       return <>
         {state === "stale" && <p className="memory-result-state" role="status" data-result-state={state}>{STATE_COPY.stale}</p>}
         {result.truncated && <p className="memory-result-state">More records match than this bounded view shows.</p>}

@@ -70,6 +70,7 @@ export function OperationalShell({ connectionState, children }: OperationalShell
           <a href="/NOTICE-ARGO.txt">
             Argo Workflows attribution, revision {ARGO_REVISION}
           </a>
+          <span>빌드 {import.meta.env.VITE_JARVIS_SHA ?? "unknown"}</span>
         </div>
       </footer>
     </div>

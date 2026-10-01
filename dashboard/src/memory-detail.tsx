@@ -22,8 +22,8 @@ export function MemoryDetail({ record, client, enabled, onOutcome }: Readonly<{ 
   const phone = useSurface() === "phone";
   useEffect(() => { mounted.current = true; return () => { mounted.current = false; }; }, []);
   if (record === undefined) return <section className="panel" aria-labelledby="memory-detail-heading">
-    <header className="panel-header"><h2 id="memory-detail-heading">Detail</h2></header>
-    <div className="panel-body"><p className="empty-state">Select a current record.</p></div></section>;
+    <header className="panel-header"><h2 id="memory-detail-heading">내용</h2></header>
+    <div className="panel-body"><p className="empty-state">기록을 고르세요.</p></div></section>;
   const superseded = record.history_state === "superseded";
   const can = (action: Action): boolean => enabled && record.actions.includes(action);
   async function stage(action: Action, command: () => Promise<unknown>): Promise<void> {
@@ -41,7 +41,7 @@ export function MemoryDetail({ record, client, enabled, onOutcome }: Readonly<{ 
   const correct = (event: FormEvent): void => { event.preventDefault();
     void stage("correct", () => client.correct(record.record_token, record.record_revision, replacement)); };
   return <section className="panel" aria-labelledby="memory-detail-heading"><header className="panel-header">
-    <h2 id="memory-detail-heading">Detail</h2></header><div className="panel-body memory-detail" aria-busy={busy !== undefined}>
+    <h2 id="memory-detail-heading">내용</h2></header><div className="panel-body memory-detail" aria-busy={busy !== undefined}>
     <h3>{record.title}</h3>
     <p>{superseded ? "An approved correction superseded this record. Its previous content is no longer shown."
       : record.excerpt ?? "Sensitive value remains redacted."}</p>
