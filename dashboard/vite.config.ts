@@ -11,6 +11,7 @@ export default defineConfig({
     // The phone gateway serves only manifest-listed assets (src/phone-gateway-http.ts loadAssetNames).
     manifest: "manifest.json",
   },
+  envPrefix: ["VITE_"],
   test: {
     environment: "jsdom",
     globals: true,

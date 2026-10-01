@@ -7,6 +7,7 @@ import type {
   TeamWorkType,
 } from "../../src/team-proposal.js";
 import { DashboardApiError } from "./api.js";
+import { copy } from "./copy.js";
 import { TaskTemplateProposal } from "./task-template-proposal.js";
 import {
   createProposalMutationClient,
@@ -126,7 +127,7 @@ export function ProposalPage({
   return (
     <div className="page-frame dashboard-main proposal-page">
       <header className="proposal-heading">
-        <h1>New proposal</h1>
+        <h1>{copy.pages.proposal}</h1>
         <p>Preview a bounded team, then stage its receipt-bound task request.</p>
         <button type="button" disabled={!client.compileTemplate || preview.kind === "loading" || stage.kind === "loading"}
           onClick={() => setTemplateMode(true)}>템플릿으로 시작</button>

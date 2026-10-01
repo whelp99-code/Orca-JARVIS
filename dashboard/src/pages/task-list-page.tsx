@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import type { TaskListResponse } from "../../../src/dashboard/read-model.js";
+import { copy } from "../copy.js";
 import type { ResourceState } from "../store.js";
 
 type TaskNavigationProps = Readonly<{
@@ -22,26 +23,26 @@ export function TaskListPage(props: TaskListPageProps) {
       case "idle":
       case "loading":
         return (
-          <section className="page-frame dashboard-main" aria-label="Tasks" aria-busy="true">
-            <h1>Tasks</h1>
+          <section className="page-frame dashboard-main" aria-label={copy.pages.tasks} aria-busy="true">
+            <h1>{copy.pages.tasks}</h1>
             <p className="empty-state">Loading tasks</p>
           </section>
         );
       case "retrying":
         return (
-          <section className="page-frame dashboard-main" aria-label="Tasks" aria-busy="true">
-            <h1>Tasks</h1>
-            <p className="empty-state">Retrying tasks</p>
+          <section className="page-frame dashboard-main" aria-label={copy.pages.tasks} aria-busy="true">
+            <h1>{copy.pages.tasks}</h1>
+            <p className="empty-state">작업을 다시 불러오는 중</p>
           </section>
         );
       case "error":
         return (
-          <section className="page-frame dashboard-main" aria-label="Tasks">
-            <h1>Tasks</h1>
+          <section className="page-frame dashboard-main" aria-label={copy.pages.tasks}>
+            <h1>{copy.pages.tasks}</h1>
             <div role="alert" className="panel">
               <p className="empty-state">{props.state.error.message}</p>
               {props.onRetry === undefined ? null : (
-                <button type="button" onClick={props.onRetry}>Retry</button>
+                <button type="button" onClick={props.onRetry}>{copy.retry}</button>
               )}
             </div>
           </section>
@@ -60,8 +61,8 @@ export function TaskListPage(props: TaskListPageProps) {
   }
 
   return (
-    <section className="page-frame dashboard-main" aria-label="Tasks">
-      <h1>Tasks</h1>
+    <section className="page-frame dashboard-main" aria-label={copy.pages.tasks}>
+      <h1>{copy.pages.tasks}</h1>
       {response.items.length === 0 ? (
         <p className="empty-state" role="status">No tasks</p>
       ) : (

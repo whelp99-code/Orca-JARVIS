@@ -20,7 +20,7 @@ const NAV_ITEMS = [
   { label: copy.nav.security, to: "/security" },
 ] as const;
 /** The routes the phone gateway serves; every other path is a gateway 404. */
-const PHONE_NAV_ITEMS = NAV_ITEMS.filter(item => item.to === "/" || item.to === "/memory" || item.to === "/security");
+const PHONE_NAV_ITEMS = NAV_ITEMS.filter(item => item.to === "/" || item.to === "/memory" || item.to === "/approvals" || item.to === "/security");
 
 const CONNECTION_LABELS = {
   connecting: "연결 중",
@@ -67,9 +67,8 @@ export function OperationalShell({ connectionState, children }: OperationalShell
       </main>
       <footer className="shell-footer">
         <div className="page-frame shell-footer-inner">
-          <a href="/NOTICE-ARGO.txt">
-            Argo Workflows attribution, revision {ARGO_REVISION}
-          </a>
+          <span className="build-sha">빌드 {import.meta.env.VITE_JARVIS_SHA ?? "unknown"}</span>
+          <a href="/NOTICE-ARGO.txt">고지</a>
         </div>
       </footer>
     </div>

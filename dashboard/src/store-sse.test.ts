@@ -24,7 +24,8 @@ describe("dashboard store SSE refetch", () => {
     const loading = onceState(current.store, (snapshot) => snapshot.overview.status === "loading");
     current.store.start();
     await loading;
-    expect(current.store.getSnapshot().connectionState).toBe("connecting");
+    // Session success marks the shell live before the event stream opens (f330987).
+    expect(current.store.getSnapshot().connectionState).toBe("live");
     expect(current.lifecycle.sourceCreated).toBe(false);
     current.client.data.release?.(current.client.data.overview);
     await current.opened;
