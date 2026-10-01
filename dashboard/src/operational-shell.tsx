@@ -29,8 +29,6 @@ const CONNECTION_LABELS = {
   offline: copy.disconnected,
 } as const satisfies Record<ConnectionState, string>;
 
-const ARGO_REVISION = "de874c1254da8fe170ad7de9c82f11c626349847";
-
 export function OperationalShell({ connectionState, children }: OperationalShellProps) {
   const phone = useSurface() === "phone";
   const items = phone ? PHONE_NAV_ITEMS : NAV_ITEMS;
