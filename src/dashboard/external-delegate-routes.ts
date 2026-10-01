@@ -173,13 +173,6 @@ function consume(db: AuthorityDb, requestId: string, body: Record<string, unknow
   const receiptId = typeof (JSON.parse(receipt.payload_json) as { receipt_id?: string }).receipt_id === "string"
     ? (JSON.parse(receipt.payload_json) as { receipt_id: string }).receipt_id : "";
   if (receiptId.length === 0) throw new DelegateError(404, "DELEGATE_NOT_FOUND");
-  db.db.exec(`CREATE TABLE IF NOT EXISTS external_delegate_item_uses (
-    receipt_id TEXT NOT NULL,
-    item_digest TEXT NOT NULL,
-    request_id TEXT NOT NULL,
-    used_at TEXT NOT NULL,
-    PRIMARY KEY (receipt_id, item_digest)
-  )`);
   try {
     db.db.prepare("INSERT INTO external_delegate_item_uses(receipt_id, item_digest, request_id, used_at) VALUES(?,?,?,?)").run(
       receiptId, digest, requestId, now.toISOString(),
