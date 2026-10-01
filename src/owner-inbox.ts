@@ -51,6 +51,8 @@ export type OwnerInboxItem = Readonly<{
   requested_at: string;
   expired: boolean;
   manual_wait: boolean;
+  needs_review: boolean;
+  failure_code: string | null;
 }>;
 
 const ACTION_SUMMARY: Readonly<Record<string, string>> = {
@@ -66,6 +68,7 @@ type Row = Readonly<{
   expires_at: string;
   requested_at: string;
   state: string;
+  failure_code: string | null;
 }>;
 
 export class OwnerInbox {
@@ -79,9 +82,9 @@ export class OwnerInbox {
   list(): readonly OwnerInboxItem[] {
     const now = this.now().getTime();
     const rows = this.db.db.prepare(
-      `SELECT request_id, action, command_digest, expires_at, requested_at, state
+      `SELECT request_id, action, command_digest, expires_at, requested_at, state, failure_code
        FROM control_command_requests
-       WHERE state = 'pending' OR state = 'approved'
+       WHERE state IN ('pending', 'approved', 'failed', 'uncertain')
        ORDER BY requested_at, request_id`,
     ).all() as Row[];
     return rows.filter(row => visible(row)).map(row => itemOf(row, Date.parse(row.expires_at) <= now));
@@ -268,6 +271,7 @@ function isAllowed(action: string): boolean {
 function visible(row: Row): boolean {
   if (!isAllowed(row.action)) return false;
   if (row.state === "pending") return true;
+  if (row.state === "failed" || row.state === "uncertain") return true;
   return row.state === "approved" && !approvedActionHasExecutor(row.action);
 }
 
@@ -283,5 +287,7 @@ function itemOf(row: Row, expired: boolean): OwnerInboxItem {
     requested_at: row.requested_at,
     expired,
     manual_wait: manual,
+    needs_review: row.state === "failed" || row.state === "uncertain",
+    failure_code: row.state === "failed" || row.state === "uncertain" ? row.failure_code : null,
   };
 }

@@ -63,6 +63,10 @@ describe("owner inbox", () => {
       carried: { carried: false, reason: "not_applicable" },
     });
     expect(inbox.list().map(item => item.request_id)).toEqual(["req-old", "req-other"]);
+    db.db.prepare("UPDATE control_command_requests SET state='failed', failure_code='RUNBOOK_FAILED' WHERE request_id='req-confirm'").run();
+    const failed = inbox.list().find(item => item.request_id === "req-confirm");
+    expect(failed?.needs_review).toBe(true);
+    expect(failed?.failure_code).toBe("RUNBOOK_FAILED");
     const audit = db.db.prepare("SELECT fact_type, subject_id FROM audit_facts WHERE subject_id=?").get("req-confirm") as {
       fact_type: string;
     };
