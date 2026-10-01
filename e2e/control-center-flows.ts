@@ -102,11 +102,18 @@ export async function proposalStageFlow(page: Page, testInfo: TestInfo, baseURL:
   await capture(page, testInfo, "proposal-stage");
 }
 
+async function openApprovalTools(page: Page): Promise<void> {
+  const tools = page.locator("details.admin-tools");
+  if (await tools.count() === 0) return;
+  if (await tools.getAttribute("open") === null) await tools.locator("summary").click();
+}
+
 export async function invalidReceiptFlow(page: Page, testInfo: TestInfo, baseURL: string): Promise<void> {
   const before = fingerprintFor(baseURL);
   const cardFor = async (): Promise<ReturnType<Page["locator"]>> => {
     await page.goto("/approvals");
     await waitLive(page);
+    await openApprovalTools(page);
     return page.locator("article.authority-controls").filter({ hasText: IDS.pendingInvalid });
   };
   const malformed = await cardFor();
@@ -125,13 +132,14 @@ export async function invalidReceiptFlow(page: Page, testInfo: TestInfo, baseURL
 export async function approveExecuteFlow(page: Page, baseURL: string): Promise<void> {
   await page.goto("/approvals");
   await waitLive(page);
+  await openApprovalTools(page);
   const card = page.locator("article.authority-controls").filter({ hasText: IDS.pendingApprove });
   await card.getByLabel("서명 영수증").fill(signedReceiptFor(baseURL, IDS.pendingApprove, "approve"));
   await card.getByRole("button", { name: "서명 제출" }).click();
-  await expect(card.getByText("approved", { exact: true })).toBeVisible();
+  await expect(card.getByText("승인됨", { exact: true })).toBeVisible();
   const executed = page.waitForResponse(response => response.request().method() === "POST"
     && response.url().endsWith(`/api/v1/control/requests/${IDS.pendingApprove}/execute`));
-  await card.getByRole("button", { name: "Execute approved request" }).click();
+  await card.getByRole("button", { name: "승인된 요청 실행" }).click();
   const response = await executed;
   expect(response.status()).toBe(200);
   expect(await response.json()).toMatchObject({ execution: { request_id: IDS.pendingApprove, state: "completed" } });
@@ -141,6 +149,7 @@ export async function approveExecuteFlow(page: Page, baseURL: string): Promise<v
 export async function rejectFlow(page: Page, baseURL: string): Promise<void> {
   await page.goto("/approvals");
   await waitLive(page);
+  await openApprovalTools(page);
   const card = page.locator("article.authority-controls").filter({ hasText: IDS.pendingReject });
   await card.getByLabel("서명 영수증").fill(signedReceiptFor(baseURL, IDS.pendingReject, "reject"));
   const rejected = page.waitForResponse(response => response.request().method() === "POST"
@@ -165,17 +174,19 @@ export async function cancelFlow(page: Page): Promise<void> {
   await expect(page.getByText("workflow.cancel").first()).toBeVisible();
   await page.goto("/approvals");
   await waitLive(page);
+  await openApprovalTools(page);
   const card = page.locator("article.authority-controls").filter({ hasText: "workflow.cancel" });
-  await expect(card.getByText("pending", { exact: true })).toBeVisible();
+  await expect(card.getByText("대기", { exact: true })).toBeVisible();
 }
 
 export async function retryFlow(page: Page): Promise<void> {
   await page.goto("/approvals");
   await waitLive(page);
+  await openApprovalTools(page);
   const card = page.locator("article.authority-controls").filter({ hasText: IDS.failedRetry });
-  await card.getByRole("button", { name: "Retry failed request" }).click();
+  await card.getByRole("button", { name: "실패한 요청 다시 시도" }).click();
   await expect(card.getByRole("heading", { name: "Pending request" })).toBeVisible();
-  await expect(card.locator("[aria-label='Pending request']").getByText("pending", { exact: true })).toBeVisible();
+  await expect(card.locator("[aria-label='Pending request']").getByText("대기", { exact: true })).toBeVisible();
 }
 
 export async function qualityFlow(page: Page, errors: readonly string[]): Promise<void> {

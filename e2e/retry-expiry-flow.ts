@@ -20,6 +20,8 @@ export async function expiredRetryFlow(page: Page, testInfo: TestInfo): Promise<
   try {
     await page.goto(`${origin}/approvals`);
     await waitLive(page);
+    const tools = page.locator("details.admin-tools");
+    if (await tools.count() > 0 && await tools.getAttribute("open") === null) await tools.locator("summary").click();
     const control = page.locator("article.authority-controls").filter({ hasText: IDS.failedRetry });
     await expect(control.getByRole("button", { name: "Retry failed request" })).toHaveCount(0);
     await expect(control.getByRole("status")).toContainText("새 승인을 받아주세요");
