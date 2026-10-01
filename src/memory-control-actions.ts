@@ -103,7 +103,15 @@ export function memoryOutboxDispatch(input: RuntimeControlActionInput): void {
     // the shipped shape and stays authoritative.
     const spooled = Object.hasOwn(input.args, "dispatch_spool_digest");
     requireOnly(input.args, ["schema_version", spooled ? "dispatch_spool_digest" : "request",
-      "expected_artifact"]);
+      "expected_artifact", "confirm_binding"]);
+    if (input.args.confirm_binding !== undefined) {
+      const binding = requireRecord(input.args, "confirm_binding");
+      requireOnly(binding, ["confirm_request_id", "confirm_receipt_id", "confirm_command_digest", "approved_candidate_digest"]);
+      if (!digest.test(String(binding.confirm_command_digest)) || !digest.test(String(binding.approved_candidate_digest))
+        || binding.approved_candidate_digest !== input.target.candidate_digest) {
+        throw new JarvisError("CONTROL_ARGS_MISMATCH");
+      }
+    }
     const expected = requireRecord(input.args, "expected_artifact");
     requireOnly(expected, ["page_id", "sid", "source_digest"]);
     const bound = spooled

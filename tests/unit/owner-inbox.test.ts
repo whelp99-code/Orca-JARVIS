@@ -56,7 +56,10 @@ describe("owner inbox", () => {
       origin: "http://127.0.0.1:4173", rpId: "127.0.0.1",
       check: async () => ({ ok: true, newCounter: 1 }),
     });
-    expect(decided).toEqual({ request_id: "req-confirm", state: "approved" });
+    expect(decided).toEqual({
+      request_id: "req-confirm", state: "approved",
+      carried: { carried: false, reason: "not_applicable" },
+    });
     expect(inbox.list().map(item => item.request_id)).toEqual(["req-old"]);
     const audit = db.db.prepare("SELECT fact_type, subject_id FROM audit_facts WHERE subject_id=?").get("req-confirm") as {
       fact_type: string;

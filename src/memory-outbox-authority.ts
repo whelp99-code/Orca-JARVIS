@@ -5,6 +5,7 @@ import { JarvisError } from "./db.js";
 import { hasSecondBrainWriteAuthority } from "./second-brain-write-authority.js";
 import type { MemoryOutboxActionV2 } from "./memory-outbox-types.js";
 import { memoryV1Hash } from "./memory-outbox-values.js";
+import { assertCarriedConfirmBinding } from "./memory-confirm-carry.js";
 
 export function requireMemoryOutboxAuthority(
   authority: AuthorityDb,
@@ -27,6 +28,7 @@ export function requireMemoryOutboxAuthority(
   if (providerPreflight && !hasSecondBrainWriteAuthority(authority, request, now)) {
     throw new JarvisError("MEMORY_OUTBOX_AUTHORITY_INVALID");
   }
+  assertCarriedConfirmBinding(authority, action.command.args, request.candidate_digest, now);
   const row = authority.db.prepare(
     `SELECT c.state,c.subject_digest,c.content_digest,c.purpose,c.expires_at,
       m.policy_sensitivity,m.retention_days,m.candidate_digest,m.classification_digest,

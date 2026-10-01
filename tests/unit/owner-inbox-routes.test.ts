@@ -27,7 +27,7 @@ function seed(db: Awaited<ReturnType<typeof initialized>>, id: string, action: s
   return digest;
 }
 
-async function boot(signerReady = true, keyId = "decision-test", enrollmentCheck?: (input: unknown) => Promise<{ ok: true; publicKey: Buffer; counter: number } | { ok: false }>) {
+async function boot(signerReady = true, keyId = "decision-test", enrollmentCheck?: (input: unknown) => Promise<{ ok: true; publicKey: Buffer; counter: number } | { ok: false }>, executed: string[] = []) {
   const db = await initialized();
   const root = mkdtempSync(join(tmpdir(), "owner-inbox-route-"));
   writeFileSync(join(root, "index.html"), "<!doctype html>");
@@ -37,12 +37,13 @@ async function boot(signerReady = true, keyId = "decision-test", enrollmentCheck
     assertionCheck: async (input) => input.assertion.id === "test-pass" && input.assertion.signature !== "bad"
       ? { ok: true, newCounter: 1 } : { ok: false },
     enrollmentCheck: enrollmentCheck as never,
+    executorFactory: () => ({ execute: async (id: string) => { executed.push(id); return { request_id: id, action: "memory.confirm", state: "completed", result: {} }; } }) as never,
   });
   const origin = `http://127.0.0.1:${server.address.port}`;
   const session = await request(`${origin}/api/v1/session`);
   const body = await session.body.json() as { csrf_token: string };
   const cookie = session.headers["set-cookie"];
-  return { db, server, origin, csrf: body.csrf_token, cookie: Array.isArray(cookie) ? cookie[0] ?? "" : String(cookie ?? "") };
+  return { db, server, origin, csrf: body.csrf_token, executed, cookie: Array.isArray(cookie) ? cookie[0] ?? "" : String(cookie ?? "") };
 }
 
 function headers(boot: { origin: string; csrf?: string; cookie?: string }, csrf = true): Record<string, string> {
@@ -109,6 +110,7 @@ describe("owner inbox routes", () => {
       assertion: { id: "test-pass", clientDataJSON: "", authenticatorData: "", signature: "", userHandle: "" },
     }) });
     expect(ok.statusCode).toBe(200);
+    expect(live.executed).toEqual(["req-confirm"]);
     const replay = await request(decide, { method: "POST", headers: headers(live), body: JSON.stringify({
       schema_version: 1, request_id: "req-confirm", decision: "approve", command_digest: digest, challenge_id: challengeBody.challenge_id,
       assertion: { id: "test-pass", clientDataJSON: "", authenticatorData: "", signature: "", userHandle: "" },

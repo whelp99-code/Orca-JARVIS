@@ -2,6 +2,7 @@ import { randomBytes, randomUUID, timingSafeEqual, createHash } from "node:crypt
 import { ControlPlane, type CommandApprovalReceipt } from "./control-plane.js";
 import { JarvisError, type AuthorityDb } from "./db.js";
 import type { ControlReceiptSigner } from "./remote-approval-signer.js";
+import { carryNonSensitiveConfirm, type ConfirmCarry } from "./memory-confirm-carry.js";
 
 /** Actions the owner inbox may sign. Anything else stays on its existing ceremony. */
 export const OWNER_INBOX_ACTIONS = [
@@ -114,7 +115,7 @@ export class OwnerInbox {
     check: AssertionCheck;
     origin: string;
     rpId: string;
-  }>): Promise<{ readonly request_id: string; readonly state: "approved" | "rejected" }> {
+  }>): Promise<{ readonly request_id: string; readonly state: "approved" | "rejected"; readonly carried?: ConfirmCarry }> {
     const fail = (code: string): never => {
       this.audit("failure", input.request_id, input.decision, input.command_digest, input.session_id, code);
       throw new JarvisError(code);
@@ -194,7 +195,14 @@ export class OwnerInbox {
       throw error;
     }
     this.audit("success", row.request_id, input.decision, row.command_digest, input.session_id, "ok");
-    return { request_id: row.request_id, state: input.decision === "approve" ? "approved" : "rejected" };
+    const state = input.decision === "approve" ? "approved" : "rejected";
+    if (state !== "approved" || row.action !== "memory.confirm") {
+      return { request_id: row.request_id, state };
+    }
+    const carried = carryNonSensitiveConfirm({
+      authority: this.db, requestId: row.request_id, now, signer: this.signer,
+    });
+    return { request_id: row.request_id, state, carried };
   }
 
   enroll(code: string, credential: Readonly<{ id: string; publicKey: Buffer; counter: number }>): void {
