@@ -47,6 +47,12 @@ function text(value: unknown, key: string, max: number): string {
   return value;
 }
 
+/** Caller-owned retry key. Never defaulted; reuse the same id when retrying. */
+function rememberRequestId(value: unknown): string {
+  if (typeof value !== "string" || !/^[0-9A-Za-z_-]{1,64}$/.test(value)) throw new HandsError("VALIDATION", "request_id");
+  return value;
+}
+
 export class HandsService {
   private readonly hits = new Map<string, Limit>();
   private readonly board: WorkboardStore;
@@ -105,6 +111,7 @@ export class HandsService {
       case "sb.remember": return { outcome: await this.sb.call("sb_remember", {
         title: text(input["title"], "title", 200),
         content: text(input["content"], "content", 8000),
+        request_id: rememberRequestId(input["request_id"]),
       }) };
       case "sb.search": return { outcome: await this.sb.call("sb_search", {
         query: text(input["query"], "query", 512),

@@ -30,6 +30,7 @@ const schemas: Record<HandsTool, z.ZodType> = {
     token: z.string().min(32),
     title: z.string().min(1).max(200),
     content: z.string().min(1).max(8000),
+    request_id: z.string().regex(/^[0-9A-Za-z_-]{1,64}$/),
   }).strict(),
   "sb.search": z.object({
     token: z.string().min(32),
@@ -63,7 +64,7 @@ export function createOmonyangHandsMcp(service: HandsService): McpServer {
   const server = new McpServer({ name: "jarvis-omonyang-hands", version: "1.0.0" });
   for (const tool of HANDS_TOOLS) {
     server.registerTool(MCP_TOOL_NAMES[tool], {
-      description: `${tool}. Approvals are external.delegate in the owner inbox. sb_remember outcome codes pass through.`,
+      description: `${tool}. Approvals are external.delegate in the owner inbox. sb_remember requires request_id; reuse the same id when retrying. Outcome codes pass through.`,
       inputSchema: schemas[tool],
       annotations: {
         readOnlyHint: tool.endsWith(".list") || tool.endsWith(".search") || tool.endsWith(".read") || tool === "jarvis.approval_status",

@@ -51,13 +51,13 @@ describe("omonyang hands", () => {
 
   it("passes sb_remember outcome codes through unchanged", async () => {
     const fx = await fixture();
-    const written = await fx.service.call("sb.remember", { title: "WRITTEN", content: "note" }, TOKEN);
+    const written = await fx.service.call("sb.remember", { title: "WRITTEN", content: "note", request_id: "code-written" }, TOKEN);
     expect(written.data["outcome"]).toEqual({ code: "WRITTEN", written: true, delivery: "written", inbox_path: "inbox/note.md" });
-    const none = await fx.service.call("sb.remember", { title: "NOTHING_WRITTEN", content: "note" }, TOKEN);
+    const none = await fx.service.call("sb.remember", { title: "NOTHING_WRITTEN", content: "note", request_id: "code-none" }, TOKEN);
     expect(none.data["outcome"]).toEqual({ code: "NOTHING_WRITTEN", written: false, delivery: "not_written", cause: "NOTHING_WRITTEN" });
-    const follow = await fx.service.call("sb.remember", { title: "WRITTEN_WITH_FOLLOWUP_ERROR", content: "note" }, TOKEN);
+    const follow = await fx.service.call("sb.remember", { title: "WRITTEN_WITH_FOLLOWUP_ERROR", content: "note", request_id: "code-follow" }, TOKEN);
     expect((follow.data["outcome"] as { code: string }).code).toBe("WRITTEN_WITH_FOLLOWUP_ERROR");
-    const unknown = await fx.service.call("sb.remember", { title: "WRITE_OUTCOME_UNKNOWN", content: "note" }, TOKEN);
+    const unknown = await fx.service.call("sb.remember", { title: "WRITE_OUTCOME_UNKNOWN", content: "note", request_id: "code-unknown" }, TOKEN);
     expect((unknown.data["outcome"] as { code: string }).code).toBe("WRITE_OUTCOME_UNKNOWN");
     const found = await fx.service.call("sb.search", { query: "receipt" }, TOKEN);
     expect(found.data["outcome"]).toEqual({ results: [{ page_id: "p1", title: "receipt" }] });
@@ -65,6 +65,13 @@ describe("omonyang hands", () => {
     expect(page.data["outcome"]).toEqual({ page_id: "p1", body: "from-sb" });
     const audits = fx.authority.db.prepare("SELECT COUNT(*) AS n FROM audit_facts WHERE fact_type='omonyang_hands_call'").get() as { n: number };
     expect(audits.n).toBe(6);
+    await expect(fx.service.call("sb.remember", { title: "note", content: "body" }, TOKEN)).rejects.toMatchObject({ code: "VALIDATION" });
+    const first = await fx.service.call("sb.remember", { title: "note", content: "body", request_id: "same-id" }, TOKEN);
+    const retry = await fx.service.call("sb.remember", { title: "note", content: "body", request_id: "same-id" }, TOKEN);
+    expect(first.data["outcome"]).toMatchObject({ page_id: "page-1", pages: 1 });
+    expect(retry.data["outcome"]).toEqual(first.data["outcome"]);
+    const other = await fx.service.call("sb.remember", { title: "note", content: "body", request_id: "other-id" }, TOKEN);
+    expect(other.data["outcome"]).toMatchObject({ page_id: "page-2", pages: 2 });
     fx.authority.close();
   });
 

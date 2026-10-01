@@ -3,6 +3,7 @@ import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js"
 import { z } from "zod";
 
 const server = new McpServer({ name: "sb-remember-fixture", version: "1.0.0" });
+const pages = new Map();
 const codes = {
   WRITTEN: { code: "WRITTEN", written: true, delivery: "written", inbox_path: "inbox/note.md" },
   NOTHING_WRITTEN: { code: "NOTHING_WRITTEN", written: false, delivery: "not_written", cause: "NOTHING_WRITTEN" },
@@ -11,10 +12,13 @@ const codes = {
 };
 
 server.registerTool("sb_remember", {
-  description: "fixture",
-  inputSchema: z.object({ title: z.string(), content: z.string() }).strict(),
+  description: "Reuse the same request_id when retrying. Omitting it is a new page.",
+  inputSchema: z.object({ title: z.string(), content: z.string(), request_id: z.string().optional() }).strict(),
 }, async (input) => {
-  const outcome = codes[input.title] ?? codes.WRITTEN;
+  if (codes[input.title]) return { content: [{ type: "text", text: JSON.stringify(codes[input.title]) }] };
+  const key = input.request_id ?? `omit-${pages.size + 1}`;
+  if (!pages.has(key)) pages.set(key, `page-${pages.size + 1}`);
+  const outcome = { code: "WRITTEN", written: true, page_id: pages.get(key), pages: pages.size };
   return { content: [{ type: "text", text: JSON.stringify(outcome) }] };
 });
 server.registerTool("sb_search", {
