@@ -1,11 +1,11 @@
 import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { StdioServerTransport } from "@modelcontextprotocol/sdk/server/stdio.js";
+import { AuthorityDb } from "./authority-db.js";
 import { loadAgentToken } from "./omonyang-hands/auth.js";
 import { HandsService } from "./omonyang-hands/hands.js";
 import { createOmonyangHandsMcp } from "./omonyang-hands/mcp.js";
-import { HandsStore } from "./omonyang-hands/store.js";
-import { FileVault } from "./omonyang-hands/vault.js";
+import { StdioSbMcp } from "./omonyang-hands/sb-client.js";
 
 let direct = false;
 try {
@@ -14,12 +14,18 @@ try {
 
 if (direct) {
   try {
-    if (process.argv.length !== 5) throw new Error("arguments");
-    const token = loadAgentToken(process.argv[2]!);
-    const store = new HandsStore(process.argv[3]!);
-    const vault = new FileVault(process.argv[4]!);
-    const bind = process.env["OMONYANG_HANDS_BIND"] ?? "stdio";
-    const service = new HandsService(token, store, vault, bind);
+    const dbPath = process.argv[2];
+    const tokenPath = process.argv[3];
+    const sbCommand = process.argv[4];
+    if (dbPath === undefined || tokenPath === undefined || sbCommand === undefined) throw new Error("arguments");
+    const authority = new AuthorityDb(dbPath);
+    await authority.migrate();
+    const service = new HandsService(
+      loadAgentToken(tokenPath),
+      authority,
+      new StdioSbMcp(sbCommand, process.argv.slice(5)),
+      process.env["OMONYANG_HANDS_BIND"] ?? "stdio",
+    );
     await createOmonyangHandsMcp(service).connect(new StdioServerTransport());
   } catch (error) {
     const code = error instanceof Error && "code" in error ? String(error.code) : "UNAVAILABLE";

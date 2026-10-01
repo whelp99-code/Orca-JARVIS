@@ -1,15 +1,20 @@
-import { randomUUID } from "node:crypto";
-import type { AuthorityDb } from "../authority-db.js";
+import { ControlPlane, type ControlCommandRequestInput } from "../control-plane.js";
+import { JarvisError, type AuthorityDb } from "../db.js";
+import {
+  externalDelegateBatchDigest,
+  parseExternalDelegateItems,
+} from "../external-delegate.js";
 import { Core5CapabilityRegistry } from "../integration/capability-registry.js";
 import { Core5MailDraftGateway, type MailDraftHttp } from "../integration/mail-draft-gateway.js";
 import { Core5MailDraftStore } from "../integration/mail-draft-store.js";
 import { Core5OperationLedger } from "../integration/operation-ledger.js";
 import type { CommandEnvelope } from "../integration/types.js";
+import { WorkboardStore } from "../workboard/store.js";
 import { assertBind, OMONYANG_AGENT, tokenMatches, type AgentTokenFile } from "./auth.js";
 import { HandsError, type HandsErrorCode } from "./errors.js";
-import { approvalMode, isApprovalKind, type HandsTool } from "./policy.js";
-import { sha256Digest, type HandsStore } from "./store.js";
-import type { FileVault } from "./vault.js";
+import { approvalMode, type HandsTool } from "./policy.js";
+import type { SbMcp } from "./sb-client.js";
+import { sha256Digest } from "./digest.js";
 
 export type HandsCallResult = {
   readonly ok: true;
@@ -27,8 +32,6 @@ const LIMITS: Readonly<Record<HandsTool, number>> = {
   "sb.search": 60,
   "sb.read": 60,
   "mail.draft": 20,
-  "calendar.list": 60,
-  "calendar.create_draft": 20,
   "workboard.list": 60,
   "workboard.update": 20,
 };
@@ -43,23 +46,20 @@ function text(value: unknown, key: string, max: number): string {
   return value;
 }
 
-function optionalText(input: Record<string, unknown>, key: string, max: number): string | undefined {
-  if (!(key in input) || input[key] === undefined) return undefined;
-  return text(input[key], key, max);
-}
-
 export class HandsService {
   private readonly hits = new Map<string, Limit>();
+  private readonly board: WorkboardStore;
 
   constructor(
     private readonly token: AgentTokenFile,
-    private readonly store: HandsStore,
-    private readonly vault: FileVault,
+    private readonly authority: AuthorityDb,
+    private readonly sb: SbMcp,
     private readonly bind: string,
     private readonly now: () => Date = () => new Date(),
-    private readonly mail?: { readonly authority: AuthorityDb; readonly http: MailDraftHttp; readonly origin: string },
+    private readonly mail?: { readonly http: MailDraftHttp; readonly origin: string },
   ) {
     assertBind(bind);
+    this.board = new WorkboardStore(authority.db);
   }
 
   async call(tool: HandsTool, input: unknown, presentedToken: string): Promise<HandsCallResult> {
@@ -69,23 +69,24 @@ export class HandsService {
       if (!tokenMatches(this.token.token, presentedToken)) throw new HandsError("AUTH_REQUIRED");
       this.rate(tool);
       const data = await this.dispatch(tool, record(input, "input"));
-      this.store.audit({
-        audit_id: `aud_${randomUUID()}`, at, agent: OMONYANG_AGENT, tool, input_digest: digest,
-        output_digest: sha256Digest(data), error_code: null, approval: approvalMode(tool),
-      });
+      this.audit(at, tool, digest, sha256Digest(data), null);
       return { ok: true, tool, approval: "log", data };
     } catch (error) {
       const code: HandsErrorCode = error instanceof HandsError ? error.code : "UNAVAILABLE";
-      try {
-        this.store.audit({
-          audit_id: `aud_${randomUUID()}`, at, agent: OMONYANG_AGENT, tool, input_digest: digest,
-          output_digest: null, error_code: code, approval: approvalMode(tool),
-        });
-      } catch {
-        throw new HandsError("AUDIT_FAILED");
-      }
-      throw error instanceof HandsError ? error : new HandsError("UNAVAILABLE");
+      try { this.audit(at, tool, digest, null, code); } catch { throw new HandsError("AUDIT_FAILED"); }
+      if (error instanceof HandsError) throw error;
+      if (error instanceof JarvisError && error.code === "CONTROL_COMMAND_REPLAY_CONFLICT") throw new HandsError("CONFLICT");
+      if (error instanceof JarvisError) throw new HandsError("VALIDATION", error.code);
+      throw new HandsError("UNAVAILABLE");
     }
+  }
+
+  private audit(at: string, tool: HandsTool, inputDigest: string, outputDigest: string | null, errorCode: string | null): void {
+    this.authority.db.prepare(
+      "INSERT INTO audit_facts(fact_type,subject_id,payload_json,created_at) VALUES(?,?,?,?)",
+    ).run("omonyang_hands_call", OMONYANG_AGENT, JSON.stringify({
+      tool, input_digest: inputDigest, output_digest: outputDigest, error_code: errorCode, approval: approvalMode(tool),
+    }), at);
   }
 
   private rate(tool: HandsTool): void {
@@ -100,14 +101,20 @@ export class HandsService {
     switch (tool) {
       case "jarvis.request_approval": return this.requestApproval(input);
       case "jarvis.approval_status": return this.approvalStatus(input);
-      case "sb.remember": return this.remember(input);
-      case "sb.search": return this.search(input);
-      case "sb.read": return this.read(input);
+      case "sb.remember": return { outcome: await this.sb.call("sb_remember", {
+        title: text(input["title"], "title", 200),
+        content: text(input["content"], "content", 8000),
+      }) };
+      case "sb.search": return { outcome: await this.sb.call("sb_search", {
+        query: text(input["query"], "query", 512),
+        limit: input["limit"] === undefined ? 8 : input["limit"],
+      }) };
+      case "sb.read": return { outcome: await this.sb.call("sb_read_page", {
+        page_id: text(input["page_id"], "page_id", 128),
+      }) };
       case "mail.draft": return this.mailDraft(input);
-      case "calendar.list": return this.calendarList(input);
-      case "calendar.create_draft": return this.calendarCreate(input);
-      case "workboard.list": return this.workboardList();
-      case "workboard.update": return this.workboardUpdate(input);
+      case "workboard.list": return { works: this.board.works() };
+      case "workboard.update": return { result: this.board.ingest(input["event"]) };
       default: {
         const exhaustive: never = tool;
         return exhaustive;
@@ -116,71 +123,65 @@ export class HandsService {
   }
 
   private requestApproval(input: Record<string, unknown>): Record<string, unknown> {
-    const items = input["items"];
-    if (!Array.isArray(items) || items.length < 1 || items.length > 20) throw new HandsError("VALIDATION", "items");
-    const batch_id = `batch_${randomUUID()}`;
-    const requests = items.map(item => {
-      const row = record(item, "item");
-      const action_kind = text(row["action_kind"], "action_kind", 32);
-      if (!isApprovalKind(action_kind)) throw new HandsError("VALIDATION", "action_kind");
-      const staged = this.store.stageApproval({
-        request_id: optionalText(row, "request_id", 80),
-        batch_id,
-        action_kind,
-        summary: text(row["summary"], "summary", 240),
-        payload_digest: text(row["payload_digest"], "payload_digest", 71),
-        mail_draft_id: optionalText(row, "mail_draft_id", 80),
-        requested_by: OMONYANG_AGENT,
-        now: this.now(),
-        expires_in_seconds: Number(row["expires_in_seconds"]),
-      });
-      return {
-        request_id: staged.request_id,
-        state: staged.state,
-        action_kind: staged.action_kind,
-        payload_digest: staged.payload_digest,
-        expires_at: staged.expires_at,
-      };
-    });
-    return { batch_id, requests };
-  }
-
-  private approvalStatus(input: Record<string, unknown>): Record<string, unknown> {
-    const request_id = text(input["request_id"], "request_id", 80);
-    const row = this.store.approval(request_id, this.now());
-    if (!row) throw new HandsError("NOT_FOUND", request_id);
-    const digest = optionalText(input, "payload_digest", 71);
-    if (digest !== undefined && digest !== row.payload_digest) throw new HandsError("NOT_FOUND", request_id);
+    const items = parseExternalDelegateItems(input["items"]);
+    const batchDigest = externalDelegateBatchDigest(items);
+    const summary = text(input["batch_summary"], "batch_summary", 240);
+    const requestId = text(input["request_id"], "request_id", 128);
+    if (!/^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$/.test(requestId)) throw new HandsError("VALIDATION", "request_id");
+    const expiresIn = input["expires_in_seconds"];
+    if (typeof expiresIn !== "number" || !Number.isInteger(expiresIn) || expiresIn < 900 || expiresIn > 7200) {
+      throw new HandsError("VALIDATION", "expires_in_seconds");
+    }
+    const requested = this.now().toISOString();
+    const command: ControlCommandRequestInput = {
+      schema_version: 1,
+      request_id: requestId,
+      action: "external.delegate",
+      action_level: 3,
+      target: { environment: "external", system: "grok-bot" },
+      args: {
+        source: "grok-bot",
+        action_kind: items.length === 1 ? items[0]?.action_kind : "batch",
+        summary,
+        batch_summary: summary,
+        batch_digest: batchDigest,
+        payload_digest: batchDigest,
+        items,
+      },
+      reversible: false,
+      requested_by: "agent:grok-bot",
+      requested_at: requested,
+      expires_at: new Date(this.now().getTime() + expiresIn * 1000).toISOString(),
+      nonce: `delegate:${requestId}`,
+    };
+    const staged = new ControlPlane(this.authority).stage(command, this.now());
     return {
-      request_id: row.request_id,
-      state: row.state,
-      action_kind: row.action_kind,
-      summary: row.summary,
-      payload_digest: row.payload_digest,
-      expires_at: row.expires_at,
-      manual_wait: row.state === "approved",
+      request_id: staged.request_id,
+      command_digest: staged.command_digest,
+      batch_digest: batchDigest,
+      state: staged.state,
     };
   }
 
-  private remember(input: Record<string, unknown>): Record<string, unknown> {
-    const page = this.vault.remember({
-      title: text(input["title"], "title", 200),
-      body: text(input["body"], "body", 8000),
-      page_id: optionalText(input, "page_id", 64),
-    });
-    return { page_id: page.page_id, title: page.title };
-  }
-
-  private search(input: Record<string, unknown>): Record<string, unknown> {
-    const limit = input["limit"] === undefined ? 8 : Number(input["limit"]);
-    if (!Number.isInteger(limit) || limit < 1 || limit > 32) throw new HandsError("VALIDATION", "limit");
-    const hits = this.vault.search(text(input["query"], "query", 512), limit);
-    return { results: hits.map(page => ({ page_id: page.page_id, title: page.title, excerpt: page.body.slice(0, 240) })) };
-  }
-
-  private read(input: Record<string, unknown>): Record<string, unknown> {
-    const page = this.vault.read(text(input["page_id"], "page_id", 64));
-    return { page_id: page.page_id, title: page.title, body: page.body };
+  private approvalStatus(input: Record<string, unknown>): Record<string, unknown> {
+    const requestId = text(input["request_id"], "request_id", 128);
+    const batchDigest = text(input["batch_digest"], "batch_digest", 71);
+    const row = this.authority.db.prepare(
+      "SELECT state, command_digest, args_json, expires_at FROM control_command_requests WHERE request_id = ? AND action = 'external.delegate'",
+    ).get(requestId) as { state: string; command_digest: string; args_json: string; expires_at: string } | undefined;
+    if (row === undefined) throw new HandsError("NOT_FOUND", requestId);
+    const args = JSON.parse(row.args_json) as { batch_digest?: string };
+    if (args.batch_digest !== batchDigest) throw new HandsError("NOT_FOUND", requestId);
+    if (row.state === "pending" && Date.parse(row.expires_at) <= this.now().getTime()) {
+      return { request_id: requestId, state: "expired", batch_digest: batchDigest };
+    }
+    return {
+      request_id: requestId,
+      state: row.state,
+      command_digest: row.command_digest,
+      batch_digest: batchDigest,
+      manual_wait: row.state === "approved",
+    };
   }
 
   private async mailDraft(input: Record<string, unknown>): Promise<Record<string, unknown>> {
@@ -188,8 +189,8 @@ export class HandsService {
     if (!this.mail) throw new HandsError("UNAVAILABLE", "mail");
     const gateway = new Core5MailDraftGateway(
       new Core5CapabilityRegistry({ CORE5_INTEGRATION_ENABLED: "1" }),
-      new Core5OperationLedger(this.mail.authority.db),
-      new Core5MailDraftStore(this.mail.authority.db),
+      new Core5OperationLedger(this.authority.db),
+      new Core5MailDraftStore(this.authority.db),
       this.mail.http,
       this.mail.origin,
       this.now,
@@ -222,47 +223,5 @@ export class HandsService {
       mail_status: card.mail_status,
       sent: false,
     };
-  }
-
-  private calendarList(input: Record<string, unknown>): Record<string, unknown> {
-    const day = optionalText(input, "day", 10);
-    const rows = this.store.db.prepare(
-      "SELECT draft_id, title, starts_at, ends_at, note FROM omonyang_calendar_drafts ORDER BY starts_at, draft_id",
-    ).all() as Array<{ draft_id: string; title: string; starts_at: string; ends_at: string; note: string }>;
-    const drafts = day === undefined ? rows : rows.filter(row => row.starts_at.startsWith(day));
-    return { drafts, transmitted: false };
-  }
-
-  private calendarCreate(input: Record<string, unknown>): Record<string, unknown> {
-    const draft_id = `cal_${randomUUID()}`;
-    const title = text(input["title"], "title", 200);
-    const starts_at = text(input["starts_at"], "starts_at", 40);
-    const ends_at = text(input["ends_at"], "ends_at", 40);
-    if (!Number.isFinite(Date.parse(starts_at)) || !Number.isFinite(Date.parse(ends_at))) throw new HandsError("VALIDATION", "starts_at");
-    const note = optionalText(input, "note", 1000) ?? "";
-    this.store.db.prepare(
-      "INSERT INTO omonyang_calendar_drafts(draft_id,title,starts_at,ends_at,note,created_at) VALUES(?,?,?,?,?,?)",
-    ).run(draft_id, title, starts_at, ends_at, note, this.now().toISOString());
-    return { draft_id, title, starts_at, ends_at, transmitted: false };
-  }
-
-  private workboardList(): Record<string, unknown> {
-    const cards = this.store.db.prepare(
-      "SELECT card_id, title, status, note, updated_at FROM omonyang_workboard_cards ORDER BY card_id",
-    ).all();
-    return { cards };
-  }
-
-  private workboardUpdate(input: Record<string, unknown>): Record<string, unknown> {
-    const card_id = text(input["card_id"], "card_id", 80);
-    const title = text(input["title"], "title", 200);
-    const status = text(input["status"], "status", 32);
-    const note = optionalText(input, "note", 1000) ?? "";
-    if (!["open", "doing", "blocked", "done"].includes(status)) throw new HandsError("VALIDATION", "status");
-    this.store.db.prepare(
-      `INSERT INTO omonyang_workboard_cards(card_id,title,status,note,updated_at) VALUES(?,?,?,?,?)
-       ON CONFLICT(card_id) DO UPDATE SET title=excluded.title, status=excluded.status, note=excluded.note, updated_at=excluded.updated_at`,
-    ).run(card_id, title, status, note, this.now().toISOString());
-    return { card_id, title, status, notion_write: false };
   }
 }
