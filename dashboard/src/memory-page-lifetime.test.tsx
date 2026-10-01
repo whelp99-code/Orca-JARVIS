@@ -60,7 +60,7 @@ it("retires a staging announcement with its search generation so expiry is annou
   // When the status freshness window lapses and clears that generation
   await act(async () => { vi.advanceTimersByTime(60_000); });
   // Then the region announces the expiry instead of the announcement it has outlived
-  expect(document.body.textContent).toContain("Memory status expired");
+  expect(document.body.textContent).toContain("기억 상태가 만료되었습니다");
   expect(document.body.textContent).not.toContain("Pending owner approval");
   act(() => store.stop());
 });
