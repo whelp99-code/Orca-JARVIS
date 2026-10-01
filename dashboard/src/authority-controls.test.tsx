@@ -105,10 +105,11 @@ describe("receipt-bound authority controls", () => {
     renderControls(BASE_REQUEST, current.client);
 
     // Then
-    expect(screen.getByText(BASE_REQUEST.action)).toBeInTheDocument();
+    expect(screen.getByText("작업 시작")).toBeInTheDocument();
+    expect(screen.queryByText(BASE_REQUEST.action)).not.toBeInTheDocument();
     expect(screen.getByText("2단계")).toBeInTheDocument();
     expect(screen.getByText(BASE_REQUEST.request_id)).toBeInTheDocument();
-    expect(screen.getByText("pending")).toBeInTheDocument();
+    expect(screen.getByText("대기")).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "서명 영수증" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "서명 제출" })).toBeEnabled();
   });

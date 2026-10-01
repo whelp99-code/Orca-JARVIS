@@ -22,7 +22,7 @@ describe("MemorySearch provider states", () => {
   it("never presents an offline provider as an empty result", () => {
     render(<MemorySearch result={search("offline", ["offline"])} onSearch={async () => {}} onSelect={() => {}} />);
     expect(screen.queryByText("보이는 기억이 없습니다")).not.toBeInTheDocument();
-    expect(screen.getByRole("status")).toHaveTextContent(/provider offline/i);
+    expect(screen.getByRole("status")).toHaveTextContent("기억 제공자가 끊겼습니다. 다시 연결되기 전에는 검색할 수 없습니다.");
   });
 
   it("announces an unavailable provider distinctly from no data", () => {
@@ -32,7 +32,7 @@ describe("MemorySearch provider states", () => {
 
   it("explains privacy-withheld results without claiming the memory is empty", () => {
     render(<MemorySearch result={search("no_data", ["privacy_filtered"])} onSearch={async () => {}} onSelect={() => {}} />);
-    expect(screen.getByText(/withheld by owner privacy decisions/)).toBeVisible();
+    expect(screen.getByText("소유자 결정으로 가려진 기록입니다.")).toBeVisible();
   });
 
   it("keeps the plain empty state for a genuinely empty current read", () => {
@@ -97,15 +97,15 @@ describe("MemoryEffects lifecycles", () => {
           updated_at: at, proof_state: "verified", export_lifecycle: null }],
       page: { limit: 20, returned: 3, has_more: true, next_cursor: null } };
     render(<MemoryEffects value={value} pending={false} />);
-    const list = screen.getByRole("list", { name: "Memory effect lifecycles" });
+    const list = screen.getByRole("list", { name: "기억 효과" });
     const rows = within(list).getAllByRole("listitem");
     expect(rows).toHaveLength(3);
     expect(rows[0]).toHaveTextContent("Forgetting");
-    expect(rows[0]).toHaveTextContent("Pending owner approval");
+    expect(rows[0]).toHaveTextContent("소유자 승인 대기");
     expect(rows[1]).toHaveTextContent("Correction");
-    expect(rows[1]).toHaveTextContent("Approved, applying at provider");
+    expect(rows[1]).toHaveTextContent("승인됨, 제공자에 적용 중");
     expect(rows[2]).toHaveTextContent("JSON export");
-    expect(screen.getByText(/More lifecycles exist/)).toBeVisible();
+    expect(screen.getByText("이 화면보다 효과가 더 있습니다.")).toBeVisible();
     expect(screen.queryByText(/No active/)).not.toBeInTheDocument();
   });
 });
