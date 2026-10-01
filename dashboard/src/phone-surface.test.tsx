@@ -139,9 +139,9 @@ describe("phone surface", () => {
     expect(screen.getByRole("heading", { level: 3, name: "Fixture title" })).toBeVisible();
     expect(screen.queryByRole("button", { name: /Stage/ })).not.toBeInTheDocument();
     expect(screen.queryByRole("button", { name: /Prepare/ })).not.toBeInTheDocument();
-    expect(screen.queryByRole("textbox", { name: "Replacement" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("textbox", { name: "바꿀 내용" })).not.toBeInTheDocument();
     expect(screen.queryByRole("heading", { name: "Candidates" })).not.toBeInTheDocument();
-    expect(screen.queryByRole("heading", { name: "Effects and privacy receipts" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("heading", { name: "효과와 개인정보 영수증" })).not.toBeInTheDocument();
     expect(within(screen.getByRole("region", { name: "내용" })).queryByRole("button")).not.toBeInTheDocument();
   });
 });

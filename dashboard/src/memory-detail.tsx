@@ -44,35 +44,35 @@ export function MemoryDetail({ record, client, enabled, onOutcome }: Readonly<{ 
     <h2 id="memory-detail-heading">내용</h2></header><div className="panel-body memory-detail" aria-busy={busy !== undefined}>
     <h3>{record.title}</h3>
     <p>{superseded ? "An approved correction superseded this record. Its previous content is no longer shown."
-      : record.excerpt ?? "Sensitive value remains redacted."}</p>
+      : record.excerpt ?? "민감한 내용은 가려져 있습니다."}</p>
     <dl className="identity-list">
-      <div><dt>Citation</dt><dd>{record.citation}</dd></div>
-      <div><dt>Provenance</dt><dd>{record.provenance.origin_label} / {record.provenance.owner_class}</dd></div>
-      <div><dt>Sensitivity</dt><dd>{record.sensitivity}</dd></div>
-      <div><dt>Retention</dt><dd>{record.retention.days} days, until <time dateTime={record.retention.expires_at}>
+      <div><dt>출처</dt><dd>{record.citation}</dd></div>
+      <div><dt>유래</dt><dd>{record.provenance.origin_label} / {record.provenance.owner_class}</dd></div>
+      <div><dt>민감도</dt><dd>{record.sensitivity}</dd></div>
+      <div><dt>보관</dt><dd>{record.retention.days}일, 까지 <time dateTime={record.retention.expires_at}>
         {record.retention.expires_at}</time></dd></div>
-      <div><dt>Freshness</dt><dd>{record.freshness}</dd></div>
-      <div><dt>History</dt><dd data-history-state={record.history_state}>{record.history_state}
+      <div><dt>신선도</dt><dd>{record.freshness}</dd></div>
+      <div><dt>이력</dt><dd data-history-state={record.history_state}>{record.history_state}
         {record.superseded_by !== null && <> / superseded by {record.superseded_by}</>}</dd></div></dl>
     <MemoryHistory entries={record.history} />
-    {can("correct") ? <form onSubmit={correct}><label htmlFor="memory-replacement">Replacement</label>
+    {can("correct") ? <form onSubmit={correct}><label htmlFor="memory-replacement">바꿀 내용</label>
       <textarea id="memory-replacement" autoComplete="off" value={replacement} maxLength={4096} required
         disabled={busy !== undefined} onChange={event => setReplacement(event.currentTarget.value)} />
-      <button type="submit" disabled={busy !== undefined}>{busy === "correct" ? "Staging correction" : "Stage correction"}</button>
+      <button type="submit" disabled={busy !== undefined}>{busy === "correct" ? "고치는 중" : "고치기"}</button>
     </form> : null}
-    {can("forget") || can("export") ? <fieldset disabled={busy !== undefined}><legend>Privacy actions</legend>
+    {can("forget") || can("export") ? <fieldset disabled={busy !== undefined}><legend>개인정보 동작</legend>
       {can("forget") && <label><input type="checkbox" checked={acknowledged}
-        onChange={event => setAcknowledged(event.currentTarget.checked)} /> I understand forgetting is irreversible</label>}
+        onChange={event => setAcknowledged(event.currentTarget.checked)} /> 지우면 되돌릴 수 없음을 이해합니다</label>}
       <div className="memory-actions">
         {can("forget") && <button type="button" disabled={!acknowledged || busy !== undefined}
           onClick={() => { void stage("forget", () => client.forget(record.record_token, record.record_revision)); }}>
-          {busy === "forget" ? "Staging forgetting" : "Stage forgetting"}</button>}
+          {busy === "forget" ? "지우는 중" : "지우기"}</button>}
         {can("export") && <button type="button" disabled={busy !== undefined}
           onClick={() => { void stage("export", () => client.exportRecord(record.record_token, record.record_revision)); }}>
-          {busy === "export" ? "Staging JSON export" : "Stage JSON export"}</button>}</div></fieldset>
-      : <p className="empty-state">{superseded ? "No actions apply to a superseded record."
-        : phone ? "Changes are staged from the Linux control center, not from the phone."
-        : "Changes are unavailable until the provider is current."}</p>}
+          {busy === "export" ? "내보내는 중" : "JSON 내보내기"}</button>}</div></fieldset>
+      : <p className="empty-state">{superseded ? "바뀐 기록에는 동작이 없습니다."
+        : phone ? "휴대폰에서는 바꾸지 않습니다. 컴퓨터 제어 화면에서 합니다."
+        : "제공자가 최신일 때만 바꿀 수 있습니다."}</p>}
     </div></section>;
 }
 

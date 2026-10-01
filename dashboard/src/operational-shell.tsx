@@ -68,7 +68,7 @@ export function OperationalShell({ connectionState, children }: OperationalShell
       <footer className="shell-footer">
         <div className="page-frame shell-footer-inner">
           <a href="/NOTICE-ARGO.txt">
-            Argo Workflows attribution, revision {ARGO_REVISION}
+            고지 {ARGO_REVISION}
           </a>
           <span>빌드 {import.meta.env.VITE_JARVIS_SHA ?? "unknown"}</span>
         </div>

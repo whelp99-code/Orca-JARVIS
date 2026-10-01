@@ -31,7 +31,7 @@ describe("MemoryDetail", () => {
   it("renders citation, provenance, sensitivity, retention, and bounded history", () => {
     fixture();
     const terms = screen.getAllByRole("term").map(node => node.textContent);
-    expect(terms).toEqual(["Citation", "Provenance", "Sensitivity", "Retention", "Freshness", "History"]);
+    expect(terms).toEqual(["출처", "유래", "민감도", "보관", "신선도", "이력"]);
     expect(screen.getByText("Memory citation")).toBeVisible();
     expect(screen.getByText("Second Brain / provider_owned")).toBeVisible();
     const history = screen.getByRole("list", { name: "Record history" });
@@ -53,31 +53,31 @@ describe("MemoryDetail", () => {
   it("sends exactly one forget command for a double click and shows a busy state", async () => {
     const { forget, settle, outcomes } = fixture();
     fireEvent.click(screen.getByRole("checkbox"));
-    const button = screen.getByRole("button", { name: "Stage forgetting" });
+    const button = screen.getByRole("button", { name: "지우기" });
     fireEvent.click(button); fireEvent.click(button);
     expect(forget).toHaveBeenCalledTimes(1);
-    expect(screen.getByRole("button", { name: "Staging forgetting" })).toBeDisabled();
-    expect(screen.getByRole("button", { name: "Stage JSON export" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "지우는 중" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "JSON 내보내기" })).toBeDisabled();
     await act(async () => { settle(); });
     expect(outcomes).toEqual([{ kind: "staged", message: "Pending owner approval" }]);
-    expect(screen.getByRole("button", { name: "Stage forgetting" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "지우기" })).toBeDisabled();
   });
 
   it("reports a stale selection as a typed outcome with safe copy", async () => {
     const { fail, outcomes } = fixture();
-    fireEvent.change(screen.getByLabelText("Replacement"), { target: { value: "Corrected body" } });
-    fireEvent.click(screen.getByRole("button", { name: "Stage correction" }));
+    fireEvent.change(screen.getByLabelText("바꿀 내용"), { target: { value: "Corrected body" } });
+    fireEvent.click(screen.getByRole("button", { name: "고치기" }));
     await act(async () => { fail(new MemoryRequestError("MEMORY_SELECTION_STALE", 404)); });
     expect(outcomes).toEqual([{ kind: "stale", message: expect.stringContaining("Search again") }]);
     expect(document.body.textContent).not.toContain("MEMORY_SELECTION_STALE");
-    expect(screen.getByRole("button", { name: "Stage correction" })).toBeEnabled();
+    expect(screen.getByRole("button", { name: "고치기" })).toBeEnabled();
   });
 
   it("maps prohibited content and unknown failures to distinct safe copy", async () => {
     const { fail, outcomes } = fixture();
-    fireEvent.click(screen.getByRole("button", { name: "Stage JSON export" }));
+    fireEvent.click(screen.getByRole("button", { name: "JSON 내보내기" }));
     await act(async () => { fail(new MemoryRequestError("MEMORY_CONTENT_PROHIBITED", 400)); });
-    fireEvent.click(screen.getByRole("button", { name: "Stage JSON export" }));
+    fireEvent.click(screen.getByRole("button", { name: "JSON 내보내기" }));
     await act(async () => { fail(new TypeError("network")); });
     expect(outcomes.map(outcome => outcome.kind)).toEqual(["failed", "failed"]);
     expect(outcomes[0]?.message).toContain("prohibited");
@@ -87,7 +87,7 @@ describe("MemoryDetail", () => {
   it("offers no mutation controls while mutations are disabled", () => {
     const { forget } = fixture(record, false);
     expect(screen.queryByRole("button")).not.toBeInTheDocument();
-    expect(screen.getByText(/Changes are unavailable/)).toBeVisible();
+    expect(screen.getByText(/제공자가 최신일 때만/)).toBeVisible();
     expect(forget).not.toHaveBeenCalled();
   });
 });

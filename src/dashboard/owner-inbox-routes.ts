@@ -56,7 +56,7 @@ export async function tryHandleOwnerInbox(input: Readonly<{
     }
     const body = parseSecondBrainStrictJsonBytes(raw);
     if (input.path.endsWith("/enroll")) {
-      const enrolled = await enrollFrom(input, body, sessionId);
+      const enrolled = await enrollFrom(input, body);
       writeDashboardJson(input.response, { status: 200, requestId: input.requestId, body: { schema_version: 1, ...enrolled } });
       return true;
     }

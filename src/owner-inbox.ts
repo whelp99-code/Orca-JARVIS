@@ -155,12 +155,13 @@ export class OwnerInbox {
       rpId: input.rpId,
     });
     if (!checked.ok) fail("OWNER_INBOX_ASSERTION_REJECTED");
+    const newCounter = checked.ok ? checked.newCounter : 0;
     const marked = this.db.db.prepare(
       "UPDATE owner_inbox_challenges SET used_at = ? WHERE challenge_id = ? AND used_at IS NULL",
     ).run(this.now().toISOString(), bound.challenge_id);
     if (marked.changes !== 1) fail("OWNER_INBOX_REPLAY");
     this.db.db.prepare("UPDATE owner_inbox_credentials SET counter = ? WHERE credential_id = ?")
-      .run(checked.newCounter, stored.credential_id);
+      .run(newCounter, stored.credential_id);
     const now = this.now();
     const row = this.one(input.request_id);
     const issued = now.toISOString();

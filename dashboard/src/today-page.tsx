@@ -205,12 +205,12 @@ function RiskList({ risks, notifications, disconnected }: Readonly<{
       {notifications.map((item) => (
         <li className="record" key={item.intent_id}>{item.urgency}: {item.preview}</li>
       ))}
-      {disconnected ? <li className="record">Live updates disconnected</li> : null}
+      {disconnected ? <li className="record">실시간 연결이 끊겼습니다</li> : null}
     </ul>
   );
 }
 function WorkerList({ agents }: Readonly<{ agents: readonly OverviewAgent[] }>) {
-  if (agents.length === 0) return <p className="empty-state">No active workers</p>;
+  if (agents.length === 0) return <p className="empty-state">일하는 에이전트가 없습니다</p>;
   return (
     <ul className="record-list">
       {agents.map((agent) => (

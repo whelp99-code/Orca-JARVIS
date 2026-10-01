@@ -35,7 +35,7 @@ async function fixture() {
   fireEvent.change(screen.getByLabelText("기억 검색"), { target: { value: "Private query fixture" } });
   await act(async () => { await store.search("fixture"); });
   fireEvent.click(screen.getByRole("button", { name: /Private fixture title/ }));
-  fireEvent.change(screen.getByLabelText("Replacement"), { target: { value: "Private correction draft" } });
+  fireEvent.change(screen.getByLabelText("바꿀 내용"), { target: { value: "Private correction draft" } });
   fireEvent.click(screen.getByRole("checkbox"));
   return { store, client, events };
 }
@@ -46,7 +46,7 @@ it("removes selected detail and draft when private results are cleared", async (
   expect(document.body.textContent).not.toContain("Private fixture");
   expect(screen.queryByDisplayValue("Private correction draft")).not.toBeInTheDocument();
   expect(screen.getByLabelText("기억 검색")).toHaveValue("");
-  expect(screen.queryByRole("button", { name: "Stage forgetting" })).not.toBeInTheDocument();
+  expect(screen.queryByRole("button", { name: "지우기" })).not.toBeInTheDocument();
   act(() => store.stop());
 });
 
@@ -55,7 +55,7 @@ it("retires a staging announcement with its search generation so expiry is annou
   const { store, client } = await fixture();
   client.forget = async () => ({ schema_version: 1, state: "pending_approval", request_id: "request-one",
     action: "forget", message: "staged" });
-  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Stage forgetting" })); });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "지우기" })); });
   expect(document.querySelector("p.memory-status")).toHaveTextContent("Pending owner approval");
   // When the status freshness window lapses and clears that generation
   await act(async () => { vi.advanceTimersByTime(60_000); });
@@ -72,7 +72,7 @@ it("drops the stale rows a rejected command just proved out of date", async () =
   let reloads = 0;
   const status = await client.status();
   client.status = async () => { reloads += 1; return status; };
-  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "Stage forgetting" })); });
+  await act(async () => { fireEvent.click(screen.getByRole("button", { name: "지우기" })); });
   // Then the record it was acting on is no longer listed with its excerpt, and the surface is re-read
   expect(document.body.textContent).not.toContain("Private fixture body");
   expect(store.getSnapshot().search).toBeUndefined();
@@ -126,13 +126,13 @@ it("ignores an old action when a batched new search reuses the same object and t
   const { store, client } = await fixture();
   let resolve!: (value: unknown) => void;
   client.forget = () => new Promise(done => { resolve = done; });
-  fireEvent.click(screen.getByRole("button", { name: "Stage forgetting" }));
+  fireEvent.click(screen.getByRole("button", { name: "지우기" }));
   await act(async () => { await store.search("same result"); });
   fireEvent.click(screen.getByRole("button", { name: /Private fixture title/ }));
   await act(async () => { resolve({ state: "pending_approval" }); });
   expect(store.getSnapshot().search).toBe(result);
   expect(screen.queryByText("Pending owner approval")).not.toBeInTheDocument();
-  expect(screen.getByLabelText("Replacement")).toHaveValue("");
+  expect(screen.getByLabelText("바꿀 내용")).toHaveValue("");
   expect(screen.getByRole("checkbox")).not.toBeChecked();
   act(() => store.stop());
 });
