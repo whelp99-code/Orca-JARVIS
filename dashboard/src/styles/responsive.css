@@ -61,8 +61,19 @@
   }
 
   html,
-  body {
-    overflow-x: clip;
+  body,
+  #root,
+  .operational-shell,
+  .control-nav,
+  .control-nav-inner,
+  .operational-shell-main,
+  .page-frame,
+  .panel,
+  .record,
+  .enroll,
+  .enroll-form {
+    max-inline-size: 100%;
+    min-inline-size: 0;
   }
 
   .control-nav-inner {
@@ -74,6 +85,9 @@
 
   .primary-nav {
     flex-wrap: nowrap;
+    inline-size: 100%;
+    max-inline-size: 100%;
+    min-inline-size: 0;
     overflow-x: auto;
     overscroll-behavior-inline: contain;
     scrollbar-width: none;
