@@ -229,7 +229,7 @@ function PageState({ message, busy = false, error = false }: Readonly<{
 }>) {
   return (
     <div className="page-frame route-state" aria-busy={busy || undefined}>
-      <section role={error ? "alert" : "status"}><h1>Today</h1><p>{message}</p></section>
+      <section role={error ? "alert" : "status"}><h1>{copy.pages.today}</h1><p>{message}</p></section>
     </div>
   );
 }

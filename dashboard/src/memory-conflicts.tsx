@@ -3,7 +3,7 @@ import { memoryResourceState, type MemoryConflicts as ConflictPage } from "./mem
 
 const STATE_COPY: Readonly<Record<string, string>> = {
   offline: "Memory provider offline. Conflicts cannot be read until it reconnects.",
-  unavailable: "Memory provider unavailable. Conflicts cannot be read right now.",
+  unavailable: "기억 제공자를 사용할 수 없습니다. 충돌은 지금 읽을 수 없습니다.",
   incompatible: "Memory provider incompatible. Conflicts cannot be read right now.",
 };
 export function MemoryConflicts({ value, pending }: Readonly<{ value?: ConflictPage; pending: boolean }>) {

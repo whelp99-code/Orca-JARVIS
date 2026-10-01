@@ -25,13 +25,13 @@ export function providerState(snapshot: MemorySnapshot): MemoryProviderBadge {
   return status.mutations_enabled ? "ready" : "incompatible";
 }
 const PROVIDER_COPY: Record<MemoryProviderBadge, string> = {
-  ready: "Current schema-4 provider",
-  expired: "Memory status expired. Searching re-reads the surface, or use 기억 새로고침.",
-  stale: "The provider reported stale evidence. Results and panels may be out of date; changes are unavailable.",
-  no_data: "Current schema-4 provider",
-  offline: "Memory provider offline. Search and changes are unavailable until it reconnects.",
-  unavailable: "Memory provider unavailable.",
-  incompatible: "Read-only memory provider. Corrections, forgetting, and export are unavailable.",
+  ready: "기억 제공자가 준비되었습니다",
+  expired: "기억 상태가 만료되었습니다. 검색하거나 기억 새로고침을 누르세요.",
+  stale: "기억 제공자 기록이 오래되었습니다. 지금은 바꿀 수 없습니다.",
+  no_data: "기억 제공자가 준비되었습니다",
+  offline: "기억 제공자가 끊겼습니다. 다시 연결되기 전에는 검색할 수 없습니다.",
+  unavailable: "기억 제공자를 사용할 수 없습니다.",
+  incompatible: "기억은 읽기만 됩니다. 고치기, 지우기, 내보내기는 지금은 없습니다.",
 };
 export function MemoryPage({ store, client }: Readonly<{ store: MemoryStore; client: MemoryClient }>) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);

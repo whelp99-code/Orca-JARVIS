@@ -170,6 +170,8 @@ const STATE_LABELS: Readonly<Record<string, string>> = {
   loading: "불러오는 중",
   error: "오류",
   unavailable: "사용할 수 없음",
+  no_data: "자료 없음",
+  degraded: "일부만 됨",
 };
 
 const ACTION_LABELS: Readonly<Record<string, string>> = {
