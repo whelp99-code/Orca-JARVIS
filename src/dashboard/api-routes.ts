@@ -16,6 +16,7 @@ import {
   writeDashboardError,
   writeDashboardJson,
 } from "./http.js";
+import { tryHandleExternalDelegate } from "./external-delegate-routes.js";
 import { tryHandleOwnerInbox } from "./owner-inbox-routes.js";
 import { tryHandleDashboardPost } from "./post-routes.js";
 import { tryHandleMemoryRead } from "./memory-read-routes.js";
@@ -81,6 +82,7 @@ export async function tryHandleDashboardApi(input: DashboardApiInput): Promise<b
     if (await tryHandleRemoteLifecycleRoutes(remote)) return true;
     if (await tryHandleRemoteAuthRoutes(remote)) return true;
   }
+  if (await tryHandleExternalDelegate(input)) return true;
   if (await tryHandleOwnerInbox(input)) return true;
   if (input.request.method === "POST") return tryHandleDashboardPost(input);
   if (await tryHandleTaskExecution(input)) return true;

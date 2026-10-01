@@ -5,6 +5,7 @@ import { memoryAuthority, memoryConfirm, memoryDedicatedEffect,
 import { REMOTE_LIFECYCLE_ACTIONS } from "./remote-approval-actions.js";
 import { validateTaskExecutionAction } from "./task-execution-plan.js";
 import { controlWorkflowRunInput } from "./control-workflow-input.js";
+import { externalDelegateBatchDigest, parseExternalDelegateItems } from "./external-delegate.js";
 
 export interface RuntimeControlActionInput {
   action: string;
@@ -165,6 +166,20 @@ function retiredCollaborationRoomCreate(input: RuntimeControlActionInput): void 
   requireRecord(input.args, "room", "CONTROL_ARGS_MISMATCH");
 }
 
+function externalDelegate(input: RuntimeControlActionInput): void {
+  rejectUnexpected(input.target, ["environment", "system"], "CONTROL_TARGET_MISMATCH");
+  if (input.target.environment !== "external" || input.target.system !== "grok-bot") throw new JarvisError("CONTROL_TARGET_MISMATCH");
+  requireOnlyArgs(input.args, ["action_kind", "summary", "payload_digest", "source", "batch_summary", "batch_digest", "items"]);
+  if (input.args.source !== "grok-bot") throw new JarvisError("CONTROL_ARGS_MISMATCH");
+  const items = parseExternalDelegateItems(input.args.items);
+  const digest = externalDelegateBatchDigest(items);
+  if (input.args.batch_digest !== digest || input.args.payload_digest !== digest) throw new JarvisError("CONTROL_ARGS_MISMATCH");
+  const summary = requireString(input.args, "batch_summary", "CONTROL_ARGS_MISMATCH");
+  if (summary.length > 240 || input.args.summary !== summary) throw new JarvisError("CONTROL_ARGS_MISMATCH");
+  const kind = items.length === 1 ? items[0]?.action_kind : "batch";
+  if (input.args.action_kind !== kind) throw new JarvisError("CONTROL_ARGS_MISMATCH");
+}
+
 function evidenceNegativeRecord(input: RuntimeControlActionInput): void {
   validateOptionalLocalTarget(input.target, ["environment", "task_id"]);
   requireOnlyArgs(input.args, ["schema_version", "task_id", "attempt_id", "reason_code", "scope", "summary", "evidence_digest"]);
@@ -190,6 +205,7 @@ const descriptors: Record<string, Descriptor> = {
   "git.push": { action: "git.push", minimum_level: 4, executable: false, validate: gitPush },
   "collaboration.room.create": { action: "collaboration.room.create", minimum_level: 3, executable: false, validate: retiredCollaborationRoomCreate },
   "evidence.negative.record": { action: "evidence.negative.record", minimum_level: 2, executable: true, validate: evidenceNegativeRecord },
+  "external.delegate": { action: "external.delegate", minimum_level: 3, executable: false, validate: externalDelegate },
   "memory.confirm": { action: "memory.confirm", minimum_level: 3, executable: false, validate: memoryConfirm },
   "memory.scope.review": { action: "memory.scope.review", minimum_level: 3, executable: false, validate: validateMemoryScopeReviewAction },
   "memory.outbox.dispatch": { action: "memory.outbox.dispatch", minimum_level: 3, executable: true, validate: memoryOutboxDispatch },

@@ -15,6 +15,7 @@ type Item = Readonly<{
   needs_review?: boolean;
   failure_code?: string | null;
   state?: string;
+  batch_items?: readonly { action_kind: string; summary: string; payload_digest: string }[];
 }>;
 
 type Status = "loading" | "ready" | "error" | "unconfigured";
@@ -123,7 +124,7 @@ export function OwnerInboxPanel() {
       const decided = await response.json() as { execution?: InboxExecution };
       const outcome = inboxExecutionOutcome(decision, decided.execution);
       setOutcome(outcome);
-      setNotice(inboxOutcomeText(outcome));
+      setNotice(inboxOutcomeText(outcome, item.action));
       await load();
     } catch {
       setNotice("패스키 확인 뒤에만 처리됩니다.");
@@ -162,6 +163,13 @@ export function OwnerInboxPanel() {
           {items.filter(item => !item.needs_review).map(item => (
             <li className="record" key={item.request_id}>
               <p className="record-title">{item.summary}</p>
+              {item.batch_items && item.batch_items.length > 0 ? (
+                <ol className="batch-list" data-batch="true">
+                  {item.batch_items.map(batch => (
+                    <li key={batch.payload_digest}><span>{batch.action_kind}</span> {batch.summary}</li>
+                  ))}
+                </ol>
+              ) : null}
               {item.expired ? <p className="record-meta">만료됨. 이 요청은 더 이상 승인할 수 없습니다.</p> : null}
               <p className="record-meta">{actionLabel(item.action)}</p>
               <p className="record-meta"><time dateTime={item.expires_at}>유효 {formatKst(item.expires_at)}</time></p>

@@ -5,6 +5,7 @@ import type { ControlReceiptSigner } from "./remote-approval-signer.js";
 import { carryNonSensitiveConfirm, type ConfirmCarry } from "./memory-confirm-carry.js";
 import { KNOWN_CONTROL_ACTIONS } from "./control-actions.js";
 import { approvedActionHasExecutor } from "./approved-executor.js";
+import { EXTERNAL_DELEGATE_RECEIPT_WINDOW_MS } from "./external-delegate.js";
 
 /** Every staged control action can be signed here. Unknown actions stay forbidden. */
 export const OWNER_INBOX_ACTIONS = KNOWN_CONTROL_ACTIONS;
@@ -12,6 +13,7 @@ export const OWNER_INBOX_ACTIONS = KNOWN_CONTROL_ACTIONS;
 export type OwnerInboxAction = string;
 
 export const OWNER_INBOX_MANUAL_WAIT = "승인됨 — 실행 대기(수동)";
+export const OWNER_INBOX_EXTERNAL_DONE = "승인됨 — 외부 실행";
 export type OwnerInboxDecision = "approve" | "reject";
 
 export type InboxAssertion = Readonly<{
@@ -53,6 +55,8 @@ export type OwnerInboxItem = Readonly<{
   manual_wait: boolean;
   needs_review: boolean;
   failure_code: string | null;
+  batch_summary?: string;
+  batch_items?: readonly { action_kind: string; summary: string; payload_digest: string }[];
 }>;
 
 const ACTION_SUMMARY: Readonly<Record<string, string>> = {
@@ -69,6 +73,7 @@ type Row = Readonly<{
   requested_at: string;
   state: string;
   failure_code: string | null;
+  args_json?: string;
 }>;
 
 export class OwnerInbox {
@@ -82,7 +87,7 @@ export class OwnerInbox {
   list(): readonly OwnerInboxItem[] {
     const now = this.now().getTime();
     const rows = this.db.db.prepare(
-      `SELECT request_id, action, command_digest, expires_at, requested_at, state, failure_code
+      `SELECT request_id, action, command_digest, expires_at, requested_at, state, failure_code, args_json
        FROM control_command_requests
        WHERE state IN ('pending', 'approved', 'failed', 'uncertain')
        ORDER BY requested_at, request_id`,
@@ -171,7 +176,8 @@ export class OwnerInbox {
     const now = this.now();
     const row = this.one(input.request_id);
     const issued = now.toISOString();
-    const receiptExpires = new Date(Math.min(Date.parse(row.expires_at), now.getTime() + 10 * 60_000)).toISOString();
+    const windowMs = row.action === "external.delegate" ? EXTERNAL_DELEGATE_RECEIPT_WINDOW_MS : 10 * 60_000;
+    const receiptExpires = new Date(Math.min(Date.parse(row.expires_at), now.getTime() + windowMs)).toISOString();
     const receipt: Omit<CommandApprovalReceipt, "signature"> = {
       schema_version: 1,
       receipt_id: `rcpt:${randomUUID()}`,
@@ -277,11 +283,13 @@ function visible(row: Row): boolean {
 
 function itemOf(row: Row, expired: boolean): OwnerInboxItem {
   const manual = row.state === "approved" && !approvedActionHasExecutor(row.action);
-  const base = ACTION_SUMMARY[row.action] ?? row.action;
+  const external = externalDisplay(row);
+  const base = external?.summary ?? ACTION_SUMMARY[row.action] ?? row.action;
+  const approvedText = row.action === "external.delegate" ? OWNER_INBOX_EXTERNAL_DONE : OWNER_INBOX_MANUAL_WAIT;
   return {
     request_id: row.request_id,
     action: row.action,
-    summary: manual ? OWNER_INBOX_MANUAL_WAIT : expired ? `${base} (만료됨)` : base,
+    summary: manual ? approvedText : expired ? `${base} (만료됨)` : base,
     command_digest: row.command_digest,
     expires_at: row.expires_at,
     requested_at: row.requested_at,
@@ -289,5 +297,27 @@ function itemOf(row: Row, expired: boolean): OwnerInboxItem {
     manual_wait: manual,
     needs_review: row.state === "failed" || row.state === "uncertain",
     failure_code: row.state === "failed" || row.state === "uncertain" ? row.failure_code : null,
+    ...(external ? { batch_summary: external.batch_summary, batch_items: external.batch_items } : {}),
   };
+}
+
+function externalDisplay(row: Row): {
+  summary: string;
+  batch_summary: string;
+  batch_items: { action_kind: string; summary: string; payload_digest: string }[];
+} | undefined {
+  if (row.action !== "external.delegate" || row.args_json === undefined) return undefined;
+  let parsed: unknown;
+  try { parsed = JSON.parse(row.args_json); } catch { return undefined; }
+  if (typeof parsed !== "object" || parsed === null) return undefined;
+  const args = parsed as { batch_summary?: unknown; items?: unknown };
+  const batchSummary = typeof args.batch_summary === "string" ? args.batch_summary : "";
+  const items = Array.isArray(args.items) ? args.items.flatMap(item => {
+    if (typeof item !== "object" || item === null) return [];
+    const rowItem = item as { action_kind?: unknown; summary?: unknown; payload_digest?: unknown };
+    if (typeof rowItem.action_kind !== "string" || typeof rowItem.summary !== "string" || typeof rowItem.payload_digest !== "string") return [];
+    return [{ action_kind: rowItem.action_kind, summary: rowItem.summary, payload_digest: rowItem.payload_digest }];
+  }) : [];
+  const kinds = items.map(item => item.action_kind).join(", ") || "batch";
+  return { summary: `외부: ${kinds} — ${batchSummary}`, batch_summary: batchSummary, batch_items: items };
 }

@@ -19,8 +19,11 @@ export function stageControlCommand(authority: AuthorityDb, input: ControlComman
       !Number.isFinite(requested) || !Number.isFinite(expires) || requested > nowMs || expires <= nowMs || expires <= requested ||
       expires - requested > 24 * 60 * 60_000 ) throw new JarvisError("CONTROL_COMMAND_INVALID"); validateControlAction(input);
     const irreversible = ["memory.outbox.dispatch", "memory.outbox.abandon-not-delivered", "memory.delete",
-      "memory.export", "memory.generation.rollback"];
+      "memory.export", "memory.generation.rollback", "external.delegate"];
     if (irreversible.includes(input.action) && input.reversible) throw new JarvisError("CONTROL_COMMAND_INVALID");
+    if (input.action === "external.delegate" && (input.action_level !== 3 || input.requested_by !== "agent:grok-bot")) {
+      throw new JarvisError("CONTROL_COMMAND_INVALID");
+    }
     const digest = controlCommandDigest(input); const targetJson = canonicalize(input.target);
     const argsJson = canonicalize(input.args); const at = now.toISOString();
     if (input.action === "memory.scope.review") {
