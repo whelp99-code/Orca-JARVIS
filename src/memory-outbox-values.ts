@@ -81,7 +81,9 @@ export function parseMemoryOutboxAction(
   // the shipped inline request body.
   const spoolDigest = args["dispatch_spool_digest"];
   const spooled = spoolDigest !== undefined;
-  exact(args, ["schema_version", spooled ? "dispatch_spool_digest" : "request", "expected_artifact"]);
+  const argKeys = ["schema_version", spooled ? "dispatch_spool_digest" : "request", "expected_artifact"];
+  if (args["confirm_binding"] !== undefined) argKeys.push("confirm_binding");
+  exact(args, argKeys);
   const candidateId = target["candidate_id"];
   if (typeof candidateId !== "string") throw new JarvisError("MEMORY_OUTBOX_INPUT_INVALID");
   if (spooled && (typeof spoolDigest !== "string" || !DIGEST.test(spoolDigest))) {

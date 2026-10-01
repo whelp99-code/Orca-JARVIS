@@ -3,7 +3,10 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { JarvisError, type AuthorityDb } from "../db.js";
 import { enrollOwnerPasskey, readEnrollmentChallenge, rejectEnrollmentOrigin, type EnrollmentCheck } from "../owner-inbox-enrollment.js";
 import { writeOwnerInboxPreflight } from "../owner-inbox-preflight.js";
+import { ApprovedCommandExecutor } from "../approved-executor.js";
 import { OwnerInbox, type AssertionCheck, type InboxAssertion, type OwnerInboxDecision } from "../owner-inbox.js";
+import type { DashboardExecutorFactory } from "./authority-service.js";
+import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
 import { composeOwnerInbox } from "../remote-approval-compose.js";
 import { verifyAssertionCrypto } from "../remote-approval-webauthn.js";
 import type { RemoteApprovalService } from "../remote-approval.js";
@@ -35,6 +38,9 @@ export async function tryHandleOwnerInbox(input: Readonly<{
   assertionCheck?: AssertionCheck;
   enrollmentCheck?: EnrollmentCheck;
   now?: Date;
+  executorFactory?: DashboardExecutorFactory;
+  memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
+  clock?: () => Date;
 }>): Promise<boolean> {
   if (!PATHS.has(input.path)) return false;
   const method = input.request.method ?? "";
@@ -82,7 +88,10 @@ export async function tryHandleOwnerInbox(input: Readonly<{
       origin: ceremony.origin,
       rpId: ceremony.rpId,
     });
-    writeDashboardJson(input.response, { status: 200, requestId: input.requestId, body: { schema_version: 1, ...result } });
+    const execution = result.state === "approved"
+      ? await executeApprovedInbox(input, result.request_id, result.carried?.carried === true ? result.carried.request_id : undefined)
+      : undefined;
+    writeDashboardJson(input.response, { status: 200, requestId: input.requestId, body: { schema_version: 1, ...result, execution } });
   } catch (error) {
     if (!(error instanceof JarvisError)) throw error;
     const status = statusFor(error.code);
@@ -91,6 +100,29 @@ export async function tryHandleOwnerInbox(input: Readonly<{
     writeDashboardError(input.response, { status, code, requestId: input.requestId });
   }
   return true;
+}
+
+async function executeApprovedInbox(input: Readonly<{
+  db: AuthorityDb;
+  now?: Date;
+  clock?: () => Date;
+  executorFactory?: DashboardExecutorFactory;
+  memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
+}>, requestId: string, carriedRequestId?: string): Promise<unknown> {
+  const now = input.now ?? input.clock?.() ?? new Date();
+  const executor = input.executorFactory?.({ db: input.db, now, memoryLifecycle: input.memoryLifecycle })
+    ?? new ApprovedCommandExecutor(input.db, undefined, undefined, {}, () => now, undefined, undefined, input.memoryLifecycle);
+  const run = async (id: string) => {
+    try {
+      return await executor.execute(id, "owner-inbox", now);
+    } catch (error) {
+      return { request_id: id, state: "failed" as const,
+        failure_code: error instanceof JarvisError ? error.code : "APPROVED_COMMAND_FAILED" };
+    }
+  };
+  const primary = await run(requestId);
+  const carried = carriedRequestId === undefined ? undefined : await run(carriedRequestId);
+  return carried === undefined ? primary : { primary, carried };
 }
 
 const productionCheck: AssertionCheck = async (input) => {
