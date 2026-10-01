@@ -1,6 +1,8 @@
 import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { JarvisError, type AuthorityDb } from "../db.js";
+import { enrollOwnerPasskey } from "../owner-inbox-enrollment.js";
+import { writeOwnerInboxPreflight } from "../owner-inbox-preflight.js";
 import { OwnerInbox, type AssertionCheck, type InboxAssertion, type OwnerInboxDecision } from "../owner-inbox.js";
 import { composeOwnerInbox } from "../remote-approval-compose.js";
 import { verifyAssertionCrypto } from "../remote-approval-webauthn.js";
@@ -12,7 +14,9 @@ import { parseSecondBrainStrictJsonBytes } from "../second-brain-strict-json.js"
 
 const CSRF = "x-jarvis-csrf";
 const MAX_BODY = 16_384;
-const PATHS = new Set(["/api/v1/owner-inbox", "/api/v1/owner-inbox/decide", "/api/v1/owner-inbox/challenge"]);
+const PATHS = new Set([
+  "/api/v1/owner-inbox", "/api/v1/owner-inbox/decide", "/api/v1/owner-inbox/challenge", "/api/v1/owner-inbox/enroll",
+]);
 
 export function isOwnerInboxPath(path: string): boolean {
   return PATHS.has(path);
@@ -33,7 +37,7 @@ export async function tryHandleOwnerInbox(input: Readonly<{
   if (!PATHS.has(input.path)) return false;
   const method = input.request.method ?? "";
   if (method === "OPTIONS") {
-    writePreflight(input.response, input.origin);
+    writeOwnerInboxPreflight(input.response, input.origin);
     return true;
   }
   if (input.path === "/api/v1/owner-inbox" && method !== "GET") return methodError(input);
@@ -51,6 +55,11 @@ export async function tryHandleOwnerInbox(input: Readonly<{
       return true;
     }
     const body = parseSecondBrainStrictJsonBytes(raw);
+    if (input.path.endsWith("/enroll")) {
+      const enrolled = await enrollFrom(input, body, sessionId);
+      writeDashboardJson(input.response, { status: 200, requestId: input.requestId, body: { schema_version: 1, ...enrolled } });
+      return true;
+    }
     if (input.path.endsWith("/challenge")) {
       const parsed = parseBinding(body);
       if (parsed === undefined) return invalid(input);
@@ -118,6 +127,32 @@ function admit(input: {
   if (local && csrf !== undefined) return `local:${createHash("sha256").update(csrf).digest("hex")}`;
   if (ingress && ingress.request_method === method && ingress.canonical_path === input.path) return ingress.gateway_session_digest;
   return undefined;
+}
+
+async function enrollFrom(input: {
+  request: IncomingMessage;
+  db: AuthorityDb;
+  origin: string;
+}, body: unknown): Promise<{ credential_id: string }> {
+  if (!record(body) || body.schema_version !== 1 || typeof body.enrollment_code !== "string") {
+    throw new JarvisError("OWNER_INBOX_INVALID");
+  }
+  const sent = header(input.request.headers.origin) ?? input.origin;
+  const expected = process.env.JARVIS_OWNER_INBOX_ORIGIN ?? input.origin;
+  if (sent !== expected) throw new JarvisError("OWNER_INBOX_IDENTITY_REQUIRED");
+  if (!record(body.attestation)) throw new JarvisError("OWNER_INBOX_WEBAUTHN_REQUIRED");
+  const attestation = body.attestation;
+  return enrollOwnerPasskey(input.db, {
+    code: body.enrollment_code,
+    attestation: {
+      id: String(attestation.id ?? ""),
+      clientDataJSON: String(attestation.clientDataJSON ?? ""),
+      attestationObject: String(attestation.attestationObject ?? ""),
+    },
+    origin: sent,
+    expectedOrigin: expected,
+    rpId: new URL(expected).hostname,
+  });
 }
 
 function parseBinding(body: unknown): { request_id: string; decision: OwnerInboxDecision; command_digest: string } | undefined {
@@ -206,18 +241,6 @@ function coded(
 ): boolean {
   writeDashboardError(input.response, { status, code, requestId: input.requestId });
   return true;
-}
-
-export function writePreflight(response: ServerResponse, origin: string): void {
-  response.writeHead(204, {
-    Allow: "GET, POST, OPTIONS",
-    "Access-Control-Allow-Origin": origin,
-    "Access-Control-Allow-Credentials": "true",
-    "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
-    "Access-Control-Allow-Headers": "content-type, x-jarvis-csrf",
-    "Access-Control-Max-Age": "600",
-  });
-  response.end();
 }
 
 async function readBody(request: IncomingMessage): Promise<Buffer | undefined> {
