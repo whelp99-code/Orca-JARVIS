@@ -5,6 +5,7 @@ import type { SecondBrainReadinessProbe } from "../second-brain-readiness.js";
 import { JarvisError, type AuthorityDb } from "../db.js";
 import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
 import { writeOwnerInboxPreflight } from "../owner-inbox-preflight.js";
+import type { DashboardExecutorFactory } from "./authority-service.js";
 import type { RemoteApprovalService } from "../remote-approval.js";
 import { tryHandleDashboardApi } from "./api-routes.js";
 import { isOwnerInboxPath } from "./owner-inbox-routes.js";
