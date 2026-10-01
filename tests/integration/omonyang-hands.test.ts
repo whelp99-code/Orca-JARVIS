@@ -1,3 +1,4 @@
+import { generateKeyPairSync } from "node:crypto";
 import { mkdtempSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -9,6 +10,8 @@ import { HandsService } from "../../src/omonyang-hands/hands.js";
 import { createOmonyangHandsMcp } from "../../src/omonyang-hands/mcp.js";
 import { StdioSbMcp } from "../../src/omonyang-hands/sb-client.js";
 import { externalDelegateBatchDigest } from "../../src/external-delegate.js";
+import { OwnerInbox } from "../../src/owner-inbox.js";
+import { ControlReceiptSigner } from "../../src/remote-approval-signer.js";
 
 const TOKEN = "omonyang-token-0123456789abcdef0123456789";
 const DIGEST = `sha256:${"ab".repeat(32)}`;
@@ -73,7 +76,9 @@ describe("omonyang hands", () => {
     }, TOKEN);
     expect(staged.data["state"]).toBe("pending");
     const row = fx.authority.db.prepare("SELECT action, requested_by FROM control_command_requests WHERE request_id='req_mail_1'").get() as { action: string; requested_by: string };
-    expect(row).toEqual({ action: "external.delegate", requested_by: "agent:grok-bot" });
+    expect(row).toEqual({ action: "external.delegate", requested_by: "agent:omonyang" });
+    const inbox = new OwnerInbox(fx.authority, new ControlReceiptSigner(generateKeyPairSync("ed25519").privateKey, "unused", "unused"), false, () => new Date("2026-10-02T00:00:00.000Z"));
+    expect(inbox.list().find(item => item.request_id === "req_mail_1")?.requester_label).toBe("오모냥 요청");
     expect(fx.authority.db.prepare("SELECT name FROM sqlite_master WHERE name='omonyang_approvals'").get()).toBeUndefined();
     const batch_digest = externalDelegateBatchDigest(items);
     expect(staged.data["batch_digest"]).toBe(batch_digest);
@@ -83,6 +88,10 @@ describe("omonyang hands", () => {
     await expect(fx.service.call("jarvis.request_approval", {
       request_id: "req_mail_1", batch_summary: "changed summary text", expires_in_seconds: 900, items,
     }, TOKEN)).rejects.toMatchObject({ code: "CONFLICT" });
+    await expect(fx.service.call("jarvis.request_approval", {
+      request_id: "req_mail_lie", batch_summary: "send the invoice draft", expires_in_seconds: 900, items,
+      requested_by: "agent:grok-bot",
+    }, TOKEN)).rejects.toMatchObject({ code: "AUTH_IDENTITY" });
     fx.authority.db.prepare("UPDATE control_command_requests SET state='approved' WHERE request_id='req_mail_1'").run();
     const approved = await fx.service.call("jarvis.approval_status", { request_id: "req_mail_1", batch_digest }, TOKEN);
     expect(approved.data).toMatchObject({ state: "approved", manual_wait: true });

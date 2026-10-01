@@ -16,6 +16,7 @@ type Item = Readonly<{
   failure_code?: string | null;
   state?: string;
   batch_items?: readonly BatchLine[];
+  requester_label?: string;
 }>;
 
 type BatchLine = Readonly<{
@@ -179,6 +180,7 @@ export function OwnerInboxPanel() {
         <ul className="record-list">
           {items.filter(item => !item.needs_review).map(item => (
             <li className="record" key={item.request_id}>
+              {item.requester_label ? <p className="record-title" data-requester={item.requester_label}>{item.requester_label}</p> : null}
               <p className="record-title">{item.batch_items && item.batch_items.length > 0 ? `윤비서 요청 · ${item.batch_items.length}건 묶음 · 30분 내 승인` : item.summary}</p>
               {item.batch_items && item.batch_items.length > 0 ? <BatchLines items={item.batch_items} /> : null}
               {item.expired ? <p className="record-meta">만료됨. 이 요청은 더 이상 승인할 수 없습니다.</p> : null}

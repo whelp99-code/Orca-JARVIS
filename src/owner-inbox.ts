@@ -5,7 +5,7 @@ import type { ControlReceiptSigner } from "./remote-approval-signer.js";
 import { carryNonSensitiveConfirm, type ConfirmCarry } from "./memory-confirm-carry.js";
 import { KNOWN_CONTROL_ACTIONS } from "./control-actions.js";
 import { approvedActionHasExecutor } from "./approved-executor.js";
-import { EXTERNAL_DELEGATE_RECEIPT_WINDOW_MS } from "./external-delegate.js";
+import { EXTERNAL_DELEGATE_RECEIPT_WINDOW_MS, externalDelegateRequester } from "./external-delegate.js";
 
 /** Every staged control action can be signed here. Unknown actions stay forbidden. */
 export const OWNER_INBOX_ACTIONS = KNOWN_CONTROL_ACTIONS;
@@ -63,6 +63,7 @@ export type OwnerInboxItem = Readonly<{
     mail_to?: string;
     mail_subject?: string;
   }[];
+  requester_label?: string;
 }>;
 
 const ACTION_SUMMARY: Readonly<Record<string, string>> = {
@@ -80,6 +81,7 @@ type Row = Readonly<{
   state: string;
   failure_code: string | null;
   args_json?: string;
+  requested_by?: string;
 }>;
 
 export class OwnerInbox {
@@ -93,7 +95,7 @@ export class OwnerInbox {
   list(): readonly OwnerInboxItem[] {
     const now = this.now().getTime();
     const rows = this.db.db.prepare(
-      `SELECT request_id, action, command_digest, expires_at, requested_at, state, failure_code, args_json
+      `SELECT request_id, action, command_digest, expires_at, requested_at, state, failure_code, args_json, requested_by
        FROM control_command_requests
        WHERE state IN ('pending', 'approved', 'failed', 'uncertain')
        ORDER BY requested_at, request_id`,
@@ -304,6 +306,7 @@ function itemOf(row: Row, expired: boolean): OwnerInboxItem {
     needs_review: row.state === "failed" || row.state === "uncertain",
     failure_code: row.state === "failed" || row.state === "uncertain" ? row.failure_code : null,
     ...(external ? { batch_summary: external.batch_summary, batch_items: external.batch_items } : {}),
+    ...(external && row.requested_by ? { requester_label: externalDelegateRequester(row.requested_by)?.header } : {}),
   };
 }
 

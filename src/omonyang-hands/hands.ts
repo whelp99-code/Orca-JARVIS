@@ -2,6 +2,7 @@ import { ControlPlane, type ControlCommandRequestInput } from "../control-plane.
 import { JarvisError, type AuthorityDb } from "../db.js";
 import {
   externalDelegateBatchDigest,
+  externalDelegateRequester,
   parseExternalDelegateItems,
 } from "../external-delegate.js";
 import { Core5CapabilityRegistry } from "../integration/capability-registry.js";
@@ -123,6 +124,9 @@ export class HandsService {
   }
 
   private requestApproval(input: Record<string, unknown>): Record<string, unknown> {
+    if ("requested_by" in input || "source" in input || "agent" in input) throw new HandsError("AUTH_IDENTITY");
+    const requester = externalDelegateRequester(this.token.agent);
+    if (requester === undefined) throw new HandsError("AUTH_IDENTITY");
     const items = parseExternalDelegateItems(input["items"]);
     const batchDigest = externalDelegateBatchDigest(items);
     const summary = text(input["batch_summary"], "batch_summary", 240);
@@ -138,9 +142,9 @@ export class HandsService {
       request_id: requestId,
       action: "external.delegate",
       action_level: 3,
-      target: { environment: "external", system: "grok-bot" },
+      target: { environment: "external", system: requester.system },
       args: {
-        source: "grok-bot",
+        source: requester.source,
         action_kind: items.length === 1 ? items[0]?.action_kind : "batch",
         summary,
         batch_summary: summary,
@@ -149,7 +153,7 @@ export class HandsService {
         items,
       },
       reversible: false,
-      requested_by: "agent:grok-bot",
+      requested_by: this.token.agent,
       requested_at: requested,
       expires_at: new Date(this.now().getTime() + expiresIn * 1000).toISOString(),
       nonce: `delegate:${requestId}`,
