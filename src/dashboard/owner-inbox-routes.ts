@@ -3,7 +3,7 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { JarvisError, type AuthorityDb } from "../db.js";
 import { enrollOwnerPasskey, readEnrollmentChallenge, rejectEnrollmentOrigin, type EnrollmentCheck } from "../owner-inbox-enrollment.js";
 import { writeOwnerInboxPreflight } from "../owner-inbox-preflight.js";
-import { ApprovedCommandExecutor } from "../approved-executor.js";
+import { ApprovedCommandExecutor, approvedActionHasExecutor } from "../approved-executor.js";
 import { OwnerInbox, type AssertionCheck, type InboxAssertion, type OwnerInboxDecision } from "../owner-inbox.js";
 import type { DashboardExecutorFactory } from "./authority-service.js";
 import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
@@ -113,7 +113,13 @@ async function executeApprovedInbox(input: Readonly<{
   const executor = input.executorFactory?.({ db: input.db, now, memoryLifecycle: input.memoryLifecycle })
     ?? new ApprovedCommandExecutor(input.db, undefined, undefined, {}, () => now, undefined, undefined, input.memoryLifecycle);
   const run = async (id: string) => {
+    const row = input.db.db.prepare("SELECT action FROM control_command_requests WHERE request_id = ?")
+      .get(id) as { action: string } | undefined;
+    if (row === undefined || !approvedActionHasExecutor(row.action)) {
+      return { request_id: id, state: "approved" as const, manual_wait: true as const };
+    }
     try {
+      // One claim. An uncertain result is returned as-is and is not claimed again.
       return await executor.execute(id, "owner-inbox", now);
     } catch (error) {
       return { request_id: id, state: "failed" as const,

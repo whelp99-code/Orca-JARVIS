@@ -10,6 +10,7 @@ type Item = Readonly<{
   command_digest: string;
   expires_at: string;
   expired?: boolean;
+  manual_wait?: boolean;
 }>;
 
 type Status = "loading" | "ready" | "error" | "unconfigured";
@@ -139,7 +140,7 @@ export function OwnerInboxPanel() {
               <p className="record-meta">{actionLabel(item.action)}</p>
               <p className="record-meta"><time dateTime={item.expires_at}>유효 {formatKst(item.expires_at)}</time></p>
               <Digest value={item.command_digest} />
-              {item.expired ? null : (
+              {item.expired || item.manual_wait ? null : (
                 <>
                   <button type="button" disabled={busyId === item.request_id} onClick={() => { void decide(item, "approve"); }}>승인</button>
                   <button type="button" disabled={busyId === item.request_id} onClick={() => { void decide(item, "reject"); }}>거절</button>

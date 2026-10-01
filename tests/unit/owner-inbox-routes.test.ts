@@ -61,7 +61,7 @@ describe("owner inbox routes", () => {
     const live = await boot();
     const digest = seed(live.db, "req-confirm", "memory.confirm");
     const oldDigest = seed(live.db, "req-old", "memory.confirm", "2026-09-29T00:00:00.000Z");
-    const otherDigest = seed(live.db, "req-other", "workflow.start");
+    const otherDigest = seed(live.db, "req-other", "not.a.control.action");
     live.db.db.prepare("INSERT INTO owner_inbox_credentials(credential_id, public_key, counter, created_at) VALUES(?,?,?,?)")
       .run("test-pass", Buffer.from("pk"), 0, NOW.toISOString());
     const decide = `${live.origin}/api/v1/owner-inbox/decide`;
