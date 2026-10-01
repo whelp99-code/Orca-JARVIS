@@ -110,13 +110,13 @@ export async function invalidReceiptFlow(page: Page, testInfo: TestInfo, baseURL
     return page.locator("article.authority-controls").filter({ hasText: IDS.pendingInvalid });
   };
   const malformed = await cardFor();
-  await malformed.getByLabel("Signed receipt JSON").fill("{");
-  await malformed.getByRole("button", { name: "Submit signed receipt" }).click();
-  await expect(malformed.getByRole("alert")).toHaveText("Signed receipt must be valid JSON");
+  await malformed.getByLabel("서명 영수증").fill("{");
+  await malformed.getByRole("button", { name: "서명 제출" }).click();
+  await expect(malformed.getByRole("alert")).toHaveText("서명 영수증은 올바른 JSON이어야 합니다");
   expect(fingerprintFor(baseURL)).toBe(before);
   const untrusted = await cardFor();
-  await untrusted.getByLabel("Signed receipt JSON").fill(signedReceiptFor(baseURL, IDS.pendingInvalid, "approve", true));
-  await untrusted.getByRole("button", { name: "Submit signed receipt" }).click();
+  await untrusted.getByLabel("서명 영수증").fill(signedReceiptFor(baseURL, IDS.pendingInvalid, "approve", true));
+  await untrusted.getByRole("button", { name: "서명 제출" }).click();
   await expect(untrusted.getByRole("alert")).toHaveText("Unable to submit signed receipt");
   expect(fingerprintFor(baseURL)).toBe(before);
   await capture(page, testInfo, "invalid-receipt");
@@ -126,8 +126,8 @@ export async function approveExecuteFlow(page: Page, baseURL: string): Promise<v
   await page.goto("/approvals");
   await waitLive(page);
   const card = page.locator("article.authority-controls").filter({ hasText: IDS.pendingApprove });
-  await card.getByLabel("Signed receipt JSON").fill(signedReceiptFor(baseURL, IDS.pendingApprove, "approve"));
-  await card.getByRole("button", { name: "Submit signed receipt" }).click();
+  await card.getByLabel("서명 영수증").fill(signedReceiptFor(baseURL, IDS.pendingApprove, "approve"));
+  await card.getByRole("button", { name: "서명 제출" }).click();
   await expect(card.getByText("approved", { exact: true })).toBeVisible();
   const executed = page.waitForResponse(response => response.request().method() === "POST"
     && response.url().endsWith(`/api/v1/control/requests/${IDS.pendingApprove}/execute`));
@@ -142,10 +142,10 @@ export async function rejectFlow(page: Page, baseURL: string): Promise<void> {
   await page.goto("/approvals");
   await waitLive(page);
   const card = page.locator("article.authority-controls").filter({ hasText: IDS.pendingReject });
-  await card.getByLabel("Signed receipt JSON").fill(signedReceiptFor(baseURL, IDS.pendingReject, "reject"));
+  await card.getByLabel("서명 영수증").fill(signedReceiptFor(baseURL, IDS.pendingReject, "reject"));
   const rejected = page.waitForResponse(response => response.request().method() === "POST"
     && response.url().endsWith(`/api/v1/control/requests/${IDS.pendingReject}/decision`));
-  await card.getByRole("button", { name: "Submit signed receipt" }).click();
+  await card.getByRole("button", { name: "서명 제출" }).click();
   const response = await rejected;
   expect(response.status()).toBe(200);
   expect(await response.json()).toMatchObject({ request_id: IDS.pendingReject, state: "rejected" });
