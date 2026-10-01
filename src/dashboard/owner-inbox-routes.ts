@@ -92,7 +92,11 @@ export async function tryHandleOwnerInbox(input: Readonly<{
     const execution = result.state === "approved"
       ? await executeApprovedInbox(input, result.request_id, result.carried?.carried === true ? result.carried.request_id : undefined)
       : undefined;
-    writeDashboardJson(input.response, { status: 200, requestId: input.requestId, body: { schema_version: 1, ...result, execution: execution === undefined ? undefined : redactExecution(execution) } });
+    const publicExecution = execution === undefined ? undefined : redactExecution(execution);
+    writeDashboardJson(input.response, {
+      status: 200, requestId: input.requestId,
+      body: { schema_version: 1, ...result, execution: publicExecution },
+    });
   } catch (error) {
     if (!(error instanceof JarvisError)) throw error;
     const status = statusFor(error.code);

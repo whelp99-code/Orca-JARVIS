@@ -22,30 +22,7 @@ import { copyPinnedRegularFile, privatePath, publishFile, removeSqliteCopy, secu
 
 export type { ApprovedExecutionResult } from "./approved-executor-types.js";
 export type { MemoryLifecycleService } from "./memory-lifecycle-service-types.js";
-
-/** Actions this class claims and settles. `executable: false` still includes memory.confirm. */
-const EXECUTOR_ACTIONS = new Set([
-  "task.execute",
-  "database.backup",
-  "database.restore_drill",
-  "state.project",
-  "workflow.register",
-  "workflow.start",
-  "workflow.advance",
-  "workflow.cancel",
-  "runbook.execute",
-  "evidence.negative.record",
-  "memory.confirm",
-  "memory.outbox.dispatch",
-  "memory.outbox.abandon-not-delivered",
-  "memory.delete",
-  "memory.export",
-  "memory.generation.rollback",
-]);
-
-export function approvedActionHasExecutor(action: string): boolean {
-  return EXECUTOR_ACTIONS.has(action);
-}
+export { approvedActionHasExecutor } from "./approved-executor-actions.js";
 
 export class ApprovedCommandExecutor {
   private readonly control: ControlPlane;
