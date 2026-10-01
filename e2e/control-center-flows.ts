@@ -186,7 +186,7 @@ export async function retryFlow(page: Page): Promise<void> {
   const card = page.locator("article.authority-controls").filter({ hasText: IDS.failedRetry });
   await card.getByRole("button", { name: "실패한 요청 다시 시도" }).click();
   await expect(card.getByRole("heading", { name: "Pending request" })).toBeVisible();
-  await expect(card.locator("[aria-label='Pending request']").getByText("대기", { exact: true })).toBeVisible();
+  await expect(card.locator("[aria-label='Pending request']").getByText("pending", { exact: true })).toBeVisible();
 }
 
 export async function qualityFlow(page: Page, errors: readonly string[]): Promise<void> {
