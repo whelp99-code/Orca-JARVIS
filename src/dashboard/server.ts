@@ -80,6 +80,7 @@ export type DashboardServerOptions = {
   readonly remoteApprovalPolicyPath?: string;
   readonly ownerInbox?: import("../owner-inbox.js").OwnerInbox;
   readonly assertionCheck?: import("../owner-inbox.js").AssertionCheck;
+  readonly enrollmentCheck?: import("../owner-inbox-enrollment.js").EnrollmentCheck;
 };
 
 type RequestContext = {
@@ -102,6 +103,7 @@ type RequestContext = {
   readonly remoteApproval?: RemoteApprovalService;
   readonly ownerInbox?: import("../owner-inbox.js").OwnerInbox;
   readonly assertionCheck?: import("../owner-inbox.js").AssertionCheck;
+  readonly enrollmentCheck?: import("../owner-inbox-enrollment.js").EnrollmentCheck;
 };
 
 export function createDashboardServer(options: DashboardServerOptions): DashboardServer & {
@@ -151,6 +153,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
       remoteApproval,
       ownerInbox: options.ownerInbox,
       assertionCheck: options.assertionCheck,
+      enrollmentCheck: options.enrollmentCheck,
     });
     requests.add(pending);
     void pending.then(() => requests.delete(pending), () => requests.delete(pending));
@@ -217,6 +220,8 @@ async function handleRequest(input: RequestContext): Promise<void> {
       remoteApproval: input.remoteApproval,
       ownerInbox: input.ownerInbox,
       assertionCheck: input.assertionCheck,
+      enrollmentCheck: input.enrollmentCheck,
+      now: input.clock(),
     })) {
       return;
     }

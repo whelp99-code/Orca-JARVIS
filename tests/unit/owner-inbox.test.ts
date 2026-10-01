@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { controlCommandDigest, type ControlCommandRequestInput } from "../../src/control-plane-contract.js";
-import { JarvisError } from "../../src/db.js";
 import { OwnerInbox } from "../../src/owner-inbox.js";
 import { ControlReceiptSigner } from "../../src/remote-approval-signer.js";
 import { initialized, localKey } from "../helpers.js";

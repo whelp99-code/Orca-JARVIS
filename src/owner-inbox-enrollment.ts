@@ -29,6 +29,14 @@ export function issueEnrollmentCode(db: AuthorityDb, now = new Date()): { readon
   return { code, expires_at: expires };
 }
 
+export function readEnrollmentChallenge(db: AuthorityDb, code: string, now = new Date()): string {
+  const row = findCode(db, code);
+  if (row === undefined) return fail(db, "OWNER_INBOX_IDENTITY_REQUIRED", now);
+  if (row.used_at !== null) return fail(db, "OWNER_INBOX_REPLAY", now);
+  if (Date.parse(row.expires_at) <= now.getTime()) return fail(db, "OWNER_INBOX_EXPIRED", now);
+  return row.challenge;
+}
+
 export async function enrollOwnerPasskey(db: AuthorityDb, input: Readonly<{
   code: string;
   attestation: EnrollmentAttestation;
@@ -87,6 +95,10 @@ function findCode(db: AuthorityDb, code: string): { used_at: string | null; expi
   return db.db.prepare(
     "SELECT used_at, expires_at, challenge FROM owner_inbox_enrollment_codes WHERE code_digest = ?",
   ).get(sha(code)) as { used_at: string | null; expires_at: string; challenge: string } | undefined;
+}
+
+export function rejectEnrollmentOrigin(db: AuthorityDb, now = new Date()): never {
+  return fail(db, "OWNER_INBOX_ORIGIN_MISMATCH", now);
 }
 
 function fail(db: AuthorityDb, code: string, now: Date): never {
