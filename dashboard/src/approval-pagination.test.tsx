@@ -56,7 +56,10 @@ it("offers page navigation including an empty last page and first-page recovery 
   const client = { decideRequest: vi.fn(), executeRequest: vi.fn(), retryRequest: vi.fn() };
   const empty = { ...page("unused"), items: [], page: { limit: 50, total: 50, returned: 0, has_more: false, next_cursor: null } } as const;
   const view = render(<ApprovalsPage state={{ status: "empty", data: empty }} client={client} onFirst={first} onNext={next} />);
-  expect(screen.getByText("0건 표시 / 처리 가능 50건")).toBeInTheDocument();
+  const pager = screen.getByRole("navigation", { name: "제어 요청" });
+  expect(pager.closest("details.admin-tools")).not.toBeNull();
+  expect(pager).toHaveTextContent("제어 요청 50건");
+  expect(pager).toHaveTextContent("0건 표시");
   expect(screen.getByRole("button", { name: "다음 페이지" })).toBeDisabled();
   fireEvent.click(screen.getByRole("button", { name: "첫 페이지" })); expect(first).toHaveBeenCalledTimes(1);
   view.rerender(<ApprovalsPage state={{ status: "error", kind: "server", error: {

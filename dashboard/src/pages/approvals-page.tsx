@@ -32,15 +32,15 @@ export function ApprovalsPage({ state, client, idFactory, onRetry, onFirst, onNe
         <section className="page-frame dashboard-main" aria-label={copy.pages.approvals}>
           <h1>{copy.pages.approvals}</h1>
           <OwnerInboxPanel />
-          {state.data.page === undefined ? null : (
-            <nav aria-label="승인 페이지" className="record-meta">
-              <span>{state.data.page.returned}건 표시 / 처리 가능 {state.data.page.total}건</span>
-              <button type="button" onClick={onFirst}>첫 페이지</button>
-              <button type="button" disabled={!state.data.page.has_more} onClick={onNext}>다음 페이지</button>
-            </nav>
-          )}
           <details className="admin-tools">
             <summary>관리자 도구</summary>
+            {state.data.page === undefined ? null : (
+              <nav aria-label="제어 요청" className="record-meta">
+                <span>제어 요청 {state.data.page.total}건 · {state.data.page.returned}건 표시</span>
+                <button type="button" onClick={onFirst}>첫 페이지</button>
+                <button type="button" disabled={!state.data.page.has_more} onClick={onNext}>다음 페이지</button>
+              </nav>
+            )}
             {state.data.items.length === 0 ? (
               <p className="empty-state" role="status">대기 중인 승인이 없습니다</p>
             ) : (
