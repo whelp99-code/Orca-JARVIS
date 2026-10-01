@@ -45,7 +45,8 @@ describe("owner inbox", () => {
     insert(db, request("req-other", "workflow.start"));
     insert(db, request("req-old", "memory.outbox.dispatch", "2026-09-29T00:00:00.000Z"));
     const inbox = new OwnerInbox(db, new ControlReceiptSigner(localKey(db), "decision-test", "test-operator"), true, () => NOW);
-    expect(inbox.list().map(item => item.request_id)).toEqual(["req-confirm"]);
+    expect(inbox.list().map(item => item.request_id)).toEqual(["req-confirm", "req-old"]);
+    expect(inbox.list().find(item => item.request_id === "req-old")?.expired).toBe(true);
     expect(JSON.stringify(inbox.list())).not.toContain("PRIVATE");
     db.db.prepare("INSERT INTO owner_inbox_credentials(credential_id, public_key, counter, created_at) VALUES(?,?,?,?)").run("cred-1", Buffer.from("pk"), 0, NOW.toISOString());
     const issued = inbox.issueChallenge({ request_id: "req-confirm", decision: "approve", command_digest: digest, session_id: "session-1" });
@@ -57,7 +58,7 @@ describe("owner inbox", () => {
       check: async () => ({ ok: true, newCounter: 1 }),
     });
     expect(decided).toEqual({ request_id: "req-confirm", state: "approved" });
-    expect(inbox.list()).toEqual([]);
+    expect(inbox.list().map(item => item.request_id)).toEqual(["req-old"]);
     const audit = db.db.prepare("SELECT fact_type, subject_id FROM audit_facts WHERE subject_id=?").get("req-confirm") as {
       fact_type: string;
     };

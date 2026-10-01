@@ -175,7 +175,7 @@ const STATE_LABELS: Readonly<Record<string, string>> = {
 };
 
 const ACTION_LABELS: Readonly<Record<string, string>> = {
-  "memory.confirm": "기억 확인",
+  "memory.confirm": "기억 저장 확인",
   "memory.outbox.dispatch": "기억 보내기",
   "memory.outbox.abandon-not-delivered": "전달 못 한 기억 닫기",
   "workflow.register": "작업 흐름 등록",

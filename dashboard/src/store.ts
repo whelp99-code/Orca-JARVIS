@@ -127,6 +127,7 @@ export function createDashboardStore(options: DashboardStoreOptions) {
     if (token !== generation) return;
     await refetch(token, SNAPSHOT_TOPICS);
     if (token !== generation) return;
+    assign({ connectionState: "live" });
     openEvents(token);
   }
 

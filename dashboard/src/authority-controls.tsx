@@ -4,6 +4,7 @@ import type { CommandApprovalReceipt, StoredControlCommand } from "../../src/con
 import "./authority-controls.css";
 import type { OverviewApproval } from "../../src/dashboard/read-model.js";
 import { DashboardApiError } from "./api.js";
+import { actionLabel, stateLabel } from "./copy.js";
 import { taskExecutionMessage } from "./task-execution-message.js";
 import {
   SYSTEM_AUTHORITY_ID_FACTORY,
@@ -119,9 +120,9 @@ export function AuthorityControls({
     <article className="authority-controls">
       <dl className="identity-list" aria-label="Request evidence">
         <div><dt>요청</dt><dd>{request.request_id}</dd></div>
-        <div><dt>할 일</dt><dd>{request.action}</dd></div>
+        <div><dt>할 일</dt><dd>{actionLabel(request.action)}</dd></div>
         <div><dt>단계</dt><dd>{request.action_level}단계</dd></div>
-        <div><dt>상태</dt><dd>{request.state}</dd></div>
+        <div><dt>상태</dt><dd>{stateLabel(request.state)}</dd></div>
       </dl>
       {taskDetailRequired ? <p>파일·검사·전송 상태를 확인하고 작업 상세에서 승인·실행하세요. <Link
         to={request.task_id ? `/tasks/${encodeURIComponent(request.task_id)}` : "/tasks"}>작업 실행 상세 열기</Link></p> : null}

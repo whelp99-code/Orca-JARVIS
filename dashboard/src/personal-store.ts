@@ -166,7 +166,7 @@ export function createPersonalStore(options: Options) {
       }
       assign({
         status: "success",
-        connectionState: source === undefined ? "offline" : sourceOpen ? "live" : "reconnecting",
+        connectionState: "live",
         data,
       });
     } catch (error: unknown) {

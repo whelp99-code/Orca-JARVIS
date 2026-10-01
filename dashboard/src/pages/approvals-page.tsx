@@ -39,17 +39,20 @@ export function ApprovalsPage({ state, client, idFactory, onRetry, onFirst, onNe
               <button type="button" disabled={!state.data.page.has_more} onClick={onNext}>다음 페이지</button>
             </nav>
           )}
-          {state.data.items.length === 0 ? (
-            <p className="empty-state" role="status">대기 중인 승인이 없습니다</p>
-          ) : (
-            <ul className="record-list panel authority-list">
-              {state.data.items.map((request) => (
-                <li className="record" key={request.request_id}>
-                  <AuthorityControls request={request} client={client} idFactory={idFactory} />
-                </li>
-              ))}
-            </ul>
-          )}
+          <details className="admin-tools">
+            <summary>관리자 도구</summary>
+            {state.data.items.length === 0 ? (
+              <p className="empty-state" role="status">대기 중인 승인이 없습니다</p>
+            ) : (
+              <ul className="record-list panel authority-list">
+                {state.data.items.map((request) => (
+                  <li className="record" key={request.request_id}>
+                    <AuthorityControls request={request} client={client} idFactory={idFactory} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </details>
         </section>
       );
     default:

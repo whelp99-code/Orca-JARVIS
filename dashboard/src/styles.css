@@ -214,8 +214,10 @@ ul {
 
 .page-frame {
   inline-size: min(100%, var(--size-page));
+  max-inline-size: 100%;
   margin-inline: auto;
   padding-inline: var(--space-8);
+  overflow-wrap: anywhere;
 }
 
 .app-header {

@@ -48,6 +48,7 @@ export type OwnerInboxItem = Readonly<{
   command_digest: string;
   expires_at: string;
   requested_at: string;
+  expired: boolean;
 }>;
 
 const ACTION_SUMMARY: Readonly<Record<OwnerInboxAction, string>> = {
@@ -81,7 +82,7 @@ export class OwnerInbox {
        WHERE state = 'pending'
        ORDER BY requested_at, request_id`,
     ).all() as Row[];
-    return rows.filter(row => isAllowed(row.action) && Date.parse(row.expires_at) > now).map(itemOf);
+    return rows.filter(row => isAllowed(row.action)).map(row => itemOf(row, Date.parse(row.expires_at) <= now));
   }
 
   issueChallenge(input: Readonly<{
@@ -248,22 +249,20 @@ export class OwnerInbox {
 }
 
 function defined<T>(value: T | undefined, code: string): T {
-  if (value === undefined) throw new JarvisError(code);
-  return value;
+  if (value === undefined) throw new JarvisError(code); return value;
 }
 
 function isAllowed(action: string): action is OwnerInboxAction {
   return (OWNER_INBOX_ACTIONS as readonly string[]).includes(action);
 }
 
-function itemOf(row: Row): OwnerInboxItem {
+function itemOf(row: Row, expired: boolean): OwnerInboxItem {
   const action = row.action as OwnerInboxAction;
-  return {
-    request_id: row.request_id,
-    action,
-    summary: ACTION_SUMMARY[action],
+  return { request_id: row.request_id, action,
+    summary: expired ? `${ACTION_SUMMARY[action]} (만료됨)` : ACTION_SUMMARY[action],
     command_digest: row.command_digest,
     expires_at: row.expires_at,
     requested_at: row.requested_at,
+    expired,
   };
 }
