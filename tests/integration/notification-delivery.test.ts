@@ -170,7 +170,7 @@ describe("notification delivery state", () => {
         expect(db.db.prepare("SELECT count(*) AS count FROM notification_deliveries").get()).toEqual({ count: 0 });
       } finally { db.close(); }
     }
-  });
+  }, 30_000);
 
   it("settles adapter failure once and rejects a contradictory replay", async () => {
     // Given

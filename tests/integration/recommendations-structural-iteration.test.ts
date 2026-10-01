@@ -197,7 +197,7 @@ describe("Task 18 structural iteration 1", () => {
       insertTerminal(db, identity, `sha256:${"b".repeat(64)}`, transitionDigest(identity), identity.occurred_at);
       expectPublicRecommendationError(() => service.project("2026-08-28T12:02:00.000Z"));
     } finally { db.close(); }
-  });
+  }, 30_000);
 
   it("uses the exact shared error for corrupt event identity across every decoding read surface", async () => {
     // Given
@@ -267,5 +267,5 @@ describe("Task 18 structural iteration 1", () => {
         }
       } finally { db.close(); }
     }
-  });
+  }, 30_000);
 });

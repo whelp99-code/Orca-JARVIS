@@ -45,9 +45,11 @@ import { memoryPolicy, verifiedMemoryInput } from "../fixtures/memory-candidate-
 import { localKey } from "../helpers.js";
 
 // This cross-process gate consumes explicitly injected build artifacts, never a host installation.
-const PROVIDER_SHA = process.env["TASK30_PROVIDER_SHA"];
-const PROVIDER_WHEEL = process.env["TASK30_PROVIDER_WHEEL"];
-const PYTHON = process.env["TASK30_PROVIDER_PYTHON"];
+import { TASK30_PROVIDER_SHA, task30Python, task30Sqlite, task30Wheel } from "../fixtures/task30-provider-runtime.js";
+
+const PROVIDER_SHA = process.env["TASK30_PROVIDER_SHA"] ?? TASK30_PROVIDER_SHA;
+const PROVIDER_WHEEL = process.env["TASK30_PROVIDER_WHEEL"] ?? task30Wheel();
+const PYTHON = process.env["TASK30_PROVIDER_PYTHON"] ?? task30Python();
 const CONTRACT = "contracts/second-brain-mcp-v1.json";
 const JARVIS_KEY_ID = "jarvis:task30:real-process";
 const PROVIDER_KEY_ID = "provider:task30:real-process";
@@ -123,7 +125,7 @@ describe("Task 30 real built-process lifecycle", () => {
     const wheel = required(PROVIDER_WHEEL, "TASK30_PROVIDER_WHEEL_REQUIRED");
     const python = required(PYTHON, "TASK30_PROVIDER_PYTHON_REQUIRED");
     const providerSha = required(PROVIDER_SHA, "TASK30_PROVIDER_SHA_REQUIRED");
-    const sqliteCli = required(process.env["TASK30_SQLITE_CLI"], "TASK30_SQLITE_CLI_REQUIRED");
+    const sqliteCli = task30Sqlite();
     expect(existsSync(wheel), "provider writer must run uv build before this gate").toBe(true);
     expect(providerSha).toMatch(/^[0-9a-f]{40}$/);
     expect(existsSync(python), "inject an isolated Python runtime").toBe(true);

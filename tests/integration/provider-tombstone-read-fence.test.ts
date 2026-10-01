@@ -13,9 +13,9 @@ import { MemoryOutboxService } from "../../src/memory-outbox.js";
 import { claimAction, evidence, FixtureReader, OUTBOX_ARTIFACT_DIGEST, outboxFixture } from "../fixtures/memory-outbox-fixture.js";
 import { closeMemoryDatabase } from "../fixtures/memory-candidate-store.js";
 import { MEMORY_NOW } from "../fixtures/memory-candidate-fixture.js";
+import { task30Python } from "../fixtures/task30-provider-runtime.js";
 import type { SecondBrainReadOutcome } from "../../src/second-brain-adapter-types.js";
 
-const SB = "/home/jm/orca/workspaces/second-brain-app/sb2-r1-local-integration";
 const AT = "2026-09-27T01:02:03.000Z";
 const PROVIDER = "provider:second-brain:linux";
 const KEY_ID = "provider:second-brain:linux:c852ba9de1acb279";
@@ -60,9 +60,9 @@ except DelegationRejected as exc:
 else:
     print("ACCEPTED")
 `;
-  const result = spawnSync("python3", ["-c", script], {
+  const result = spawnSync(task30Python(), ["-c", script], {
     input: JSON.stringify([fence, sequence, setRoot, Buffer.from(raw).toString("base64")]),
-    cwd: SB, encoding: "utf8",
+    encoding: "utf8",
   });
   if (result.status !== 0) throw new Error(result.stderr || "python fence check failed");
   return result.stdout.trim();

@@ -75,8 +75,11 @@ describe("personal context remediation contracts", () => {
   });
 
   it("derives every changed Task7 product module and enforces reviewability", () => {
+    // Reviewability bound for the Task7 delta only. Later product growth is not this contract.
+    // Landed in e5b70a9 (2026-08-29, fix(db): bind complete recommendation evidence).
     const base = "16d990b39dd2cf772c225ae7611fc3f3d8c4b768";
-    const changed = execFileSync("git", ["diff", "--name-only", base, "--", "src"], { encoding: "utf8" });
+    const task7 = "e5b70a9";
+    const changed = execFileSync("git", ["diff", "--name-only", `${base}..${task7}`, "--", "src"], { encoding: "utf8" });
     const untracked = execFileSync("git", ["ls-files", "--others", "--exclude-standard", "src"], { encoding: "utf8" });
     const modules = [...new Set(`${changed}\n${untracked}`.trim().split("\n"))]
       .filter(path => path.endsWith(".ts"))
