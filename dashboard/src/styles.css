@@ -213,6 +213,22 @@ ul {
   min-inline-size: 0;
 }
 
+.build-sha {
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+}
+
+.digest {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.digest summary,
+.digest-full {
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
 .shell-footer a:hover {
   color: var(--color-text);
 }

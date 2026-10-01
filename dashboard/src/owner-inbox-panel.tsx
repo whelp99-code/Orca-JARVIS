@@ -132,14 +132,28 @@ export function OwnerInboxPanel() {
               {item.expired ? <p className="record-meta">만료됨. 이 요청은 더 이상 승인할 수 없습니다.</p> : null}
               <p className="record-meta">{actionLabel(item.action)}</p>
               <p className="record-meta"><time dateTime={item.expires_at}>유효 {formatKst(item.expires_at)}</time></p>
-              <p className="record-meta">{item.command_digest}</p>
-              <button type="button" disabled={item.expired || busyId === item.request_id} onClick={() => { void decide(item, "approve"); }}>승인</button>
-              <button type="button" disabled={item.expired || busyId === item.request_id} onClick={() => { void decide(item, "reject"); }}>거절</button>
+              <Digest value={item.command_digest} />
+              {item.expired ? null : (
+                <>
+                  <button type="button" disabled={busyId === item.request_id} onClick={() => { void decide(item, "approve"); }}>승인</button>
+                  <button type="button" disabled={busyId === item.request_id} onClick={() => { void decide(item, "reject"); }}>거절</button>
+                </>
+              )}
             </li>
           ))}
         </ul>
       </div>
     </section>
+  );
+}
+
+function Digest({ value }: Readonly<{ value: string }>) {
+  const short = value.length <= 12 ? value : `${value.slice(0, 12)}…`;
+  return (
+    <details className="digest">
+      <summary className="record-meta" title={value}>{short}</summary>
+      <p className="record-meta digest-full">{value}</p>
+    </details>
   );
 }
 
