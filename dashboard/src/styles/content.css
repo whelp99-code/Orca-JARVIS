@@ -102,6 +102,49 @@
   min-inline-size: 0;
 }
 
+.panel-body:has(.enroll) {
+  padding: var(--space-4);
+}
+
+.enroll {
+  display: grid;
+  gap: var(--space-3);
+  margin-block-end: var(--space-4);
+  max-inline-size: 100%;
+}
+
+.enroll h3 {
+  margin: 0;
+  font-size: var(--type-panel);
+  font-weight: var(--weight-medium);
+}
+
+.enroll-form {
+  display: grid;
+  gap: var(--space-3);
+}
+
+.enroll-form label {
+  display: grid;
+  gap: var(--space-2);
+  min-inline-size: 0;
+}
+
+.enroll-form input {
+  min-block-size: var(--size-control);
+  width: 100%;
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  padding-inline: var(--space-3);
+  background: var(--color-canvas);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.enroll-form button {
+  width: 100%;
+}
+
 .graph-panel-header {
   display: flex;
   align-items: center;

@@ -5,6 +5,7 @@ import { request } from "undici";
 import { describe, expect, it } from "vitest";
 import { controlCommandDigest, type ControlCommandRequestInput } from "../../src/control-plane-contract.js";
 import { createDashboardServer } from "../../src/dashboard/server.js";
+import { issueEnrollmentCode } from "../../src/owner-inbox-enrollment.js";
 import { OwnerInbox } from "../../src/owner-inbox.js";
 import { ControlReceiptSigner } from "../../src/remote-approval-signer.js";
 import { initialized, localKey } from "../helpers.js";
@@ -26,7 +27,7 @@ function seed(db: Awaited<ReturnType<typeof initialized>>, id: string, action: s
   return digest;
 }
 
-async function boot(signerReady = true, keyId = "decision-test") {
+async function boot(signerReady = true, keyId = "decision-test", enrollmentCheck?: (input: unknown) => Promise<{ ok: true; publicKey: Buffer; counter: number } | { ok: false }>) {
   const db = await initialized();
   const root = mkdtempSync(join(tmpdir(), "owner-inbox-route-"));
   writeFileSync(join(root, "index.html"), "<!doctype html>");
@@ -35,6 +36,7 @@ async function boot(signerReady = true, keyId = "decision-test") {
     db, staticRoot: root, host: "127.0.0.1", port: 0, clock: () => NOW, ownerInbox: inbox,
     assertionCheck: async (input) => input.assertion.id === "test-pass" && input.assertion.signature !== "bad"
       ? { ok: true, newCounter: 1 } : { ok: false },
+    enrollmentCheck: enrollmentCheck as never,
   });
   const origin = `http://127.0.0.1:${server.address.port}`;
   const session = await request(`${origin}/api/v1/session`);
@@ -134,6 +136,54 @@ describe("owner inbox routes", () => {
     expect(rejected.statusCode).toBe(409);
     expect(live.db.db.prepare("SELECT state FROM control_command_requests WHERE request_id='req-confirm'").get()).toEqual({ state: "pending" });
     expect(live.db.db.prepare("SELECT COUNT(*) AS n FROM audit_facts WHERE fact_type='owner_inbox_attempt'").get()).toEqual({ n: 1 });
+    live.server.close();
+    live.db.close();
+  });
+
+  it("returns the stored challenge and enrolls once", async () => {
+    const live = await boot(true, "decision-test", async () => ({ ok: true, publicKey: Buffer.from("pk"), counter: 1 }));
+    const issued = issueEnrollmentCode(live.db, NOW);
+    const options = await request(`${live.origin}/api/v1/owner-inbox/enroll`, {
+      method: "POST", headers: headers(live), body: JSON.stringify({ schema_version: 1, enrollment_code: issued.code, phase: "options" }),
+    });
+    expect(options.statusCode).toBe(200);
+    const optionsBody = await options.body.json() as { challenge: string; rp: { id: string } };
+    const stored = live.db.db.prepare("SELECT challenge FROM owner_inbox_enrollment_codes").get() as { challenge: string };
+    expect(optionsBody.challenge).toBe(stored.challenge);
+    expect(optionsBody.rp.id).toBe("127.0.0.1");
+    const enrolled = await request(`${live.origin}/api/v1/owner-inbox/enroll`, {
+      method: "POST", headers: headers(live), body: JSON.stringify({
+        schema_version: 1, enrollment_code: issued.code,
+        attestation: { id: "cred", clientDataJSON: "e30", attestationObject: "e30" },
+      }),
+    });
+    expect(enrolled.statusCode).toBe(200);
+    expect(await enrolled.body.json()).toMatchObject({ credential_id: "cred" });
+    const replay = await request(`${live.origin}/api/v1/owner-inbox/enroll`, {
+      method: "POST", headers: headers(live), body: JSON.stringify({ schema_version: 1, enrollment_code: issued.code, phase: "options" }),
+    });
+    expect(replay.statusCode).toBe(401);
+    expect(await replay.body.json()).toMatchObject({ error: { code: "OWNER_INBOX_REPLAY" } });
+    const wrong = await request(`${live.origin}/api/v1/owner-inbox/enroll`, {
+      method: "POST", headers: headers(live), body: JSON.stringify({ schema_version: 1, enrollment_code: "nope", phase: "options" }),
+    });
+    expect(wrong.statusCode).toBe(401);
+    expect(await wrong.body.json()).toMatchObject({ error: { code: "OWNER_INBOX_IDENTITY_REQUIRED" } });
+    const expiredCode = issueEnrollmentCode(live.db, new Date(NOW.getTime() - 11 * 60_000));
+    const expired = await request(`${live.origin}/api/v1/owner-inbox/enroll`, {
+      method: "POST", headers: headers(live), body: JSON.stringify({ schema_version: 1, enrollment_code: expiredCode.code, phase: "options" }),
+    });
+    expect(expired.statusCode).toBe(409);
+    expect(await expired.body.json()).toMatchObject({ error: { code: "OWNER_INBOX_EXPIRED" } });
+    const other = issueEnrollmentCode(live.db, NOW);
+    process.env.JARVIS_OWNER_INBOX_ORIGIN = "https://phone.example";
+    const origin = await request(`${live.origin}/api/v1/owner-inbox/enroll`, {
+      method: "POST", headers: headers(live),
+      body: JSON.stringify({ schema_version: 1, enrollment_code: other.code, phase: "options" }),
+    });
+    delete process.env.JARVIS_OWNER_INBOX_ORIGIN;
+    expect(origin.statusCode).toBe(401);
+    expect(await origin.body.json()).toMatchObject({ error: { code: "OWNER_INBOX_ORIGIN_MISMATCH" } });
     live.server.close();
     live.db.close();
   });

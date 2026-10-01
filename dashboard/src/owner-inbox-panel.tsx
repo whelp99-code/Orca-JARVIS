@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { actionLabel, formatKst } from "./copy.js";
+import { deviceHasInboxPasskey, OwnerInboxEnroll } from "./owner-inbox-enroll.js";
 import { useSurface } from "./surface.js";
 
 type Item = Readonly<{
@@ -19,6 +20,8 @@ export function OwnerInboxPanel() {
   const [status, setStatus] = useState<Status>("loading");
   const [notice, setNotice] = useState("");
   const [busyId, setBusyId] = useState<string | undefined>();
+  const [passkeyEnrolled, setPasskeyEnrolled] = useState(true);
+  const [devicePasskey, setDevicePasskey] = useState(deviceHasInboxPasskey);
 
   async function load(): Promise<void> {
     setStatus("loading");
@@ -36,8 +39,10 @@ export function OwnerInboxPanel() {
         setStatus("error");
         return;
       }
-      const body = await response.json() as { items?: Item[] };
+      const body = await response.json() as { items?: Item[]; passkey_enrolled?: boolean };
       setItems(body.items ?? []);
+      setPasskeyEnrolled(body.passkey_enrolled === true);
+      setDevicePasskey(deviceHasInboxPasskey());
       setStatus("ready");
     } catch {
       setStatus("error");
@@ -123,6 +128,9 @@ export function OwnerInboxPanel() {
         {status === "loading" ? <p role="status">승인을 불러오는 중</p> : null}
         {status === "error" ? <p role="alert">승인함을 열 수 없습니다. <button type="button" onClick={() => { void load(); }}>다시 시도</button></p> : null}
         {status === "unconfigured" ? <p role="status">이 화면에서는 서명 키가 연결되어 있지 않습니다.</p> : null}
+        {status === "ready" && (!passkeyEnrolled || !devicePasskey || typeof navigator.credentials?.create !== "function") ? (
+          <OwnerInboxEnroll csrf={() => csrfToken(phone)} />
+        ) : null}
         {status === "ready" && items.length === 0 ? <p className="empty-state">대기 중인 승인이 없습니다</p> : null}
         {notice.length > 0 ? <p role="status">{notice}</p> : null}
         <ul className="record-list">

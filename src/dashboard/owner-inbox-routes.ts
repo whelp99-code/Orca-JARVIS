@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { JarvisError, type AuthorityDb } from "../db.js";
-import { enrollOwnerPasskey } from "../owner-inbox-enrollment.js";
+import { enrollOwnerPasskey, readEnrollmentChallenge, type EnrollmentCheck } from "../owner-inbox-enrollment.js";
 import { writeOwnerInboxPreflight } from "../owner-inbox-preflight.js";
 import { OwnerInbox, type AssertionCheck, type InboxAssertion, type OwnerInboxDecision } from "../owner-inbox.js";
 import { composeOwnerInbox } from "../remote-approval-compose.js";
@@ -33,6 +33,8 @@ export async function tryHandleOwnerInbox(input: Readonly<{
   remoteApproval?: RemoteApprovalService;
   ownerInbox?: OwnerInbox;
   assertionCheck?: AssertionCheck;
+  enrollmentCheck?: EnrollmentCheck;
+  now?: Date;
 }>): Promise<boolean> {
   if (!PATHS.has(input.path)) return false;
   const method = input.request.method ?? "";
@@ -49,8 +51,10 @@ export async function tryHandleOwnerInbox(input: Readonly<{
   const inbox = input.ownerInbox ?? composeOwnerInbox(input.db);
   try {
     if (method === "GET") {
+      const enrolled = input.db.db.prepare("SELECT COUNT(*) AS n FROM owner_inbox_credentials").get() as { n: number };
       writeDashboardJson(input.response, {
-        status: 200, requestId: input.requestId, body: { schema_version: 1, items: inbox.list() },
+        status: 200, requestId: input.requestId,
+        body: { schema_version: 1, items: inbox.list(), passkey_enrolled: enrolled.n > 0 },
       });
       return true;
     }
@@ -136,13 +140,20 @@ async function enrollFrom(input: {
   request: IncomingMessage;
   db: AuthorityDb;
   origin: string;
-}, body: unknown): Promise<{ credential_id: string }> {
-  if (!record(body) || body.schema_version !== 1 || typeof body.enrollment_code !== "string") {
+  enrollmentCheck?: EnrollmentCheck;
+  now?: Date;
+}, body: unknown): Promise<{ credential_id: string } | EnrollmentOptions> {
+  if (!record(body) || body.schema_version !== 1 || typeof body.enrollment_code !== "string" || body.enrollment_code.length === 0) {
     throw new JarvisError("OWNER_INBOX_INVALID");
   }
   const sent = header(input.request.headers.origin) ?? input.origin;
   const expected = process.env.JARVIS_OWNER_INBOX_ORIGIN ?? input.origin;
-  if (sent !== expected) throw new JarvisError("OWNER_INBOX_IDENTITY_REQUIRED");
+  if (sent !== expected) throw new JarvisError("OWNER_INBOX_ORIGIN_MISMATCH");
+  const rpId = new URL(expected).hostname;
+  if (body.phase === "options") {
+    const challenge = readEnrollmentChallenge(input.db, body.enrollment_code, input.now);
+    return registrationOptions(challenge, rpId);
+  }
   if (!record(body.attestation)) throw new JarvisError("OWNER_INBOX_WEBAUTHN_REQUIRED");
   const attestation = body.attestation;
   return enrollOwnerPasskey(input.db, {
@@ -154,8 +165,34 @@ async function enrollFrom(input: {
     },
     origin: sent,
     expectedOrigin: expected,
-    rpId: new URL(expected).hostname,
+    rpId,
+    check: input.enrollmentCheck,
+    now: input.now,
   });
+}
+
+type EnrollmentOptions = {
+  readonly phase: "options";
+  readonly challenge: string;
+  readonly rp: { readonly id: string; readonly name: string };
+  readonly user: { readonly id: string; readonly name: string; readonly displayName: string };
+  readonly pubKeyCredParams: readonly { readonly type: "public-key"; readonly alg: -7 | -8 }[];
+  readonly timeout: number;
+  readonly attestation: "none";
+  readonly authenticatorSelection: { readonly residentKey: "required"; readonly userVerification: "required" };
+};
+
+function registrationOptions(challenge: string, rpId: string): EnrollmentOptions {
+  return {
+    phase: "options",
+    challenge,
+    rp: { id: rpId, name: "JARVIS" },
+    user: { id: "amFydmlzLW93bmVy", name: "owner", displayName: "소유자" },
+    pubKeyCredParams: [{ type: "public-key", alg: -7 }, { type: "public-key", alg: -8 }],
+    timeout: 60_000,
+    attestation: "none",
+    authenticatorSelection: { residentKey: "required", userVerification: "required" },
+  };
 }
 
 function parseBinding(body: unknown): { request_id: string; decision: OwnerInboxDecision; command_digest: string } | undefined {
@@ -211,6 +248,7 @@ function statusFor(code: string): number | undefined {
   switch (code) {
     case "OWNER_INBOX_UNCONFIGURED": return 503;
     case "OWNER_INBOX_IDENTITY_REQUIRED":
+    case "OWNER_INBOX_ORIGIN_MISMATCH":
     case "OWNER_INBOX_WEBAUTHN_REQUIRED":
     case "OWNER_INBOX_ASSERTION_REJECTED":
     case "OWNER_INBOX_REPLAY":
