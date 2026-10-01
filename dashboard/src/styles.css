@@ -198,14 +198,19 @@ ul {
 }
 
 .shell-footer-inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   padding-block: var(--space-3);
 }
 
-.shell-footer a {
+.shell-footer a,
+.shell-footer span {
   color: var(--color-text-muted);
   font-family: var(--font-mono);
   font-size: var(--type-sm);
   overflow-wrap: anywhere;
+  min-inline-size: 0;
 }
 
 .shell-footer a:hover {
