@@ -42,9 +42,11 @@ describe("owner inbox", () => {
     const db = await initialized();
     const digest = insert(db, request("req-confirm", "memory.confirm"));
     insert(db, request("req-other", "workflow.start"));
+    insert(db, request("req-unknown", "not.a.control.action"));
     insert(db, request("req-old", "memory.outbox.dispatch", "2026-09-29T00:00:00.000Z"));
     const inbox = new OwnerInbox(db, new ControlReceiptSigner(localKey(db), "decision-test", "test-operator"), true, () => NOW);
-    expect(inbox.list().map(item => item.request_id)).toEqual(["req-confirm", "req-old"]);
+    expect(inbox.list().map(item => item.request_id)).toEqual(["req-confirm", "req-old", "req-other"]);
+    expect(inbox.list().every(item => item.manual_wait === false)).toBe(true);
     expect(inbox.list().find(item => item.request_id === "req-old")?.expired).toBe(true);
     expect(JSON.stringify(inbox.list())).not.toContain("PRIVATE");
     db.db.prepare("INSERT INTO owner_inbox_credentials(credential_id, public_key, counter, created_at) VALUES(?,?,?,?)").run("cred-1", Buffer.from("pk"), 0, NOW.toISOString());
@@ -60,7 +62,11 @@ describe("owner inbox", () => {
       request_id: "req-confirm", state: "approved",
       carried: { carried: false, reason: "not_applicable" },
     });
-    expect(inbox.list().map(item => item.request_id)).toEqual(["req-old"]);
+    expect(inbox.list().map(item => item.request_id)).toEqual(["req-old", "req-other"]);
+    db.db.prepare("UPDATE control_command_requests SET state='failed', failure_code='RUNBOOK_FAILED' WHERE request_id='req-confirm'").run();
+    const failed = inbox.list().find(item => item.request_id === "req-confirm");
+    expect(failed?.needs_review).toBe(true);
+    expect(failed?.failure_code).toBe("RUNBOOK_FAILED");
     const audit = db.db.prepare("SELECT fact_type, subject_id FROM audit_facts WHERE subject_id=?").get("req-confirm") as {
       fact_type: string;
     };
@@ -77,7 +83,7 @@ describe("owner inbox", () => {
   it("refuses a mismatched digest, a forbidden action, a missing session, and an unconfigured key", async () => {
     const db = await initialized();
     const digest = insert(db, request("req-confirm", "memory.confirm"));
-    insert(db, request("req-other", "workflow.start"));
+    insert(db, request("req-other", "not.a.control.action"));
     const inbox = new OwnerInbox(db, new ControlReceiptSigner(localKey(db), "decision-test", "test-operator"), true, () => NOW);
     await expect(inbox.decide({
       request_id: "req-confirm", decision: "approve", command_digest: "sha256:nope", session_id: "session-1",

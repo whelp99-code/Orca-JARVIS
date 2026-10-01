@@ -22,6 +22,7 @@ import { copyPinnedRegularFile, privatePath, publishFile, removeSqliteCopy, secu
 
 export type { ApprovedExecutionResult } from "./approved-executor-types.js";
 export type { MemoryLifecycleService } from "./memory-lifecycle-service-types.js";
+export { approvedActionHasExecutor } from "./approved-executor-actions.js";
 
 export class ApprovedCommandExecutor {
   private readonly control: ControlPlane;

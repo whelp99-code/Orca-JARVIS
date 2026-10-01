@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { actionLabel, formatKst } from "./copy.js";
 import { OwnerInboxEnroll } from "./owner-inbox-enroll.js";
+import { inboxExecutionOutcome, inboxOutcomeText, type InboxExecution } from "./owner-inbox-outcome.js";
 import { useSurface } from "./surface.js";
 
 type Item = Readonly<{
@@ -10,6 +11,10 @@ type Item = Readonly<{
   command_digest: string;
   expires_at: string;
   expired?: boolean;
+  manual_wait?: boolean;
+  needs_review?: boolean;
+  failure_code?: string | null;
+  state?: string;
 }>;
 
 type Status = "loading" | "ready" | "error" | "unconfigured";
@@ -19,6 +24,7 @@ export function OwnerInboxPanel() {
   const [items, setItems] = useState<readonly Item[]>([]);
   const [status, setStatus] = useState<Status>("loading");
   const [notice, setNotice] = useState("");
+  const [outcome, setOutcome] = useState<{ state: string; failure_code?: string } | undefined>();
   const [busyId, setBusyId] = useState<string | undefined>();
   const [passkeyEnrolled, setPasskeyEnrolled] = useState(true);
 
@@ -110,7 +116,14 @@ export function OwnerInboxPanel() {
           },
         }),
       });
-      setNotice(response.ok ? (decision === "approve" ? "승인했습니다." : "거절했습니다.") : "패스키 확인 뒤에만 처리됩니다.");
+      if (!response.ok) {
+        setNotice("패스키 확인 뒤에만 처리됩니다.");
+        return;
+      }
+      const decided = await response.json() as { execution?: InboxExecution };
+      const outcome = inboxExecutionOutcome(decision, decided.execution);
+      setOutcome(outcome);
+      setNotice(inboxOutcomeText(outcome));
       await load();
     } catch {
       setNotice("패스키 확인 뒤에만 처리됩니다.");
@@ -130,16 +143,30 @@ export function OwnerInboxPanel() {
           <OwnerInboxEnroll csrf={() => csrfToken(phone)} />
         ) : null}
         {status === "ready" && items.length === 0 ? <p className="empty-state">대기 중인 승인이 없습니다</p> : null}
-        {notice.length > 0 ? <p role="status">{notice}</p> : null}
+        {notice.length > 0 ? <p role="status" data-execution-state={outcome?.state} data-failure-code={outcome?.failure_code}>{notice}</p> : null}
+        {items.some(item => item.needs_review) ? (
+          <section data-section="needs-review">
+            <h3>결과 확인 필요</h3>
+            <ul className="record-list">
+              {items.filter(item => item.needs_review).map(item => (
+                <li className="record" key={item.request_id} data-request-state={item.state} data-failure-code={item.failure_code ?? ""}>
+                  <p className="record-title">{item.summary}</p>
+                  <p className="record-meta">{actionLabel(item.action)}</p>
+                  <Digest value={item.command_digest} />
+                </li>
+              ))}
+            </ul>
+          </section>
+        ) : null}
         <ul className="record-list">
-          {items.map(item => (
+          {items.filter(item => !item.needs_review).map(item => (
             <li className="record" key={item.request_id}>
               <p className="record-title">{item.summary}</p>
               {item.expired ? <p className="record-meta">만료됨. 이 요청은 더 이상 승인할 수 없습니다.</p> : null}
               <p className="record-meta">{actionLabel(item.action)}</p>
               <p className="record-meta"><time dateTime={item.expires_at}>유효 {formatKst(item.expires_at)}</time></p>
               <Digest value={item.command_digest} />
-              {item.expired ? null : (
+              {item.expired || item.manual_wait ? null : (
                 <>
                   <button type="button" disabled={busyId === item.request_id} onClick={() => { void decide(item, "approve"); }}>승인</button>
                   <button type="button" disabled={busyId === item.request_id} onClick={() => { void decide(item, "reject"); }}>거절</button>

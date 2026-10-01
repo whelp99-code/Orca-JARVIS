@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { request } from "undici";
 import { describe, expect, it } from "vitest";
 import { controlCommandDigest, type ControlCommandRequestInput } from "../../src/control-plane-contract.js";
+import { redactExecution } from "../../src/dashboard/owner-inbox-routes.js";
 import { createDashboardServer } from "../../src/dashboard/server.js";
 import { issueEnrollmentCode } from "../../src/owner-inbox-enrollment.js";
 import { OwnerInbox } from "../../src/owner-inbox.js";
@@ -57,11 +58,21 @@ function headers(boot: { origin: string; csrf?: string; cookie?: string }, csrf 
 }
 
 describe("owner inbox routes", () => {
+  it("returns only state and failure code from an execution", () => {
+    expect(redactExecution({
+      request_id: "req", action: "runbook.execute", state: "failed", failure_code: "RUNBOOK_FAILED",
+      result: { error: "secret path /tmp/private" },
+    })).toEqual({ request_id: "req", state: "failed", failure_code: "RUNBOOK_FAILED" });
+    expect(JSON.stringify(redactExecution({
+      primary: { request_id: "req", state: "uncertain", failure_code: "MEMORY_LIFECYCLE_RECONCILING", result: { code: "hidden" } },
+      carried: { request_id: "next", state: "completed", result: { page: "secret" } },
+    }))).not.toContain("secret");
+  });
   it("fails closed for each guard", async () => {
     const live = await boot();
     const digest = seed(live.db, "req-confirm", "memory.confirm");
     const oldDigest = seed(live.db, "req-old", "memory.confirm", "2026-09-29T00:00:00.000Z");
-    const otherDigest = seed(live.db, "req-other", "workflow.start");
+    const otherDigest = seed(live.db, "req-other", "not.a.control.action");
     live.db.db.prepare("INSERT INTO owner_inbox_credentials(credential_id, public_key, counter, created_at) VALUES(?,?,?,?)")
       .run("test-pass", Buffer.from("pk"), 0, NOW.toISOString());
     const decide = `${live.origin}/api/v1/owner-inbox/decide`;

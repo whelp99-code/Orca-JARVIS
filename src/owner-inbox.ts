@@ -3,15 +3,15 @@ import { ControlPlane, type CommandApprovalReceipt } from "./control-plane.js";
 import { JarvisError, type AuthorityDb } from "./db.js";
 import type { ControlReceiptSigner } from "./remote-approval-signer.js";
 import { carryNonSensitiveConfirm, type ConfirmCarry } from "./memory-confirm-carry.js";
+import { KNOWN_CONTROL_ACTIONS } from "./control-actions.js";
+import { approvedActionHasExecutor } from "./approved-executor.js";
 
-/** Actions the owner inbox may sign. Anything else stays on its existing ceremony. */
-export const OWNER_INBOX_ACTIONS = [
-  "memory.confirm",
-  "memory.outbox.dispatch",
-  "memory.outbox.abandon-not-delivered",
-] as const;
+/** Every staged control action can be signed here. Unknown actions stay forbidden. */
+export const OWNER_INBOX_ACTIONS = KNOWN_CONTROL_ACTIONS;
 
-export type OwnerInboxAction = (typeof OWNER_INBOX_ACTIONS)[number];
+export type OwnerInboxAction = string;
+
+export const OWNER_INBOX_MANUAL_WAIT = "승인됨 — 실행 대기(수동)";
 export type OwnerInboxDecision = "approve" | "reject";
 
 export type InboxAssertion = Readonly<{
@@ -50,9 +50,12 @@ export type OwnerInboxItem = Readonly<{
   expires_at: string;
   requested_at: string;
   expired: boolean;
+  manual_wait: boolean;
+  needs_review: boolean;
+  failure_code: string | null;
 }>;
 
-const ACTION_SUMMARY: Readonly<Record<OwnerInboxAction, string>> = {
+const ACTION_SUMMARY: Readonly<Record<string, string>> = {
   "memory.confirm": "기억 확인을 승인합니다",
   "memory.outbox.dispatch": "기억을 보내도록 승인합니다",
   "memory.outbox.abandon-not-delivered": "전달되지 않은 기억을 닫도록 승인합니다",
@@ -65,6 +68,7 @@ type Row = Readonly<{
   expires_at: string;
   requested_at: string;
   state: string;
+  failure_code: string | null;
 }>;
 
 export class OwnerInbox {
@@ -78,12 +82,12 @@ export class OwnerInbox {
   list(): readonly OwnerInboxItem[] {
     const now = this.now().getTime();
     const rows = this.db.db.prepare(
-      `SELECT request_id, action, command_digest, expires_at, requested_at, state
+      `SELECT request_id, action, command_digest, expires_at, requested_at, state, failure_code
        FROM control_command_requests
-       WHERE state = 'pending'
+       WHERE state IN ('pending', 'approved', 'failed', 'uncertain')
        ORDER BY requested_at, request_id`,
     ).all() as Row[];
-    return rows.filter(row => isAllowed(row.action)).map(row => itemOf(row, Date.parse(row.expires_at) <= now));
+    return rows.filter(row => visible(row)).map(row => itemOf(row, Date.parse(row.expires_at) <= now));
   }
 
   issueChallenge(input: Readonly<{
@@ -260,17 +264,30 @@ function defined<T>(value: T | undefined, code: string): T {
   if (value === undefined) throw new JarvisError(code); return value;
 }
 
-function isAllowed(action: string): action is OwnerInboxAction {
+function isAllowed(action: string): boolean {
   return (OWNER_INBOX_ACTIONS as readonly string[]).includes(action);
 }
 
+function visible(row: Row): boolean {
+  if (!isAllowed(row.action)) return false;
+  if (row.state === "pending") return true;
+  if (row.state === "failed" || row.state === "uncertain") return true;
+  return row.state === "approved" && !approvedActionHasExecutor(row.action);
+}
+
 function itemOf(row: Row, expired: boolean): OwnerInboxItem {
-  const action = row.action as OwnerInboxAction;
-  return { request_id: row.request_id, action,
-    summary: expired ? `${ACTION_SUMMARY[action]} (만료됨)` : ACTION_SUMMARY[action],
+  const manual = row.state === "approved" && !approvedActionHasExecutor(row.action);
+  const base = ACTION_SUMMARY[row.action] ?? row.action;
+  return {
+    request_id: row.request_id,
+    action: row.action,
+    summary: manual ? OWNER_INBOX_MANUAL_WAIT : expired ? `${base} (만료됨)` : base,
     command_digest: row.command_digest,
     expires_at: row.expires_at,
     requested_at: row.requested_at,
     expired,
+    manual_wait: manual,
+    needs_review: row.state === "failed" || row.state === "uncertain",
+    failure_code: row.state === "failed" || row.state === "uncertain" ? row.failure_code : null,
   };
 }

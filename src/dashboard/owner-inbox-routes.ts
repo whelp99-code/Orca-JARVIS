@@ -3,7 +3,8 @@ import type { IncomingMessage, ServerResponse } from "node:http";
 import { JarvisError, type AuthorityDb } from "../db.js";
 import { enrollOwnerPasskey, readEnrollmentChallenge, rejectEnrollmentOrigin, type EnrollmentCheck } from "../owner-inbox-enrollment.js";
 import { writeOwnerInboxPreflight } from "../owner-inbox-preflight.js";
-import { ApprovedCommandExecutor } from "../approved-executor.js";
+import { ApprovedCommandExecutor, approvedActionHasExecutor } from "../approved-executor.js";
+import { ControlPlane } from "../control-plane.js";
 import { OwnerInbox, type AssertionCheck, type InboxAssertion, type OwnerInboxDecision } from "../owner-inbox.js";
 import type { DashboardExecutorFactory } from "./authority-service.js";
 import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
@@ -91,7 +92,11 @@ export async function tryHandleOwnerInbox(input: Readonly<{
     const execution = result.state === "approved"
       ? await executeApprovedInbox(input, result.request_id, result.carried?.carried === true ? result.carried.request_id : undefined)
       : undefined;
-    writeDashboardJson(input.response, { status: 200, requestId: input.requestId, body: { schema_version: 1, ...result, execution } });
+    const publicExecution = execution === undefined ? undefined : redactExecution(execution);
+    writeDashboardJson(input.response, {
+      status: 200, requestId: input.requestId,
+      body: { schema_version: 1, ...result, execution: publicExecution },
+    });
   } catch (error) {
     if (!(error instanceof JarvisError)) throw error;
     const status = statusFor(error.code);
@@ -113,8 +118,16 @@ async function executeApprovedInbox(input: Readonly<{
   const executor = input.executorFactory?.({ db: input.db, now, memoryLifecycle: input.memoryLifecycle })
     ?? new ApprovedCommandExecutor(input.db, undefined, undefined, {}, () => now, undefined, undefined, input.memoryLifecycle);
   const run = async (id: string) => {
+    const row = input.db.db.prepare("SELECT action FROM control_command_requests WHERE request_id = ?")
+      .get(id) as { action: string } | undefined;
+    if (row === undefined || !approvedActionHasExecutor(row.action)) {
+      return { request_id: id, state: "approved" as const, manual_wait: true as const };
+    }
     try {
-      return await executor.execute(id, "owner-inbox", now);
+      // One claim. An uncertain result is returned as-is and is not claimed again.
+      const executed = await executor.execute(id, "owner-inbox", now);
+      persistUnsettled(input.db, id, executed.state, executed.failure_code, now);
+      return executed;
     } catch (error) {
       return { request_id: id, state: "failed" as const,
         failure_code: error instanceof JarvisError ? error.code : "APPROVED_COMMAND_FAILED" };
@@ -123,6 +136,38 @@ async function executeApprovedInbox(input: Readonly<{
   const primary = await run(requestId);
   const carried = carriedRequestId === undefined ? undefined : await run(carriedRequestId);
   return carried === undefined ? primary : { primary, carried };
+}
+
+function persistUnsettled(db: AuthorityDb, requestId: string, state: string, failureCode: string | undefined, now: Date): void {
+  if (state !== "failed" && state !== "uncertain") return;
+  const row = db.db.prepare("SELECT state, lease_fence FROM control_command_requests WHERE request_id = ?")
+    .get(requestId) as { state: string; lease_fence: number } | undefined;
+  if (row?.state !== "claimed") return;
+  const code = failureCode && failureCode.length > 0 ? failureCode : "APPROVED_COMMAND_FAILED";
+  new ControlPlane(db).settle(requestId, row.lease_fence, {
+    state, effect_type: state === "uncertain" ? "command.uncertain" : "command.failure",
+    payload: { code }, failure_code: code,
+  }, now);
+}
+
+export function redactExecution(value: unknown): Record<string, unknown> {
+  if (!value || typeof value !== "object" || Array.isArray(value)) {
+    return { state: "failed", failure_code: "APPROVED_COMMAND_FAILED" };
+  }
+  const row = value as Record<string, unknown>;
+  if ("primary" in row || "carried" in row) {
+    return {
+      primary: redactExecution(row.primary),
+      ...(row.carried === undefined ? {} : { carried: redactExecution(row.carried) }),
+    };
+  }
+  const failure = typeof row.failure_code === "string" && row.failure_code.length > 0 ? row.failure_code : undefined;
+  return {
+    request_id: typeof row.request_id === "string" ? row.request_id : undefined,
+    state: typeof row.state === "string" ? row.state : "failed",
+    ...(row.manual_wait === true ? { manual_wait: true } : {}),
+    ...(failure ? { failure_code: failure } : {}),
+  };
 }
 
 const productionCheck: AssertionCheck = async (input) => {
