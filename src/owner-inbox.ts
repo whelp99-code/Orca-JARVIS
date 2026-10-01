@@ -120,7 +120,9 @@ export class OwnerInbox {
     };
     if (!this.signerReady) fail("OWNER_INBOX_UNCONFIGURED");
     if (input.session_id.length === 0) fail("OWNER_INBOX_IDENTITY_REQUIRED");
-    const prior = this.db.db.prepare("SELECT used_at FROM owner_inbox_challenges WHERE challenge_id = ?").get(input.challenge_id) as { used_at: string | null } | undefined;
+    const prior = this.db.db.prepare(
+      "SELECT used_at FROM owner_inbox_challenges WHERE challenge_id = ?",
+    ).get(input.challenge_id) as { used_at: string | null } | undefined;
     if (prior?.used_at) fail("OWNER_INBOX_REPLAY");
     try {
       this.guardPending(input);
@@ -138,7 +140,7 @@ export class OwnerInbox {
     if (Date.parse(bound.expires_at) <= this.now().getTime()) fail("OWNER_INBOX_EXPIRED");
     if (bound.request_id !== input.request_id || bound.decision !== input.decision
       || bound.command_digest !== input.command_digest) fail("OWNER_INBOX_DIGEST_MISMATCH");
-    const assertion = defined(input.assertion, "OWNER_INBOX_WEBAUTHN_REQUIRED");
+    const assertion = input.assertion as InboxAssertion;
     const credential = this.db.db.prepare(
       "SELECT credential_id, public_key, counter FROM owner_inbox_credentials WHERE credential_id = ?",
     ).get(assertion.id) as { credential_id: string; public_key: Buffer; counter: number } | undefined;
@@ -157,9 +159,6 @@ export class OwnerInbox {
       "UPDATE owner_inbox_challenges SET used_at = ? WHERE challenge_id = ? AND used_at IS NULL",
     ).run(this.now().toISOString(), bound.challenge_id);
     if (marked.changes !== 1) fail("OWNER_INBOX_REPLAY");
-    if (bound === undefined || assertion === undefined || credential === undefined || !checked.ok) {
-      throw new JarvisError("OWNER_INBOX_ASSERTION_REJECTED");
-    }
     this.db.db.prepare("UPDATE owner_inbox_credentials SET counter = ? WHERE credential_id = ?")
       .run(checked.newCounter, stored.credential_id);
     const now = this.now();

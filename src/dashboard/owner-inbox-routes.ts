@@ -72,7 +72,8 @@ export async function tryHandleOwnerInbox(input: Readonly<{
     if (!(error instanceof JarvisError)) throw error;
     const status = statusFor(error.code);
     if (status === undefined) throw error;
-    writeDashboardError(input.response, { status, code: error.code as typeof DASHBOARD_ERROR_CODES[keyof typeof DASHBOARD_ERROR_CODES], requestId: input.requestId });
+    const code = error.code as typeof DASHBOARD_ERROR_CODES[keyof typeof DASHBOARD_ERROR_CODES];
+    writeDashboardError(input.response, { status, code, requestId: input.requestId });
   }
   return true;
 }
@@ -198,7 +199,11 @@ function invalid(input: { response: ServerResponse; requestId: string }): boolea
   return true;
 }
 
-function coded(input: { response: ServerResponse; requestId: string }, status: number, code: typeof DASHBOARD_ERROR_CODES[keyof typeof DASHBOARD_ERROR_CODES]): boolean {
+function coded(
+  input: { response: ServerResponse; requestId: string },
+  status: number,
+  code: typeof DASHBOARD_ERROR_CODES[keyof typeof DASHBOARD_ERROR_CODES],
+): boolean {
   writeDashboardError(input.response, { status, code, requestId: input.requestId });
   return true;
 }

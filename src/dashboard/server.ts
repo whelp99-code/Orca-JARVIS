@@ -3,14 +3,7 @@ import type { TrustedCloseoutKey } from "../evening-closeout-types.js";
 import { realpathSync } from "node:fs";
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
 import { BoundSocket } from "node:net";
-
-declare module "node:net" {
-  export class BoundSocket {
-    constructor(options?: { readonly host?: string; readonly port?: number });
-    address(): { address: string; family: string; port: number };
-    close(): void;
-  }
-}
+import "./bound-socket.js";
 import type { CapabilityProbe } from "../capabilities.js";
 import type { SecondBrainReadAdapter } from "../second-brain-adapter-types.js";
 import type { SecondBrainReadinessProbe } from "../second-brain-readiness.js";
@@ -19,6 +12,8 @@ import type { OrcaRunner } from "../orca.js";
 import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
 import type { DashboardExecutorFactory } from "./authority-service.js";
 import { composeRemoteApproval } from "../remote-approval-compose.js";
+import { isOwnerInboxPath } from "./owner-inbox-routes.js";
+import { writeOwnerInboxPreflight } from "../owner-inbox-preflight.js";
 import type { RemoteApprovalService } from "../remote-approval.js";
 import { tryHandleDashboardApi } from "./api-routes.js";
 import { createDashboardEvents, type ReconcileHub } from "./events.js";
@@ -191,9 +186,8 @@ async function handleRequest(input: RequestContext): Promise<void> {
     }
     const path = requestPath(input.request.url);
     const method = input.request.method;
-    if (path !== undefined && method === "OPTIONS" && (path === "/api/v1/owner-inbox" || path === "/api/v1/owner-inbox/decide" || path === "/api/v1/owner-inbox/challenge")) {
-      const { writePreflight } = await import("./owner-inbox-routes.js");
-      writePreflight(input.response, input.origin);
+    if (path !== undefined && method === "OPTIONS" && isOwnerInboxPath(path)) {
+      writeOwnerInboxPreflight(input.response, input.origin);
       return;
     }
     if (path === undefined || (method !== "GET" && method !== "POST")) {
@@ -253,13 +247,8 @@ async function handleRequest(input: RequestContext): Promise<void> {
       writeDashboardError(input.response, { status: 409, code: error.code, requestId });
       return;
     }
-    if (error instanceof JarvisError && (error.code === "AUTHORITY_NOT_READY"
-      || error.code === "MEMORY_PROJECTION_AUTHORITY_NOT_READY")) {
-      writeDashboardError(input.response, {
-        status: 503,
-        code: error.code,
-        requestId,
-      });
+    if (error instanceof JarvisError && (error.code === "AUTHORITY_NOT_READY" || error.code === "MEMORY_PROJECTION_AUTHORITY_NOT_READY")) {
+      writeDashboardError(input.response, { status: 503, code: error.code, requestId });
       return;
     }
     writeDashboardError(input.response, { status: 500, code: DASHBOARD_ERROR_CODES.INTERNAL_ERROR, requestId });

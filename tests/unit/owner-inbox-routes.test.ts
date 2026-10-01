@@ -33,7 +33,8 @@ async function boot(signerReady = true, keyId = "decision-test") {
   const inbox = new OwnerInbox(db, new ControlReceiptSigner(localKey(db), keyId, "test-operator"), signerReady, () => NOW);
   const server = createDashboardServer({
     db, staticRoot: root, host: "127.0.0.1", port: 0, clock: () => NOW, ownerInbox: inbox,
-    assertionCheck: async (input) => input.assertion.id === "test-pass" ? { ok: true, newCounter: 1 } : { ok: false },
+    assertionCheck: async (input) => input.assertion.id === "test-pass" && input.assertion.signature !== "bad"
+      ? { ok: true, newCounter: 1 } : { ok: false },
   });
   const origin = `http://127.0.0.1:${server.address.port}`;
   const session = await request(`${origin}/api/v1/session`);
@@ -79,8 +80,15 @@ describe("owner inbox routes", () => {
       schema_version: 1, request_id: "req-confirm", decision: "approve", command_digest: "sha256:" + "b".repeat(64), challenge_id: "none",
     }) });
     expect(mismatch.statusCode).toBe(409);
+    const missingChallenge = await request(`${live.origin}/api/v1/owner-inbox/challenge`, {
+      method: "POST", headers: headers(live), body: JSON.stringify({
+        schema_version: 1, request_id: "req-confirm", decision: "approve", command_digest: digest,
+      }),
+    });
+    const missingChallengeBody = await missingChallenge.body.json() as { challenge_id: string };
     const missing = await request(decide, { method: "POST", headers: headers(live), body: JSON.stringify({
-      schema_version: 1, request_id: "req-confirm", decision: "approve", command_digest: digest, challenge_id: "none",
+      schema_version: 1, request_id: "req-confirm", decision: "approve", command_digest: digest,
+      challenge_id: missingChallengeBody.challenge_id,
     }) });
     expect(missing.statusCode).toBe(401);
     const issued = live.db && (await import("../../src/owner-inbox.js"));
@@ -91,7 +99,7 @@ describe("owner inbox routes", () => {
     const challengeBody = await challenge.body.json() as { challenge_id: string };
     const badAssertion = await request(decide, { method: "POST", headers: headers(live), body: JSON.stringify({
       schema_version: 1, request_id: "req-confirm", decision: "approve", command_digest: digest, challenge_id: challengeBody.challenge_id,
-      assertion: { id: "nope", clientDataJSON: "", authenticatorData: "", signature: "", userHandle: "" },
+      assertion: { id: "test-pass", clientDataJSON: "", authenticatorData: "", signature: "bad", userHandle: "" },
     }) });
     expect(badAssertion.statusCode).toBe(401);
     const ok = await request(decide, { method: "POST", headers: headers(live), body: JSON.stringify({
