@@ -1,4 +1,3 @@
-import { createHash } from "node:crypto";
 import type { WorkEvent } from "../contracts.js";
 import { sourceKey, workKey, sessionKey } from "../contracts.js";
 import { metadataEvent } from "./session-metadata.js";
@@ -6,7 +5,7 @@ import type { WorkboardStore } from "../store.js";
 
 /** Mail Intelligence reply-gap projection. Collectors own this table set; the dashboard stays read-only. */
 export const MAIL_REPLY_GAP_SOURCE = { host: "linux", app: "mail", scope: "reply-gap", generation: "v1" } as const;
-/** Phone-reachable Mail Intelligence. Override per snapshot; loopback is not reachable off-box. */
+/** Phone-reachable Mail Intelligence. A snapshot may repeat this origin only. */
 export const MAIL_REPLY_GAP_BASE_URL = "http://jm-acloud.alpines-goldeye.ts.net:3010";
 
 export type ReplyGapItem = { id: string; subject: string; receivedAt: string };
@@ -15,9 +14,11 @@ export type ReplyGapResult = { source: string; opened: number; closed: number; o
 
 const SOURCE_KEY = sourceKey(MAIL_REPLY_GAP_SOURCE);
 
-function taskToken(id: string): string {
-  if (id.length > 0 && id.length <= 200 && !/[\0\r\n]/u.test(id)) return id;
-  return createHash("sha256").update(id).digest("hex");
+function messageId(id: string): string {
+  if (!/^\d+$/u.test(id)) throw new Error("MAIL_REPLY_GAP_SNAPSHOT_INVALID");
+  const numeric = Number(id);
+  if (!Number.isSafeInteger(numeric) || numeric < 1) throw new Error("MAIL_REPLY_GAP_SNAPSHOT_INVALID");
+  return String(numeric);
 }
 
 function summaryOf(subject: string): string {
@@ -26,15 +27,21 @@ function summaryOf(subject: string): string {
   return `회신: ${clipped}`;
 }
 
+function pinnedBase(baseUrl: string | undefined): string {
+  const configured = new URL(MAIL_REPLY_GAP_BASE_URL);
+  const given = new URL(baseUrl ?? MAIL_REPLY_GAP_BASE_URL);
+  if (given.origin !== configured.origin) throw new Error("MAIL_REPLY_GAP_LINK_INVALID");
+  return configured.origin;
+}
+
 function linkFor(baseUrl: string | undefined, id: string): string {
-  const root = baseUrl ?? MAIL_REPLY_GAP_BASE_URL;
-  const href = `${root.replace(/\/$/u, "")}/#m=${encodeURIComponent(id)}`;
+  const href = `${pinnedBase(baseUrl)}/#m=${encodeURIComponent(id)}`;
   if (href.length > 256 || /[\0\r\n]/u.test(href)) throw new Error("MAIL_REPLY_GAP_LINK_INVALID");
   return href;
 }
 
 function eventFor(item: ReplyGapItem, snapshot: ReplyGapSnapshot, kind: "open" | "close"): WorkEvent {
-  const taskId = taskToken(item.id);
+  const taskId = messageId(item.id);
   const when = kind === "open" ? item.receivedAt : snapshot.observedAt;
   return metadataEvent(MAIL_REPLY_GAP_SOURCE, {
     sessionId: `msg:${taskId}`,
@@ -46,25 +53,22 @@ function eventFor(item: ReplyGapItem, snapshot: ReplyGapSnapshot, kind: "open" |
     taskId,
     state: kind === "open" ? "waiting" : "verified",
     summary: kind === "open" ? summaryOf(item.subject) : `회신 완료: ${summaryOf(item.subject).slice(4)}`,
-    evidenceRef: linkFor(snapshot.baseUrl, item.id),
+    evidenceRef: linkFor(snapshot.baseUrl, taskId),
   });
 }
 
 function validateSnapshot(snapshot: ReplyGapSnapshot): void {
   if (!Number.isFinite(Date.parse(snapshot.observedAt))) throw new Error("MAIL_REPLY_GAP_OBSERVATION_INVALID");
-  const baseUrl = snapshot.baseUrl ?? MAIL_REPLY_GAP_BASE_URL;
-  let url: URL;
-  try { url = new URL(baseUrl); } catch { throw new Error("MAIL_REPLY_GAP_LINK_INVALID"); }
-  if (url.protocol !== "http:" && url.protocol !== "https:") throw new Error("MAIL_REPLY_GAP_LINK_INVALID");
-  if (url.username || url.password) throw new Error("MAIL_REPLY_GAP_LINK_INVALID");
+  try { pinnedBase(snapshot.baseUrl); } catch { throw new Error("MAIL_REPLY_GAP_LINK_INVALID"); }
   if (!Array.isArray(snapshot.open)) throw new Error("MAIL_REPLY_GAP_SNAPSHOT_INVALID");
   const ids = new Set<string>();
   for (const item of snapshot.open) {
-    if (!item || typeof item.id !== "string" || !item.id || typeof item.subject !== "string" || !Number.isFinite(Date.parse(item.receivedAt))) {
+    if (!item || typeof item.id !== "string" || typeof item.subject !== "string" || !Number.isFinite(Date.parse(item.receivedAt))) {
       throw new Error("MAIL_REPLY_GAP_SNAPSHOT_INVALID");
     }
-    if (ids.has(item.id)) throw new Error("MAIL_REPLY_GAP_SNAPSHOT_INVALID");
-    ids.add(item.id);
+    const id = messageId(item.id);
+    if (ids.has(id)) throw new Error("MAIL_REPLY_GAP_SNAPSHOT_INVALID");
+    ids.add(id);
   }
 }
 
@@ -77,12 +81,12 @@ export function projectMailReplyGaps(store: WorkboardStore, snapshot: ReplyGapSn
   validateSnapshot(snapshot);
   snapshot = { ...snapshot, baseUrl: snapshot.baseUrl ?? MAIL_REPLY_GAP_BASE_URL };
   const openIds = snapshot.open.map(item => item.id);
-  const openTokens = new Set(snapshot.open.map(item => taskToken(item.id)));
+  const openTokens = new Set(snapshot.open.map(item => messageId(item.id)));
   return store.db.transaction(() => {
     let opened = 0;
     let closed = 0;
     for (const item of snapshot.open) {
-      const taskId = taskToken(item.id);
+      const taskId = messageId(item.id);
       const existing = store.db.prepare(
         "SELECT sequence FROM workboard_works WHERE source_key=? AND task_id=?",
       ).get(SOURCE_KEY, taskId) as { sequence: number } | undefined;

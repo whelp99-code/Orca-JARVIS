@@ -15,7 +15,7 @@ function store(): WorkboardStore {
 
 const snap = (open: Array<{ id: string; subject: string; receivedAt?: string }>, observedAt: string) => ({
   observedAt,
-  baseUrl: "http://127.0.0.1:3010",
+  baseUrl: MAIL_REPLY_GAP_BASE_URL,
   open: open.map(item => ({ receivedAt: "2026-09-20T01:00:00.000Z", ...item })),
 });
 
@@ -27,7 +27,7 @@ describe("mail reply-gap projection", () => {
     const view = readWorkboard(board.db, new Date("2026-10-01T00:01:00.000Z"));
     expect(view.works).toHaveLength(1);
     expect(view.works[0]).toMatchObject({ state: "waiting", summary: "회신: 견적 부탁드립니다" });
-    expect((view.works[0] as { evidence_ref?: string }).evidence_ref).toBe("http://127.0.0.1:3010/#m=41");
+    expect((view.works[0] as { evidence_ref?: string }).evidence_ref).toBe(`${MAIL_REPLY_GAP_BASE_URL}/#m=41`);
     expect(view.attention.map(item => item.workId)).toEqual([view.works[0]?.work_id]);
     expect(view.attention[0]).toMatchObject({ rank: 0, reasons: ["user_decision"] });
 
@@ -52,12 +52,38 @@ describe("mail reply-gap projection", () => {
     expect(MAIL_REPLY_GAP_BASE_URL).toBe("http://jm-acloud.alpines-goldeye.ts.net:3010");
   });
 
-  it("rejects a snapshot that would hide the mail link", () => {
+  it("rejects a snapshot whose link origin is not the configured Mail Intelligence origin", () => {
+    const board = store();
+    const bad = [
+      "http://evil.example/#m=1",
+      "javascript:alert(1)",
+      "data:text/html,hi",
+    ];
+    for (const baseUrl of bad) {
+      expect(() => projectMailReplyGaps(board, {
+        observedAt: "2026-10-01T00:00:00.000Z",
+        baseUrl,
+        open: [{ id: "1", subject: "x", receivedAt: "2026-10-01T00:00:00.000Z" }],
+      })).toThrow(/LINK_INVALID/);
+    }
+    expect(board.works()).toHaveLength(0);
+    const sameOrigin = new URL(MAIL_REPLY_GAP_BASE_URL);
+    sameOrigin.pathname = "/ignored";
+    const accepted = projectMailReplyGaps(board, {
+      observedAt: "2026-10-01T00:00:00.000Z",
+      baseUrl: sameOrigin.href,
+      open: [{ id: "41", subject: "ok", receivedAt: "2026-10-01T00:00:00.000Z" }],
+    });
+    expect(accepted.opened).toBe(1);
+    expect((board.works()[0] as { evidence_ref?: string }).evidence_ref).toBe(`${MAIL_REPLY_GAP_BASE_URL}/#m=41`);
+  });
+
+  it("rejects a non-integer message id before ingest", () => {
     const board = store();
     expect(() => projectMailReplyGaps(board, {
       observedAt: "2026-10-01T00:00:00.000Z",
-      baseUrl: "file:///tmp",
-      open: [{ id: "1", subject: "x", receivedAt: "2026-10-01T00:00:00.000Z" }],
-    })).toThrow(/LINK_INVALID/);
+      open: [{ id: "1e2", subject: "x", receivedAt: "2026-10-01T00:00:00.000Z" }],
+    })).toThrow(/SNAPSHOT_INVALID/);
+    expect(board.works()).toHaveLength(0);
   });
 });
