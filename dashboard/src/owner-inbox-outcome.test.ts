@@ -3,8 +3,8 @@ import { inboxExecutionOutcome } from "./owner-inbox-outcome.js";
 
 describe("inbox execution outcome", () => {
   it("keeps state and failure code, not a payload", () => {
-    expect(inboxExecutionOutcome("approve", { state: "completed", result: "secret" } as never)).toEqual({ state: "completed" });
-    expect(inboxExecutionOutcome("approve", { state: "failed", failure_code: "RUNBOOK_FAILED", result: { error: "secret" } })).toEqual({
+    expect(inboxExecutionOutcome("approve", { state: "completed" })).toEqual({ state: "completed" });
+    expect(inboxExecutionOutcome("approve", { state: "failed", failure_code: "RUNBOOK_FAILED" })).toEqual({
       state: "failed", failure_code: "RUNBOOK_FAILED",
     });
     expect(inboxExecutionOutcome("approve", { state: "uncertain", failure_code: "MEMORY_OUTBOX_RECONCILING" })).toEqual({
