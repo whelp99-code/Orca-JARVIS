@@ -26,8 +26,9 @@ function summaryOf(subject: string): string {
   return `회신: ${clipped}`;
 }
 
-function linkFor(baseUrl: string, id: string): string {
-  const href = `${baseUrl.replace(/\/$/u, "")}/#m=${encodeURIComponent(id)}`;
+function linkFor(baseUrl: string | undefined, id: string): string {
+  const root = baseUrl ?? MAIL_REPLY_GAP_BASE_URL;
+  const href = `${root.replace(/\/$/u, "")}/#m=${encodeURIComponent(id)}`;
   if (href.length > 256 || /[\0\r\n]/u.test(href)) throw new Error("MAIL_REPLY_GAP_LINK_INVALID");
   return href;
 }
