@@ -154,7 +154,9 @@ describe("external.delegate", () => {
     const server = createDashboardServer({ db, staticRoot: root, host: "127.0.0.1", port: 0, clock: () => NOW });
     const origin = `http://127.0.0.1:${server.address.port}`;
     const shared = items()[0];
-    const duplicated = [shared, { ...items()[1], payload_digest: shared?.payload_digest }];
+    const other = items()[1];
+    if (shared === undefined || other === undefined) throw new Error("fixture");
+    const duplicated = [shared, { ...other, payload_digest: shared.payload_digest }];
     const batch = externalDelegateBatchDigest(duplicated);
     try {
       const rejected = await request(`${origin}/api/v1/internal/external-delegate`, {
