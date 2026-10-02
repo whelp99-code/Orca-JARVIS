@@ -168,9 +168,11 @@ function retiredCollaborationRoomCreate(input: RuntimeControlActionInput): void 
 
 function externalDelegate(input: RuntimeControlActionInput): void {
   rejectUnexpected(input.target, ["environment", "system"], "CONTROL_TARGET_MISMATCH");
-  if (input.target.environment !== "external" || input.target.system !== "grok-bot") throw new JarvisError("CONTROL_TARGET_MISMATCH");
+  if (input.target.environment !== "external" || typeof input.target.system !== "string") throw new JarvisError("CONTROL_TARGET_MISMATCH");
   requireOnlyArgs(input.args, ["action_kind", "summary", "payload_digest", "source", "batch_summary", "batch_digest", "items"]);
-  if (input.args.source !== "grok-bot") throw new JarvisError("CONTROL_ARGS_MISMATCH");
+  const source = input.args.source;
+  if (source !== "grok-bot" && source !== "omonyang") throw new JarvisError("CONTROL_ARGS_MISMATCH");
+  if (input.target.system !== source) throw new JarvisError("CONTROL_TARGET_MISMATCH");
   const items = parseExternalDelegateItems(input.args.items);
   const digest = externalDelegateBatchDigest(items);
   if (input.args.batch_digest !== digest || input.args.payload_digest !== digest) throw new JarvisError("CONTROL_ARGS_MISMATCH");

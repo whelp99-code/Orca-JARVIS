@@ -13,6 +13,19 @@ export const EXTERNAL_DELEGATE_NOTION_EFFECTS = Object.freeze([
 export const EXTERNAL_DELEGATE_MAX_ITEMS = 50;
 export const EXTERNAL_DELEGATE_RECEIPT_WINDOW_MS = 30 * 60_000;
 
+/** Token file identity → inbox row. Never taken from the request body. */
+export const EXTERNAL_DELEGATE_REQUESTERS = Object.freeze({
+  "agent:grok-bot": { source: "grok-bot", system: "grok-bot", header: "윤비서 요청" },
+  "agent:omonyang": { source: "omonyang", system: "omonyang", header: "오모냥 요청" },
+} as const);
+
+export type ExternalDelegateRequester = keyof typeof EXTERNAL_DELEGATE_REQUESTERS;
+
+export function externalDelegateRequester(id: string): (typeof EXTERNAL_DELEGATE_REQUESTERS)[ExternalDelegateRequester] | undefined {
+  if (!Object.hasOwn(EXTERNAL_DELEGATE_REQUESTERS, id)) return undefined;
+  return EXTERNAL_DELEGATE_REQUESTERS[id as ExternalDelegateRequester];
+}
+
 const DIGEST = /^sha256:[0-9a-f]{64}$/;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 

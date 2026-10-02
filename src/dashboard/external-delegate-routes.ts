@@ -88,6 +88,7 @@ class DelegateError extends Error {
 }
 
 function stage(db: AuthorityDb, body: Record<string, unknown>, now: Date): { request_id: string; command_digest: string; batch_digest: string; state: string } {
+  if ("requested_by" in body || "source" in body) throw new DelegateError(400, "DELEGATE_INVALID");
   const items = parseExternalDelegateItems(body.items);
   const batchDigest = externalDelegateBatchDigest(items);
   if (body.batch_digest !== batchDigest) throw new DelegateError(400, "BATCH_DIGEST_MISMATCH");
