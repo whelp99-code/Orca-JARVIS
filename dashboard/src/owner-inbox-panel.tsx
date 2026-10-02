@@ -209,7 +209,7 @@ function BatchLines({ items }: Readonly<{ items: readonly BatchLine[] }>) {
     <>
       <ol className={open && items.length > 6 ? "batch-list expanded" : "batch-list"} data-batch="true">
         {shown.map((batch, index) => (
-          <li key={index}>
+          <li key={index} data-item-index={index}>
             <strong>{KIND_LABEL[batch.action_kind] ?? "외부 요청"}</strong>
             {batch.action_kind === "mail.send" ? (
               <p className="record-meta">확인된 초안 · {batch.summary}</p>
