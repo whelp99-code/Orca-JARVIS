@@ -60,6 +60,8 @@ export type OwnerInboxItem = Readonly<{
     action_kind: string;
     summary: string;
     payload_digest: string;
+    mail_draft_id?: string;
+    notion_effect?: string;
     mail_to?: string;
     mail_subject?: string;
   }[];
@@ -313,7 +315,7 @@ function itemOf(row: Row, expired: boolean): OwnerInboxItem {
 function externalDisplay(row: Row): {
   summary: string;
   batch_summary: string;
-  batch_items: { action_kind: string; summary: string; payload_digest: string; mail_to?: string; mail_subject?: string }[];
+  batch_items: NonNullable<OwnerInboxItem["batch_items"]>;
 } | undefined {
   if (row.action !== "external.delegate" || row.args_json === undefined) return undefined;
   let parsed: unknown;
@@ -323,12 +325,14 @@ function externalDisplay(row: Row): {
   const batchSummary = typeof args.batch_summary === "string" ? args.batch_summary : "";
   const items = Array.isArray(args.items) ? args.items.flatMap(item => {
     if (typeof item !== "object" || item === null) return [];
-    const rowItem = item as { action_kind?: unknown; summary?: unknown; payload_digest?: unknown; mail_to?: unknown; mail_subject?: unknown };
+    const rowItem = item as { action_kind?: unknown; summary?: unknown; payload_digest?: unknown; mail_draft_id?: unknown; notion_effect?: unknown; mail_to?: unknown; mail_subject?: unknown };
     if (typeof rowItem.action_kind !== "string" || typeof rowItem.summary !== "string" || typeof rowItem.payload_digest !== "string") return [];
     return [{
       action_kind: rowItem.action_kind,
       summary: rowItem.summary,
       payload_digest: rowItem.payload_digest,
+      ...(typeof rowItem.mail_draft_id === "string" ? { mail_draft_id: rowItem.mail_draft_id } : {}),
+      ...(typeof rowItem.notion_effect === "string" ? { notion_effect: rowItem.notion_effect } : {}),
       ...(typeof rowItem.mail_to === "string" ? { mail_to: rowItem.mail_to } : {}),
       ...(typeof rowItem.mail_subject === "string" ? { mail_subject: rowItem.mail_subject } : {}),
     }];

@@ -112,7 +112,7 @@ export function signCommandApproval(payload: Omit<CommandApprovalReceipt, "signa
   return { ...payload, signature: base64url(signature) };
 }
 
-export function verifyCommandApproval(receipt: CommandApprovalReceipt, trustedPublicKey: string, now: Date): boolean {
+export function verifyCommandApproval(receipt: CommandApprovalReceipt, trustedPublicKey: string, now: Date, action?: string): boolean {
   const issued = Date.parse(receipt.issued_at);
   const notBefore = Date.parse(receipt.not_before);
   const expires = Date.parse(receipt.expires_at);
@@ -135,7 +135,7 @@ export function verifyCommandApproval(receipt: CommandApprovalReceipt, trustedPu
     notBefore > now.getTime() ||
     expires <= issued ||
     expires <= now.getTime() ||
-    expires - issued > 30 * 60_000
+    expires - issued > (action === "external.delegate" ? 30 : 15) * 60_000
   )
     return false;
   const payload: Omit<CommandApprovalReceipt, "signature"> = {

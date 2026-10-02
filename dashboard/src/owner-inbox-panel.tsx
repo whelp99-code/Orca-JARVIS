@@ -23,6 +23,8 @@ type BatchLine = Readonly<{
   action_kind: string;
   summary: string;
   payload_digest: string;
+  mail_draft_id?: string;
+  notion_effect?: string;
   mail_to?: string;
   mail_subject?: string;
 }>;
@@ -32,6 +34,11 @@ const KIND_LABEL: Readonly<Record<string, string>> = {
   "notion.write": "노션 기록",
   "tax.transmit": "세금 전송",
   "payment": "결제",
+};
+
+const NOTION_EFFECT_LABEL: Readonly<Record<string, string>> = {
+  create: "생성", delete: "삭제", amount: "금액 변경",
+  date: "날짜 변경", status: "상태 변경", partner: "거래처 변경",
 };
 
 type Status = "loading" | "ready" | "error" | "unconfigured";
@@ -211,6 +218,12 @@ function BatchLines({ items }: Readonly<{ items: readonly BatchLine[] }>) {
         {shown.map((batch, index) => (
           <li key={index} data-item-index={index}>
             <strong>{KIND_LABEL[batch.action_kind] ?? "외부 요청"}</strong>
+            {batch.notion_effect ? (
+              <p className="record-meta" data-notion-effect={batch.notion_effect}>변경 작업 · {NOTION_EFFECT_LABEL[batch.notion_effect] ?? batch.notion_effect}</p>
+            ) : null}
+            {batch.mail_draft_id ? (
+              <p className="record-meta" data-mail-draft-id={batch.mail_draft_id}>메일 초안 · {batch.mail_draft_id}</p>
+            ) : null}
             {batch.action_kind === "mail.send" ? (
               <p className="record-meta">확인된 초안 · {batch.summary}</p>
             ) : (

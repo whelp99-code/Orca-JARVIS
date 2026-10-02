@@ -57,7 +57,7 @@ const schemas: Record<HandsTool, z.ZodType> = {
 
 function fail(error: unknown): { isError: true; content: [{ type: "text"; text: string }] } {
   const code = error instanceof HandsError ? error.code : "UNAVAILABLE";
-  return { isError: true, content: [{ type: "text", text: JSON.stringify({ ok: false, error: { code } }) }] };
+  return { isError: true, content: [{ type: "text", text: JSON.stringify({ schema_version: 1, ok: false, error: { code } }) }] };
 }
 
 export function createOmonyangHandsMcp(service: HandsService): McpServer {

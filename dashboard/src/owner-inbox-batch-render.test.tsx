@@ -25,8 +25,9 @@ describe("owner inbox batch list", () => {
           expired: false,
           manual_wait: false,
           batch_items: [
-            { action_kind: "mail.send", summary: "수신 a@example.com · 제목 하나", payload_digest: DIGEST },
+            { action_kind: "mail.send", summary: "수신 a@example.com · 제목 하나", payload_digest: DIGEST, mail_draft_id: "11111111-1111-4111-8111-111111111111" },
             { action_kind: "payment", summary: "두 번째", payload_digest: DIGEST },
+            { action_kind: "notion.write", summary: "일반적인 요약", payload_digest: DIGEST, notion_effect: "delete" },
           ],
         }],
       });
@@ -35,6 +36,8 @@ describe("owner inbox batch list", () => {
     expect(await screen.findByText("메일 발송")).toBeInTheDocument();
     expect(screen.getByText("결제")).toBeInTheDocument();
     const rows = document.querySelectorAll("[data-item-index]");
-    expect([...rows].map(row => row.getAttribute("data-item-index"))).toEqual(["0", "1"]);
+    expect([...rows].map(row => row.getAttribute("data-item-index"))).toEqual(["0", "1", "2"]);
+    expect(document.querySelector("[data-mail-draft-id]")).toHaveAttribute("data-mail-draft-id", "11111111-1111-4111-8111-111111111111");
+    expect(document.querySelector("[data-notion-effect]")).toHaveAttribute("data-notion-effect", "delete");
   });
 });
