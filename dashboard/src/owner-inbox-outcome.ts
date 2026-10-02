@@ -22,10 +22,11 @@ export function inboxExecutionOutcome(decision: "approve" | "reject", execution:
   return { state: "completed" };
 }
 
-export function inboxOutcomeText(outcome: InboxOutcome): string {
+export function inboxOutcomeText(outcome: InboxOutcome, action?: string): string {
   if (outcome.state === "rejected") return "거절했습니다.";
   if (outcome.state === "failed") return `승인됨 — 실행 실패 (코드: ${outcome.failure_code ?? "APPROVED_COMMAND_FAILED"})`;
   if (outcome.state === "uncertain") return `승인됨 — 결과 확인 중 (코드: ${outcome.failure_code ?? "APPROVED_COMMAND_FAILED"})`;
+  if (outcome.state === "approved" && action === "external.delegate") return "승인됨 — 외부 실행";
   if (outcome.state === "approved") return "승인됨 — 실행 대기(수동)";
   return "승인·실행 완료";
 }

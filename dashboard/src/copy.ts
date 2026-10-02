@@ -182,6 +182,7 @@ const ACTION_LABELS: Readonly<Record<string, string>> = {
   "workflow.register": "작업 흐름 등록",
   "workflow.start": "작업 시작",
   "task.execute": "작업 실행",
+  "external.delegate": "윤비서 요청",
 };
 
 export function stateLabel(value: string): string {

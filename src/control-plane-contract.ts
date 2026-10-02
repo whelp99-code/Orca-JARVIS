@@ -135,7 +135,7 @@ export function verifyCommandApproval(receipt: CommandApprovalReceipt, trustedPu
     notBefore > now.getTime() ||
     expires <= issued ||
     expires <= now.getTime() ||
-    expires - issued > 15 * 60_000
+    expires - issued > 30 * 60_000
   )
     return false;
   const payload: Omit<CommandApprovalReceipt, "signature"> = {

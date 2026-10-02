@@ -15,7 +15,23 @@ type Item = Readonly<{
   needs_review?: boolean;
   failure_code?: string | null;
   state?: string;
+  batch_items?: readonly BatchLine[];
 }>;
+
+type BatchLine = Readonly<{
+  action_kind: string;
+  summary: string;
+  payload_digest: string;
+  mail_to?: string;
+  mail_subject?: string;
+}>;
+
+const KIND_LABEL: Readonly<Record<string, string>> = {
+  "mail.send": "메일 발송",
+  "notion.write": "노션 기록",
+  "tax.transmit": "세금 전송",
+  "payment": "결제",
+};
 
 type Status = "loading" | "ready" | "error" | "unconfigured";
 
@@ -56,7 +72,9 @@ export function OwnerInboxPanel() {
   useEffect(() => { void load(); }, [phone]);
 
   async function decide(item: Item, decision: "approve" | "reject"): Promise<void> {
-    const confirmed = window.confirm(`${decision === "approve" ? "이 요청만 승인합니다." : "이 요청만 거절합니다."}\n${item.summary}\n${item.command_digest}`);
+    const confirmed = window.confirm(decision === "approve"
+      ? "이 묶음 전체를 Face ID 한 번으로 승인합니다."
+      : "이 묶음 전체를 거절합니다.");
     if (!confirmed) return;
     if (typeof navigator.credentials?.get !== "function") {
       setNotice("이 기기에는 패스키가 없습니다. 휴대폰에서 한 번 등록한 뒤에만 승인할 수 있습니다.");
@@ -123,7 +141,7 @@ export function OwnerInboxPanel() {
       const decided = await response.json() as { execution?: InboxExecution };
       const outcome = inboxExecutionOutcome(decision, decided.execution);
       setOutcome(outcome);
-      setNotice(inboxOutcomeText(outcome));
+      setNotice(inboxOutcomeText(outcome, item.action));
       await load();
     } catch {
       setNotice("패스키 확인 뒤에만 처리됩니다.");
@@ -161,13 +179,15 @@ export function OwnerInboxPanel() {
         <ul className="record-list">
           {items.filter(item => !item.needs_review).map(item => (
             <li className="record" key={item.request_id}>
-              <p className="record-title">{item.summary}</p>
+              <p className="record-title">{item.batch_items && item.batch_items.length > 0 ? `윤비서 요청 · ${item.batch_items.length}건 묶음 · 30분 내 승인` : item.summary}</p>
+              {item.batch_items && item.batch_items.length > 0 ? <BatchLines items={item.batch_items} /> : null}
               {item.expired ? <p className="record-meta">만료됨. 이 요청은 더 이상 승인할 수 없습니다.</p> : null}
               <p className="record-meta">{actionLabel(item.action)}</p>
               <p className="record-meta"><time dateTime={item.expires_at}>유효 {formatKst(item.expires_at)}</time></p>
               <Digest value={item.command_digest} />
               {item.expired || item.manual_wait ? null : (
                 <>
+                  <p className="record-meta">이 묶음은 Face ID 한 번으로 승인됩니다.</p>
                   <button type="button" disabled={busyId === item.request_id} onClick={() => { void decide(item, "approve"); }}>승인</button>
                   <button type="button" disabled={busyId === item.request_id} onClick={() => { void decide(item, "reject"); }}>거절</button>
                 </>
@@ -177,6 +197,32 @@ export function OwnerInboxPanel() {
         </ul>
       </div>
     </section>
+  );
+}
+
+function BatchLines({ items }: Readonly<{ items: readonly BatchLine[] }>) {
+  const [open, setOpen] = useState(items.length <= 6);
+  const shown = open ? items : items.slice(0, 3);
+  return (
+    <>
+      <ol className={open && items.length > 6 ? "batch-list expanded" : "batch-list"} data-batch="true">
+        {shown.map((batch, index) => (
+          <li key={index} data-item-index={index}>
+            <strong>{KIND_LABEL[batch.action_kind] ?? "외부 요청"}</strong>
+            {batch.action_kind === "mail.send" ? (
+              <p className="record-meta">확인된 초안 · {batch.summary}</p>
+            ) : (
+              <p className="record-meta">윤비서 작성 요약 · {batch.summary}</p>
+            )}
+          </li>
+        ))}
+      </ol>
+      {items.length > 6 ? (
+        <button type="button" onClick={() => { setOpen(value => !value); }}>
+          {open ? "접기" : `나머지 ${items.length - 3}건 보기`}
+        </button>
+      ) : null}
+    </>
   );
 }
 

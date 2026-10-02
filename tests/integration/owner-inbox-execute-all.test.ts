@@ -8,7 +8,8 @@ import { KNOWN_CONTROL_ACTIONS } from "../../src/control-actions.js";
 import { ControlPlane, type ControlCommandRequestInput } from "../../src/control-plane.js";
 import { createDashboardServer } from "../../src/dashboard/server.js";
 import { DEFAULT_AGENTOPS_LOOP } from "../../src/loopgraph.js";
-import { OWNER_INBOX_MANUAL_WAIT, OwnerInbox } from "../../src/owner-inbox.js";
+import { externalDelegateBatchDigest } from "../../src/external-delegate.js";
+import { OWNER_INBOX_EXTERNAL_DONE, OWNER_INBOX_MANUAL_WAIT, OwnerInbox } from "../../src/owner-inbox.js";
 import { ControlReceiptSigner } from "../../src/remote-approval-signer.js";
 import { initialized, localKey, snapshot } from "../helpers.js";
 import { approvedTaskFixture } from "../fixtures/approved-task-fixture.js";
@@ -23,12 +24,22 @@ const EXPIRES = "2026-09-30T01:00:00.000Z";
 const sha = (fill: string) => `sha256:${fill.repeat(64)}`;
 const hex = (fill: string) => fill.repeat(32);
 
-function command(action: string, level: number, target: Record<string, unknown>, args: Record<string, unknown>, reversible: boolean): ControlCommandRequestInput {
+function command(action: string, level: number, target: Record<string, unknown>, args: Record<string, unknown>, reversible: boolean, requestedBy = "principal:owner"): ControlCommandRequestInput {
   return {
     schema_version: 1, request_id: `inbox:${action}`, action, action_level: level as 0 | 1 | 2 | 3 | 4 | 5,
-    target, args, reversible, requested_by: "principal:owner", requested_at: NOW.toISOString(),
+    target, args, reversible, requested_by: requestedBy, requested_at: NOW.toISOString(),
     expires_at: EXPIRES, nonce: `nonce:${action}`,
   };
+}
+
+function delegateCommand(): ControlCommandRequestInput {
+  const digest = sha("d");
+  const items = [{ action_kind: "payment", summary: "pay fixture", payload_digest: digest }];
+  const batch = externalDelegateBatchDigest(items);
+  return command("external.delegate", 3, { environment: "external", system: "grok-bot" }, {
+    source: "grok-bot", action_kind: "payment", summary: "pay fixture", batch_summary: "pay fixture",
+    batch_digest: batch, payload_digest: batch, items,
+  }, false, "agent:grok-bot");
 }
 
 function payloads(): ControlCommandRequestInput[] {
@@ -117,6 +128,7 @@ function payloads(): ControlCommandRequestInput[] {
     command("remote.principal.revoke", 4, { principal_id: "principal:owner", user_handle_digest: digest }, {
       schema_version: 1, reason_digest: digest,
     }, true),
+    delegateCommand(),
   ];
 }
 
@@ -194,7 +206,7 @@ describe("owner inbox executes every action that has an executor", () => {
       }
       const waiting = live.inbox.list().filter(item => item.manual_wait);
       expect(waiting.length).toBeGreaterThan(0);
-      expect(waiting.every(item => item.summary === OWNER_INBOX_MANUAL_WAIT)).toBe(true);
+      expect(waiting.every(item => item.summary === (item.action === "external.delegate" ? OWNER_INBOX_EXTERNAL_DONE : OWNER_INBOX_MANUAL_WAIT))).toBe(true);
       expect(waiting.map(item => item.action)).toContain("git.push");
       const again = db.db.prepare("SELECT COUNT(*) AS n FROM control_command_redemptions WHERE request_id='inbox:memory.delete'").get() as { n: number };
       expect(again.n).toBe(1);
