@@ -143,6 +143,32 @@ describe("external.delegate", () => {
     }
   });
 
+  it("rejects a batch whose item digests are not unique", async () => {
+    const db = await initialized();
+    const root = mkdtempSync(join(tmpdir(), "delegate-dup-"));
+    const tokenFile = join(root, "token");
+    writeFileSync(tokenFile, "t".repeat(40));
+    chmodSync(tokenFile, 0o600);
+    process.env.JARVIS_EXTERNAL_DELEGATE_TOKEN_FILE = tokenFile;
+    writeFileSync(join(root, "index.html"), "<!doctype html>");
+    const server = createDashboardServer({ db, staticRoot: root, host: "127.0.0.1", port: 0, clock: () => NOW });
+    const origin = `http://127.0.0.1:${server.address.port}`;
+    const shared = items()[0];
+    const duplicated = [shared, { ...items()[1], payload_digest: shared?.payload_digest }];
+    const batch = externalDelegateBatchDigest(duplicated);
+    try {
+      const rejected = await request(`${origin}/api/v1/internal/external-delegate`, {
+        method: "POST",
+        headers: { host: new URL(origin).host, "content-type": "application/json", "x-jarvis-delegate-token": "t".repeat(40) },
+        body: JSON.stringify({ request_id: "delegate-dup-0001", batch_summary: "중복", batch_digest: batch, items: duplicated, expires_in_seconds: 1800 }),
+      });
+      expect(rejected.statusCode).toBe(400);
+    } finally {
+      server.close();
+      delete process.env.JARVIS_EXTERNAL_DELEGATE_TOKEN_FILE;
+    }
+  });
+
   it("consumes an item once and rejects an expired receipt", async () => {
     const db = await initialized();
     const control = new ControlPlane(db);
