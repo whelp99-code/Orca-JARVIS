@@ -14,10 +14,12 @@ const transports: Array<{ close(): Promise<void> }> = []; afterEach(async () => 
       JARVIS_PROVIDER_STATE_ROOT: process.env["JARVIS_PROVIDER_STATE_ROOT"],
       JARVIS_SECOND_BRAIN_LAUNCHER: process.env["JARVIS_SECOND_BRAIN_LAUNCHER"],
       JARVIS_SECOND_BRAIN_CONFIG: process.env["JARVIS_SECOND_BRAIN_CONFIG"],
+      JARVIS_PROVIDER_CONFIG: process.env["JARVIS_PROVIDER_CONFIG"],
     };
     delete process.env["JARVIS_PROVIDER_STATE_ROOT"];
     delete process.env["JARVIS_SECOND_BRAIN_LAUNCHER"];
     delete process.env["JARVIS_SECOND_BRAIN_CONFIG"];
+    delete process.env["JARVIS_PROVIDER_CONFIG"];
     try {
       expect({ launcher: secondBrainLauncher(), config: secondBrainConfig(), protocol: SECOND_BRAIN_PROTOCOL_VERSION, bytes: SECOND_BRAIN_FRAME_BYTES }).toEqual({
         launcher: "/home/jm/.local/state/second-brain/app/current/bin/second-brain-mcp", config: "/home/jm/.config/second-brain/config.toml",

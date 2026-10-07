@@ -1,25 +1,51 @@
 import { mkdtempSync, readFileSync, rmSync, statSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { tryExecuteDeploymentCommand } from "../../src/cli-deployment-commands.js";
+import { DEFAULT_DEPLOYMENT_ROOTS } from "../../src/personal-os-deployment-roots.js";
 
 const scratch: string[] = [];
+const deploymentEnvironmentKeys = [
+  "JARVIS_STATE_ROOT",
+  "JARVIS_PROVIDER_STATE_ROOT",
+  "JARVIS_PROVIDER_CONFIG",
+  "JARVIS_PROVIDER_SHARE_ROOT",
+  "JARVIS_SHARE_ROOT",
+  "JARVIS_CONFIG_ROOT",
+  "JARVIS_BIN_ROOT",
+  "JARVIS_NODE_BIN",
+  "JARVIS_SERVICE_USER",
+  "JARVIS_TASK_CLAUDE_PATH",
+  "JARVIS_PORTFOLIO_SPOOL_ROOT",
+  "JARVIS_DAILY_SERVICE_CONFIG",
+  "JARVIS_DAILY_CLOSEOUT_KEY",
+] as const;
+let savedEnvironment: Map<typeof deploymentEnvironmentKeys[number], string | undefined>;
+beforeEach(() => {
+  savedEnvironment = new Map(deploymentEnvironmentKeys.map(name => [name, process.env[name]] as const));
+});
 afterEach(() => {
   for (const path of scratch.splice(0)) rmSync(path, { recursive: true, force: true });
-  for (const name of ["JARVIS_STATE_ROOT", "JARVIS_PROVIDER_STATE_ROOT", "JARVIS_PROVIDER_CONFIG",
-    "JARVIS_PROVIDER_SHARE_ROOT", "JARVIS_SHARE_ROOT", "JARVIS_CONFIG_ROOT", "JARVIS_BIN_ROOT",
-    "JARVIS_NODE_BIN", "JARVIS_SERVICE_USER", "JARVIS_TASK_CLAUDE_PATH"]) {
-    delete process.env[name];
+  for (const name of deploymentEnvironmentKeys) {
+    const value = savedEnvironment.get(name);
+    if (value === undefined) delete process.env[name];
+    else process.env[name] = value;
   }
 });
 
+function clearDeploymentEnvironment(): void {
+  for (const name of deploymentEnvironmentKeys) delete process.env[name];
+}
+
 function serviceEnvironment(): void {
+  clearDeploymentEnvironment();
   process.env["JARVIS_STATE_ROOT"] = "/var/lib/jarvis-svc/state/orca-jarvis";
   process.env["JARVIS_PROVIDER_STATE_ROOT"] = "/var/lib/jarvis-svc/state/second-brain";
   process.env["JARVIS_PROVIDER_CONFIG"] = "/var/lib/jarvis-svc/config/second-brain/config.toml";
   process.env["JARVIS_PROVIDER_SHARE_ROOT"] = "/var/lib/jarvis-svc/share/second-brain";
   process.env["JARVIS_SHARE_ROOT"] = "/var/lib/jarvis-svc/share/jarvis";
+  process.env["JARVIS_PORTFOLIO_SPOOL_ROOT"] = "/var/lib/jarvis-svc/share/jarvis/portfolio-spool";
   process.env["JARVIS_CONFIG_ROOT"] = "/var/lib/jarvis-svc/config";
   process.env["JARVIS_BIN_ROOT"] = "/opt/jarvis-runtime/bin";
   process.env["JARVIS_NODE_BIN"] = "/opt/jarvis-runtime/bin/node";
@@ -28,13 +54,15 @@ function serviceEnvironment(): void {
 
 describe("deployment CLI", () => {
   it("reports the unconfigured deployment and names its remaining home paths", () => {
+    clearDeploymentEnvironment();
+
     // Given / When
     const result = tryExecuteDeploymentCommand({ positionals: ["deployment", "roots"], values: {} });
 
     // Then
     expect(result).toMatchObject({ ok: true, command: "deployment.roots" });
     expect(Reflect.get(result ?? {}, "roots")).toMatchObject({
-      jarvisDb: "/home/jm/.local/state/orca-jarvis/jarvis.sqlite",
+      jarvisDb: `${DEFAULT_DEPLOYMENT_ROOTS.stateRoot}/jarvis.sqlite`,
       serviceUser: undefined,
     });
     // Every root is still under the interactive user's home before the cutover, and the command
@@ -108,6 +136,7 @@ describe("deployment CLI", () => {
 
   it("renders an inert executor drop-in for a deployment that configures no executor", () => {
     // Given
+    clearDeploymentEnvironment();
     const out = mkdtempSync(join(tmpdir(), "jarvis-units-"));
     scratch.push(out);
 

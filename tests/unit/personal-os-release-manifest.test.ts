@@ -127,18 +127,30 @@ describe("personal-OS release manifest", () => {
       },
     })).toThrow(PersonalOsError);
 
-    expect(() => buildReleaseManifest({
-      root: "/home/jm/.local/state/orca-jarvis/authority",
-      artifact: "jarvis-authority",
-      source: SOURCE,
-      build: {
-        source_date_epoch: 0,
-        builder_command: "personal-os-rehearsal",
-        offline_cache_digest: "e".repeat(64),
-        lifecycle_command_digests: ["f".repeat(64)],
-        reproducibility_receipt: "g".repeat(64),
-      },
-    })).toThrow(PersonalOsError);
+    const state = stage();
+    const authority = join(state, "authority");
+    mkdirSync(join(authority, "dist/src"), { recursive: true });
+    writeFileSync(join(authority, "package.json"), readFileSync(join(state, "package.json")));
+    writeFileSync(join(authority, "dist/src/cli.js"), readFileSync(join(state, "dist/src/cli.js")));
+    const savedState = process.env["JARVIS_STATE_ROOT"];
+    process.env["JARVIS_STATE_ROOT"] = state;
+    try {
+      expect(() => buildReleaseManifest({
+        root: authority,
+        artifact: "jarvis-authority",
+        source: SOURCE,
+        build: {
+          source_date_epoch: 0,
+          builder_command: "personal-os-rehearsal",
+          offline_cache_digest: "e".repeat(64),
+          lifecycle_command_digests: ["f".repeat(64)],
+          reproducibility_receipt: "g".repeat(64),
+        },
+      })).toThrow(PersonalOsError);
+    } finally {
+      if (savedState === undefined) delete process.env["JARVIS_STATE_ROOT"];
+      else process.env["JARVIS_STATE_ROOT"] = savedState;
+    }
   });
 
   it("seals a relative symlink that remains inside the release root", () => {

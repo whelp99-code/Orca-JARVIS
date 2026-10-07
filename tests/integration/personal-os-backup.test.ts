@@ -76,14 +76,26 @@ describe("personal-OS backup, restore, and publish", () => {
     // Then
     expect(published.currentTarget).toBe("releases/aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa");
     expect(readFileSync(join(root, "authority", "current", "dist/src/cli.js"), "utf8")).toBe("export {};\n");
-    await expect(backupSqlite({
-      sourcePath: "/home/jm/.local/state/orca-jarvis/jarvis.sqlite",
-      destPath: join(root, "x.sqlite"),
-    })).rejects.toBeInstanceOf(PersonalOsError);
-    expect(() => restoreSqlite({
-      backupPath: join(root, "missing.sqlite"),
-      destPath: "/home/jm/.local/state/orca-jarvis/jarvis.sqlite",
-    })).toThrow(PersonalOsError);
+    const state = join(root, "protected-state");
+    mkdirSync(state, { recursive: true });
+    seedDb(join(state, "jarvis.sqlite"), "protected-production");
+    const backup = join(root, "restore-source.sqlite");
+    seedDb(backup, "restorable-backup");
+    const savedState = process.env["JARVIS_STATE_ROOT"];
+    process.env["JARVIS_STATE_ROOT"] = state;
+    try {
+      await expect(backupSqlite({
+        sourcePath: join(state, "jarvis.sqlite"),
+        destPath: join(root, "x.sqlite"),
+      })).rejects.toBeInstanceOf(PersonalOsError);
+      expect(() => restoreSqlite({
+        backupPath: backup,
+        destPath: join(state, "jarvis.sqlite"),
+      })).toThrow(PersonalOsError);
+    } finally {
+      if (savedState === undefined) delete process.env["JARVIS_STATE_ROOT"];
+      else process.env["JARVIS_STATE_ROOT"] = savedState;
+    }
   });
 
   it("refuses a non-sqlite backup instead of copying it as recovered state", () => {
