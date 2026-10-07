@@ -26,6 +26,8 @@ import { TodayRoute, type PersonalRuntime } from "./today-route.js";
 import type { createDashboardStore, DashboardState, ResourceState } from "./store.js";
 import { useDetailResource } from "./use-detail-resource.js";
 import { TaskExecutionPanel } from "./task-execution-panel.js";
+import { FinanceReadPage } from "./finance-read-page.js";
+import type { FinanceReadAdapter } from "./finance-read-adapter.js";
 import { WorkboardRoute } from "./workboard/page.js";
 
 type DashboardStore = ReturnType<typeof createDashboardStore>;
@@ -41,6 +43,7 @@ type ControlCenterRootProps = Readonly<{
   memoryRuntime?: MemoryClientRuntime;
   initialPath?: string;
   surface?: DashboardSurface;
+  financeReadAdapter?: FinanceReadAdapter;
 }>;
 export function ControlCenterRoot({
   store,
@@ -51,6 +54,7 @@ export function ControlCenterRoot({
   memoryRuntime,
   initialPath,
   surface = "local",
+  financeReadAdapter,
 }: ControlCenterRootProps) {
   const content = (
     <SurfaceContext.Provider value={surface}>
@@ -62,6 +66,7 @@ export function ControlCenterRoot({
         personalRuntime={personalRuntime}
         memoryRuntime={memoryRuntime}
         surface={surface}
+        financeReadAdapter={financeReadAdapter}
       />
     </SurfaceContext.Provider>
   );
@@ -80,6 +85,7 @@ function ControlCenter({
   personalRuntime,
   memoryRuntime,
   surface,
+  financeReadAdapter,
 }: Omit<ControlCenterRootProps, "initialPath"> & Readonly<{ surface: DashboardSurface }>) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const proposalClient = useMemo(() => createProposalMutationClient(client.session), [client]);
@@ -173,6 +179,9 @@ function ControlCenter({
           )}
         />
         <Route path="/security" element={security} />
+        <Route path="/finance-read" element={financeReadAdapter === undefined
+          ? <RouteState title="재무 조회 요청 준비" message="재무 조회 adapter 미연결 · 실제 조회나 fixture 권한이 활성화되지 않았습니다." />
+          : <FinanceReadPage adapter={financeReadAdapter} />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </OperationalShell>

@@ -15,6 +15,7 @@ const NAV_ITEMS = [
   { label: "에이전트", href: "/agents" },
   { label: "승인", href: "/approvals" },
   { label: "보안", href: "/security" },
+  { label: "조회 준비", href: "/finance-read" },
 ] as const;
 
 afterEach(cleanup);

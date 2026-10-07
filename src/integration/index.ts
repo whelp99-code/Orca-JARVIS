@@ -1,4 +1,5 @@
 export { isCore5IntegrationEnabled } from "./flag.js";
+export * from "./finance-read-api.js";
 export { Core5CapabilityRegistry } from "./capability-registry.js";
 export {
   StaticVerifiedIssuer,
