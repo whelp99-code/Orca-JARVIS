@@ -214,6 +214,12 @@ export {
 } from "./loopgraph.js";
 export { BUILTIN_RUNBOOKS, type RunbookSpec, type RunbookResult, type HostOperations } from "./runbook.js";
 export { type MicroLoopName, type MicroLoopHandler, type MicroLoopOutcome } from "./microloops.js";
+export { CORE5_INTEGRATION_V2_CAPABILITIES, Core5FinanceReadGateway, parseFinanceReadEnvelope } from "./integration/finance-read-gateway.js";
+export { CompanyArchiveReader, type CompanyArchiveReadBinding, type CompanyArchiveReadTransport } from "./integration/company-archive-read.js";
+export { consumeNativeOwnerReport, type NativeOwnerReportBinding } from "./integration/native-owner-report.js";
+export { NativeFinanceReader, type NativeFinanceReadRequest, type NativeFinanceGet, type NativeFinanceReadTransport, type NativeFinanceReadReceipt } from "./integration/native-finance-read.js";
+export { consumeNativeCrmLink, type NativeCrmLinkEvidence, type NativeCompanyBinding } from "./integration/native-crm-link.js";
+export type { FinanceReadEnvelope, PreparedFinanceRead, RegisteredFinanceReadTarget } from "./integration/finance-read-gateway.js";
 export { PersonalOsRuntime } from "./personal-os-runtime.js"; export { evaluateSlo, SLO_CATALOG } from "./personal-os-slo.js";
 export * from "./personal-os-retention.js";
 export { decideRollback, migrationVectorDigest } from "./personal-os-compatibility.js"; export { runPersonalOsRehearsal } from "./personal-os-rehearsal.js";

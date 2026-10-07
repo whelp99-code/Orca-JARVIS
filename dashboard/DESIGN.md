@@ -139,7 +139,26 @@ The document owns vertical scrolling. The operational shell uses StyleGallery's 
 - **Layout**: document scroll owner; Results/Detail and Candidates/Effects use overflow-safe two-column grids above 40rem and preserve source/focus order when stacked.
 - **Privacy**: no query in URL/storage, no memory-derived links or HTML, no path/download/clipboard surface, and provider origin labels that look like paths or URIs are replaced with a safe label.
 
+### Finance Read Preparation
+- **Structure**: route heading, explicit isolated-fixture/unconfigured notice, bounded request form, then a preparation result panel. The result exposes company, target, case/report, source revision, view and operation identities, not invented financial results.
+- **States**: unconfigured (no action), isolated fixture idle, refused, and prepared locally. Editing the request retires the previous result immediately. Preparation is not a live read, consumed approval, signed receipt or integrated acceptance.
+- **Actions**: only local contract validation; no approval, send, tax, payment, provider connection or authority registration control.
+- **Accessibility**: persistent native labels, bounded inputs, grouped case/report reference, one atomic status region and safe code-based refusal copy. The phone gateway exposes neither the route nor its navigation link.
+- **Layout**: existing Panel, Form Control, Proposal Preview and `proposal-layout` supporting panes; document owns scrolling. Identifier values wrap anywhere and the request precedes its result in DOM order. Form/disclosure scroll targets reserve three navigation-height tokens below 64rem for the wrapping sticky header, and one above that breakpoint.
+- **Color and motion**: existing tokens only; fixture/preparation uses informational or warning text, never live-success tone; no motion.
+- **Composition**: the normal route is unconfigured. Explicit Vite development mode `fp5-local` supplies fixture authority only; production builds contain no active fixture runtime.
+- **Company-memory evidence**: a separate panel in the same explicit local composition displays selected fields from the Root-admitted MS receipt. It preserves candidate state, workspace, immutable message locator, parser, content/request digests, ack version and the recorded receipt identity. Native disclosure keeps technical evidence behind the summary. This historical isolated projection is not a new signed receipt, current connection, business approval or personal memory, and is not joined to the finance fixture's different company. It exposes no action or memory-derived link.
+- **Mail-to-work evidence**: a separate recorded MR panel preserves Mail producer source/request/audit identities, receive/mapping versions and explicit-human-fixture mapping authority. Producer IDs are not labeled as Root's fresh fixture IDs. This is not a new command, live identity, archive approval, financial truth or a merge with the MS source. It uses the same token spacing and native disclosure, with no action or provider client.
+- **Work-reference memory evidence**: a separate recorded RS panel uses Root's independently observed request, receive receipt and raw-source byte digest. It preserves candidate/EMITTED/version 2, RS_LOCAL_ONLY and ARCHIVE_PROJECTION_ONLY. Native approval stays boolean false; the locator's approval string stays `"false"` and is not coerced into a grant. Technical IDs remain behind native disclosure. The panel has no action or live outbox/personal-memory implication.
+
 ## 6. Motion & Interaction
+
+### Local Five-product Work Card
+- **Structure**: one native finance job article, purpose and blocked-state summary, then source, native project, amounts, approval and receipt in that order. Recorded MS/RS/MR/MT proofs remain separate; RT displays native Price state, source identity and its explicit company/workspace registration.
+- **Identity**: every job section carries the same internal case and response-body revision. Native project/source IDs and producer snapshot remain distinct from the internal J1 report reference and body hash.
+- **States**: recorded LOCAL_ONLY native UNBOUND, UNAPPROVED, CONFIRMED and SOURCE_CHANGED. Only a native confirmed link with its matching human-confirmed company/workspace registration establishes identity confirmation; never caller-supplied registration. SOURCE_CHANGED preserves registration history but removes current connection confirmation and shows unavailable current project/amounts as null. Identity confirmation never implies finance approval. Body integrity does not prove producer freshness; both financial readiness flags remain false.
+- **Layout**: existing Panel and Record List primitives; document scrolling, source-order stack, token spacing, wrapping identifiers including disclosure titles, and native disclosures. No financial aggregation across independent fixture scopes.
+- **Actions**: disclosure only. No read principal, grant, approval, provider call, payment or journal effect. Development `fp5-local` only; default production remains unconfigured.
 
 Motion intensity is low. State changes are immediate and no automatic animation is used. Hover, active, and focus feedback communicate affordance without moving layout. Any future non-essential motion must animate only transform or opacity and honor `prefers-reduced-motion`.
 

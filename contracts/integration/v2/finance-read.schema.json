@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://orca-jarvis.local/contracts/integration/v2/finance-read.schema.json",
+  "title": "FinanceReadEnvelope",
+  "description": "Bounded read preparation only. No provider call, financial mutation or authority issuance.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "capability", "operation_id", "attempt_id", "lease_fence", "target_id", "payload", "caller"],
+  "properties": {
+    "schema_version": { "const": 2 },
+    "capability": { "const": "finance.read" },
+    "operation_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "attempt_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "lease_fence": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "target_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+    "payload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["company_id", "source_revision", "view"],
+      "oneOf": [{ "required": ["case_id"], "not": { "required": ["report_id"] } }, { "required": ["report_id"], "not": { "required": ["case_id"] } }],
+      "properties": {
+        "company_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "case_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "report_id": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "source_revision": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "view": { "enum": ["reconciliation", "owner_report", "discrepancy"] }
+      }
+    },
+    "caller": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["principal", "workspace", "purpose", "expiry", "audience"],
+      "properties": {
+        "principal": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "workspace": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "purpose": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "expiry": { "type": "string", "minLength": 1, "maxLength": 256 },
+        "audience": { "type": "string", "minLength": 1, "maxLength": 256 }
+      }
+    }
+  }
+}

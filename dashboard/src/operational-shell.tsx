@@ -18,6 +18,7 @@ const NAV_ITEMS = [
   { label: copy.nav.agents, to: "/agents" },
   { label: copy.nav.approvals, to: "/approvals" },
   { label: copy.nav.security, to: "/security" },
+  { label: "조회 준비", to: "/finance-read" },
 ] as const;
 /** The routes the phone gateway serves; every other path is a gateway 404. */
 const PHONE_NAV_ITEMS = NAV_ITEMS.filter(item => item.to === "/" || item.to === "/memory" || item.to === "/security");

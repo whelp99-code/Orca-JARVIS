@@ -1,0 +1,65 @@
+.finance-read-page .form-field input {
+  inline-size: 100%;
+  min-block-size: var(--size-control);
+  border: var(--border-width) solid var(--color-border-strong);
+  border-radius: var(--radius);
+  padding: var(--space-2) var(--space-3);
+  background: var(--color-surface-raised);
+  color: var(--color-text);
+  font: inherit;
+}
+
+.finance-read-page .finance-read-fixture-notice {
+  color: var(--color-warning);
+}
+
+.finance-read-ms-receipt {
+  margin-block-start: var(--space-6);
+}
+
+.finance-read-page code {
+  font-family: var(--font-mono);
+  font-size: var(--type-sm);
+  overflow-wrap: anywhere;
+}
+
+.finance-read-page details {
+  margin-block-start: var(--space-4);
+}
+
+.finance-read-page summary {
+  min-block-size: var(--size-control);
+  cursor: pointer;
+}
+
+.local-work-card {
+  margin-block: var(--space-6);
+}
+
+.local-work-card section {
+  padding-block: var(--space-3);
+}
+
+.local-work-card h3 {
+  font-size: var(--type-panel);
+}
+
+.local-work-card summary {
+  overflow-wrap: anywhere;
+}
+
+.local-work-card pre {
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  font-size: var(--type-sm);
+}
+
+.finance-read-page :is(input, select, button, summary) {
+  scroll-margin-block-start: calc(var(--size-nav) * 3);
+}
+
+@media (min-width: 64rem) {
+  .finance-read-page :is(input, select, button, summary) {
+    scroll-margin-block-start: var(--size-nav);
+  }
+}
