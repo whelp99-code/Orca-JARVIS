@@ -28,16 +28,16 @@ describe("candidate review actions", () => {
     const props = { value, pending: false, client, enabled: true, onReview, onChanged };
     const rendered = render(<MemoryCandidates {...props} />);
     expect(screen.queryByText(review.statement)).not.toBeInTheDocument();
-    expect(screen.queryByRole("button", { name: "Prepare confirmation" })).not.toBeInTheDocument();
-    fireEvent.click(screen.getByRole("button", { name: "Review candidate" }));
+    expect(screen.queryByRole("button", { name: "확인 준비" })).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole("button", { name: "후보 보기" }));
     expect(onReview).toHaveBeenCalledWith(review.candidate_id);
     rendered.rerender(<MemoryCandidates {...props} review={review} />);
-    const confirm = screen.getByRole("button", { name: "Prepare confirmation" });
+    const confirm = screen.getByRole("button", { name: "확인 준비" });
     fireEvent.click(confirm); fireEvent.click(confirm);
     expect(decision).toHaveBeenCalledExactlyOnceWith(review.candidate_id, review.review_digest, "confirm");
     await act(async () => { finish({ request_id: "command-one", state: "pending_approval" }); });
     expect(screen.getByRole("status")).toHaveTextContent("pending_approval");
-    expect(screen.getByRole("link", { name: "Open Approvals" })).toHaveAttribute("href", "/approvals");
+    expect(screen.getByRole("link", { name: "승인함 열기" })).toHaveAttribute("href", "/approvals");
     expect(onChanged).toHaveBeenCalledOnce();
   });
   it("never labels approval or acceptance as stored", () => {
@@ -45,15 +45,15 @@ describe("candidate review actions", () => {
       has_more: false, items: [{ request_id: "pending-command", state: "approved", outbox_state: "queued",
         failure_code: null, stored: false }, { request_id: "done-command", state: "completed",
         outbox_state: "settled", failure_code: null, stored: true }] }} />);
-    expect(screen.getByText("Storage command: approved")).toBeVisible();
-    expect(screen.getAllByText("Memory stored")).toHaveLength(1);
+    expect(screen.getByText("저장 명령: approved")).toBeVisible();
+    expect(screen.getAllByText("기억 저장됨")).toHaveLength(1);
   });
   it("does not refresh private state when a prepared command responds after the view was closed", async () => {
     const onChanged = vi.fn(); let finish!: (value: unknown) => void;
     const client = { candidateDecision: () => new Promise(resolve => { finish = resolve; }) } as unknown as MemoryClient;
     const rendered = render(<MemoryCandidates pending={false} value={value} review={review} client={client}
       enabled onReview={async () => {}} onChanged={onChanged} />);
-    fireEvent.click(screen.getByRole("button", { name: "Prepare confirmation" })); rendered.unmount();
+    fireEvent.click(screen.getByRole("button", { name: "확인 준비" })); rendered.unmount();
     await act(async () => { finish({ request_id: "persisted-command", state: "pending_approval" }); });
     expect(onChanged).not.toHaveBeenCalled();
   });

@@ -20,6 +20,10 @@ export function registerMemoryCandidateSpoolRoots(authority: AuthorityDb, roots:
   candidateSpoolRoots.set(authority, roots);
 }
 
+export function memoryCandidateSpoolRootsOf(authority: AuthorityDb): CandidateSpoolRoots | undefined {
+  return candidateSpoolRoots.get(authority);
+}
+
 export class MemorySurfaceAuthority {
   constructor(private readonly authority: AuthorityDb) {}
   applyReceipt(receipt: CommandApprovalReceipt, requestId: string, now: Date): void {

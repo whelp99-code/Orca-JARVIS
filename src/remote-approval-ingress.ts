@@ -48,7 +48,7 @@ function admitIngress(input: {
   const issued = Date.parse(envelope.issued_at);
   if (!Number.isFinite(issued) || Math.abs(now.getTime() - issued) > input.nonceTtlSeconds * 1000) return null;
   if (!consumeNonce(input.db, envelope, now, input.nonceTtlSeconds)) return null;
-  if (!lookupStaged(input.db, path, now)) return null;
+  if (!ownerInboxIngress(envelope.method, path) && !lookupStaged(input.db, path, now)) return null;
   return {
     schema_version: 1,
     trust_mode: "gateway",
@@ -70,6 +70,15 @@ function admitIngress(input: {
  * admitted so every ceremony rejection, including an unknown id, can be audited;
  * the handler re-checks the enrollment binding before any credential write.
  */
+function ownerInboxIngress(method: string, path: string): boolean {
+  if (method === "GET" && path === "/api/v1/owner-inbox") return true;
+  return method === "POST" && (
+    path === "/api/v1/owner-inbox/enroll"
+    || path === "/api/v1/owner-inbox/decide"
+    || path === "/api/v1/owner-inbox/challenge"
+  );
+}
+
 function lookupStaged(db: AuthorityDb, path: string, now: Date): boolean {
   if (path === "/api/v1/security/webauthn/credentials") return true;
   const requestId = requestIdFrom(path);

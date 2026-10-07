@@ -30,6 +30,14 @@ const transports: Array<{ close(): Promise<void> }> = []; afterEach(async () => 
     } expect(launches).toHaveLength(1); expect(launches[0]?.args).toEqual([]);
     expect(launches[0]?.options).toMatchObject({ shell: false, env: { SB_CONFIG: value.config, SB_MCP_CONTRACT_PROFILE: "task32-schema4" }, windowsHide: true,
     }); expect(Object.keys(launches[0]?.options.env ?? {}).sort()).toEqual(["SB_CONFIG", "SB_MCP_CONTRACT_PROFILE"]); });
+  it("starts the fixture handshake without a node executable on PATH", async () => {
+    const value = fixture();
+    const runner: SecondBrainExecFile = (file, args, childOptions) => execFile(file, [...args], {
+      ...childOptions, env: { ...childOptions.env, PATH: join(value.root, "missing-bin") },
+    });
+    const transport = createSecondBrainTransport(options(value, { execFile: runner })); transports.push(transport);
+    await expect(transport.call("sb_search", { query: "pathless" })).resolves.toMatchObject({ kind: "data" });
+  });
   it("freezes a realpath per generation and discovers a symlink swap only after restart", async () => { const first = fixture(); const second = fixture();
     const transport = createSecondBrainTransport(options(first)); transports.push(transport);
     await expect(transport.call("sb_search", { query: "before" })).resolves.toMatchObject({ kind: "data" }); rmSync(first.launcher);

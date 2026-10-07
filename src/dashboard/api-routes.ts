@@ -1,3 +1,4 @@
+import type { WorkboardActions } from "../workboard/actions.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { CapabilityProbe } from "../capabilities.js";
 import type { AuthorityDb } from "../db.js";
@@ -15,6 +16,8 @@ import {
   writeDashboardError,
   writeDashboardJson,
 } from "./http.js";
+import { tryHandleExternalDelegate } from "./external-delegate-routes.js";
+import { tryHandleOwnerInbox } from "./owner-inbox-routes.js";
 import { tryHandleDashboardPost } from "./post-routes.js";
 import { tryHandleMemoryRead } from "./memory-read-routes.js";
 import type { MemoryRuntime } from "./memory-runtime.js";
@@ -25,6 +28,7 @@ import { tryHandleDashboardRead } from "./read-routes.js";
 import { tryHandleTaskExecution } from "./task-execution-routes.js";
 import { tryHandleDashboardSession, type DashboardSessionStore } from "./session.js";
 import { tryHandleDashboardSse } from "./sse-route.js";
+import { tryHandleWorkboardRead } from "./workboard-routes.js";
 import type { DashboardTerminalReader, TerminalLogResult } from "./terminal-reader.js";
 
 const LOG_LIMIT_MIN = 1;
@@ -56,6 +60,11 @@ export type DashboardApiInput = {
   readonly executorFactory?: DashboardExecutorFactory;
   readonly memoryRuntime: MemoryRuntime;
   readonly remoteApproval?: RemoteApprovalService;
+  readonly ownerInbox?: import("../owner-inbox.js").OwnerInbox;
+  readonly assertionCheck?: import("../owner-inbox.js").AssertionCheck;
+  readonly enrollmentCheck?: import("../owner-inbox-enrollment.js").EnrollmentCheck;
+  readonly now?: Date;
+  readonly workboardActions?: WorkboardActions;
 };
 
 type LogsRoute =
@@ -73,6 +82,8 @@ export async function tryHandleDashboardApi(input: DashboardApiInput): Promise<b
     if (await tryHandleRemoteLifecycleRoutes(remote)) return true;
     if (await tryHandleRemoteAuthRoutes(remote)) return true;
   }
+  if (await tryHandleExternalDelegate(input)) return true;
+  if (await tryHandleOwnerInbox(input)) return true;
   if (input.request.method === "POST") return tryHandleDashboardPost(input);
   if (await tryHandleTaskExecution(input)) return true;
   if (tryHandleDashboardSession(input)) return true;
@@ -89,6 +100,8 @@ export async function tryHandleDashboardApi(input: DashboardApiInput): Promise<b
     });
     return true;
   }
+  if (tryHandleWorkboardRead({ db: input.db.db, path: input.path, response: input.response,
+    requestId: input.requestId, now: input.clock(), actions: input.workboardActions })) return true;
   if (await tryHandleDashboardLogs(input)) return true;
   if (await tryHandleMemoryRead({ path: input.path, url: input.url, request: input.request,
     response: input.response, requestId: input.requestId, session: input.session,

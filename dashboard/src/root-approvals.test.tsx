@@ -120,6 +120,7 @@ function createClient(failures: ResourceFailure = {}) {
         pending.reject = reject;
       });
     },
+    workboard: async () => ({ schema_version: 1 as const, generated_at: "2026-08-18T00:00:00.000Z", collected: false, attention: [], groups: [], sources: [] }),
   } satisfies DashboardClient;
   return { client, counts, taskIds, pending };
 }
@@ -191,8 +192,8 @@ describe("ControlCenterRoot approvals and lifecycle", () => {
   it("renders receipt-bound controls on the live approvals route", async () => {
     await liveRoot("/approvals");
     expect(screen.getByText("request-approval-1")).toBeInTheDocument();
-    expect(screen.getByRole("textbox", { name: "Signed receipt JSON" })).toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Submit signed receipt" })).toBeEnabled();
+    expect(screen.getByRole("textbox", { name: "서명 영수증" })).toBeInTheDocument();
+    expect(screen.getByRole("button", { name: "서명 제출" })).toBeEnabled();
   });
 
   it.each([
@@ -202,7 +203,7 @@ describe("ControlCenterRoot approvals and lifecycle", () => {
   ] as const)("calls store.$seam from the $path Retry control", async ({ path, seam, failure }) => {
     const user = userEvent.setup();
     const current = await liveRoot(path, { [failure]: new Error("server") });
-    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
     expect(current[seam]).toHaveBeenCalledTimes(1);
   });
 

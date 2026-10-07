@@ -106,7 +106,7 @@ describe("JARVIS Control Center overview", () => {
     expect(screen.getByText("wire argo cli to jaw")).toBeInTheDocument();
 
     expect(screen.getByRole("heading", { level: 3, name: "승인 대기" })).toBeInTheDocument();
-    expect(screen.getByText("workflow.start")).toBeInTheDocument();
+    expect(screen.getByText("작업 시작")).toBeInTheDocument();
 
     expect(screen.getByRole("heading", { level: 3, name: "위험" })).toBeInTheDocument();
     expect(screen.getByText("retry may duplicate an external effect")).toBeInTheDocument();

@@ -10,16 +10,21 @@ permissions:
 
 jobs:
   verify:
-    runs-on: ubuntu-latest
-    timeout-minutes: 30
+    runs-on: ubuntu-26.04
+    timeout-minutes: 90
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
       - uses: actions/setup-node@v4
         with:
           node-version-file: .node-version
           cache: npm
       - run: npm ci
-      - run: sudo apt-get update && sudo apt-get install -y bubblewrap
+      - run: sudo apt-get update && sudo apt-get install -y bubblewrap sqlite3
+      - name: Install pinned uv
+        run: curl -LsSf https://astral.sh/uv/0.12.3/install.sh | sh
+      - run: echo "$HOME/.local/bin" >> "$GITHUB_PATH"
       - run: npm run verify
       - run: sudo apt-get install -y xvfb xauth x11-utils
       - run: npm run test:gui

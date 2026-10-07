@@ -20,6 +20,7 @@
   --type-sm: 0.8125rem;
   --type-body: 0.9375rem;
   --type-panel: 1rem;
+  --type-lead: 1.25rem;
   --type-title: clamp(1.5rem, 2.5vw, 2rem);
   --type-count: 2rem;
   --line-tight: 1.2;
@@ -40,11 +41,13 @@
   --size-status-min: 13rem;
   --size-agent-min: 20rem;
   --size-reading: 40rem;
+  --size-fact-min: 9rem;
   --size-icon: 0.5rem;
   --size-nav: 3.5rem;
   --size-control: 2.75rem;
   --size-textarea: 7rem;
   --border-width: 1px;
+  --border-accent: 3px;
   --focus-width: 2px;
   --focus-offset: 3px;
   --radius: 0.25rem;
@@ -198,14 +201,35 @@ ul {
 }
 
 .shell-footer-inner {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--space-2);
   padding-block: var(--space-3);
 }
 
-.shell-footer a {
+.shell-footer a,
+.shell-footer span {
   color: var(--color-text-muted);
   font-family: var(--font-mono);
   font-size: var(--type-sm);
   overflow-wrap: anywhere;
+  min-inline-size: 0;
+}
+
+.build-sha {
+  font-weight: var(--weight-medium);
+  color: var(--color-text);
+}
+
+.digest {
+  min-inline-size: 0;
+  max-inline-size: 100%;
+}
+
+.digest summary,
+.digest-full {
+  overflow-wrap: anywhere;
+  word-break: break-all;
 }
 
 .shell-footer a:hover {
@@ -214,8 +238,10 @@ ul {
 
 .page-frame {
   inline-size: min(100%, var(--size-page));
+  max-inline-size: 100%;
   margin-inline: auto;
   padding-inline: var(--space-8);
+  overflow-wrap: anywhere;
 }
 
 .app-header {

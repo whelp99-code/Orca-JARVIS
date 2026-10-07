@@ -76,9 +76,9 @@ describe("task execution screen", () => {
     await user.clear(screen.getByLabelText("새 결과 브랜치 이름")); await user.type(screen.getByLabelText("새 결과 브랜치 이름"), "result");
     await user.click(screen.getByRole("button", { name: "계획 준비" }));
     await user.click(await screen.findByRole("button", { name: "검토한 계획 승인 요청" }));
-    await user.click(await screen.findByLabelText("Signed receipt JSON")); await user.paste(JSON.stringify(SIGNED_RECEIPT));
-    await user.click(screen.getByRole("button", { name: "Submit signed receipt" }));
-    await user.click(await screen.findByRole("button", { name: "Execute approved request" }));
+    await user.click(await screen.findByLabelText("서명 영수증")); await user.paste(JSON.stringify(SIGNED_RECEIPT));
+    await user.click(screen.getByRole("button", { name: "서명 제출" }));
+    await user.click(await screen.findByRole("button", { name: "승인된 요청 실행" }));
     expect(await screen.findByRole("heading", { name: "검증된 실행 결과" })).toBeInTheDocument();
     expect(screen.getByText(COMPLETION.commit)).toBeInTheDocument();
     expect(h.executeRequest).toHaveBeenCalledTimes(1);
@@ -94,7 +94,7 @@ describe("task execution screen", () => {
     expect(h.stage).toHaveBeenCalledTimes(1);
     h.setData({ ...EMPTY, requests: [PENDING] });
     await user.click(screen.getByRole("button", { name: "실행 상태 새로고침" }));
-    expect(await screen.findByLabelText("Signed receipt JSON")).toBeInTheDocument();
+    expect(await screen.findByLabelText("서명 영수증")).toBeInTheDocument();
     expect(h.stage).toHaveBeenCalledTimes(1);
   });
 
@@ -111,9 +111,9 @@ describe("task execution screen", () => {
   it("does not report a disconnected execution as failed or resend it", async () => {
     const approved = { ...EMPTY, requests: [{ ...PENDING, request: { ...PENDING.request, state: "approved" } }] };
     const h = harness(approved); h.executeRequest.mockRejectedValueOnce(new TypeError("disconnect"));
-    const user = userEvent.setup(); await user.click(await screen.findByRole("button", { name: "Execute approved request" }));
+    const user = userEvent.setup(); await user.click(await screen.findByRole("button", { name: "승인된 요청 실행" }));
     await screen.findByText(/서버에서 계속 실행 중일 수 있습니다/);
-    expect(screen.getByRole("button", { name: "Execute approved request" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "승인된 요청 실행" })).toBeDisabled();
     h.setData({ ...EMPTY, requests: [{ ...PENDING, request: { ...PENDING.request, state: "completed" }, completion: COMPLETION }] });
     await user.click(screen.getByRole("button", { name: "상태 다시 확인" }));
     expect(await screen.findByText(COMPLETION.commit)).toBeInTheDocument(); expect(h.executeRequest).toHaveBeenCalledTimes(1);
@@ -150,23 +150,23 @@ describe("task execution screen", () => {
     expect(h.stage).toHaveBeenCalledTimes(1);
     h.setData({ ...EMPTY, requests: [PENDING] });
     await user.click(screen.getByRole("button", { name: "실행 상태 새로고침" }));
-    expect(await screen.findByRole("button", { name: "Submit signed receipt" })).toBeEnabled();
+    expect(await screen.findByRole("button", { name: "서명 제출" })).toBeEnabled();
     expect(screen.queryByText(/전송 이력을 보존 중입니다/)).not.toBeInTheDocument();
   });
 
   it("keeps execution blocked when failed read recovery still observes approved", async () => {
     const approved = { ...EMPTY, requests: [{ ...PENDING, request: { ...PENDING.request, state: "approved" } }] };
     const h = harness(approved); const user = userEvent.setup();
-    await screen.findByRole("button", { name: "Execute approved request" });
+    await screen.findByRole("button", { name: "승인된 요청 실행" });
     h.executeRequest.mockRejectedValueOnce(new TypeError("response lost during preflight"));
     h.read.mockRejectedValueOnce(new TypeError("read lost"));
-    await user.click(screen.getByRole("button", { name: "Execute approved request" }));
+    await user.click(screen.getByRole("button", { name: "승인된 요청 실행" }));
     await screen.findByText(/실행 상태를 확인하지 못했습니다/);
     await user.click(screen.getByRole("button", { name: "실행 상태 새로고침" }));
-    expect(await screen.findByRole("button", { name: "Execute approved request" })).toBeDisabled();
+    expect(await screen.findByRole("button", { name: "승인된 요청 실행" })).toBeDisabled();
     h.view.rerender(<TaskExecutionPanel taskId="task-other" store={h.store} client={h.client} />);
     h.view.rerender(<TaskExecutionPanel taskId="task-1" store={h.store} client={h.client} />);
-    const execute = await screen.findByRole("button", { name: "Execute approved request" });
+    const execute = await screen.findByRole("button", { name: "승인된 요청 실행" });
     expect(execute).toBeDisabled(); await user.click(execute);
     expect(h.executeRequest).toHaveBeenCalledTimes(1);
     h.setData({ ...EMPTY, requests: [{ ...PENDING, request: { ...PENDING.request, state: "completed" }, completion: COMPLETION }] });
@@ -176,14 +176,14 @@ describe("task execution screen", () => {
   });
 
   it("disables authority controls during refresh and replaces a failed read with a visible error", async () => {
-    const h = harness({ ...EMPTY, requests: [PENDING] }); await screen.findByLabelText("Signed receipt JSON");
+    const h = harness({ ...EMPTY, requests: [PENDING] }); await screen.findByLabelText("서명 영수증");
     let reject!: (reason: unknown) => void;
     h.read.mockImplementationOnce(() => new Promise((_resolve, fail) => { reject = fail; }));
     let pending!: Promise<void>;
     act(() => { pending = h.store.refreshTaskExecution(); });
-    expect(screen.getByRole("button", { name: "Submit signed receipt" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "서명 제출" })).toBeDisabled();
     await act(async () => { reject(new Error("failed")); await pending; });
-    await waitFor(() => expect(screen.queryByLabelText("Signed receipt JSON")).not.toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByLabelText("서명 영수증")).not.toBeInTheDocument());
     expect(screen.getByRole("alert")).toHaveTextContent("실행 상태를 확인하지 못했습니다");
   });
 });

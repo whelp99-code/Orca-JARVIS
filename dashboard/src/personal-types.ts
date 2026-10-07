@@ -1,7 +1,7 @@
 export type ResourceQuality = "ready" | "degraded" | "no_data" | "offline" | "stale";
 export type ConfidenceClass = "low" | "medium" | "high";
 export type DecisionState = "pending" | "accepted" | "rejected" | "expired" | "superseded";
-export type NotificationState = "created" | "deferred" | "ready" | "delivering" | "delivered" | "suppressed" | "failed" | "expired";
+export type NotificationState = "created" | "deferred" | "queued" | "ready" | "delivering" | "delivered" | "suppressed" | "failed" | "expired";
 export type EvidenceKind = "user_confirmed_principle" | "owner_decision" | "linux_live_fact" | "context_observation" | "confirmed_memory";
 export type DailyRun = Readonly<Record<string, string | null>>;
 export type TodayAction = Readonly<{
@@ -59,8 +59,8 @@ export type DecisionItem = Readonly<{
 }>;
 export type NotificationItem = Readonly<{
   intent_id: string;
-  urgency: "low" | "normal" | "high" | "critical";
-  channel: "in_app" | "mac_native" | "phone_web";
+  urgency: "low" | "normal" | "high" | "critical" | "info" | "action" | "digest";
+  channel: "in_app" | "mac_native" | "phone_web" | "mac";
   preview: string;
   deep_link: string;
   state: NotificationState;

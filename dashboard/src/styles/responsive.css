@@ -21,7 +21,77 @@
   }
 }
 
+.batch-list {
+  margin: 0;
+  padding-inline-start: 1.25rem;
+  max-inline-size: 100%;
+}
+
+.batch-list li {
+  overflow-wrap: anywhere;
+  min-inline-size: 0;
+}
+
+.batch-list.expanded {
+  max-block-size: 22rem;
+  overflow: auto;
+}
+
 @media (max-width: 40rem) {
+  .operational-shell,
+  .operational-shell-main,
+  .page-frame,
+  .panel,
+  .today-alert,
+  .record,
+  .identity-list dd {
+    max-inline-size: 100%;
+    min-inline-size: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .page-frame {
+    padding-inline: var(--space-3);
+  }
+
+  .identity-list > div,
+  .today-summary > div {
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .record-meta,
+  .admin-tools summary,
+  button {
+    max-inline-size: 100%;
+  }
+
+  .phrase-pair {
+    white-space: normal;
+  }
+
+  .today-summary dd,
+  .today-section :is(p, li, summary, button),
+  .today-alert {
+    word-break: break-word;
+    overflow-wrap: anywhere;
+  }
+
+  html,
+  body,
+  #root,
+  .operational-shell,
+  .control-nav,
+  .control-nav-inner,
+  .operational-shell-main,
+  .page-frame,
+  .panel,
+  .record,
+  .enroll,
+  .enroll-form {
+    max-inline-size: 100%;
+    min-inline-size: 0;
+  }
+
   .control-nav-inner {
     align-items: stretch;
     flex-direction: column;
@@ -30,11 +100,19 @@
   }
 
   .primary-nav {
-    flex-wrap: wrap;
+    flex-wrap: nowrap;
+    inline-size: 100%;
+    max-inline-size: 100%;
+    min-inline-size: 0;
+    overflow-x: auto;
+    overscroll-behavior-inline: contain;
+    scrollbar-width: none;
   }
 
   .control-nav a {
-    padding-inline: var(--space-2);
+    flex: 0 0 auto;
+    min-block-size: var(--size-control);
+    padding-inline: var(--space-3);
   }
 
   .shell-connection {

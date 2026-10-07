@@ -1,0 +1,11 @@
+JARVIS_TEST_PROFILE dashboard
+
+ RUN  v3.2.7 /home/jm/orca/workspaces/Orca-JARVIS/purpose-workboard/dashboard
+
+ ✓ src/workboard/page.test.tsx (7 tests) 284ms
+
+ Test Files  1 passed (1)
+      Tests  7 passed (7)
+   Start at  13:22:08
+   Duration  1.16s (transform 99ms, setup 0ms, collect 238ms, tests 284ms, environment 480ms, prepare 46ms)
+

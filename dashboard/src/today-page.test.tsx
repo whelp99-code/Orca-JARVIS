@@ -56,13 +56,13 @@ describe("Task31 Today page", () => {
       ...data, today: { ...today, brief: { ...today.brief, state: "stale", item_count: 0 } },
     } };
     render(<TodayPage snapshot={state} overview={overview} approvals={[]} client={client()} onRefresh={() => undefined} />);
-    expect(screen.getByText("stale / 0 items")).toBeInTheDocument();
+    expect(screen.getByText("오래됨 / 0건")).toBeInTheDocument();
   });
   it("renders all six semantic sections with freshness, notification, and closeout state", () => {
     render(<TodayPage snapshot={snapshot()} overview={overview} approvals={[]} client={client()} onRefresh={() => undefined} />);
-    expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent)).toEqual(["NOW", "BLOCKED", "DECISIONS", "NEXT 3", "WORKERS", "RISKS"]);
+    expect(screen.getAllByRole("heading", { level: 2 }).map((heading) => heading.textContent)).toEqual(["지금", "막힌 일", "결정할 일", "다음 세 가지", "에이전트", "위험"]);
     expect(screen.getByText("calendar and customer dates differ")).toBeInTheDocument();
-    expect(screen.getByText("No verified closeout")).toBeInTheDocument();
+    expect(screen.getByText("확인된 마감 없음")).toBeInTheDocument();
     expect(screen.getByText("capacity warning")).toBeInTheDocument();
   });
 
@@ -96,7 +96,7 @@ describe("Task31 Today page", () => {
 
     view.rerender(<TodayPage snapshot={snapshot("reconnecting")} overview={overview} approvals={[]} client={client()} onRefresh={() => undefined} />);
     expect(screen.getByRole("button", { name: "Accept action 1" })).toBeDisabled();
-    expect(screen.getByRole("alert")).toHaveTextContent("Cached data is not authoritative");
+    expect(screen.getByRole("alert")).toHaveTextContent("저장된 화면이라 지금 결정할 수 없습니다");
 
     view.unmount();
     render(<TodayPage snapshot={snapshot()} overview={overview} approvals={[]} client={client()}

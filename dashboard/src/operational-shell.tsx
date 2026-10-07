@@ -11,6 +11,7 @@ type OperationalShellProps = Readonly<{
 
 const NAV_ITEMS = [
   { label: copy.nav.today, to: "/" },
+  { label: copy.nav.workboard, to: "/workboard" },
   { label: copy.nav.memory, to: "/memory" },
   { label: copy.nav.overview, to: "/overview" },
   { label: copy.nav.tasks, to: "/tasks" },
@@ -21,7 +22,7 @@ const NAV_ITEMS = [
   { label: "조회 준비", to: "/finance-read" },
 ] as const;
 /** The routes the phone gateway serves; every other path is a gateway 404. */
-const PHONE_NAV_ITEMS = NAV_ITEMS.filter(item => item.to === "/" || item.to === "/memory" || item.to === "/security");
+const PHONE_NAV_ITEMS = NAV_ITEMS.filter(item => item.to === "/" || item.to === "/memory" || item.to === "/approvals" || item.to === "/security");
 
 const CONNECTION_LABELS = {
   connecting: "연결 중",
@@ -29,8 +30,6 @@ const CONNECTION_LABELS = {
   reconnecting: "다시 연결 중",
   offline: copy.disconnected,
 } as const satisfies Record<ConnectionState, string>;
-
-const ARGO_REVISION = "de874c1254da8fe170ad7de9c82f11c626349847";
 
 export function OperationalShell({ connectionState, children }: OperationalShellProps) {
   const phone = useSurface() === "phone";
@@ -68,9 +67,8 @@ export function OperationalShell({ connectionState, children }: OperationalShell
       </main>
       <footer className="shell-footer">
         <div className="page-frame shell-footer-inner">
-          <a href="/NOTICE-ARGO.txt">
-            Argo Workflows attribution, revision {ARGO_REVISION}
-          </a>
+          <span className="build-sha">빌드 {import.meta.env.VITE_JARVIS_SHA ?? "unknown"}</span>
+          <a href="/NOTICE-ARGO.txt">고지</a>
         </div>
       </footer>
     </div>

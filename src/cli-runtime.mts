@@ -29,6 +29,7 @@ import { tryExecuteSecondBrainReadinessCommand } from "./cli-readiness-commands.
 import { CLI_HELP } from "./cli-help-text.js";
 import { tryExecuteDeploymentCommand } from "./cli-deployment-commands.js";
 import { tryExecutePortfolioCollectCommand } from "./cli-portfolio-collect.js";
+import { tryExecuteWorkboardReplyGap } from "./cli-workboard-reply-gap.js";
 import { CLI_OPTIONS } from "./cli-option-table.js";
 
 const COMMAND_HANDLERS: readonly CliCommandHandler[] = [
@@ -193,6 +194,8 @@ export async function execute(args: string[], dependencies: CliDependencies = {}
     const bootstrap = await executeBootstrapCommand(context);
     if (bootstrap !== undefined) return bootstrap;
     await db.assertMigrationsReady();
+    const replyGap = await tryExecuteWorkboardReplyGap(context);
+    if (replyGap !== undefined) return replyGap;
     if (auditHistory) return { ok: true, command: "report.remote-audit", history: readRemoteAuditHistory(db.db, argument!) };
     if (routingShadow) return { ok: true, command: "report.routing-shadow",
       report: readTaskRoutingShadow(db, argument, fourth, shadowPolicies[0], shadowPolicies[1], performanceAt) };

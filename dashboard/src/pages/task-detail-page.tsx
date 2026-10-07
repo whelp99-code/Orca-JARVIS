@@ -2,6 +2,7 @@ import type { TaskDetailResponse } from "../../../src/dashboard/read-model.js";
 import type { AuthorityIdFactory, AuthorityMutationClient } from "../authority-api.js";
 import { TaskGraph } from "../components/task-graph.js";
 import { TimelinePanel } from "../components/timeline-panel.js";
+import { copy } from "../copy.js";
 import type { ResourceState } from "../store.js";
 import { TaskControl } from "../task-control.js";
 import type { ReactNode } from "react";
@@ -27,15 +28,15 @@ export function TaskDetailPage(props: TaskDetailPageProps) {
       case "loading":
         return (
           <div className="page-frame dashboard-main" aria-busy="true">
-            <h1>Task</h1>
+            <h1>{copy.pages.task}</h1>
             <p className="empty-state">Loading task</p>
           </div>
         );
       case "retrying":
         return (
           <div className="page-frame dashboard-main" aria-busy="true">
-            <h1>Task</h1>
-            <p className="empty-state">Retrying task</p>
+            <h1>{copy.pages.task}</h1>
+            <p className="empty-state">작업을 다시 불러오는 중</p>
           </div>
         );
       case "error": {
@@ -44,12 +45,12 @@ export function TaskDetailPage(props: TaskDetailPageProps) {
           <div className="page-frame dashboard-main">
             <section role="alert" className="panel">
               <header className="panel-header">
-                <h1>{notFound ? "Task not found" : "Unable to load task"}</h1>
+                <h1>{notFound ? "없는 작업" : "작업을 열 수 없습니다"}</h1>
               </header>
               <div className="panel-body">
                 <p className="empty-state">{props.state.error.message}</p>
                 {!notFound && props.onRetry !== undefined ? (
-                  <button type="button" onClick={props.onRetry}>Retry</button>
+                  <button type="button" onClick={props.onRetry}>{copy.retry}</button>
                 ) : null}
               </div>
             </section>

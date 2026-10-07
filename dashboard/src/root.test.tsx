@@ -123,6 +123,7 @@ function createClient(failures: ResourceFailure = {}) {
         pending.reject = reject;
       });
     },
+    workboard: async () => ({ schema_version: 1 as const, generated_at: "2026-08-18T00:00:00.000Z", collected: false, attention: [], groups: [], sources: [] }),
   } satisfies DashboardClient;
   return { client, counts, taskIds, pending };
 }
@@ -208,7 +209,7 @@ describe("ControlCenterRoot live routing", () => {
     expect(within(nav).getByRole("link", { name: "새 제안" })).toHaveAttribute("href", "/proposals");
     expect(within(nav).getByRole("link", { name: "에이전트" })).toHaveAttribute("href", "/agents");
     expect(within(nav).getByRole("link", { name: "승인" })).toHaveAttribute("href", "/approvals");
-    expect(texts("Tasks")).toEqual([
+    expect(texts("작업")).toEqual([
       expect.stringContaining("zeta-task"),
       expect.stringContaining("alpha-task"),
     ]);
@@ -216,7 +217,7 @@ describe("ControlCenterRoot live routing", () => {
 
   it("renders the proposal interview on /proposals", async () => {
     await liveRoot("/proposals");
-    expect(screen.getByRole("heading", { level: 1, name: "New proposal" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { level: 1, name: "새 제안" })).toBeInTheDocument();
     expect(screen.getByRole("textbox", { name: "Objective" })).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Preview" })).toBeEnabled();
   });

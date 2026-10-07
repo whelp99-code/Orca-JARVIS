@@ -10,6 +10,7 @@ import {
   type AuthorityMutationClient,
 } from "./authority-api.js";
 import App from "./app.js";
+import { copy } from "./copy.js";
 import { MemoryRoute, type MemoryClientRuntime } from "./memory-route.js";
 import { OperationalShell } from "./operational-shell.js";
 import { AgentDetailPage } from "./pages/agent-detail-page.js";
@@ -18,6 +19,7 @@ import { ApprovalsPage } from "./pages/approvals-page.js";
 import { createBrowserSecurityClient, SecurityPage } from "./pages/security-page.js";
 import { TaskDetailPage } from "./pages/task-detail-page.js";
 import { TaskListPage } from "./pages/task-list-page.js";
+import { OwnerInboxPanel } from "./owner-inbox-panel.js";
 import { ProposalPage } from "./proposal-page.js";
 import { SurfaceContext, type DashboardSurface } from "./surface.js";
 import { TodayRoute, type PersonalRuntime } from "./today-route.js";
@@ -26,6 +28,7 @@ import { useDetailResource } from "./use-detail-resource.js";
 import { TaskExecutionPanel } from "./task-execution-panel.js";
 import { FinanceReadPage } from "./finance-read-page.js";
 import type { FinanceReadAdapter } from "./finance-read-adapter.js";
+import { WorkboardRoute } from "./workboard/page.js";
 
 type DashboardStore = ReturnType<typeof createDashboardStore>;
 type RootClient = Omit<DashboardClient, "agentLogs"> & Readonly<{
@@ -111,6 +114,7 @@ function ControlCenter({
         <Routes>
           <Route path="/" element={today} />
           <Route path="/memory" element={memory} />
+          <Route path="/approvals" element={<section className="page-frame dashboard-main"><h1>{copy.pages.approvals}</h1><OwnerInboxPanel /></section>} />
           <Route path="/security" element={security} />
           <Route path="*" element={<NotFoundPage />} />
         </Routes>
@@ -121,6 +125,7 @@ function ControlCenter({
     <OperationalShell connectionState={state.connectionState}>
       <Routes>
         <Route path="/" element={today} />
+        <Route path="/workboard" element={<WorkboardRoute load={client.workboard} actionClient={liveAuthorityClient.workboardActions} />} />
         <Route path="/memory" element={memory} />
         <Route path="/overview" element={<OverviewRoute state={state} store={store} />} />
         <Route
@@ -291,14 +296,14 @@ function RouteState({ title, message, busy = false, onRetry }: Readonly<{
       <section role={busy ? "status" : "alert"}>
         <h1>{title}</h1>
         <p>{message}</p>
-        {onRetry === undefined ? null : <button type="button" onClick={onRetry}>Retry</button>}
+        {onRetry === undefined ? null : <button type="button" onClick={onRetry}>{copy.retry}</button>}
       </section>
     </div>
   );
 }
 
 function NotFoundPage() {
-  return <RouteState title="Page not found" message="The requested route is unavailable." />;
+  return <RouteState title={copy.pages.notFound} message={copy.pages.notFoundMessage} />;
 }
 
 function assertNever(value: never): never {

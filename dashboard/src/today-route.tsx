@@ -5,6 +5,7 @@ import type { PersonalClient } from "./personal-api.js";
 import type { PersonalStore } from "./personal-store.js";
 import type { ConnectionState } from "./store-types.js";
 import type { ResourceState } from "./store.js";
+import { copy } from "./copy.js";
 import { TodayPage } from "./today-page.js";
 
 export type PersonalRuntime = Readonly<{ store: PersonalStore; client: PersonalClient }>;
@@ -19,7 +20,7 @@ type Props = Readonly<{
 
 export function TodayRoute({ runtime, overview, approvals, authorityClient, authorityConnection }: Props) {
   if (runtime === undefined) {
-    return <div className="page-frame route-state"><section role="alert"><h1>Today</h1><p>Today is unavailable</p></section></div>;
+    return <div className="page-frame route-state"><section role="alert"><h1>{copy.pages.today}</h1><p>{copy.today.unavailable}</p></section></div>;
   }
   return (
     <LiveTodayRoute runtime={runtime} overview={overview} approvals={approvals}

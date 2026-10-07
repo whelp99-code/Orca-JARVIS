@@ -1,0 +1,130 @@
+{
+  "schema_version": 1,
+  "task_id": "st_01a0d1b4",
+  "base": "1ed3e1154bb9b68fffdd064ffc003289b1439150",
+  "branch": "whelp99-code/purpose-workboard",
+  "worktree": "/home/jm/orca/workspaces/Orca-JARVIS/purpose-workboard",
+  "scope": "Plan checkbox 6 implementation and disposable action verification only",
+  "implementation_verified": true,
+  "full_live_source_acceptance": false,
+  "checkbox_7_started": false,
+  "production_enabled": false,
+  "decision": {
+    "chosen": "Persist immutable reviewed requests and reserve a logical intent in a FULL-synchronous SQLite transaction before sending. Atomic source compare-and-consume plus source receipt read-back. An uncertain intent locks the work across request-id changes and process restart.",
+    "rejected": "Automatic retry with a new request id, terminal keystroke approval, prose-to-approval conversion, or trusting the send ACK as settlement.",
+    "recovery": "Read the original receipt only. Even a crash between reservation and actual send remains uncertain. No administrative unlock or non-delivery proof protocol is invented.",
+    "completion": "Receipt completion evidence must match task/spec/attempt and include acceptance criteria/evidence references. Source completion remains claimed_done, never verified completion.",
+    "purpose": "Preflight compares purpose/spec/session/attempt again after the source read. Previously approved bytes and digests are immutable."
+  },
+  "protocols": {
+    "jarvis_control_plane": {
+      "adapter": "src/workboard/adapters/control-plane-actions.ts",
+      "query": true, "approve": true, "reject": true, "stop": false, "resume": false, "redirect": false,
+      "authority": "Existing externally signed CommandApprovalReceipt through ControlPlane.decide; no key minting or executor import",
+      "tested": "Disposable initialized authority, one signed approve and one signed reject; one receipt each and zero redemptions",
+      "approval_effect": "Approval only; execution remains in the existing Control Plane executor boundary",
+      "registration": "Explicit per-work adapter registration through DashboardServerOptions.workboardActions; not enabled in production main"
+    },
+    "disposable_structured_v1": {
+      "adapter": "src/workboard/adapters/structured-actions.ts",
+      "query": true, "approve": true, "reject": true, "stop": true, "resume": true, "redirect": true,
+      "authority": "Existing dashboard exact-Origin and local-session CSRF boundary; explicitly registered loopback structured endpoint",
+      "protocol": "GET /requests/:workId; POST /decisions with original request, digest, operation and durable intentId; GET /receipts/:intentId",
+      "source_precondition": "Atomic exact-request comparison, expiry/operation checks and single consumption are mandatory source guarantees",
+      "approval_effect": "Fixture approval resumes execution immediately; dialog explicitly says so",
+      "tested": "Disposable structured endpoint and fixture agent only; no compatibility claim for a live app"
+    }
+  },
+  "unsupported_capabilities": { "query_current_metadata": "Existing read-only collectors unchanged", "approve": false, "reject": false, "stop": false, "resume": false, "redirect": false },
+  "sources": [
+    { "source_id": "linux:claude:local", "actions": "unsupported_capabilities", "reason": "Session metadata is not a verified structured approval protocol" },
+    { "source_id": "linux:codex:local", "actions": "unsupported_capabilities", "reason": "Session metadata is not a verified structured approval protocol" },
+    { "source_id": "linux:crm:local", "actions": "unsupported_capabilities", "reason": "No registered, verified CRM decision endpoint" },
+    { "source_id": "linux:cursor-agent:local", "actions": "unsupported_capabilities", "reason": "No registered, verified agent decision endpoint" },
+    { "source_id": "linux:mail:local", "actions": "unsupported_capabilities", "reason": "No registered, verified mail decision endpoint" },
+    { "source_id": "linux:omo:local", "actions": "unsupported_capabilities", "reason": "Observed session/task metadata does not prove approval protocol compatibility" },
+    { "source_id": "linux:orca-terminals:local", "actions": "unsupported_capabilities", "reason": "Read-only terminal API has no implemented structured approval bridge; terminal y fallback prohibited" },
+    { "source_id": "linux:orca-worktrees:local", "actions": "unsupported_capabilities", "reason": "Worktree metadata is not an approval request" },
+    { "source_id": "linux:senpi:local", "actions": "unsupported_capabilities", "reason": "Observed session/task metadata does not prove approval protocol compatibility" },
+    { "source_id": "mac:chatgpt-to-codex:local", "actions": "unsupported_capabilities", "reason": "No registered, verified source decision endpoint" },
+    { "source_id": "mac:claude-desktop:local", "actions": "unsupported_capabilities", "reason": "No registered, verified desktop decision endpoint" },
+    { "source_id": "mac:claude:local", "actions": "unsupported_capabilities", "reason": "Session metadata is not a verified structured approval protocol" },
+    { "source_id": "mac:codex-desktop:local", "actions": "unsupported_capabilities", "reason": "No registered, verified desktop decision endpoint" },
+    { "source_id": "mac:codex:local", "actions": "unsupported_capabilities", "reason": "Session metadata is not a verified structured approval protocol" },
+    { "source_id": "mac:crm:local", "actions": "unsupported_capabilities", "reason": "No registered, verified CRM decision endpoint" },
+    { "source_id": "mac:mail:local", "actions": "unsupported_capabilities", "reason": "No registered, verified mail decision endpoint" },
+    { "source_id": "mac:omo:local", "actions": "unsupported_capabilities", "reason": "Observed session/task metadata does not prove approval protocol compatibility" },
+    { "source_id": "mac:orca-terminals:local", "actions": "unsupported_capabilities", "reason": "Read-only terminal API has no implemented structured approval bridge; terminal y fallback prohibited" },
+    { "source_id": "mac:orca-worktrees:local", "actions": "unsupported_capabilities", "reason": "Worktree metadata is not an approval request" },
+    { "source_id": "mac:senpi:local", "actions": "unsupported_capabilities", "reason": "Observed session/task metadata does not prove approval protocol compatibility" }
+  ],
+  "unsupported_ui": { "label": "원천에서 처리", "location": "Card app/workspace and session in evidence; registered adapters supply an explicit location", "reason": "검증된 구조화 처리 프로토콜이 연결되지 않았습니다", "counts_as_direct_processing_acceptance": false },
+  "red": {
+    "log": "actions-red.log", "tests_failed": 9,
+    "cases": ["double submit", "request replaced after dialog opened", "expiry", "lost ACK", "restart/reconnect", "session change", "incarnation/attempt change", "spec version change", "purpose version change"],
+    "failure_kind": "Executable unsafe baseline: assertion mismatches for absent rejection/uncertain behavior; double submit reached the conditional endpoint twice and its second-send conflict failed the test. No missing-import or compilation RED.",
+    "additional_lineage_red": "actions-lineage-red.log: original settled receipt was incorrectly replaced by a newer uncertain intent; fixed exact-request journal lookup precedence and replay binding"
+  },
+  "verification": {
+    "backend": { "passed": 61, "failed": 0, "files": 8, "log": "actions-green.log" },
+    "dashboard": { "passed": 19, "failed": 0, "files": 4, "log": "actions-dashboard-green.log" },
+    "new_tests": { "backend": 31, "dashboard": 3 },
+    "typecheck": "PASS: all three tsconfigs; actions-typecheck.log",
+    "lint": "PASS: all changed TypeScript files; actions-lint.log",
+    "architecture": "PASS: actions-architecture.log",
+    "build": "PASS: backend plus Vite dashboard; actions-build.log",
+    "diagnostics": "Initial changed-file LSP checks reported no errors. Later fresh LSP checks timed out; full tsc --noEmit across all three configs passed instead.",
+    "commands": [
+      "npm run typecheck",
+      "npx eslint src/workboard/action-contracts.ts src/workboard/actions.ts src/workboard/action-journal.ts src/workboard/adapters/*-actions.ts src/dashboard/workboard-action-routes.ts src/dashboard/{server,api-routes,post-routes,workboard-routes}.ts dashboard/src/{api,authority-api}.ts dashboard/src/root.tsx dashboard/src/workboard/*.tsx tests/fixtures/workboard-action-*.ts tests/integration/workboard-action*.test.ts --max-warnings=0",
+      "npm run architecture:check",
+      "npm run build",
+      "JARVIS_SECOND_BRAIN_LAUNCHER=$PWD/.runtime-tmp/workboard/no-provider/sb-mcp JARVIS_SECOND_BRAIN_CONFIG=$PWD/.runtime-tmp/workboard/no-provider/config.toml JARVIS_SECOND_BRAIN_REFRESH_RECEIPT='' node scripts/run-tests.mjs backend tests/integration/workboard-actions.test.ts tests/integration/workboard-action-routes.test.ts tests/integration/workboard-ingest.test.ts tests/unit/workboard-purpose.test.ts tests/unit/workboard-attention.test.ts tests/integration/dashboard-api.test.ts tests/integration/dashboard-session.test.ts tests/integration/dashboard-authority.test.ts",
+      "node scripts/run-tests.mjs dashboard dashboard/src/workboard dashboard/src/authority-api.test.ts dashboard/src/root.test.tsx",
+      "node scripts/workboard-actions-qa.mjs",
+      "git diff --check"
+    ],
+    "earlier_failures": [
+      "actions-dashboard-fixture-failure.log: new client test used a CSRF token shorter than the existing 32-character minimum; corrected the fixture, not the validator",
+      "actions-regression-environment-failure.log: existing dashboard overview test exceeded 5000ms with its default provider probe. Isolated provider configuration passed without a timing retry or test edit (actions-isolated-regression.log).",
+      "actions-base-regression.log: exported base checkout also failed health/overview with HTTP 500 in that different checkout environment; this is not claimed to reproduce the exact timeout",
+      "actions-manual-environment-failure.log: bundled Playwright Chromium absent; used installed Google Chrome channel for successful QA"
+    ]
+  },
+  "manual_qa": {
+    "surface": "Real /workboard page in headless installed Google Chrome, existing authority mutation client, actual protected route, disposable endpoint and fixture agent",
+    "trace": "actions-manual-qa.json",
+    "trace_sha256": "07a7c3a898c7dd5eac786695be92f73dbb42e135c335e2e6f5233409b6d0b4e9",
+    "screenshots": ["actions-approve.png", "actions-reject.png", "actions-approve-dialog.png", "actions-reject-dialog.png"],
+    "cases": [
+      { "operation": "approve", "request_id": "manual:approve", "intent_id": "df57cd09-536b-440c-afc1-08a17ec57b1d", "receipt_id": "receipt:df57cd09-536b-440c-afc1-08a17ec57b1d", "sends": 1, "repeated_click_same_receipt": true },
+      { "operation": "reject", "request_id": "manual:reject", "intent_id": "4b1291ac-8d80-40ef-8bb9-e10d7ea35b3c", "receipt_id": "receipt:4b1291ac-8d80-40ef-8bb9-e10d7ea35b3c", "sends": 1, "repeated_click_same_receipt": true }
+    ],
+    "journal_receipts": 2,
+    "source_receipts": 2,
+    "approval_resume_warning_observed": true
+  },
+  "protection_and_cleanup": {
+    "production_symlink_before": "releases/ef49ba0dda37eb3b93e1306eba1ea6e8bf7ade9c",
+    "production_symlink_after": "releases/ef49ba0dda37eb3b93e1306eba1ea6e8bf7ade9c",
+    "authority_db_inputs": "Disposable freshly initialized DBs only; no production authority DB copy or migration",
+    "production_approvals_sent": 0,
+    "forbidden_ports_bound": [],
+    "current_retargeted": false,
+    "plan_modified": false,
+    "push": false,
+    "browser_closed": true,
+    "test_servers_closed": true,
+    "disposable_db_directories_removed": true,
+    "leftover_test_directories": [],
+    "closed_port_probes": [{ "port": 39925, "connect_errno": 111 }, { "port": 41717, "connect_errno": 111 }]
+  },
+  "assumptions_and_remaining_risks": [
+    "Per-work registration is trusted configuration, not source prose. Stable logical work identity and the same durable journal file must survive reconnect/restart.",
+    "The structured HTTP adapter implements only the explicitly documented fixture protocol. No live Codex/Claude/Orca/OmO/Senpi/Mail/CRM protocol compatibility was established; all 20 inventory sources remain direct-processing acceptance incomplete.",
+    "Uncertain intents deliberately remain blocked without a matching source receipt, including crash-before-send; no unsafe retry/unlock path is provided.",
+    "JARVIS approval needs an externally signed Control Plane receipt. Existing execution, lease/fence and completion-verifier boundaries are unchanged.",
+    "Action delivery results are reread from the source and displayed separately from collector-owned lifecycle state; this work does not turn a source completion claim into verified task completion.",
+    "No production rollout, full live-source acceptance, or checkbox 7 verification is claimed."
+  ]
+}

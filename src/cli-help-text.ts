@@ -2,7 +2,10 @@
 export const CLI_HELP =
   "JARVIS — agent-ops runtime\n"
   + "Commands: init, db migrate/rebuild-projections, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, "
-  + "observe, pre-gjc, capabilities, team, portfolio, status, daily, routing, release, second-brain, deployment\n"
+  + "observe, pre-gjc, capabilities, team, portfolio, status, daily, routing, release, second-brain, deployment, workboard\n"
+  + "workboard ingest-reply-gap FILE --db PATH: project a Mail Intelligence reply-gap snapshot into the workboard; "
+  + "open rows become owner-decision tasks, rows that left the snapshot are closed. "
+  + "baseUrl defaults to http://jm-acloud.alpines-goldeye.ts.net:3010\n"
   + "portfolio collect --spool DIR --source local|jm-server --key-file PATH [--orca-bin|--gh-bin|--git-bin PATH]: "
   + "read the local host and write one signed envelope into the spool; opens no database\n"
   + "portfolio ingest --spool DIR --source local|jm-server --key-file PATH --db PATH: consume the spool once each "

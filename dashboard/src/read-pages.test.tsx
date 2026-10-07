@@ -108,8 +108,8 @@ function texts(name: string): readonly string[] {
 describe("task, agent, and log read pages", () => {
   it("renders task titles in the API list order", () => {
     render(<TaskListPage {...populatedTasks} />);
-    expect(screen.getByRole("heading", { name: "Tasks" })).toBeInTheDocument();
-    expect(texts("Tasks")).toEqual([
+    expect(screen.getByRole("heading", { name: "작업" })).toBeInTheDocument();
+    expect(texts("작업")).toEqual([
       expect.stringContaining("zeta-task"),
       expect.stringContaining("alpha-task"),
     ]);
@@ -117,7 +117,7 @@ describe("task, agent, and log read pages", () => {
 
   it("renders the shipped empty task list state", () => {
     render(<TaskListPage {...emptyTasks} />);
-    expect(screen.getByRole("heading", { name: "Tasks" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "작업" })).toBeInTheDocument();
     expect(screen.getByText("No tasks")).toBeInTheDocument();
   });
 
@@ -137,7 +137,7 @@ describe("task, agent, and log read pages", () => {
 
   it("renders a live agent by its identity fields", () => {
     render(<AgentsPage {...populatedAgents} />);
-    expect(screen.getByRole("heading", { name: "Agents" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "에이전트" })).toBeInTheDocument();
     expect(screen.getByText(agent.provider)).toBeInTheDocument();
     expect(screen.getByText(agent.terminal_id)).toBeInTheDocument();
     expect(screen.getByText(agent.incarnation_id)).toBeInTheDocument();
@@ -146,7 +146,7 @@ describe("task, agent, and log read pages", () => {
 
   it("renders the shipped empty agent list state", () => {
     render(<AgentsPage {...emptyAgents} />);
-    expect(screen.getByRole("heading", { name: "Agents" })).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: "에이전트" })).toBeInTheDocument();
     expect(screen.getByText("No agents connected")).toBeInTheDocument();
   });
 
@@ -203,18 +203,18 @@ describe("task, agent, and log read pages", () => {
 
   it.each([
     {
-      name: "Tasks",
+      name: "작업",
       view: (onRetry: () => void) => <TaskListPage state={retryableError} onRetry={onRetry} />,
     },
     {
-      name: "Agents",
+      name: "에이전트",
       view: (onRetry: () => void) => <AgentsPage state={retryableError} onRetry={onRetry} />,
     },
   ])("invokes $name onRetry once from a keyboard-operable Retry control", async ({ view }) => {
     const user = userEvent.setup();
     const onRetry = vi.fn();
     render(view(onRetry));
-    await user.click(screen.getByRole("button", { name: "Retry" }));
+    await user.click(screen.getByRole("button", { name: "다시 시도" }));
     expect(onRetry).toHaveBeenCalledTimes(1);
   });
 });

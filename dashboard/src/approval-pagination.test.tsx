@@ -56,12 +56,15 @@ it("offers page navigation including an empty last page and first-page recovery 
   const client = { decideRequest: vi.fn(), executeRequest: vi.fn(), retryRequest: vi.fn() };
   const empty = { ...page("unused"), items: [], page: { limit: 50, total: 50, returned: 0, has_more: false, next_cursor: null } } as const;
   const view = render(<ApprovalsPage state={{ status: "empty", data: empty }} client={client} onFirst={first} onNext={next} />);
-  expect(screen.getByText("0 shown / 50 actionable requests")).toBeInTheDocument();
-  expect(screen.getByRole("button", { name: "Next page" })).toBeDisabled();
-  fireEvent.click(screen.getByRole("button", { name: "First page" })); expect(first).toHaveBeenCalledTimes(1);
+  const pager = screen.getByRole("navigation", { name: "제어 요청" });
+  expect(pager.closest("details.admin-tools")).not.toBeNull();
+  expect(pager).toHaveTextContent("제어 요청 50건");
+  expect(pager).toHaveTextContent("0건 표시");
+  expect(screen.getByRole("button", { name: "다음 페이지" })).toBeDisabled();
+  fireEvent.click(screen.getByRole("button", { name: "첫 페이지" })); expect(first).toHaveBeenCalledTimes(1);
   view.rerender(<ApprovalsPage state={{ status: "error", kind: "server", error: {
     kind: "server", code: "CONTROL_PAGE_STALE", message: "List changed", request_id: "test" } }} client={client} onFirst={first} />);
-  fireEvent.click(screen.getByRole("button", { name: "First page" })); expect(first).toHaveBeenCalledTimes(2);
+  fireEvent.click(screen.getByRole("button", { name: "첫 페이지" })); expect(first).toHaveBeenCalledTimes(2);
 });
 
 it("renders the whole pending count independently of the bounded overview preview", () => {

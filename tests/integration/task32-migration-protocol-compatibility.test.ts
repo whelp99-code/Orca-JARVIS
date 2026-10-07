@@ -29,6 +29,11 @@ describe("Task 32 migration protocol compatibility", () => {
         ["080_memory_late_subject_suppression.sql", "080_memory_scoped_settlements.sql"],
         ["097_core5_integration_operations.sql", "097_memory_deletion_terminal_refusal.sql"],
         ["098_core5_mail_draft_refs.sql", "098_morning_refresh_subscription.sql", "098_owner_decision_key_enrollment.sql"],
+        // Published parallel histories. Renumbering would rewrite applied production migrations.
+        // 099: ee21fe5 / 7cb1d7c. 100: 9c7535a / deb14c2. 101: a654612 / deb14c2.
+        ["099_provider_tombstone_replica.sql", "099_workboard_projection.sql"],
+        ["100_memory_outbox_not_delivered.sql", "100_workboard_purpose.sql"],
+        ["101_owner_inbox_webauthn.sql", "101_workboard_attention.sql"],
       ]);
       expect(ids).toEqual(expect.arrayContaining([
         "052_memory_effect_content_free.sql",

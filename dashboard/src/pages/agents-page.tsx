@@ -1,5 +1,6 @@
 import { Link } from "react-router-dom";
 import type { AgentListResponse } from "../../../src/dashboard/read-model.js";
+import { copy } from "../copy.js";
 import type { ResourceState } from "../store.js";
 
 type AgentNavigationProps = Readonly<{
@@ -23,26 +24,26 @@ export function AgentsPage(props: AgentsPageProps) {
       case "idle":
       case "loading":
         return (
-          <section className="page-frame dashboard-main" aria-label="Agents" aria-busy="true">
-            <h1>Agents</h1>
+          <section className="page-frame dashboard-main" aria-label={copy.pages.agents} aria-busy="true">
+            <h1>{copy.pages.agents}</h1>
             <p className="empty-state">Loading agents</p>
           </section>
         );
       case "retrying":
         return (
-          <section className="page-frame dashboard-main" aria-label="Agents" aria-busy="true">
-            <h1>Agents</h1>
-            <p className="empty-state">Retrying agents</p>
+          <section className="page-frame dashboard-main" aria-label={copy.pages.agents} aria-busy="true">
+            <h1>{copy.pages.agents}</h1>
+            <p className="empty-state">에이전트를 다시 불러오는 중</p>
           </section>
         );
       case "error":
         return (
-          <section className="page-frame dashboard-main" aria-label="Agents">
-            <h1>Agents</h1>
+          <section className="page-frame dashboard-main" aria-label={copy.pages.agents}>
+            <h1>{copy.pages.agents}</h1>
             <div role="alert" className="panel">
               <p className="empty-state">{props.state.error.message}</p>
               {props.onRetry === undefined ? null : (
-                <button type="button" onClick={props.onRetry}>Retry</button>
+                <button type="button" onClick={props.onRetry}>{copy.retry}</button>
               )}
             </div>
           </section>
@@ -63,8 +64,8 @@ export function AgentsPage(props: AgentsPageProps) {
   const onAgentSelect = props.onAgentSelect;
 
   return (
-    <section className="page-frame dashboard-main" aria-label="Agents">
-      <h1>Agents</h1>
+    <section className="page-frame dashboard-main" aria-label={copy.pages.agents}>
+      <h1>{copy.pages.agents}</h1>
       {response.items.length === 0 ? (
         <p className="empty-state" role="status">No agents connected</p>
       ) : (

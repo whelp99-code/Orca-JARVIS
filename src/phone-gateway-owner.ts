@@ -6,7 +6,9 @@ import {
   PHONE_ERROR_CODES,
 } from "./phone-gateway-protocol.js";
 import { authenticateTailnetOwner, headerValues, isTrustedServeRequest } from "./phone-gateway-config.js";
+import { readPhoneOrigin } from "./phone-gateway-origin.js";
 import { matchPhoneRoute } from "./phone-gateway-routes.js";
+import { writeOwnerInboxPreflight } from "./owner-inbox-preflight.js";
 import { retryAfter, writeAsset, writeHtml, writeJson, writePhoneGatewayError } from "./phone-gateway-http.js";
 import { bootstrapDocumentSession } from "./phone-gateway-navigation.js";
 import { servePhoneRemoteRoute } from "./phone-gateway-remote.js";
@@ -36,7 +38,7 @@ export async function handleOwnerRequest(
     return;
   }
   update({ ownerHex: ctx.config.ownerDigest.toString("hex").slice(0, 16) });
-  const origin = readOrigin(ctx.request.rawHeaders);
+  const origin = readPhoneOrigin(ctx.request.rawHeaders);
   const unsafe = method !== "GET" && method !== "HEAD";
   if (origin.kind === "bad" || (origin.kind === "ok" && origin.value !== ctx.config.publicOrigin)
     || (unsafe && origin.kind !== "ok")) {
@@ -80,6 +82,11 @@ async function handleAuthedRoute(
     return;
   }
   update({ routeClass: matched.routeClass });
+  if (method === "OPTIONS" && path.startsWith("/api/v1/owner-inbox")) {
+    writeOwnerInboxPreflight(ctx.response, ctx.config.publicOrigin);
+    update({ outcome: "allowed", code: "ok", status: 204 });
+    return;
+  }
   const ownerHex = ctx.config.ownerDigest.toString("hex").slice(0, 16);
   if (auth.kind !== "ok") {
     const limited = ctx.limiter.takePreSession(ownerHex);
@@ -242,12 +249,4 @@ async function serveMatchedRoute(ctx: PhoneGatewayRequestCtx, method: string, pa
   update({ outcome: "allowed", code: "ok", status: proxied.status });
 }
 
-function readOrigin(rawHeaders: readonly string[]):
-  | { readonly kind: "absent" }
-  | { readonly kind: "ok"; readonly value: string }
-  | { readonly kind: "bad" } {
-  const values = headerValues(rawHeaders, "origin");
-  if (values.length === 0) return { kind: "absent" };
-  if (values.length !== 1 || values[0] === undefined || values[0] === "null") return { kind: "bad" };
-  return { kind: "ok", value: values[0] };
-}
+

@@ -1,4 +1,5 @@
 import { useEffect, useState, useSyncExternalStore } from "react";
+import { copy, stateLabel } from "./copy.js";
 import type { MemoryClient } from "./memory-api.js";
 import { MemoryCandidates } from "./memory-candidates.js";
 import { MemoryConflicts } from "./memory-conflicts.js";
@@ -24,13 +25,13 @@ export function providerState(snapshot: MemorySnapshot): MemoryProviderBadge {
   return status.mutations_enabled ? "ready" : "incompatible";
 }
 const PROVIDER_COPY: Record<MemoryProviderBadge, string> = {
-  ready: "Current schema-4 provider",
-  expired: "Memory status expired. Searching re-reads the surface, or use Refresh memory.",
-  stale: "The provider reported stale evidence. Results and panels may be out of date; changes are unavailable.",
-  no_data: "Current schema-4 provider",
-  offline: "Memory provider offline. Search and changes are unavailable until it reconnects.",
-  unavailable: "Memory provider unavailable.",
-  incompatible: "Read-only memory provider. Corrections, forgetting, and export are unavailable.",
+  ready: "기억 제공자가 준비되었습니다",
+  expired: "기억 상태가 만료되었습니다. 검색하거나 기억 새로고침을 누르세요.",
+  stale: "기억 제공자 기록이 오래되었습니다. 지금은 바꿀 수 없습니다.",
+  no_data: "기억 제공자가 준비되었습니다",
+  offline: "기억 제공자가 끊겼습니다. 다시 연결되기 전에는 검색할 수 없습니다.",
+  unavailable: "기억 제공자를 사용할 수 없습니다.",
+  incompatible: "기억은 읽기만 됩니다. 고치기, 지우기, 내보내기는 지금은 없습니다.",
 };
 export function MemoryPage({ store, client }: Readonly<{ store: MemoryStore; client: MemoryClient }>) {
   const snapshot = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
@@ -51,9 +52,9 @@ export function MemoryPage({ store, client }: Readonly<{ store: MemoryStore; cli
     return () => { window.removeEventListener("pagehide", clear); window.removeEventListener("pageshow", restore); };
   }, [store]);
   if (snapshot.state === "loading") return <div className="page-frame route-state" aria-busy="true">
-    <section role="status"><h1>Memory</h1><p>Loading private memory surface</p></section></div>;
+    <section role="status"><h1>{copy.pages.memory}</h1><p>기억을 불러오는 중</p></section></div>;
   if (snapshot.state === "error") return <div className="page-frame route-state"><section role="alert">
-    <h1>Memory</h1><p>{snapshot.message}</p></section></div>;
+    <h1>{copy.pages.memory}</h1><p>{snapshot.message}</p></section></div>;
   const provider = providerState(snapshot);
   const mutable = !phone && provider === "ready" && snapshot.status?.mutations_enabled === true;
   const refresh = (): void => {
@@ -77,10 +78,10 @@ export function MemoryPage({ store, client }: Readonly<{ store: MemoryStore; cli
     if (outcome.kind === "staged") { setSelectedRevision(undefined); void store.load(); }
   };
   return <div className="page-frame dashboard-main memory-page"><header className="memory-heading">
-    <div><p className="today-kicker">USER-CONTROLLED MEMORY</p><h1>Memory</h1></div>
-    <div className="memory-heading-controls"><p className="freshness-badge" data-freshness={provider}>{provider}</p>
+    <div><p className="today-kicker">내가 통제하는 기억</p><h1>{copy.pages.memory}</h1></div>
+    <div className="memory-heading-controls"><p className="freshness-badge" data-freshness={provider}>{stateLabel(provider)}</p>
       <button type="button" onClick={refresh} disabled={refreshing} aria-busy={refreshing}>
-        {refreshing ? "Refreshing memory" : "Refresh memory"}</button></div></header>
+        {refreshing ? "기억을 다시 불러오는 중" : "기억 새로고침"}</button></div></header>
     <p className="memory-status" role="status" tabIndex={-1} aria-live="polite" aria-atomic="true">
       {snapshot.message || (announced.revision === snapshot.search_revision ? announced.message : "")
         || PROVIDER_COPY[provider]}</p>

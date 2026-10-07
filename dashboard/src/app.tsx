@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import type { OverviewResponse } from "../../src/dashboard/read-model.js";
-import { copy } from "./copy.js";
+import { actionLabel, copy, formatKst, stateLabel } from "./copy.js";
 import { PortfolioStatus } from "./portfolio-status.js";
 import { RuntimeStatus } from "./runtime-status.js";
 import { DaemonRuntimeStatus } from "./daemon-runtime-status.js";
@@ -85,11 +85,11 @@ export default function App({ overview, onRefresh }: AppProps) {
               <ul className="record-list">
                 {overview.recent_tasks.map((task) => (
                   <li className="record" key={task.task_id}>
-                    <p className="record-title">{task.title}</p>
+                    <p className="record-title">{actionLabel(task.title)}</p>
                     <div className="record-meta">
-                      <span>{task.kind}</span>
-                      <span>{task.state}</span>
-                      <time dateTime={task.updated_at}>{task.updated_at}</time>
+                      <span>{stateLabel(task.kind)}</span>
+                      <span>{stateLabel(task.state)}</span>
+                      <time dateTime={task.updated_at}>{formatKst(task.updated_at)}</time>
                     </div>
                   </li>
                 ))}
@@ -105,7 +105,7 @@ export default function App({ overview, onRefresh }: AppProps) {
               <ul className="record-list">
                 {overview.pending_approvals.map((approval) => (
                   <li className="record" key={approval.request_id}>
-                    <p className="record-title">{approval.action}</p>
+                    <p className="record-title">{actionLabel(approval.action)}</p>
                     <p className="record-summary">{approval.summary}</p>
                     <div className="record-meta">
                       <span>Level {approval.action_level}</span>
@@ -124,7 +124,7 @@ export default function App({ overview, onRefresh }: AppProps) {
               <ul className="record-list">
                 {overview.risks.map((risk) => (
                   <li className="record" key={risk.id}>
-                    <p className="severity-label">{risk.severity}</p>
+                    <p className="severity-label">{stateLabel(risk.severity)}</p>
                     <p className="record-title">{risk.message}</p>
                   </li>
                 ))}

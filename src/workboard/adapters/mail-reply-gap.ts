@@ -1,0 +1,130 @@
+import type { WorkEvent } from "../contracts.js";
+import { sourceKey, workKey, sessionKey } from "../contracts.js";
+import { metadataEvent } from "./session-metadata.js";
+import type { WorkboardStore } from "../store.js";
+
+/** Mail Intelligence reply-gap projection. Collectors own this table set; the dashboard stays read-only. */
+export const MAIL_REPLY_GAP_SOURCE = { host: "linux", app: "mail", scope: "reply-gap", generation: "v1" } as const;
+/** Phone-reachable Mail Intelligence. A snapshot may repeat this origin only. */
+export const MAIL_REPLY_GAP_BASE_URL = "http://jm-acloud.alpines-goldeye.ts.net:3010";
+
+export type ReplyGapItem = { id: string; subject: string; receivedAt: string };
+export type ReplyGapSnapshot = { observedAt: string; baseUrl?: string; open: ReplyGapItem[] };
+export type ReplyGapResult = { source: string; opened: number; closed: number; openIds: string[] };
+
+const SOURCE_KEY = sourceKey(MAIL_REPLY_GAP_SOURCE);
+
+function messageId(id: string): string {
+  if (!/^\d+$/u.test(id)) throw new Error("MAIL_REPLY_GAP_SNAPSHOT_INVALID");
+  const numeric = Number(id);
+  if (!Number.isSafeInteger(numeric) || numeric < 1) throw new Error("MAIL_REPLY_GAP_SNAPSHOT_INVALID");
+  return String(numeric);
+}
+
+function summaryOf(subject: string): string {
+  const text = subject.replace(/\s+/gu, " ").trim() || "(제목 없음)";
+  const clipped = text.length > 80 ? `${text.slice(0, 79)}…` : text;
+  return `회신: ${clipped}`;
+}
+
+function pinnedBase(baseUrl: string | undefined): string {
+  const configured = new URL(MAIL_REPLY_GAP_BASE_URL);
+  const given = new URL(baseUrl ?? MAIL_REPLY_GAP_BASE_URL);
+  if (given.origin !== configured.origin) throw new Error("MAIL_REPLY_GAP_LINK_INVALID");
+  return configured.origin;
+}
+
+function linkFor(baseUrl: string | undefined, id: string): string {
+  const href = `${pinnedBase(baseUrl)}/#m=${encodeURIComponent(id)}`;
+  if (href.length > 256 || /[\0\r\n]/u.test(href)) throw new Error("MAIL_REPLY_GAP_LINK_INVALID");
+  return href;
+}
+
+function eventFor(item: ReplyGapItem, snapshot: ReplyGapSnapshot, kind: "open" | "close"): WorkEvent {
+  const taskId = messageId(item.id);
+  const when = kind === "open" ? item.receivedAt : snapshot.observedAt;
+  return metadataEvent(MAIL_REPLY_GAP_SOURCE, {
+    sessionId: `msg:${taskId}`,
+    incarnation: "reply-gap",
+    eventId: `${kind}:${taskId}:${snapshot.observedAt}`,
+    sequence: Date.parse(snapshot.observedAt),
+    observedAt: snapshot.observedAt,
+    sourceAt: when,
+    taskId,
+    state: kind === "open" ? "waiting" : "verified",
+    summary: kind === "open" ? summaryOf(item.subject) : `회신 완료: ${summaryOf(item.subject).slice(4)}`,
+    evidenceRef: linkFor(snapshot.baseUrl, taskId),
+  });
+}
+
+function validateSnapshot(snapshot: ReplyGapSnapshot): void {
+  if (!Number.isFinite(Date.parse(snapshot.observedAt))) throw new Error("MAIL_REPLY_GAP_OBSERVATION_INVALID");
+  try { pinnedBase(snapshot.baseUrl); } catch { throw new Error("MAIL_REPLY_GAP_LINK_INVALID"); }
+  if (!Array.isArray(snapshot.open)) throw new Error("MAIL_REPLY_GAP_SNAPSHOT_INVALID");
+  const ids = new Set<string>();
+  for (const item of snapshot.open) {
+    if (!item || typeof item.id !== "string" || typeof item.subject !== "string" || !Number.isFinite(Date.parse(item.receivedAt))) {
+      throw new Error("MAIL_REPLY_GAP_SNAPSHOT_INVALID");
+    }
+    const id = messageId(item.id);
+    if (ids.has(id)) throw new Error("MAIL_REPLY_GAP_SNAPSHOT_INVALID");
+    ids.add(id);
+  }
+}
+
+/**
+ * Project the current reply-gap set. Open rows become owner-decision tasks.
+ * Rows that left the set (replied, handled elsewhere, promotional, deleted, or aged out)
+ * are recorded as verified and removed from the current board.
+ */
+export function projectMailReplyGaps(store: WorkboardStore, snapshot: ReplyGapSnapshot): ReplyGapResult {
+  validateSnapshot(snapshot);
+  snapshot = { ...snapshot, baseUrl: snapshot.baseUrl ?? MAIL_REPLY_GAP_BASE_URL };
+  const openIds = snapshot.open.map(item => item.id);
+  const openTokens = new Set(snapshot.open.map(item => messageId(item.id)));
+  return store.db.transaction(() => {
+    let opened = 0;
+    let closed = 0;
+    for (const item of snapshot.open) {
+      const taskId = messageId(item.id);
+      const existing = store.db.prepare(
+        "SELECT sequence FROM workboard_works WHERE source_key=? AND task_id=?",
+      ).get(SOURCE_KEY, taskId) as { sequence: number } | undefined;
+      if (!existing || existing.sequence < Date.parse(snapshot.observedAt)) {
+        store.ingest(eventFor(item, snapshot, "open"));
+        opened += existing ? 0 : 1;
+      }
+      const session = sessionKey(MAIL_REPLY_GAP_SOURCE, `msg:${taskId}`);
+      const workId = workKey(session, taskId);
+      store.db.prepare(`INSERT INTO workboard_attention(
+        work_id, sequence, last_progress_received_at, attempt_execution, action_delivery,
+        wait_kind, wait_reason, wait_started_at, deadline_at, impact, decision_valid)
+        VALUES(?, ?, ?, 'waiting', 'none', 'user_decision', '회신 필요', ?, NULL, NULL, 1)
+        ON CONFLICT(work_id) DO UPDATE SET
+          sequence=excluded.sequence, last_progress_received_at=excluded.last_progress_received_at,
+          attempt_execution='waiting', wait_kind='user_decision',
+          wait_reason='회신 필요', decision_valid=1`).run(
+        workId, Date.parse(snapshot.observedAt), snapshot.observedAt, item.receivedAt,
+      );
+    }
+    const stale = store.db.prepare(
+      "SELECT work_id, task_id, summary FROM workboard_works WHERE source_key=?",
+    ).all(SOURCE_KEY) as Array<{ work_id: string; task_id: string | null; summary: string }>;
+    for (const row of stale) {
+      if (row.task_id !== null && openTokens.has(row.task_id)) continue;
+      const item: ReplyGapItem = {
+        id: row.task_id ?? row.work_id,
+        subject: row.summary.replace(/^회신: /u, ""),
+        receivedAt: snapshot.observedAt,
+      };
+      store.ingest(eventFor(item, snapshot, "close"));
+      store.db.prepare("DELETE FROM workboard_attention WHERE work_id=?").run(row.work_id);
+      store.db.prepare("DELETE FROM workboard_works WHERE work_id=?").run(row.work_id);
+      closed += 1;
+    }
+    store.db.prepare(
+      "UPDATE workboard_sources SET warning=NULL, last_successful_observation=? WHERE source_key=?",
+    ).run(snapshot.observedAt, SOURCE_KEY);
+    return { source: SOURCE_KEY, opened, closed, openIds };
+  })();
+}

@@ -1,6 +1,8 @@
 import type { ControlRequestListResponse } from "../../../src/dashboard/read-model.js";
 import type { AuthorityIdFactory, AuthorityMutationClient } from "../authority-api.js";
 import { AuthorityControls } from "../authority-controls.js";
+import { OwnerInboxPanel } from "../owner-inbox-panel.js";
+import { copy } from "../copy.js";
 import type { ResourceState } from "../store.js";
 
 export type ApprovalsPageProps = Readonly<{
@@ -16,37 +18,41 @@ export function ApprovalsPage({ state, client, idFactory, onRetry, onFirst, onNe
   switch (state.status) {
     case "idle":
     case "loading":
-      return <PageState title="Approvals" message="Loading approvals" busy />;
+      return <PageState title={copy.pages.approvals} message="승인을 불러오는 중" busy />;
     case "retrying":
-      return <PageState title="Approvals" message="Retrying approvals" busy />;
+      return <PageState title={copy.pages.approvals} message="승인을 다시 불러오는 중" busy />;
     case "error":
       return <>
-        <PageState title="Unable to load approvals" message={state.error.message} onRetry={onRetry} />
-        {onFirst === undefined ? null : <button type="button" onClick={onFirst}>First page</button>}
+        <PageState title="승인을 열 수 없습니다" message={state.error.message} onRetry={onRetry} />
+        {onFirst === undefined ? null : <button type="button" onClick={onFirst}>첫 페이지</button>}
       </>;
     case "success":
     case "empty":
       return (
-        <section className="page-frame dashboard-main" aria-label="Approvals">
-          <h1>Approvals</h1>
-          {state.data.page === undefined ? null : (
-            <nav aria-label="Approval pages" className="record-meta">
-              <span>{state.data.page.returned} shown / {state.data.page.total} actionable requests</span>
-              <button type="button" onClick={onFirst}>First page</button>
-              <button type="button" disabled={!state.data.page.has_more} onClick={onNext}>Next page</button>
-            </nav>
-          )}
-          {state.data.items.length === 0 ? (
-            <p className="empty-state" role="status">No approval requests</p>
-          ) : (
-            <ul className="record-list panel authority-list">
-              {state.data.items.map((request) => (
-                <li className="record" key={request.request_id}>
-                  <AuthorityControls request={request} client={client} idFactory={idFactory} />
-                </li>
-              ))}
-            </ul>
-          )}
+        <section className="page-frame dashboard-main" aria-label={copy.pages.approvals}>
+          <h1>{copy.pages.approvals}</h1>
+          <OwnerInboxPanel />
+          <details className="admin-tools">
+            <summary>관리자 도구</summary>
+            {state.data.page === undefined ? null : (
+              <nav aria-label="제어 요청" className="record-meta">
+                <span>제어 요청 {state.data.page.total}건 · {state.data.page.returned}건 표시</span>
+                <button type="button" onClick={onFirst}>첫 페이지</button>
+                <button type="button" disabled={!state.data.page.has_more} onClick={onNext}>다음 페이지</button>
+              </nav>
+            )}
+            {state.data.items.length === 0 ? (
+              <p className="empty-state" role="status">대기 중인 승인이 없습니다</p>
+            ) : (
+              <ul className="record-list panel authority-list">
+                {state.data.items.map((request) => (
+                  <li className="record" key={request.request_id}>
+                    <AuthorityControls request={request} client={client} idFactory={idFactory} />
+                  </li>
+                ))}
+              </ul>
+            )}
+          </details>
         </section>
       );
     default:
@@ -65,7 +71,7 @@ function PageState({ title, message, busy = false, onRetry }: Readonly<{
       <section role={busy ? "status" : "alert"}>
         <h1>{title}</h1>
         <p>{message}</p>
-        {onRetry === undefined ? null : <button type="button" onClick={onRetry}>Retry</button>}
+        {onRetry === undefined ? null : <button type="button" onClick={onRetry}>{copy.retry}</button>}
       </section>
     </div>
   );

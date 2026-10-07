@@ -7,7 +7,7 @@
 // from the same stored evidence rather than from three differently-shaped fixtures.
 import { spawnSync } from "node:child_process";
 import { generateKeyPairSync, randomBytes } from "node:crypto";
-import { chmodSync, existsSync, mkdirSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { dirname, join, resolve } from "node:path";
 import { expect } from "vitest";
@@ -31,6 +31,7 @@ import { approveFixtureOwnerDecision, sealFixtureAuthority } from "./fixture-aut
 import { inferredMemoryInput, memoryPolicy } from "./memory-candidate-fixture.js";
 import { memoryDatabase } from "./memory-candidate-store.js";
 import { evidence, FixtureReader, FixtureWriter, OUTBOX_ARTIFACT_DIGEST } from "./memory-outbox-fixture.js";
+import { writeSecondBrainFixtureLauncher } from "./second-brain-transport-harness.js";
 import { localKey } from "../helpers.js";
 
 // The morning schedule fires at 07:15:00.000 KST and the shipped policy is effective from
@@ -73,8 +74,7 @@ export function installProviderUnderRoots(root: string, providerConfig: string) 
   const stateRoot = join(root, "provider-root");
   mkdirSync(join(stateRoot, "app", "current", "bin"), { recursive: true });
   const launcher = join(stateRoot, "app", "current", "bin", "second-brain-mcp");
-  chmodSync(PROVIDER_CHILD, 0o755);
-  symlinkSync(PROVIDER_CHILD, launcher);
+  writeSecondBrainFixtureLauncher(launcher, PROVIDER_CHILD);
   return { launcher, environment: { JARVIS_PROVIDER_STATE_ROOT: stateRoot, JARVIS_PROVIDER_CONFIG: providerConfig } };
 }
 
@@ -193,9 +193,8 @@ export async function prepareDailyProductionChain(options: { readonly ownerDecis
   const projectionKey = join(root, "memory-projection.key");
   writeFileSync(projectionKey, randomBytes(32), { mode: 0o600 });
   chmodSync(projectionKey, 0o600);
-  chmodSync(PROVIDER_CHILD, 0o755);
   const launcher = join(root, "second-brain-mcp");
-  symlinkSync(PROVIDER_CHILD, launcher);
+  writeSecondBrainFixtureLauncher(launcher, PROVIDER_CHILD);
   const providerConfig = join(root, "provider-config.json");
   writeFileSync(providerConfig, JSON.stringify({ adapterScenario: "schema4", schema4Pages: [{
     page_id: PAGE, sensitivity: "personal", updated: "2026-08-28",
