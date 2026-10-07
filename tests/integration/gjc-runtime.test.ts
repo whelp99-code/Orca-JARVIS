@@ -32,9 +32,32 @@ describe("GJC runtime", () => {
     const db = new AuthorityDb(tempDb()); await db.migrate(); db.configureGjc(process.cwd(), "s", true); const sync = db.createGjcIntent("sync", { session_id: "s", turn_id: "t" }, "flat-read"); const read = new GjcRuntimeService(db, new GjcCoordinatorClient(async () => envelope({ status: "completed", session_id: "s", turn_id: "t" })), "flat-read", undefined, () => new Date("2026-08-10T00:00:00.000Z")); await expect(read.once("2026-08-10T00:00:00.000Z")).resolves.toMatchObject({ state: "uncertain" }); expect((db.db.prepare("SELECT state FROM gjc_intents WHERE intent_id=?").get(sync) as { state: string }).state).toBe("uncertain");
     db.bindGjcQuestion(sync, "q", { session_id: "s", turn_id: "t", question_id: "q" }); const answer = db.createGjcQuestionAnswerIntent("q", { session_id: "s", turn_id: "t", answer_binding: { key: "v" }, answer: "yes" }, "flat-answer"); const submit = new GjcRuntimeService(db, new GjcCoordinatorClient(async () => envelope({ status: "completed", session_id: "s", turn_id: "t", question_id: "q", answer: "yes" }), true), "flat-answer", undefined, () => new Date("2026-08-10T00:02:00.000Z")); await expect(submit.once("2026-08-10T00:02:00.000Z")).resolves.toMatchObject({ state: "uncertain" }); expect((db.db.prepare("SELECT state FROM gjc_intents WHERE intent_id=?").get(answer) as { state: string }).state).toBe("uncertain"); expect((db.db.prepare("SELECT COUNT(*) AS n FROM gjc_answer_receipts").get() as { n: number }).n).toBe(0);
   });
-  it("drives read_turn then await_turn for every nonterminal structured lifecycle status", async () => {
-    for (const status of ["queued", "delivering", "active", "waiting_for_answer", "completing"]) { const db = new AuthorityDb(tempDb()); await db.migrate(); db.configureGjc(process.cwd(), "s", true); db.createGjcIntent("sync", { session_id: "s", turn_id: "t" }, `read-${status}`); const calls: string[] = []; const reply = (body: unknown) => ({ stdout: `${JSON.stringify({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2024-11-05", serverInfo: { name: "gjc-coordinator-mcp", version: "0.11.8" } } })}\n${JSON.stringify({ jsonrpc: "2.0", id: 2, result: { content: [{ type: "text", text: JSON.stringify(body) }] } })}\n`, exitCode: 0 }); const client = new GjcCoordinatorClient(async run => { const name = JSON.parse(run.stdin.trim().split("\n")[2]!).params.name; calls.push(name); return name === "gjc_coordinator_read_turn" ? reply({ ok: true, turn: { status, turn_id: "t", session_id: "s" } }) : name === "gjc_coordinator_await_turn" ? reply({ ok: true, turn: { status: "completed", turn_id: "t", session_id: "s" } }) : reply({ questions: [] }); }); const service = new GjcRuntimeService(db, client, status, undefined, () => new Date("2026-08-10T00:00:00.000Z")); await expect(service.once("2026-08-10T00:00:00.000Z")).resolves.toMatchObject({ state: "completed" }); expect(calls).toEqual(["gjc_coordinator_read_turn", "gjc_coordinator_await_turn", "gjc_coordinator_list_questions"]); }
-  });
+  it.each(["queued", "delivering", "active", "waiting_for_answer", "completing"])(
+    "drives read_turn then await_turn for %s structured lifecycle status",
+    async status => {
+      const db = new AuthorityDb(tempDb());
+      await db.migrate();
+      db.configureGjc(process.cwd(), "s", true);
+      db.createGjcIntent("sync", { session_id: "s", turn_id: "t" }, `read-${status}`);
+      const calls: string[] = [];
+      const reply = (body: unknown) => ({ stdout: `${JSON.stringify({ jsonrpc: "2.0", id: 1, result: { protocolVersion: "2024-11-05", serverInfo: { name: "gjc-coordinator-mcp", version: "0.11.8" } } })}\n${JSON.stringify({ jsonrpc: "2.0", id: 2, result: { content: [{ type: "text", text: JSON.stringify(body) }] } })}\n`, exitCode: 0 });
+      const client = new GjcCoordinatorClient(async run => {
+        const name = JSON.parse(run.stdin.trim().split("\n")[2]!).params.name;
+        calls.push(name);
+        return name === "gjc_coordinator_read_turn" ? reply({ ok: true, turn: { status, turn_id: "t", session_id: "s" } })
+          : name === "gjc_coordinator_await_turn" ? reply({ ok: true, turn: { status: "completed", turn_id: "t", session_id: "s" } })
+            : reply({ questions: [] });
+      });
+      const service = new GjcRuntimeService(db, client, status, undefined, () => new Date("2026-08-10T00:00:00.000Z"));
+      try {
+        await expect(service.once("2026-08-10T00:00:00.000Z")).resolves.toMatchObject({ state: "completed" });
+        expect(calls).toEqual(["gjc_coordinator_read_turn", "gjc_coordinator_await_turn", "gjc_coordinator_list_questions"]);
+      } finally {
+        service.close();
+        db.db.close();
+      }
+    },
+  );
   it("human-approved GJC work never ACKs mocks before turn completion, then ACKs once after durable sync completion", async () => {
     const db = await initialized(); db.configureGjc(process.cwd(), "s", true); db.ingest(snapshot("codex", { authorization: "both" }), policyKey(db)); db.approveWithReceipt("codex-work", decisionReceiptFor(db, "codex-work")); const before = db.workerOnce(); expect(before).toMatchObject({ processed: 0, outcome: "GJC_PENDING" }); expect((db.db.prepare("SELECT COUNT(*) AS n FROM outbox WHERE acked_at IS NOT NULL").get() as { n: number }).n).toBe(0);
     const dispatch = db.db.prepare("SELECT intent_id FROM gjc_intents WHERE kind='dispatch'").get() as { intent_id: string }; const claim = db.claimGjcIntent(dispatch.intent_id, "test", new Date().toISOString())!; db.settleGjcIntent(dispatch.intent_id, Number(claim.lease_fence), { status: "accepted", receipt: { status: "accepted", session_id: "s", turn_id: "t" } }); const sync = db.db.prepare("SELECT intent_id FROM gjc_intents WHERE kind='sync'").get() as { intent_id: string }; const syncClaim = db.claimGjcIntent(sync.intent_id, "test", new Date().toISOString())!; db.settleGjcIntent(sync.intent_id, Number(syncClaim.lease_fence), { status: "completed", receipt: { status: "completed", turn_id: "t" } }); expect(db.workerOnce()).toMatchObject({ processed: 1 }); expect(db.workerOnce()).toMatchObject({ processed: 1 }); expect(db.workerOnce()).toMatchObject({ processed: 0 }); expect((db.db.prepare("SELECT COUNT(*) AS n FROM outbox WHERE acked_at IS NOT NULL").get() as { n: number }).n).toBe(2);
