@@ -192,3 +192,9 @@ Exact measured candidate branch HEAD before documentation: 7669b34e6309e93e6f7c9
 | Production and authority boundaries | No live service, deployment, merge, ready transition or environment write | PASS |
 
 This is an evidence-only change. There is no new production logic, helper extraction, dependency, error suppression, new test, removed test, prose-pinning assertion, or altered machine-consumed contract. The programming and overfit/slop perspectives identify no new behavioral change. Final independent review is recorded in the external task evidence and the draft PR.
+
+## Handoff note (윤비서, 2026-10-08 01:26 KST)
+
+wK JARVIS 깨끗한 배포 후보 기준 SHA는 `7669b34e6309e93e6f7c9b3a70ffed3cbd76dd0f` 유지, 후보는 PR63 미포함. 새 main과의 차이는 PR63 테스트 1파일 +2/-2(`tests/integration/recommendations-exception-remediation.test.ts`)뿐.
+
+참고: main `a0ba5165` 머지 후 CI run 37651032844 실패는 코드 문제가 아니라 GitHub 결제/지출 한도 차단("The job was not started because recent account payments have failed or your spending limit needs to be increased.")으로 러너가 할당되지 않은 것임.
