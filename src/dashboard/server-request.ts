@@ -53,6 +53,7 @@ type RequestContext = {
   readonly assertionCheck?: import("../owner-inbox.js").AssertionCheck;
   readonly enrollmentCheck?: import("../owner-inbox-enrollment.js").EnrollmentCheck;
   readonly workboardActions?: WorkboardActions;
+  readonly priceFinance?: import("../integration/price-finance-production.js").PriceFinanceRuntime;
 };
 
 export async function handleRequest(input: RequestContext): Promise<void> {
@@ -102,6 +103,7 @@ export async function handleRequest(input: RequestContext): Promise<void> {
       enrollmentCheck: input.enrollmentCheck,
       now: input.clock(),
       workboardActions: input.workboardActions,
+      priceFinance: input.priceFinance,
     })) {
       return;
     }

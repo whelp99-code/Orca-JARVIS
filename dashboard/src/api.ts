@@ -23,6 +23,8 @@ import type {
 import { isPortfolioOverview } from "./portfolio-guard.js";
 import { isRuntimeIdentity, isDaemonRuntimeIdentity } from "./runtime-guard.js";
 import type { DashboardSurface } from "./surface.js";
+import { priceFinanceConfigSchema, priceFinanceReceiptSchema,
+  type PriceFinanceConfig, type PriceFinanceReceipt, type PriceFinanceRequest } from "../../src/integration/price-finance-contract.js";
 
 export type ApiErrorKind = "offline" | "forbidden" | "not_found" | "server";
 export type ApiError = {
@@ -41,6 +43,8 @@ export type DashboardClient = {
   readonly task: (taskId: string) => Promise<TaskDetailResponse>;
   readonly agentLogs: (agentId: string) => Promise<TerminalLogResponse>;
   readonly workboard: (signal?: AbortSignal) => Promise<WorkboardResponse>;
+  readonly priceFinanceConfig?: (signal?: AbortSignal) => Promise<PriceFinanceConfig>;
+  readonly priceFinanceRead?: (request: PriceFinanceRequest, signal?: AbortSignal) => Promise<PriceFinanceReceipt>;
 };
 
 export class DashboardApiError extends Error {
@@ -68,8 +72,13 @@ const PURPOSE_STATUSES = ["confirmed", "proposed", "unknown"] as const;
 const LIST_LIMIT = 500;
 
 export function createDashboardClient(surface: DashboardSurface = "local"): DashboardClient {
+  const session = surface === "phone" ? phoneSession() : () => readJson("/api/v1/session", isSession);
+  async function financeJson(path: string, signal?: AbortSignal) {
+    const own = await session();
+    return requestJson(path, signal, own.csrf_token);
+  }
   return {
-    session: surface === "phone" ? phoneSession() : () => readJson("/api/v1/session", isSession),
+    session,
     overview: (signal) => readJson("/api/v1/overview", isOverview, signal),
     tasks: (signal) => readJson(`/api/v1/tasks?limit=${String(LIST_LIMIT)}`, isTaskList, signal),
     agents: (signal) => readJson("/api/v1/agents", isAgentList, signal),
@@ -81,6 +90,9 @@ export function createDashboardClient(surface: DashboardSurface = "local"): Dash
       isTerminalLog,
     ),
     workboard: (signal) => readJson("/api/v1/workboard", isWorkboard, signal),
+    priceFinanceConfig: async signal => priceFinanceConfigSchema.parse(await financeJson("/api/v1/finance-read/config", signal)),
+    priceFinanceRead: async (request, signal) => priceFinanceReceiptSchema.parse(await financeJson(
+      `/api/v1/finance-read?${new URLSearchParams(request).toString()}`, signal)),
   };
 }
 
@@ -123,11 +135,11 @@ async function readJson<T>(path: string, parse: (value: unknown) => value is T, 
   return body;
 }
 
-async function requestJson(path: string, signal?: AbortSignal): Promise<unknown> {
+async function requestJson(path: string, signal?: AbortSignal, csrf?: string): Promise<unknown> {
   let response: Response;
   try {
     response = await fetch(path, {
-      headers: { Accept: "application/json" },
+      headers: { Accept: "application/json", ...(csrf === undefined ? {} : { "x-jarvis-csrf": csrf }) },
       signal: signal ? AbortSignal.any([signal, AbortSignal.timeout(15_000)]) : AbortSignal.timeout(15_000),
     });
   } catch (error: unknown) {

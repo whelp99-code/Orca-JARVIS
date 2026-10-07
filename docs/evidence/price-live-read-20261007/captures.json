@@ -1,0 +1,44 @@
+{
+  "surface": "Product CLI on isolated authority DB, actual Price operating viewer transport",
+  "widths": [
+    1440,
+    390
+  ],
+  "all_views_native_status": 200,
+  "body_SHA_equal": true,
+  "RT": "UNBOUND",
+  "official_tax_ready": false,
+  "no_credential_values_rendered": true,
+  "captures": [
+    {
+      "name": "desktop-owner-card.png",
+      "sha256": "8614ff77f23803527d720d664e7f4f5716c660d0a15ffcfaa2950355e5cc0b8a",
+      "bytes": 230531
+    },
+    {
+      "name": "mobile-owner-card.png",
+      "sha256": "59f1c1c064ae61c2379b14426b08214b0e3ea19b0ab3d2942e28e49616704b7f",
+      "bytes": 855341
+    },
+    {
+      "name": "desktop-discrepancy-card.png",
+      "sha256": "d3b20ca452aba662ab80c02a5f58d39d5edff9451d9da572e39a88258329143e",
+      "bytes": 216489
+    },
+    {
+      "name": "mobile-discrepancy-card.png",
+      "sha256": "b1d1e0b0c34da73dee59fbe30383fc982ebf950744d99a4b01f31327c3b2f83f",
+      "bytes": 782509
+    },
+    {
+      "name": "desktop-settlement-card.png",
+      "sha256": "3b1ed602b93514640f8ee0727f4e8356fe0b90799176b8a2972353295014d825",
+      "bytes": 141919
+    },
+    {
+      "name": "mobile-settlement-card.png",
+      "sha256": "94e4062066b7a0b331d9bd1e0bff969d04d8ffba9b727020082dbe81519f5a27",
+      "bytes": 423035
+    }
+  ]
+}
