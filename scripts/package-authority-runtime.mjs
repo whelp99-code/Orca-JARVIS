@@ -5,6 +5,7 @@ import { parseArgs } from "node:util";
 import { pathToFileURL } from "node:url";
 import { BACKEND_OUTPUT_ROOTS, backendSourceIdentity, fileIdentity, releaseSourceIdentity } from "./lib/backend-build-identity.mjs";
 import { RUNTIME_PACKAGE_ROOTS as roots } from "./lib/runtime-package-roots.mjs";
+import { assertRuntimePackageNoTestState, withRuntimePackageSmoke } from "./lib/runtime-package-smoke.mjs";
 
 const { values } = parseArgs({ options: { "output-parent": { type: "string" } }, strict: true });
 if (!values["output-parent"]) throw new Error("RUNTIME_PACKAGE_OUTPUT_PARENT_REQUIRED");
@@ -44,9 +45,9 @@ try {
     join(output, "dependency-install.log"));
   const { runtimeDependencyIdentity } = await import(pathToFileURL(join(root, "dist/src/personal-os-release-manifest.js")));
   const dependencies = runtimeDependencyIdentity(join(output, "node_modules"));
-  mkdirSync(join(output, "smoke-state"));
-  run(process.execPath, ["scripts/cli-smoke.mjs"], output, join(output, "cli-smoke.log"),
-    { ...process.env, TMPDIR: join(output, "smoke-state") });
+  withRuntimePackageSmoke(output, env => {
+    run(process.execPath, ["scripts/cli-smoke.mjs"], output, join(output, "cli-smoke.log"), env);
+  });
   const identityDb = join(output, "identity-must-not-create.sqlite");
   const identityLog = join(output, "runtime-identity.json");
   run(process.execPath, ["dist/src/cli.js", "runtime", "identity", "--db", identityDb], output, identityLog);
@@ -64,6 +65,7 @@ try {
   if (runtimeDependencyIdentity(join(output, "node_modules")).digest !== dependencies.digest) {
     throw new Error("RUNTIME_PACKAGE_DEPENDENCIES_CHANGED");
   }
+  assertRuntimePackageNoTestState(output);
   // Committed provenance for a sealed release manifest. Recorded only when this checkout can
   // answer for it; a package built without a checkout carries none and cannot be published.
   const releaseSource = releaseSourceIdentity(root);
@@ -74,6 +76,7 @@ try {
     ...(releaseSource === null ? {} : { release_source: releaseSource }),
     payload: before, dependencies,
     validation: { production_dependency_install: "passed", dependency_identity: "passed", cli_smoke: "passed", runtime_identity: "passed",
+      test_state_absent: "passed",
       dashboard: "not_performed", provider: "not_performed", reproducibility: "not_performed" },
     deployment_ready: false };
   writeFileSync(join(output, "runtime-package-receipt.json"), `${JSON.stringify(receipt)}\n`, { flag: "wx", mode: 0o600 });
