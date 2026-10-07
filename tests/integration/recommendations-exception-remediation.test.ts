@@ -9,6 +9,7 @@ import {
   task18Request,
 } from "../fixtures/recommendation-fixture.js";
 import { tempDb } from "../helpers.js";
+import { migratedTestDatabase } from "../fixtures/migrated-database.js";
 
 const CITATION_SLOTS = [
   "confirmed_principle_ref",
@@ -28,8 +29,7 @@ const IDS = [
 ] as const;
 
 async function setup() {
-  const db = new AuthorityDb(tempDb());
-  await db.migrate();
+  const db = await migratedTestDatabase(tempDb());
   const context = await persistTask18Context(db);
   return { context, db, service: new Recommendations(db) };
 }
