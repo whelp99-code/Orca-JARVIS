@@ -71,7 +71,9 @@ export async function buildFreshAuthority(
     }
     const triggers = targetSchema.filter(row => row.type === "trigger" && row.sql !== null);
     fresh.db.pragma("foreign_keys=OFF");
-    for (const trigger of triggers) fresh.db.exec(`DROP TRIGGER ${quote(trigger.name)}`);
+    fresh.db.transaction(() => {
+      for (const trigger of triggers) fresh.db.exec(`DROP TRIGGER ${quote(trigger.name)}`);
+    }).immediate();
     fresh.db.exec("CREATE TEMP TABLE blocked_projections(kind TEXT,id TEXT,component_id TEXT)");
     const insertBlocked = fresh.db.prepare(
       "INSERT INTO blocked_projections(kind,id,component_id) VALUES(?,?,?)",
@@ -94,10 +96,12 @@ export async function buildFreshAuthority(
         }
       }, sourceVersion: Number(source.db.pragma("data_version", { simple: true })) });
     removeSuppressedRows(fresh.db, blockedProjections);
-    for (const trigger of triggers) {
-      if (trigger.sql === null) throw new JarvisError("MEMORY_COMPACTION_SCHEMA_INVALID");
-      fresh.db.exec(trigger.sql);
-    }
+    fresh.db.transaction(() => {
+      for (const trigger of triggers) {
+        if (trigger.sql === null) throw new JarvisError("MEMORY_COMPACTION_SCHEMA_INVALID");
+        fresh.db.exec(trigger.sql);
+      }
+    }).immediate();
     fresh.db.pragma("foreign_keys=ON");
     const foreignKeys = fresh.db.pragma("foreign_key_check") as readonly unknown[];
     if (foreignKeys.length !== 0) throw new JarvisError("MEMORY_COMPACTION_FOREIGN_KEY_INVALID");
