@@ -66,6 +66,7 @@ export type DashboardServerOptions = {
   readonly assertionCheck?: import("../owner-inbox.js").AssertionCheck;
   readonly enrollmentCheck?: import("../owner-inbox-enrollment.js").EnrollmentCheck;
   readonly workboardActions?: WorkboardActions;
+  readonly priceFinance?: import("../integration/price-finance-production.js").PriceFinanceRuntime;
 };
 
 export function createDashboardServer(options: DashboardServerOptions): DashboardServer & {
@@ -117,6 +118,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
       assertionCheck: options.assertionCheck,
       enrollmentCheck: options.enrollmentCheck,
       workboardActions: options.workboardActions,
+      priceFinance: options.priceFinance,
     });
     requests.add(pending);
     void pending.then(() => requests.delete(pending), () => requests.delete(pending));

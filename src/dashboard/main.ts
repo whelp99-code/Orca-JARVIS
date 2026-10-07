@@ -17,6 +17,7 @@ import { MemoryOutboxTick } from "../memory-outbox-tick.js";
 import { parseTrustedCloseoutKey } from "../evening-closeout-crypto.js";
 import type { TrustedCloseoutKey } from "../evening-closeout-types.js";
 import { parseNativeEveningSourceConfig, type NativeEveningSourceConfig } from "../evening-native-source.js";
+import { createPriceFinanceRuntime } from "../integration/price-finance-production.js";
 
 const LOOPBACK = "127.0.0.1";
 
@@ -28,6 +29,7 @@ export type DashboardCliOptions = {
   readonly policyPath?: string;
   readonly trustedCloseoutKey?: TrustedCloseoutKey;
   readonly nativeCloseoutSource?: NativeEveningSourceConfig;
+  readonly priceReadCredentialPath?: string;
 };
 
 function configuredCloseoutKey(value: unknown): TrustedCloseoutKey | undefined {
@@ -69,6 +71,7 @@ export function parseDashboardCli(argv: readonly string[]): DashboardCliOptions 
       "closeout-key-id": { type: "string" },
       "closeout-public-key-spki": { type: "string" },
       "native-closeout-source": { type: "string" },
+      "price-read-credential": { type: "string" },
     },
     strict: true,
   });
@@ -92,6 +95,7 @@ export function parseDashboardCli(argv: readonly string[]): DashboardCliOptions 
   }
   const nativeCloseoutSource = configuredNativeSource(source, trustedCloseoutKey);
   return { host: LOOPBACK, port, dbPath: resolve(values.db), staticRoot: resolve(values["static-root"]),
+    ...(values["price-read-credential"] === undefined ? {} : { priceReadCredentialPath: values["price-read-credential"] }),
     ...(trustedCloseoutKey === undefined ? {} : { trustedCloseoutKey }),
     ...(nativeCloseoutSource === undefined ? {} : { nativeCloseoutSource }),
     ...(values.policy === undefined ? {} : { policyPath: resolve(values.policy) }) };
@@ -103,6 +107,8 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
   dependencies: DashboardMemoryDependencies = {}): { close: () => Promise<void> } {
   const trustedCloseoutKey = configuredCloseoutKey(options.trustedCloseoutKey);
   const nativeCloseoutSource = configuredNativeSource(options.nativeCloseoutSource, trustedCloseoutKey);
+  const priceFinance = options.priceReadCredentialPath === undefined ? undefined
+    : createPriceFinanceRuntime(options.priceReadCredentialPath);
   const db = new AuthorityDb(options.dbPath);
   const remoteApproval = (() => {
     try { return composeRemoteApproval(db, { policyPath: options.policyPath }); }
@@ -119,6 +125,7 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
     () => server.publish(["memory.effects.v1", "memory.records.v1", "memory.candidates.v1", "approvals", "overview"]));
   const server = createDashboardServer({
     db,
+    priceFinance,
     trustedCloseoutKey,
     nativeCloseoutSource,
     staticRoot: options.staticRoot,
@@ -145,6 +152,7 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
     server.close();
     closing = (async () => {
       await Promise.all([tick?.close(), server.drain()]);
+      await priceFinance?.close();
       if (bound.ownedProviderTransport !== undefined) await bound.ownedProviderTransport.close();
       db.close();
     })();

@@ -27,6 +27,7 @@ import type { createDashboardStore, DashboardState, ResourceState } from "./stor
 import { useDetailResource } from "./use-detail-resource.js";
 import { TaskExecutionPanel } from "./task-execution-panel.js";
 import { FinanceReadPage } from "./finance-read-page.js";
+import { PriceFinancePage } from "./price-finance-page.js";
 import type { FinanceReadAdapter } from "./finance-read-adapter.js";
 import { WorkboardRoute } from "./workboard/page.js";
 
@@ -180,7 +181,7 @@ function ControlCenter({
         />
         <Route path="/security" element={security} />
         <Route path="/finance-read" element={financeReadAdapter === undefined
-          ? <RouteState title="재무 조회 요청 준비" message="재무 조회 adapter 미연결 · 실제 조회나 fixture 권한이 활성화되지 않았습니다." />
+          ? <PriceFinancePage client={client} />
           : <FinanceReadPage adapter={financeReadAdapter} />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>

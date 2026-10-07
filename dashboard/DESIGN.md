@@ -4,6 +4,16 @@
 
 A restrained operational command surface: compact, legible, and evidence-first. Charcoal layers, precise borders, and monospaced machine values keep system state readable without decorative chrome. The signature is status communicated through language and a single semantic color ramp rather than ornamental graphics.
 
+### Operating Price read state
+The finance-read route uses the existing panel, form-field, identity-list and
+local-work-card primitives. Unconfigured remains explicit. Loading, refused and
+read-complete are distinct; HTTP200 never implies financial confirmation.
+The card shows the exact raw response body and its SHA without numeric rewriting.
+Missing producer fields stay missing; official_tax_ready=false is displayed from
+the response. CRM workspace absence stays RT UNBOUND. Identifiers and raw JSON
+wrap at 390px, document scrolling remains the sole scroll owner, and no new tokens
+or motion are introduced. Credentials remain backend-only.
+
 ## 2. Color
 
 The shipped dark theme is the only page theme. Every implementation color references a token from `styles.css`.
