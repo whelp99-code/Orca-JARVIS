@@ -69,7 +69,7 @@ async function fixturePackage(override: PackageOverride = {}): Promise<FixturePa
   mkdirSync(join(root, "node_modules"), { recursive: true });
   for (const name of RUNTIME_DEPENDENCIES) {
     if (existsSync(join("node_modules", name))) {
-      execFileSync("cp", ["-al", "--", join("node_modules", name), join(root, "node_modules", name)]);
+    execFileSync("cp", ["-a", "--", join("node_modules", name), join(root, "node_modules", name)]);
     }
   }
   const metadataPath = join(root, "dist/build-metadata.json");
@@ -184,6 +184,7 @@ function publish(args: readonly string[], env: Readonly<Record<string, string>> 
       ...inherited,
       JARVIS_SECOND_BRAIN_LAUNCHER: provider.launcher,
       JARVIS_SECOND_BRAIN_CONFIG: provider.config,
+      JARVIS_PUBLISH_STAGE_PARENT: scratch("publish-stage-"),
       ...env,
     },
   });

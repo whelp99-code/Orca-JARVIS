@@ -5,9 +5,13 @@ import { describe, expect, it } from "vitest";
 const SCRIPT = join(process.cwd(), "scripts", "open-electron.mjs");
 
 function run(env: NodeJS.ProcessEnv) {
+  const childEnv = { ...process.env };
+  delete childEnv.JARVIS_DB;
+  delete childEnv.JARVIS_RUNTIME_HOME;
+  delete childEnv.JARVIS_TEST_RUNTIME_HOME;
   const result = spawnSync(process.execPath, [SCRIPT], {
     encoding: "utf8",
-    env: { ...process.env, ...env },
+    env: { ...childEnv, ...env },
   });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
