@@ -14,7 +14,7 @@ type BindingState = { readonly kind: "idle" } | { readonly kind: "loading" }
 const sourceFields = z.object({
   official_tax_ready: z.boolean().optional(), company_data_complete: z.boolean().optional(),
   crm_company_binding: z.unknown().optional(),
-  payable_coverage: z.object({ crm_links: z.array(z.unknown()) }).optional(),
+  payable_coverage: z.object({ crm_links: z.array(z.unknown()).optional() }).optional(),
 });
 const names = { owner_report: "소유자 보고", discrepancy: "불일치", settlement: "정산 조회" } as const;
 
@@ -135,7 +135,7 @@ function PriceCompanyBindingCard({ receipt }: Readonly<{ receipt: PriceCompanyBi
 function PriceReadCard({ receipt }: Readonly<{ receipt: PriceFinanceReceipt }>) {
   const fields = sourceFields.parse(JSON.parse(receipt.response_body));
   const unbound = receipt.view === "owner_report" && fields.crm_company_binding === null
-    && fields.payable_coverage?.crm_links.length === 0;
+    && fields.payable_coverage?.crm_links?.length === 0;
   return <article className="panel local-work-card" aria-labelledby="price-read-card-title"
     data-source-revision={receipt.source_revision} data-rt-state={unbound ? "UNBOUND" : undefined}>
     <header className="panel-header"><h2 id="price-read-card-title">업무 카드 · {names[receipt.view]}</h2></header>
