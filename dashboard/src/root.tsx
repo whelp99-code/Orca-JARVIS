@@ -95,6 +95,11 @@ function ControlCenter({
   mailCandidatesAdapter,
 }: Omit<ControlCenterRootProps, "initialPath"> & Readonly<{ surface: DashboardSurface }>) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
+  const candidatesAdapter = useMemo<MailCandidatesReadAdapter | undefined>(() => {
+    if (mailCandidatesAdapter !== undefined) return mailCandidatesAdapter;
+    const read = client.mailCandidatesRead;
+    return read === undefined ? undefined : { read };
+  }, [client, mailCandidatesAdapter]);
   const proposalClient = useMemo(() => createProposalMutationClient(client.session), [client]);
   const liveAuthorityClient = useMemo(
     () => authorityClient ?? createAuthorityMutationClient(client.session),
@@ -187,7 +192,7 @@ function ControlCenter({
         />
         <Route path="/security" element={security} />
         <Route path="/finance-read" element={<>
-          <MailCandidatesCard adapter={mailCandidatesAdapter} />
+          <MailCandidatesCard adapter={candidatesAdapter} />
           {financeReadAdapter === undefined ? <PriceFinancePage client={client} />
             : <FinanceReadPage adapter={financeReadAdapter} />}
         </>} />

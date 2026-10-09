@@ -18,6 +18,7 @@ import { parseTrustedCloseoutKey } from "../evening-closeout-crypto.js";
 import type { TrustedCloseoutKey } from "../evening-closeout-types.js";
 import { parseNativeEveningSourceConfig, type NativeEveningSourceConfig } from "../evening-native-source.js";
 import { createPriceFinanceRuntime } from "../integration/price-finance-production.js";
+import { createMailCandidatesRuntime } from "../integration/mail-candidates-production.js";
 
 const LOOPBACK = "127.0.0.1";
 
@@ -109,6 +110,7 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
   const nativeCloseoutSource = configuredNativeSource(options.nativeCloseoutSource, trustedCloseoutKey);
   const priceFinance = options.priceReadCredentialPath === undefined ? undefined
     : createPriceFinanceRuntime(options.priceReadCredentialPath);
+  const mailCandidates = createMailCandidatesRuntime();
   const db = new AuthorityDb(options.dbPath);
   const remoteApproval = (() => {
     try { return composeRemoteApproval(db, { policyPath: options.policyPath }); }
@@ -126,6 +128,7 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
   const server = createDashboardServer({
     db,
     priceFinance,
+    mailCandidates,
     trustedCloseoutKey,
     nativeCloseoutSource,
     staticRoot: options.staticRoot,
@@ -150,6 +153,7 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
   const close = (): Promise<void> => {
     if (closing !== undefined) return closing;
     server.close();
+    mailCandidates.close();
     closing = (async () => {
       await Promise.all([tick?.close(), server.drain()]);
       await priceFinance?.close();

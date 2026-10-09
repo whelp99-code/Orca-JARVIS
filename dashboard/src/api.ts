@@ -26,6 +26,7 @@ import type { DashboardSurface } from "./surface.js";
 import { priceFinanceConfigSchema, priceFinanceReceiptSchema,
   priceCompanyBindingReceiptSchema, type PriceCompanyBindingReceipt,
   type PriceFinanceConfig, type PriceFinanceReceipt, type PriceFinanceRequest } from "../../src/integration/price-finance-contract.js";
+import { mailCandidatesSummarySchema, type MailCandidatesSummary } from "../../src/integration/mail-candidates-contract.js";
 
 export type ApiErrorKind = "offline" | "forbidden" | "not_found" | "server";
 export type ApiError = {
@@ -47,6 +48,7 @@ export type DashboardClient = {
   readonly priceFinanceConfig?: (signal?: AbortSignal) => Promise<PriceFinanceConfig>;
   readonly priceFinanceRead?: (request: PriceFinanceRequest, signal?: AbortSignal) => Promise<PriceFinanceReceipt>;
   readonly priceCompanyBinding?: (signal?: AbortSignal) => Promise<PriceCompanyBindingReceipt>;
+  readonly mailCandidatesRead?: (signal?: AbortSignal) => Promise<MailCandidatesSummary>;
 };
 
 export class DashboardApiError extends Error {
@@ -97,6 +99,7 @@ export function createDashboardClient(surface: DashboardSurface = "local"): Dash
       "/api/v1/finance-read/company-binding", signal)),
     priceFinanceRead: async (request, signal) => priceFinanceReceiptSchema.parse(await financeJson(
       `/api/v1/finance-read?${new URLSearchParams(request).toString()}`, signal)),
+    mailCandidatesRead: async signal => mailCandidatesSummarySchema.parse(await financeJson("/api/v1/mail-candidates", signal)),
   };
 }
 

@@ -8,10 +8,38 @@ import { mailCandidatesSummarySchema, type MailCandidatesReadAdapter } from "./m
 afterEach(cleanup);
 async function sample() {
   const adapter = createMailCandidatesFixture();
-  return { adapter, value: mailCandidatesSummarySchema.parse(await adapter.read(new AbortController().signal)) };
+  const value = mailCandidatesSummarySchema.parse(await adapter.read(new AbortController().signal));
+  if (value.proof_level !== "isolated-fixture") throw new Error("fixture proof required");
+  return { adapter, value };
 }
 function source(name: "crm" | "sb") { return document.querySelector(`[data-candidate-source="${name}"]`); }
 describe("read-only Mail candidate card", () => {
+  it("renders native allowed metadata without treating it as fixture titles or authority", async () => {
+    const data = {
+      schema_version: 1, proof_level: "native-read", authority: "none", observed_at: "2026-10-09T00:00:00.000Z",
+      crm: { state: "read", workspace_id: "75c2b088-e5aa-5396-9e9e-6dfd77e50048", candidate_count: 1,
+        recent: [{ id: "native-1", status: "<img src=x onerror=alert(1)>", confirmed: false,
+          freshness: "producer_unverified", createdAt: "2026-10-08T00:00:00.000Z" }] },
+      sb: { state: "read", workspace_id: "75c2b088-e5aa-5396-9e9e-6dfd77e50048", candidate_count: 9 },
+    };
+    render(<MailCandidatesCard adapter={{ async read() { return data; } }} />);
+    const rows = await screen.findAllByRole("listitem");
+    expect(source("crm")?.getAttribute("data-candidate-count")).toBe("1");
+    expect(source("sb")?.getAttribute("data-candidate-count")).toBe("9");
+    expect(document.querySelector("[data-proof-level]")?.getAttribute("data-proof-level")).toBe("native-read");
+    expect(rows[0]?.querySelector("span")?.textContent).toBe(data.crm.recent[0]?.status);
+    expect(document.querySelector("img")).toBeNull();
+    expect(screen.queryByRole("button")).toBeNull();
+  });
+  it("preserves an independently read source when the other native reader refuses", async () => {
+    const data = { schema_version: 1, proof_level: "native-read", authority: "none", observed_at: "2026-10-09T00:00:00.000Z",
+      crm: { state: "unconnected", reason: "refused" },
+      sb: { state: "read", workspace_id: "75c2b088-e5aa-5396-9e9e-6dfd77e50048", candidate_count: 9 } };
+    render(<MailCandidatesCard adapter={{ async read() { return data; } }} />);
+    await screen.findByRole("alert");
+    expect(source("crm")?.hasAttribute("data-candidate-count")).toBe(false);
+    expect(source("sb")?.getAttribute("data-candidate-count")).toBe("9");
+  });
   it("shows unconnected sources without fabricated zero counts or actions", () => {
     render(<MailCandidatesCard />);
     expect(source("crm")?.getAttribute("data-source-state")).toBe("unconnected");
