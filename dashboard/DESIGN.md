@@ -17,6 +17,12 @@ The company-registration card uses the same primitives and preserves its separat
 native body, revision and SHA. CONFIRMED is identity-only; workspace registration
 never confirms a project link, money, approval or financial execution receipt.
 Missing, refused and unconfirmed registration states never imply a usable join.
+The mail-candidate panel shows separate CRM and SB counts. Native CRM recent
+records expose only id/status/confirmed/freshness/createdAt (at most five);
+title access is explicitly unavailable. Only the isolated fixture has synthetic
+titles. Unconnected is not zero, each reader may independently refuse, and the
+panel has no confirmation or editing actions. Fixture counts stay LOCAL_ONLY;
+native reads never imply business approval. Credentials remain backend-only.
 
 ## 2. Color
 
