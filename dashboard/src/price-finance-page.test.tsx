@@ -91,6 +91,22 @@ describe("operating Price read work card", () => {
     await act(async () => { deliver(receipt); await flight; });
     expect(screen.queryByTestId("price-response-body")).toBeNull();
   });
+  it("renders native coverage without CRM link metadata without inferring an unbound job", async () => {
+    const api = await ready();
+    const body = JSON.stringify({
+      official_tax_ready: false, company_data_complete: false, crm_company_binding: null,
+      cash: { received: 0, paid: 0 }, payable_coverage: {
+        allocations: [], balances: [], purchase_obligations: [], accounting_posted: false,
+        confirmed: false, bank_cutoff_verified: false, as_of: "2026-09-30", stale_event_ids: [],
+      },
+    });
+    api.priceFinanceRead.mockResolvedValueOnce({ ...receipt, response_body: body,
+      source_revision: `sha256:${createHash("sha256").update(body).digest("hex")}` });
+    const rendered = screen.findByTestId("price-response-body");
+    fireEvent.click(screen.getByRole("button", { name: "Price 원본 조회" }));
+    expect((await rendered).textContent).toBe(body);
+    expect(document.querySelector("[data-rt-state]")).toBeNull();
+  });
   it("does not turn a missing producer readiness field into false", async () => {
     const api = await ready();
     const body = '{"items":[],"read_only":true,"live_source_checked":false}';
