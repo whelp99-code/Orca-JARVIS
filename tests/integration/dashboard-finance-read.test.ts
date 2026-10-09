@@ -9,10 +9,12 @@ import type { AuthorityDb } from "../../src/db.js";
 
 const company = `company_${"a".repeat(32)}`;
 const body = '{"items":[],"read_only":true,"live_source_checked":false}';
+const bindingBody = '{"candidate":null,"confirmed_connection":false}';
 const wire = vi.fn<PriceHttpExchange>(async input => input.url.pathname === "/api/login"
   ? { status: 200, cookie: "price_session=test-only", body: JSON.stringify({ csrf: "test-only",
     companies: [{ id: company, role: "viewer" }] }) }
-  : input.url.pathname === "/api/logout" ? { status: 200, body: "{}" } : { status: 200, body });
+  : input.url.pathname === "/api/logout" ? { status: 200, body: "{}" }
+    : { status: 200, body: input.url.pathname.endsWith("/crm-company-binding") ? bindingBody : body });
 let db: AuthorityDb;
 let server: DashboardServer;
 let runtime: PriceFinanceRuntime;
@@ -59,6 +61,25 @@ describe("dashboard Price finance read boundary", () => {
     expect(receipt.request.company_id).toBe(company);
     expect(wire.mock.calls.filter(([input]) => input.method === "GET")).toHaveLength(1);
     expect(JSON.stringify(receipt)).not.toContain("test-only");
+  });
+  it("reads native registration through the same local session boundary", async () => {
+    const response = await fetch(origin + "/api/v1/finance-read/company-binding", { headers: { "x-jarvis-csrf": csrf } });
+    expect(response.status).toBe(200);
+    const receipt = await response.json();
+    expect(receipt.response_body).toBe(bindingBody);
+    expect(receipt.company_id).toBe(company);
+    expect(receipt.data).toEqual({ candidate: null, confirmed_connection: false });
+    expect(wire.mock.calls.filter(([input]) => input.method === "GET")).toHaveLength(1);
+    expect(wire.mock.calls.find(([input]) => input.method === "GET")?.[0].url.pathname)
+      .toBe(`/api/companies/${company}/crm-company-binding`);
+  });
+  it("rejects unbound registration reads and caller-supplied company parameters", async () => {
+    const path = origin + "/api/v1/finance-read/company-binding";
+    const unbound = await fetch(path);
+    const foreign = await fetch(path + "?company_id=foreign", { headers: { "x-jarvis-csrf": csrf } });
+    expect(unbound.status).toBe(403);
+    expect(foreign.status).toBe(400);
+    expect(wire).not.toHaveBeenCalled();
   });
   it.each([
     { headers: new Headers() },

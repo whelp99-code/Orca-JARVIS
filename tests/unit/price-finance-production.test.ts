@@ -10,6 +10,16 @@ const request = { company_id: company, period_start: "2026-09-01", period_end: "
   view: "discrepancy" } as const;
 const body = '{"items":[],"read_only":true,"live_source_checked":false}';
 const roots: string[] = [];
+const nativeBinding = {
+  candidate: {
+    id: "crm_company_binding_unit", revision: 1,
+    crm_workspace_id: "75c2b088-e5aa-5396-9e9e-6dfd77e50048", price_company_id: company,
+    registered_by: "unit-owner", registered_at: "2026-10-08T23:34:51.982364+00:00",
+    confirmed_by_human: true, confirmed_by: "owner", confirmation_ref: "unit-owner-decision",
+    source_reference: "unit-native-source",
+  },
+  confirmed_connection: true,
+};
 afterEach(() => {
   vi.unstubAllEnvs();
   for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true });
@@ -36,6 +46,64 @@ function exchange(role = "viewer", company_id = company) {
 }
 
 describe("Price operating finance read composition", () => {
+  it("reads native company registration under the existing viewer without financial authority", async () => {
+    const raw = JSON.stringify(nativeBinding);
+    const wire = exchange();
+    const normal = wire.getMockImplementation();
+    wire.mockImplementation(async input => {
+      if (input.url.pathname.endsWith("/crm-company-binding")) return { status: 200, body: raw };
+      if (normal === undefined) throw new Error("wire implementation required");
+      return normal(input);
+    });
+    const runtime = createPriceFinanceRuntime(credential(), wire);
+    try {
+      const receipt = await runtime.readCompanyBinding();
+      expect(wire.mock.calls.map(([input]) => [input.method, input.url.href])).toEqual([
+        ["POST", "http://127.0.0.1:4382/api/login"],
+        ["GET", `http://127.0.0.1:4382/api/companies/${company}/crm-company-binding`],
+      ]);
+      expect(receipt.response_body).toBe(raw);
+      expect(receipt.source_revision).toBe(`sha256:${createHash("sha256").update(raw).digest("hex")}`);
+      expect(receipt.data).toEqual(nativeBinding);
+      expect(receipt.freshness).toBe("producer_unverified");
+      expect(JSON.stringify(receipt)).not.toContain("unit-session");
+      expect(JSON.stringify(receipt)).not.toContain("unit-only-not-a-live-credential");
+    } finally { await runtime.close(); }
+  });
+  it.each([
+    { value: { ...nativeBinding, candidate: { ...nativeBinding.candidate, price_company_id: "foreign" } },
+      code: "CORE5_NATIVE_READ_SCOPE_DENIED" },
+    { value: { ...nativeBinding, confirmed_connection: false }, code: "CORE5_NATIVE_READ_RESPONSE_INVALID" },
+  ])("refuses a foreign or contradictory native registration %#", async ({ value, code }) => {
+    const wire = exchange();
+    const normal = wire.getMockImplementation();
+    wire.mockImplementation(async input => {
+      if (input.url.pathname.endsWith("/crm-company-binding")) return { status: 200, body: JSON.stringify(value) };
+      if (normal === undefined) throw new Error("wire implementation required");
+      return normal(input);
+    });
+    const runtime = createPriceFinanceRuntime(credential(), wire);
+    try { await expect(runtime.readCompanyBinding()).rejects.toMatchObject({ code }); }
+    finally { await runtime.close(); }
+  });
+  it("discards registration delivered after the runtime closes", async () => {
+    const reading = Promise.withResolvers<void>();
+    const delivery = Promise.withResolvers<Awaited<ReturnType<PriceHttpExchange>>>();
+    const wire = exchange();
+    const normal = wire.getMockImplementation();
+    wire.mockImplementation(async input => {
+      if (input.method === "GET") { reading.resolve(); return delivery.promise; }
+      if (normal === undefined) throw new Error("wire implementation required");
+      return normal(input);
+    });
+    const runtime = createPriceFinanceRuntime(credential(), wire);
+    const pending = runtime.readCompanyBinding();
+    const denied = expect(pending).rejects.toMatchObject({ code: "CORE5_NATIVE_READ_FENCE_CHANGED" });
+    await reading.promise;
+    await runtime.close();
+    delivery.resolve({ status: 200, body: JSON.stringify(nativeBinding) });
+    await denied;
+  });
   it("uses its own viewer login and preserves exact native bytes and SHA", async () => {
     const wire = exchange();
     const runtime = createPriceFinanceRuntime(credential(), wire);

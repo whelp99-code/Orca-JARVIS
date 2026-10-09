@@ -1,10 +1,11 @@
 import { constants, openSync, readFileSync, closeSync, fstatSync, realpathSync } from "node:fs";
 import { dirname, isAbsolute } from "node:path";
 import { request } from "node:http";
-import { randomUUID } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
 import { z } from "zod";
 import { JarvisError } from "../jarvis-error.js";
 import { NativeFinanceReader, type NativeFinanceReadTransport } from "./native-finance-read.js";
+import { priceCompanyBindingSourceSchema, type PriceCompanyBindingReceipt } from "./price-finance-contract.js";
 
 const ORIGIN = "http://127.0.0.1:4382";
 const credentialSchema = z.object({
@@ -75,6 +76,7 @@ function readCredential(path: string) {
 export type PriceFinanceRuntime = Readonly<{
   company_id: string;
   reader: NativeFinanceReader;
+  readCompanyBinding(): Promise<PriceCompanyBindingReceipt>;
   close(): Promise<void>;
 }>;
 
@@ -131,6 +133,36 @@ export function createPriceFinanceRuntime(
   return {
     company_id: credential.company_id,
     reader: new NativeFinanceReader(credential.company_id, transport, () => closed ? "closed" : fence),
+    async readCompanyBinding() {
+      if (closed) throw new JarvisError("CORE5_NATIVE_READ_FENCE_CHANGED");
+      session ??= authenticate();
+      const own = await session;
+      if (closed) throw new JarvisError("CORE5_NATIVE_READ_FENCE_CHANGED");
+      // Identity metadata is separate from the three frozen finance.read views.
+      const response = await exchange({
+        method: "GET", url: new URL(`/api/companies/${credential.company_id}/crm-company-binding`, ORIGIN),
+        headers: { cookie: own.cookie, accept: "application/json" },
+      });
+      if (closed) throw new JarvisError("CORE5_NATIVE_READ_FENCE_CHANGED");
+      if (response.status !== 200) throw new JarvisError("CORE5_NATIVE_READ_REFUSED");
+      let value: unknown;
+      try { value = JSON.parse(response.body); }
+      catch (error) {
+        if (!(error instanceof SyntaxError)) throw error;
+        throw new JarvisError("CORE5_NATIVE_READ_RESPONSE_INVALID");
+      }
+      const parsed = priceCompanyBindingSourceSchema.safeParse(value);
+      if (!parsed.success) throw new JarvisError("CORE5_NATIVE_READ_RESPONSE_INVALID");
+      if (parsed.data.candidate !== null && parsed.data.candidate.price_company_id !== credential.company_id) {
+        throw new JarvisError("CORE5_NATIVE_READ_SCOPE_DENIED");
+      }
+      return {
+        schema_version: 1, company_id: credential.company_id,
+        source_revision: `sha256:${createHash("sha256").update(response.body).digest("hex")}`,
+        observed_at: new Date().toISOString(), freshness: "producer_unverified",
+        receipt_kind: "response_body_integrity_not_signed", response_body: response.body, data: parsed.data,
+      };
+    },
     async close() {
       if (closed) return;
       closed = true;

@@ -5,7 +5,8 @@ import { sessionMatchesCsrf } from "./session.js";
 import { writeDashboardError, writeDashboardJson } from "./http.js";
 
 export async function tryHandleFinanceRead(input: DashboardApiInput): Promise<boolean> {
-  if (input.path !== "/api/v1/finance-read/config" && input.path !== "/api/v1/finance-read") return false;
+  if (input.path !== "/api/v1/finance-read/config" && input.path !== "/api/v1/finance-read"
+    && input.path !== "/api/v1/finance-read/company-binding") return false;
   if (input.request.method !== "GET" || !hasSameOriginReadOrigin(input.request, input.origin)
     || !sessionMatchesCsrf(input.session, typeof input.request.headers["x-jarvis-csrf"] === "string"
       ? input.request.headers["x-jarvis-csrf"] : undefined)) {
@@ -30,7 +31,11 @@ export async function tryHandleFinanceRead(input: DashboardApiInput): Promise<bo
     const query = new URL(input.url ?? "", input.origin).searchParams;
     const entries = [...query.entries()];
     if (new Set(entries.map(([key]) => key)).size !== entries.length) throw new JarvisError("CORE5_NATIVE_READ_INPUT_INVALID");
-    const receipt = await runtime.reader.read(Object.fromEntries(entries));
+    if (input.path.endsWith("/company-binding") && entries.length !== 0) {
+      throw new JarvisError("CORE5_NATIVE_READ_INPUT_INVALID");
+    }
+    const receipt = input.path.endsWith("/company-binding")
+      ? await runtime.readCompanyBinding() : await runtime.reader.read(Object.fromEntries(entries));
     writeDashboardJson(input.response, { status: 200, body: receipt, requestId: input.requestId });
   } catch (error) {
     if (!(error instanceof JarvisError)) throw error;
