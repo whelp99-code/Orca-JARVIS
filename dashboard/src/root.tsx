@@ -30,6 +30,8 @@ import { FinanceReadPage } from "./finance-read-page.js";
 import { PriceFinancePage } from "./price-finance-page.js";
 import type { FinanceReadAdapter } from "./finance-read-adapter.js";
 import { WorkboardRoute } from "./workboard/page.js";
+import { MailCandidatesCard } from "./mail-candidates-card.js";
+import type { MailCandidatesReadAdapter } from "./mail-candidates-model.js";
 
 type DashboardStore = ReturnType<typeof createDashboardStore>;
 type RootClient = Omit<DashboardClient, "agentLogs"> & Readonly<{
@@ -45,6 +47,7 @@ type ControlCenterRootProps = Readonly<{
   initialPath?: string;
   surface?: DashboardSurface;
   financeReadAdapter?: FinanceReadAdapter;
+  mailCandidatesAdapter?: MailCandidatesReadAdapter;
 }>;
 export function ControlCenterRoot({
   store,
@@ -56,6 +59,7 @@ export function ControlCenterRoot({
   initialPath,
   surface = "local",
   financeReadAdapter,
+  mailCandidatesAdapter,
 }: ControlCenterRootProps) {
   const content = (
     <SurfaceContext.Provider value={surface}>
@@ -68,6 +72,7 @@ export function ControlCenterRoot({
         memoryRuntime={memoryRuntime}
         surface={surface}
         financeReadAdapter={financeReadAdapter}
+        mailCandidatesAdapter={mailCandidatesAdapter}
       />
     </SurfaceContext.Provider>
   );
@@ -87,6 +92,7 @@ function ControlCenter({
   memoryRuntime,
   surface,
   financeReadAdapter,
+  mailCandidatesAdapter,
 }: Omit<ControlCenterRootProps, "initialPath"> & Readonly<{ surface: DashboardSurface }>) {
   const state = useSyncExternalStore(store.subscribe, store.getSnapshot, store.getSnapshot);
   const proposalClient = useMemo(() => createProposalMutationClient(client.session), [client]);
@@ -180,9 +186,11 @@ function ControlCenter({
           )}
         />
         <Route path="/security" element={security} />
-        <Route path="/finance-read" element={financeReadAdapter === undefined
-          ? <PriceFinancePage client={client} />
-          : <FinanceReadPage adapter={financeReadAdapter} />} />
+        <Route path="/finance-read" element={<>
+          <MailCandidatesCard adapter={mailCandidatesAdapter} />
+          {financeReadAdapter === undefined ? <PriceFinancePage client={client} />
+            : <FinanceReadPage adapter={financeReadAdapter} />}
+        </>} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </OperationalShell>

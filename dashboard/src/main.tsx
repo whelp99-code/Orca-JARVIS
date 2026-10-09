@@ -9,6 +9,7 @@ import { ControlCenterRoot } from "./root.js";
 import { createDashboardStore } from "./store.js";
 import { detectSurface } from "./surface.js";
 import type { FinanceReadAdapter } from "./finance-read-adapter.js";
+import type { MailCandidatesReadAdapter } from "./mail-candidates-model.js";
 import "./styles.css";
 import "./styles/content.css";
 import "./styles/controls.css";
@@ -41,10 +42,11 @@ const personalStore = createPersonalStore({ client: personalClient, eventSourceF
 const rootElement = document.getElementById("root");
 if (rootElement === null) throw new DashboardInitializationError();
 const root = createRoot(rootElement);
-function renderDashboard(financeReadAdapter?: FinanceReadAdapter) {
+function renderDashboard(financeReadAdapter?: FinanceReadAdapter, mailCandidatesAdapter?: MailCandidatesReadAdapter) {
   root.render(
     <ControlCenterRoot store={store} client={client} personalRuntime={{ store: personalStore, client: personalClient }}
-      memoryRuntime={{ store: memoryStore, client: memoryClient }} surface={surface} financeReadAdapter={financeReadAdapter} />,
+      memoryRuntime={{ store: memoryStore, client: memoryClient }} surface={surface} financeReadAdapter={financeReadAdapter}
+      mailCandidatesAdapter={mailCandidatesAdapter} />,
   );
 }
 if (import.meta.env.DEV && import.meta.env.MODE === "fp5-local" && surface === "local") {
@@ -52,7 +54,11 @@ if (import.meta.env.DEV && import.meta.env.MODE === "fp5-local" && surface === "
   const rtState = state === "UNBOUND" || state === "UNAPPROVED" || state === "CONFIRMED" || state === "SOURCE_CHANGED"
     ? state : null;
   void import("./finance-read-adapter.js")
-    .then(module => module.createLocalCompositionAdapter(() => new Date(), rtState)).then(renderDashboard);
+    .then(module => module.createLocalCompositionAdapter(() => new Date(), rtState))
+    .then(async adapter => {
+      const { createMailCandidatesFixture } = await import("./mail-candidates-fixture.js");
+      renderDashboard(adapter, createMailCandidatesFixture());
+    });
 } else {
   renderDashboard();
 }
