@@ -24,6 +24,7 @@ import { isPortfolioOverview } from "./portfolio-guard.js";
 import { isRuntimeIdentity, isDaemonRuntimeIdentity } from "./runtime-guard.js";
 import type { DashboardSurface } from "./surface.js";
 import { priceFinanceConfigSchema, priceFinanceReceiptSchema,
+  priceCompanyBindingReceiptSchema, type PriceCompanyBindingReceipt,
   type PriceFinanceConfig, type PriceFinanceReceipt, type PriceFinanceRequest } from "../../src/integration/price-finance-contract.js";
 
 export type ApiErrorKind = "offline" | "forbidden" | "not_found" | "server";
@@ -45,6 +46,7 @@ export type DashboardClient = {
   readonly workboard: (signal?: AbortSignal) => Promise<WorkboardResponse>;
   readonly priceFinanceConfig?: (signal?: AbortSignal) => Promise<PriceFinanceConfig>;
   readonly priceFinanceRead?: (request: PriceFinanceRequest, signal?: AbortSignal) => Promise<PriceFinanceReceipt>;
+  readonly priceCompanyBinding?: (signal?: AbortSignal) => Promise<PriceCompanyBindingReceipt>;
 };
 
 export class DashboardApiError extends Error {
@@ -91,6 +93,8 @@ export function createDashboardClient(surface: DashboardSurface = "local"): Dash
     ),
     workboard: (signal) => readJson("/api/v1/workboard", isWorkboard, signal),
     priceFinanceConfig: async signal => priceFinanceConfigSchema.parse(await financeJson("/api/v1/finance-read/config", signal)),
+    priceCompanyBinding: async signal => priceCompanyBindingReceiptSchema.parse(await financeJson(
+      "/api/v1/finance-read/company-binding", signal)),
     priceFinanceRead: async (request, signal) => priceFinanceReceiptSchema.parse(await financeJson(
       `/api/v1/finance-read?${new URLSearchParams(request).toString()}`, signal)),
   };

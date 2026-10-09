@@ -13,6 +13,10 @@ Missing producer fields stay missing; official_tax_ready=false is displayed from
 the response. CRM workspace absence stays RT UNBOUND. Identifiers and raw JSON
 wrap at 390px, document scrolling remains the sole scroll owner, and no new tokens
 or motion are introduced. Credentials remain backend-only.
+The company-registration card uses the same primitives and preserves its separate
+native body, revision and SHA. CONFIRMED is identity-only; workspace registration
+never confirms a project link, money, approval or financial execution receipt.
+Missing, refused and unconfirmed registration states never imply a usable join.
 
 ## 2. Color
 
