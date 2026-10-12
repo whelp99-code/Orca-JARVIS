@@ -1,10 +1,19 @@
 import { describe, expect, it } from "vitest";
-import { elapsedDays, formatReadableDate, formatReadableTimestamp, formatWon } from "./finance-readable-format.js";
+import { elapsedDays, formatReadableDate, formatReadablePeriodDate, formatReadableTimestamp, formatWon } from "./finance-readable-format.js";
 
 describe("finance readable formatting", () => {
   it("formats source dates in Korean month/day/weekday form", () => {
     expect(formatReadableDate("2026-10-01")).toBe("10/1(목)");
     expect(formatReadableDate("not-a-date")).toBe("확인 필요");
+  });
+
+  it("preserves years for historical and cross-year report periods", () => {
+    expect(formatReadablePeriodDate("2025-09-01")).toBe("2025/9/1(월)");
+    expect(formatReadablePeriodDate("2025-09-30")).toBe("2025/9/30(화)");
+    expect(formatReadablePeriodDate("2026-09-01")).toBe("2026/9/1(화)");
+    expect(formatReadablePeriodDate("2025-12-31")).toBe("2025/12/31(수)");
+    expect(formatReadablePeriodDate("2026-01-15")).toBe("2026/1/15(목)");
+    expect(formatReadablePeriodDate("2025-09-01")).not.toBe(formatReadablePeriodDate("2026-09-01"));
   });
 
   it("preserves year and time in source observation timestamps", () => {

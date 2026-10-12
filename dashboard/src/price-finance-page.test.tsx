@@ -53,6 +53,9 @@ describe("operating Price read work card", () => {
   it("shows confirmed company identity without confirming an RT job or changing finance bytes", async () => {
     await ready();
     const registration = await screen.findByTestId("price-binding-body");
+    const bindingTime = document.querySelector("[data-binding-state] time");
+    expect(bindingTime?.getAttribute("dateTime")).toBe(bindingReceipt().observed_at);
+    expect(bindingTime?.textContent).toBe("2026/10/9(금) 09:00:00");
     expect(registration.textContent).toBe(bindingReceipt().response_body);
     expect(document.querySelector("[data-binding-state]")?.getAttribute("data-binding-state")).toBe("CONFIRMED");
     expect(document.querySelector("[data-financial-authority]")?.getAttribute("data-financial-authority")).toBe("none");
@@ -83,7 +86,8 @@ describe("operating Price read work card", () => {
     const observed = document.querySelector("[data-source-revision] time");
     expect(observed?.getAttribute("dateTime")).toBe(receipt.observed_at);
     expect(observed?.textContent).toBe("2026/10/7(수) 20:00:00");
-    expect(screen.getByTestId("price-readable-summary").textContent).toContain("기간: 9/1(화)–9/30(수)");
+    expect(screen.getByTestId("price-readable-summary").textContent)
+      .toContain("기간: 2026/9/1(화)–2026/9/30(수)");
     expect(screen.getByTestId("price-readable-summary").textContent).toContain("받은 금액확인 필요");
     expect(screen.getByTestId("price-readable-summary").textContent).toContain("다음 행동확인 필요");
     expect(raw.closest("details")?.hasAttribute("open")).toBe(false);
@@ -105,6 +109,43 @@ describe("operating Price read work card", () => {
     expect(summary.textContent).toContain("순현금 변동₩300,000");
     expect(raw.closest("details")?.hasAttribute("open")).toBe(false);
   });
+  it.each([
+    { label: "prior year", start: "2025-09-01", end: "2025-09-30",
+      expected: "기간: 2025/9/1(월)–2025/9/30(화)", detail: "2025/9/1(월) — 2025/9/30(화)" },
+    { label: "current year", start: "2026-09-01", end: "2026-09-30",
+      expected: "기간: 2026/9/1(화)–2026/9/30(수)", detail: "2026/9/1(화) — 2026/9/30(수)" },
+    { label: "year boundary", start: "2025-12-31", end: "2026-01-15",
+      expected: "기간: 2025/12/31(수)–2026/1/15(목)", detail: "2025/12/31(수) — 2026/1/15(목)" },
+  ])("keeps year information in a $label owner report", async ({ start, end, expected, detail }) => {
+    const api = await ready();
+    const body = JSON.stringify({ cash: { received: 0, paid: 0, net_movement: 0 } });
+    api.priceFinanceRead.mockResolvedValueOnce({ ...receipt,
+      request: { ...receipt.request, period_start: start, period_end: end }, response_body: body,
+      source_revision: `sha256:${createHash("sha256").update(body).digest("hex")}` });
+    fireEvent.change(screen.getByLabelText("시작일"), { target: { value: start } });
+    fireEvent.change(screen.getByLabelText("종료일"), { target: { value: end } });
+    fireEvent.click(screen.getByRole("button", { name: "Price 원본 조회" }));
+    await screen.findByTestId("price-response-body");
+    expect(screen.getByTestId("price-readable-summary").textContent).toContain(expected);
+    expect(document.querySelector("[data-source-revision]")?.textContent).toContain(detail);
+  });
+  it.each(["owner_report", "discrepancy", "settlement"] as const)(
+    "limits cash summaries to owner_report results (%s)", async view => {
+      const api = await ready();
+      const body = JSON.stringify(view === "owner_report" ? {
+        cash: { received: 1000, paid: 500, net_movement: 500 },
+      } : view === "discrepancy" ? { items: [] } : { settlements: [] });
+      api.priceFinanceRead.mockResolvedValueOnce({ ...receipt, view,
+        request: { ...receipt.request, view }, response_body: body,
+        source_revision: `sha256:${createHash("sha256").update(body).digest("hex")}` });
+      fireEvent.change(screen.getByLabelText("조회 종류"), { target: { value: view } });
+      fireEvent.click(screen.getByRole("button", { name: "Price 원본 조회" }));
+      await screen.findByTestId("price-response-body");
+      const cashSummary = screen.queryByTestId("price-cash-summary");
+      if (view === "owner_report") expect(cashSummary?.textContent).toContain("₩1,000");
+      else expect(cashSummary).toBeNull();
+    },
+  );
   it.each(["discrepancy", "settlement"] as const)(
     "shows company-wide coverage instead of form dates for %s results", async view => {
       const api = await ready();

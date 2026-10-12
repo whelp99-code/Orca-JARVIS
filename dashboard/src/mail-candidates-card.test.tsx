@@ -67,6 +67,34 @@ describe("read-only Mail candidate card", () => {
       "확인 필요 0건 · 가장 오래된 미확인 항목 없음 · 다음 행동: 없음",
     );
   });
+  it("states that no oldest unconfirmed candidate exists when a complete result is confirmed", async () => {
+    const data = {
+      schema_version: 1, proof_level: "native-read", authority: "none", observed_at: "2026-10-09T00:00:00.000Z",
+      crm: { state: "read", workspace_id: "75c2b088-e5aa-5396-9e9e-6dfd77e50048", candidate_count: 1,
+        recent: [{ id: "native-confirmed", status: "CONFIRMED", confirmed: true,
+          freshness: "producer_unverified", createdAt: "2026-10-08T00:00:00.000Z" }] },
+      sb: { state: "unconnected" },
+    };
+    render(<MailCandidatesCard adapter={{ async read() { return data; } }} />);
+    expect((await screen.findByTestId("crm-readable-summary")).textContent).toContain(
+      "확인 필요 0건 · 가장 오래된 미확인 항목 없음 · 다음 행동: 없음",
+    );
+  });
+  it("keeps oldest age unknown when no pending rows appear in a truncated result", async () => {
+    const data = {
+      schema_version: 1, proof_level: "native-read", authority: "none", observed_at: "2026-10-09T00:00:00.000Z",
+      crm: { state: "read", workspace_id: "75c2b088-e5aa-5396-9e9e-6dfd77e50048", candidate_count: 9,
+        recent: Array.from({ length: 5 }, (_, index) => ({
+          id: `confirmed-${index}`, status: "CONFIRMED", confirmed: true,
+          freshness: "producer_unverified", createdAt: `2026-10-0${8 - index}T00:00:00.000Z`,
+        })) },
+      sb: { state: "unconnected" },
+    };
+    render(<MailCandidatesCard adapter={{ async read() { return data; } }} />);
+    expect((await screen.findByTestId("crm-readable-summary")).textContent).toContain(
+      "최근 5건 중 확인 필요 0건 · 가장 오래된 것 확인 필요 · 다음 행동: CRM에서 확인",
+    );
+  });
   it("preserves an independently read source when the other native reader refuses", async () => {
     const data = { schema_version: 1, proof_level: "native-read", authority: "none", observed_at: "2026-10-09T00:00:00.000Z",
       crm: { state: "unconnected", reason: "refused" },

@@ -3,7 +3,7 @@ import { z } from "zod";
 import type { DashboardClient } from "./api.js";
 import { classifyDashboardError } from "./api.js";
 import type { PriceCompanyBindingReceipt, PriceFinanceConfig, PriceFinanceReceipt, PriceFinanceRequest } from "../../src/integration/price-finance-contract.js";
-import { formatReadableDate, formatReadableTimestamp, formatWon } from "./finance-readable-format.js";
+import { formatReadablePeriodDate, formatReadableTimestamp, formatWon } from "./finance-readable-format.js";
 import "./finance-read-page.css";
 
 type ConfigState = { readonly kind: "loading" } | { readonly kind: "ready"; readonly value: PriceFinanceConfig }
@@ -136,9 +136,9 @@ function PriceCompanyBindingCard({ receipt }: Readonly<{ receipt: PriceCompanyBi
 
 function PriceReadCard({ receipt }: Readonly<{ receipt: PriceFinanceReceipt }>) {
   const fields = sourceFields.parse(JSON.parse(receipt.response_body));
-  const cash = z.looseObject({
+  const cash = receipt.view === "owner_report" ? z.looseObject({
     received: z.unknown().optional(), paid: z.unknown().optional(), net_movement: z.unknown().optional(),
-  }).safeParse(fields.cash);
+  }).safeParse(fields.cash) : undefined;
   const unbound = receipt.view === "owner_report" && fields.crm_company_binding === null
     && fields.payable_coverage?.crm_links?.length === 0;
   return <article className="panel local-work-card" aria-labelledby="price-read-card-title"
@@ -150,7 +150,7 @@ function PriceReadCard({ receipt }: Readonly<{ receipt: PriceFinanceReceipt }>) 
         <dt>어디서</dt><dd>Price 운영 API</dd>
         <dt>누가</dt><dd>JARVIS 전용 읽기 계정 · viewer</dd>
         <dt>무엇을</dt><dd>{names[receipt.view]} · {receipt.view === "owner_report"
-          ? `${formatReadableDate(receipt.request.period_start)} — ${formatReadableDate(receipt.request.period_end)}`
+          ? `${formatReadablePeriodDate(receipt.request.period_start)} — ${formatReadablePeriodDate(receipt.request.period_end)}`
           : "회사 전체"}</dd>
         <dt>어떻게</dt><dd>native GET · 읽기 전용</dd>
         <dt>공식 세무 준비</dt><dd data-official-tax-ready={String(fields.official_tax_ready)}>
@@ -166,12 +166,12 @@ function PriceReadCard({ receipt }: Readonly<{ receipt: PriceFinanceReceipt }>) 
       <section aria-label="읽기 쉬운 재무 요약" data-testid="price-readable-summary">
         <h3>재무 요약</h3>
         <p>{receipt.view === "owner_report"
-          ? `기간: ${formatReadableDate(receipt.request.period_start)}–${formatReadableDate(receipt.request.period_end)}`
+          ? `기간: ${formatReadablePeriodDate(receipt.request.period_start)}–${formatReadablePeriodDate(receipt.request.period_end)}`
           : "범위: 회사 전체"}</p>
         {receipt.view === "owner_report" && <dl className="identity-list" data-testid="price-cash-summary">
-          <dt>받은 금액</dt><dd>{formatWon(cash.success ? cash.data.received : undefined)}</dd>
-          <dt>지급 금액</dt><dd>{formatWon(cash.success ? cash.data.paid : undefined)}</dd>
-          <dt>순현금 변동</dt><dd>{formatWon(cash.success ? cash.data.net_movement : undefined)}</dd>
+          <dt>받은 금액</dt><dd>{formatWon(cash?.success ? cash.data.received : undefined)}</dd>
+          <dt>지급 금액</dt><dd>{formatWon(cash?.success ? cash.data.paid : undefined)}</dd>
+          <dt>순현금 변동</dt><dd>{formatWon(cash?.success ? cash.data.net_movement : undefined)}</dd>
           <dt>다음 행동</dt><dd>확인 필요</dd>
         </dl>}
       </section>
