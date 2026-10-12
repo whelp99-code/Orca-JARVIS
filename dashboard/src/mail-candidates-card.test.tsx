@@ -27,9 +27,73 @@ describe("read-only Mail candidate card", () => {
     expect(source("crm")?.getAttribute("data-candidate-count")).toBe("1");
     expect(source("sb")?.getAttribute("data-candidate-count")).toBe("9");
     expect(document.querySelector("[data-proof-level]")?.getAttribute("data-proof-level")).toBe("native-read");
-    expect(rows[0]?.querySelector("span")?.textContent).toBe(data.crm.recent[0]?.status);
+    expect(rows[0]?.querySelector("span")?.textContent).toBe("확인 필요");
+    expect(screen.getByTestId("crm-readable-summary").textContent).toContain(
+      "확인 필요 1건 · 가장 오래된 것 1일 · 다음 행동: CRM에서 확인",
+    );
+    const observed = document.querySelector('time[datetime="2026-10-09T00:00:00.000Z"]');
+    expect(observed?.textContent).toBe("2026/10/9(금) 09:00:00");
+    expect(observed?.getAttribute("dateTime")).toBe("2026-10-09T00:00:00.000Z");
+    expect(rows[0]?.querySelector("time")?.textContent).toBe("10/8(목)");
+    expect(rows[0]?.querySelector("details")?.hasAttribute("open")).toBe(false);
     expect(document.querySelector("img")).toBeNull();
     expect(screen.queryByRole("button")).toBeNull();
+  });
+  it("does not infer oldest-candidate age from a truncated recent list", async () => {
+    const data = {
+      schema_version: 1, proof_level: "native-read", authority: "none", observed_at: "2026-10-09T00:00:00.000Z",
+      crm: { state: "read", workspace_id: "75c2b088-e5aa-5396-9e9e-6dfd77e50048", candidate_count: 9,
+        recent: Array.from({ length: 5 }, (_, index) => ({
+          id: `native-${index}`, status: "CANDIDATE", confirmed: false,
+          freshness: "producer_unverified", createdAt: `2026-10-0${8 - index}T00:00:00.000Z`,
+        })) },
+      sb: { state: "unconnected" },
+    };
+    render(<MailCandidatesCard adapter={{ async read() { return data; } }} />);
+    expect((await screen.findByTestId("crm-readable-summary")).textContent).toContain(
+      "최근 5건 중 확인 필요 5건 · 가장 오래된 것 확인 필요 · 다음 행동: CRM에서 확인",
+    );
+    expect(screen.getByTestId("crm-readable-summary").textContent).not.toContain("1일");
+  });
+  it("states that no oldest unconfirmed candidate exists for a complete empty result", async () => {
+    const data = {
+      schema_version: 1, proof_level: "native-read", authority: "none", observed_at: "2026-10-09T00:00:00.000Z",
+      crm: { state: "read", workspace_id: "75c2b088-e5aa-5396-9e9e-6dfd77e50048",
+        candidate_count: 0, recent: [] },
+      sb: { state: "unconnected" },
+    };
+    render(<MailCandidatesCard adapter={{ async read() { return data; } }} />);
+    expect((await screen.findByTestId("crm-readable-summary")).textContent).toContain(
+      "확인 필요 0건 · 가장 오래된 미확인 항목 없음 · 다음 행동: 없음",
+    );
+  });
+  it("states that no oldest unconfirmed candidate exists when a complete result is confirmed", async () => {
+    const data = {
+      schema_version: 1, proof_level: "native-read", authority: "none", observed_at: "2026-10-09T00:00:00.000Z",
+      crm: { state: "read", workspace_id: "75c2b088-e5aa-5396-9e9e-6dfd77e50048", candidate_count: 1,
+        recent: [{ id: "native-confirmed", status: "CONFIRMED", confirmed: true,
+          freshness: "producer_unverified", createdAt: "2026-10-08T00:00:00.000Z" }] },
+      sb: { state: "unconnected" },
+    };
+    render(<MailCandidatesCard adapter={{ async read() { return data; } }} />);
+    expect((await screen.findByTestId("crm-readable-summary")).textContent).toContain(
+      "확인 필요 0건 · 가장 오래된 미확인 항목 없음 · 다음 행동: 없음",
+    );
+  });
+  it("keeps oldest age unknown when no pending rows appear in a truncated result", async () => {
+    const data = {
+      schema_version: 1, proof_level: "native-read", authority: "none", observed_at: "2026-10-09T00:00:00.000Z",
+      crm: { state: "read", workspace_id: "75c2b088-e5aa-5396-9e9e-6dfd77e50048", candidate_count: 9,
+        recent: Array.from({ length: 5 }, (_, index) => ({
+          id: `confirmed-${index}`, status: "CONFIRMED", confirmed: true,
+          freshness: "producer_unverified", createdAt: `2026-10-0${8 - index}T00:00:00.000Z`,
+        })) },
+      sb: { state: "unconnected" },
+    };
+    render(<MailCandidatesCard adapter={{ async read() { return data; } }} />);
+    expect((await screen.findByTestId("crm-readable-summary")).textContent).toContain(
+      "최근 5건 중 확인 필요 0건 · 가장 오래된 것 확인 필요 · 다음 행동: CRM에서 확인",
+    );
   });
   it("preserves an independently read source when the other native reader refuses", async () => {
     const data = { schema_version: 1, proof_level: "native-read", authority: "none", observed_at: "2026-10-09T00:00:00.000Z",
