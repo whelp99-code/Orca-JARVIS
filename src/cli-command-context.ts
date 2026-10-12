@@ -75,6 +75,8 @@ export type CliValues = {
   readonly "restore-backup"?: string;
   readonly "refresh-receipt"?: string;
   readonly spool?: string;
+  readonly "company-config"?: string;
+  readonly "company-completion-config"?: string;
 };
 
 export type CliCommandContext = {
@@ -95,6 +97,8 @@ export function normalizeCliValues(
   value: Readonly<Record<string, string | boolean | undefined>>,
 ): CliValues {
   return {
+    "company-config": stringValue(value["company-config"]),
+    "company-completion-config": stringValue(value["company-completion-config"]),
     db: stringValue(value.db),
     decision_public: stringValue(value.decision_public),
     decision_key_id: stringValue(value.decision_key_id),

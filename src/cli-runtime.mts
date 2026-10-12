@@ -31,8 +31,10 @@ import { tryExecuteDeploymentCommand } from "./cli-deployment-commands.js";
 import { tryExecutePortfolioCollectCommand } from "./cli-portfolio-collect.js";
 import { tryExecuteWorkboardReplyGap } from "./cli-workboard-reply-gap.js";
 import { CLI_OPTIONS } from "./cli-option-table.js";
+import { executeCompanyCandidates } from "./cli-company-candidates.js";
 
 const COMMAND_HANDLERS: readonly CliCommandHandler[] = [
+  executeCompanyCandidates,
   executeLocalTimeline,
   executeCoreCommand,
   executeControlCommand,
@@ -65,6 +67,8 @@ export async function execute(args: string[], dependencies: CliDependencies = {}
   })();
   const [command, subcommand, argument, fourth, fifth, sixth] = parsed.positionals;
   const values = normalizeCliValues(parsed.values);
+  if ((values["company-config"] !== undefined || values["company-completion-config"] !== undefined)
+    && command !== "company-candidates") throw new JarvisError("COMPANY_CALLER_CONFIG_INVALID");
   // Reported and rendered before anything opens a database: these are the paths a database would
   // be opened at, so they have to be answerable when that open would fail.
   const deployment = tryExecuteDeploymentCommand({ positionals: parsed.positionals, values: parsed.values });

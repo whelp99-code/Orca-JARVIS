@@ -37,4 +37,28 @@ describe("owner inbox batch list", () => {
     const rows = document.querySelectorAll("[data-item-index]");
     expect([...rows].map(row => row.getAttribute("data-item-index"))).toEqual(["0", "1"]);
   });
+
+  it("renders the exact company identity and access fence without treating it as a personal batch", async () => {
+    const company = {
+      provider_instance_id: "provider:company-fixture",
+      workspace_id: "12345678-1234-4234-8234-123456789abc",
+      candidate_id: "mail:candidate:company-fixture",
+      content_digest: DIGEST, owner: "principal:owner", projects: ["project:company"],
+      policy_revision: "policy:1", deletion_sequence: 2, deletion_set_root: DIGEST,
+      processor_principal_id: "principal:company-processor", status: "imported",
+    };
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url === "/api/v1/session"
+      ? json({ csrf_token: "csrf-company" })
+      : json({ schema_version: 1, passkey_enrolled: true, items: [{
+        request_id: "company-handoff:v1:fixture:1", action: "company.candidate.transition",
+        summary: "company fixture", command_digest: DIGEST, expires_at: "2026-10-14T00:00:00.000Z",
+        company_candidate: company,
+      }] })));
+    render(<OwnerInboxPanel />);
+    expect(await screen.findByText(company.candidate_id)).toBeInTheDocument();
+    expect(screen.getByText(company.workspace_id)).toBeInTheDocument();
+    expect(screen.getByText(company.processor_principal_id)).toBeInTheDocument();
+    expect(document.querySelector("[data-batch]")).toBeNull();
+    expect(screen.getAllByRole("button")).toHaveLength(2);
+  });
 });

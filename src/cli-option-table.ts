@@ -57,4 +57,6 @@ export const CLI_OPTIONS = {
   "git-bin": { type: "string" },
   "scope-file": { type: "string" },
   "status-file": { type: "string" },
+  "company-config": { type: "string" },
+  "company-completion-config": { type: "string" },
 } as const satisfies NonNullable<ParseArgsConfig["options"]>;

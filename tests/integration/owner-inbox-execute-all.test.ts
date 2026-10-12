@@ -18,6 +18,8 @@ import { memoryDatabase, closeMemoryDatabase, seedMemoryAuthority, memoryCandida
 import { verifiedMemoryInput, MEMORY_NOW } from "../fixtures/memory-candidate-fixture.js";
 import { proposeMemoryCandidateScope } from "../../src/memory-candidate-scope.js";
 import { stageMemoryScopeReview } from "../../src/memory-scope-review.js";
+import { COMPANY_CONTEXT, companyPage, companyProposal } from "../fixtures/company-candidate.js";
+import { importCompanyPage } from "../../src/company-candidate-import.js";
 
 const NOW = new Date("2026-09-30T00:00:00.000Z");
 const EXPIRES = "2026-09-30T01:00:00.000Z";
@@ -53,6 +55,7 @@ function payloads(): ControlCommandRequestInput[] {
     operation: "remember", purpose: "personal_memory", sensitivity: "personal",
   };
   return [
+    companyProposal("company-inbox-fixture", NOW, 1, { ...COMPANY_CONTEXT, owner: "test-operator" }).command,
     command("database.backup", 2, local, { destination: "snapshot.sqlite" }, true),
     command("database.restore_drill", 1, local, { source: "snapshot.sqlite" }, true),
     command("state.project", 1, local, {}, true),
@@ -185,6 +188,8 @@ describe("owner inbox executes every action that has an executor", () => {
     const db = await initialized();
     db.ingest(snapshot());
     const control = new ControlPlane(db);
+    const company = companyProposal("company-inbox-fixture", NOW, 1, { ...COMPANY_CONTEXT, owner: "test-operator" });
+    importCompanyPage(db, companyPage(company), { ...COMPANY_CONTEXT, owner: "test-operator" }, NOW);
     const staged = payloads().map(input => control.stage(input, NOW));
     const covered = new Set(staged.map(row => row.action));
     expect([...covered].sort()).toEqual(KNOWN_CONTROL_ACTIONS.filter(action => action !== "memory.scope.review" && action !== "task.execute"));
@@ -206,7 +211,10 @@ describe("owner inbox executes every action that has an executor", () => {
       }
       const waiting = live.inbox.list().filter(item => item.manual_wait);
       expect(waiting.length).toBeGreaterThan(0);
-      expect(waiting.every(item => item.summary === (item.action === "external.delegate" ? OWNER_INBOX_EXTERNAL_DONE : OWNER_INBOX_MANUAL_WAIT))).toBe(true);
+      expect(waiting.filter(item => item.action !== "company.candidate.transition")
+        .every(item => item.summary === (item.action === "external.delegate" ? OWNER_INBOX_EXTERNAL_DONE : OWNER_INBOX_MANUAL_WAIT))).toBe(true);
+      expect(waiting.find(item => item.action === "company.candidate.transition")?.company_candidate)
+        .toMatchObject({ candidate_id: "company-inbox-fixture", owner: "test-operator" });
       expect(waiting.map(item => item.action)).toContain("git.push");
       const again = db.db.prepare("SELECT COUNT(*) AS n FROM control_command_redemptions WHERE request_id='inbox:memory.delete'").get() as { n: number };
       expect(again.n).toBe(1);

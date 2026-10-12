@@ -11,6 +11,7 @@ import { MemorySurfaceAuthority } from "./memory-surface-authority.js"; export {
 import { memoryOutboxControlProof } from "./memory-outbox-control-proof.js";
 import { validateMemoryCandidateScopeProposal } from "./memory-candidate-scope.js";
 import { runImmediate } from "./sqlite-contention.js";
+import { companyArgumentsSchema } from "./company-candidate-contract.js";
 function finiteDate(date: Date, code: string): number { const time = date.getTime(); if (!Number.isFinite(time)) throw new JarvisError(code); return time; }
 function finiteIso(value: string): number { const time = Date.parse(value); return Number.isFinite(time) ? time : Number.NaN; } export class ControlPlane {
   constructor(private readonly authority: AuthorityDb) {}
@@ -49,6 +50,19 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
       !verifyCommandApproval(receipt, key.public_key_pem, now) || Date.parse(receipt.expires_at) > Date.parse(String(request.expires_at)) )
       throw new JarvisError("CONTROL_APPROVAL_INVALID"); const state = receipt.decision === "approve" ? "approved" : "rejected"; const at = now.toISOString();
     const tx = this.authority.db.transaction(() => {
+      if (request.action === "company.candidate.transition") {
+        const imported = this.authority.db.prepare(
+          "SELECT current,command_digest FROM company_candidate_handoffs WHERE request_id=?",
+        ).get(receipt.request_id) as { current: number; command_digest: string } | undefined;
+        if (!imported || imported.current !== 1 || imported.command_digest !== receipt.command_digest) {
+          throw new JarvisError("CONTROL_APPROVAL_NOT_APPLICABLE");
+        }
+        const args = companyArgumentsSchema.parse(JSON.parse(String(request.args_json)));
+        if (this.legacyRevoked(receipt.key_id, receipt.signer_principal_id)) throw new JarvisError("CONTROL_APPROVAL_REVOKED");
+        if (receipt.signer_principal_id !== args.owner || receipt.signer_principal_id === args.processor_principal_id) {
+          throw new JarvisError("CONTROL_APPROVAL_INVALID");
+        }
+      }
       if (request.action === "memory.scope.review" && receipt.decision === "approve") {
         const action = this.parseStoredAction(request); validateControlAction(action);
         validateMemoryCandidateScopeProposal(this.authority, action.args.proposal, now);
@@ -100,6 +114,7 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
          LEFT JOIN control_command_redemptions x ON x.request_id=r.request_id
          WHERE r.state='approved' AND x.request_id IS NULL
            AND r.action <> 'memory.scope.review'
+           AND r.action <> 'company.candidate.transition'
            AND r.action NOT IN (SELECT value FROM json_each(?))
          ORDER BY r.requested_at,r.request_id`,
       ) .all(JSON.stringify(excludedActions)) as Array<Record<string, unknown>>; for (const row of rows) {
@@ -121,6 +136,7 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
       if (!row || row.state !== "approved" || Date.parse(String(row.expires_at)) <= nowMs || Date.parse(String(row.approval_expires)) <= nowMs)
         throw new JarvisError("CONTROL_APPROVAL_REQUIRED");
       if (row.action === "memory.scope.review") throw new JarvisError("CONTROL_ACTION_REVIEW_ONLY");
+      if (row.action === "company.candidate.transition") throw new JarvisError("CONTROL_ACTION_REVIEW_ONLY");
       if (row.action === "task.execute" && !readControlCommand(this.authority, requestId)) throw new JarvisError("CONTROL_APPROVAL_REQUIRED");
       if (this.commandRevoked(requestId, String(row.command_digest), String(row.receipt_id))) throw new JarvisError("CONTROL_APPROVAL_REVOKED");
       const action = this.parseStoredAction(row); validateControlAction(action); const fence = Number(row.lease_fence) + 1;

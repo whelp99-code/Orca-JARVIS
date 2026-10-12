@@ -2,7 +2,10 @@
 export const CLI_HELP =
   "JARVIS — agent-ops runtime\n"
   + "Commands: init, db migrate/rebuild-projections, doctor, project, supervisor, report, gjc, service, approval, census, work, control, timeline, runtime, "
-  + "observe, pre-gjc, capabilities, team, portfolio, status, daily, routing, release, second-brain, deployment, workboard\n"
+  + "observe, pre-gjc, capabilities, team, portfolio, status, daily, routing, release, second-brain, deployment, workboard, company-candidates\n"
+  + "company-candidates import --company-config PATH --db PATH [--limit N]: import one trusted company handoff page; no owner approval\n"
+  + "company-candidates execute REQUEST_ID --company-config PATH --db PATH [--company-completion-config PATH]: "
+  + "forward the exact owner decision using separate processor authority; completion requires verified downstream work\n"
   + "workboard ingest-reply-gap FILE --db PATH: project a Mail Intelligence reply-gap snapshot into the workboard; "
   + "open rows become owner-decision tasks, rows that left the snapshot are closed. "
   + "baseUrl defaults to http://jm-acloud.alpines-goldeye.ts.net:3010\n"

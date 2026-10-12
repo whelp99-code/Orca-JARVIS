@@ -17,6 +17,12 @@ type Item = Readonly<{
   state?: string;
   batch_items?: readonly BatchLine[];
   requester_label?: string;
+  company_candidate?: Readonly<{
+    provider_instance_id: string; workspace_id: string; candidate_id: string;
+    content_digest: string; owner: string; projects: readonly string[];
+    policy_revision: string; deletion_sequence: number; deletion_set_root: string;
+    processor_principal_id: string; status: string;
+  }>;
 }>;
 
 type BatchLine = Readonly<{
@@ -74,8 +80,9 @@ export function OwnerInboxPanel() {
 
   async function decide(item: Item, decision: "approve" | "reject"): Promise<void> {
     const confirmed = window.confirm(decision === "approve"
-      ? "이 묶음 전체를 Face ID 한 번으로 승인합니다."
-      : "이 묶음 전체를 거절합니다.");
+      ? item.company_candidate ? "이 회사 후보의 수락과 완료 증거 확인 후 처리를 패스키로 승인합니다."
+        : "이 묶음 전체를 Face ID 한 번으로 승인합니다."
+      : item.company_candidate ? "이 회사 후보를 거절합니다." : "이 묶음 전체를 거절합니다.");
     if (!confirmed) return;
     if (typeof navigator.credentials?.get !== "function") {
       setNotice("이 기기에는 패스키가 없습니다. 휴대폰에서 한 번 등록한 뒤에만 승인할 수 있습니다.");
@@ -171,6 +178,7 @@ export function OwnerInboxPanel() {
                 <li className="record" key={item.request_id} data-request-state={item.state} data-failure-code={item.failure_code ?? ""}>
                   <p className="record-title">{item.summary}</p>
                   <p className="record-meta">{actionLabel(item.action)}</p>
+                  {item.company_candidate ? <CompanyDetails item={item.company_candidate} /> : null}
                   <Digest value={item.command_digest} />
                 </li>
               ))}
@@ -183,13 +191,16 @@ export function OwnerInboxPanel() {
               {item.requester_label ? <p className="record-title" data-requester={item.requester_label}>{item.requester_label}</p> : null}
               <p className="record-title">{item.batch_items && item.batch_items.length > 0 ? `윤비서 요청 · ${item.batch_items.length}건 묶음 · 30분 내 승인` : item.summary}</p>
               {item.batch_items && item.batch_items.length > 0 ? <BatchLines items={item.batch_items} /> : null}
+              {item.company_candidate ? <CompanyDetails item={item.company_candidate} /> : null}
               {item.expired ? <p className="record-meta">만료됨. 이 요청은 더 이상 승인할 수 없습니다.</p> : null}
               <p className="record-meta">{actionLabel(item.action)}</p>
               <p className="record-meta"><time dateTime={item.expires_at}>유효 {formatKst(item.expires_at)}</time></p>
               <Digest value={item.command_digest} />
               {item.expired || item.manual_wait ? null : (
                 <>
-                  <p className="record-meta">이 묶음은 Face ID 한 번으로 승인됩니다.</p>
+                  <p className="record-meta">{item.company_candidate
+                    ? "이 후보만 패스키로 승인합니다. 수락은 완료가 아니며 별도 처리기가 완료 증거를 확인합니다."
+                    : "이 묶음은 Face ID 한 번으로 승인됩니다."}</p>
                   <button type="button" disabled={busyId === item.request_id} onClick={() => { void decide(item, "approve"); }}>승인</button>
                   <button type="button" disabled={busyId === item.request_id} onClick={() => { void decide(item, "reject"); }}>거절</button>
                 </>
@@ -199,6 +210,19 @@ export function OwnerInboxPanel() {
         </ul>
       </div>
     </section>
+  );
+}
+
+function CompanyDetails({ item }: Readonly<{ item: NonNullable<Item["company_candidate"]> }>) {
+  return (
+    <details className="digest">
+      <summary className="record-meta">회사 후보·승인 범위 확인</summary>
+      <dl className="identity-list">
+        {Object.entries(item).map(([key, value]) => (
+          <div key={key}><dt>{key}</dt><dd>{Array.isArray(value) ? value.join(", ") : value}</dd></div>
+        ))}
+      </dl>
+    </details>
   );
 }
 
