@@ -19,6 +19,7 @@ import type { TrustedCloseoutKey } from "../evening-closeout-types.js";
 import { parseNativeEveningSourceConfig, type NativeEveningSourceConfig } from "../evening-native-source.js";
 import { createPriceFinanceRuntime } from "../integration/price-finance-production.js";
 import { createMailCandidatesRuntime } from "../integration/mail-candidates-production.js";
+import { MailPersonalConnectorSource } from "../personal-connector-mail-source.js";
 
 const LOOPBACK = "127.0.0.1";
 
@@ -111,6 +112,10 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
   const priceFinance = options.priceReadCredentialPath === undefined ? undefined
     : createPriceFinanceRuntime(options.priceReadCredentialPath);
   const mailCandidates = createMailCandidatesRuntime();
+  const mailSource = process.env.JARVIS_MAIL_SESSION_FILE === undefined ? undefined : new MailPersonalConnectorSource({
+    base_url: process.env.JARVIS_MAIL_BASE_URL ?? "http://127.0.0.1:3010",
+    session_file: process.env.JARVIS_MAIL_SESSION_FILE,
+  });
   const db = new AuthorityDb(options.dbPath);
   const remoteApproval = (() => {
     try { return composeRemoteApproval(db, { policyPath: options.policyPath }); }
@@ -129,6 +134,7 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
     db,
     priceFinance,
     mailCandidates,
+    mailSource,
     trustedCloseoutKey,
     nativeCloseoutSource,
     staticRoot: options.staticRoot,

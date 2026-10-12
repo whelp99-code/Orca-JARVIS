@@ -55,6 +55,7 @@ type RequestContext = {
   readonly workboardActions?: WorkboardActions;
   readonly priceFinance?: import("../integration/price-finance-production.js").PriceFinanceRuntime;
   readonly mailCandidates?: import("../integration/mail-candidates-production.js").MailCandidatesRuntime;
+  readonly mailSource?: import("../personal-connector-mail-source.js").MailPersonalConnectorSource;
 };
 
 export async function handleRequest(input: RequestContext): Promise<void> {
@@ -106,6 +107,7 @@ export async function handleRequest(input: RequestContext): Promise<void> {
       workboardActions: input.workboardActions,
       priceFinance: input.priceFinance,
       mailCandidates: input.mailCandidates,
+      mailSource: input.mailSource,
     })) {
       return;
     }
