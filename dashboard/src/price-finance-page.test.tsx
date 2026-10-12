@@ -80,6 +80,27 @@ describe("operating Price read work card", () => {
     expect(screen.getByTestId("price-response-sha").textContent).toBe(receipt.source_revision);
     expect(document.querySelector("[data-official-tax-ready]")?.getAttribute("data-official-tax-ready")).toBe("false");
     expect(document.querySelector("[data-rt-state]")?.getAttribute("data-rt-state")).toBe("UNBOUND");
+    expect(screen.getByTestId("price-readable-summary").textContent).toContain("기간: 9/1(화)–9/30(수)");
+    expect(screen.getByTestId("price-readable-summary").textContent).toContain("받은 금액확인 필요");
+    expect(screen.getByTestId("price-readable-summary").textContent).toContain("다음 행동확인 필요");
+    expect(raw.closest("details")?.hasAttribute("open")).toBe(false);
+  });
+  it("formats known cash amounts and keeps source JSON collapsed", async () => {
+    const api = await ready();
+    const body = JSON.stringify({
+      official_tax_ready: false, company_data_complete: false, crm_company_binding: null,
+      payable_coverage: { crm_links: [] },
+      cash: { received: 1250000, paid: 950000, net_movement: 300000 },
+    });
+    api.priceFinanceRead.mockResolvedValueOnce({ ...receipt, response_body: body,
+      source_revision: `sha256:${createHash("sha256").update(body).digest("hex")}` });
+    fireEvent.click(screen.getByRole("button", { name: "Price 원본 조회" }));
+    const raw = await screen.findByTestId("price-response-body");
+    const summary = screen.getByTestId("price-readable-summary");
+    expect(summary.textContent).toContain("받은 금액₩1,250,000");
+    expect(summary.textContent).toContain("지급 금액₩950,000");
+    expect(summary.textContent).toContain("순현금 변동₩300,000");
+    expect(raw.closest("details")?.hasAttribute("open")).toBe(false);
   });
   it("does not display an old request response after the user edits its scope", async () => {
     const api = await ready();
@@ -109,7 +130,7 @@ describe("operating Price read work card", () => {
   });
   it("does not turn a missing producer readiness field into false", async () => {
     const api = await ready();
-    const body = '{"items":[],"read_only":true,"live_source_checked":false}';
+    const body = '{"items":[],"read_only":true,"live_source_checked":false,"cash":null}';
     api.priceFinanceRead.mockResolvedValueOnce({ ...receipt, view: "discrepancy",
       request: { ...receipt.request, view: "discrepancy" }, response_body: body,
       source_revision: `sha256:${createHash("sha256").update(body).digest("hex")}` });
@@ -118,5 +139,6 @@ describe("operating Price read work card", () => {
     await screen.findByTestId("price-response-body");
     expect(document.querySelector("[data-official-tax-ready]")?.getAttribute("data-official-tax-ready")).toBe("undefined");
     expect(document.querySelector("[data-rt-state]")).toBeNull();
+    expect(screen.getByTestId("price-readable-summary").textContent).toContain("받은 금액확인 필요");
   });
 });

@@ -3,6 +3,7 @@ import { z } from "zod";
 import type { DashboardClient } from "./api.js";
 import { classifyDashboardError } from "./api.js";
 import type { PriceCompanyBindingReceipt, PriceFinanceConfig, PriceFinanceReceipt, PriceFinanceRequest } from "../../src/integration/price-finance-contract.js";
+import { formatReadableDate, formatWon } from "./finance-readable-format.js";
 import "./finance-read-page.css";
 
 type ConfigState = { readonly kind: "loading" } | { readonly kind: "ready"; readonly value: PriceFinanceConfig }
@@ -15,6 +16,7 @@ const sourceFields = z.object({
   official_tax_ready: z.boolean().optional(), company_data_complete: z.boolean().optional(),
   crm_company_binding: z.unknown().optional(),
   payable_coverage: z.object({ crm_links: z.array(z.unknown()).optional() }).optional(),
+  cash: z.unknown().optional(),
 });
 const names = { owner_report: "소유자 보고", discrepancy: "불일치", settlement: "정산 조회" } as const;
 
@@ -123,7 +125,7 @@ function PriceCompanyBindingCard({ receipt }: Readonly<{ receipt: PriceCompanyBi
           {" · 회사 식별 확인만 해당 · 금융 승인 없음"}</dd>
         <dt>등록 ID / revision</dt><dd>{candidate === null ? "없음" : `${candidate.id} / ${candidate.revision}`}</dd>
         <dt>응답 SHA-256</dt><dd><code data-testid="price-binding-sha">{receipt.source_revision}</code></dd>
-        <dt>관측 시각</dt><dd><time dateTime={receipt.observed_at}>{receipt.observed_at}</time></dd>
+        <dt>관측 시각</dt><dd><time dateTime={receipt.observed_at}>{formatReadableDate(receipt.observed_at)}</time></dd>
         <dt>신선도</dt><dd>producer_unverified</dd>
       </dl>
       <p>회사 등록은 지급·세무·업무별 연결 확인이 아닙니다. 이 SHA는 등록 GET의 body 무결성이며 금융 실행 receipt가 아닙니다.</p>
@@ -134,6 +136,9 @@ function PriceCompanyBindingCard({ receipt }: Readonly<{ receipt: PriceCompanyBi
 
 function PriceReadCard({ receipt }: Readonly<{ receipt: PriceFinanceReceipt }>) {
   const fields = sourceFields.parse(JSON.parse(receipt.response_body));
+  const cash = z.looseObject({
+    received: z.unknown().optional(), paid: z.unknown().optional(), net_movement: z.unknown().optional(),
+  }).safeParse(fields.cash);
   const unbound = receipt.view === "owner_report" && fields.crm_company_binding === null
     && fields.payable_coverage?.crm_links?.length === 0;
   return <article className="panel local-work-card" aria-labelledby="price-read-card-title"
@@ -144,17 +149,30 @@ function PriceReadCard({ receipt }: Readonly<{ receipt: PriceFinanceReceipt }>) 
       <dl className="identity-list">
         <dt>어디서</dt><dd>Price 운영 API</dd>
         <dt>누가</dt><dd>JARVIS 전용 읽기 계정 · viewer</dd>
-        <dt>무엇을</dt><dd>{names[receipt.view]} · {receipt.view === "owner_report" ? `${receipt.request.period_start} — ${receipt.request.period_end}` : "회사 전체"}</dd>
+        <dt>무엇을</dt><dd>{names[receipt.view]} · {receipt.view === "owner_report"
+          ? `${formatReadableDate(receipt.request.period_start)} — ${formatReadableDate(receipt.request.period_end)}`
+          : "회사 전체"}</dd>
         <dt>어떻게</dt><dd>native GET · 읽기 전용</dd>
-        <dt>공식 세무 준비</dt><dd data-official-tax-ready={String(fields.official_tax_ready)}>official_tax_ready={fields.official_tax_ready === undefined ? "원본에 필드 없음" : String(fields.official_tax_ready)}</dd>
-        <dt>회사 자료 완전성</dt><dd>company_data_complete={fields.company_data_complete === undefined ? "원본에 필드 없음" : String(fields.company_data_complete)}</dd>
+        <dt>공식 세무 준비</dt><dd data-official-tax-ready={String(fields.official_tax_ready)}>
+          {fields.official_tax_ready === true ? "준비 완료" : "확인 필요"}</dd>
+        <dt>회사 자료 완전성</dt><dd>{fields.company_data_complete === true ? "확인 완료" : "확인 필요"}</dd>
         {unbound && <><dt>CRM ↔ Price</dt><dd>RT UNBOUND · 업무별 native 연결 없음 · 합산 없음</dd></>}
         <dt>응답 SHA-256</dt><dd><code data-testid="price-response-sha">{receipt.source_revision}</code></dd>
-        <dt>관측 시각</dt><dd><time dateTime={receipt.observed_at}>{receipt.observed_at}</time></dd>
+        <dt>관측 시각</dt><dd><time dateTime={receipt.observed_at}>{formatReadableDate(receipt.observed_at)}</time></dd>
         <dt>신선도</dt><dd>producer_unverified</dd>
       </dl>
+      <section aria-label="읽기 쉬운 재무 요약" data-testid="price-readable-summary">
+        <h3>재무 요약</h3>
+        <p>기간: {formatReadableDate(receipt.request.period_start)}–{formatReadableDate(receipt.request.period_end)}</p>
+        <dl className="identity-list">
+          <dt>받은 금액</dt><dd>{formatWon(cash.success ? cash.data.received : undefined)}</dd>
+          <dt>지급 금액</dt><dd>{formatWon(cash.success ? cash.data.paid : undefined)}</dd>
+          <dt>순현금 변동</dt><dd>{formatWon(cash.success ? cash.data.net_movement : undefined)}</dd>
+          <dt>다음 행동</dt><dd>확인 필요</dd>
+        </dl>
+      </section>
       <p>응답 SHA는 원본 body 무결성입니다. 서명 영수증이나 생산자 신선도 검증이 아닙니다.</p>
-      <details open><summary>가공하지 않은 Price 응답</summary><pre data-testid="price-response-body">{receipt.response_body}</pre></details>
+      <details><summary>가공하지 않은 Price 응답</summary><pre data-testid="price-response-body">{receipt.response_body}</pre></details>
     </div>
   </article>;
 }

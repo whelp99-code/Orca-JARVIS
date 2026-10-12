@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { MAIL_CANDIDATE_RECENT_LIMIT, mailCandidatesSummarySchema,
   type MailCandidatesReadAdapter, type MailCandidatesSummary } from "./mail-candidates-model.js";
+import { elapsedDays, formatReadableDate } from "./finance-readable-format.js";
 import "./finance-read-page.css";
 
 type LoadState =
@@ -55,7 +56,7 @@ export function MailCandidatesCard({ adapter }: Readonly<{ adapter?: MailCandida
             {sb?.state === "read" ? `${sb.candidate_count}건 · 메일 후보` : "연결 안 됨"}
           </dd>
           {value !== undefined && <><dt>{value.proof_level === "isolated-fixture" ? "Fixture 관측 시각" : "조회 시각"}</dt>
-            <dd><time dateTime={value.observed_at}>{value.observed_at}</time></dd>
+            <dd><time dateTime={value.observed_at}>{formatReadableDate(value.observed_at)}</time></dd>
             <dt>신선도</dt><dd>{value.proof_level === "isolated-fixture"
               ? "producer_unverified · 실제 제공자 조회 아님" : "원본 응답 관측 · 업무·기억 확정 근거 아님"}</dd></>}
         </dl>
@@ -71,12 +72,24 @@ export function MailCandidatesCard({ adapter }: Readonly<{ adapter?: MailCandida
           && <section aria-labelledby="mail-candidates-recent-title">
           <h3 id="mail-candidates-recent-title">CRM 최근 {MAIL_CANDIDATE_RECENT_LIMIT}건</h3>
           <p>제목 읽기 권한 없음 · 원본이 허용한 후보 메타데이터만 표시</p>
+          <p data-testid="crm-readable-summary">{(() => {
+            const unconfirmed = value.crm.recent.filter(row => !row.confirmed);
+            const limited = value.crm.candidate_count > value.crm.recent.length;
+            const oldest = limited ? undefined : unconfirmed.at(-1);
+            const age = oldest === undefined ? undefined : elapsedDays(oldest.createdAt, value.observed_at);
+            const count = limited ? `최근 ${MAIL_CANDIDATE_RECENT_LIMIT}건 중 확인 필요 ${unconfirmed.length}건`
+              : `확인 필요 ${unconfirmed.length}건`;
+            const oldestLabel = age === undefined ? "가장 오래된 것 확인 필요" : `가장 오래된 것 ${age}일`;
+            const action = unconfirmed.length > 0 || limited ? "다음 행동: CRM에서 확인" : "다음 행동: 없음";
+            return `${count} · ${oldestLabel} · ${action}`;
+          })()}</p>
           {value.crm.recent.length === 0 ? <p>메일 후보 없음</p>
             : <ol>{value.crm.recent.map(row => <li key={row.id} data-candidate-id={row.id}>
-              <span>{row.status}</span>{" · "}<time dateTime={row.createdAt}>{row.createdAt}</time>
+              <span>{row.confirmed ? "CRM에서 확인됨" : "확인 필요"}</span>{" · "}
+              <time dateTime={row.createdAt}>{formatReadableDate(row.createdAt)}</time>
               <details><summary>후보 원본 정보</summary><dl className="identity-list">
-                <dt>ID</dt><dd>{row.id}</dd><dt>확인값</dt><dd>{String(row.confirmed)} · 업무 승인 아님</dd>
-                <dt>신선도</dt><dd>{row.freshness}</dd>
+                <dt>ID</dt><dd>{row.id}</dd><dt>원본 상태</dt><dd>{row.status}</dd>
+                <dt>확인값</dt><dd>{String(row.confirmed)} · 업무 승인 아님</dd><dt>신선도</dt><dd>{row.freshness}</dd>
               </dl></details>
             </li>)}</ol>}
         </section>}
