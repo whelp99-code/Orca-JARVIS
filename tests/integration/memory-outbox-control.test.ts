@@ -48,7 +48,9 @@ describe("memory completion projected to the original control command", () => {
     expect(effects(previous.f)).toHaveLength(1);
     expect(f.database.authority.db.prepare("SELECT * FROM memory_outbox_control_cursor").get()).toBeUndefined();
     expect(reconcileMemoryOutboxCommands(f.database.authority, f.clock.now, 1))
-      .toEqual({ commands_reconciled: 0, control_error: "MEMORY_OUTBOX_CONTROL_RECONCILE_FAILED" });
+      .toEqual({ commands_reconciled: 0, control_error: "MEMORY_OUTBOX_CONTROL_RECONCILE_FAILED",
+        failure: { phase: "control_reconciliation", error_code: "MEMORY_OUTBOX_CONTROL_RECONCILE_FAILED",
+          cause_code: "MEMORY_OUTBOX_UNCLASSIFIED_ERROR" } });
     f.database.authority.db.exec("DROP TRIGGER test_cursor_failure");
     expect(await f.service.runOnce("cursor-retry", 1)).toMatchObject({ commands_reconciled: 1, dispatched: 0 });
     expect(state(previous.f)).toEqual({ state: "completed", failure_code: null });
@@ -77,7 +79,9 @@ describe("memory completion projected to the original control command", () => {
       try { return reconcileMemoryOutboxCommands(connection, first.f.clock.now, 1); }
       finally { connection.close(); }
     };
-    expect(cycle()).toEqual({ commands_reconciled: 0, control_error: "MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID" });
+    expect(cycle()).toEqual({ commands_reconciled: 0, control_error: "MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID",
+      failure: { phase: "control_reconciliation", error_code: "MEMORY_OUTBOX_CONTROL_RECONCILE_FAILED",
+        cause_code: "MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID" } });
     expect(cycle()).toEqual({ commands_reconciled: 1 });
     expect(state(good.f)).toEqual({ state: "completed", failure_code: null });
     expect(state(bad.f)).toEqual({ state: "uncertain", failure_code: "MEMORY_OUTBOX_RECONCILING" });

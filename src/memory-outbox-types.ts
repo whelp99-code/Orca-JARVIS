@@ -1,4 +1,5 @@
 import type { ClaimedControlCommand } from "./control-plane.js";
+import type { MemoryOutboxFailure } from "./memory-outbox-diagnostic.js";
 import type {
   SecondBrainReadAdapter,
   SecondBrainWriteOutcome,
@@ -50,6 +51,7 @@ export type MemoryOutboxCycleResult = {
   readonly settled: number;
   readonly conflicts: number;
   readonly failed: number;
+  readonly failure?: MemoryOutboxFailure;
   readonly cleanup_error?: "MEMORY_REVIEW_CLEANUP_FAILED";
   readonly commands_reconciled?: number;
   readonly control_error?: "MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID" | "MEMORY_OUTBOX_CONTROL_RECONCILE_FAILED";

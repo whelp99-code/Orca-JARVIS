@@ -14,6 +14,7 @@ import { bindDashboardMemoryDependencies } from "./memory-production.js";
 import { composeRemoteApproval } from "../remote-approval-compose.js";
 import { createDashboardServer } from "./server.js";
 import { MemoryOutboxTick } from "../memory-outbox-tick.js";
+import { memoryOutboxLog } from "../memory-outbox-diagnostic.js";
 import { parseTrustedCloseoutKey } from "../evening-closeout-crypto.js";
 import type { TrustedCloseoutKey } from "../evening-closeout-types.js";
 import { parseNativeEveningSourceConfig, type NativeEveningSourceConfig } from "../evening-native-source.js";
@@ -129,7 +130,7 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
   const outbox = bound.outboxFor(db);
   const tick = outbox === undefined ? undefined : new MemoryOutboxTick(
     () => outbox.runOnce("dashboard-memory-outbox", 1),
-    code => process.stderr.write(`${JSON.stringify({ component: "memory.outbox", error_code: code })}\n`),
+    failure => process.stderr.write(`${JSON.stringify(memoryOutboxLog(failure))}\n`),
     () => server.publish(["memory.effects.v1", "memory.records.v1", "memory.candidates.v1", "approvals", "overview"]));
   const server = createDashboardServer({
     db,
