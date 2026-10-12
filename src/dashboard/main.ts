@@ -112,9 +112,10 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
   const priceFinance = options.priceReadCredentialPath === undefined ? undefined
     : createPriceFinanceRuntime(options.priceReadCredentialPath);
   const mailCandidates = createMailCandidatesRuntime();
-  const mailSource = process.env.JARVIS_MAIL_SESSION_FILE === undefined ? undefined : new MailPersonalConnectorSource({
+  const mailSource = process.env.JARVIS_MAIL_READER_KEY_FILE === undefined ? undefined : new MailPersonalConnectorSource({
     base_url: process.env.JARVIS_MAIL_BASE_URL ?? "http://127.0.0.1:3010",
-    session_file: process.env.JARVIS_MAIL_SESSION_FILE,
+    reader_key_file: process.env.JARVIS_MAIL_READER_KEY_FILE,
+    reader_principal_id: process.env.JARVIS_MAIL_READER_PRINCIPAL_ID ?? "jarvis-mail-summary-reader",
   });
   const db = new AuthorityDb(options.dbPath);
   const remoteApproval = (() => {

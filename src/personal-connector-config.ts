@@ -94,7 +94,7 @@ export function parsePersonalConnectorConfig(value: unknown): ParsedPersonalConn
     if (typeof value === "object" && value !== null && Object.hasOwn(value, "mail")) keys.push("mail");
     const top = record(value, keys);
     const mail = keys.includes("mail")
-      ? parseMailConnectorConfig(record(top["mail"], ["base_url", "session_file"])) : undefined;
+      ? parseMailConnectorConfig(record(top["mail"], ["base_url", "reader_key_file", "reader_principal_id"])) : undefined;
     const memory = record(top["second_brain"], [
       "budgets", "call", "expiry_ms", "max_age_ms", "operation", "readiness_inspect",
     ]);
