@@ -33,6 +33,12 @@ The public registry grants only `mail.summary.read` and allows
 `message_count`, `thread_count`, and `observed_at`. Send, draft, Graph sync,
 and mail state APIs are never called or enabled.
 
+Mail reads are always stateless: `checkpoint` and the session handle are null.
+Well-formed explicit `start` or `continue` requests return a stateless session
+without allocating or resolving a handle. Malformed checkpoint payloads are
+still rejected. Closing a Mail reader discards its result; no server handle
+needs release. The four existing connector checkpoint slots are unaffected.
+
 Operating note: supply the existing service-owned `0600` session-file path;
 reuse the existing Mail `3010` and dashboard units/ports. Deployment and
 credential provisioning remain operator work.

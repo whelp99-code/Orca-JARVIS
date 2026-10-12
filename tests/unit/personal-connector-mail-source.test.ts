@@ -7,7 +7,7 @@ import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createPersonalConnectorRegistry } from "../../src/personal-connectors.js";
 import { Core5CapabilityRegistry } from "../../src/integration/capability-registry.js";
 import { MailPersonalConnectorSource, parseMailConnectorConfig } from "../../src/personal-connector-mail-source.js";
-import { CONNECTOR_NOW, connectorHarness } from "../fixtures/personal-connector-sources.js";
+import { CONNECTOR_NOW, connectorHarness, connectorSessionRequest } from "../fixtures/personal-connector-sources.js";
 
 const token = "a".repeat(43);
 const root = mkdtempSync(join(tmpdir(), "jarvis-mail-read-"));
@@ -62,6 +62,70 @@ async function inspect(request: unknown = readRequest) {
 }
 
 describe("read-only personal Mail connector", () => {
+  it("supports five concurrent connectors with only the four legacy sources owning checkpoints", async () => {
+    const harness = await connectorHarness();
+    const registry = createPersonalConnectorRegistry({
+      ...harness.factory_input, mail: { base_url: baseUrl, session_file: sessionFile },
+    });
+    try {
+      const results = await Promise.all([
+        ...(["second_brain", "orca", "task_timeline", "portfolio"] as const)
+          .map(id => registry.inspect(connectorSessionRequest(id))),
+        registry.inspect({ ...readRequest, checkpoint_session: { mode: "start", version: 1 } }),
+      ]);
+      expect(results.map(result => result.state)).toEqual(["ready", "ready", "no_data", "ready", "ready"]);
+      const handles = results.slice(0, 4).map(result => result.checkpoint);
+      expect(handles.every(handle => handle !== null)).toBe(true);
+      expect(new Set(handles).size).toBe(4);
+      expect(results[4]).toMatchObject({ checkpoint: null,
+        checkpoint_session: { mode: "stateless", handle: null } });
+    } finally {
+      harness.db.close();
+      rmSync(dirname(harness.db.filename), { recursive: true, force: true });
+    }
+  });
+  it.each(["before", "after"])("opens and closes Mail reads 100 times %s filling legacy slots without a registry restart", async order => {
+    const harness = await connectorHarness();
+    const registry = createPersonalConnectorRegistry({
+      ...harness.factory_input, mail: { base_url: baseUrl, session_file: sessionFile },
+    });
+    const ids = ["second_brain", "orca", "task_timeline", "portfolio"] as const;
+    const handles: string[] = [];
+    const openLegacy = async () => {
+      for (const id of ids) {
+        const result = await registry.inspect(connectorSessionRequest(id));
+        if (result.checkpoint === null) throw new Error(`legacy slot refused: ${result.reason}`);
+        handles.push(result.checkpoint);
+      }
+    };
+    try {
+      if (order === "after") await openLegacy();
+      for (let index = 0; index < 100; index += 1) {
+        const checkpoint_session = index % 2 === 0 ? { mode: "start", version: 1 }
+          : { mode: "continue", version: 1,
+            handle: "pcp:1:00000000-0000-0000-0000-000000000001:00000000-0000-0000-0000-000000000002" };
+        // Closing the client discards this stateless result; no server handle exists to release.
+        const result = await registry.inspect({ ...readRequest, checkpoint_session });
+        expect(result).toMatchObject({ state: "ready", checkpoint: null,
+          checkpoint_session: { mode: "stateless", handle: null } });
+      }
+      if (order === "before") await openLegacy();
+      for (const [index, id] of ids.entries()) {
+        const result = await registry.inspect(connectorSessionRequest(id, handles[index]));
+        expect(result.checkpoint).toBe(handles[index]);
+        expect(result.checkpoint_session.mode).toBe("explicit");
+      }
+      expect(calls).toHaveLength(100);
+    } finally {
+      harness.db.close();
+      rmSync(dirname(harness.db.filename), { recursive: true, force: true });
+    }
+  });
+  it("rejects malformed Mail checkpoint payloads before reading the producer", async () => {
+    await expect(inspect({ ...readRequest, checkpoint_session: { mode: "continue", version: 1, handle: "bad" } }))
+      .rejects.toMatchObject({ code: "PERSONAL_CONNECTOR_REQUEST_INVALID" });
+    expect(calls).toEqual([]);
+  });
   it("reads authenticated storage metadata through the registry without projecting mail or secrets", async () => {
     // Given: the existing session file and a real HTTP producer.
     // When: the scoped public registry read executes.
@@ -95,7 +159,9 @@ describe("read-only personal Mail connector", () => {
   });
   it("does not retry or turn refusal into empty data", async () => {
     status = 401;
-    expect((await inspect()).result).toMatchObject({ state: "unavailable", reason: "adapter_failed", values: {} });
+    expect((await inspect({ ...readRequest, checkpoint_session: { mode: "start", version: 1 } })).result)
+      .toMatchObject({ state: "unavailable", reason: "adapter_failed", values: {}, checkpoint: null,
+        checkpoint_session: { mode: "stateless", handle: null } });
     expect(calls).toEqual(["GET /api/storage/status"]);
   });
   it.each([

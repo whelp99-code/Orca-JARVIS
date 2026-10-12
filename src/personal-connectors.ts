@@ -114,7 +114,7 @@ function checkpointSession(
   request: PersonalConnectorReadRequest,
   handle: string | null,
 ): PersonalCheckpointSessionResult {
-  return request.checkpoint_session === undefined
+  return request.connector_id === "mail" || request.checkpoint_session === undefined
     ? { mode: "stateless", version: 1, persistence: "process_local", handle: null }
     : { mode: "explicit", version: 1, persistence: "process_local", handle };
 }
@@ -192,7 +192,8 @@ class PersonalConnectorRegistryAuthority {
       return personalUnavailable(definition, "not_configured", resultContext);
     }
     if (request.scopes.length === 0) return personalNoScope(definition, resultContext);
-    const session = request.checkpoint_session;
+    // Mail has no resumable producer cursor and never owns a checkpoint slot.
+    const session = request.connector_id === "mail" ? undefined : request.checkpoint_session;
     if (session?.mode === "continue") {
       const resolution = this.#checkpoints.resolve(session.handle);
       if (resolution === "session_invalid") {
