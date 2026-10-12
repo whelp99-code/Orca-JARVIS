@@ -80,6 +80,9 @@ describe("operating Price read work card", () => {
     expect(screen.getByTestId("price-response-sha").textContent).toBe(receipt.source_revision);
     expect(document.querySelector("[data-official-tax-ready]")?.getAttribute("data-official-tax-ready")).toBe("false");
     expect(document.querySelector("[data-rt-state]")?.getAttribute("data-rt-state")).toBe("UNBOUND");
+    const observed = document.querySelector("[data-source-revision] time");
+    expect(observed?.getAttribute("dateTime")).toBe(receipt.observed_at);
+    expect(observed?.textContent).toBe("2026/10/7(수) 20:00:00");
     expect(screen.getByTestId("price-readable-summary").textContent).toContain("기간: 9/1(화)–9/30(수)");
     expect(screen.getByTestId("price-readable-summary").textContent).toContain("받은 금액확인 필요");
     expect(screen.getByTestId("price-readable-summary").textContent).toContain("다음 행동확인 필요");
@@ -102,6 +105,35 @@ describe("operating Price read work card", () => {
     expect(summary.textContent).toContain("순현금 변동₩300,000");
     expect(raw.closest("details")?.hasAttribute("open")).toBe(false);
   });
+  it.each(["discrepancy", "settlement"] as const)(
+    "shows company-wide coverage instead of form dates for %s results", async view => {
+      const api = await ready();
+      const body = JSON.stringify(view === "discrepancy" ? { items: [] } : { settlements: [] });
+      api.priceFinanceRead.mockResolvedValueOnce({ ...receipt, view,
+        request: { ...receipt.request, view }, response_body: body,
+        source_revision: `sha256:${createHash("sha256").update(body).digest("hex")}` });
+      fireEvent.change(screen.getByLabelText("조회 종류"), { target: { value: view } });
+      fireEvent.click(screen.getByRole("button", { name: "Price 원본 조회" }));
+      await screen.findByTestId("price-response-body");
+      const summary = screen.getByTestId("price-readable-summary").textContent;
+      expect(summary).toContain("범위: 회사 전체");
+      expect(summary).not.toContain("기간:");
+      expect(summary).not.toContain("9/1");
+    },
+  );
+  it.each(["discrepancy", "settlement"] as const)(
+    "does not show owner-report cash fields for company-wide %s results", async view => {
+      const api = await ready();
+      const body = JSON.stringify(view === "discrepancy" ? { items: [] } : { settlements: [] });
+      api.priceFinanceRead.mockResolvedValueOnce({ ...receipt, view,
+        request: { ...receipt.request, view }, response_body: body,
+        source_revision: `sha256:${createHash("sha256").update(body).digest("hex")}` });
+      fireEvent.change(screen.getByLabelText("조회 종류"), { target: { value: view } });
+      fireEvent.click(screen.getByRole("button", { name: "Price 원본 조회" }));
+      await screen.findByTestId("price-response-body");
+      expect(screen.queryByTestId("price-cash-summary")).toBeNull();
+    },
+  );
   it("does not display an old request response after the user edits its scope", async () => {
     const api = await ready();
     let deliver: (value: PriceFinanceReceipt) => void = () => { throw new Error("flight not initialized"); };
@@ -139,6 +171,18 @@ describe("operating Price read work card", () => {
     await screen.findByTestId("price-response-body");
     expect(document.querySelector("[data-official-tax-ready]")?.getAttribute("data-official-tax-ready")).toBe("undefined");
     expect(document.querySelector("[data-rt-state]")).toBeNull();
-    expect(screen.getByTestId("price-readable-summary").textContent).toContain("받은 금액확인 필요");
+    expect(screen.getByTestId("price-readable-summary").textContent).toContain("범위: 회사 전체");
+    expect(screen.queryByTestId("price-cash-summary")).toBeNull();
+    expect(document.querySelector("[data-source-revision]")?.textContent).toContain("원본에 필드 없음");
+  });
+  it("shows producer-confirmed false readiness separately from missing fields", async () => {
+    const api = await ready();
+    const body = JSON.stringify({ official_tax_ready: false, company_data_complete: false });
+    api.priceFinanceRead.mockResolvedValueOnce({ ...receipt, response_body: body,
+      source_revision: `sha256:${createHash("sha256").update(body).digest("hex")}` });
+    fireEvent.click(screen.getByRole("button", { name: "Price 원본 조회" }));
+    await screen.findByTestId("price-response-body");
+    expect(screen.getByText("준비되지 않음").textContent).toBe("준비되지 않음");
+    expect(screen.getByText("자료 미완료").textContent).toBe("자료 미완료");
   });
 });

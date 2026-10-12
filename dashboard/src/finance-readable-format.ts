@@ -12,6 +12,26 @@ export function formatReadableDate(value: string): string {
     ? "확인 필요" : `${month}/${day}(${weekday})`;
 }
 
+export function formatReadableTimestamp(value: string): string {
+  const date = new Date(value);
+  if (!Number.isFinite(date.getTime())) return "확인 필요";
+  const parts = new Intl.DateTimeFormat("ko-KR", {
+    year: "numeric", month: "numeric", day: "numeric", weekday: "short",
+    hour: "2-digit", minute: "2-digit", second: "2-digit", hourCycle: "h23", timeZone: "Asia/Seoul",
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) => parts.find(item => item.type === type)?.value;
+  const year = part("year");
+  const month = part("month");
+  const day = part("day");
+  const weekday = part("weekday");
+  const hour = part("hour");
+  const minute = part("minute");
+  const second = part("second");
+  return year === undefined || month === undefined || day === undefined || weekday === undefined
+    || hour === undefined || minute === undefined || second === undefined
+    ? "확인 필요" : `${year}/${month}/${day}(${weekday}) ${hour}:${minute}:${second}`;
+}
+
 export function elapsedDays(from: string, until: string): number | undefined {
   const fromMs = Date.parse(from);
   const untilMs = Date.parse(until);

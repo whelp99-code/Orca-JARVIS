@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
-import { elapsedDays, formatReadableDate, formatWon } from "./finance-readable-format.js";
+import { elapsedDays, formatReadableDate, formatReadableTimestamp, formatWon } from "./finance-readable-format.js";
 
 describe("finance readable formatting", () => {
   it("formats source dates in Korean month/day/weekday form", () => {
     expect(formatReadableDate("2026-10-01")).toBe("10/1(목)");
     expect(formatReadableDate("not-a-date")).toBe("확인 필요");
+  });
+
+  it("preserves year and time in source observation timestamps", () => {
+    expect(formatReadableTimestamp("2026-10-07T11:00:00.000Z")).toBe("2026/10/7(수) 20:00:00");
+    expect(formatReadableTimestamp("not-a-date")).toBe("확인 필요");
   });
 
   it("formats integer won amounts without losing large integer precision", () => {

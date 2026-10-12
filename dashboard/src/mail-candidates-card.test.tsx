@@ -31,6 +31,9 @@ describe("read-only Mail candidate card", () => {
     expect(screen.getByTestId("crm-readable-summary").textContent).toContain(
       "확인 필요 1건 · 가장 오래된 것 1일 · 다음 행동: CRM에서 확인",
     );
+    const observed = document.querySelector('time[datetime="2026-10-09T00:00:00.000Z"]');
+    expect(observed?.textContent).toBe("2026/10/9(금) 09:00:00");
+    expect(observed?.getAttribute("dateTime")).toBe("2026-10-09T00:00:00.000Z");
     expect(rows[0]?.querySelector("time")?.textContent).toBe("10/8(목)");
     expect(rows[0]?.querySelector("details")?.hasAttribute("open")).toBe(false);
     expect(document.querySelector("img")).toBeNull();
@@ -51,6 +54,18 @@ describe("read-only Mail candidate card", () => {
       "최근 5건 중 확인 필요 5건 · 가장 오래된 것 확인 필요 · 다음 행동: CRM에서 확인",
     );
     expect(screen.getByTestId("crm-readable-summary").textContent).not.toContain("1일");
+  });
+  it("states that no oldest unconfirmed candidate exists for a complete empty result", async () => {
+    const data = {
+      schema_version: 1, proof_level: "native-read", authority: "none", observed_at: "2026-10-09T00:00:00.000Z",
+      crm: { state: "read", workspace_id: "75c2b088-e5aa-5396-9e9e-6dfd77e50048",
+        candidate_count: 0, recent: [] },
+      sb: { state: "unconnected" },
+    };
+    render(<MailCandidatesCard adapter={{ async read() { return data; } }} />);
+    expect((await screen.findByTestId("crm-readable-summary")).textContent).toContain(
+      "확인 필요 0건 · 가장 오래된 미확인 항목 없음 · 다음 행동: 없음",
+    );
   });
   it("preserves an independently read source when the other native reader refuses", async () => {
     const data = { schema_version: 1, proof_level: "native-read", authority: "none", observed_at: "2026-10-09T00:00:00.000Z",
