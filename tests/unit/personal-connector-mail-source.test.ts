@@ -1,28 +1,33 @@
 import { once } from "node:events";
-import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { createServer } from "node:http";
 import { tmpdir } from "node:os";
 import { dirname, join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
-import { createPersonalConnectorRegistry } from "../../src/personal-connectors.js";
+import { createPersonalConnectorRegistry, PersonalConnectorConfigError } from "../../src/personal-connectors.js";
 import { Core5CapabilityRegistry } from "../../src/integration/capability-registry.js";
 import { MailPersonalConnectorSource, parseMailConnectorConfig } from "../../src/personal-connector-mail-source.js";
 import { CONNECTOR_NOW, connectorHarness, connectorSessionRequest } from "../fixtures/personal-connector-sources.js";
 
-const token = "a".repeat(43);
+const readerKey = "public-fixture-mail-reader-" + "a".repeat(32);
+const principalId = "jarvis-mail-summary-reader";
 const root = mkdtempSync(join(tmpdir(), "jarvis-mail-read-"));
-const sessionFile = join(root, "session");
+const readerKeyFile = join(root, "reader-key");
 const calls: string[] = [];
 let body: unknown;
 let status = 200;
 let baseUrl: string;
 const server = createServer((req, res) => {
   calls.push(`${req.method} ${req.url}`);
-  if (req.method !== "GET" || req.url !== "/api/storage/status" || req.headers.cookie !== `mi_session=${token}`) {
+  if (req.method !== "GET" || req.url !== "/api/storage/status"
+    || req.headers["x-api-key"] !== readerKey || req.headers["x-principal-id"] !== principalId
+    || req.headers["x-principal-kind"] !== "service" || req.headers.accept !== "application/json"
+    || ["cookie", "authorization", "x-workspace-id"].some(field => Object.hasOwn(req.headers, field))) {
     res.writeHead(403).end();
     return;
   }
-  res.writeHead(status, { "content-type": "application/json" }).end(JSON.stringify(body));
+  res.writeHead(status, { "content-type": "application/json", ...(status === 302 ? { location: "/forbidden" } : {}) })
+    .end(JSON.stringify(body));
 });
 beforeAll(async () => {
   const listening = once(server, "listening");
@@ -33,8 +38,8 @@ beforeAll(async () => {
   baseUrl = `http://127.0.0.1:${address.port}`;
 });
 beforeEach(() => {
-  writeFileSync(sessionFile, token, { mode: 0o600 });
-  chmodSync(sessionFile, 0o600);
+  if (existsSync(readerKeyFile)) chmodSync(readerKeyFile, 0o600);
+  writeFileSync(readerKeyFile, readerKey, { mode: 0o600 });
   calls.length = 0;
   status = 200;
   body = { ready: true, counts: { messages: 7, threads: 3 }, jobs: [{ secret: "must not be projected" }] };
@@ -48,11 +53,14 @@ afterAll(async () => {
 const readRequest = {
   connector_id: "mail", scopes: ["mail.summary.read"], fields: ["message_count", "thread_count", "observed_at"],
 };
+function mailConfig(reader_key_file = readerKeyFile) {
+  return { base_url: baseUrl, reader_key_file, reader_principal_id: principalId };
+}
 async function inspect(request: unknown = readRequest) {
   const harness = await connectorHarness();
   try {
     const registry = createPersonalConnectorRegistry({
-      ...harness.factory_input, mail: { base_url: baseUrl, session_file: sessionFile },
+      ...harness.factory_input, mail: mailConfig(),
     });
     return { result: await registry.inspect(request), definition: registry.list().find(item => item.id === "mail") };
   } finally {
@@ -65,7 +73,7 @@ describe("read-only personal Mail connector", () => {
   it("supports five concurrent connectors with only the four legacy sources owning checkpoints", async () => {
     const harness = await connectorHarness();
     const registry = createPersonalConnectorRegistry({
-      ...harness.factory_input, mail: { base_url: baseUrl, session_file: sessionFile },
+      ...harness.factory_input, mail: mailConfig(),
     });
     try {
       const results = await Promise.all([
@@ -87,7 +95,7 @@ describe("read-only personal Mail connector", () => {
   it.each(["before", "after"])("opens and closes Mail reads 100 times %s filling legacy slots without a registry restart", async order => {
     const harness = await connectorHarness();
     const registry = createPersonalConnectorRegistry({
-      ...harness.factory_input, mail: { base_url: baseUrl, session_file: sessionFile },
+      ...harness.factory_input, mail: mailConfig(),
     });
     const ids = ["second_brain", "orca", "task_timeline", "portfolio"] as const;
     const handles: string[] = [];
@@ -127,7 +135,7 @@ describe("read-only personal Mail connector", () => {
     expect(calls).toEqual([]);
   });
   it("reads authenticated storage metadata through the registry without projecting mail or secrets", async () => {
-    // Given: the existing session file and a real HTTP producer.
+    // Given: a private fixture reader key and a service-only HTTP producer.
     // When: the scoped public registry read executes.
     const { result, definition } = await inspect();
     // Then: only summary metadata crosses the connector boundary.
@@ -157,8 +165,8 @@ describe("read-only personal Mail connector", () => {
     body = invalid;
     expect((await inspect()).result).toMatchObject({ state: "unavailable", reason: "adapter_failed", values: {} });
   });
-  it("does not retry or turn refusal into empty data", async () => {
-    status = 401;
+  it.each([401, 403, 302])("does not retry follow redirects or turn refusal %i into empty data", async refusal => {
+    status = refusal;
     expect((await inspect({ ...readRequest, checkpoint_session: { mode: "start", version: 1 } })).result)
       .toMatchObject({ state: "unavailable", reason: "adapter_failed", values: {}, checkpoint: null,
         checkpoint_session: { mode: "stateless", handle: null } });
@@ -184,17 +192,46 @@ describe("read-only personal Mail connector", () => {
     }
     expect(calls).toEqual([]);
   });
-  it("refuses exposed or symlinked session files before transport", async () => {
-    chmodSync(sessionFile, 0o644);
+  it.each([0o644, 0o400])("refuses reader key file permissions %i before transport", async mode => {
+    chmodSync(readerKeyFile, mode);
     expect((await inspect()).result).toMatchObject({ reason: "adapter_failed", values: {} });
-    const link = join(root, "link");
-    symlinkSync(sessionFile, link);
-    await expect(new MailPersonalConnectorSource({ base_url: baseUrl, session_file: link }).read(CONNECTOR_NOW))
+    expect(calls).toEqual([]);
+  });
+  it("refuses missing or symlinked reader key files before transport", async () => {
+    await expect(new MailPersonalConnectorSource(mailConfig(join(root, "missing"))).read(CONNECTOR_NOW))
       .rejects.toThrow("CANDIDATE_READER_CREDENTIAL_INVALID");
+    const link = join(root, "link");
+    symlinkSync(readerKeyFile, link);
+    await expect(new MailPersonalConnectorSource(mailConfig(link)).read(CONNECTOR_NOW))
+      .rejects.toThrow("CANDIDATE_READER_CREDENTIAL_INVALID");
+    expect(calls).toEqual([]);
+  });
+  it("reports a missing configured key as unavailable", async () => {
+    rmSync(readerKeyFile);
+    expect((await inspect()).result).toMatchObject({ state: "unavailable", reason: "adapter_failed", values: {} });
+    expect(calls).toEqual([]);
+  });
+  it.each(["", "short", "a".repeat(32) + "\ninside", "a".repeat(4097), " ".repeat(4098) + readerKey])(
+    "refuses empty malformed or oversized reader keys case %# before HTTP", async key => {
+      writeFileSync(readerKeyFile, key, { mode: 0o600 });
+      expect((await inspect()).result).toMatchObject({ state: "unavailable", reason: "adapter_failed", values: {} });
+      expect(calls).toEqual([]);
+    },
+  );
+  it("rejects legacy session configuration rather than falling back to a cookie", async () => {
+    const harness = await connectorHarness();
+    try {
+      expect(() => createPersonalConnectorRegistry({
+        ...harness.factory_input, mail: { base_url: baseUrl, session_file: readerKeyFile },
+      })).toThrow(PersonalConnectorConfigError);
+    } finally {
+      harness.db.close();
+      rmSync(dirname(harness.db.filename), { recursive: true, force: true });
+    }
     expect(calls).toEqual([]);
   });
   it.each(["https://foreign.invalid", "http://localhost:3010", "http://127.0.0.1:3010/send",
     "http://127.0.0.1:3010?override=1", "http://user:secret@127.0.0.1:3010"])("rejects non-loopback-root targets %s", base_url => {
-    expect(() => parseMailConnectorConfig({ base_url, session_file: sessionFile })).toThrow("MAIL_READ_CONFIG_INVALID");
+    expect(() => parseMailConnectorConfig({ ...mailConfig(), base_url })).toThrow("MAIL_READ_CONFIG_INVALID");
   });
 });

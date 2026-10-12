@@ -12,7 +12,8 @@ const configSchema = z.object({
     return url.protocol === "http:" && url.hostname === "127.0.0.1" && url.pathname === "/"
       && url.username === "" && url.password === "" && url.search === "" && url.hash === "";
   }),
-  session_file: z.string().refine(isAbsolute),
+  reader_key_file: z.string().refine(isAbsolute),
+  reader_principal_id: z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/),
 }).strict().readonly();
 const summarySchema = z.object({
   ready: z.boolean(),
@@ -26,7 +27,7 @@ export function parseMailConnectorConfig(value: unknown): MailConnectorConfig {
   return parsed.data;
 }
 
-/** Uses an existing session only. Never logs in, refreshes Graph, or changes mail state. */
+/** Dedicated summary-only service authentication; never acquires a human session. */
 export class MailPersonalConnectorSource {
   readonly connectorId = "mail" as const;
   private readonly config: MailConnectorConfig;
@@ -34,12 +35,20 @@ export class MailPersonalConnectorSource {
   constructor(config: MailConnectorConfig) { this.config = parseMailConnectorConfig(config); }
 
   async read(now: Date): Promise<PersonalSourceSnapshot> {
-    const token = readCandidateCredential(this.config.session_file).trim();
-    if (!/^[A-Za-z0-9_-]{43}$/.test(token)) throw new JarvisError("MAIL_READ_CREDENTIAL_INVALID");
+    const rawKey = readCandidateCredential(this.config.reader_key_file);
+    const key = rawKey.trim();
+    if (Buffer.byteLength(rawKey, "utf8") > 4_098 || !/^[\x21-\x7e]{32,4096}$/.test(key)) {
+      throw new JarvisError("MAIL_READ_CREDENTIAL_INVALID");
+    }
     const body = await new Promise<string>((resolve, reject) => {
       const fail = () => reject(new JarvisError("MAIL_READ_REFUSED"));
       const outgoing = request(new URL("/api/storage/status", this.config.base_url), {
-        method: "GET", headers: { cookie: `mi_session=${token}`, accept: "application/json" },
+        method: "GET", headers: {
+          "x-api-key": key,
+          "x-principal-id": this.config.reader_principal_id,
+          "x-principal-kind": "service",
+          accept: "application/json",
+        },
         signal: AbortSignal.timeout(5_000),
       }, incoming => {
         if (incoming.statusCode !== 200) { incoming.resume(); fail(); return; }

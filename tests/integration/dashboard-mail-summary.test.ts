@@ -10,15 +10,18 @@ import { migratedTestDatabase } from "../fixtures/migrated-database.js";
 import type { AuthorityDb } from "../../src/db.js";
 
 const root = mkdtempSync(join(tmpdir(), "jarvis-mail-summary-http-"));
-const token = "b".repeat(43);
-const sessionFile = join(root, "mail-session");
+const readerKey = "public-fixture-mail-reader-" + "b".repeat(32);
+const readerKeyFile = join(root, "mail-reader-key");
 const upstreamCalls: string[] = [];
 let status = 200;
 const upstream = createServer((req, res) => {
   upstreamCalls.push(`${req.method} ${req.url}`);
-  const authorized = req.headers.cookie === `mi_session=${token}`;
+  const authorized = req.headers["x-api-key"] === readerKey
+    && req.headers["x-principal-id"] === "jarvis-mail-summary-reader"
+    && req.headers["x-principal-kind"] === "service" && req.headers.accept === "application/json"
+    && !["cookie", "authorization", "x-workspace-id"].some(field => Object.hasOwn(req.headers, field));
   res.writeHead(authorized ? status : 403, { "content-type": "application/json" })
-    .end(JSON.stringify({ ready: true, counts: { messages: 11, threads: 4 }, jobs: [{ body: "private" }] }));
+    .end(JSON.stringify({ ready: true, counts: { messages: 11, threads: 4 } }));
 });
 let db: AuthorityDb;
 let server: DashboardServer;
@@ -26,7 +29,7 @@ let unconfigured: DashboardServer;
 let origin: string;
 let csrf: string;
 beforeAll(async () => {
-  writeFileSync(sessionFile, token, { mode: 0o600 });
+  writeFileSync(readerKeyFile, readerKey, { mode: 0o600 });
   writeFileSync(join(root, "index.html"), "<!doctype html><title>test</title>");
   const listening = once(upstream, "listening");
   upstream.listen(0, "127.0.0.1");
@@ -35,7 +38,10 @@ beforeAll(async () => {
   if (address === null || typeof address === "string") throw new Error("missing test address");
   db = await migratedTestDatabase(join(root, "authority.sqlite"));
   server = createDashboardServer({ db, staticRoot: root, host: "127.0.0.1", port: 0,
-    mailSource: new MailPersonalConnectorSource({ base_url: `http://127.0.0.1:${address.port}`, session_file: sessionFile }) });
+    mailSource: new MailPersonalConnectorSource({
+      base_url: `http://127.0.0.1:${address.port}`, reader_key_file: readerKeyFile,
+      reader_principal_id: "jarvis-mail-summary-reader",
+    }) });
   unconfigured = createDashboardServer({ db, staticRoot: root, host: "127.0.0.1", port: 0 });
   origin = `http://127.0.0.1:${server.address.port}`;
   csrf = (await fetch(origin + "/api/v1/session").then(response => response.json())).csrf_token;
