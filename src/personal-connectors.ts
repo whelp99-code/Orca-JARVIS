@@ -2,6 +2,7 @@ import { createSecondBrainReadAdapter } from "./second-brain-adapter.js";
 import { PersonalCheckpointStore, PERSONAL_CONNECTOR_REGISTRY_SESSION } from "./personal-connector-checkpoints.js";
 import { parsePersonalConnectorConfig, type ParsedPersonalConnectorConfig } from "./personal-connector-config.js";
 import { personalConnectorDefinitionsForSecondBrain } from "./personal-connector-definitions.js";
+import { MailPersonalConnectorSource } from "./personal-connector-mail-source.js";
 import {
   OrcaPersonalConnectorSource,
   PersonalSourceBudgetError,
@@ -46,6 +47,7 @@ export type {
 export type { SecondBrainConnectorRead } from "./personal-connector-second-brain-source.js";
 
 type PersonalConnectorSources = {
+  readonly mail?: MailPersonalConnectorSource;
   readonly second_brain: SecondBrainPersonalConnectorSource;
   readonly orca: OrcaPersonalConnectorSource;
   readonly task_timeline: TaskTimelinePersonalConnectorSource;
@@ -66,8 +68,12 @@ function operationInfo(operation: SecondBrainConnectorRead): {
     default: { const exhaustive: never = operation; return exhaustive; }
   }
 }
-function sourceFor(sources: PersonalConnectorSources, id: ConfiguredPersonalConnectorId): ConfiguredSource {
+function sourceFor(sources: PersonalConnectorSources, id: ConfiguredPersonalConnectorId): NonNullable<ConfiguredSource> {
   switch (id) {
+    case "mail": {
+      if (sources.mail === undefined) throw new PersonalConnectorConfigError();
+      return sources.mail;
+    }
     case "second_brain": return sources.second_brain;
     case "orca": return sources.orca;
     case "task_timeline": return sources.task_timeline;
@@ -76,12 +82,13 @@ function sourceFor(sources: PersonalConnectorSources, id: ConfiguredPersonalConn
   }
 }
 function configured(id: PersonalConnectorReadRequest["connector_id"]): id is ConfiguredPersonalConnectorId {
-  return id === "second_brain" || id === "orca" || id === "task_timeline" || id === "portfolio";
+  return id === "second_brain" || id === "orca" || id === "task_timeline" || id === "portfolio" || id === "mail";
 }
 function requested(values: readonly string[], allowed: readonly string[]): boolean {
   return values.length === new Set(values).size && values.every(value => allowed.includes(value));
 }
 function fieldAllowed(id: ConfiguredPersonalConnectorId, field: string, scopes: readonly string[]): boolean {
+  if (id === "mail") return scopes.includes("mail.summary.read");
   if (id === "portfolio") return scopes.includes("portfolio.projection.read");
   if (id === "second_brain") return scopes.length === 1;
   if (id === "orca") {
@@ -107,7 +114,7 @@ function checkpointSession(
   request: PersonalConnectorReadRequest,
   handle: string | null,
 ): PersonalCheckpointSessionResult {
-  return request.checkpoint_session === undefined
+  return request.connector_id === "mail" || request.checkpoint_session === undefined
     ? { mode: "stateless", version: 1, persistence: "process_local", handle: null }
     : { mode: "explicit", version: 1, persistence: "process_local", handle };
 }
@@ -130,6 +137,7 @@ function buildSources(config: ParsedPersonalConnectorConfig): PersonalConnectorS
     read: config.second_brain.operation,
   });
   return Object.freeze({
+    ...(config.mail === undefined ? {} : { mail: new MailPersonalConnectorSource(config.mail) }),
     second_brain: memory,
     orca: new OrcaPersonalConnectorSource({
       adapter: new OrcaReadonlyAdapter(config.orca.runner),
@@ -156,7 +164,7 @@ class PersonalConnectorRegistryAuthority {
     const info = operationInfo(config.second_brain.operation);
     this.#config = config;
     this.#sources = buildSources(config);
-    this.#definitions = personalConnectorDefinitionsForSecondBrain(info.capability, info.scope);
+    this.#definitions = personalConnectorDefinitionsForSecondBrain(info.capability, info.scope, config.mail !== undefined);
   }
 
   list(): readonly PersonalConnectorDefinition[] { return this.#definitions; }
@@ -180,9 +188,12 @@ class PersonalConnectorRegistryAuthority {
     }
     const checkedAt = now.toISOString();
     const resultContext = { checked_at: checkedAt, checkpoint_session: emptyCheckpointSession };
-    if (!configured(request.connector_id)) return personalUnavailable(definition, "not_configured", resultContext);
+    if (!definition.configured || !configured(request.connector_id)) {
+      return personalUnavailable(definition, "not_configured", resultContext);
+    }
     if (request.scopes.length === 0) return personalNoScope(definition, resultContext);
-    const session = request.checkpoint_session;
+    // Mail has no resumable producer cursor and never owns a checkpoint slot.
+    const session = request.connector_id === "mail" ? undefined : request.checkpoint_session;
     if (session?.mode === "continue") {
       const resolution = this.#checkpoints.resolve(session.handle);
       if (resolution === "session_invalid") {

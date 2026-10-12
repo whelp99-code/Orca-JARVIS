@@ -3,8 +3,10 @@ import type { SecondBrainReadinessObservation } from "./second-brain-readiness.j
 import { PersonalConnectorConfigError } from "./personal-connector-types.js";
 import type { SecondBrainOutcome, SecondBrainReadMethod } from "./second-brain-transport.js";
 import type { SecondBrainConnectorRead } from "./personal-connector-second-brain-source.js";
+import { parseMailConnectorConfig, type MailConnectorConfig } from "./personal-connector-mail-source.js";
 
 export type ParsedPersonalConnectorConfig = {
+  readonly mail?: MailConnectorConfig;
   readonly clock: () => Date;
   readonly second_brain: {
     readonly call: (method: SecondBrainReadMethod, arguments_: Readonly<Record<string, unknown>>) => Promise<SecondBrainOutcome>;
@@ -88,7 +90,11 @@ function operation(value: unknown): SecondBrainConnectorRead {
 
 export function parsePersonalConnectorConfig(value: unknown): ParsedPersonalConnectorConfig {
   try {
-    const top = record(value, ["clock", "orca", "portfolio", "second_brain", "timeline"]);
+    const keys = ["clock", "orca", "portfolio", "second_brain", "timeline"];
+    if (typeof value === "object" && value !== null && Object.hasOwn(value, "mail")) keys.push("mail");
+    const top = record(value, keys);
+    const mail = keys.includes("mail")
+      ? parseMailConnectorConfig(record(top["mail"], ["base_url", "session_file"])) : undefined;
     const memory = record(top["second_brain"], [
       "budgets", "call", "expiry_ms", "max_age_ms", "operation", "readiness_inspect",
     ]);
@@ -108,6 +114,7 @@ export function parsePersonalConnectorConfig(value: unknown): ParsedPersonalConn
     const call = memory["call"]; const inspect = memory["readiness_inspect"]; const run = orca["runner"]; const readClock = top["clock"];
     if (!transportCall(call) || !readinessInspect(inspect) || !runner(run) || !clock(readClock)) return fail();
     return Object.freeze({
+      ...(mail === undefined ? {} : { mail }),
       clock: readClock,
       second_brain: Object.freeze({
         call,

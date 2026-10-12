@@ -51,6 +51,7 @@ export const PERSONAL_CONNECTOR_DEFINITIONS = Object.freeze([
 export function personalConnectorDefinitionsForSecondBrain(
   capability: "search" | "read_page" | "recent_changes" | "open_conflicts",
   scope: string,
+  mailConfigured = false,
 ): readonly PersonalConnectorDefinition[] {
   const memory = PERSONAL_CONNECTOR_DEFINITIONS[0];
   if (memory === undefined) throw new TypeError("PERSONAL_CONNECTOR_DEFINITION_MISSING");
@@ -62,7 +63,18 @@ export function personalConnectorDefinitionsForSecondBrain(
       ? memory.allowed_fields
       : memory.allowed_fields.filter(field => field !== "conflict_id"),
   });
-  return Object.freeze([narrowed, ...PERSONAL_CONNECTOR_DEFINITIONS.slice(1)]);
+  return Object.freeze([narrowed, ...PERSONAL_CONNECTOR_DEFINITIONS.slice(1).map(item =>
+    item.id === "mail" ? personalMailConnectorDefinition(mailConfigured) : item)]);
+}
+
+export function personalMailConnectorDefinition(configured: boolean): PersonalConnectorDefinition {
+  return frozenDefinition({
+    id: "mail", configured,
+    capabilities: configured ? ["storage_summary"] : [],
+    scopes: configured ? ["mail.summary.read"] : [],
+    allowed_fields: configured ? ["message_count", "thread_count", "observed_at"] : [],
+    freshness: { live_ms: null, stale_ms: null },
+  });
 }
 
 export function personalConnectorDefinition(id: PersonalConnectorId): PersonalConnectorDefinition {

@@ -19,6 +19,7 @@ import {
 import { tryHandleExternalDelegate } from "./external-delegate-routes.js";
 import { tryHandleFinanceRead } from "./finance-read-routes.js";
 import { tryHandleMailCandidates } from "./mail-candidates-routes.js";
+import { tryHandleMailSummary } from "./mail-summary-routes.js";
 import { tryHandleOwnerInbox } from "./owner-inbox-routes.js";
 import { tryHandleDashboardPost } from "./post-routes.js";
 import { tryHandleMemoryRead } from "./memory-read-routes.js";
@@ -69,6 +70,7 @@ export type DashboardApiInput = {
   readonly workboardActions?: WorkboardActions;
   readonly priceFinance?: import("../integration/price-finance-production.js").PriceFinanceRuntime;
   readonly mailCandidates?: import("../integration/mail-candidates-production.js").MailCandidatesRuntime;
+  readonly mailSource?: import("../personal-connector-mail-source.js").MailPersonalConnectorSource;
 };
 
 type LogsRoute =
@@ -90,6 +92,7 @@ export async function tryHandleDashboardApi(input: DashboardApiInput): Promise<b
   if (await tryHandleOwnerInbox(input)) return true;
   if (await tryHandleFinanceRead(input)) return true;
   if (await tryHandleMailCandidates(input)) return true;
+  if (await tryHandleMailSummary(input)) return true;
   if (input.request.method === "POST") return tryHandleDashboardPost(input);
   if (await tryHandleTaskExecution(input)) return true;
   if (tryHandleDashboardSession(input)) return true;
