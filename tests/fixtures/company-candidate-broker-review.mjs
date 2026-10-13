@@ -47,10 +47,27 @@ if (!isMain && process.env.JARVIS_BROKER_REVIEW_FAULT === "post-listen") {
 
 if (isMain) {
   const gatePath = process.argv[2];
+  const mode = process.argv[3];
   if (gatePath === undefined || !gatePath.startsWith("/")) process.exit(2);
   const socket = createConnection(gatePath);
   socket.on("error", () => process.exit(1));
   await once(socket, "connect");
-  await once(socket, "end");
-  process.stdout.write("{\"state\":\"ok\"}");
+  if (mode === "stall") {
+    socket.write(`${process.pid}\n`);
+    const body = JSON.stringify({ state: "ok", pad: "x".repeat(900_000) });
+    if (!process.stdout.write(body)) await once(process.stdout, "drain");
+    socket.end();
+  } else if (mode === "ignore-term") {
+    const marker = process.argv[4];
+    process.on("SIGTERM", () => {
+      if (marker !== undefined && marker.startsWith("/")) {
+        process.getBuiltinModule("node:fs").appendFileSync(marker, `SIGTERM ${process.pid}\n`);
+      }
+    });
+    socket.write(`${process.pid}\n`);
+    await new Promise(() => undefined);
+  } else {
+    await once(socket, "end");
+    process.stdout.write("{\"state\":\"ok\"}");
+  }
 }

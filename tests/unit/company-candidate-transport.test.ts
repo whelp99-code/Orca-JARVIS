@@ -37,11 +37,16 @@ const roots: string[] = [];
 const servers: Server[] = [];
 const sockets: Socket[] = [];
 const children: Array<ReturnType<typeof spawn>> = [];
+const reviewPids = new Set<number>();
 const BROKER = fileURLToPath(new URL("../../dist/src/company-candidate-broker-main.mjs", import.meta.url));
 const REVIEW = fileURLToPath(new URL("../fixtures/company-candidate-broker-review.mjs", import.meta.url));
 
 afterEach(async () => {
   for (const socket of sockets.splice(0)) socket.destroy();
+  for (const pid of reviewPids) {
+    killReviewPid(pid);
+  }
+  reviewPids.clear();
   for (const child of children.splice(0)) {
     if (child.exitCode === null && child.signalCode === null) {
       child.kill("SIGTERM");
@@ -292,6 +297,87 @@ function socketReady(root: string, socketPath: string, expectedMode = 0o600): Pr
       resolve();
     }
   });
+}
+
+function rememberPid(pid: number): void {
+  if (Number.isInteger(pid) && pid > 0) reviewPids.add(pid);
+}
+
+function killReviewPid(pid: number): void {
+  try { process.kill(pid, "SIGKILL"); }
+  catch (error) {
+    if (!(error instanceof Error) || Reflect.get(error, "code") !== "ESRCH") throw error;
+  }
+}
+
+async function loadBroker(configPath: string): Promise<{ close(): Promise<void> }> {
+  const loaded: unknown = await import(pathToFileURL(BROKER).href);
+  if (typeof loaded !== "object" || loaded === null || !("startCompanyCandidateBroker" in loaded)
+    || typeof loaded.startCompanyCandidateBroker !== "function") throw new Error("compiled broker export missing");
+  const broker: unknown = await loaded.startCompanyCandidateBroker(configPath);
+  if (!isBrokerHandle(broker)) throw new Error("compiled broker handle missing");
+  return broker;
+}
+
+function capturePid(socket: Socket): void {
+  let buf = "";
+  socket.on("data", (chunk: Buffer) => {
+    buf += chunk.toString("utf8");
+    const line = buf.split("\n")[0] ?? "";
+    if (/^\d+$/.test(line)) rememberPid(Number(line));
+  });
+}
+
+function handoffEnvelope(): {
+  authority: Record<string, unknown>;
+  arguments: { limit: number; offset: number };
+} {
+  return {
+    authority: {
+      schema_version: 1,
+      provider_instance_id: "provider:unit",
+      workspace_id: CONTEXT.workspace_id,
+      principal_id: CONTEXT.owner,
+      agent_id: CONTEXT.agent_id,
+      session_id: CONTEXT.session_id,
+      projects: ["project:unit"],
+      policy_revision: "policy:unit",
+      purpose: "company_memory_handoff",
+      operation: "handoff",
+      request_digest: `sha256:${"b".repeat(64)}`,
+      deletion_sequence: 7,
+      deletion_set_root: CONTEXT.deletion_set_root,
+      issued_at: NOW.toISOString(),
+      expires_at: "2026-10-12T00:01:00.000Z",
+      nonce: "jarvis:fixed-nonce",
+      signing_key_id: "key:unit",
+      signature: "c2ln",
+    },
+    arguments: { limit: 1, offset: 0 },
+  };
+}
+
+function readBrokerBounded(socketPath: string, payload: unknown, budgetMs: number): Promise<string> {
+  const socket = createConnection(socketPath);
+  socket.on("error", () => undefined);
+  sockets.push(socket);
+  const chunks: Buffer[] = [];
+  const response = new Promise<string>((resolve, reject) => {
+    const signal = AbortSignal.timeout(budgetMs);
+    const fail = () => reject(new Error("broker response timed out"));
+    signal.addEventListener("abort", fail, { once: true });
+    socket.on("data", (chunk: Buffer) => chunks.push(chunk));
+    socket.on("close", () => {
+      signal.removeEventListener("abort", fail);
+      resolve(Buffer.concat(chunks).toString("utf8"));
+    });
+  });
+  socket.end(JSON.stringify(payload));
+  return response;
+}
+
+function quoteShell(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 function exchange(socketPath: string, payload: unknown): Promise<string> {
@@ -708,4 +794,197 @@ describe("company candidate broker", () => {
       await broker?.close();
     }
   });
+
+  it("holds quota until a stalled response socket closes within the write bound", async () => {
+    const root = tempRoot();
+    const gatePath = join(root, "gate.sock");
+    const gate = createServer();
+    servers.push(gate);
+    const started: Socket[] = [];
+    const ended: Array<Promise<void>> = [];
+    const eight = new Promise<void>((resolve, reject) => {
+      const signal = AbortSignal.timeout(5_000);
+      const fail = () => reject(new Error("dispatch children did not start"));
+      signal.addEventListener("abort", fail, { once: true });
+      gate.on("connection", (sock) => {
+        started.push(sock);
+        capturePid(sock);
+        sock.on("error", () => undefined);
+        ended.push(sock.readableEnded ? Promise.resolve() : once(sock, "end").then(() => undefined));
+        if (started.length === 8) {
+          signal.removeEventListener("abort", fail);
+          resolve();
+        }
+      });
+    });
+    gate.listen(gatePath);
+    await once(gate, "listening");
+    const script = `#!/bin/bash\nexec ${quoteShell(process.execPath)} ${quoteShell(REVIEW)} ${quoteShell(gatePath)} stall\n`;
+    const fixture = brokerFixture("handoff", script);
+    const brokerSockets: Socket[] = [];
+    const realCreateServer = net.createServer;
+    const netTarget: Record<string, unknown> = net;
+    netTarget["createServer"] = (...args: Parameters<typeof realCreateServer>) => {
+      const server = realCreateServer(...args);
+      server.on("connection", sock => brokerSockets.push(sock));
+      return server;
+    };
+    syncBuiltinESMExports();
+    let broker: { close(): Promise<void> } | undefined;
+    try {
+      broker = await loadBroker(fixture.brokerConfig);
+      const envelope = handoffEnvelope();
+      const holds: Socket[] = [];
+      const sawWrite: Array<Promise<void>> = [];
+      for (let index = 0; index < 8; index += 1) {
+        const socket = createConnection(fixture.socketPath);
+        sockets.push(socket);
+        holds.push(socket);
+        sawWrite.push(new Promise((resolve, reject) => {
+          const signal = AbortSignal.timeout(5_000);
+          const fail = () => reject(new Error("response write did not start"));
+          signal.addEventListener("abort", fail, { once: true });
+          socket.on("data", () => {
+            socket.pause();
+            signal.removeEventListener("abort", fail);
+            resolve();
+          });
+        }));
+        socket.end(JSON.stringify(envelope));
+      }
+      await eight;
+      await Promise.all(ended);
+      await Promise.all(sawWrite);
+      const ninth = new Promise<void>((resolve) => {
+        gate.once("connection", () => resolve());
+      });
+      const refused = readBroker(fixture.socketPath, envelope);
+      const winner = await Promise.race([
+        refused.then((body) => ({ kind: "response" as const, body })),
+        ninth.then(() => ({ kind: "spawned" as const })),
+      ]);
+      expect(winner).toEqual({ kind: "response", body: '{"error":"COMPANY_CANDIDATE_BROKER_REFUSED"}' });
+      expect(started).toHaveLength(8);
+      for (const socket of holds) expect(socket.destroyed).toBe(false);
+      const stillHeld = JSON.parse(await readBroker(fixture.socketPath, envelope)) as { error?: string };
+      expect(stillHeld).toEqual({ error: "COMPANY_CANDIDATE_BROKER_REFUSED" });
+      await Promise.all(brokerSockets.slice(0, 8).map(sock =>
+        once(sock, "close", { signal: AbortSignal.timeout(13_000) })));
+      const admitted = new Promise<Socket>((resolve, reject) => {
+        const signal = AbortSignal.timeout(5_000);
+        signal.addEventListener("abort", () => reject(new Error("write budget did not restore admission")), { once: true });
+        gate.once("connection", (sock) => {
+          capturePid(sock);
+          resolve(sock);
+        });
+      });
+      const admittedReply = readBroker(fixture.socketPath, envelope);
+      const outcome = await Promise.race([
+        admitted.then((sock) => ({ kind: "spawned" as const, sock })),
+        admittedReply.then((body) => ({ kind: "response" as const, body })),
+      ]);
+      expect(outcome.kind).toBe("spawned");
+      if (outcome.kind === "spawned") outcome.sock.destroy();
+    } finally {
+      netTarget["createServer"] = realCreateServer;
+      syncBuiltinESMExports();
+      for (const sock of brokerSockets) sock.destroy();
+      await broker?.close();
+    }
+  }, 30_000);
+
+  it("hard-kills a pinned child that ignores SIGTERM and restores the slot", async () => {
+    const root = tempRoot();
+    const gatePath = join(root, "gate.sock");
+    const marker = join(root, "sigterm.txt");
+    const gate = createServer();
+    servers.push(gate);
+    const connected = new Promise<Socket>((resolve, reject) => {
+      const signal = AbortSignal.timeout(5_000);
+      signal.addEventListener("abort", () => reject(new Error("deadline child did not start")), { once: true });
+      gate.once("connection", (sock) => {
+        capturePid(sock);
+        sock.on("error", () => undefined);
+        resolve(sock);
+      });
+    });
+    gate.listen(gatePath);
+    await once(gate, "listening");
+    const script = `#!/bin/bash\nexec ${quoteShell(process.execPath)} ${quoteShell(REVIEW)} ${quoteShell(gatePath)} ignore-term ${quoteShell(marker)}\n`;
+    const fixture = brokerFixture("handoff", script);
+    const ready = socketReady(fixture.root, fixture.socketPath);
+    spawnBroker(fixture.brokerConfig);
+    await ready;
+    const envelope = handoffEnvelope();
+    const response = readBrokerBounded(fixture.socketPath, envelope, 16_000);
+    const gateSock = await connected;
+    const startedAt = Date.now();
+    await once(gateSock, "close", { signal: AbortSignal.timeout(13_000) });
+    const elapsed = Date.now() - startedAt;
+    expect(elapsed).toBeGreaterThanOrEqual(7_000);
+    expect(elapsed).toBeLessThan(13_000);
+    expect(JSON.parse(await response)).toEqual({ error: "COMPANY_CANDIDATE_BROKER_REFUSED" });
+    const again = new Promise<Socket>((resolve, reject) => {
+      const signal = AbortSignal.timeout(5_000);
+      signal.addEventListener("abort", () => reject(new Error("admission was not restored")), { once: true });
+      gate.once("connection", (sock) => {
+        capturePid(sock);
+        resolve(sock);
+      });
+    });
+    const second = readBrokerBounded(fixture.socketPath, envelope, 3_000).then(
+      (body) => ({ kind: "response" as const, body }),
+      () => ({ kind: "pending" as const }),
+    );
+    const outcome = await Promise.race([
+      again.then((sock) => ({ kind: "spawned" as const, sock })),
+      second,
+    ]);
+    expect(outcome.kind).toBe("spawned");
+    if (outcome.kind === "spawned") {
+      outcome.sock.destroy();
+      for (const pid of reviewPids) killReviewPid(pid);
+    }
+  }, 30_000);
+
+  it("closes a refused response after flushing even when the peer keeps its write side open", async () => {
+    const fixture = brokerFixture("handoff", CHILD);
+    const serverSockets: Socket[] = [];
+    let entered: (() => void) | undefined;
+    const eight = new Promise<void>(resolve => { entered = resolve; });
+    let ninthEntered: ((socket: Socket) => void) | undefined;
+    const ninth = new Promise<Socket>(resolve => { ninthEntered = resolve; });
+    const realCreateServer = net.createServer;
+    const target: Record<string, unknown> = net;
+    target["createServer"] = (...args: Parameters<typeof realCreateServer>) => {
+      const server = realCreateServer(...args);
+      server.on("connection", socket => {
+        serverSockets.push(socket);
+        if (serverSockets.length === 8) entered?.();
+        if (serverSockets.length === 9) ninthEntered?.(socket);
+      });
+      return server;
+    };
+    syncBuiltinESMExports();
+    let broker: { close(): Promise<void> } | undefined;
+    try {
+      broker = await loadBroker(fixture.brokerConfig);
+      for (let index = 0; index < 8; index++) sockets.push(createConnection(fixture.socketPath));
+      await eight;
+      const peer = createConnection(fixture.socketPath);
+      peer.on("error", () => undefined);
+      peer.pause();
+      sockets.push(peer);
+      const rejected = await ninth;
+      const closed = once(rejected, "close", { signal: AbortSignal.timeout(3_000) });
+      await closed;
+      expect(rejected.destroyed).toBe(true);
+      expect(peer.writableEnded).toBe(false);
+    } finally {
+      target["createServer"] = realCreateServer;
+      syncBuiltinESMExports();
+      for (const socket of serverSockets) socket.destroy();
+      await broker?.close();
+    }
+  }, 10_000);
 });

@@ -181,6 +181,8 @@ function runPinned(config: BrokerConfig, action: "handoff" | "process", stdin: B
     const child = execFile(config.sb_company_bin, [action, "--config", config.sb_config_file], {
       shell: false,
       timeout: TIMEOUT_MS,
+      // A pinned child can ignore SIGTERM. The 10s bound is a hard kill, not a request.
+      killSignal: "SIGKILL",
       maxBuffer: MAX_BYTES,
       encoding: "buffer",
       env: childEnv(),
@@ -205,7 +207,7 @@ function runPinned(config: BrokerConfig, action: "handoff" | "process", stdin: B
       resolve(JSON.stringify(raw));
     });
     child.stdin?.on("error", () => {
-      child.kill("SIGTERM");
+      child.kill("SIGKILL");
     });
     child.stdin?.end(stdin);
   });
@@ -280,45 +282,69 @@ export async function startCompanyCandidateBroker(
     process.umask(previous);
   }
 
+  const endBounded = (socket: Socket, body: string) => {
+    if (socket.destroyed) return;
+    const writeTimer = setTimeout(() => socket.destroy(), TIMEOUT_MS);
+    socket.once("close", () => clearTimeout(writeTimer));
+    socket.end(body, () => socket.destroy());
+  };
   server.on("connection", (socket: Socket) => {
     sockets.add(socket);
     socket.once("close", () => sockets.delete(socket));
     if (active >= MAX_CLIENTS) {
-      socket.end(REFUSED, () => socket.destroy());
+      endBounded(socket, REFUSED);
       return;
     }
     active += 1;
     const chunks: Buffer[] = [];
     let total = 0;
-    let settled = false;
+    let responded = false;
     let dispatching = false;
-    const finish = (body: string) => {
-      if (settled) return;
-      settled = true;
+    let childDone = false;
+    let socketDone = false;
+    let holding = true;
+    const maybeRelease = () => {
+      if (!holding || !childDone || !socketDone) return;
+      holding = false;
       active -= 1;
+    };
+    const markChildDone = () => {
+      if (childDone) return;
+      childDone = true;
       clearTimeout(timer);
-      if (!socket.destroyed) socket.end(body, () => socket.destroy());
+      maybeRelease();
+    };
+    const beginResponse = (body: string) => {
+      if (responded) return;
+      responded = true;
+      markChildDone();
+      if (socket.destroyed) {
+        return;
+      }
+      endBounded(socket, body);
     };
     const releaseIfIdle = () => {
-      if (!dispatching) finish(REFUSED);
+      if (!dispatching) beginResponse(REFUSED);
     };
     const timer = setTimeout(releaseIfIdle, TIMEOUT_MS);
     socket.once("close", () => {
-      releaseIfIdle();
+      socketDone = true;
+      if (!dispatching) markChildDone();
+      maybeRelease();
     });
     socket.on("data", (chunk: Buffer) => {
       total += chunk.length;
-      if (total > MAX_BYTES) finish(REFUSED);
+      if (total > MAX_BYTES) beginResponse(REFUSED);
       else chunks.push(chunk);
     });
     socket.on("error", releaseIfIdle);
     socket.on("end", () => {
-      if (settled || dispatching) return;
+      if (responded || dispatching) return;
       dispatching = true;
       clearTimeout(timer);
       void dispatch(Buffer.concat(chunks)).then(
-        (body) => finish(body),
-        () => finish(REFUSED),
+        (body) => beginResponse(body),
+        () => beginResponse(REFUSED),
       );
     });
   });
