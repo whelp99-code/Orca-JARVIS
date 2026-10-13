@@ -4,15 +4,19 @@ import { randomBytes } from "node:crypto";
 import {
   closeSync,
   constants,
+  copyFileSync,
   fchmodSync,
   fsyncSync,
   lstatSync,
+  mkdtempSync,
   openSync,
   realpathSync,
   renameSync,
+  rmSync,
   unlinkSync,
   writeSync,
 } from "node:fs";
+import { tmpdir } from "node:os";
 import { isAbsolute, dirname, join, resolve } from "node:path";
 import { parseArgs } from "node:util";
 import Database from "better-sqlite3";
@@ -98,7 +102,7 @@ function sourceOk(path) {
 
 function outputOk(path, source) {
   const output = requireAbsolute(path, "OUTPUT_INVALID");
-  const forbidden = new Set([source, `${source}-wal`, `${source}-shm`]);
+  const forbidden = new Set([source, `${source}-wal`, `${source}-shm`, `${source}-journal`]);
   if (forbidden.has(output)) throw new Coded("OUTPUT_INVALID");
   const dir = dirname(output);
   let dirStat;
@@ -212,6 +216,35 @@ function publish(dir, output, bytes) {
   }
 }
 
+function snapshotSource(source) {
+  const scratch = mkdtempSync(join(tmpdir(), "messenger-export-"));
+  const snapshot = join(scratch, "inbox.sqlite");
+  copyFileSync(source, snapshot);
+  for (const suffix of ["-wal", "-shm", "-journal"]) {
+    const sidecar = `${source}${suffix}`;
+    try {
+      copyFileSync(sidecar, `${snapshot}${suffix}`);
+    } catch (error) {
+      if (error?.code !== "ENOENT") throw error;
+    }
+  }
+  return { scratch, snapshot };
+}
+
+function openSnapshot(source) {
+  const { scratch, snapshot } = snapshotSource(source);
+  let db;
+  try {
+    db = new Database(snapshot, { readonly: true, fileMustExist: true });
+    db.pragma("query_only = ON");
+  } catch (error) {
+    rmSync(scratch, { recursive: true, force: true });
+    if (error instanceof Coded) throw error;
+    throw new Coded("SCHEMA_INVALID");
+  }
+  return { db, scratch };
+}
+
 function readFlags() {
   let values;
   try {
@@ -241,14 +274,9 @@ function main() {
   const output = outputOk(flags.output, source);
   const observedMillis = Date.now();
   let db;
+  let scratch;
   try {
-    try {
-      db = new Database(source, { readonly: true, fileMustExist: true });
-      db.pragma("query_only = ON");
-    } catch (error) {
-      if (error instanceof Coded) throw error;
-      throw new Coded("SCHEMA_INVALID");
-    }
+    ({ db, scratch } = openSnapshot(source));
     const summary = aggregate(db, flags.uid, observedMillis);
     const bytes = Buffer.from(`${JSON.stringify({
       schema_version: 1,
@@ -259,6 +287,7 @@ function main() {
     publish(dirname(output), output, bytes);
   } finally {
     db?.close();
+    if (scratch) rmSync(scratch, { recursive: true, force: true });
   }
   process.stdout.write(SUCCESS);
 }

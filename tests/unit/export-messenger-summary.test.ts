@@ -51,9 +51,13 @@ function payload(user: string, extra: Record<string, string> = {}): string {
   return JSON.stringify({ user, text: BODY, channel: "C1", ts: "1.0", ...extra });
 }
 
-function seed(path: string, rows: readonly { readonly id: string; readonly payload: string; readonly state: string; readonly received: number }[]): string {
+function seed(
+  path: string,
+  rows: readonly { readonly id: string; readonly payload: string; readonly state: string; readonly received: number }[],
+  journalMode: "DELETE" | "WAL" = "DELETE",
+): string {
   const db = new Database(path);
-  db.pragma("journal_mode = DELETE");
+  db.pragma(`journal_mode = ${journalMode}`);
   db.exec(DDL);
   const insert = db.prepare("INSERT INTO events(id, payload, state, received) VALUES (?, ?, ?, ?)");
   for (const row of rows) insert.run(row.id, row.payload, row.state, row.received);
@@ -149,6 +153,34 @@ describe("export-messenger-summary", () => {
     expect(result.stdout).toBe("ok\n");
     const { parsed } = snapshot(output);
     expect(parsed).toMatchObject({ schema_version: 1, incomplete_count: 0, oldest_incomplete_age_ms: null });
+  });
+
+  it("refuses output targeting the source rollback journal sidecar", () => {
+    const { root } = workspace();
+    const inbox = join(root, "inbox.sqlite");
+    const digest = seed(inbox, [{ id: "pending", payload: payload(UID), state: "pending", received: RECEIVED }]);
+    const result = run(inbox, `${inbox}-journal`);
+    expect(result.status).toBe(1);
+    expect(result.stderr).toBe("OUTPUT_INVALID\n");
+    expect(createHash("sha256").update(readFileSync(inbox)).digest("hex")).toBe(digest);
+  });
+
+  it("exports a WAL-mode inbox without adding sqlite sidecars beside the source", () => {
+    const { root, dir } = workspace();
+    const inbox = join(root, "inbox.sqlite");
+    const output = join(dir, "summary.json");
+    const digest = seed(inbox, [
+      { id: "pending", payload: payload(UID), state: "pending", received: RECEIVED },
+      { id: "processing", payload: payload(UID), state: "processing", received: RECEIVED + 1_000 },
+    ], "WAL");
+    const before = readdirSync(root).slice().sort();
+    const result = run(inbox, output, UID, 0o077);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe("ok\n");
+    expect(readdirSync(root).slice().sort()).toEqual(before);
+    expect(createHash("sha256").update(readFileSync(inbox)).digest("hex")).toBe(digest);
+    const { parsed } = snapshot(output);
+    expect(parsed).toMatchObject({ incomplete_count: 2, oldest_incomplete_age_ms: expect.any(Number) });
   });
 
   it("refuses a normalized output alias of the source database", () => {

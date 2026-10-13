@@ -14,8 +14,11 @@ representative, so the exporter requires an explicit representative Slack user
 ID. It must be supplied by the operator, not inferred from a channel or the
 first inbox row.
 
-The separate `scripts/export-messenger-summary.mjs` opens that database readonly
-and aggregates the representative's human `pending` and `processing` events.
+The separate `scripts/export-messenger-summary.mjs` copies the inbox database
+and any present SQLite sidecars into a private scratch file, opens that copy
+readonly and aggregates the representative's human `pending` and `processing`
+events. The live inbox file and its WAL/SHM/journal sidecars are never opened
+by SQLite and are not mutated by export.
 Completed records, other users, bots and message edit/delete notifications are
 excluded. Age is based on local durable receipt time, not the Slack message
 timestamp. Neither `inbox.mjs` nor its listener is changed or imported.
@@ -65,7 +68,10 @@ service; setgid inheritance gives new atomic snapshots the correct group.
 The JARVIS service needs traversal and read access to this directory/file only,
 not the inbox directory, SQLite WAL/SHM or Slack token files.
 Both paths must be canonical absolute paths, without `.` or `..` aliases;
-source DB, WAL and SHM paths cannot be publication targets.
+source DB, WAL, SHM and rollback-journal paths cannot be publication targets.
+Packaged runtime releases include `scripts/export-messenger-summary.mjs` beside
+the existing operator scripts so the documented command works from
+`/opt/jarvis-runtime` checkouts.
 
 The operator chooses and provisions the directory, group membership and
 representative ID after review. Refresh the snapshot more frequently than
