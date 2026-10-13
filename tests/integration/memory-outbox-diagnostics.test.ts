@@ -1,6 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { JarvisError } from "../../src/jarvis-error.js";
 import { MemoryOutboxStore } from "../../src/memory-outbox-store.js";
+import { MemoryCandidateReviewSpool } from "../../src/memory-candidate-review-spool.js";
 import { MemoryOutboxTick } from "../../src/memory-outbox-tick.js";
 import { memoryOutboxLog } from "../../src/memory-outbox-diagnostic.js";
 import { closeMemoryDatabase } from "../fixtures/memory-candidate-store.js";
@@ -13,6 +14,67 @@ afterEach(() => {
   for (const fixture of fixtures.splice(0)) closeMemoryDatabase(fixture.database);
 });
 describe("memory outbox failure diagnostics", () => {
+  it("clears an active cleanup failure after an otherwise-idle successful retry", async () => {
+    const fixture = await outboxFixture({ reader: new FixtureReader({ kind: "current",
+      checked_at: "2026-08-28T12:00:00.000Z", evidence: [evidence(OUTBOX_ARTIFACT_DIGEST)] }) });
+    fixtures.push(fixture);
+    const queued = fixture.service.enqueue(claimAction(fixture));
+    vi.spyOn(MemoryCandidateReviewSpool.prototype, "remove").mockImplementationOnce(() => {
+      throw new Error("PRIVATE_SENTINEL");
+    });
+    const logs: unknown[] = [];
+    const tick = new MemoryOutboxTick(() => fixture.service.runOnce("cleanup-retry-worker", 1),
+      failure => logs.push(memoryOutboxLog(failure)));
+    tick.tick(); await tick.drain();
+    expect(fixture.service.get(queued.outbox_id)?.state).toBe("settled");
+    tick.tick(); await tick.drain();
+    tick.tick(); await tick.close();
+    expect(logs).toEqual([
+      { component: "memory.outbox", phase: "review_cleanup",
+        error_code: "MEMORY_REVIEW_CLEANUP_FAILED", cause_code: "MEMORY_OUTBOX_UNCLASSIFIED_ERROR" },
+      { component: "memory.outbox", phase: null, error_code: null, cause_code: null },
+    ]);
+    expect(fixture.writer.calls).toHaveLength(1);
+    expect([...new MemoryCandidateReviewSpool(fixture.database.root + "/candidate-review").iteratePaths()]).toHaveLength(0);
+  });
+  it("omits a committed uncertain write failure after same-cycle settlement", async () => {
+    const fixture = await outboxFixture();
+    fixtures.push(fixture);
+    const queued = fixture.service.enqueue(claimAction(fixture));
+    const write = fixture.writer.write.bind(fixture.writer);
+    vi.spyOn(fixture.writer, "write").mockImplementation(async request => {
+      await write(request);
+      const artifact = { kind: "current" as const, checked_at: "2026-08-28T12:00:00.000Z",
+        evidence: [evidence(OUTBOX_ARTIFACT_DIGEST)] };
+      vi.spyOn(fixture.reader, "recentChanges").mockResolvedValue(artifact);
+      vi.spyOn(fixture.reader, "readPage").mockResolvedValue(artifact);
+      throw new JarvisError("MEMORY_OUTBOX_WRITE_FAILED");
+    });
+    const result = await fixture.service.runOnce("committed-uncertain-worker", 1);
+    expect(result.settled).toBe(1);
+    expect(result.failure).toBeUndefined();
+    expect(fixture.service.get(queued.outbox_id)?.state).toBe("settled");
+    expect(fixture.writer.calls).toHaveLength(1);
+    const idle = await fixture.service.runOnce("committed-uncertain-worker", 1);
+    expect(idle.settled).toBe(0);
+    expect(idle.failure).toBeUndefined();
+    expect(fixture.writer.calls).toHaveLength(1);
+  });
+  it("retains an uncertain write failure while its artifact is still missing", async () => {
+    const fixture = await outboxFixture();
+    fixtures.push(fixture);
+    const queued = fixture.service.enqueue(claimAction(fixture));
+    const write = fixture.writer.write.bind(fixture.writer);
+    vi.spyOn(fixture.writer, "write").mockImplementation(async request => {
+      await write(request);
+      throw new JarvisError("MEMORY_OUTBOX_WRITE_FAILED");
+    });
+    const result = await fixture.service.runOnce("unresolved-uncertain-worker", 1);
+    expect(result.settled).toBe(0);
+    expect(result.failure?.phase).toBe("provider_write");
+    expect(fixture.service.get(queued.outbox_id)?.state).toBe("reconciling");
+    expect(fixture.writer.calls).toHaveLength(1);
+  });
   it.each(["provider_observation", "record_observation", "settlement"] as const)(
     "reports %s without committing an observation or dispatching twice", async phase => {
       const fixture = await outboxFixture(phase === "settlement" ? { reader: new FixtureReader({

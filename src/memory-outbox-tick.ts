@@ -20,7 +20,8 @@ export class MemoryOutboxTick {
         ?? (result.cleanup_error === undefined ? undefined : memoryOutboxFailure(
           tagMemoryOutboxFailure("review_cleanup", new JarvisError(result.cleanup_error))))
         ?? (result.failed === 0 ? undefined : memoryOutboxFailure(new JarvisError("MEMORY_OUTBOX_CYCLE_FAILED")));
-      const progressed = result.dispatched + result.settled + result.conflicts + result.reconciling + (result.commands_reconciled ?? 0) > 0;
+      const progressed = result.dispatched + result.settled + result.conflicts + result.reconciling + (result.commands_reconciled ?? 0) > 0
+        || (this.lastError?.startsWith("review_cleanup:") === true && result.cleanup_error === undefined);
       this.report(failure, progressed);
       if (result.dispatched + result.settled + result.conflicts + result.failed + (result.commands_reconciled ?? 0) > 0) this.onChange();
     }, error => { this.report(memoryOutboxFailure(error)); }).finally(() => { this.pending = undefined; });

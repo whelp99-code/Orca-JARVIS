@@ -48,7 +48,7 @@ export class MemoryOutboxService {
   }
   async runOnce(workerId: string, limit = 16): Promise<MemoryOutboxCycleResult> {
     const worker = requireWorker(workerId); const bound = requireLimit(limit); const result = { ...empty() };
-    let failure: MemoryOutboxFailure | undefined;
+    const failures: { readonly outboxId: string; readonly failure: MemoryOutboxFailure }[] = [];
     result.reconciling += this.phase("recover_dispatch", () => this.store.recoverDispatching(this.options.clock()));
     for (let index = 0; index < bound; index += 1) {
       const claimed = this.phase("claim_dispatch", () => this.store.claimDispatch(worker, this.options.clock(), this.leaseMs));
@@ -57,7 +57,7 @@ export class MemoryOutboxService {
       let dispatch;
       try { dispatch = this.phase("dispatch", () => this.store.markDispatch(claimed.outbox_id, worker, claimed.lease_fence, this.options.clock())); }
       catch (error) {
-        result.failed += 1; failure ??= memoryOutboxFailure(error);
+        result.failed += 1; failures.push({ outboxId: claimed.outbox_id, failure: memoryOutboxFailure(error) });
         if (error instanceof JarvisError) continue;
         throw error;
       }
@@ -65,17 +65,20 @@ export class MemoryOutboxService {
       let outcome;
       try { outcome = await this.options.writer.write(dispatch.request); }
       catch (error) {
-        failure ??= memoryOutboxFailure(tagMemoryOutboxFailure("provider_write", error));
+        failures.push({ outboxId: dispatch.saga.outbox_id,
+          failure: memoryOutboxFailure(tagMemoryOutboxFailure("provider_write", error)) });
         outcome = { kind: "uncertain" as const, code: error instanceof Error ? "MEMORY_OUTBOX_WRITE_FAILED" : "MEMORY_OUTBOX_WRITE_FAILED" };
       }
       this.phase("record_write_result", () => this.store.recordResult(dispatch, outcome, this.options.clock())); result.reconciling += 1;
     }
     const reconciled = await this.reconcileOnce(worker, bound);
+    const failure = reconciled.failure ?? failures.find(item =>
+      item.failure.phase !== "provider_write" || this.store.get(item.outboxId)?.state !== "settled")?.failure;
     return { claimed: result.claimed, dispatched: result.dispatched,
       reconciling: result.reconciling + reconciled.reconciling, settled: reconciled.settled,
       conflicts: reconciled.conflicts, failed: result.failed + reconciled.failed,
       commands_reconciled: reconciled.commands_reconciled ?? 0,
-      ...((reconciled.failure ?? failure) === undefined ? {} : { failure: reconciled.failure ?? failure }),
+      ...(failure === undefined ? {} : { failure }),
       ...(reconciled.control_error === undefined ? {} : { control_error: reconciled.control_error }),
       ...(reconciled.cleanup_error === undefined ? {} : { cleanup_error: reconciled.cleanup_error }) };
   }
