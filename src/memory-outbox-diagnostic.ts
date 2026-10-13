@@ -14,6 +14,21 @@ const codes = {
   control_reconciliation: "MEMORY_OUTBOX_CONTROL_RECONCILE_FAILED",
   review_cleanup: "MEMORY_REVIEW_CLEANUP_FAILED",
 } as const;
+const approvedCauseCodes = new Set([
+  "MEMORY_OUTBOX_CYCLE_FAILED",
+  "MEMORY_OUTBOX_TIME_INVALID",
+  "MEMORY_OUTBOX_REPLAY_CONFLICT",
+  "MEMORY_OUTBOX_INTEGRITY_FAILURE",
+  "MEMORY_OUTBOX_AUTHORITY_INVALID",
+  "MEMORY_OUTBOX_STALE_FENCE",
+  "MEMORY_OUTBOX_EVIDENCE_CONFLICT",
+  "MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID",
+  "MEMORY_OUTBOX_CONTROL_RECONCILE_FAILED",
+  "MEMORY_REVIEW_CLEANUP_FAILED",
+  "MEMORY_READ_FENCE_CONFIG_INVALID",
+  "MEMORY_READ_FENCE_KEY_UNAVAILABLE",
+  "MEMORY_READ_FENCE_AUTHORITY_UNAVAILABLE",
+]);
 export type MemoryOutboxPhase = keyof typeof codes;
 export type MemoryOutboxFailure = {
   readonly phase: MemoryOutboxPhase;
@@ -33,7 +48,7 @@ export function tagMemoryOutboxFailure(phase: MemoryOutboxPhase, error: unknown)
 export function memoryOutboxFailure(error: unknown): MemoryOutboxFailure {
   const phase = (typeof error === "object" && error !== null) || typeof error === "function"
     ? phases.get(error) ?? "cycle" : "cycle";
-  const cause = error instanceof JarvisError && /^[A-Z][A-Z0-9_]{0,63}$/.test(error.code)
+  const cause = error instanceof JarvisError && approvedCauseCodes.has(error.code)
     ? error.code : GENERIC_CAUSE;
   return { phase, error_code: codes[phase], cause_code: cause };
 }
