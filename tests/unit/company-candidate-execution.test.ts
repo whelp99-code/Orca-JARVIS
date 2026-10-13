@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import { CompanyCandidateExecutor, createCompanyCompletionVerifier, type CompanyCompletionVerifier } from "../../src/company-candidate-execution.js";
 import { importCompanyPage } from "../../src/company-candidate-import.js";
 import { ControlPlane } from "../../src/control-plane.js";
+import { controlValueDigest } from "../../src/control-plane-contract.js";
 import { JarvisError } from "../../src/jarvis-error.js";
 import { OwnerInbox } from "../../src/owner-inbox.js";
 import { ControlReceiptSigner } from "../../src/remote-approval-signer.js";
@@ -136,6 +137,29 @@ describe("restricted company candidate executor", () => {
       }, () => COMPANY_NOW).execute(live.proposal.command.request_id);
       expect(result.state).toBe("rejected"); expect(operations).toEqual(["reject"]);
       expect(result.receipts).toHaveLength(1);
+    } finally { live.close(); }
+  });
+
+  it("records the validated completion object directly in the mark_processed effect", async () => {
+    const live = await approved();
+    try {
+      const acceptance = companyReceipt(live.proposal.command.request_id, "accept");
+      const processed = companyReceipt(live.proposal.command.request_id, "mark_processed");
+      const completion = {
+        schema_version: 1, state: "completed", request_id: live.proposal.command.request_id,
+        command_digest: live.proposal.command_digest, candidate_id: live.proposal.command.target.candidate_id,
+        content_digest: live.proposal.command.target.content_digest,
+        acceptance_receipt_digest: acceptance.receipt_digest, effect_digest: `sha256:${"e".repeat(64)}`,
+      };
+      const client = companyClient(async operation => operation === "accept" ? acceptance : processed);
+      await new CompanyCandidateExecutor(live.db, client, { async verify() { return completion; } },
+        () => COMPANY_NOW).execute(live.proposal.command.request_id);
+      const effect = live.db.db.prepare(
+        "SELECT payload_json,payload_digest FROM control_command_effects WHERE request_id=? AND effect_type=?",
+      ).get(live.proposal.command.request_id, "company.candidate.mark_processed") as
+        { payload_json: string; payload_digest: string };
+      expect(JSON.parse(effect.payload_json)).toEqual({ receipt: processed, completion });
+      expect(effect.payload_digest).toBe(controlValueDigest({ receipt: processed, completion }));
     } finally { live.close(); }
   });
 

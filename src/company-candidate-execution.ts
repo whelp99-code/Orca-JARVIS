@@ -164,7 +164,7 @@ export class CompanyCandidateExecutor {
             candidate_id: command.target.candidate_id, handoff_id: requestId, approval,
           }, this.clock()), requestId, operation,
         );
-        this.persistReceipt(requestId, token, receipt, operation === "accept" ? "accepted" : "rejected");
+        this.persistReceipt(requestId, token, receipt);
       }
       if (operation === "reject") return this.result(requestId, "rejected");
       let completion = row.completion_json === null ? undefined : completionSchema.parse(JSON.parse(row.completion_json));
@@ -190,7 +190,7 @@ export class CompanyCandidateExecutor {
       const processed = this.parseReceipt(await this.client.call("mark_processed", {
         candidate_id: command.target.candidate_id, handoff_id: requestId,
       }, this.clock()), requestId, "mark_processed");
-      this.persistReceipt(requestId, token, processed, "completed");
+      this.persistReceipt(requestId, token, processed, completion);
       return this.result(requestId, "completed");
     } catch (error) {
       const code = error instanceof JarvisError ? error.code : "COMPANY_EXECUTION_UNCERTAIN";
@@ -245,7 +245,8 @@ export class CompanyCandidateExecutor {
     if (changed.changes !== 1) throw new JarvisError("COMPANY_EXECUTION_BUSY");
   }
 
-  private persistReceipt(requestId: string, token: string, receipt: CompanySbReceipt, status: string): void {
+  private persistReceipt(requestId: string, token: string, receipt: CompanySbReceipt, completion?: CompanyCompletion): void {
+    const status = receipt.state === "processed_complete" ? "completed" : receipt.state;
     this.db.db.transaction(() => {
       this.db.db.prepare(
         `INSERT INTO company_candidate_sb_receipts(request_id,operation,receipt_id,receipt_digest,payload_json,observed_at)
@@ -258,9 +259,7 @@ export class CompanyCandidateExecutor {
         ).run(this.clock().toISOString(), requestId);
         if (changed.changes !== 1) throw new JarvisError("CONTROL_STATE_CONFLICT");
       }
-      const payload = { receipt, ...(status === "completed" ? { completion: this.db.db.prepare(
-        "SELECT completion_json FROM company_candidate_handoffs WHERE request_id=?",
-      ).get(requestId) } : {}) };
+      const payload = { receipt, ...(completion ? { completion } : {}) };
       this.db.db.prepare(
         `INSERT INTO control_command_effects(effect_id,request_id,effect_type,payload_json,payload_digest,created_at)
          VALUES(?,?,?,?,?,?)`,

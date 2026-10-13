@@ -171,6 +171,9 @@ verified evidence is persisted before a fresh signed `mark_processed`.
 SB receipt metadata and completion proof are retained in company-only tables
 and control effects. Their digest identifies SB's internal receipt; the reduced
 metadata is not a replacement for SB's full signed-input audit.
+Completed control effects expose the validated object directly as `completion`,
+including `effect_digest`. Their `payload_digest` binds both that object and the
+SB receipt.
 
 ## Failure and replay
 
