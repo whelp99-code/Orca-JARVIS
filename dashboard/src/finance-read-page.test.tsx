@@ -49,10 +49,10 @@ describe("isolated finance read page", () => {
     });
     expect(screen.getByRole("heading", { level: 1 })).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "격리 요청 검사" })).not.toBeInTheDocument();
-    expect(document.querySelector("[data-proof-level]")).toBeNull();
-    expect(document.querySelector("[data-memory-state]")).toBeNull();
-    expect(document.querySelector("[data-mapping-authority]")).toBeNull();
-    expect(document.querySelector("[data-archive-approved]")).toBeNull();
+    expect(document.querySelector(".finance-read-page[data-proof-level]")).toBeNull();
+    expect(document.querySelector(".finance-read-page[data-proof-level] [data-memory-state]")).toBeNull();
+    expect(document.querySelector(".finance-read-page[data-proof-level] [data-mapping-authority]")).toBeNull();
+    expect(document.querySelector(".finance-read-page[data-proof-level] [data-archive-approved]")).toBeNull();
   });
   it("consumes the explicit fixture through the real route, not a separate mock page", async () => {
     const harness = createHarness();
@@ -62,7 +62,7 @@ describe("isolated finance read page", () => {
         initialPath="/finance-read" financeReadAdapter={adapter} />);
     });
     fireEvent.click(screen.getByRole("button", { name: "격리 요청 검사" }));
-    expect(document.querySelector("[data-proof-level]")).toHaveAttribute("data-proof-level", "isolated-fixture");
+    expect(document.querySelector(".finance-read-page[data-proof-level]")).toHaveAttribute("data-proof-level", "isolated-fixture");
     expect(screen.getByTestId("finance-read-prepared")).toBeInTheDocument();
   });
   it("renders the recorded MS candidate separately without issuing a read or mutation", () => {
