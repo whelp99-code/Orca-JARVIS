@@ -80,7 +80,7 @@ export function importCompanyPage(db: AuthorityDb, value: unknown, context: Comp
         ).run(now.toISOString(), old.request_id);
         superseded++;
       }
-      control.stage(item.command, now);
+      if (control.stage(item.command, now).state !== "pending") throw new JarvisError("COMPANY_HANDOFF_NOT_PENDING");
       db.db.prepare(
         `INSERT INTO company_candidate_handoffs(request_id,idempotency_key,generation,command_digest,
          context_json,imported_at,updated_at) VALUES(?,?,?,?,?,?,?)`,

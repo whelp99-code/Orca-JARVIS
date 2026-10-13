@@ -11,6 +11,37 @@ import { COMPANY_CONTEXT, COMPANY_NOW, COMPANY_OWNER_KEY, companyApproval, compa
   companyDatabase, companyPage, companyProposal, companyReceipt } from "../fixtures/company-candidate.js";
 
 describe("company-only handoff importer", () => {
+  it("refuses a cancelled same-digest prestage and rolls back the fresh page item", async () => {
+    const live = await companyDatabase();
+    try {
+      const blocked = companyProposal("cancelled-prestage");
+      const fresh = companyProposal("fresh-before-cancelled");
+      const control = new ControlPlane(live.db);
+      control.stage(blocked.command, COMPANY_NOW);
+      control.cancel({ request_id: blocked.command.request_id, reason: "fixture cancellation",
+        actor: COMPANY_CONTEXT.owner, revoked_at: COMPANY_NOW.toISOString() }, COMPANY_NOW);
+      const prior = control.get(blocked.command.request_id);
+      expect(() => importCompanyPage(live.db, companyPage(fresh, blocked), COMPANY_CONTEXT, COMPANY_NOW))
+        .toThrow("COMPANY_HANDOFF_NOT_PENDING");
+      expect(control.get(blocked.command.request_id)).toEqual(prior);
+      expect(control.get(fresh.command.request_id)).toBeUndefined();
+      expect(live.db.db.prepare("SELECT count(*) AS n FROM company_candidate_handoffs").get()).toEqual({ n: 0 });
+    } finally { live.close(); }
+  });
+
+  it("imports a pending same-digest prestage without creating another control request", async () => {
+    const live = await companyDatabase();
+    try {
+      const proposal = companyProposal("pending-prestage");
+      const control = new ControlPlane(live.db);
+      control.stage(proposal.command, COMPANY_NOW);
+      expect(importCompanyPage(live.db, companyPage(proposal), COMPANY_CONTEXT, COMPANY_NOW).imported).toBe(1);
+      expect(control.get(proposal.command.request_id)?.state).toBe("pending");
+      expect(control.list()).toHaveLength(1);
+      expect(live.db.db.prepare("SELECT count(*) AS n FROM company_candidate_handoffs").get()).toEqual({ n: 1 });
+    } finally { live.close(); }
+  });
+
   it.each(["pending", "accepted"] as const)("keeps an expired %s duplicate unchanged while importing a fresh candidate", async state => {
     const live = await companyDatabase();
     try {
