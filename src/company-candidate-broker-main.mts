@@ -188,7 +188,9 @@ function runPinned(config: BrokerConfig, action: "handoff" | "process", stdin: B
       }
       resolve(JSON.stringify(raw));
     });
-    child.stdin?.on("error", () => reject(new CompanyCandidateBrokerError("COMPANY_CANDIDATE_BROKER_REFUSED")));
+    child.stdin?.on("error", () => {
+      child.kill("SIGTERM");
+    });
     child.stdin?.end(stdin);
   });
 }
@@ -250,7 +252,12 @@ export async function startCompanyCandidateBroker(
       });
     });
   } catch (error) {
-    if (created) unlinkOwned(config.socket, true);
+    try {
+      if (server.listening) await closeServer(server);
+    } finally {
+      if (created) unlinkOwned(config.socket, true);
+      created = false;
+    }
     if (error instanceof CompanyCandidateBrokerError) throw error;
     fail("COMPANY_CANDIDATE_BROKER_CONFIG_INVALID");
   } finally {
@@ -276,17 +283,23 @@ export async function startCompanyCandidateBroker(
       clearTimeout(timer);
       if (!socket.destroyed) socket.end(body, () => socket.destroy());
     };
-    const timer = setTimeout(() => finish(REFUSED), TIMEOUT_MS);
-    socket.once("close", () => finish(REFUSED));
+    const releaseIfIdle = () => {
+      if (!dispatching) finish(REFUSED);
+    };
+    const timer = setTimeout(releaseIfIdle, TIMEOUT_MS);
+    socket.once("close", () => {
+      releaseIfIdle();
+    });
     socket.on("data", (chunk: Buffer) => {
       total += chunk.length;
       if (total > MAX_BYTES) finish(REFUSED);
       else chunks.push(chunk);
     });
-    socket.on("error", () => finish(REFUSED));
+    socket.on("error", releaseIfIdle);
     socket.on("end", () => {
       if (settled || dispatching) return;
       dispatching = true;
+      clearTimeout(timer);
       void dispatch(Buffer.concat(chunks)).then(
         (body) => finish(body),
         () => finish(REFUSED),

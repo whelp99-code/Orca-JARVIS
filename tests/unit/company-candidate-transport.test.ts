@@ -1,11 +1,12 @@
-import { spawn } from "node:child_process";
+import childProcess, { spawn, type ChildProcess } from "node:child_process";
+import { syncBuiltinESMExports } from "node:module";
 import { createHash, createPublicKey, generateKeyPairSync, verify } from "node:crypto";
 import { once } from "node:events";
 import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, watch, writeFileSync } from "node:fs";
-import { createConnection, createServer, type Server, type Socket } from "node:net";
+import net, { createConnection, createServer, type Server, type Socket } from "node:net";
 import { userInfo } from "node:os";
 import { join } from "node:path";
-import { fileURLToPath } from "node:url";
+import { fileURLToPath, pathToFileURL } from "node:url";
 import { afterEach, describe, expect, it } from "vitest";
 import { canonicalize } from "../../src/canonical.js";
 import { createCompanyClient, type CompanyContext } from "../../src/company-candidate-transport.js";
@@ -37,6 +38,7 @@ const servers: Server[] = [];
 const sockets: Socket[] = [];
 const children: Array<ReturnType<typeof spawn>> = [];
 const BROKER = fileURLToPath(new URL("../../dist/src/company-candidate-broker-main.mjs", import.meta.url));
+const REVIEW = fileURLToPath(new URL("../fixtures/company-candidate-broker-review.mjs", import.meta.url));
 
 afterEach(async () => {
   for (const socket of sockets.splice(0)) socket.destroy();
@@ -242,6 +244,29 @@ const CHILD = `#!/bin/bash
 printf '%s' '{"state":"ok"}'
 `;
 
+function readBroker(socketPath: string, payload: unknown): Promise<string> {
+  const socket = createConnection(socketPath);
+  socket.on("error", () => undefined);
+  sockets.push(socket);
+  const chunks: Buffer[] = [];
+  const response = new Promise<string>((resolve, reject) => {
+    const signal = AbortSignal.timeout(5_000);
+    const fail = () => reject(new Error("broker response timed out"));
+    signal.addEventListener("abort", fail, { once: true });
+    socket.on("data", (chunk: Buffer) => chunks.push(chunk));
+    socket.on("close", () => {
+      signal.removeEventListener("abort", fail);
+      resolve(Buffer.concat(chunks).toString("utf8"));
+    });
+  });
+  socket.end(JSON.stringify(payload));
+  return response;
+}
+
+function isBrokerHandle(value: unknown): value is { close(): Promise<void> } {
+  return typeof value === "object" && value !== null && "close" in value && typeof value.close === "function";
+}
+
 function spawnBroker(configPath: string, env: NodeJS.ProcessEnv = process.env): ReturnType<typeof spawn> {
   const child = spawn(process.execPath, ["--experimental-strip-types", BROKER, "--config", configPath], {
     stdio: ["ignore", "pipe", "pipe"],
@@ -251,16 +276,17 @@ function spawnBroker(configPath: string, env: NodeJS.ProcessEnv = process.env): 
   return child;
 }
 
-function socketReady(root: string, socketPath: string): Promise<void> {
+function socketReady(root: string, socketPath: string, expectedMode = 0o600): Promise<void> {
   return new Promise((resolve, reject) => {
+    const ready = () => existsSync(socketPath) && (statSync(socketPath).mode & 0o777) === expectedMode;
     const timer = setTimeout(() => { watcher.close(); reject(new Error("socket did not appear")); }, 5_000);
     const watcher = watch(root, () => {
-      if (!existsSync(socketPath)) return;
+      if (!ready()) return;
       clearTimeout(timer);
       watcher.close();
       resolve();
     });
-    if (existsSync(socketPath)) {
+    if (ready()) {
       clearTimeout(timer);
       watcher.close();
       resolve();
@@ -403,11 +429,165 @@ describe("company candidate broker", () => {
       schema_version: 1, role: "processor", socket: fixture.socketPath,
       sb_company_bin: fixture.bin, sb_config_file: fixture.sbConfig, caller_group_id: group,
     }));
-    const ready = socketReady(fixture.root, fixture.socketPath);
+    const ready = socketReady(fixture.root, fixture.socketPath, 0o660);
     spawnBroker(fixture.brokerConfig);
     await ready;
     expect(statSync(fixture.socketPath).gid).toBe(group);
     expect(statSync(fixture.socketPath).mode & 0o777).toBe(0o660);
     expect(statSync(fixture.sbConfig).mode & 0o777).toBe(0o600);
+  });
+
+  it("closes the listening server when socket setup fails after listen", async () => {
+    const fixture = brokerFixture("handoff", CHILD);
+    const child = spawn(process.execPath, [
+      "--experimental-strip-types",
+      "--import",
+      REVIEW,
+      BROKER,
+      "--config",
+      fixture.brokerConfig,
+    ], {
+      stdio: ["ignore", "pipe", "pipe"],
+      env: { ...process.env, JARVIS_BROKER_REVIEW_FAULT: "post-listen" },
+    });
+    children.push(child);
+    const exited = once(child, "exit", { signal: AbortSignal.timeout(3_000) });
+    let stderr = "";
+    child.stderr?.setEncoding("utf8");
+    child.stderr?.on("data", (chunk: string) => {
+      stderr += chunk;
+    });
+    const [code] = await exited;
+    expect(code).toBe(1);
+    expect(stderr).toBe("COMPANY_CANDIDATE_BROKER_CONFIG_INVALID\n");
+    expect(existsSync(fixture.socketPath)).toBe(false);
+  });
+
+  it("refuses a ninth dispatch while disconnected children still hold slots", async () => {
+    const root = tempRoot();
+    const gatePath = join(root, "gate.sock");
+    const gate = createServer();
+    servers.push(gate);
+    const started: Socket[] = [];
+    const eight = new Promise<void>((resolve, reject) => {
+      const timer = setTimeout(() => reject(new Error("dispatch children did not start")), 5_000);
+      gate.on("connection", (sock) => {
+        started.push(sock);
+        sock.on("error", () => undefined);
+        if (started.length === 8) {
+          clearTimeout(timer);
+          resolve();
+        }
+      });
+    });
+    gate.listen(gatePath);
+    await once(gate, "listening");
+    const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
+    const script = `#!/bin/bash\nexec ${quote(process.execPath)} ${quote(REVIEW)} ${quote(gatePath)}\n`;
+    const fixture = brokerFixture("handoff", script);
+    const realExecFile = childProcess.execFile;
+    const tracked: ChildProcess[] = [];
+    const execTarget: Record<string, unknown> = childProcess;
+    execTarget["execFile"] = (...args: Parameters<typeof realExecFile>) => {
+      const child = realExecFile(...args);
+      tracked.push(child);
+      return child;
+    };
+    const serverSockets: Socket[] = [];
+    const realCreateServer = net.createServer;
+    const netTarget: Record<string, unknown> = net;
+    netTarget["createServer"] = (...args: Parameters<typeof realCreateServer>) => {
+      const server = realCreateServer(...args);
+      server.on("connection", (socket) => {
+        serverSockets.push(socket);
+      });
+      return server;
+    };
+    syncBuiltinESMExports();
+    const envelope = {
+      authority: {
+        schema_version: 1,
+        provider_instance_id: "provider:unit",
+        workspace_id: CONTEXT.workspace_id,
+        principal_id: CONTEXT.owner,
+        agent_id: CONTEXT.agent_id,
+        session_id: CONTEXT.session_id,
+        projects: ["project:unit"],
+        policy_revision: "policy:unit",
+        purpose: "company_memory_handoff",
+        operation: "handoff",
+        request_digest: `sha256:${"b".repeat(64)}`,
+        deletion_sequence: 7,
+        deletion_set_root: CONTEXT.deletion_set_root,
+        issued_at: NOW.toISOString(),
+        expires_at: "2026-10-12T00:01:00.000Z",
+        nonce: "jarvis:fixed-nonce",
+        signing_key_id: "key:unit",
+        signature: "c2ln",
+      },
+      arguments: { limit: 1, offset: 0 },
+    };
+    let broker: { close(): Promise<void> } | undefined;
+    try {
+      const loaded: unknown = await import(pathToFileURL(BROKER).href);
+      if (typeof loaded !== "object" || loaded === null || !("startCompanyCandidateBroker" in loaded)
+        || typeof loaded.startCompanyCandidateBroker !== "function") {
+        throw new Error("compiled broker export missing");
+      }
+      const startedBroker: unknown = await loaded.startCompanyCandidateBroker(fixture.brokerConfig);
+      if (!isBrokerHandle(startedBroker)) throw new Error("compiled broker handle missing");
+      broker = startedBroker;
+      const holds: Socket[] = [];
+      for (let index = 0; index < 8; index += 1) {
+        const socket = createConnection(fixture.socketPath);
+        socket.on("error", () => undefined);
+        sockets.push(socket);
+        holds.push(socket);
+        socket.end(JSON.stringify(envelope));
+      }
+      await eight;
+      expect(tracked).toHaveLength(8);
+      const requestSockets = serverSockets.slice(0, 8);
+      const disconnected = Promise.all(requestSockets.map((socket) => once(socket, "close")));
+      for (const socket of holds) socket.destroy();
+      for (const socket of requestSockets) socket.destroy();
+      await disconnected;
+      const ninthSpawn = new Promise<void>((resolve) => {
+        gate.once("connection", () => resolve());
+      });
+      const refused = readBroker(fixture.socketPath, envelope);
+      const winner = await Promise.race([
+        refused.then((body) => ({ kind: "response" as const, body })),
+        ninthSpawn.then(() => ({ kind: "spawned" as const })),
+      ]);
+      expect(winner).toEqual({ kind: "response", body: '{"error":"COMPANY_CANDIDATE_BROKER_REFUSED"}' });
+      expect(started).toHaveLength(8);
+      expect(tracked).toHaveLength(8);
+      const settled = Promise.all(tracked.map((child) => once(child, "close")));
+      for (const sock of started) sock.end();
+      await settled;
+      const admittedSpawn = new Promise<Socket>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error("admission child did not start")), 5_000);
+        gate.once("connection", (socket) => {
+          clearTimeout(timer);
+          resolve(socket);
+        });
+      });
+      const admittedReply = readBroker(fixture.socketPath, envelope);
+      const admittedSocket = await admittedSpawn;
+      admittedSocket.end();
+      const admitted = await admittedReply;
+      expect(JSON.parse(admitted)).toEqual({ state: "ok" });
+      expect(tracked).toHaveLength(9);
+    } finally {
+      execTarget["execFile"] = realExecFile;
+      netTarget["createServer"] = realCreateServer;
+      syncBuiltinESMExports();
+      for (const sock of started) sock.destroy();
+      for (const child of tracked) {
+        if (child.exitCode === null && child.signalCode === null) child.kill("SIGTERM");
+      }
+      await broker?.close();
+    }
   });
 });
