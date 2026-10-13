@@ -142,12 +142,15 @@ The document owns vertical scrolling. The operational shell uses StyleGallery's 
   scope, native disclosure for provider/workspace/candidate/content/access fence,
   and existing representative passkey approve/reject controls.
 - **States**: pending, expired, approved awaiting separate processor, accepted
-  awaiting downstream verification, uncertain requiring review, superseded removed.
+  awaiting downstream verification, rejected awaiting SB forwarding (read-only),
+  uncertain requiring review, superseded removed.
 - **Privacy**: metadata only; no company content, personal memory or raw source.
 - **Layout, typography and motion**: existing Record List, Panel, Digest and
   identity-list primitives and tokens; no new geometry, colors or animation.
 - **Authority**: processor does not sign representative decisions; acceptance is
   not processing completion. Approved/accepted items retain their exact identity.
+  Unforwarded rejections remain visible without decision controls. Their exact
+  request ID is available in the existing identity disclosure for manual execution.
 
 ### Today Decision Surface
 - **Structure**: six semantic panels in fixed source order: NOW, BLOCKED, DECISIONS, NEXT 3, WORKERS, RISKS.

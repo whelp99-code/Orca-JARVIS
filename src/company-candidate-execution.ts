@@ -1,5 +1,7 @@
 import { randomUUID } from "node:crypto";
 import { execFile } from "node:child_process";
+import { lstatSync, realpathSync } from "node:fs";
+import { dirname } from "node:path";
 import { z } from "zod";
 import { canonicalize } from "./canonical.js";
 import { ControlPlane } from "./control-plane.js";
@@ -46,6 +48,26 @@ export function createCompanyCompletionVerifier(path: string): CompanyCompletion
   }).strict().safeParse(parseCompanyJson(readCandidateCredential(path)));
   if (!parsed.success) throw new JarvisError("COMPANY_COMPLETION_CONFIG_INVALID");
   const config = parsed.data;
+  try {
+    const uid = process.getuid?.();
+    const executable = lstatSync(config.executable);
+    if (realpathSync(config.executable) !== config.executable || !executable.isFile()
+      || (executable.uid !== uid && executable.uid !== 0)
+      || (executable.mode & 0o022) !== 0 || (executable.mode & 0o111) === 0) {
+      throw new JarvisError("COMPANY_COMPLETION_CONFIG_INVALID");
+    }
+    for (let parent = dirname(config.executable);; parent = dirname(parent)) {
+      const info = lstatSync(parent);
+      if (!info.isDirectory() || (info.uid !== uid && info.uid !== 0)
+        || ((info.mode & 0o022) !== 0 && (info.mode & 0o1000) === 0)) {
+        throw new JarvisError("COMPANY_COMPLETION_CONFIG_INVALID");
+      }
+      if (parent === "/") break;
+    }
+  } catch (error) {
+    if (!(error instanceof Error)) throw error;
+    throw new JarvisError("COMPANY_COMPLETION_CONFIG_INVALID");
+  }
   return {
     verify(command, acceptance) {
       return new Promise((resolve, reject) => {
@@ -105,13 +127,15 @@ export class CompanyCandidateExecutor {
     ).get(requestId) as { payload_json: string; public_key_pem: string; principal_id: string } | undefined;
     if (!receiptRow) throw new JarvisError("CONTROL_APPROVAL_REQUIRED");
     const approval: CommandApprovalReceipt = JSON.parse(receiptRow.payload_json);
+    const operation = approval.decision === "approve" ? "accept" : "reject";
+    const acknowledged = this.readReceipt(requestId, operation);
     const redeemed = this.db.db.prepare("SELECT 1 FROM control_command_redemptions WHERE request_id=?").get(requestId);
-    const proofNow = redeemed ? new Date(approval.issued_at) : this.clock();
+    const proofNow = acknowledged ? new Date(approval.issued_at) : this.clock();
     if (approval.request_id !== requestId || approval.command_digest !== stored.command_digest
       || approval.signer_principal_id !== command.args.owner || receiptRow.principal_id !== command.args.owner
       || !verifyCommandApproval(approval, receiptRow.public_key_pem, proofNow)
       || Date.parse(approval.expires_at) > Date.parse(command.expires_at)
-      || (!redeemed && Date.parse(command.expires_at) <= this.clock().getTime())
+      || (!acknowledged && Date.parse(command.expires_at) <= this.clock().getTime())
       || !["approved", "rejected", "completed"].includes(stored.state)) {
       throw new JarvisError("CONTROL_APPROVAL_INVALID");
     }
@@ -131,8 +155,7 @@ export class CompanyCandidateExecutor {
       ).run(approval.receipt_id, requestId, instant.toISOString());
     }).immediate();
     try {
-      const operation = approval.decision === "approve" ? "accept" : "reject";
-      let receipt = this.readReceipt(requestId, operation);
+      let receipt = acknowledged;
       if (!receipt) {
         this.update(requestId, token, "invoking");
         this.assertNotRevoked(command, approval);

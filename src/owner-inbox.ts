@@ -110,6 +110,8 @@ export class OwnerInbox {
          h.status AS company_status FROM control_command_requests r
        LEFT JOIN company_candidate_handoffs h ON h.request_id=r.request_id
        WHERE r.state IN ('pending', 'approved', 'failed', 'uncertain')
+         OR (r.state='rejected' AND r.action='company.candidate.transition' AND h.current=1
+           AND h.status NOT IN ('rejected','completed','superseded'))
        ORDER BY r.requested_at,r.request_id`,
     ).all() as Row[];
     return rows.filter(row => visible(row)).map(row => itemOf(row, Date.parse(row.expires_at) <= now));
@@ -300,13 +302,15 @@ function isAllowed(action: string): boolean {
 function visible(row: Row): boolean {
   if (!isAllowed(row.action)) return false;
   if (row.action === "company.candidate.transition" && row.company_status == null) return false;
+  if (row.state === "rejected") return row.action === "company.candidate.transition";
   if (row.state === "pending") return true;
   if (row.state === "failed" || row.state === "uncertain") return true;
   return row.state === "approved" && !approvedActionHasExecutor(row.action);
 }
 
 function itemOf(row: Row, expired: boolean): OwnerInboxItem {
-  const manual = row.state === "approved" && !approvedActionHasExecutor(row.action);
+  const rejectedCompany = row.action === "company.candidate.transition" && row.state === "rejected";
+  const manual = rejectedCompany || (row.state === "approved" && !approvedActionHasExecutor(row.action));
   const external = externalDisplay(row);
   const company = row.action === "company.candidate.transition" && row.target_json && row.args_json
     ? { ...companyTargetSchema.parse(JSON.parse(row.target_json)),
@@ -317,7 +321,8 @@ function itemOf(row: Row, expired: boolean): OwnerInboxItem {
   return {
     request_id: row.request_id,
     action: row.action,
-    summary: manual ? company ? `${base} (${company.status === "accepted" ? "수락됨 — 완료 확인 대기" : approvedText})` : approvedText
+    summary: rejectedCompany ? "거절됨 — SB 전달 대기(수동)"
+      : manual ? company ? `${base} (${company.status === "accepted" ? "수락됨 — 완료 확인 대기" : approvedText})` : approvedText
       : expired ? `${base} (만료됨)` : base,
     command_digest: row.command_digest,
     expires_at: row.expires_at,

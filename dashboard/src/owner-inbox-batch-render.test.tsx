@@ -10,6 +10,25 @@ function json(body: unknown): Response {
 }
 
 describe("owner inbox batch list", () => {
+  it("exposes the executable request ID on a read-only company rejection", async () => {
+    const requestId = "company-handoff:v1:operator-visible-rejection:1";
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url === "/api/v1/session"
+      ? json({ csrf_token: "test-csrf" })
+      : json({ schema_version: 1, passkey_enrolled: true, items: [{
+        request_id: requestId, action: "company.candidate.transition",
+        summary: "synthetic rejection", command_digest: DIGEST, expires_at: "2026-10-14T00:00:00.000Z",
+        manual_wait: true, company_candidate: {
+          provider_instance_id: "provider:fixture", workspace_id: "12345678-1234-4234-8234-123456789abc",
+          candidate_id: "review-fixture", content_digest: DIGEST, owner: "principal:owner",
+          projects: ["project:fixture"], policy_revision: "policy:fixture", deletion_sequence: 0,
+          deletion_set_root: DIGEST, processor_principal_id: "principal:processor", status: "imported",
+        },
+      }] })));
+    render(<OwnerInboxPanel />);
+    expect(await screen.findByText(requestId)).toBeInTheDocument();
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+  });
+
   it("renders every batch item by index even when digests collide", async () => {
     vi.stubGlobal("fetch", vi.fn(async (url: string) => {
       if (url === "/api/v1/session") return json({ csrf_token: "csrf-1" });

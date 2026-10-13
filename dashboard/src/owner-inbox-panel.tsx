@@ -178,7 +178,7 @@ export function OwnerInboxPanel() {
                 <li className="record" key={item.request_id} data-request-state={item.state} data-failure-code={item.failure_code ?? ""}>
                   <p className="record-title">{item.summary}</p>
                   <p className="record-meta">{actionLabel(item.action)}</p>
-                  {item.company_candidate ? <CompanyDetails item={item.company_candidate} /> : null}
+                  {item.company_candidate ? <CompanyDetails item={item.company_candidate} requestId={item.request_id} /> : null}
                   <Digest value={item.command_digest} />
                 </li>
               ))}
@@ -191,7 +191,7 @@ export function OwnerInboxPanel() {
               {item.requester_label ? <p className="record-title" data-requester={item.requester_label}>{item.requester_label}</p> : null}
               <p className="record-title">{item.batch_items && item.batch_items.length > 0 ? `윤비서 요청 · ${item.batch_items.length}건 묶음 · 30분 내 승인` : item.summary}</p>
               {item.batch_items && item.batch_items.length > 0 ? <BatchLines items={item.batch_items} /> : null}
-              {item.company_candidate ? <CompanyDetails item={item.company_candidate} /> : null}
+              {item.company_candidate ? <CompanyDetails item={item.company_candidate} requestId={item.request_id} /> : null}
               {item.expired ? <p className="record-meta">만료됨. 이 요청은 더 이상 승인할 수 없습니다.</p> : null}
               <p className="record-meta">{actionLabel(item.action)}</p>
               <p className="record-meta"><time dateTime={item.expires_at}>유효 {formatKst(item.expires_at)}</time></p>
@@ -213,11 +213,12 @@ export function OwnerInboxPanel() {
   );
 }
 
-function CompanyDetails({ item }: Readonly<{ item: NonNullable<Item["company_candidate"]> }>) {
+function CompanyDetails({ item, requestId }: Readonly<{ item: NonNullable<Item["company_candidate"]>; requestId: string }>) {
   return (
     <details className="digest">
       <summary className="record-meta">회사 후보·승인 범위 확인</summary>
       <dl className="identity-list">
+        <div><dt>request_id</dt><dd>{requestId}</dd></div>
         {Object.entries(item).map(([key, value]) => (
           <div key={key}><dt>{key}</dt><dd>{Array.isArray(value) ? value.join(", ") : value}</dd></div>
         ))}

@@ -1,8 +1,13 @@
-import { createPublicKey } from "node:crypto";
+import { createHash, createPublicKey } from "node:crypto";
+import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it } from "vitest";
-import { CompanyCandidateExecutor, type CompanyCompletionVerifier } from "../../src/company-candidate-execution.js";
+import { CompanyCandidateExecutor, createCompanyCompletionVerifier, type CompanyCompletionVerifier } from "../../src/company-candidate-execution.js";
 import { importCompanyPage } from "../../src/company-candidate-import.js";
 import { ControlPlane } from "../../src/control-plane.js";
+import { JarvisError } from "../../src/jarvis-error.js";
+import { OwnerInbox } from "../../src/owner-inbox.js";
+import { ControlReceiptSigner } from "../../src/remote-approval-signer.js";
 import { COMPANY_CONTEXT, COMPANY_NOW, COMPANY_PROCESSOR_KEY, COMPANY_OWNER_KEY, companyApproval,
   companyClient, companyDatabase, companyPage, companyProposal, companyReceipt, companyState } from "../fixtures/company-candidate.js";
 
@@ -23,6 +28,65 @@ async function approved(decision: "approve" | "reject" = "approve") {
 }
 
 describe("restricted company candidate executor", () => {
+  it.each([
+    ["approve", 600_000], ["reject", 600_000],
+    ["approve", 86_400_000], ["reject", 86_400_000],
+  ] as const)("refuses expired %s first-use retry without SB acknowledgement at %i", async (decision, age) => {
+    const live = await approved(decision);
+    let now = new Date(COMPANY_NOW); let calls = 0;
+    try {
+      const client = companyClient(async () => {
+        calls++;
+        if (calls === 1) throw new JarvisError("COMPANY_CANDIDATE_CALL_REFUSED");
+        return companyReceipt(live.proposal.command.request_id, decision === "approve" ? "accept" : "reject");
+      });
+      const executor = new CompanyCandidateExecutor(live.db, client, undefined, () => now);
+      await expect(executor.execute(live.proposal.command.request_id)).rejects.toThrow("COMPANY_CANDIDATE_CALL_REFUSED");
+      now = new Date(COMPANY_NOW.getTime() + age);
+      await expect(executor.execute(live.proposal.command.request_id)).rejects.toThrow("CONTROL_APPROVAL_INVALID");
+      expect(calls).toBe(1);
+      expect(live.db.db.prepare("SELECT count(*) AS n FROM company_candidate_sb_receipts").get()).toEqual({ n: 0 });
+      expect(live.db.db.prepare("SELECT count(*) AS n FROM control_command_redemptions").get()).toEqual({ n: 1 });
+      expect(companyState(live.db, live.proposal.command.request_id)?.lease_token).toBeNull();
+    } finally { live.close(); }
+  });
+
+  it("allows completion after expiry only when SB acceptance was acknowledged", async () => {
+    const live = await approved(); let now = new Date(COMPANY_NOW);
+    const operations: string[] = [];
+    try {
+      const client = companyClient(async operation => {
+        if (operation === "handoff") throw new Error("unexpected handoff");
+        operations.push(operation);
+        return companyReceipt(live.proposal.command.request_id, operation);
+      });
+      expect((await new CompanyCandidateExecutor(live.db, client, undefined, () => now)
+        .execute(live.proposal.command.request_id)).state).toBe("accepted");
+      now = new Date(COMPANY_NOW.getTime() + 86_400_001);
+      expect((await new CompanyCandidateExecutor(live.db, client, completed, () => now)
+        .execute(live.proposal.command.request_id)).state).toBe("completed");
+      expect(operations).toEqual(["accept", "mark_processed"]);
+    } finally { live.close(); }
+  });
+
+  it("retains a signed unforwarded rejection as a read-only inbox request until SB acknowledges it", async () => {
+    const live = await approved("reject");
+    try {
+      const inbox = new OwnerInbox(live.db,
+        new ControlReceiptSigner(COMPANY_OWNER_KEY, "company-owner", COMPANY_CONTEXT.owner), true, () => COMPANY_NOW);
+      const item = inbox.list().find(value => value.request_id === live.proposal.command.request_id);
+      expect(item).toMatchObject({ manual_wait: true, company_candidate: { status: "imported" } });
+      expect(() => inbox.issueChallenge({
+        request_id: live.proposal.command.request_id, command_digest: live.proposal.command_digest,
+        decision: "approve", session_id: "test",
+      })).toThrow("OWNER_INBOX_NOT_PENDING");
+      const client = companyClient(async () => companyReceipt(live.proposal.command.request_id, "reject"));
+      expect((await new CompanyCandidateExecutor(live.db, client, undefined, () => COMPANY_NOW)
+        .execute(live.proposal.command.request_id)).state).toBe("rejected");
+      expect(inbox.list().some(value => value.request_id === live.proposal.command.request_id)).toBe(false);
+    } finally { live.close(); }
+  });
+
   it("forwards the original signed decision and keeps acceptance separate from completion", async () => {
     const live = await approved(); const operations: string[] = [];
     try {
@@ -224,4 +288,55 @@ describe("restricted company candidate executor", () => {
       expect(companyState(live.db, live.proposal.command.request_id)?.status).toBe("uncertain");
     } finally { live.close(); }
   });
+});
+
+describe("pinned company completion executable", () => {
+  it("runs a protected owned verifier and observes its durable effect", async () => {
+    const live = await companyDatabase();
+    try {
+      const effect = join(live.root, "effect");
+      const executable = join(live.root, "verify");
+      writeFileSync(executable, `#!${process.execPath}
+import { writeFileSync, readFileSync } from "node:fs";
+import { createHash } from "node:crypto";
+let data=""; process.stdin.setEncoding("utf8");
+process.stdin.on("data", chunk => { data+=chunk; });
+process.stdin.on("end", () => {
+  const input=JSON.parse(data);
+  writeFileSync(${JSON.stringify(effect)}, "verified-fixture-effect", {mode:0o600});
+  const bytes=readFileSync(${JSON.stringify(effect)});
+  console.log(JSON.stringify({state:"completed",request_id:input.command.request_id,
+    effect_digest:"sha256:"+createHash("sha256").update(bytes).digest("hex")}));
+});
+`, { mode: 0o700 });
+      const config = join(live.root, "completion.json");
+      writeFileSync(config, JSON.stringify({ schema_version: 1, executable, args: [] }), { mode: 0o600 });
+      const command = companyProposal().command;
+      const result = await createCompanyCompletionVerifier(config).verify(command, companyReceipt(command.request_id, "accept"));
+      expect(result).toEqual({ state: "completed", request_id: command.request_id,
+        effect_digest: `sha256:${createHash("sha256").update("verified-fixture-effect").digest("hex")}` });
+      expect(readFileSync(effect, "utf8")).toBe("verified-fixture-effect");
+    } finally { live.close(); }
+  });
+
+  it.each(["symlink", "writable-file", "writable-parent", "directory"] as const)(
+    "refuses an unsafe %s before treating the verifier as pinned", async kind => {
+      const live = await companyDatabase();
+      try {
+        const parent = join(live.root, "bin"); mkdirSync(parent, { mode: 0o700 });
+        const executable = join(parent, "verify");
+        if (kind === "directory") mkdirSync(executable, { mode: 0o700 });
+        else {
+          const target = kind === "symlink" ? join(parent, "target") : executable;
+          writeFileSync(target, `#!${process.execPath}\nprocess.stdin.resume();\n`, { mode: 0o700 });
+          if (kind === "symlink") symlinkSync(target, executable);
+          if (kind === "writable-file") chmodSync(executable, 0o722);
+          if (kind === "writable-parent") chmodSync(parent, 0o777);
+        }
+        const config = join(live.root, "completion.json");
+        writeFileSync(config, JSON.stringify({ schema_version: 1, executable, args: [] }), { mode: 0o600 });
+        expect(() => createCompanyCompletionVerifier(config)).toThrow("COMPANY_COMPLETION_CONFIG_INVALID");
+      } finally { live.close(); }
+    },
+  );
 });

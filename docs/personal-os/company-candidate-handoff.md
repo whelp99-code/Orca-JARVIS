@@ -118,6 +118,9 @@ to SB `process` accept/reject. Company request/authority domains match SB v1.
 Acceptance alone leaves the local request approved and the company state
 accepted. Without a completion verifier, `mark_processed` is never called.
 Reject is terminal and never runs downstream completion.
+An unforwarded signed rejection stays read-only in the representative inbox.
+Open its company scope disclosure to copy the exact `request_id` into the
+execution command; it disappears only after the SB rejection receipt is retained.
 
 For completion, explicitly add:
 
@@ -127,6 +130,10 @@ For completion, explicitly add:
 
 That private0600 config is a closed object with `schema_version:1`,
 `executable` (absolute path) and `args` (fixed string array, at most16).
+The executable must be a canonical regular non-symlink file, owned by the
+service account or root, executable and not group/world-writable. Its directory
+chain must have trusted ownership and prevent replacement by other accounts;
+trusted sticky temporary directories may contain service-owned private fixtures.
 The pinned program receives `{schema_version:1,command,acceptance}` on stdin,
 with the exact command and retained acceptance metadata. It must perform or
 independently verify the actual downstream work idempotently by request/digest,
@@ -170,6 +177,10 @@ each external phase. SB checks its own current pinned owner keys on replay
 and completion. Propagate rotations/revocations to both trust roots; SB does
 not query JARVIS's revocation registry. A local approved request that has not
 been consumed by SB must still have a valid first-use receipt window.
+Local pre-call redemption is not proof of SB consumption. Expiry is relaxed
+only after the matching accept/reject receipt is durably retained locally.
+If a first call or local receipt commit fails, an expired retry is refused
+without dispatching an apparently fresh use.
 
 ## Focused verification
 
