@@ -3,6 +3,7 @@ import { JarvisError } from "../../src/jarvis-error.js";
 import { MemoryOutboxStore } from "../../src/memory-outbox-store.js";
 import { MemoryCandidateReviewSpool } from "../../src/memory-candidate-review-spool.js";
 import { MemoryOutboxTick } from "../../src/memory-outbox-tick.js";
+import type { MemoryOutboxCycleResult } from "../../src/memory-outbox-types.js";
 import { memoryOutboxLog } from "../../src/memory-outbox-diagnostic.js";
 import { closeMemoryDatabase } from "../fixtures/memory-candidate-store.js";
 import { claimAction, evidence, FixtureReader, OUTBOX_ARTIFACT_DIGEST, outboxFixture,
@@ -14,6 +15,47 @@ afterEach(() => {
   for (const fixture of fixtures.splice(0)) closeMemoryDatabase(fixture.database);
 });
 describe("memory outbox failure diagnostics", () => {
+  it("retains an uncertain writer diagnostic through missing artifacts until terminal settlement", async () => {
+    const fixture = await outboxFixture({ deadline: 60_000 });
+    fixtures.push(fixture);
+    const queued = fixture.service.enqueue(claimAction(fixture));
+    const write = fixture.writer.write.bind(fixture.writer);
+    vi.spyOn(fixture.writer, "write").mockImplementation(async request => {
+      await write(request);
+      throw new JarvisError("MEMORY_OUTBOX_WRITE_FAILED");
+    });
+    const cycles: MemoryOutboxCycleResult[] = [];
+    const logs: unknown[] = [];
+    const tick = new MemoryOutboxTick(async () => {
+      const cycle = await fixture.service.runOnce("uncertain-recovery-worker", 1);
+      cycles.push(cycle); return cycle;
+    }, failure => logs.push(memoryOutboxLog(failure)));
+    tick.tick(); await tick.drain();
+    for (let index = 0; index < 2; index++) {
+      fixture.clock.now = new Date(fixture.clock.now.getTime() + 10_000);
+      tick.tick(); await tick.drain();
+      expect(cycles.at(-1)?.reconciling).toBe(1);
+      expect(fixture.service.get(queued.outbox_id)?.state).toBe("reconciling");
+      expect(logs).toHaveLength(1);
+    }
+    const artifact = { kind: "current" as const, checked_at: "2026-08-31T03:30:30.000Z",
+      evidence: [evidence(OUTBOX_ARTIFACT_DIGEST)] };
+    vi.spyOn(fixture.reader, "recentChanges").mockResolvedValue(artifact);
+    vi.spyOn(fixture.reader, "readPage").mockResolvedValue(artifact);
+    fixture.clock.now = new Date(fixture.clock.now.getTime() + 10_000);
+
+    tick.tick(); await tick.drain(); tick.tick(); await tick.close();
+
+    expect(cycles.at(-2)?.settled).toBe(1);
+    expect(fixture.service.get(queued.outbox_id)?.state).toBe("settled");
+    expect(fixture.writer.calls).toHaveLength(1);
+    expect(logs).toEqual([
+      { component: "memory.outbox", phase: "provider_write",
+        error_code: "MEMORY_OUTBOX_PROVIDER_WRITE_FAILED", cause_code: "MEMORY_OUTBOX_UNCLASSIFIED_ERROR" },
+      { component: "memory.outbox", phase: null, error_code: null, cause_code: null },
+    ]);
+  });
+
   it("clears an active cleanup failure after an otherwise-idle successful retry", async () => {
     const fixture = await outboxFixture({ reader: new FixtureReader({ kind: "current",
       checked_at: "2026-08-28T12:00:00.000Z", evidence: [evidence(OUTBOX_ARTIFACT_DIGEST)] }) });

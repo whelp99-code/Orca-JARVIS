@@ -6,6 +6,38 @@ import { memoryOutboxLog, tagMemoryOutboxFailure } from "../../src/memory-outbox
 
 const empty = { claimed: 0, dispatched: 0, reconciling: 0, settled: 0, conflicts: 0, failed: 0 };
 describe("bounded memory outbox tick", () => {
+  it.each(["reconciling", "dispatched", "commands_reconciled"] as const)(
+    "retains a provider write failure through %s without terminal evidence", async progress => {
+      const logs: unknown[] = [];
+      const cycle = vi.fn<() => Promise<MemoryOutboxCycleResult>>()
+        .mockRejectedValueOnce(tagMemoryOutboxFailure("provider_write", new Error("PRIVATE_SENTINEL")))
+        .mockResolvedValueOnce({ ...empty, [progress]: 1 });
+      const tick = new MemoryOutboxTick(cycle, failure => logs.push(memoryOutboxLog(failure)));
+
+      tick.tick(); await tick.drain(); tick.tick(); await tick.close();
+
+      expect(logs).toEqual([{ component: "memory.outbox", phase: "provider_write",
+        error_code: "MEMORY_OUTBOX_PROVIDER_WRITE_FAILED", cause_code: "MEMORY_OUTBOX_UNCLASSIFIED_ERROR" }]);
+    });
+  it.each(["settled", "conflicts"] as const)("recovers a provider write only after %s evidence", async terminal => {
+    const logs: unknown[] = [];
+    const cycle = vi.fn<() => Promise<MemoryOutboxCycleResult>>()
+      .mockRejectedValueOnce(tagMemoryOutboxFailure("provider_write", new Error("PRIVATE_SENTINEL")))
+      .mockResolvedValueOnce({ ...empty, reconciling: 1 })
+      .mockResolvedValueOnce({ ...empty, [terminal]: 1 })
+      .mockResolvedValueOnce(empty);
+    const tick = new MemoryOutboxTick(cycle, failure => logs.push(memoryOutboxLog(failure)));
+    tick.tick(); await tick.drain(); tick.tick(); await tick.drain();
+    expect(logs).toHaveLength(1);
+
+    tick.tick(); await tick.drain(); tick.tick(); await tick.close();
+
+    expect(logs).toEqual([
+      { component: "memory.outbox", phase: "provider_write",
+        error_code: "MEMORY_OUTBOX_PROVIDER_WRITE_FAILED", cause_code: "MEMORY_OUTBOX_UNCLASSIFIED_ERROR" },
+      { component: "memory.outbox", phase: null, error_code: null, cause_code: null },
+    ]);
+  });
   it.each(["getter", "prototype", "revoked"])("reports a throwing %s without rejecting the tick", async kind => {
     const error = new JarvisError("MEMORY_OUTBOX_STALE_FENCE");
     Object.defineProperty(error, "code", { get: () => { throw new Error("PRIVATE_SENTINEL"); } });
