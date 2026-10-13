@@ -180,6 +180,9 @@ request and original owner receipt for an explicit retry. SB exact replay
 returns its original receipt. The local lease serializes workers; receipt and
 effect persistence commit together. A failure after SB acceptance preserves
 that evidence, leaves completion unconfirmed and never fabricates success.
+Retrying without a completion verifier preserves the acknowledged `uncertain`
+status and failure code in both stored state and the execution result; it does
+not resend acceptance or report the request as newly accepted.
 
 Current JARVIS decision-key trust and local revocations are checked before
 each external phase. SB checks its own current pinned owner keys on replay

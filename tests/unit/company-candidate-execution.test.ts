@@ -228,6 +228,43 @@ describe("restricted company candidate executor", () => {
     } finally { live.close(); }
   });
 
+  it("keeps an acknowledged uncertain state on retry without a completion verifier", async () => {
+    const live = await approved(); const operations: string[] = [];
+    try {
+      const client = companyClient(async operation => {
+        operations.push(operation); return companyReceipt(live.proposal.command.request_id, "accept");
+      });
+      await expect(new CompanyCandidateExecutor(live.db, client, { async verify() { return { state: "failed" }; } },
+        () => COMPANY_NOW).execute(live.proposal.command.request_id)).rejects.toThrow("COMPANY_COMPLETION_UNVERIFIED");
+      const prior = live.db.db.prepare(
+        "SELECT status,failure_code,completion_json FROM company_candidate_handoffs WHERE request_id=?",
+      ).get(live.proposal.command.request_id);
+      expect((await new CompanyCandidateExecutor(live.db, client, undefined, () => COMPANY_NOW)
+        .execute(live.proposal.command.request_id)).state).toBe("uncertain");
+      expect(live.db.db.prepare(
+        "SELECT status,failure_code,completion_json FROM company_candidate_handoffs WHERE request_id=?",
+      ).get(live.proposal.command.request_id)).toEqual(prior);
+      expect(operations).toEqual(["accept"]);
+      expect(live.db.db.prepare("SELECT count(*) AS n FROM company_candidate_sb_receipts").get()).toEqual({ n: 1 });
+      expect(new ControlPlane(live.db).get(live.proposal.command.request_id)?.state).toBe("approved");
+    } finally { live.close(); }
+  });
+
+  it("returns accepted when an unacknowledged uncertain retry obtains fresh SB acceptance", async () => {
+    const live = await approved(); let calls = 0;
+    try {
+      const client = companyClient(async () => {
+        if (++calls === 1) throw new JarvisError("COMPANY_CANDIDATE_CALL_REFUSED");
+        return companyReceipt(live.proposal.command.request_id, "accept");
+      });
+      const executor = new CompanyCandidateExecutor(live.db, client, undefined, () => COMPANY_NOW);
+      await expect(executor.execute(live.proposal.command.request_id)).rejects.toThrow("COMPANY_CANDIDATE_CALL_REFUSED");
+      expect((await executor.execute(live.proposal.command.request_id)).state).toBe("accepted");
+      expect(companyState(live.db, live.proposal.command.request_id)?.status).toBe("accepted");
+      expect(calls).toBe(2);
+    } finally { live.close(); }
+  });
+
   it("rejects wrong SB metadata without completion evidence", async () => {
     const live = await approved(); let calls = 0;
     try {

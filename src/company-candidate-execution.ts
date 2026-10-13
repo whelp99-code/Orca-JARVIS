@@ -169,7 +169,7 @@ export class CompanyCandidateExecutor {
       if (operation === "reject") return this.result(requestId, "rejected");
       let completion = row.completion_json === null ? undefined : completionSchema.parse(JSON.parse(row.completion_json));
       if (!completion) {
-        if (!this.completion) return this.result(requestId, "accepted");
+        if (!this.completion) return this.result(requestId, acknowledged ? row.status : "accepted");
         this.update(requestId, token, "verifying");
         this.assertNotRevoked(command, approval);
         const parsed = completionSchema.safeParse(await this.completion.verify(command, receipt));
