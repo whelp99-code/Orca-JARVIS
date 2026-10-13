@@ -40,6 +40,59 @@ describe("memory outbox failure diagnostics", () => {
         "SELECT COUNT(*) AS n FROM memory_reconciliation_events WHERE event_type IN ('artifact_missing','artifact_observed','settled')",
       ).get()).toEqual({ n: 0 });
     });
+  it("propagates an unexpected primitive dispatch failure without sending to the provider", async () => {
+    const fixture = await outboxFixture();
+    fixtures.push(fixture);
+    const queued = fixture.service.enqueue(claimAction(fixture));
+    vi.spyOn(MemoryOutboxStore.prototype, "markDispatch").mockImplementation(() => { throw "PRIVATE_SENTINEL"; });
+    const cycle = fixture.service.runOnce("unexpected-dispatch-worker", 1);
+    await expect(cycle).rejects.toBeInstanceOf(Error);
+    await expect(cycle).rejects.not.toBeInstanceOf(JarvisError);
+    expect(fixture.writer.calls).toHaveLength(0);
+    expect(fixture.service.get(queued.outbox_id)?.state).toBe("claimed");
+  });
+  it("attributes a primitive provider observation without retaining the thrown value", async () => {
+    const fixture = await outboxFixture();
+    fixtures.push(fixture);
+    fixture.service.enqueue(claimAction(fixture));
+    const marker = "PRIVATE_SENTINEL /qa/private/path";
+    vi.spyOn(fixture.reader, "recentChanges").mockRejectedValue(marker);
+    const logs: unknown[] = [];
+    const tick = new MemoryOutboxTick(() => fixture.service.runOnce("primitive-worker", 1),
+      failure => logs.push(memoryOutboxLog(failure)));
+    tick.tick(); await tick.close();
+    expect(logs).toEqual([{ component: "memory.outbox", phase: "provider_observation",
+      error_code: "MEMORY_OUTBOX_PROVIDER_OBSERVATION_FAILED", cause_code: "MEMORY_OUTBOX_UNCLASSIFIED_ERROR" }]);
+    expect(JSON.stringify(logs)).not.toContain("PRIVATE_SENTINEL");
+    expect(fixture.writer.calls).toHaveLength(1);
+  });
+  it("clears a prior failure after lease expiry commits artifact_missing only", async () => {
+    const fixture = await outboxFixture();
+    fixtures.push(fixture);
+    const queued = fixture.service.enqueue(claimAction(fixture));
+    let observations = 0;
+    vi.spyOn(fixture.reader, "recentChanges").mockImplementation(() => {
+      observations += 1;
+      if (observations === 1) return Promise.reject(new JarvisError("MEMORY_READ_FENCE_KEY_UNAVAILABLE"));
+      return Promise.resolve(fixture.reader.outcome);
+    });
+    const logs: unknown[] = [];
+    const tick = new MemoryOutboxTick(() => fixture.service.runOnce("recover-worker", 1),
+      failure => logs.push(memoryOutboxLog(failure)));
+    tick.tick(); await tick.drain();
+    tick.tick(); await tick.drain();
+    fixture.clock.now = new Date(fixture.clock.now.getTime() + 10_000);
+    tick.tick(); await tick.close();
+    expect(logs).toEqual([
+      { component: "memory.outbox", phase: "provider_observation",
+        error_code: "MEMORY_OUTBOX_PROVIDER_OBSERVATION_FAILED", cause_code: "MEMORY_READ_FENCE_KEY_UNAVAILABLE" },
+      { component: "memory.outbox", phase: null, error_code: null, cause_code: null },
+    ]);
+    expect(fixture.service.get(queued.outbox_id)?.state).toBe("reconciling");
+    expect(fixture.database.authority.db.prepare(
+      "SELECT COUNT(*) AS n FROM memory_reconciliation_events WHERE event_type='artifact_missing'",
+    ).get()).toEqual({ n: 1 });
+  });
   it("keeps the original settlement exception and rolls back colliding evidence", async () => {
     const fixture = await outboxFixture({ reader: new FixtureReader({ kind: "current",
       checked_at: "2026-08-28T12:00:00.000Z", evidence: [evidence(OUTBOX_ARTIFACT_DIGEST)] }) });

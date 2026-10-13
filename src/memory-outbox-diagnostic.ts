@@ -23,15 +23,18 @@ export type MemoryOutboxFailure = {
 
 // Keep the original exception identity without retaining or copying private details.
 const phases = new WeakMap<object, MemoryOutboxPhase>();
+const GENERIC_CAUSE = "MEMORY_OUTBOX_UNCLASSIFIED_ERROR";
 export function tagMemoryOutboxFailure(phase: MemoryOutboxPhase, error: unknown): unknown {
-  if ((typeof error === "object" && error !== null) || typeof error === "function") phases.set(error, phase);
-  return error;
+  const tagged = (typeof error === "object" && error !== null) || typeof error === "function"
+    ? error : new Error(GENERIC_CAUSE);
+  phases.set(tagged, phase);
+  return tagged;
 }
 export function memoryOutboxFailure(error: unknown): MemoryOutboxFailure {
   const phase = (typeof error === "object" && error !== null) || typeof error === "function"
     ? phases.get(error) ?? "cycle" : "cycle";
   const cause = error instanceof JarvisError && /^[A-Z][A-Z0-9_]{0,63}$/.test(error.code)
-    ? error.code : "MEMORY_OUTBOX_UNCLASSIFIED_ERROR";
+    ? error.code : GENERIC_CAUSE;
   return { phase, error_code: codes[phase], cause_code: cause };
 }
 export function memoryOutboxLog(failure: MemoryOutboxFailure | null) {

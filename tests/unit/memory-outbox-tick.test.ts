@@ -80,6 +80,42 @@ describe("bounded memory outbox tick", () => {
     expect(JSON.stringify(logs)).not.toContain("PRIVATE_SENTINEL");
     expect(JSON.stringify(logs)).not.toContain("/qa/private/path");
   });
+  it("clears a prior failure after reconciling-only progress and ignores that progress for changes", async () => {
+    const report = vi.fn(); const changes = vi.fn();
+    const cycle = vi.fn<() => Promise<MemoryOutboxCycleResult>>()
+      .mockRejectedValueOnce(tagMemoryOutboxFailure("provider_observation", new JarvisError("MEMORY_READ_FENCE_KEY_UNAVAILABLE")))
+      .mockResolvedValueOnce(empty)
+      .mockResolvedValueOnce({ ...empty, reconciling: 1 });
+    const tick = new MemoryOutboxTick(cycle, report, changes);
+    for (let index = 0; index < 3; index++) { tick.tick(); await tick.drain(); }
+    await tick.close();
+    expect(report.mock.calls).toEqual([
+      [{ phase: "provider_observation", error_code: "MEMORY_OUTBOX_PROVIDER_OBSERVATION_FAILED",
+        cause_code: "MEMORY_READ_FENCE_KEY_UNAVAILABLE" }],
+      [null],
+    ]);
+    expect(changes).not.toHaveBeenCalled();
+  });
+  it.each(["PRIVATE_SENTINEL /qa/private/path", undefined, null, false, 42, 1n, Symbol("PRIVATE_SENTINEL")])(
+    "attributes a primitive throw to the supplied phase without retaining it (%#)", async marker => {
+      const tagged = tagMemoryOutboxFailure("provider_observation", marker);
+      expect(tagged).toBeInstanceOf(Error);
+      expect(tagged).not.toBeInstanceOf(JarvisError);
+      expect(tagged).not.toBe(marker);
+      expect(tagMemoryOutboxFailure("settlement", marker)).not.toBe(tagged);
+      if (!(tagged instanceof Error)) return;
+      expect(tagged.message).toBe("MEMORY_OUTBOX_UNCLASSIFIED_ERROR");
+      expect(tagged.cause).toBeUndefined();
+      const fn = () => undefined;
+      expect(tagMemoryOutboxFailure("settlement", fn)).toBe(fn);
+      const logs: unknown[] = [];
+      const tick = new MemoryOutboxTick(async () => { throw tagged; }, failure => logs.push(memoryOutboxLog(failure)));
+      tick.tick(); await tick.close();
+      expect(logs).toEqual([{ component: "memory.outbox", phase: "provider_observation",
+        error_code: "MEMORY_OUTBOX_PROVIDER_OBSERVATION_FAILED", cause_code: "MEMORY_OUTBOX_UNCLASSIFIED_ERROR" }]);
+      expect(JSON.stringify(logs)).not.toContain("PRIVATE_SENTINEL");
+      expect(JSON.stringify(tagged)).not.toContain("PRIVATE_SENTINEL");
+    });
   it("logs only a tagged phase and valid JarvisError code without replacing the exception", async () => {
     const error = new JarvisError("MEMORY_OUTBOX_STALE_FENCE", "PRIVATE_SENTINEL /qa/private/path");
     expect(tagMemoryOutboxFailure("record_observation", error)).toBe(error);
