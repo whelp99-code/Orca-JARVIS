@@ -59,7 +59,10 @@ SB config bytes must use SB's canonical JSON format; do not pretty-print or
 re-serialize them with ordinary JSON defaults. Broker/client configs below use
 the independent bounded company parser.
 The executable must be an owned regular executable, not a symlink or writable
-by other users. The broker refuses an existing socket instead of unlinking it.
+by other users. Its full directory chain must have current-account or root
+ownership and must not be group/world-writable unless it is a trusted sticky
+directory. The broker checks the chain at startup and before every dispatch.
+It refuses an existing socket instead of unlinking it.
 
 ```bash
 node dist/src/company-candidate-broker-main.mjs --config /absolute/broker.json

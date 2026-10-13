@@ -2,7 +2,7 @@ import childProcess, { spawn, type ChildProcess } from "node:child_process";
 import { syncBuiltinESMExports } from "node:module";
 import { createHash, createPublicKey, generateKeyPairSync, verify } from "node:crypto";
 import { once } from "node:events";
-import { chmodSync, existsSync, mkdtempSync, readFileSync, rmSync, statSync, symlinkSync, watch, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, watch, writeFileSync } from "node:fs";
 import net, { createConnection, createServer, type Server, type Socket } from "node:net";
 import { userInfo } from "node:os";
 import { join } from "node:path";
@@ -308,6 +308,55 @@ function exchange(socketPath: string, payload: unknown): Promise<string> {
 }
 
 describe("company candidate broker", () => {
+  it.each([0o720, 0o702])("refuses a writable executable ancestor at startup (%i)", async mode => {
+    const fixture = brokerFixture("handoff", CHILD);
+    const ancestor = join(fixture.root, "replaceable");
+    const parent = join(ancestor, "bin");
+    mkdirSync(parent, { recursive: true, mode: 0o700 });
+    const executable = join(parent, "sb-company");
+    renameSync(fixture.bin, executable);
+    chmodSync(ancestor, mode);
+    writeSecure(fixture.brokerConfig, JSON.stringify({
+      schema_version: 1, role: "handoff", socket: fixture.socketPath,
+      sb_company_bin: executable, sb_config_file: fixture.sbConfig,
+    }));
+    const child = spawnBroker(fixture.brokerConfig);
+    const [code] = await once(child, "exit", { signal: AbortSignal.timeout(3_000) });
+    expect(code).toBe(1);
+    expect(existsSync(fixture.socketPath)).toBe(false);
+    expect(existsSync(fixture.log)).toBe(false);
+  });
+
+  it.each([0o720, 0o702])("rechecks a changed executable ancestor before dispatch (%i)", async mode => {
+    const fixture = brokerFixture("handoff", CHILD);
+    const ancestor = join(fixture.root, "replaceable");
+    const parent = join(ancestor, "bin");
+    mkdirSync(parent, { recursive: true, mode: 0o700 });
+    chmodSync(ancestor, 0o700);
+    const executable = join(parent, "sb-company");
+    renameSync(fixture.bin, executable);
+    writeSecure(fixture.brokerConfig, JSON.stringify({
+      schema_version: 1, role: "handoff", socket: fixture.socketPath,
+      sb_company_bin: executable, sb_config_file: fixture.sbConfig,
+    }));
+    const ready = socketReady(fixture.root, fixture.socketPath);
+    spawnBroker(fixture.brokerConfig);
+    await ready;
+    const key = join(fixture.root, "client.pem");
+    writeSecure(key, FIXED_PRIVATE_PEM);
+    const config = join(fixture.root, "client.json");
+    writeSecure(config, JSON.stringify(clientConfig(fixture.root, "handoff", fixture.socketPath, key)));
+    const client = createCompanyClient(config, "handoff");
+    expect(await client.call("handoff", { limit: 1, offset: 0 }, NOW)).toEqual({ state: "ok" });
+    rmSync(fixture.log);
+    chmodSync(ancestor, mode);
+    renameSync(executable, `${executable}.original`);
+    writeSecure(executable, `#!/bin/bash\nprintf replaced > '${fixture.log}'\nprintf '%s' '{"state":"replacement"}'\n`, 0o755);
+    await expect(client.call("handoff", { limit: 1, offset: 0 }, NOW))
+      .rejects.toThrow("COMPANY_CANDIDATE_CALL_REFUSED");
+    expect(existsSync(fixture.log)).toBe(false);
+  });
+
   it("runs only the pinned action and config", async () => {
     const fixture = brokerFixture("handoff", CHILD);
     const ready = socketReady(fixture.root, fixture.socketPath);

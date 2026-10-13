@@ -83,6 +83,14 @@ function assertPinnedExecutable(path: string): void {
     || (info.mode & 0o111) === 0) {
     fail("COMPANY_CANDIDATE_BROKER_CONFIG_INVALID");
   }
+  for (let parent = dirname(path);; parent = dirname(parent)) {
+    const directory = lstatSync(parent);
+    if (!directory.isDirectory() || (directory.uid !== uid && directory.uid !== 0)
+      || ((directory.mode & 0o022) !== 0 && (directory.mode & 0o1000) === 0)) {
+      fail("COMPANY_CANDIDATE_BROKER_CONFIG_INVALID");
+    }
+    if (parent === "/") break;
+  }
 }
 
 function loadBrokerConfig(configPath: string): BrokerConfig {
@@ -161,6 +169,7 @@ function childEnv(): NodeJS.ProcessEnv {
 }
 
 function runPinned(config: BrokerConfig, action: "handoff" | "process", stdin: Buffer): Promise<string> {
+  assertPinnedExecutable(config.sb_company_bin);
   return new Promise((resolve, reject) => {
     const child = execFile(config.sb_company_bin, [action, "--config", config.sb_config_file], {
       shell: false,
