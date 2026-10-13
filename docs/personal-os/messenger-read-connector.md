@@ -53,7 +53,8 @@ The file contract is exactly:
 
 The example is synthetic. A successful empty export has count `0` and age
 `null`. Counts/ages must be nonnegative safe integers, and count/age emptiness
-must agree. The exporter captures one observation time and writes atomically:
+must agree. The exporter copies the inbox into scratch, then captures one
+observation time for aggregation and writes atomically:
 exclusive temporary file, exact `0640`, file fsync, rename, directory fsync.
 It does not create or mutate the inbox, claim/complete work, send anything, or
 generate keys.

@@ -245,6 +245,13 @@ function openSnapshot(source) {
   return { db, scratch };
 }
 
+export function summarizeDatabase(db, uid) {
+  const observedMillis = Date.now();
+  return { observedMillis, summary: aggregate(db, uid, observedMillis) };
+}
+
+export { aggregate };
+
 function readFlags() {
   let values;
   try {
@@ -272,12 +279,11 @@ function main() {
   const flags = readFlags();
   const source = sourceOk(flags.inbox);
   const output = outputOk(flags.output, source);
-  const observedMillis = Date.now();
   let db;
   let scratch;
   try {
     ({ db, scratch } = openSnapshot(source));
-    const summary = aggregate(db, flags.uid, observedMillis);
+    const { observedMillis, summary } = summarizeDatabase(db, flags.uid);
     const bytes = Buffer.from(`${JSON.stringify({
       schema_version: 1,
       observed_at: new Date(observedMillis).toISOString(),

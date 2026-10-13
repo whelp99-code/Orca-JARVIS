@@ -165,7 +165,7 @@ describe("export-messenger-summary", () => {
     expect(createHash("sha256").update(readFileSync(inbox)).digest("hex")).toBe(digest);
   });
 
-  it("exports a WAL-mode inbox without adding sqlite sidecars beside the source", () => {
+  it("exports a WAL-mode inbox without mutating source sqlite sidecars", () => {
     const { root, dir } = workspace();
     const inbox = join(root, "inbox.sqlite");
     const output = join(dir, "summary.json");
@@ -174,13 +174,33 @@ describe("export-messenger-summary", () => {
       { id: "processing", payload: payload(UID), state: "processing", received: RECEIVED + 1_000 },
     ], "WAL");
     const before = readdirSync(root).slice().sort();
+    const sidecarBefore = before
+      .filter((name) => name.endsWith("-wal") || name.endsWith("-shm"))
+      .map((name) => ({ name, stat: statSync(join(root, name)) }));
     const result = run(inbox, output, UID, 0o077);
     expect(result.status).toBe(0);
     expect(result.stdout).toBe("ok\n");
     expect(readdirSync(root).slice().sort()).toEqual(before);
+    for (const { name, stat } of sidecarBefore) {
+      const after = statSync(join(root, name));
+      expect(after.mtimeMs).toBe(stat.mtimeMs);
+      expect(after.size).toBe(stat.size);
+    }
     expect(createHash("sha256").update(readFileSync(inbox)).digest("hex")).toBe(digest);
     const { parsed } = snapshot(output);
     expect(parsed).toMatchObject({ incomplete_count: 2, oldest_incomplete_age_ms: expect.any(Number) });
+  });
+
+  it("refuses output targeting the source WAL or SHM sidecars", () => {
+    const { root } = workspace();
+    const inbox = join(root, "inbox.sqlite");
+    const digest = seed(inbox, [{ id: "pending", payload: payload(UID), state: "pending", received: RECEIVED }], "WAL");
+    for (const target of [`${inbox}-wal`, `${inbox}-shm`]) {
+      const result = run(inbox, target);
+      expect(result.status).toBe(1);
+      expect(result.stderr).toBe("OUTPUT_INVALID\n");
+    }
+    expect(createHash("sha256").update(readFileSync(inbox)).digest("hex")).toBe(digest);
   });
 
   it("refuses a normalized output alias of the source database", () => {
