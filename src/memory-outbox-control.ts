@@ -1,5 +1,5 @@
 import { ControlPlane } from "./control-plane.js";
-import { JarvisError, type AuthorityDb } from "./db.js";
+import type { AuthorityDb } from "./db.js";
 import type { MemoryOutboxCycleResult } from "./memory-outbox-types.js";
 import { requireLimit } from "./memory-outbox-values.js";
 import { memoryOutboxFailure, tagMemoryOutboxFailure, type MemoryOutboxFailure } from "./memory-outbox-diagnostic.js";
@@ -28,9 +28,11 @@ export function reconcileMemoryOutboxCommands(authority: AuthorityDb, now: Date,
   for (const row of rows) {
     try { if (control.reconcileMemoryOutbox(row.outbox_id, now)) count += 1; }
     catch (failure) {
-      diagnostic ??= memoryOutboxFailure(tagMemoryOutboxFailure("control_reconciliation", failure));
-      error = failure instanceof JarvisError && failure.code === "MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID"
-        ? failure.code : "MEMORY_OUTBOX_CONTROL_RECONCILE_FAILED";
+      const current = memoryOutboxFailure(tagMemoryOutboxFailure("control_reconciliation", failure));
+      const code = current.cause_code;
+      diagnostic ??= current;
+      error = code === "MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID"
+        ? code : "MEMORY_OUTBOX_CONTROL_RECONCILE_FAILED";
     }
   }
   const last = rows.at(-1);
