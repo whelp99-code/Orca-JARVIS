@@ -6,6 +6,29 @@ import { memoryOutboxLog, tagMemoryOutboxFailure } from "../../src/memory-outbox
 
 const empty = { claimed: 0, dispatched: 0, reconciling: 0, settled: 0, conflicts: 0, failed: 0 };
 describe("bounded memory outbox tick", () => {
+  it.each(["getter", "prototype", "revoked"])("reports a throwing %s without rejecting the tick", async kind => {
+    const error = new JarvisError("MEMORY_OUTBOX_STALE_FENCE");
+    Object.defineProperty(error, "code", { get: () => { throw new Error("PRIVATE_SENTINEL"); } });
+    let thrown: unknown = error;
+    if (kind === "prototype") thrown = new Proxy(error, {
+      getPrototypeOf() { throw new Error("PRIVATE_SENTINEL"); },
+    });
+    if (kind === "revoked") {
+      const { proxy, revoke } = Proxy.revocable(error, {});
+      revoke(); thrown = proxy;
+    }
+    const logs: unknown[] = [];
+    const tick = new MemoryOutboxTick(async () => {
+      throw tagMemoryOutboxFailure("provider_observation", thrown);
+    }, failure => logs.push(memoryOutboxLog(failure)));
+
+    tick.tick();
+    await tick.close();
+
+    expect(logs).toEqual([{ component: "memory.outbox", phase: "provider_observation",
+      error_code: "MEMORY_OUTBOX_PROVIDER_OBSERVATION_FAILED", cause_code: "MEMORY_OUTBOX_UNCLASSIFIED_ERROR" }]);
+  });
+
   it("publishes recovered command changes and reports control proof errors", async () => {
     const report = vi.fn(); const changes = vi.fn();
     const cycle = vi.fn<() => Promise<MemoryOutboxCycleResult>>()

@@ -48,7 +48,9 @@ export function tagMemoryOutboxFailure(phase: MemoryOutboxPhase, error: unknown)
 export function memoryOutboxFailure(error: unknown): MemoryOutboxFailure {
   const phase = (typeof error === "object" && error !== null) || typeof error === "function"
     ? phases.get(error) ?? "cycle" : "cycle";
-  const code = error instanceof JarvisError ? error.code : GENERIC_CAUSE;
+  let code = GENERIC_CAUSE;
+  try { code = error instanceof JarvisError ? error.code : GENERIC_CAUSE; }
+  catch { code = GENERIC_CAUSE; }
   const cause = approvedCauseCodes.has(code) ? code : GENERIC_CAUSE;
   return { phase, error_code: codes[phase], cause_code: cause };
 }

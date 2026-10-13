@@ -1,8 +1,29 @@
 import { describe, expect, it } from "vitest";
 import { JarvisError } from "../../src/jarvis-error.js";
-import { memoryOutboxFailure } from "../../src/memory-outbox-diagnostic.js";
+import { memoryOutboxFailure, tagMemoryOutboxFailure } from "../../src/memory-outbox-diagnostic.js";
 
 describe("memory outbox diagnostic cause codes", () => {
+  it.each(["getter", "prototype", "revoked"])("classifies a throwing %s without losing the tagged phase", kind => {
+    const error = new JarvisError("MEMORY_OUTBOX_STALE_FENCE");
+    let reads = 0;
+    Object.defineProperty(error, "code", { get: () => { reads += 1; throw new Error("PRIVATE_SENTINEL"); } });
+    let thrown: unknown = error;
+    if (kind === "prototype") thrown = new Proxy(error, {
+      getPrototypeOf() { throw new Error("PRIVATE_SENTINEL"); },
+    });
+    if (kind === "revoked") {
+      const { proxy, revoke } = Proxy.revocable(error, {});
+      revoke(); thrown = proxy;
+    }
+
+    const failure = memoryOutboxFailure(tagMemoryOutboxFailure("provider_observation", thrown));
+
+    expect(failure).toEqual({ phase: "provider_observation",
+      error_code: "MEMORY_OUTBOX_PROVIDER_OBSERVATION_FAILED", cause_code: "MEMORY_OUTBOX_UNCLASSIFIED_ERROR" });
+    expect(reads).toBe(kind === "getter" ? 1 : 0);
+    expect(JSON.stringify(failure)).not.toContain("PRIVATE_SENTINEL");
+  });
+
   it.each(["getter", "proxy"])("preserves the approved snapshot from a stateful %s", kind => {
     const error = new JarvisError("MEMORY_OUTBOX_STALE_FENCE");
     let reads = 0;
