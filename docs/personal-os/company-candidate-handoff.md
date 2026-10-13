@@ -89,6 +89,9 @@ One invocation imports one bounded page at offset0, never an unbounded drain.
 Schedule it only after account/config/enrollment review; a suggested upper bound
 is one invocation per minute, with no overlapping caller. It does not sign an
 owner decision. Repeated export imports are no-ops by exact request ID/digest.
+An already stored current handoff with the same digest and access fence remains
+a no-op after expiry, preserving its decision and receipts. Freshness is checked
+only for new request IDs; conflicting replays and new expired rows still fail.
 The logical key, target, access fence, generation, lifetime and command digest
 are recomputed and checked. One bad item rolls back the whole page.
 

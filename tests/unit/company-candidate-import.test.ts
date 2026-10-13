@@ -6,10 +6,57 @@ import { ControlPlane } from "../../src/control-plane.js";
 import { OwnerInbox } from "../../src/owner-inbox.js";
 import { ControlReceiptSigner } from "../../src/remote-approval-signer.js";
 import { parseCompanyJson } from "../../src/company-candidate-json.js";
+import { CompanyCandidateExecutor } from "../../src/company-candidate-execution.js";
 import { COMPANY_CONTEXT, COMPANY_NOW, COMPANY_OWNER_KEY, companyApproval, companyClient,
-  companyDatabase, companyPage, companyProposal } from "../fixtures/company-candidate.js";
+  companyDatabase, companyPage, companyProposal, companyReceipt } from "../fixtures/company-candidate.js";
 
 describe("company-only handoff importer", () => {
+  it.each(["pending", "accepted"] as const)("keeps an expired %s duplicate unchanged while importing a fresh candidate", async state => {
+    const live = await companyDatabase();
+    try {
+      const old = companyProposal("repeated");
+      importCompanyPage(live.db, companyPage(old), COMPANY_CONTEXT, COMPANY_NOW);
+      if (state === "accepted") {
+        new ControlPlane(live.db).decide(companyApproval(old), COMPANY_NOW);
+        const client = companyClient(async () => companyReceipt(old.command.request_id, "accept"));
+        expect((await new CompanyCandidateExecutor(live.db, client, undefined, () => COMPANY_NOW)
+          .execute(old.command.request_id)).state).toBe("accepted");
+      }
+      const prior = live.db.db.prepare("SELECT * FROM company_candidate_handoffs WHERE request_id=?").get(old.command.request_id);
+      const receipts = live.db.db.prepare("SELECT * FROM company_candidate_sb_receipts WHERE request_id=?").all(old.command.request_id);
+      const control = new ControlPlane(live.db);
+      const request = control.get(old.command.request_id);
+      const later = new Date(COMPANY_NOW.getTime() + 86_400_000);
+      const fresh = companyProposal("fresh-in-repeated-page", later);
+      expect(importCompanyPage(live.db, companyPage(fresh, old), COMPANY_CONTEXT, later))
+        .toMatchObject({ imported: 1, duplicate: 1, superseded: 0 });
+      expect(live.db.db.prepare("SELECT * FROM company_candidate_handoffs WHERE request_id=?").get(old.command.request_id)).toEqual(prior);
+      expect(live.db.db.prepare("SELECT * FROM company_candidate_sb_receipts WHERE request_id=?").all(old.command.request_id)).toEqual(receipts);
+      expect(control.get(old.command.request_id)).toEqual(request);
+      expect(control.get(fresh.command.request_id)?.state).toBe("pending");
+      expect(control.list()).toHaveLength(2);
+    } finally { live.close(); }
+  });
+
+  it("still rejects a conflicting expired replay and atomically refuses unseen expired rows", async () => {
+    const live = await companyDatabase();
+    try {
+      const old = companyProposal("repeated");
+      importCompanyPage(live.db, companyPage(old), COMPANY_CONTEXT, COMPANY_NOW);
+      const later = new Date(COMPANY_NOW.getTime() + 86_400_001);
+      const fresh = companyProposal("fresh", later);
+      const conflict = companyProposal("repeated", new Date(COMPANY_NOW.getTime() + 1));
+      expect(() => importCompanyPage(live.db, companyPage(fresh, conflict), COMPANY_CONTEXT, later))
+        .toThrow("COMPANY_HANDOFF_REPLAY_CONFLICT");
+      const unseenExpired = companyProposal("unseen-expired");
+      expect(() => importCompanyPage(live.db, companyPage(fresh, unseenExpired), COMPANY_CONTEXT, later))
+        .toThrow("COMPANY_HANDOFF_EXPIRED");
+      const control = new ControlPlane(live.db);
+      expect(control.get(fresh.command.request_id)).toBeUndefined();
+      expect(control.list()).toHaveLength(1);
+    } finally { live.close(); }
+  });
+
   it("imports an exact request and repeated page as one inbox item", async () => {
     const live = await companyDatabase();
     try {

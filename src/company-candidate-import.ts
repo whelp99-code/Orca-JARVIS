@@ -53,8 +53,6 @@ export function importCompanyPage(db: AuthorityDb, value: unknown, context: Comp
     let imported = 0; let duplicate = 0; let superseded = 0;
     for (const item of items) {
       assertCompanyContext(item.command, context);
-      if (Date.parse(item.command.requested_at) > now.getTime()
-        || Date.parse(item.command.expires_at) <= now.getTime()) throw new JarvisError("COMPANY_HANDOFF_EXPIRED");
       const prior = db.db.prepare(
         "SELECT command_digest,context_json,current FROM company_candidate_handoffs WHERE request_id=?",
       ).get(item.command.request_id) as { command_digest: string; context_json: string; current: number } | undefined;
@@ -64,6 +62,8 @@ export function importCompanyPage(db: AuthorityDb, value: unknown, context: Comp
           || prior.current !== 1) throw new JarvisError("COMPANY_HANDOFF_REPLAY_CONFLICT");
         duplicate++; continue;
       }
+      if (Date.parse(item.command.requested_at) > now.getTime()
+        || Date.parse(item.command.expires_at) <= now.getTime()) throw new JarvisError("COMPANY_HANDOFF_EXPIRED");
       const old = db.db.prepare(
         `SELECT h.request_id,h.generation,h.status,r.state,r.expires_at FROM company_candidate_handoffs h
          JOIN control_command_requests r USING(request_id) WHERE h.idempotency_key=? AND h.current=1`,
