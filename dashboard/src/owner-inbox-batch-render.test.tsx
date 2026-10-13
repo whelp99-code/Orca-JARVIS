@@ -10,6 +10,27 @@ function json(body: unknown): Response {
 }
 
 describe("owner inbox batch list", () => {
+  it.each([false, true])("keeps the company proof deadline visible when needs_review=%s", async needsReview => {
+    const requestId = "company-handoff:v1:proof-window:1";
+    const expiresAt = "2026-10-13T00:10:00.000Z";
+    vi.stubGlobal("fetch", vi.fn(async (url: string) => url === "/api/v1/session"
+      ? json({ csrf_token: "test-csrf" })
+      : json({ schema_version: 1, passkey_enrolled: true, items: [{
+        request_id: requestId, action: "company.candidate.transition",
+        summary: "company deadline fixture", command_digest: DIGEST, expires_at: expiresAt,
+        manual_wait: true, expired: needsReview, needs_review: needsReview, company_candidate: {
+          provider_instance_id: "provider:fixture", workspace_id: "12345678-1234-4234-8234-123456789abc",
+          candidate_id: "deadline-fixture", content_digest: DIGEST, owner: "principal:owner",
+          projects: ["project:fixture"], policy_revision: "policy:fixture", deletion_sequence: 0,
+          deletion_set_root: DIGEST, processor_principal_id: "principal:processor", status: "imported",
+        },
+      }] })));
+    render(<OwnerInboxPanel />);
+    expect(await screen.findByText(requestId)).toBeInTheDocument();
+    expect(document.querySelector("time")?.getAttribute("datetime")).toBe(expiresAt);
+    expect(screen.queryAllByRole("button")).toHaveLength(0);
+  });
+
   it("exposes the executable request ID on a read-only company rejection", async () => {
     const requestId = "company-handoff:v1:operator-visible-rejection:1";
     vi.stubGlobal("fetch", vi.fn(async (url: string) => url === "/api/v1/session"

@@ -92,6 +92,7 @@ type Row = Readonly<{
   requested_by?: string;
   target_json?: string;
   company_status?: string | null;
+  company_first_use_expires_at?: string | null;
 }>;
 
 export class OwnerInbox {
@@ -107,14 +108,25 @@ export class OwnerInbox {
     const rows = this.db.db.prepare(
       `SELECT r.request_id,r.action,r.command_digest,r.expires_at,r.requested_at,r.state,
          COALESCE(h.failure_code,r.failure_code) AS failure_code,r.args_json,r.target_json,r.requested_by,
-         h.status AS company_status FROM control_command_requests r
+         h.status AS company_status,
+         CASE WHEN h.current=1 AND NOT EXISTS (
+           SELECT 1 FROM company_candidate_sb_receipts s WHERE s.request_id=r.request_id
+             AND s.operation=CASE a.decision WHEN 'approve' THEN 'accept' ELSE 'reject' END
+         ) THEN a.expires_at ELSE NULL END AS company_first_use_expires_at
+       FROM control_command_requests r
        LEFT JOIN company_candidate_handoffs h ON h.request_id=r.request_id
+       LEFT JOIN control_command_receipts a ON a.request_id=r.request_id
        WHERE r.state IN ('pending', 'approved', 'failed', 'uncertain')
          OR (r.state='rejected' AND r.action='company.candidate.transition' AND h.current=1
            AND h.status NOT IN ('rejected','completed','superseded'))
        ORDER BY r.requested_at,r.request_id`,
     ).all() as Row[];
-    return rows.filter(row => visible(row)).map(row => itemOf(row, Date.parse(row.expires_at) <= now));
+    return rows.filter(row => visible(row)).map(row => {
+      const expiresAt = row.company_first_use_expires_at
+        && Date.parse(row.company_first_use_expires_at) < Date.parse(row.expires_at)
+        ? row.company_first_use_expires_at : row.expires_at;
+      return itemOf({ ...row, expires_at: expiresAt }, Date.parse(expiresAt) <= now);
+    });
   }
 
   issueChallenge(input: Readonly<{
@@ -329,7 +341,8 @@ function itemOf(row: Row, expired: boolean): OwnerInboxItem {
     requested_at: row.requested_at,
     expired,
     manual_wait: manual,
-    needs_review: row.state === "failed" || row.state === "uncertain" || row.company_status === "uncertain",
+    needs_review: row.state === "failed" || row.state === "uncertain" || row.company_status === "uncertain"
+      || (expired && row.company_first_use_expires_at != null),
     failure_code: row.state === "failed" || row.state === "uncertain" || row.company_status === "uncertain" ? row.failure_code : null,
     ...(external ? { batch_summary: external.batch_summary, batch_items: external.batch_items } : {}),
     ...(external && row.requested_by ? { requester_label: externalDelegateRequester(row.requested_by)?.header } : {}),

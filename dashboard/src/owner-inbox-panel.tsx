@@ -179,6 +179,7 @@ export function OwnerInboxPanel() {
                   <p className="record-title">{item.summary}</p>
                   <p className="record-meta">{actionLabel(item.action)}</p>
                   {item.company_candidate ? <CompanyDetails item={item.company_candidate} requestId={item.request_id} /> : null}
+                  {item.company_candidate ? <p className="record-meta"><time dateTime={item.expires_at}>유효 {formatKst(item.expires_at)}</time></p> : null}
                   <Digest value={item.command_digest} />
                 </li>
               ))}
