@@ -4,9 +4,11 @@ import { PersonalConnectorConfigError } from "./personal-connector-types.js";
 import type { SecondBrainOutcome, SecondBrainReadMethod } from "./second-brain-transport.js";
 import type { SecondBrainConnectorRead } from "./personal-connector-second-brain-source.js";
 import { parseMailConnectorConfig, type MailConnectorConfig } from "./personal-connector-mail-source.js";
+import { parseMessengerConnectorConfig, type MessengerConnectorConfig } from "./personal-connector-messenger-source.js";
 
 export type ParsedPersonalConnectorConfig = {
   readonly mail?: MailConnectorConfig;
+  readonly messenger?: MessengerConnectorConfig;
   readonly clock: () => Date;
   readonly second_brain: {
     readonly call: (method: SecondBrainReadMethod, arguments_: Readonly<Record<string, unknown>>) => Promise<SecondBrainOutcome>;
@@ -92,9 +94,12 @@ export function parsePersonalConnectorConfig(value: unknown): ParsedPersonalConn
   try {
     const keys = ["clock", "orca", "portfolio", "second_brain", "timeline"];
     if (typeof value === "object" && value !== null && Object.hasOwn(value, "mail")) keys.push("mail");
+    if (typeof value === "object" && value !== null && Object.hasOwn(value, "messenger")) keys.push("messenger");
     const top = record(value, keys);
     const mail = keys.includes("mail")
       ? parseMailConnectorConfig(record(top["mail"], ["base_url", "reader_key_file", "reader_principal_id"])) : undefined;
+    const messenger = keys.includes("messenger")
+      ? parseMessengerConnectorConfig(record(top["messenger"], ["snapshot_file", "producer_uid"])) : undefined;
     const memory = record(top["second_brain"], [
       "budgets", "call", "expiry_ms", "max_age_ms", "operation", "readiness_inspect",
     ]);
@@ -115,6 +120,7 @@ export function parsePersonalConnectorConfig(value: unknown): ParsedPersonalConn
     if (!transportCall(call) || !readinessInspect(inspect) || !runner(run) || !clock(readClock)) return fail();
     return Object.freeze({
       ...(mail === undefined ? {} : { mail }),
+      ...(messenger === undefined ? {} : { messenger }),
       clock: readClock,
       second_brain: Object.freeze({
         call,

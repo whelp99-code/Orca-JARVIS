@@ -69,6 +69,7 @@ export type DashboardServerOptions = {
   readonly priceFinance?: import("../integration/price-finance-production.js").PriceFinanceRuntime;
   readonly mailCandidates?: import("../integration/mail-candidates-production.js").MailCandidatesRuntime;
   readonly mailSource?: import("../personal-connector-mail-source.js").MailPersonalConnectorSource;
+  readonly messengerSource?: import("../personal-connector-messenger-source.js").MessengerPersonalConnectorSource;
 };
 
 export function createDashboardServer(options: DashboardServerOptions): DashboardServer & {
@@ -123,6 +124,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
       priceFinance: options.priceFinance,
       mailCandidates: options.mailCandidates,
       mailSource: options.mailSource,
+      messengerSource: options.messengerSource,
     });
     requests.add(pending);
     void pending.then(() => requests.delete(pending), () => requests.delete(pending));
