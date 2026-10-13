@@ -308,6 +308,75 @@ function exchange(socketPath: string, payload: unknown): Promise<string> {
 }
 
 describe("company candidate broker", () => {
+  it.each([0o770, 0o707])("refuses a writable SB config ancestor at startup (%i)", async mode => {
+    const fixture = brokerFixture("handoff", CHILD);
+    const ancestor = join(fixture.root, "replaceable-config");
+    const parent = join(ancestor, "credentials");
+    mkdirSync(parent, { recursive: true, mode: 0o700 });
+    const config = join(parent, "sb.json");
+    renameSync(fixture.sbConfig, config);
+    chmodSync(ancestor, mode);
+    writeSecure(fixture.brokerConfig, JSON.stringify({
+      schema_version: 1, role: "handoff", socket: fixture.socketPath,
+      sb_company_bin: fixture.bin, sb_config_file: config,
+    }));
+    const child = spawnBroker(fixture.brokerConfig);
+    const [code] = await once(child, "exit", { signal: AbortSignal.timeout(3_000) });
+    expect(code).toBe(1);
+    expect(existsSync(fixture.socketPath)).toBe(false);
+    expect(existsSync(fixture.log)).toBe(false);
+  });
+
+  it.each([0o770, 0o707])("refuses a replaced SB config under a changed ancestor before dispatch (%i)", async mode => {
+    const fixture = brokerFixture("handoff", CHILD);
+    const ancestor = join(fixture.root, "replaceable-config");
+    const parent = join(ancestor, "credentials");
+    mkdirSync(parent, { recursive: true, mode: 0o700 });
+    chmodSync(ancestor, 0o700);
+    const config = join(parent, "sb.json");
+    renameSync(fixture.sbConfig, config);
+    writeSecure(fixture.brokerConfig, JSON.stringify({
+      schema_version: 1, role: "handoff", socket: fixture.socketPath,
+      sb_company_bin: fixture.bin, sb_config_file: config,
+    }));
+    const ready = socketReady(fixture.root, fixture.socketPath);
+    spawnBroker(fixture.brokerConfig);
+    await ready;
+    const key = join(fixture.root, "client.pem");
+    writeSecure(key, FIXED_PRIVATE_PEM);
+    const clientPath = join(fixture.root, "client.json");
+    writeSecure(clientPath, JSON.stringify(clientConfig(fixture.root, "handoff", fixture.socketPath, key)));
+    const client = createCompanyClient(clientPath, "handoff");
+    expect(await client.call("handoff", { limit: 1, offset: 0 }, NOW)).toEqual({ state: "ok" });
+    rmSync(fixture.log);
+    chmodSync(ancestor, mode);
+    renameSync(config, `${config}.original`);
+    writeSecure(config, "{\"replacement\":true}");
+    await expect(client.call("handoff", { limit: 1, offset: 0 }, NOW))
+      .rejects.toThrow("COMPANY_CANDIDATE_CALL_REFUSED");
+    expect(existsSync(fixture.log)).toBe(false);
+  });
+
+  it.each(["mode", "symlink"] as const)("rechecks the SB config file itself before dispatch (%s)", async change => {
+    const fixture = brokerFixture("handoff", CHILD);
+    const ready = socketReady(fixture.root, fixture.socketPath);
+    spawnBroker(fixture.brokerConfig);
+    await ready;
+    const key = join(fixture.root, "client.pem");
+    writeSecure(key, FIXED_PRIVATE_PEM);
+    const clientPath = join(fixture.root, "client.json");
+    writeSecure(clientPath, JSON.stringify(clientConfig(fixture.root, "handoff", fixture.socketPath, key)));
+    const client = createCompanyClient(clientPath, "handoff");
+    if (change === "mode") chmodSync(fixture.sbConfig, 0o640);
+    else {
+      renameSync(fixture.sbConfig, `${fixture.sbConfig}.original`);
+      symlinkSync(`${fixture.sbConfig}.original`, fixture.sbConfig);
+    }
+    await expect(client.call("handoff", { limit: 1, offset: 0 }, NOW))
+      .rejects.toThrow("COMPANY_CANDIDATE_CALL_REFUSED");
+    expect(existsSync(fixture.log)).toBe(false);
+  });
+
   it.each([0o720, 0o702])("refuses a writable executable ancestor at startup (%i)", async mode => {
     const fixture = brokerFixture("handoff", CHILD);
     const ancestor = join(fixture.root, "replaceable");

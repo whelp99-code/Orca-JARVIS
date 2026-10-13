@@ -62,6 +62,9 @@ The executable must be an owned regular executable, not a symlink or writable
 by other users. Its full directory chain must have current-account or root
 ownership and must not be group/world-writable unless it is a trusted sticky
 directory. The broker checks the chain at startup and before every dispatch.
+Broker and SB config files must be current-account-owned regular0600 files,
+without symlinks, under the same trusted directory-chain rule. The SB config
+file is rechecked before every dispatch, not just when the broker starts.
 It refuses an existing socket instead of unlinking it.
 
 ```bash
