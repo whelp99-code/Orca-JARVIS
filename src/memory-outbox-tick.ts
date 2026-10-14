@@ -20,10 +20,12 @@ export class MemoryOutboxTick {
         ?? (result.cleanup_error === undefined ? undefined : memoryOutboxFailure(
           tagMemoryOutboxFailure("review_cleanup", new JarvisError(result.cleanup_error))))
         ?? (result.failed === 0 ? undefined : memoryOutboxFailure(new JarvisError("MEMORY_OUTBOX_CYCLE_FAILED")));
-      const progressed = memoryOutboxRecovered(result, this.lastFailure) || (this.lastFailure?.phase === "provider_write"
+      const requiresOwnRetry = this.lastFailure !== undefined && ["record_write_result", "dispatch",
+        "claim_dispatch", "claim_reconciliation", "recover_dispatch"].includes(this.lastFailure.phase);
+      const progressed = memoryOutboxRecovered(result, this.lastFailure) || (!requiresOwnRetry && (this.lastFailure?.phase === "provider_write"
         ? result.settled + result.conflicts > 0
         : result.dispatched + result.settled + result.conflicts + result.reconciling + (result.commands_reconciled ?? 0) > 0
-          || (this.lastFailure?.phase === "review_cleanup" && result.cleanup_error === undefined));
+          || (this.lastFailure?.phase === "review_cleanup" && result.cleanup_error === undefined)));
       this.report(failure, progressed);
       if (result.dispatched + result.settled + result.conflicts + result.failed + (result.commands_reconciled ?? 0) > 0) this.onChange();
     }, error => { this.report(memoryOutboxFailure(error)); }).finally(() => { this.pending = undefined; });

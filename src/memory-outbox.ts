@@ -58,7 +58,7 @@ export class MemoryOutboxService {
       if (claimed === undefined) break;
       result.claimed += 1;
       let dispatch;
-      try { dispatch = this.phase("dispatch", () => this.store.markDispatch(claimed.outbox_id, worker, claimed.lease_fence, this.options.clock())); }
+      try { dispatch = this.phase("dispatch", () => this.store.markDispatch(claimed.outbox_id, worker, claimed.lease_fence, this.options.clock()), claimed.outbox_id); }
       catch (error) {
         result.failed += 1; failures.push(memoryOutboxFailure(error));
         if (error instanceof JarvisError) continue;
@@ -72,7 +72,7 @@ export class MemoryOutboxService {
           memoryOutboxFailure(tagMemoryOutboxFailure("provider_write", error)));
         outcome = { kind: "uncertain" as const, code: "MEMORY_OUTBOX_WRITE_FAILED" };
       }
-      this.phase("record_write_result", () => this.store.recordResult(dispatch, outcome, this.options.clock())); result.reconciling += 1;
+      this.phase("record_write_result", () => this.store.recordResult(dispatch, outcome, this.options.clock()), dispatch.saga.outbox_id); result.reconciling += 1;
     }
     const reconciled = await this.reconcileOnce(worker, bound);
     const failure = reconciled.failure?.phase === "provider_write" ? reconciled.failure : failures[0] ?? reconciled.failure;
@@ -127,9 +127,19 @@ export class MemoryOutboxService {
     const failure = pending.failure ?? commands.failure;
     return markMemoryOutboxRecovery({ ...result, ...commands, ...(failure === undefined ? {} : { failure }) }, pending.retired);
   }
-  private phase<T>(phase: MemoryOutboxPhase, operation: () => T): T {
-    try { return operation(); }
-    catch (error) { throw tagMemoryOutboxFailure(phase, error); }
+  private phase<T>(phase: MemoryOutboxPhase, operation: () => T, outboxId?: string): T {
+    const cyclePhase = ["recover_dispatch", "claim_dispatch", "claim_reconciliation"].includes(phase);
+    try {
+      const result = operation();
+      if (outboxId !== undefined) this.diagnostics.resolve(outboxId, phase);
+      else if (cyclePhase) this.diagnostics.resolvePhase(phase);
+      return result;
+    } catch (error) {
+      const tagged = tagMemoryOutboxFailure(phase, error); const failure = memoryOutboxFailure(tagged);
+      if (outboxId !== undefined) this.diagnostics.record(outboxId, failure);
+      else if (cyclePhase) this.diagnostics.recordPhase(failure);
+      throw tagged;
+    }
   }
   private cleanupReviews(): void {
     const root = this.options.candidate_review_spool_root ?? process.env["JARVIS_MEMORY_REVIEW_SPOOL_ROOT"];

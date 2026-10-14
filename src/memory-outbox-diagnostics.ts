@@ -8,9 +8,15 @@ export class MemoryOutboxDiagnostics {
   private readonly writers = new Map<string, Fault>();
   private readonly observers = new Map<string, Fault>();
   private readonly controls = new Map<string, Fault>();
+  private readonly phases = new Map<MemoryOutboxPhase, MemoryOutboxFailure>();
   private readonly retired: MemoryOutboxFailure[] = [];
   constructor(private readonly authority: AuthorityDb) {}
 
+  recordPhase(failure: MemoryOutboxFailure): void { this.phases.set(failure.phase, failure); }
+  resolvePhase(phase: MemoryOutboxPhase): void {
+    const failure = this.phases.get(phase);
+    if (failure !== undefined) { this.phases.delete(phase); this.retired.push(failure); }
+  }
   private group(phase: MemoryOutboxPhase): Map<string, Fault> {
     return phase === "provider_write" ? this.writers : phase === "control_reconciliation" ? this.controls : this.observers;
   }
@@ -23,7 +29,8 @@ export class MemoryOutboxDiagnostics {
     if (fault !== undefined) { group.delete(key); this.retired.push(fault.failure); }
   }
   resolveOutbox(id: string): void {
-    for (const phase of ["provider_write", "provider_observation", "record_observation", "settlement"] as const) {
+    for (const phase of ["provider_write", "record_write_result", "dispatch",
+      "provider_observation", "record_observation", "settlement"] as const) {
       this.resolve(id, phase);
     }
   }
@@ -37,7 +44,7 @@ export class MemoryOutboxDiagnostics {
         if (++count === limit) break;
       }
     }
-    let failure: MemoryOutboxFailure | undefined;
+    let failure: MemoryOutboxFailure | undefined = this.phases.values().next().value;
     if (selected.length > 0) {
       const terminal = new Set(this.authority.db.prepare(
         `WITH faults AS (SELECT json_extract(value,'$.id') AS id,json_extract(value,'$.control') AS control FROM json_each(?))
