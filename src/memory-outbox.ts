@@ -111,7 +111,11 @@ export class MemoryOutboxService {
       }
     }
     const commands = reconcileMemoryOutboxCommands(this.options.authority, this.options.clock(), bound);
-    for (const outcome of memoryOutboxControlOutcomes(commands)) {
+    const outcomes = memoryOutboxControlOutcomes(commands);
+    if (outcomes === undefined) {
+      if (commands.failure !== undefined) this.diagnostics.recordPhase(commands.failure);
+    } else this.diagnostics.resolvePhase("control_reconciliation");
+    for (const outcome of outcomes ?? []) {
       if (outcome.failure === undefined) this.diagnostics.resolve(outcome.outbox_id, "control_reconciliation");
       else this.diagnostics.record(outcome.outbox_id, outcome.failure);
     }

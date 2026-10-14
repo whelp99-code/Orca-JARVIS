@@ -81,9 +81,11 @@ describe("bounded memory outbox tick", () => {
 
   it("publishes recovered command changes and reports control proof errors", async () => {
     const report = vi.fn(); const changes = vi.fn();
+    const failure = memoryOutboxFailure(tagMemoryOutboxFailure("control_reconciliation",
+      new JarvisError("MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID")));
     const cycle = vi.fn<() => Promise<MemoryOutboxCycleResult>>()
-      .mockResolvedValueOnce({ ...empty, control_error: "MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID" })
-      .mockResolvedValueOnce({ ...empty, commands_reconciled: 1 });
+      .mockResolvedValueOnce({ ...empty, failure, control_error: "MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID" })
+      .mockResolvedValueOnce(markMemoryOutboxRecovery({ ...empty, commands_reconciled: 1 }, [failure]));
     const tick = new MemoryOutboxTick(cycle, report, changes);
     tick.tick(); await tick.drain(); tick.tick(); await tick.close();
     expect(report.mock.calls).toEqual([[{ phase: "control_reconciliation",

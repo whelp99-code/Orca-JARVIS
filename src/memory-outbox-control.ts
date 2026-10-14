@@ -6,7 +6,7 @@ import { memoryOutboxFailure, tagMemoryOutboxFailure, type MemoryOutboxFailure }
 
 type ControlOutcome = { readonly outbox_id: string; readonly failure?: MemoryOutboxFailure };
 const outcomes = new WeakMap<object, readonly ControlOutcome[]>();
-export function memoryOutboxControlOutcomes(result: object): readonly ControlOutcome[] { return outcomes.get(result) ?? []; }
+export function memoryOutboxControlOutcomes(result: object): readonly ControlOutcome[] | undefined { return outcomes.get(result); }
 
 /** Bounded durable recovery also covers a crash between outbox and control commits. */
 export function reconcileMemoryOutboxCommands(authority: AuthorityDb, now: Date, limit: number): {

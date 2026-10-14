@@ -21,7 +21,7 @@ export class MemoryOutboxTick {
           tagMemoryOutboxFailure("review_cleanup", new JarvisError(result.cleanup_error))))
         ?? (result.failed === 0 ? undefined : memoryOutboxFailure(new JarvisError("MEMORY_OUTBOX_CYCLE_FAILED")));
       const requiresOwnRetry = this.lastFailure !== undefined && ["record_write_result", "dispatch",
-        "claim_dispatch", "claim_reconciliation", "recover_dispatch"].includes(this.lastFailure.phase);
+        "claim_dispatch", "claim_reconciliation", "recover_dispatch", "control_reconciliation"].includes(this.lastFailure.phase);
       const progressed = memoryOutboxRecovered(result, this.lastFailure) || (!requiresOwnRetry && (this.lastFailure?.phase === "provider_write"
         ? result.settled + result.conflicts > 0
         : result.dispatched + result.settled + result.conflicts + result.reconciling + (result.commands_reconciled ?? 0) > 0

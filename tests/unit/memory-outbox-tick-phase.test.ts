@@ -5,7 +5,7 @@ import type { MemoryOutboxCycleResult } from "../../src/memory-outbox-types.js";
 
 const empty = { claimed: 0, dispatched: 0, reconciling: 0, settled: 0, conflicts: 0, failed: 0 };
 describe("own-phase tick recovery", () => {
-  it.each(["record_write_result", "dispatch", "claim_dispatch", "claim_reconciliation", "recover_dispatch"] as const)(
+  it.each(["record_write_result", "dispatch", "claim_dispatch", "claim_reconciliation", "recover_dispatch", "control_reconciliation"] as const)(
     "does not recover %s from aggregate progress or a different failure's proof", async phase => {
       const failure: MemoryOutboxFailure = { phase, error_code: "MEMORY_OUTBOX_UNCLASSIFIED_ERROR",
         cause_code: "MEMORY_OUTBOX_UNCLASSIFIED_ERROR" };

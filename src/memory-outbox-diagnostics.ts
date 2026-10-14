@@ -44,7 +44,8 @@ export class MemoryOutboxDiagnostics {
         if (++count === limit) break;
       }
     }
-    let failure: MemoryOutboxFailure | undefined = this.phases.values().next().value;
+    let failure: MemoryOutboxFailure | undefined = [...this.phases.values()]
+      .find(value => value.phase !== "control_reconciliation");
     if (selected.length > 0) {
       const terminal = new Set(this.authority.db.prepare(
         `WITH faults AS (SELECT json_extract(value,'$.id') AS id,json_extract(value,'$.control') AS control FROM json_each(?))
@@ -52,10 +53,15 @@ export class MemoryOutboxDiagnostics {
          LEFT JOIN memory_outbox o ON o.outbox_id=f.id
          LEFT JOIN memory_outbox_not_delivered n ON n.outbox_id=f.id
          LEFT JOIN control_command_requests r ON r.request_id=o.action_request_id
-         WHERE n.outbox_id IS NOT NULL
-           OR (f.control=0 AND (o.outbox_id IS NULL OR o.state IN ('settled','conflict')))
-           OR (f.control=1 AND r.state IN ('completed','failed') AND EXISTS (
-             SELECT 1 FROM control_command_effects e WHERE e.request_id=r.request_id AND e.effect_type='memory.outbox.reconciled'))`,
+         WHERE n.outbox_id IS NOT NULL OR o.outbox_id IS NULL
+           OR (f.control=0 AND o.state IN ('settled','conflict','failed','expired'))
+           OR (f.control=1 AND (
+             EXISTS (SELECT 1 FROM control_command_revocations v
+               WHERE v.request_id=r.request_id OR v.receipt_id=o.action_receipt_id)
+             OR EXISTS (SELECT 1 FROM authority_revocations v
+               WHERE v.reference IN (r.request_id,r.command_digest,o.action_receipt_id))
+             OR (r.state IN ('completed','failed') AND EXISTS (
+               SELECT 1 FROM control_command_effects e WHERE e.request_id=r.request_id AND e.effect_type='memory.outbox.reconciled'))))`,
       ).pluck().all(JSON.stringify(selected.map(item => ({ id: item.fault.id, control: item.control })))));
       for (const item of selected) {
         if (terminal.has(`${item.fault.id}:${item.control}`)) {
@@ -63,6 +69,6 @@ export class MemoryOutboxDiagnostics {
         } else failure ??= item.fault.failure;
       }
     }
-    return { failure, retired: this.retired.splice(0) };
+    return { failure: failure ?? this.phases.get("control_reconciliation"), retired: this.retired.splice(0) };
   }
 }
