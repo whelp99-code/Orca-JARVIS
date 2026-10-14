@@ -1,4 +1,4 @@
-import { copyFileSync, mkdtempSync, mkdirSync, readdirSync, rmSync } from "node:fs";
+import { chmodSync, copyFileSync, mkdtempSync, mkdirSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { fileURLToPath, pathToFileURL } from "node:url";
@@ -60,6 +60,70 @@ describe("export-messenger-summary snapshot consistency", () => {
     db.close();
     rmSync(scratch, { recursive: true, force: true });
     expect(summary).toMatchObject({ incomplete_count: 1, oldest_incomplete_age_ms: expect.any(Number) });
+  });
+
+  it("removes scratch when a non-ENOENT sidecar copy fails after the main database file was copied", () => {
+    const root = mkdtempSync(join(tmpdir(), "messenger-snap-"));
+    roots.push(root);
+    const inbox = join(root, "inbox.sqlite");
+    const writer = new Database(inbox);
+    writer.pragma("journal_mode = WAL");
+    writer.exec(DDL);
+    writer.prepare("INSERT INTO events(id, payload, state, received) VALUES (?, ?, ?, ?)").run(
+      "pending",
+      payload(UID),
+      "pending",
+      RECEIVED,
+    );
+    writer.close();
+    const wal = `${inbox}-wal`;
+    writeFileSync(wal, "unreadable-sidecar");
+    chmodSync(wal, 0o000);
+
+    const before = readdirSync(tmpdir()).filter((name) => name.startsWith("messenger-export-"));
+    const scratch = mkdtempSync(join(tmpdir(), "messenger-export-"));
+    const snapshot = join(scratch, "inbox.sqlite");
+    let ready = false;
+    try {
+      try {
+        copyFileSync(inbox, snapshot);
+        copyFileSync(`${inbox}-wal`, `${snapshot}-wal`);
+        ready = true;
+      } finally {
+        if (!ready) rmSync(scratch, { recursive: true, force: true });
+      }
+    } catch {
+      // Expected non-ENOENT sidecar copy failure after the main file was copied.
+    }
+    chmodSync(wal, 0o600);
+    expect(ready).toBe(false);
+    const after = readdirSync(tmpdir()).filter((name) => name.startsWith("messenger-export-"));
+    expect(after).toEqual(before);
+  });
+
+  it("removes the scratch directory when sqlite backup fails with a non-ENOENT error", async () => {
+    const { snapshotSource } = await import(pathToFileURL(SCRIPT).href);
+    const root = mkdtempSync(join(tmpdir(), "messenger-snap-"));
+    roots.push(root);
+    const inbox = join(root, "inbox.sqlite");
+    const db = new Database(inbox);
+    db.exec(DDL);
+    db.close();
+    const before = readdirSync(tmpdir()).filter((name) => name.startsWith("messenger-export-"));
+    const original = Database.prototype.backup;
+    Database.prototype.backup = function failingBackup(filename: string) {
+      writeFileSync(filename, "partial-inbox-copy");
+      const error = new Error("EIO") as NodeJS.ErrnoException;
+      error.code = "EIO";
+      throw error;
+    };
+    try {
+      await expect(snapshotSource(inbox)).rejects.toThrow();
+    } finally {
+      Database.prototype.backup = original;
+    }
+    const after = readdirSync(tmpdir()).filter((name) => name.startsWith("messenger-export-"));
+    expect(after).toEqual(before);
   });
 
   it("removes the scratch directory when backup cannot create the snapshot file", async () => {

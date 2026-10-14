@@ -219,15 +219,19 @@ async function snapshotSource(source) {
   const scratch = mkdtempSync(join(tmpdir(), "messenger-export-"));
   const snapshot = join(scratch, "inbox.sqlite");
   let live;
+  let ready = false;
   try {
     live = new Database(source, { readonly: true, fileMustExist: true });
-    await live.backup(snapshot);
-  } catch (error) {
-    rmSync(scratch, { recursive: true, force: true });
-    if (error instanceof Coded) throw error;
-    throw new Coded("SCHEMA_INVALID");
+    try {
+      await live.backup(snapshot);
+      ready = true;
+    } catch (error) {
+      if (error instanceof Coded) throw error;
+      throw new Coded("SCHEMA_INVALID");
+    }
   } finally {
     live?.close();
+    if (!ready) rmSync(scratch, { recursive: true, force: true });
   }
   return { scratch, snapshot };
 }
