@@ -1,5 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ApprovedCommandExecutor, ControlPlane, signCommandApproval, type AuthorityDb } from "../../src/index.js";
+import { MemoryOutboxTick } from "../../src/memory-outbox-tick.js";
+import type { MemoryOutboxFailure } from "../../src/memory-outbox-diagnostic.js";
 import { claimAction, outboxFixture, OUTBOX_NOW } from "../fixtures/memory-outbox-fixture.js";
 import { closeMemoryDatabase } from "../fixtures/memory-candidate-store.js";
 import { localKey } from "../helpers.js";
@@ -40,6 +42,32 @@ function stageAbandon(db: AuthorityDb, outboxId: string): string {
 }
 
 describe("abandon an expired outbox that never reached Second Brain", () => {
+  it("retires a retained observer failure after signed abandonment even while the row stays reconciling", async () => {
+    const { fixture, outboxId } = await reconciling("SECOND_BRAIN_DISCOVERY_FAILED");
+    const db = fixture.database.authority;
+    vi.spyOn(fixture.reader, "recentChanges").mockRejectedValue(new Error("PRIVATE_SENTINEL"));
+    const logs: (MemoryOutboxFailure | null)[] = [];
+    const cycles: Awaited<ReturnType<typeof fixture.service.runOnce>>[] = [];
+    const tick = new MemoryOutboxTick(async () => {
+      const cycle = await fixture.service.runOnce("abandon-diagnostic-owner", 1);
+      cycles.push(cycle); return cycle;
+    }, failure => logs.push(failure));
+    try {
+      tick.tick(); await tick.drain();
+      expect(logs).toEqual([expect.objectContaining({ phase: "provider_observation" })]);
+      expect(await new ApprovedCommandExecutor(db, undefined, undefined, {}, () => AFTER).execute(
+        stageAbandon(db, outboxId), "owner-worker", AFTER)).toMatchObject({ state: "completed" });
+      fixture.clock.now = AFTER;
+
+      tick.tick(); await tick.drain(); tick.tick(); await tick.drain();
+
+      expect(fixture.service.get(outboxId)?.state).toBe("reconciling");
+      expect(db.db.prepare("SELECT COUNT(*) AS count FROM memory_outbox_not_delivered WHERE outbox_id=?").get(outboxId))
+        .toEqual({ count: 1 });
+      expect(cycles.at(-1)?.claimed).toBe(0);
+      expect(logs).toEqual([expect.objectContaining({ phase: "provider_observation" }), null]);
+    } finally { await tick.close(); vi.restoreAllMocks(); closeMemoryDatabase(fixture.database); }
+  });
   it("closes a discovery failure and the linked command, then stops reconcile claims", async () => {
     const { fixture, outboxId, requestId } = await reconciling("SECOND_BRAIN_DISCOVERY_FAILED");
     const db = fixture.database.authority;
