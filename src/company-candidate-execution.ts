@@ -71,16 +71,20 @@ export function createCompanyCompletionVerifier(path: string): CompanyCompletion
   return {
     verify(command, acceptance) {
       return new Promise((resolve, reject) => {
+        let stdinFailed = false;
         const child = execFile(config.executable, [...config.args], {
           shell: false, timeout: 10_000, killSignal: "SIGKILL", maxBuffer: 1_048_576, encoding: "utf8",
           env: { PATH: "/usr/bin:/bin" },
         }, (error, stdout) => {
-          if (error) { reject(new JarvisError("COMPANY_COMPLETION_UNVERIFIED")); return; }
+          if (error || stdinFailed) { reject(new JarvisError("COMPANY_COMPLETION_UNVERIFIED")); return; }
           const result = parseCompanyJson(stdout);
           if (result === undefined) reject(new JarvisError("COMPANY_COMPLETION_UNVERIFIED"));
           else resolve(result);
         });
-        child.stdin?.on("error", () => reject(new JarvisError("COMPANY_COMPLETION_UNVERIFIED")));
+        child.stdin?.on("error", () => {
+          stdinFailed = true;
+          child.kill("SIGKILL");
+        });
         child.stdin?.end(canonicalize({ schema_version: 1, command, acceptance }));
       });
     },

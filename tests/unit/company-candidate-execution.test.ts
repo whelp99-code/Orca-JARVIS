@@ -419,6 +419,85 @@ socket.write("ready\\n");
     }
   }, 20_000);
 
+  it("kills a live verifier after stdin close before rejecting and clearing the lease", async () => {
+    const live = await approved();
+    const gatePath = join(live.root, "verifier.sock");
+    const gate = createServer();
+    const entered = once(gate, "connection", { signal: AbortSignal.timeout(5_000) });
+    gate.listen(gatePath);
+    await once(gate, "listening");
+    const executable = join(live.root, "verify");
+    writeFileSync(executable, `#!${process.execPath}
+import { closeSync } from "node:fs";
+import { createConnection } from "node:net";
+import { once } from "node:events";
+closeSync(0);
+const socket = createConnection(${JSON.stringify(gatePath)});
+await once(socket, "connect");
+socket.write("ready\\n");
+await new Promise(() => {});
+`, { mode: 0o700 });
+    const config = join(live.root, "completion.json");
+    writeFileSync(config, JSON.stringify({ schema_version: 1, executable, args: [] }), { mode: 0o600 });
+    const realExecFile = childProcess.execFile;
+    const target: Record<string, unknown> = childProcess;
+    const children: ChildProcess[] = [];
+    let releaseWrite: (() => void) | undefined;
+    target["execFile"] = (...args: Parameters<typeof realExecFile>) => {
+      const child = realExecFile(...args);
+      children.push(child);
+      const stdin = child.stdin;
+      if (!stdin) throw new Error("verifier stdin missing");
+      const realEnd = stdin.end.bind(stdin) as (...endArgs: readonly unknown[]) => typeof stdin;
+      stdin.end = ((...endArgs: readonly unknown[]) => {
+        releaseWrite = () => { realEnd(...endArgs); };
+        return stdin;
+      }) as typeof stdin.end;
+      return child;
+    };
+    syncBuiltinESMExports();
+    let execution: Promise<unknown> | undefined;
+    let leaseAtDeath: string | null | undefined;
+    try {
+      const client = companyClient(async () => companyReceipt(live.proposal.command.request_id, "accept"));
+      const executor = new CompanyCandidateExecutor(live.db, client, createCompanyCompletionVerifier(config), () => COMPANY_NOW);
+      execution = executor.execute(live.proposal.command.request_id).catch((error: unknown) => error);
+      const [channel] = await entered;
+      await once(channel, "data", { signal: AbortSignal.timeout(5_000) });
+      channel.resume();
+      const child = children[0];
+      if (!child || !releaseWrite) throw new Error("verifier child missing");
+      expect(child.exitCode).toBeNull();
+      expect(child.signalCode).toBeNull();
+      const requestId = live.proposal.command.request_id;
+      child.once("close", () => {
+        leaseAtDeath = companyState(live.db, requestId)?.lease_token ?? null;
+      });
+      releaseWrite();
+      const result = await execution;
+      expect(child.exitCode !== null || child.signalCode !== null).toBe(true);
+      expect(leaseAtDeath).toBeTypeOf("string");
+      expect(result).toMatchObject({ code: "COMPANY_COMPLETION_UNVERIFIED" });
+      expect(companyState(live.db, requestId)).toMatchObject({
+        status: "uncertain", lease_token: null, completion_json: null,
+      });
+      expect(live.db.db.prepare("SELECT operation FROM company_candidate_sb_receipts").all()).toEqual([{ operation: "accept" }]);
+    } finally {
+      target["execFile"] = realExecFile;
+      syncBuiltinESMExports();
+      for (const child of children) {
+        if (child.exitCode === null && child.signalCode === null) {
+          const settled = once(child, "close");
+          child.kill("SIGKILL");
+          await settled;
+        }
+      }
+      await execution;
+      await new Promise<void>(resolve => gate.close(() => resolve()));
+      live.close();
+    }
+  }, 15_000);
+
   it("runs a protected owned verifier and observes its durable effect", async () => {
     const live = await companyDatabase();
     try {
