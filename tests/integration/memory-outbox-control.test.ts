@@ -2,7 +2,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ApprovedCommandExecutor } from "../../src/approved-executor.js";
 import { ControlPlane } from "../../src/control-plane.js";
-import { AuthorityDb } from "../../src/db.js";
+import { AuthorityDb, JarvisError } from "../../src/db.js";
 import { MemoryCandidateReviewSpool } from "../../src/memory-candidate-review-spool.js";
 import { reconcileMemoryOutboxCommands } from "../../src/memory-outbox-control.js";
 import { removeSuppressedRows } from "../../src/memory-compaction-sanitize.js";
@@ -36,6 +36,56 @@ async function settledLive(options: Parameters<typeof outboxFixture>[0] = {}) {
 }
 
 describe("memory completion projected to the original control command", () => {
+  it.each([
+    ["getter", "MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID"],
+    ["proxy", "MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID"],
+    ["getter", "PRIVATE_SENTINEL"],
+    ["proxy", "PRIVATE_SENTINEL"],
+  ])("uses one validated snapshot for cycle errors from a %s with first code %s", async (kind, first) => {
+    const { f, claim } = await settledLive(); uncertain(f, claim.fence);
+    const approved = "MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID";
+    const values = [first, approved, "PRIVATE_SENTINEL"];
+    const error = new JarvisError(approved);
+    let reads = 0;
+    const readCode = () => values[reads++] ?? "PRIVATE_SENTINEL";
+    if (kind === "getter") Object.defineProperty(error, "code", { get: readCode });
+    const thrown = kind === "proxy" ? new Proxy(error, {
+      get(target, property, receiver) {
+        return property === "code" ? readCode() : Reflect.get(target, property, receiver);
+      },
+    }) : error;
+    vi.spyOn(ControlPlane.prototype, "reconcileMemoryOutbox").mockImplementation(() => { throw thrown; });
+
+    const cycle = await f.service.runOnce("control-snapshot-worker", 1);
+
+    expect(cycle.control_error).toBe(first === approved ? approved : "MEMORY_OUTBOX_CONTROL_RECONCILE_FAILED");
+    expect(cycle.failure).toEqual({ phase: "control_reconciliation",
+      error_code: "MEMORY_OUTBOX_CONTROL_RECONCILE_FAILED",
+      cause_code: first === approved ? approved : "MEMORY_OUTBOX_UNCLASSIFIED_ERROR" });
+    expect(JSON.stringify(cycle)).not.toContain("PRIVATE_SENTINEL");
+    expect(reads).toBe(1);
+  });
+
+  it("snapshots a later control failure while retaining the first diagnostic", async () => {
+    const first = await settledLive();
+    const second = await settledLive({ database: first.f.database, suffix: "-later-error" });
+    for (const item of [first, second]) uncertain(item.f, item.claim.fence);
+    const approved = "MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID";
+    const error = new JarvisError(approved);
+    let reads = 0;
+    Object.defineProperty(error, "code", { get: () => ++reads === 1 ? approved : "PRIVATE_SENTINEL" });
+    vi.spyOn(ControlPlane.prototype, "reconcileMemoryOutbox")
+      .mockImplementationOnce(() => { throw new JarvisError("MEMORY_OUTBOX_STALE_FENCE"); })
+      .mockImplementationOnce(() => { throw error; });
+
+    const cycle = await first.f.service.runOnce("later-control-snapshot-worker", 2);
+
+    expect(cycle.control_error).toBe(approved);
+    expect(cycle.failure?.cause_code).toBe("MEMORY_OUTBOX_STALE_FENCE");
+    expect(JSON.stringify(cycle)).not.toContain("PRIVATE_SENTINEL");
+    expect(reads).toBe(1);
+  });
+
   it("keeps an unrelated completed execution successful when the recovery cursor commit fails", async () => {
     const previous = await settledLive(); uncertain(previous.f, previous.claim.fence);
     const f = await fixture({ database: previous.f.database, suffix: "-cursor-fault", reader: ready() });
@@ -48,7 +98,9 @@ describe("memory completion projected to the original control command", () => {
     expect(effects(previous.f)).toHaveLength(1);
     expect(f.database.authority.db.prepare("SELECT * FROM memory_outbox_control_cursor").get()).toBeUndefined();
     expect(reconcileMemoryOutboxCommands(f.database.authority, f.clock.now, 1))
-      .toEqual({ commands_reconciled: 0, control_error: "MEMORY_OUTBOX_CONTROL_RECONCILE_FAILED" });
+      .toEqual({ commands_reconciled: 0, control_error: "MEMORY_OUTBOX_CONTROL_RECONCILE_FAILED",
+        failure: { phase: "control_reconciliation", error_code: "MEMORY_OUTBOX_CONTROL_RECONCILE_FAILED",
+          cause_code: "MEMORY_OUTBOX_UNCLASSIFIED_ERROR" } });
     f.database.authority.db.exec("DROP TRIGGER test_cursor_failure");
     expect(await f.service.runOnce("cursor-retry", 1)).toMatchObject({ commands_reconciled: 1, dispatched: 0 });
     expect(state(previous.f)).toEqual({ state: "completed", failure_code: null });
@@ -77,7 +129,9 @@ describe("memory completion projected to the original control command", () => {
       try { return reconcileMemoryOutboxCommands(connection, first.f.clock.now, 1); }
       finally { connection.close(); }
     };
-    expect(cycle()).toEqual({ commands_reconciled: 0, control_error: "MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID" });
+    expect(cycle()).toEqual({ commands_reconciled: 0, control_error: "MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID",
+      failure: { phase: "control_reconciliation", error_code: "MEMORY_OUTBOX_CONTROL_RECONCILE_FAILED",
+        cause_code: "MEMORY_OUTBOX_CONTROL_EVIDENCE_INVALID" } });
     expect(cycle()).toEqual({ commands_reconciled: 1 });
     expect(state(good.f)).toEqual({ state: "completed", failure_code: null });
     expect(state(bad.f)).toEqual({ state: "uncertain", failure_code: "MEMORY_OUTBOX_RECONCILING" });

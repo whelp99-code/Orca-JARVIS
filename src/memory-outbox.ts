@@ -3,7 +3,10 @@ import { JarvisError } from "./db.js";
 import { cleanupMemoryCandidateReviews } from "./memory-candidate-review-cleanup.js";
 import { memoryRememberArtifact, observeRememberArtifact } from "./memory-remember-artifact.js";
 import { MemoryOutboxStore } from "./memory-outbox-store.js";
-import { reconcileMemoryOutboxCommands } from "./memory-outbox-control.js";
+import { memoryOutboxControlOutcomes, reconcileMemoryOutboxCommands } from "./memory-outbox-control.js";
+import { MemoryOutboxDiagnostics } from "./memory-outbox-diagnostics.js";
+import { markMemoryOutboxRecovery, memoryOutboxFailure, memoryOutboxRecoveries, tagMemoryOutboxFailure,
+  type MemoryOutboxFailure, type MemoryOutboxPhase } from "./memory-outbox-diagnostic.js";
 import type {
   MemoryObservation,
   MemoryOutboxCycleResult,
@@ -29,9 +32,11 @@ export class MemoryOutboxService {
   private readonly store: MemoryOutboxStore;
   private readonly leaseMs: number;
   private readonly deadlineMs: number;
+  private readonly diagnostics: MemoryOutboxDiagnostics;
   constructor(private readonly options: MemoryOutboxServiceOptions) {
     this.leaseMs = requireDuration(options.leaseMs ?? DEFAULT_LEASE_MS);
     this.deadlineMs = requireDuration(options.artifactDeadlineMs ?? MEMORY_OUTBOX_RUNTIME_DEADLINE_MS);
+    this.diagnostics = new MemoryOutboxDiagnostics(options.authority);
     this.store = new MemoryOutboxStore(options.authority, this.deadlineMs, {
       candidate_dispatch_spool_root: options.candidate_dispatch_spool_root,
       candidate_review_spool_root: options.candidate_review_spool_root,
@@ -46,51 +51,102 @@ export class MemoryOutboxService {
   }
   async runOnce(workerId: string, limit = 16): Promise<MemoryOutboxCycleResult> {
     const worker = requireWorker(workerId); const bound = requireLimit(limit); const result = { ...empty() };
-    result.reconciling += this.store.recoverDispatching(this.options.clock());
+    const failures: MemoryOutboxFailure[] = [];
+    result.reconciling += this.phase("recover_dispatch", () => this.store.recoverDispatching(this.options.clock()));
     for (let index = 0; index < bound; index += 1) {
-      const claimed = this.store.claimDispatch(worker, this.options.clock(), this.leaseMs);
+      const claimed = this.phase("claim_dispatch", () => this.store.claimDispatch(worker, this.options.clock(), this.leaseMs));
       if (claimed === undefined) break;
       result.claimed += 1;
       let dispatch;
-      try { dispatch = this.store.markDispatch(claimed.outbox_id, worker, claimed.lease_fence, this.options.clock()); }
-      catch (error) { result.failed += 1; if (error instanceof JarvisError) continue; throw error; }
+      try { dispatch = this.phase("dispatch", () => this.store.markDispatch(claimed.outbox_id, worker, claimed.lease_fence, this.options.clock()), claimed.outbox_id); }
+      catch (error) {
+        const failure = memoryOutboxFailure(error);
+        this.diagnostics.record(claimed.outbox_id, failure, failures.length === 0);
+        result.failed += 1; failures.push(failure);
+        if (error instanceof JarvisError) continue;
+        throw error;
+      }
       result.dispatched += 1;
       let outcome;
       try { outcome = await this.options.writer.write(dispatch.request); }
       catch (error) {
-        outcome = { kind: "uncertain" as const, code: error instanceof Error ? "MEMORY_OUTBOX_WRITE_FAILED" : "MEMORY_OUTBOX_WRITE_FAILED" };
+        this.diagnostics.record(dispatch.saga.outbox_id,
+          memoryOutboxFailure(tagMemoryOutboxFailure("provider_write", error)));
+        outcome = { kind: "uncertain" as const, code: "MEMORY_OUTBOX_WRITE_FAILED" };
       }
-      this.store.recordResult(dispatch, outcome, this.options.clock()); result.reconciling += 1;
+      this.phase("record_write_result", () => this.store.recordResult(dispatch, outcome, this.options.clock()), dispatch.saga.outbox_id); result.reconciling += 1;
     }
     const reconciled = await this.reconcileOnce(worker, bound);
-    return { claimed: result.claimed, dispatched: result.dispatched,
+    const failure = reconciled.failure?.phase === "provider_write" ? reconciled.failure : failures[0] ?? reconciled.failure;
+    const cycle = { claimed: result.claimed, dispatched: result.dispatched,
       reconciling: result.reconciling + reconciled.reconciling, settled: reconciled.settled,
       conflicts: reconciled.conflicts, failed: result.failed + reconciled.failed,
       commands_reconciled: reconciled.commands_reconciled ?? 0,
+      ...(failure === undefined ? {} : { failure }),
       ...(reconciled.control_error === undefined ? {} : { control_error: reconciled.control_error }),
       ...(reconciled.cleanup_error === undefined ? {} : { cleanup_error: reconciled.cleanup_error }) };
+    return markMemoryOutboxRecovery(cycle, memoryOutboxRecoveries(reconciled));
   }
   async reconcileOnce(workerId: string, limit = 16): Promise<MemoryOutboxCycleResult> {
     const worker = requireWorker(workerId); const bound = requireLimit(limit); const result = { ...empty() };
     for (let index = 0; index < bound; index += 1) {
-      const saga = this.store.claimReconcile(worker, this.options.clock(), this.leaseMs);
+      const saga = this.phase("claim_reconciliation", () => this.store.claimReconcile(worker, this.options.clock(), this.leaseMs));
       if (saga === undefined) break;
       result.claimed += 1;
-      const observation = await this.observe(saga);
-      const updated = this.store.recordObservation(saga, observation, this.options.clock());
-      if (updated.state === "settled") result.settled += 1;
-      else if (updated.state === "conflict") result.conflicts += 1;
-      else if (updated.state === "reconciling") result.reconciling += 1;
-      else result.failed += 1;
+      try {
+        const observation = await this.observe(saga).catch(error => {
+          throw tagMemoryOutboxFailure("provider_observation", error);
+        });
+        this.diagnostics.resolve(saga.outbox_id, "provider_observation");
+        const phase = observation.kind === "missing" ? "record_observation" : "settlement";
+        const updated = this.phase(phase, () => this.store.recordObservation(saga, observation, this.options.clock()));
+        this.diagnostics.resolve(saga.outbox_id, phase);
+        if (updated.state === "settled" || updated.state === "conflict") this.diagnostics.resolveOutbox(saga.outbox_id);
+        if (updated.state === "settled") result.settled += 1;
+        else if (updated.state === "conflict") result.conflicts += 1;
+        else if (updated.state === "reconciling") result.reconciling += 1;
+        else result.failed += 1;
+      } catch (error) {
+        const failure = memoryOutboxFailure(error);
+        this.diagnostics.record(saga.outbox_id, failure, true);
+        throw error;
+      }
     }
     const commands = reconcileMemoryOutboxCommands(this.options.authority, this.options.clock(), bound);
+    const outcomes = memoryOutboxControlOutcomes(commands);
+    if (outcomes === undefined) {
+      if (commands.failure !== undefined) this.diagnostics.recordPhase(commands.failure);
+    } else this.diagnostics.resolvePhase("control_reconciliation");
+    for (const outcome of outcomes ?? []) {
+      if (outcome.failure === undefined) this.diagnostics.resolve(outcome.outbox_id, "control_reconciliation");
+      else this.diagnostics.record(outcome.outbox_id, outcome.failure);
+    }
+    const pending = this.diagnostics.take(bound);
     try { this.cleanupReviews(); }
-    catch {
+    catch (error) {
       // Cleanup is retryable on the next cycle. A committed settlement must not
       // become a failed control command merely because local cleanup failed.
-      return { ...result, ...commands, cleanup_error: "MEMORY_REVIEW_CLEANUP_FAILED" };
+      return markMemoryOutboxRecovery({ ...result, ...commands, cleanup_error: "MEMORY_REVIEW_CLEANUP_FAILED" as const,
+        failure: pending.failure ?? commands.failure ?? memoryOutboxFailure(tagMemoryOutboxFailure("review_cleanup", error)) },
+      pending.retired);
     }
-    return { ...result, ...commands };
+    const failure = pending.failure ?? commands.failure;
+    return markMemoryOutboxRecovery({ ...result, ...commands, ...(failure === undefined ? {} : { failure }) }, pending.retired);
+  }
+  private phase<T>(phase: MemoryOutboxPhase, operation: () => T, outboxId?: string): T {
+    const cyclePhase = ["recover_dispatch", "claim_dispatch", "claim_reconciliation"].includes(phase);
+    try {
+      const result = operation();
+      if (outboxId !== undefined) this.diagnostics.resolve(outboxId, phase);
+      else if (cyclePhase) this.diagnostics.resolvePhase(phase);
+      return result;
+    } catch (error) {
+      const tagged = tagMemoryOutboxFailure(phase, error); const failure = memoryOutboxFailure(tagged);
+      if (outboxId !== undefined) this.diagnostics.record(outboxId, failure,
+        phase !== "dispatch" || !(error instanceof JarvisError));
+      else if (cyclePhase) this.diagnostics.recordPhase(failure);
+      throw tagged;
+    }
   }
   private cleanupReviews(): void {
     const root = this.options.candidate_review_spool_root ?? process.env["JARVIS_MEMORY_REVIEW_SPOOL_ROOT"];

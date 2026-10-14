@@ -101,7 +101,7 @@ describe("local work-card contract", () => {
         render(<ControlCenterRoot store={harness.store} client={harness.client}
           initialPath="/finance-read" financeReadAdapter={adapter} />);
       });
-      const card = document.querySelector(".local-work-card");
+      const card = document.querySelector(".finance-read-page[data-proof-level] .local-work-card");
       expect(card).toHaveAttribute("data-rt-state", state);
       expect(card).toHaveAttribute("data-confirmation", state === "CONFIRMED" ? "confirmed" : "unconfirmed");
       expect(card?.querySelector("[data-official-tax-ready]")).toHaveAttribute("data-official-tax-ready", "false");
@@ -122,7 +122,7 @@ describe("local work-card contract", () => {
       render(<ControlCenterRoot store={harness.store} client={harness.client}
         initialPath="/finance-read" financeReadAdapter={adapter} />);
     });
-    const cards = document.querySelectorAll(".local-work-card");
+    const cards = document.querySelectorAll(".finance-read-page[data-proof-level] .local-work-card");
     expect(cards).toHaveLength(1);
     const card = cards.item(0);
     expect(card).toHaveAttribute("data-connection", "unconnected");
@@ -154,6 +154,6 @@ describe("local work-card contract", () => {
     await act(async () => {
       render(<ControlCenterRoot store={harness.store} client={harness.client} initialPath="/finance-read" />);
     });
-    expect(document.querySelector(".local-work-card")).toBeNull();
+    expect(document.querySelector(".finance-read-page[data-proof-level] .local-work-card")).toBeNull();
   });
 });
