@@ -4,7 +4,6 @@ import { randomBytes } from "node:crypto";
 import {
   closeSync,
   constants,
-  copyFileSync,
   fchmodSync,
   fsyncSync,
   lstatSync,
@@ -216,23 +215,25 @@ function publish(dir, output, bytes) {
   }
 }
 
-function snapshotSource(source) {
+async function snapshotSource(source) {
   const scratch = mkdtempSync(join(tmpdir(), "messenger-export-"));
   const snapshot = join(scratch, "inbox.sqlite");
-  copyFileSync(source, snapshot);
-  for (const suffix of ["-wal", "-shm", "-journal"]) {
-    const sidecar = `${source}${suffix}`;
-    try {
-      copyFileSync(sidecar, `${snapshot}${suffix}`);
-    } catch (error) {
-      if (error?.code !== "ENOENT") throw error;
-    }
+  let live;
+  try {
+    live = new Database(source, { readonly: true, fileMustExist: true });
+    await live.backup(snapshot);
+  } catch (error) {
+    rmSync(scratch, { recursive: true, force: true });
+    if (error instanceof Coded) throw error;
+    throw new Coded("SCHEMA_INVALID");
+  } finally {
+    live?.close();
   }
   return { scratch, snapshot };
 }
 
-function openSnapshot(source) {
-  const { scratch, snapshot } = snapshotSource(source);
+async function openSnapshot(source) {
+  const { scratch, snapshot } = await snapshotSource(source);
   let db;
   try {
     db = new Database(snapshot, { readonly: true, fileMustExist: true });
@@ -244,6 +245,8 @@ function openSnapshot(source) {
   }
   return { db, scratch };
 }
+
+export { openSnapshot, snapshotSource };
 
 export function summarizeDatabase(db, uid) {
   const observedMillis = Date.now();
@@ -275,14 +278,14 @@ function readFlags() {
   return { inbox: values.inbox, uid, output: values.output };
 }
 
-function main() {
+async function main() {
   const flags = readFlags();
   const source = sourceOk(flags.inbox);
   const output = outputOk(flags.output, source);
   let db;
   let scratch;
   try {
-    ({ db, scratch } = openSnapshot(source));
+    ({ db, scratch } = await openSnapshot(source));
     const { observedMillis, summary } = summarizeDatabase(db, flags.uid);
     const bytes = Buffer.from(`${JSON.stringify({
       schema_version: 1,
@@ -299,7 +302,7 @@ function main() {
 }
 
 try {
-  main();
+  await main();
 } catch (error) {
   emit(error instanceof Coded ? error.code : "PUBLISH_FAILED");
 }

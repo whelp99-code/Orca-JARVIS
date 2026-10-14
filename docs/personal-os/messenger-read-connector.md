@@ -14,11 +14,11 @@ representative, so the exporter requires an explicit representative Slack user
 ID. It must be supplied by the operator, not inferred from a channel or the
 first inbox row.
 
-The separate `scripts/export-messenger-summary.mjs` copies the inbox database
-and any present SQLite sidecars into a private scratch file, opens that copy
-readonly and aggregates the representative's human `pending` and `processing`
-events. The live inbox file and its WAL/SHM/journal sidecars are never opened
-by SQLite and are not mutated by export.
+The separate `scripts/export-messenger-summary.mjs` opens the inbox readonly
+and uses SQLite's online backup API to materialize one consistent private
+scratch database, then aggregates the representative's human `pending` and
+`processing` events from that copy. The live inbox is not written and no
+rollback journal is created on the source path.
 Completed records, other users, bots and message edit/delete notifications are
 excluded. Age is based on local durable receipt time, not the Slack message
 timestamp. Neither `inbox.mjs` nor its listener is changed or imported.

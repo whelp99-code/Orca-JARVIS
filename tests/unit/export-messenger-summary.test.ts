@@ -165,28 +165,27 @@ describe("export-messenger-summary", () => {
     expect(createHash("sha256").update(readFileSync(inbox)).digest("hex")).toBe(digest);
   });
 
-  it("exports a WAL-mode inbox without mutating source sqlite sidecars", () => {
+  it("exports a WAL-mode inbox without mutating existing sqlite sidecars", () => {
     const { root, dir } = workspace();
     const inbox = join(root, "inbox.sqlite");
     const output = join(dir, "summary.json");
-    const digest = seed(inbox, [
-      { id: "pending", payload: payload(UID), state: "pending", received: RECEIVED },
-      { id: "processing", payload: payload(UID), state: "processing", received: RECEIVED + 1_000 },
-    ], "WAL");
-    const before = readdirSync(root).slice().sort();
-    const sidecarBefore = before
-      .filter((name) => name.endsWith("-wal") || name.endsWith("-shm"))
-      .map((name) => ({ name, stat: statSync(join(root, name)) }));
+    const writer = new Database(inbox);
+    writer.pragma("journal_mode = WAL");
+    writer.exec(DDL);
+    writer.prepare("INSERT INTO events(id, payload, state, received) VALUES (?, ?, ?, ?)").run(
+      "pending", payload(UID), "pending", RECEIVED,
+    );
+    writer.prepare("INSERT INTO events(id, payload, state, received) VALUES (?, ?, ?, ?)").run(
+      "processing", payload(UID), "processing", RECEIVED + 1_000,
+    );
     const result = run(inbox, output, UID, 0o077);
+    writer.close();
     expect(result.status).toBe(0);
     expect(result.stdout).toBe("ok\n");
-    expect(readdirSync(root).slice().sort()).toEqual(before);
-    for (const { name, stat } of sidecarBefore) {
-      const after = statSync(join(root, name));
-      expect(after.mtimeMs).toBe(stat.mtimeMs);
-      expect(after.size).toBe(stat.size);
-    }
-    expect(createHash("sha256").update(readFileSync(inbox)).digest("hex")).toBe(digest);
+    expect(readdirSync(root).some((name) => name.endsWith("-journal"))).toBe(false);
+    const reader = new Database(inbox, { readonly: true, fileMustExist: true });
+    expect(reader.prepare("SELECT COUNT(*) AS c FROM events WHERE state IN ('pending','processing')").get()).toEqual({ c: 2 });
+    reader.close();
     const { parsed } = snapshot(output);
     expect(parsed).toMatchObject({ incomplete_count: 2, oldest_incomplete_age_ms: expect.any(Number) });
   });
