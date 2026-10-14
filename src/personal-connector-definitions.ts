@@ -52,6 +52,7 @@ export function personalConnectorDefinitionsForSecondBrain(
   capability: "search" | "read_page" | "recent_changes" | "open_conflicts",
   scope: string,
   mailConfigured = false,
+  messengerConfigured = false,
 ): readonly PersonalConnectorDefinition[] {
   const memory = PERSONAL_CONNECTOR_DEFINITIONS[0];
   if (memory === undefined) throw new TypeError("PERSONAL_CONNECTOR_DEFINITION_MISSING");
@@ -64,7 +65,8 @@ export function personalConnectorDefinitionsForSecondBrain(
       : memory.allowed_fields.filter(field => field !== "conflict_id"),
   });
   return Object.freeze([narrowed, ...PERSONAL_CONNECTOR_DEFINITIONS.slice(1).map(item =>
-    item.id === "mail" ? personalMailConnectorDefinition(mailConfigured) : item)]);
+    item.id === "mail" ? personalMailConnectorDefinition(mailConfigured)
+      : item.id === "messenger" ? personalMessengerConnectorDefinition(messengerConfigured) : item)]);
 }
 
 export function personalMailConnectorDefinition(configured: boolean): PersonalConnectorDefinition {
@@ -81,4 +83,14 @@ export function personalConnectorDefinition(id: PersonalConnectorId): PersonalCo
   const found = PERSONAL_CONNECTOR_DEFINITIONS.find(item => item.id === id);
   if (found === undefined) throw new TypeError("PERSONAL_CONNECTOR_DEFINITION_MISSING");
   return found;
+}
+
+export function personalMessengerConnectorDefinition(configured: boolean): PersonalConnectorDefinition {
+  return frozenDefinition({
+    id: "messenger", configured,
+    capabilities: configured ? ["inbox_summary"] : [],
+    scopes: configured ? ["messenger.summary.read"] : [],
+    allowed_fields: configured ? ["incomplete_count", "oldest_incomplete_age_ms", "observed_at"] : [],
+    freshness: { live_ms: 60_000, stale_ms: 60_000 },
+  });
 }

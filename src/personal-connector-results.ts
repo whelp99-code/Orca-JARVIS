@@ -75,6 +75,11 @@ export function classifyPersonalSnapshot(snapshot: PersonalSourceSnapshot, id: P
     case "offline": return { state: "offline", reason: "source_offline", freshness: "unknown" };
     case "unavailable": return { state: "unavailable", reason: "source_unavailable", freshness: "unknown" };
     case "current": {
+      if (id === "messenger") {
+        return age >= 0 && age <= 60_000
+          ? { state: "ready", reason: "current", freshness: "fresh" }
+          : { state: "unavailable", reason: "source_stale", freshness: "unknown" };
+      }
       if (id === "portfolio") {
         if (age <= 90_000) return { state: "ready", reason: "current", freshness: "fresh" };
         if (age <= 300_000) return { state: "stale", reason: "freshness_threshold_exceeded", freshness: "stale" };

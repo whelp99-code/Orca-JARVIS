@@ -20,6 +20,7 @@ import { parseNativeEveningSourceConfig, type NativeEveningSourceConfig } from "
 import { createPriceFinanceRuntime } from "../integration/price-finance-production.js";
 import { createMailCandidatesRuntime } from "../integration/mail-candidates-production.js";
 import { MailPersonalConnectorSource } from "../personal-connector-mail-source.js";
+import { MessengerPersonalConnectorSource } from "../personal-connector-messenger-source.js";
 
 const LOOPBACK = "127.0.0.1";
 
@@ -117,6 +118,12 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
     reader_key_file: process.env.JARVIS_MAIL_READER_KEY_FILE,
     reader_principal_id: process.env.JARVIS_MAIL_READER_PRINCIPAL_ID ?? "jarvis-mail-summary-reader",
   });
+  const messengerUid = process.env.JARVIS_MESSENGER_PRODUCER_UID ?? "";
+  const messengerSource = process.env.JARVIS_MESSENGER_SNAPSHOT_FILE === undefined ? undefined
+    : new MessengerPersonalConnectorSource({
+      snapshot_file: process.env.JARVIS_MESSENGER_SNAPSHOT_FILE,
+      producer_uid: /^(0|[1-9][0-9]*)$/.test(messengerUid) ? Number(messengerUid) : Number.NaN,
+    });
   const db = new AuthorityDb(options.dbPath);
   const remoteApproval = (() => {
     try { return composeRemoteApproval(db, { policyPath: options.policyPath }); }
@@ -136,6 +143,7 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
     priceFinance,
     mailCandidates,
     mailSource,
+    messengerSource,
     trustedCloseoutKey,
     nativeCloseoutSource,
     staticRoot: options.staticRoot,

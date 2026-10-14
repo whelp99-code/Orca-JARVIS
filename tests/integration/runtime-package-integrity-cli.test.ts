@@ -17,8 +17,13 @@ async function fixture() {
   }
   // The verifier must hash this candidate module, never import it.
   writeFileSync(join(root, "dist/src/personal-os-release-manifest.js"), "throw new Error('CANDIDATE_CODE_EXECUTED');\n");
-  for (const name of ["package.json", "package-lock.json", "scripts/cli-smoke.mjs", "scripts/owner-key-enrollment.mjs"])
-    writeFileSync(join(root, name), "{}\n");
+  for (const name of [
+    "package.json",
+    "package-lock.json",
+    "scripts/cli-smoke.mjs",
+    "scripts/owner-key-enrollment.mjs",
+    "scripts/export-messenger-summary.mjs",
+  ]) writeFileSync(join(root, name), "{}\n");
   const source = { head: "a".repeat(40), fixture: true };
   const artifact = identity.fileIdentity(join(root, "dist"), identity.BACKEND_OUTPUT_ROOTS);
   writeFileSync(join(root, "dist/build-metadata.json"), JSON.stringify({ source, artifact }));
@@ -54,6 +59,7 @@ it.each([
   ["nested", "PACKAGE_UNTRACKED_PAYLOAD_TREE"],
   ["missing", "PACKAGE_VERIFICATION_FAILED"],
   ["owner-cli", "PACKAGE_VERIFICATION_FAILED"],
+  ["messenger-export", "PACKAGE_VERIFICATION_FAILED"],
 ] as const)("rejects %s changes through the real CLI", async (kind, code) => {
   const { root, pin } = await fixture();
   try {
@@ -62,6 +68,7 @@ it.each([
     if (kind === "nested") mkdirSync(join(root, "dist/src/node_modules"));
     if (kind === "missing") rmSync(join(root, "scripts/cli-smoke.mjs"));
     if (kind === "owner-cli") rmSync(join(root, "scripts/owner-key-enrollment.mjs"));
+    if (kind === "messenger-export") rmSync(join(root, "scripts/export-messenger-summary.mjs"));
     expect(verify(root, kind === "pin" ? "0".repeat(64) : pin)).toMatchObject({ code: 1,
       body: { ok: false, code, deployment_ready: false } });
   } finally { rmSync(root, { recursive: true, force: true }); }

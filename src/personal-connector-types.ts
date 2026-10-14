@@ -2,7 +2,7 @@ export const PERSONAL_CONNECTOR_IDS = [
   "second_brain", "orca", "task_timeline", "portfolio", "calendar", "mail", "messenger",
 ] as const;
 export type PersonalConnectorId = (typeof PERSONAL_CONNECTOR_IDS)[number];
-export type ConfiguredPersonalConnectorId = "second_brain" | "orca" | "task_timeline" | "portfolio" | "mail";
+export type ConfiguredPersonalConnectorId = "second_brain" | "orca" | "task_timeline" | "portfolio" | "mail" | "messenger";
 export type PersonalConnectorState = "ready" | "no_data" | "stale" | "offline" | "unavailable";
 export type PersonalConnectorReason =
   | "current" | "current_empty" | "source_stale" | "freshness_threshold_exceeded" | "source_offline" | "disconnected"
