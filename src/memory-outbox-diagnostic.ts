@@ -40,6 +40,7 @@ export type MemoryOutboxFailure = {
 const phases = new WeakMap<object, MemoryOutboxPhase>();
 const snapshots = new WeakMap<object, MemoryOutboxFailure>();
 const recoveries = new WeakMap<object, readonly MemoryOutboxFailure[]>();
+const ownCycleRetries = new WeakSet<MemoryOutboxFailure>();
 const GENERIC_CAUSE = "MEMORY_OUTBOX_UNCLASSIFIED_ERROR";
 export function tagMemoryOutboxFailure(phase: MemoryOutboxPhase, error: unknown): unknown {
   const tagged = (typeof error === "object" && error !== null) || typeof error === "function"
@@ -72,4 +73,10 @@ export function markMemoryOutboxRecovery<T extends object>(value: T, retired: re
 export function memoryOutboxRecoveries(value: object): readonly MemoryOutboxFailure[] { return recoveries.get(value) ?? []; }
 export function memoryOutboxRecovered(value: object, failure: MemoryOutboxFailure | undefined): boolean {
   return failure !== undefined && memoryOutboxRecoveries(value).includes(failure);
+}
+export function markMemoryOutboxCycleRetry(failure: MemoryOutboxFailure): MemoryOutboxFailure {
+  ownCycleRetries.add(failure); return failure;
+}
+export function memoryOutboxRequiresCycleRetry(failure: MemoryOutboxFailure): boolean {
+  return ownCycleRetries.has(failure);
 }

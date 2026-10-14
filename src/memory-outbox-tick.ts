@@ -1,6 +1,7 @@
 import type { MemoryOutboxCycleResult } from "./memory-outbox-types.js";
 import { JarvisError } from "./jarvis-error.js";
-import { memoryOutboxFailure, memoryOutboxRecovered, tagMemoryOutboxFailure, type MemoryOutboxFailure } from "./memory-outbox-diagnostic.js";
+import { memoryOutboxFailure, memoryOutboxRecovered, memoryOutboxRequiresCycleRetry,
+  tagMemoryOutboxFailure, type MemoryOutboxFailure } from "./memory-outbox-diagnostic.js";
 
 /** Adapts an existing runtime tick to one bounded, non-overlapping outbox cycle. */
 export class MemoryOutboxTick {
@@ -21,7 +22,8 @@ export class MemoryOutboxTick {
           tagMemoryOutboxFailure("review_cleanup", new JarvisError(result.cleanup_error))))
         ?? (result.failed === 0 ? undefined : memoryOutboxFailure(new JarvisError("MEMORY_OUTBOX_CYCLE_FAILED")));
       const requiresOwnRetry = this.lastFailure !== undefined && ["record_write_result", "dispatch",
-        "claim_dispatch", "claim_reconciliation", "recover_dispatch", "control_reconciliation"].includes(this.lastFailure.phase);
+        "claim_dispatch", "claim_reconciliation", "recover_dispatch", "control_reconciliation"].includes(this.lastFailure.phase)
+        || this.lastFailure !== undefined && memoryOutboxRequiresCycleRetry(this.lastFailure);
       const progressed = memoryOutboxRecovered(result, this.lastFailure) || (!requiresOwnRetry && (this.lastFailure?.phase === "provider_write"
         ? result.settled + result.conflicts > 0
         : result.dispatched + result.settled + result.conflicts + result.reconciling + (result.commands_reconciled ?? 0) > 0

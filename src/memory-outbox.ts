@@ -60,7 +60,9 @@ export class MemoryOutboxService {
       let dispatch;
       try { dispatch = this.phase("dispatch", () => this.store.markDispatch(claimed.outbox_id, worker, claimed.lease_fence, this.options.clock()), claimed.outbox_id); }
       catch (error) {
-        result.failed += 1; failures.push(memoryOutboxFailure(error));
+        const failure = memoryOutboxFailure(error);
+        this.diagnostics.record(claimed.outbox_id, failure, failures.length === 0);
+        result.failed += 1; failures.push(failure);
         if (error instanceof JarvisError) continue;
         throw error;
       }
@@ -106,7 +108,7 @@ export class MemoryOutboxService {
         else result.failed += 1;
       } catch (error) {
         const failure = memoryOutboxFailure(error);
-        this.diagnostics.record(saga.outbox_id, failure);
+        this.diagnostics.record(saga.outbox_id, failure, true);
         throw error;
       }
     }
@@ -140,7 +142,8 @@ export class MemoryOutboxService {
       return result;
     } catch (error) {
       const tagged = tagMemoryOutboxFailure(phase, error); const failure = memoryOutboxFailure(tagged);
-      if (outboxId !== undefined) this.diagnostics.record(outboxId, failure);
+      if (outboxId !== undefined) this.diagnostics.record(outboxId, failure,
+        phase !== "dispatch" || !(error instanceof JarvisError));
       else if (cyclePhase) this.diagnostics.recordPhase(failure);
       throw tagged;
     }
