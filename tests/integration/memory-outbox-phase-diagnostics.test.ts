@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { JarvisError } from "../../src/jarvis-error.js";
 import { MemoryOutboxStore } from "../../src/memory-outbox-store.js";
 import { MemoryOutboxTick } from "../../src/memory-outbox-tick.js";
-import type { MemoryOutboxFailure } from "../../src/memory-outbox-diagnostic.js";
+import { memoryOutboxRecovered, type MemoryOutboxFailure } from "../../src/memory-outbox-diagnostic.js";
 import { closeMemoryDatabase } from "../fixtures/memory-candidate-store.js";
 import { claimAction, evidence, FixtureReader, OUTBOX_ARTIFACT_DIGEST, outboxFixture,
   type OutboxFixture } from "../fixtures/memory-outbox-fixture.js";
@@ -18,6 +18,36 @@ async function pair() {
 }
 
 describe("own-phase outbox diagnostic recovery", () => {
+  it.each(["dispatch", "provider_observation"] as const)("clears repeated %s rejections with the same cause", async phase => {
+    const a = await outboxFixture({ reader: ready(), deadline: 60_000 }); fixtures.push(a);
+    const id = a.service.enqueue(claimAction(a)).outbox_id;
+    const rejection = () => { throw new JarvisError("MEMORY_OUTBOX_STALE_FENCE", "PRIVATE_SENTINEL"); };
+    const fault = phase === "dispatch" ? vi.spyOn(MemoryOutboxStore.prototype, "markDispatch").mockImplementation(rejection)
+      : vi.spyOn(a.reader, "recentChanges").mockImplementation(rejection);
+    const logs: (MemoryOutboxFailure | null)[] = [];
+    const cycles: Awaited<ReturnType<typeof a.service.runOnce>>[] = [];
+    const tick = new MemoryOutboxTick(async () => {
+      const cycle = await a.service.runOnce("same-cause-owner", 1); cycles.push(cycle); return cycle;
+    }, value => logs.push(value));
+    try {
+      tick.tick(); await tick.drain();
+      a.clock.now = new Date(a.clock.now.getTime() + 10_001);
+      tick.tick(); await tick.drain();
+      expect(logs).toEqual([expect.objectContaining({ phase })]);
+      const shown = tick["lastFailure"];
+      fault.mockRestore();
+      a.clock.now = new Date(a.clock.now.getTime() + 10_001);
+
+      tick.tick(); await tick.drain(); const recovered = cycles.at(-1);
+      tick.tick(); await tick.drain();
+
+      expect(a.service.get(id)?.state).toBe("settled");
+      expect(a.writer.calls).toHaveLength(1);
+      expect(memoryOutboxRecovered(recovered ?? {}, shown)).toBe(true);
+      expect(logs).toEqual([expect.objectContaining({ phase }), null]);
+    } finally { await tick.close(); }
+  });
+
   it.each(["record_write_result", "dispatch"] as const)("retains %s for leased A while B completes", async phase => {
     const { a, b } = await pair();
     const queued = a.service.enqueue(claimAction(a));

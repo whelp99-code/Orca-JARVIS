@@ -30,7 +30,7 @@ export class MemoryOutboxDiagnostics {
   record(id: string, failure: MemoryOutboxFailure, reported = false): void {
     const group = this.group(failure.phase); const key = `${id}:${failure.phase}`;
     const previous = group.get(key);
-    const current = previous?.failure.cause_code === failure.cause_code ? previous.failure : failure;
+    const current = !reported && previous?.failure.cause_code === failure.cause_code ? previous.failure : failure;
     if (previous === undefined && group.size === SAMPLE_CAPACITY) {
       for (const victim of group.keys()) {
         if (this.pin?.group === group && this.pin.key === victim) continue;
