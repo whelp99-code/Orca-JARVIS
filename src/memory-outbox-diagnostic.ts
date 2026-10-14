@@ -38,23 +38,38 @@ export type MemoryOutboxFailure = {
 
 // Keep the original exception identity without retaining or copying private details.
 const phases = new WeakMap<object, MemoryOutboxPhase>();
+const snapshots = new WeakMap<object, MemoryOutboxFailure>();
+const recoveries = new WeakMap<object, readonly MemoryOutboxFailure[]>();
 const GENERIC_CAUSE = "MEMORY_OUTBOX_UNCLASSIFIED_ERROR";
 export function tagMemoryOutboxFailure(phase: MemoryOutboxPhase, error: unknown): unknown {
   const tagged = (typeof error === "object" && error !== null) || typeof error === "function"
     ? error : new Error(GENERIC_CAUSE);
   phases.set(tagged, phase);
+  snapshots.delete(tagged);
   return tagged;
 }
 export function memoryOutboxFailure(error: unknown): MemoryOutboxFailure {
-  const phase = (typeof error === "object" && error !== null) || typeof error === "function"
-    ? phases.get(error) ?? "cycle" : "cycle";
+  const object = (typeof error === "object" && error !== null) || typeof error === "function" ? error : undefined;
+  const snapshot = object === undefined ? undefined : snapshots.get(object);
+  if (snapshot !== undefined) return snapshot;
+  const phase = object === undefined ? "cycle" : phases.get(object) ?? "cycle";
   let code = GENERIC_CAUSE;
   try { code = error instanceof JarvisError ? error.code : GENERIC_CAUSE; }
   catch { code = GENERIC_CAUSE; }
   const cause = approvedCauseCodes.has(code) ? code : GENERIC_CAUSE;
-  return { phase, error_code: codes[phase], cause_code: cause };
+  const failure = { phase, error_code: codes[phase], cause_code: cause };
+  if (object !== undefined) snapshots.set(object, failure);
+  return failure;
 }
 export function memoryOutboxLog(failure: MemoryOutboxFailure | null) {
   return { component: "memory.outbox", error_code: failure?.error_code ?? null,
     phase: failure?.phase ?? null, cause_code: failure?.cause_code ?? null };
+}
+export function markMemoryOutboxRecovery<T extends object>(value: T, retired: readonly MemoryOutboxFailure[]): T {
+  if (retired.length > 0) recoveries.set(value, retired);
+  return value;
+}
+export function memoryOutboxRecoveries(value: object): readonly MemoryOutboxFailure[] { return recoveries.get(value) ?? []; }
+export function memoryOutboxRecovered(value: object, failure: MemoryOutboxFailure | undefined): boolean {
+  return failure !== undefined && memoryOutboxRecoveries(value).includes(failure);
 }

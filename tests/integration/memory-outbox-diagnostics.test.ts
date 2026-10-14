@@ -79,7 +79,7 @@ describe("memory outbox failure diagnostics", () => {
     expect(fixture.writer.calls).toHaveLength(1);
     expect([...new MemoryCandidateReviewSpool(fixture.database.root + "/candidate-review").iteratePaths()]).toHaveLength(0);
   });
-  it("omits a committed uncertain write failure after same-cycle settlement", async () => {
+  it.each(["settled", "conflict"] as const)("omits an uncertain write failure after same-cycle %s", async terminal => {
     const fixture = await outboxFixture();
     fixtures.push(fixture);
     const queued = fixture.service.enqueue(claimAction(fixture));
@@ -87,15 +87,15 @@ describe("memory outbox failure diagnostics", () => {
     vi.spyOn(fixture.writer, "write").mockImplementation(async request => {
       await write(request);
       const artifact = { kind: "current" as const, checked_at: "2026-08-28T12:00:00.000Z",
-        evidence: [evidence(OUTBOX_ARTIFACT_DIGEST)] };
+        evidence: [evidence(terminal === "settled" ? OUTBOX_ARTIFACT_DIGEST : `sha256:${"f".repeat(64)}`)] };
       vi.spyOn(fixture.reader, "recentChanges").mockResolvedValue(artifact);
       vi.spyOn(fixture.reader, "readPage").mockResolvedValue(artifact);
       throw new JarvisError("MEMORY_OUTBOX_WRITE_FAILED");
     });
     const result = await fixture.service.runOnce("committed-uncertain-worker", 1);
-    expect(result.settled).toBe(1);
+    expect(terminal === "settled" ? result.settled : result.conflicts).toBe(1);
     expect(result.failure).toBeUndefined();
-    expect(fixture.service.get(queued.outbox_id)?.state).toBe("settled");
+    expect(fixture.service.get(queued.outbox_id)?.state).toBe(terminal);
     expect(fixture.writer.calls).toHaveLength(1);
     const idle = await fixture.service.runOnce("committed-uncertain-worker", 1);
     expect(idle.settled).toBe(0);

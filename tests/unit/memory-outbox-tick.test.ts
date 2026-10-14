@@ -2,10 +2,28 @@ import { describe, expect, it, vi } from "vitest";
 import { MemoryOutboxTick } from "../../src/memory-outbox-tick.js";
 import type { MemoryOutboxCycleResult } from "../../src/memory-outbox-types.js";
 import { JarvisError } from "../../src/jarvis-error.js";
-import { memoryOutboxLog, tagMemoryOutboxFailure } from "../../src/memory-outbox-diagnostic.js";
+import { markMemoryOutboxRecovery, memoryOutboxFailure, memoryOutboxLog, tagMemoryOutboxFailure,
+  type MemoryOutboxFailure } from "../../src/memory-outbox-diagnostic.js";
 
 const empty = { claimed: 0, dispatched: 0, reconciling: 0, settled: 0, conflicts: 0, failed: 0 };
 describe("bounded memory outbox tick", () => {
+  it("requires the reported diagnostic's own proof even when another retired fault has identical fields", async () => {
+    const fault = () => memoryOutboxFailure(tagMemoryOutboxFailure("provider_observation", new JarvisError("MEMORY_OUTBOX_STALE_FENCE")));
+    const a = fault(); const b = fault();
+    const logs: (MemoryOutboxFailure | null)[] = [];
+    const cycle = vi.fn<() => Promise<MemoryOutboxCycleResult>>()
+      .mockResolvedValueOnce({ ...empty, failure: b })
+      .mockResolvedValueOnce(markMemoryOutboxRecovery({ ...empty }, [a]))
+      .mockResolvedValueOnce(markMemoryOutboxRecovery({ ...empty }, [b]))
+      .mockResolvedValueOnce(empty);
+    const tick = new MemoryOutboxTick(cycle, failure => logs.push(failure));
+    tick.tick(); await tick.drain(); tick.tick(); await tick.drain();
+    expect(logs).toEqual([b]);
+
+    tick.tick(); await tick.drain(); tick.tick(); await tick.close();
+
+    expect(logs).toEqual([b, null]);
+  });
   it.each(["reconciling", "dispatched", "commands_reconciled"] as const)(
     "retains a provider write failure through %s without terminal evidence", async progress => {
       const logs: unknown[] = [];

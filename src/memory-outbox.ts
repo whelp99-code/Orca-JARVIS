@@ -4,7 +4,7 @@ import { cleanupMemoryCandidateReviews } from "./memory-candidate-review-cleanup
 import { memoryRememberArtifact, observeRememberArtifact } from "./memory-remember-artifact.js";
 import { MemoryOutboxStore } from "./memory-outbox-store.js";
 import { reconcileMemoryOutboxCommands } from "./memory-outbox-control.js";
-import { memoryOutboxFailure, tagMemoryOutboxFailure,
+import { markMemoryOutboxRecovery, memoryOutboxFailure, memoryOutboxRecoveries, tagMemoryOutboxFailure,
   type MemoryOutboxFailure, type MemoryOutboxPhase } from "./memory-outbox-diagnostic.js";
 import type {
   MemoryObservation,
@@ -31,6 +31,8 @@ export class MemoryOutboxService {
   private readonly store: MemoryOutboxStore;
   private readonly leaseMs: number;
   private readonly deadlineMs: number;
+  private readonly writerFailures = new Map<string, MemoryOutboxFailure>();
+  private readonly reconcileFaults = new Map<string, { readonly outboxId: string; readonly failure: MemoryOutboxFailure }>();
   constructor(private readonly options: MemoryOutboxServiceOptions) {
     this.leaseMs = requireDuration(options.leaseMs ?? DEFAULT_LEASE_MS);
     this.deadlineMs = requireDuration(options.artifactDeadlineMs ?? MEMORY_OUTBOX_RUNTIME_DEADLINE_MS);
@@ -48,7 +50,7 @@ export class MemoryOutboxService {
   }
   async runOnce(workerId: string, limit = 16): Promise<MemoryOutboxCycleResult> {
     const worker = requireWorker(workerId); const bound = requireLimit(limit); const result = { ...empty() };
-    const failures: { readonly outboxId: string; readonly failure: MemoryOutboxFailure }[] = [];
+    const failures: MemoryOutboxFailure[] = [];
     result.reconciling += this.phase("recover_dispatch", () => this.store.recoverDispatching(this.options.clock()));
     for (let index = 0; index < bound; index += 1) {
       const claimed = this.phase("claim_dispatch", () => this.store.claimDispatch(worker, this.options.clock(), this.leaseMs));
@@ -57,7 +59,7 @@ export class MemoryOutboxService {
       let dispatch;
       try { dispatch = this.phase("dispatch", () => this.store.markDispatch(claimed.outbox_id, worker, claimed.lease_fence, this.options.clock())); }
       catch (error) {
-        result.failed += 1; failures.push({ outboxId: claimed.outbox_id, failure: memoryOutboxFailure(error) });
+        result.failed += 1; failures.push(memoryOutboxFailure(error));
         if (error instanceof JarvisError) continue;
         throw error;
       }
@@ -65,22 +67,23 @@ export class MemoryOutboxService {
       let outcome;
       try { outcome = await this.options.writer.write(dispatch.request); }
       catch (error) {
-        failures.push({ outboxId: dispatch.saga.outbox_id,
-          failure: memoryOutboxFailure(tagMemoryOutboxFailure("provider_write", error)) });
-        outcome = { kind: "uncertain" as const, code: error instanceof Error ? "MEMORY_OUTBOX_WRITE_FAILED" : "MEMORY_OUTBOX_WRITE_FAILED" };
+        this.writerFailures.set(dispatch.saga.outbox_id,
+          memoryOutboxFailure(tagMemoryOutboxFailure("provider_write", error)));
+        outcome = { kind: "uncertain" as const, code: "MEMORY_OUTBOX_WRITE_FAILED" };
       }
       this.phase("record_write_result", () => this.store.recordResult(dispatch, outcome, this.options.clock())); result.reconciling += 1;
     }
     const reconciled = await this.reconcileOnce(worker, bound);
-    const failure = reconciled.failure ?? failures.find(item =>
-      item.failure.phase !== "provider_write" || this.store.get(item.outboxId)?.state !== "settled")?.failure;
-    return { claimed: result.claimed, dispatched: result.dispatched,
+    const pending = this.pendingFailure(failures[0]);
+    const failure = pending.failure ?? reconciled.failure;
+    const cycle = { claimed: result.claimed, dispatched: result.dispatched,
       reconciling: result.reconciling + reconciled.reconciling, settled: reconciled.settled,
       conflicts: reconciled.conflicts, failed: result.failed + reconciled.failed,
       commands_reconciled: reconciled.commands_reconciled ?? 0,
       ...(failure === undefined ? {} : { failure }),
       ...(reconciled.control_error === undefined ? {} : { control_error: reconciled.control_error }),
       ...(reconciled.cleanup_error === undefined ? {} : { cleanup_error: reconciled.cleanup_error }) };
+    return markMemoryOutboxRecovery(cycle, [...pending.retired, ...memoryOutboxRecoveries(reconciled)]);
   }
   async reconcileOnce(workerId: string, limit = 16): Promise<MemoryOutboxCycleResult> {
     const worker = requireWorker(workerId); const bound = requireLimit(limit); const result = { ...empty() };
@@ -88,25 +91,52 @@ export class MemoryOutboxService {
       const saga = this.phase("claim_reconciliation", () => this.store.claimReconcile(worker, this.options.clock(), this.leaseMs));
       if (saga === undefined) break;
       result.claimed += 1;
-      const observation = await this.observe(saga).catch(error => {
-        throw tagMemoryOutboxFailure("provider_observation", error);
-      });
-      const updated = this.phase(observation.kind === "missing" ? "record_observation" : "settlement",
-        () => this.store.recordObservation(saga, observation, this.options.clock()));
-      if (updated.state === "settled") result.settled += 1;
-      else if (updated.state === "conflict") result.conflicts += 1;
-      else if (updated.state === "reconciling") result.reconciling += 1;
-      else result.failed += 1;
+      try {
+        const observation = await this.observe(saga).catch(error => {
+          throw tagMemoryOutboxFailure("provider_observation", error);
+        });
+        this.reconcileFaults.delete(`${saga.outbox_id}:provider_observation`);
+        const phase = observation.kind === "missing" ? "record_observation" : "settlement";
+        const updated = this.phase(phase, () => this.store.recordObservation(saga, observation, this.options.clock()));
+        this.reconcileFaults.delete(`${saga.outbox_id}:${phase}`);
+        if (updated.state === "settled") result.settled += 1;
+        else if (updated.state === "conflict") result.conflicts += 1;
+        else if (updated.state === "reconciling") result.reconciling += 1;
+        else result.failed += 1;
+      } catch (error) {
+        const failure = memoryOutboxFailure(error);
+        this.reconcileFaults.set(`${saga.outbox_id}:${failure.phase}`, { outboxId: saga.outbox_id, failure });
+        throw error;
+      }
     }
     const commands = reconcileMemoryOutboxCommands(this.options.authority, this.options.clock(), bound);
+    const pending = this.pendingFailure();
     try { this.cleanupReviews(); }
     catch (error) {
       // Cleanup is retryable on the next cycle. A committed settlement must not
       // become a failed control command merely because local cleanup failed.
-      return { ...result, ...commands, cleanup_error: "MEMORY_REVIEW_CLEANUP_FAILED",
-        failure: commands.failure ?? memoryOutboxFailure(tagMemoryOutboxFailure("review_cleanup", error)) };
+      return markMemoryOutboxRecovery({ ...result, ...commands, cleanup_error: "MEMORY_REVIEW_CLEANUP_FAILED" as const,
+        failure: pending.failure ?? commands.failure ?? memoryOutboxFailure(tagMemoryOutboxFailure("review_cleanup", error)) },
+      pending.retired);
     }
-    return { ...result, ...commands };
+    const failure = pending.failure ?? commands.failure;
+    return markMemoryOutboxRecovery({ ...result, ...commands, ...(failure === undefined ? {} : { failure }) }, pending.retired);
+  }
+  private pendingFailure(current?: MemoryOutboxFailure): { readonly failure: MemoryOutboxFailure | undefined; readonly retired: readonly MemoryOutboxFailure[] } {
+    const retired: MemoryOutboxFailure[] = [];
+    for (const [id, failure] of this.writerFailures) {
+      const saga = this.store.get(id);
+      if (saga === undefined || saga.state === "settled" || saga.state === "conflict") {
+        this.writerFailures.delete(id); retired.push(failure);
+      }
+    }
+    for (const [key, fault] of this.reconcileFaults) {
+      const saga = this.store.get(fault.outboxId);
+      if (saga === undefined || saga.state === "settled" || saga.state === "conflict") {
+        this.reconcileFaults.delete(key); retired.push(fault.failure);
+      }
+    }
+    return { failure: this.writerFailures.values().next().value ?? current ?? this.reconcileFaults.values().next().value?.failure, retired };
   }
   private phase<T>(phase: MemoryOutboxPhase, operation: () => T): T {
     try { return operation(); }
