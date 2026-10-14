@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, type ChildProcess } from "node:child_process";
 import {
   chmodSync,
   chownSync,
@@ -127,6 +127,7 @@ function loadBrokerConfig(configPath: string): BrokerConfig {
     || (group !== undefined && parentInfo.gid !== group)) {
     fail("COMPANY_CANDIDATE_BROKER_CONFIG_INVALID");
   }
+  assertTrustedParents(parsed.data.socket);
   try {
     lstatSync(parsed.data.socket);
     fail("COMPANY_CANDIDATE_BROKER_SOCKET_EXISTS");
@@ -174,7 +175,10 @@ function childEnv(): NodeJS.ProcessEnv {
   return { PATH: "/usr/bin:/bin", HOME: home };
 }
 
-function runPinned(config: BrokerConfig, action: "handoff" | "process", stdin: Buffer): Promise<string> {
+function runPinned(
+  config: BrokerConfig, action: "handoff" | "process", stdin: Buffer,
+  children: Map<ChildProcess, Promise<void>>,
+): Promise<string> {
   assertPinnedExecutable(config.sb_company_bin);
   readSecureConfig(config.sb_config_file);
   return new Promise((resolve, reject) => {
@@ -209,6 +213,12 @@ function runPinned(config: BrokerConfig, action: "handoff" | "process", stdin: B
     child.stdin?.on("error", () => {
       child.kill("SIGKILL");
     });
+    children.set(child, new Promise<void>(resolve => {
+      child.once("close", () => {
+        children.delete(child);
+        resolve();
+      });
+    }));
     child.stdin?.end(stdin);
   });
 }
@@ -232,19 +242,26 @@ export async function startCompanyCandidateBroker(
   let active = 0;
   let created = false;
   let closed = false;
+  let closing: Promise<void> | undefined;
   const sockets = new Set<Socket>();
+  const children = new Map<ChildProcess, Promise<void>>();
   const closeServer = (target: Server) => new Promise<void>((resolve) => {
     target.close(() => resolve());
   });
   const broker: CompanyCandidateBroker = {
-    async close() {
-      if (closed) return;
+    close() {
+      if (closing) return closing;
       closed = true;
-      server.removeAllListeners("connection");
-      for (const socket of sockets) socket.destroy();
-      if (server.listening) await closeServer(server);
-      unlinkOwned(config.socket, created);
-      created = false;
+      closing = (async () => {
+        server.removeAllListeners("connection");
+        for (const socket of sockets) socket.destroy();
+        for (const child of children.keys()) child.kill("SIGKILL");
+        await Promise.all(children.values());
+        if (server.listening) await closeServer(server);
+        unlinkOwned(config.socket, created);
+        created = false;
+      })();
+      return closing;
     },
   };
   const previous = process.umask(0o177);
@@ -350,6 +367,7 @@ export async function startCompanyCandidateBroker(
   });
 
   async function dispatch(raw: Buffer): Promise<string> {
+    if (closed) return REFUSED;
     let parsed: unknown;
     try {
       parsed = parseCompanyJsonBytes(raw);
@@ -360,7 +378,7 @@ export async function startCompanyCandidateBroker(
     const envelope = envelopeSchema.safeParse(parsed);
     if (!envelope.success) return REFUSED;
     const action = pinnedAction(config.role, envelope.data.authority.operation);
-    return runPinned(config, action, raw);
+    return runPinned(config, action, raw, children);
   }
 
   return broker;

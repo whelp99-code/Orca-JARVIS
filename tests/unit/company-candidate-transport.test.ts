@@ -394,6 +394,25 @@ function exchange(socketPath: string, payload: unknown): Promise<string> {
 }
 
 describe("company candidate broker", () => {
+  it.each([0o770, 0o707])("refuses a writable socket ancestor at startup (%i)", async mode => {
+    const fixture = brokerFixture("handoff", CHILD);
+    const ancestor = join(fixture.root, "replaceable-socket");
+    const parent = join(ancestor, "private");
+    mkdirSync(parent, { recursive: true, mode: 0o700 });
+    chmodSync(parent, 0o700);
+    chmodSync(ancestor, mode);
+    const socketPath = join(parent, "b.sock");
+    writeSecure(fixture.brokerConfig, JSON.stringify({
+      schema_version: 1, role: "handoff", socket: socketPath,
+      sb_company_bin: fixture.bin, sb_config_file: fixture.sbConfig,
+    }));
+    const child = spawnBroker(fixture.brokerConfig);
+    const [code] = await once(child, "exit", { signal: AbortSignal.timeout(3_000) });
+    expect(code).toBe(1);
+    expect(existsSync(socketPath)).toBe(false);
+    expect(existsSync(fixture.log)).toBe(false);
+  });
+
   it.each([0o770, 0o707])("refuses a writable SB config ancestor at startup (%i)", async mode => {
     const fixture = brokerFixture("handoff", CHILD);
     const ancestor = join(fixture.root, "replaceable-config");
@@ -622,6 +641,51 @@ describe("company candidate broker", () => {
     const [code] = await exited;
     expect(code).toBe(0);
     expect(existsSync(fixture.socketPath)).toBe(false);
+  });
+
+  it.each(["SIGTERM", "SIGINT"] as const)("ends dispatched children before broker shutdown (%s)", async signal => {
+    const root = tempRoot();
+    const gatePath = join(root, "gate.sock");
+    const gate = createServer();
+    servers.push(gate);
+    const started = new Promise<{ socket: Socket; pid: number }>((resolve, reject) => {
+      const timeout = AbortSignal.timeout(5_000);
+      timeout.addEventListener("abort", () => reject(new Error("shutdown child did not start")), { once: true });
+      gate.once("connection", socket => {
+        let body = "";
+        socket.on("error", reject);
+        socket.on("data", (chunk: Buffer) => {
+          body += chunk.toString("utf8");
+          if (!body.includes("\n")) return;
+          const pid = Number(body.split("\n")[0]);
+          rememberPid(pid);
+          resolve({ socket, pid });
+        });
+      });
+    });
+    gate.listen(gatePath);
+    await once(gate, "listening");
+    const script = `#!/bin/bash\nexec ${quoteShell(process.execPath)} ${quoteShell(REVIEW)} ${quoteShell(gatePath)} ignore-term\n`;
+    const fixture = brokerFixture("handoff", script);
+    const ready = socketReady(fixture.root, fixture.socketPath);
+    const broker = spawnBroker(fixture.brokerConfig);
+    await ready;
+    const response = readBroker(fixture.socketPath, handoffEnvelope());
+    const child = await started;
+    try {
+      const exited = once(broker, "exit", { signal: AbortSignal.timeout(3_000) });
+      broker.kill(signal);
+      const [code] = await exited;
+      expect(code).toBe(0);
+      expect(() => process.kill(child.pid, 0)).toThrow(expect.objectContaining({ code: "ESRCH" }));
+      expect(existsSync(fixture.socketPath)).toBe(false);
+      await response;
+    } finally {
+      const closed = child.socket.destroyed ? Promise.resolve()
+        : once(child.socket, "close", { signal: AbortSignal.timeout(3_000) });
+      killReviewPid(child.pid);
+      await closed;
+    }
   });
 
   it("supports an explicitly pinned caller group without exposing SB credentials or database", async () => {
