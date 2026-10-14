@@ -9,6 +9,7 @@ import { validateMemoryCandidateScopeProposal } from "./memory-candidate-scope.j
 import { assertTaskWorkLineage } from "./task-work-lineage-binding.js";
 import { parseTaskExecutionPlan } from "./task-execution-plan.js";
 import { readControlCommand } from "./control-command-read.js";
+import { parseCompanyCommand } from "./company-candidate-contract.js";
 function finiteDate(date: Date, code: string): number { const time = date.getTime(); if (!Number.isFinite(time)) throw new JarvisError(code); return time; }
 function finiteIso(value: string): number { const time = Date.parse(value); return Number.isFinite(time) ? time : Number.NaN; }
 
@@ -19,7 +20,8 @@ export function stageControlCommand(authority: AuthorityDb, input: ControlComman
       !isRecord(input.target) || !isRecord(input.args) || typeof input.reversible !== "boolean" || !nonempty(input.requested_by) || !nonempty(input.nonce) ||
       !Number.isFinite(requested) || !Number.isFinite(expires) || requested > nowMs || expires <= nowMs || expires <= requested ||
       expires - requested > 24 * 60 * 60_000 ) throw new JarvisError("CONTROL_COMMAND_INVALID"); validateControlAction(input);
-    const irreversible = ["memory.outbox.dispatch", "memory.outbox.abandon-not-delivered", "memory.delete",
+    if (input.action === "company.candidate.transition") parseCompanyCommand(input);
+    const irreversible = ["company.candidate.transition", "memory.outbox.dispatch", "memory.outbox.abandon-not-delivered", "memory.delete",
       "memory.export", "memory.generation.rollback", "external.delegate"];
     if (irreversible.includes(input.action) && input.reversible) throw new JarvisError("CONTROL_COMMAND_INVALID");
     if (input.action === "external.delegate") {

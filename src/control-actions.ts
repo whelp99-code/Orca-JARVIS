@@ -6,6 +6,7 @@ import { REMOTE_LIFECYCLE_ACTIONS } from "./remote-approval-actions.js";
 import { validateTaskExecutionAction } from "./task-execution-plan.js";
 import { controlWorkflowRunInput } from "./control-workflow-input.js";
 import { externalDelegateBatchDigest, parseExternalDelegateItems } from "./external-delegate.js";
+import { validateCompanyAction } from "./company-candidate-contract.js";
 
 export interface RuntimeControlActionInput {
   action: string;
@@ -195,6 +196,7 @@ function evidenceNegativeRecord(input: RuntimeControlActionInput): void {
 }
 
 const descriptors: Record<string, Descriptor> = {
+  "company.candidate.transition": { action: "company.candidate.transition", minimum_level: 3, executable: false, validate: validateCompanyAction },
   "task.execute": { action: "task.execute", minimum_level: 3, executable: true, validate: validateTaskExecutionAction },
   "database.backup": { action: "database.backup", minimum_level: 2, executable: true, validate: databaseBackup },
   "database.restore_drill": { action: "database.restore_drill", minimum_level: 1, executable: true, validate: databaseRestoreDrill },

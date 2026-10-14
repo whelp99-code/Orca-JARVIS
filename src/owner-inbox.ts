@@ -6,6 +6,7 @@ import { carryNonSensitiveConfirm, type ConfirmCarry } from "./memory-confirm-ca
 import { KNOWN_CONTROL_ACTIONS } from "./control-actions.js";
 import { approvedActionHasExecutor } from "./approved-executor.js";
 import { EXTERNAL_DELEGATE_RECEIPT_WINDOW_MS, externalDelegateRequester } from "./external-delegate.js";
+import { companyTargetSchema, companyArgumentsSchema } from "./company-candidate-contract.js";
 
 /** Every staged control action can be signed here. Unknown actions stay forbidden. */
 export const OWNER_INBOX_ACTIONS = KNOWN_CONTROL_ACTIONS;
@@ -64,12 +65,19 @@ export type OwnerInboxItem = Readonly<{
     mail_subject?: string;
   }[];
   requester_label?: string;
+  company_candidate?: Readonly<{
+    provider_instance_id: string; workspace_id: string; candidate_id: string;
+    content_digest: string; owner: string; projects: readonly string[];
+    policy_revision: string; deletion_sequence: number; deletion_set_root: string;
+    processor_principal_id: string; status: string;
+  }>;
 }>;
 
 const ACTION_SUMMARY: Readonly<Record<string, string>> = {
   "memory.confirm": "기억 확인을 승인합니다",
   "memory.outbox.dispatch": "기억을 보내도록 승인합니다",
   "memory.outbox.abandon-not-delivered": "전달되지 않은 기억을 닫도록 승인합니다",
+  "company.candidate.transition": "회사 후보 1건 수락과 완료 증거 확인 후 처리 완료를 승인합니다. 거절하면 이 후보를 닫습니다.",
 };
 
 type Row = Readonly<{
@@ -82,6 +90,9 @@ type Row = Readonly<{
   failure_code: string | null;
   args_json?: string;
   requested_by?: string;
+  target_json?: string;
+  company_status?: string | null;
+  company_first_use_expires_at?: string | null;
 }>;
 
 export class OwnerInbox {
@@ -95,12 +106,27 @@ export class OwnerInbox {
   list(): readonly OwnerInboxItem[] {
     const now = this.now().getTime();
     const rows = this.db.db.prepare(
-      `SELECT request_id, action, command_digest, expires_at, requested_at, state, failure_code, args_json, requested_by
-       FROM control_command_requests
-       WHERE state IN ('pending', 'approved', 'failed', 'uncertain')
-       ORDER BY requested_at, request_id`,
+      `SELECT r.request_id,r.action,r.command_digest,r.expires_at,r.requested_at,r.state,
+         COALESCE(h.failure_code,r.failure_code) AS failure_code,r.args_json,r.target_json,r.requested_by,
+         h.status AS company_status,
+         CASE WHEN h.current=1 AND NOT EXISTS (
+           SELECT 1 FROM company_candidate_sb_receipts s WHERE s.request_id=r.request_id
+             AND s.operation=CASE a.decision WHEN 'approve' THEN 'accept' ELSE 'reject' END
+         ) THEN a.expires_at ELSE NULL END AS company_first_use_expires_at
+       FROM control_command_requests r
+       LEFT JOIN company_candidate_handoffs h ON h.request_id=r.request_id
+       LEFT JOIN control_command_receipts a ON a.request_id=r.request_id
+       WHERE r.state IN ('pending', 'approved', 'failed', 'uncertain')
+         OR (r.state='rejected' AND r.action='company.candidate.transition' AND h.current=1
+           AND h.status NOT IN ('rejected','completed','superseded'))
+       ORDER BY r.requested_at,r.request_id`,
     ).all() as Row[];
-    return rows.filter(row => visible(row)).map(row => itemOf(row, Date.parse(row.expires_at) <= now));
+    return rows.filter(row => visible(row)).map(row => {
+      const expiresAt = row.company_first_use_expires_at
+        && Date.parse(row.company_first_use_expires_at) < Date.parse(row.expires_at)
+        ? row.company_first_use_expires_at : row.expires_at;
+      return itemOf({ ...row, expires_at: expiresAt }, Date.parse(expiresAt) <= now);
+    });
   }
 
   issueChallenge(input: Readonly<{
@@ -248,6 +274,9 @@ export class OwnerInbox {
     if (input.decision !== "approve" && input.decision !== "reject") throw new JarvisError("OWNER_INBOX_INVALID");
     const row = this.one(input.request_id);
     if (!isAllowed(row.action)) throw new JarvisError("OWNER_INBOX_ACTION_FORBIDDEN");
+    if (row.action === "company.candidate.transition" && !this.db.db.prepare(
+      "SELECT 1 FROM company_candidate_handoffs WHERE request_id=? AND command_digest=? AND current=1",
+    ).get(row.request_id, row.command_digest)) throw new JarvisError("OWNER_INBOX_NOT_PENDING");
     if (row.state !== "pending") throw new JarvisError("OWNER_INBOX_NOT_PENDING");
     if (row.command_digest !== input.command_digest) throw new JarvisError("OWNER_INBOX_DIGEST_MISMATCH");
     if (Date.parse(row.expires_at) <= this.now().getTime()) throw new JarvisError("OWNER_INBOX_EXPIRED");
@@ -284,29 +313,40 @@ function isAllowed(action: string): boolean {
 
 function visible(row: Row): boolean {
   if (!isAllowed(row.action)) return false;
+  if (row.action === "company.candidate.transition" && row.company_status == null) return false;
+  if (row.state === "rejected") return row.action === "company.candidate.transition";
   if (row.state === "pending") return true;
   if (row.state === "failed" || row.state === "uncertain") return true;
   return row.state === "approved" && !approvedActionHasExecutor(row.action);
 }
 
 function itemOf(row: Row, expired: boolean): OwnerInboxItem {
-  const manual = row.state === "approved" && !approvedActionHasExecutor(row.action);
+  const rejectedCompany = row.action === "company.candidate.transition" && row.state === "rejected";
+  const manual = rejectedCompany || (row.state === "approved" && !approvedActionHasExecutor(row.action));
   const external = externalDisplay(row);
+  const company = row.action === "company.candidate.transition" && row.target_json && row.args_json
+    ? { ...companyTargetSchema.parse(JSON.parse(row.target_json)),
+      ...companyArgumentsSchema.parse(JSON.parse(row.args_json)), status: row.company_status ?? "unimported" }
+    : undefined;
   const base = external?.summary ?? ACTION_SUMMARY[row.action] ?? row.action;
   const approvedText = row.action === "external.delegate" ? OWNER_INBOX_EXTERNAL_DONE : OWNER_INBOX_MANUAL_WAIT;
   return {
     request_id: row.request_id,
     action: row.action,
-    summary: manual ? approvedText : expired ? `${base} (만료됨)` : base,
+    summary: rejectedCompany ? "거절됨 — SB 전달 대기(수동)"
+      : manual ? company ? `${base} (${company.status === "accepted" ? "수락됨 — 완료 확인 대기" : approvedText})` : approvedText
+      : expired ? `${base} (만료됨)` : base,
     command_digest: row.command_digest,
     expires_at: row.expires_at,
     requested_at: row.requested_at,
     expired,
     manual_wait: manual,
-    needs_review: row.state === "failed" || row.state === "uncertain",
-    failure_code: row.state === "failed" || row.state === "uncertain" ? row.failure_code : null,
+    needs_review: row.state === "failed" || row.state === "uncertain" || row.company_status === "uncertain"
+      || (expired && row.company_first_use_expires_at != null),
+    failure_code: row.state === "failed" || row.state === "uncertain" || row.company_status === "uncertain" ? row.failure_code : null,
     ...(external ? { batch_summary: external.batch_summary, batch_items: external.batch_items } : {}),
     ...(external && row.requested_by ? { requester_label: externalDelegateRequester(row.requested_by)?.header } : {}),
+    ...(company ? { company_candidate: company } : {}),
   };
 }
 
