@@ -1,5 +1,9 @@
 import { createHash, createPublicKey } from "node:crypto";
+import childProcess, { type ChildProcess } from "node:child_process";
+import { once } from "node:events";
 import { chmodSync, mkdirSync, readFileSync, symlinkSync, writeFileSync } from "node:fs";
+import { syncBuiltinESMExports } from "node:module";
+import { createServer } from "node:net";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CompanyCandidateExecutor, createCompanyCompletionVerifier, type CompanyCompletionVerifier } from "../../src/company-candidate-execution.js";
@@ -352,6 +356,69 @@ describe("restricted company candidate executor", () => {
 });
 
 describe("pinned company completion executable", () => {
+  it("ends a SIGTERM-ignoring verifier at its deadline and clears the execution lease", async () => {
+    const live = await approved();
+    const gatePath = join(live.root, "verifier.sock");
+    const gate = createServer();
+    const entered = once(gate, "connection", { signal: AbortSignal.timeout(5_000) });
+    gate.listen(gatePath);
+    await once(gate, "listening");
+    const executable = join(live.root, "verify");
+    writeFileSync(executable, `#!${process.execPath}
+import {createConnection} from "node:net";
+import {once} from "node:events";
+const socket=createConnection(${JSON.stringify(gatePath)});
+process.on("SIGTERM",()=>socket.write("ignored\\n"));
+process.stdin.resume();
+await once(socket,"connect");
+socket.write("ready\\n");
+`, { mode: 0o700 });
+    const config = join(live.root, "completion.json");
+    writeFileSync(config, JSON.stringify({ schema_version: 1, executable, args: [] }), { mode: 0o600 });
+    const realExecFile = childProcess.execFile;
+    const target: Record<string, unknown> = childProcess;
+    const children: ChildProcess[] = [];
+    target["execFile"] = (...args: Parameters<typeof realExecFile>) => {
+      const child = realExecFile(...args);
+      children.push(child);
+      return child;
+    };
+    syncBuiltinESMExports();
+    let execution: Promise<unknown> | undefined;
+    try {
+      const client = companyClient(async () => companyReceipt(live.proposal.command.request_id, "accept"));
+      const executor = new CompanyCandidateExecutor(live.db, client, createCompanyCompletionVerifier(config), () => COMPANY_NOW);
+      const started = Date.now();
+      execution = executor.execute(live.proposal.command.request_id).catch((error: unknown) => error);
+      const [channel] = await entered;
+      await once(channel, "data", { signal: AbortSignal.timeout(5_000) });
+      channel.resume();
+      const child = children[0];
+      if (!child) throw new Error("verifier child missing");
+      await once(child, "close", { signal: AbortSignal.timeout(13_000) });
+      expect(child.signalCode).toBe("SIGKILL");
+      expect(Date.now() - started).toBeLessThan(13_000);
+      expect(await execution).toMatchObject({ code: "COMPANY_COMPLETION_UNVERIFIED" });
+      expect(companyState(live.db, live.proposal.command.request_id)).toMatchObject({
+        status: "uncertain", lease_token: null, completion_json: null,
+      });
+      expect(live.db.db.prepare("SELECT operation FROM company_candidate_sb_receipts").all()).toEqual([{ operation: "accept" }]);
+    } finally {
+      target["execFile"] = realExecFile;
+      syncBuiltinESMExports();
+      for (const child of children) {
+        if (child.exitCode === null && child.signalCode === null) {
+          const settled = once(child, "close");
+          child.kill("SIGKILL");
+          await settled;
+        }
+      }
+      await execution;
+      await new Promise<void>(resolve => gate.close(() => resolve()));
+      live.close();
+    }
+  }, 20_000);
+
   it("runs a protected owned verifier and observes its durable effect", async () => {
     const live = await companyDatabase();
     try {

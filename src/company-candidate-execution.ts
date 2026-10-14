@@ -72,7 +72,7 @@ export function createCompanyCompletionVerifier(path: string): CompanyCompletion
     verify(command, acceptance) {
       return new Promise((resolve, reject) => {
         const child = execFile(config.executable, [...config.args], {
-          shell: false, timeout: 10_000, maxBuffer: 1_048_576, encoding: "utf8",
+          shell: false, timeout: 10_000, killSignal: "SIGKILL", maxBuffer: 1_048_576, encoding: "utf8",
           env: { PATH: "/usr/bin:/bin" },
         }, (error, stdout) => {
           if (error) { reject(new JarvisError("COMPANY_COMPLETION_UNVERIFIED")); return; }
