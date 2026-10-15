@@ -386,7 +386,7 @@ export class CompanyCandidateExecutor {
     try {
       return progress.reserve(command, operation, eventDigest, now);
     } catch (error) {
-      if (error instanceof JarvisError && (error.code === "COMPANY_DUPLICATE_OPERATION" || error.code === "COMPANY_PROGRESS_UNCERTAIN")) {
+      if (error instanceof JarvisError && error.code === "COMPANY_DUPLICATE_OPERATION") {
         throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
       }
       throw error;

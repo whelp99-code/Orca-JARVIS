@@ -60,6 +60,13 @@ export class CompanyProgress {
 
   reserve(command: CompanyCommandV2, operation: CommandOperation, eventDigest: string, now: Date): CompanyProgressReservation {
     const scope = { provider_instance_id: command.target.provider_instance_id, workspace_id: command.target.workspace_id };
+    const pending = this.db.db.prepare(
+      `SELECT request_id FROM company_progress_reservations
+       WHERE provider_instance_id=? AND workspace_id=? AND evidence_digest IS NULL LIMIT 1`,
+    ).get(scope.provider_instance_id, scope.workspace_id) as { request_id: string } | undefined;
+    if (pending) {
+      throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN", `COMPANY_PROGRESS_UNCERTAIN: request_id=${pending.request_id}`);
+    }
     const operationId = companyOperationId({ scope, request_id: command.request_id, command_digest: commandDigest(command), operation });
     if (this.db.db.prepare("SELECT 1 FROM company_progress_reservations WHERE operation_id=?").get(operationId)) {
       throw new JarvisError("COMPANY_DUPLICATE_OPERATION");

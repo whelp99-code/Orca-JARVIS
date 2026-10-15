@@ -25,8 +25,12 @@ async function session(operation?: CompanyProgressOperation, loss: "before" | "a
   const command = decodeCompanyCommandV2(live.command);
   const finishes: FinishProgressRequest[] = [];
   let lose = operation !== undefined;
+  let freshnessReads = 0;
   const provider: CompanyFreshnessProvider = {
-    readFreshness: request => live.provider.readFreshness(request),
+    readFreshness: request => {
+      freshnessReads++;
+      return live.provider.readFreshness(request);
+    },
     reserveProgress: request => live.provider.reserveProgress(request),
     finishProgress: request => {
       finishes.push(structuredClone(request));
@@ -71,6 +75,7 @@ async function session(operation?: CompanyProgressOperation, loss: "before" | "a
     },
   };
   return { ...live, command, provider, client, verifier, calls, effects, finishes,
+    freshnessReads: () => freshnessReads,
     failEffect: () => { failEffect = true; }, failMark: () => { failMark = true; },
     execute: (db = live.db) => new CompanyCandidateExecutor(db, client, verifier, () => NOW, provider).execute(command.request_id) };
 }
@@ -129,6 +134,29 @@ describe("committed company finish retry", () => {
         expect(live.db.db.prepare("SELECT count(*) AS n FROM company_candidate_sb_receipts WHERE operation='mark_processed'").get())
           .toEqual({ n: 1 });
       }
+      const next = structuredClone(live.command);
+      next.target.candidate_id += ":next";
+      const key = companyHandoffKeyV2(next);
+      next.request_id = `${key}:1`; next.nonce = next.request_id;
+      const nextDigest = controlCommandDigest(next);
+      importCompanyPage(live.db, { handoffs: [{ idempotency_key: key, command: next, command_digest: nextDigest }],
+        count: 1, limit: 100, offset: 0 }, live.client.context, NOW);
+      const { signature: _signature, ...payload } = live.approval;
+      void _signature;
+      const nextApproval = signCommandApproval({ ...payload, decision: "approve", receipt_id: "receipt:next",
+        request_id: next.request_id, command_digest: nextDigest, nonce: "nonce:next" }, companyApproverKey());
+      const before = control.get(next.request_id);
+      const reads = live.freshnessReads();
+      let blocked: unknown;
+      try { control.decide(nextApproval, NOW); }
+      catch (error) { blocked = error; }
+      expect(blocked).toMatchObject({
+        code: "COMPANY_PROGRESS_UNCERTAIN", message: expect.stringContaining(live.command.request_id),
+      });
+      expect(live.freshnessReads()).toBe(reads);
+      expect(control.get(next.request_id)).toEqual(before);
+      expect(live.db.db.prepare("SELECT count(*) AS n FROM control_command_receipts WHERE request_id=?").get(next.request_id))
+        .toEqual({ n: 0 });
       const restarted = new AuthorityDb(live.db.filename);
       try { expect((await live.execute(restarted)).state).toBe(operation === "decide_reject" ? "rejected" : "completed"); }
       finally { restarted.close(); }
@@ -146,17 +174,7 @@ describe("committed company finish retry", () => {
       expect(live.effects).toHaveLength(operation === "decide_reject" ? 0 : 1);
       expect(live.db.db.prepare("SELECT count(*) AS n FROM control_command_receipts").get()).toEqual({ n: 1 });
 
-      const next = structuredClone(live.command);
-      next.target.candidate_id += ":next";
-      const key = companyHandoffKeyV2(next);
-      next.request_id = `${key}:1`; next.nonce = next.request_id;
-      const nextDigest = controlCommandDigest(next);
-      importCompanyPage(live.db, { handoffs: [{ idempotency_key: key, command: next, command_digest: nextDigest }],
-        count: 1, limit: 100, offset: 0 }, live.client.context, NOW);
-      const { signature: _signature, ...payload } = live.approval;
-      void _signature;
-      control.decide(signCommandApproval({ ...payload, decision: "approve", receipt_id: "receipt:next",
-        request_id: next.request_id, command_digest: nextDigest, nonce: "nonce:next" }, companyApproverKey()), NOW);
+      control.decide(nextApproval, NOW);
       expect((await new CompanyCandidateExecutor(live.db, live.client, live.verifier, () => NOW, live.provider)
         .execute(next.request_id)).state).toBe("completed");
 
@@ -165,6 +183,34 @@ describe("committed company finish retry", () => {
         expect(() => new ControlPlane(restored, live.provider).decide(live.approval, NOW)).toThrow("COMPANY_OPERATIONAL_ROLLBACK");
         expect(restored.db.prepare("SELECT count(*) AS n FROM control_command_receipts").get()).toEqual({ n: 0 });
       } finally { restored.close(); }
+    } finally { live.close(); }
+  });
+
+  it("preserves the blocking request when a preapproved candidate executes", async () => {
+    const live = await session("complete", "before");
+    try {
+      const control = new ControlPlane(live.db, live.provider);
+      control.decide(live.approval, NOW);
+      const next = structuredClone(live.command);
+      next.target.candidate_id += ":preapproved";
+      const key = companyHandoffKeyV2(next);
+      next.request_id = `${key}:1`; next.nonce = next.request_id;
+      const nextDigest = controlCommandDigest(next);
+      importCompanyPage(live.db, { handoffs: [{ idempotency_key: key, command: next, command_digest: nextDigest }],
+        count: 1, limit: 100, offset: 0 }, live.client.context, NOW);
+      const { signature: _signature, ...payload } = live.approval;
+      void _signature;
+      control.decide(signCommandApproval({ ...payload, receipt_id: "receipt:preapproved",
+        request_id: next.request_id, command_digest: nextDigest, nonce: "nonce:preapproved" }, companyApproverKey()), NOW);
+      await expect(live.execute()).rejects.toThrow("COMPANY_PROGRESS_UNCERTAIN");
+      const reads = live.freshnessReads();
+      await expect(new CompanyCandidateExecutor(live.db, live.client, live.verifier, () => NOW, live.provider)
+        .execute(next.request_id)).rejects.toMatchObject({
+        code: "COMPANY_PROGRESS_UNCERTAIN", message: expect.stringContaining(live.command.request_id),
+      });
+      expect(live.freshnessReads()).toBe(reads);
+      expect(live.calls.filter(call => call.request === next.request_id)).toEqual([]);
+      expect(live.effects).toEqual([live.command.request_id]);
     } finally { live.close(); }
   });
 
