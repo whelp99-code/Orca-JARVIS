@@ -7,7 +7,7 @@ import { createServer } from "node:net";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CompanyCandidateExecutor } from "../../src/company-candidate-execution.js";
-import { createCompanyCompletionVerifierV2 } from "../../src/company-completion-v2.js";
+import { createCompanyCompletionVerifierV2, type CompanyCompletionV2, type CompanyCompletionVerifierV2 } from "../../src/company-completion-v2.js";
 import { createCompanyClient } from "../../src/company-candidate-transport.js";
 import { JarvisError } from "../../src/jarvis-error.js";
 import { AuthorityDb } from "../../src/db.js";
@@ -196,6 +196,43 @@ process.stdin.on("end", () => {
       expect(session.live.db.db.prepare("SELECT lease_token FROM company_candidate_handoffs").get()).toEqual({ lease_token: null });
       expect(session.peer.counts().mark_processed).toBe(0);
       expect(session.peer.counts().accept).toBe(1);
+    } finally { await session.peer.close(); session.live.close(); }
+  });
+
+  const invalidInjected: ReadonlyArray<readonly [string, (value: CompanyCompletionV2) => CompanyCompletionV2]> = [
+    ["request", value => ({ ...value, request_id: "different-request" })],
+    ["command", value => ({ ...value, command_digest: `sha256:${"a".repeat(64)}` })],
+    ["candidate", value => ({ ...value, candidate_id: "different-candidate" })],
+    ["content", value => ({ ...value, content_digest: `sha256:${"b".repeat(64)}` })],
+    ["acceptance", value => ({ ...value, acceptance_receipt_digest: `sha256:${"c".repeat(64)}` })],
+    ["unknown-field", value => ({ ...value, extra: true })],
+    ["echo-command", value => ({ ...value, effect_digest: value.command_digest })],
+    ["echo-content", value => ({ ...value, effect_digest: value.content_digest })],
+    ["echo-acceptance", value => ({ ...value, effect_digest: value.acceptance_receipt_digest })],
+  ];
+
+  it.each(invalidInjected)("rejects injected verifier %s before storing completion", async (_name, corrupt) => {
+    const session = await withPeer("ok");
+    const verifier: CompanyCompletionVerifierV2 = {
+      version: 2,
+      async verify(command, acceptance, commandDigest) {
+        return corrupt({
+          schema_version: 2, state: "completed", request_id: command.request_id,
+          command_digest: commandDigest, candidate_id: command.target.candidate_id,
+          content_digest: command.target.content_digest, acceptance_receipt_digest: acceptance.receipt_digest,
+          effect_digest: `sha256:${"e".repeat(64)}`,
+        });
+      },
+    };
+    try {
+      const executor = new CompanyCandidateExecutor(session.live.db, session.client, verifier, () => ACTIVE, session.live.provider);
+      await expect(executor.execute(session.live.command.request_id)).rejects.toMatchObject({ code: "COMPANY_VERIFIER_INVALID" });
+      expect(session.live.db.db.prepare("SELECT completion_json,lease_token FROM company_candidate_handoffs").get())
+        .toEqual({ completion_json: null, lease_token: null });
+      expect(session.live.db.db.prepare(
+        "SELECT evidence_digest,finished_checkpoint_json FROM company_progress_reservations WHERE operation='complete'",
+      ).get()).toEqual({ evidence_digest: null, finished_checkpoint_json: null });
+      expect(session.peer.counts()).toEqual({ accept: 1, reject: 0, mark_processed: 0, read: 0 });
     } finally { await session.peer.close(); session.live.close(); }
   });
 

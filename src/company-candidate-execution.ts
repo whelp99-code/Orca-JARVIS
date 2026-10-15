@@ -338,10 +338,19 @@ export class CompanyCandidateExecutor {
         }
         const reserved = this.reserveV2(progress, command, "complete", receipt.receipt_digest, this.clock());
         this.update(requestId, token, "verifying");
-        completion = await verifier.verify(command, {
+        const verified = companyCompletionV2Schema.safeParse(await verifier.verify(command, {
           receipt_id: receipt.receipt_id, receipt_digest: receipt.receipt_digest,
           operation: "accept", state: "accepted", handoff_id: requestId,
-        }, stored.command_digest);
+        }, stored.command_digest));
+        if (!verified.success || verified.data.request_id !== requestId
+          || verified.data.command_digest !== stored.command_digest
+          || verified.data.candidate_id !== command.target.candidate_id
+          || verified.data.content_digest !== command.target.content_digest
+          || verified.data.acceptance_receipt_digest !== receipt.receipt_digest
+          || verified.data.effect_digest === stored.command_digest
+          || verified.data.effect_digest === command.target.content_digest
+          || verified.data.effect_digest === receipt.receipt_digest) throw new JarvisError("COMPANY_VERIFIER_INVALID");
+        completion = verified.data;
         const saved = this.db.db.prepare(
           "UPDATE company_candidate_handoffs SET completion_json=?,updated_at=? WHERE request_id=? AND lease_token=?",
         ).run(canonicalize(completion), this.clock().toISOString(), requestId, token);
