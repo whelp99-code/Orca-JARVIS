@@ -36,6 +36,10 @@ approver != owner/processor, owner != processor; requested_by=args.owner를 유�
 `binding_digest=H(D("second-brain/company-approval-binding/v1")+C(binding))`.
 `handoff_key="company-handoff:v2:"+SHA256(D("second-brain/company-handoff/v2")+C({target,args})).hex()`.
 `request_id=handoff_key+":"+generation`(양의 safe integer 십진수, 선행0 없음), nonce=request_id.
+같은 handoff_key의 새 명령 generation은 보존한 최고 generation보다 엄격히 커야 하며
+재사용/감소를 금지한다. 같은 request_id의 동일 bytes 재조회는 새 generation 발급이
+아니다. 같은 ID로 시간 등 bytes를 바꾸면 replay conflict다. 증가만으로 terminal 상태나
+미확정 작업을 재실행할 권한이 생기지 않는다.
 명령 TTL은 정확히24시간이며 권한 행사 시 `requested_at <= 현재시각 < expires_at`도
 별도로 검사한다. 시작 시각은 포함하고 만료 시각은 제외하며, 미래 시작/만료 명령은
 24시간 길이가 맞아도 거절한다. C1~C4는 주입된 현재시각으로 이 구간을 다시 검사한다.
@@ -51,6 +55,9 @@ issued_at, not_before, expires_at, nonce, max_uses=1, status="issued".
 Ed25519 pure 모드(no prehash)로 서명한다. signature는 64byte 서명의 padding 없는 base64url(86자)다.
 approval=unsigned 필드+signature. command 직접 서명/이중 hash/문자열 hex 서명은 금지한다.
 receipt의 command_digest가 새 command2 전체를 묶는다. 옛 command1 receipt 이식은 거절한다.
+`approval.request_id == command.request_id`도 필수다. 올바른 command_digest와 유효한
+서명이 있어도 다른 request_id의 approval은 거절한다. fixture의 음성 예시는
+의도적으로 test key로 다시 서명한 불일치 receipt다.
 issued_at <= not_before <= 현재 < expires_at, 수명 최대30분, command TTL도 별도 검사한다.
 C1은 approve/reject **기록 전** 실제 key principal/ID/purpose/SPKI와 고정 binding,
 서명·시간·폐기·최신성을 검증한다. 실패 시 pending 유지·receipt/이벤트/상환0.
@@ -63,6 +70,13 @@ processor 전용 operation=`read_transition_receipt`, purpose=`company_memory_re
 operation="accept"|"reject", transition_request_digest, command_digest, content_digest,
 approval_policy_version, approval_binding_digest를 가진다. scope는 authority에서 고정한다.
 transition_request_digest는 보존한 **원래** accept/reject arguments(approval 포함)의 요청 hash다.
+두 operation의 arguments는 각각 정확히 `{candidate_id,handoff_id,approval}`인 closed
+object다. candidate_id는 command.target.candidate_id, handoff_id는 command.request_id,
+approval은 2절 봉투 전체이며 signature도 포함한다. accept는 decision="approve",
+reject는 decision="reject"만 허용한다. 누락/추가 필드와 반대 결정은 거절하며, 시간이나
+별도 transition 필드를 더하지 않는다. 두 경우 모두 approval.request_id/command_digest를
+원래 command와 대조한다. fixture `transition_request_vectors`에 두 arguments 전체,
+`C({operation,arguments})`의 UTF-8 hex와 domain 포함 최종 digest를 고정한다.
 정확히 `H(D("second-brain/company-memory-request/v1")+C({operation:Q.operation,arguments:original_arguments}))`.
 조회 hash는 `H(D("second-brain/company-memory-request/v1")+C({operation:"read_transition_receipt",arguments:Q}))`.
 authority v1은 provider_instance_id/workspace_id/principal_id/agent_id/session_id/projects/
@@ -140,6 +154,22 @@ scope/challenge/checkpoint/reservation_id를 요구하거나 추가하지 않는
 
 진행 기록의 operation은 decide_approve/decide_reject/accept/reject/complete/mark_processed/delete다.
 C1 결정·SB 전이·verifier 효과는 서로 다른 operation이며 호출 경계가 고정한다.
+terminal_state의 closed enum은 approved/rejected/accepted/completed/processed_complete/deleted다.
+finish는 호출자가 보낸 operation을 믿지 않고 원래 reservation의 operation을 사용한다.
+
+| 예약 operation | 유일하게 허용하는 terminal_state |
+|---|---|
+| decide_approve | approved |
+| decide_reject | rejected |
+| accept | accepted |
+| reject | rejected |
+| complete | completed |
+| mark_processed | processed_complete |
+| delete | deleted |
+
+enum 밖 값은 COMPANY_CONTRACT_INVALID다. enum 안이지만 위 대응과 다르면
+finish는 conflict/checkpoint=null이며 기록/head를 바꾸지 않는다. uncertain/failed는
+완료 상태가 아니며 미확정 예약을 finish로 없애는 데 쓰지 않는다.
 `operation_id=H(D("second-brain/company-operation/v1")+C({scope,request_id,command_digest,operation}))`.
 삭제는 같은 domain의 `C({scope,deletion_plan_digest,operation:"delete"})`다.
 **epoch/재시도 시각을 넣어 다른 일로 만들지 않는다**.
@@ -170,8 +200,9 @@ factory 입력은 `{scope,initial_checkpoint}`이며 복제한 초기 head와 op
 여전히 unconfigured 하나이며 TEST_ONLY_memory/테스트 플래그로 우회하면 계약 오류다.
 휘발성 메모리는 독립 저장·현재성·복구/운영 준비의 증거가 아니다.
 
-- read_freshness: 고정 scope와 challenge를 echo. observed_checkpoint가 현재 head와
-  같으면 ready+현재 checkpoint 복사본, 다르면 mismatch+checkpoint=null.
+- read_freshness: 고정 scope 검증 후 challenge를 echo. 미완료 reservation이 하나라도
+  있으면 observed_checkpoint가 head와 같아도 uncertain+checkpoint=null이다.
+  미완료 예약이 없을 때만 head 일치면 ready+checkpoint 복사본, 아니면 mismatch/null.
 - reserve_progress: 같은 operation_id의 operation/event_digest/원래 expected_checkpoint가
   모두 같으면 이미 기록한 reservation_id/checkpoint로 already_reserved.
   다른 내용의 같은 ID, 또는 신규 ID의 expected_checkpoint가 현재 head와 다르면
@@ -182,6 +213,7 @@ factory 입력은 `{scope,initial_checkpoint}`이며 복제한 초기 head와 op
   expected_checkpoint면 already_recorded+원래 완료 checkpoint; 내용/예약/현재 head
   불일치는 conflict+checkpoint=null. 이미 완료한 내용을 덮거나 효과를 호출하지 않는다.
   서로 다른 예약의 같은 head 동시 finish도 승자 하나다. scope 불일치는 계약 오류다.
+  위 operation별 terminal_state도 대조하며, 잘못된 상태는 예약을 완료하지 않는다.
 
 시험 모델의 reservation_id는 `"reservation:TEST_ONLY:"+operation_id의 sha256: 뒤 64hex`.
 reserve record는 `{operation_id,operation,event_digest,reservation_id,state:"reserved"}`,
@@ -191,7 +223,8 @@ finish record는 `{operation_id,reservation_id,evidence_digest,terminal_state,st
 (sequence=새 intent_sequence)로 head를 갱신한다. 나머지 checkpoint 필드는 seed 그대로다.
 재호출/conflict/read는 map/head를 바꾸지 않는다. fixture의 case 배열을 순서대로 독립
 factory 한 개에 적용하면 ready/reserved/already_reserved/conflict/recorded/
-already_recorded/mismatch의 정확한 응답이 나온다.
+already_recorded/uncertain/mismatch의 정확한 응답이 나온다. fixture는 reserve 직후 같은
+checkpoint를 읽어도 uncertain인 경우와 해당 finish 후 다시 ready인 경우를 모두 고정한다.
 이는 T7·T17·T11·T18 성공 경로에 주입할 시험 대역 계약이지 그 제품 통합 시험의 실행 결과가 아니다.
 
 ## 6. 오류와 미래 통합 시험
@@ -217,6 +250,9 @@ transport 실패/권한 실패/응답 불명을 합쳐 not_found로 처리하지
    두 진행 응답 parser는 unconfigured의 정확한 오류 wire를 허용하되 정상/CAS 분기와
    혼합한 객체는 거절한다. 명령은 requested_at 직전/정각/만료 직전/정각/이후를 고정
    시각으로 시험해, 24시간 길이만 맞는 미래/만료 명령을 허용하지 않는다.
+   유효하게 다시 서명한 request_id 불일치, 같은 handoff의 generation 재사용/감소,
+   예약 operation과 terminal_state 불일치를 거절한다. head가 같은 미완료 예약에서도
+   read_freshness는 uncertain/null이며, 완료 뒤에만 ready로 돌아오는지 시험한다.
 2. F2(키 폐기 rollback): 키/정책 폐기 뒤 한쪽·양쪽 옛 DB/config 복원, C1~C4 승인·효과0.
 3. F3([별도 P1 4278139710](https://github.com/whelp99-code/Orca-JARVIS/pull/88#discussion_r4278139710)):
    **binding/키/폐기 목록을 바꾸지 않고**, backup 뒤 accept·reject·완료·삭제를 각각 실행한
