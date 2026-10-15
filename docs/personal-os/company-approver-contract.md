@@ -95,13 +95,13 @@ shell:false/최소env/10초-SIGKILL/1MiB/stdin 실패 kill·lease 해제 유지.
 
 ## 5. 외부 최신성 제공자: 저장소 중립, 준비 전 비활성
 
-이 절은 인터페이스다. 현재 정의하는 구현체는 **미설정·항상 거절** 한 개뿐이다.
+이 절은 인터페이스다. 운영 config로 고르는 구현체는 **미설정·항상 거절** 한 개뿐이다.
 config는 `{schema_version:2,kind:"unconfigured"}`만 허용하며, 등록/환경변수로 이를 우회하지 않는다.
 unconfigured의 read_freshness는 요청 scope/challenge를 그대로 돌려주되
 `status:"unavailable",checkpoint:null`이다. reserve_progress/finish_progress는 항상
 `{schema_version:2,outcome:"error",code:"COMPANY_FRESHNESS_REQUIRED"}`를 반환하고 기록/효과0.
 ready/예약 성공/정상 완료를 반환하지 않는다. fixture에 config와 정확한 거절값을 고정했다.
-아래 최신성·진행 조건은 인터페이스의 요구이며 이번에 충족하는 다른 구현체를 만들지 않는다.
+아래 최신성·진행 조건은 인터페이스의 요구다. 아래 시험 전용 모델을 운영에 연결하지 않는다.
 동일 호스트/동일 backup의 enabled 플래그·서로 같은 옛 DB·자체 hash chain은 독립 근거가 아니다.
 scope=`{provider_instance_id,workspace_id}`. checkpoint는 아래 closed object다.
 `{operational_epoch,approval_policy_version,approval_binding_digest,revocation_sequence,
@@ -149,6 +149,38 @@ operation_id로 dedup하거나, 재실행 없이 독립 조회로 결과를 증�
 receipt-only 읽기는 별도 현재 권한 확인 아래 가능하며 mutation으로 승격하지 않는다.
 ready는 운영 활성화 승인이 아니다. 대표의 별도 승인·운영자 검증과 후속 복구 과제가
 없으면 재활성화하지 않는다. 이 계약·fixture·제공자 후보 조사는 운영 준비 증명이 아니다.
+
+### TEST_ONLY 메모리 제공자: 성공 경로 시험 전용
+
+논리 구현체 `TEST_ONLY_memory`는 시험 코드에서만 생성·불러오기·주입한다.
+factory 입력은 `{scope,initial_checkpoint}`이며 복제한 초기 head와 operation별 map을 가진다.
+제품 export/registry/CLI/env/운영 config로 선택할 수 없다. 운영 config의 허용 kind는
+여전히 unconfigured 하나이며 TEST_ONLY_memory/테스트 플래그로 우회하면 계약 오류다.
+휘발성 메모리는 독립 저장·현재성·복구/운영 준비의 증거가 아니다.
+
+- read_freshness: 고정 scope와 challenge를 echo. observed_checkpoint가 현재 head와
+  같으면 ready+현재 checkpoint 복사본, 다르면 mismatch+checkpoint=null.
+- reserve_progress: 같은 operation_id의 operation/event_digest/원래 expected_checkpoint가
+  모두 같으면 이미 기록한 reservation_id/checkpoint로 already_reserved.
+  다른 내용의 같은 ID, 또는 신규 ID의 expected_checkpoint가 현재 head와 다르면
+  conflict+checkpoint=null+reservation_id=null. 신규 일치 요청만 원자적 CAS로
+  reserved 기록+head를 갱신한다. 같은 head에 동시 신규 요청은 승자 정확히 하나다.
+- finish_progress: 원래 reservation_id가 필요하다. 최초 일치 expected_checkpoint만
+  원자적 CAS로 recorded. 완료 후 같은 evidence_digest/terminal_state/원래 finish
+  expected_checkpoint면 already_recorded+원래 완료 checkpoint; 내용/예약/현재 head
+  불일치는 conflict+checkpoint=null. 이미 완료한 내용을 덮거나 효과를 호출하지 않는다.
+  서로 다른 예약의 같은 head 동시 finish도 승자 하나다. scope 불일치는 계약 오류다.
+
+시험 모델의 reservation_id는 `"reservation:TEST_ONLY:"+operation_id의 sha256: 뒤 64hex`.
+reserve record는 `{operation_id,operation,event_digest,reservation_id,state:"reserved"}`,
+finish record는 `{operation_id,reservation_id,evidence_digest,terminal_state,state:"finished"}`.
+각 최초 성공만 intent_sequence를 1 늘리고
+`intent_root=H(D("second-brain/TEST_ONLY-memory-progress/v1")+C({previous_root,sequence,record}))`
+(sequence=새 intent_sequence)로 head를 갱신한다. 나머지 checkpoint 필드는 seed 그대로다.
+재호출/conflict/read는 map/head를 바꾸지 않는다. fixture의 case 배열을 순서대로 독립
+factory 한 개에 적용하면 ready/reserved/already_reserved/conflict/recorded/
+already_recorded/mismatch의 정확한 응답이 나온다.
+이는 T7·T17·T11·T18 성공 경로에 주입할 시험 대역 계약이지 그 제품 통합 시험의 실행 결과가 아니다.
 
 ## 6. 오류와 미래 통합 시험
 
