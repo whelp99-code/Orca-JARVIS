@@ -395,8 +395,7 @@ export class CompanyCandidateExecutor {
 
   private finishV2(progress: CompanyProgress, reservation: CompanyProgressReservation, evidenceDigest: string, terminalState: "accepted" | "rejected" | "completed" | "processed_complete"): void {
     const now = this.clock();
-    this.db.db.transaction(() => {
-      progress.finish(reservation, evidenceDigest, terminalState, now);
+    progress.finish(reservation, evidenceDigest, terminalState, now, () => {
       if (terminalState === "accepted" || terminalState === "rejected") {
         const handoff = this.db.db.prepare(
           "UPDATE company_candidate_handoffs SET status=?,failure_code=NULL,updated_at=? WHERE request_id=? AND current=1",
@@ -412,7 +411,7 @@ export class CompanyCandidateExecutor {
         ).run(now.toISOString(), reservation.request_id);
         if (control.changes !== 1 || handoff.changes !== 1) throw new JarvisError("CONTROL_STATE_CONFLICT");
       }
-    }).immediate();
+    });
   }
 
   private v2Verifier(): CompanyCompletionVerifierV2 | undefined {

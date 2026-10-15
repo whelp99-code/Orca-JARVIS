@@ -214,22 +214,59 @@ describe("committed company finish retry", () => {
     } finally { live.close(); }
   });
 
-  it("keeps the receipt but rolls back completion publication when the checkpoint CAS fails", async () => {
+  it("allows another SQLite writer while processed completion waits for its provider", async () => {
+    const live = await session();
+    const other = new AuthorityDb(live.db.filename);
+    other.db.pragma("busy_timeout = 0");
+    other.db.exec("CREATE TABLE test_finish_writer(value TEXT)");
+    const transactions: boolean[] = [];
+    const writeErrors: unknown[] = [];
+    const provider: CompanyFreshnessProvider = {
+      ...live.provider,
+      finishProgress(request) {
+        if (request.terminal_state === "processed_complete") {
+          transactions.push(live.db.db.inTransaction);
+          try {
+            other.db.transaction(() => other.db.prepare("INSERT INTO test_finish_writer VALUES(?)").run("provider")).immediate();
+          } catch (error) { writeErrors.push(error); }
+        }
+        return live.provider.finishProgress(request);
+      },
+    };
+    try {
+      const control = new ControlPlane(live.db, provider);
+      control.decide(live.approval, NOW);
+      expect((await new CompanyCandidateExecutor(live.db, live.client, live.verifier, () => NOW, provider)
+        .execute(live.command.request_id)).state).toBe("completed");
+      expect(writeErrors).toEqual([]);
+      expect(transactions).toEqual([false]);
+      expect(other.db.prepare("SELECT count(*) AS n FROM test_finish_writer").get()).toEqual({ n: 1 });
+      expect(control.get(live.command.request_id)?.state).toBe("completed");
+    } finally { other.close(); live.close(); }
+  });
+
+  it.each(["checkpoint", "publication"] as const)("keeps the receipt but rolls back completion when %s fails", async phase => {
     const live = await session();
     try {
       const control = new ControlPlane(live.db, live.provider);
       control.decide(live.approval, NOW);
-      live.db.db.exec(`CREATE TEMP TRIGGER fail_finished_mark_checkpoint
+      live.db.db.exec(phase === "checkpoint" ? `CREATE TEMP TRIGGER fail_finished_mark_checkpoint
         BEFORE UPDATE OF checkpoint_json ON company_freshness_checkpoints
         WHEN EXISTS (SELECT 1 FROM company_progress_reservations
           WHERE operation='mark_processed' AND finished_checkpoint_json IS NOT NULL)
-        BEGIN SELECT RAISE(ABORT,'TEST_ONLY checkpoint CAS failed'); END`);
-      await expect(live.execute()).rejects.toThrow("TEST_ONLY checkpoint CAS failed");
+        BEGIN SELECT RAISE(ABORT,'TEST_ONLY checkpoint CAS failed'); END`
+        : `CREATE TEMP TRIGGER fail_finished_mark_checkpoint
+        BEFORE UPDATE OF state ON control_command_requests WHEN NEW.state='completed'
+        BEGIN SELECT RAISE(ABORT,'TEST_ONLY terminal publication failed'); END`);
+      await expect(live.execute()).rejects.toThrow(phase === "checkpoint"
+        ? "TEST_ONLY checkpoint CAS failed" : "TEST_ONLY terminal publication failed");
       expect(control.get(live.command.request_id)?.state).toBe("approved");
       expect(live.db.db.prepare("SELECT count(*) AS n FROM company_candidate_sb_receipts WHERE operation='mark_processed'").get())
         .toEqual({ n: 1 });
       expect(live.db.db.prepare("SELECT evidence_digest FROM company_progress_reservations WHERE operation='mark_processed'").get())
         .toEqual({ evidence_digest: null });
+      expect(live.db.db.prepare("SELECT checkpoint_json FROM company_freshness_checkpoints").pluck().get())
+        .toBe(live.db.db.prepare("SELECT checkpoint_json FROM company_progress_reservations WHERE operation='mark_processed'").pluck().get());
       const first = live.finishes.find(request => request.terminal_state === "processed_complete");
       live.db.db.exec("DROP TRIGGER fail_finished_mark_checkpoint");
       expect((await live.execute()).state).toBe("completed");

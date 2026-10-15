@@ -123,7 +123,8 @@ export class CompanyProgress {
     return token;
   }
 
-  finish(token: CompanyProgressReservation, evidenceDigest: string, terminalState: FinishProgressRequest["terminal_state"], now: Date): void {
+  /** Provider acknowledgement precedes the local checkpoint/publication transaction. */
+  finish(token: CompanyProgressReservation, evidenceDigest: string, terminalState: FinishProgressRequest["terminal_state"], now: Date, publish?: () => void): void {
     const challenge = randomUUID();
     let raw: unknown;
     try {
@@ -152,14 +153,15 @@ export class CompanyProgress {
         if (!previous || previous.evidence_digest !== evidenceDigest || previous.terminal_state !== terminalState) {
           throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
         }
-        return;
+      } else {
+        const updated = this.db.db.prepare(
+          `UPDATE company_freshness_checkpoints SET checkpoint_json=?,updated_at=?
+           WHERE provider_instance_id=? AND workspace_id=? AND checkpoint_json=?`,
+        ).run(canonicalize(response.checkpoint), now.toISOString(), token.scope.provider_instance_id, token.scope.workspace_id,
+          canonicalize(token.checkpoint));
+        if (updated.changes !== 1) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
       }
-      const updated = this.db.db.prepare(
-        `UPDATE company_freshness_checkpoints SET checkpoint_json=?,updated_at=?
-         WHERE provider_instance_id=? AND workspace_id=? AND checkpoint_json=?`,
-      ).run(canonicalize(response.checkpoint), now.toISOString(), token.scope.provider_instance_id, token.scope.workspace_id,
-        canonicalize(token.checkpoint));
-      if (updated.changes !== 1) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
-    })();
+      publish?.();
+    }).immediate();
   }
 }
