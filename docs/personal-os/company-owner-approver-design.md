@@ -6,6 +6,7 @@ attempt=9eaf3e68-6614-45a4-a3d1-5a8f33d65b61
 보완: TASK-COMPANY-OWNER-DESIGN-REV-20261015,
 attempt=390e08aa-ef6c-443c-8793-5b00f265a37e.
 가재·나희의 `3297452` 검토와 운영자 관리 설정 합의안을 반영했다.
+추가로 `86a4c4e`의 나희·가재 검토 세 항목과 대표 키 교체 안전 정지 수락을 반영했다.
 
 **추천: B — 기존 후보의 데이터 owner는 보존하고, 정책에 고정된
 `approver_principal_id`를 별도로 두어 대표 결정 권한을 묶는다.**
@@ -37,6 +38,7 @@ attempt=390e08aa-ef6c-443c-8793-5b00f265a37e.
   `/tmp/gajae-owner-scope.txt`, `/tmp/gajae-nahee-merge.txt` 전체다.
   최초 승인자는 기존 운영자 신뢰 경계에서 확정하고 이행 구현은 현재 필요한
   범위로 줄이라는 합의를 기준으로 한다. 이번에도 운영 DB는 다시 조사하지 않았다.
+- 추가 보완 입력은 `/tmp/nahee-88b.txt`, `/tmp/gajae-88b.txt` 전체다.
 - 요청의 “기존 24건”은 보존해야 할 기존 집합이다. 위 27건과 같은 시점의
   건수로 단정하지 않는다. 향후 실행은 cohort manifest와 당시 전건 N을
   보존해야 하며 24 또는 27을 SQL LIMIT나 이행 완료 상수로 사용하지 않는다.
@@ -62,6 +64,9 @@ SB 경로는 아래 SHA에 고정한다:
 | JARVIS `src/company-candidate-contract.ts:52-55` | target+args canonical bytes를 domain과 함께 handoff key에 hash | approver 추가 시 기존 식별값/receipt 재사용 불가 |
 | JARVIS `src/company-candidate-contract.ts:58-68`, 특히65 | requested_by == args.owner, nonce/request ID/generation/TTL 검사 | B에서도 요청 주체와 데이터 owner 검사를 유지; signer와는 분리 |
 | JARVIS `src/company-candidate-contract.ts:72-86` | 재계산 key/digest 및 action args를 각각 검증 | importer와 staging parser도 동시에 새 계약으로 맞춰야 함 |
+| JARVIS `src/control-command-stage.ts:18,55-61` | 공통 stage는 schema_version 1만 허용하고 INSERT에 명령 version을 저장하지 않음 | 회사 명령2는 공통 stage/type 및 version 저장도 함께 바꿔야 함 |
+| JARVIS `src/control-command-read.ts:38` | decodeStoredControlCommand가 항상 schema_version 1로 복원 | 회사2를 저장해도 읽을 때1로 바꾸면 digest 왕복이 깨짐 |
+| JARVIS `src/control-plane-contract.ts:7-26` | ControlCommandRequestInput.schema_version은 literal1, StoredControlCommand가 그 타입을 계승 | action별 회사2/기타1 구별과 digest 입력 타입 변경 필요 |
 | SB `sb/company_memory_handoff.py:65-68` | policy는 processor ID/keys와 owner_approval_keys만 보유 | 명시적 approver principal은 현재 없음 |
 | SB `sb/company_memory_handoff.py:99-106` | ControlArguments.owner/project/policy/fence/processor/operations | data scope는 보존하고 새 승인 축을 별도로 계약화 |
 | SB `sb/company_memory_handoff.py:123-145`, 특히130·144 | enrollment context에 owner=context.principal, 조회 결과와 exact equality | config owner/새 approver만 바꾸면 등록 context와 불일치 |
@@ -104,8 +109,11 @@ SB의 candidate owner/project/policy/deletion scope 검사도 유지한다.
 SB `owner_approval_keys`는 **key ID -> 공개키**이며 principal 레지스트리가 아니다.
 SB에서 JARVIS처럼 `key.principal_id`를 검사한다고 쓰면 안 된다.
 SB는 실제 서명의 signer 필드와 대표 전용 공개키 pin을 함께 확인한다.
-`COMPANY_HANDOFF_KEYS_NOT_SEPARATE` 검사는 남겨 Mail/processor와 대표의
-key ID 및 실제 키 material 공유를 거부한다.
+기존 SB `sb/company_memory_cli.py:248-256`의
+`COMPANY_HANDOFF_KEYS_NOT_SEPARATE`는 `public_bytes_raw()` 집합끼리 대조해
+대표/Mail/processor **공개키 바이트 중복만** 거부한다. 이 검사는 유지한다.
+key ID 집합 충돌 거절은 **새로 추가할 동작**이다. 현재 코드에 있다고 주장하지 않는다.
+서로 다른 키가 같은 ID를 써도 새 검사에서 거절해야 하며 T3으로 증명한다.
 
 ## 3. 세 안 비교
 
@@ -284,6 +292,21 @@ request_id·nonce, target, args, requested_by, 시간 필드까지 포함한다.
 Python `canonical_bytes`/TS `canonicalize` 고정 입력 시험으로 byte·binding hash·
 handoff ID·command digest 동등성을 확인한다.
 
+**공통 저장·읽기·타입 경로도 회사2 구현 범위다.** 회사 parser만 바꾸지 않는다.
+`stageControlCommand` (`src/control-command-stage.ts:18`)는 회사 action2만
+선별 허용하고 다른 action은 기존1 계약·검사·digest를 유지한다. 공통
+`ControlCommandRequestInput`/`StoredControlCommand`와 `controlCommandDigest`
+입력 타입도 회사2/기타1을 구별한다. 전역적으로 모든 action에 `1 | 2`를 허용하지 않는다.
+현재 INSERT는 version을 저장하지 않으므로 새 migration으로
+`control_command_requests`에 실제 명령 schema version을 저장하는 열을 추가하고
+기존 행은1로 보존한다. shipped SQL은 수정하지 않는다.
+`decodeStoredControlCommand` (`src/control-command-read.ts:38`) 및 list/read는
+저장된 version을 검증해 그대로 복원한다. action/ID만 보고 회사 기록을 무조건2로
+재해석하거나 알 수 없는 version을1로 낮추지 않는다. 과거 회사1 기록의 읽기/
+감사와 다른 작업1 동작은 보존하되, 옛 회사1 mutation은 새 binding에서 거절한다.
+T14는 stage→실제 DB 저장→read/list→재시작 후 read→digest/서명 검증 왕복과
+입력 원본/저장 digest 동등성을 증명하며, 다른 작업1 및 historical 회사1도 대조한다.
+
 범용 approval receipt는 기존 schema_version 1/Ed25519/max_uses 1을 유지한다.
 JARVIS `src/control-plane-contract.ts:78,94-113`의 기존 서명 형식대로
 `orca-jarvis/command-approval/v1` + NUL + signature를 제외한 payload canonical bytes를
@@ -294,7 +317,9 @@ SB `company_handoff_decisions`는 원래 approval bytes·receipt_id·request_dig
 JARVIS `control_command_receipts`/`control_command_redemptions`는 실제 서명/상환을
 보존한다. 동일 업무의 정해진 멱등 재시도와 새 사용을 구별한다.
 다른 ID/digest/후보/operation에 receipt를 복사하거나 다른 서명으로 결정을 교체하면
-거절한다. v1 receipt와 v1 command는 새 mutation에 사용하지 않는다.
+거절한다. **옛 회사 v1 명령의 ID/digest에 묶인 receipt**는 새 mutation에 사용하지 않는다.
+**새 회사 v2 명령 digest에 올바르게 서명한 v1 형식 approval receipt는 허용**한다.
+여기서 봉투의 schema_version 1은 옛 명령 버전1과 다르다.
 frozen MCP/scoped transport profile이나 그 sidecar를 이 문제 해결에 임의 변경하지 않는다.
 구 v1 request는 history display/진단용만 읽고 새 binding의 mutation에는 사용하지 않는다.
 approver 누락 시 owner fallback을 두지 않는다.
@@ -379,16 +404,18 @@ T 번호는 새 파일/API가 아니라 추가할 시험 시나리오 식별자�
 | 검토 기준 | 보장해야 할 코드/저장 지점 | 구현 시험 |
 |---|---|---|
 | 최초 승인자는 운영자가 확정; 요청자가 변경 불가 | 4.1 로컬 policy/JARVIS trusted 등록 -> 양쪽 enrollment_context; Mail enrollment override 거절, C1~C4 fixed 대조 | T1 정상 최초 등록, T2 Mail/processor가 approver/key/version을 보내거나 설정을 바꾸려 하면 거절 |
-| principal·purpose·지문·키 목록 pin | JARVIS registry/C2/C3, SB 대표 전용 owner_approval_keys·policy pin 및 key separation; immutable context | T3 같은 key ID의 새 material, 다른 principal/purpose, 추가 key·shared material 거절 |
+| principal·purpose·지문·키 목록 pin | JARVIS registry/C2/C3, SB 대표 전용 owner_approval_keys·policy pin·기존 공개키 바이트 분리 + 신규 key ID 충돌 거절; immutable context | T3 같은 key ID의 새 material, 다른 principal/purpose, 추가 key·shared material/ID 충돌 거절 |
 | 승인자·승인 정책 버전·키 pin이 서명에 묶임 | 새 strict args + binding hash + handoff ID + controlCommandDigest; SB canonical_bytes와 JARVIS canonicalize | T4 각 binding 필드 변경/유효한 공격자 서명/옛 버전 거절; T5 양 언어 동일 canonical bytes/digest |
 | 옛 policy 복원·등록 교체 차단 | 현재 context exact equality + scope별 durable 최고 version/digest/폐기 증거, 삭제 후 재등록 금지 | T6 낮은 version, 같은 version 다른 digest, 옛 context 동시 복원, 재시작 뒤 rollback 거절 |
 | 대표만 approve/reject/완료 | C1~C5와 SB270/mark_processed 원래 approve receipt; 데이터 owner/requested_by 유지 | T7 대표 accept/reject/검증된 mark_processed 성공; T8 Mail/processor/다른 signer/미등록 key/spoof 거절 |
 | import 이후 각 단계에서 현재 정책·폐기 재확인 | C1/C2/C3의 SB 호출/완료 직전 guards, SB authorize_transition228의 require_enrollment 및 현재 pin/폐기 | T9 승인→수신→완료 사이 key 교체·폐기·정책 변경·재시작·양쪽 version 불일치 거절 |
-| 옛 서명 재사용과 새 사용 차단 | request_id/command_digest 일치, SB company_handoff_decisions283-305, JARVIS receipts/redemptions, current binding | T10 v1→v2/다른 후보·generation·operation·binding 재사용 및 다른 서명 교체 거절; 동일 원본 멱등 재시도만 1 effect |
+| 옛 명령 서명 재사용과 새 사용 차단 | request_id/command_digest 일치, SB company_handoff_decisions283-305, JARVIS receipts/redemptions, current binding | T10 옛 명령1→새 명령2/다른 후보·generation·operation·binding 재사용 거절; 새 명령2에 서명한 봉투1은 T7에서 허용 |
 | 만료 후 마무리 재시도 명확 | 6.2 완료 증거 + C3/current pin + 저장된 SB accept receipt와 redemptions, fresh accept 금지 | T11 만료 뒤 무수신/불확실 accept 거절; 확인된 동일 accept의 완료만 허용; revoked/binding 변경이면 완료도 거절 |
 | 현재 legacy 기록 0, 없을 때만 활성화 | 5절 activation gate·writer 배제·초기 양쪽 digest 확인; 삭제/전환 대신 감사 중지 | T12 각 legacy 기록 1건/직전 삽입/query 오류/양쪽 등록 일부 성공이면 실행 미활성; 전건 N 불변 |
 | legacy 전환의 감사·되돌리기 | 현재는 gate 거절 기록과 원본 보존; 5.1 별도 transition manifest, 7절 rollback | T12 현재 거절 후 원본 불변; 향후 실제 전환 과제는 old/new·uncertain·terminal·rollback 시험 별도 |
 | 인접 권한 회귀 없음 | requested_by==owner65, SB owner/project/policy/fence, 타 action owner guard·Mail receive-only | T13 기존 개인/daily/다른 회사 scope·data fence·owner/requester 거절 시험 유지 |
+| 회사2의 저장·읽기·타입/digest 왕복, 기타1 보존 | 공통 control-command-stage18/INSERT, control-command-read38/read/list, control-plane-contract 입력/저장 타입·digest, 실제 version 저장 열 | T14 회사2 입력→stage→DB→read/list/재시작→digest 같음; 기타1/과거 회사1 읽기 동일, 다른 action2/미지원 version 거절 |
+| 키 폐기·교체 후 운영 공백 수락 | SB 목록/pin 변경 -> 등록 exact mismatch -> ENROLLMENT_REQUIRED, 7절 안전 정지·전환 담당 | T9 폐기/교체 뒤 승인·수신·완료 중지; 삭제 후 재등록/구 pin 복구로 몰래 재개 불가 |
 
 ### 6.2 만료 후 마무리 재시도 규칙
 
@@ -426,17 +453,24 @@ acceptance receipt 바인딩이 있어야 한다. 같은 완료 재시도는 원
 | T4 | approver·approval version·key 목록·지문·purpose·binding digest 중 하나를 바꾸고 새 digest/유효 서명 생성 -> fixed 대조에서 거절; 누락/unknown args/구 schema/ID/domain도 거절 |
 | T5 | 공유 고정 JSON: 다른 object key 순서, 정렬된 key 목록, 한글/NFC, projects/정수 fence/시간/null 허용 여부를 strict 계약대로 양쪽 계산 -> canonical bytes·binding hash·handoff ID·command_digest·signature payload bytes 같음; 1필드 변경 시 다름 |
 | T6 | 설정만 변경, context만 변경, 낮은 version, 동일 version 다른 pin, 옛 설정+옛 context 복원, 삭제 후 재등록, 재시작 뒤 최고 version 소실/불일치 -> 거절/실행 미활성 |
-| T7 | 고정 대표 key로 accept/reject 성공·원래 approve receipt와 실제 완료 증거로 mark_processed 성공; accepted와 processed_complete 구별, 원래 signer 기록 |
+| T7 | 새 회사 명령2 digest에 서명한 **봉투1**의 고정 대표 receipt로 accept/reject 성공·원래 approve receipt와 실제 완료 증거로 mark_processed 성공; accepted와 processed_complete 구별, 원래 signer 기록 |
 | T8 | mail-ms/ordinary handoff key, processor, 다른 대표/legacy jm-owner, 미등록 key, 올바른 signer 필드에 다른 key, 대표 key에 다른 signer 필드 -> approve/reject/mark_processed 모두 거절 |
 | T9 | 승인 후 accept 전/accept 후 완료 전 key 교체·삭제·폐기·purpose/principal/pin/version 변경, 재시작, SB/JARVIS 다른 version -> 다음 mutation 거절; 이미 수행한 effect 보존 |
-| T10 | v1 서명을 v2에 이식, 다른 request/후보/workspace/provider/generation/operation/binding 복사, 기존 결정을 다른 서명으로 교체, 상환 receipt 새 사용 -> 거절; 동일 원본 재시도 effect 1회 |
+| T10 | **옛 명령1 ID/digest의 receipt**를 새 명령2에 이식, 다른 request/후보/workspace/provider/generation/operation/binding 복사, 기존 결정의 서명 교체, 상환 receipt 새 사용 -> 거절; 봉투1 자체는 금지하지 않으며 동일 원본 재시도 effect 1회 |
 | T11 | expires_at 경계/미래 not_before/잘못된 nonce·max_uses·TTL·signature, 승인만 있고 만료, redemption만 있고 ack 불확실 -> 거절; 확인된 수신 후 만료된 동일 완료 재시도 성공, 증거 없음/변조/폐기면 거절 |
 | T12 | v1 outbox·등록·JARVIS 수입/관련 control 기록 각각 1건, expired/terminal 포함; gate 직전 동시 삽입/query 실패/버전 불명/한쪽 등록 실패 -> 활성화 거절·감사·원본 유지; 0/24/27/N+동시 후보 수신 보존 |
 | T13 | owner/project/data policy/deletion fence/content/requested_by 변조, completion 누락/다른 candidate/digest/acceptance_receipt_digest, reject 후 mark_processed -> 거절; 타 action·개인/daily·Mail receive-only 회귀 통과 |
+| T14 | 실제 공통 stage/store/read/list와 재시작 후 decode에서 회사2 schema/ID/args/nonce/시간 및 재계산 digest == 원본/저장 digest, 봉투1 signature 검증 성공; 기존 기타1 입력·stage·읽기·digest 불변; 역사적 회사1은1로 읽고 다른 action2/미지원 저장 version은 거절 |
+
+T14는 기존 `tests/unit/control-plane.test.ts`,
+`tests/integration/control-command-lookup.test.ts` 및
+`tests/integration/control-command-page.test.ts`와 company import/execution 시험에
+통합한다. DB/read를 mock으로 없애면 read의 강제1 복원 회귀를 잡지 못한다.
 
 | 범위 | 변경/회귀 확인 |
 |---|---|
 | JARVIS company-candidate-contract / context·transport·import | required approver/version/binding·새 digest/ID, owner/source/access 값 보존, caller override 거부, 동일 export idempotency |
+| JARVIS 공통 stage/read/type/store | control-command-stage.ts18/INSERT, control-command-read.ts38/read/list, control-plane-contract.ts 입력/저장 타입·digest, 실제 version 열/new migration. 회사2 왕복과 다른 action1 보존 |
 | JARVIS control-plane62 / execution139·217 | 회사 action의 signer·key principal을 fixed approver와 비교; 타 action owner guard는 동일; accept/reject와 completion 모두 |
 | JARVIS owner inbox/read model/store | receipt 실제 signer를 데이터 owner로 위장하지 않음. 광범위 author provenance/UI 재설계는 최소 구현에서 제외 |
 | SB CompanyHandoffPolicy/ControlArguments/enrollment_context | 로컬 고정 pin·분리된 승인 version, role/key material disjoint, scope/deletion 유지, 최초 immutable 등록 증거 |
@@ -453,7 +487,7 @@ acceptance receipt 바인딩이 있어야 한다. 같은 완료 재시도는 원
 | 다른 대표/legacy jm-owner/non-decision key | 거부 |
 | processor key 또는 mail-ms/ordinary handoff key의 승인 | 거부 |
 | approver 값만 바꿈/키 principal 위장/다른 workspace·projects·binding | signature/digest/policy 경계에서 거부 |
-| approver 필드 누락, v1 receipt를 새 request에 복사 | 거부; owner fallback 없음 |
+| approver 필드 누락, 옛 회사1 명령에 묶인 receipt를 새 request에 복사 | 거부; owner fallback 없음. 새 회사2 digest를 서명한 봉투1은 허용 |
 | revoked/expired/not-yet-valid key·receipt, nonce/digest 변조 | 기존 거절 유지 |
 | 정상 owner=mail-ms 후보 export 및 requested_by | data owner/requester 그대로, scope filter 통과 |
 | 24/27/0/N 후보 및 concurrent receive | 전건·원본 bytes/digest/state/fence 보존, 누락·중복 0 |
@@ -484,10 +518,21 @@ legacy 기록이 활성화 직전에 발견되면 임의 확대하지 않고 중
 회사 자체의 법적 data owner를 바꾸는 요구가 생기면
 A/C를 별도 권리 이행 과제로 결정한다.
 
+**키 교체 운영 공백은 받아들인다.**
+대표 키 교체 = 전환 과제 구현 전까지 회사 승인함 승인 중지
+(`ENROLLMENT_REQUIRED`, 안전 정지).
+SB에는 현재 별도 승인 키 폐기 원장이 없으므로 폐기/교체를 위해
+`owner_approval_keys`를 바꾸면 고정 등록 pin과 불일치한다. 이 상태에서 신규
+승인·수신·처리 완료 mutation을 재개하지 않는다. 오래된 pin으로 복귀하거나
+등록을 삭제해 재등록하는 우회도 금지한다. 기존 수행 사실/읽기 조회는 보존한다.
+더 높은 승인 version의 명시적 재등록·양쪽 binding 전환은 이번 구현 범위 밖이다.
+그 **전환 과제 담당은 오모냥(계획·배정)**이며, 과제 구현·검증 완료 전까지의
+승인 중지는 수락된 운영 경계다. 이 문서가 전환을 구현하거나 운영 활성화를 승인하지 않는다.
+
 ## 검수와 종료
 
 초안 단계의 사용자 조사·세 named 파일의 행 인용 보완·architect 위험 비교를 이어받고,
-이번 보완에서는 가재/나희 원문 네 개와 기존 서명/실행 경로를 좁게 대조했다.
+이번 보완에서는 가재/나희 원문 여섯 개와 기존 서명/실행·stage/read·키 분리 경로를 좁게 대조했다.
 코드 조사 중복과 전체 AST/DB 재조사는 하지 않았다.
 초안의 Raw GitHub URL404는 authenticated contents 조회로 필요한 인용만 보완했다.
 secret-bearing download URL/token은 문서에 보존하지 않았다.
