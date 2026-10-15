@@ -1,15 +1,15 @@
-import { createHash, createPrivateKey, createPublicKey, randomUUID, sign } from "node:crypto";
+import { createPrivateKey, createPublicKey, randomUUID, sign } from "node:crypto";
 import { createConnection } from "node:net";
 import { z } from "zod";
 import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./jarvis-error.js";
 import { readCandidateCredential } from "./integration/candidate-reader-credential.js";
 import { parseCompanyJson, parseCompanyJsonBytes } from "./company-candidate-json.js";
+import { companyMemoryRequestDigest, parseTransitionReadResponse } from "./company-transition-read.js";
 
 const MAX_BYTES = 1_048_576;
 const CALL_TIMEOUT_MS = 10_000;
 const AUTHORITY_TTL_MS = 60_000;
-const REQUEST_DOMAIN = "second-brain/company-memory-request/v1\0";
 const AUTHORITY_DOMAIN = "second-brain/company-memory-authority/v1\0";
 const identifier = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/);
 const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/);
@@ -51,7 +51,7 @@ export type CompanyContext = Readonly<{
   processor_principal_id: string;
 }>;
 
-export type CompanyOperation = "handoff" | "accept" | "reject" | "mark_processed";
+export type CompanyOperation = "handoff" | "accept" | "reject" | "mark_processed" | "read_transition_receipt";
 
 export interface CompanyClient {
   readonly context: CompanyContext;
@@ -65,6 +65,7 @@ const PURPOSE = {
   accept: "company_memory_accept",
   reject: "company_memory_reject",
   mark_processed: "company_memory_process",
+  read_transition_receipt: "company_memory_receipt_read",
 } as const;
 
 function fail(code: string): never {
@@ -81,17 +82,15 @@ function allowed(role: "handoff" | "processor", operation: CompanyOperation): bo
     case "handoff":
       return operation === "handoff";
     case "processor":
-      return operation === "accept" || operation === "reject" || operation === "mark_processed";
+      return operation === "accept" || operation === "reject" || operation === "mark_processed"
+        || operation === "read_transition_receipt";
     default:
       return assertNever(role);
   }
 }
 
 function requestDigest(operation: CompanyOperation, args: Record<string, unknown>): string {
-  return `sha256:${createHash("sha256")
-    .update(REQUEST_DOMAIN)
-    .update(canonicalize({ operation, arguments: args }))
-    .digest("hex")}`;
+  return companyMemoryRequestDigest(operation, args);
 }
 
 export function createCompanyClient(configPath: string, role: "handoff" | "processor"): CompanyClient {
@@ -134,6 +133,8 @@ export function createCompanyClient(configPath: string, role: "handoff" | "proce
         ? context.owner
         : context.processor_principal_id;
       let request = "";
+      let lookupNonce = "";
+      let lookupDigest = "";
       try {
         const unsignedAuthority = {
           schema_version: 1,
@@ -157,6 +158,8 @@ export function createCompanyClient(configPath: string, role: "handoff" | "proce
         const signature = sign(null, Buffer.from(
           `${AUTHORITY_DOMAIN}${canonicalize(unsignedAuthority)}`,
         ), privateKey).toString("base64url");
+        lookupNonce = unsignedAuthority.nonce;
+        lookupDigest = unsignedAuthority.request_digest;
         request = canonicalize({
           authority: { ...unsignedAuthority, signature },
           arguments: args,
@@ -199,6 +202,20 @@ export function createCompanyClient(configPath: string, role: "handoff" | "proce
           }
           if (typeof raw === "object" && raw !== null && "error" in raw) {
             finish(new JarvisError("COMPANY_CANDIDATE_CALL_REFUSED"));
+            return;
+          }
+          if (operation === "read_transition_receipt") {
+            try {
+              finish(undefined, parseTransitionReadResponse(raw, {
+                provider_instance_id: context.provider_instance_id,
+                workspace_id: context.workspace_id,
+                selector: args,
+                lookup_nonce: lookupNonce,
+                lookup_request_digest: lookupDigest,
+              }));
+            } catch (error) {
+              finish(error instanceof JarvisError ? error : new JarvisError("COMPANY_SB_RECEIPT_INVALID"));
+            }
             return;
           }
           finish(undefined, raw);

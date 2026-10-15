@@ -147,7 +147,7 @@ const authoritySchema = z.object({
   projects: z.array(z.string().min(1).max(128)).max(128),
   policy_revision: z.string().min(1).max(256),
   purpose: z.string().min(1).max(64),
-  operation: z.enum(["handoff", "accept", "reject", "mark_processed"]),
+  operation: z.enum(["handoff", "accept", "reject", "mark_processed", "read_transition_receipt"]),
   request_digest: z.string().min(1).max(80),
   deletion_sequence: z.int().min(0).max(Number.MAX_SAFE_INTEGER),
   deletion_set_root: z.string().min(1).max(80),
@@ -165,7 +165,8 @@ const envelopeSchema = z.object({
 
 function pinnedAction(role: BrokerRole, operation: z.infer<typeof authoritySchema>["operation"]): "handoff" | "process" {
   if (role === "handoff") return operation === "handoff" ? "handoff" : fail("COMPANY_CANDIDATE_BROKER_REFUSED");
-  if (operation === "accept" || operation === "reject" || operation === "mark_processed") return "process";
+  if (operation === "accept" || operation === "reject" || operation === "mark_processed"
+    || operation === "read_transition_receipt") return "process";
   return fail("COMPANY_CANDIDATE_BROKER_REFUSED");
 }
 

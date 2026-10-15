@@ -394,6 +394,64 @@ function exchange(socketPath: string, payload: unknown): Promise<string> {
 }
 
 describe("company candidate broker", () => {
+  it.each(["handoff", "processor"] as const)("routes authenticated receipt reads only through the processor broker (%s)", async role => {
+    const fixture = brokerFixture(role, `#!${process.execPath}
+const fs = require("node:fs");
+let input = "";
+process.stdin.setEncoding("utf8");
+process.stdin.on("data", chunk => { input += chunk; });
+process.stdin.on("end", () => {
+  const envelope = JSON.parse(input);
+  fs.writeFileSync("__LOG__", JSON.stringify({ argv: process.argv.slice(2), envelope }));
+  const authority = envelope.authority;
+  process.stdout.write(JSON.stringify({
+    schema_version: 2,
+    provider_instance_id: authority.provider_instance_id,
+    workspace_id: authority.workspace_id,
+    selector: envelope.arguments,
+    lookup_nonce: authority.nonce,
+    lookup_request_digest: authority.request_digest,
+    outcome: "not_found",
+    receipt: null,
+  }));
+});
+`);
+    const ready = socketReady(fixture.root, fixture.socketPath);
+    spawnBroker(fixture.brokerConfig);
+    await ready;
+    const key = join(fixture.root, "key.pem");
+    const config = join(fixture.root, "processor.json");
+    writeSecure(key, FIXED_PRIVATE_PEM);
+    writeSecure(config, JSON.stringify(clientConfig(fixture.root, "processor", fixture.socketPath, key)));
+    const client = createCompanyClient(config, "processor");
+    const query = {
+      candidate_id: "candidate:unit", handoff_id: "handoff:unit", operation: "accept",
+      transition_request_digest: `sha256:${"b".repeat(64)}`, command_digest: `sha256:${"c".repeat(64)}`,
+      content_digest: `sha256:${"d".repeat(64)}`, approval_policy_version: 1,
+      approval_binding_digest: `sha256:${"e".repeat(64)}`,
+    };
+    if (role === "handoff") {
+      await expect(client.call("read_transition_receipt", query, NOW))
+        .rejects.toMatchObject({ code: "COMPANY_CANDIDATE_CALL_REFUSED" });
+      expect(existsSync(fixture.log)).toBe(false);
+      return;
+    }
+    await expect(client.call("read_transition_receipt", query, NOW))
+      .resolves.toMatchObject({ outcome: "not_found", selector: query, receipt: null });
+    const logged = JSON.parse(readFileSync(fixture.log, "utf8")) as {
+      argv: string[]; envelope: { authority: Record<string, unknown> & { signature: string }; arguments: unknown };
+    };
+    expect(logged.argv).toEqual(["process", "--config", fixture.sbConfig]);
+    expect(logged.envelope.arguments).toEqual(query);
+    const { signature, ...authority } = logged.envelope.authority;
+    expect(authority).toMatchObject({
+      principal_id: CONTEXT.processor_principal_id,
+      operation: "read_transition_receipt", purpose: "company_memory_receipt_read",
+    });
+    expect(verify(null, Buffer.from(`second-brain/company-memory-authority/v1\0${canonicalize(authority)}`),
+      createPublicKey(FIXED_PUBLIC_PEM), Buffer.from(signature, "base64url"))).toBe(true);
+  });
+
   it.each([0o770, 0o707])("refuses a writable socket ancestor at startup (%i)", async mode => {
     const fixture = brokerFixture("handoff", CHILD);
     const ancestor = join(fixture.root, "replaceable-socket");

@@ -12,9 +12,14 @@ import { memoryOutboxControlProof } from "./memory-outbox-control-proof.js";
 import { validateMemoryCandidateScopeProposal } from "./memory-candidate-scope.js";
 import { runImmediate } from "./sqlite-contention.js";
 import { companyArgumentsSchema } from "./company-candidate-contract.js";
+import { decodeCompanyCommandV2 } from "./company-candidate-v2-contract.js";
+import { assertCurrentCompanyPin, readCompanyApprovalBinding } from "./company-approval-binding.js";
+import { CompanyProgress, type CompanyProgressReservation } from "./company-progress.js";
+import { loadCompanyFreshness, type CompanyFreshnessProvider } from "./company-freshness.js";
 function finiteDate(date: Date, code: string): number { const time = date.getTime(); if (!Number.isFinite(time)) throw new JarvisError(code); return time; }
 function finiteIso(value: string): number { const time = Date.parse(value); return Number.isFinite(time) ? time : Number.NaN; } export class ControlPlane {
-  constructor(private readonly authority: AuthorityDb) {}
+  constructor(private readonly authority: AuthorityDb,
+    private readonly companyFreshness: CompanyFreshnessProvider = loadCompanyFreshness({ schema_version: 2, kind: "unconfigured" })) {}
   private event(input: ControlEventInput): void {
     const created = input.created_at ?? new Date().toISOString(); const payloadJson = canonicalize(input.payload); this.authority.db .prepare(
         `INSERT INTO control_events(
@@ -40,7 +45,16 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
     const nowMs = finiteDate(now, "CONTROL_APPROVAL_INVALID");
     const request = this.authority.db.prepare("SELECT * FROM control_command_requests WHERE request_id=?").get(receipt.request_id) as | Record<string, unknown>
       | undefined; if (!request) throw new JarvisError("CONTROL_APPROVAL_NOT_APPLICABLE");
-    if (this.commandRevoked(String(request.request_id), String(request.command_digest))) throw new JarvisError("CONTROL_APPROVAL_REVOKED");
+    const companyV2 = request.action === "company.candidate.transition" && Number(request.schema_version) === 2
+      ? decodeCompanyCommandV2({
+        schema_version: 2, request_id: request.request_id, action: request.action, action_level: request.action_level,
+        target: JSON.parse(String(request.target_json)), args: JSON.parse(String(request.args_json)), reversible: Boolean(request.reversible),
+        requested_by: request.requested_by, requested_at: request.requested_at, expires_at: request.expires_at, nonce: request.nonce,
+      }) : undefined;
+    if (this.commandRevoked(String(request.request_id), String(request.command_digest))) {
+      throw new JarvisError(companyV2 ? "COMPANY_APPROVAL_REVOKED" : "CONTROL_APPROVAL_REVOKED");
+    }
+    if (companyV2) assertCurrentCompanyPin(this.authority, companyV2, receipt, now);
     if (request.state !== "pending" || request.command_digest !== receipt.command_digest || Date.parse(String(request.expires_at)) <= nowMs)
       throw new JarvisError("CONTROL_APPROVAL_NOT_APPLICABLE"); const key = this.authority.db .prepare(
         `SELECT k.public_key_pem,k.principal_id FROM trusted_authority_keys k
@@ -48,7 +62,10 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
          WHERE k.key_id=? AND p.purpose='decision'`,
       ) .get(receipt.key_id) as { public_key_pem: string; principal_id: string } | undefined; if ( !key || key.principal_id !== receipt.signer_principal_id ||
       !verifyCommandApproval(receipt, key.public_key_pem, now) || Date.parse(receipt.expires_at) > Date.parse(String(request.expires_at)) )
-      throw new JarvisError("CONTROL_APPROVAL_INVALID"); const state = receipt.decision === "approve" ? "approved" : "rejected"; const at = now.toISOString();
+      throw new JarvisError(companyV2 ? "COMPANY_APPROVAL_INVALID" : "CONTROL_APPROVAL_INVALID");
+    const state = receipt.decision === "approve" ? "approved" : "rejected"; const at = now.toISOString();
+    const progress = new CompanyProgress(this.authority, this.companyFreshness);
+    let reservation: CompanyProgressReservation | undefined;
     const tx = this.authority.db.transaction(() => {
       if (request.action === "company.candidate.transition") {
         const imported = this.authority.db.prepare(
@@ -57,10 +74,17 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
         if (!imported || imported.current !== 1 || imported.command_digest !== receipt.command_digest) {
           throw new JarvisError("CONTROL_APPROVAL_NOT_APPLICABLE");
         }
-        const args = companyArgumentsSchema.parse(JSON.parse(String(request.args_json)));
-        if (this.legacyRevoked(receipt.key_id, receipt.signer_principal_id)) throw new JarvisError("CONTROL_APPROVAL_REVOKED");
-        if (receipt.signer_principal_id !== args.owner || receipt.signer_principal_id === args.processor_principal_id) {
-          throw new JarvisError("CONTROL_APPROVAL_INVALID");
+        if (companyV2) {
+          assertCurrentCompanyPin(this.authority, companyV2, receipt, now);
+          reservation = progress.reserve(companyV2, receipt.decision === "approve" ? "decide_approve" : "decide_reject", hash(receipt), now);
+        } else {
+          const target = JSON.parse(String(request.target_json)) as { provider_instance_id: string; workspace_id: string };
+          if (readCompanyApprovalBinding(this.authority, target)) throw new JarvisError("ENROLLMENT_REQUIRED");
+          const args = companyArgumentsSchema.parse(JSON.parse(String(request.args_json)));
+          if (this.legacyRevoked(receipt.key_id, receipt.signer_principal_id)) throw new JarvisError("CONTROL_APPROVAL_REVOKED");
+          if (receipt.signer_principal_id !== args.owner || receipt.signer_principal_id === args.processor_principal_id) {
+            throw new JarvisError("CONTROL_APPROVAL_INVALID");
+          }
         }
       }
       if (request.action === "memory.scope.review" && receipt.decision === "approve") {
@@ -80,7 +104,18 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
       new MemorySurfaceAuthority(this.authority).applyReceipt(receipt, receipt.request_id, now); this.event({ event_id: `evt:${receipt.request_id}:${state}`,
         event_type: `control.command.${state}`, source: "human-approval", subject: receipt.request_id, correlation_id: receipt.request_id,
         causation_id: `evt:${receipt.request_id}:requested`, payload: { receipt_id: receipt.receipt_id, signer_principal_id: receipt.signer_principal_id },
-        created_at: at, }); }); tx(); } private authorityLossCode(row: Record<string, unknown>, nowMs: number): string | null {
+        created_at: at, }); }); tx();
+    if (reservation) {
+      try { progress.finish(reservation, hash(receipt), state, now); }
+      catch (error) {
+        const code = error instanceof JarvisError ? error.code : "COMPANY_PROGRESS_UNCERTAIN";
+        this.authority.db.prepare(
+          "UPDATE company_candidate_handoffs SET status='uncertain',failure_code=?,updated_at=? WHERE request_id=?",
+        ).run(code, at, receipt.request_id);
+        throw error;
+      }
+    }
+  } private authorityLossCode(row: Record<string, unknown>, nowMs: number): string | null {
     const leaseExpires = Date.parse(String(row.lease_expires_at)); const requestExpires = Date.parse(String(row.expires_at));
     const approvalExpires = Date.parse(String(row.approval_expires));
     if (!Number.isFinite(leaseExpires) || leaseExpires <= nowMs) return "CONTROL_CLAIM_EXPIRED";

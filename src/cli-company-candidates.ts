@@ -3,6 +3,7 @@ import { commandNow } from "./cli-command-context.js";
 import { createCompanyClient } from "./company-candidate-transport.js";
 import { pullCompanyCandidates } from "./company-candidate-import.js";
 import { CompanyCandidateExecutor, createCompanyCompletionVerifier } from "./company-candidate-execution.js";
+import { companyCompletionConfigVersion, createCompanyCompletionVerifierV2 } from "./company-completion-v2.js";
 import { JarvisError } from "./jarvis-error.js";
 
 const IMPORT_OPTIONS = ["db", "json", "company-config", "limit"] as const;
@@ -30,8 +31,12 @@ export async function executeCompanyCandidates(context: CliCommandContext): Prom
   if (subcommand === "execute" && argument) {
     rejectUnlisted(values, EXECUTE_OPTIONS);
     const completion = values["company-completion-config"];
+    const verifier = completion === undefined ? undefined
+      : companyCompletionConfigVersion(completion) === 2
+        ? createCompanyCompletionVerifierV2(completion)
+        : createCompanyCompletionVerifier(completion);
     const executor = new CompanyCandidateExecutor(db, createCompanyClient(config, "processor"),
-      completion ? createCompanyCompletionVerifier(completion) : undefined, () => commandNow(context));
+      verifier, () => commandNow(context));
     return { ok: true, command: "company-candidates.execute", execution: await executor.execute(argument) };
   }
   throw new JarvisError("COMPANY_CALLER_CONFIG_INVALID");

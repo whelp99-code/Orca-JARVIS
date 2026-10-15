@@ -1,5 +1,7 @@
 /** Internal bounded decoder shared by protocol-specific limits. */
-export type StrictJsonLimits = Readonly<{ depth: number; nodes: number; workItems: number; characters: number }>;
+export type StrictJsonLimits = Readonly<{
+  depth: number; nodes: number; workItems: number; characters: number; companyV2Profile?: boolean;
+}>;
 
 class StrictJsonError extends Error {
   readonly name = "StrictJsonError";
@@ -45,6 +47,7 @@ class StrictJsonReader {
     for (;;) {
       if (this.text[this.index] !== "\"") throw new StrictJsonError();
       const key = this.string();
+      if (this.limits.companyV2Profile && [...key].some(char => char.charCodeAt(0) > 127)) throw new StrictJsonError();
       this.workItems += 1;
       if (this.workItems > this.limits.workItems || keys.has(key)) throw new StrictJsonError();
       keys.add(key);
@@ -81,6 +84,7 @@ class StrictJsonReader {
         this.index += 1;
         const decoded: unknown = JSON.parse(this.text.slice(start, this.index));
         if (typeof decoded !== "string") throw new StrictJsonError();
+        if (this.limits.companyV2Profile && decoded.normalize("NFC") !== decoded) throw new StrictJsonError();
         return decoded;
       }
       if (code < 0x20) throw new StrictJsonError();
@@ -122,7 +126,11 @@ class StrictJsonReader {
       if (sign === "+" || sign === "-") this.index += 1;
       this.digits(true);
     }
-    if (!Number.isFinite(Number(this.text.slice(start, this.index)))) throw new StrictJsonError();
+    const token = this.text.slice(start, this.index);
+    if (!Number.isFinite(Number(token))) throw new StrictJsonError();
+    if (this.limits.companyV2Profile && (!/^(0|[1-9][0-9]*)$/.test(token) || !Number.isSafeInteger(Number(token)))) {
+      throw new StrictJsonError();
+    }
   }
 
   private digits(required: boolean): void {
