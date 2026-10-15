@@ -397,6 +397,12 @@ export class CompanyCandidateExecutor {
     const now = this.clock();
     this.db.db.transaction(() => {
       progress.finish(reservation, evidenceDigest, terminalState, now);
+      if (terminalState === "accepted" || terminalState === "rejected") {
+        const handoff = this.db.db.prepare(
+          "UPDATE company_candidate_handoffs SET status=?,failure_code=NULL,updated_at=? WHERE request_id=? AND current=1",
+        ).run(terminalState, now.toISOString(), reservation.request_id);
+        if (handoff.changes !== 1) throw new JarvisError("CONTROL_STATE_CONFLICT");
+      }
       if (terminalState === "processed_complete") {
         const control = this.db.db.prepare(
           "UPDATE control_command_requests SET state='completed',completed_at=COALESCE(completed_at,?) WHERE request_id=? AND state IN ('approved','completed')",
@@ -425,11 +431,13 @@ export class CompanyCandidateExecutor {
       approval_policy_version: command.args.approval_policy_version,
       approval_binding_digest: command.args.approval_binding_digest,
     };
-    const parsed = transitionReadResponseSchema.safeParse(await this.client.call("read_transition_receipt", query, this.clock()));
+    const lookupNonce = `jarvis:${randomUUID()}`;
+    const parsed = transitionReadResponseSchema.safeParse(await this.client.call("read_transition_receipt", query, this.clock(), lookupNonce));
     if (!parsed.success) throw new JarvisError("COMPANY_CONTRACT_INVALID");
     const response = parsed.data;
     if (response.provider_instance_id !== command.target.provider_instance_id
       || response.workspace_id !== command.target.workspace_id
+      || response.lookup_nonce !== lookupNonce
       || canonicalize(response.selector) !== canonicalize(query)
       || response.lookup_request_digest !== companyMemoryRequestDigest("read_transition_receipt", query)) {
       throw new JarvisError("COMPANY_SB_RECEIPT_INVALID");

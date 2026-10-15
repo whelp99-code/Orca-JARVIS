@@ -1,14 +1,15 @@
 import { createHash } from "node:crypto";
 import childProcess, { type ChildProcess } from "node:child_process";
 import { once } from "node:events";
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { syncBuiltinESMExports } from "node:module";
 import { createServer } from "node:net";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { CompanyCandidateExecutor } from "../../src/company-candidate-execution.js";
 import { createCompanyCompletionVerifierV2, type CompanyCompletionV2, type CompanyCompletionVerifierV2 } from "../../src/company-completion-v2.js";
-import { createCompanyClient } from "../../src/company-candidate-transport.js";
+import { createCompanyClient, type CompanyClient } from "../../src/company-candidate-transport.js";
+import { transitionReadResponseSchema } from "../../src/company-transition-read.js";
 import { JarvisError } from "../../src/jarvis-error.js";
 import { AuthorityDb } from "../../src/db.js";
 import {
@@ -111,6 +112,62 @@ describe("company candidate execution v2", () => {
       expect(session.peer.counts().accept).toBe(1);
       expect(session.peer.counts().read).toBe(1);
       expect(session.live.db.db.prepare("SELECT count(*) AS n FROM company_candidate_sb_receipts").get()).toEqual({ n: 0 });
+    } finally { await session.peer.close(); session.live.close(); }
+  });
+
+  it("refuses a cached found lookup when the current endpoint has no receipt", async () => {
+    const session = await withPeer("drop-once");
+    const effect = join(session.live.root, "forbidden-replay-effect");
+    let cached: unknown;
+    const capturing: CompanyClient = {
+      ...session.client,
+      async call(...args: Parameters<CompanyClient["call"]>) {
+        const result = await session.client.call(...args);
+        if (args[0] === "read_transition_receipt") {
+          cached = result;
+          throw new JarvisError("COMPANY_CANDIDATE_RESPONSE_INVALID");
+        }
+        return result;
+      },
+    };
+    try {
+      await expect(new CompanyCandidateExecutor(session.live.db, session.client, undefined, () => ACTIVE, session.live.provider)
+        .execute(session.live.command.request_id)).rejects.toMatchObject({ code: "COMPANY_CANDIDATE_RESPONSE_INVALID" });
+      await expect(new CompanyCandidateExecutor(session.live.db, capturing, undefined, () => ACTIVE, session.live.provider)
+        .execute(session.live.command.request_id)).rejects.toMatchObject({ code: "COMPANY_CANDIDATE_RESPONSE_INVALID" });
+      const old = transitionReadResponseSchema.parse(cached);
+      expect(old.outcome).toBe("found");
+      writeFileSync(join(session.peer.root, "counts.json.receipts.json"), "{}", { mode: 0o600 });
+      const current = transitionReadResponseSchema.parse(
+        await session.client.call("read_transition_receipt", old.selector, ACTIVE),
+      );
+      expect(current.outcome).toBe("not_found");
+      expect(current.lookup_request_digest).toBe(old.lookup_request_digest);
+      expect(current.lookup_nonce).not.toBe(old.lookup_nonce);
+      const replaying: CompanyClient = {
+        ...session.client,
+        call: async (...args: Parameters<CompanyClient["call"]>) => args[0] === "read_transition_receipt"
+          ? old : session.client.call(...args),
+      };
+      const verifier: CompanyCompletionVerifierV2 = {
+        version: 2,
+        async verify(command, acceptance, commandDigest) {
+          writeFileSync(effect, "must not execute from stale lookup", { mode: 0o600, flag: "wx" });
+          return { schema_version: 2, state: "completed", request_id: command.request_id,
+            command_digest: commandDigest, candidate_id: command.target.candidate_id,
+            content_digest: command.target.content_digest, acceptance_receipt_digest: acceptance.receipt_digest,
+            effect_digest: `sha256:${createHash("sha256").update(readFileSync(effect)).digest("hex")}` };
+        },
+      };
+
+      await expect(new CompanyCandidateExecutor(session.live.db, replaying, verifier, () => ACTIVE, session.live.provider)
+        .execute(session.live.command.request_id)).rejects.toMatchObject({ code: "COMPANY_SB_RECEIPT_INVALID" });
+
+      expect(existsSync(effect)).toBe(false);
+      expect(session.live.db.db.prepare("SELECT count(*) AS n FROM company_candidate_sb_receipts").get()).toEqual({ n: 0 });
+      expect(session.live.db.db.prepare("SELECT status,completion_json,lease_token FROM company_candidate_handoffs").get())
+        .toEqual({ status: "uncertain", completion_json: null, lease_token: null });
+      expect(session.peer.counts()).toEqual({ accept: 1, reject: 0, mark_processed: 0, read: 2 });
     } finally { await session.peer.close(); session.live.close(); }
   });
 

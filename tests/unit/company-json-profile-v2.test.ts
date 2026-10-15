@@ -40,4 +40,26 @@ describe("company v2 raw JSON profile", () => {
     expect(parseCompanyJson('{"schema_version":1,"n":-0,"float":1.5,"exp":1e0,"text":"e\\u0301"}'))
       .toEqual({ schema_version: 1, n: -0, float: 1.5, exp: 1, text: "e\u0301" });
   });
+
+  it("refuses escaped lone surrogates in v2 values and config arguments", () => {
+    expect(parseCompanyJson('{"schema_version":2,"text":"\\uD800"}')).toBeUndefined();
+    expect(parseCompanyJson('{"schema_version":2,"text":"\\uDC00"}')).toBeUndefined();
+    expect(parseCompanyJson('{"schema_version":2,"executable":"/bin/true","args":["\\uD800"]}')).toBeUndefined();
+    expect(parseCompanyJson('{"schema_version":2,"executable":"/bin/true","args":["\\udc00"]}')).toBeUndefined();
+  });
+
+  it("accepts a valid surrogate pair in v2 values and config arguments", () => {
+    const pair = "\uD83D\uDE00";
+    expect(parseCompanyJson('{"schema_version":2,"text":"\\uD83D\\uDE00"}'))
+      .toEqual({ schema_version: 2, text: pair });
+    expect(parseCompanyJson('{"schema_version":2,"executable":"/bin/true","args":["\\uD83D\\uDE00"]}'))
+      .toEqual({ schema_version: 2, executable: "/bin/true", args: [pair] });
+  });
+
+  it("keeps v1 refusal of lone surrogates and acceptance of a valid pair", () => {
+    expect(parseCompanyJson('{"schema_version":1,"text":"\\uD800"}')).toBeUndefined();
+    expect(parseCompanyJson('{"schema_version":1,"text":"\\uDC00"}')).toBeUndefined();
+    expect(parseCompanyJson('{"schema_version":1,"text":"\\uD83D\\uDE00"}'))
+      .toEqual({ schema_version: 1, text: "\uD83D\uDE00" });
+  });
 });
