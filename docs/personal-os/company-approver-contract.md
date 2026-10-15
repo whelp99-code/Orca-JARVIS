@@ -34,7 +34,10 @@ approver != owner/processor, owner != processor; requested_by=args.owner를 유�
 `binding_digest=H(D("second-brain/company-approval-binding/v1")+C(binding))`.
 `handoff_key="company-handoff:v2:"+SHA256(D("second-brain/company-handoff/v2")+C({target,args})).hex()`.
 `request_id=handoff_key+":"+generation`(양의 safe integer 십진수, 선행0 없음), nonce=request_id.
-명령 TTL은 정확히24시간. `command_digest=H(C(command))`; state/command_digest를 command에 넣지 않는다.
+명령 TTL은 정확히24시간이며 권한 행사 시 `requested_at <= 현재시각 < expires_at`도
+별도로 검사한다. 시작 시각은 포함하고 만료 시각은 제외하며, 미래 시작/만료 명령은
+24시간 길이가 맞아도 거절한다. C1~C4는 주입된 현재시각으로 이 구간을 다시 검사한다.
+`command_digest=H(C(command))`; state/command_digest를 command에 넣지 않는다.
 다른 action은 v1 그대로이며 과거 회사 v1 읽기와 새 v2 mutation 권한을 혼동하지 않는다.
 
 ## 2. 대표 승인 서명은 봉투 v1 유지
@@ -123,8 +126,15 @@ fresh challenge 응답, rollback 불가능한 현재 head 선택·CAS의 보장�
 | 인터페이스 | 필수 입력 -> 응답 및 효과 |
 |---|---|
 | read_freshness | `{schema_version:2,scope,installation_id,challenge,observed_checkpoint}` -> `{schema_version:2,scope,challenge,status:"ready"|"mismatch"|"unavailable"|"uncertain",checkpoint}`. ready만 최신 checkpoint, 나머지는 checkpoint=null. observed는 비교값일 뿐 최신 선택권 없음 |
-| reserve_progress | `{schema_version:2,scope,operation_id,operation,expected_checkpoint,event_digest,challenge}` -> `{schema_version:2,scope,challenge,outcome:"reserved"|"already_reserved"|"conflict",checkpoint,reservation_id}`. 현재 head에 CAS하여 영구 intent를 **효과 전** append, 원자적 one-winner; 재호출은 실행 권한 재발급 아님 |
-| finish_progress | `{schema_version:2,scope,operation_id,reservation_id,expected_checkpoint,evidence_digest,terminal_state,challenge}` -> `{schema_version:2,scope,challenge,outcome:"recorded"|"already_recorded"|"conflict",checkpoint}`. 원래 사실/진행만 추가, 모순 결과 덮어쓰기 금지 |
+| reserve_progress | `{schema_version:2,scope,operation_id,operation,expected_checkpoint,event_digest,challenge}` -> `{schema_version:2,scope,challenge,outcome:"reserved"|"already_reserved"|"conflict",checkpoint,reservation_id}` **또는** `CompanyFreshnessRequiredError`. 현재 head에 CAS하여 영구 intent를 **효과 전** append, 원자적 one-winner; 재호출은 실행 권한 재발급 아님 |
+| finish_progress | `{schema_version:2,scope,operation_id,reservation_id,expected_checkpoint,evidence_digest,terminal_state,challenge}` -> `{schema_version:2,scope,challenge,outcome:"recorded"|"already_recorded"|"conflict",checkpoint}` **또는** `CompanyFreshnessRequiredError`. 원래 사실/진행만 추가, 모순 결과 덮어쓰기 금지 |
+
+`CompanyFreshnessRequiredError`는 closed object
+`{schema_version:2,outcome:"error",code:"COMPANY_FRESHNESS_REQUIRED"}`다.
+두 진행 응답은 정상/CAS 분기와 이 오류 분기의 명시적 합집합이다. 오류에는
+scope/challenge/checkpoint/reservation_id를 요구하거나 추가하지 않는다.
+소비자는 이 유효한 오류를 COMPANY_CONTRACT_INVALID로 바꾸지 않고 원래 코드를
+유지하며, 예약·완료로 취급하거나 후속 효과를 실행하지 않는다.
 
 진행 기록의 operation은 decide_approve/decide_reject/accept/reject/complete/mark_processed/delete다.
 C1 결정·SB 전이·verifier 효과는 서로 다른 operation이며 호출 경계가 고정한다.
@@ -202,6 +212,9 @@ transport 실패/권한 실패/응답 불명을 합쳐 not_found로 처리하지
 
 1. F1: 양 언어가 fixture binding/command/unsigned approval canonical hex·hash·서명 bytes를
    같게 계산하고 실제 Ed25519 검증. 한 필드/서명/domain 변조는 실패.
+   두 진행 응답 parser는 unconfigured의 정확한 오류 wire를 허용하되 정상/CAS 분기와
+   혼합한 객체는 거절한다. 명령은 requested_at 직전/정각/만료 직전/정각/이후를 고정
+   시각으로 시험해, 24시간 길이만 맞는 미래/만료 명령을 허용하지 않는다.
 2. F2(키 폐기 rollback): 키/정책 폐기 뒤 한쪽·양쪽 옛 DB/config 복원, C1~C4 승인·효과0.
 3. F3([별도 P1 4278139710](https://github.com/whelp99-code/Orca-JARVIS/pull/88#discussion_r4278139710)):
    **binding/키/폐기 목록을 바꾸지 않고**, backup 뒤 accept·reject·완료·삭제를 각각 실행한
