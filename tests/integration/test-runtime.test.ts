@@ -1,6 +1,8 @@
 import { readFileSync, existsSync, statSync } from "node:fs";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
+import { tmpdir } from "node:os";
+import { dirname } from "node:path";
 import { describe, expect, it } from "vitest";
 import { createTestEnvironment } from "../../scripts/lib/test-environment.mjs";
 import { runTestProcess } from "../../scripts/lib/test-process.mjs";
@@ -16,6 +18,18 @@ function running(pid: number): boolean {
 }
 
 describe("test runtime lifecycle", () => {
+  it("places unconfigured scratch on the OS temporary filesystem", () => {
+    const scratch = createTestEnvironment({});
+    try {
+      expect(dirname(scratch.root)).toBe(tmpdir());
+      expect(scratch.env.TMPDIR).toBe(scratch.root);
+      expect(statSync(scratch.root).mode & 0o777).toBe(0o700);
+    } finally {
+      scratch.cleanup();
+    }
+    expect(existsSync(scratch.root)).toBe(false);
+  });
+
   it("creates an isolated verified scratch root and removes only its own files", () => {
     const parent = createTestEnvironment();
     try {
