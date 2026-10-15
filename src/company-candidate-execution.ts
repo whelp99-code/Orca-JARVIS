@@ -397,6 +397,12 @@ export class CompanyCandidateExecutor {
     const now = this.clock();
     this.db.db.transaction(() => {
       progress.finish(reservation, evidenceDigest, terminalState, now);
+      if (terminalState === "accepted" || terminalState === "rejected") {
+        const handoff = this.db.db.prepare(
+          "UPDATE company_candidate_handoffs SET status=?,failure_code=NULL,updated_at=? WHERE request_id=? AND current=1",
+        ).run(terminalState, now.toISOString(), reservation.request_id);
+        if (handoff.changes !== 1) throw new JarvisError("CONTROL_STATE_CONFLICT");
+      }
       if (terminalState === "processed_complete") {
         const control = this.db.db.prepare(
           "UPDATE control_command_requests SET state='completed',completed_at=COALESCE(completed_at,?) WHERE request_id=? AND state IN ('approved','completed')",

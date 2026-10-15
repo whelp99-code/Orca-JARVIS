@@ -21,7 +21,7 @@ const cases = (["decide_approve", "decide_reject", "complete", "mark_processed"]
 const digest = (value: string) => `sha256:${createHash("sha256").update(value).digest("hex")}`;
 
 async function session(operation?: CompanyProgressOperation, loss: "before" | "after" = "before") {
-  const live = await companyApproverV2Database(operation === "decide_reject" ? "reject" : "approve", false);
+  const live = await companyApproverV2Database(operation === "decide_reject" || operation === "reject" ? "reject" : "approve", false);
   const command = decodeCompanyCommandV2(live.command);
   const finishes: FinishProgressRequest[] = [];
   let lose = operation !== undefined;
@@ -76,6 +76,37 @@ async function session(operation?: CompanyProgressOperation, loss: "before" | "a
 }
 
 describe("committed company finish retry", () => {
+  it.each((["accept", "reject"] as const).flatMap(operation =>
+    (["before", "after"] as const).map(loss => ({ operation, loss }))))(
+    "$operation lost_$loss restores durable terminal state without a verifier", async ({ operation, loss }) => {
+      const live = await session(operation, loss);
+      try {
+        new ControlPlane(live.db, live.provider).decide(live.approval, NOW);
+        const executor = new CompanyCandidateExecutor(live.db, live.client, undefined, () => NOW, live.provider);
+        await expect(executor.execute(live.command.request_id)).rejects.toThrow("COMPANY_PROGRESS_UNCERTAIN");
+        expect(live.db.db.prepare("SELECT status,lease_token FROM company_candidate_handoffs").get())
+          .toEqual({ status: "uncertain", lease_token: null });
+        const first = live.finishes.at(-1);
+        if (!first) throw new Error("Missing initial finish request");
+        const restarted = new AuthorityDb(live.db.filename);
+        const terminal = operation === "accept" ? "accepted" : "rejected";
+
+        try {
+          expect((await new CompanyCandidateExecutor(restarted, live.client, undefined, () => NOW, live.provider)
+            .execute(live.command.request_id)).state).toBe(terminal);
+        } finally { restarted.close(); }
+
+        expect(live.db.db.prepare("SELECT status,failure_code,lease_token,lease_expires_at FROM company_candidate_handoffs").get())
+          .toEqual({ status: terminal, failure_code: null, lease_token: null, lease_expires_at: null });
+        const retries = live.finishes.filter(request => request.operation_id === first.operation_id);
+        expect(retries).toHaveLength(2);
+        expect({ ...retries[1], challenge: first.challenge }).toEqual(first);
+        expect(live.calls.filter(call => call.operation === operation)).toHaveLength(1);
+        expect(live.effects).toEqual([]);
+      } finally { live.close(); }
+    },
+  );
+
   it.each(cases)("$operation lost_$loss repairs only the original finish and unblocks the next candidate", async ({ operation, loss }) => {
     const live = await session(operation, loss);
     try {
