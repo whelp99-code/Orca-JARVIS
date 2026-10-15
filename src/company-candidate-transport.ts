@@ -57,7 +57,7 @@ export interface CompanyClient {
   readonly context: CompanyContext;
   readonly publicKeyPem: string;
   readonly keyId: string;
-  call(operation: CompanyOperation, args: Record<string, unknown>, now?: Date): Promise<unknown>;
+  call(operation: CompanyOperation, args: Record<string, unknown>, now?: Date, requestNonce?: string): Promise<unknown>;
 }
 
 const PURPOSE = {
@@ -123,12 +123,13 @@ export function createCompanyClient(configPath: string, role: "handoff" | "proce
     context,
     publicKeyPem: exported,
     keyId: config.signing_key_id,
-    call(operation, args, now = new Date()) {
+    call(operation, args, now = new Date(), requestNonce = `jarvis:${randomUUID()}`) {
       if (!allowed(config.role, operation)) fail("COMPANY_CANDIDATE_OPERATION_DENIED");
       if (args === null || typeof args !== "object" || Array.isArray(args)) {
         fail("COMPANY_CANDIDATE_REQUEST_INVALID");
       }
       if (Number.isNaN(now.getTime())) fail("COMPANY_CANDIDATE_REQUEST_INVALID");
+      if (!identifier.safeParse(requestNonce).success) fail("COMPANY_CANDIDATE_REQUEST_INVALID");
       const principalId = config.role === "handoff"
         ? context.owner
         : context.processor_principal_id;
@@ -152,7 +153,7 @@ export function createCompanyClient(configPath: string, role: "handoff" | "proce
           request_digest: requestDigest(operation, args),
           issued_at: now.toISOString(),
           expires_at: new Date(now.getTime() + AUTHORITY_TTL_MS).toISOString(),
-          nonce: `jarvis:${randomUUID()}`,
+          nonce: requestNonce,
           signing_key_id: config.signing_key_id,
         };
         const signature = sign(null, Buffer.from(

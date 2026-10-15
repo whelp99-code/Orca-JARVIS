@@ -431,11 +431,13 @@ export class CompanyCandidateExecutor {
       approval_policy_version: command.args.approval_policy_version,
       approval_binding_digest: command.args.approval_binding_digest,
     };
-    const parsed = transitionReadResponseSchema.safeParse(await this.client.call("read_transition_receipt", query, this.clock()));
+    const lookupNonce = `jarvis:${randomUUID()}`;
+    const parsed = transitionReadResponseSchema.safeParse(await this.client.call("read_transition_receipt", query, this.clock(), lookupNonce));
     if (!parsed.success) throw new JarvisError("COMPANY_CONTRACT_INVALID");
     const response = parsed.data;
     if (response.provider_instance_id !== command.target.provider_instance_id
       || response.workspace_id !== command.target.workspace_id
+      || response.lookup_nonce !== lookupNonce
       || canonicalize(response.selector) !== canonicalize(query)
       || response.lookup_request_digest !== companyMemoryRequestDigest("read_transition_receipt", query)) {
       throw new JarvisError("COMPANY_SB_RECEIPT_INVALID");
