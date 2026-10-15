@@ -6,7 +6,7 @@ attempt=9eaf3e68-6614-45a4-a3d1-5a8f33d65b61
 보완: TASK-COMPANY-OWNER-DESIGN-REV-20261015,
 attempt=390e08aa-ef6c-443c-8793-5b00f265a37e.
 가재·나희의 `3297452` 검토와 운영자 관리 설정 합의안을 반영했다.
-추가로 `86a4c4e`의 나희·가재 검토 세 항목과 대표 키 교체 안전 정지 수락을 반영했다.
+추가로 `86a4c4e`의 나희·가재 검토 세 항목과 대표 키 교체 안전 정지가 제안된 경계, 대표님 결정 대기임을 명시했다.
 
 **추천: B — 기존 후보의 데이터 owner는 보존하고, 정책에 고정된
 `approver_principal_id`를 별도로 두어 대표 결정 권한을 묶는다.**
@@ -415,7 +415,7 @@ T 번호는 새 파일/API가 아니라 추가할 시험 시나리오 식별자�
 | legacy 전환의 감사·되돌리기 | 현재는 gate 거절 기록과 원본 보존; 5.1 별도 transition manifest, 7절 rollback | T12 현재 거절 후 원본 불변; 향후 실제 전환 과제는 old/new·uncertain·terminal·rollback 시험 별도 |
 | 인접 권한 회귀 없음 | requested_by==owner65, SB owner/project/policy/fence, 타 action owner guard·Mail receive-only | T13 기존 개인/daily/다른 회사 scope·data fence·owner/requester 거절 시험 유지 |
 | 회사2의 저장·읽기·타입/digest 왕복, 기타1 보존 | 공통 control-command-stage18/INSERT, control-command-read38/read/list, control-plane-contract 입력/저장 타입·digest, 실제 version 저장 열 | T14 회사2 입력→stage→DB→read/list/재시작→digest 같음; 기타1/과거 회사1 읽기 동일, 다른 action2/미지원 version 거절 |
-| 키 폐기·교체 후 운영 공백 수락 | SB 목록/pin 변경 -> 등록 exact mismatch -> ENROLLMENT_REQUIRED, 7절 안전 정지·전환 담당 | T9 폐기/교체 뒤 승인·수신·완료 중지; 삭제 후 재등록/구 pin 복구로 몰래 재개 불가 |
+| 키 폐기·교체 후 운영 공백: 제안된 경계, 대표님 결정 대기 | SB 목록/pin 변경 -> 등록 exact mismatch -> ENROLLMENT_REQUIRED, 7절 안전 정지·전환 담당 | T9 폐기/교체 뒤 승인·수신·완료 중지; 삭제 후 재등록/구 pin 복구로 몰래 재개 불가 |
 
 ### 6.2 만료 후 마무리 재시도 규칙
 
@@ -518,7 +518,7 @@ legacy 기록이 활성화 직전에 발견되면 임의 확대하지 않고 중
 회사 자체의 법적 data owner를 바꾸는 요구가 생기면
 A/C를 별도 권리 이행 과제로 결정한다.
 
-**키 교체 운영 공백은 받아들인다.**
+**키 교체 운영 공백: 제안된 경계, 대표님 결정 대기.**
 대표 키 교체 = 전환 과제 구현 전까지 회사 승인함 승인 중지
 (`ENROLLMENT_REQUIRED`, 안전 정지).
 SB에는 현재 별도 승인 키 폐기 원장이 없으므로 폐기/교체를 위해
@@ -526,8 +526,10 @@ SB에는 현재 별도 승인 키 폐기 원장이 없으므로 폐기/교체를
 승인·수신·처리 완료 mutation을 재개하지 않는다. 오래된 pin으로 복귀하거나
 등록을 삭제해 재등록하는 우회도 금지한다. 기존 수행 사실/읽기 조회는 보존한다.
 더 높은 승인 version의 명시적 재등록·양쪽 binding 전환은 이번 구현 범위 밖이다.
-그 **전환 과제 담당은 오모냥(계획·배정)**이며, 과제 구현·검증 완료 전까지의
-승인 중지는 수락된 운영 경계다. 이 문서가 전환을 구현하거나 운영 활성화를 승인하지 않는다.
+그 **복구·전환 과제 담당은 오모냥(계획·배정)**이다. 과제 구현·검증 완료 전까지의
+승인 중지는 제안된 경계, 대표님 결정 대기다. 대표님은 이 중단을 아직 결정하지 않았다.
+담당 지정은 복구 절차의 계획·배정 책임이며 대표님의 중단 동의를 뜻하지 않는다.
+이 문서가 전환을 구현하거나 운영 활성화를 승인하지 않는다.
 
 ## 검수와 종료
 
