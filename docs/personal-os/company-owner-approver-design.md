@@ -43,6 +43,8 @@ attempt=390e08aa-ef6c-443c-8793-5b00f265a37e.
 - Codex P2 원문은 PR #88의 [version 불변 trigger](https://github.com/whelp99-code/Orca-JARVIS/pull/88#discussion_r4277639200)와
   [과거 v1 inbox](https://github.com/whelp99-code/Orca-JARVIS/pull/88#discussion_r4277639202)다.
   `gh api repos/whelp99-code/Orca-JARVIS/pulls/88/comments`로 원문을 확인했다.
+- 후속 [accept receipt 권한 조회](https://github.com/whelp99-code/Orca-JARVIS/pull/88#discussion_r4277775413)와
+  [completion verifier v2 경계](https://github.com/whelp99-code/Orca-JARVIS/pull/88#discussion_r4277775420)도 원문 전체를 확인했다.
 - 요청의 “기존 24건”은 보존해야 할 기존 집합이다. 위 27건과 같은 시점의
   건수로 단정하지 않는다. 향후 실행은 cohort manifest와 당시 전건 N을
   보존해야 하며 24 또는 27을 SQL LIMIT나 이행 완료 상수로 사용하지 않는다.
@@ -437,6 +439,8 @@ T 번호는 새 파일/API가 아니라 추가할 시험 시나리오 식별자�
 | 인접 권한 회귀 없음 | requested_by==owner65, SB owner/project/policy/fence, 타 action owner guard·Mail receive-only | T13 기존 개인/daily/다른 회사 scope·data fence·owner/requester 거절 시험 유지 |
 | 회사2의 저장·읽기·타입/digest 왕복, 기타1 보존 | 공통 control-command-stage18/INSERT, control-command-read38/read/list, control-plane-contract 타입·digest, 실제 version 열 + identity trigger 재생성, owner-inbox327-329의 version별 args | T14 회사2 왕복/digest 같음; 기타1/과거1 inbox 혼합 조회 보존; version UPDATE/미지원 version 거절 |
 | 대표 결정(10/15 09:23:05 KST (Slack C0C6HJM0BV5:1792023785.146919, "오모냥아 진행해"), 진행): 키 교체 시 회사 승인함 일시 중지 수용, 재개 절차는 오모냥 담당 별도 과제 | SB 목록/pin 변경 -> 등록 exact mismatch -> ENROLLMENT_REQUIRED, 7절 결정 근거·전환 담당 | T9 폐기/교체 뒤 승인·수신·완료 중지; 삭제 후 재등록/구 pin 복구로 몰래 재개 불가 |
+| accept ack 유실 뒤 실제 receipt·시각 조회 | 6.4 새 processor-only read, SB 원본 receipt/decision, JARVIS 복구 저장 | T11 실제 SB commit 뒤 응답 유실·재시작·만료 후 원본 조회, 읽기 전후 mutation 0 |
+| 외부 verifier 회사2 wire | 6.5 config2/stdin2/응답2, execution.ts26-95와 operator 문서 | T15 실제 child/durable effect/executor/mark_processed 통합과 실패 거절 |
 
 ### 6.2 만료 후 마무리 재시도 규칙
 
@@ -453,7 +457,7 @@ key 폐기/pin/version/등록 검사는 건너뛰지 않는다. 현재 binding �
 확인된 완료/거절 결과 조회는 읽기이며 이 규칙으로 새 mutation을 만들지 않는다.
 
 SB 수신 결과가 불확실하거나 로컬 accept receipt가 없으면 authoritative 상태/receipt를
-먼저 대조하고 확인 전 blind resend/자동 성공을 금지한다.
+먼저 6.4의 인증된 읽기 전용 조회로 대조하고 확인 전 blind resend/자동 성공을 금지한다.
 accept만으로 processed_complete가 되지 않는다. 실제 completion verifier 결과와 정확한
 acceptance receipt 바인딩이 있어야 한다. 같은 완료 재시도는 원본 한 effect를 반환하고
 다른 completion/receipt로 덮어쓰기나 terminal→candidate를 거절한다.
@@ -478,10 +482,11 @@ acceptance receipt 바인딩이 있어야 한다. 같은 완료 재시도는 원
 | T8 | mail-ms/ordinary handoff key, processor, 다른 대표/legacy jm-owner, 미등록 key, 올바른 signer 필드에 다른 key, 대표 key에 다른 signer 필드 -> approve/reject/mark_processed 모두 거절 |
 | T9 | 승인 후 accept 전/accept 후 완료 전 key 교체·삭제·폐기·purpose/principal/pin/version 변경, 재시작, SB/JARVIS 다른 version -> 다음 mutation 거절; 이미 수행한 effect 보존 |
 | T10 | **옛 명령1 ID/digest의 receipt**를 새 명령2에 이식, 다른 request/후보/workspace/provider/generation/operation/binding 복사, 기존 결정의 서명 교체, 상환 receipt 새 사용 -> 거절; 봉투1 자체는 금지하지 않으며 동일 원본 재시도 effect 1회 |
-| T11 | expires_at 경계/미래 not_before/잘못된 nonce·max_uses·TTL·signature, 승인만 있고 만료, redemption만 있고 ack 불확실 -> 거절; 확인된 수신 후 만료된 동일 완료 재시도 성공, 증거 없음/변조/폐기면 거절 |
+| T11 | SB accept commit 뒤 응답 유실·persistReceipt 전 crash→재시작→새 인증 read로 원본 receipt/accepted_at 복구; 만료된 동일 완료만 재개, accept 효과1회. 시간/nonce/scope/digest/권한/폐기/부재·손상·불확실이면 mutation 0; 조회 전후 DB 불변 |
 | T12 | v1 outbox·등록·JARVIS 수입/관련 control 기록 각각 1건, expired/terminal 포함; gate 직전 동시 삽입/query 실패/버전 불명/한쪽 등록 실패 -> 활성화 거절·감사·원본 유지; 0/24/27/N+동시 후보 수신 보존 |
 | T13 | owner/project/data policy/deletion fence/content/requested_by 변조, completion 누락/다른 candidate/digest/acceptance_receipt_digest, reject 후 mark_processed -> 거절; 타 action·개인/daily·Mail receive-only 회귀 통과 |
 | T14 | 실제 공통 stage/store/read/list와 재시작 후 회사2 decode/digest == 원본/저장 digest, 봉투1 signature 성공; 기타1 불변; 과거 회사1 args에 새 approver 필드가 없어도 OwnerInbox.list() 및1/2 혼합 조회 정상·identity/digest 보존; 새2 필드 검증; version UPDATE1→2/2→1 거절·원래 row/digest 불변; 다른 action2/미지원 version 거절 |
+| T15 | 실제 고정 executable에 stdin2/command2/원래 acceptance 전달→독립 durable effect·완전 응답2 검증 후에만 mark_processed; v1/변조/JSON·종료·stdin·timeout 오류는 완료0, child 종료/lease 해제/효과1회 |
 
 T14는 기존 `tests/unit/control-plane.test.ts`,
 `tests/integration/control-command-lookup.test.ts` 및
@@ -525,6 +530,98 @@ inbox 시험은 과거1/새2/혼합 행을 실제 조회해 version별 args 및 
 | 이미 등록된 context·policy 변경 | 암묵적 upsert/unenroll/키 교체 금지; 후속 명시적 전환 과제로 중지 |
 | mark_processed에서 approver/binding/원래 receipt/실제 완료 증거 | 올바른 경우만 성공; accept만으로 완료 금지 |
 | 개인 memory/daily/다른 company scope·Mail receive-only | 기존 권한/격리 불변 |
+
+### 6.4 인증된 읽기 전용 accept receipt 조회 — 후속 P2
+
+현재 `src/company-candidate-transport.ts:54-85`는 handoff/accept/reject/
+mark_processed만 허용한다. 아래는 **새 구현 계약**이며 현재 조회 API가 있다는 뜻이 아니다.
+제안 operation은 `read_acceptance_receipt`, purpose는 `company_memory_receipt_read`다.
+기존 company private broker의 processor 역할에만 추가하고 Mail/handoff·개인 memory
+권한에는 열지 않는다. transport/broker allowlist와 SB authority/CLI/read-store,
+JARVIS 복구 저장을 함께 구현한다. 새 control command나 대표 결정/상환 API가 아니다.
+
+기존 Ed25519 authority 봉투1을 사용하되 새 조회 nonce/request_digest, 짧은 TTL,
+현재 고정 provider/workspace/processor/projects/policy/삭제 fence를 검증한다.
+만료된 accept authority를 재전송하지 않는다. 요청 args는 candidate_id/handoff_id/
+operation=`accept`/accept_request_digest/command_digest/content_digest/
+approval_policy_version/approval_binding_digest의 closed object다.
+원래 accept_request_digest는 보존한 실제 approval bytes와 원래 accept args로 재계산한다.
+SB는 현재 로컬 scope/binding과 processor key를 검증한 뒤 원본 receipt 및
+company_handoff_decisions의 같은 workspace/candidate/handoff/approve/request_digest를 읽는다.
+조회는 execute/accept/authorize_transition를 호출하지 않으며 후보·decision·상환·
+receipt·accepted_at·등록을 생성/변경하거나 schema를 초기화하지 않는다.
+
+응답2는 위 identity/binding과 outcome, lookup_nonce/lookup_request_digest를
+반드시 echo한다. found에는 원래 receipt_id/receipt_digest/operation/state/handoff_id,
+원본 snapshot의 accepted_at 및 원래 receipt_created_at을 포함한다.
+not_found는 인증/정상 조회가 끝났으나 그 행이 없는 경우에만 쓰며, 동시 accept의
+영구 부재나 재전송 허가로 해석하지 않는다. 시각 부재/불명확·손상·권한 거절·
+미초기화·timeout·응답 누락은 evidence_absent/거절/uncertain으로 유지한다.
+unknown을 성공/not_found로 바꾸지 않는다.
+
+SB `company_memory.py:409-520`은 전이와 원본 receipt를 한 transaction에 저장한다.
+result_json에는 accepted_at이 있지만 현재 wire의 축약5필드에는 없다.
+SB는 원본 전체 result/created_at을 기존 receipt domain으로 재해시해 ID/digest를
+검증한 뒤 본문을 제거한 projection만 반환한다. 후보 본문/approval 원문은 반환하지 않는다.
+JARVIS는 축약 응답으로 원본 전체 receipt hash를 재계산했다고 주장하지 않는다.
+hash나 nonce echo 자체는 인증이 아니다. 운영자 고정 broker/SB 실행 경로와
+소켓 소유·권한·교체 방지/peer 신뢰가 검증된 채널만 허용하고 scope/digest/nonce를
+모두 대조한다. 호출자 지정 소켓/프로그램/임의 JSON·UI·캐시로 대체하지 않는다.
+새 응답 서명 키나 신뢰 root를 만들지 않는다.
+
+accepted_at은 **해당 원본 receipt snapshot**에서만 가져온다. 조회 시각, approval
+issued_at, JARVIS redemption 또는 receipt_created_at으로 채우지 않는다.
+이미 accepted인 후보의 다른 요청에서는 두 시각이 다를 수 있다. 그 값이 해당
+original approval의 유효 구간과 exact 요청에 대한 수신 증거를 입증하지 못하면
+완료도 중지한다. 검증된 found를 로컬 저장한 뒤에만 6.2의 당시 승인 유효성과
+현재 key/policy/fence/폐기를 재확인하고 완료를 재개하며, accept는 다시 보내지 않는다.
+
+| 검토 기준 | 구현 지점 | 미래 T11 증거 |
+|---|---|---|
+| 응답 유실 뒤 실제 수신 증명 | 새 read operation/purpose, SB 원본 receipt/decision, JARVIS 복구 | 실제 SB commit 뒤 응답 차단·persistReceipt 전 crash→재시작→fresh read→원래 receipt/시각 복구, accept 효과1회 |
+| 읽기가 mutation을 숨기지 않음 | readonly store와 인증/응답 validator | 조회 전후 후보/decision/상환/receipt/시각 DB 불변; 재전송0 |
+| 잘못된 증거는 만료 연장 아님 | exact scope/request/binding/nonce와 현재 guard | 권한·폐기·fence/시각·digest·대상 변조, 부재/손상/timeout이면 완료0, original receipt/current guard 모두 보존 |
+
+T11은 in-process callback만이 아니라 실제 SB transaction과 인증 read를 통과한다.
+원래 authority/approval 만료 뒤에는 새 조회 authority로 증거만 회복한다.
+commit/응답 차단/프로세스 종료 이벤트를 먼저 구독하며 fixed sleep을 쓰지 않는다.
+
+### 6.5 completion verifier v2 stdin·응답과 실제 subprocess — 후속 P2
+
+현재 `src/company-candidate-execution.ts:26-35,40-95`와
+`docs/personal-os/company-candidate-handoff.md:140-160`은 config/stdin/completion1이다.
+미래 회사2 구현은 운영자 고정 private config도2로 명시하고 executable/args와
+함께 배포한다. config2는 schema_version/executable/args의 closed object이며
+trusted path·소유·권한·0600·인자 상한16을 유지한다. config1 자동 승격/v1-only
+binary fallback을 두지 않고 활성화 전 격리된 실제 subprocess rehearsal로 확인한다.
+현재 v1 운영 문서는 이 설계 PR에서 바꾸지 않고 실제 구현 PR에서 함께 개정한다.
+
+stdin은 UTF-8 canonical JSON 한 객체 `{schema_version:2,command,acceptance}` 뒤 EOF다.
+command는 strict 회사 명령2 전체 원본이다. acceptance는 보존 또는 6.4 조회로
+검증한 원래 SB5필드 metadata다. SB receipt의 cmreceipt:v1 및 대표 approval 봉투1은
+verifier wire2와 별개이며 원본을 유지한다. 비밀키/credential/후보 본문은 넘기지 않는다.
+stdout은 로그·추가 객체 없는 closed completion2다: schema_version=2,
+state=`completed`, request_id=`company-handoff:v2:...`, command_digest,
+candidate_id, content_digest, acceptance_receipt_digest, effect_digest.
+원래 command/acceptance와 모든 identity/digest를 대조하고 현재 guard를 재확인해
+completion2를 저장한 뒤에만 mark_processed를 보낸다. 응답1을2로 감싸 통과시키지 않는다.
+
+프로그램은 request_id+command_digest로 실제 후속 효과를 멱등 실행하거나 독립 검증한다.
+exit0/입력 echo/임의 effect_digest만으로 완료라고 하지 않는다. 기존 shell:false,
+최소 env,10초/SIGKILL,1MiB, stdin 실패 kill/lease 해제를 유지한다.
+실패해도 확인한 accept는 보존하지만 processed_complete로 올리지 않는다.
+
+| ID/검토 기준 | 구현 지점 | 미래 실제 시험 |
+|---|---|---|
+| T15 양방향 wire2 | createCompanyCompletionVerifier/config·stdin·completion parser, operator 문서 | 실제 고정 child가 stdin2/command2를 strict parse하고 durable effect 생성·독립 hash·완전 응답2 반환→executor 검증 후 mark_processed |
+| T15 버전/증거 거절 | 실제 stdout→executor binding/current guard | v1-only child/응답1, 다른 ID/digest/acceptance/effect, 오염·부분·중복·과대 JSON·비정상 종료이면 완료0 |
+| T15 자원/멱등성 | 실제 child/lease/effect 저장 | stdin 오류·timeout에서 child 종료/lease 해제, 재시작·동일 요청 재시도 effect1회, 다른 요청으로 원본 이식 거절 |
+
+기존 `tests/unit/company-candidate-execution.test.ts:358-545`의 실제 executable
+패턴을 확장한다. CompanyCompletionVerifier mock만 쓰거나 createVerifier 단독의
+불완전 출력만 검사하지 않고 execFile/stdin/EOF/stdout/executor 전체 경계를 통과한다.
+child readiness/close와 효과 기록 이벤트를 먼저 구독한다. 기존 v1 path/timeout
+회귀 시험을 삭제·약화하지 않고, T7 정상 완료도 이 실제 T15 경로로 확인한다.
 
 ## 7. 되돌리기와 추천 이유
 
