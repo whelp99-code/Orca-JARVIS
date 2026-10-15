@@ -14,11 +14,12 @@ import { controlCommandDigest as commandDigest } from "./control-plane-contract.
 type CommandOperation = Exclude<CompanyProgressOperation, "delete">;
 
 function advances(previous: CompanyCheckpoint, next: CompanyCheckpoint): boolean {
-  const prefix = (a: number, ar: string, b: number, br: string) => b >= a && (b > a || ar === br);
+  const prefix = (a: number, ar: string, b: number, br: string) => b === a ? ar === br : b > a && ar !== br;
   return next.approval_binding_digest === previous.approval_binding_digest
     && next.approval_policy_version === previous.approval_policy_version
     && next.operational_epoch === previous.operational_epoch
     && next.intent_sequence === previous.intent_sequence + 1
+    && next.intent_root !== previous.intent_root
     && prefix(previous.revocation_sequence, previous.revocation_root, next.revocation_sequence, next.revocation_root)
     && (["jarvis", "second_brain"] as const).every(store => {
       const a = previous.stores[store]; const b = next.stores[store];
