@@ -5,6 +5,8 @@ TASK-COMPANY-CONTRACT-FIXTURE-20261015 / attempt=a2468740-3266-4957-89ae-8161d60
 근거: [닫힌 설계 #88, 9fa2f0d](https://github.com/whelp99-code/Orca-JARVIS/blob/9fa2f0d9dc647ee1d3a8dad2626e41900e8dc32e/docs/personal-os/company-owner-approver-design.md).
 이 문서는 그 설계를 수정하지 않는다. SB/Python과 JARVIS/TS의 공통 wire를 정한다.
 fixture는 `fixtures/company-approver/company-approver-v2.test-only.json` 한 개다.
+두 진행 오류 응답 예시는 `unconfigured_progress_responses`, 명령 유효구간의 고정 시각
+예시는 `command_validity`에 둔다. 이 시험 metadata는 command나 서명 대상에 추가하지 않는다.
 
 ## 1. 값·직렬화·명령
 

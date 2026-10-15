@@ -12,6 +12,50 @@
     "outcome": "error",
     "code": "COMPANY_FRESHNESS_REQUIRED"
   },
+  "unconfigured_progress_responses": {
+    "reserve_progress": {
+      "schema_version": 2,
+      "outcome": "error",
+      "code": "COMPANY_FRESHNESS_REQUIRED"
+    },
+    "finish_progress": {
+      "schema_version": 2,
+      "outcome": "error",
+      "code": "COMPANY_FRESHNESS_REQUIRED"
+    }
+  },
+  "command_validity": {
+    "command_ref": "/command",
+    "required_duration_ms": 86400000,
+    "validity_rule": "requested_at <= now < expires_at",
+    "cases": [
+      {
+        "name": "before_requested_at",
+        "now": "2026-10-14T23:59:59.999Z",
+        "expected_valid": false
+      },
+      {
+        "name": "at_requested_at",
+        "now": "2026-10-15T00:00:00.000Z",
+        "expected_valid": true
+      },
+      {
+        "name": "before_expires_at",
+        "now": "2026-10-15T23:59:59.999Z",
+        "expected_valid": true
+      },
+      {
+        "name": "at_expires_at",
+        "now": "2026-10-16T00:00:00.000Z",
+        "expected_valid": false
+      },
+      {
+        "name": "after_expires_at",
+        "now": "2026-10-16T00:00:00.001Z",
+        "expected_valid": false
+      }
+    ]
+  },
   "read_freshness": {
     "request": {
       "schema_version": 2,
