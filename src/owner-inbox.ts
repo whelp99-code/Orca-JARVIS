@@ -7,6 +7,7 @@ import { KNOWN_CONTROL_ACTIONS } from "./control-actions.js";
 import { approvedActionHasExecutor } from "./approved-executor.js";
 import { EXTERNAL_DELEGATE_RECEIPT_WINDOW_MS, externalDelegateRequester } from "./external-delegate.js";
 import { companyTargetSchema, companyArgumentsSchema } from "./company-candidate-contract.js";
+import { companyArgumentsV2Schema, companyTargetV2Schema } from "./company-candidate-v2-contract.js";
 
 /** Every staged control action can be signed here. Unknown actions stay forbidden. */
 export const OWNER_INBOX_ACTIONS = KNOWN_CONTROL_ACTIONS;
@@ -70,6 +71,7 @@ export type OwnerInboxItem = Readonly<{
     content_digest: string; owner: string; projects: readonly string[];
     policy_revision: string; deletion_sequence: number; deletion_set_root: string;
     processor_principal_id: string; status: string;
+    approver_principal_id?: string; approval_policy_version?: number; approval_binding_digest?: string;
   }>;
 }>;
 
@@ -93,6 +95,7 @@ type Row = Readonly<{
   target_json?: string;
   company_status?: string | null;
   company_first_use_expires_at?: string | null;
+  schema_version?: number | null;
 }>;
 
 export class OwnerInbox {
@@ -107,7 +110,7 @@ export class OwnerInbox {
     const now = this.now().getTime();
     const rows = this.db.db.prepare(
       `SELECT r.request_id,r.action,r.command_digest,r.expires_at,r.requested_at,r.state,
-         COALESCE(h.failure_code,r.failure_code) AS failure_code,r.args_json,r.target_json,r.requested_by,
+         COALESCE(h.failure_code,r.failure_code) AS failure_code,r.args_json,r.target_json,r.requested_by,r.schema_version,
          h.status AS company_status,
          CASE WHEN h.current=1 AND NOT EXISTS (
            SELECT 1 FROM company_candidate_sb_receipts s WHERE s.request_id=r.request_id
@@ -324,9 +327,14 @@ function itemOf(row: Row, expired: boolean): OwnerInboxItem {
   const rejectedCompany = row.action === "company.candidate.transition" && row.state === "rejected";
   const manual = rejectedCompany || (row.state === "approved" && !approvedActionHasExecutor(row.action));
   const external = externalDisplay(row);
-  const company = row.action === "company.candidate.transition" && row.target_json && row.args_json
-    ? { ...companyTargetSchema.parse(JSON.parse(row.target_json)),
-      ...companyArgumentsSchema.parse(JSON.parse(row.args_json)), status: row.company_status ?? "unimported" }
+  const companyArgs = row.action === "company.candidate.transition" && row.args_json
+    ? Number(row.schema_version) === 2
+      ? companyArgumentsV2Schema.parse(JSON.parse(row.args_json))
+      : companyArgumentsSchema.parse(JSON.parse(row.args_json))
+    : undefined;
+  const company = row.action === "company.candidate.transition" && row.target_json && companyArgs
+    ? { ...(Number(row.schema_version) === 2 ? companyTargetV2Schema : companyTargetSchema).parse(JSON.parse(row.target_json)),
+      ...companyArgs, status: row.company_status ?? "unimported" }
     : undefined;
   const base = external?.summary ?? ACTION_SUMMARY[row.action] ?? row.action;
   const approvedText = row.action === "external.delegate" ? OWNER_INBOX_EXTERNAL_DONE : OWNER_INBOX_MANUAL_WAIT;

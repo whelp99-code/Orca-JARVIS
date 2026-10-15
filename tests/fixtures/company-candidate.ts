@@ -61,7 +61,7 @@ export function companyApproval(proposal: ReturnType<typeof companyProposal>, de
   }, key);
 }
 
-export function companyReceipt(requestId: string, operation: Exclude<CompanyOperation, "handoff">): CompanySbReceipt {
+export function companyReceipt(requestId: string, operation: Exclude<CompanyOperation, "handoff" | "read_transition_receipt">): CompanySbReceipt {
   const hash = createHash("sha256").update(JSON.stringify({ requestId, operation })).digest("hex");
   return { receipt_id: `cmreceipt:v1:${hash}`, receipt_digest: `sha256:${hash}`,
     operation, state: operation === "accept" ? "accepted" : operation === "reject" ? "rejected" : "processed_complete",

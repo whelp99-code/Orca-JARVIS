@@ -6,6 +6,61 @@ SB wire contract: PR67 at `20ca51361202331de8321e2c8c741610e673969b`,
 No operating keys, enrollment, service, timer, deployment or actual candidates
 were provisioned. Existing personal memory candidates and outbox are not used.
 
+## Company command v2
+
+The separate approver contract is
+[`company-approver-contract.md`](company-approver-contract.md). Command v2 keeps
+the data owner and requester unchanged; its decision signer must match the
+immutable local binding's approver principal, decision-purpose key ID and DER
+SPKI fingerprint. Registration is a local operator API, not an importer field
+or a new enrollment CLI. Existing company control history blocks first
+registration; this implementation does not migrate or reactivate it.
+
+Migration 105 stores the original command version and replaces the identity
+trigger to protect that column. Historical v1 commands and mixed-version inboxes
+remain readable. A registered v2 company scope cannot fall back to v1 mutations.
+The sections below describe the preserved v1 protocol unless v2 is specified.
+
+Production freshness is **unconfigured and denied by default**. The CLI has no
+test-memory provider or enable flag. The injected provider interface requires
+independently current scope/checkpoint evidence, a reserved operation before
+each effect, and a recorded finish. Local checkpoints are observations, not a
+freshness authority. Restore, missing evidence and unfinished reservations keep
+mutations closed. The memory provider under `tests/fixtures` is not production
+rollback protection. No operating activation or external freshness service is
+provided here.
+
+For a v2 command, the private completion config must use `schema_version:2`;
+the pinned child receives `{schema_version:2,command,acceptance}` through stdin
+EOF and must return the completion object shown below with `schema_version:2`
+and the exact v2 request ID. Command/config version mismatches are refused
+before any reservation, redemption or acceptance. A v1 response is refused. The fixed
+executable, minimal environment, 10-second hard kill and 1 MiB bound still
+apply. A successful exit or an echo of input digests is not completion evidence.
+
+Lost accept/reject acknowledgements are not replayed. The processor sends a
+freshly signed `read_transition_receipt` request, with purpose
+`company_memory_receipt_read`, through the processor broker's fixed `process`
+action. Lookup binds the original transition arguments/digest, company scope,
+command, binding, candidate and content, and checks the response's fresh nonce.
+Only an authenticated original receipt can restore original decision/acceptance
+times. Lookup after expiry grants no new verifier effect or `mark_processed`;
+the current command and approval window is required for each new mutation.
+At execute entry, an unfinished decision, completion or mark-processed intent
+can resend only its original finish: the same reservation ID and the committed
+approval hash, completion effect digest or SB receipt digest. Confirmed
+`recorded`/`already_recorded` evidence updates the local checkpoint by CAS;
+the underlying decision, verifier effect or SB mutation is never repeated.
+The mark-processed receipt is retained first, but completed control/handoff
+status is published atomically with that confirmed local finish. Missing local
+evidence stays uncertain, and a restored DB with missing reservations/receipts
+does not acquire recovery authority merely because its binding still matches.
+
+The JARVIS tests exercise this protocol through an authenticating subprocess
+peer and the real broker. They do not demonstrate a deployed SB v2 endpoint.
+Operating adoption requires a compatible SB implementation and an independently
+verified production freshness provider; neither is provisioned by this change.
+
 ## Authority and caller separation
 
 The SB data owner runs two bounded broker instances, one `handoff`, one

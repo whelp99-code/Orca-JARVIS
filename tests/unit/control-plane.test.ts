@@ -2,8 +2,8 @@ import { describe, expect, it } from "vitest";
 import { ControlPlane, signCommandApproval, type CommandApprovalReceipt, type ControlCommandRequestInput } from "../../src/index.js";
 import { future, initialized, localKey } from "../helpers.js";
 
-const request = (id: string): ControlCommandRequestInput => ({ schema_version: 1, request_id: id, action: "runbook.execute", action_level: 3, target: { environment: "local", runbook_id: "daemon-dead" }, args: { runbook_id: "daemon-dead", args: { dry_run: false } }, reversible: true, requested_by: "operator", requested_at: new Date().toISOString(), expires_at: future(10), nonce: `nonce-${id}` });
-const requestAt = (id: string, now: Date, lifetimeMs = 10 * 60_000): ControlCommandRequestInput => ({ ...request(id), requested_at: now.toISOString(), expires_at: new Date(now.getTime() + lifetimeMs).toISOString() });
+const request = (id: string): Extract<ControlCommandRequestInput, { schema_version: 1 }> => ({ schema_version: 1, request_id: id, action: "runbook.execute", action_level: 3, target: { environment: "local", runbook_id: "daemon-dead" }, args: { runbook_id: "daemon-dead", args: { dry_run: false } }, reversible: true, requested_by: "operator", requested_at: new Date().toISOString(), expires_at: future(10), nonce: `nonce-${id}` });
+const requestAt = (id: string, now: Date, lifetimeMs = 10 * 60_000): Extract<ControlCommandRequestInput, { schema_version: 1 }> => ({ ...request(id), requested_at: now.toISOString(), expires_at: new Date(now.getTime() + lifetimeMs).toISOString() });
 
 function approval(db: Awaited<ReturnType<typeof initialized>>, staged: ReturnType<ControlPlane["stage"]>, overrides: Partial<Omit<CommandApprovalReceipt, "signature">> = {}): CommandApprovalReceipt {
   const now = new Date().toISOString();

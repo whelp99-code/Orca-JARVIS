@@ -1,6 +1,7 @@
 import { createPublicKey } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { companyPageSchema, parseCompanyHandoff, parseCompanyCommand } from "./company-candidate-contract.js";
+import { companyPageV2Schema, parseCompanyHandoffV2 } from "./company-candidate-v2-contract.js";
 import { ControlPlane } from "./control-plane.js";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
@@ -15,7 +16,7 @@ export function companyEnrollmentContext(context: CompanyContext) {
   };
 }
 
-export function assertCompanyContext(command: ReturnType<typeof parseCompanyCommand>, context: CompanyContext): void {
+export function assertCompanyContext(command: Pick<ReturnType<typeof parseCompanyCommand>, "target" | "args">, context: CompanyContext): void {
   const expected = {
     provider_instance_id: command.target.provider_instance_id, workspace_id: command.target.workspace_id,
     owner: command.args.owner,
@@ -43,11 +44,19 @@ export function assertCompanyKeySeparation(db: AuthorityDb, client: CompanyClien
   }
 }
 
+function loadCompanyPage(value: unknown) {
+  const parsedV1 = companyPageSchema.safeParse(value);
+  if (parsedV1.success) return { page: parsedV1.data, items: parsedV1.data.handoffs.map(parseCompanyHandoff) };
+  const parsedV2 = companyPageV2Schema.safeParse(value);
+  if (!parsedV2.success) throw new JarvisError("COMPANY_HANDOFF_INVALID");
+  return { page: parsedV2.data, items: parsedV2.data.handoffs.map(parseCompanyHandoffV2) };
+}
+
 export function importCompanyPage(db: AuthorityDb, value: unknown, context: CompanyContext, now = new Date()) {
-  const parsed = companyPageSchema.safeParse(value);
-  if (!parsed.success || !Number.isFinite(now.getTime())) throw new JarvisError("COMPANY_HANDOFF_INVALID");
-  const page = parsed.data;
-  const items = page.handoffs.map(parseCompanyHandoff);
+  if (!Number.isFinite(now.getTime())) throw new JarvisError("COMPANY_HANDOFF_INVALID");
+  const loaded = loadCompanyPage(value);
+  const page = loaded.page;
+  const items = loaded.items;
   const control = new ControlPlane(db);
   return db.db.transaction(() => {
     let imported = 0; let duplicate = 0; let superseded = 0;
@@ -99,7 +108,8 @@ export async function pullCompanyCandidates(db: AuthorityDb, client: CompanyClie
   }
   assertCompanyKeySeparation(db, client);
   const value = await client.call("handoff", { limit, offset }, clock());
-  const page = companyPageSchema.safeParse(value);
+  const parsedV1 = companyPageSchema.safeParse(value);
+  const page = parsedV1.success ? parsedV1 : companyPageV2Schema.safeParse(value);
   if (!page.success || page.data.limit !== limit || page.data.offset !== offset) throw new JarvisError("COMPANY_HANDOFF_INVALID");
   return importCompanyPage(db, page.data, client.context, clock());
 }

@@ -1,9 +1,9 @@
 import { chmodSync, closeSync, fsyncSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, statSync, writeFileSync } from "node:fs";
-import { homedir } from "node:os";
+import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
 export function createTestEnvironment(env = process.env) {
-  const base = env.TMPDIR || join(homedir(), ".cache", "orca-jarvis", "tests");
+  const base = env.TMPDIR || tmpdir();
   let root;
   try {
     if (!isAbsolute(base)) throw new Error("absolute path required");

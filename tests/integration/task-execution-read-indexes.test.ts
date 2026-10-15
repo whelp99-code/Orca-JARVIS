@@ -46,7 +46,11 @@ it("upgrades populated history without changing rows and indexes all three live 
     const before = snapshot();
     db.close(); db = new AuthorityDb(join(root, "authority.sqlite"), resolve("migrations"));
     await db.migrate(); await db.migrate();
-    expect(snapshot()).toEqual(before);
+    const expectedSnapshot = before.map((rows, table) => table === 0 ? rows.map(row => {
+      if (row === null || typeof row !== "object") throw new Error("expected a historical control row");
+      return { ...row, schema_version: 1 };
+    }) : rows);
+    expect(snapshot()).toEqual(expectedSnapshot);
     expect(db.db.prepare("PRAGMA foreign_key_check").all()).toEqual([]);
     expect(db.db.prepare("PRAGMA quick_check").get()).toEqual({ quick_check: "ok" });
     const expected = ["workflow_runs_task_page", "control_task_execution_page", "control_workflow_start_run"];

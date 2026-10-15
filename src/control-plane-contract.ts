@@ -5,10 +5,8 @@ import { base64url, unbase64url } from "./receipt.js";
 export type ActionLevel = 0 | 1 | 2 | 3 | 4 | 5;
 export type ControlCommandState = "pending" | "approved" | "rejected" | "claimed" | "completed" | "failed" | "uncertain" | "cancelled";
 
-export interface ControlCommandRequestInput {
-  schema_version: 1;
+interface ControlCommandRequestFields {
   request_id: string;
-  action: string;
   action_level: ActionLevel;
   target: Record<string, unknown>;
   args: Record<string, unknown>;
@@ -19,10 +17,14 @@ export interface ControlCommandRequestInput {
   nonce: string;
 }
 
-export interface StoredControlCommand extends ControlCommandRequestInput {
+export type ControlCommandRequestInput =
+  | (ControlCommandRequestFields & { schema_version: 1; action: string })
+  | (ControlCommandRequestFields & { schema_version: 2; action: "company.candidate.transition" });
+
+export type StoredControlCommand = ControlCommandRequestInput & {
   command_digest: string;
   state: ControlCommandState;
-}
+};
 
 export interface CommandApprovalReceipt {
   schema_version: 1;

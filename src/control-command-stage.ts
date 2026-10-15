@@ -10,17 +10,21 @@ import { assertTaskWorkLineage } from "./task-work-lineage-binding.js";
 import { parseTaskExecutionPlan } from "./task-execution-plan.js";
 import { readControlCommand } from "./control-command-read.js";
 import { parseCompanyCommand } from "./company-candidate-contract.js";
+import { parseCompanyCommandV2 } from "./company-candidate-v2-contract.js";
 function finiteDate(date: Date, code: string): number { const time = date.getTime(); if (!Number.isFinite(time)) throw new JarvisError(code); return time; }
 function finiteIso(value: string): number { const time = Date.parse(value); return Number.isFinite(time) ? time : Number.NaN; }
 
 export function stageControlCommand(authority: AuthorityDb, input: ControlCommandRequestInput, now: Date,
   emit: (event: ControlEventInput) => void): StoredControlCommand { const nowMs = finiteDate(now, "CONTROL_COMMAND_INVALID");
-    const requested = finiteIso(input.requested_at); const expires = finiteIso(input.expires_at); if ( input.schema_version !== 1 ||
+    const requested = finiteIso(input.requested_at); const expires = finiteIso(input.expires_at); if ( (input.schema_version !== 1 && !(input.schema_version === 2 && input.action === "company.candidate.transition")) ||
       !nonempty(input.request_id) || !nonempty(input.action) || !Number.isInteger(input.action_level) || input.action_level < 0 || input.action_level > 5 ||
       !isRecord(input.target) || !isRecord(input.args) || typeof input.reversible !== "boolean" || !nonempty(input.requested_by) || !nonempty(input.nonce) ||
       !Number.isFinite(requested) || !Number.isFinite(expires) || requested > nowMs || expires <= nowMs || expires <= requested ||
-      expires - requested > 24 * 60 * 60_000 ) throw new JarvisError("CONTROL_COMMAND_INVALID"); validateControlAction(input);
-    if (input.action === "company.candidate.transition") parseCompanyCommand(input);
+      expires - requested > 24 * 60 * 60_000 ) throw new JarvisError("CONTROL_COMMAND_INVALID"); if (input.action === "company.candidate.transition" && input.schema_version === 2) parseCompanyCommandV2(input, now);
+    else {
+      validateControlAction(input);
+      if (input.action === "company.candidate.transition") parseCompanyCommand(input);
+    }
     const irreversible = ["company.candidate.transition", "memory.outbox.dispatch", "memory.outbox.abandon-not-delivered", "memory.delete",
       "memory.export", "memory.generation.rollback", "external.delegate"];
     if (irreversible.includes(input.action) && input.reversible) throw new JarvisError("CONTROL_COMMAND_INVALID");
@@ -53,10 +57,10 @@ export function stageControlCommand(authority: AuthorityDb, input: ControlComman
       authority.db .prepare(
           `INSERT INTO control_command_requests(
             request_id,action,action_level,target_json,args_json,command_digest,reversible,
-            requested_by,requested_at,expires_at,nonce,state,created_at
-          ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)`,
+            requested_by,requested_at,expires_at,nonce,state,created_at,schema_version
+          ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)`,
         ) .run( input.request_id, input.action, input.action_level, targetJson, argsJson, digest, input.reversible ? 1 : 0, input.requested_by,
-          input.requested_at, input.expires_at, input.nonce, "pending", at, ); emit({ event_id: `evt:${input.request_id}:requested`,
+          input.requested_at, input.expires_at, input.nonce, "pending", at, input.schema_version, ); emit({ event_id: `evt:${input.request_id}:requested`,
         event_type: "control.command.requested", source: "jarvis-control-plane", subject: input.request_id, correlation_id: input.request_id,
         payload: { action: input.action, action_level: input.action_level, command_digest: digest }, created_at: at, });
     return { ...input, command_digest: digest, state: "pending" }; }).immediate(); }

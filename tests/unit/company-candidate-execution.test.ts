@@ -61,7 +61,7 @@ describe("restricted company candidate executor", () => {
     const operations: string[] = [];
     try {
       const client = companyClient(async operation => {
-        if (operation === "handoff") throw new Error("unexpected handoff");
+        if (operation === "handoff" || operation === "read_transition_receipt") throw new Error("unexpected legacy operation");
         operations.push(operation);
         return companyReceipt(live.proposal.command.request_id, operation);
       });
@@ -114,7 +114,7 @@ describe("restricted company candidate executor", () => {
     try {
       const client = companyClient(async (operation) => {
         operations.push(operation);
-        if (operation === "handoff") throw new Error("unexpected handoff");
+        if (operation === "handoff" || operation === "read_transition_receipt") throw new Error("unexpected legacy operation");
         return companyReceipt(live.proposal.command.request_id, operation);
       });
       const executor = new CompanyCandidateExecutor(live.db, client, completed, () => COMPANY_NOW);

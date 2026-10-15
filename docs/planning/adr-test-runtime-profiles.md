@@ -7,7 +7,10 @@ GUI를 제외한 계약·오류·소스 검사는 기본 backend 검증에 남�
 테스트 프로필·제외 경로는 중앙 구성에 두고 unit/integration/전체 backend/dashboard/GUI 명령을 제공한다.
 호출마다 쓰기·읽기를 확인한 private 임시 루트를 만들고 자식 프로세스에 전달한다.
 명시 TMPDIR는 이미 존재하는 절대 디렉터리여야 하며, 유효하지 않으면 다른 곳으로 바꾸지 않는다.
-기본 경로는 `~/.cache/orca-jarvis/tests`다. 각 run 디렉터리는 0700이며 실제 4 KiB 쓰기·fsync·읽기 비교 후 사용한다.
+기본 경로는 OS의 `os.tmpdir()`다. 각 run 디렉터리는 0700이며 실제 4 KiB 쓰기·fsync·읽기 비교 후 사용한다.
+2026-10-15 보완: home의 btrfs 디렉터리 link-count가 고정 provider fixture의 안전 조건과 맞지 않아 home cache 기본값을 없앴다.
+같은 home scratch의 migration·rebuild 시험도 CI의 기본 5초 예산을 초과했다.
+명시 TMPDIR는 그대로 존중하며 provider 안전 조건이나 시험 timeout은 완화하지 않는다.
 외부 runner의 AbortController는 TERM→1초 뒤 KILL을 전달한다. 내부 helper는 Vitest 종료 처리보다 먼저
 자신이 생성한 별도 그룹을 정리한다. 정상 종료·실패·시간 초과·SIGTERM/SIGINT 후 임시 루트를 제거한다.
 Linux headless의 PID namespace를 제외하면 최상위 SIGKILL·호스트 종료까지 정리를 보장하지 않는다.

@@ -1,4 +1,5 @@
 import type { AuthorityDb } from "./db.js";
+import { JarvisError } from "./jarvis-error.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import type { ActionLevel, ControlCommandState, StoredControlCommand } from "./control-plane-contract.js";
 import { visibleTaskWorkLineage, withVisibleControlCommandReader } from "./task-work-lineage-visibility.js";
@@ -34,8 +35,10 @@ function visibleCommand(row: Record<string, unknown>, projections: MemoryProject
 }
 
 export function decodeStoredControlCommand(row: Record<string, unknown>): StoredControlCommand {
-  return {
-    schema_version: 1, request_id: String(row.request_id), action: String(row.action),
+  const action = String(row.action);
+  const schemaVersion = Number(row.schema_version);
+  const stored = {
+    request_id: String(row.request_id), action,
     action_level: Number(row.action_level) as ActionLevel,
     target: JSON.parse(String(row.target_json)) as Record<string, unknown>,
     args: JSON.parse(String(row.args_json)) as Record<string, unknown>,
@@ -43,4 +46,9 @@ export function decodeStoredControlCommand(row: Record<string, unknown>): Stored
     requested_by: String(row.requested_by), requested_at: String(row.requested_at),
     expires_at: String(row.expires_at), nonce: String(row.nonce), state: String(row.state) as ControlCommandState,
   };
+  if (schemaVersion === 2 && action === "company.candidate.transition") {
+    return { ...stored, schema_version: 2, action: "company.candidate.transition" };
+  }
+  if (schemaVersion !== 1) throw new JarvisError("CONTROL_COMMAND_INVALID");
+  return { ...stored, schema_version: 1 };
 }
