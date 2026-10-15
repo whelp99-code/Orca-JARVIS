@@ -1,0 +1,1225 @@
+{
+  "schema_version": 1,
+  "fixture_id": "TEST_ONLY_company_approver_v2",
+  "test_only": true,
+  "production_activation": "disabled",
+  "freshness_provider": {
+    "schema_version": 2,
+    "kind": "unconfigured"
+  },
+  "expected_unconfigured_error": {
+    "schema_version": 2,
+    "outcome": "error",
+    "code": "COMPANY_FRESHNESS_REQUIRED"
+  },
+  "unconfigured_progress_responses": {
+    "reserve_progress": {
+      "schema_version": 2,
+      "outcome": "error",
+      "code": "COMPANY_FRESHNESS_REQUIRED"
+    },
+    "finish_progress": {
+      "schema_version": 2,
+      "outcome": "error",
+      "code": "COMPANY_FRESHNESS_REQUIRED"
+    }
+  },
+  "command_validity": {
+    "command_ref": "/command",
+    "required_duration_ms": 86400000,
+    "validity_rule": "requested_at <= now < expires_at",
+    "cases": [
+      {
+        "name": "before_requested_at",
+        "now": "2026-10-14T23:59:59.999Z",
+        "expected_valid": false
+      },
+      {
+        "name": "at_requested_at",
+        "now": "2026-10-15T00:00:00.000Z",
+        "expected_valid": true
+      },
+      {
+        "name": "before_expires_at",
+        "now": "2026-10-15T23:59:59.999Z",
+        "expected_valid": true
+      },
+      {
+        "name": "at_expires_at",
+        "now": "2026-10-16T00:00:00.000Z",
+        "expected_valid": false
+      },
+      {
+        "name": "after_expires_at",
+        "now": "2026-10-16T00:00:00.001Z",
+        "expected_valid": false
+      }
+    ]
+  },
+  "read_freshness": {
+    "request": {
+      "schema_version": 2,
+      "scope": {
+        "provider_instance_id": "provider:TEST_ONLY",
+        "workspace_id": "11111111-1111-4111-8111-111111111111"
+      },
+      "installation_id": "installation:TEST_ONLY",
+      "challenge": "challenge:TEST_ONLY:read-freshness:0001",
+      "observed_checkpoint": {
+        "operational_epoch": 1,
+        "approval_policy_version": 1,
+        "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770",
+        "revocation_sequence": 0,
+        "revocation_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stores": {
+          "jarvis": {
+            "receipt_sequence": 0,
+            "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "terminal_sequence": 0,
+            "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "deletion_sequence": 0,
+            "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "second_brain": {
+            "receipt_sequence": 0,
+            "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "terminal_sequence": 0,
+            "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "deletion_sequence": 0,
+            "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        "intent_sequence": 0,
+        "intent_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "response": {
+      "schema_version": 2,
+      "scope": {
+        "provider_instance_id": "provider:TEST_ONLY",
+        "workspace_id": "11111111-1111-4111-8111-111111111111"
+      },
+      "challenge": "challenge:TEST_ONLY:read-freshness:0001",
+      "status": "unavailable",
+      "checkpoint": null
+    }
+  },
+  "test_only_memory": {
+    "test_only": true,
+    "production_config_selectable": false,
+    "factory_input": {
+      "scope": {
+        "provider_instance_id": "provider:TEST_ONLY",
+        "workspace_id": "11111111-1111-4111-8111-111111111111"
+      },
+      "initial_checkpoint": {
+        "operational_epoch": 1,
+        "approval_policy_version": 1,
+        "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770",
+        "revocation_sequence": 0,
+        "revocation_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+        "stores": {
+          "jarvis": {
+            "receipt_sequence": 0,
+            "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "terminal_sequence": 0,
+            "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "deletion_sequence": 0,
+            "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "second_brain": {
+            "receipt_sequence": 0,
+            "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "terminal_sequence": 0,
+            "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "deletion_sequence": 0,
+            "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        "intent_sequence": 0,
+        "intent_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+      }
+    },
+    "cases": [
+      {
+        "name": "ready",
+        "operation": "read_freshness",
+        "request": {
+          "schema_version": 2,
+          "scope": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111"
+          },
+          "installation_id": "installation:TEST_ONLY",
+          "challenge": "challenge:TEST_ONLY:read-freshness:0001",
+          "observed_checkpoint": {
+            "operational_epoch": 1,
+            "approval_policy_version": 1,
+            "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770",
+            "revocation_sequence": 0,
+            "revocation_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stores": {
+              "jarvis": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "second_brain": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            },
+            "intent_sequence": 0,
+            "intent_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        "response": {
+          "schema_version": 2,
+          "scope": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111"
+          },
+          "challenge": "challenge:TEST_ONLY:read-freshness:0001",
+          "status": "ready",
+          "checkpoint": {
+            "operational_epoch": 1,
+            "approval_policy_version": 1,
+            "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770",
+            "revocation_sequence": 0,
+            "revocation_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stores": {
+              "jarvis": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "second_brain": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            },
+            "intent_sequence": 0,
+            "intent_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        }
+      },
+      {
+        "name": "reserve_winner",
+        "operation": "reserve_progress",
+        "request": {
+          "schema_version": 2,
+          "scope": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111"
+          },
+          "operation_id": "sha256:e52dd4288c2c6a153e8b9953f8ecb622bcf1268e198545f8e0ea24e5cf4d9c13",
+          "operation": "accept",
+          "expected_checkpoint": {
+            "operational_epoch": 1,
+            "approval_policy_version": 1,
+            "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770",
+            "revocation_sequence": 0,
+            "revocation_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stores": {
+              "jarvis": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "second_brain": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            },
+            "intent_sequence": 0,
+            "intent_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "event_digest": "sha256:ec81cc4a19105f9d87d9cc9d75dc64a9e3c9ba2a6860d4496b90dd24c953ee14",
+          "challenge": "challenge:TEST_ONLY:reserve:0001"
+        },
+        "response": {
+          "schema_version": 2,
+          "scope": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111"
+          },
+          "challenge": "challenge:TEST_ONLY:reserve:0001",
+          "outcome": "reserved",
+          "checkpoint": {
+            "operational_epoch": 1,
+            "approval_policy_version": 1,
+            "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770",
+            "revocation_sequence": 0,
+            "revocation_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stores": {
+              "jarvis": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "second_brain": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            },
+            "intent_sequence": 1,
+            "intent_root": "sha256:15bfb50592c65f5ff87ab6d75613be5ad4ebb58437157f44fa7b6bfb6e1d1754"
+          },
+          "reservation_id": "reservation:TEST_ONLY:e52dd4288c2c6a153e8b9953f8ecb622bcf1268e198545f8e0ea24e5cf4d9c13"
+        }
+      },
+      {
+        "name": "unfinished_reservation",
+        "operation": "read_freshness",
+        "request": {
+          "schema_version": 2,
+          "scope": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111"
+          },
+          "installation_id": "installation:TEST_ONLY",
+          "challenge": "challenge:TEST_ONLY:memory:unfinished",
+          "observed_checkpoint": {
+            "operational_epoch": 1,
+            "approval_policy_version": 1,
+            "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770",
+            "revocation_sequence": 0,
+            "revocation_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stores": {
+              "jarvis": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "second_brain": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            },
+            "intent_sequence": 1,
+            "intent_root": "sha256:15bfb50592c65f5ff87ab6d75613be5ad4ebb58437157f44fa7b6bfb6e1d1754"
+          }
+        },
+        "response": {
+          "schema_version": 2,
+          "scope": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111"
+          },
+          "challenge": "challenge:TEST_ONLY:memory:unfinished",
+          "status": "uncertain",
+          "checkpoint": null
+        }
+      },
+      {
+        "name": "already_reserved",
+        "operation": "reserve_progress",
+        "request": {
+          "schema_version": 2,
+          "scope": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111"
+          },
+          "operation_id": "sha256:e52dd4288c2c6a153e8b9953f8ecb622bcf1268e198545f8e0ea24e5cf4d9c13",
+          "operation": "accept",
+          "expected_checkpoint": {
+            "operational_epoch": 1,
+            "approval_policy_version": 1,
+            "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770",
+            "revocation_sequence": 0,
+            "revocation_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stores": {
+              "jarvis": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "second_brain": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            },
+            "intent_sequence": 0,
+            "intent_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "event_digest": "sha256:ec81cc4a19105f9d87d9cc9d75dc64a9e3c9ba2a6860d4496b90dd24c953ee14",
+          "challenge": "challenge:TEST_ONLY:reserve:0002"
+        },
+        "response": {
+          "schema_version": 2,
+          "scope": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111"
+          },
+          "challenge": "challenge:TEST_ONLY:reserve:0002",
+          "outcome": "already_reserved",
+          "checkpoint": {
+            "operational_epoch": 1,
+            "approval_policy_version": 1,
+            "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770",
+            "revocation_sequence": 0,
+            "revocation_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stores": {
+              "jarvis": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "second_brain": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            },
+            "intent_sequence": 1,
+            "intent_root": "sha256:15bfb50592c65f5ff87ab6d75613be5ad4ebb58437157f44fa7b6bfb6e1d1754"
+          },
+          "reservation_id": "reservation:TEST_ONLY:e52dd4288c2c6a153e8b9953f8ecb622bcf1268e198545f8e0ea24e5cf4d9c13"
+        }
+      },
+      {
+        "name": "reserve_conflict",
+        "operation": "reserve_progress",
+        "request": {
+          "schema_version": 2,
+          "scope": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111"
+          },
+          "operation_id": "sha256:98c570f8543eda27eb931143c18963767e4c5292344687a4879447f18557bfde",
+          "operation": "reject",
+          "expected_checkpoint": {
+            "operational_epoch": 1,
+            "approval_policy_version": 1,
+            "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770",
+            "revocation_sequence": 0,
+            "revocation_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stores": {
+              "jarvis": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "second_brain": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            },
+            "intent_sequence": 0,
+            "intent_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "event_digest": "sha256:ec81cc4a19105f9d87d9cc9d75dc64a9e3c9ba2a6860d4496b90dd24c953ee14",
+          "challenge": "challenge:TEST_ONLY:reserve:0003"
+        },
+        "response": {
+          "schema_version": 2,
+          "scope": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111"
+          },
+          "challenge": "challenge:TEST_ONLY:reserve:0003",
+          "outcome": "conflict",
+          "checkpoint": null,
+          "reservation_id": null
+        }
+      },
+      {
+        "name": "finish_winner",
+        "operation": "finish_progress",
+        "request": {
+          "schema_version": 2,
+          "scope": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111"
+          },
+          "operation_id": "sha256:e52dd4288c2c6a153e8b9953f8ecb622bcf1268e198545f8e0ea24e5cf4d9c13",
+          "reservation_id": "reservation:TEST_ONLY:e52dd4288c2c6a153e8b9953f8ecb622bcf1268e198545f8e0ea24e5cf4d9c13",
+          "expected_checkpoint": {
+            "operational_epoch": 1,
+            "approval_policy_version": 1,
+            "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770",
+            "revocation_sequence": 0,
+            "revocation_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stores": {
+              "jarvis": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "second_brain": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            },
+            "intent_sequence": 1,
+            "intent_root": "sha256:15bfb50592c65f5ff87ab6d75613be5ad4ebb58437157f44fa7b6bfb6e1d1754"
+          },
+          "evidence_digest": "sha256:ea8e48be82bb9d3d9b6dea981b1234122d1d43760729b585f54c5bfc8fa4ed55",
+          "terminal_state": "accepted",
+          "challenge": "challenge:TEST_ONLY:finish:0001"
+        },
+        "response": {
+          "schema_version": 2,
+          "scope": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111"
+          },
+          "challenge": "challenge:TEST_ONLY:finish:0001",
+          "outcome": "recorded",
+          "checkpoint": {
+            "operational_epoch": 1,
+            "approval_policy_version": 1,
+            "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770",
+            "revocation_sequence": 0,
+            "revocation_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stores": {
+              "jarvis": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "second_brain": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            },
+            "intent_sequence": 2,
+            "intent_root": "sha256:d2ff4df0bdb5470bf96f63e5cc4d6356d0e9659aac52e0137a3b5595a54b08c5"
+          }
+        }
+      },
+      {
+        "name": "already_recorded",
+        "operation": "finish_progress",
+        "request": {
+          "schema_version": 2,
+          "scope": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111"
+          },
+          "operation_id": "sha256:e52dd4288c2c6a153e8b9953f8ecb622bcf1268e198545f8e0ea24e5cf4d9c13",
+          "reservation_id": "reservation:TEST_ONLY:e52dd4288c2c6a153e8b9953f8ecb622bcf1268e198545f8e0ea24e5cf4d9c13",
+          "expected_checkpoint": {
+            "operational_epoch": 1,
+            "approval_policy_version": 1,
+            "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770",
+            "revocation_sequence": 0,
+            "revocation_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stores": {
+              "jarvis": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "second_brain": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            },
+            "intent_sequence": 1,
+            "intent_root": "sha256:15bfb50592c65f5ff87ab6d75613be5ad4ebb58437157f44fa7b6bfb6e1d1754"
+          },
+          "evidence_digest": "sha256:ea8e48be82bb9d3d9b6dea981b1234122d1d43760729b585f54c5bfc8fa4ed55",
+          "terminal_state": "accepted",
+          "challenge": "challenge:TEST_ONLY:finish:0002"
+        },
+        "response": {
+          "schema_version": 2,
+          "scope": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111"
+          },
+          "challenge": "challenge:TEST_ONLY:finish:0002",
+          "outcome": "already_recorded",
+          "checkpoint": {
+            "operational_epoch": 1,
+            "approval_policy_version": 1,
+            "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770",
+            "revocation_sequence": 0,
+            "revocation_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stores": {
+              "jarvis": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "second_brain": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            },
+            "intent_sequence": 2,
+            "intent_root": "sha256:d2ff4df0bdb5470bf96f63e5cc4d6356d0e9659aac52e0137a3b5595a54b08c5"
+          }
+        }
+      },
+      {
+        "name": "finish_conflict",
+        "operation": "finish_progress",
+        "request": {
+          "schema_version": 2,
+          "scope": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111"
+          },
+          "operation_id": "sha256:e52dd4288c2c6a153e8b9953f8ecb622bcf1268e198545f8e0ea24e5cf4d9c13",
+          "reservation_id": "reservation:TEST_ONLY:e52dd4288c2c6a153e8b9953f8ecb622bcf1268e198545f8e0ea24e5cf4d9c13",
+          "expected_checkpoint": {
+            "operational_epoch": 1,
+            "approval_policy_version": 1,
+            "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770",
+            "revocation_sequence": 0,
+            "revocation_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stores": {
+              "jarvis": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "second_brain": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            },
+            "intent_sequence": 1,
+            "intent_root": "sha256:15bfb50592c65f5ff87ab6d75613be5ad4ebb58437157f44fa7b6bfb6e1d1754"
+          },
+          "evidence_digest": "sha256:df9841e27db13feefe85398996dff516de9607dd7aa632bc27156a237b8342f9",
+          "terminal_state": "accepted",
+          "challenge": "challenge:TEST_ONLY:finish:0003"
+        },
+        "response": {
+          "schema_version": 2,
+          "scope": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111"
+          },
+          "challenge": "challenge:TEST_ONLY:finish:0003",
+          "outcome": "conflict",
+          "checkpoint": null
+        }
+      },
+      {
+        "name": "stale_read",
+        "operation": "read_freshness",
+        "request": {
+          "schema_version": 2,
+          "scope": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111"
+          },
+          "installation_id": "installation:TEST_ONLY",
+          "challenge": "challenge:TEST_ONLY:read-freshness:0002",
+          "observed_checkpoint": {
+            "operational_epoch": 1,
+            "approval_policy_version": 1,
+            "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770",
+            "revocation_sequence": 0,
+            "revocation_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stores": {
+              "jarvis": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "second_brain": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            },
+            "intent_sequence": 0,
+            "intent_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          }
+        },
+        "response": {
+          "schema_version": 2,
+          "scope": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111"
+          },
+          "challenge": "challenge:TEST_ONLY:read-freshness:0002",
+          "status": "mismatch",
+          "checkpoint": null
+        }
+      },
+      {
+        "name": "ready_after_finish",
+        "operation": "read_freshness",
+        "request": {
+          "schema_version": 2,
+          "scope": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111"
+          },
+          "installation_id": "installation:TEST_ONLY",
+          "challenge": "challenge:TEST_ONLY:memory:finished",
+          "observed_checkpoint": {
+            "operational_epoch": 1,
+            "approval_policy_version": 1,
+            "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770",
+            "revocation_sequence": 0,
+            "revocation_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stores": {
+              "jarvis": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "second_brain": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            },
+            "intent_sequence": 2,
+            "intent_root": "sha256:d2ff4df0bdb5470bf96f63e5cc4d6356d0e9659aac52e0137a3b5595a54b08c5"
+          }
+        },
+        "response": {
+          "schema_version": 2,
+          "scope": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111"
+          },
+          "challenge": "challenge:TEST_ONLY:memory:finished",
+          "status": "ready",
+          "checkpoint": {
+            "operational_epoch": 1,
+            "approval_policy_version": 1,
+            "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770",
+            "revocation_sequence": 0,
+            "revocation_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "stores": {
+              "jarvis": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              },
+              "second_brain": {
+                "receipt_sequence": 0,
+                "receipt_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "terminal_sequence": 0,
+                "terminal_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+                "deletion_sequence": 0,
+                "deletion_root": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+              }
+            },
+            "intent_sequence": 2,
+            "intent_root": "sha256:d2ff4df0bdb5470bf96f63e5cc4d6356d0e9659aac52e0137a3b5595a54b08c5"
+          }
+        }
+      }
+    ]
+  },
+  "test_only_key": {
+    "key_id": "TEST_ONLY_company_approver_ed25519",
+    "algorithm": "Ed25519",
+    "test_only_private_key_pkcs8_der_hex": "302e020100300506032b6570042204201128e6a16bf3d42bf05642417c605bdf24a0b09e8bb648fd9d7a85d481cfba53",
+    "test_only_public_key_spki_der_hex": "302a300506032b65700321009e9b199d38c6cb0e6149364c995c825cafb513ce1c3a08e6fa3661c67308a8fb",
+    "public_key_fingerprint": "sha256:a25400cdf0e34bc5d7e72779f9100f42d6ea87d2ee2616186626828fe3c20e0f"
+  },
+  "binding": {
+    "provider_instance_id": "provider:TEST_ONLY",
+    "workspace_id": "11111111-1111-4111-8111-111111111111",
+    "owner": "principal:mail-ms",
+    "processor_principal_id": "principal:company-candidate-processor",
+    "approver_principal_id": "principal:owner",
+    "approval_policy_version": 1,
+    "wire_revision": 2,
+    "approver_keys": [
+      {
+        "key_id": "TEST_ONLY_company_approver_ed25519",
+        "algorithm": "Ed25519",
+        "purpose": "decision",
+        "public_key_fingerprint": "sha256:a25400cdf0e34bc5d7e72779f9100f42d6ea87d2ee2616186626828fe3c20e0f"
+      }
+    ]
+  },
+  "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770",
+  "handoff_key": "company-handoff:v2:476efd8c4d12034b0a63cee341847947cc119ae1e68090c18ca092b7f0272c33",
+  "command": {
+    "schema_version": 2,
+    "request_id": "company-handoff:v2:476efd8c4d12034b0a63cee341847947cc119ae1e68090c18ca092b7f0272c33:1",
+    "action": "company.candidate.transition",
+    "action_level": 3,
+    "target": {
+      "provider_instance_id": "provider:TEST_ONLY",
+      "workspace_id": "11111111-1111-4111-8111-111111111111",
+      "candidate_id": "candidate:회사:001",
+      "content_digest": "sha256:87920cd83d6f7602160691fe6bb280ae1bb8902d42fe3844f63e2891b0ddc235"
+    },
+    "args": {
+      "owner": "principal:mail-ms",
+      "projects": [
+        "project:alpha",
+        "project:beta"
+      ],
+      "policy_revision": "policy:TEST_ONLY:v1",
+      "deletion_sequence": 0,
+      "deletion_set_root": "sha256:6bc4dd546ebd5fde9c03b4b8f08133ef224a7e6e68922ba05c7ed6a259a5e102",
+      "processor_principal_id": "principal:company-candidate-processor",
+      "operations": [
+        "accept",
+        "reject",
+        "mark_processed"
+      ],
+      "approver_principal_id": "principal:owner",
+      "approval_policy_version": 1,
+      "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770"
+    },
+    "reversible": false,
+    "requested_by": "principal:mail-ms",
+    "requested_at": "2026-10-15T00:00:00.000Z",
+    "expires_at": "2026-10-16T00:00:00.000Z",
+    "nonce": "company-handoff:v2:476efd8c4d12034b0a63cee341847947cc119ae1e68090c18ca092b7f0272c33:1"
+  },
+  "command_digest": "sha256:fe65e63d77d0caebcf540e43b8dc3b39c755480946d9bf722403aaf184072b61",
+  "approval_receipt": {
+    "schema_version": 1,
+    "receipt_id": "receipt:TEST_ONLY:0001",
+    "request_id": "company-handoff:v2:476efd8c4d12034b0a63cee341847947cc119ae1e68090c18ca092b7f0272c33:1",
+    "decision": "approve",
+    "command_digest": "sha256:fe65e63d77d0caebcf540e43b8dc3b39c755480946d9bf722403aaf184072b61",
+    "signer_principal_id": "principal:owner",
+    "authenticated_session_id": "session:TEST_ONLY",
+    "key_id": "TEST_ONLY_company_approver_ed25519",
+    "algorithm": "Ed25519",
+    "issued_at": "2026-10-15T00:01:00.000Z",
+    "not_before": "2026-10-15T00:01:00.000Z",
+    "expires_at": "2026-10-15T00:31:00.000Z",
+    "nonce": "nonce:TEST_ONLY:0001",
+    "max_uses": 1,
+    "status": "issued",
+    "signature": "xo57vck92hu141eownCVs0FIHieBG7f1-jXwmRYsuTdhv5RLAxDScqpdKIzhNlsLtgR1Mf0cqSNm5Ybe8QuLBw"
+  },
+  "canonical_utf8_hex": {
+    "binding": "7b22617070726f76616c5f706f6c6963795f76657273696f6e223a312c22617070726f7665725f6b657973223a5b7b22616c676f726974686d223a2245643235353139222c226b65795f6964223a22544553545f4f4e4c595f636f6d70616e795f617070726f7665725f65643235353139222c227075626c69635f6b65795f66696e6765727072696e74223a227368613235363a61323534303063646630653334626335643765373237373966393130306634326436656138376432656532363136313836363236383238666533633230653066222c22707572706f7365223a226465636973696f6e227d5d2c22617070726f7665725f7072696e636970616c5f6964223a227072696e636970616c3a6f776e6572222c226f776e6572223a227072696e636970616c3a6d61696c2d6d73222c2270726f636573736f725f7072696e636970616c5f6964223a227072696e636970616c3a636f6d70616e792d63616e6469646174652d70726f636573736f72222c2270726f76696465725f696e7374616e63655f6964223a2270726f76696465723a544553545f4f4e4c59222c22776972655f7265766973696f6e223a322c22776f726b73706163655f6964223a2231313131313131312d313131312d343131312d383131312d313131313131313131313131227d",
+    "command": "7b22616374696f6e223a22636f6d70616e792e63616e6469646174652e7472616e736974696f6e222c22616374696f6e5f6c6576656c223a332c2261726773223a7b22617070726f76616c5f62696e64696e675f646967657374223a227368613235363a35653166633663303638613136333465303337343239646163353865303733623934373935633633656332623366613666343066663539306164323962373730222c22617070726f76616c5f706f6c6963795f76657273696f6e223a312c22617070726f7665725f7072696e636970616c5f6964223a227072696e636970616c3a6f776e6572222c2264656c6574696f6e5f73657175656e6365223a302c2264656c6574696f6e5f7365745f726f6f74223a227368613235363a36626334646435343665626435666465396330336234623866303831333365663232346137653665363839323262613035633765643661323539613565313032222c226f7065726174696f6e73223a5b22616363657074222c2272656a656374222c226d61726b5f70726f636573736564225d2c226f776e6572223a227072696e636970616c3a6d61696c2d6d73222c22706f6c6963795f7265766973696f6e223a22706f6c6963793a544553545f4f4e4c593a7631222c2270726f636573736f725f7072696e636970616c5f6964223a227072696e636970616c3a636f6d70616e792d63616e6469646174652d70726f636573736f72222c2270726f6a65637473223a5b2270726f6a6563743a616c706861222c2270726f6a6563743a62657461225d7d2c22657870697265735f6174223a22323032362d31302d31365430303a30303a30302e3030305a222c226e6f6e6365223a22636f6d70616e792d68616e646f66663a76323a343736656664386334643132303334623061363363656533343138343739343763633131396165316536383039306331386361303932623766303237326333333a31222c22726571756573745f6964223a22636f6d70616e792d68616e646f66663a76323a343736656664386334643132303334623061363363656533343138343739343763633131396165316536383039306331386361303932623766303237326333333a31222c227265717565737465645f6174223a22323032362d31302d31355430303a30303a30302e3030305a222c227265717565737465645f6279223a227072696e636970616c3a6d61696c2d6d73222c2272657665727369626c65223a66616c73652c22736368656d615f76657273696f6e223a322c22746172676574223a7b2263616e6469646174655f6964223a2263616e6469646174653aed9a8cec82ac3a303031222c22636f6e74656e745f646967657374223a227368613235363a38373932306364383364366637363032313630363931666536626232383061653162623839303264343266653338343466363365323839316230646463323335222c2270726f76696465725f696e7374616e63655f6964223a2270726f76696465723a544553545f4f4e4c59222c22776f726b73706163655f6964223a2231313131313131312d313131312d343131312d383131312d313131313131313131313131227d7d",
+    "unsigned_approval": "7b22616c676f726974686d223a2245643235353139222c2261757468656e746963617465645f73657373696f6e5f6964223a2273657373696f6e3a544553545f4f4e4c59222c22636f6d6d616e645f646967657374223a227368613235363a66653635653633643737643063616562636635343065343362386463336233396337353534383039343664396266373232343033616166313834303732623631222c226465636973696f6e223a22617070726f7665222c22657870697265735f6174223a22323032362d31302d31355430303a33313a30302e3030305a222c226973737565645f6174223a22323032362d31302d31355430303a30313a30302e3030305a222c226b65795f6964223a22544553545f4f4e4c595f636f6d70616e795f617070726f7665725f65643235353139222c226d61785f75736573223a312c226e6f6e6365223a226e6f6e63653a544553545f4f4e4c593a30303031222c226e6f745f6265666f7265223a22323032362d31302d31355430303a30313a30302e3030305a222c22726563656970745f6964223a22726563656970743a544553545f4f4e4c593a30303031222c22726571756573745f6964223a22636f6d70616e792d68616e646f66663a76323a343736656664386334643132303334623061363363656533343138343739343763633131396165316536383039306331386361303932623766303237326333333a31222c22736368656d615f76657273696f6e223a312c227369676e65725f7072696e636970616c5f6964223a227072696e636970616c3a6f776e6572222c22737461747573223a22697373756564227d"
+  },
+  "signing_bytes_hex": "6f7263612d6a61727669732f636f6d6d616e642d617070726f76616c2f7631007b22616c676f726974686d223a2245643235353139222c2261757468656e746963617465645f73657373696f6e5f6964223a2273657373696f6e3a544553545f4f4e4c59222c22636f6d6d616e645f646967657374223a227368613235363a66653635653633643737643063616562636635343065343362386463336233396337353534383039343664396266373232343033616166313834303732623631222c226465636973696f6e223a22617070726f7665222c22657870697265735f6174223a22323032362d31302d31355430303a33313a30302e3030305a222c226973737565645f6174223a22323032362d31302d31355430303a30313a30302e3030305a222c226b65795f6964223a22544553545f4f4e4c595f636f6d70616e795f617070726f7665725f65643235353139222c226d61785f75736573223a312c226e6f6e6365223a226e6f6e63653a544553545f4f4e4c593a30303031222c226e6f745f6265666f7265223a22323032362d31302d31355430303a30313a30302e3030305a222c22726563656970745f6964223a22726563656970743a544553545f4f4e4c593a30303031222c22726571756573745f6964223a22636f6d70616e792d68616e646f66663a76323a343736656664386334643132303334623061363363656533343138343739343763633131396165316536383039306331386361303932623766303237326333333a31222c22736368656d615f76657273696f6e223a312c227369676e65725f7072696e636970616c5f6964223a227072696e636970616c3a6f776e6572222c22737461747573223a22697373756564227d",
+  "transition_request_vectors": {
+    "accept": {
+      "arguments": {
+        "candidate_id": "candidate:회사:001",
+        "handoff_id": "company-handoff:v2:476efd8c4d12034b0a63cee341847947cc119ae1e68090c18ca092b7f0272c33:1",
+        "approval": {
+          "schema_version": 1,
+          "receipt_id": "receipt:TEST_ONLY:0001",
+          "request_id": "company-handoff:v2:476efd8c4d12034b0a63cee341847947cc119ae1e68090c18ca092b7f0272c33:1",
+          "decision": "approve",
+          "command_digest": "sha256:fe65e63d77d0caebcf540e43b8dc3b39c755480946d9bf722403aaf184072b61",
+          "signer_principal_id": "principal:owner",
+          "authenticated_session_id": "session:TEST_ONLY",
+          "key_id": "TEST_ONLY_company_approver_ed25519",
+          "algorithm": "Ed25519",
+          "issued_at": "2026-10-15T00:01:00.000Z",
+          "not_before": "2026-10-15T00:01:00.000Z",
+          "expires_at": "2026-10-15T00:31:00.000Z",
+          "nonce": "nonce:TEST_ONLY:0001",
+          "max_uses": 1,
+          "status": "issued",
+          "signature": "xo57vck92hu141eownCVs0FIHieBG7f1-jXwmRYsuTdhv5RLAxDScqpdKIzhNlsLtgR1Mf0cqSNm5Ybe8QuLBw"
+        }
+      },
+      "canonical_request_utf8_hex": "7b22617267756d656e7473223a7b22617070726f76616c223a7b22616c676f726974686d223a2245643235353139222c2261757468656e746963617465645f73657373696f6e5f6964223a2273657373696f6e3a544553545f4f4e4c59222c22636f6d6d616e645f646967657374223a227368613235363a66653635653633643737643063616562636635343065343362386463336233396337353534383039343664396266373232343033616166313834303732623631222c226465636973696f6e223a22617070726f7665222c22657870697265735f6174223a22323032362d31302d31355430303a33313a30302e3030305a222c226973737565645f6174223a22323032362d31302d31355430303a30313a30302e3030305a222c226b65795f6964223a22544553545f4f4e4c595f636f6d70616e795f617070726f7665725f65643235353139222c226d61785f75736573223a312c226e6f6e6365223a226e6f6e63653a544553545f4f4e4c593a30303031222c226e6f745f6265666f7265223a22323032362d31302d31355430303a30313a30302e3030305a222c22726563656970745f6964223a22726563656970743a544553545f4f4e4c593a30303031222c22726571756573745f6964223a22636f6d70616e792d68616e646f66663a76323a343736656664386334643132303334623061363363656533343138343739343763633131396165316536383039306331386361303932623766303237326333333a31222c22736368656d615f76657273696f6e223a312c227369676e6174757265223a22786f353776636b39326875313431656f776e43567330464948696542473766312d6a58776d525973755464687635524c41784453637170644b497a684e6c734c746752314d66306371534e6d355962653851754c4277222c227369676e65725f7072696e636970616c5f6964223a227072696e636970616c3a6f776e6572222c22737461747573223a22697373756564227d2c2263616e6469646174655f6964223a2263616e6469646174653aed9a8cec82ac3a303031222c2268616e646f66665f6964223a22636f6d70616e792d68616e646f66663a76323a343736656664386334643132303334623061363363656533343138343739343763633131396165316536383039306331386361303932623766303237326333333a31227d2c226f7065726174696f6e223a22616363657074227d",
+      "transition_request_digest": "sha256:73e240602722baee5efcd2c85dd540f92df995f5a4f0ccb6441a2565aba42063"
+    },
+    "reject": {
+      "arguments": {
+        "candidate_id": "candidate:회사:001",
+        "handoff_id": "company-handoff:v2:476efd8c4d12034b0a63cee341847947cc119ae1e68090c18ca092b7f0272c33:1",
+        "approval": {
+          "schema_version": 1,
+          "receipt_id": "receipt:TEST_ONLY:reject:0001",
+          "request_id": "company-handoff:v2:476efd8c4d12034b0a63cee341847947cc119ae1e68090c18ca092b7f0272c33:1",
+          "decision": "reject",
+          "command_digest": "sha256:fe65e63d77d0caebcf540e43b8dc3b39c755480946d9bf722403aaf184072b61",
+          "signer_principal_id": "principal:owner",
+          "authenticated_session_id": "session:TEST_ONLY",
+          "key_id": "TEST_ONLY_company_approver_ed25519",
+          "algorithm": "Ed25519",
+          "issued_at": "2026-10-15T00:01:00.000Z",
+          "not_before": "2026-10-15T00:01:00.000Z",
+          "expires_at": "2026-10-15T00:31:00.000Z",
+          "nonce": "nonce:TEST_ONLY:reject:0001",
+          "max_uses": 1,
+          "status": "issued",
+          "signature": "SASKpvxmvKTOaPQJmu29mGyxd7sUV-MBUo3qvEoG_aZZPBhngxELj2hdvQUAIQ3x0TiPgkJmnI7OfHmoT-dxBw"
+        }
+      },
+      "canonical_request_utf8_hex": "7b22617267756d656e7473223a7b22617070726f76616c223a7b22616c676f726974686d223a2245643235353139222c2261757468656e746963617465645f73657373696f6e5f6964223a2273657373696f6e3a544553545f4f4e4c59222c22636f6d6d616e645f646967657374223a227368613235363a66653635653633643737643063616562636635343065343362386463336233396337353534383039343664396266373232343033616166313834303732623631222c226465636973696f6e223a2272656a656374222c22657870697265735f6174223a22323032362d31302d31355430303a33313a30302e3030305a222c226973737565645f6174223a22323032362d31302d31355430303a30313a30302e3030305a222c226b65795f6964223a22544553545f4f4e4c595f636f6d70616e795f617070726f7665725f65643235353139222c226d61785f75736573223a312c226e6f6e6365223a226e6f6e63653a544553545f4f4e4c593a72656a6563743a30303031222c226e6f745f6265666f7265223a22323032362d31302d31355430303a30313a30302e3030305a222c22726563656970745f6964223a22726563656970743a544553545f4f4e4c593a72656a6563743a30303031222c22726571756573745f6964223a22636f6d70616e792d68616e646f66663a76323a343736656664386334643132303334623061363363656533343138343739343763633131396165316536383039306331386361303932623766303237326333333a31222c22736368656d615f76657273696f6e223a312c227369676e6174757265223a225341534b7076786d764b544f6150514a6d7532396d47797864377355562d4d42556f337176456f475f615a5a5042686e6778454c6a326864765155414951337830546950676b4a6d6e49374f66486d6f542d64784277222c227369676e65725f7072696e636970616c5f6964223a227072696e636970616c3a6f776e6572222c22737461747573223a22697373756564227d2c2263616e6469646174655f6964223a2263616e6469646174653aed9a8cec82ac3a303031222c2268616e646f66665f6964223a22636f6d70616e792d68616e646f66663a76323a343736656664386334643132303334623061363363656533343138343739343763633131396165316536383039306331386361303932623766303237326333333a31227d2c226f7065726174696f6e223a2272656a656374227d",
+      "transition_request_digest": "sha256:8daf49ae9fb73d38d1e8320789305c9f376887bda7415ac96a7e0a11a7a881aa"
+    }
+  },
+  "terminal_state_by_operation": {
+    "decide_approve": "approved",
+    "decide_reject": "rejected",
+    "accept": "accepted",
+    "reject": "rejected",
+    "complete": "completed",
+    "mark_processed": "processed_complete",
+    "delete": "deleted"
+  },
+  "terminal_state_negative_cases": [
+    {
+      "operation": "decide_approve",
+      "terminal_state": "accepted",
+      "expected_valid": false
+    },
+    {
+      "operation": "decide_reject",
+      "terminal_state": "accepted",
+      "expected_valid": false
+    },
+    {
+      "operation": "accept",
+      "terminal_state": "rejected",
+      "expected_valid": false
+    },
+    {
+      "operation": "reject",
+      "terminal_state": "accepted",
+      "expected_valid": false
+    },
+    {
+      "operation": "complete",
+      "terminal_state": "accepted",
+      "expected_valid": false
+    },
+    {
+      "operation": "mark_processed",
+      "terminal_state": "accepted",
+      "expected_valid": false
+    },
+    {
+      "operation": "delete",
+      "terminal_state": "accepted",
+      "expected_valid": false
+    },
+    {
+      "operation": "accept",
+      "terminal_state": "uncertain",
+      "expected_valid": false
+    }
+  ],
+  "approval_request_id_cases": [
+    {
+      "name": "matching_request",
+      "command_ref": "/command",
+      "approval": {
+        "schema_version": 1,
+        "receipt_id": "receipt:TEST_ONLY:0001",
+        "request_id": "company-handoff:v2:476efd8c4d12034b0a63cee341847947cc119ae1e68090c18ca092b7f0272c33:1",
+        "decision": "approve",
+        "command_digest": "sha256:fe65e63d77d0caebcf540e43b8dc3b39c755480946d9bf722403aaf184072b61",
+        "signer_principal_id": "principal:owner",
+        "authenticated_session_id": "session:TEST_ONLY",
+        "key_id": "TEST_ONLY_company_approver_ed25519",
+        "algorithm": "Ed25519",
+        "issued_at": "2026-10-15T00:01:00.000Z",
+        "not_before": "2026-10-15T00:01:00.000Z",
+        "expires_at": "2026-10-15T00:31:00.000Z",
+        "nonce": "nonce:TEST_ONLY:0001",
+        "max_uses": 1,
+        "status": "issued",
+        "signature": "xo57vck92hu141eownCVs0FIHieBG7f1-jXwmRYsuTdhv5RLAxDScqpdKIzhNlsLtgR1Mf0cqSNm5Ybe8QuLBw"
+      },
+      "expected_valid": true
+    },
+    {
+      "name": "mismatch_with_valid_signature",
+      "command_ref": "/command",
+      "approval": {
+        "schema_version": 1,
+        "receipt_id": "receipt:TEST_ONLY:0001",
+        "request_id": "company-handoff:v2:476efd8c4d12034b0a63cee341847947cc119ae1e68090c18ca092b7f0272c33:2",
+        "decision": "approve",
+        "command_digest": "sha256:fe65e63d77d0caebcf540e43b8dc3b39c755480946d9bf722403aaf184072b61",
+        "signer_principal_id": "principal:owner",
+        "authenticated_session_id": "session:TEST_ONLY",
+        "key_id": "TEST_ONLY_company_approver_ed25519",
+        "algorithm": "Ed25519",
+        "issued_at": "2026-10-15T00:01:00.000Z",
+        "not_before": "2026-10-15T00:01:00.000Z",
+        "expires_at": "2026-10-15T00:31:00.000Z",
+        "nonce": "nonce:TEST_ONLY:0001",
+        "max_uses": 1,
+        "status": "issued",
+        "signature": "XP9lfuL9daFw0OQEORORViOIzLCJejVdYUASqhhSONyOp6jRu0iRjPT-Au-wm2xM66eTRvp0OvsU0qxt6IUDCw"
+      },
+      "expected_valid": false
+    }
+  ],
+  "generation_validation": {
+    "previous_command": {
+      "schema_version": 2,
+      "request_id": "company-handoff:v2:476efd8c4d12034b0a63cee341847947cc119ae1e68090c18ca092b7f0272c33:2",
+      "action": "company.candidate.transition",
+      "action_level": 3,
+      "target": {
+        "provider_instance_id": "provider:TEST_ONLY",
+        "workspace_id": "11111111-1111-4111-8111-111111111111",
+        "candidate_id": "candidate:회사:001",
+        "content_digest": "sha256:87920cd83d6f7602160691fe6bb280ae1bb8902d42fe3844f63e2891b0ddc235"
+      },
+      "args": {
+        "owner": "principal:mail-ms",
+        "projects": [
+          "project:alpha",
+          "project:beta"
+        ],
+        "policy_revision": "policy:TEST_ONLY:v1",
+        "deletion_sequence": 0,
+        "deletion_set_root": "sha256:6bc4dd546ebd5fde9c03b4b8f08133ef224a7e6e68922ba05c7ed6a259a5e102",
+        "processor_principal_id": "principal:company-candidate-processor",
+        "operations": [
+          "accept",
+          "reject",
+          "mark_processed"
+        ],
+        "approver_principal_id": "principal:owner",
+        "approval_policy_version": 1,
+        "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770"
+      },
+      "reversible": false,
+      "requested_by": "principal:mail-ms",
+      "requested_at": "2026-10-15T00:00:00.000Z",
+      "expires_at": "2026-10-16T00:00:00.000Z",
+      "nonce": "company-handoff:v2:476efd8c4d12034b0a63cee341847947cc119ae1e68090c18ca092b7f0272c33:2"
+    },
+    "previous_command_digest": "sha256:369040e351a5a16fccdcfa8acf58d72c9c6bdb139e751b8501e1e510c373326d",
+    "validation_time": "2026-10-16T00:00:00.000Z",
+    "cases": [
+      {
+        "name": "decreased",
+        "command": {
+          "schema_version": 2,
+          "request_id": "company-handoff:v2:476efd8c4d12034b0a63cee341847947cc119ae1e68090c18ca092b7f0272c33:1",
+          "action": "company.candidate.transition",
+          "action_level": 3,
+          "target": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111",
+            "candidate_id": "candidate:회사:001",
+            "content_digest": "sha256:87920cd83d6f7602160691fe6bb280ae1bb8902d42fe3844f63e2891b0ddc235"
+          },
+          "args": {
+            "owner": "principal:mail-ms",
+            "projects": [
+              "project:alpha",
+              "project:beta"
+            ],
+            "policy_revision": "policy:TEST_ONLY:v1",
+            "deletion_sequence": 0,
+            "deletion_set_root": "sha256:6bc4dd546ebd5fde9c03b4b8f08133ef224a7e6e68922ba05c7ed6a259a5e102",
+            "processor_principal_id": "principal:company-candidate-processor",
+            "operations": [
+              "accept",
+              "reject",
+              "mark_processed"
+            ],
+            "approver_principal_id": "principal:owner",
+            "approval_policy_version": 1,
+            "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770"
+          },
+          "reversible": false,
+          "requested_by": "principal:mail-ms",
+          "requested_at": "2026-10-16T00:00:00.000Z",
+          "expires_at": "2026-10-17T00:00:00.000Z",
+          "nonce": "company-handoff:v2:476efd8c4d12034b0a63cee341847947cc119ae1e68090c18ca092b7f0272c33:1"
+        },
+        "command_digest": "sha256:3c93182bc80ee032090bd6cf34cf15c048e1ed1280e4afb9200c860c049d5a2b",
+        "expected_valid": false
+      },
+      {
+        "name": "reused_with_changed_bytes",
+        "command": {
+          "schema_version": 2,
+          "request_id": "company-handoff:v2:476efd8c4d12034b0a63cee341847947cc119ae1e68090c18ca092b7f0272c33:2",
+          "action": "company.candidate.transition",
+          "action_level": 3,
+          "target": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111",
+            "candidate_id": "candidate:회사:001",
+            "content_digest": "sha256:87920cd83d6f7602160691fe6bb280ae1bb8902d42fe3844f63e2891b0ddc235"
+          },
+          "args": {
+            "owner": "principal:mail-ms",
+            "projects": [
+              "project:alpha",
+              "project:beta"
+            ],
+            "policy_revision": "policy:TEST_ONLY:v1",
+            "deletion_sequence": 0,
+            "deletion_set_root": "sha256:6bc4dd546ebd5fde9c03b4b8f08133ef224a7e6e68922ba05c7ed6a259a5e102",
+            "processor_principal_id": "principal:company-candidate-processor",
+            "operations": [
+              "accept",
+              "reject",
+              "mark_processed"
+            ],
+            "approver_principal_id": "principal:owner",
+            "approval_policy_version": 1,
+            "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770"
+          },
+          "reversible": false,
+          "requested_by": "principal:mail-ms",
+          "requested_at": "2026-10-16T00:00:00.000Z",
+          "expires_at": "2026-10-17T00:00:00.000Z",
+          "nonce": "company-handoff:v2:476efd8c4d12034b0a63cee341847947cc119ae1e68090c18ca092b7f0272c33:2"
+        },
+        "command_digest": "sha256:d98603dbf013a7b5378266166f0bdf4ad4afeb8e42eceb0b8cc6118a08fa9d6d",
+        "expected_valid": false
+      },
+      {
+        "name": "strictly_increased",
+        "command": {
+          "schema_version": 2,
+          "request_id": "company-handoff:v2:476efd8c4d12034b0a63cee341847947cc119ae1e68090c18ca092b7f0272c33:3",
+          "action": "company.candidate.transition",
+          "action_level": 3,
+          "target": {
+            "provider_instance_id": "provider:TEST_ONLY",
+            "workspace_id": "11111111-1111-4111-8111-111111111111",
+            "candidate_id": "candidate:회사:001",
+            "content_digest": "sha256:87920cd83d6f7602160691fe6bb280ae1bb8902d42fe3844f63e2891b0ddc235"
+          },
+          "args": {
+            "owner": "principal:mail-ms",
+            "projects": [
+              "project:alpha",
+              "project:beta"
+            ],
+            "policy_revision": "policy:TEST_ONLY:v1",
+            "deletion_sequence": 0,
+            "deletion_set_root": "sha256:6bc4dd546ebd5fde9c03b4b8f08133ef224a7e6e68922ba05c7ed6a259a5e102",
+            "processor_principal_id": "principal:company-candidate-processor",
+            "operations": [
+              "accept",
+              "reject",
+              "mark_processed"
+            ],
+            "approver_principal_id": "principal:owner",
+            "approval_policy_version": 1,
+            "approval_binding_digest": "sha256:5e1fc6c068a1634e037429dac58e073b94795c63ec2b3fa6f40ff590ad29b770"
+          },
+          "reversible": false,
+          "requested_by": "principal:mail-ms",
+          "requested_at": "2026-10-16T00:00:00.000Z",
+          "expires_at": "2026-10-17T00:00:00.000Z",
+          "nonce": "company-handoff:v2:476efd8c4d12034b0a63cee341847947cc119ae1e68090c18ca092b7f0272c33:3"
+        },
+        "command_digest": "sha256:eb58ad27515a8ba760bc3e6b8026c2560cb090022578f4ae24fc87d5fc11157f",
+        "expected_valid": true
+      }
+    ]
+  }
+}
