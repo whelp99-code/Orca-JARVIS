@@ -106,7 +106,7 @@ decision / Ed25519였다. principal:mail-ms로 주장하도록 receipt를 바꾸
 
 | 번호 | 현재 코드 지점 | 바뀐 뒤 통과 조건 |
 |---|---|---|
-| C1 | JARVIS `src/control-plane.ts:62` | 회사 action만 `receipt.signer_principal_id == fixed.approver_principal_id`; signer != processor 유지. command approver·binding version/digest가 fixed와 같은지 먼저 검사 |
+| C1 | JARVIS `src/control-plane.ts:62` (`ControlPlane.decide`) | 회사 action만 receipt signer와 조회 key principal == fixed approver; signer != processor 유지. command approver·binding version/digest 및 receipt key ID·decision 용도·실제 DER-SPKI 지문을 fixed pin과 **receipt 저장/상태 변경 전** 대조. C2로 미루지 않음 |
 | C2 | JARVIS `src/company-candidate-execution.ts:139` | `approval.signer_principal_id`와 조회 key의 `principal_id` **둘 다** fixed approver와 같음. key ID·decision 용도·공개키 지문도 등록 pin과 일치 |
 | C3 | JARVIS `src/company-candidate-execution.ts:217` (`assertNotRevoked`) | 현재 key principal == fixed approver, purpose에 decision 포함, 지문 == 등록 pin; 현재 정책/version/binding과 key/request/receipt/principal 폐기를 매 호출마다 확인 |
 | C4 | SB `sb/company_memory_handoff.py:270` (`authorize_transition`) | signer == SB의 고정 policy.approver_principal_id, key ID와 실제 공개키 지문은 고정 대표 목록에 있음. `require_enrollment`와 현재 binding 일치가 선행. accept/reject와 저장된 approve receipt를 쓰는 mark_processed 모두 적용 |
@@ -117,6 +117,11 @@ SB의 candidate owner/project/policy/deletion scope 검사도 유지한다.
 SB `owner_approval_keys`는 **key ID -> 공개키**이며 principal 레지스트리가 아니다.
 SB에서 JARVIS처럼 `key.principal_id`를 검사한다고 쓰면 안 된다.
 SB는 실제 서명의 signer 필드와 대표 전용 공개키 pin을 함께 확인한다.
+`ControlPlane.decide`는 approve와 reject 모두에서 C1의 고정 key 대조 및 기존
+서명·시간·폐기 검증이 끝나기 전에 receipt를 저장하거나 pending 상태를 바꾸지 않는다.
+같은 principal:owner의 유효한 decision key라도 회사 목록 밖이면 거절한다.
+실패 시 요청은 pending 그대로, receipt·이벤트는 생성 0, 상환은 불변이며 실제
+pinned key로 같은 요청의 후속 결정이 가능해야 한다(T17).
 기존 SB `sb/company_memory_cli.py:248-256`의
 `COMPANY_HANDOFF_KEYS_NOT_SEPARATE`는 `public_bytes_raw()` 집합끼리 대조해
 대표/Mail/processor **공개키 바이트 중복만** 거부한다. 이 검사는 유지한다.
@@ -234,7 +239,11 @@ approval policy version, 대표 key ID/Ed25519/decision 용도/공개키 지문�
 JARVIS에는 **기존** 대표 key `owner-decision-v1`의 실제 principal:owner,
 decision 용도와 같은 공개키 지문을 company scope의 승인 목록으로 pin한다.
 지문은 PEM 문자열 hash가 아니라 **DER SPKI bytes의 SHA-256**으로 정의한다.
-목록은 key ID 순으로 정렬하고 ID 중복·잘못된 algorithm은 거절한다.
+목록은 key ID 순으로 정렬하고 ID 중복·잘못된 algorithm뿐 아니라 **SPKI 지문 중복**도
+양쪽 binding 검증에서 거절한다. 다른 ID라도 같은 공개키이면 등록·활성화하지 않는다.
+한 ID만 폐기하고 같은 material의 다른 ID로 서명하는 우회를 막기 위한 불변식이다.
+현재 JARVIS registry의 공개키 중복 허용을 회사 binding의 허용으로 해석하지 않는다.
+등록/현재 pin 재확인 모두 이 검증을 적용하고 T3/T9 및 독립 T16으로 증명한다.
 SB purpose pin은 로컬 정책 항목이지 기존 principal/purpose registry라는 뜻이 아니다.
 목록에는 대표 이외 key material을 넣지 않는다.
 
@@ -427,7 +436,8 @@ T 번호는 새 파일/API가 아니라 추가할 시험 시나리오 식별자�
 | 검토 기준 | 보장해야 할 코드/저장 지점 | 구현 시험 |
 |---|---|---|
 | 최초 승인자는 운영자가 확정; 요청자가 변경 불가 | 4.1 로컬 policy/JARVIS trusted 등록 -> 양쪽 enrollment_context; Mail enrollment override 거절, C1~C4 fixed 대조 | T1 정상 최초 등록, T2 Mail/processor가 approver/key/version을 보내거나 설정을 바꾸려 하면 거절 |
-| principal·purpose·지문·키 목록 pin | JARVIS registry/C2/C3, SB 대표 전용 owner_approval_keys·policy pin·기존 공개키 바이트 분리 + 신규 key ID 충돌 거절; immutable context | T3 같은 key ID의 새 material, 다른 principal/purpose, 추가 key·shared material/ID 충돌 거절 |
+| principal·purpose·지문·키 목록 pin | JARVIS registry/C1/C2/C3, SB 대표 전용 owner_approval_keys·policy pin·기존 공개키 바이트 분리 + 신규 key ID 충돌 및 승인 목록 내부 SPKI 중복 거절; immutable context | T3 같은 key ID의 새 material, 다른 principal/purpose, 추가 key·shared material/ID 충돌 거절; T16 다른 ID/같은 SPKI 및 폐기 alias 거절 |
+| 기록 전 고정 키 검증(P1) | C1 ControlPlane.decide의 approve/reject transaction 전 fixed key ID/purpose/SPKI 대조 | T17 같은 대표 principal의 유효한 비pin key로 approve/reject 모두 거절, pending 유지·receipt/이벤트 생성0·상환 불변, 뒤이어 실제 pinned 결정 성공 |
 | 승인자·승인 정책 버전·키 pin이 서명에 묶임 | 새 strict args + binding hash + handoff ID + controlCommandDigest; SB canonical_bytes와 JARVIS canonicalize | T4 각 binding 필드 변경/유효한 공격자 서명/옛 버전 거절; T5 양 언어 동일 canonical bytes/digest |
 | 옛 policy 복원·등록 교체 차단 | 현재 context exact equality + scope별 durable 최고 version/digest/폐기 증거, 삭제 후 재등록 금지 | T6 낮은 version, 같은 version 다른 digest, 옛 context 동시 복원, 재시작 뒤 rollback 거절 |
 | 대표만 approve/reject/완료 | C1~C5와 SB270/mark_processed 원래 approve receipt; 데이터 owner/requested_by 유지 | T7 대표 accept/reject/검증된 mark_processed 성공; T8 Mail/processor/다른 signer/미등록 key/spoof 거절 |
@@ -439,7 +449,7 @@ T 번호는 새 파일/API가 아니라 추가할 시험 시나리오 식별자�
 | 인접 권한 회귀 없음 | requested_by==owner65, SB owner/project/policy/fence, 타 action owner guard·Mail receive-only | T13 기존 개인/daily/다른 회사 scope·data fence·owner/requester 거절 시험 유지 |
 | 회사2의 저장·읽기·타입/digest 왕복, 기타1 보존 | 공통 control-command-stage18/INSERT, control-command-read38/read/list, control-plane-contract 타입·digest, 실제 version 열 + identity trigger 재생성, owner-inbox327-329의 version별 args | T14 회사2 왕복/digest 같음; 기타1/과거1 inbox 혼합 조회 보존; version UPDATE/미지원 version 거절 |
 | 대표 결정(10/15 09:23:05 KST (Slack C0C6HJM0BV5:1792023785.146919, "오모냥아 진행해"), 진행): 키 교체 시 회사 승인함 일시 중지 수용, 재개 절차는 오모냥 담당 별도 과제 | SB 목록/pin 변경 -> 등록 exact mismatch -> ENROLLMENT_REQUIRED, 7절 결정 근거·전환 담당 | T9 폐기/교체 뒤 승인·수신·완료 중지; 삭제 후 재등록/구 pin 복구로 몰래 재개 불가 |
-| accept ack 유실 뒤 실제 receipt·시각 조회 | 6.4 새 processor-only read, SB 원본 receipt/decision, JARVIS 복구 저장 | T11 실제 SB commit 뒤 응답 유실·재시작·만료 후 원본 조회, 읽기 전후 mutation 0 |
+| accept/reject ack 유실 뒤 실제 receipt·시각 조회 | 6.4 새 processor-only read, SB 원본 receipt/decision, JARVIS 복구 저장 | T11 accept 및 T18 reject의 실제 SB commit 뒤 응답 유실·재시작·만료 후 원본 조회, 읽기 전후 mutation 0 |
 | 외부 verifier 회사2 wire | 6.5 config2/stdin2/응답2, execution.ts26-95와 operator 문서 | T15 실제 child/durable effect/executor/mark_processed 통합과 실패 거절 |
 
 ### 6.2 만료 후 마무리 재시도 규칙
@@ -456,7 +466,7 @@ key 폐기/pin/version/등록 검사는 건너뛰지 않는다. 현재 binding �
 마무리도 중지·조정한다. 새 approval/receipt transplant/새 command 재실행이 아니다.
 확인된 완료/거절 결과 조회는 읽기이며 이 규칙으로 새 mutation을 만들지 않는다.
 
-SB 수신 결과가 불확실하거나 로컬 accept receipt가 없으면 authoritative 상태/receipt를
+SB accept/reject 결과가 불확실하거나 로컬 transition receipt가 없으면 authoritative 상태/receipt를
 먼저 6.4의 인증된 읽기 전용 조회로 대조하고 확인 전 blind resend/자동 성공을 금지한다.
 accept만으로 processed_complete가 되지 않는다. 실제 completion verifier 결과와 정확한
 acceptance receipt 바인딩이 있어야 한다. 같은 완료 재시도는 원본 한 effect를 반환하고
@@ -474,19 +484,22 @@ acceptance receipt 바인딩이 있어야 한다. 같은 완료 재시도는 원
 |---|---|
 | T1 | legacy 0인 양쪽 동일 local pin의 최초 등록/활성화 성공; snapshot/digest/audit 일치, candidate 0건 변경 |
 | T2 | Mail/processor enrollment에 approver/key 목록/pin/version override, 자기 key를 대표로 지정, 운영자 설정 권한 시도 -> 모두 거절 |
-| T3 | 같은 key ID 다른 공개키, actual key/pin 불일치, principal 위장, purpose 비decision/누락, 비Ed25519, 중복/미등록/목록 추가 key, 대표와 Mail/processor 동일 ID 또는 material -> 모두 거절 |
+| T3 | 같은 key ID 다른 공개키, 다른 ID 같은 DER-SPKI 지문, actual key/pin 불일치, principal 위장, purpose 비decision/누락, 비Ed25519, 중복/미등록/목록 추가 key, 대표와 Mail/processor 동일 ID 또는 material -> 모두 거절 |
 | T4 | approver·approval version·key 목록·지문·purpose·binding digest 중 하나를 바꾸고 새 digest/유효 서명 생성 -> fixed 대조에서 거절; 누락/unknown args/구 schema/ID/domain도 거절 |
 | T5 | 공유 고정 JSON: 다른 object key 순서, 정렬된 key 목록, 한글/NFC, projects/정수 fence/시간/null 허용 여부를 strict 계약대로 양쪽 계산 -> canonical bytes·binding hash·handoff ID·command_digest·signature payload bytes 같음; 1필드 변경 시 다름 |
 | T6 | 설정만 변경, context만 변경, 낮은 version, 동일 version 다른 pin, 옛 설정+옛 context 복원, 삭제 후 재등록, 재시작 뒤 최고 version 소실/불일치 -> 거절/실행 미활성 |
 | T7 | 새 회사 명령2 digest에 서명한 **봉투1**의 고정 대표 receipt로 accept/reject 성공·원래 approve receipt와 실제 완료 증거로 mark_processed 성공; accepted와 processed_complete 구별, 원래 signer 기록 |
 | T8 | mail-ms/ordinary handoff key, processor, 다른 대표/legacy jm-owner, 미등록 key, 올바른 signer 필드에 다른 key, 대표 key에 다른 signer 필드 -> approve/reject/mark_processed 모두 거절 |
-| T9 | 승인 후 accept 전/accept 후 완료 전 key 교체·삭제·폐기·purpose/principal/pin/version 변경, 재시작, SB/JARVIS 다른 version -> 다음 mutation 거절; 이미 수행한 effect 보존 |
+| T9 | 승인 후 accept 전/accept 후 완료 전 key 교체·삭제·폐기·purpose/principal/pin/version 변경, 재시작, SB/JARVIS 다른 version -> 다음 mutation 거절; 한 ID 폐기 뒤 같은 SPKI의 별도 ID로 재시도도 거절; 이미 수행한 effect 보존 |
 | T10 | **옛 명령1 ID/digest의 receipt**를 새 명령2에 이식, 다른 request/후보/workspace/provider/generation/operation/binding 복사, 기존 결정의 서명 교체, 상환 receipt 새 사용 -> 거절; 봉투1 자체는 금지하지 않으며 동일 원본 재시도 effect 1회 |
 | T11 | SB accept commit 뒤 응답 유실·persistReceipt 전 crash→재시작→새 인증 read로 원본 receipt/accepted_at 복구; 만료된 동일 완료만 재개, accept 효과1회. 시간/nonce/scope/digest/권한/폐기/부재·손상·불확실이면 mutation 0; 조회 전후 DB 불변 |
 | T12 | v1 outbox·등록·JARVIS 수입/관련 control 기록 각각 1건, expired/terminal 포함; gate 직전 동시 삽입/query 실패/버전 불명/한쪽 등록 실패 -> 활성화 거절·감사·원본 유지; 0/24/27/N+동시 후보 수신 보존 |
 | T13 | owner/project/data policy/deletion fence/content/requested_by 변조, completion 누락/다른 candidate/digest/acceptance_receipt_digest, reject 후 mark_processed -> 거절; 타 action·개인/daily·Mail receive-only 회귀 통과 |
 | T14 | 실제 공통 stage/store/read/list와 재시작 후 회사2 decode/digest == 원본/저장 digest, 봉투1 signature 성공; 기타1 불변; 과거 회사1 args에 새 approver 필드가 없어도 OwnerInbox.list() 및1/2 혼합 조회 정상·identity/digest 보존; 새2 필드 검증; version UPDATE1→2/2→1 거절·원래 row/digest 불변; 다른 action2/미지원 version 거절 |
 | T15 | 실제 고정 executable에 stdin2/command2/원래 acceptance 전달→독립 durable effect·완전 응답2 검증 후에만 mark_processed; v1/변조/JSON·종료·stdin·timeout 오류는 완료0, child 종료/lease 해제/효과1회 |
+| T16 | 양쪽 binding 입력에 ID A/B와 같은 DER-SPKI 지문을 넣으면 등록/활성화 거절; fixture로 중복 pin을 주입하고 A 폐기 후 B로 유효 서명해도 C1~C4 현재 검증에서 거절, receipt/상환/효과 0. 서로 다른 ID·SPKI의 정상 목록은 허용 |
+| T17 | 실제 ControlPlane.decide에 같은 principal이지만 고정 목록에 없는 유효한 키로 approve·reject를 각각 시도 -> 요청은 pending 그대로, receipt·이벤트 생성0, 상환 불변; 그 뒤 같은 요청에 고정된 정상 키로 결정 성공. key ID/실제 SPKI 불일치·잘못된 purpose도 독립 거절. C2 실행 없이 실제 DB와 이벤트 기록/발행 경계에서 증명 |
+| T18 | 실제 SB reject commit 뒤 응답 차단·persistReceipt 전 crash→재시작→원래 approval/authority 만료 후 fresh 인증 read로 exact reject receipt/원래 결정 시각 복구; 로컬 거절 증거만 저장, reject 재전송0/효과1회/mark_processed0. accept 증거 교차·잘못된 operation/request/시각·권한/부재·손상/timeout은 불확실 유지, 조회 전후 SB DB 불변 |
 
 T14는 기존 `tests/unit/control-plane.test.ts`,
 `tests/integration/control-command-lookup.test.ts` 및
@@ -505,7 +518,7 @@ inbox 시험은 과거1/새2/혼합 행을 실제 조회해 version별 args 및 
 |---|---|
 | JARVIS company-candidate-contract / context·transport·import | required approver/version/binding·새 digest/ID, owner/source/access 값 보존, caller override 거부, 동일 export idempotency |
 | JARVIS 공통 stage/read/type/store | control-command-stage.ts18/INSERT, control-command-read.ts38/read/list, control-plane-contract.ts 타입·digest, schema_version 열/new migration +021:69 identity trigger DROP/CREATE. 회사2 왕복과 다른 action1 보존 |
-| JARVIS control-plane62 / execution139·217 | 회사 action의 signer·key principal을 fixed approver와 비교; 타 action owner guard는 동일; accept/reject와 completion 모두 |
+| JARVIS control-plane62 / execution139·217 | C1에서 receipt/state 쓰기 전 signer·key principal/ID/purpose/SPKI를 fixed와 비교; C2/C3 현재 재확인. 타 action owner guard는 동일; accept/reject와 completion 모두 |
 | JARVIS owner inbox/read model/store | owner-inbox.ts327-329·Row/query/표시 타입의 version별1/2 args 읽기와 과거1 inbox 시험 필수; receipt 실제 signer 위장 금지. 광범위 author provenance/UI 재설계는 제외 |
 | SB CompanyHandoffPolicy/ControlArguments/enrollment_context | 로컬 고정 pin·분리된 승인 version, role/key material disjoint, scope/deletion 유지, 최초 immutable 등록 증거 |
 | SB prepare_handoff/authorize_transition/store | 새 identity/digest·현재 등록/key pin 재확인·원래 receipt와 terminal 보존; legacy mapping 제외 |
@@ -531,30 +544,36 @@ inbox 시험은 과거1/새2/혼합 행을 실제 조회해 version별 args 및 
 | mark_processed에서 approver/binding/원래 receipt/실제 완료 증거 | 올바른 경우만 성공; accept만으로 완료 금지 |
 | 개인 memory/daily/다른 company scope·Mail receive-only | 기존 권한/격리 불변 |
 
-### 6.4 인증된 읽기 전용 accept receipt 조회 — 후속 P2
+### 6.4 인증된 읽기 전용 accept/reject receipt 조회 — 후속 P2
 
 현재 `src/company-candidate-transport.ts:54-85`는 handoff/accept/reject/
 mark_processed만 허용한다. 아래는 **새 구현 계약**이며 현재 조회 API가 있다는 뜻이 아니다.
-제안 operation은 `read_acceptance_receipt`, purpose는 `company_memory_receipt_read`다.
+제안 operation은 `read_transition_receipt`, purpose는 `company_memory_receipt_read`다.
+앞선 accept-only `read_acceptance_receipt` 제안을 대체하며 accept/reject 모두 지원한다.
 기존 company private broker의 processor 역할에만 추가하고 Mail/handoff·개인 memory
 권한에는 열지 않는다. transport/broker allowlist와 SB authority/CLI/read-store,
 JARVIS 복구 저장을 함께 구현한다. 새 control command나 대표 결정/상환 API가 아니다.
 
 기존 Ed25519 authority 봉투1을 사용하되 새 조회 nonce/request_digest, 짧은 TTL,
 현재 고정 provider/workspace/processor/projects/policy/삭제 fence를 검증한다.
-만료된 accept authority를 재전송하지 않는다. 요청 args는 candidate_id/handoff_id/
-operation=`accept`/accept_request_digest/command_digest/content_digest/
+만료된 accept/reject authority를 재전송하지 않는다. 요청 args는 candidate_id/handoff_id/
+operation=`accept|reject`/transition_request_digest/command_digest/content_digest/
 approval_policy_version/approval_binding_digest의 closed object다.
-원래 accept_request_digest는 보존한 실제 approval bytes와 원래 accept args로 재계산한다.
+operation은 둘 중 하나의 exact 값이다. 원래 transition_request_digest는 보존한 실제
+approval bytes와 원래 accept 또는 reject args로 재계산한다. accept는 approve,
+reject는 reject decision과 매칭하며 서로의 receipt를 대신 쓰지 않는다.
 SB는 현재 로컬 scope/binding과 processor key를 검증한 뒤 원본 receipt 및
-company_handoff_decisions의 같은 workspace/candidate/handoff/approve/request_digest를 읽는다.
-조회는 execute/accept/authorize_transition를 호출하지 않으며 후보·decision·상환·
-receipt·accepted_at·등록을 생성/변경하거나 schema를 초기화하지 않는다.
+company_handoff_decisions의 같은 workspace/candidate/handoff/decision/request_digest를 읽는다.
+조회는 execute/accept/reject/authorize_transition를 호출하지 않으며 후보·decision·상환·
+receipt·결정 시각·등록을 생성/변경하거나 schema를 초기화하지 않는다.
 
 응답2는 위 identity/binding과 outcome, lookup_nonce/lookup_request_digest를
 반드시 echo한다. found에는 원래 receipt_id/receipt_digest/operation/state/handoff_id,
-원본 snapshot의 accepted_at 및 원래 receipt_created_at을 포함한다.
-not_found는 인증/정상 조회가 끝났으나 그 행이 없는 경우에만 쓰며, 동시 accept의
+accept에는 원본 snapshot의 accepted_at, reject에는 원래 reject 결정 시각을 포함하고
+둘 다 원래 receipt_created_at을 보존한다. reject 결정 시각의 immutable 저장 필드도
+후속 계약에 명시하고 필요하면 reject 전이/receipt와 같은 transaction에 추가한다.
+조회가 기존 reject 시각을 만들거나 accept의 accepted_at으로 채우지 않는다.
+not_found는 인증/정상 조회가 끝났으나 그 행이 없는 경우에만 쓰며, 동시 accept/reject의
 영구 부재나 재전송 허가로 해석하지 않는다. 시각 부재/불명확·손상·권한 거절·
 미초기화·timeout·응답 누락은 evidence_absent/거절/uncertain으로 유지한다.
 unknown을 성공/not_found로 바꾸지 않는다.
@@ -575,16 +594,29 @@ issued_at, JARVIS redemption 또는 receipt_created_at으로 채우지 않는다
 original approval의 유효 구간과 exact 요청에 대한 수신 증거를 입증하지 못하면
 완료도 중지한다. 검증된 found를 로컬 저장한 뒤에만 6.2의 당시 승인 유효성과
 현재 key/policy/fence/폐기를 재확인하고 완료를 재개하며, accept는 다시 보내지 않는다.
+reject도 exact 원본 receipt/decision/operation 및 당시 유효성을 검증한 경우에만
+로컬 terminal 거절 증거를 복구한다. reject를 다시 보내거나 새로운 결정/상환을 만들지
+않으며 mark_processed를 호출하지 않는다. 원래 reject 시각이 없거나 불명확하면
+조회/approval issued_at/receipt_created_at/JARVIS redemption 시각으로 추정하지 않고
+불확실 상태와 격리를 유지한다. 현재 권한·binding·fence 검증도 생략하지 않는다.
 
-| 검토 기준 | 구현 지점 | 미래 T11 증거 |
+| 검토 기준 | 구현 지점 | 미래 T11/T18 증거 |
 |---|---|---|
 | 응답 유실 뒤 실제 수신 증명 | 새 read operation/purpose, SB 원본 receipt/decision, JARVIS 복구 | 실제 SB commit 뒤 응답 차단·persistReceipt 전 crash→재시작→fresh read→원래 receipt/시각 복구, accept 효과1회 |
+| reject 응답 유실도 복구 | 같은 read의 operation=reject 및 원본 reject decision/receipt/시각 | T18 실제 reject commit/crash/만료 뒤 조회, reject 재전송0·거절 효과1회·완료0; accept receipt 교차 거절 |
 | 읽기가 mutation을 숨기지 않음 | readonly store와 인증/응답 validator | 조회 전후 후보/decision/상환/receipt/시각 DB 불변; 재전송0 |
 | 잘못된 증거는 만료 연장 아님 | exact scope/request/binding/nonce와 현재 guard | 권한·폐기·fence/시각·digest·대상 변조, 부재/손상/timeout이면 완료0, original receipt/current guard 모두 보존 |
 
-T11은 in-process callback만이 아니라 실제 SB transaction과 인증 read를 통과한다.
-원래 authority/approval 만료 뒤에는 새 조회 authority로 증거만 회복한다.
+T11/T18은 in-process callback만이 아니라 실제 SB transaction과 인증 read를 통과한다.
+원래 authority/approval 만료 뒤에는 새 조회 authority로 accept/reject 증거만 회복한다.
 commit/응답 차단/프로세스 종료 이벤트를 먼저 구독하며 fixed sleep을 쓰지 않는다.
+
+추가 근거는 head `8b5f50e`의 Codex 원문
+[SPKI 중복](https://github.com/whelp99-code/Orca-JARVIS/pull/88#discussion_r4277969673),
+[C1 기록 전 검증](https://github.com/whelp99-code/Orca-JARVIS/pull/88#discussion_r4277969675),
+[reject 복구](https://github.com/whelp99-code/Orca-JARVIS/pull/88#discussion_r4277969679)다.
+심각도는 SPKI 중복 P2, C1 기록 전 검증 **P1**, reject 복구 P2다.
+각각 T16/T17/T18로 독립 검증하고 기존 T3/T9/T11을 유지·확장한다.
 
 ### 6.5 completion verifier v2 stdin·응답과 실제 subprocess — 후속 P2
 
