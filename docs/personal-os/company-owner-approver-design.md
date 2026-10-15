@@ -8,6 +8,10 @@ attempt=390e08aa-ef6c-443c-8793-5b00f265a37e.
 가재·나희의 `3297452` 검토와 운영자 관리 설정 합의안을 반영했다.
 추가로 `86a4c4e`의 나희·가재 검토 세 항목과 Codex P2 두 항목을 반영했다.
 **대표 결정(10/15 09:23:05 KST (Slack C0C6HJM0BV5:1792023785.146919, "오모냥아 진행해"), 진행): 키 교체 시 회사 승인함 일시 중지 수용, 재개 절차는 오모냥 담당 별도 과제**다.
+추가 보완: TASK-COMPANY-OWNER-DESIGN-ROLLBACK-20261015,
+attempt=e54e5c96-95b2-4753-b693-72480e636ec7. Codex P1 `4278041815` 및
+가재·나희 합의에 따라 **복원됐거나 최신성을 증명할 수 없는 설치는 회사 승인·실행
+기본 비활성**이다. 재활성화 기능은 오모냥 담당 별도 과제로 남긴다(4.3절).
 
 **추천: B — 기존 후보의 데이터 owner는 보존하고, 정책에 고정된
 `approver_principal_id`를 별도로 두어 대표 결정 권한을 묶는다.**
@@ -274,13 +278,17 @@ principal(JARVIS)/purpose/algorithm/SPKI 지문, version, scope, 등록 시각,
 거절한다. 새 key ID/목록 추가/purpose/principal 변경도 암묵적으로 허용하지 않는다.
 
 옛 설정과 옛 context를 함께 되돌리면 equality만으로 탐지할 수 없다.
-따라서 신규 등록 저장에는 scope별 **최고 확정 version과 binding digest**를
-지속 보존하고 낮은 version, 같은 version의 다른 digest, 폐기한 binding 재활성화를
-거절한다. 이 최소 신규 등록 증거는 필요하지만 legacy 이행 engine은 아니다.
+scope별 **최고 확정 version과 binding digest·폐기 기록**은 보존해야 하지만,
+그 로컬 기록까지 같은 백업으로 복원하면 monotone 검사도 통과한다.
+SB·JARVIS가 서로의 기록을 복제·교차 대조해도 **둘 다 같은 옛 백업이면 일치**하므로
+롤백 보호의 정본 증거가 아니다. 한쪽만 독립적으로 최신일 때의 불일치 탐지와
+양쪽 동시 복원 안전성을 혼동하지 않는다. 낮은 version·같은 version의 다른 digest·
+폐기 binding 거절을 약속하려면 4.3절의 기본 비활성과 최신성 검증 경계가 선행한다.
 정책/키 변경은 이후 명시적 운영 승인과 더 높은 version의 별도 전환 과제이며,
 이 최초 등록 구현 PR은 기존 등록을 `DO NOTHING`/UPDATE로 바꾸지 않는다.
-재시작에도 최고 version/pin/폐기 증거가 남아야 한다.
-전체 DB 복구도 운영 감사 기준과 대조하며 백업만 덮어써 폐기를 지우지 않는다.
+재시작·정상 백업 복원·악의적 복원 모두 폐기 증거를 없던 일로 취급하지 않는다.
+백업만 덮어써 폐기를 지우지 않는다는 보장은 자동 복구가 아니라 **비활성 유지**로
+충족한다. 복구 뒤 다시 여는 기능까지 이 최초 구현이 제공한다는 뜻이 아니다.
 
 JARVIS는 import뿐 아니라 C1 승인 시점과 C2/C3 실행·SB 호출 직전·완료 직전에,
 SB는 `authorize_transition`의 `require_enrollment`를 통해 accept/reject/mark_processed
@@ -291,6 +299,59 @@ revocation DB가 SB에 자동 동기화된다고 가정하지 않는다. 양쪽 
 단계 사이 설정/key 폐기는 writer exclusion과 DB current-version guard로
 검사/효과 경계를 지킨다. 외부 효과 뒤 폐기되면 사실을 보존하고 후속 mutation을
 거절·조정하며 이미 수행한 accept를 없던 일로 되돌리지 않는다.
+
+### 4.3 복원·최신성 미확인 시 기본 비활성 — Codex P1
+
+근거는 [Codex P1 원문](https://github.com/whelp99-code/Orca-JARVIS/pull/88#discussion_r4278041815)
+(`604a1cc`, 279행), 가재의 네 대조 기준과 나희·가재의 최종 합의다.
+**이번 최초 구현 범위는 차단 장치이며 복구/재활성화 기능은 구현하지 않는다.**
+설치가 복원됐거나 최신성을 증명할 수 없으면 회사 승인·실행을 기본 비활성으로
+유지하고 `ENROLLMENT_REQUIRED`로 거절한다. 시작 시와 **C1·C2·C3·C4 확인 때마다**
+이를 판단하며, 처음 한 번 통과한 결과나 수입 시점 cache로 대체하지 않는다.
+복원 여부를 DB의 marker만으로 알 수 없으면 미복원이라고 간주하지 않고
+최신성 미확인으로 차단한다. restore marker가 지워진 양쪽 동시 복원도 같은 규칙이다.
+
+최신성 근거는 해당 company scope의 최고 version/binding digest와 현재 폐기된
+binding·key ID/SPKI·principal 등 관련 폐기 기록을 함께 다뤄야 한다.
+그 근거의 저장·관리 경계가 **SB/JARVIS DB·설정과 같은 백업·복원 대상 밖**임을
+독립적으로 확인해야 한다. 같은 호스트의 같은 백업 대상에 별도 파일/디렉터리를
+만들거나 enabled 플래그·양쪽의 일치하는 값·자체 hash chain만 추가하는 것은
+롤백 영역 밖이 아니다. 복원된 설정이 지목한 임의 기준값이나 옛 응답/cache도
+신뢰하지 않는다. 외부 기준의 출처·현재성·무결성과 scope를 입증할 수 없으면
+추정하지 않고 차단한다. 이 문서는 그런 외부 기반이 이미 있다는 주장을 하지 않는다.
+
+기준값 없음/읽기 실패/timeout/현재성 불명/DB와의 불일치 중 하나라도 있으면
+시작과 C1~C4에서 승인함의 mutation을 열지 않는다. C1 approve/reject는 pending을
+유지하고 decision receipt·이벤트·상환을 만들지 않으며 C2~C4는 accept/reject/
+외부 효과/mark_processed를 실행하지 않는다. 이미 존재하는 원본 사실과
+권한이 허용하는 읽기 전용 감사는 보존한다. **화면의 비활성 표시만이 아니라
+서버의 승인·실행 경계가 거절**해야 한다. 기준값 장애를 정상 상태로 승격하지 않는다.
+
+복원 대상 밖의 근거 없이 로컬 상태만으로 정상 설치와 동일 bytes의 복원 설치를
+구분할 수 있다는 보장은 하지 않는다. 따라서 해당 근거·검증을 제공하지 못하는
+설치에서는 최초 등록 준비나 구현 PR 시작이 가능해도 **운영 회사 승인·실행은
+계속 비활성**이다. 이것은 동시 복원을 허용하는 알려진 예외가 아니라 가용성을
+포기하는 fail-closed 보장이다. 손상/복원된 기준값을 같은 백업에서 새 정본으로
+재생성하거나 version을 1로 초기화해 여는 우회는 금지한다.
+
+**재활성화는 별도 과제, 담당 오모냥(계획·배정)**이다. 그 과제가 구현·검증되기 전에는
+이 최초 구현에 unblock/recover API나 자동 재등록/자동 재개 경로를 넣지 않는다.
+후속 과제가 충족해야 할 조건은 다음과 같으며, 이 문서는 재활성화 실행 승인이 아니다.
+
+1. 회사 mutation을 닫은 상태에서 복원 범위와 원본 수행/receipt/삭제 사실을 확인하고,
+   복원 대상 밖의 신뢰할 수 있는 **최신 binding·최고 version/digest·현재 폐기 목록**을
+   읽어 양쪽 DB/정책/키 pin과 대조한다. 기준이 없거나 불명확하면 계속 비활성이다.
+2. 기준 version·폐기 기록을 낮추거나 삭제하지 않고 현재 증거와 양쪽 상태를
+   정합화한다. 폐기 키/별칭 지문·폐기 binding·과거 receipt를 새 권한으로 되살리지
+   않는다. 더 높은 version의 키 전환이 필요하면 기존 키 교체 별도 과제의 승인을 따른다.
+3. 대표의 **별도 명시적 운영 재활성화 승인**과 기존 정책/키 관리 권한을 가진 운영자의
+   검증된 복구 절차를 요구한다. 오모냥은 계획·배정 담당이지 위험 수용/자기 승인자가
+   아니다. Mail/processor/복원된 enabled=true나 후보별 decision 서명으로 대신하지 않는다.
+4. 복구 과제의 정상/실패 시험과 양쪽 현재성 대조가 통과한 뒤에만 별도 절차로 다시
+   열 수 있다. 재개 뒤에도 시작 및 C1~C4의 현재성/폐기 검증을 생략하지 않는다.
+
+대표의 09:23:05 응답은 **키 교체 때 승인함 일시 중지**에 관한 결정이다.
+최신성 미확인 활성화 위험이나 위 재활성화 권한을 이미 승인한 것으로 확대하지 않는다.
 
 ### wire·digest 개정 선택
 
@@ -366,6 +427,8 @@ legacy enrollment epoch 전환, 두 DB transition engine을 구현하지 않는�
 다르며 그대로 사용한다.
 
 활성화 gate는 운영 시점에 양쪽 writer/importer/processor를 정지·배제한 뒤
+먼저 4.3절의 미복원/최신성 검증을 통과해야 한다. 실패하면 legacy 기록이
+0이어도 회사 승인·실행은 비활성이다. 그 다음
 SB v1 outbox·회사 enrollment·JARVIS 회사 handoff/import·연결 control 기록이
 **각각 0건**인지 다시 확인한다. 테이블 없음은 0으로 취급하되 query 오류나
 버전/분류 불명은 0으로 간주하지 않고 거절한다. terminal/expired/superseded 기록도
@@ -376,9 +439,13 @@ gate와 최초 등록 사이 새 legacy 기록을 만들 수 없도록 배제를
 candidate 수신 동시성이 N 보존을 깨면 중지하고 재측정한다.
 
 새 revision이 **이미 정상 활성화된 후 재시작**하는 경로는 최초 활성화와 다르다.
-등록된 동일 새 context/pin/최고 version과 감사 증거를 검증해 그대로 재개한다.
+로컬 context/pin/최고 version·감사 증거가 같다는 이유만으로 그대로 재개하지 않는다.
+매 시작마다 4.3절의 복원 여부·복원 밖 최신성을 다시 검증하고 C1~C4에서도 반복한다.
+복원됐거나 최신성을 증명할 수 없으면 과거에 정상 활성화됐어도 비활성으로 남는다.
+이 상태의 재활성화는 별도 복구 과제 없이는 제공하지 않는다.
 초기 등록 일부만 성공한 경우는 양쪽 미활성 상태를 유지한 채 동일 binding의
-멱등 재개만 허용한다. 다른 binding, legacy 발견, 증거 불일치면 자동 재등록하지 않는다.
+등록 준비 멱등 재개만 허용하며 회사 mutation을 열지 않는다.
+다른 binding, legacy 발견, 증거 불일치면 자동 재등록하지 않는다.
 
 ### 5.1 legacy 발견 시 별도 전환 과제의 경계
 
@@ -389,7 +456,7 @@ candidate 수신 동시성이 N 보존을 깨면 중지하고 재측정한다.
 
 | 실행 시 상태 | 처리 |
 |---|---|
-| 후보만 존재, 등록/outbox 없음 | 실제 N과 scope/fence snapshot → 승인된 새 binding의 첫 enrollment → 새 형식의 최초 handoff. 후보 row는 0건 변경 |
+| 후보만 존재, 등록/outbox 없음 | 실제 N과 scope/fence snapshot → 승인된 새 binding의 첫 enrollment 준비. 4.3 미복원/최신성 gate 통과 때만 새 형식의 최초 handoff/회사 mutation 허용. 후보 row는 0건 변경 |
 | outbox만 있고 JARVIS 미수입 | old bytes/ID/digest를 history로 보존, 승인된 binding 전환과 candidate별 old→new handoff mapping으로 새 revision 생성 |
 | JARVIS pending/미결정 | 원래 request를 감사된 superseded/current-inactive 상태로 전환하고 새 request 생성. 동일 candidate가 두 개의 active approval subject가 되지 않음 |
 | approved/rejected이나 미상환 | 옛 receipt는 원래 digest에만 보존, 새 request에는 대표의 새 결정 필요. 새 approver field만 바꿔 receipt를 복사하지 않음 |
@@ -439,7 +506,7 @@ T 번호는 새 파일/API가 아니라 추가할 시험 시나리오 식별자�
 | principal·purpose·지문·키 목록 pin | JARVIS registry/C1/C2/C3, SB 대표 전용 owner_approval_keys·policy pin·기존 공개키 바이트 분리 + 신규 key ID 충돌 및 승인 목록 내부 SPKI 중복 거절; immutable context | T3 같은 key ID의 새 material, 다른 principal/purpose, 추가 key·shared material/ID 충돌 거절; T16 다른 ID/같은 SPKI 및 폐기 alias 거절 |
 | 기록 전 고정 키 검증(P1) | C1 ControlPlane.decide의 approve/reject transaction 전 fixed key ID/purpose/SPKI 대조 | T17 같은 대표 principal의 유효한 비pin key로 approve/reject 모두 거절, pending 유지·receipt/이벤트 생성0·상환 불변, 뒤이어 실제 pinned 결정 성공 |
 | 승인자·승인 정책 버전·키 pin이 서명에 묶임 | 새 strict args + binding hash + handoff ID + controlCommandDigest; SB canonical_bytes와 JARVIS canonicalize | T4 각 binding 필드 변경/유효한 공격자 서명/옛 버전 거절; T5 양 언어 동일 canonical bytes/digest |
-| 옛 policy 복원·등록 교체 차단 | 현재 context exact equality + scope별 durable 최고 version/digest/폐기 증거, 삭제 후 재등록 금지 | T6 낮은 version, 같은 version 다른 digest, 옛 context 동시 복원, 재시작 뒤 rollback 거절 |
+| 옛 policy 복원·등록 교체 차단(P1) | 4.3 기본 비활성·복원 밖 최신성 근거, 시작/C1~C4 gate; 로컬 equality/양쪽 교차 대조만으로 허용 금지 | T6-N 정상 복원·T6-A 악의적 복원 각각 비활성/폐기 승인0, T6-F 기준값 장애·불일치 차단; 재활성화는 별도 과제 |
 | 대표만 approve/reject/완료 | C1~C5와 SB270/mark_processed 원래 approve receipt; 데이터 owner/requested_by 유지 | T7 대표 accept/reject/검증된 mark_processed 성공; T8 Mail/processor/다른 signer/미등록 key/spoof 거절 |
 | import 이후 각 단계에서 현재 정책·폐기 재확인 | C1/C2/C3의 SB 호출/완료 직전 guards, SB authorize_transition228의 require_enrollment 및 현재 pin/폐기 | T9 승인→수신→완료 사이 key 교체·폐기·정책 변경·재시작·양쪽 version 불일치 거절 |
 | 옛 명령 서명 재사용과 새 사용 차단 | request_id/command_digest 일치, SB company_handoff_decisions283-305, JARVIS receipts/redemptions, current binding | T10 옛 명령1→새 명령2/다른 후보·generation·operation·binding 재사용 거절; 새 명령2에 서명한 봉투1은 T7에서 허용 |
@@ -482,12 +549,12 @@ acceptance receipt 바인딩이 있어야 한다. 같은 완료 재시도는 원
 
 | ID | 반드시 실행할 입력/상태와 이진 결과 |
 |---|---|
-| T1 | legacy 0인 양쪽 동일 local pin의 최초 등록/활성화 성공; snapshot/digest/audit 일치, candidate 0건 변경 |
+| T1 | legacy 0, 양쪽 동일 local pin 및 4.3의 복원 밖 최신성 증거가 검증된 미복원 설치에서 최초 등록/활성화 성공; snapshot/digest/audit 일치, candidate 0건 변경. 그 증거가 없으면 정상 pin·legacy0이어도 T6-F처럼 비활성 |
 | T2 | Mail/processor enrollment에 approver/key 목록/pin/version override, 자기 key를 대표로 지정, 운영자 설정 권한 시도 -> 모두 거절 |
 | T3 | 같은 key ID 다른 공개키, 다른 ID 같은 DER-SPKI 지문, actual key/pin 불일치, principal 위장, purpose 비decision/누락, 비Ed25519, 중복/미등록/목록 추가 key, 대표와 Mail/processor 동일 ID 또는 material -> 모두 거절 |
 | T4 | approver·approval version·key 목록·지문·purpose·binding digest 중 하나를 바꾸고 새 digest/유효 서명 생성 -> fixed 대조에서 거절; 누락/unknown args/구 schema/ID/domain도 거절 |
 | T5 | 공유 고정 JSON: 다른 object key 순서, 정렬된 key 목록, 한글/NFC, projects/정수 fence/시간/null 허용 여부를 strict 계약대로 양쪽 계산 -> canonical bytes·binding hash·handoff ID·command_digest·signature payload bytes 같음; 1필드 변경 시 다름 |
-| T6 | 설정만 변경, context만 변경, 낮은 version, 동일 version 다른 pin, 옛 설정+옛 context 복원, 삭제 후 재등록, 재시작 뒤 최고 version 소실/불일치 -> 거절/실행 미활성 |
+| T6 | 설정/context 변경·낮은 version·동일 version 다른 pin·삭제 후 재등록 거절을 유지하고, 아래 T6-N/T6-A/T6-F로 정상 복원/악의적 복원/기준값 실패를 실제 분리 검증. 세 경우 모두 회사 승인·실행 비활성 유지, 폐기 키 승인0; 복구 기능 성공을 이 최초 구현의 인수 조건으로 주장하지 않음 |
 | T7 | 새 회사 명령2 digest에 서명한 **봉투1**의 고정 대표 receipt로 accept/reject 성공·원래 approve receipt와 실제 완료 증거로 mark_processed 성공; accepted와 processed_complete 구별, 원래 signer 기록 |
 | T8 | mail-ms/ordinary handoff key, processor, 다른 대표/legacy jm-owner, 미등록 key, 올바른 signer 필드에 다른 key, 대표 key에 다른 signer 필드 -> approve/reject/mark_processed 모두 거절 |
 | T9 | 승인 후 accept 전/accept 후 완료 전 key 교체·삭제·폐기·purpose/principal/pin/version 변경, 재시작, SB/JARVIS 다른 version -> 다음 mutation 거절; 한 ID 폐기 뒤 같은 SPKI의 별도 ID로 재시도도 거절; 이미 수행한 effect 보존 |
@@ -500,6 +567,21 @@ acceptance receipt 바인딩이 있어야 한다. 같은 완료 재시도는 원
 | T16 | 양쪽 binding 입력에 ID A/B와 같은 DER-SPKI 지문을 넣으면 등록/활성화 거절; fixture로 중복 pin을 주입하고 A 폐기 후 B로 유효 서명해도 C1~C4 현재 검증에서 거절, receipt/상환/효과 0. 서로 다른 ID·SPKI의 정상 목록은 허용 |
 | T17 | 실제 ControlPlane.decide에 같은 principal이지만 고정 목록에 없는 유효한 키로 approve·reject를 각각 시도 -> 요청은 pending 그대로, receipt·이벤트 생성0, 상환 불변; 그 뒤 같은 요청에 고정된 정상 키로 결정 성공. key ID/실제 SPKI 불일치·잘못된 purpose도 독립 거절. C2 실행 없이 실제 DB와 이벤트 기록/발행 경계에서 증명 |
 | T18 | 실제 SB reject commit 뒤 응답 차단·persistReceipt 전 crash→재시작→원래 approval/authority 만료 후 fresh 인증 read로 exact reject receipt/원래 결정 시각 복구; 로컬 거절 증거만 저장, reject 재전송0/효과1회/mark_processed0. accept 증거 교차·잘못된 operation/request/시각·권한/부재·손상/timeout은 불확실 유지, 조회 전후 SB DB 불변 |
+
+T6는 격리된 실제 DB/설정 snapshot과 시작·C1~C4 호출을 사용하고 정상 복원과
+악의적 복원을 하나의 “다름” assertion으로 합치지 않는다. 현재 구현된 시험이라는
+뜻이 아니라 후속 최초 구현 PR에서 추가할 인수 시나리오다.
+
+| T6 하위 시험 | 구체 입력/호출과 이진 결과 |
+|---|---|
+| T6-N 정상 장애 복구 | version1/key K 활성 시점에 양쪽 DB·설정을 backup한 뒤 별도 최신 근거에 K 폐기/다음 상태를 확정. 장애 복구 절차로 한쪽 및 **양쪽 모두** 같은 옛 backup으로 restore하고 재시작. 시작/C1 approve·reject/C2/C3/C4 accept·reject·mark_processed 각각에서 비활성 유지, K의 유효한 서명도 승인0, 신규 decision receipt·이벤트·상환·후속 효과0, 기존 사실 불변 |
+| T6-A 악의적 복원 | 폐기 키 보유자의 유효한 새 서명을 준비하고 옛 설정+context+로컬 최고 version/폐기 기록+enabled=true+restore marker를 한쪽/양쪽 동시 복원·삭제. 두 시스템이 서로 일치해도 시작 및 각 C1~C4는 비활성 유지/승인0/receipt·이벤트·효과0. 다시 시작·cache 재사용·옛 key ID 또는 같은 SPKI 별칭으로 우회 불가 |
+| T6-F 최신성 증명 실패 | 복원 밖 기준값 없음/읽기 거절/timeout/옛 응답·현재성 불명/잘못된 scope/DB version·digest·폐기 목록 불일치를 각각 주입. 시작 및 각 C1~C4에서 차단하며 enabled 플래그·로컬 equality·양쪽 교차 대조만으로 열리지 않음. 실행 중 근거가 사라지거나 바뀌어도 다음 mutation 거절 |
+
+각 시험은 차단 결과뿐 아니라 실제 request pending/receipt·이벤트·상환/효과 전후를
+대조한다. 권한 경계를 mock으로 없애지 않고 확인 이벤트를 먼저 구독한다.
+복구/재활성화는 별도 과제가 시험하며, 그때에도 최신 폐기 목록/기준값 대조와
+기준값 비감소, 폐기 키 부활 금지, 대표의 별도 승인 및 운영자 실행이 필수다.
 
 T14는 기존 `tests/unit/control-plane.test.ts`,
 `tests/integration/control-command-lookup.test.ts` 및
@@ -668,6 +750,10 @@ Mail과 processor의 승인권은 확대하지 않는다. 새 grant 범위는 �
 새 receipt 상환/업무 효과/삭제 이후에는 기존 사실과 high-water mark를 보존한다.
 승인된 다음 epoch로 전진하거나 검증된 전체 복구를 검토하며, completed→candidate,
 삭제 부활, old receipt의 새 digest 이식은 허용하지 않는다.
+다만 복원 뒤 자동 재활성화 기능은 이번 최초 구현 범위가 아니다. 4.3절에 따라
+정상 복원과 악의적 복원 모두 기본 비활성으로 남기고, 최신성을 입증하지 못한
+상태를 양쪽 DB의 일치나 예전 운영 승인으로 통과시키지 않는다. 별도 복구 과제의
+담당은 오모냥이며 재활성화 조건·별도 승인 주체도 4.3절을 따른다.
 
 최초 승인자 신뢰는 기존 운영자 설정/키 등록에서 확정하며 별도 서명 ceremony는
 추가하지 않는다. 후속 구현은 여기 정한 회사 전용 wire/hash와 pin/등록 증거를
