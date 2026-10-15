@@ -33,7 +33,8 @@ provided here.
 For a v2 command, the private completion config must use `schema_version:2`;
 the pinned child receives `{schema_version:2,command,acceptance}` through stdin
 EOF and must return the completion object shown below with `schema_version:2`
-and the exact v2 request ID. A v1 config or response is refused. The fixed
+and the exact v2 request ID. Command/config version mismatches are refused
+before any reservation, redemption or acceptance. A v1 response is refused. The fixed
 executable, minimal environment, 10-second hard kill and 1 MiB bound still
 apply. A successful exit or an echo of input digests is not completion evidence.
 
@@ -45,8 +46,15 @@ command, binding, candidate and content, and checks the response's fresh nonce.
 Only an authenticated original receipt can restore original decision/acceptance
 times. Lookup after expiry grants no new verifier effect or `mark_processed`;
 the current command and approval window is required for each new mutation.
-An unresolved completion or mark-processed reservation stays uncertain rather
-than being blindly retried.
+At execute entry, an unfinished decision, completion or mark-processed intent
+can resend only its original finish: the same reservation ID and the committed
+approval hash, completion effect digest or SB receipt digest. Confirmed
+`recorded`/`already_recorded` evidence updates the local checkpoint by CAS;
+the underlying decision, verifier effect or SB mutation is never repeated.
+The mark-processed receipt is retained first, but completed control/handoff
+status is published atomically with that confirmed local finish. Missing local
+evidence stays uncertain, and a restored DB with missing reservations/receipts
+does not acquire recovery authority merely because its binding still matches.
 
 The JARVIS tests exercise this protocol through an authenticating subprocess
 peer and the real broker. They do not demonstrate a deployed SB v2 endpoint.

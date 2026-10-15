@@ -125,6 +125,8 @@ export class CompanyCandidateExecutor {
     const stored = control.get(requestId);
     if (!stored) throw new JarvisError("COMPANY_HANDOFF_NOT_FOUND");
     if (stored.schema_version === 2) return this.executeV2(stored);
+    const verifier = this.completion;
+    if (verifier?.version === 2) throw new JarvisError("COMPANY_COMPLETION_CONFIG_INVALID");
     assertCompanyKeySeparation(this.db, this.client);
     const command = parseCompanyCommand({
       schema_version: stored.schema_version, request_id: stored.request_id, action: stored.action,
@@ -190,11 +192,10 @@ export class CompanyCandidateExecutor {
       if (operation === "reject") return this.result(requestId, "rejected");
       let completion = row.completion_json === null ? undefined : completionSchema.parse(JSON.parse(row.completion_json));
       if (!completion) {
-        if (!this.completion) return this.result(requestId, acknowledged ? row.status : "accepted");
-        if (this.completion.version === 2) throw new JarvisError("COMPANY_COMPLETION_CONFIG_INVALID");
+        if (!verifier) return this.result(requestId, acknowledged ? row.status : "accepted");
         this.update(requestId, token, "verifying");
         this.assertNotRevoked(command, approval);
-        const parsed = completionSchema.safeParse(await this.completion.verify(command, receipt));
+        const parsed = completionSchema.safeParse(await verifier.verify(command, receipt));
         if (!parsed.success || parsed.data.request_id !== requestId || parsed.data.command_digest !== stored.command_digest
           || parsed.data.candidate_id !== command.target.candidate_id
           || parsed.data.content_digest !== command.target.content_digest
@@ -229,6 +230,7 @@ export class CompanyCandidateExecutor {
 
   private async executeV2(stored: StoredControlCommand) {
     const requestId = stored.request_id;
+    const verifier = this.v2Verifier();
     assertCompanyKeySeparation(this.db, this.client);
     const input = {
       schema_version: stored.schema_version, request_id: stored.request_id, action: stored.action,
@@ -253,8 +255,32 @@ export class CompanyCandidateExecutor {
     const progress = new CompanyProgress(this.db, this.freshness);
     const pending = progress.pending(command, operation);
     const acknowledged = this.readReceipt(requestId, operation, 2);
-    if (pending || acknowledged) assertCompanyApprovalPin(this.db, command, approval);
-    else {
+    assertCompanyApprovalPin(this.db, command, approval);
+    const pendingDecision = progress.pending(command, approval.decision === "approve" ? "decide_approve" : "decide_reject");
+    if (pendingDecision) {
+      progress.finish(pendingDecision, controlValueDigest(approval), approval.decision === "approve" ? "approved" : "rejected", this.clock());
+    }
+    let completion: CompanyCompletionV2 | undefined;
+    if (row.completion_json !== null) {
+      const parsed = companyCompletionV2Schema.safeParse(JSON.parse(row.completion_json));
+      if (!parsed.success || parsed.data.request_id !== requestId || parsed.data.command_digest !== stored.command_digest
+        || parsed.data.candidate_id !== command.target.candidate_id || parsed.data.content_digest !== command.target.content_digest
+        || parsed.data.acceptance_receipt_digest !== acknowledged?.receipt_digest) throw new JarvisError("COMPANY_VERIFIER_INVALID");
+      completion = parsed.data;
+    }
+    const pendingComplete = progress.pending(command, "complete");
+    if (pendingComplete) {
+      if (!completion) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
+      this.finishV2(progress, pendingComplete, completion.effect_digest, "completed");
+    }
+    const processed = this.readReceipt(requestId, "mark_processed", 2);
+    const pendingProcessed = progress.pending(command, "mark_processed");
+    if (pendingProcessed) {
+      if (!processed || !completion) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
+      this.finishV2(progress, pendingProcessed, processed.receipt_digest, "processed_complete");
+      return this.result(requestId, "completed", 2);
+    }
+    if (!pending && !acknowledged) {
       parseCompanyCommandV2(input, this.clock());
       assertCurrentCompanyPin(this.db, command, approval, this.clock());
     }
@@ -301,18 +327,7 @@ export class CompanyCandidateExecutor {
       }
       if (!receipt) throw new JarvisError("COMPANY_EXECUTION_UNCERTAIN");
       if (operation === "reject") return this.result(requestId, "rejected", 2);
-      let completion: CompanyCompletionV2 | undefined;
-      if (row.completion_json !== null) {
-        const parsed = companyCompletionV2Schema.safeParse(JSON.parse(row.completion_json));
-        if (!parsed.success || parsed.data.request_id !== requestId || parsed.data.command_digest !== stored.command_digest
-          || parsed.data.candidate_id !== command.target.candidate_id || parsed.data.content_digest !== command.target.content_digest
-          || parsed.data.acceptance_receipt_digest !== receipt.receipt_digest) throw new JarvisError("COMPANY_VERIFIER_INVALID");
-        completion = parsed.data;
-      }
-      const pendingComplete = progress.pending(command, "complete");
-      if (pendingComplete) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
       if (!completion) {
-        const verifier = this.v2Verifier();
         if (!verifier) return this.result(requestId, receipt.state, 2);
         try {
           parseCompanyCommandV2(input, this.clock());
@@ -333,9 +348,6 @@ export class CompanyCandidateExecutor {
         if (saved.changes !== 1) throw new JarvisError("COMPANY_EXECUTION_BUSY");
         this.finishV2(progress, reserved, completion.effect_digest, "completed");
       }
-      const processed = this.readReceipt(requestId, "mark_processed", 2);
-      const pendingProcessed = progress.pending(command, "mark_processed");
-      if (pendingProcessed) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
       if (!processed) {
         parseCompanyCommandV2(input, this.clock());
         assertCurrentCompanyPin(this.db, command, approval, this.clock());
@@ -344,7 +356,7 @@ export class CompanyCandidateExecutor {
         const marked = this.parseReceipt(await this.client.call("mark_processed", {
           candidate_id: command.target.candidate_id, handoff_id: requestId,
         }, this.clock()), requestId, "mark_processed", 2);
-        this.persistReceipt(requestId, token, marked, completion);
+        this.persistReceipt(requestId, token, marked, completion, 2);
         this.finishV2(progress, reserved, marked.receipt_digest, "processed_complete");
       }
       return this.result(requestId, "completed", 2);
@@ -373,7 +385,19 @@ export class CompanyCandidateExecutor {
   }
 
   private finishV2(progress: CompanyProgress, reservation: CompanyProgressReservation, evidenceDigest: string, terminalState: "accepted" | "rejected" | "completed" | "processed_complete"): void {
-    progress.finish(reservation, evidenceDigest, terminalState, this.clock());
+    const now = this.clock();
+    this.db.db.transaction(() => {
+      progress.finish(reservation, evidenceDigest, terminalState, now);
+      if (terminalState === "processed_complete") {
+        const control = this.db.db.prepare(
+          "UPDATE control_command_requests SET state='completed',completed_at=COALESCE(completed_at,?) WHERE request_id=? AND state IN ('approved','completed')",
+        ).run(now.toISOString(), reservation.request_id);
+        const handoff = this.db.db.prepare(
+          "UPDATE company_candidate_handoffs SET status='completed',failure_code=NULL,updated_at=? WHERE request_id=? AND current=1",
+        ).run(now.toISOString(), reservation.request_id);
+        if (control.changes !== 1 || handoff.changes !== 1) throw new JarvisError("CONTROL_STATE_CONFLICT");
+      }
+    }).immediate();
   }
 
   private v2Verifier(): CompanyCompletionVerifierV2 | undefined {
@@ -458,8 +482,8 @@ export class CompanyCandidateExecutor {
     if (changed.changes !== 1) throw new JarvisError("COMPANY_EXECUTION_BUSY");
   }
 
-  private persistReceipt(requestId: string, token: string, receipt: CompanySbReceipt, completion?: CompanyCompletion | CompanyCompletionV2): void {
-    const status = receipt.state === "processed_complete" ? "completed" : receipt.state;
+  private persistReceipt(requestId: string, token: string, receipt: CompanySbReceipt, completion?: CompanyCompletion | CompanyCompletionV2, version: 1 | 2 = 1): void {
+    const status = receipt.state === "processed_complete" ? version === 2 ? "completing" : "completed" : receipt.state;
     this.db.db.transaction(() => {
       this.db.db.prepare(
         `INSERT INTO company_candidate_sb_receipts(request_id,operation,receipt_id,receipt_digest,payload_json,observed_at)

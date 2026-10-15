@@ -92,7 +92,7 @@ export function companyApproverRejectReceipt(): CommandApprovalReceipt {
   }, companyApproverKey());
 }
 
-export async function companyApproverV2Database(decision: "approve" | "reject" = "approve") {
+export async function companyApproverV2Database(decision: "approve" | "reject" = "approve", recordDecision = true) {
   const fixture = companyApproverFixture();
   const root = mkdtempSync(join(tmpdir(), "jarvis-company-v2-"));
   chmodSync(root, 0o700);
@@ -121,7 +121,7 @@ export async function companyApproverV2Database(decision: "approve" | "reject" =
   const context = companyApproverProcessorContext();
   importCompanyPage(db, { handoffs: [{ idempotency_key: fixture.handoff_key, command, command_digest: fixture.command_digest }],
     count: 1, limit: 100, offset: 0 }, context, now);
-  new ControlPlane(db, provider).decide(approval, now);
+  if (recordDecision) new ControlPlane(db, provider).decide(approval, now);
   return { ...live, provider, approval, command, digest: fixture.command_digest };
 }
 
