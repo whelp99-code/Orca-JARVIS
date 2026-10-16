@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { cpSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
+import { copyFileSync, linkSync, mkdirSync, mkdtempSync, readdirSync, rmSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -7,6 +7,28 @@ import { AuthorityDb } from "../../src/index.js";
 import { digest, T0, T1, T5 } from "./personal-operations-test-helpers.js";
 
 const SLOT = "039_memory_outbox_saga.sql";
+const SOURCE_MIGRATIONS = join(process.cwd(), "migrations");
+const SCRATCH = process.env.TMPDIR ?? tmpdir();
+function stageMigration(name: string, dest: string): void {
+  const source = join(SOURCE_MIGRATIONS, name);
+  const target = join(dest, name);
+  try {
+    linkSync(source, target);
+  } catch (error) {
+    if (error !== null && typeof error === "object" && Reflect.get(error, "code") === "EXDEV") {
+      copyFileSync(source, target);
+      return;
+    }
+    throw error;
+  }
+}
+function linkMigrations(dest: string, include: (name: string) => boolean): void {
+  mkdirSync(dest, { recursive: true });
+  for (const name of readdirSync(SOURCE_MIGRATIONS)) {
+    if (!name.endsWith(".sql") || !include(name)) continue;
+    stageMigration(name, dest);
+  }
+}
 const validMappings = [
   ["queued", "queued"], ["delivering", "reconciling"],
   ["accepted_unsettled", "reconciling"], ["uncertain", "reconciling"],
@@ -14,9 +36,9 @@ const validMappings = [
 ] as const;
 const invalidStates = ["proposed", "classified", "awaiting_confirmation", "approved"] as const;
 function migrationRoot(): { root: string; migrations: string; database: string } {
-  const root = mkdtempSync(join(tmpdir(), "task29-migration-")); const migrations = join(root, "migrations");
-  cpSync(join(process.cwd(), "migrations"), migrations, { recursive: true });
-  for (const name of readdirSync(migrations)) if (name >= SLOT) rmSync(join(migrations, name));
+  const root = mkdtempSync(join(SCRATCH, "task29-migration-"));
+  const migrations = join(root, "migrations");
+  linkMigrations(migrations, name => name < SLOT);
   return { root, migrations, database: join(root, "authority.sqlite") };
 }
 function seedCandidate(db: AuthorityDb, suffix: string, operation = "remember"): string {
@@ -64,16 +86,14 @@ function schema(db: AuthorityDb): readonly { type: string; name: string; sql: st
 }
 async function applySlot(value: ReturnType<typeof migrationRoot>, db: AuthorityDb): Promise<void> {
   db.close();
-  for (const name of readdirSync(join(process.cwd(), "migrations"))) {
-    if (name >= SLOT) cpSync(join(process.cwd(), "migrations", name), join(value.migrations, name));
-  }
+  linkMigrations(value.migrations, name => name >= SLOT);
   const upgraded = new AuthorityDb(value.database, value.migrations);
   try { await upgraded.migrate(); } finally { upgraded.close(); }
 }
 
 describe("memory outbox V2 forward migration", () => {
   it("publishes only closed V2 machine values and exact fence columns", async () => {
-    const db = new AuthorityDb(join(mkdtempSync(join(tmpdir(), "task29-fresh-")), "authority.sqlite"));
+    const db = new AuthorityDb(join(mkdtempSync(join(SCRATCH, "task29-fresh-")), "authority.sqlite"));
     try {
       await db.migrate(); const outbox = String((db.db.prepare("SELECT sql FROM sqlite_master WHERE name='memory_outbox'").get() as { sql: string }).sql);
       const attempts = String((db.db.prepare("SELECT sql FROM sqlite_master WHERE name='memory_outbox_attempts'").get() as { sql: string }).sql);
@@ -91,7 +111,7 @@ describe("memory outbox V2 forward migration", () => {
       await prior.migrate(); const guards = dropLegacyGuards(prior);
       for (const [state] of validMappings) seedLegacy(prior, state, state);
       restoreLegacyGuards(prior, guards); await applySlot(value, prior);
-      const upgraded = new AuthorityDb(value.database, value.migrations); const freshRoot = mkdtempSync(join(tmpdir(), "task29-fresh-schema-"));
+      const upgraded = new AuthorityDb(value.database, value.migrations); const freshRoot = mkdtempSync(join(SCRATCH, "task29-fresh-schema-"));
       const fresh = new AuthorityDb(join(freshRoot, "authority.sqlite"));
       try {
         await fresh.migrate();
@@ -110,9 +130,7 @@ describe("memory outbox V2 forward migration", () => {
       seedLegacy(prior, lane, state, lane === "forget" || lane === "export" ? lane : "remember",
         lane !== "settled_without_observation");
       restoreLegacyGuards(prior, guards); prior.close();
-      for (const name of readdirSync(join(process.cwd(), "migrations"))) {
-        if (name >= SLOT) cpSync(join(process.cwd(), "migrations", name), join(value.migrations, name));
-      }
+      linkMigrations(value.migrations, name => name >= SLOT);
       const upgraded = new AuthorityDb(value.database, value.migrations);
       try { await expect(upgraded.migrate()).rejects.toThrow("MEMORY_OUTBOX_MIGRATION_INVALID"); }
       finally { upgraded.close(); }

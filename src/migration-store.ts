@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile, readdir } from "node:fs/promises";
+import { readFile, readdir, stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type Database from "better-sqlite3";
@@ -17,7 +17,10 @@ function checksum(value: Buffer): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
+type MigrationDigestCacheEntry = { mtimeMs: number; size: number; digest: string };
+
 export class MigrationStore {
+  private static readonly digestCache = new Map<string, MigrationDigestCacheEntry>();
   constructor(
     private readonly database: Database.Database,
     private readonly configuredPath: string | undefined,
@@ -32,44 +35,60 @@ export class MigrationStore {
     return (await readdir(this.directory())).filter(file => file.endsWith(".sql")).sort();
   }
 
+  private async migrationDigest(
+    path: string,
+    requireBody: boolean,
+  ): Promise<{ body?: Buffer; digest: string }> {
+    const observed = await stat(path);
+    const cached = MigrationStore.digestCache.get(path);
+    if (cached !== undefined && cached.mtimeMs === observed.mtimeMs && cached.size === observed.size) {
+      if (!requireBody) return { digest: cached.digest };
+      const body = await readFile(path);
+      return { body, digest: cached.digest };
+    }
+    const body = await readFile(path);
+    const digest = checksum(body);
+    MigrationStore.digestCache.set(path, { mtimeMs: observed.mtimeMs, size: observed.size, digest });
+    return { body, digest };
+  }
+
   async migrate(): Promise<void> {
     this.database.exec(
       "CREATE TABLE IF NOT EXISTS schema_migrations (id TEXT PRIMARY KEY, checksum TEXT NOT NULL, applied_at TEXT NOT NULL)",
     );
-    const migrations = await Promise.all((await this.files()).map(async id => {
-      const body = await readFile(join(this.directory(), id));
-      return { id, body, digest: checksum(body) };
-    }));
-    const recovery = new Task30MigrationRecovery(this.database, this.error);
-    this.assertSupportedHistory(migrations.map(migration => migration.id), recovery);
-    for (const migration of migrations) {
+    const ids = await this.files();
+    const pending: Array<{ id: string; body: Buffer; digest: string }> = [];
+    for (const id of ids) {
+      const path = join(this.directory(), id);
       const prior = row(this.database.prepare(
         "SELECT checksum FROM schema_migrations WHERE id=?",
-      ).get(migration.id));
-      if (prior !== undefined && prior["checksum"] !== migration.digest) {
-        throw this.error("MIGRATION_CHECKSUM_MISMATCH", migration.id);
+      ).get(id));
+      if (prior !== undefined) {
+        const { digest } = await this.migrationDigest(path, false);
+        if (prior["checksum"] !== digest) throw this.error("MIGRATION_CHECKSUM_MISMATCH", id);
+        continue;
       }
+      const { body, digest } = await this.migrationDigest(path, true);
+      if (body === undefined) throw this.error("MIGRATIONS_PENDING", id);
+      pending.push({ id, body, digest });
     }
+    const recovery = new Task30MigrationRecovery(this.database, this.error);
+    this.assertSupportedHistory(ids, recovery);
     recovery.recoverRejectedCandidate();
-    for (const migration of migrations) {
+    for (const migration of pending) {
       if (migration.id === "042_memory_deletion_proof.sql"
         || migration.id === "045_task30_schema_compatibility.sql") {
         recovery.prepareLegacyDeletionSnapshot();
       }
-      const prior = row(this.database.prepare(
-        "SELECT checksum FROM schema_migrations WHERE id=?",
-      ).get(migration.id));
-      if (prior === undefined) {
-        this.database.transaction(() => {
-          this.database.exec(migration.body.toString("utf8"));
-          this.database.prepare(
-            "INSERT INTO schema_migrations(id,checksum,applied_at) VALUES(?,?,?)",
-          ).run(migration.id, migration.digest, new Date().toISOString());
-        }).immediate();
-        // The deletion-lane rebuild returns dropped pages to the freelist. A later rolled-back
-        // write would otherwise change those free-page bytes, which serialize() observes.
-        if (migration.id === "097_memory_deletion_terminal_refusal.sql") this.database.exec("VACUUM");
-      }
+      this.database.transaction(() => {
+        this.database.exec(migration.body.toString("utf8"));
+        this.database.prepare(
+          "INSERT INTO schema_migrations(id,checksum,applied_at) VALUES(?,?,?)",
+        ).run(migration.id, migration.digest, new Date().toISOString());
+      }).immediate();
+      // The deletion-lane rebuild returns dropped pages to the freelist. A later rolled-back
+      // write would otherwise change those free-page bytes, which serialize() observes.
+      if (migration.id === "097_memory_deletion_terminal_refusal.sql") this.database.exec("VACUUM");
     }
     recovery.restorePreservedKeys();
   }
