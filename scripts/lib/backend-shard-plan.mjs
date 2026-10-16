@@ -1,13 +1,13 @@
-/** Backend verify runs two vitest shards; they are independent when each gets its own TMPDIR. */
+/** Backend verify runs two vitest shards in parallel (unit vs integration+longitudinal). */
 export const BACKEND_SHARD_COUNT = 2;
 
-export function backendShardArgv(baseArgv, shardIndex, shardCount = BACKEND_SHARD_COUNT) {
-  return [...baseArgv, `--shard=${shardIndex}/${shardCount}`];
-}
-
+/** @param {readonly string[]} baseArgv */
 export function backendShardRuns(profile, forwardedArgs, baseArgv, shardCount = BACKEND_SHARD_COUNT) {
   if (profile !== "backend" || forwardedArgs.length > 0 || shardCount < 2) return [baseArgv];
-  return Array.from({ length: shardCount }, (_, index) => backendShardArgv(baseArgv, index + 1, shardCount));
+  return [
+    [...baseArgv, "tests/unit"],
+    [...baseArgv, "tests/integration", "tests/longitudinal"],
+  ];
 }
 
 export function backendShardsRunInParallel(profile, forwardedArgs, shardCount = BACKEND_SHARD_COUNT) {

@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   BACKEND_SHARD_COUNT,
-  backendShardArgv,
   backendShardRuns,
   backendShardsRunInParallel,
 } from "../../scripts/lib/backend-shard-plan.mjs";
@@ -14,11 +13,11 @@ describe("backend shard plan", () => {
     expect(backendShardsRunInParallel("backend", ["tests/unit/foo.test.ts"])).toBe(false);
   });
 
-  it("plans two shards for the default backend profile", () => {
+  it("plans unit and integration shards for the default backend profile", () => {
     const runs = backendShardRuns("backend", [], base);
     expect(runs).toHaveLength(BACKEND_SHARD_COUNT);
-    expect(runs[0]).toEqual(backendShardArgv(base, 1));
-    expect(runs[1]).toEqual(backendShardArgv(base, 2));
+    expect(runs[0]).toEqual([...base, "tests/unit"]);
+    expect(runs[1]).toEqual([...base, "tests/integration", "tests/longitudinal"]);
     expect(backendShardsRunInParallel("backend", [])).toBe(true);
   });
 
