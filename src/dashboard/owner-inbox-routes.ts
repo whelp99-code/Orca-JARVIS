@@ -36,6 +36,7 @@ export async function tryHandleOwnerInbox(input: Readonly<{
   origin: string;
   remoteApproval?: RemoteApprovalService;
   ownerInbox?: OwnerInbox;
+  companyFreshness?: import("../company-freshness.js").CompanyFreshnessProvider;
   assertionCheck?: AssertionCheck;
   enrollmentCheck?: EnrollmentCheck;
   now?: Date;
@@ -56,7 +57,9 @@ export async function tryHandleOwnerInbox(input: Readonly<{
   const admitted = admit(input, raw, method === "POST" ? "POST" : "GET");
   if (admitted === undefined) return coded(input, 401, DASHBOARD_ERROR_CODES.OWNER_INBOX_IDENTITY_REQUIRED);
   const sessionId = admitted.id;
-  const inbox = input.ownerInbox ?? composeOwnerInbox(input.db);
+  const inbox = input.ownerInbox ?? composeOwnerInbox(input.db, {
+    clock: input.clock, companyFreshness: input.companyFreshness,
+  });
   try {
     if (method === "GET") {
       const enrolled = input.db.db.prepare("SELECT COUNT(*) AS n FROM owner_inbox_credentials").get() as { n: number };

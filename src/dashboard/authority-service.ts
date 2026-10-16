@@ -16,6 +16,7 @@ import {
 } from "./authority-validation.js";
 import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
 import { dashboardRetryStatus } from "./retry-policy.js";
+import type { CompanyFreshnessProvider } from "../company-freshness.js";
 
 const REQUESTED_BY = "jarvis-control-center" as const;
 const REQUEST_TTL_MS = 15 * 60_000;
@@ -43,6 +44,8 @@ export type DecideInput = {
   readonly requestId: string;
   readonly body: unknown;
   readonly now: Date;
+  readonly clock?: () => Date;
+  readonly companyFreshness?: CompanyFreshnessProvider;
 };
 
 export type DashboardExecutorFactory = (input: {
@@ -79,7 +82,7 @@ export function decideDashboardRequest(input: DecideInput): DashboardDecision {
   if (parsed.receipt.request_id !== input.requestId) {
     throw new JarvisError("CONTROL_APPROVAL_NOT_APPLICABLE");
   }
-  new ControlPlane(input.db).decide(parsed.receipt, input.now);
+  new ControlPlane(input.db, input.companyFreshness).decide(parsed.receipt, input.clock ?? input.now);
   return {
     schema_version: DASHBOARD_SCHEMA_VERSION,
     request_id: input.requestId,

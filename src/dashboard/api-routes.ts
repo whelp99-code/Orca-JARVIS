@@ -62,6 +62,7 @@ export type DashboardApiInput = {
   readonly planner?: TeamProposalPlanner;
   readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
   readonly executorFactory?: DashboardExecutorFactory;
+  readonly companyFreshness?: import("../company-freshness.js").CompanyFreshnessProvider;
   readonly memoryRuntime: MemoryRuntime;
   readonly remoteApproval?: RemoteApprovalService;
   readonly ownerInbox?: import("../owner-inbox.js").OwnerInbox;

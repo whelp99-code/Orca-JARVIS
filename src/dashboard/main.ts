@@ -3,6 +3,7 @@ import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { AuthorityDb, JarvisError } from "../db.js";
+import { configuredCompanyFreshness } from "../company-freshness-config.js";
 import type { SecondBrainAdapterOptions, SecondBrainReadAdapter } from "../second-brain-adapter-types.js";
 import type { SecondBrainTransport, SecondBrainTransportOptions } from "../second-brain-transport.js";
 import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
@@ -34,6 +35,7 @@ export type DashboardCliOptions = {
   readonly trustedCloseoutKey?: TrustedCloseoutKey;
   readonly nativeCloseoutSource?: NativeEveningSourceConfig;
   readonly priceReadCredentialPath?: string;
+  readonly companyFreshnessConfigPath?: string;
 };
 
 function configuredCloseoutKey(value: unknown): TrustedCloseoutKey | undefined {
@@ -76,6 +78,7 @@ export function parseDashboardCli(argv: readonly string[]): DashboardCliOptions 
       "closeout-public-key-spki": { type: "string" },
       "native-closeout-source": { type: "string" },
       "price-read-credential": { type: "string" },
+      "company-freshness-config": { type: "string" },
     },
     strict: true,
   });
@@ -98,7 +101,9 @@ export function parseDashboardCli(argv: readonly string[]): DashboardCliOptions 
     } catch { throw new JarvisError("VALIDATION_ERROR"); }
   }
   const nativeCloseoutSource = configuredNativeSource(source, trustedCloseoutKey);
+  if (values["company-freshness-config"] === "") throw new JarvisError("COMPANY_CALLER_CONFIG_INVALID");
   return { host: LOOPBACK, port, dbPath: resolve(values.db), staticRoot: resolve(values["static-root"]),
+    ...(values["company-freshness-config"] === undefined ? {} : { companyFreshnessConfigPath: resolve(values["company-freshness-config"]) }),
     ...(values["price-read-credential"] === undefined ? {} : { priceReadCredentialPath: values["price-read-credential"] }),
     ...(trustedCloseoutKey === undefined ? {} : { trustedCloseoutKey }),
     ...(nativeCloseoutSource === undefined ? {} : { nativeCloseoutSource }),
@@ -126,6 +131,10 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
       producer_uid: /^(0|[1-9][0-9]*)$/.test(messengerUid) ? Number(messengerUid) : Number.NaN,
     });
   const db = new AuthorityDb(options.dbPath);
+  const companyFreshness = (() => {
+    try { return configuredCompanyFreshness(options.companyFreshnessConfigPath, db); }
+    catch (error) { db.close(); throw error; }
+  })();
   const remoteApproval = (() => {
     try { return composeRemoteApproval(db, { policyPath: options.policyPath }); }
     catch (error) { db.close(); throw error; }
@@ -141,6 +150,7 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
     () => server.publish(["memory.effects.v1", "memory.records.v1", "memory.candidates.v1", "approvals", "overview"]));
   const server = createDashboardServer({
     db,
+    companyFreshness,
     priceFinance,
     mailCandidates,
     mailSource,

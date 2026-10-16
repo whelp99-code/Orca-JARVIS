@@ -42,8 +42,9 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
     return { action: String(row.action), action_level: Number(row.action_level) as ActionLevel, target, args }; }
   stage(input: ControlCommandRequestInput, now = new Date()): StoredControlCommand {
     return stageControlCommand(this.authority, input, now, event => this.event(event));
-  } decide(receipt: CommandApprovalReceipt, decisionAt?: Date): void {
-    let now = decisionAt ?? new Date();
+  } decide(receipt: CommandApprovalReceipt, decisionAt?: Date | (() => Date)): void {
+    const readNow = () => typeof decisionAt === "function" ? decisionAt() : decisionAt ?? new Date();
+    let now = readNow();
     const nowMs = finiteDate(now, "CONTROL_APPROVAL_INVALID");
     const request = this.authority.db.prepare("SELECT * FROM control_command_requests WHERE request_id=?").get(receipt.request_id) as | Record<string, unknown>
       | undefined; if (!request) throw new JarvisError("CONTROL_APPROVAL_NOT_APPLICABLE");
@@ -77,7 +78,7 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
       }
       reservation = progress.reserve(companyV2, receipt.decision === "approve" ? "decide_approve" : "decide_reject", hash(receipt), now);
     }
-    now = decisionAt ?? new Date();
+    now = readNow();
     const at = now.toISOString();
     const tx = this.authority.db.transaction(() => {
       if (request.action === "company.candidate.transition") {

@@ -54,6 +54,7 @@ export type DashboardServerOptions = {
   readonly sessionStore?: DashboardSessionStore;
   readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
   readonly executorFactory?: DashboardExecutorFactory;
+  readonly companyFreshness?: import("../company-freshness.js").CompanyFreshnessProvider;
   readonly memoryAdapter?: SecondBrainReadAdapter;
   readonly memoryProjectionKey?: Buffer;
   readonly memoryEffectSpoolRoot?: string;
@@ -115,6 +116,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
       planner: options.planner,
       memoryLifecycle: options.memoryLifecycle,
       executorFactory: options.executorFactory,
+      companyFreshness: options.companyFreshness,
       memoryRuntime,
       remoteApproval,
       ownerInbox: options.ownerInbox,

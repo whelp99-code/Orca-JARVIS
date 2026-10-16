@@ -66,6 +66,8 @@ export function composeRemoteApproval(db: AuthorityDb, options: {
 
 export function composeOwnerInbox(db: AuthorityDb, options: {
   readonly decisionKeyPath?: string;
+  readonly clock?: () => Date;
+  readonly companyFreshness?: import("./company-freshness.js").CompanyFreshnessProvider;
 } = {}): OwnerInbox {
   const policy = readPolicy(undefined);
   const sealed = sealedDecision(db, policy.owner_principal);
@@ -76,7 +78,7 @@ export function composeOwnerInbox(db: AuthorityDb, options: {
     sealed?.key_id ?? "unready-decision",
     sealed?.principal_id ?? "unready",
   );
-  return new OwnerInbox(db, signer, loaded !== undefined && sealed !== undefined);
+  return new OwnerInbox(db, signer, loaded !== undefined && sealed !== undefined, options.clock, options.companyFreshness);
 }
 
 function readKeyBytes(path: string): Buffer | undefined {

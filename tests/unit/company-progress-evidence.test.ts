@@ -6,11 +6,47 @@ import { readCompanyProgressEvidence, stageCompanyProgressEvidence } from "../..
 import type { CompanyFreshnessProvider } from "../../src/company-freshness.js";
 import { transitionRequestDigest } from "../../src/company-transition-read.js";
 import { ControlPlane } from "../../src/control-plane.js";
-import { companyApproverV2Database } from "../fixtures/company-approver-execution.js";
+import { decideDashboardRequest } from "../../src/dashboard/authority-service.js";
+import { OwnerInbox } from "../../src/owner-inbox.js";
+import { ControlReceiptSigner } from "../../src/remote-approval-signer.js";
+import { companyApproverKey, companyApproverV2Database } from "../fixtures/company-approver-execution.js";
 
 const NOW = new Date("2026-10-15T00:05:00.000Z");
 
 describe("committed company progress evidence", () => {
+  it.each(["dashboard", "passkey inbox"] as const)("uses the trusted provider through the %s decision surface", async surface => {
+    const live = await companyApproverV2Database("approve", false);
+    let finishes = 0;
+    const provider: CompanyFreshnessProvider = {
+      readFreshness: request => live.provider.readFreshness(request),
+      reserveProgress: request => live.provider.reserveProgress(request),
+      finishProgress(request) {
+        expect(live.db.db.inTransaction).toBe(false);
+        finishes++;
+        return live.provider.finishProgress(request);
+      },
+    };
+    try {
+      if (surface === "dashboard") {
+        decideDashboardRequest({ db: live.db, requestId: live.command.request_id,
+          body: { schema_version: 1, receipt: live.approval }, now: NOW, clock: () => NOW, companyFreshness: provider });
+      } else {
+        const inbox = new OwnerInbox(live.db, new ControlReceiptSigner(companyApproverKey(),
+          live.approval.key_id, live.approval.signer_principal_id), true, () => NOW, provider);
+        live.db.db.prepare("INSERT INTO owner_inbox_credentials(credential_id,public_key,counter,created_at) VALUES(?,?,?,?)")
+          .run("TEST_ONLY:provider-credential", Buffer.from("TEST_ONLY"), 0, NOW.toISOString());
+        const binding = { request_id: live.command.request_id, decision: "approve" as const,
+          command_digest: live.approval.command_digest, session_id: "TEST_ONLY:provider-session" };
+        const issued = inbox.issueChallenge(binding);
+        await inbox.decide({ ...binding, challenge_id: issued.challenge_id,
+          assertion: { id: "TEST_ONLY:provider-credential", clientDataJSON: "", authenticatorData: "", signature: "", userHandle: "" },
+          check: async () => ({ ok: true, newCounter: 1 }), origin: "http://127.0.0.1", rpId: "127.0.0.1" });
+      }
+      expect(finishes).toBe(1);
+      expect(new ControlPlane(live.db).get(live.command.request_id)?.state).toBe("approved");
+    } finally { live.close(); }
+  });
+
   it("commits the original decision and outbox together before finish outside a write transaction", async () => {
     const live = await companyApproverV2Database("approve", false);
     const calls: string[] = [];
@@ -81,7 +117,7 @@ describe("committed company progress evidence", () => {
     } finally { live.close(); }
   });
 
-  it("rechecks current time after reserve before committing a decision", async () => {
+  it.each(["default", "live callback"] as const)("rechecks %s time after reserve before committing a decision", async source => {
     const live = await companyApproverV2Database("approve", false);
     const provider: CompanyFreshnessProvider = {
       readFreshness: request => live.provider.readFreshness(request),
@@ -95,7 +131,8 @@ describe("committed company progress evidence", () => {
     vi.useFakeTimers({ toFake: ["Date"] });
     vi.setSystemTime(NOW);
     try {
-      expect(() => new ControlPlane(live.db, provider).decide(live.approval)).toThrow("CONTROL_APPROVAL_NOT_APPLICABLE");
+      expect(() => new ControlPlane(live.db, provider).decide(live.approval,
+        source === "live callback" ? () => new Date() : undefined)).toThrow("CONTROL_APPROVAL_NOT_APPLICABLE");
       expect(live.db.db.prepare("SELECT count(*) AS n FROM control_command_receipts").get()).toEqual({ n: 0 });
       expect(live.db.db.prepare("SELECT count(*) AS n FROM company_progress_reservations WHERE evidence_digest IS NULL").get()).toEqual({ n: 1 });
     } finally { vi.useRealTimers(); live.close(); }

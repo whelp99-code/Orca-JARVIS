@@ -25,6 +25,7 @@ import { stageMemoryRememberDispatch } from "./memory-remember-dispatch.js";
 import { taskExecutionReadiness } from "./task-execution-runtime.js";
 import { pageControlCommands } from "./control-command-page.js";
 import { learnProviderTombstonesFromFile } from "./cli-provider-tombstone-replica.js";
+import { configuredCompanyFreshness } from "./company-freshness-config.js";
 
 export async function executeControlCommand(
   context: CliCommandContext,
@@ -59,7 +60,7 @@ export async function executeControlCommand(
     return { ok: true, command: "memory.lifecycle", cycle: await lifecycle.reconcilePending(256) };
   }
   if (command === "control") {
-    const control = new ControlPlane(db);
+    const control = new ControlPlane(db, configuredCompanyFreshness(values["company-freshness-config"], db));
     if (subcommand === "check-task" && argument) {
       const input = typedObject(await jsonFile<StageTaskExecutionInput>(argument));
       const plan = parseTaskExecutionPlan(input.plan);
@@ -83,7 +84,7 @@ export async function executeControlCommand(
       if (control.get(receipt.request_id)?.action === "memory.confirm") {
         bindMemoryCandidateSpools(db, context.dependencies.memoryOutboxOptions);
       }
-      control.decide(receipt, commandNow(context));
+      control.decide(receipt, () => commandNow(context));
       return { ok: true, command: "control.decide", request_id: receipt.request_id, decision: receipt.decision };
     }
     if (subcommand === "cancel" && argument) {

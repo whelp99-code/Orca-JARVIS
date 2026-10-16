@@ -104,6 +104,7 @@ export class OwnerInbox {
     private readonly signer: ControlReceiptSigner,
     private readonly signerReady: boolean,
     private readonly now: () => Date = () => new Date(),
+    private readonly companyFreshness?: import("./company-freshness.js").CompanyFreshnessProvider,
   ) {}
 
   list(): readonly OwnerInboxItem[] {
@@ -234,7 +235,7 @@ export class OwnerInbox {
     };
     const signed = this.signer.signVerifiedRemoteDecision(receipt);
     try {
-      new ControlPlane(this.db).decide(signed, now);
+    new ControlPlane(this.db, this.companyFreshness).decide(signed, this.now);
     } catch (error) {
       if (error instanceof JarvisError && error.code === "CONTROL_APPROVAL_INVALID") {
         fail("OWNER_INBOX_KEY_MISMATCH");

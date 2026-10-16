@@ -47,6 +47,7 @@ type RequestContext = {
   readonly planner?: TeamProposalPlanner;
   readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
   readonly executorFactory?: DashboardExecutorFactory;
+  readonly companyFreshness?: import("../company-freshness.js").CompanyFreshnessProvider;
   readonly memoryRuntime: MemoryRuntime;
   readonly remoteApproval?: RemoteApprovalService;
   readonly ownerInbox?: import("../owner-inbox.js").OwnerInbox;
@@ -99,6 +100,7 @@ export async function handleRequest(input: RequestContext): Promise<void> {
       planner: input.planner,
       memoryLifecycle: input.memoryLifecycle,
       executorFactory: input.executorFactory,
+      companyFreshness: input.companyFreshness,
       memoryRuntime: input.memoryRuntime,
       remoteApproval: input.remoteApproval,
       ownerInbox: input.ownerInbox,
