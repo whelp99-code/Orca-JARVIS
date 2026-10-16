@@ -1,3 +1,4 @@
+import { randomUUID } from "node:crypto";
 import { stageControlCommand } from "./control-command-stage.js";
 import { readControlCommand, listControlCommands, decodeStoredControlCommand } from "./control-command-read.js";
 import { canonicalize } from "./canonical.js"; import { validateControlAction } from "./control-actions.js"; import {
@@ -69,17 +70,44 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
     const state = receipt.decision === "approve" ? "approved" : "rejected";
     const progress = new CompanyProgress(this.authority, this.companyFreshness);
     let reservation: CompanyProgressReservation | undefined;
+    let at = now.toISOString();
+    const operation = receipt.decision === "approve" ? "decide_approve" : "decide_reject";
+    const token = companyV2 ? randomUUID() : undefined;
+    if (companyV2 && token) {
+      if (this.authority.db.inTransaction) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
+      this.authority.db.transaction(() => {
+        reservation = progress.pending(companyV2, operation);
+        if (reservation && reservation.reserve_request.event_digest !== hash(receipt)) {
+          throw new JarvisError("COMPANY_APPROVAL_INVALID");
+        }
+        const scope = companyV2.target;
+        const busy = this.authority.db.prepare(
+          `SELECT 1 FROM company_progress_reservations
+           WHERE provider_instance_id=? AND workspace_id=? AND evidence_digest IS NULL AND operation_id<>?
+           UNION ALL
+           SELECT 1 FROM company_candidate_handoffs h JOIN control_command_requests r USING(request_id)
+           WHERE json_extract(r.target_json,'$.provider_instance_id')=? AND json_extract(r.target_json,'$.workspace_id')=?
+           AND h.lease_token IS NOT NULL AND h.lease_expires_at>? LIMIT 1`,
+        ).get(scope.provider_instance_id, scope.workspace_id, reservation?.operation_id ?? "",
+          scope.provider_instance_id, scope.workspace_id, at);
+        if (busy) throw new JarvisError("COMPANY_EXECUTION_BUSY");
+        assertCurrentCompanyPin(this.authority, companyV2, receipt, now);
+        const changed = this.authority.db.prepare(
+          `UPDATE company_candidate_handoffs SET lease_token=?,lease_expires_at=?,updated_at=?
+           WHERE request_id=? AND current=1 AND command_digest=?
+           AND EXISTS (SELECT 1 FROM control_command_requests r WHERE r.request_id=company_candidate_handoffs.request_id AND r.state='pending')
+           AND (lease_token IS NULL OR lease_expires_at<=?)`,
+        ).run(token, new Date(nowMs + 60_000).toISOString(), at, receipt.request_id, receipt.command_digest, at);
+        if (changed.changes !== 1) throw new JarvisError("CONTROL_APPROVAL_NOT_APPLICABLE");
+      }).immediate();
+    }
+    try {
     if (companyV2) {
-      const imported = this.authority.db.prepare(
-        "SELECT current,command_digest FROM company_candidate_handoffs WHERE request_id=?",
-      ).get(receipt.request_id) as { current: number; command_digest: string } | undefined;
-      if (!imported || imported.current !== 1 || imported.command_digest !== receipt.command_digest) {
-        throw new JarvisError("CONTROL_APPROVAL_NOT_APPLICABLE");
-      }
-      reservation = progress.reserve(companyV2, receipt.decision === "approve" ? "decide_approve" : "decide_reject", hash(receipt), now);
+      // The local claim is committed before provider I/O; a receipt rollback must retain this reservation.
+      reservation ??= progress.reserve(companyV2, operation, hash(receipt), now);
     }
     now = readNow();
-    const at = now.toISOString();
+    at = now.toISOString();
     const tx = this.authority.db.transaction(() => {
       if (request.action === "company.candidate.transition") {
         const imported = this.authority.db.prepare(
@@ -103,6 +131,10 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
             || !verifyCommandApproval(receipt, currentKey.public_key_pem, now, current.action)) throw new JarvisError("COMPANY_APPROVAL_INVALID");
           assertCurrentCompanyPin(this.authority, companyV2, receipt, now);
           if (reservation) progress.assertReservation(reservation);
+          const claim = this.authority.db.prepare(
+            "SELECT 1 FROM company_candidate_handoffs WHERE request_id=? AND lease_token=?",
+          ).get(receipt.request_id, token);
+          if (!claim) throw new JarvisError("CONTROL_APPROVAL_RACE");
         } else {
           const target = JSON.parse(String(request.target_json)) as { provider_instance_id: string; workspace_id: string };
           if (readCompanyApprovalBinding(this.authority, target)) throw new JarvisError("ENROLLMENT_REQUIRED");
@@ -143,6 +175,11 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
         ).run(code, at, receipt.request_id);
         throw error;
       }
+    }
+    } finally {
+      if (token) this.authority.db.prepare(
+        "UPDATE company_candidate_handoffs SET lease_token=NULL,lease_expires_at=NULL WHERE request_id=? AND lease_token=?",
+      ).run(receipt.request_id, token);
     }
   } private authorityLossCode(row: Record<string, unknown>, nowMs: number): string | null {
     const leaseExpires = Date.parse(String(row.lease_expires_at)); const requestExpires = Date.parse(String(row.expires_at));
