@@ -75,6 +75,7 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
     const token = companyV2 ? randomUUID() : undefined;
     if (companyV2 && token) {
       if (this.authority.db.inTransaction) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
+      progress.settleCancelled(companyV2.target, now);
       this.authority.db.transaction(() => {
         reservation = progress.pending(companyV2, operation);
         if (reservation && reservation.reserve_request.event_digest !== hash(receipt)) {
@@ -85,10 +86,16 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
           `SELECT 1 FROM company_progress_reservations
            WHERE provider_instance_id=? AND workspace_id=? AND evidence_digest IS NULL AND operation_id<>?
            UNION ALL
+           SELECT 1 FROM company_progress_intents i
+           LEFT JOIN company_progress_reservations p ON p.operation_id=i.operation_id
+           WHERE i.provider_instance_id=? AND i.workspace_id=? AND p.finished_checkpoint_json IS NULL
+           AND NOT (i.request_id=? AND i.operation=?)
+           UNION ALL
            SELECT 1 FROM company_candidate_handoffs h JOIN control_command_requests r USING(request_id)
            WHERE json_extract(r.target_json,'$.provider_instance_id')=? AND json_extract(r.target_json,'$.workspace_id')=?
            AND h.lease_token IS NOT NULL AND h.lease_expires_at>? LIMIT 1`,
         ).get(scope.provider_instance_id, scope.workspace_id, reservation?.operation_id ?? "",
+          scope.provider_instance_id, scope.workspace_id, receipt.request_id, operation,
           scope.provider_instance_id, scope.workspace_id, at);
         if (busy) throw new JarvisError("COMPANY_EXECUTION_BUSY");
         assertCurrentCompanyPin(this.authority, companyV2, receipt, now);
@@ -176,6 +183,9 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
         throw error;
       }
     }
+    } catch (error) {
+      if (companyV2) progress.settleCancelled(companyV2.target, now);
+      throw error;
     } finally {
       if (token) this.authority.db.prepare(
         "UPDATE company_candidate_handoffs SET lease_token=NULL,lease_expires_at=NULL WHERE request_id=? AND lease_token=?",

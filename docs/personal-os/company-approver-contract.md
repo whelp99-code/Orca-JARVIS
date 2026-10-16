@@ -159,13 +159,13 @@ scope/challenge/checkpoint/reservation_id를 요구하거나 추가하지 않는
 
 진행 기록의 operation은 decide_approve/decide_reject/accept/reject/complete/mark_processed/delete다.
 C1 결정·SB 전이·verifier 효과는 서로 다른 operation이며 호출 경계가 고정한다.
-terminal_state의 closed enum은 approved/rejected/accepted/completed/processed_complete/deleted다.
+terminal_state의 closed enum은 approved/rejected/accepted/completed/processed_complete/deleted/cancelled다.
 finish는 호출자가 보낸 operation을 믿지 않고 원래 reservation의 operation을 사용한다.
 
-| 예약 operation | 유일하게 허용하는 terminal_state |
+| 예약 operation | 허용하는 terminal_state |
 |---|---|
-| decide_approve | approved |
-| decide_reject | rejected |
+| decide_approve | approved 또는 증명된 cancelled |
+| decide_reject | rejected 또는 증명된 cancelled |
 | accept | accepted |
 | reject | rejected |
 | complete | completed |
@@ -173,7 +173,18 @@ finish는 호출자가 보낸 operation을 믿지 않고 원래 reservation의 o
 | delete | deleted |
 
 enum 밖 값은 COMPANY_CONTRACT_INVALID다. enum 안이지만 위 대응과 다르면
-finish는 conflict/checkpoint=null이며 기록/head를 바꾸지 않는다. uncertain/failed는
+finish는 conflict/checkpoint=null이며 기록/head를 바꾸지 않는다. cancelled는 실제
+`control_command_revocations`의 request/command 및 정규화한 payload와 `payload_digest`가 일치하고
+effect가 실행되지 않은 결정 예약에만 허용한다. JARVIS는 cancelled 상태와 execution fence 0,
+`control_command_redemptions`의 부재를 함께 확인한다. 회사 실행은 별도 redemption을 사용하므로
+일반 fence 0만으로 미실행을 증명하지 않는다. 이미 redeem된 요청은 실행 결과가 불명확한
+상태로 남기며 진행 중인 회사 실행 lease를 해제하지 않는다. lease 해제도 이 조건을 원자적으로
+확인하며, 기존 receipt가 있다면 원래 예약의 decision/event와 일치하는 사실만 보존한다.
+cancelled는 승인·거절 receipt나 effect를 새로 만드는 값이 아니다. 같은 원래 예약을
+종결한 provider ACK/checkpoint를 영속화한 뒤에만 workspace fence를 해제한다.
+예약/intent는 삭제하지 않으며, ACK 유실은 같은 증거로 재시도한다. 원 요청의 철회는 유지한다.
+SB provider와 JARVIS는 같은 계약을 채택하며, SB PR84의 채택은 운영 배포 선행조건이다.
+unknown 값이나 증거 불일치로 예약을 풀지 않는다. uncertain/failed는
 완료 상태가 아니며 미확정 예약을 finish로 없애는 데 쓰지 않는다.
 `operation_id=H(D("second-brain/company-operation/v1")+C({scope,request_id,command_digest,operation}))`.
 삭제는 같은 domain의 `C({scope,deletion_plan_digest,operation:"delete"})`다.

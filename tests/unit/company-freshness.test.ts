@@ -198,6 +198,38 @@ describe("company freshness contract", () => {
     expect(companyCheckpointSchema.safeParse({ ...checkpoint, operational_epoch: 0 }).success).toBe(false);
   });
 
+  it("records cancelled decision progress without manufacturing receipt or effect streams", () => {
+    const target = provider();
+    const reserved = target.reserveProgress(reserveRequest("decide_approve",
+      memory.factory_input.initial_checkpoint, "challenge:TEST_ONLY:cancelled"));
+    if (reserved.outcome !== "reserved") throw new Error("expected reservation");
+    const input: FinishProgressRequest = {
+      schema_version: 2, scope, operation_id: operationId("decide_approve"), reservation_id: reserved.reservation_id,
+      expected_checkpoint: reserved.checkpoint, evidence_digest: domainDigest("TEST_ONLY:revocation", "cancelled"),
+      terminal_state: "cancelled", challenge: "challenge:TEST_ONLY:cancel-finish",
+    };
+    expect(finishProgressRequestSchema.safeParse(input).success).toBe(true);
+    expect(finishProgressRequestSchema.safeParse({ ...input, terminal_state: "unknown_terminal" }).success).toBe(false);
+    const result = target.finishProgress(input);
+    expect(result.outcome).toBe("recorded");
+    if (result.outcome !== "recorded" || !result.checkpoint) throw new Error("expected cancellation record");
+    expect(result.checkpoint.stores).toEqual(memory.factory_input.initial_checkpoint.stores);
+    expect(target.finishProgress(input).outcome).toBe("already_recorded");
+  });
+
+  it.each(["accept", "complete", "delete"] as const)("refuses cancelled for a non-decision %s reservation", operation => {
+    const target = provider();
+    const reserved = target.reserveProgress(reserveRequest(operation,
+      memory.factory_input.initial_checkpoint, "challenge:TEST_ONLY:nondecision-cancel"));
+    if (reserved.outcome !== "reserved") throw new Error("expected reservation");
+    expect(target.finishProgress({
+      schema_version: 2, scope, operation_id: operationId(operation), reservation_id: reserved.reservation_id,
+      expected_checkpoint: reserved.checkpoint, evidence_digest: domainDigest("TEST_ONLY:revocation", "cancelled"),
+      terminal_state: "cancelled", challenge: "challenge:TEST_ONLY:nondecision-finish",
+    })).toEqual({ schema_version: 2, scope, challenge: "challenge:TEST_ONLY:nondecision-finish",
+      outcome: "conflict", checkpoint: null });
+  });
+
   it("keeps a bad terminal state reserved and then accepts the mapped state", () => {
     for (const negative of fixture.terminal_state_negative_cases) {
       expect(negative.expected_valid).toBe(false);
