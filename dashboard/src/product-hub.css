@@ -69,10 +69,17 @@
   word-break: keep-all;
 }
 
+.product-hub-card-links {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: var(--space-1);
+  margin-block-start: auto;
+}
+
 .product-hub-card a {
   display: inline-flex;
   align-items: center;
   align-self: start;
   min-block-size: var(--size-control);
-  margin-block-start: auto;
 }

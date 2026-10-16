@@ -15,7 +15,7 @@ type LoadState =
 const PRODUCTS = [
   { id: "crm", name: "CRM", link: "CRM 화면 열기" },
   { id: "mail", name: "Mail", link: "메일함 열기" },
-  { id: "price", name: "AI 세무사", link: "AI 세무사 화면 열기" },
+  { id: "price", name: "AI 세무사", link: "화면 준비 중" },
   { id: "second_brain", name: "Second Brain", link: "기억 화면 열기" },
   { id: "messenger", name: "메신저 요약", link: "메신저 요약 보기" },
   { id: "approvals", name: "승인함", link: "승인함 열기" },
@@ -32,22 +32,21 @@ const STATES = {
   configured: "연결 구성됨 · 실제 조회 미확인",
 } as const satisfies Record<Product["state"] | "loading", string>;
 
-/** Product destinations use the entry point's hostname, never provider-supplied URLs. */
-export function productScreen(id: ProductId, origin: string): string {
-  const url = new URL("/", origin);
+/** Public build configuration supplies navigation, never source-provided URLs. */
+function productScreen(id: ProductId): string | undefined {
   switch (id) {
     case "crm":
-      url.protocol = "https:"; url.port = "8446"; return url.href;
+      return import.meta.env.VITE_JARVIS_CRM_URL ?? "https://jm-omachy.alpines-goldeye.ts.net:8448/";
     case "mail":
-      url.protocol = "http:"; url.port = "3010"; return url.href;
+      return import.meta.env.VITE_JARVIS_MAIL_URL ?? "https://jm-omachy.alpines-goldeye.ts.net:8451/";
     case "price":
-      url.protocol = "https:"; url.port = "8450"; return url.href;
+      return undefined;
     case "second_brain":
-      return "/memory";
+      return import.meta.env.VITE_JARVIS_MEMORY_URL ?? "/memory";
     case "messenger":
-      return "/products#product-messenger";
+      return import.meta.env.VITE_JARVIS_MESSENGER_URL ?? "/products#product-messenger";
     case "approvals":
-      return "/approvals";
+      return import.meta.env.VITE_JARVIS_APPROVALS_URL ?? "/approvals";
     default:
       return assertNever(id);
   }
@@ -92,6 +91,7 @@ export function ProductHub({ load }: Readonly<{ load?: Loader }>) {
         {PRODUCTS.map(product => {
           const item = value?.items.find(item => item.id === product.id);
           const status = item?.state ?? fallback;
+          const href = productScreen(product.id);
           return (
             <article className="panel product-hub-card" id={`product-${product.id}`} key={product.id}
               data-product={product.id} data-state={status} aria-labelledby={`product-title-${product.id}`}>
@@ -105,7 +105,12 @@ export function ProductHub({ load }: Readonly<{ load?: Loader }>) {
                 {item?.observed_at == null ? "원본 관측 시각 미확인"
                   : <>관측 <time dateTime={item.observed_at}>{formatKst(item.observed_at)}</time></>}
               </p>
-              <a href={productScreen(product.id, window.location.origin)}>{product.link}</a>
+              <div className="product-hub-card-links">
+                {href === undefined ? <p className="product-hub-note">{product.link}</p>
+                  : <a href={href}>{product.link}</a>}
+                {product.id === "crm" && <a href={import.meta.env.VITE_JARVIS_CRM_REVIEW_URL
+                  ?? "https://jm-omachy.alpines-goldeye.ts.net:8450/"}>CRM 후보 승인 화면 열기</a>}
+              </div>
             </article>
           );
         })}
@@ -122,7 +127,7 @@ function summary(id: ProductId, item: Product | undefined): string {
   switch (id) {
     case "crm": return `메일에서 온 업무 후보 ${count(item?.count)}`;
     case "mail": return `메일 ${count(item?.count)} · 대화 ${count(item?.secondary_count)}`;
-    case "price": return "원장 금액과 처리 상태는 AI 세무사 원래 화면에서 확인";
+    case "price": return "AI 세무사 전용 화면은 아직 없습니다.";
     case "second_brain": return `회사기억 후보 ${count(item?.count)}`;
     case "messenger": {
       const age = item?.oldest_age_ms;

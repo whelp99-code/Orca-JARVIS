@@ -1,9 +1,9 @@
 import "@testing-library/jest-dom/vitest";
 import { act, cleanup, fireEvent, render, screen } from "@testing-library/react";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import type { ProductHubResponse } from "../../src/dashboard/product-hub-contract.js";
 import { createDashboardClient, DashboardApiError } from "./api.js";
-import { ProductHub, productScreen } from "./product-hub.js";
+import { ProductHub } from "./product-hub.js";
 import { ControlCenterRoot } from "./root.js";
 import { createDashboardStore } from "./store.js";
 
@@ -20,7 +20,13 @@ const value: ProductHubResponse = {
   ],
 };
 
-afterEach(() => { cleanup(); vi.unstubAllGlobals(); });
+beforeEach(() => {
+  for (const key of ["VITE_JARVIS_CRM_URL", "VITE_JARVIS_CRM_REVIEW_URL", "VITE_JARVIS_MAIL_URL",
+    "VITE_JARVIS_MEMORY_URL", "VITE_JARVIS_MESSENGER_URL", "VITE_JARVIS_APPROVALS_URL"]) {
+    vi.stubEnv(key, undefined);
+  }
+});
+afterEach(() => { cleanup(); vi.unstubAllGlobals(); vi.unstubAllEnvs(); });
 
 function deferred<T>() {
   const callbacks: { resolve?: (value: T | PromiseLike<T>) => void; reject?: (reason: Error) => void } = {};
@@ -45,6 +51,8 @@ describe("read-only product Hub", () => {
     expect(view.container.querySelector('[data-product-summary="messenger"]')).toHaveTextContent("0건");
     expect(view.container.querySelector('[data-product="price"]')).toHaveAttribute("data-state", "configured");
     expect(view.container.querySelector('[data-product-summary="price"]')).not.toHaveTextContent("0원");
+    expect(view.container.querySelector('#product-price a, #product-price button')).toBeNull();
+    expect(view.container.querySelector("#product-price")).toHaveTextContent("화면 준비 중");
     expect(screen.queryByRole("button", { name: /승인|전송|확정/ })).not.toBeInTheDocument();
   });
 
@@ -82,14 +90,35 @@ describe("read-only product Hub", () => {
     expect(view.container.querySelector('[data-product-summary="crm"]')).not.toHaveTextContent("12건");
   });
 
-  it("keeps product destinations on the entry hostname and fixed existing routes", () => {
-    const origin = "https://representative.example.ts.net:8444";
-    expect(productScreen("crm", origin)).toBe("https://representative.example.ts.net:8446/");
-    expect(productScreen("mail", origin)).toBe("http://representative.example.ts.net:3010/");
-    expect(productScreen("price", origin)).toBe("https://representative.example.ts.net:8450/");
-    expect(productScreen("second_brain", origin)).toBe("/memory");
-    expect(productScreen("messenger", origin)).toBe("/products#product-messenger");
-    expect(productScreen("approvals", origin)).toBe("/approvals");
+  it("uses the measured CRM web, CRM review and HTTPS Mail destinations without a Price link", () => {
+    const view = render(<ProductHub />);
+    expect(screen.getByRole("link", { name: "CRM 화면 열기" }))
+      .toHaveAttribute("href", "https://jm-omachy.alpines-goldeye.ts.net:8448/");
+    expect(screen.getByRole("link", { name: "CRM 후보 승인 화면 열기" }))
+      .toHaveAttribute("href", "https://jm-omachy.alpines-goldeye.ts.net:8450/");
+    expect(screen.getByRole("link", { name: "메일함 열기" }))
+      .toHaveAttribute("href", "https://jm-omachy.alpines-goldeye.ts.net:8451/");
+    expect(screen.getByRole("link", { name: "기억 화면 열기" })).toHaveAttribute("href", "/memory");
+    expect(screen.getByRole("link", { name: "메신저 요약 보기" })).toHaveAttribute("href", "/products#product-messenger");
+    expect(screen.getByRole("link", { name: "승인함 열기" })).toHaveAttribute("href", "/approvals");
+    expect(view.container.querySelector('#product-price a, #product-price button')).toBeNull();
+  });
+
+  it("uses configured env destinations rather than hard-coded product ports", () => {
+    const destinations = [
+      ["VITE_JARVIS_CRM_URL", "CRM 화면 열기", "https://configured.example.ts.net/crm"],
+      ["VITE_JARVIS_CRM_REVIEW_URL", "CRM 후보 승인 화면 열기", "https://configured.example.ts.net/crm-review"],
+      ["VITE_JARVIS_MAIL_URL", "메일함 열기", "https://configured.example.ts.net/mail"],
+      ["VITE_JARVIS_MEMORY_URL", "기억 화면 열기", "/configured-memory"],
+      ["VITE_JARVIS_MESSENGER_URL", "메신저 요약 보기", "/configured-messenger"],
+      ["VITE_JARVIS_APPROVALS_URL", "승인함 열기", "/configured-approvals"],
+    ] as const;
+    for (const [key, , href] of destinations) vi.stubEnv(key, href);
+    const view = render(<ProductHub />);
+    for (const [, label, href] of destinations) {
+      expect(screen.getByRole("link", { name: label })).toHaveAttribute("href", href);
+    }
+    expect(view.container.querySelector('#product-price a, #product-price button')).toBeNull();
   });
 
   it("mounts on the real phone root even when personal data cannot load, without authority reads", async () => {
