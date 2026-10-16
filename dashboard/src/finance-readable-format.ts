@@ -91,8 +91,8 @@ export function formatOptionalCardAmount(value: unknown): string {
 export function formatCashBalancePair(opening: unknown, closing: unknown): string {
   const open = formatCardWonSuffix(opening);
   const close = formatCardWonSuffix(closing);
-  if (open === undefined && close === undefined) return "없음";
-  return `기초 ${open ?? "없음"} · 마감 ${close ?? "없음"}`;
+  if (open === undefined && close === undefined) return "확인 안 됨";
+  return `기초 ${open ?? "확인 안 됨"} · 마감 ${close ?? "확인 안 됨"}`;
 }
 
 export function formatReadablePeriodRange(start: string, end: string): string {
