@@ -1,0 +1,509 @@
+status: running
+   ✓ keeps a commit that landed after the candidate was built and before the swap began  3144ms
+   ✓ keeps a commit that landed between the candidate's read and the swap  3477ms
+   ✓ keeps a commit that landed between the version reading and the connection closing  8152ms
+ ✓ tests/integration/release-rollback-cli.test.ts (9 tests) 29140ms
+   ✓ release rollback > allows a rollback whose vector, provider contract and sealed manifest all match  622ms
+   ✓ release rollback --restore-backup > restores the backup and switches current when the backup is on the target's vector  9613ms
+   ✓ release rollback --restore-backup > refuses a backup whose vector is not the target's, and an unusable backup  18739ms
+ ✓ tests/integration/daily-control-loop-runtime-matrix.test.ts (57 tests) 28508ms
+   ✓ accessor-safe closed records > rejects hostile config symbol without leaking  600ms
+   ✓ accessor-safe closed records > rejects hostile config non_enumerable without leaking  565ms
+   ✓ accessor-safe closed records > rejects hostile config custom_prototype without leaking  577ms
+   ✓ accessor-safe closed records > rejects hostile config nested_getter without leaking  568ms
+   ✓ accessor-safe closed records > rejects hostile config proxy without leaking  578ms
+   ✓ accessor-safe closed records > rejects hostile event symbol without writes  571ms
+   ✓ accessor-safe closed records > rejects hostile event non_enumerable without writes  586ms
+   ✓ accessor-safe closed records > rejects hostile event custom_prototype without writes  559ms
+   ✓ accessor-safe closed records > rejects hostile event nested_getter without writes  564ms
+   ✓ accessor-safe closed records > rejects hostile event proxy without writes  563ms
+   ✓ complete identity, lease, recovery, defer, and uncertainty > conflicts when occurred_at changes under one logical event key  567ms
+   ✓ complete identity, lease, recovery, defer, and uncertainty > conflicts when critical changes under one logical event key  566ms
+   ✓ complete identity, lease, recovery, defer, and uncertainty > conflicts when items changes under one logical event key  570ms
+   ✓ complete identity, lease, recovery, defer, and uncertainty > conflicts when work changes under one logical event key  566ms
+   ✓ complete identity, lease, recovery, defer, and uncertainty > conflicts when bytes changes under one logical event key  565ms
+   ✓ complete identity, lease, recovery, defer, and uncertainty > conflicts on scheduled instant, created time, not-before, deadline, and step bytes  578ms
+   ✓ complete identity, lease, recovery, defer, and uncertainty > enforces same-owner -1/equality/+1 reclaim boundaries  1736ms
+   ✓ complete identity, lease, recovery, defer, and uncertainty > enforces different-owner -1/equality/+1 reclaim boundaries  1748ms
+   ✓ complete identity, lease, recovery, defer, and uncertainty > scans three dates, classifies every schedule, and repeats with zero delta  583ms
+   ✓ complete identity, lease, recovery, defer, and uncertainty > admits a durable deferred event only at equality without redelivery and rejects conflict  568ms
+   ✓ complete identity, lease, recovery, defer, and uncertainty > rejects stale and expired uncertain claims and keeps duplicate terminal immutable  574ms
+   ✓ budget, deadline, and environment parity > enforces items N-1/N/N+1  1738ms
+   ✓ budget, deadline, and environment parity > enforces work N-1/N/N+1  1852ms
+   ✓ budget, deadline, and environment parity > enforces bytes N-1/N/N+1  1825ms
+   ✓ budget, deadline, and environment parity > rejects malformed event cost -1  609ms
+   ✓ budget, deadline, and environment parity > rejects malformed event cost 1.5  578ms
+   ✓ budget, deadline, and environment parity > rejects malformed event cost 2147483648  579ms
+   ✓ budget, deadline, and environment parity > rejects malformed event cost NaN  570ms
+   ✓ budget, deadline, and environment parity > rejects malformed event cost Infinity  569ms
+   ✓ budget, deadline, and environment parity > rejects malformed deadline -1 before writes  644ms
+   ✓ budget, deadline, and environment parity > rejects malformed deadline 1.5 before writes  664ms
+   ✓ budget, deadline, and environment parity > rejects malformed deadline 86400001 before writes  635ms
+   ✓ budget, deadline, and environment parity > rejects malformed deadline NaN before writes  656ms
+   ✓ budget, deadline, and environment parity > rejects malformed deadline Infinity before writes  633ms
+   ✓ budget, deadline, and environment parity > enforces deadline delta -1 without work at or after equality  567ms
+   ✓ budget, deadline, and environment parity > enforces deadline delta 0 without work at or after equality  586ms
+   ✓ budget, deadline, and environment parity > enforces deadline delta 1 without work at or after equality  580ms
+   ✓ budget, deadline, and environment parity > produces identical KST bytes across TZ and locale  860ms
+ ✓ tests/integration/memory-correction-control.test.ts (11 tests) 30945ms
+   ✓ correction control completion from durable proof > completes after compaction and approval/lease expiry using a fresh clock  3510ms
+   ✓ correction control completion from durable proof > rolls back a failed final event, then recovers locally while provider is offline  3185ms
+   ✓ correction control completion from durable proof > repairs a historical settled/claimed gap and rolls back a cursor failure  2591ms
+   ✓ correction control completion from durable proof > repairs a historical settled/uncertain gap and rolls back a cursor failure  2429ms
+   ✓ correction control completion from durable proof > does not complete with provider_key evidence loss  2861ms
+   ✓ correction control completion from durable proof > does not complete with fence evidence loss  2644ms
+   ✓ correction control completion from durable proof > does not complete with cancel evidence loss  2706ms
+   ✓ correction control completion from durable proof > does not complete with revocation evidence loss  2850ms
+   ✓ correction control completion from durable proof > does not complete with missing_binding evidence loss  2631ms
+   ✓ correction control completion from durable proof > does not complete with proof_signature evidence loss  2838ms
+   ✓ correction control completion from durable proof > does not complete with purge_digest evidence loss  2698ms
+ ✓ tests/unit/company-candidate-transport.test.ts (30 tests) 22642ms
+   ✓ company candidate broker > holds quota until a stalled response socket closes within the write bound  10150ms
+   ✓ company candidate broker > hard-kills a pinned child that ignores SIGTERM and restores the slot  10125ms
+ ❯ tests/integration/personal-os-release-rehearsal.test.ts (6 tests | 1 failed) 5475ms
+   ✓ personal-OS release rehearsal > refuses a production release root before creating files 5ms
+   ✓ personal-OS release rehearsal > does not emit PERSONAL_OS_REHEARSAL_OK when the payload CLI is a stub 3ms
+   ✓ personal-OS release rehearsal > rejects an unknown scenario before writing a release  350ms
+   ✓ personal-OS release rehearsal > keeps the newer binary when the previous schema range rejects the database  683ms
+   × personal-OS release rehearsal > emits PERSONAL_OS_REHEARSAL_OK only after the isolated stages pass 3830ms
+     → E_REHEARSAL_GATE
+   ✓ personal-OS release rehearsal > switches authority/current only when the previous range accepts the database  603ms
+ ✓ tests/integration/local-observation-retention-plan.test.ts (12 tests) 20827ms
+   ✓ accepts the candidate the copier's own plan produces, with and without removals  2892ms
+   ✓ rejects a candidate that kept rows the selection chose to remove  2824ms
+   ✓ rejects a candidate that lost an audit row naming a removed context  1462ms
+   ✓ rejects a candidate whose INTEGER differs only beyond the safe range  1359ms
+   ✓ rejects a candidate whose separator and token value differs from the source  1477ms
+   ✓ rejects a candidate whose quote value differs from the source  1447ms
+   ✓ rejects a candidate whose empty string value differs from the source  1312ms
+   ✓ rejects a candidate whose null value differs from the source  1340ms
+   ✓ rejects a candidate whose blob value differs from the source  1327ms
+   ✓ rejects a candidate whose numeric value differs from the source  1340ms
+   ✓ rejects a candidate whose large integer value differs from the source  1375ms
+   ✓ rejects a candidate whose table set or generation history was altered  2672ms
+ ✓ tests/integration/local-observation-retention-exclusivity.test.ts (16 tests) 19660ms
+   ✓ refuses to replace a source another process holds open, then swaps once it lets go  1751ms
+   ✓ refuses a holder that appears after the probe and before the rename  1514ms
+   ✓ refuses before removing anything when the source is writable outside this user  2432ms
+   ✓ refuses on an environment whose answer has a hole, and preserves everything it was asked to replace  1510ms
+   ✓ keeps the source, its log and the candidate when a writer commits after the last question  1607ms
+   ✓ leaves the original database live when a run stops between retirement and publish  1530ms
+   ✓ settles a publish that stopped before the old log moved, on identity rather than on the name  1523ms
+   ✓ leaves a live database's own log alone when the publish it was told about never happened  1468ms
+   ✓ refuses to open a database whose publish record cannot be accounted for, and keeps everything  1402ms
+   ✓ leaves a live publisher's phase record alone when another opener arrives mid-swap  1465ms
+   ✓ gives the descriptor up when a publish record appears while the database is being opened  1350ms
+   ✓ keeps a commit that arrived after the last question and let go before the count was taken  1618ms
+ ❯ tests/integration/local-observation-retention-recovery.test.ts (14 tests | 1 failed) 16252ms
+   ✓ explains a process killed with the claim recorded and nothing built  823ms
+   ✓ removes a half-copied candidate and leaves the source able to try again  1510ms
+   ✓ discards a verified candidate its process never applied, losing nothing  1488ms
+   ✓ keeps the source intact when the process dies one step before the swap  1644ms
+   ✓ leaves an applied database that explains its own history when the process dies after the swap  1713ms
+   ✓ preserves a file at the claimed path that this operation did not create  1412ms
+   ✓ refuses to install a candidate whose bytes changed after it was verified  1392ms
+   ✓ writes the verified digest once and refuses to have it rewritten  1396ms
+   ✓ leaves an operation alone while the process that owns it is still running  755ms
+   ✓ keeps a directory an intent never proved it created  672ms
+   ✓ does not decide a claim is abandoned when it cannot read the owner  622ms
+   ✓ frees the destination a run that died before recording identity never reached  1503ms
+   ✓ recovers a staged claim whose identity it can still prove  731ms
+   × leaves an object squatting a staged name exactly as it was 590ms
+     → disk I/O error
+
+⎯⎯⎯⎯⎯ Failed Suites 342 ⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/longitudinal/personal-os-boundary.test.ts [ tests/longitudinal/personal-os-boundary.test.ts ]
+ FAIL  tests/longitudinal/personal-os-support-integrity.test.ts [ tests/longitudinal/personal-os-support-integrity.test.ts ]
+ FAIL  tests/longitudinal/personal-os-thresholds.test.ts [ tests/longitudinal/personal-os-thresholds.test.ts ]
+ FAIL  tests/unit/assembled-session-transport.test.ts [ tests/unit/assembled-session-transport.test.ts ]
+ FAIL  tests/unit/authority-database-close-fence.test.ts [ tests/unit/authority-database-close-fence.test.ts ]
+ FAIL  tests/unit/authority-database-content.test.ts [ tests/unit/authority-database-content.test.ts ]
+ FAIL  tests/unit/authority-database-process-race.test.ts [ tests/unit/authority-database-process-race.test.ts ]
+ FAIL  tests/unit/authority-open-admission.test.ts [ tests/unit/authority-open-admission.test.ts ]
+ FAIL  tests/unit/company-approval-binding.test.ts [ tests/unit/company-approval-binding.test.ts ]
+ FAIL  tests/unit/company-archive-read.test.ts [ tests/unit/company-archive-read.test.ts ]
+ FAIL  tests/unit/company-candidate-execution-v2.test.ts [ tests/unit/company-candidate-execution-v2.test.ts ]
+ FAIL  tests/unit/company-command-storage-v2.test.ts [ tests/unit/company-command-storage-v2.test.ts ]
+ FAIL  tests/unit/company-daily-report.test.ts [ tests/unit/company-daily-report.test.ts ]
+ FAIL  tests/unit/company-freshness.test.ts [ tests/unit/company-freshness.test.ts ]
+ FAIL  tests/unit/company-json-profile-v2.test.ts [ tests/unit/company-json-profile-v2.test.ts ]
+ FAIL  tests/unit/company-progress-evidence.test.ts [ tests/unit/company-progress-evidence.test.ts ]
+ FAIL  tests/unit/company-sb-report-source.test.ts [ tests/unit/company-sb-report-source.test.ts ]
+ FAIL  tests/unit/company-shared-progress.test.ts [ tests/unit/company-shared-progress.test.ts ]
+ FAIL  tests/unit/company-transition-read.test.ts [ tests/unit/company-transition-read.test.ts ]
+ FAIL  tests/unit/context-assembler-public.test.ts [ tests/unit/context-assembler-public.test.ts ]
+ FAIL  tests/unit/context-policy-happy.test.ts [ tests/unit/context-policy-happy.test.ts ]
+ FAIL  tests/unit/context-policy-public.test.ts [ tests/unit/context-policy-public.test.ts ]
+ FAIL  tests/unit/context-policy-states-trust.test.ts [ tests/unit/context-policy-states-trust.test.ts ]
+ FAIL  tests/unit/control-plane.test.ts [ tests/unit/control-plane.test.ts ]
+ FAIL  tests/unit/core5-integration.test.ts [ tests/unit/core5-integration.test.ts ]
+ FAIL  tests/unit/core5-j04-mail-drafts.test.ts [ tests/unit/core5-j04-mail-drafts.test.ts ]
+ FAIL  tests/unit/daily-production-contract.test.ts [ tests/unit/daily-production-contract.test.ts ]
+ FAIL  tests/unit/daily-production-single-door.test.ts [ tests/unit/daily-production-single-door.test.ts ]
+ FAIL  tests/unit/dashboard-launchagent.test.ts [ tests/unit/dashboard-launchagent.test.ts ]
+ FAIL  tests/unit/dashboard-personal-events.test.ts [ tests/unit/dashboard-personal-events.test.ts ]
+ FAIL  tests/unit/dashboard-personal-page.test.ts [ tests/unit/dashboard-personal-page.test.ts ]
+ FAIL  tests/unit/dashboard-personal-privacy.test.ts [ tests/unit/dashboard-personal-privacy.test.ts ]
+ FAIL  tests/unit/dashboard-redaction.test.ts [ tests/unit/dashboard-redaction.test.ts ]
+ FAIL  tests/unit/doctor.test.ts [ tests/unit/doctor.test.ts ]
+ FAIL  tests/unit/electron-deep-link.test.ts [ tests/unit/electron-deep-link.test.ts ]
+ FAIL  tests/unit/electron-main-source.test.ts [ tests/unit/electron-main-source.test.ts ]
+ FAIL  tests/unit/evening-closeout-bounds.test.ts [ tests/unit/evening-closeout-bounds.test.ts ]
+ FAIL  tests/unit/finance-read-gateway.test.ts [ tests/unit/finance-read-gateway.test.ts ]
+ FAIL  tests/unit/memory-access-policy.test.ts [ tests/unit/memory-access-policy.test.ts ]
+ FAIL  tests/unit/memory-candidates-boundary.test.ts [ tests/unit/memory-candidates-boundary.test.ts ]
+ FAIL  tests/unit/memory-candidates-cartesian.test.ts [ tests/unit/memory-candidates-cartesian.test.ts ]
+ FAIL  tests/unit/memory-correction-cancellation-result.test.ts [ tests/unit/memory-correction-cancellation-result.test.ts ]
+ FAIL  tests/unit/memory-disposition-proof.test.ts [ tests/unit/memory-disposition-proof.test.ts ]
+ FAIL  tests/unit/memory-effect-delegation.test.ts [ tests/unit/memory-effect-delegation.test.ts ]
+ FAIL  tests/unit/memory-effect-wire-vectors.test.ts [ tests/unit/memory-effect-wire-vectors.test.ts ]
+ FAIL  tests/unit/memory-forbidden-content.test.ts [ tests/unit/memory-forbidden-content.test.ts ]
+ FAIL  tests/unit/memory-managed-surface-catalog.test.ts [ tests/unit/memory-managed-surface-catalog.test.ts ]
+ FAIL  tests/unit/memory-outbox-reconciliation.test.ts [ tests/unit/memory-outbox-reconciliation.test.ts ]
+ FAIL  tests/unit/memory-outbox-tick-phase.test.ts [ tests/unit/memory-outbox-tick-phase.test.ts ]
+ FAIL  tests/unit/memory-plain-text-v3.test.ts [ tests/unit/memory-plain-text-v3.test.ts ]
+ FAIL  tests/unit/memory-reference-context.test.ts [ tests/unit/memory-reference-context.test.ts ]
+ FAIL  tests/unit/memory-scoped-write-codec.test.ts [ tests/unit/memory-scoped-write-codec.test.ts ]
+ FAIL  tests/unit/memory-target-values.test.ts [ tests/unit/memory-target-values.test.ts ]
+ FAIL  tests/unit/morning-brief-remediation.test.ts [ tests/unit/morning-brief-remediation.test.ts ]
+ FAIL  tests/unit/morning-brief-shared-provenance.test.ts [ tests/unit/morning-brief-shared-provenance.test.ts ]
+ FAIL  tests/unit/morning-brief.test.ts [ tests/unit/morning-brief.test.ts ]
+ FAIL  tests/unit/native-owner-report.test.ts [ tests/unit/native-owner-report.test.ts ]
+ FAIL  tests/unit/notification-delivery-input.test.ts [ tests/unit/notification-delivery-input.test.ts ]
+ FAIL  tests/unit/orca-read-runner.test.ts [ tests/unit/orca-read-runner.test.ts ]
+ FAIL  tests/unit/orca-resume.test.ts [ tests/unit/orca-resume.test.ts ]
+ FAIL  tests/unit/owner-inbox-company-deadline.test.ts [ tests/unit/owner-inbox-company-deadline.test.ts ]
+ FAIL  tests/unit/owner-inbox-enrollment.test.ts [ tests/unit/owner-inbox-enrollment.test.ts ]
+ FAIL  tests/unit/owner-inbox.test.ts [ tests/unit/owner-inbox.test.ts ]
+ FAIL  tests/unit/personal-contracts-boundaries.test.ts [ tests/unit/personal-contracts-boundaries.test.ts ]
+ FAIL  tests/unit/personal-contracts-generative.test.ts [ tests/unit/personal-contracts-generative.test.ts ]
+ FAIL  tests/unit/personal-contracts-roundtrip.test.ts [ tests/unit/personal-contracts-roundtrip.test.ts ]
+ FAIL  tests/unit/personal-observations-public.test.ts [ tests/unit/personal-observations-public.test.ts ]
+ FAIL  tests/unit/personal-os-backup-cli.test.ts [ tests/unit/personal-os-backup-cli.test.ts ]
+ FAIL  tests/unit/personal-os-compatibility.test.ts [ tests/unit/personal-os-compatibility.test.ts ]
+ FAIL  tests/unit/personal-os-cycle-cursor.test.ts [ tests/unit/personal-os-cycle-cursor.test.ts ]
+ FAIL  tests/unit/personal-os-docs.test.ts [ tests/unit/personal-os-docs.test.ts ]
+ FAIL  tests/unit/personal-os-policy.test.ts [ tests/unit/personal-os-policy.test.ts ]
+ FAIL  tests/unit/personal-os-runtime-composition.test.ts [ tests/unit/personal-os-runtime-composition.test.ts ]
+ FAIL  tests/unit/personal-os-systemd-verify.test.ts [ tests/unit/personal-os-systemd-verify.test.ts ]
+ FAIL  tests/unit/personal-os-systemd.test.ts [ tests/unit/personal-os-systemd.test.ts ]
+ FAIL  tests/unit/phone-gateway-serve-headers.test.ts [ tests/unit/phone-gateway-serve-headers.test.ts ]
+ FAIL  tests/unit/phone-gateway.test.ts [ tests/unit/phone-gateway.test.ts ]
+ FAIL  tests/unit/phone-memory-provider-cli.test.ts [ tests/unit/phone-memory-provider-cli.test.ts ]
+ FAIL  tests/unit/phone-memory-reconcile.test.ts [ tests/unit/phone-memory-reconcile.test.ts ]
+ FAIL  tests/unit/phone-session.test.ts [ tests/unit/phone-session.test.ts ]
+ FAIL  tests/unit/policy-gate.test.ts [ tests/unit/policy-gate.test.ts ]
+ FAIL  tests/unit/portfolio-collector.test.ts [ tests/unit/portfolio-collector.test.ts ]
+ FAIL  tests/unit/portfolio-parse.test.ts [ tests/unit/portfolio-parse.test.ts ]
+ FAIL  tests/unit/portfolio-projection.test.ts [ tests/unit/portfolio-projection.test.ts ]
+ FAIL  tests/unit/portfolio-stdin.test.ts [ tests/unit/portfolio-stdin.test.ts ]
+ FAIL  tests/unit/price-finance-production.test.ts [ tests/unit/price-finance-production.test.ts ]
+ FAIL  tests/unit/priority-deadline-evidence.test.ts [ tests/unit/priority-deadline-evidence.test.ts ]
+ FAIL  tests/unit/priority-engine-public.test.ts [ tests/unit/priority-engine-public.test.ts ]
+ FAIL  tests/unit/priority-engine-ranking.test.ts [ tests/unit/priority-engine-ranking.test.ts ]
+ FAIL  tests/unit/priority-engine-stable-identity-provenance.test.ts [ tests/unit/priority-engine-stable-identity-provenance.test.ts ]
+ FAIL  tests/unit/progress-core.test.ts [ tests/unit/progress-core.test.ts ]
+ FAIL  tests/unit/recommendation-workflow-public.test.ts [ tests/unit/recommendation-workflow-public.test.ts ]
+ FAIL  tests/unit/recommendations-public.test.ts [ tests/unit/recommendations-public.test.ts ]
+ FAIL  tests/unit/release-dependency-reuse.test.ts [ tests/unit/release-dependency-reuse.test.ts ]
+ FAIL  tests/unit/runtime-process-identity.test.ts [ tests/unit/runtime-process-identity.test.ts ]
+ FAIL  tests/unit/second-brain-adapter-outcomes.test.ts [ tests/unit/second-brain-adapter-outcomes.test.ts ]
+ FAIL  tests/unit/second-brain-adapter-page.test.ts [ tests/unit/second-brain-adapter-page.test.ts ]
+ FAIL  tests/unit/second-brain-adapter-remediation.test.ts [ tests/unit/second-brain-adapter-remediation.test.ts ]
+ FAIL  tests/unit/second-brain-adapter-third-remediation.test.ts [ tests/unit/second-brain-adapter-third-remediation.test.ts ]
+ FAIL  tests/unit/second-brain-cancellation-profile.test.ts [ tests/unit/second-brain-cancellation-profile.test.ts ]
+ FAIL  tests/unit/second-brain-cancellation-submit.test.ts [ tests/unit/second-brain-cancellation-submit.test.ts ]
+ FAIL  tests/unit/second-brain-readiness-authoritative.test.ts [ tests/unit/second-brain-readiness-authoritative.test.ts ]
+ FAIL  tests/unit/second-brain-readiness-config.test.ts [ tests/unit/second-brain-readiness-config.test.ts ]
+ FAIL  tests/unit/second-brain-readiness-invalid-clock.test.ts [ tests/unit/second-brain-readiness-invalid-clock.test.ts ]
+ FAIL  tests/unit/second-brain-readiness-producer-contract.test.ts [ tests/unit/second-brain-readiness-producer-contract.test.ts ]
+ FAIL  tests/unit/second-brain-readiness-public.test.ts [ tests/unit/second-brain-readiness-public.test.ts ]
+ FAIL  tests/unit/second-brain-readiness.test.ts [ tests/unit/second-brain-readiness.test.ts ]
+ FAIL  tests/unit/second-brain-scoped-proof.test.ts [ tests/unit/second-brain-scoped-proof.test.ts ]
+ FAIL  tests/unit/second-brain-scoped-read.test.ts [ tests/unit/second-brain-scoped-read.test.ts ]
+ FAIL  tests/unit/second-brain-scoped-status-transport.test.ts [ tests/unit/second-brain-scoped-status-transport.test.ts ]
+ FAIL  tests/unit/second-brain-scoped-transport.test.ts [ tests/unit/second-brain-scoped-transport.test.ts ]
+ FAIL  tests/unit/second-brain-systemd.test.ts [ tests/unit/second-brain-systemd.test.ts ]
+ FAIL  tests/unit/second-brain-transport-budgets.test.ts [ tests/unit/second-brain-transport-budgets.test.ts ]
+ FAIL  tests/unit/second-brain-transport-characterization.test.ts [ tests/unit/second-brain-transport-characterization.test.ts ]
+ FAIL  tests/unit/second-brain-transport-crash.test.ts [ tests/unit/second-brain-transport-crash.test.ts ]
+ FAIL  tests/unit/second-brain-transport-profiles.test.ts [ tests/unit/second-brain-transport-profiles.test.ts ]
+ FAIL  tests/unit/secure-root-race.test.ts [ tests/unit/secure-root-race.test.ts ]
+ FAIL  tests/unit/seoul-deadline-ranking.test.ts [ tests/unit/seoul-deadline-ranking.test.ts ]
+ FAIL  tests/unit/task-candidate-provider.test.ts [ tests/unit/task-candidate-provider.test.ts ]
+ FAIL  tests/unit/task-candidate-verification.test.ts [ tests/unit/task-candidate-verification.test.ts ]
+ FAIL  tests/unit/task-certification-verifier-principal.test.ts [ tests/unit/task-certification-verifier-principal.test.ts ]
+ FAIL  tests/unit/task-verifier-process.test.ts [ tests/unit/task-verifier-process.test.ts ]
+ FAIL  tests/unit/task12-characterization.test.ts [ tests/unit/task12-characterization.test.ts ]
+ FAIL  tests/unit/team-proposal.test.ts [ tests/unit/team-proposal.test.ts ]
+ FAIL  tests/unit/work-routing.test.ts [ tests/unit/work-routing.test.ts ]
+ FAIL  tests/unit/workboard-migration-path.test.ts [ tests/unit/workboard-migration-path.test.ts ]
+ FAIL  tests/unit/workboard-projection.test.ts [ tests/unit/workboard-projection.test.ts ]
+ FAIL  tests/integration/approved-executor.test.ts [ tests/integration/approved-executor.test.ts ]
+ FAIL  tests/integration/backend-build.test.mjs [ tests/integration/backend-build.test.mjs ]
+ FAIL  tests/integration/budgeted-evolution-memory.test.ts [ tests/integration/budgeted-evolution-memory.test.ts ]
+ FAIL  tests/integration/cli-help.test.ts [ tests/integration/cli-help.test.ts ]
+ FAIL  tests/integration/cli-local-timeline.test.ts [ tests/integration/cli-local-timeline.test.ts ]
+ FAIL  tests/integration/collaboration-workspace.test.ts [ tests/integration/collaboration-workspace.test.ts ]
+ FAIL  tests/integration/company-db-freshness.test.ts [ tests/integration/company-db-freshness.test.ts ]
+ FAIL  tests/integration/connector-schema-fixture.test.ts [ tests/integration/connector-schema-fixture.test.ts ]
+ FAIL  tests/integration/context-principle-proof.test.ts [ tests/integration/context-principle-proof.test.ts ]
+ FAIL  tests/integration/control-center-release.test.ts [ tests/integration/control-center-release.test.ts ]
+ FAIL  tests/integration/control-page-memo-capacity.test.ts [ tests/integration/control-page-memo-capacity.test.ts ]
+ FAIL  tests/integration/daemon-runtime-cli.test.mjs [ tests/integration/daemon-runtime-cli.test.mjs ]
+ FAIL  tests/integration/daemon-runtime-staged.test.ts [ tests/integration/daemon-runtime-staged.test.ts ]
+ FAIL  tests/integration/daemon-runtime-upgrade.test.ts [ tests/integration/daemon-runtime-upgrade.test.ts ]
+ FAIL  tests/integration/daily-control-loop-adversarial.test.ts [ tests/integration/daily-control-loop-adversarial.test.ts ]
+ FAIL  tests/integration/daily-control-loop-results.test.ts [ tests/integration/daily-control-loop-results.test.ts ]
+ FAIL  tests/integration/daily-control-loop.test.ts [ tests/integration/daily-control-loop.test.ts ]
+ FAIL  tests/integration/daily-evening-cli.test.ts [ tests/integration/daily-evening-cli.test.ts ]
+ FAIL  tests/integration/daily-event-identity.test.ts [ tests/integration/daily-event-identity.test.ts ]
+ FAIL  tests/integration/daily-morning-cli-process.test.ts [ tests/integration/daily-morning-cli-process.test.ts ]
+ FAIL  tests/integration/daily-morning-execution.test.ts [ tests/integration/daily-morning-execution.test.ts ]
+ FAIL  tests/integration/daily-morning-production-validity.test.ts [ tests/integration/daily-morning-production-validity.test.ts ]
+ FAIL  tests/integration/dashboard-authority.test.ts [ tests/integration/dashboard-authority.test.ts ]
+ FAIL  tests/integration/dashboard-cancel-retry.test.ts [ tests/integration/dashboard-cancel-retry.test.ts ]
+ FAIL  tests/integration/dashboard-daemon-identity.test.ts [ tests/integration/dashboard-daemon-identity.test.ts ]
+ FAIL  tests/integration/dashboard-mail-candidates.test.ts [ tests/integration/dashboard-mail-candidates.test.ts ]
+ FAIL  tests/integration/dashboard-messenger-summary.test.ts [ tests/integration/dashboard-messenger-summary.test.ts ]
+ FAIL  tests/integration/dashboard-personal-integrity.test.ts [ tests/integration/dashboard-personal-integrity.test.ts ]
+ FAIL  tests/integration/dashboard-personal-read.test.ts [ tests/integration/dashboard-personal-read.test.ts ]
+ FAIL  tests/integration/dashboard-portfolio-api.test.ts [ tests/integration/dashboard-portfolio-api.test.ts ]
+ FAIL  tests/integration/dashboard-retry-expiry.test.ts [ tests/integration/dashboard-retry-expiry.test.ts ]
+ FAIL  tests/integration/dashboard-sse-capacity.test.ts [ tests/integration/dashboard-sse-capacity.test.ts ]
+ FAIL  tests/integration/dashboard-sse-external.test.ts [ tests/integration/dashboard-sse-external.test.ts ]
+ FAIL  tests/integration/dashboard-sse.test.ts [ tests/integration/dashboard-sse.test.ts ]
+ FAIL  tests/integration/dashboard-task-create.test.ts [ tests/integration/dashboard-task-create.test.ts ]
+ FAIL  tests/integration/dashboard-task-execution.test.ts [ tests/integration/dashboard-task-execution.test.ts ]
+ FAIL  tests/integration/electron-deep-link.test.ts [ tests/integration/electron-deep-link.test.ts ]
+ FAIL  tests/integration/electron-local-decision.test.ts [ tests/integration/electron-local-decision.test.ts ]
+ FAIL  tests/integration/evening-native-store.test.ts [ tests/integration/evening-native-store.test.ts ]
+ FAIL  tests/integration/gjc-dispatch-assemble.test.ts [ tests/integration/gjc-dispatch-assemble.test.ts ]
+ FAIL  tests/integration/gjc-dispatch-cli.test.ts [ tests/integration/gjc-dispatch-cli.test.ts ]
+ FAIL  tests/integration/gjc-lease-recovery.test.ts [ tests/integration/gjc-lease-recovery.test.ts ]
+ FAIL  tests/integration/gjc-process-diagnostics.test.ts [ tests/integration/gjc-process-diagnostics.test.ts ]
+ FAIL  tests/integration/gjc-runtime-ownership.test.ts [ tests/integration/gjc-runtime-ownership.test.ts ]
+ FAIL  tests/integration/gjc-runtime-process-ownership.test.ts [ tests/integration/gjc-runtime-process-ownership.test.ts ]
+ FAIL  tests/integration/live-cli.test.ts [ tests/integration/live-cli.test.ts ]
+ FAIL  tests/integration/live-fact-collection-path.test.ts [ tests/integration/live-fact-collection-path.test.ts ]
+ FAIL  tests/integration/local-observation-daily-cli.test.ts [ tests/integration/local-observation-daily-cli.test.ts ]
+ FAIL  tests/integration/local-observation-duplicate-producers.test.ts [ tests/integration/local-observation-duplicate-producers.test.ts ]
+ FAIL  tests/integration/local-observation-growth.test.ts [ tests/integration/local-observation-growth.test.ts ]
+ FAIL  tests/integration/local-observation-morning-publication.test.ts [ tests/integration/local-observation-morning-publication.test.ts ]
+ FAIL  tests/integration/local-observation-recommendation-lineage.test.ts [ tests/integration/local-observation-recommendation-lineage.test.ts ]
+ FAIL  tests/integration/local-observation-retention-schedule.test.ts [ tests/integration/local-observation-retention-schedule.test.ts ]
+ FAIL  tests/integration/local-observation-retention-source-writes.test.ts [ tests/integration/local-observation-retention-source-writes.test.ts ]
+ FAIL  tests/integration/local-observation-retention.test.ts [ tests/integration/local-observation-retention.test.ts ]
+ FAIL  tests/integration/local-retention-close-boundary.test.ts [ tests/integration/local-retention-close-boundary.test.ts ]
+ FAIL  tests/integration/local-retention-exclusion-reporting.test.ts [ tests/integration/local-retention-exclusion-reporting.test.ts ]
+ FAIL  tests/integration/local-timeline-collection.test.ts [ tests/integration/local-timeline-collection.test.ts ]
+ FAIL  tests/integration/local-timeline-refresh-service.test.ts [ tests/integration/local-timeline-refresh-service.test.ts ]
+ FAIL  tests/integration/loopgraph.test.ts [ tests/integration/loopgraph.test.ts ]
+ FAIL  tests/integration/mac-native-driver.test.ts [ tests/integration/mac-native-driver.test.ts ]
+ FAIL  tests/integration/memory-authority-compaction.test.ts [ tests/integration/memory-authority-compaction.test.ts ]
+ FAIL  tests/integration/memory-cancellation-followup.test.ts [ tests/integration/memory-cancellation-followup.test.ts ]
+ FAIL  tests/integration/memory-candidate-intake-cli.test.ts [ tests/integration/memory-candidate-intake-cli.test.ts ]
+ FAIL  tests/integration/memory-candidate-scope.test.ts [ tests/integration/memory-candidate-scope.test.ts ]
+ FAIL  tests/integration/memory-candidate-task-source.test.ts [ tests/integration/memory-candidate-task-source.test.ts ]
+ FAIL  tests/integration/memory-candidate-ui.test.ts [ tests/integration/memory-candidate-ui.test.ts ]
+ FAIL  tests/integration/memory-candidates-authority-preflight.test.ts [ tests/integration/memory-candidates-authority-preflight.test.ts ]
+ FAIL  tests/integration/memory-candidates-authority.test.ts [ tests/integration/memory-candidates-authority.test.ts ]
+ FAIL  tests/integration/memory-candidates-idempotency.test.ts [ tests/integration/memory-candidates-idempotency.test.ts ]
+ FAIL  tests/integration/memory-candidates-policy-matrix.test.ts [ tests/integration/memory-candidates-policy-matrix.test.ts ]
+ FAIL  tests/integration/memory-candidates-privacy.test.ts [ tests/integration/memory-candidates-privacy.test.ts ]
+ FAIL  tests/integration/memory-candidates-remediation.test.ts [ tests/integration/memory-candidates-remediation.test.ts ]
+ FAIL  tests/integration/memory-confirm-carry.test.ts [ tests/integration/memory-confirm-carry.test.ts ]
+ FAIL  tests/integration/memory-control-claim-race.test.ts [ tests/integration/memory-control-claim-race.test.ts ]
+ FAIL  tests/integration/memory-correction-citation.test.ts [ tests/integration/memory-correction-citation.test.ts ]
+ FAIL  tests/integration/memory-correction-saga.test.ts [ tests/integration/memory-correction-saga.test.ts ]
+ FAIL  tests/integration/memory-correction-suppression.test.ts [ tests/integration/memory-correction-suppression.test.ts ]
+ FAIL  tests/integration/memory-dashboard-read-lifetime.test.ts [ tests/integration/memory-dashboard-read-lifetime.test.ts ]
+ FAIL  tests/integration/memory-deletion-recovery.test.ts [ tests/integration/memory-deletion-recovery.test.ts ]
+ FAIL  tests/integration/memory-deletion-terminal-migration.test.ts [ tests/integration/memory-deletion-terminal-migration.test.ts ]
+ FAIL  tests/integration/memory-deletion-terminal-refusal.test.ts [ tests/integration/memory-deletion-terminal-refusal.test.ts ]
+ FAIL  tests/integration/memory-destructive-dispatch.test.ts [ tests/integration/memory-destructive-dispatch.test.ts ]
+ FAIL  tests/integration/memory-destructive-preparation.test.ts [ tests/integration/memory-destructive-preparation.test.ts ]
+ FAIL  tests/integration/memory-effect-concurrency.test.ts [ tests/integration/memory-effect-concurrency.test.ts ]
+ FAIL  tests/integration/memory-effect-provisioned-key.test.ts [ tests/integration/memory-effect-provisioned-key.test.ts ]
+ FAIL  tests/integration/memory-export-saga.test.ts [ tests/integration/memory-export-saga.test.ts ]
+ FAIL  tests/integration/memory-jarvis-crash-barriers.test.ts [ tests/integration/memory-jarvis-crash-barriers.test.ts ]
+ FAIL  tests/integration/memory-json-content-retention.test.ts [ tests/integration/memory-json-content-retention.test.ts ]
+ FAIL  tests/integration/memory-lifecycle-executor.test.ts [ tests/integration/memory-lifecycle-executor.test.ts ]
+ FAIL  tests/integration/memory-managed-surface-inventory.test.ts [ tests/integration/memory-managed-surface-inventory.test.ts ]
+ FAIL  tests/integration/memory-outbox-abandon-not-delivered.test.ts [ tests/integration/memory-outbox-abandon-not-delivered.test.ts ]
+ FAIL  tests/integration/memory-outbox-control-diagnostics.test.ts [ tests/integration/memory-outbox-control-diagnostics.test.ts ]
+ FAIL  tests/integration/memory-outbox-control.test.ts [ tests/integration/memory-outbox-control.test.ts ]
+ FAIL  tests/integration/memory-outbox-diagnostic-lifecycle.test.ts [ tests/integration/memory-outbox-diagnostic-lifecycle.test.ts ]
+ FAIL  tests/integration/memory-outbox-diagnostics-bounded.test.ts [ tests/integration/memory-outbox-diagnostics-bounded.test.ts ]
+ FAIL  tests/integration/memory-outbox-diagnostics-correlation.test.ts [ tests/integration/memory-outbox-diagnostics-correlation.test.ts ]
+ FAIL  tests/integration/memory-outbox-migration.test.ts [ tests/integration/memory-outbox-migration.test.ts ]
+ FAIL  tests/integration/memory-outbox-profile.test.ts [ tests/integration/memory-outbox-profile.test.ts ]
+ FAIL  tests/integration/memory-process-topology.test.ts [ tests/integration/memory-process-topology.test.ts ]
+ FAIL  tests/integration/memory-projection-readers.test.ts [ tests/integration/memory-projection-readers.test.ts ]
+ FAIL  tests/integration/memory-read-fence-production.test.ts [ tests/integration/memory-read-fence-production.test.ts ]
+ FAIL  tests/integration/memory-reference-deliveries.test.ts [ tests/integration/memory-reference-deliveries.test.ts ]
+ FAIL  tests/integration/memory-reference-submit.test.ts [ tests/integration/memory-reference-submit.test.ts ]
+ FAIL  tests/integration/memory-remediation-recovery.test.ts [ tests/integration/memory-remediation-recovery.test.ts ]
+ FAIL  tests/integration/memory-restore-high-water.test.ts [ tests/integration/memory-restore-high-water.test.ts ]
+ FAIL  tests/integration/memory-review-cleanup-scanner.test.ts [ tests/integration/memory-review-cleanup-scanner.test.ts ]
+ FAIL  tests/integration/memory-review-handoff.test.ts [ tests/integration/memory-review-handoff.test.ts ]
+ FAIL  tests/integration/memory-scope-review.test.ts [ tests/integration/memory-scope-review.test.ts ]
+ FAIL  tests/integration/memory-scoped-compaction.test.ts [ tests/integration/memory-scoped-compaction.test.ts ]
+ FAIL  tests/integration/memory-scoped-completion-proof.test.ts [ tests/integration/memory-scoped-completion-proof.test.ts ]
+ FAIL  tests/integration/memory-scoped-completion.test.ts [ tests/integration/memory-scoped-completion.test.ts ]
+ FAIL  tests/integration/memory-scoped-outbox-result.test.ts [ tests/integration/memory-scoped-outbox-result.test.ts ]
+ FAIL  tests/integration/memory-scoped-outbox-worker.test.ts [ tests/integration/memory-scoped-outbox-worker.test.ts ]
+ FAIL  tests/integration/memory-scoped-outbox.test.ts [ tests/integration/memory-scoped-outbox.test.ts ]
+ FAIL  tests/integration/memory-scoped-production.test.ts [ tests/integration/memory-scoped-production.test.ts ]
+ FAIL  tests/integration/memory-scoped-reconcile-once.test.ts [ tests/integration/memory-scoped-reconcile-once.test.ts ]
+ FAIL  tests/integration/memory-task-closure-reuse.test.ts [ tests/integration/memory-task-closure-reuse.test.ts ]
+ FAIL  tests/integration/memory-withdrawal-target.test.ts [ tests/integration/memory-withdrawal-target.test.ts ]
+ FAIL  tests/integration/migration-rehearsal-cli.test.ts [ tests/integration/migration-rehearsal-cli.test.ts ]
+ FAIL  tests/integration/notification-delivery.test.ts [ tests/integration/notification-delivery.test.ts ]
+ FAIL  tests/integration/observation-refresh-compaction.test.ts [ tests/integration/observation-refresh-compaction.test.ts ]
+ FAIL  tests/integration/observation-refresh-store.test.ts [ tests/integration/observation-refresh-store.test.ts ]
+ FAIL  tests/integration/omonyang-hands.test.ts [ tests/integration/omonyang-hands.test.ts ]
+ FAIL  tests/integration/orca-observation-persistence.test.ts [ tests/integration/orca-observation-persistence.test.ts ]
+ FAIL  tests/integration/owner-decision-key-enrollment.test.ts [ tests/integration/owner-decision-key-enrollment.test.ts ]
+ FAIL  tests/integration/owner-decision-window.test.ts [ tests/integration/owner-decision-window.test.ts ]
+ FAIL  tests/integration/owner-inbox-phone-enroll.test.ts [ tests/integration/owner-inbox-phone-enroll.test.ts ]
+ FAIL  tests/integration/package-electron.test.ts [ tests/integration/package-electron.test.ts ]
+ FAIL  tests/integration/personal-connectors-public-authority.test.ts [ tests/integration/personal-connectors-public-authority.test.ts ]
+ FAIL  tests/integration/personal-connectors-public-checkpoints.test.ts [ tests/integration/personal-connectors-public-checkpoints.test.ts ]
+ FAIL  tests/integration/personal-context-production.test.ts [ tests/integration/personal-context-production.test.ts ]
+ FAIL  tests/integration/personal-context-remediation.test.ts [ tests/integration/personal-context-remediation.test.ts ]
+ FAIL  tests/integration/personal-observation-batch.test.ts [ tests/integration/personal-observation-batch.test.ts ]
+ FAIL  tests/integration/personal-observations-persistence.test.ts [ tests/integration/personal-observations-persistence.test.ts ]
+ FAIL  tests/integration/personal-operations-authority-remediation.test.ts [ tests/integration/personal-operations-authority-remediation.test.ts ]
+ FAIL  tests/integration/personal-operations-jobs.test.ts [ tests/integration/personal-operations-jobs.test.ts ]
+ FAIL  tests/integration/personal-os-backup.test.ts [ tests/integration/personal-os-backup.test.ts ]
+ FAIL  tests/integration/personal-os-process-stress.test.ts [ tests/integration/personal-os-process-stress.test.ts ]
+ FAIL  tests/integration/personal-os-release-rehearsal-scenarios.test.ts [ tests/integration/personal-os-release-rehearsal-scenarios.test.ts ]
+ FAIL  tests/integration/phone-gateway-spa.test.ts [ tests/integration/phone-gateway-spa.test.ts ]
+ FAIL  tests/integration/phone-gateway.test.ts [ tests/integration/phone-gateway.test.ts ]
+ FAIL  tests/integration/phone-memory-client.test.ts [ tests/integration/phone-memory-client.test.ts ]
+ FAIL  tests/integration/pre-gjc-acceptance.test.ts [ tests/integration/pre-gjc-acceptance.test.ts ]
+ FAIL  tests/integration/progress-core-persistence.test.ts [ tests/integration/progress-core-persistence.test.ts ]
+ FAIL  tests/integration/recommendation-current-time.test.ts [ tests/integration/recommendation-current-time.test.ts ]
+ FAIL  tests/integration/recommendation-read-binding.test.ts [ tests/integration/recommendation-read-binding.test.ts ]
+ FAIL  tests/integration/recommendation-read-snapshot.test.ts [ tests/integration/recommendation-read-snapshot.test.ts ]
+ FAIL  tests/integration/recommendation-work-migration-closure.test.ts [ tests/integration/recommendation-work-migration-closure.test.ts ]
+ FAIL  tests/integration/recommendation-work-runtime.test.ts [ tests/integration/recommendation-work-runtime.test.ts ]
+ FAIL  tests/integration/recommendation-workflow-authority.test.ts [ tests/integration/recommendation-workflow-authority.test.ts ]
+ FAIL  tests/integration/recommendation-workflow-executor.test.ts [ tests/integration/recommendation-workflow-executor.test.ts ]
+ FAIL  tests/integration/recommendation-workflow-staging.test.ts [ tests/integration/recommendation-workflow-staging.test.ts ]
+ FAIL  tests/integration/recommendations-lifecycle.test.ts [ tests/integration/recommendations-lifecycle.test.ts ]
+ FAIL  tests/integration/recommendations-structural-iteration.test.ts [ tests/integration/recommendations-structural-iteration.test.ts ]
+ FAIL  tests/integration/recommendations-visibility.test.ts [ tests/integration/recommendations-visibility.test.ts ]
+ FAIL  tests/integration/release-health-gates-cli.test.ts [ tests/integration/release-health-gates-cli.test.ts ]
+ FAIL  tests/integration/remote-approval-compose-readiness.test.ts [ tests/integration/remote-approval-compose-readiness.test.ts ]
+ FAIL  tests/integration/remote-approval-fail-closed.test.ts [ tests/integration/remote-approval-fail-closed.test.ts ]
+ FAIL  tests/integration/remote-approval-http.test.ts [ tests/integration/remote-approval-http.test.ts ]
+ FAIL  tests/integration/remote-approval-lifecycle-http.test.ts [ tests/integration/remote-approval-lifecycle-http.test.ts ]
+ FAIL  tests/integration/remote-approval-lifecycle.test.ts [ tests/integration/remote-approval-lifecycle.test.ts ]
+ FAIL  tests/integration/remote-audit-expiry.test.ts [ tests/integration/remote-audit-expiry.test.ts ]
+ FAIL  tests/integration/remote-audit-service.test.ts [ tests/integration/remote-audit-service.test.ts ]
+ FAIL  tests/integration/report-readonly-database.test.ts [ tests/integration/report-readonly-database.test.ts ]
+ FAIL  tests/integration/routing-json-boundary.test.ts [ tests/integration/routing-json-boundary.test.ts ]
+ FAIL  tests/integration/second-brain-adapter-empty-shapes.test.ts [ tests/integration/second-brain-adapter-empty-shapes.test.ts ]
+ FAIL  tests/integration/second-brain-adapter-transport.test.ts [ tests/integration/second-brain-adapter-transport.test.ts ]
+ FAIL  tests/integration/second-brain-readiness-surfaces.test.ts [ tests/integration/second-brain-readiness-surfaces.test.ts ]
+ FAIL  tests/integration/service-observation-health.test.ts [ tests/integration/service-observation-health.test.ts ]
+ FAIL  tests/integration/state-publication-lineage.test.ts [ tests/integration/state-publication-lineage.test.ts ]
+ FAIL  tests/integration/status-command-cli.test.ts [ tests/integration/status-command-cli.test.ts ]
+ FAIL  tests/integration/task-authentication-probe.test.ts [ tests/integration/task-authentication-probe.test.ts ]
+ FAIL  tests/integration/task-binding-query.test.ts [ tests/integration/task-binding-query.test.ts ]
+ FAIL  tests/integration/task-candidate-artifacts.test.ts [ tests/integration/task-candidate-artifacts.test.ts ]
+ FAIL  tests/integration/task-completion-process.test.ts [ tests/integration/task-completion-process.test.ts ]
+ FAIL  tests/integration/task-executor-bin-root.test.ts [ tests/integration/task-executor-bin-root.test.ts ]
+ FAIL  tests/integration/task-executor-plan.test.ts [ tests/integration/task-executor-plan.test.ts ]
+ FAIL  tests/integration/task-executor-runtime-probe.test.ts [ tests/integration/task-executor-runtime-probe.test.ts ]
+ FAIL  tests/integration/task-git-publication.test.ts [ tests/integration/task-git-publication.test.ts ]
+ FAIL  tests/integration/task-performance.test.ts [ tests/integration/task-performance.test.ts ]
+ FAIL  tests/integration/task-provider-transport.test.ts [ tests/integration/task-provider-transport.test.ts ]
+ FAIL  tests/integration/task-timeline-scale.test.ts [ tests/integration/task-timeline-scale.test.ts ]
+ FAIL  tests/integration/task-timeline.test.ts [ tests/integration/task-timeline.test.ts ]
+ FAIL  tests/integration/task-verifier-entry.test.ts [ tests/integration/task-verifier-entry.test.ts ]
+ FAIL  tests/integration/task-work-lineage-boundaries.test.ts [ tests/integration/task-work-lineage-boundaries.test.ts ]
+ FAIL  tests/integration/task-work-lineage-claim.test.ts [ tests/integration/task-work-lineage-claim.test.ts ]
+ FAIL  tests/integration/task-workflow-execution.test.ts [ tests/integration/task-workflow-execution.test.ts ]
+ FAIL  tests/integration/task12-runtime-reviewability.test.ts [ tests/integration/task12-runtime-reviewability.test.ts ]
+ FAIL  tests/integration/task30-control-actions.test.ts [ tests/integration/task30-control-actions.test.ts ]
+ FAIL  tests/integration/task32-candidate-decision-concurrency.test.ts [ tests/integration/task32-candidate-decision-concurrency.test.ts ]
+ FAIL  tests/integration/task32-candidate-handoff.test.ts [ tests/integration/task32-candidate-handoff.test.ts ]
+ FAIL  tests/integration/task32-common-dir-flock.test.ts [ tests/integration/task32-common-dir-flock.test.ts ]
+ FAIL  tests/integration/task32-correction-spool-crash.test.ts [ tests/integration/task32-correction-spool-crash.test.ts ]
+ FAIL  tests/integration/task32-evidence-dag.test.ts [ tests/integration/task32-evidence-dag.test.ts ]
+ FAIL  tests/integration/task32-export-lifecycle.test.ts [ tests/integration/task32-export-lifecycle.test.ts ]
+ FAIL  tests/integration/task32-generation-race.test.ts [ tests/integration/task32-generation-race.test.ts ]
+ FAIL  tests/integration/task32-memory-runtime.test.ts [ tests/integration/task32-memory-runtime.test.ts ]
+ FAIL  tests/integration/task32-migration-allocation.test.ts [ tests/integration/task32-migration-allocation.test.ts ]
+ FAIL  tests/integration/task32-migration-flock.test.ts [ tests/integration/task32-migration-flock.test.ts ]
+ FAIL  tests/integration/task32-migration-protocol-compatibility.test.ts [ tests/integration/task32-migration-protocol-compatibility.test.ts ]
+ FAIL  tests/integration/task32-pre-cas-candidate-verification.test.ts [ tests/integration/task32-pre-cas-candidate-verification.test.ts ]
+ FAIL  tests/integration/task32-review-spool-privacy.test.ts [ tests/integration/task32-review-spool-privacy.test.ts ]
+ FAIL  tests/integration/task32-source-contract.test.ts [ tests/integration/task32-source-contract.test.ts ]
+ FAIL  tests/integration/task32-sse.test.ts [ tests/integration/task32-sse.test.ts ]
+ FAIL  tests/integration/task32-tombstone-membership.test.ts [ tests/integration/task32-tombstone-membership.test.ts ]
+ FAIL  tests/integration/task33-driver-contract.test.ts [ tests/integration/task33-driver-contract.test.ts ]
+ FAIL  tests/integration/team-proposal-cli.test.ts [ tests/integration/team-proposal-cli.test.ts ]
+ FAIL  tests/integration/test-artifact-cleanup.test.ts [ tests/integration/test-artifact-cleanup.test.ts ]
+ FAIL  tests/integration/test-runtime.test.ts [ tests/integration/test-runtime.test.ts ]
+ FAIL  tests/integration/work-routing-cli.test.ts [ tests/integration/work-routing-cli.test.ts ]
+ FAIL  tests/integration/workboard-action-routes.test.ts [ tests/integration/workboard-action-routes.test.ts ]
+ FAIL  tests/integration/workboard-current-work.test.ts [ tests/integration/workboard-current-work.test.ts ]
+ FAIL  tests/integration/workboard-ingest.test.ts [ tests/integration/workboard-ingest.test.ts ]
+ FAIL  tests/integration/worker-crash-idempotency.test.ts [ tests/integration/worker-crash-idempotency.test.ts ]
+Error: Unknown system error -122: Unknown system error -122, write
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[1/344]⎯
+
+
+⎯⎯⎯⎯⎯⎯⎯ Failed Tests 2 ⎯⎯⎯⎯⎯⎯⎯
+
+ FAIL  tests/integration/local-observation-retention-recovery.test.ts > leaves an object squatting a staged name exactly as it was
+SqliteError: disk I/O error
+ ❯ sqliteTransaction node_modules/better-sqlite3/lib/methods/transaction.js:69:9
+ ❯ MigrationStore.migrate src/migration-store.ts:68:12
+     66|             "INSERT INTO schema_migrations(id,checksum,applied_at) VAL…
+     67|           ).run(migration.id, migration.digest, new Date().toISOString…
+     68|         }).immediate();
+       |            ^
+     69|         // The deletion-lane rebuild returns dropped pages to the free…
+     70|         // write would otherwise change those free-page bytes, which s…
+ ❯ AuthorityDb.migrate src/authority-db-base.ts:138:3
+ ❯ sealFixtureAuthority tests/fixtures/fixture-authority.ts:29:3
+ ❯ admitLocalChainObservation tests/fixtures/local-observation-chain.ts:276:3
+ ❯ localObservationChain tests/fixtures/local-observation-chain.ts:389:44
+ ❯ seeded tests/integration/local-observation-retention-recovery.test.ts:40:17
+ ❯ tests/integration/local-observation-retention-recovery.test.ts:369:16
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[2/344]⎯
+
+ FAIL  tests/integration/personal-os-release-rehearsal.test.ts > personal-OS release rehearsal > emits PERSONAL_OS_REHEARSAL_OK only after the isolated stages pass
+PersonalOsError: E_REHEARSAL_GATE
+ ❯ run src/personal-os-rehearsal-provider.ts:35:34
+     33| function run(command: string, args: readonly string[], cwd?: string): …
+     34|   const result = spawnSync(command, [...args], { cwd, encoding: "utf8"…
+     35|   if (result.status !== 0) throw new PersonalOsError("E_REHEARSAL_GATE…
+       |                                  ^
+     36| }
+     37|
+ ❯ installProviderRelease src/personal-os-rehearsal-provider.ts:81:3
+ ❯ runHappyRehearsal src/personal-os-rehearsal-happy.ts:70:20
+ ❯ runPersonalOsRehearsal src/personal-os-rehearsal.ts:22:13
+ ❯ tests/integration/personal-os-release-rehearsal.test.ts:77:26
+
+⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯⎯[3/344]⎯
+
+
+ Test Files  344 failed | 7 passed (351)
+      Tests  2 failed | 168 passed (170)
+   Start at  15:25:40
+   Duration  290.52s (transform 4.19s, setup 0ms, collect 7.70s, tests 237.04s, environment 41ms, prepare 11.17s)
+
+JARVIS_TEST_SHARD 2/2
+
+ RUN  v3.2.7 /home/jm/orca/lanes/jarvis-freshness-9db9d7be
+
+[Showing lines 58-563 of 563; earlier output dropped]

@@ -1,0 +1,601 @@
+status: completed exit_code: 0
+   ✓ separates having no receipt from having one it cannot read  621ms
+   ✓ reads a regular file only, and one that fits the bound  597ms
+   ✓ refuses a configured path that is not absolute  611ms
+ ✓ tests/integration/dashboard-agent-observations.test.ts (8 tests) 4918ms
+   ✓ agent connection observations > recovers an existing v2 report byte-for-byte before collecting v3 observations  682ms
+   ✓ agent connection observations > does not promote registration or legacy progress into a live connection  599ms
+   ✓ agent connection observations > keeps connection freshness independent of progress and preserves it across restart  588ms
+   ✓ agent connection observations > rejects mismatched or invalid persisted session_id without repairing it in a read  604ms
+   ✓ agent connection observations > rejects mismatched or invalid persisted incarnation_id without repairing it in a read  601ms
+   ✓ agent connection observations > rejects mismatched or invalid persisted updated_at without repairing it in a read  603ms
+   ✓ agent connection observations > uses the same HTTP clock for list and detail without exposing session identity or writing  616ms
+   ✓ agent connection observations > records the structured terminal connection result and keeps probe failure unknown  623ms
+ ✓ tests/unit/context-model-request.test.ts (6 tests) 33ms
+ ✓ tests/unit/memory-session-source.test.ts (2 tests) 5ms
+ ✓ tests/integration/memory-remember-v3-migration.test.ts (1 test) 424ms
+   ✓ remember V3 publication forward migration > preserves old publication rows, foreign keys, and immutable identity while admitting only remember V3  423ms
+ ✓ tests/integration/memory-candidates-store.test.ts (3 tests) 723ms
+   ✓ Task 27 authority-side memory candidate persistence > persists one verified candidate, immutable metadata, ordered refs, and no effect rows  639ms
+ ✓ tests/unit/native-finance-read.test.ts (25 tests) 18ms
+ ✓ tests/unit/memory-projection-parent-bindings.test.ts (6 tests) 3552ms
+   ✓ notification parent binding > preserves the full parent list for mixed inputs  609ms
+   ✓ notification parent binding > preserves the full parent list for resolved inputs  570ms
+   ✓ notification parent binding > preserves the full parent list for untracked inputs  580ms
+   ✓ structured parent binding > preserves the full parent list for mixed inputs  594ms
+   ✓ structured parent binding > preserves the full parent list for resolved inputs  579ms
+   ✓ structured parent binding > preserves the full parent list for untracked inputs  618ms
+ ✓ tests/unit/priority-engine-abstention.test.ts (18 tests) 25ms
+ ✓ tests/integration/memory-outbox-saga.test.ts (9 tests) 1063ms
+   ✓ memory outbox V2 saga > snapshots an authorized historical request without wall-clock rejection  664ms
+ ✓ tests/integration/cli-argument-validation.test.ts (1 test) 6ms
+ ✓ tests/unit/native-crm-link.test.ts (14 tests) 7ms
+ ✓ tests/integration/local-observation-retention-consistency.test.ts (16 tests) 25524ms
+   ✓ refuses a candidate whose source changed between selection and copy  1419ms
+   ✓ refuses a candidate whose source a second connection changed during the copy  1365ms
+   ✓ refuses a candidate when the source path is replaced during the copy  2032ms
+   ✓ refuses a candidate when a second connection adds a context chain during the copy  1382ms
+   ✓ refuses a candidate copied from a file the selection never read  1197ms
+   ✓ still produces a candidate on a retry after a rejected apply  2070ms
+   ✓ finds the dangling reference a clean foreign_key_check cannot  1357ms
+   ✓ reports a candidate stale once the source moves past the fence it was built from  1374ms
+   ✓ refuses a source pathname replaced by an equal-count database (WAL source, DELETE replacement)  1155ms
+   ✓ refuses a source pathname replaced by an equal-count database (DELETE source, WAL replacement)  1120ms
+   ✓ reports a candidate stale when the source pathname is replaced after the build  1857ms
+   ✓ refuses a candidate when a second connection names a replacement during the copy  1357ms
+   ✓ refuses a candidate holding rows the selection's connection does not hold  1986ms
+   ✓ ignores a source swapped around the adapter's attach and keeps the unselected work  1958ms
+   ✓ keeps an unrelated row whose key reuses a blocked id when the source is swapped  1941ms
+   ✓ advances the generation from the selected source when another is swapped in  1952ms
+ ✓ tests/integration/control-command-lookup.test.ts (2 tests) 1207ms
+   ✓ control command lookup > reads one command without inspecting unrelated payloads or their visibility  625ms
+   ✓ control command lookup > keeps quarantined commands hidden for both list and direct lookup  581ms
+ ✓ tests/integration/task32-content-free-effect-migration.test.ts (1 test) 629ms
+   ✓ Task 32 content-free effect migration > removes request JSON from the final authority schema  628ms
+ ✓ tests/unit/memory-lifecycle-observation-manifest.test.ts (5 tests) 23ms
+ ✓ tests/integration/dashboard-mail-summary.test.ts (4 tests) 657ms
+ ✓ tests/integration/memory-outbox-authority.test.ts (4 tests) 738ms
+   ✓ memory outbox complete authority binding > opens post-marker write authority only for the exact accepted-unsettled projection  638ms
+ ✓ tests/unit/task32-memory-token-cache.test.ts (2 tests) 4ms
+ ✓ tests/integration/task-routing-shadow.test.ts (5 tests) 1145ms
+   ✓ compares original task inputs, binds policies and evidence, and performs no writes or execution  708ms
+   ✓ runs the compiled report in a separate process and rejects invalid input before database creation  304ms
+ ✓ tests/integration/negative-evidence.test.ts (10 tests) 1037ms
+   ✓ approved negative evidence > records one immutable row through a claimed level-2 receipt and projects it  673ms
+ ✓ tests/integration/phone-memory-provider-verifier.test.ts (1 test) 841ms
+   ✓ verifies the original dispatch through live gateway login, CSRF and current policy  840ms
+ ✓ tests/unit/second-brain-transport-authority-races.test.ts (3 tests) 141ms
+ ✓ tests/unit/notification-delivery-payload.test.ts (3 tests) 6ms
+ ✓ tests/longitudinal/personal-os-evaluator.test.ts (4 tests) 25ms
+ ✓ tests/integration/personal-operations-migration.test.ts (5 tests) 2910ms
+   ✓ personal operations migration > publishes the exact table and authentication column inventories  578ms
+   ✓ personal operations migration > upgrades and restores a pre-033 database without changing existing data  1134ms
+   ✓ personal operations migration > rolls back a failed 033 transaction and retries cleanly  560ms
+   ✓ personal operations migration > journals the exact migration bytes once  550ms
+ ✓ tests/integration/service-local-retention-entrypoint.test.ts (3 tests) 1658ms
+   ✓ claims one window per configured interval and reports the lane through service once  1508ms
+ ✓ tests/integration/recommendations-exception-remediation.test.ts (5 tests) 976ms
+   ✓ Task 18 exception remediation > rejects an unrelated persisted-evidence alias in every ordinary citation slot  651ms
+ ✓ tests/unit/second-brain-readiness-refresh-receipt.test.ts (9 tests) 10ms
+ ✓ tests/integration/daily-loop-schema-remediation.test.ts (15 tests) 2272ms
+   ✓ migration 035 upgrade integrity > resumes a legacy verifying run without replaying its verification checkpoint  612ms
+   ✓ migration 035 upgrade integrity > upgrades six valid legacy lifecycle shapes byte-identically and continues with version one  591ms
+ ✓ tests/unit/personal-connectors-remediation.test.ts (25 tests) 1272ms
+   ✓ Task 13 remediation roots > root 1 rejects structurally injected configured wrapper objects  643ms
+ ✓ tests/integration/memory-auto-expiry-cleanup.test.ts (2 tests) 645ms
+   ✓ cleans expired unused automatic source bytes without changing the classified snapshot  611ms
+ ✓ tests/unit/phone-memory-reconcile-cli.test.ts (9 tests) 11ms
+ ✓ tests/unit/personal-observations-happy.test.ts (2 tests) 12ms
+ ✓ tests/unit/memory-projection-authority.test.ts (5 tests) 2860ms
+   ✓ normalized memory projection authority > preserves dependencies from every resolved parent  594ms
+   ✓ normalized memory projection authority > quarantines mixed known and missing parents, missing first=false  563ms
+   ✓ normalized memory projection authority > quarantines mixed known and missing parents, missing first=true  561ms
+   ✓ normalized memory projection authority > suppresses all eleven transitive read contexts in the tombstone transaction  577ms
+   ✓ normalized memory projection authority > quarantines unresolved lineage and suppresses a post-tombstone binding immediately  563ms
+ ✓ tests/integration/cli-shadow-vertical.test.ts (1 test) 1067ms
+   ✓ CLI shadow vertical slice > consumes external receipts/evidence for Codex and Claude  1066ms
+ ✓ tests/unit/second-brain-readiness-provider-result-key.test.ts (10 tests) 171ms
+ ✓ tests/integration/memory-candidates-policy-binding.test.ts (75 tests) 6584ms
+   ✓ Task 27 full policy-input authority binding > rejects 'explicit' 'host' before and after intended use  702ms
+ ✓ tests/integration/electron-migration.test.ts (1 test) 607ms
+   ✓ control ingress migration > is unique, ordered, checksummed, copied, and idempotent  606ms
+ ✓ tests/integration/remote-approval-migration.test.ts (1 test) 603ms
+   ✓ remote approval v2 migration > applies v2 tables, quarantines legacy writes, and allows a zero counter credential  602ms
+ ✓ tests/unit/second-brain-contract.test.ts (16 tests) 434ms
+ ✓ tests/integration/memory-scoped-reconcile-cli.test.ts (6 tests) 1335ms
+   ✓ CLI scoped reconciliation requires explicit authority: valid  748ms
+ ✓ tests/integration/task32-pair-handoff-dag.test.ts (1 test) 2ms
+ ✓ tests/integration/remote-approval-control-plane.test.ts (2 tests) 679ms
+   ✓ remote approval ControlPlane translation > mints exactly one existing receipt when a UV assertion matches the challenge binding  646ms
+ ✓ tests/integration/memory-scoped-journal-recovery.test.ts (7 tests) 1324ms
+   ✓ recovers only the original acceptance: pending  729ms
+ ✓ tests/integration/memory-real-process-driver.test.ts (1 test) 15520ms
+   ✓ Task 30 real built-process lifecycle > settles four proved effects, then ends an organic stale correction as conflict  15519ms
+ ✓ tests/integration/dashboard-terminal.test.ts (4 tests) 2307ms
+   ✓ dashboard redacted terminal logs > returns at most 500 redacted lines for an exact binding and never sends  617ms
+   ✓ dashboard redacted terminal logs > returns a typed 404 for missing or ambiguous bindings and never sends  571ms
+   ✓ dashboard redacted terminal logs > maps an Orca failure to typed 502 and never sends  557ms
+   ✓ dashboard redacted terminal logs > rejects a log limit outside 1..500 before calling Orca  559ms
+ ✓ tests/unit/remote-auth-validation.test.ts (5 tests) 3ms
+ ✓ tests/integration/morning-brief-scheduled-entry.test.ts (2 tests) 1917ms
+   ✓ one 07:15 morning command waits until 07:20 after the daily service subscribed  704ms
+   ✓ one 07:15 daily-service cycle waits until 07:20 and matches the morning digest  1212ms
+ ✓ tests/integration/personal-operations-effect-expiry-remediation.test.ts (13 tests) 7268ms
+   ✓ memory confirmation authority epoch 3 > rejects classified-to-approved and outbox bypass for a sensitive confirmation-required candidate  602ms
+   ✓ memory confirmation authority epoch 3 > approves a confirmation-required candidate only through exact current human authority  559ms
+   ✓ memory confirmation authority epoch 3 > rejects a self-consistent remote principal as trusted human confirmation  561ms
+   ✓ memory confirmation authority epoch 3 > rejects a required confirmation deadline equal to candidate creation  553ms
+   ✓ memory confirmation authority epoch 3 > rejects approval at the exact confirmation deadline  567ms
+   ✓ memory confirmation authority epoch 3 > rejects confirmation deadline beyond candidate expiry  552ms
+   ✓ current lease effects epoch 3 > rejects claimed-to-running after the daily lease expired  551ms
+   ✓ current lease effects epoch 3 > rejects memory acceptance and reconciliation after outbox lease expiry  548ms
+   ✓ current lease effects epoch 3 > rejects an anonymous stale-owner tombstone after reclaim and accepts the current fence once  555ms
+   ✓ current lease effects epoch 3 > rejects tombstone and settlement after deletion lease expiry  555ms
+   ✓ notification and retention hard time boundaries epoch 3 > rejects notification delivery after intent and lease expiry  549ms
+   ✓ notification and retention hard time boundaries epoch 3 > rejects retention settlement after its lease expiry  568ms
+   ✓ notification and retention hard time boundaries epoch 3 > rejects retention claim before not_before  545ms
+ ✓ tests/integration/morning-operating-brief.test.ts (8 tests) 5503ms
+   ✓ cited morning operating brief > caps cited actions at three and emits the operating sections when the publisher is given no action cap  703ms
+   ✓ cited morning operating brief > holds publication until 07:20 when the refresh has not completed  558ms
+   ✓ cited morning operating brief > assembles before 07:20 only after a subscription installed before the 07:00 refresh  563ms
+   ✓ cited morning operating brief > emits an honest degraded brief at 07:20 when refresh is no_data  584ms
+   ✓ cited morning operating brief > emits an honest degraded brief at 07:20 when refresh is failed  600ms
+   ✓ cited morning operating brief > emits an honest degraded brief at 07:20 when refresh is capped  600ms
+   ✓ cited morning operating brief > emits an honest degraded brief at 07:20 when refresh is previous_date  599ms
+   ✓ cited morning operating brief > yields the same operating digest for identical inputs  1295ms
+ ✓ tests/unit/remote-approval.test.ts (7 tests) 5ms
+ ✓ tests/integration/task-execution-attempt-process.test.ts (1 test) 782ms
+   ✓ task operation across real processes > admits one signed request and preserves the invocation fence after the winner exits  782ms
+ ✓ tests/unit/personal-connectors.test.ts (12 tests) 1019ms
+   ✓ personal connector registry > enumerates four verified sources and three immutable unavailable slots  637ms
+ ✓ tests/integration/portfolio-spool-cli.test.ts (4 tests) 733ms
+   ✓ portfolio spool-and-ingest split > consumes each spool file exactly once and ignores a duplicate  679ms
+ ✓ tests/integration/recommendation-deadline-evidence.test.ts (1 test) 676ms
+   ✓ stores v1 and v2 recommendations and restores exact v2 deadline evidence after reopening SQLite  675ms
+ ✓ tests/unit/second-brain-shared-records.test.ts (18 tests) 106ms
+ ✓ tests/unit/personal-os-deployment-roots.test.ts (7 tests) 5ms
+ ✓ tests/integration/personal-operations-webauthn-remediation.test.ts (14 tests) 3266ms
+ ✓ tests/integration/personal-connectors-public-parser.test.ts (9 tests) 1059ms
+   ✓ Task 13 third remediation required contract B > accepts natural search text and absolute space-bearing Orca argv  623ms
+ ✓ tests/unit/priority-engine-policy-provenance.test.ts (6 tests) 18ms
+ ✓ tests/integration/daily-control-loop-boundaries.test.ts (26 tests) 6924ms
+   ✓ Daily Control Loop closed public boundaries > never invokes a hostile claim accessor  601ms
+   ✓ Daily Control Loop closed public boundaries > returns the durable run identity for a deferred event  583ms
+   ✓ Daily Control Loop closed public boundaries > rebinds an interrupted step to the exact current fence after two expired reclaims  588ms
+   ✓ DailyLoopStore exported runtime boundaries > rejects hostile prepare records without invoking accessors or writing  571ms
+   ✓ DailyLoopStore exported runtime boundaries > rejects hostile claim records without invoking accessors or writing  554ms
+   ✓ DailyLoopStore exported runtime boundaries > rejects hostile appendCheckpoint records without invoking accessors or writing  557ms
+   ✓ DailyLoopStore exported runtime boundaries > rejects hostile completeStep records without invoking accessors or writing  601ms
+   ✓ DailyLoopStore exported runtime boundaries > rejects hostile start claims without invoking accessors or writing  557ms
+   ✓ DailyLoopStore exported runtime boundaries > rejects hostile fail claims without invoking accessors or writing  550ms
+   ✓ DailyLoopStore exported runtime boundaries > rejects hostile uncertain claims without invoking accessors or writing  557ms
+   ✓ DailyLoopStore exported runtime boundaries > rejects hostile complete claims without invoking accessors or writing  591ms
+   ✓ DailyLoopStore exported runtime boundaries > rejects malformed due/steps/omit and scalar run/date inputs with zero writes  607ms
+ ✓ tests/integration/task-execution-staging.test.ts (8 tests) 1095ms
+   ✓ execution plan staging after approved workflow start > creates a separate pending approval, preserves the full plan, and replays without writes  648ms
+ ✓ tests/integration/dashboard-overview-concurrency.test.ts (3 tests) 745ms
+   ✓ overview while a memory UI command commits > allows another request to stage during a health probe and includes the new pending command  647ms
+ ✓ tests/integration/dashboard-session.test.ts (2 tests) 612ms
+   ✓ dashboard local session > returns one stable no-store token per server without mutating authority  610ms
+ ✓ tests/integration/personal-operations-reclaim.test.ts (5 tests) 2814ms
+   ✓ expired lease atomic reclaim > rejects a skipped fence during expired daily reclaim  594ms
+   ✓ expired lease atomic reclaim > reclaims an expired daily run and fences the old owner  555ms
+   ✓ expired lease atomic reclaim > rejects a notification duplicate claimant then permits expired reclaim  551ms
+   ✓ expired lease atomic reclaim > rejects legacy memory delivery before any reclaimable effect exists  558ms
+   ✓ expired lease atomic reclaim > reclaims expired deletion and retention leases with exactly next fence  556ms
+ ✓ tests/unit/context-assembler-privacy.test.ts (2 tests) 18ms
+ ✓ tests/unit/dashboard-request-boundary.test.ts (10 tests) 2ms
+ ✓ tests/integration/memory-outbox-concurrency.test.ts (5 tests) 796ms
+   ✓ memory outbox concurrency and crash fencing > allows thirty-two workers only one dispatch attempt  655ms
+ ✓ tests/integration/portfolio-cli.test.ts (4 tests) 1856ms
+   ✓ portfolio ingest CLI > verifies an authenticated envelope before persisting the projection  638ms
+   ✓ portfolio ingest CLI > rejects malformed stdin and source mismatch without writing a row  614ms
+   ✓ portfolio ingest CLI > rejects unsigned and invalidly signed reports without writing a row  602ms
+ ✓ tests/integration/migration-version-boundary.test.ts (2 tests) 11ms
+ ✓ tests/unit/dashboard-authority-validation.test.ts (4 tests) 4ms
+ ✓ tests/unit/context-assembler-trust.test.ts (11 tests) 50ms
+ ✓ tests/integration/runtime-identity.test.mjs (18 tests) 36ms
+ ✓ tests/integration/task-routing-read.test.ts (4 tests) 823ms
+   ✓ projects the bound selection on runs and requests without policy text or database writes  647ms
+ ✓ tests/integration/memory-effect-migrations.test.ts (8 tests) 7423ms
+   ✓ Task 30 forward migration closure > preserves the legacy lane while fresh and through-039 schemas converge  1197ms
+   ✓ Task 30 forward migration closure > recovers an empty rejected-candidate prefix of length 1  1158ms
+   ✓ Task 30 forward migration closure > recovers an empty rejected-candidate prefix of length 2  1160ms
+   ✓ Task 30 forward migration closure > recovers an empty rejected-candidate prefix of length 3  1151ms
+   ✓ Task 30 forward migration closure > recovers an empty rejected-candidate prefix of length 4  1171ms
+   ✓ Task 30 forward migration closure > recovers an empty rejected-candidate prefix of length 5  1183ms
+ ✓ tests/integration/daily-evening-execution.test.ts (10 tests) 1561ms
+   ✓ schedules an empty signed report once across a fresh scheduler instance  706ms
+   ✓ publishes a populated report only after recorded source provenance is available  649ms
+ ✓ tests/integration/task27-memory-migration.test.ts (7 tests) 1494ms
+   ✓ Task 27 forward memory classification migration > publishes exact immutable classification, source-reference, and idempotency tables  586ms
+   ✓ Task 27 forward memory classification migration > enforces lowercase hexadecimal bytes on every migration-038 digest column  582ms
+ ✓ tests/unit/gjc-error-boundary.test.ts (10 tests) 4ms
+ ✓ tests/unit/budgeted-evolution-adversarial.test.ts (7 tests) 12ms
+ ✓ tests/integration/observation-health.test.ts (7 tests) 3891ms
+   ✓ durable observation health > refuses a new attempt from a stale cursor snapshot before invoking Orca  584ms
+   ✓ durable observation health > keeps skipped reads and timestamps unchanged across restart, then grows and resets bounded backoff  552ms
+   ✓ durable observation health > uses completion time, expires abandoned attempts and refuses stale completions  553ms
+   ✓ durable observation health > keeps a fatal error blocking while another attempt is in flight  539ms
+   ✓ durable observation health > does not let an old incarnation delay or overwrite a newly authorized binding  551ms
+   ✓ durable observation health > rejects an old cycle at the final cursor transaction after a newer cycle finishes  552ms
+   ✓ durable observation health > waits for all in-flight readers before propagating a fatal error  560ms
+ ✓ tests/unit/memory-outbox-values.test.ts (4 tests) 4ms
+ ✓ tests/integration/pre-gjc-runtime.test.ts (2 tests) 1198ms
+   ✓ pre-GJC runtime boundary > is replay-safe across one hundred conflicting claims and project-scoped report delivery  636ms
+   ✓ pre-GJC runtime boundary > binds authority decisions exactly and persists local-only recovery evidence  561ms
+ ✓ tests/integration/runtime-package-integrity-cli.test.ts (8 tests) 306ms
+ ✓ tests/integration/dashboard-notification-delivery.test.ts (3 tests) 1273ms
+   ✓ dashboard notification delivery routes > claims and settles through the real session boundary  671ms
+   ✓ dashboard notification delivery routes > rejects wrong origin before any delivery write  600ms
+ ✓ tests/integration/task32-canonical-integration.test.ts (1 test) 2ms
+ ✓ tests/integration/task32-effect-intent-concurrency.test.ts (1 test) 2ms
+ ✓ tests/integration/memory-reference-context-seam.test.ts (3 tests) 701ms
+   ✓ contributes nothing when no settled write of ours landed on the page a record came back on  610ms
+ ✓ tests/longitudinal/personal-os-final-boundary.test.ts (3 tests) 21ms
+ ✓ tests/integration/task-publication-process.test.ts (2 tests) 1733ms
+   ✓ recovers the durable commit intent after a real SIGKILL at before_ref without replay  1144ms
+   ✓ recovers the durable commit intent after a real SIGKILL at after_ref without replay  588ms
+ ✓ tests/integration/memory-scoped-provider-production.test.ts (1 test) 706ms
+   ✓ uses the server session and current policy on every provider verification  705ms
+ ✓ tests/integration/memory-content-propagation.test.ts (1 test) 2ms
+ ✓ tests/integration/remote-audit-retention.test.ts (9 tests) 5093ms
+   ✓ retires one old remote row, preserves outcome and prevents identity replay  580ms
+   ✓ rejects a cutoff that violates the 365-day policy  577ms
+   ✓ rolls back audit retirement and authorization if the lease expires at settlement  585ms
+   ✓ requires retirement evidence for remote.rejected with legacy authorization  559ms
+   ✓ requires retirement evidence for REMOTE.rejected with legacy authorization  561ms
+   ✓ rolls back all retirement writes when authorization settlement fails  539ms
+   ✓ retires an actual pre-056 remote audit after upgrading without inventing outcomes  558ms
+   ✓ reads minimal active and retired history without writes and rejects altered authorization  537ms
+   ✓ opens and reopens non-WAL audit history read-only without converting journal mode  596ms
+ ✓ tests/integration/dashboard-finance-read.test.ts (9 tests) 644ms
+ ✓ tests/unit/phone-memory-context-error.test.ts (16 tests) 3ms
+ ✓ tests/unit/live-supervisor.test.ts (4 tests) 2263ms
+   ✓ live supervisor > registers only canonical absolute paths, caps at ten, and rejects active rebinds  592ms
+   ✓ live supervisor > accepts remote encoded worktrees without a local mount  549ms
+   ✓ live supervisor > recovers before observation and atomically records change-only reports and cursors  564ms
+   ✓ live supervisor > reports first null cursor and same-cursor state change but suppresses exact replay  558ms
+ ✓ tests/unit/external-delegate.test.ts (5 tests) 714ms
+   ✓ external.delegate > is visible without an executor and shows the batch once  613ms
+ ✓ tests/unit/second-brain-config-python.test.ts (15 tests) 67ms
+ ✓ tests/integration/memory-candidate-project-scope.test.ts (10 tests) 928ms
+   ✓ admits a candidate whose task belongs to a listed project  654ms
+ ✓ tests/integration/orca-observation-boundaries.test.ts (8 tests) 6696ms
+   ✓ Orca observation failure boundaries > isolates runtime_unavailable only when it proves a transport outage  1156ms
+   ✓ Orca observation failure boundaries > isolates runtime_timeout only when it proves a transport outage  1114ms
+   ✓ Orca observation failure boundaries > isolates permission_denied only when it proves a transport outage  1102ms
+   ✓ Orca observation failure boundaries > isolates terminal_handle_stale only when it proves a transport outage  1090ms
+   ✓ Orca observation failure boundaries > isolates invalid_runtime_response only when it proves a transport outage  1128ms
+   ✓ Orca observation failure boundaries > isolates unknown only when it proves a transport outage  1101ms
+ ✓ tests/integration/remote-approval-zero-counter-crypto.test.ts (1 test) 597ms
+   ✓ zero-counter cryptographic assertion > verifies and translates a manually signed P-256 assertion whose counter stays 0  597ms
+ ✓ tests/unit/task32-memory-redaction.test.ts (2 tests) 4ms
+ ✓ tests/integration/local-timeline-snapshot-store.test.ts (6 tests) 4238ms
+   ✓ replaces snapshots without growing history and never substitutes newer bytes for an old ID  573ms
+   ✓ preserves subject holds through expiry and release requires a new collection  556ms
+   ✓ enforces the total subject capacity without growing auxiliary receipts  544ms
+   ✓ rejects a hold/release during collection and invalidates changed source reads  570ms
+   ✓ discards cached content through reconstruction and restore while preserving current holds  1408ms
+   ✓ does not publish or return a snapshot when source revalidation consumes its freshness window  584ms
+ ✓ tests/integration/task-executor-registry.test.ts (5 tests) 667ms
+   ✓ runs compiled inspection without executing a configured provider, leaking values or creating a database  657ms
+ ✓ tests/unit/memory-projection-traversal.test.ts (5 tests) 2915ms
+   ✓ bounded structured lineage traversal > quarantines wide input without publishing partial lineage  603ms
+   ✓ bounded structured lineage traversal > quarantines cycle input without publishing partial lineage  573ms
+   ✓ bounded structured lineage traversal > quarantines partially collected deep input, array=false  581ms
+   ✓ bounded structured lineage traversal > quarantines partially collected deep input, array=true  587ms
+   ✓ bounded structured lineage traversal > retains lineage at the supported depth boundary  569ms
+ ✓ tests/unit/company-progress.test.ts (16 tests) 1059ms
+   ✓ company progress reserve response > refuses an advanced 'intent' sequence with its previous root  653ms
+ ✓ tests/integration/evening-closeout-store.test.ts (16 tests) 1270ms
+   ✓ evening closeout persistence > counts native v2 durable output after suppression (populated=false)  675ms
+ ✓ tests/integration/memory-scoped-reconciliation.test.ts (8 tests) 1392ms
+   ✓ reconstructs an expired spent request and fences reconciliation without another dispatch  725ms
+ ✓ tests/integration/approved-task-execution.test.ts (17 tests) 4204ms
+   ✓ runs the approved task to a completed receipt and replays with no new claim or model call  1240ms
+   ✓ uses a fresh claim time after asynchronous readiness  606ms
+   ✓ exposes completion through the dashboard authority execution path  612ms
+   ✓ keeps a published Git result uncertain when completion recording fails  606ms
+ ✓ tests/integration/daily-loop-concurrency-remediation.test.ts (2 tests) 2222ms
+   ✓ process-like Daily Loop contention > releases two independent initial claimants together and persists one sequence-one append  1162ms
+   ✓ process-like Daily Loop contention > releases two expired reclaimants together and advances exactly one fence  1059ms
+ ✓ tests/integration/memory-auto-publication.test.ts (6 tests) 1059ms
+   ✓ CLI publishes approved schema 1 candidates and replays without extra rows  775ms
+ ✓ tests/unit/dashboard-personal-cursor.test.ts (2 tests) 7ms
+ ✓ tests/unit/dashboard-validation.test.ts (11 tests) 8ms
+ ✓ tests/integration/memory-reference-positive-control.test.ts (1 test) 644ms
+   ✓ accepts a record from a settled write the owner confirmed, through the real confirmation  643ms
+ ✓ tests/integration/test-schema-fixture.test.ts (3 tests) 3106ms
+   ✓ clones the actual schema while keeping data, trust anchors and policy keys independent  1324ms
+   ✓ invalidates on migration bytes and retains normal checksum rejection on an older clone  1183ms
+   ✓ never overwrites an existing fixture destination  597ms
+ ✓ tests/unit/workboard-attention.test.ts (7 tests) 8ms
+ ✓ tests/integration/task-execution-runtime.test.ts (4 tests) 880ms
+   ✓ does not infer executable or verifier configuration from a request or model name  674ms
+ ✓ tests/integration/migrations.test.ts (7 tests) 4082ms
+   ✓ migrations > applies every immutable forward migration repeatedly  593ms
+   ✓ migrations > applies personal context between 031 and 033 on empty and exact prior-031 databases  1143ms
+   ✓ migrations > fails closed when migration is pending or its raw SQL bytes change  557ms
+   ✓ migrations > publishes the forward execution-hardening schema  605ms
+   ✓ migrations > rejects every retired collaboration write on a fresh migrated database  589ms
+   ✓ migrations > publishes the immutable negative-evidence ledger bound to control authority  590ms
+ ✓ tests/integration/memory-candidates-concurrency.test.ts (2 tests) 1591ms
+   ✓ Task 27 two-connection candidate convergence > releases two SQLite writers together and persists one candidate, metadata row, and event  1101ms
+   ✓ Task 27 two-connection candidate convergence > rolls back a terminal-policy race loser while the signed winner consumes authority  488ms
+ ✓ tests/integration/task32-schema4-read.test.ts (2 tests) 7ms
+ ✓ tests/integration/memory-scoped-request-status.test.ts (13 tests) 17ms
+ ✓ tests/unit/cli-deployment-commands.test.ts (6 tests) 9ms
+ ✓ tests/integration/memory-withdrawal-effect.test.ts (5 tests) 892ms
+   ✓ withdraws a stored derived memory once its task is hidden and empties the outstanding list  680ms
+ ✓ tests/integration/memory-scoped-client.test.ts (1 test) 674ms
+   ✓ rechecks real issuer authority before send and delivery without inventing empty evidence  673ms
+ ✓ tests/unit/gjc-coordinator.test.ts (2 tests) 5ms
+ ✓ tests/unit/control-center-publish-entrypoint.test.ts (1 test) 10ms
+ ✓ tests/unit/budgeted-evolution-engine.test.ts (8 tests) 14ms
+ ✓ tests/integration/task32-review-spool-concurrency.test.ts (1 test) 2ms
+ ✓ tests/unit/progress-signal.test.ts (8 tests) 27ms
+ ✓ tests/integration/task32-semantic-attempt-restage.test.ts (1 test) 586ms
+   ✓ Task 32 semantic attempt restage > creates one generation-2 successor linked to an expired predecessor  585ms
+ ✓ tests/integration/task-identity-suppression.test.ts (4 tests) 2019ms
+   ✓ reads replay visibility and completion from one snapshot during a concurrent quarantine  1264ms
+   ✓ does not disclose historical completion on a new execute call after task quarantine  598ms
+ ✓ tests/longitudinal/personal-os-cli.test.ts (4 tests) 227ms
+ ✓ tests/unit/authority-state.test.ts (7 tests) 750ms
+   ✓ authority state > ingests Codex and Claude open code as authorization-safe candidates  603ms
+ ✓ tests/integration/memory-postcompact.test.ts (10 tests) 1001ms
+   ✓ memory.postcompact configured transport > reselects and sends body, source, and budget on a configured transport  654ms
+ ✓ tests/integration/task30-memory-effects.test.ts (4 tests) 2378ms
+   ✓ Task 30 proof-bound authority > publishes the immutable architecture plus consecutive remediation migrations  607ms
+   ✓ Task 30 proof-bound authority > appends one permanent tombstone and immediate content-free suppression  589ms
+   ✓ Task 30 proof-bound authority > uses strict wire validation before cryptographic recomputation  591ms
+   ✓ Task 30 proof-bound authority > pins provider proof keys to instance and release  590ms
+ ✓ tests/unit/jarvis-orca-systemd.test.ts (1 test) 2ms
+ ✓ tests/unit/second-brain-readiness-cache.test.ts (2 tests) 2ms
+ ✓ tests/unit/capabilities.test.ts (5 tests) 3015ms
+   ✓ capability matrix > reports healthy GJC stages from injected probes and operational DB state without writes  606ms
+   ✓ capability matrix > keeps later stages false after a missing executable or incompatible protocol  589ms
+   ✓ capability matrix > parses versions and protocols before true stages and redacts secret-bearing evidence  595ms
+   ✓ capability matrix > replaces probe-positive evidence when local authority forces a false stage  660ms
+   ✓ capability matrix > turns probe failures into false states and rejects structurally invalid observations  563ms
+ ✓ tests/integration/daemon-runtime-identity.test.ts (19 tests) 10703ms
+   ✓ lease-bound daemon identity > keeps construction and status read-only without substituting the caller process  607ms
+   ✓ lease-bound daemon identity > publishes on first owned cycle, keeps it fixed, and never lets a competing service overwrite it  614ms
+   ✓ lease-bound daemon identity > marks release/expiry inactive and republishes the same snapshot with a new fence  556ms
+   ✓ lease-bound daemon identity > rejects fence theft during capture and rolls back partial publication  575ms
+   ✓ lease-bound daemon identity > does not renew a lease that expired during synchronous build observation  584ms
+   ✓ lease-bound daemon identity > rolls back identity and lease heartbeat if runtime heartbeat publication fails  565ms
+   ✓ lease-bound daemon identity > recaptures after unpublished expiry observation  589ms
+   ✓ lease-bound daemon identity > recaptures after unpublished stolen-fence observation  553ms
+   ✓ lease-bound daemon identity > recaptures after unpublished heartbeat-rollback observation  562ms
+   ✓ lease-bound daemon identity > marks an old snapshot stale while a new lease owner has not published yet  551ms
+   ✓ lease-bound daemon identity > classifies process missing without claiming the old build is active  564ms
+   ✓ lease-bound daemon identity > classifies process exited without claiming the old build is active  542ms
+   ✓ lease-bound daemon identity > classifies process unavailable without claiming the old build is active  541ms
+   ✓ lease-bound daemon identity > does not trust a changed boot_id  540ms
+   ✓ lease-bound daemon identity > does not trust a changed start_token  547ms
+   ✓ lease-bound daemon identity > does not trust a changed pid_namespace  548ms
+   ✓ lease-bound daemon identity > reports corrupted snapshots and bad clocks explicitly without leaking stored bytes  552ms
+   ✓ lease-bound daemon identity > does not promote a future heartbeat to an active observation  549ms
+   ✓ lease-bound daemon identity > rejects unknown snapshot fields and unavailable legacy DBs without initialization  563ms
+ ✓ tests/integration/memory-confirmation-binding.test.ts (2 tests) 739ms
+   ✓ refuses a settled write the owner never confirmed, even when the same words were confirmed elsewhere  680ms
+ ✓ tests/integration/repository-hygiene.test.ts (1 test) 35ms
+ ✓ tests/integration/memory-cross-repo-skew.test.ts (2 tests) 7ms
+ ✓ tests/unit/morning-brief-artifact.test.ts (41 tests) 55ms
+ ✓ tests/integration/remote-approval-policy-ttl.test.ts (1 test) 628ms
+   ✓ remote approval policy TTL > expires a challenge at the policy TTL rather than a hardcoded five minutes  627ms
+ ✓ tests/unit/phone-gateway-systemd.test.ts (3 tests) 3ms
+ ✓ tests/integration/task-execution-attempts.test.ts (18 tests) 1135ms
+   ✓ task execution operation binding > blocks another signed request after reopening a prepared operation  646ms
+ ✓ tests/integration/personal-connectors-public.test.ts (10 tests) 887ms
+   ✓ Task 13 public registry projection > rejects injected source objects  620ms
+ ✓ tests/integration/task-completion.test.ts (21 tests) 11540ms
+   ✓ preserves native proof bytes in a signed v2 envelope and separates live validity from durable cost evidence  1447ms
+   ✓ collects native evening evidence within scope, byte limits and existing privacy filters  632ms
+   ✓ verifies original completion evidence after the execution lease expires without writes  647ms
+   ✓ rejects original completion evidence when the independent verifier key no longer matches  510ms
+   ✓ rejects revoked completion evidence without invoking execution  517ms
+   ✓ rejects a historical completion when its stored certification bytes are lost  655ms
+   ✓ atomically completes the verified request, operation and built-in workflow with a read-only replay  482ms
+   ✓ blocks api_command completion without a bound completion receipt  432ms
+   ✓ blocks sql_command completion without a bound completion receipt  461ms
+   ✓ blocks sql_attempt completion without a bound completion receipt  448ms
+   ✓ blocks sql_workflow completion without a bound completion receipt  431ms
+   ✓ blocks graph_no_action completion without a bound completion receipt  443ms
+   ✓ rejects an actual missing publication ref before completion  517ms
+   ✓ rejects an actual moved publication ref before completion  528ms
+   ✓ rejects an actual symbolic publication ref before completion  532ms
+   ✓ rejects cancelled authority before settlement  469ms
+   ✓ rejects expired authority before settlement  485ms
+   ✓ rejects verifier_revoked authority before settlement  470ms
+   ✓ rolls every completion write back on event_failure  477ms
+   ✓ rolls every completion write back on expired_at_commit  478ms
+   ✓ rolls every completion write back on revoked_at_commit  480ms
+ ✓ tests/unit/task13-characterization.test.ts (5 tests) 601ms
+   ✓ Task 13 source seam characterization > preserves TaskTimeline reads and Task 11 typed no-data outcomes  595ms
+ ✓ tests/integration/dashboard-recommendation-accept.test.ts (13 tests) 1273ms
+   ✓ Task31 recommendation acceptance route > stages one redacted pending workflow request for an exact Origin and converges retries  684ms
+ ✓ tests/unit/notification-intents-public.test.ts (1 test) 2ms
+ ✓ tests/integration/memory-scoped-completion-observation.test.ts (5 tests) 1129ms
+   ✓ records scoped observation atomically: valid  732ms
+ ✓ tests/integration/task32-memory-history.test.ts (5 tests) 2997ms
+   ✓ Task 32 Memory record history > reports a current record with an empty bounded history before any owner command  635ms
+   ✓ Task 32 Memory record history > shows a staged correction in the record history while it awaits approval  604ms
+   ✓ Task 32 Memory record history > marks an approved correction as superseded with its receipt and hides the old content  595ms
+   ✓ Task 32 Memory record history > never returns a forgotten record, not even as history  595ms
+   ✓ Task 32 Memory record history > replaces a path-like provider origin label with a safe label  566ms
+{"schema_version":1,"event":"phone_gateway_request","request_id":"2850d2a7-c851-4a3f-b5b5-f0fc9c3705c1","occurred_at":"2026-10-16T07:31:46.577Z","route_class":"session","outcome":"allowed","code":"ok","status":200,"duration_bucket":"lt100ms","owner_digest16":"a1d5d4103d619e71"}
+{"schema_version":1,"event":"phone_gateway_request","request_id":"ff7086ea-fff7-4edc-9782-8f3960830722","occurred_at":"2026-10-16T07:31:46.577Z","route_class":"remote_approval","outcome":"allowed","code":"ok","status":200,"duration_bucket":"lt100ms","owner_digest16":"a1d5d4103d619e71"}
+{"schema_version":1,"event":"phone_gateway_request","request_id":"440b2470-39be-4790-ae38-654dc6ec5405","occurred_at":"2026-10-16T07:31:46.577Z","route_class":"security","outcome":"allowed","code":"ok","status":200,"duration_bucket":"lt100ms","owner_digest16":"a1d5d4103d619e71"}
+{"schema_version":1,"event":"phone_gateway_request","request_id":"3264e3a1-b4b0-463d-b982-37efc55036d4","occurred_at":"2026-10-16T07:31:46.577Z","route_class":"denied","outcome":"rejected","code":"PHONE_ROUTE_NOT_FOUND","status":404,"duration_bucket":"lt100ms","owner_digest16":"a1d5d4103d619e71"}
+ ✓ tests/integration/remote-approval-gateway-resolver.test.ts (1 test) 642ms
+   ✓ phone gateway remote approval resolver > looks up the staged request and mints options only with the matching sealed key  641ms
+ ✓ tests/integration/daily-service-evening-failure.test.ts (1 test) 1537ms
+   ✓ fails the evening run with its own reason instead of leaving it claimed  1536ms
+ ✓ tests/integration/second-brain-readiness-cli.test.ts (3 tests) 475ms
+ ✓ tests/integration/morning-brief-recommendation-provenance.test.ts (1 test) 665ms
+   ✓ accepts real stored recommendation identities and evidence shared by three ranked actions  665ms
+ ✓ tests/unit/daily-control-loop-time.test.ts (8 tests) 5ms
+USAGE
+ ✓ tests/unit/export-messenger-summary-snapshot.test.ts (4 tests) 18ms
+ ✓ tests/integration/remote-approval-production-cli.test.ts (2 tests) 691ms
+   ✓ remote approval production CLI composition > exposes enroll, options, and verify on createDashboardServer without an injected service  645ms
+ ✓ tests/unit/evening-closeout.test.ts (8 tests) 28ms
+ ✓ tests/integration/retention-policy-migration.test.ts (1 test) 633ms
+   ✓ upgrades existing retention jobs without inventing or permitting retroactive policy  632ms
+ ✓ tests/integration/daily-loop-integrity-remediation.test.ts (4 tests) 2403ms
+   ✓ Task 20 daily-loop persisted integrity > rejects an otherwise valid forged checkpoint after reopen without projecting or appending  642ms
+   ✓ Task 20 daily-loop persisted integrity > rejects an arbitrary run digest mutation with zero additional state change  586ms
+   ✓ Task 20 daily-loop persisted integrity > rejects an arbitrary step digest mutation with zero additional state change  599ms
+   ✓ Task 20 daily-loop persisted integrity > rejects an arbitrary checkpoint digest mutation with zero additional state change  574ms
+ ✓ tests/unit/phone-memory-context-cli.test.ts (11 tests) 14ms
+ ✓ tests/integration/task32-provenance-authority.test.ts (1 test) 595ms
+   ✓ Task 32 provider profile authority > keeps exact schema 3 read-only and enables staging only for schema 4  595ms
+ ✓ tests/unit/task32-memory-contracts.test.ts (1 test) 2ms
+ ✓ tests/unit/task-execution-plan.test.ts (35 tests) 10ms
+ ✓ tests/integration/memory-scoped-provider-authority.test.ts (10 tests) 1654ms
+   ✓ checks the original dispatched attempt with current policy and consumed reviews without spending again  764ms
+ ✓ tests/integration/memory-scoped-settlement-authority.test.ts (8 tests) 1424ms
+   ✓ checks spent scoped authority against current withdrawal: valid  711ms
+ ✓ tests/unit/memory-remember-artifact.test.ts (4 tests) 5ms
+ ✓ tests/unit/company-candidate-import.test.ts (16 tests) 965ms
+   ✓ company-only handoff importer > refuses a cancelled same-digest prestage and rolls back the fresh page item  633ms
+ ✓ tests/unit/context-assembler-boundary.test.ts (2 tests) 5ms
+
+ Test Files  351 passed (351)
+      Tests  2558 passed (2558)
+   Start at  16:18:39
+   Duration  809.04s (transform 4.78s, setup 0ms, collect 152.93s, tests 608.71s, environment 41ms, prepare 10.90s)
+
+JARVIS_TEST_PROFILE dashboard
+
+ RUN  v3.2.7 /home/jm/orca/lanes/jarvis-freshness-9db9d7be/dashboard
+
+ ✓ src/personal-store.test.ts (15 tests) 24ms
+ ✓ src/price-finance-page.test.tsx (18 tests) 620ms
+ ✓ src/task-execution-panel.test.tsx (13 tests) 1826ms
+   ✓ task execution screen > invalidates the preview on relationship edits and displays the submitted lineage for approval  687ms
+   ✓ task execution screen > prepares explicit inputs, invalidates an edited preview, then follows approval to durable result  326ms
+ ✓ src/authority-controls.test.tsx (22 tests) 391ms
+ ✓ src/root-agent.test.tsx (3 tests) 218ms
+ ✓ src/mail-candidates-card.test.tsx (15 tests) 207ms
+ ✓ src/root-task.test.tsx (2 tests) 208ms
+ ✓ src/proposal-page.test.tsx (5 tests) 1594ms
+   ✓ proposal interview and receipt-bound task staging > previews the normalized request and exposes the ready proposal  515ms
+   ✓ proposal interview and receipt-bound task staging > stages the ready proposal with deterministic identifiers and deadline  371ms
+   ✓ proposal interview and receipt-bound task staging > offers retry after a transport error without losing interview input  349ms
+ ✓ src/root.test.tsx (3 tests) 267ms
+ ✓ src/memory-store-freshness.test.ts (9 tests) 11ms
+ ✓ src/root-approvals.test.tsx (5 tests) 244ms
+ ✓ src/local-work-card.test.tsx (20 tests) 309ms
+ ✓ src/memory-page-lifetime.test.tsx (8 tests) 465ms
+ ✓ src/personal-api.test.ts (18 tests) 16ms
+ ✓ src/phone-surface.test.tsx (5 tests) 176ms
+ ✓ src/finance-read-page.test.tsx (8 tests) 305ms
+ ✓ src/today-page.test.tsx (8 tests) 262ms
+ ✓ src/daemon-runtime-status.test.tsx (35 tests) 138ms
+ ✓ src/read-pages.test.tsx (11 tests) 197ms
+ ✓ src/workboard/page.test.tsx (8 tests) 396ms
+ ✓ src/memory-surface-states.test.tsx (11 tests) 124ms
+ ✓ src/store-sse.test.ts (8 tests) 11ms
+ ✓ src/authority-api.test.ts (6 tests) 9ms
+ ✓ src/task-template-proposal.test.tsx (4 tests) 479ms
+   ✓ previews server-compiled scope, invalidates edits, and preserves a single request after an uncertain response  320ms
+ ✓ src/memory-detail.test.tsx (6 tests) 216ms
+ ✓ src/app.test.tsx (7 tests) 243ms
+ ✓ src/task-control.test.tsx (8 tests) 191ms
+ ✓ src/owner-inbox-batch-render.test.tsx (5 tests) 142ms
+ ✓ src/memory-candidates.test.tsx (4 tests) 121ms
+ ✓ src/owner-inbox-enroll.test.tsx (3 tests) 222ms
+ ✓ src/approval-pagination.test.tsx (4 tests) 131ms
+ ✓ src/runtime-status.test.tsx (18 tests) 135ms
+ ✓ src/workboard/action-slot.test.tsx (4 tests) 128ms
+ ✓ src/store-coalescing.test.ts (5 tests) 60ms
+ ✓ src/portfolio-status.test.tsx (3 tests) 136ms
+ ✓ src/task-execution-api.test.ts (4 tests) 8ms
+ ✓ src/task-routing-summary.test.tsx (3 tests) 196ms
+ ✓ src/response-budget.test.ts (8 tests) 12ms
+ ✓ src/operational-shell.test.tsx (6 tests) 266ms
+stderr | src/pages/approvals-page.test.tsx > ApprovalsPage > keeps receipt-bound authority controls on a populated success state
+An update to OwnerInboxPanel inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/pages/approvals-page.test.tsx > ApprovalsPage > places the control-request pager inside admin tools, not beside the owner inbox
+An update to OwnerInboxPanel inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ src/pages/approvals-page.test.tsx (3 tests) 121ms
+ ✓ src/components/timeline-panel.test.tsx (4 tests) 112ms
+stderr | src/mail-candidates-route.test.tsx > Mail candidates in the product work-card route > keeps the operating route unconnected when no candidate reader is issued
+An update to PriceFinancePage inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+stderr | src/mail-candidates-route.test.tsx > Mail candidates in the product work-card route > keeps the operating route unconnected when no candidate reader is issued
+An update to ControlCenter inside a test was not wrapped in act(...).
+
+When testing, code that causes React state updates should be wrapped into act(...):
+
+act(() => {
+  /* fire events that update state */
+});
+/* assert on the output */
+
+This ensures that you're testing the behavior the user would see in the browser. Learn more at https://react.dev/link/wrap-tests-with-act
+
+ ✓ src/mail-candidates-route.test.tsx (3 tests) 162ms
+ ✓ src/task-execution-resource.test.ts (3 tests) 6ms
+ ✓ src/components/terminal-log.test.tsx (4 tests) 111ms
+ ✓ src/components/task-graph.test.tsx (4 tests) 143ms
+ ✓ src/store-recovery.test.ts (4 tests) 6ms
+ ✓ src/memory-api.test.ts (2 tests) 25ms
+ ✓ src/company-daily-report-card.test.tsx (2 tests) 151ms
+ ✓ src/pages/security-client-list.test.ts (2 tests) 14ms
+ ✓ src/finance-read-adapter.test.ts (6 tests) 7ms
+ ✓ src/store-reconnect.test.ts (2 tests) 7ms
+ ✓ src/store-resources.test.ts (1 test) 3ms
+ ✓ src/pages/security-page.test.tsx (1 test) 187ms
+ ✓ src/finance-readable-format.test.ts (5 tests) 16ms
+ ✓ src/memory-conflicts.test.tsx (2 tests) 93ms
+ ✓ src/portfolio-guard.test.ts (3 tests) 3ms
+ ✓ src/company-memory-admitted-fixture.test.ts (13 tests) 7ms
+ ✓ src/crm-memory-admitted-fixture.test.ts (14 tests) 6ms
+ ✓ src/mail-crm-admitted-fixture.test.ts (11 tests) 6ms
+ ✓ src/pages/security-ceremony.test.ts (1 test) 9ms
+ ✓ src/owner-inbox-outcome.test.ts (1 test) 3ms
+
+ Test Files  61 passed (61)
+      Tests  439 passed (439)
+   Start at  16:32:09
+   Duration  54.40s (transform 844ms, setup 0ms, collect 6.97s, tests 11.90s, environment 27.36s, prepare 1.98s)
+
+⠙npm notice run orca-jarvis-shadow@0.1.0 acceptance:pre-gjc
+npm notice run node scripts/run-tests.mjs acceptance --fixture test/fixtures/pre-gjc-e2e.json --clock 2026-08-09T00:00:00.000Z
+{"boundary":"pre_gjc_ready","aggregate_status":"stopped","completion_promoted":true,"gjc_dispatched":false}
+⠙⠙
+
+[Showing lines 1679-2276 of 2276; earlier output dropped]

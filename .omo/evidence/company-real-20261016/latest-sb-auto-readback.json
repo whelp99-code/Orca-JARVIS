@@ -1,0 +1,231 @@
+{
+  "sb_head": "6e56964b34e9b2e092ddf5152bf09a89b2f2267f",
+  "label": "actual signed broker -> actual SB auto CLI -> SQL -> fixed report read; simulated anchor only",
+  "first": {
+    "checkpoint": {
+      "approval_binding_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "approval_policy_version": 1,
+      "intent_root": "sha256:edafeb496729b2a85782dee85272ed0d07c428b825762cc069ce6e2ff2069931",
+      "intent_sequence": 19,
+      "operational_epoch": 1,
+      "revocation_root": "sha256:cf601f3f201ded8f69fbe353afbbbde906145fe20a4e872146799993a75929ea",
+      "revocation_sequence": 1,
+      "stores": {
+        "jarvis": {
+          "deletion_root": "sha256:aaad46c82a56b36ba8417c5f06aac3dc77cbd20484f378c225e7a9eb3cda6c7e",
+          "deletion_sequence": 0,
+          "receipt_root": "sha256:9fd5207da793016a2d7e4b991bcfc2f0b6cf6d995c4f2272521b95c353d9ac47",
+          "receipt_sequence": 0,
+          "terminal_root": "sha256:95199024c4278c00c9bc2583d01b9388c37f4ad703f5230ac743ee71c609befc",
+          "terminal_sequence": 0
+        },
+        "second_brain": {
+          "deletion_root": "sha256:4c0889659f715356238bf30d7538ef515b93a8929ae5c78ceb368516ba0953ab",
+          "deletion_sequence": 0,
+          "receipt_root": "sha256:49e5cfd0dbaa1d4db72e52ec539e07c680b042b8f70019c5be20122d96d9dca6",
+          "receipt_sequence": 9,
+          "terminal_root": "sha256:e19d5ccb8e4ce12ee05afd5772023c14499d1ad05c0c86be22db17f36d70c3ae",
+          "terminal_sequence": 6
+        }
+      }
+    },
+    "outcomes": [
+      {
+        "candidate_id": "candidate:calendar",
+        "classification": "auto_internal",
+        "effect_count": 1,
+        "reason_codes": [],
+        "receipt_ids": [
+          "cmreceipt:v1:fd4fa38835a210b1cfcdfa61c38f55ee17f003c70a9d3487e9a671980955f9cc",
+          "cmreceipt:v1:599d9bd868593aad348a5f38e5450bf1216dd5a51159532e31e523150f127de5"
+        ],
+        "uncertain": false
+      },
+      {
+        "candidate_id": "candidate:contact",
+        "classification": "auto_internal",
+        "effect_count": 1,
+        "reason_codes": [],
+        "receipt_ids": [
+          "cmreceipt:v1:fb0de1d18d86c5176aeef1f1c9f45cab438af126aa09fe16d693ea505ba08ad6",
+          "cmreceipt:v1:9cec87dff072d473bd3df9bc3f52c8458918ffc91a386f3653f42ffd6f8e837c"
+        ],
+        "uncertain": false
+      },
+      {
+        "candidate_id": "candidate:contract",
+        "classification": "human_required",
+        "effect_count": 0,
+        "reason_codes": [
+          "contract",
+          "ambiguous"
+        ],
+        "receipt_ids": [],
+        "uncertain": false
+      },
+      {
+        "candidate_id": "candidate:money",
+        "classification": "human_required",
+        "effect_count": 0,
+        "reason_codes": [
+          "money",
+          "ambiguous"
+        ],
+        "receipt_ids": [],
+        "uncertain": false
+      },
+      {
+        "candidate_id": "candidate:progress",
+        "classification": "auto_internal",
+        "effect_count": 1,
+        "reason_codes": [],
+        "receipt_ids": [
+          "cmreceipt:v1:48127c509a67838a56c2e59f1ec26668997f52e8a4c42884959499133fd9b449",
+          "cmreceipt:v1:e523f0028e836976df23d92e20984c452e66658edcb4597bce8bbbda488c0ba7"
+        ],
+        "uncertain": false
+      }
+    ]
+  },
+  "second": {
+    "checkpoint": {
+      "approval_binding_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+      "approval_policy_version": 1,
+      "intent_root": "sha256:edafeb496729b2a85782dee85272ed0d07c428b825762cc069ce6e2ff2069931",
+      "intent_sequence": 19,
+      "operational_epoch": 1,
+      "revocation_root": "sha256:cf601f3f201ded8f69fbe353afbbbde906145fe20a4e872146799993a75929ea",
+      "revocation_sequence": 1,
+      "stores": {
+        "jarvis": {
+          "deletion_root": "sha256:aaad46c82a56b36ba8417c5f06aac3dc77cbd20484f378c225e7a9eb3cda6c7e",
+          "deletion_sequence": 0,
+          "receipt_root": "sha256:9fd5207da793016a2d7e4b991bcfc2f0b6cf6d995c4f2272521b95c353d9ac47",
+          "receipt_sequence": 0,
+          "terminal_root": "sha256:95199024c4278c00c9bc2583d01b9388c37f4ad703f5230ac743ee71c609befc",
+          "terminal_sequence": 0
+        },
+        "second_brain": {
+          "deletion_root": "sha256:4c0889659f715356238bf30d7538ef515b93a8929ae5c78ceb368516ba0953ab",
+          "deletion_sequence": 0,
+          "receipt_root": "sha256:49e5cfd0dbaa1d4db72e52ec539e07c680b042b8f70019c5be20122d96d9dca6",
+          "receipt_sequence": 9,
+          "terminal_root": "sha256:e19d5ccb8e4ce12ee05afd5772023c14499d1ad05c0c86be22db17f36d70c3ae",
+          "terminal_sequence": 6
+        }
+      }
+    },
+    "outcomes": [
+      {
+        "candidate_id": "candidate:contract",
+        "classification": "human_required",
+        "effect_count": 0,
+        "reason_codes": [
+          "contract",
+          "ambiguous"
+        ],
+        "receipt_ids": [],
+        "uncertain": false
+      },
+      {
+        "candidate_id": "candidate:money",
+        "classification": "human_required",
+        "effect_count": 0,
+        "reason_codes": [
+          "money",
+          "ambiguous"
+        ],
+        "receipt_ids": [],
+        "uncertain": false
+      }
+    ]
+  },
+  "published": {
+    "status": "published",
+    "report_id": "company-report:v1:43ef65a80d688b5f774d402477cffad2322dc82359934dd6932ddf72dc55fbea",
+    "created": true
+  },
+  "repeated": {
+    "status": "published",
+    "report_id": "company-report:v1:43ef65a80d688b5f774d402477cffad2322dc82359934dd6932ddf72dc55fbea",
+    "created": false
+  },
+  "counts": {
+    "calendar_memo": 1,
+    "completed": 3,
+    "conflict": 2,
+    "contact_new": 1,
+    "human_required": 2,
+    "progress_memo": 1,
+    "unresolved": 0
+  },
+  "rows": [
+    {
+      "candidate_id": "candidate:calendar",
+      "classification": "calendar_memo",
+      "counts_as_complete": true,
+      "error_reason": null,
+      "global_sequence": 10,
+      "mail_event_ref": "event:calendar",
+      "operation_id": "sha256:b0076dab90824bc70403a9a327e37b36aa3fca6f2a20b324bd31201f5a6a412f",
+      "policy_version": "1",
+      "processed_at": "2026-10-16T05:43:54.804Z",
+      "receipt_id": "cmreceipt:v1:599d9bd868593aad348a5f38e5450bf1216dd5a51159532e31e523150f127de5",
+      "status": "processed_complete"
+    },
+    {
+      "candidate_id": "candidate:contact",
+      "classification": "contact_new",
+      "counts_as_complete": true,
+      "error_reason": null,
+      "global_sequence": 18,
+      "mail_event_ref": "event:contact",
+      "operation_id": "sha256:7d0a96eb14b1ae9269141b63f228d4ccf85f2f286f7f2ebb6c9ca943e5ba77e4",
+      "policy_version": "1",
+      "processed_at": "2026-10-16T05:43:54.982Z",
+      "receipt_id": "cmreceipt:v1:9cec87dff072d473bd3df9bc3f52c8458918ffc91a386f3653f42ffd6f8e837c",
+      "status": "processed_complete"
+    },
+    {
+      "candidate_id": "candidate:contract",
+      "classification": "conflict",
+      "counts_as_complete": false,
+      "error_reason": "contract:ambiguous",
+      "global_sequence": 19,
+      "mail_event_ref": "event:contract",
+      "operation_id": "assessment:sha256:2080a0ea8601690c3bea700abc58627e995982812ceb732fa0fdefffd966907e",
+      "policy_version": "1",
+      "processed_at": null,
+      "receipt_id": null,
+      "status": "candidate"
+    },
+    {
+      "candidate_id": "candidate:money",
+      "classification": "conflict",
+      "counts_as_complete": false,
+      "error_reason": "money:ambiguous",
+      "global_sequence": 20,
+      "mail_event_ref": "event:money",
+      "operation_id": "assessment:sha256:f5b35e4bb6c2773b5d89f8f0950661b3141e8b67ecc3c02c1eab86b286318d31",
+      "policy_version": "1",
+      "processed_at": null,
+      "receipt_id": null,
+      "status": "candidate"
+    },
+    {
+      "candidate_id": "candidate:progress",
+      "classification": "progress_memo",
+      "counts_as_complete": true,
+      "error_reason": null,
+      "global_sequence": 28,
+      "mail_event_ref": "event:progress",
+      "operation_id": "sha256:2f010c063c5b5f507df9471cddd1d8d2ac60fb2df8a636904a62d6e5afa8881b",
+      "policy_version": "1",
+      "processed_at": "2026-10-16T05:43:55.272Z",
+      "receipt_id": "cmreceipt:v1:e523f0028e836976df23d92e20984c452e66658edcb4597bce8bbbda488c0ba7",
+      "status": "processed_complete"
+    }
+  ],
+  "fabricated_human_receipts": 0,
+  "notification_intents": 1
+}
