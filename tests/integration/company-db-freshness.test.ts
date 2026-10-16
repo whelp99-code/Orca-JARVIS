@@ -6,9 +6,11 @@ import { canonicalize } from "../../src/canonical.js";
 import { companyCheckpointSchema } from "../../src/company-freshness.js";
 import { loadCompanyFreshnessClient } from "../../src/company-freshness-client-config.js";
 import { signCompanyFreshnessEnvelope } from "../../src/company-freshness-envelope.js";
+import { signCompanyInternalEnvelope } from "../../src/company-internal-envelope.js";
 import { companyFreshnessBroker } from "../fixtures/company-freshness-broker.js";
 
 const clientWorker = fileURLToPath(new URL("../../dist/tests/fixtures/company-freshness-client-call.mjs", import.meta.url));
+const transportWorker = fileURLToPath(new URL("../../dist/src/company-freshness-transport-main.mjs", import.meta.url));
 
 function readRequest(fixture: Awaited<ReturnType<typeof companyFreshnessBroker>>) {
   return { schema_version: 2 as const, scope: fixture.fixture.test_only_memory.factory_input.scope,
@@ -35,8 +37,31 @@ async function rawCall(socketPath: string, input: unknown): Promise<string> {
 }
 
 describe("company database freshness signed broker transport", () => {
+  it.each(["auto", "report"] as const)("pins the signed %s route to its dedicated existing broker config", async route => {
+    const live = await companyFreshnessBroker({ route });
+    try {
+      const operation = route === "auto" ? "auto_process_internal" : "read_auto_report";
+      const args = route === "auto" ? { limit: 100 }
+        : { from_global_sequence: 0, to_global_sequence: 100, limit: 100, cursor: null };
+      const response = JSON.parse(execFileSync(process.execPath, [transportWorker, "--config", live.client], {
+        input: canonicalize({ schema_version: 1, operation, arguments: args }), encoding: "utf8", timeout: 15_000,
+      }));
+      expect(response).toEqual({ TEST_ONLY: true, action: route === "auto" ? "auto-internal" : "auto-report" });
+      expect(live.captured()).toMatchObject({
+        argv: [route === "auto" ? "auto-internal" : "auto-report", "--config", live.freshnessConfig],
+        envelope: { arguments: args, authority: { operation,
+          purpose: route === "auto" ? "company_internal_auto_trigger" : "company_memory_auto_report" } },
+      });
+      const signed = signCompanyInternalEnvelope({ schema_version: 1, operation, arguments: args }, loadCompanyFreshnessClient(live.client));
+      expect(await rawCall(live.socket, { ...signed, authority: { ...signed.authority, purpose: "policy_auto" } }))
+        .toBe('{"error":"COMPANY_CANDIDATE_BROKER_REFUSED"}');
+      expect(await rawCall(live.socket, { ...signed, arguments: { ...args, limit: 101, config: "/forbidden/override" } }))
+        .toBe('{"error":"COMPANY_CANDIDATE_BROKER_REFUSED"}');
+    } finally { await live.close(); }
+  });
+
   it("uses the synchronous helper and signed freshness-only argv without inherited overrides", async () => {
-    const live = await companyFreshnessBroker();
+    const live = await companyFreshnessBroker({ installationId: "installation:actual-registry" });
     try {
       const request = readRequest(live);
       const response = call(live.client, "read_freshness", request);
@@ -45,6 +70,7 @@ describe("company database freshness signed broker transport", () => {
         argv: ["freshness", "--config", live.freshnessConfig],
         env: { PATH: "/usr/bin:/bin" },
         envelope: { schema_version: 1, method: "read_freshness", evidence: null,
+          request: { installation_id: "installation:actual-registry" },
           authority: { principal_id: "principal:jarvis-company-progress", purpose: "company_freshness_progress" } },
       });
       expect(response).toEqual({

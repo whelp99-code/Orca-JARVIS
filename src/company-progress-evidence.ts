@@ -2,7 +2,7 @@ import { z } from "zod";
 import { canonicalize } from "./canonical.js";
 import { parseCompanyJson } from "./company-candidate-json.js";
 import { parseCompanyProgressEvidence } from "./company-freshness-envelope.js";
-import { companyOperationId } from "./company-freshness.js";
+import { companyOperationId } from "./company-freshness-contract.js";
 import { companyCompletionV2Schema } from "./company-completion-v2.js";
 import { controlCommandDigest, controlValueDigest, verifyCommandApproval, type CommandApprovalReceipt } from "./control-plane-contract.js";
 import type { CompanyCommandV2 } from "./company-candidate-v2-contract.js";
@@ -52,9 +52,9 @@ export function stageCompanyProgressEvidence(authority: AuthorityDb, value: unkn
   return expected.operation_id;
 }
 
-function assertOriginalDecision(authority: AuthorityDb, command: CompanyCommandV2, receipt: CommandApprovalReceipt): void {
-  const row = textRow.safeParse(authority.db.prepare(
-    "SELECT payload_json FROM control_command_receipts WHERE receipt_id=? AND request_id=?",
+function assertOriginalDecision(authority: AuthorityDb, command: CompanyCommandV2, receipt: CommandApprovalReceipt, originalAt?: string): void {
+  const row = textRow.extend({ created_at: z.string() }).safeParse(authority.db.prepare(
+    "SELECT payload_json,created_at FROM control_command_receipts WHERE receipt_id=? AND request_id=?",
   ).get(receipt.receipt_id, command.request_id));
   const key = z.object({ public_key_pem: z.string(), principal_id: z.string() }).safeParse(authority.db.prepare(
     "SELECT public_key_pem,principal_id FROM trusted_authority_keys WHERE key_id=?",
@@ -62,7 +62,8 @@ function assertOriginalDecision(authority: AuthorityDb, command: CompanyCommandV
   const request = z.object({ command_digest: z.string() }).safeParse(authority.db.prepare(
     "SELECT command_digest FROM control_command_requests WHERE request_id=?",
   ).get(command.request_id));
-  if (!row.success || canonicalize(parseCompanyJson(row.data.payload_json)) !== canonicalize(receipt)
+  if (!row.success || (originalAt !== undefined && row.data.created_at !== originalAt)
+    || canonicalize(parseCompanyJson(row.data.payload_json)) !== canonicalize(receipt)
     || !request.success || request.data.command_digest !== controlCommandDigest(command)
     || !key.success || key.data.principal_id !== receipt.signer_principal_id
     || !verifyCommandApproval(receipt, key.data.public_key_pem, new Date(receipt.not_before))) {
@@ -83,7 +84,7 @@ export function readCompanyProgressEvidence(authority: AuthorityDb, operationId:
     || row.evidence_kind !== evidence.kind) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
   switch (evidence.kind) {
     case "jarvis_decision":
-      assertOriginalDecision(authority, evidence.command, evidence.receipt);
+      assertOriginalDecision(authority, evidence.command, evidence.receipt, evidence.original_at);
       break;
     case "jarvis_completion": {
       assertOriginalDecision(authority, evidence.command, evidence.approval);

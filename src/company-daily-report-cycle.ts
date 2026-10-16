@@ -1,6 +1,8 @@
 import { KST_OFFSET_MS } from "./daily-loop-time.js";
 import { CompanyDailyReportError } from "./company-daily-report-types.js";
 import { CompanyDailyReportStore } from "./company-daily-report-store.js";
+import { z } from "zod";
+import { canonicalize } from "./canonical.js";
 import type { AuthorityDb } from "./db.js";
 import type { CompanyDailyReportConfig, CompanyDailyReportCounts, CompanyDailyReportDocument,
   CompanyDailyReportPage, CompanyDailyReportRead, CompanyDailyReportRow, CompanyDailyReportSource,
@@ -13,6 +15,14 @@ const CLASSIFICATIONS = new Set<CompanyReportClassification>([
 const INSTANT = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/u;
 const DATE = /^\d{4}-\d{2}-\d{2}$/u;
 const SECRET = /(?:@|password|secret|token|bearer|credential|passkey|금액|원\b|KRW|USD|\$)/iu;
+const metadata = z.string().refine(safeId);
+const rowSchema = z.object({
+  candidate_id: metadata, classification: z.enum(["contact_new", "calendar_memo", "progress_memo", "human_required", "conflict", "unresolved"]),
+  status: metadata, mail_event_ref: metadata, policy_version: metadata,
+  processed_at: z.iso.datetime({ precision: 3 }).nullable(), receipt_id: metadata.nullable(),
+  error_reason: metadata.nullable(), operation_id: metadata,
+  global_sequence: z.int().min(1).max(Number.MAX_SAFE_INTEGER), counts_as_complete: z.boolean(),
+}).strict();
 
 export function disabledCompanyReportConfig(): CompanyDailyReportConfig {
   return { enabled: false };
@@ -36,6 +46,8 @@ export class CompanyDailyReportCycle {
     const reportDate = dueReportDate(now, config.activation_cutoff);
     if (reportDate === null) return { status: "idle" };
     const store = new CompanyDailyReportStore(this.db);
+    const existing = store.reportIdFor(config.scope, reportDate);
+    if (existing !== undefined) return { status: "published", report_id: existing, created: false };
     const prior = store.latestCutoff(config.scope, reportDate);
     const cutoffTo = kstCutoff(reportDate);
     const cutoffFrom = prior?.cutoff_to ?? config.activation_cutoff;
@@ -63,7 +75,9 @@ function readPages(source: CompanyDailyReportSource, first: CompanyDailyReportRe
   let epoch: string | undefined;
   let upper: number | undefined;
   const seen = new Set<string>();
+  let last: CompanyDailyReportRow | undefined;
   const rows: CompanyDailyReportRow[] = [];
+  let bytes = 0;
   for (let page = 0; page < 1_000; page += 1) {
     const result = source.readPage({ ...first, to_global_sequence: upper ?? null, cursor, limit: PAGE_LIMIT });
     acceptPage(result, first, epoch, upper);
@@ -72,8 +86,15 @@ function readPages(source: CompanyDailyReportSource, first: CompanyDailyReportRe
     for (const row of result.rows) {
       const key = `${String(row.global_sequence)}\u0000${row.operation_id}`;
       if (seen.has(key)) throw new CompanyDailyReportError("COMPANY_REPORT_PAGE_INVALID");
+      if (last !== undefined && (row.global_sequence < last.global_sequence
+        || (row.global_sequence === last.global_sequence && row.operation_id <= last.operation_id))) {
+        throw new CompanyDailyReportError("COMPANY_REPORT_PAGE_INVALID");
+      }
       seen.add(key);
+      bytes += Buffer.byteLength(canonicalize(row), "utf8") + 1;
+      if (bytes > 1_900_000) throw new CompanyDailyReportError("COMPANY_REPORT_PAGE_INVALID");
       rows.push(row);
+      last = row;
     }
     if (result.next_cursor === null) return { epoch, to_global_sequence: upper, rows };
     if (result.next_cursor === cursor) throw new CompanyDailyReportError("COMPANY_REPORT_PAGE_INVALID");
@@ -91,8 +112,9 @@ function acceptPage(page: CompanyDailyReportPage, request: CompanyDailyReportRea
   for (const row of page.rows) acceptRow(row, request.from_global_sequence, page.to_global_sequence);
 }
 function acceptRow(row: CompanyDailyReportRow, from: number, to: number): void {
-  const complete = row.classification !== "unresolved";
-  if (!CLASSIFICATIONS.has(row.classification) || row.counts_as_complete !== complete
+  const complete = ["contact_new", "calendar_memo", "progress_memo"].includes(row.classification)
+    && row.status === "processed_complete" && row.receipt_id !== null && row.processed_at !== null;
+  if (!rowSchema.safeParse(row).success || !CLASSIFICATIONS.has(row.classification) || row.counts_as_complete !== complete
     || !Number.isInteger(row.global_sequence) || row.global_sequence <= from || row.global_sequence > to
     || !safeId(row.candidate_id) || !safeId(row.operation_id) || !safeId(row.mail_event_ref) || !safeId(row.policy_version)
     || !safeId(row.status) || (row.processed_at !== null && !INSTANT.test(row.processed_at))
@@ -108,6 +130,7 @@ function documentFrom(scope: CompanyReportScope, reportDate: string, cutoffFrom:
   const counts = emptyCounts();
   for (const row of read.rows) {
     counts[row.classification] += 1;
+    if (row.classification === "conflict") counts.human_required += 1;
     if (row.counts_as_complete) counts.completed += 1;
   }
   return {

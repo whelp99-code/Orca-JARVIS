@@ -60,4 +60,5 @@ export const CLI_OPTIONS = {
   "company-config": { type: "string" },
   "company-completion-config": { type: "string" },
   "company-freshness-config": { type: "string" },
+  date: { type: "string" },
 } as const satisfies NonNullable<ParseArgsConfig["options"]>;

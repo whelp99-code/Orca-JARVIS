@@ -82,7 +82,7 @@ export class CompanyDailyReportStore {
     const rows = this.db.db.prepare(
       `SELECT r.report_id, r.report_json, n.state FROM company_daily_reports r
        JOIN company_report_notifications n ON n.report_id=r.report_id
-       ORDER BY r.report_date DESC, r.report_id`,
+       ORDER BY r.report_date DESC, r.report_id LIMIT 30`,
     ).all() as readonly { readonly report_id: string; readonly report_json: string; readonly state: string }[];
     return rows.map(row => card(row.report_id, row.report_json, notificationState(row.state)));
   }

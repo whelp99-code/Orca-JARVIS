@@ -7,6 +7,7 @@ export const CLI_HELP =
   + "company-candidates execute REQUEST_ID --company-config PATH --db PATH [--company-completion-config PATH] [--company-freshness-config PATH]: "
   + "forward the exact owner decision using separate processor authority; completion requires verified downstream work\n"
   + "control decide RECEIPT --db PATH [--company-freshness-config PATH]: record a signed decision; company freshness defaults to unconfigured\n"
+  + "company-candidates daily-report --date YYYY-MM-DD --company-config PATH --db PATH --json: publish one metadata-only report from the pinned read client; never run automatic effects\n"
   + "workboard ingest-reply-gap FILE --db PATH: project a Mail Intelligence reply-gap snapshot into the workboard; "
   + "open rows become owner-decision tasks, rows that left the snapshot are closed. "
   + "baseUrl defaults to http://jm-acloud.alpines-goldeye.ts.net:3010\n"

@@ -7,6 +7,7 @@ import { canonicalize } from "./canonical.js";
 import { parseCompanyJsonBytes } from "./company-candidate-json.js";
 import { loadCompanyFreshnessClient } from "./company-freshness-client-config.js";
 import { signCompanyFreshnessEnvelope } from "./company-freshness-envelope.js";
+import { signCompanyInternalEnvelope } from "./company-internal-envelope.js";
 import { JarvisError } from "./jarvis-error.js";
 
 const MAX_BYTES = 1_048_576;
@@ -30,7 +31,9 @@ export async function exchangeCompanyFreshness(configPath: string, input: unknow
     }
     if (path === "/") break;
   }
-  const envelope = signCompanyFreshnessEnvelope(input, client);
+  const envelope = typeof input === "object" && input !== null && "operation" in input
+    ? signCompanyInternalEnvelope(input, client)
+    : signCompanyFreshnessEnvelope(input, client);
   const body = canonicalize(envelope);
   if (Buffer.byteLength(body) > MAX_BYTES) throw new JarvisError("COMPANY_FRESHNESS_REQUIRED");
   return new Promise((resolve, reject) => {

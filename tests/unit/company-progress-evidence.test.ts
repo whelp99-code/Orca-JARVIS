@@ -3,6 +3,7 @@ import { canonicalize } from "../../src/canonical.js";
 import { decodeCompanyCommandV2 } from "../../src/company-candidate-v2-contract.js";
 import { CompanyPeerCalls } from "../../src/company-peer-calls.js";
 import { readCompanyProgressEvidence, stageCompanyProgressEvidence } from "../../src/company-progress-evidence.js";
+import { companyProgressSidecar, parseCompanyFreshnessPayload } from "../../src/company-freshness-envelope.js";
 import type { CompanyFreshnessProvider } from "../../src/company-freshness.js";
 import { transitionRequestDigest } from "../../src/company-transition-read.js";
 import { ControlPlane } from "../../src/control-plane.js";
@@ -64,8 +65,15 @@ describe("committed company progress evidence", () => {
       finishProgress(request) {
         expect(live.db.db.inTransaction).toBe(false);
         expect(readCompanyProgressEvidence(live.db, request.operation_id)).toEqual({
-          kind: "jarvis_decision", command: live.command, receipt: live.approval,
+          kind: "jarvis_decision", original_at: NOW.toISOString(), command: live.command, receipt: live.approval,
         });
+        const evidence = companyProgressSidecar(readCompanyProgressEvidence(live.db, request.operation_id));
+        expect(evidence).toEqual({ schema_version: 1, kind: "representative_receipt",
+          source_record_id: live.approval.receipt_id, original_at: NOW.toISOString(),
+          command: live.command, record: live.approval });
+        expect(parseCompanyFreshnessPayload({ schema_version: 1, method: "finish_progress", request, evidence }).evidence).toEqual(evidence);
+        expect(() => parseCompanyFreshnessPayload({ schema_version: 1, method: "finish_progress", request,
+          evidence: { ...evidence, original_at: live.approval.expires_at } })).toThrow("COMPANY_CONTRACT_INVALID");
         calls.push("finish");
         return live.provider.finishProgress(request);
       },
@@ -103,7 +111,7 @@ describe("committed company progress evidence", () => {
     const live = await companyApproverV2Database("approve", false);
     try {
       const operationId = stageCompanyProgressEvidence(live.db, {
-        kind: "jarvis_decision", command: decodeCompanyCommandV2(live.command), receipt: live.approval,
+        kind: "jarvis_decision", original_at: NOW.toISOString(), command: decodeCompanyCommandV2(live.command), receipt: live.approval,
       });
       expect(() => readCompanyProgressEvidence(live.db, operationId)).toThrow("COMPANY_PROGRESS_UNCERTAIN");
       expect(() => live.db.db.prepare(

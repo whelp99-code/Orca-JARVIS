@@ -3,12 +3,26 @@ import { readFileSync, writeFileSync } from "node:fs";
 import { z } from "zod";
 import { canonicalize } from "../../src/canonical.js";
 import { parseCompanyFreshnessEnvelope } from "../../src/company-freshness-envelope.js";
+import { companyBrokerAuthoritySchema } from "../../src/company-broker-authority.js";
+import { companyMemoryRequestDigest } from "../../src/company-transition-read.js";
 
 const [action, option, path] = process.argv.slice(2);
-if (action !== "freshness" || option !== "--config" || !path) throw new Error("Wrong pinned argv");
+if (!["freshness", "auto-internal", "auto-report"].includes(action ?? "") || option !== "--config" || !path) throw new Error("Wrong pinned argv");
 const config = z.object({ public_key: z.string(), capture: z.string(), oversized: z.boolean() })
   .parse(JSON.parse(readFileSync(path, "utf8")));
-const envelope = parseCompanyFreshnessEnvelope(JSON.parse(readFileSync(0, "utf8")));
+const input: unknown = JSON.parse(readFileSync(0, "utf8"));
+if (action !== "freshness") {
+  const envelope = z.object({ authority: companyBrokerAuthoritySchema, arguments: z.record(z.string(), z.unknown()) }).strict().parse(input);
+  const { signature, ...unsigned } = envelope.authority;
+  if (!verify(null, Buffer.from(`second-brain/company-memory-authority/v1\0${canonicalize(unsigned)}`),
+    config.public_key, Buffer.from(signature, "base64url"))
+    || unsigned.request_digest !== companyMemoryRequestDigest(unsigned.operation, envelope.arguments)
+    || unsigned.principal_id !== "principal:jarvis-company-progress") throw new Error("Invalid internal authority");
+  writeFileSync(config.capture, canonicalize({ argv: process.argv.slice(2), env: process.env, envelope }), { mode: 0o600 });
+  process.stdout.write(canonicalize({ TEST_ONLY: true, action }));
+  process.exit(0);
+}
+const envelope = parseCompanyFreshnessEnvelope(input);
 const { signature, ...unsigned } = envelope.authority;
 if (!verify(null, Buffer.from(`second-brain/company-memory-authority/v1\0${canonicalize(unsigned)}`),
   config.public_key, Buffer.from(signature, "base64url"))) throw new Error("Invalid authority signature");

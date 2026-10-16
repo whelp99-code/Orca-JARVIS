@@ -152,6 +152,24 @@ The document owns vertical scrolling. The operational shell uses StyleGallery's 
   Unforwarded rejections remain visible without decision controls. Their exact
   request ID is available in the existing identity disclosure for manual execution.
 
+### Company Daily Report
+- **Structure**: read-only Record List card in the existing approval inbox, date and
+ 18:00 KST cutoff, separate completed/protected/uncertain counts, then a native
+ disclosure for the immutable metadata rows and original receipt references.
+- **States**: published, empty (0 records), notification pending/unsupported/failed/
+ delivered, and selected report detail. A report never contains representative
+ approve/reject controls. Existing human candidates keep their passkey controls.
+- **Privacy**: candidate/source/policy/operation/receipt identifiers only. No body,
+ contact values, amount, personal memory or invented representative approval.
+- **Layout and tokens**: existing Panel, Record List, Digest, identity-list and
+ button primitives; document scrolling and wrapping identifiers at390px. No new
+ colors, spacing values, fonts, motion or developer runtime dependencies.
+- **Accessibility**: named disclosure with native keyboard behavior; report links
+ address the exact report rather than the latest card. Dates use native time and
+ KST display. Technical identifiers remain selectable in the evidence disclosure.
+ Receipt fragment targets reserve the existing shell navigation scroll margin:
+ three navigation-height tokens below64rem and one above, as on Finance Read.
+
 ### Today Decision Surface
 - **Structure**: six semantic panels in fixed source order: NOW, BLOCKED, DECISIONS, NEXT 3, WORKERS, RISKS.
 - **States**: loading, live, stale, offline, blocked, staging, accepted, validation error, and read-only (phone: a status banner replaces the stale alert, the approvals link and worker/risk authority data are not rendered, and no action is enabled).

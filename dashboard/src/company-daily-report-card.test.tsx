@@ -1,7 +1,7 @@
 import "@testing-library/jest-dom/vitest";
 import { render, screen } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
-import { describe, expect, it, vi } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CompanyDailyReportCard as Card } from "../../src/company-daily-report-types.js";
 import { CompanyDailyReportCard } from "./company-daily-report-card.js";
 import { OwnerInboxPanel } from "./owner-inbox-panel.js";
@@ -14,9 +14,10 @@ const report: Card = {
   rows: [{
     candidate_id: "candidate-1", classification: "human_required", status: "waiting", mail_event_ref: "mail-event-1",
     policy_version: "policy-1", processed_at: null, receipt_id: "receipt-1", error_reason: null,
-    operation_id: "operation-1", global_sequence: 1, counts_as_complete: true,
+    operation_id: "operation-1", global_sequence: 1, counts_as_complete: false,
   }],
 };
+afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("company daily report card", () => {
   it("shows metadata and no approval action", async () => {
@@ -24,9 +25,13 @@ describe("company daily report card", () => {
     render(<CompanyDailyReportCard report={report} />);
     expect(screen.getByText(/2026-10-16/)).toBeInTheDocument();
     expect(screen.queryByRole("button", { name: "승인" })).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /회사 내부 기록/ }));
+    await user.click(screen.getByText("회사 내부 기록 목록 보기"));
     expect(screen.getByText("candidate-1")).toBeInTheDocument();
+    await user.click(screen.getByText("원본 근거"));
     expect(screen.getByText(/receipt-1/)).toBeInTheDocument();
+    const original = screen.getByRole("link", { name: "receipt-1" });
+    const fragment = original.getAttribute("href")?.slice(1) ?? "";
+    expect(document.getElementById(decodeURIComponent(fragment))).toContainElement(original);
   });
 
   it("keeps the human passkey candidate beside the read-only report", async () => {
@@ -39,6 +44,6 @@ describe("company daily report card", () => {
     render(<OwnerInboxPanel />);
     expect(await screen.findByText("사람 승인")).toBeInTheDocument();
     expect(screen.getByRole("button", { name: "승인" })).toBeInTheDocument();
-    expect(screen.getByText(/회사 내부 기록/)).toBeInTheDocument();
+    expect(screen.getByRole("heading", { name: /회사 내부 기록 자동 처리/ })).toBeInTheDocument();
   });
 });

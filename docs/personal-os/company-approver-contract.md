@@ -292,7 +292,9 @@ JARVIS 설정은 다음 strict union의 새 분기다. unknown kind/키는 거�
 reserve/finish는 `COMPANY_FRESHNESS_REQUIRED`다. 설정만으로 DB·scope·epoch를 초기화하지 않는다.
 
 client credential은 정확히 `{schema_version:2,role:"freshness",socket,signing_key_id,
-signing_key_file,context}`다. context는 provider_instance_id/workspace_id/principal_id/
+signing_key_file,installation_id,context}`다. installation_id는 같은 SB registry의
+설치 ID를 operator가 pin하며 caller 입력이 아니다. adapter는 read의 설치 ID를 이 값으로
+고정한다. context는 provider_instance_id/workspace_id/principal_id/
 agent_id/session_id/projects/policy_revision/deletion_sequence/deletion_set_root다.
 principal은 `principal:jarvis-company-progress`, socket은 기존 processor broker의
 `/run/sb-company-processor/broker.sock`이다. private dir0700/file0600, 소유권·신뢰 parent와
@@ -338,8 +340,15 @@ state=`processed_complete`, 원래 receipt_created_at/decision_at/accepted_at을
 명령/승인이 만료돼도 새 효과 없이 원래 사실을 읽을 수 있으나 mutation 재전송은 금지한다.
 기존 accept/reject arguments·canonical/signature vector는 그대로다.
 
-finish evidence는 `jarvis_decision`의 원래 command2+대표 receipt 또는
-`jarvis_completion`의 원래 command2+대표 approval+SB acceptance5+검증된 completion2다.
+로컬 outbox는 `jarvis_decision`의 원래 command2+대표 receipt 또는
+`jarvis_completion`의 원래 command2+대표 approval+SB acceptance5+검증된 completion2와
+해당 사실의 원래 커밋 시각 `original_at`을 보존한다.
+finish wire evidence는 SB의 closed sidecar
+`{schema_version:1,kind,source_record_id,original_at,command,record}`다.
+decision의 kind=`representative_receipt`, source_record_id=원래 receipt_id,
+record=원래 대표 receipt다. completion의 kind=`completion`,
+source_record_id=`completion:`+request_id, record=원래 completion2다.
+재시도 시 현재 시각으로 original_at을 바꾸지 않는다.
 digest만 넘겨 성공시키지 않는다. JARVIS는 로컬 실제 receipt/completion과 outbox를
 함께 커밋하고, transport는 실제 원본과 서명을 다시 대조한 자료만 전송한다.
 outbox만 남고 원본이 사라졌으면 증거가 아니다. SB mirror는 JARVIS own stream에 더하지 않는다.
@@ -393,3 +402,49 @@ Pure Ed25519 서명 대상은
 signature vector는 보존한다. 이 metadata는 회사 명령·서명 대상의 추가 필드가 아니다.
 예시 policy digest·assessment는 protocol 시험일 뿐 등록된 정책/실제 SQL 효과의 증거가 아니며,
 어느 TEST_ONLY key/config도 운영 registry/credential로 설치하지 않는다.
+
+### JARVIS bounded 실행과 일일 보고
+
+dashboard의 operator-only `--company-internal-config PATH`는 기본 미지정/비활성이다.
+closed 설정은 `{schema_version:1,enabled:false}` 또는
+`{schema_version:1,enabled:true,activation_cutoff,report_client_config_file,
+auto_client_config_file?,handoff_client_config_file?}`다. auto를 설정하면 기존 human
+handoff client도 필수다. 파일은0700 private dir의0600 operator credential이며 요청이나
+환경 변수가 경로·정책·scope를 선택하지 않는다. 운영 활성화는 별도 승인 범위다.
+
+이미 실행 중인 dashboard의 tick에서 scope당 분당 최대1회 고정 `{limit:100}` 평가와
+metadata-only handoff100건을 요청한다. SB가 human_required만 기존 handoff로 분류한다.
+JARVIS는 정책 signer나 대표 receipt를 만들지 않는다. 실패한 평가가 보고 읽기를 막거나
+알림 재시도가 업무 효과를 다시 실행하지 않는다. 종료는 진행 중인 bounded 작업을 drain한다.
+
+processor broker의 optional `auto_config_file`은 고정
+`auto-internal --config PATH`다. operation=`auto_process_internal`,
+purpose=`company_internal_auto_trigger`이며 policy_auto wire capability가 아니다.
+handoff broker의 optional `report_config_file`은 고정 `auto-report --config PATH`다.
+operation=`read_auto_report`, purpose=`company_memory_auto_report`이며 네 인수
+`{from_global_sequence,to_global_sequence,limit,cursor}`만 허용한다. limit은1~100이다.
+두 scope 모두 별도 progress principal 서명과 기존 company-memory 두 domain을 쓴다.
+
+SB의 실제 report는 정수 epoch/head_sequence, 원래 publication cutoff와 body-free
+assessment를 반환한다. 첫 page에서 head를 고정하고 다음 page의 epoch/실제 cutoff/head가
+바뀌면 전체 발행을 거절한다. 지연 tick/catchup은 고정 읽기 endpoint로 마감 이전 최대
+sequence를 이진 탐색한다(최대53회, 전체 read budget10초). 18:00 이후 publication을
+전날 보고에 섞거나 다음 날 cursor에서 건너뛰지 않는다. page100, report JSON2MiB 미만이며
+본문·연락처 값·금액·비밀 필드가 들어온 응답은 보관하지 않는다.
+
+18:00 KST 이전에는 당일 보고0건, 경계에서1건이다. 시작 시 최신 누락 일자만 catch-up하며
+이미 발행한 scope/date는 provider 재조회 없이 원래 보고를 반환한다. PK와 immutable digest가
+동시 발행/다른 본문 충돌을 막고 report와 mac intent는 같은 transaction에서 연결된다.
+완료는 내부3종의 processed_complete와 원래 receipt/처리 시각이 모두 있어야 한다.
+human_required·충돌·미확정은 별도 집계이며 완료가 아니다.
+충돌·모호함은 human_required의 부분 집합으로도 집계해 SB의 원래 aggregate와 일치시킨다.
+
+승인함의 읽기 전용 카드와 `/approvals/company-reports/:reportId`는 metadata만 보여 준다.
+회사 notification은 독립 report reference이며 morning recommendation lineage가 아니다.
+기존 claim/settle API를 재사용하고 새 타입 capability가 없는 client에는 회사 payload를 주지
+않는다. unsupported/미전달은 원래 목록을 남기며 delivered로 표시하지 않는다.
+
+수동 smoke는 구현된 명령
+`company-candidates daily-report --date YYYY-MM-DD --company-config PATH --db PATH --json`이다.
+명시적 JARVIS DB와 고정 report client 설정을 요구하고 미래 마감은 거절한다.
+자동 평가·대표 승인·외부 송신은 이 수동 명령의 효과가 아니다.

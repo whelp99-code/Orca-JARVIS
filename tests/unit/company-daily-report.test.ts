@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { AuthorityDb } from "../../src/db.js";
 import { CompanyDailyReportCycle, kstCutoff } from "../../src/company-daily-report-cycle.js";
+import { CompanyDailyReportStore } from "../../src/company-daily-report-store.js";
 import { CompanyDailyReportError, type CompanyDailyReportPage, type CompanyDailyReportRead,
   type CompanyDailyReportRow, type CompanyDailyReportSource } from "../../src/company-daily-report-types.js";
 import { NotificationDeliveryStore } from "../../src/notification-delivery-store.js";
@@ -18,10 +19,11 @@ async function db(): Promise<AuthorityDb> {
 }
 function row(sequence: number, classification: CompanyDailyReportRow["classification"] = "contact_new"): CompanyDailyReportRow {
   return {
-    candidate_id: `candidate-${String(sequence)}`, classification, status: "recorded",
+    candidate_id: `candidate-${String(sequence)}`, classification, status: "processed_complete",
     mail_event_ref: `mail-event-${String(sequence)}`, policy_version: "policy-1",
     processed_at: "2026-10-16T01:00:00.000Z", receipt_id: `receipt-${String(sequence)}`, error_reason: null,
-    operation_id: `operation-${String(sequence)}`, global_sequence: sequence, counts_as_complete: classification !== "unresolved",
+    operation_id: `operation-${String(sequence)}`, global_sequence: sequence,
+    counts_as_complete: ["contact_new", "calendar_memo", "progress_memo"].includes(classification),
   };
 }
 function source(count: number, mutate?: (page: number) => void): CompanyDailyReportSource & { readonly calls: number } {
@@ -57,6 +59,7 @@ describe("company daily report", () => {
     expect(published.status).toBe("published");
     expect(count(authority)).toBe(1);
     expect(publisher.publishDue(AT).status).toBe("published");
+    expect(reportSource.calls).toBe(1);
     expect(count(authority)).toBe(1);
     expect(authority.db.prepare("SELECT COUNT(*) AS n FROM company_report_notifications").get()).toEqual({ n: 1 });
     expect(authority.db.prepare("SELECT COUNT(*) AS n FROM notification_intents").get()).toEqual({ n: 1 });
@@ -90,10 +93,12 @@ describe("company daily report", () => {
     const publisher = cycle(authority, { readPage: request => page(request, 3, rows, null) });
     publisher.publishDue(AT);
     const stored = JSON.parse(String((authority.db.prepare("SELECT report_json FROM company_daily_reports").get() as { report_json: string }).report_json)) as {
-      counts: { completed: number; unresolved: number }; rows: readonly { candidate_id: string }[];
+      counts: { completed: number; unresolved: number; human_required: number; conflict: number }; rows: readonly { candidate_id: string }[];
     };
-    expect(stored.counts.completed).toBe(2);
+    expect(stored.counts.completed).toBe(0);
     expect(stored.counts.unresolved).toBe(1);
+    expect(stored.counts.human_required).toBe(2);
+    expect(stored.counts.conflict).toBe(1);
     expect(JSON.stringify(stored)).not.toMatch(/@|password|secret/);
     expect(stored.rows.map(item => item.candidate_id)).toEqual(["candidate-1", "candidate-2", "candidate-3"]);
   });
@@ -130,8 +135,10 @@ describe("company daily report", () => {
     const publisher = cycle(authority, first);
     publisher.publishDue(AT);
     const digest = (authority.db.prepare("SELECT report_digest FROM company_daily_reports").get() as { report_digest: string }).report_digest;
-    const conflict = cycle(authority, { readPage: request => page(request, 1, [{ ...row(1), classification: "calendar_memo" }], null) }).publishDue(AT);
-    expect(conflict.status).toBe("conflict");
+    const stored = JSON.parse(String((authority.db.prepare("SELECT report_json FROM company_daily_reports").get() as { report_json: string }).report_json));
+    const store = new CompanyDailyReportStore(authority);
+    expect(() => store.insert({ document: { ...stored, rows: [{ ...row(1), classification: "calendar_memo" }] },
+      preview: "회사 내부 기록", publishedAt: AT.toISOString() })).toThrow("COMPANY_REPORT_DIGEST_CONFLICT");
     expect(authority.db.prepare("SELECT report_digest FROM company_daily_reports").get()).toEqual({ report_digest: digest });
     expect(count(authority)).toBe(1);
   });

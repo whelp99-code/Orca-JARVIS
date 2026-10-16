@@ -13,7 +13,8 @@ const peer = fileURLToPath(new URL("../../dist/tests/fixtures/company-freshness-
 const quote = (value: string) => `'${value.replaceAll("'", "'\\''")}'`;
 
 /** A signature-checking wire peer, not a production SB provider or effect-verification substitute. */
-export async function companyFreshnessBroker(options: { enabled?: boolean; oversized?: boolean } = {}) {
+export async function companyFreshnessBroker(options: { enabled?: boolean; oversized?: boolean;
+  route?: "auto" | "report"; installationId?: string } = {}) {
   const root = mkdtempSync(join(tmpdir(), "jfb-"));
   chmodSync(root, 0o700);
   const keys = generateKeyPairSync("ed25519");
@@ -31,7 +32,8 @@ export async function companyFreshnessBroker(options: { enabled?: boolean; overs
   const ready = join(root, "ready");
   const write = (path: string, value: unknown) => writeFileSync(path, canonicalize(value), { mode: 0o600 });
   writeFileSync(privateKey, keys.privateKey.export({ type: "pkcs8", format: "pem" }), { mode: 0o600 });
-  write(client, { schema_version: 2, role: "freshness", socket, signing_key_id: "key:progress", signing_key_file: privateKey,
+  write(client, { schema_version: 2, role: "freshness", installation_id: options.installationId ?? "installation:jarvis",
+    socket, signing_key_id: "key:progress", signing_key_file: privateKey,
     context: { provider_instance_id: command.target.provider_instance_id, workspace_id: command.target.workspace_id,
       principal_id: "principal:jarvis-company-progress", agent_id: "agent:progress", session_id: "session:progress",
       projects: command.args.projects, policy_revision: command.args.policy_revision,
@@ -39,8 +41,10 @@ export async function companyFreshnessBroker(options: { enabled?: boolean; overs
   write(sbConfig, { forbidden_process_config: true });
   write(freshnessConfig, { public_key: publicKey, capture, oversized: options.oversized ?? false });
   writeFileSync(binary, `#!/bin/sh\nexec ${quote(process.execPath)} ${quote(peer)} "$@"\n`, { mode: 0o700 });
-  write(brokerConfig, { schema_version: 1, role: "processor", socket, sb_company_bin: binary, sb_config_file: sbConfig,
-    ...(options.enabled === false ? {} : { freshness_config_file: freshnessConfig }) });
+  write(brokerConfig, { schema_version: 1, role: options.route === "report" ? "handoff" : "processor",
+    socket, sb_company_bin: binary, sb_config_file: sbConfig,
+    ...(options.enabled === false ? {} : options.route === "auto" ? { auto_config_file: freshnessConfig }
+      : options.route === "report" ? { report_config_file: freshnessConfig } : { freshness_config_file: freshnessConfig }) });
   const listening = new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => { watcher.close(); reject(new Error("Broker fixture did not become ready")); }, 5_000);
     const watcher = watch(root, (_event, name) => {

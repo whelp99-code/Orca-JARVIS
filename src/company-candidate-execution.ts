@@ -375,12 +375,13 @@ export class CompanyCandidateExecutor {
           || verified.data.effect_digest === receipt.receipt_digest) throw new JarvisError("COMPANY_VERIFIER_INVALID");
         completion = verified.data;
         this.db.db.transaction(() => {
+          const committedAt = this.clock().toISOString();
           const saved = this.db.db.prepare(
             "UPDATE company_candidate_handoffs SET completion_json=?,updated_at=? WHERE request_id=? AND lease_token=?",
-          ).run(canonicalize(completion), this.clock().toISOString(), requestId, token);
+          ).run(canonicalize(completion), committedAt, requestId, token);
           if (saved.changes !== 1) throw new JarvisError("COMPANY_EXECUTION_BUSY");
           stageCompanyProgressEvidence(this.db, {
-            kind: "jarvis_completion", command, approval, completion,
+            kind: "jarvis_completion", original_at: committedAt, command, approval, completion,
             acceptance: { receipt_id: receipt.receipt_id, receipt_digest: receipt.receipt_digest,
               operation: "accept", state: "accepted", handoff_id: requestId },
           });

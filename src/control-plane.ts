@@ -128,7 +128,7 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
         .prepare("UPDATE control_command_requests SET state=? WHERE request_id=? AND state='pending'") .run(state, receipt.request_id);
       if (changed.changes !== 1) throw new JarvisError("CONTROL_APPROVAL_RACE");
       if (companyV2) stageCompanyProgressEvidence(this.authority, {
-        kind: "jarvis_decision", command: companyV2, receipt,
+        kind: "jarvis_decision", original_at: at, command: companyV2, receipt,
       });
       new MemorySurfaceAuthority(this.authority).applyReceipt(receipt, receipt.request_id, now); this.event({ event_id: `evt:${receipt.request_id}:${state}`,
         event_type: `control.command.${state}`, source: "human-approval", subject: receipt.request_id, correlation_id: receipt.request_id,

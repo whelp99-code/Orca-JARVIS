@@ -71,6 +71,9 @@ export async function execute(args: string[], dependencies: CliDependencies = {}
     && command !== "company-candidates") throw new JarvisError("COMPANY_CALLER_CONFIG_INVALID");
   if (values["company-freshness-config"] !== undefined && command !== "company-candidates"
     && !(command === "control" && subcommand === "decide")) throw new JarvisError("COMPANY_CALLER_CONFIG_INVALID");
+  if (values.date !== undefined && !(command === "company-candidates" && subcommand === "daily-report")) {
+    throw new JarvisError("COMPANY_CALLER_CONFIG_INVALID");
+  }
   // Reported and rendered before anything opens a database: these are the paths a database would
   // be opened at, so they have to be answerable when that open would fail.
   const deployment = tryExecuteDeploymentCommand({ positionals: parsed.positionals, values: parsed.values });

@@ -232,6 +232,35 @@ ul {
   word-break: break-all;
 }
 
+.company-report-details summary {
+  min-block-size: var(--size-control);
+  padding-block: var(--space-3);
+  cursor: pointer;
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.company-report-details summary:focus-visible {
+  outline: var(--border-width) solid var(--color-focus);
+  outline-offset: var(--space-1);
+}
+
+.company-daily-report :is(.record-meta, .record-title),
+.owner-inbox-panel .record-title {
+  word-break: keep-all;
+  overflow-wrap: anywhere;
+}
+
+.company-report-details dd[id] {
+  scroll-margin-block-start: calc(var(--size-nav) * 3);
+}
+
+@media (min-width: 64rem) {
+  .company-report-details dd[id] {
+    scroll-margin-block-start: var(--size-nav);
+  }
+}
+
 .shell-footer a:hover {
   color: var(--color-text);
 }

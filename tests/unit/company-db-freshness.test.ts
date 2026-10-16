@@ -5,7 +5,9 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { canonicalize } from "../../src/canonical.js";
 import { companyCheckpointSchema, loadCompanyFreshness } from "../../src/company-freshness.js";
-import { companyApproverFixture, companyApproverKey, companyApproverV2Database } from "../fixtures/company-approver-execution.js";
+import { companyApproverFixture, companyApproverKey, companyApproverProcessorContext,
+  companyApproverV2Database } from "../fixtures/company-approver-execution.js";
+import { configuredCompanyInternalRuntime } from "../../src/company-internal-runtime.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -21,7 +23,7 @@ function client() {
   const fixture = companyApproverFixture();
   const command = fixture.command;
   const value = {
-    schema_version: 2, role: "freshness", socket: join(root, "broker.sock"),
+    schema_version: 2, role: "freshness", installation_id: "installation:jarvis", socket: join(root, "broker.sock"),
     signing_key_id: "key:company-progress", signing_key_file: key,
     context: {
       provider_instance_id: command.target.provider_instance_id, workspace_id: command.target.workspace_id,
@@ -36,6 +38,26 @@ function client() {
 }
 
 describe("company database freshness configuration", () => {
+  it.each(["key-id", "material"] as const)("rejects internal report/handoff %s reuse even when C1 is unconfigured", async alias => {
+    const live = client();
+    const authority = await companyApproverV2Database("approve", false);
+    const handoff = join(live.root, "handoff.json");
+    const otherKey = join(live.root, "other.pem");
+    writeFileSync(otherKey, generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" }), { mode: 0o600 });
+    writeFileSync(handoff, canonicalize({ schema_version: 1, role: "handoff", context: companyApproverProcessorContext(),
+      socket: live.value.socket, signing_key_id: alias === "key-id" ? live.value.signing_key_id : "key:handoff",
+      signing_key_file: alias === "material" ? live.key : otherKey }), { mode: 0o600 });
+    const runtime = join(live.root, "internal.json");
+    writeFileSync(runtime, canonicalize({ schema_version: 1, enabled: true,
+      activation_cutoff: "2026-10-16T00:00:00.000Z", report_client_config_file: live.path,
+      handoff_client_config_file: handoff }), { mode: 0o600 });
+    try {
+      expect(() => configuredCompanyInternalRuntime(authority.db, runtime,
+        loadCompanyFreshness({ schema_version: 2, kind: "unconfigured" }),
+        () => new Date("2026-10-16T09:00:00.000Z"), () => {}, () => {})).toThrow("COMPANY_CREDENTIAL_NOT_SEPARATE");
+    } finally { authority.close(); }
+  });
+
   it("selects the configured provider without invoking SB or opening a company database", () => {
     const live = client();
     const provider = loadCompanyFreshness(live.config);

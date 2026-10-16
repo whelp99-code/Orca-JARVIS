@@ -13,6 +13,7 @@ const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/);
 export const companyFreshnessClientConfigSchema = z.object({
   schema_version: z.literal(2),
   role: z.literal("freshness"),
+  installation_id: identifier,
   socket: z.string().min(1).max(107).startsWith("/"),
   signing_key_id: identifier,
   signing_key_file: absolutePath,

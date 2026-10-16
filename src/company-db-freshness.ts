@@ -8,12 +8,13 @@ import { parseCompanyJsonBytes } from "./company-candidate-json.js";
 import { loadCompanyFreshnessClient } from "./company-freshness-client-config.js";
 import { readCompanyProgressEvidence } from "./company-progress-evidence.js";
 import { companyPublicKeyFingerprint } from "./company-approver-contract.js";
+import { companyProgressSidecar } from "./company-freshness-envelope.js";
 import {
   freshnessReadRequestSchema, freshnessReadResponseSchema, reserveProgressRequestSchema, reserveProgressResponseSchema,
   finishProgressRequestSchema, finishProgressResponseSchema,
   type CompanyFreshnessProvider, type FreshnessReadRequest, type FreshnessReadResponse,
   type ReserveProgressRequest, type ReserveProgressResponse, type FinishProgressRequest, type FinishProgressResponse,
-} from "./company-freshness.js";
+} from "./company-freshness-contract.js";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
 
@@ -38,10 +39,12 @@ export class CompanyDbFreshness implements CompanyFreshnessProvider {
   readonly kind = "sb_company_db" as const;
   readonly publicKeyPem: string;
   readonly keyId: string;
+  private readonly installationId: string;
   constructor(private readonly configPath: string, private readonly authority?: AuthorityDb) {
     const client = loadCompanyFreshnessClient(configPath);
     this.publicKeyPem = client.publicKeyPem;
     this.keyId = client.config.signing_key_id;
+    this.installationId = client.config.installation_id;
     if (authority) {
       const keys = z.array(z.object({ key_id: z.string(), public_key_pem: z.string() })).parse(
         authority.db.prepare("SELECT key_id,public_key_pem FROM trusted_authority_keys").all(),
@@ -56,7 +59,8 @@ export class CompanyDbFreshness implements CompanyFreshnessProvider {
   readFreshness(value: FreshnessReadRequest): FreshnessReadResponse {
     const request = parseRequest(freshnessReadRequestSchema, value);
     try {
-      const response = freshnessReadResponseSchema.parse(this.exchange("read_freshness", request, null));
+      const response = freshnessReadResponseSchema.parse(this.exchange("read_freshness",
+        { ...request, installation_id: this.installationId }, null));
       if (response.challenge === request.challenge && sameScope(response.scope, request.scope)) return response;
     } catch (error) { if (!(error instanceof Error)) throw error; }
     return { schema_version: 2, scope: request.scope, challenge: request.challenge, status: "unavailable", checkpoint: null };
@@ -81,7 +85,7 @@ export class CompanyDbFreshness implements CompanyFreshnessProvider {
         "SELECT evidence_json,evidence_digest FROM company_progress_evidence_outbox WHERE operation_id=?",
       ).get(request.operation_id));
       if (row.evidence_digest !== request.evidence_digest) return required();
-      const evidence = readCompanyProgressEvidence(this.authority, request.operation_id);
+      const evidence = companyProgressSidecar(readCompanyProgressEvidence(this.authority, request.operation_id));
       const response = finishProgressResponseSchema.parse(this.exchange("finish_progress", request, evidence));
       if (response.outcome === "error") return response;
       if (response.challenge !== request.challenge || !sameScope(response.scope, request.scope)) return required();

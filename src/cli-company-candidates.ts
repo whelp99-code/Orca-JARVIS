@@ -6,6 +6,8 @@ import { configuredCompanyFreshness } from "./company-freshness-config.js";
 import { CompanyCandidateExecutor, createCompanyCompletionVerifier } from "./company-candidate-execution.js";
 import { companyCompletionConfigVersion, createCompanyCompletionVerifierV2 } from "./company-completion-v2.js";
 import { JarvisError } from "./jarvis-error.js";
+import { configuredCompanyDailyReport } from "./company-internal-runtime.js";
+import { kstCutoff } from "./company-daily-report-cycle.js";
 
 const IMPORT_OPTIONS = ["db", "json", "company-config", "company-freshness-config", "limit"] as const;
 const EXECUTE_OPTIONS = ["db", "json", "company-config", "company-completion-config", "company-freshness-config"] as const;
@@ -22,6 +24,18 @@ export async function executeCompanyCandidates(context: CliCommandContext): Prom
   const { values, argument, subcommand, db } = context;
   const config = values["company-config"];
   if (!config || context.fourth !== undefined) throw new JarvisError("COMPANY_CALLER_CONFIG_REQUIRED");
+  if (subcommand === "daily-report" && argument === undefined) {
+    rejectUnlisted(values, ["db", "json", "company-config", "date"]);
+    const date = values.date;
+    if (values.db === undefined || date === undefined || !/^\d{4}-\d{2}-\d{2}$/.test(date)) {
+      throw new JarvisError("COMPANY_CALLER_CONFIG_INVALID");
+    }
+    const cutoff = new Date(kstCutoff(date));
+    if (new Date(cutoff.getTime() + 9 * 60 * 60_000).toISOString().slice(0, 10) !== date
+      || cutoff.getTime() > commandNow(context).getTime()) throw new JarvisError("COMPANY_CALLER_CONFIG_INVALID");
+    return { ok: true, command: "company-candidates.daily-report",
+      report: configuredCompanyDailyReport(db, config).publishDue(cutoff) };
+  }
   if (subcommand === "import" && argument === undefined) {
     rejectUnlisted(values, IMPORT_OPTIONS);
     const limit = values.limit === undefined ? 100 : Number(values.limit);

@@ -191,15 +191,22 @@ function ControlCenter({
           )}
         />
         <Route path="/security" element={security} />
+        <Route path="/approvals/company-reports/:reportId" element={<CompanyReportRoute />} />
         <Route path="/finance-read" element={<>
           <MailCandidatesCard adapter={candidatesAdapter} />
           {financeReadAdapter === undefined ? <PriceFinancePage client={client} />
             : <FinanceReadPage adapter={financeReadAdapter} />}
         </>} />
+        <Route path="/approvals/company-reports/:reportId" element={<CompanyReportRoute />} />
         <Route path="*" element={<NotFoundPage />} />
       </Routes>
     </OperationalShell>
   );
+}
+
+function CompanyReportRoute() {
+  const { reportId } = useParams();
+  return <section className="page-frame dashboard-main"><h1>회사 자동 처리 일일 목록</h1><OwnerInboxPanel reportId={reportId} /></section>;
 }
 
 function OverviewRoute({ state, store }: Readonly<{ state: DashboardState; store: DashboardStore }>) {

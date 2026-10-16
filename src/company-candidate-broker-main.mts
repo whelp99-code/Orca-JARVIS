@@ -20,6 +20,7 @@ import { z } from "zod";
 import { parseCompanyJson, parseCompanyJsonBytes } from "./company-candidate-json.js";
 import { companyBrokerAuthoritySchema as authoritySchema } from "./company-broker-authority.js";
 import { parseCompanyFreshnessEnvelope } from "./company-freshness-envelope.js";
+import { companyReportArgumentsSchema } from "./company-internal-envelope.js";
 
 const MAX_BYTES = 1_048_576;
 const TIMEOUT_MS = 10_000;
@@ -33,8 +34,12 @@ const brokerConfigSchema = z.object({
   sb_company_bin: z.string().min(1).max(4096),
   sb_config_file: z.string().min(1).max(4096),
   freshness_config_file: z.string().min(1).max(4096).startsWith("/").optional(),
+  auto_config_file: z.string().min(1).max(4096).startsWith("/").optional(),
+  report_config_file: z.string().min(1).max(4096).startsWith("/").optional(),
   caller_group_id: z.int().min(0).max(2_147_483_647).optional(),
-}).strict().refine(config => config.role === "processor" || config.freshness_config_file === undefined);
+}).strict().refine(config => config.role === "processor"
+  ? config.report_config_file === undefined
+  : config.freshness_config_file === undefined && config.auto_config_file === undefined);
 
 type BrokerConfig = Readonly<z.infer<typeof brokerConfigSchema>>;
 type BrokerRole = BrokerConfig["role"];
@@ -119,6 +124,8 @@ function loadBrokerConfig(configPath: string): BrokerConfig {
   assertPinnedExecutable(parsed.data.sb_company_bin);
   readSecureConfig(parsed.data.sb_config_file);
   if (parsed.data.freshness_config_file !== undefined) readSecureConfig(parsed.data.freshness_config_file);
+  if (parsed.data.auto_config_file !== undefined) readSecureConfig(parsed.data.auto_config_file);
+  if (parsed.data.report_config_file !== undefined) readSecureConfig(parsed.data.report_config_file);
   // Default is private0700/0600. Cross-account transport requires an explicitly
   // pinned caller group and a dedicated0710 directory, never a company.db grant.
   const parent = dirname(parsed.data.socket);
@@ -160,11 +167,13 @@ function childEnv(): NodeJS.ProcessEnv {
 }
 
 function runPinned(
-  config: BrokerConfig, action: "handoff" | "process" | "freshness", stdin: Buffer,
+  config: BrokerConfig, action: "handoff" | "process" | "freshness" | "auto-internal" | "auto-report", stdin: Buffer,
   children: Map<ChildProcess, Promise<void>>,
 ): Promise<string> {
   assertPinnedExecutable(config.sb_company_bin);
-  const configFile = action === "freshness" ? config.freshness_config_file : config.sb_config_file;
+  const configFile = action === "freshness" ? config.freshness_config_file
+    : action === "auto-internal" ? config.auto_config_file
+      : action === "auto-report" ? config.report_config_file : config.sb_config_file;
   if (configFile === undefined) fail("COMPANY_CANDIDATE_BROKER_REFUSED");
   readSecureConfig(configFile);
   return new Promise((resolve, reject) => {
@@ -369,6 +378,21 @@ export async function startCompanyCandidateBroker(
     }
     const envelope = envelopeSchema.safeParse(parsed);
     if (!envelope.success) return REFUSED;
+    const { authority, arguments: args } = envelope.data;
+    if (authority.operation === "auto_process_internal") {
+      if (config.role !== "processor" || config.auto_config_file === undefined
+        || authority.purpose !== "company_internal_auto_trigger"
+        || authority.principal_id !== "principal:jarvis-company-progress"
+        || !z.object({ limit: z.literal(100) }).strict().safeParse(args).success) return REFUSED;
+      return runPinned(config, "auto-internal", raw, children);
+    }
+    if (authority.operation === "read_auto_report") {
+      if (config.role !== "handoff" || config.report_config_file === undefined
+        || authority.purpose !== "company_memory_auto_report"
+        || authority.principal_id !== "principal:jarvis-company-progress"
+        || !companyReportArgumentsSchema.safeParse(args).success) return REFUSED;
+      return runPinned(config, "auto-report", raw, children);
+    }
     const action = pinnedAction(config.role, envelope.data.authority.operation);
     return runPinned(config, action, raw, children);
   }
