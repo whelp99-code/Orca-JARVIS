@@ -1,4 +1,4 @@
-import type { ServerResponse } from "node:http";
+import type { IncomingMessage, ServerResponse } from "node:http";
 import type { AuthorityDb } from "../db.js";
 import { parseNotificationClaimInput, parseNotificationSettleInput } from "../notification-delivery-input.js";
 import { NotificationDeliveryStore } from "../notification-delivery-store.js";
@@ -8,7 +8,7 @@ import { writeDashboardJson } from "./http.js";
 import type { DashboardSessionStore } from "./session.js";
 
 export type NotificationPublisher = { publishPersonal(kind: "notification"): void };
-type Input = { readonly db: AuthorityDb; readonly path: string; readonly body: unknown; readonly response: ServerResponse;
+type Input = { readonly db: AuthorityDb; readonly path: string; readonly body: unknown; readonly request: IncomingMessage; readonly response: ServerResponse;
   readonly requestId: string; readonly hub: ReconcileHub; readonly session: DashboardSessionStore; readonly clock: () => Date };
 type Route = { readonly kind: "claim" } | { readonly kind: "settle"; readonly deliveryId: string }
   | { readonly kind: "invalid" } | { readonly kind: "unhandled" };
@@ -31,7 +31,7 @@ export function tryHandleNotificationDelivery(input: Input): boolean {
 function claim(input: Input): boolean {
   try {
     parseNotificationClaimInput(input.body);
-    const result = store(input).claimEffect(now(input), input.session.authenticatedSessionId());
+    const result = store(input).claimEffect(now(input), input.session.authenticatedSessionId(), supportsCompanyReport(input.request));
     publishNotificationMutation(input.hub, result.changed);
     if (result.value === null) {
       input.response.statusCode = 204; input.response.setHeader("Cache-Control", "no-store");
@@ -58,7 +58,19 @@ export function publishNotificationMutation(hub: NotificationPublisher, changed:
 function store(input: Input): NotificationDeliveryStore {
   return new NotificationDeliveryStore({ authority: input.db, resourceIsCurrent: (link, instant) => resourceCurrent(input.db, link, instant) });
 }
+function supportsCompanyReport(request: IncomingMessage): boolean {
+  const raw = request.headers["x-jarvis-notification-types"];
+  const value = Array.isArray(raw) ? raw.join(",") : raw ?? "";
+  return value.split(",").some(item => item.trim() === "company-daily-report");
+}
 function resourceCurrent(db: AuthorityDb, link: string, nowValue: string): boolean {
+  const company = /^\/approvals\/company-reports\/([^/?]+)$/u.exec(link);
+  if (company?.[1] !== undefined) {
+    let reportId: string;
+    try { reportId = decodeURIComponent(company[1]); }
+    catch (error) { if (error instanceof URIError) return false; throw error; }
+    return db.db.prepare("SELECT 1 AS ok FROM company_daily_reports WHERE report_id=?").get(reportId) !== undefined;
+  }
   const matched = /^\/recommendations\/([^/?]+)\?rank=([1-9]|[12]\d|3[0-2])$/u.exec(link);
   const encoded = matched?.[1]; const rawRank = matched?.[2];
   if (encoded === undefined || rawRank === undefined) return false;

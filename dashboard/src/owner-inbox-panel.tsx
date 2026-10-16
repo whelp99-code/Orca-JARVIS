@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import type { CompanyDailyReportCard as ReportCard } from "../../src/company-daily-report-types.js";
+import { CompanyDailyReportCard } from "./company-daily-report-card.js";
 import { actionLabel, formatKst } from "./copy.js";
 import { OwnerInboxEnroll } from "./owner-inbox-enroll.js";
 import { inboxExecutionOutcome, inboxOutcomeText, type InboxExecution } from "./owner-inbox-outcome.js";
@@ -45,6 +47,7 @@ type Status = "loading" | "ready" | "error" | "unconfigured";
 export function OwnerInboxPanel() {
   const phone = useSurface() === "phone";
   const [items, setItems] = useState<readonly Item[]>([]);
+  const [reports, setReports] = useState<readonly ReportCard[]>([]);
   const [status, setStatus] = useState<Status>("loading");
   const [notice, setNotice] = useState("");
   const [outcome, setOutcome] = useState<{ state: string; failure_code?: string } | undefined>();
@@ -67,8 +70,9 @@ export function OwnerInboxPanel() {
         setStatus("error");
         return;
       }
-      const body = await response.json() as { items?: Item[]; passkey_enrolled?: boolean };
+      const body = await response.json() as { items?: Item[]; passkey_enrolled?: boolean; company_reports?: ReportCard[] };
       setItems(body.items ?? []);
+      setReports(body.company_reports ?? []);
       setPasskeyEnrolled(body.passkey_enrolled === true);
       setStatus("ready");
     } catch {
@@ -168,6 +172,7 @@ export function OwnerInboxPanel() {
         {status === "ready" && !passkeyEnrolled ? (
           <OwnerInboxEnroll csrf={() => csrfToken(phone)} />
         ) : null}
+        {status === "ready" && reports[0] !== undefined ? <CompanyDailyReportCard report={reports[0]} /> : null}
         {status === "ready" && items.length === 0 ? <p className="empty-state">대기 중인 승인이 없습니다</p> : null}
         {notice.length > 0 ? <p role="status" data-execution-state={outcome?.state} data-failure-code={outcome?.failure_code}>{notice}</p> : null}
         {items.some(item => item.needs_review) ? (

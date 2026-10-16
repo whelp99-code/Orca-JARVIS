@@ -5,6 +5,7 @@ import { enrollOwnerPasskey, readEnrollmentChallenge, rejectEnrollmentOrigin, ty
 import { writeOwnerInboxPreflight } from "../owner-inbox-preflight.js";
 import { ApprovedCommandExecutor, approvedActionHasExecutor } from "../approved-executor.js";
 import { ControlPlane } from "../control-plane.js";
+import { CompanyDailyReportStore } from "../company-daily-report-store.js";
 import { OwnerInbox, type AssertionCheck, type InboxAssertion, type OwnerInboxDecision } from "../owner-inbox.js";
 import type { DashboardExecutorFactory } from "./authority-service.js";
 import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
@@ -65,7 +66,8 @@ export async function tryHandleOwnerInbox(input: Readonly<{
       const enrolled = input.db.db.prepare("SELECT COUNT(*) AS n FROM owner_inbox_credentials").get() as { n: number };
       writeDashboardJson(input.response, {
         status: 200, requestId: input.requestId,
-        body: { schema_version: 1, items: inbox.list(), passkey_enrolled: enrolled.n > 0 },
+        body: { schema_version: 1, items: inbox.list(), passkey_enrolled: enrolled.n > 0,
+          company_reports: new CompanyDailyReportStore(input.db).listCards() },
       });
       return true;
     }

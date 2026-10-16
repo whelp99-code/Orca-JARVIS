@@ -75,6 +75,7 @@ function validateDetails(body, recommendationId) {
 export async function resolveJarvisRoute(value, authorityUrl, request) {
   const parsed = parseJarvisDeepLink(value);
   if (parsed.kind === "today") return "/";
+  if (parsed.kind === "company-report") return "/approvals";
   try {
     const response = await request(`${authorityUrl}/api/v1/recommendations/${encodeURIComponent(parsed.recommendationId)}`);
     if (response.status !== 200) return "/";
@@ -121,6 +122,15 @@ export function parseJarvisDeepLink(value) {
   if (url.pathname === "/today") {
     if ([...url.searchParams.keys()].length !== 0) return invalid();
     return { kind: "today" };
+  }
+  if (url.pathname === "/company-report") {
+    if ([...url.searchParams.keys()].join(",") !== "id" || url.searchParams.getAll("id").length !== 1) return invalid();
+    const encoded = url.searchParams.get("id");
+    if (encoded === null || !/^[A-Za-z0-9_-]+$/u.test(encoded)) return invalid();
+    const reportId = Buffer.from(encoded, "base64url").toString("utf8");
+    if (Buffer.from(reportId, "utf8").toString("base64url") !== encoded || !safeId(reportId)
+      || !reportId.startsWith("company-report:v1:")) return invalid();
+    return { kind: "company-report", reportId };
   }
   if (url.pathname !== "/recommendation" || [...url.searchParams.keys()].sort().join(",") !== "id,rank"
     || url.searchParams.getAll("id").length !== 1 || url.searchParams.getAll("rank").length !== 1) return invalid();

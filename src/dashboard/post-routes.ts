@@ -104,6 +104,7 @@ export async function tryHandleDashboardPost(input: DashboardPostInput): Promise
     db: input.db,
     path: input.path,
     body: parsed.value,
+    request: input.request,
     response: input.response,
     requestId: input.requestId,
     hub: input.hub,

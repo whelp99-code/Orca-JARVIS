@@ -45,13 +45,14 @@ function privateText(value) {
 }
 function parsePayload(value) {
   const row = exact(value, ["title", "summary", "alert_class", "deep_link"]);
-  if (!["Decision needed", "Critical decision needed", "Decision digest"].includes(row.title)
-    || typeof row.summary !== "string" || row.summary.length === 0 || Buffer.byteLength(row.summary, "utf8") > 160
-    || !["decision_action", "decision_critical", "decision_digest"].includes(row.alert_class)
-    || typeof row.deep_link !== "string") return protocolInvalid();
+  const company = row.title === "Company daily report" && row.alert_class === "company_daily_report";
+  if (typeof row.summary !== "string" || row.summary.length === 0 || Buffer.byteLength(row.summary, "utf8") > 160
+    || typeof row.deep_link !== "string" || (!company && (!["Decision needed", "Critical decision needed", "Decision digest"].includes(row.title)
+    || !["decision_action", "decision_critical", "decision_digest"].includes(row.alert_class)))) return protocolInvalid();
   let parsed;
   try { parsed = parseJarvisDeepLink(row.deep_link); } catch { return protocolInvalid(); }
   if (parsed.kind === "recommendation" && privateText(parsed.recommendationId)) return protocolInvalid();
+  if (company !== (parsed.kind === "company-report")) return protocolInvalid();
   const payload = { title: row.title, summary: row.summary, alert_class: row.alert_class, deep_link: row.deep_link };
   for (const field of Object.values(payload)) if (privateText(field)) return protocolInvalid();
   if (privateText(JSON.stringify(payload))) return protocolInvalid();

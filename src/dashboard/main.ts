@@ -14,6 +14,7 @@ import { defaultRunner } from "../orca.js";
 import { bindDashboardMemoryDependencies } from "./memory-production.js";
 import { composeRemoteApproval } from "../remote-approval-compose.js";
 import { createDashboardServer } from "./server.js";
+import { createDashboardCompanyReportTick } from "../company-daily-report-cycle.js";
 import { MemoryOutboxTick } from "../memory-outbox-tick.js";
 import { memoryOutboxLog } from "../memory-outbox-diagnostic.js";
 import { parseTrustedCloseoutKey } from "../evening-closeout-crypto.js";
@@ -172,6 +173,7 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
     executorFactory: bound.executorFactory,
     clock: dependencies.memoryAdapterOptions?.clock,
     memoryReconcileTick: tick === undefined ? undefined : () => tick.tick(),
+    companyReportTick: createDashboardCompanyReportTick(db, () => dependencies.memoryAdapterOptions?.clock?.() ?? new Date()),
     remoteApproval,
   });
   write(`http://${server.address.host}:${String(server.address.port)}`);
