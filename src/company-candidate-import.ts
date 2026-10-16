@@ -6,6 +6,7 @@ import { ControlPlane } from "./control-plane.js";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
 import type { CompanyClient, CompanyContext } from "./company-candidate-transport.js";
+import type { CompanyFreshnessProvider } from "./company-freshness.js";
 
 /** SB enrollment binds this fence, not the role-specific caller agent/session. */
 export function companyEnrollmentContext(context: CompanyContext) {
@@ -32,8 +33,13 @@ export function assertCompanyContext(command: Pick<ReturnType<typeof parseCompan
 }
 
 /** Ordinary handoff/processor key material can never double as representative authority. */
-export function assertCompanyKeySeparation(db: AuthorityDb, client: CompanyClient): void {
+export function assertCompanyKeySeparation(db: AuthorityDb, client: CompanyClient, freshness?: CompanyFreshnessProvider): void {
   const raw = createPublicKey(client.publicKeyPem).export({ format: "der", type: "spki" });
+  if (freshness?.kind === "sb_company_db" && (freshness.keyId === client.keyId
+    || (freshness.publicKeyPem !== undefined
+      && createPublicKey(freshness.publicKeyPem).export({ format: "der", type: "spki" }).equals(raw)))) {
+    throw new JarvisError("COMPANY_CREDENTIAL_NOT_SEPARATE");
+  }
   const keys = db.db.prepare(
     `SELECT k.key_id,k.public_key_pem FROM trusted_authority_keys k
      JOIN authority_key_purposes p ON p.key_id=k.key_id WHERE p.purpose='decision'`,

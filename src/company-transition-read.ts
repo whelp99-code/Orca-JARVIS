@@ -13,7 +13,7 @@ const identifier = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/);
 export const transitionReadArgumentsSchema = z.object({
   candidate_id: companyTargetV2Schema.shape.candidate_id,
   handoff_id: z.string().min(1).max(256),
-  operation: z.enum(["accept", "reject"]),
+  operation: z.enum(["accept", "reject", "mark_processed"]),
   transition_request_digest: digest,
   command_digest: digest,
   content_digest: digest,
@@ -25,8 +25,8 @@ export type TransitionReadArguments = z.infer<typeof transitionReadArgumentsSche
 const projectionSchema = z.object({
   receipt_id: z.string().min(1).max(256),
   receipt_digest: digest,
-  operation: z.enum(["accept", "reject"]),
-  state: z.enum(["accepted", "rejected"]),
+  operation: z.enum(["accept", "reject", "mark_processed"]),
+  state: z.enum(["accepted", "rejected", "processed_complete"]),
   handoff_id: z.string().min(1).max(256),
   receipt_created_at: instant,
   decision_at: instant,
@@ -54,7 +54,15 @@ export type TransitionReadExpectation = {
   lookup_request_digest: string;
 };
 
-export function transitionRequestDigest(operation: "accept" | "reject", originalArguments: Record<string, unknown>): string {
+export function transitionRequestDigest(operation: "accept" | "reject" | "mark_processed", originalArguments: Record<string, unknown>): string {
+  if (operation === "mark_processed") {
+    const parsed = z.object({
+      candidate_id: transitionReadArgumentsSchema.shape.candidate_id,
+      handoff_id: transitionReadArgumentsSchema.shape.handoff_id,
+    }).strict().safeParse(originalArguments);
+    if (!parsed.success) throw new JarvisError("COMPANY_CONTRACT_INVALID");
+    return companyMemoryRequestDigest(operation, parsed.data);
+  }
   const parsed = z.object({
     candidate_id: transitionReadArgumentsSchema.shape.candidate_id,
     handoff_id: transitionReadArgumentsSchema.shape.handoff_id,
@@ -78,6 +86,7 @@ function fail(code: string): never {
 function projectionMatches(receipt: TransitionReceiptProjection, selector: TransitionReadArguments): boolean {
   if (receipt.operation !== selector.operation || receipt.handoff_id !== selector.handoff_id) return false;
   if (receipt.operation === "accept") return receipt.state === "accepted" && receipt.accepted_at !== null;
+  if (receipt.operation === "mark_processed") return receipt.state === "processed_complete" && receipt.accepted_at !== null;
   return receipt.state === "rejected" && receipt.accepted_at === null;
 }
 

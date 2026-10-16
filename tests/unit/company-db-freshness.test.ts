@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { afterEach, describe, expect, it } from "vitest";
 import { canonicalize } from "../../src/canonical.js";
 import { companyCheckpointSchema, loadCompanyFreshness } from "../../src/company-freshness.js";
-import { companyApproverFixture } from "../fixtures/company-approver-execution.js";
+import { companyApproverFixture, companyApproverKey, companyApproverV2Database } from "../fixtures/company-approver-execution.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -80,5 +80,17 @@ describe("company database freshness configuration", () => {
     chmodSync(live.root, 0o770);
     expect(() => loadCompanyFreshness(live.config)).toThrow("COMPANY_FRESHNESS_CREDENTIAL_INVALID");
     expect(() => loadCompanyFreshness({ ...live.config, registry: "/tmp/registry.json" })).toThrow("COMPANY_CONTRACT_INVALID");
+  });
+
+  it.each(["key-id", "material"] as const)("rejects progress/representative %s reuse with a bound JARVIS database", async alias => {
+    const live = client();
+    const authority = await companyApproverV2Database("approve", false);
+    try {
+      if (alias === "key-id") writeFileSync(live.path, canonicalize({
+        ...live.value, signing_key_id: live.fixture.approval_receipt.key_id,
+      }), { mode: 0o600 });
+      else writeFileSync(live.key, companyApproverKey().export({ type: "pkcs8", format: "pem" }), { mode: 0o600 });
+      expect(() => loadCompanyFreshness(live.config, authority.db)).toThrow("COMPANY_CREDENTIAL_NOT_SEPARATE");
+    } finally { authority.close(); }
   });
 });

@@ -220,6 +220,8 @@ const OPERATION_DOMAIN = "second-brain/company-operation/v1";
 
 export interface CompanyFreshnessProvider {
   readonly kind?: "sb_company_db";
+  readonly keyId?: string;
+  readonly publicKeyPem?: string;
   readFreshness(request: FreshnessReadRequest): FreshnessReadResponse;
   reserveProgress(request: ReserveProgressRequest): ReserveProgressResponse;
   finishProgress(request: FinishProgressRequest): FinishProgressResponse;

@@ -101,6 +101,7 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
           if (!currentKey || currentKey.principal_id !== receipt.signer_principal_id
             || !verifyCommandApproval(receipt, currentKey.public_key_pem, now)) throw new JarvisError("COMPANY_APPROVAL_INVALID");
           assertCurrentCompanyPin(this.authority, companyV2, receipt, now);
+          if (reservation) progress.assertReservation(reservation);
         } else {
           const target = JSON.parse(String(request.target_json)) as { provider_instance_id: string; workspace_id: string };
           if (readCompanyApprovalBinding(this.authority, target)) throw new JarvisError("ENROLLMENT_REQUIRED");

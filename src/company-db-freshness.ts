@@ -7,6 +7,7 @@ import { canonicalize } from "./canonical.js";
 import { parseCompanyJsonBytes } from "./company-candidate-json.js";
 import { loadCompanyFreshnessClient } from "./company-freshness-client-config.js";
 import { readCompanyProgressEvidence } from "./company-progress-evidence.js";
+import { companyPublicKeyFingerprint } from "./company-approver-contract.js";
 import {
   freshnessReadRequestSchema, freshnessReadResponseSchema, reserveProgressRequestSchema, reserveProgressResponseSchema,
   finishProgressRequestSchema, finishProgressResponseSchema,
@@ -41,6 +42,15 @@ export class CompanyDbFreshness implements CompanyFreshnessProvider {
     const client = loadCompanyFreshnessClient(configPath);
     this.publicKeyPem = client.publicKeyPem;
     this.keyId = client.config.signing_key_id;
+    if (authority) {
+      const keys = z.array(z.object({ key_id: z.string(), public_key_pem: z.string() })).parse(
+        authority.db.prepare("SELECT key_id,public_key_pem FROM trusted_authority_keys").all(),
+      );
+      const fingerprint = companyPublicKeyFingerprint(this.publicKeyPem);
+      if (keys.some(key => key.key_id === this.keyId || companyPublicKeyFingerprint(key.public_key_pem) === fingerprint)) {
+        throw new JarvisError("COMPANY_CREDENTIAL_NOT_SEPARATE");
+      }
+    }
   }
 
   readFreshness(value: FreshnessReadRequest): FreshnessReadResponse {
@@ -54,6 +64,7 @@ export class CompanyDbFreshness implements CompanyFreshnessProvider {
 
   reserveProgress(value: ReserveProgressRequest): ReserveProgressResponse {
     const request = parseRequest(reserveProgressRequestSchema, value);
+    if (!this.authority) return required();
     try {
       const response = reserveProgressResponseSchema.parse(this.exchange("reserve_progress", request, null));
       if (response.outcome === "error"
@@ -74,9 +85,6 @@ export class CompanyDbFreshness implements CompanyFreshnessProvider {
       const response = finishProgressResponseSchema.parse(this.exchange("finish_progress", request, evidence));
       if (response.outcome === "error") return response;
       if (response.challenge !== request.challenge || !sameScope(response.scope, request.scope)) return required();
-      if (response.outcome === "recorded" || response.outcome === "already_recorded") this.authority.db.prepare(
-        "UPDATE company_progress_evidence_outbox SET acknowledged=1 WHERE operation_id=? AND acknowledged=0",
-      ).run(request.operation_id);
       return response;
     } catch (error) { if (!(error instanceof Error)) throw error; }
     return required();
