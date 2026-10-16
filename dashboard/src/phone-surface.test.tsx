@@ -116,9 +116,9 @@ describe("phone surface", () => {
     } });
     // When it mounts
     render(<ControlCenterRoot store={store} client={client} initialPath="/" surface="phone" />);
-    // Then only Today, Memory and Security are offered and no authority stream is opened
+    // Then the product directory joins the existing phone routes without an authority stream.
     const nav = screen.getByRole("navigation", { name: "주요 메뉴" });
-    expect(within(nav).getAllByRole("link").map(link => link.getAttribute("href"))).toEqual(["/", "/memory", "/approvals", "/security"]);
+    expect(within(nav).getAllByRole("link").map(link => link.getAttribute("href"))).toEqual(["/", "/products", "/memory", "/approvals", "/security"]);
     expect(session).not.toHaveBeenCalled();
     expect(sources).toEqual([]);
     expect(screen.getByRole("status", { name: "실시간" })).toHaveAttribute("data-state", "readonly");
