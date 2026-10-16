@@ -2,17 +2,17 @@ import Database from "better-sqlite3";
 import { generateKeyPairSync } from "node:crypto";
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { AuthorityDb } from "../../src/db.js";
 import { createDashboardServer } from "../../src/dashboard/server.js";
 import { ActionJournal } from "../../src/workboard/action-journal.js";
 import { WorkboardActions, readActionBinding } from "../../src/workboard/actions.js";
 import { seedWorkboardFixture, WORKBOARD_FIXTURE_NOW } from "./workboard-fixture.js";
 import { actionRequest, startActionAgent } from "./workboard-action-agent.js";
+import { migratedTestDatabase } from "./migrated-database.js";
 
 export async function startWorkboardActionDashboard() {
   const root = resolve(".runtime-tmp/workboard"); mkdirSync(root, { recursive: true });
   const directory = mkdtempSync(join(root, "actions-dashboard-"));
-  const authority = new AuthorityDb(join(directory, "authority.sqlite"), resolve("migrations"));
+  const authority = await migratedTestDatabase(join(directory, "authority.sqlite"), resolve("migrations"));
   const decision = generateKeyPairSync("ed25519"); const verifier = generateKeyPairSync("ed25519");
   const decisionPath = join(directory, "decision.pub.pem"); const verifierPath = join(directory, "verifier.pub.pem");
   writeFileSync(decisionPath, decision.publicKey.export({ type: "spki", format: "pem" }));
