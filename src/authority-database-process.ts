@@ -61,9 +61,11 @@ export function discoverOpenInodeHolders(
   const unprovable: number[] = [];
   const requiredPids = new Set(required.map(item => item.pid));
   let fdCount = 0;
-  for (const entry of readdirSync("/proc", { withFileTypes: true })) {
-    if (!entry.isDirectory() || !/^\d+$/.test(entry.name)) continue;
-    const pid = Number(entry.name);
+  // Dirent conversion may lstat UNKNOWN entries before this loop and race an exited PID.
+  // Enumerate names only so every per-PID metadata read stays inside the classified try below.
+  for (const name of readdirSync("/proc")) {
+    if (!/^\d+$/.test(name)) continue;
+    const pid = Number(name);
     if (!Number.isSafeInteger(pid) || pid < 1) continue;
     try {
       // Every /proc read below can race a process that exits between the readdir above and the
