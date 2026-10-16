@@ -160,6 +160,14 @@ The document owns vertical scrolling. The operational shell uses StyleGallery's 
 - **Motion**: none; async controls swap labels and disabled state immediately.
 - **Layout**: StyleGallery `ram-grid` inside the existing sticky-header shell; document owns scrolling and source/focus order is unchanged at every width.
 
+### Read-only Product Hub
+- **Structure**: a named product section before Today, also available at `/products`; six Panel articles in fixed order: CRM, Mail, AI tax, Second Brain, messenger and approvals. Each exposes its source-specific summary, read state, observation time and original-screen link.
+- **States**: loading, ready, explicit no data, unconfigured, unavailable, denied, stale and configured-only. Failed reads remove old counts instead of turning them into zero. Price configured-only is not a live ledger read; its original amounts remain in the source screen. Candidate, message and pending-control counts are never added together.
+- **Authority and privacy**: bounded summary GET with existing session/CSRF; no source bodies, record identities, arbitrary provider links, money calculation or mutation controls. The approval card navigates only; it does not authorize or perform a decision.
+- **Links**: external product screens use the current hostname with fixed existing product ports, preserving the same tailnet host. Memory and approvals use existing internal routes. Messenger has no separate original UI; its link opens the actual `/products#product-messenger` summary.
+- **Layout and tokens**: existing Panel and Record List geometry, intrinsic grid with `--size-agent-min`, spacing `--space-2` through `--space-6`, existing type/color tokens, document scrolling and wrapping long content. No new visual tokens, motion, shadow or colored state borders.
+- **Accessibility**: semantic section/article/headings, native links/buttons/time, one atomic read status, visible keyboard focus, control-height links and scroll margin beneath the sticky header. The existing dark theme is retained under both OS color preferences.
+
 ### Memory Control Surface
 - **Structure**: heading with provider badge and a `Refresh memory` button, one atomic live status, bounded Search, Results/Detail, Conflicts, Candidates, then Effects and privacy receipts in fixed DOM order.
 - **States**: loading, ready, no data, expired (status token lapsed), stale (provider reported stale evidence), offline, unavailable, incompatible, not loaded, sensitive-redacted, superseded, staging (busy), pending approval, applying, verified complete, and forgotten removal. The badge and status copy derive from the latest provider read, never from the status route alone; offline, unavailable, or stale is never presented as an empty result or as `ready`, and a panel whose data was cleared or could not be read renders an explicit "Not loaded" state (or "Loading" while a reload is in flight), never its empty-state copy.

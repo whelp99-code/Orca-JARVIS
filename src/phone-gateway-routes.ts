@@ -29,7 +29,7 @@ export function matchPhoneRoute(input: {
     if (input.path === "/api/v1/phone/session" && query === "") {
       return route("session", method, input.path, "", 1024, false, false, false);
     }
-    if ((input.path === "/" || input.path === "/memory" || input.path === "/approvals") && query === "") {
+    if ((input.path === "/" || input.path === "/memory" || input.path === "/approvals" || input.path === "/products") && query === "") {
       return route("shell", method, input.path, "", PHONE_GATEWAY_LIMITS.html, true, false, false);
     }
     if (input.path === "/NOTICE-ARGO.txt" && query === "") {
@@ -40,6 +40,9 @@ export function matchPhoneRoute(input: {
       return route("asset", method, input.path, "", PHONE_GATEWAY_LIMITS.asset, true, false, false);
     }
     if (input.path === "/api/v1/today" && query === "") {
+      return route("today", method, input.path, "", PHONE_GATEWAY_LIMITS.jsonResponse, true, true, true);
+    }
+    if (input.path === "/api/v1/product-hub" && query === "") {
       return route("today", method, input.path, "", PHONE_GATEWAY_LIMITS.jsonResponse, true, true, true);
     }
     const list = matchList(input.path, query);
@@ -111,6 +114,7 @@ function knownMethods(path: string): readonly string[] | undefined {
     ["/api/v1/memory/context/capabilities", ["GET"]],
     ["/healthz", ["GET", "HEAD"]], ["/readyz", ["GET", "HEAD"]],
     ["/api/v1/phone/session", ["GET"]], ["/", ["GET"]], ["/memory", ["GET"]], ["/approvals", ["GET"]],
+    ["/products", ["GET"]], ["/api/v1/product-hub", ["GET"]],
     ["/NOTICE-ARGO.txt", ["GET", "HEAD"]], ["/api/v1/today", ["GET"]],
     ["/api/v1/decision-inbox", ["GET"]], ["/api/v1/notification-intents", ["GET"]],
     ["/api/v1/source-health", ["GET"]], ["/api/v1/memory/conflicts", ["GET"]],
