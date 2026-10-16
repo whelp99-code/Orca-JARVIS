@@ -1,5 +1,5 @@
 import { createHash } from "node:crypto";
-import { readFile, readdir, stat } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 import type Database from "better-sqlite3";
@@ -17,10 +17,7 @@ function checksum(value: Buffer): string {
   return createHash("sha256").update(value).digest("hex");
 }
 
-type MigrationDigestCacheEntry = { mtimeMs: number; size: number; digest: string };
-
 export class MigrationStore {
-  private static readonly digestCache = new Map<string, MigrationDigestCacheEntry>();
   constructor(
     private readonly database: Database.Database,
     private readonly configuredPath: string | undefined,
@@ -35,23 +32,6 @@ export class MigrationStore {
     return (await readdir(this.directory())).filter(file => file.endsWith(".sql")).sort();
   }
 
-  private async migrationDigest(
-    path: string,
-    requireBody: boolean,
-  ): Promise<{ body?: Buffer; digest: string }> {
-    const observed = await stat(path);
-    const cached = MigrationStore.digestCache.get(path);
-    if (cached !== undefined && cached.mtimeMs === observed.mtimeMs && cached.size === observed.size) {
-      if (!requireBody) return { digest: cached.digest };
-      const body = await readFile(path);
-      return { body, digest: cached.digest };
-    }
-    const body = await readFile(path);
-    const digest = checksum(body);
-    MigrationStore.digestCache.set(path, { mtimeMs: observed.mtimeMs, size: observed.size, digest });
-    return { body, digest };
-  }
-
   async migrate(): Promise<void> {
     this.database.exec(
       "CREATE TABLE IF NOT EXISTS schema_migrations (id TEXT PRIMARY KEY, checksum TEXT NOT NULL, applied_at TEXT NOT NULL)",
@@ -63,13 +43,12 @@ export class MigrationStore {
       const prior = row(this.database.prepare(
         "SELECT checksum FROM schema_migrations WHERE id=?",
       ).get(id));
+      const body = await readFile(path);
+      const digest = checksum(body);
       if (prior !== undefined) {
-        const { digest } = await this.migrationDigest(path, false);
         if (prior["checksum"] !== digest) throw this.error("MIGRATION_CHECKSUM_MISMATCH", id);
         continue;
       }
-      const { body, digest } = await this.migrationDigest(path, true);
-      if (body === undefined) throw this.error("MIGRATIONS_PENDING", id);
       pending.push({ id, body, digest });
     }
     const recovery = new Task30MigrationRecovery(this.database, this.error);
