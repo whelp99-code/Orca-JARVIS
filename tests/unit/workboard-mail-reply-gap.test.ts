@@ -3,7 +3,12 @@ import Database from "better-sqlite3";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { WorkboardStore } from "../../src/workboard/store.js";
-import { MAIL_REPLY_GAP_BASE_URL, projectMailReplyGaps } from "../../src/workboard/adapters/mail-reply-gap.js";
+import {
+  MAIL_REPLY_GAP_BASE_URL,
+  MAIL_REPLY_GAP_BASE_URL_DEFAULT,
+  projectMailReplyGaps,
+  resolveMailReplyGapBaseUrl,
+} from "../../src/workboard/adapters/mail-reply-gap.js";
 import { readWorkboard } from "../../src/workboard/projection.js";
 
 function store(): WorkboardStore {
@@ -49,7 +54,10 @@ describe("mail reply-gap projection", () => {
     expect(linked.opened).toBe(1);
     const row = readWorkboard(board.db, new Date("2026-10-01T00:01:00.000Z")).works[0] as { evidence_ref?: string };
     expect(row.evidence_ref).toBe(`${MAIL_REPLY_GAP_BASE_URL}/#m=536`);
-    expect(MAIL_REPLY_GAP_BASE_URL).toBe("http://jm-acloud.alpines-goldeye.ts.net:3010");
+    expect(MAIL_REPLY_GAP_BASE_URL).toBe(MAIL_REPLY_GAP_BASE_URL_DEFAULT);
+    expect(MAIL_REPLY_GAP_BASE_URL_DEFAULT).toBe("https://jm-omachy.alpines-goldeye.ts.net:8451");
+    expect(resolveMailReplyGapBaseUrl({ JARVIS_MAIL_REPLY_GAP_BASE_URL: "https://mail.example:9" }))
+      .toBe("https://mail.example:9");
   });
 
   it("rejects a snapshot whose link origin is not the configured Mail Intelligence origin", () => {

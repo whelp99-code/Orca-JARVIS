@@ -10,6 +10,7 @@ GIT=/opt/homebrew/bin/git
 KEY="$RUNTIME/secrets/portfolio-local.key"
 SSH_KEY=/Users/jmpark/.ssh/jarvis-portfolio-ingest
 KNOWN_HOSTS=/Users/jmpark/.ssh/known_hosts
+INGEST_SSH_TARGET="${JARVIS_PORTFOLIO_INGEST_SSH_TARGET:-jm@jm-omachy}"
 
 [[ "$RELEASE" =~ ^$RUNTIME/control-center/releases/[0-9a-f]{40}$ ]]
 
@@ -31,4 +32,4 @@ KNOWN_HOSTS=/Users/jmpark/.ssh/known_hosts
     -o ServerAliveInterval=5 \
     -o ServerAliveCountMax=2 \
     -i "$SSH_KEY" \
-    jm@100.87.81.57
+    "$INGEST_SSH_TARGET"

@@ -5,8 +5,18 @@ import type { WorkboardStore } from "../store.js";
 
 /** Mail Intelligence reply-gap projection. Collectors own this table set; the dashboard stays read-only. */
 export const MAIL_REPLY_GAP_SOURCE = { host: "linux", app: "mail", scope: "reply-gap", generation: "v1" } as const;
-/** Phone-reachable Mail Intelligence. A snapshot may repeat this origin only. */
-export const MAIL_REPLY_GAP_BASE_URL = "http://jm-acloud.alpines-goldeye.ts.net:3010";
+/** Phone-reachable Mail Intelligence. Override with `JARVIS_MAIL_REPLY_GAP_BASE_URL`. */
+export const MAIL_REPLY_GAP_BASE_URL_DEFAULT = "https://jm-omachy.alpines-goldeye.ts.net:8451";
+
+export function resolveMailReplyGapBaseUrl(
+  env: NodeJS.ProcessEnv = process.env,
+): string {
+  const configured = env.JARVIS_MAIL_REPLY_GAP_BASE_URL?.trim();
+  return configured && configured.length > 0 ? configured : MAIL_REPLY_GAP_BASE_URL_DEFAULT;
+}
+
+/** A snapshot may repeat this origin only. */
+export const MAIL_REPLY_GAP_BASE_URL = resolveMailReplyGapBaseUrl();
 
 export type ReplyGapItem = { id: string; subject: string; receivedAt: string };
 export type ReplyGapSnapshot = { observedAt: string; baseUrl?: string; open: ReplyGapItem[] };
