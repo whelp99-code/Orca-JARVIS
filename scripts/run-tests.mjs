@@ -60,13 +60,21 @@ try {
   if (parallelShards) {
     process.stdout.write(`JARVIS_TEST_SHARD parallel ${runs.length}/${runs.length}\n`);
     const shardCleanups = [];
+    const shardAbort = new AbortController();
+    const shardSignal = AbortSignal.any([controller.signal, shardAbort.signal]);
     const outcomes = await Promise.all(runs.map(async (current, index) => {
       const shardScratch = createTestEnvironment();
       shardCleanups.push(shardScratch.cleanup);
       process.stdout.write(`JARVIS_TEST_SHARD ${index + 1}/${runs.length} start\n`);
-      const env = { ...shardScratch.env, JARVIS_TEST_PROFILE: profile };
-      const outcome = await runOnce(command, current, env, processOptions);
+      const env = {
+        ...shardScratch.env,
+        JARVIS_TEST_PROFILE: profile,
+        VITEST_CACHE_DIR: join(shardScratch.root, "vitest-cache"),
+        NODE_COMPILE_CACHE: join(shardScratch.root, "node-compile-cache"),
+      };
+      const outcome = await runOnce(command, current, env, { ...processOptions, signal: shardSignal });
       process.stdout.write(`JARVIS_TEST_SHARD ${index + 1}/${runs.length} end code=${outcome.code}\n`);
+      if (outcome.code !== 0) shardAbort.abort();
       return outcome;
     }));
     for (const cleanup of shardCleanups) cleanup();
