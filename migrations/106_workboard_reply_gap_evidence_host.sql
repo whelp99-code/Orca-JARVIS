@@ -8,8 +8,7 @@
 
 CREATE TABLE workboard_evidence_ref_host_remap_20261016 (
   work_id TEXT PRIMARY KEY,
-  prior_evidence_ref TEXT NOT NULL,
-  FOREIGN KEY(work_id) REFERENCES workboard_works(work_id)
+  prior_evidence_ref TEXT NOT NULL
 );
 
 INSERT INTO workboard_evidence_ref_host_remap_20261016 (work_id, prior_evidence_ref)
@@ -21,7 +20,19 @@ WHERE evidence_ref LIKE '%jm-acloud.alpines-goldeye.ts.net%'
 UPDATE workboard_works
 SET evidence_ref = REPLACE(
   REPLACE(
-    REPLACE(evidence_ref,
+    REPLACE(
+      REPLACE(
+        REPLACE(
+          REPLACE(
+            REPLACE(evidence_ref,
+              'http://100.87.81.57:3010',
+              'https://jm-omachy.alpines-goldeye.ts.net:8451'),
+            'https://100.87.81.57:3010',
+            'https://jm-omachy.alpines-goldeye.ts.net:8451'),
+          'http://100.87.81.57:8451',
+          'https://jm-omachy.alpines-goldeye.ts.net:8451'),
+        'https://100.87.81.57:8451',
+        'https://jm-omachy.alpines-goldeye.ts.net:8451'),
       'http://jm-acloud.alpines-goldeye.ts.net:3010',
       'https://jm-omachy.alpines-goldeye.ts.net:8451'),
     'https://jm-acloud.alpines-goldeye.ts.net:3010',
