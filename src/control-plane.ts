@@ -16,6 +16,7 @@ import { decodeCompanyCommandV2 } from "./company-candidate-v2-contract.js";
 import { assertCurrentCompanyPin, readCompanyApprovalBinding } from "./company-approval-binding.js";
 import { CompanyProgress, type CompanyProgressReservation } from "./company-progress.js";
 import { loadCompanyFreshness, type CompanyFreshnessProvider } from "./company-freshness.js";
+import { stageCompanyProgressEvidence } from "./company-progress-evidence.js";
 function finiteDate(date: Date, code: string): number { const time = date.getTime(); if (!Number.isFinite(time)) throw new JarvisError(code); return time; }
 function finiteIso(value: string): number { const time = Date.parse(value); return Number.isFinite(time) ? time : Number.NaN; } export class ControlPlane {
   constructor(private readonly authority: AuthorityDb,
@@ -41,7 +42,8 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
     return { action: String(row.action), action_level: Number(row.action_level) as ActionLevel, target, args }; }
   stage(input: ControlCommandRequestInput, now = new Date()): StoredControlCommand {
     return stageControlCommand(this.authority, input, now, event => this.event(event));
-  } decide(receipt: CommandApprovalReceipt, now = new Date()): void {
+  } decide(receipt: CommandApprovalReceipt, decisionAt?: Date): void {
+    let now = decisionAt ?? new Date();
     const nowMs = finiteDate(now, "CONTROL_APPROVAL_INVALID");
     const request = this.authority.db.prepare("SELECT * FROM control_command_requests WHERE request_id=?").get(receipt.request_id) as | Record<string, unknown>
       | undefined; if (!request) throw new JarvisError("CONTROL_APPROVAL_NOT_APPLICABLE");
@@ -63,9 +65,20 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
       ) .get(receipt.key_id) as { public_key_pem: string; principal_id: string } | undefined; if ( !key || key.principal_id !== receipt.signer_principal_id ||
       !verifyCommandApproval(receipt, key.public_key_pem, now) || Date.parse(receipt.expires_at) > Date.parse(String(request.expires_at)) )
       throw new JarvisError(companyV2 ? "COMPANY_APPROVAL_INVALID" : "CONTROL_APPROVAL_INVALID");
-    const state = receipt.decision === "approve" ? "approved" : "rejected"; const at = now.toISOString();
+    const state = receipt.decision === "approve" ? "approved" : "rejected";
     const progress = new CompanyProgress(this.authority, this.companyFreshness);
     let reservation: CompanyProgressReservation | undefined;
+    if (companyV2) {
+      const imported = this.authority.db.prepare(
+        "SELECT current,command_digest FROM company_candidate_handoffs WHERE request_id=?",
+      ).get(receipt.request_id) as { current: number; command_digest: string } | undefined;
+      if (!imported || imported.current !== 1 || imported.command_digest !== receipt.command_digest) {
+        throw new JarvisError("CONTROL_APPROVAL_NOT_APPLICABLE");
+      }
+      reservation = progress.reserve(companyV2, receipt.decision === "approve" ? "decide_approve" : "decide_reject", hash(receipt), now);
+    }
+    now = decisionAt ?? new Date();
+    const at = now.toISOString();
     const tx = this.authority.db.transaction(() => {
       if (request.action === "company.candidate.transition") {
         const imported = this.authority.db.prepare(
@@ -75,8 +88,19 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
           throw new JarvisError("CONTROL_APPROVAL_NOT_APPLICABLE");
         }
         if (companyV2) {
+          const current = this.get(receipt.request_id);
+          const currentKey = this.authority.db.prepare(
+            `SELECT k.public_key_pem,k.principal_id FROM trusted_authority_keys k
+             JOIN authority_key_purposes p ON p.key_id=k.key_id WHERE k.key_id=? AND p.purpose='decision'`,
+          ).get(receipt.key_id) as { public_key_pem: string; principal_id: string } | undefined;
+          if (!current || current.state !== "pending" || current.command_digest !== receipt.command_digest
+            || Date.parse(current.expires_at) <= now.getTime()) throw new JarvisError("CONTROL_APPROVAL_NOT_APPLICABLE");
+          if (this.commandRevoked(current.request_id, current.command_digest, receipt.receipt_id)) {
+            throw new JarvisError("COMPANY_APPROVAL_REVOKED");
+          }
+          if (!currentKey || currentKey.principal_id !== receipt.signer_principal_id
+            || !verifyCommandApproval(receipt, currentKey.public_key_pem, now)) throw new JarvisError("COMPANY_APPROVAL_INVALID");
           assertCurrentCompanyPin(this.authority, companyV2, receipt, now);
-          reservation = progress.reserve(companyV2, receipt.decision === "approve" ? "decide_approve" : "decide_reject", hash(receipt), now);
         } else {
           const target = JSON.parse(String(request.target_json)) as { provider_instance_id: string; workspace_id: string };
           if (readCompanyApprovalBinding(this.authority, target)) throw new JarvisError("ENROLLMENT_REQUIRED");
@@ -101,6 +125,9 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
           receipt.key_id, canonicalize(receipt), receipt.signature, receipt.issued_at, receipt.expires_at, at, ); const changed = this.authority.db
         .prepare("UPDATE control_command_requests SET state=? WHERE request_id=? AND state='pending'") .run(state, receipt.request_id);
       if (changed.changes !== 1) throw new JarvisError("CONTROL_APPROVAL_RACE");
+      if (companyV2) stageCompanyProgressEvidence(this.authority, {
+        kind: "jarvis_decision", command: companyV2, receipt,
+      });
       new MemorySurfaceAuthority(this.authority).applyReceipt(receipt, receipt.request_id, now); this.event({ event_id: `evt:${receipt.request_id}:${state}`,
         event_type: `control.command.${state}`, source: "human-approval", subject: receipt.request_id, correlation_id: receipt.request_id,
         causation_id: `evt:${receipt.request_id}:requested`, payload: { receipt_id: receipt.receipt_id, signer_principal_id: receipt.signer_principal_id },

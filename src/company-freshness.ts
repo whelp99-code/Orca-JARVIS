@@ -2,6 +2,8 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { canonicalize } from "./canonical.js";
 import { JarvisError } from "./jarvis-error.js";
+import { CompanyDbFreshness } from "./company-db-freshness.js";
+import type { AuthorityDb } from "./db.js";
 
 const identifier = z.string().regex(/^[A-Za-z0-9][A-Za-z0-9._:-]{0,255}$/);
 const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/);
@@ -206,10 +208,18 @@ const unconfiguredConfigSchema = z.object({
   schema_version: z.literal(2),
   kind: z.literal("unconfigured"),
 }).strict();
+const providerConfigSchema = z.discriminatedUnion("kind", [
+  unconfiguredConfigSchema,
+  z.object({
+    schema_version: z.literal(2), kind: z.literal("sb_company_db"),
+    client_config_file: z.string().min(1).max(4096).startsWith("/"),
+  }).strict(),
+]);
 
 const OPERATION_DOMAIN = "second-brain/company-operation/v1";
 
 export interface CompanyFreshnessProvider {
+  readonly kind?: "sb_company_db";
   readFreshness(request: FreshnessReadRequest): FreshnessReadResponse;
   reserveProgress(request: ReserveProgressRequest): ReserveProgressResponse;
   finishProgress(request: FinishProgressRequest): FinishProgressResponse;
@@ -264,7 +274,15 @@ class UnconfiguredCompanyFreshness implements CompanyFreshnessProvider {
   }
 }
 
-export function loadCompanyFreshness(config: unknown): CompanyFreshnessProvider {
-  parseContract(unconfiguredConfigSchema, config);
-  return new UnconfiguredCompanyFreshness();
+export function loadCompanyFreshness(config: unknown, authority?: AuthorityDb): CompanyFreshnessProvider {
+  const parsed = parseContract(providerConfigSchema, config);
+  switch (parsed.kind) {
+    case "sb_company_db": return new CompanyDbFreshness(parsed.client_config_file, authority);
+    case "unconfigured": return new UnconfiguredCompanyFreshness();
+    default: {
+      const exhaustive: never = parsed;
+      void exhaustive;
+      throw new JarvisError("COMPANY_CONTRACT_INVALID");
+    }
+  }
 }

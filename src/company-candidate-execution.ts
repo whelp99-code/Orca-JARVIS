@@ -22,6 +22,7 @@ import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
 import { readCandidateCredential } from "./integration/candidate-reader-credential.js";
 import { parseCompanyJson } from "./company-candidate-json.js";
+import { stageCompanyProgressEvidence } from "./company-progress-evidence.js";
 
 const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/);
 const sbReceiptSchema = z.object({
@@ -351,10 +352,17 @@ export class CompanyCandidateExecutor {
           || verified.data.effect_digest === command.target.content_digest
           || verified.data.effect_digest === receipt.receipt_digest) throw new JarvisError("COMPANY_VERIFIER_INVALID");
         completion = verified.data;
-        const saved = this.db.db.prepare(
-          "UPDATE company_candidate_handoffs SET completion_json=?,updated_at=? WHERE request_id=? AND lease_token=?",
-        ).run(canonicalize(completion), this.clock().toISOString(), requestId, token);
-        if (saved.changes !== 1) throw new JarvisError("COMPANY_EXECUTION_BUSY");
+        this.db.db.transaction(() => {
+          const saved = this.db.db.prepare(
+            "UPDATE company_candidate_handoffs SET completion_json=?,updated_at=? WHERE request_id=? AND lease_token=?",
+          ).run(canonicalize(completion), this.clock().toISOString(), requestId, token);
+          if (saved.changes !== 1) throw new JarvisError("COMPANY_EXECUTION_BUSY");
+          stageCompanyProgressEvidence(this.db, {
+            kind: "jarvis_completion", command, approval, completion,
+            acceptance: { receipt_id: receipt.receipt_id, receipt_digest: receipt.receipt_digest,
+              operation: "accept", state: "accepted", handoff_id: requestId },
+          });
+        }).immediate();
         this.finishV2(progress, reserved, completion.effect_digest, "completed");
       }
       if (!processed) {

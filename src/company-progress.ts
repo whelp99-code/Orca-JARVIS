@@ -143,6 +143,15 @@ export class CompanyProgress {
     }
     if (!advances(token.checkpoint, response.checkpoint)) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
     this.db.db.transaction(() => {
+      if (this.provider.kind === "sb_company_db") {
+        const acknowledged = this.db.db.prepare(
+          `UPDATE company_progress_evidence_outbox SET acknowledged=1
+           WHERE operation_id=? AND evidence_digest=? AND acknowledged=0`,
+        ).run(token.operation_id, evidenceDigest);
+        if (acknowledged.changes !== 1 && !this.db.db.prepare(
+          "SELECT 1 FROM company_progress_evidence_outbox WHERE operation_id=? AND evidence_digest=? AND acknowledged=1",
+        ).get(token.operation_id, evidenceDigest)) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
+      }
       const recorded = this.db.db.prepare(
         `UPDATE company_progress_reservations SET finished_checkpoint_json=?,evidence_digest=?,terminal_state=?
          WHERE operation_id=? AND evidence_digest IS NULL`,
