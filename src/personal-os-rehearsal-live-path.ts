@@ -21,10 +21,15 @@ function identity(path: string): LivePathSnapshot {
 export type LivePathRoots = {
   readonly environment?: DeploymentEnvironment;
   readonly namedRoots?: readonly string[];
+  readonly liveUnitPath?: string;
 };
 
 export function snapshotLivePaths(roots: LivePathRoots = {}): readonly LivePathSnapshot[] {
-  const paths = [...new Set([...(roots.namedRoots ?? NAMED_ROOTS), ...protectedRoots(roots.environment)])];
+  const paths = [...new Set([
+    ...(roots.namedRoots ?? NAMED_ROOTS),
+    ...protectedRoots(roots.environment),
+    ...(roots.liveUnitPath === undefined ? [] : [roots.liveUnitPath]),
+  ])];
   return paths.map(identity);
 }
 

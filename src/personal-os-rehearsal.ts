@@ -14,9 +14,7 @@ import { type ScenarioResult } from "./personal-os-rehearsal-scenarios.js";
 export type { RehearsalOptions } from "./personal-os-rehearsal-contract.js";
 export type { RehearsalResult } from "./personal-os-rehearsal-happy.js";
 
-export type RehearsalDependencies = LivePathRoots & {
-  readonly liveUnitPath?: string;
-};
+export type RehearsalDependencies = LivePathRoots;
 
 export async function runPersonalOsRehearsal(
   options: RehearsalOptions,

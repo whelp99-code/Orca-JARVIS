@@ -4,7 +4,7 @@ import { existsSync, mkdirSync, readFileSync, readlinkSync, symlinkSync, unlinkS
 import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PersonalOsError } from "../../src/personal-os-errors.js";
-import { protectedRoots } from "../../src/personal-os-protected-paths.js";
+import { NAMED_ROOTS, protectedRoots } from "../../src/personal-os-protected-paths.js";
 import { snapshotLivePaths } from "../../src/personal-os-rehearsal-live-path.js";
 import { resolveProviderSource } from "../../src/personal-os-rehearsal-provider.js";
 import { runPersonalOsRehearsal, type RehearsalDependencies } from "../../src/personal-os-rehearsal.js";
@@ -224,6 +224,9 @@ describe("personal-OS release rehearsal", () => {
 
   it("emits PERSONAL_OS_REHEARSAL_OK only after the isolated stages pass", async () => {
     const releaseRoot = root();
+    dependencies = {
+      ...dependencies, namedRoots: dependencies.namedRoots!.filter(path => path !== dependencies.liveUnitPath),
+    };
     const result = await runPersonalOsRehearsal({ fixturePath: FIXTURE, clock: CLOCK, releaseRoot }, dependencies);
     if (!result.ok || result.rehearsal !== "PERSONAL_OS_REHEARSAL_OK") {
       throw new Error(JSON.stringify(result));
@@ -272,6 +275,51 @@ describe("personal-OS release rehearsal", () => {
       ...dependencies.namedRoots!, ...protectedRoots(dependencies.environment),
     ]);
     expect(snapshots.every(item => item.present)).toBe(true);
+  });
+
+  it("preserves default snapshot order without forwarding actual path stats", () => {
+    const implementation = vi.mocked(fs.lstatSync).getMockImplementation()!;
+    vi.mocked(fs.lstatSync).mockImplementation(() => { throw new Error("TEST_STAT_NOT_FORWARDED"); });
+    try {
+      const expected = [...new Set([...NAMED_ROOTS, ...protectedRoots()])];
+      expect(snapshotLivePaths().map(item => item.path)).toEqual(expected);
+      expect(snapshotLivePaths({ liveUnitPath: NAMED_ROOTS[5] }).map(item => item.path)).toEqual(expected);
+    } finally {
+      vi.mocked(fs.lstatSync).mockImplementation(implementation);
+    }
+  });
+
+  it("appends an independently injected live unit once after the existing snapshot roots", () => {
+    const liveUnitPath = join(root(), "separate.service");
+    writeFileSync(liveUnitPath, "[Service]\nExecStart=/synthetic/current/jarvis\n");
+    const observed = { ...dependencies, liveUnitPath };
+    const existing = [...dependencies.namedRoots!, ...protectedRoots(dependencies.environment)];
+    expect(snapshotLivePaths(observed).map(item => item.path)).toEqual([...existing, liveUnitPath]);
+    expect(snapshotLivePaths({
+      ...observed, namedRoots: [...dependencies.namedRoots!, liveUnitPath, liveUnitPath],
+    }).map(item => item.path)).toEqual([
+      ...dependencies.namedRoots!, liveUnitPath, ...protectedRoots(dependencies.environment),
+    ]);
+    expect(snapshotLivePaths({
+      environment: observed.environment, namedRoots: observed.namedRoots,
+    }).map(item => item.path)).toEqual(existing);
+  });
+
+  it.each(["removed", "mtime-changed"] as const)("rejects an independently injected live unit %s during a stage", async mutation => {
+    const liveUnitPath = join(root(), "separate.service");
+    writeFileSync(liveUnitPath, "[Service]\nExecStart=/synthetic/current/jarvis\n");
+    dependencies = { ...dependencies, liveUnitPath };
+    expect(dependencies.namedRoots).not.toContain(liveUnitPath);
+    expect(protectedRoots(dependencies.environment)).not.toContain(liveUnitPath);
+    const before = fs.statSync(liveUnitPath);
+    const pending = boundedRehearsal();
+    if (mutation === "removed") {
+      unlinkSync(liveUnitPath);
+    } else {
+      fs.utimesSync(liveUnitPath, before.atime, new Date(before.mtimeMs + 10_000));
+      expect(fs.statSync(liveUnitPath).ino).toBe(before.ino);
+    }
+    await expect(pending).rejects.toMatchObject({ code: "E_REHEARSAL_GATE" });
   });
 
   it("passes the synthetic gate with writes confined to the isolated release", async () => {
