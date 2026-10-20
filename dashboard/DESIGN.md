@@ -83,7 +83,7 @@ The document owns vertical scrolling. The operational shell uses StyleGallery's 
 ### Operational Shell
 - **Structure**: skip link, sticky header with primary navigation and canonical connection state, one main landmark, and attribution footer.
 - **States**: live, reconnecting, offline, read-only (phone), current route, keyboard focus.
-- **Surfaces**: the same build serves the loopback control center (`local`) and the tailnet phone gateway (`phone`, marked by the gateway's `jarvis-phone-mode` meta). On the phone the navigation offers only Today, Memory and Security, the state pill reads `읽기 전용` with the `--color-info` dot (`data-state="readonly"`), no authority stream opens, and every mutation control is absent: the phone is read-only by design, never "disconnected".
+- **Surfaces**: the same build serves the loopback control center (`local`) and the tailnet phone gateway (`phone`, marked by the gateway's `jarvis-phone-mode` meta). On the phone the navigation offers only Today, Products, Memory, Approvals and Security, the state pill reads `읽기 전용` with the `--color-info` dot (`data-state="readonly"`), no authority stream opens, and every mutation control is absent: the phone is read-only by design, never "disconnected".
 - **Spacing**: `--space-1` through `--space-4`; navigation and controls use `--size-nav` and `--size-control`.
 - **Accessibility**: skip link targets the programmatically focusable main landmark; navigation follows route order; state is politely announced; footer links to the shipped notice.
 - **Motion**: none.
