@@ -332,4 +332,182 @@ describe("committed company finish retry", () => {
         .toEqual({ evidence_digest: null });
     } finally { live.close(); }
   });
+  it("keeps a completed handoff when a late already_recorded finish still holds a stale lease", async () => {
+    const live = await session();
+    let releaseLate: (() => void) | undefined;
+    try {
+      new ControlPlane(live.db, live.provider).decide(live.approval, NOW);
+      const provider = live.provider;
+      const lateEntered = new Promise<void>(resolve => {
+        const finish = provider.finishProgress.bind(provider);
+        provider.finishProgress = request => {
+          if (request.terminal_state !== "accepted") return finish(request);
+          return new Promise(resolveFinish => {
+            releaseLate = () => resolveFinish(finish(request));
+            resolve();
+          }) as unknown as ReturnType<CompanyFreshnessProvider["finishProgress"]>;
+        };
+      });
+      const winner = live.execute();
+      await lateEntered;
+      const stolen = live.db.db.prepare(
+        "UPDATE company_candidate_handoffs SET lease_token='winner-lease',lease_expires_at=?,status='completing',updated_at=? WHERE request_id=?",
+      ).run(new Date(NOW.getTime() + 60_000).toISOString(), NOW.toISOString(), live.command.request_id);
+      expect(stolen.changes).toBe(1);
+      live.db.db.prepare(
+        "UPDATE control_command_requests SET state='completed',completed_at=? WHERE request_id=? AND state='approved'",
+      ).run(NOW.toISOString(), live.command.request_id);
+      live.db.db.prepare(
+        "UPDATE company_candidate_handoffs SET status='completed',failure_code=NULL,updated_at=? WHERE request_id=?",
+      ).run(NOW.toISOString(), live.command.request_id);
+      releaseLate?.();
+      await expect(winner).rejects.toMatchObject({ code: "COMPANY_PROGRESS_UNCERTAIN" });
+      expect(live.db.db.prepare("SELECT status FROM company_candidate_handoffs WHERE request_id=?").get(live.command.request_id))
+        .toEqual({ status: "completed" });
+      expect(live.db.db.prepare("SELECT state FROM control_command_requests WHERE request_id=?").get(live.command.request_id))
+        .toEqual({ state: "completed" });
+      expect(live.finishes.filter(request => request.terminal_state === "accepted")).toHaveLength(1);
+      expect(live.db.db.prepare(
+        "SELECT evidence_digest FROM company_progress_reservations WHERE operation='accept'",
+      ).get()).toEqual({ evidence_digest: null });
+    } finally { releaseLate?.(); live.close(); }
+  });
+
+  it("refuses a stale lease before publishing an already_recorded accept and preserves completed", async () => {
+    const live = await session();
+    try {
+      new ControlPlane(live.db, live.provider).decide(live.approval, NOW);
+      const reserved = new CompanyProgress(live.db, live.provider).reserve(
+        live.command, "accept", digest("stale-lease-event"), NOW,
+      );
+      live.db.db.prepare(
+        "UPDATE company_candidate_handoffs SET status='completed',lease_token='expired-lease',lease_expires_at=?,failure_code=NULL,updated_at=? WHERE request_id=?",
+      ).run(new Date(NOW.getTime() - 1_000).toISOString(), NOW.toISOString(), live.command.request_id);
+      live.db.db.prepare(
+        "UPDATE control_command_requests SET state='completed',completed_at=? WHERE request_id=?",
+      ).run(NOW.toISOString(), live.command.request_id);
+      const before = live.finishes.length;
+      const executor = new CompanyCandidateExecutor(live.db, live.client, live.verifier, () => NOW, live.provider);
+      const finish = executor["finishV2"].bind(executor) as (
+        progress: CompanyProgress, reservation: typeof reserved, evidenceDigest: string,
+        terminalState: "accepted", token: string,
+      ) => void;
+      expect(() => finish(new CompanyProgress(live.db, live.provider), reserved, digest("stale-evidence"), "accepted", "expired-lease"))
+        .toThrow("COMPANY_EXECUTION_BUSY");
+      expect(live.finishes).toHaveLength(before);
+      expect(live.db.db.prepare("SELECT status,lease_token FROM company_candidate_handoffs").get())
+        .toEqual({ status: "completed", lease_token: "expired-lease" });
+      expect(live.db.db.prepare("SELECT state FROM control_command_requests WHERE request_id=?").get(live.command.request_id))
+        .toEqual({ state: "completed" });
+    } finally { live.close(); }
+  });
+
+  it("publishes an owned accept and leaves an already_recorded duplicate on the same terminal state", async () => {
+    const live = await session();
+    try {
+      new ControlPlane(live.db, live.provider).decide(live.approval, NOW);
+      const token = "owned-lease";
+      live.db.db.prepare(
+        "UPDATE company_candidate_handoffs SET lease_token=?,lease_expires_at=?,updated_at=? WHERE request_id=?",
+      ).run(token, new Date(NOW.getTime() + 60_000).toISOString(), NOW.toISOString(), live.command.request_id);
+      const progress = new CompanyProgress(live.db, live.provider);
+      const reserved = progress.reserve(live.command, "accept", digest("owned-event"), NOW);
+      const executor = new CompanyCandidateExecutor(live.db, live.client, live.verifier, () => NOW, live.provider);
+      const finish = executor["finishV2"].bind(executor) as (
+        progress: CompanyProgress, reservation: typeof reserved, evidenceDigest: string,
+        terminalState: "accepted", token: string,
+      ) => void;
+      finish(progress, reserved, digest("owned-evidence"), "accepted", token);
+      expect(live.db.db.prepare("SELECT status FROM company_candidate_handoffs").get()).toEqual({ status: "accepted" });
+      expect(live.finishes.at(-1)?.terminal_state).toBe("accepted");
+      const again = structuredClone(live.finishes.at(-1)!);
+      again.challenge = "challenge:TEST_ONLY:already-recorded";
+      expect(live.provider.finishProgress(again).outcome).toBe("already_recorded");
+      finish(progress, reserved, digest("owned-evidence"), "accepted", token);
+      expect(live.db.db.prepare("SELECT status FROM company_candidate_handoffs").get()).toEqual({ status: "accepted" });
+      expect(live.db.db.prepare("SELECT state FROM control_command_requests WHERE request_id=?").get(live.command.request_id))
+        .toEqual({ state: "approved" });
+    } finally { live.close(); }
+  });
+  it.each(["complete", "mark_processed"] as const)(
+    "pre-lease %s recovery preserves completed and does not publish a regressing handoff",
+    async operation => {
+      const live = await session();
+      try {
+        new ControlPlane(live.db, live.provider).decide(live.approval, NOW);
+        const progress = new CompanyProgress(live.db, live.provider);
+        const event = digest(`${operation}-recovery-event`);
+        const reserved = progress.reserve(live.command, operation, event, NOW);
+        const evidence = digest(`${operation}-recovery-evidence`);
+        live.db.db.prepare(
+          "UPDATE company_candidate_handoffs SET status='completed',lease_token=NULL,lease_expires_at=NULL,failure_code=NULL,updated_at=? WHERE request_id=?",
+        ).run(NOW.toISOString(), live.command.request_id);
+        live.db.db.prepare(
+          "UPDATE control_command_requests SET state='completed',completed_at=? WHERE request_id=?",
+        ).run(NOW.toISOString(), live.command.request_id);
+        const before = {
+          handoff: live.db.db.prepare("SELECT status,lease_token FROM company_candidate_handoffs").get(),
+          control: live.db.db.prepare("SELECT state FROM control_command_requests WHERE request_id=?").get(live.command.request_id),
+          finishes: live.finishes.length,
+        };
+        const executor = new CompanyCandidateExecutor(live.db, live.client, live.verifier, () => NOW, live.provider);
+        const finish = executor["finishV2"].bind(executor) as (
+          progress: CompanyProgress, reservation: typeof reserved, evidenceDigest: string,
+          terminalState: "completed" | "processed_complete",
+        ) => void;
+        finish(progress, reserved, evidence, operation === "complete" ? "completed" : "processed_complete");
+        expect(live.provider.finishProgress({
+          ...live.finishes.at(-1)!, challenge: `challenge:TEST_ONLY:${operation}-already`,
+        }).outcome).toBe("already_recorded");
+        expect(live.db.db.prepare("SELECT status,lease_token FROM company_candidate_handoffs").get()).toEqual(before.handoff);
+        expect(live.db.db.prepare("SELECT state FROM control_command_requests WHERE request_id=?").get(live.command.request_id))
+          .toEqual(before.control);
+        expect(before.handoff).toEqual({ status: "completed", lease_token: null });
+        expect(before.control).toEqual({ state: "completed" });
+        expect(live.finishes.length).toBeGreaterThan(before.finishes);
+      } finally { live.close(); }
+    },
+  );
+  it.each(["equal", "past"] as const)(
+    "refuses publish when the lease expires during finishProgress and the clock is %s to expiry",
+    async boundary => {
+      const opened = await session();
+      const clock = { at: NOW };
+      try {
+        new ControlPlane(opened.db, opened.provider).decide(opened.approval, NOW);
+        const command = decodeCompanyCommandV2(opened.command);
+        const token = "delayed-lease";
+        const expiry = new Date(NOW.getTime() + 60_000);
+        opened.db.db.prepare(
+          "UPDATE company_candidate_handoffs SET status='invoking',lease_token=?,lease_expires_at=?,updated_at=? WHERE request_id=?",
+        ).run(token, expiry.toISOString(), NOW.toISOString(), command.request_id);
+        const reserved = new CompanyProgress(opened.db, opened.provider).reserve(command, "accept", digest("delayed-event"), NOW);
+        let observed = 0;
+        const delaying: CompanyFreshnessProvider = {
+          readFreshness: request => opened.provider.readFreshness(request),
+          reserveProgress: request => opened.provider.reserveProgress(request),
+          finishProgress: request => {
+            observed++;
+            clock.at = boundary === "equal" ? new Date(expiry) : new Date(expiry.getTime() + 1);
+            return opened.provider.finishProgress(request);
+          },
+        };
+        const executor = new CompanyCandidateExecutor(opened.db, opened.client, undefined, () => clock.at, delaying);
+        const finish = executor["finishV2"].bind(executor) as (
+          progress: CompanyProgress, reservation: typeof reserved, evidenceDigest: string,
+          terminalState: "accepted", token: string,
+        ) => void;
+        expect(() => finish(new CompanyProgress(opened.db, delaying), reserved, digest("delayed-evidence"), "accepted", token))
+          .toThrow("COMPANY_EXECUTION_BUSY");
+        expect(observed).toBe(1);
+        expect(clock.at.getTime()).toBeGreaterThanOrEqual(expiry.getTime());
+        expect(opened.db.db.prepare("SELECT status,lease_token,lease_expires_at FROM company_candidate_handoffs").get())
+          .toEqual({ status: "invoking", lease_token: token, lease_expires_at: expiry.toISOString() });
+        expect(opened.db.db.prepare("SELECT evidence_digest FROM company_progress_reservations WHERE operation='accept'").get())
+          .toEqual({ evidence_digest: null });
+        expect(opened.db.db.prepare("SELECT state FROM control_command_requests WHERE request_id=?").get(command.request_id))
+          .toEqual({ state: "approved" });
+      } finally { opened.close(); }
+    },
+  );
 });
