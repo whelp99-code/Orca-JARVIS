@@ -3,6 +3,7 @@ import { canonicalize } from "./canonical.js";
 import { projectMacNotificationPayload } from "./notification-delivery-payload.js";
 import { bindNotificationDeliveryProjection } from "./memory-projection-bindings.js";
 import { suppressMemoryNotifications } from "./memory-notification-suppression.js";
+import { expireUnclaimedNotifications } from "./notification-intent-expiry.js";
 import { MemoryProjectionAuthority } from "./memory-projection-authority.js";
 import { NotificationDeliveryError, type NotificationClaim, type NotificationSettleInput,
   type NotificationSettlement } from "./notification-delivery-types.js";
@@ -206,23 +207,12 @@ export class NotificationDeliveryStore {
       if (typeof expires !== "string") throw new NotificationDeliveryError("NOTIFICATION_DELIVERY_UNAVAILABLE");
       this.terminalize(row, epoch >= validInstant(expires) ? "expired" : "failed", now); changed = true;
     }
-    const expired = this.options.authority.db.prepare(
-      `UPDATE notification_intents SET state='expired',updated_at=? WHERE state IN ('created','deferred','queued')
-       AND julianday(expires_at)<=julianday(?)`,
-    ).run(now, now);
-    if (expired.changes > 0) {
-      this.options.authority.db.prepare(
-        `UPDATE company_report_notifications SET state='failed',delivery_receipt=NULL
-         WHERE state='pending' AND intent_id IN (
-           SELECT intent_id FROM notification_intents WHERE state='expired'
-         )`,
-      ).run();
-    }
+    const expired = expireUnclaimedNotifications(this.options.authority, now);
     const queued = this.options.authority.db.prepare(
       `UPDATE notification_intents SET state='queued',updated_at=? WHERE state='deferred'
        AND julianday(updated_at)<=julianday(?) AND julianday(expires_at)>julianday(?)`,
     ).run(now, now, now);
-    return changed || expired.changes > 0 || queued.changes > 0;
+    return changed || expired || queued.changes > 0;
   }
 
   private terminalize(row: DeliveryRow, state: "failed" | "expired", now: string): void {

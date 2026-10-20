@@ -35,14 +35,14 @@ export function createDashboardCompanyReportTick(db: AuthorityDb, clock: () => D
 export class CompanyDailyReportCycle {
   private active = false;
   constructor(private readonly db: AuthorityDb, private readonly config: CompanyDailyReportConfig) {}
-  publishDue(now: Date): CompanyReportPublishResult {
+  publishDue(now: Date, publishedAt: Date = now): CompanyReportPublishResult {
     if (!this.config.enabled) return { status: "disabled" };
     if (this.active) return { status: "idle" };
     this.active = true;
-    try { return this.publish(now, this.config); }
+    try { return this.publish(now, publishedAt, this.config); }
     finally { this.active = false; }
   }
-  private publish(now: Date, config: Extract<CompanyDailyReportConfig, { enabled: true }>): CompanyReportPublishResult {
+  private publish(now: Date, publishedAt: Date, config: Extract<CompanyDailyReportConfig, { enabled: true }>): CompanyReportPublishResult {
     const reportDate = dueReportDate(now, config.activation_cutoff);
     if (reportDate === null) return { status: "idle" };
     const store = new CompanyDailyReportStore(this.db);
@@ -56,10 +56,9 @@ export class CompanyDailyReportCycle {
       scope: config.scope, report_date: reportDate, cutoff_from: cutoffFrom, cutoff_to: cutoffTo,
       from_global_sequence: prior?.to_global_sequence ?? 0, to_global_sequence: null, limit: PAGE_LIMIT, cursor: null,
     });
-    const from = prior?.to_global_sequence ?? 0;
-    const document = documentFrom(config.scope, reportDate, cutoffFrom, cutoffTo, from, read);
+    const document = documentFrom(config.scope, reportDate, cutoffFrom, cutoffTo, read);
     try {
-      const inserted = store.insert({ document, preview: preview(document), publishedAt: now.toISOString() });
+      const inserted = store.insert({ document, preview: preview(document), publishedAt: publishedAt.toISOString() });
       return { status: "published", report_id: inserted.report_id, created: inserted.created };
     } catch (error) {
       if (error instanceof CompanyDailyReportError && error.code === "COMPANY_REPORT_DIGEST_CONFLICT") {
@@ -69,10 +68,12 @@ export class CompanyDailyReportCycle {
     }
   }
 }
-type ReadResult = { readonly epoch: string; readonly to_global_sequence: number; readonly rows: readonly CompanyDailyReportRow[] };
+type ReadResult = { readonly epoch: string; readonly from_global_sequence: number;
+  readonly to_global_sequence: number; readonly rows: readonly CompanyDailyReportRow[] };
 function readPages(source: CompanyDailyReportSource, first: CompanyDailyReportRead): ReadResult {
   let cursor: string | null = null;
   let epoch: string | undefined;
+  let lower: number | undefined;
   let upper: number | undefined;
   const seen = new Set<string>();
   let last: CompanyDailyReportRow | undefined;
@@ -80,8 +81,9 @@ function readPages(source: CompanyDailyReportSource, first: CompanyDailyReportRe
   let bytes = 0;
   for (let page = 0; page < 1_000; page += 1) {
     const result = source.readPage({ ...first, to_global_sequence: upper ?? null, cursor, limit: PAGE_LIMIT });
-    acceptPage(result, first, epoch, upper);
+    acceptPage(result, first, epoch, lower, upper);
     epoch = result.epoch;
+    lower = result.from_global_sequence;
     upper = result.to_global_sequence;
     for (const row of result.rows) {
       const key = `${String(row.global_sequence)}\u0000${row.operation_id}`;
@@ -96,20 +98,24 @@ function readPages(source: CompanyDailyReportSource, first: CompanyDailyReportRe
       rows.push(row);
       last = row;
     }
-    if (result.next_cursor === null) return { epoch, to_global_sequence: upper, rows };
+    if (result.next_cursor === null) return { epoch, from_global_sequence: lower, to_global_sequence: upper, rows };
     if (result.next_cursor === cursor) throw new CompanyDailyReportError("COMPANY_REPORT_PAGE_INVALID");
     cursor = result.next_cursor;
   }
   throw new CompanyDailyReportError("COMPANY_REPORT_PAGE_INVALID");
 }
-function acceptPage(page: CompanyDailyReportPage, request: CompanyDailyReportRead, epoch: string | undefined, upper: number | undefined): void {
-  if (page.schema_version !== 1 || page.pinned_cutoff !== request.cutoff_to || page.from_global_sequence !== request.from_global_sequence
+function acceptPage(page: CompanyDailyReportPage, request: CompanyDailyReportRead, epoch: string | undefined,
+  lower: number | undefined, upper: number | undefined): void {
+  if (page.schema_version !== 1 || page.pinned_cutoff !== request.cutoff_to
+    || !Number.isSafeInteger(page.from_global_sequence) || page.from_global_sequence < 0
+    || (request.from_global_sequence !== 0 && page.from_global_sequence !== request.from_global_sequence)
+    || (lower !== undefined && page.from_global_sequence !== lower)
     || page.epoch.length === 0 || page.rows.length > PAGE_LIMIT || (page.next_cursor !== null && page.rows.length === 0)
     || (epoch !== undefined && page.epoch !== epoch) || (upper !== undefined && page.to_global_sequence !== upper)
-    || !Number.isInteger(page.to_global_sequence) || page.to_global_sequence < request.from_global_sequence) {
+    || !Number.isSafeInteger(page.to_global_sequence) || page.to_global_sequence < page.from_global_sequence) {
     throw new CompanyDailyReportError("COMPANY_REPORT_PAGE_INVALID");
   }
-  for (const row of page.rows) acceptRow(row, request.from_global_sequence, page.to_global_sequence);
+  for (const row of page.rows) acceptRow(row, page.from_global_sequence, page.to_global_sequence);
 }
 function acceptRow(row: CompanyDailyReportRow, from: number, to: number): void {
   const complete = ["contact_new", "calendar_memo", "progress_memo"].includes(row.classification)
@@ -126,7 +132,7 @@ function safeId(value: string): boolean {
   return value.length > 0 && Buffer.byteLength(value, "utf8") <= 128 && value === value.normalize("NFC") && !SECRET.test(value);
 }
 function documentFrom(scope: CompanyReportScope, reportDate: string, cutoffFrom: string, cutoffTo: string,
-  from: number, read: ReadResult): CompanyDailyReportDocument {
+  read: ReadResult): CompanyDailyReportDocument {
   const counts = emptyCounts();
   for (const row of read.rows) {
     counts[row.classification] += 1;
@@ -135,7 +141,7 @@ function documentFrom(scope: CompanyReportScope, reportDate: string, cutoffFrom:
   }
   return {
     schema_version: 1, provider: scope.provider, workspace: scope.workspace, report_date: reportDate,
-    cutoff_from: cutoffFrom, cutoff_to: cutoffTo, epoch: read.epoch, from_global_sequence: from,
+    cutoff_from: cutoffFrom, cutoff_to: cutoffTo, epoch: read.epoch, from_global_sequence: read.from_global_sequence,
     to_global_sequence: read.to_global_sequence, counts, rows: read.rows,
   };
 }

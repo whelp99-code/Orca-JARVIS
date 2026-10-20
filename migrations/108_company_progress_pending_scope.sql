@@ -1,0 +1,3 @@
+CREATE INDEX company_progress_reservations_pending_scope
+ON company_progress_reservations(provider_instance_id, workspace_id)
+WHERE evidence_digest IS NULL;

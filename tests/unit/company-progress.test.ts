@@ -30,6 +30,20 @@ const roots: readonly RootCase[] = [
 const NOW = new Date("2026-10-15T00:05:00.000Z");
 const EVIDENCE = `sha256:${"e".repeat(64)}`;
 
+it("indexes pending reservations by provider and workspace after migration", async () => {
+  const live = await companyApproverV2Database();
+  try {
+    const query = `SELECT operation_id FROM company_progress_reservations
+      WHERE provider_instance_id=? AND workspace_id=? AND evidence_digest IS NULL`;
+    const plan = live.db.db.prepare(`EXPLAIN QUERY PLAN ${query}`).all("provider", "workspace") as { detail: string }[];
+    expect(plan.some(row => row.detail.includes("USING INDEX company_progress_reservations_pending_scope"))).toBe(true);
+    expect(live.db.db.prepare("SELECT sql FROM sqlite_master WHERE name='company_progress_reservations_pending_scope'").get())
+      .toEqual({ sql: expect.stringMatching(/\(provider_instance_id, workspace_id\)\s+WHERE evidence_digest IS NULL/u) });
+    await live.db.migrate();
+    await live.db.assertMigrationsReady();
+  } finally { live.close(); }
+});
+
 describe.each(["reserve", "finish"] as const)("company progress %s response", phase => {
   it.each(roots)("refuses an advanced $name sequence with its previous root", async ({ corrupt }) => {
     const live = await companyApproverV2Database();

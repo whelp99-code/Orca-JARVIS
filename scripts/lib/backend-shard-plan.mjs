@@ -66,7 +66,7 @@ export async function settleParallelShards({ runs, runShard, createEnvironment, 
         scratch = createEnvironment();
         cleanups.push(scratch.cleanup);
         const outcome = await runShard(argv, scratch, shardSignal, index);
-        if (outcome.code !== 0) shardAbort.abort();
+        if (outcome.interrupted || outcome.signal != null) shardAbort.abort();
         return outcome;
       } catch (error) {
         shardAbort.abort();

@@ -31,10 +31,11 @@ export async function executeCompanyCandidates(context: CliCommandContext): Prom
       throw new JarvisError("COMPANY_CALLER_CONFIG_INVALID");
     }
     const cutoff = new Date(kstCutoff(date));
+    const now = commandNow(context);
     if (new Date(cutoff.getTime() + 9 * 60 * 60_000).toISOString().slice(0, 10) !== date
-      || cutoff.getTime() > commandNow(context).getTime()) throw new JarvisError("COMPANY_CALLER_CONFIG_INVALID");
+      || cutoff.getTime() > now.getTime()) throw new JarvisError("COMPANY_CALLER_CONFIG_INVALID");
     return { ok: true, command: "company-candidates.daily-report",
-      report: configuredCompanyDailyReport(db, config).publishDue(cutoff) };
+      report: configuredCompanyDailyReport(db, config).publishDue(cutoff, now) };
   }
   if (subcommand === "import" && argument === undefined) {
     rejectUnlisted(values, IMPORT_OPTIONS);
