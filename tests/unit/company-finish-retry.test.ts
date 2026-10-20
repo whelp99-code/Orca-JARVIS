@@ -564,4 +564,74 @@ describe("committed company finish retry", () => {
       } finally { opened.close(); }
     },
   );
+
+  async function nextCandidate(live: Awaited<ReturnType<typeof session>>) {
+    const control = new ControlPlane(live.db, live.provider);
+    const next = structuredClone(live.command);
+    next.target.candidate_id += ":after-cancel";
+    const key = companyHandoffKeyV2(next);
+    next.request_id = `${key}:1`; next.nonce = next.request_id;
+    const nextDigest = controlCommandDigest(next);
+    importCompanyPage(live.db, { handoffs: [{ idempotency_key: key, command: next, command_digest: nextDigest }],
+      count: 1, limit: 100, offset: 0 }, live.client.context, NOW);
+    const { signature: _signature, ...payload } = live.approval;
+    void _signature;
+    const nextApproval = signCommandApproval({ ...payload, decision: "approve", receipt_id: "receipt:after-cancel",
+      request_id: next.request_id, command_digest: nextDigest, nonce: "nonce:after-cancel" }, companyApproverKey());
+    control.decide(nextApproval, NOW);
+    expect((await new CompanyCandidateExecutor(live.db, live.client, live.verifier, () => NOW, live.provider)
+      .execute(next.request_id)).state).toBe("completed");
+    expect(control.get(next.request_id)?.state).toBe("completed");
+  }
+
+  it("releases the workspace when cancel lands during processed completion", async () => {
+    const live = await session();
+    try {
+      const control = new ControlPlane(live.db, live.provider);
+      control.decide(live.approval, NOW);
+      const racing: CompanyFreshnessProvider = {
+        readFreshness: request => live.provider.readFreshness(request),
+        reserveProgress: request => live.provider.reserveProgress(request),
+        finishProgress: request => {
+          if (request.terminal_state === "processed_complete") {
+            control.cancel({ request_id: live.command.request_id, reason: "cancel during processed completion",
+              actor: "test-operator", revoked_at: NOW.toISOString() }, NOW);
+          }
+          return live.provider.finishProgress(request);
+        },
+      };
+      await expect(new CompanyCandidateExecutor(live.db, live.client, live.verifier, () => NOW, racing)
+        .execute(live.command.request_id)).rejects.toMatchObject({ code: "COMPANY_APPROVAL_REVOKED" });
+      expect(control.get(live.command.request_id)?.state).toBe("cancelled");
+      expect(live.db.db.prepare(
+        "SELECT evidence_digest FROM company_progress_reservations WHERE operation='mark_processed'",
+      ).get()).toEqual({ evidence_digest: expect.stringMatching(/^sha256:/) });
+      expect(live.db.db.prepare("SELECT status FROM company_candidate_handoffs WHERE request_id=?").get(live.command.request_id))
+        .toEqual({ status: "uncertain" });
+      await expect(live.execute()).rejects.toMatchObject({ code: "COMPANY_APPROVAL_REVOKED" });
+      expect(live.db.db.prepare("SELECT count(*) AS n FROM company_progress_reservations WHERE evidence_digest IS NULL").get())
+        .toEqual({ n: 0 });
+      await nextCandidate(live);
+    } finally { live.close(); }
+  });
+
+  it("releases a rolled-back processed reservation when cancel happens before the retry", async () => {
+    const live = await session("mark_processed", "after");
+    try {
+      const control = new ControlPlane(live.db, live.provider);
+      control.decide(live.approval, NOW);
+      await expect(live.execute()).rejects.toThrow("COMPANY_PROGRESS_UNCERTAIN");
+      expect(live.db.db.prepare("SELECT evidence_digest FROM company_progress_reservations WHERE operation='mark_processed'").get())
+        .toEqual({ evidence_digest: null });
+      control.cancel({ request_id: live.command.request_id, reason: "cancel before processed publication retry",
+        actor: "test-operator", revoked_at: NOW.toISOString() }, NOW);
+      await expect(live.execute()).rejects.toMatchObject({ code: "COMPANY_APPROVAL_REVOKED" });
+      expect(control.get(live.command.request_id)?.state).toBe("cancelled");
+      expect(live.db.db.prepare("SELECT evidence_digest FROM company_progress_reservations WHERE operation='mark_processed'").get())
+        .toEqual({ evidence_digest: expect.stringMatching(/^sha256:/) });
+      expect(live.db.db.prepare("SELECT count(*) AS n FROM company_progress_reservations WHERE evidence_digest IS NULL").get())
+        .toEqual({ n: 0 });
+      await nextCandidate(live);
+    } finally { live.close(); }
+  });
 });

@@ -255,7 +255,9 @@ export class CompanyCandidateExecutor {
     const progress = new CompanyProgress(this.db, this.freshness);
     const pending = progress.pending(command, operation);
     const acknowledged = this.readReceipt(requestId, operation, 2);
-    assertCompanyApprovalPin(this.db, command, approval);
+    // Cancel keeps the command approved until this publication, then revocation blocks
+    // every later attempt. Close an already reserved finish before that check.
+    if (stored.state !== "cancelled") assertCompanyApprovalPin(this.db, command, approval);
     const pendingDecision = progress.pending(command, approval.decision === "approve" ? "decide_approve" : "decide_reject");
     if (pendingDecision) {
       progress.finish(pendingDecision, controlValueDigest(approval), approval.decision === "approve" ? "approved" : "rejected", this.clock());
@@ -278,8 +280,10 @@ export class CompanyCandidateExecutor {
     if (pendingProcessed) {
       if (!processed || !completion) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
       this.finishV2(progress, pendingProcessed, processed.receipt_digest, "processed_complete");
+      if (stored.state === "cancelled") throw new JarvisError("COMPANY_APPROVAL_REVOKED");
       return this.result(requestId, "completed", 2);
     }
+    if (stored.state === "cancelled") throw new JarvisError("COMPANY_APPROVAL_REVOKED");
     if (!pending && !acknowledged) {
       parseCompanyCommandV2(input, this.clock());
       assertCurrentCompanyPin(this.db, command, approval, this.clock());
@@ -397,6 +401,7 @@ export class CompanyCandidateExecutor {
     const started = this.clock();
     const observed = token ?? this.publicationLease(reservation.request_id, undefined, started)?.lease_token;
     if (token !== undefined) this.ownedHandoff(reservation.request_id, token, started);
+    let releasedCancellation = false;
     progress.finish(reservation, evidenceDigest, terminalState, started, () => {
       const now = this.clock();
       const owner = this.publicationLease(reservation.request_id, token, now);
@@ -418,6 +423,15 @@ export class CompanyCandidateExecutor {
       }
       if (terminalState === "completed") return;
       if (terminalState === "processed_complete") {
+        const controlState = this.db.db.prepare(
+          "SELECT state FROM control_command_requests WHERE request_id=?",
+        ).get(reservation.request_id) as { state: string } | undefined;
+        // Provider progress is already durable. Commit that evidence so the scope gate
+        // can open, but do not rewrite a cancellation that won this publication.
+        if (controlState?.state === "cancelled") {
+          releasedCancellation = true;
+          return;
+        }
         const current = this.db.db.prepare(
           "SELECT status FROM company_candidate_handoffs WHERE request_id=? AND current=1",
         ).get(reservation.request_id) as { status: string } | undefined;
@@ -431,6 +445,7 @@ export class CompanyCandidateExecutor {
         if (control.changes !== 1 || handoff.changes !== 1) throw new JarvisError("CONTROL_STATE_CONFLICT");
       }
     });
+    if (releasedCancellation) throw new JarvisError("COMPANY_APPROVAL_REVOKED");
   }
 
   private v2Verifier(): CompanyCompletionVerifierV2 | undefined {
