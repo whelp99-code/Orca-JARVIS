@@ -395,12 +395,14 @@ export class CompanyCandidateExecutor {
 
   private finishV2(progress: CompanyProgress, reservation: CompanyProgressReservation, evidenceDigest: string, terminalState: "accepted" | "rejected" | "completed" | "processed_complete", token?: string): void {
     const started = this.clock();
+    const observed = token ?? this.publicationLease(reservation.request_id, undefined, started)?.lease_token;
     if (token !== undefined) this.ownedHandoff(reservation.request_id, token, started);
     progress.finish(reservation, evidenceDigest, terminalState, started, () => {
       const now = this.clock();
-      if (token !== undefined) this.ownedHandoff(reservation.request_id, token, now);
-      const owned = token === undefined ? "" : " AND lease_token=? AND lease_expires_at>?";
-      const ownedArgs = token === undefined ? [] : [token, now.toISOString()];
+      const owner = this.publicationLease(reservation.request_id, token, now);
+      if (observed !== undefined && owner?.lease_token !== observed) throw new JarvisError("COMPANY_EXECUTION_BUSY");
+      const owned = owner ? " AND lease_token=? AND lease_expires_at>?" : "";
+      const ownedArgs = owner ? [owner.lease_token, now.toISOString()] : [];
       if (terminalState === "accepted" || terminalState === "rejected") {
         const current = this.db.db.prepare(
           "SELECT status FROM company_candidate_handoffs WHERE request_id=? AND current=1",
@@ -516,6 +518,18 @@ export class CompanyCandidateExecutor {
       throw new JarvisError("COMPANY_EXECUTION_BUSY");
     }
     return row;
+  }
+
+  private publicationLease(requestId: string, token: string | undefined, now: Date): { lease_token: string } | undefined {
+    if (token !== undefined) {
+      this.ownedHandoff(requestId, token, now);
+      return { lease_token: token };
+    }
+    const row = this.db.db.prepare(
+      "SELECT lease_token,lease_expires_at FROM company_candidate_handoffs WHERE request_id=? AND current=1",
+    ).get(requestId) as { lease_token: string | null; lease_expires_at: string | null } | undefined;
+    if (!row?.lease_token || !row.lease_expires_at || Date.parse(row.lease_expires_at) <= now.getTime()) return undefined;
+    return { lease_token: row.lease_token };
   }
 
   private update(requestId: string, token: string, status: string): void {
