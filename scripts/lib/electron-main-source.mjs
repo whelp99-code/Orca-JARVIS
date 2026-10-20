@@ -55,7 +55,7 @@ function makeTransport(protocol, metrics) {
       csrf = protocol.parseSessionResponse(await json(session)).csrf_token;
     }
     return net.fetch(config.authority_url + path, { method: "POST", headers: { "Content-Type": "application/json",
-      "X-JARVIS-CSRF": csrf, Origin: config.authority_url }, body: JSON.stringify(body) });
+      "X-JARVIS-CSRF": csrf, "X-JARVIS-Notification-Types": "company-daily-report", Origin: config.authority_url }, body: JSON.stringify(body) });
   };
   return {
     claim: async () => {

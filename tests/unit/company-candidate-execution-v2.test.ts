@@ -10,6 +10,7 @@ import { CompanyCandidateExecutor } from "../../src/company-candidate-execution.
 import { createCompanyCompletionVerifierV2, type CompanyCompletionV2, type CompanyCompletionVerifierV2 } from "../../src/company-completion-v2.js";
 import { createCompanyClient, type CompanyClient } from "../../src/company-candidate-transport.js";
 import { transitionReadResponseSchema } from "../../src/company-transition-read.js";
+import { readCompanyProgressEvidence, stageCompanyProgressEvidence } from "../../src/company-progress-evidence.js";
 import { JarvisError } from "../../src/jarvis-error.js";
 import { AuthorityDb } from "../../src/db.js";
 import {
@@ -199,6 +200,8 @@ process.stdin.on("end", () => {
       schema_version: 2, executable, args: [],
     }), { mode: 0o600 });
     try {
+      const beforeEffect = join(session.live.root, "before-effect.sqlite");
+      await session.live.db.db.backup(beforeEffect);
       const verifier = createCompanyCompletionVerifierV2(join(session.live.root, "completion.json"));
       const executor = new CompanyCandidateExecutor(session.live.db, session.client, verifier, () => ACTIVE, session.live.provider);
       const result = await executor.execute(session.live.command.request_id);
@@ -207,6 +210,23 @@ process.stdin.on("end", () => {
       expect(readFileSync(effect, "utf8")).toBe("verified-v2-effect");
       expect(session.peer.counts()).toEqual({ accept: 1, reject: 0, mark_processed: 1, read: 0 });
       expect(createHash("sha256").update(readFileSync(effect)).digest("hex")).toHaveLength(64);
+      const operationId = String(session.live.db.db.prepare(
+        "SELECT operation_id FROM company_progress_evidence_outbox WHERE evidence_kind='jarvis_completion'",
+      ).pluck().get());
+      const evidence = readCompanyProgressEvidence(session.live.db, operationId);
+      expect(evidence).toMatchObject({
+        kind: "jarvis_completion", completion: {
+          request_id: session.live.command.request_id,
+          effect_digest: `sha256:${createHash("sha256").update(readFileSync(effect)).digest("hex")}`,
+        },
+      });
+      expect(() => session.live.db.db.prepare("UPDATE company_candidate_handoffs SET completion_json=NULL").run())
+        .toThrow("immutable company completion evidence");
+      const restored = new AuthorityDb(beforeEffect);
+      try {
+        stageCompanyProgressEvidence(restored, evidence);
+        expect(() => readCompanyProgressEvidence(restored, operationId)).toThrow("COMPANY_PROGRESS_UNCERTAIN");
+      } finally { restored.close(); }
     } finally { await session.peer.close(); session.live.close(); }
   });
 

@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { encodeRecommendationDeepLink, parseJarvisDeepLink } from "../../scripts/lib/electron-deep-link.mjs";
+import { encodeRecommendationDeepLink, parseJarvisDeepLink, resolveJarvisRoute } from "../../scripts/lib/electron-deep-link.mjs";
 
 describe("Electron private deep links", () => {
+  it("opens the exact company report without a recommendation lookup", async () => {
+    const id = `company-report:v1:${"a".repeat(64)}`;
+    const link = `jarvis://open/company-report?id=${Buffer.from(id).toString("base64url")}`;
+    expect(await resolveJarvisRoute(link, "http://127.0.0.1:1", async () => {
+      throw new Error("unexpected recommendation lookup");
+    })).toBe(`/approvals/company-reports/${encodeURIComponent(id)}`);
+  });
   it("round trips Today and recommendation links", () => {
     // Given
     const recommendation = "rec:pos:v1:decision-1";

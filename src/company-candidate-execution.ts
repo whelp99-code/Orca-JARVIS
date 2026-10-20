@@ -13,7 +13,8 @@ import { decodeCompanyCommandV2, parseCompanyCommandV2, type CompanyCommandV2 } 
 import { assertCompanyContext, assertCompanyKeySeparation, companyEnrollmentContext } from "./company-candidate-import.js";
 import { companyCompletionV2Schema, type CompanyCompletionV2, type CompanyCompletionVerifierV2 } from "./company-completion-v2.js";
 import { CompanyProgress, type CompanyProgressReservation } from "./company-progress.js";
-import { loadCompanyFreshness, type CompanyFreshnessProvider } from "./company-freshness.js";
+import { companyOperationId, loadCompanyFreshness, type CompanyFreshnessProvider } from "./company-freshness.js";
+import { CompanyPeerCalls } from "./company-peer-calls.js";
 import {
   companyMemoryRequestDigest, transitionRequestDigest, transitionReadResponseSchema, type TransitionReadArguments,
 } from "./company-transition-read.js";
@@ -22,6 +23,7 @@ import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
 import { readCandidateCredential } from "./integration/candidate-reader-credential.js";
 import { parseCompanyJson } from "./company-candidate-json.js";
+import { stageCompanyProgressEvidence } from "./company-progress-evidence.js";
 
 const digest = z.string().regex(/^sha256:[a-f0-9]{64}$/);
 const sbReceiptSchema = z.object({
@@ -127,7 +129,7 @@ export class CompanyCandidateExecutor {
     if (stored.schema_version === 2) return this.executeV2(stored);
     const verifier = this.completion;
     if (verifier?.version === 2) throw new JarvisError("COMPANY_COMPLETION_CONFIG_INVALID");
-    assertCompanyKeySeparation(this.db, this.client);
+    assertCompanyKeySeparation(this.db, this.client, this.freshness);
     const command = parseCompanyCommand({
       schema_version: stored.schema_version, request_id: stored.request_id, action: stored.action,
       action_level: stored.action_level, target: stored.target, args: stored.args,
@@ -231,7 +233,7 @@ export class CompanyCandidateExecutor {
   private async executeV2(stored: StoredControlCommand) {
     const requestId = stored.request_id;
     const verifier = this.v2Verifier();
-    assertCompanyKeySeparation(this.db, this.client);
+    assertCompanyKeySeparation(this.db, this.client, this.freshness);
     const input = {
       schema_version: stored.schema_version, request_id: stored.request_id, action: stored.action,
       action_level: stored.action_level, target: stored.target, args: stored.args,
@@ -239,6 +241,7 @@ export class CompanyCandidateExecutor {
       requested_at: stored.requested_at, expires_at: stored.expires_at, nonce: stored.nonce,
     };
     const command = decodeCompanyCommandV2(input);
+    const scope = { provider_instance_id: command.target.provider_instance_id, workspace_id: command.target.workspace_id };
     assertCompanyContext(command, this.client.context);
     const row = this.db.db.prepare("SELECT * FROM company_candidate_handoffs WHERE request_id=?")
       .get(requestId) as HandoffRow | undefined;
@@ -253,8 +256,18 @@ export class CompanyCandidateExecutor {
     const approval: CommandApprovalReceipt = JSON.parse(receiptRow.payload_json);
     const operation = approval.decision === "approve" ? "accept" : "reject";
     const progress = new CompanyProgress(this.db, this.freshness);
-    const pending = progress.pending(command, operation);
+    const shared = this.freshness.kind === "sb_company_db";
+    const pending = shared ? undefined : progress.pending(command, operation);
+    const peer = shared ? new CompanyPeerCalls(this.db).read(companyOperationId({
+      scope,
+      request_id: command.request_id, command_digest: stored.command_digest, operation,
+    })) : undefined;
     const acknowledged = this.readReceipt(requestId, operation, 2);
+    const pendingProcessed = shared ? undefined : progress.pending(command, "mark_processed");
+    const recovering = pending !== undefined || (peer !== undefined && peer.state !== "prepared");
+    // A reserved processed_complete is already-issued provider evidence. Close it,
+    // then reject. Every other cancellation refuses before a new provider call.
+    if (stored.state === "cancelled" && !pendingProcessed) throw new JarvisError("COMPANY_APPROVAL_REVOKED");
     // Cancel keeps the command approved until this publication, then revocation blocks
     // every later attempt. Close an already reserved finish before that check.
     if (stored.state !== "cancelled") assertCompanyApprovalPin(this.db, command, approval);
@@ -276,25 +289,30 @@ export class CompanyCandidateExecutor {
       this.finishV2(progress, pendingComplete, completion.effect_digest, "completed");
     }
     const processed = this.readReceipt(requestId, "mark_processed", 2);
-    const pendingProcessed = progress.pending(command, "mark_processed");
     if (pendingProcessed) {
       if (!processed || !completion) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
-      this.finishV2(progress, pendingProcessed, processed.receipt_digest, "processed_complete");
-      if (stored.state === "cancelled") throw new JarvisError("COMPANY_APPROVAL_REVOKED");
+      let cancelled = stored.state === "cancelled";
+      try {
+        this.finishV2(progress, pendingProcessed, processed.receipt_digest, "processed_complete");
+      } catch (error) {
+        if (!(error instanceof JarvisError) || error.code !== "COMPANY_APPROVAL_REVOKED") throw error;
+        cancelled = true;
+      }
+      if (cancelled) throw new JarvisError("COMPANY_APPROVAL_REVOKED");
       return this.result(requestId, "completed", 2);
     }
-    if (stored.state === "cancelled") throw new JarvisError("COMPANY_APPROVAL_REVOKED");
-    if (!pending && !acknowledged) {
+    if (!recovering && !acknowledged) {
       parseCompanyCommandV2(input, this.clock());
       assertCurrentCompanyPin(this.db, command, approval, this.clock());
     }
-    if (!pending && !acknowledged && !["approved", "rejected"].includes(stored.state)) {
+    if (!recovering && !acknowledged && !["approved", "rejected"].includes(stored.state)) {
       throw new JarvisError("CONTROL_APPROVAL_INVALID");
     }
     if ((row.status === "completed" || row.status === "rejected") && !pending) {
       if (this.db.db.prepare("SELECT 1 FROM company_progress_reservations WHERE request_id=? AND evidence_digest IS NULL").get(requestId)) {
         throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
       }
+      if (shared) progress.synchronize(scope, this.clock());
       return this.result(requestId, row.status, 2);
     }
     const token = randomUUID();
@@ -313,10 +331,14 @@ export class CompanyCandidateExecutor {
     }).immediate();
     try {
       let receipt = acknowledged;
-      const mutation = pending ?? (receipt ? undefined : this.reserveV2(progress, command, operation, transitionRequestDigest(operation, {
+      const mutation = shared ? undefined : pending ?? (receipt ? undefined : this.reserveV2(progress, command, operation, transitionRequestDigest(operation, {
         candidate_id: command.target.candidate_id, handoff_id: requestId, approval,
       }), this.clock()));
-      if (!receipt && mutation) {
+      if (!receipt && shared) {
+        this.update(requestId, token, "invoking");
+        receipt = await this.peerTransition(command, approval, operation);
+        this.persistReceipt(requestId, token, receipt);
+      } else if (!receipt && mutation) {
         if (pending) receipt = await this.recoverTransition(command, approval, operation, stored.command_digest);
         else {
           this.update(requestId, token, "invoking");
@@ -330,14 +352,26 @@ export class CompanyCandidateExecutor {
         this.finishV2(progress, mutation, receipt.receipt_digest, operation === "accept" ? "accepted" : "rejected", token);
       }
       if (!receipt) throw new JarvisError("COMPANY_EXECUTION_UNCERTAIN");
-      if (operation === "reject") return this.result(requestId, "rejected", 2);
+      if (operation === "reject") {
+        if (shared) {
+          progress.synchronize(scope, this.clock());
+          this.update(requestId, token, "rejected");
+        }
+        return this.result(requestId, "rejected", 2);
+      }
       if (!completion) {
-        if (!verifier) return this.result(requestId, receipt.state, 2);
+        if (!verifier) {
+          if (shared) progress.synchronize(scope, this.clock());
+          return this.result(requestId, receipt.state, 2);
+        }
         try {
           parseCompanyCommandV2(input, this.clock());
           assertCurrentCompanyPin(this.db, command, approval, this.clock());
         } catch (error) {
-          if (pending && !acknowledged && error instanceof JarvisError) return this.result(requestId, receipt.state, 2);
+          if (recovering && !acknowledged && error instanceof JarvisError) {
+            if (shared) progress.synchronize(scope, this.clock());
+            return this.result(requestId, receipt.state, 2);
+          }
           throw error;
         }
         const reserved = this.reserveV2(progress, command, "complete", receipt.receipt_digest, this.clock());
@@ -355,34 +389,102 @@ export class CompanyCandidateExecutor {
           || verified.data.effect_digest === command.target.content_digest
           || verified.data.effect_digest === receipt.receipt_digest) throw new JarvisError("COMPANY_VERIFIER_INVALID");
         completion = verified.data;
-        const saved = this.db.db.prepare(
-          "UPDATE company_candidate_handoffs SET completion_json=?,updated_at=? WHERE request_id=? AND lease_token=?",
-        ).run(canonicalize(completion), this.clock().toISOString(), requestId, token);
-        if (saved.changes !== 1) throw new JarvisError("COMPANY_EXECUTION_BUSY");
+        this.db.db.transaction(() => {
+          const committedAt = this.clock().toISOString();
+          const saved = this.db.db.prepare(
+            "UPDATE company_candidate_handoffs SET completion_json=?,updated_at=? WHERE request_id=? AND lease_token=?",
+          ).run(canonicalize(completion), committedAt, requestId, token);
+          if (saved.changes !== 1) throw new JarvisError("COMPANY_EXECUTION_BUSY");
+          stageCompanyProgressEvidence(this.db, {
+            kind: "jarvis_completion", original_at: committedAt, command, approval, completion,
+            acceptance: { receipt_id: receipt.receipt_id, receipt_digest: receipt.receipt_digest,
+              operation: "accept", state: "accepted", handoff_id: requestId },
+          });
+        }).immediate();
         this.finishV2(progress, reserved, completion.effect_digest, "completed", token);
       }
       if (!processed) {
-        parseCompanyCommandV2(input, this.clock());
-        assertCurrentCompanyPin(this.db, command, approval, this.clock());
-        const reserved = this.reserveV2(progress, command, "mark_processed", stored.command_digest, this.clock());
-        this.update(requestId, token, "completing");
-        const marked = this.parseReceipt(await this.client.call("mark_processed", {
-          candidate_id: command.target.candidate_id, handoff_id: requestId,
-        }, this.clock()), requestId, "mark_processed", 2);
-        this.persistReceipt(requestId, token, marked, completion, 2);
-        this.finishV2(progress, reserved, marked.receipt_digest, "processed_complete", token);
+        if (shared) {
+          this.update(requestId, token, "completing");
+          const marked = await this.peerTransition(command, approval, "mark_processed");
+          this.persistReceipt(requestId, token, marked, completion, 2);
+        } else {
+          parseCompanyCommandV2(input, this.clock());
+          assertCurrentCompanyPin(this.db, command, approval, this.clock());
+          const reserved = this.reserveV2(progress, command, "mark_processed", stored.command_digest, this.clock());
+          this.update(requestId, token, "completing");
+          const marked = this.parseReceipt(await this.client.call("mark_processed", {
+            candidate_id: command.target.candidate_id, handoff_id: requestId,
+          }, this.clock()), requestId, "mark_processed", 2);
+          this.persistReceipt(requestId, token, marked, completion, 2);
+          this.finishV2(progress, reserved, marked.receipt_digest, "processed_complete", token);
+        }
+      }
+      if (shared) {
+        progress.synchronize(scope, this.clock());
+        this.db.db.transaction(() => this.publishV2(requestId, "processed_complete", this.clock(), token)).immediate();
       }
       return this.result(requestId, "completed", 2);
     } catch (error) {
       const code = error instanceof JarvisError ? error.code : "COMPANY_EXECUTION_UNCERTAIN";
-      this.db.db.prepare(
-        "UPDATE company_candidate_handoffs SET status='uncertain',failure_code=?,updated_at=? WHERE request_id=? AND lease_token=?",
-      ).run(code, this.clock().toISOString(), requestId, token);
+      const preserveSharedCancellation = shared && error instanceof JarvisError && error.code === "COMPANY_APPROVAL_REVOKED";
+      if (!preserveSharedCancellation) {
+        this.db.db.prepare(
+          "UPDATE company_candidate_handoffs SET status='uncertain',failure_code=?,updated_at=? WHERE request_id=? AND lease_token=?",
+        ).run(code, this.clock().toISOString(), requestId, token);
+      }
       throw error;
     } finally {
       this.db.db.prepare(
         "UPDATE company_candidate_handoffs SET lease_token=NULL,lease_expires_at=NULL WHERE request_id=? AND lease_token=?",
       ).run(requestId, token);
+    }
+  }
+
+  /** Only SB owns its phase reservation. An uncertain send is recovered with a fresh readonly lookup. */
+  private async peerTransition(command: CompanyCommandV2, approval: CommandApprovalReceipt, operation: "accept" | "reject" | "mark_processed"): Promise<CompanySbReceipt> {
+    if (this.db.db.inTransaction) throw new JarvisError("COMPANY_EXECUTION_UNCERTAIN");
+    const calls = new CompanyPeerCalls(this.db);
+    const scope = { provider_instance_id: command.target.provider_instance_id, workspace_id: command.target.workspace_id };
+    const original = operation === "mark_processed"
+      ? { candidate_id: command.target.candidate_id, handoff_id: command.request_id }
+      : { candidate_id: command.target.candidate_id, handoff_id: command.request_id, approval };
+    const operationId = companyOperationId({ scope, request_id: command.request_id, command_digest: approval.command_digest, operation });
+    const intent = { operation_id: operationId, ...scope, request_id: command.request_id, operation,
+      transition_request_digest: transitionRequestDigest(operation, original), arguments: original };
+    let call = calls.read(operationId);
+    if (call) call = calls.prepare(intent, this.clock());
+    let invoke = false;
+    if (!call || call.state === "prepared") {
+      parseCompanyCommandV2(command, this.clock());
+      assertCurrentCompanyPin(this.db, command, approval, this.clock());
+      new CompanyProgress(this.db, this.freshness).synchronize(scope, this.clock());
+      parseCompanyCommandV2(command, this.clock());
+      assertCurrentCompanyPin(this.db, command, approval, this.clock());
+      call = calls.prepare(intent, this.clock());
+      if (call.state === "prepared") {
+        calls.invoking(operationId, this.clock());
+        invoke = true;
+      }
+    }
+    try {
+      const receipt = invoke
+        ? this.parseReceipt(await this.client.call(operation, original, this.clock()), command.request_id, operation, 2)
+        : await this.recoverTransition(command, approval, operation, approval.command_digest);
+      if (call?.state === "found") {
+        const retained = this.parseReceipt(calls.projection(call), command.request_id, operation, 2);
+        if (retained.receipt_id !== receipt.receipt_id || retained.receipt_digest !== receipt.receipt_digest
+          || ("receipt_created_at" in retained && (!("receipt_created_at" in receipt)
+            || retained.receipt_created_at !== receipt.receipt_created_at))
+          || ("decision_at" in retained && (!("decision_at" in receipt) || retained.decision_at !== receipt.decision_at))
+          || ("accepted_at" in retained && (!("accepted_at" in receipt) || retained.accepted_at !== receipt.accepted_at))) {
+          throw new JarvisError("COMPANY_SB_RECEIPT_INVALID");
+        }
+      } else calls.found(operationId, receipt, this.clock());
+      return receipt;
+    } catch (error) {
+      if (invoke) calls.uncertain(operationId, this.clock());
+      throw error;
     }
   }
 
@@ -402,52 +504,57 @@ export class CompanyCandidateExecutor {
     const observed = token === undefined ? undefined : this.publicationLease(reservation.request_id, token, started)?.lease_token;
     let releasedCancellation = false;
     progress.finish(reservation, evidenceDigest, terminalState, started, () => {
-      const now = this.clock();
-      const owner = this.publicationLease(reservation.request_id, token, now);
-      // A lease snapshot is not ownership. Tokenless recovery may close only a terminal,
-      // expired, or unleased handoff; a live foreign lease stays untouched.
-      if (token === undefined && owner && !this.terminalHandoff(reservation.request_id)) throw new JarvisError("COMPANY_EXECUTION_BUSY");
-      if (token !== undefined && owner?.lease_token !== observed) throw new JarvisError("COMPANY_EXECUTION_BUSY");
-      const owned = token !== undefined && owner ? " AND lease_token=? AND lease_expires_at>?" : "";
-      const ownedArgs = token !== undefined && owner ? [owner.lease_token, now.toISOString()] : [];
-      if (terminalState === "accepted" || terminalState === "rejected") {
-        const current = this.db.db.prepare(
-          "SELECT status FROM company_candidate_handoffs WHERE request_id=? AND current=1",
-        ).get(reservation.request_id) as { status: string } | undefined;
-        if (current?.status === "completed" || current?.status === "rejected" || current?.status === "superseded") {
-          if (current.status !== terminalState) throw new JarvisError("CONTROL_STATE_CONFLICT");
-          return;
-        }
-        const handoff = this.db.db.prepare(
-          `UPDATE company_candidate_handoffs SET status=?,failure_code=NULL,updated_at=? WHERE request_id=? AND current=1${owned}`,
-        ).run(terminalState, now.toISOString(), reservation.request_id, ...ownedArgs);
-        if (handoff.changes !== 1) throw new JarvisError("CONTROL_STATE_CONFLICT");
-      }
-      if (terminalState === "completed") return;
-      if (terminalState === "processed_complete") {
-        const controlState = this.db.db.prepare(
-          "SELECT state FROM control_command_requests WHERE request_id=?",
-        ).get(reservation.request_id) as { state: string } | undefined;
-        // Provider progress is already durable. Commit that evidence so the scope gate
-        // can open, but do not rewrite a cancellation that won this publication.
-        if (controlState?.state === "cancelled") {
-          releasedCancellation = true;
-          return;
-        }
-        const current = this.db.db.prepare(
-          "SELECT status FROM company_candidate_handoffs WHERE request_id=? AND current=1",
-        ).get(reservation.request_id) as { status: string } | undefined;
-        if (current?.status === "completed") return;
-        const control = this.db.db.prepare(
-          "UPDATE control_command_requests SET state='completed',completed_at=COALESCE(completed_at,?) WHERE request_id=? AND state IN ('approved','completed')",
-        ).run(now.toISOString(), reservation.request_id);
-        const handoff = this.db.db.prepare(
-          `UPDATE company_candidate_handoffs SET status='completed',failure_code=NULL,updated_at=? WHERE request_id=? AND current=1${owned}`,
-        ).run(now.toISOString(), reservation.request_id, ...ownedArgs);
-        if (control.changes !== 1 || handoff.changes !== 1) throw new JarvisError("CONTROL_STATE_CONFLICT");
+      try {
+        this.publishV2(reservation.request_id, terminalState, this.clock(), token, observed);
+      } catch (error) {
+        if (!(error instanceof JarvisError) || error.code !== "COMPANY_APPROVAL_REVOKED") throw error;
+        releasedCancellation = true;
       }
     });
     if (releasedCancellation) throw new JarvisError("COMPANY_APPROVAL_REVOKED");
+  }
+
+  private publishV2(requestId: string, terminalState: "accepted" | "rejected" | "completed" | "processed_complete", now: Date, token?: string, observed?: string): void {
+    const owner = this.publicationLease(requestId, token, now);
+    // A lease snapshot is not ownership. Tokenless recovery may close only a terminal,
+    // expired, or unleased handoff; a live foreign lease stays untouched.
+    if (token === undefined && owner && !this.terminalHandoff(requestId)) throw new JarvisError("COMPANY_EXECUTION_BUSY");
+    if (token !== undefined && owner?.lease_token !== (observed ?? token)) throw new JarvisError("COMPANY_EXECUTION_BUSY");
+    const owned = token !== undefined && owner ? " AND lease_token=? AND lease_expires_at>?" : "";
+    const ownedArgs = token !== undefined && owner ? [owner.lease_token, now.toISOString()] : [];
+    if (terminalState === "accepted" || terminalState === "rejected") {
+      const current = this.db.db.prepare(
+        "SELECT status FROM company_candidate_handoffs WHERE request_id=? AND current=1",
+      ).get(requestId) as { status: string } | undefined;
+      if (current?.status === "completed" || current?.status === "rejected" || current?.status === "superseded") {
+        if (current.status !== terminalState) throw new JarvisError("CONTROL_STATE_CONFLICT");
+        return;
+      }
+      const handoff = this.db.db.prepare(
+        `UPDATE company_candidate_handoffs SET status=?,failure_code=NULL,updated_at=? WHERE request_id=? AND current=1${owned}`,
+      ).run(terminalState, now.toISOString(), requestId, ...ownedArgs);
+      if (handoff.changes !== 1) throw new JarvisError("CONTROL_STATE_CONFLICT");
+    }
+    if (terminalState === "completed") return;
+    if (terminalState === "processed_complete") {
+      const controlState = this.db.db.prepare(
+        "SELECT state FROM control_command_requests WHERE request_id=?",
+      ).get(requestId) as { state: string } | undefined;
+      // Provider progress is already durable. Commit that evidence so the scope gate
+      // can open, but do not rewrite a cancellation that won this publication.
+      if (controlState?.state === "cancelled") throw new JarvisError("COMPANY_APPROVAL_REVOKED");
+      const current = this.db.db.prepare(
+        "SELECT status FROM company_candidate_handoffs WHERE request_id=? AND current=1",
+      ).get(requestId) as { status: string } | undefined;
+      if (current?.status === "completed") return;
+      const control = this.db.db.prepare(
+        "UPDATE control_command_requests SET state='completed',completed_at=COALESCE(completed_at,?) WHERE request_id=? AND state IN ('approved','completed')",
+      ).run(now.toISOString(), requestId);
+      const handoff = this.db.db.prepare(
+        `UPDATE company_candidate_handoffs SET status='completed',failure_code=NULL,updated_at=? WHERE request_id=? AND current=1${owned}`,
+      ).run(now.toISOString(), requestId, ...ownedArgs);
+      if (control.changes !== 1 || handoff.changes !== 1) throw new JarvisError("CONTROL_STATE_CONFLICT");
+    }
   }
 
   private v2Verifier(): CompanyCompletionVerifierV2 | undefined {
@@ -457,8 +564,10 @@ export class CompanyCandidateExecutor {
     return completion;
   }
 
-  private async recoverTransition(command: CompanyCommandV2, approval: CommandApprovalReceipt, operation: "accept" | "reject", commandDigest: string): Promise<CompanySbReceipt> {
-    const original = { candidate_id: command.target.candidate_id, handoff_id: command.request_id, approval };
+  private async recoverTransition(command: CompanyCommandV2, approval: CommandApprovalReceipt, operation: "accept" | "reject" | "mark_processed", commandDigest: string): Promise<CompanySbReceipt> {
+    const original = operation === "mark_processed"
+      ? { candidate_id: command.target.candidate_id, handoff_id: command.request_id }
+      : { candidate_id: command.target.candidate_id, handoff_id: command.request_id, approval };
     const query: TransitionReadArguments = {
       candidate_id: command.target.candidate_id, handoff_id: command.request_id, operation,
       transition_request_digest: transitionRequestDigest(operation, original),
@@ -480,7 +589,9 @@ export class CompanyCandidateExecutor {
     if (response.outcome === "evidence_absent") throw new JarvisError("COMPANY_RECEIPT_EVIDENCE_ABSENT");
     if (response.outcome !== "found" || !response.receipt) throw new JarvisError("COMPANY_EXECUTION_UNCERTAIN");
     const receipt = response.receipt;
-    const originalTime = Date.parse(operation === "accept" ? receipt.accepted_at ?? "" : receipt.decision_at);
+    if (operation === "mark_processed" && receipt.accepted_at === null) throw new JarvisError("COMPANY_SB_RECEIPT_INVALID");
+    const originalTime = Date.parse(operation === "accept" ? receipt.accepted_at ?? ""
+      : operation === "mark_processed" ? receipt.receipt_created_at : receipt.decision_at);
     if (!Number.isFinite(originalTime)
       || originalTime < Math.max(Date.parse(command.requested_at), Date.parse(approval.not_before))
       || originalTime >= Math.min(Date.parse(command.expires_at), Date.parse(approval.expires_at))) {

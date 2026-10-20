@@ -15,6 +15,7 @@ import { importCompanyPage } from "../../src/company-candidate-import.js";
 import { createTestOnlyMemoryProvider } from "../fixtures/company-freshness.js";
 import { COMPANY_OWNER_KEY, companyProposal } from "../fixtures/company-candidate.js";
 import { migratedTestDatabase } from "../fixtures/migrated-database.js";
+import { TestOnlyCompanyDbProtocol } from "../fixtures/company-db-protocol.js";
 
 const fixture = z.object({
   binding: companyApprovalBindingSchema,
@@ -200,6 +201,61 @@ describe("fixed company approver C1 authority", () => {
       loadCompanyFreshness({ schema_version: 2, kind: "unconfigured" }), now)).toThrow("COMPANY_FRESHNESS_REQUIRED");
     expect(db.db.prepare("SELECT * FROM company_approval_bindings").all()).toEqual([]);
     expect(db.db.prepare("SELECT * FROM company_freshness_checkpoints").all()).toEqual([]);
+  });
+
+  it.each([false, true])("registers only after external I/O and current-key recheck (revoked=%s)", async revoke => {
+    const { db, provider } = await setup(false);
+    const other = new AuthorityDb(db.filename);
+    let writers = 0;
+    const external: CompanyFreshnessProvider = {
+      reserveProgress: request => provider.reserveProgress(request), finishProgress: request => provider.finishProgress(request),
+      readFreshness(request) {
+        expect(db.db.inTransaction).toBe(false);
+        other.db.transaction(() => {
+          writers++;
+          if (revoke) other.db.prepare("INSERT INTO authority_revocations(reference,reason,created_at) VALUES(?,?,?)")
+            .run(fixture.approval_receipt.key_id, "TEST_ONLY concurrent revocation", now.toISOString());
+        }).immediate();
+        return provider.readFreshness(request);
+      },
+    };
+    try {
+      other.db.pragma("busy_timeout=0");
+      const register = () => registerCompanyApprovalBinding(db, fixture.binding,
+        fixture.test_only_memory.factory_input.initial_checkpoint, external, now);
+      if (revoke) expect(register).toThrow("COMPANY_APPROVAL_REVOKED");
+      else expect(register).not.toThrow();
+      expect(writers).toBe(1);
+      expect(db.db.prepare("SELECT count(*) AS n FROM company_approval_bindings").get()).toEqual({ n: revoke ? 0 : 1 });
+      expect(db.db.prepare("SELECT count(*) AS n FROM company_freshness_checkpoints").get()).toEqual({ n: revoke ? 0 : 1 });
+    } finally { other.close(); }
+  });
+
+  it("never invokes a registration provider under a caller-held write transaction", async () => {
+    const { db, provider } = await setup(false);
+    let reads = 0;
+    const external: CompanyFreshnessProvider = {
+      reserveProgress: request => provider.reserveProgress(request), finishProgress: request => provider.finishProgress(request),
+      readFreshness(request) { reads++; return provider.readFreshness(request); },
+    };
+    expect(() => db.db.transaction(() => registerCompanyApprovalBinding(db, fixture.binding,
+      fixture.test_only_memory.factory_input.initial_checkpoint, external, now)).immediate()).toThrow("COMPANY_FRESHNESS_REQUIRED");
+    expect(reads).toBe(0);
+  });
+
+  it("registers an authenticated other-store prefix without replacing the caller's own facts", async () => {
+    const { db } = await setup(false);
+    const initial = fixture.test_only_memory.factory_input.initial_checkpoint;
+    const provider = new TestOnlyCompanyDbProtocol(scope, initial);
+    const latest = provider.checkpoint;
+    latest.intent_sequence += 2; latest.intent_root = `sha256:${"6".repeat(64)}`;
+    latest.stores.second_brain.receipt_sequence++; latest.stores.second_brain.receipt_root = `sha256:${"7".repeat(64)}`;
+    provider.attest(latest);
+    registerCompanyApprovalBinding(db, fixture.binding, initial, provider, now);
+    expect(companyCheckpointSchema.parse(JSON.parse(String(db.db.prepare(
+      "SELECT checkpoint_json FROM company_freshness_checkpoints",
+    ).pluck().get())))).toEqual(latest);
+    expect(provider.reads).toBe(1);
   });
 
   it("T12 refuses registration with preexisting legacy history without modifying it", async () => {

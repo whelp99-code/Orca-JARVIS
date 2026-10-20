@@ -18,6 +18,9 @@ import { pathToFileURL } from "node:url";
 import { parseArgs } from "node:util";
 import { z } from "zod";
 import { parseCompanyJson, parseCompanyJsonBytes } from "./company-candidate-json.js";
+import { companyBrokerAuthoritySchema as authoritySchema } from "./company-broker-authority.js";
+import { parseCompanyFreshnessEnvelope } from "./company-freshness-envelope.js";
+import { companyReportArgumentsSchema } from "./company-internal-envelope.js";
 
 const MAX_BYTES = 1_048_576;
 const TIMEOUT_MS = 10_000;
@@ -30,8 +33,13 @@ const brokerConfigSchema = z.object({
   socket: z.string().min(1).max(107),
   sb_company_bin: z.string().min(1).max(4096),
   sb_config_file: z.string().min(1).max(4096),
+  freshness_config_file: z.string().min(1).max(4096).startsWith("/").optional(),
+  auto_config_file: z.string().min(1).max(4096).startsWith("/").optional(),
+  report_config_file: z.string().min(1).max(4096).startsWith("/").optional(),
   caller_group_id: z.int().min(0).max(2_147_483_647).optional(),
-}).strict();
+}).strict().refine(config => config.role === "processor"
+  ? config.report_config_file === undefined
+  : config.freshness_config_file === undefined && config.auto_config_file === undefined);
 
 type BrokerConfig = Readonly<z.infer<typeof brokerConfigSchema>>;
 type BrokerRole = BrokerConfig["role"];
@@ -115,6 +123,9 @@ function loadBrokerConfig(configPath: string): BrokerConfig {
   }
   assertPinnedExecutable(parsed.data.sb_company_bin);
   readSecureConfig(parsed.data.sb_config_file);
+  if (parsed.data.freshness_config_file !== undefined) readSecureConfig(parsed.data.freshness_config_file);
+  if (parsed.data.auto_config_file !== undefined) readSecureConfig(parsed.data.auto_config_file);
+  if (parsed.data.report_config_file !== undefined) readSecureConfig(parsed.data.report_config_file);
   // Default is private0700/0600. Cross-account transport requires an explicitly
   // pinned caller group and a dedicated0710 directory, never a company.db grant.
   const parent = dirname(parsed.data.socket);
@@ -137,27 +148,6 @@ function loadBrokerConfig(configPath: string): BrokerConfig {
   return parsed.data;
 }
 
-const authoritySchema = z.object({
-  schema_version: z.literal(1),
-  provider_instance_id: z.string().min(1).max(128),
-  workspace_id: z.string().min(1).max(128),
-  principal_id: z.string().min(1).max(128),
-  agent_id: z.string().min(1).max(128),
-  session_id: z.string().min(1).max(128),
-  projects: z.array(z.string().min(1).max(128)).max(128),
-  policy_revision: z.string().min(1).max(256),
-  purpose: z.string().min(1).max(64),
-  operation: z.enum(["handoff", "accept", "reject", "mark_processed", "read_transition_receipt"]),
-  request_digest: z.string().min(1).max(80),
-  deletion_sequence: z.int().min(0).max(Number.MAX_SAFE_INTEGER),
-  deletion_set_root: z.string().min(1).max(80),
-  issued_at: z.string().min(1).max(64),
-  expires_at: z.string().min(1).max(64),
-  nonce: z.string().min(1).max(128),
-  signing_key_id: z.string().min(1).max(128),
-  signature: z.string().min(1).max(256),
-}).strict();
-
 const envelopeSchema = z.object({
   authority: authoritySchema,
   arguments: z.record(z.string(), z.unknown()),
@@ -177,13 +167,17 @@ function childEnv(): NodeJS.ProcessEnv {
 }
 
 function runPinned(
-  config: BrokerConfig, action: "handoff" | "process", stdin: Buffer,
+  config: BrokerConfig, action: "handoff" | "process" | "freshness" | "auto-internal" | "auto-report", stdin: Buffer,
   children: Map<ChildProcess, Promise<void>>,
 ): Promise<string> {
   assertPinnedExecutable(config.sb_company_bin);
-  readSecureConfig(config.sb_config_file);
+  const configFile = action === "freshness" ? config.freshness_config_file
+    : action === "auto-internal" ? config.auto_config_file
+      : action === "auto-report" ? config.report_config_file : config.sb_config_file;
+  if (configFile === undefined) fail("COMPANY_CANDIDATE_BROKER_REFUSED");
+  readSecureConfig(configFile);
   return new Promise((resolve, reject) => {
-    const child = execFile(config.sb_company_bin, [action, "--config", config.sb_config_file], {
+    const child = execFile(config.sb_company_bin, [action, "--config", configFile], {
       shell: false,
       timeout: TIMEOUT_MS,
       // A pinned child can ignore SIGTERM. The 10s bound is a hard kill, not a request.
@@ -376,8 +370,29 @@ export async function startCompanyCandidateBroker(
     } catch {
       return REFUSED;
     }
+    if (typeof parsed === "object" && parsed !== null && "method" in parsed) {
+      if (config.role !== "processor" || config.freshness_config_file === undefined) return REFUSED;
+      try { parseCompanyFreshnessEnvelope(parsed); }
+      catch { return REFUSED; }
+      return runPinned(config, "freshness", raw, children);
+    }
     const envelope = envelopeSchema.safeParse(parsed);
     if (!envelope.success) return REFUSED;
+    const { authority, arguments: args } = envelope.data;
+    if (authority.operation === "auto_process_internal") {
+      if (config.role !== "processor" || config.auto_config_file === undefined
+        || authority.purpose !== "company_internal_auto_trigger"
+        || authority.principal_id !== "principal:jarvis-company-progress"
+        || !z.object({ limit: z.literal(100) }).strict().safeParse(args).success) return REFUSED;
+      return runPinned(config, "auto-internal", raw, children);
+    }
+    if (authority.operation === "read_auto_report") {
+      if (config.role !== "handoff" || config.report_config_file === undefined
+        || authority.purpose !== "company_memory_auto_report"
+        || authority.principal_id !== "principal:jarvis-company-progress"
+        || !companyReportArgumentsSchema.safeParse(args).success) return REFUSED;
+      return runPinned(config, "auto-report", raw, children);
+    }
     const action = pinnedAction(config.role, envelope.data.authority.operation);
     return runPinned(config, action, raw, children);
   }

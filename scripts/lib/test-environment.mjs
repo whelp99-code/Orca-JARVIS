@@ -26,7 +26,7 @@ function ioCode(error) {
   return error && typeof error === "object" && "code" in error && error.code ? String(error.code) : "IO";
 }
 
-export function providerStorageBase(env = process.env) {
+export function providerStorageBase(env = globalThis.process.env) {
   const selector = env.JARVIS_TEST_PROVIDER_STORAGE_ROOT;
   if (selector === undefined) return tmpdir();
   if (typeof selector !== "string" || selector.trim() === "" || !isAbsolute(selector)) {
@@ -40,7 +40,7 @@ export function providerStorageBase(env = process.env) {
   return realpathSync(selector);
 }
 
-export function createTestEnvironment(env = process.env) {
+export function createTestEnvironment(env = globalThis.process.env) {
   const selector = env.JARVIS_TEST_PROVIDER_STORAGE_ROOT;
   const selected = selector !== undefined;
   if (selected && (typeof selector !== "string" || selector.trim() === "" || !isAbsolute(selector))) {
@@ -68,7 +68,7 @@ export function createTestEnvironment(env = process.env) {
       if (reason) throw unsupported(reason, created);
     }
     const probe = join(root, "write-probe");
-    const expected = Buffer.alloc(4096, 0x5a);
+    const expected = globalThis.Buffer.alloc(4096, 0x5a);
     writeFileSync(probe, expected, { mode: 0o600 });
     const fd = openSync(probe, "r+");
     try { fsyncSync(fd); } finally { closeSync(fd); }

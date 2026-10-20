@@ -1,9 +1,11 @@
 # 회사 승인자 공통 계약 v2
 
-상태: **구현 전 계약·fixture만, 운영 승인·실행 활성화 금지**.
+상태: **개발 구현 계약·TEST_ONLY fixture, 운영 승인·실행 활성화 금지**.
 TASK-COMPANY-CONTRACT-FIXTURE-20261015 / attempt=a2468740-3266-4957-89ae-8161d60d12eb.
 근거: [닫힌 설계 #88, 9fa2f0d](https://github.com/whelp99-code/Orca-JARVIS/blob/9fa2f0d9dc647ee1d3a8dad2626e41900e8dc32e/docs/personal-os/company-owner-approver-design.md).
-이 문서는 그 설계를 수정하지 않는다. SB/Python과 JARVIS/TS의 공통 wire를 정한다.
+기존 human wire는 유지한다. 아래 7~8절은 승인된
+TASK-COMPANY-FRESHNESS-PLAN-20261016의 DB 제공자·정책 경로를 추가한다.
+SB/Python과 JARVIS/TS의 공통 wire이며 운영 배포·활성화의 증거가 아니다.
 fixture는 `fixtures/company-approver/company-approver-v2.test-only.json` 한 개다.
 두 진행 오류 응답 예시는 `unconfigured_progress_responses`, 명령 유효구간의 고정 시각
 예시는 `command_validity`에 둔다. 이 시험 metadata는 command나 서명 대상에 추가하지 않는다.
@@ -114,8 +116,9 @@ shell:false/최소env/10초-SIGKILL/1MiB/stdin 실패 kill·lease 해제 유지.
 
 ## 5. 외부 최신성 제공자: 저장소 중립, 준비 전 비활성
 
-이 절은 인터페이스다. 운영 config로 고르는 구현체는 **미설정·항상 거절** 한 개뿐이다.
-config는 `{schema_version:2,kind:"unconfigured"}`만 허용하며, 등록/환경변수로 이를 우회하지 않는다.
+이 절은 저장소 중립 인터페이스다. 기본값은 **미설정·항상 거절**이다.
+`{schema_version:2,kind:"unconfigured"}`와 7절의 명시적 `sb_company_db` 설정만 허용하며,
+등록/환경변수/TEST_ONLY 플래그로 준비 상태를 우회하지 않는다.
 unconfigured의 read_freshness는 요청 scope/challenge를 그대로 돌려주되
 `status:"unavailable",checkpoint:null`이다. reserve_progress/finish_progress는 항상
 `{schema_version:2,outcome:"error",code:"COMPANY_FRESHNESS_REQUIRED"}`를 반환하고 기록/효과0.
@@ -196,8 +199,8 @@ ready는 운영 활성화 승인이 아니다. 대표의 별도 승인·운영�
 
 논리 구현체 `TEST_ONLY_memory`는 시험 코드에서만 생성·불러오기·주입한다.
 factory 입력은 `{scope,initial_checkpoint}`이며 복제한 초기 head와 operation별 map을 가진다.
-제품 export/registry/CLI/env/운영 config로 선택할 수 없다. 운영 config의 허용 kind는
-여전히 unconfigured 하나이며 TEST_ONLY_memory/테스트 플래그로 우회하면 계약 오류다.
+제품 export/registry/CLI/env/운영 config로 선택할 수 없다. `TEST_ONLY_memory` 또는
+테스트 플래그로 `unconfigured`/7절의 보호 경로를 우회하면 계약 오류다.
 휘발성 메모리는 독립 저장·현재성·복구/운영 준비의 증거가 아니다.
 
 - read_freshness: 고정 scope 검증 후 challenge를 echo. 미완료 reservation이 하나라도
@@ -267,5 +270,181 @@ transport 실패/권한 실패/응답 불명을 합쳐 not_found로 처리하지
 7. F7: 실제 verifier child stdin2/EOF/stdout2→검증된 효과/mark_processed; v1·불완전 출력·
    timeout 거절, child 종료/lease 해제. 기존 T1~T18의 나머지 권한·scope 회귀도 유지.
 
-F2~F7은 후속 본체/제공자 구현의 통합 시험 목록이며 이 PR에서 실행한 시험이 아니다.
+F2~F7은 통합 인수 조건이며 최초 계약·fixture PR에서 실행한 시험이 아니다.
+후속 구현의 실행 근거는 해당 PR의 정확한 head·시나리오·검증 장부로 구분한다.
 fixture의 TEST_ONLY private key는 공개 시험 데이터다. 운영 registry/credential에 등록 금지.
+
+## 7. SB 회사 DB 제공자와 JARVIS broker transport
+
+세 freshness 메서드의 schema2, operation ID와 서명 domain은 바꾸지 않는다.
+JARVIS 설정은 다음 strict union의 새 분기다. unknown kind/키는 거절한다.
+
+```json
+{
+  "schema_version": 2,
+  "kind": "sb_company_db",
+  "client_config_file": "/var/lib/jarvis-svc/credentials/second-brain/company-freshness/client.json"
+}
+```
+
+`loadCompanyFreshness(config, authorityDb)`는 검증된 JARVIS DB를 별도 내부 인자로 받는다.
+이 인자는 SB 회사 DB 선택권이 아니다. DB 문맥 없이 만든 client는 읽기만 가능하며,
+reserve/finish는 `COMPANY_FRESHNESS_REQUIRED`다. 설정만으로 DB·scope·epoch를 초기화하지 않는다.
+
+client credential은 정확히 `{schema_version:2,role:"freshness",socket,signing_key_id,
+signing_key_file,installation_id,context}`다. installation_id는 같은 SB registry의
+설치 ID를 operator가 pin하며 caller 입력이 아니다. adapter는 read의 설치 ID를 이 값으로
+고정한다. context는 provider_instance_id/workspace_id/principal_id/
+agent_id/session_id/projects/policy_revision/deletion_sequence/deletion_set_root다.
+principal은 `principal:jarvis-company-progress`, socket은 기존 processor broker의
+`/run/sb-company-processor/broker.sock`이다. private dir0700/file0600, 소유권·신뢰 parent와
+symlink 금지를 검사한다. progress key ID/material은 human/processor key와 분리한다.
+기존 owner/processor credential을 progress로 해석하지 않는다.
+
+동기 adapter는 고정 helper를 shell:false, 고정 argv, 최소 env,
+10초 SIGKILL/출력1MiB로 실행한다. 세 메서드에 Promise를 반환하지 않는다.
+helper는 기존 socket peer/경로 권한을 검사하고 다음 closed outer envelope만 보낸다.
+
+```text
+{schema_version:1,method,request,evidence,authority}
+method = read_freshness | reserve_progress | finish_progress
+read/reserve evidence = null
+```
+
+authority는 3절의 봉투1을 그대로 사용하되 purpose=`company_freshness_progress`,
+operation=method, principal=고정 progress principal이다.
+`request_digest=H(D("second-brain/company-freshness-request/v1")+C({method,request,evidence}))`.
+서명은 기존 `D("second-brain/company-memory-authority/v1")+C(unsigned_authority)`이며
+새 nonce/최대60초를 사용한다. nonce echo는 인증 채널의 대체물이 아니다.
+
+기존 processor broker config schema1에 optional `freshness_config_file`을 고정한다.
+없으면 route를 거절한다. 고정 dispatch는
+`sb_company_bin freshness --config freshness_config_file`뿐이다.
+요청의 argv/env/config/DB/registry/NV override를 받지 않는다. 기존 handoff/process
+role과 human 봉투를 넓혀 자동 권한으로 해석하지 않는다.
+
+### 실제 사실과 유일한 단계 소유자
+
+| 단계 | reserve/finish 소유자 |
+|---|---|
+| decide_approve / decide_reject | JARVIS C1 |
+| accept / reject / mark_processed | SB |
+| complete | human은 JARVIS, auto_internal은 SB |
+| delete | SB의 원래 승인된 삭제 경로 |
+
+JARVIS는 새 kind에서 SB 단계를 다시 예약하지 않는다. 영구 peer-call marker를 먼저
+커밋하고, 불확실한 전송은 원래 receipt의 fresh readonly 조회로만 복구한다.
+3절 selector에 `operation:"mark_processed"`를 추가하며 원래 arguments는
+`{candidate_id,handoff_id}`다. domain은 그대로다. found projection은
+state=`processed_complete`, 원래 receipt_created_at/decision_at/accepted_at을 보존한다.
+명령/승인이 만료돼도 새 효과 없이 원래 사실을 읽을 수 있으나 mutation 재전송은 금지한다.
+기존 accept/reject arguments·canonical/signature vector는 그대로다.
+
+로컬 outbox는 `jarvis_decision`의 원래 command2+대표 receipt 또는
+`jarvis_completion`의 원래 command2+대표 approval+SB acceptance5+검증된 completion2와
+해당 사실의 원래 커밋 시각 `original_at`을 보존한다.
+finish wire evidence는 SB의 closed sidecar
+`{schema_version:1,kind,source_record_id,original_at,command,record}`다.
+decision의 kind=`representative_receipt`, source_record_id=원래 receipt_id,
+record=원래 대표 receipt다. completion의 kind=`completion`,
+source_record_id=`completion:`+request_id, record=원래 completion2다.
+재시도 시 현재 시각으로 original_at을 바꾸지 않는다.
+digest만 넘겨 성공시키지 않는다. JARVIS는 로컬 실제 receipt/completion과 outbox를
+함께 커밋하고, transport는 실제 원본과 서명을 다시 대조한 자료만 전송한다.
+outbox만 남고 원본이 사라졌으면 증거가 아니다. SB mirror는 JARVIS own stream에 더하지 않는다.
+
+모든 broker/provider I/O는 JARVIS write transaction 밖이다. C1/등록은 readonly
+preflight와 외부 ack 뒤 짧은 transaction에서 현재 pin·요청·실제 원본을 다시 확인한다.
+finish ack 검증 뒤 local evidence acknowledgement/checkpoint/publication을 함께 커밋한다.
+CAS 실패나 응답 유실은 uncertain이며 새 승인·효과를 만들지 않는다.
+
+### retained prefix와 운영 경계
+
+새 kind만 인증된 ready/latest를 받아 반대 store의 검증된 prefix를 채택할 수 있다.
+자기 store의 실제 원본 coverage와 retained finish journal을 먼저 재검증한다.
+자기 store6필드, epoch, policy/binding, revocation은 같아야 하며, 차이는 SB stream의
+단조 전진과 intent prefix뿐이어야 한다. local cache는 이전 값 CAS로만 전진시키고
+transaction 안에서도 실제 원본을 다시 확인한다. 같은 높이 다른 root, 자기 사실 소실,
+정책/epoch/폐기 변경, unknown prefix는 rebase가 아니다.
+기존 TEST_ONLY_memory의 완전 동일 read와 원래 opaque intent vector는 바꾸지 않는다.
+네 번째 freshness 메서드나 새 wire proof 필드를 만들지 않는다.
+
+업무 정본은 SB 회사 DB지만 같은 DB hash chain만으로 rollback을 막았다고 주장하지 않는다.
+복원 제외 witness와 보호 TPM2 NV_EXTEND의 live Name/value·연속 prefix를 검증해야 한다.
+migration은 bootstrap/ready가 아니다. 운영 registry·NV 보호·독립 pin·이행 inventory와
+별도 활성화 승인이 검증되지 않으면 운영은 계속 unconfigured다.
+일반 restore/re-enrollment engine, 외부 CRM/메일/캘린더 effect adapter는 이 확장에 없다.
+
+## 8. 내부 자동 정책 receipt와 공개 시험 metadata
+
+자동 처리는 SB가 source/provenance·typed span·고정 positive allowlist·보호 veto를 검증한다.
+금액·계약·세금·외부 효과·고객 삭제·혼합/모호함은 human_required이며 기존 passkey 경로다.
+JARVIS는 본문을 읽거나 정책 signer를 갖지 않고 별도 scope의 bounded trigger만 보낸다.
+
+auto command는 정확히 `{schema_version:1,action:"company.internal.record",request_id,
+scope,candidate_id,content_digest,policy_digest,assessment_digest,record_kind}`다.
+`auto_request_id="company-auto:v1:"+hex(H(D("second-brain/company-auto/v1")+
+C({scope,candidate_id,content_digest,policy_digest})))`, request_id/nonce는 이 ID다.
+command_digest는 `H(C(auto_command))`다. operation ID에 epoch/actor/재시도 번호를 넣지 않는다.
+
+정책 receipt는 schema_version=1, auto_request_id, scope, candidate_id, content_digest,
+source_event_id, policy_version/digest, assessment_digest, command_digest,
+allowed_operations=["accept","complete","mark_processed"], issuer_principal_id,
+issued_at, expires_at, nonce, signature다. TTL은5분이며 별도
+`principal:company-internal-automation`/purpose=`policy_auto` key만 사용한다.
+Pure Ed25519 서명 대상은
+`D("second-brain/company-policy-auto/v1")+C(unsigned_policy_receipt)`다.
+이 receipt는 대표 approval이 아니며 기존 human parser가 받아서는 안 된다.
+이미 human claim/outbox가 있는 후보를 자동 경로로 갈아타거나 공개 wire에 내부 permit을 넣지 않는다.
+
+공개 fixture의 `db_provider_extension`은 새 config/actor ownership/prefix/outer envelope와
+별도 TEST_ONLY progress·policy key의 crypto vector다. 기존 모든 root 값과 canonical/
+signature vector는 보존한다. 이 metadata는 회사 명령·서명 대상의 추가 필드가 아니다.
+예시 policy digest·assessment는 protocol 시험일 뿐 등록된 정책/실제 SQL 효과의 증거가 아니며,
+어느 TEST_ONLY key/config도 운영 registry/credential로 설치하지 않는다.
+
+### JARVIS bounded 실행과 일일 보고
+
+dashboard의 operator-only `--company-internal-config PATH`는 기본 미지정/비활성이다.
+closed 설정은 `{schema_version:1,enabled:false}` 또는
+`{schema_version:1,enabled:true,activation_cutoff,report_client_config_file,
+auto_client_config_file?,handoff_client_config_file?}`다. auto를 설정하면 기존 human
+handoff client도 필수다. 파일은0700 private dir의0600 operator credential이며 요청이나
+환경 변수가 경로·정책·scope를 선택하지 않는다. 운영 활성화는 별도 승인 범위다.
+
+이미 실행 중인 dashboard의 tick에서 scope당 분당 최대1회 고정 `{limit:100}` 평가와
+metadata-only handoff100건을 요청한다. SB가 human_required만 기존 handoff로 분류한다.
+JARVIS는 정책 signer나 대표 receipt를 만들지 않는다. 실패한 평가가 보고 읽기를 막거나
+알림 재시도가 업무 효과를 다시 실행하지 않는다. 종료는 진행 중인 bounded 작업을 drain한다.
+
+processor broker의 optional `auto_config_file`은 고정
+`auto-internal --config PATH`다. operation=`auto_process_internal`,
+purpose=`company_internal_auto_trigger`이며 policy_auto wire capability가 아니다.
+handoff broker의 optional `report_config_file`은 고정 `auto-report --config PATH`다.
+operation=`read_auto_report`, purpose=`company_memory_auto_report`이며 네 인수
+`{from_global_sequence,to_global_sequence,limit,cursor}`만 허용한다. limit은1~100이다.
+두 scope 모두 별도 progress principal 서명과 기존 company-memory 두 domain을 쓴다.
+
+SB의 실제 report는 정수 epoch/head_sequence, 원래 publication cutoff와 body-free
+assessment를 반환한다. 첫 page에서 head를 고정하고 다음 page의 epoch/실제 cutoff/head가
+바뀌면 전체 발행을 거절한다. 지연 tick/catchup은 고정 읽기 endpoint로 마감 이전 최대
+sequence를 이진 탐색한다(최대53회, 전체 read budget10초). 18:00 이후 publication을
+전날 보고에 섞거나 다음 날 cursor에서 건너뛰지 않는다. page100, report JSON2MiB 미만이며
+본문·연락처 값·금액·비밀 필드가 들어온 응답은 보관하지 않는다.
+
+18:00 KST 이전에는 당일 보고0건, 경계에서1건이다. 시작 시 최신 누락 일자만 catch-up하며
+이미 발행한 scope/date는 provider 재조회 없이 원래 보고를 반환한다. PK와 immutable digest가
+동시 발행/다른 본문 충돌을 막고 report와 mac intent는 같은 transaction에서 연결된다.
+완료는 내부3종의 processed_complete와 원래 receipt/처리 시각이 모두 있어야 한다.
+human_required·충돌·미확정은 별도 집계이며 완료가 아니다.
+충돌·모호함은 human_required의 부분 집합으로도 집계해 SB의 원래 aggregate와 일치시킨다.
+
+승인함의 읽기 전용 카드와 `/approvals/company-reports/:reportId`는 metadata만 보여 준다.
+회사 notification은 독립 report reference이며 morning recommendation lineage가 아니다.
+기존 claim/settle API를 재사용하고 새 타입 capability가 없는 client에는 회사 payload를 주지
+않는다. unsupported/미전달은 원래 목록을 남기며 delivered로 표시하지 않는다.
+
+수동 smoke는 구현된 명령
+`company-candidates daily-report --date YYYY-MM-DD --company-config PATH --db PATH --json`이다.
+명시적 JARVIS DB와 고정 report client 설정을 요구하고 미래 마감은 거절한다.
+자동 평가·대표 승인·외부 송신은 이 수동 명령의 효과가 아니다.

@@ -5,6 +5,7 @@ import { enrollOwnerPasskey, readEnrollmentChallenge, rejectEnrollmentOrigin, ty
 import { writeOwnerInboxPreflight } from "../owner-inbox-preflight.js";
 import { ApprovedCommandExecutor, approvedActionHasExecutor } from "../approved-executor.js";
 import { ControlPlane } from "../control-plane.js";
+import { CompanyDailyReportStore } from "../company-daily-report-store.js";
 import { OwnerInbox, type AssertionCheck, type InboxAssertion, type OwnerInboxDecision } from "../owner-inbox.js";
 import type { DashboardExecutorFactory } from "./authority-service.js";
 import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
@@ -36,6 +37,7 @@ export async function tryHandleOwnerInbox(input: Readonly<{
   origin: string;
   remoteApproval?: RemoteApprovalService;
   ownerInbox?: OwnerInbox;
+  companyFreshness?: import("../company-freshness.js").CompanyFreshnessProvider;
   assertionCheck?: AssertionCheck;
   enrollmentCheck?: EnrollmentCheck;
   now?: Date;
@@ -56,13 +58,16 @@ export async function tryHandleOwnerInbox(input: Readonly<{
   const admitted = admit(input, raw, method === "POST" ? "POST" : "GET");
   if (admitted === undefined) return coded(input, 401, DASHBOARD_ERROR_CODES.OWNER_INBOX_IDENTITY_REQUIRED);
   const sessionId = admitted.id;
-  const inbox = input.ownerInbox ?? composeOwnerInbox(input.db);
+  const inbox = input.ownerInbox ?? composeOwnerInbox(input.db, {
+    clock: input.clock, companyFreshness: input.companyFreshness,
+  });
   try {
     if (method === "GET") {
       const enrolled = input.db.db.prepare("SELECT COUNT(*) AS n FROM owner_inbox_credentials").get() as { n: number };
       writeDashboardJson(input.response, {
         status: 200, requestId: input.requestId,
-        body: { schema_version: 1, items: inbox.list(), passkey_enrolled: enrolled.n > 0 },
+        body: { schema_version: 1, items: inbox.list(), passkey_enrolled: enrolled.n > 0,
+          company_reports: new CompanyDailyReportStore(input.db).listCards() },
       });
       return true;
     }

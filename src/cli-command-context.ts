@@ -77,6 +77,8 @@ export type CliValues = {
   readonly spool?: string;
   readonly "company-config"?: string;
   readonly "company-completion-config"?: string;
+  readonly "company-freshness-config"?: string;
+  readonly date?: string;
 };
 
 export type CliCommandContext = {
@@ -99,6 +101,8 @@ export function normalizeCliValues(
   return {
     "company-config": stringValue(value["company-config"]),
     "company-completion-config": stringValue(value["company-completion-config"]),
+    "company-freshness-config": stringValue(value["company-freshness-config"]),
+    date: stringValue(value.date),
     db: stringValue(value.db),
     decision_public: stringValue(value.decision_public),
     decision_key_id: stringValue(value.decision_key_id),

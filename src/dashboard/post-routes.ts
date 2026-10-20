@@ -34,6 +34,7 @@ export type DashboardPostInput = {
   readonly planner?: TeamProposalPlanner;
   readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
   readonly executorFactory?: DashboardExecutorFactory;
+  readonly companyFreshness?: import("../company-freshness.js").CompanyFreshnessProvider;
   readonly memoryRuntime: MemoryRuntime;
   readonly workboardActions?: WorkboardActions;
 };
@@ -103,6 +104,7 @@ export async function tryHandleDashboardPost(input: DashboardPostInput): Promise
     db: input.db,
     path: input.path,
     body: parsed.value,
+    request: input.request,
     response: input.response,
     requestId: input.requestId,
     hub: input.hub,
@@ -122,6 +124,7 @@ export async function tryHandleDashboardPost(input: DashboardPostInput): Promise
     clock: input.clock,
     memoryLifecycle: input.memoryLifecycle,
     executorFactory: input.executorFactory,
+    companyFreshness: input.companyFreshness,
   })) {
     return true;
   }

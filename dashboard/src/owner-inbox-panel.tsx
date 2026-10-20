@@ -1,4 +1,6 @@
 import { useEffect, useState } from "react";
+import type { CompanyDailyReportCard as ReportDetail, CompanyDailyReportSummary } from "../../src/company-daily-report-types.js";
+import { CompanyDailyReportCard } from "./company-daily-report-card.js";
 import { actionLabel, formatKst } from "./copy.js";
 import { OwnerInboxEnroll } from "./owner-inbox-enroll.js";
 import { inboxExecutionOutcome, inboxOutcomeText, type InboxExecution } from "./owner-inbox-outcome.js";
@@ -41,10 +43,12 @@ const KIND_LABEL: Readonly<Record<string, string>> = {
 };
 
 type Status = "loading" | "ready" | "error" | "unconfigured";
+type ReportCard = ReportDetail | CompanyDailyReportSummary;
 
-export function OwnerInboxPanel() {
+export function OwnerInboxPanel({ reportId }: Readonly<{ reportId?: string }> = {}) {
   const phone = useSurface() === "phone";
   const [items, setItems] = useState<readonly Item[]>([]);
+  const [reports, setReports] = useState<readonly ReportCard[]>([]);
   const [status, setStatus] = useState<Status>("loading");
   const [notice, setNotice] = useState("");
   const [outcome, setOutcome] = useState<{ state: string; failure_code?: string } | undefined>();
@@ -67,8 +71,21 @@ export function OwnerInboxPanel() {
         setStatus("error");
         return;
       }
-      const body = await response.json() as { items?: Item[]; passkey_enrolled?: boolean };
+      const body = await response.json() as { items?: Item[]; passkey_enrolled?: boolean; company_reports?: ReportCard[] };
+      let loadedReports = body.company_reports ?? [];
+      if (reportId !== undefined && phone) {
+        loadedReports = loadedReports.filter(report => report.report_id === reportId);
+        if (loadedReports.length !== 1) { setStatus("error"); return; }
+      } else if (reportId !== undefined) {
+        const detail = await fetch(`/api/v1/company-daily-reports/${encodeURIComponent(reportId)}`, {
+          headers: { Accept: "application/json", "X-JARVIS-CSRF": csrf }, credentials: "same-origin",
+        });
+        if (!detail.ok) { setStatus("error"); return; }
+        const selected = await detail.json() as { report: ReportCard };
+        loadedReports = [selected.report];
+      }
       setItems(body.items ?? []);
+      setReports(loadedReports);
       setPasskeyEnrolled(body.passkey_enrolled === true);
       setStatus("ready");
     } catch {
@@ -76,7 +93,7 @@ export function OwnerInboxPanel() {
     }
   }
 
-  useEffect(() => { void load(); }, [phone]);
+  useEffect(() => { void load(); }, [phone, reportId]);
 
   async function decide(item: Item, decision: "approve" | "reject"): Promise<void> {
     const confirmed = window.confirm(decision === "approve"
@@ -159,7 +176,7 @@ export function OwnerInboxPanel() {
   }
 
   return (
-    <section className="panel" aria-labelledby="owner-inbox-title">
+    <section className="panel owner-inbox-panel" aria-labelledby="owner-inbox-title">
       <header className="panel-header"><h2 id="owner-inbox-title">승인함</h2></header>
       <div className="panel-body">
         {status === "loading" ? <p role="status">승인을 불러오는 중</p> : null}
@@ -168,6 +185,8 @@ export function OwnerInboxPanel() {
         {status === "ready" && !passkeyEnrolled ? (
           <OwnerInboxEnroll csrf={() => csrfToken(phone)} />
         ) : null}
+        {status === "ready" && reports.map(report => <CompanyDailyReportCard key={report.report_id}
+          report={report} initiallyOpen={reportId !== undefined} />)}
         {status === "ready" && items.length === 0 ? <p className="empty-state">대기 중인 승인이 없습니다</p> : null}
         {notice.length > 0 ? <p role="status" data-execution-state={outcome?.state} data-failure-code={outcome?.failure_code}>{notice}</p> : null}
         {items.some(item => item.needs_review) ? (

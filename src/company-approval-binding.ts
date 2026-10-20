@@ -12,6 +12,7 @@ import {
 import { controlCommandDigest, verifyCommandApproval, type CommandApprovalReceipt } from "./control-plane-contract.js";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
+import { assertCompanyLocalProgress, companyOtherStorePrefix } from "./company-local-progress.js";
 
 type Scope = { provider_instance_id: string; workspace_id: string };
 type TrustedKey = { key_id: string; principal_id: string; public_key_pem: string };
@@ -63,7 +64,9 @@ export function registerCompanyApprovalBinding(
   const bindingDigest = companyApprovalBindingDigest(binding);
   if (checkpoint.approval_binding_digest !== bindingDigest
     || checkpoint.approval_policy_version !== binding.approval_policy_version) throw new JarvisError("ENROLLMENT_REQUIRED");
-  db.db.transaction(() => {
+  if (db.db.inTransaction) throw new JarvisError("COMPANY_FRESHNESS_REQUIRED");
+  const scope = { provider_instance_id: binding.provider_instance_id, workspace_id: binding.workspace_id };
+  const preflight = () => {
     if (readCompanyApprovalBinding(db, binding)) throw new JarvisError("ENROLLMENT_REQUIRED");
     const legacy = db.db.prepare(
       `SELECT 1 FROM control_command_requests WHERE action='company.candidate.transition'
@@ -71,25 +74,32 @@ export function registerCompanyApprovalBinding(
     ).get(binding.provider_instance_id, binding.workspace_id);
     if (legacy) throw new JarvisError("ENROLLMENT_REQUIRED");
     assertBindingKeys(db, binding);
-    const scope = { provider_instance_id: binding.provider_instance_id, workspace_id: binding.workspace_id };
-    const challenge = randomUUID();
-    let raw: unknown;
-    try {
-      raw = provider.readFreshness({ schema_version: 2, scope, installation_id: "installation:jarvis", challenge, observed_checkpoint: checkpoint });
-    } catch { throw new JarvisError("COMPANY_FRESHNESS_REQUIRED"); }
-    const response = freshnessReadResponseSchema.safeParse(raw);
-    if (!response.success || response.data.challenge !== challenge
-      || canonicalize(response.data.scope) !== canonicalize(scope)) throw new JarvisError("COMPANY_FRESHNESS_REQUIRED");
-    if (response.data.status === "mismatch") throw new JarvisError("COMPANY_OPERATIONAL_ROLLBACK");
-    if (response.data.status !== "ready" || canonicalize(response.data.checkpoint) !== canonicalize(checkpoint)) {
-      throw new JarvisError("COMPANY_FRESHNESS_REQUIRED");
-    }
+    if (provider.kind === "sb_company_db") assertCompanyLocalProgress(db, scope, checkpoint);
+  };
+  preflight();
+  const challenge = randomUUID();
+  let raw: unknown;
+  try {
+    raw = provider.readFreshness({ schema_version: 2, scope, installation_id: "installation:jarvis", challenge, observed_checkpoint: checkpoint });
+  } catch { throw new JarvisError("COMPANY_FRESHNESS_REQUIRED"); }
+  const response = freshnessReadResponseSchema.safeParse(raw);
+  if (!response.success || response.data.challenge !== challenge
+    || canonicalize(response.data.scope) !== canonicalize(scope)) throw new JarvisError("COMPANY_FRESHNESS_REQUIRED");
+  if (response.data.status === "mismatch") throw new JarvisError("COMPANY_OPERATIONAL_ROLLBACK");
+  if (response.data.status !== "ready") throw new JarvisError("COMPANY_FRESHNESS_REQUIRED");
+  const selected = response.data.checkpoint;
+  if (canonicalize(selected) !== canonicalize(checkpoint)
+    && (provider.kind !== "sb_company_db" || !companyOtherStorePrefix(checkpoint, selected))) {
+    throw new JarvisError("COMPANY_FRESHNESS_REQUIRED");
+  }
+  db.db.transaction(() => {
+    preflight();
     db.db.prepare(
       "INSERT INTO company_approval_bindings(provider_instance_id,workspace_id,binding_json,binding_digest,registered_at) VALUES(?,?,?,?,?)",
     ).run(binding.provider_instance_id, binding.workspace_id, canonicalize(binding), bindingDigest, now.toISOString());
     db.db.prepare(
       "INSERT INTO company_freshness_checkpoints(provider_instance_id,workspace_id,checkpoint_json,updated_at) VALUES(?,?,?,?)",
-    ).run(binding.provider_instance_id, binding.workspace_id, canonicalize(checkpoint), now.toISOString());
+    ).run(binding.provider_instance_id, binding.workspace_id, canonicalize(selected), now.toISOString());
   }).immediate();
 }
 

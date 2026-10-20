@@ -21,6 +21,7 @@ import { tryHandleFinanceRead } from "./finance-read-routes.js";
 import { tryHandleMailCandidates } from "./mail-candidates-routes.js";
 import { tryHandleMailSummary } from "./mail-summary-routes.js";
 import { tryHandleMessengerSummary } from "./messenger-summary-routes.js";
+import { tryHandleCompanyReports } from "./company-report-routes.js";
 import { tryHandleProductHub } from "./product-hub-routes.js";
 import { tryHandleOwnerInbox } from "./owner-inbox-routes.js";
 import { tryHandleDashboardPost } from "./post-routes.js";
@@ -63,6 +64,7 @@ export type DashboardApiInput = {
   readonly planner?: TeamProposalPlanner;
   readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
   readonly executorFactory?: DashboardExecutorFactory;
+  readonly companyFreshness?: import("../company-freshness.js").CompanyFreshnessProvider;
   readonly memoryRuntime: MemoryRuntime;
   readonly remoteApproval?: RemoteApprovalService;
   readonly ownerInbox?: import("../owner-inbox.js").OwnerInbox;
@@ -92,6 +94,7 @@ export async function tryHandleDashboardApi(input: DashboardApiInput): Promise<b
     if (await tryHandleRemoteAuthRoutes(remote)) return true;
   }
   if (await tryHandleExternalDelegate(input)) return true;
+  if (tryHandleCompanyReports(input)) return true;
   if (await tryHandleOwnerInbox(input)) return true;
   if (await tryHandleFinanceRead(input)) return true;
   if (await tryHandleMailCandidates(input)) return true;

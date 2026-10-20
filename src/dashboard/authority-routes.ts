@@ -66,6 +66,7 @@ export type AuthorityRouteInput = {
   readonly clock: () => Date;
   readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
   readonly executorFactory?: DashboardExecutorFactory;
+  readonly companyFreshness?: import("../company-freshness.js").CompanyFreshnessProvider;
 };
 
 export async function tryHandleAuthorityPost(input: AuthorityRouteInput): Promise<boolean> {
@@ -97,6 +98,8 @@ function writeDecision(input: AuthorityRouteInput, requestId: string): boolean {
       requestId,
       body: input.body,
       now: input.clock(),
+      clock: input.clock,
+      companyFreshness: input.companyFreshness,
     });
     input.hub.publish(["overview", "approvals"]);
     writeDashboardJson(input.response, { status: 200, requestId: input.requestId, body });

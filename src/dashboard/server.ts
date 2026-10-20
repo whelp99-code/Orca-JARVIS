@@ -54,12 +54,14 @@ export type DashboardServerOptions = {
   readonly sessionStore?: DashboardSessionStore;
   readonly memoryLifecycle?: Pick<MemoryLifecycleService, "execute">;
   readonly executorFactory?: DashboardExecutorFactory;
+  readonly companyFreshness?: import("../company-freshness.js").CompanyFreshnessProvider;
   readonly memoryAdapter?: SecondBrainReadAdapter;
   readonly memoryProjectionKey?: Buffer;
   readonly memoryEffectSpoolRoot?: string;
   readonly memoryCandidateReviewSpoolRoot?: string;
   readonly memoryCandidateDispatchSpoolRoot?: string;
   readonly memoryReconcileTick?: () => void;
+  readonly companyReportTick?: () => void;
   readonly remoteApproval?: RemoteApprovalService;
   readonly remoteApprovalPolicyPath?: string;
   readonly ownerInbox?: import("../owner-inbox.js").OwnerInbox;
@@ -87,7 +89,10 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
   const model = new DashboardReadModel(options.db, options.secondBrainProbe, options.capabilityProbe,
     undefined, undefined, options.trustedCloseoutKey, nativeConfig);
   const terminals = new DashboardTerminalReader(model, options.orcaRunner);
-  const events = createDashboardEvents(options.db, options.memoryReconcileTick);
+  const events = createDashboardEvents(options.db, () => {
+    options.memoryReconcileTick?.();
+    options.companyReportTick?.();
+  });
   const session = options.sessionStore ?? createDashboardSession();
   const clock = options.clock ?? (() => new Date());
   const memoryRuntime = createMemoryRuntime({ authority: options.db, session, clock,
@@ -115,6 +120,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
       planner: options.planner,
       memoryLifecycle: options.memoryLifecycle,
       executorFactory: options.executorFactory,
+      companyFreshness: options.companyFreshness,
       memoryRuntime,
       remoteApproval,
       ownerInbox: options.ownerInbox,

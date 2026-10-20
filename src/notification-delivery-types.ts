@@ -16,9 +16,9 @@ export type NotificationSettleInput =
   | { readonly schema_version: 1; readonly outcome: "delivered" }
   | { readonly schema_version: 1; readonly outcome: "failed"; readonly failure_code: NotificationFailureCode };
 export type MacNotificationPayload = {
-  readonly title: "Decision needed" | "Critical decision needed" | "Decision digest";
+  readonly title: "Decision needed" | "Critical decision needed" | "Decision digest" | "Company daily report";
   readonly summary: string;
-  readonly alert_class: "decision_action" | "decision_critical" | "decision_digest";
+  readonly alert_class: "decision_action" | "decision_critical" | "decision_digest" | "company_daily_report";
   readonly deep_link: string;
 };
 export type NotificationClaim = {

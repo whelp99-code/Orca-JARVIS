@@ -26,6 +26,9 @@ type DeliveryRow = {
   readonly lease_expires_at: string | null; readonly attempt_digest: string; readonly updated_at: string;
 };
 const hash = (value: unknown): string => createHash("sha256").update(canonicalize(value)).digest("hex");
+function deliveryIdentity(intentId: string): string {
+  return `ndl:pos:v1:${hash({ schema_version: 1, intent_id: intentId, channel: "mac_native" })}`;
+}
 const digest = (value: unknown): string => `sha256:${hash(value)}`;
 function validInstant(value: string): number {
   const parsed = Date.parse(value);
@@ -65,12 +68,13 @@ export class NotificationDeliveryStore {
 
   claim(now: string, sessionId: string): NotificationClaim | null { return this.claimEffect(now, sessionId).value; }
 
-  claimEffect(now: string, sessionId: string): NotificationMutationResult<NotificationClaim | null> {
+  claimEffect(now: string, sessionId: string, supportsCompanyReport = false): NotificationMutationResult<NotificationClaim | null> {
     const epoch = validInstant(now);
     if (sessionId.length === 0) throw new NotificationDeliveryError("NOTIFICATION_DELIVERY_INVALID");
     return this.options.authority.db.transaction(() => {
       new MemoryProjectionAuthority(this.options.authority).assertReady();
       let changed = this.reconcile(epoch, now);
+      const skipped: string[] = [];
       for (;;) {
         const value = this.options.authority.db.prepare(
           `SELECT intent_id,urgency,redacted_preview,deep_link,expires_at FROM notification_intents i
@@ -79,10 +83,13 @@ export class NotificationDeliveryStore {
                WHERE s.projection_kind='notification_intent' AND s.projection_id=i.intent_id)
              AND NOT EXISTS (SELECT 1 FROM memory_projection_quarantine q
                WHERE q.projection_kind='notification_intent' AND q.projection_id=i.intent_id)
+             AND (? = 1 OR NOT EXISTS (SELECT 1 FROM company_report_notifications n WHERE n.intent_id=i.intent_id))
+             AND instr(?, char(31) || i.intent_id || char(31)) = 0
            ORDER BY CASE urgency WHEN 'critical' THEN 0 WHEN 'action' THEN 1 ELSE 2 END,created_at,intent_id LIMIT 1`,
-        ).get(now);
+        ).get(now, supportsCompanyReport ? 1 : 0, `\u001f${skipped.join("\u001f")}\u001f`);
         if (value === undefined) return { value: null, changed };
         const intent = intentRow(value);
+        const company = this.companyIntent(intent.intent_id);
         let payload;
         try {
           if (!this.options.resourceIsCurrent(intent.deep_link, now)) throw new NotificationDeliveryError("NOTIFICATION_DELIVERY_INVALID");
@@ -90,14 +97,14 @@ export class NotificationDeliveryStore {
             deepLink: intent.deep_link });
         } catch (error) {
           if (!(error instanceof NotificationDeliveryError)) throw error;
+          if (company) { skipped.push(intent.intent_id); continue; }
           const suppressed = this.options.authority.db.prepare(
             "UPDATE notification_intents SET state='suppressed',updated_at=? WHERE intent_id=?",
           ).run(now, intent.intent_id);
           changed = changed || suppressed.changes > 0; continue;
         }
-        const semantic = { schema_version: 1, intent_id: intent.intent_id, channel: "mac_native" };
-        const identity = hash(semantic); const deliveryId = `ndl:pos:v1:${identity}`;
-        const idempotencyKey = `idem:notification-delivery:v1:${identity}`;
+        const deliveryId = deliveryIdentity(intent.intent_id);
+        const idempotencyKey = `idem:notification-delivery:v1:${deliveryId.slice("ndl:pos:v1:".length)}`;
         const attemptDigest = digest({ schema_version: 1, delivery_id: deliveryId, intent_id: intent.intent_id,
           channel: "mac_native", payload_digest: digest(payload) });
         const lease = new Date(Math.min(epoch + LEASE_MS, validInstant(intent.expires_at))).toISOString();
@@ -157,7 +164,18 @@ export class NotificationDeliveryStore {
         this.terminalize(row, "expired", now);
         return { value: settlement(row, "expired", now), changed: true };
       }
+      if (input.outcome === "failed" && input.failure_code === "NOTIFICATIONS_UNSUPPORTED" && this.companyIntent(row.intent_id)) {
+        this.terminalize(row, "failed", now);
+        this.options.authority.db.prepare(
+          "UPDATE company_report_notifications SET state='unsupported', delivery_receipt=NULL WHERE intent_id=?",
+        ).run(row.intent_id);
+        return { value: settlement(row, "failed", now), changed: true };
+      }
       if (input.outcome === "delivered") {
+        this.options.authority.db.prepare(
+          "UPDATE company_report_notifications SET state='delivered', delivery_receipt=? WHERE intent_id=?",
+        ).run(digest({ schema_version: 1, delivery_id: row.delivery_id, intent_id: row.intent_id,
+          attempt_digest: row.attempt_digest, outcome: "delivered" }), row.intent_id);
         const receipt = digest({ schema_version: 1, delivery_id: row.delivery_id, intent_id: row.intent_id,
           attempt_digest: row.attempt_digest, outcome: "delivered" });
         this.options.authority.db.prepare(
@@ -172,6 +190,9 @@ export class NotificationDeliveryStore {
     }).immediate();
   }
 
+  private companyIntent(intentId: string): boolean {
+    return this.options.authority.db.prepare("SELECT 1 AS ok FROM company_report_notifications WHERE intent_id=?").get(intentId) !== undefined;
+  }
   private reconcile(epoch: number, now: string): boolean {
     let changed = suppressMemoryNotifications(this.options.authority, now);
     const stale = this.options.authority.db.prepare(
@@ -189,6 +210,14 @@ export class NotificationDeliveryStore {
       `UPDATE notification_intents SET state='expired',updated_at=? WHERE state IN ('created','deferred','queued')
        AND julianday(expires_at)<=julianday(?)`,
     ).run(now, now);
+    if (expired.changes > 0) {
+      this.options.authority.db.prepare(
+        `UPDATE company_report_notifications SET state='failed',delivery_receipt=NULL
+         WHERE state='pending' AND intent_id IN (
+           SELECT intent_id FROM notification_intents WHERE state='expired'
+         )`,
+      ).run();
+    }
     const queued = this.options.authority.db.prepare(
       `UPDATE notification_intents SET state='queued',updated_at=? WHERE state='deferred'
        AND julianday(updated_at)<=julianday(?) AND julianday(expires_at)>julianday(?)`,
@@ -197,6 +226,9 @@ export class NotificationDeliveryStore {
   }
 
   private terminalize(row: DeliveryRow, state: "failed" | "expired", now: string): void {
+    this.options.authority.db.prepare(
+      "UPDATE company_report_notifications SET state='failed',delivery_receipt=NULL WHERE intent_id=?",
+    ).run(row.intent_id);
     this.options.authority.db.prepare(
       "UPDATE notification_deliveries SET state=?,delivered_at=NULL,updated_at=? WHERE delivery_id=?",
     ).run(state, now, row.delivery_id);

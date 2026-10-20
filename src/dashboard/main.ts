@@ -3,6 +3,7 @@ import { realpathSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { resolve } from "node:path";
 import { AuthorityDb, JarvisError } from "../db.js";
+import { configuredCompanyFreshness } from "../company-freshness-config.js";
 import type { SecondBrainAdapterOptions, SecondBrainReadAdapter } from "../second-brain-adapter-types.js";
 import type { SecondBrainTransport, SecondBrainTransportOptions } from "../second-brain-transport.js";
 import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
@@ -13,6 +14,7 @@ import { defaultRunner } from "../orca.js";
 import { bindDashboardMemoryDependencies } from "./memory-production.js";
 import { composeRemoteApproval } from "../remote-approval-compose.js";
 import { createDashboardServer } from "./server.js";
+import { configuredCompanyInternalRuntime } from "../company-internal-runtime.js";
 import { MemoryOutboxTick } from "../memory-outbox-tick.js";
 import { memoryOutboxLog } from "../memory-outbox-diagnostic.js";
 import { parseTrustedCloseoutKey } from "../evening-closeout-crypto.js";
@@ -34,6 +36,8 @@ export type DashboardCliOptions = {
   readonly trustedCloseoutKey?: TrustedCloseoutKey;
   readonly nativeCloseoutSource?: NativeEveningSourceConfig;
   readonly priceReadCredentialPath?: string;
+  readonly companyFreshnessConfigPath?: string;
+  readonly companyInternalConfigPath?: string;
 };
 
 function configuredCloseoutKey(value: unknown): TrustedCloseoutKey | undefined {
@@ -76,6 +80,8 @@ export function parseDashboardCli(argv: readonly string[]): DashboardCliOptions 
       "closeout-public-key-spki": { type: "string" },
       "native-closeout-source": { type: "string" },
       "price-read-credential": { type: "string" },
+      "company-freshness-config": { type: "string" },
+      "company-internal-config": { type: "string" },
     },
     strict: true,
   });
@@ -98,7 +104,11 @@ export function parseDashboardCli(argv: readonly string[]): DashboardCliOptions 
     } catch { throw new JarvisError("VALIDATION_ERROR"); }
   }
   const nativeCloseoutSource = configuredNativeSource(source, trustedCloseoutKey);
+  if (values["company-freshness-config"] === "") throw new JarvisError("COMPANY_CALLER_CONFIG_INVALID");
+  if (values["company-internal-config"] === "") throw new JarvisError("COMPANY_CALLER_CONFIG_INVALID");
   return { host: LOOPBACK, port, dbPath: resolve(values.db), staticRoot: resolve(values["static-root"]),
+    ...(values["company-freshness-config"] === undefined ? {} : { companyFreshnessConfigPath: resolve(values["company-freshness-config"]) }),
+    ...(values["company-internal-config"] === undefined ? {} : { companyInternalConfigPath: resolve(values["company-internal-config"]) }),
     ...(values["price-read-credential"] === undefined ? {} : { priceReadCredentialPath: values["price-read-credential"] }),
     ...(trustedCloseoutKey === undefined ? {} : { trustedCloseoutKey }),
     ...(nativeCloseoutSource === undefined ? {} : { nativeCloseoutSource }),
@@ -126,6 +136,18 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
       producer_uid: /^(0|[1-9][0-9]*)$/.test(messengerUid) ? Number(messengerUid) : Number.NaN,
     });
   const db = new AuthorityDb(options.dbPath);
+  const companyFreshness = (() => {
+    try { return configuredCompanyFreshness(options.companyFreshnessConfigPath, db); }
+    catch (error) { db.close(); throw error; }
+  })();
+  const company = (() => {
+    try {
+      return configuredCompanyInternalRuntime(db, options.companyInternalConfigPath, companyFreshness,
+        () => dependencies.memoryAdapterOptions?.clock?.() ?? new Date(),
+        () => server.publish(["approvals", "overview", "notifications"]),
+        code => process.stderr.write(`${JSON.stringify({ component: "company-internal", code })}\n`));
+    } catch (error) { db.close(); throw error; }
+  })();
   const remoteApproval = (() => {
     try { return composeRemoteApproval(db, { policyPath: options.policyPath }); }
     catch (error) { db.close(); throw error; }
@@ -141,6 +163,7 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
     () => server.publish(["memory.effects.v1", "memory.records.v1", "memory.candidates.v1", "approvals", "overview"]));
   const server = createDashboardServer({
     db,
+    companyFreshness,
     priceFinance,
     mailCandidates,
     mailSource,
@@ -162,16 +185,18 @@ export function startDashboardCli(options: DashboardCliOptions, write: (line: st
     executorFactory: bound.executorFactory,
     clock: dependencies.memoryAdapterOptions?.clock,
     memoryReconcileTick: tick === undefined ? undefined : () => tick.tick(),
+    companyReportTick: () => company?.tick(),
     remoteApproval,
   });
   write(`http://${server.address.host}:${String(server.address.port)}`);
+  company?.tick();
   let closing: Promise<void> | undefined;
   const close = (): Promise<void> => {
     if (closing !== undefined) return closing;
     server.close();
     mailCandidates.close();
     closing = (async () => {
-      await Promise.all([tick?.close(), server.drain()]);
+      await Promise.all([tick?.close(), company?.close(), server.drain()]);
       await priceFinance?.close();
       if (bound.ownedProviderTransport !== undefined) await bound.ownedProviderTransport.close();
       db.close();

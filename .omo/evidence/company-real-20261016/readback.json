@@ -1,0 +1,696 @@
+{
+  "schema_version": 1,
+  "task": "TASK-JARVIS-FRESHNESS-CONFIG-B-20261016",
+  "attempt": "9db9d7be-c7aa-4b66-9b12-b00545bbfeed",
+  "auto": {
+    "label": "actual signed broker -> actual SB auto CLI -> SQL -> fixed report read; simulated anchor only",
+    "first": {
+      "checkpoint": {
+        "approval_binding_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "approval_policy_version": 1,
+        "intent_root": "sha256:59dba71fec6ed20fc07deeddd6f3760dc66b3b7c60839441c3278998e3276fef",
+        "intent_sequence": 19,
+        "operational_epoch": 1,
+        "revocation_root": "sha256:8010f405b5bb1bdb6dde1b26b78cf1e72ee98cd6188ccccb8e78d5c1e202f457",
+        "revocation_sequence": 1,
+        "stores": {
+          "jarvis": {
+            "deletion_root": "sha256:aaad46c82a56b36ba8417c5f06aac3dc77cbd20484f378c225e7a9eb3cda6c7e",
+            "deletion_sequence": 0,
+            "receipt_root": "sha256:9fd5207da793016a2d7e4b991bcfc2f0b6cf6d995c4f2272521b95c353d9ac47",
+            "receipt_sequence": 0,
+            "terminal_root": "sha256:95199024c4278c00c9bc2583d01b9388c37f4ad703f5230ac743ee71c609befc",
+            "terminal_sequence": 0
+          },
+          "second_brain": {
+            "deletion_root": "sha256:4c0889659f715356238bf30d7538ef515b93a8929ae5c78ceb368516ba0953ab",
+            "deletion_sequence": 0,
+            "receipt_root": "sha256:e1ad3fc079a97faae1639eddd4bdb57a3062092306e824a50ffde1cb8a202fa8",
+            "receipt_sequence": 9,
+            "terminal_root": "sha256:29269977c845cd022d982f5a09df4076b09738a3934691cd426140b1257a70ae",
+            "terminal_sequence": 6
+          }
+        }
+      },
+      "outcomes": [
+        {
+          "candidate_id": "candidate:calendar",
+          "classification": "auto_internal",
+          "effect_count": 1,
+          "reason_codes": [],
+          "receipt_ids": [
+            "cmreceipt:v1:e32dfb46ba6571b5a336ea0f653e3bea30c420fd67d213fbd88a59bed7ca4aa5",
+            "cmreceipt:v1:7d9a1fed00917178413412ae5f60c83a0861770cbcea9d82b725310c51a6ec71"
+          ],
+          "uncertain": false
+        },
+        {
+          "candidate_id": "candidate:contact",
+          "classification": "auto_internal",
+          "effect_count": 1,
+          "reason_codes": [],
+          "receipt_ids": [
+            "cmreceipt:v1:ee30e43a83b638f51eeb92006a7dd6aed526d08dda998c8e4d6f4d5b6963921f",
+            "cmreceipt:v1:8c73dceb660c91e701e4121860ab204f15e76d38c34d3c14bef9e849730acfcc"
+          ],
+          "uncertain": false
+        },
+        {
+          "candidate_id": "candidate:contract",
+          "classification": "human_required",
+          "effect_count": 0,
+          "reason_codes": [
+            "contract"
+          ],
+          "receipt_ids": [],
+          "uncertain": false
+        },
+        {
+          "candidate_id": "candidate:money",
+          "classification": "human_required",
+          "effect_count": 0,
+          "reason_codes": [
+            "money"
+          ],
+          "receipt_ids": [],
+          "uncertain": false
+        },
+        {
+          "candidate_id": "candidate:progress",
+          "classification": "auto_internal",
+          "effect_count": 1,
+          "reason_codes": [],
+          "receipt_ids": [
+            "cmreceipt:v1:11894a3d7c7e2a063e2a456a9da5df8d46b53ce0bef82ab9cd6228e085fbe61e",
+            "cmreceipt:v1:f3361eb388076208729c3f598676da05d3ece8ff3ebd29ff37e927fcae96f750"
+          ],
+          "uncertain": false
+        }
+      ]
+    },
+    "second": {
+      "checkpoint": {
+        "approval_binding_digest": "sha256:1111111111111111111111111111111111111111111111111111111111111111",
+        "approval_policy_version": 1,
+        "intent_root": "sha256:59dba71fec6ed20fc07deeddd6f3760dc66b3b7c60839441c3278998e3276fef",
+        "intent_sequence": 19,
+        "operational_epoch": 1,
+        "revocation_root": "sha256:8010f405b5bb1bdb6dde1b26b78cf1e72ee98cd6188ccccb8e78d5c1e202f457",
+        "revocation_sequence": 1,
+        "stores": {
+          "jarvis": {
+            "deletion_root": "sha256:aaad46c82a56b36ba8417c5f06aac3dc77cbd20484f378c225e7a9eb3cda6c7e",
+            "deletion_sequence": 0,
+            "receipt_root": "sha256:9fd5207da793016a2d7e4b991bcfc2f0b6cf6d995c4f2272521b95c353d9ac47",
+            "receipt_sequence": 0,
+            "terminal_root": "sha256:95199024c4278c00c9bc2583d01b9388c37f4ad703f5230ac743ee71c609befc",
+            "terminal_sequence": 0
+          },
+          "second_brain": {
+            "deletion_root": "sha256:4c0889659f715356238bf30d7538ef515b93a8929ae5c78ceb368516ba0953ab",
+            "deletion_sequence": 0,
+            "receipt_root": "sha256:e1ad3fc079a97faae1639eddd4bdb57a3062092306e824a50ffde1cb8a202fa8",
+            "receipt_sequence": 9,
+            "terminal_root": "sha256:29269977c845cd022d982f5a09df4076b09738a3934691cd426140b1257a70ae",
+            "terminal_sequence": 6
+          }
+        }
+      },
+      "outcomes": [
+        {
+          "candidate_id": "candidate:contract",
+          "classification": "human_required",
+          "effect_count": 0,
+          "reason_codes": [
+            "contract"
+          ],
+          "receipt_ids": [],
+          "uncertain": false
+        },
+        {
+          "candidate_id": "candidate:money",
+          "classification": "human_required",
+          "effect_count": 0,
+          "reason_codes": [
+            "money"
+          ],
+          "receipt_ids": [],
+          "uncertain": false
+        }
+      ]
+    },
+    "published": {
+      "status": "published",
+      "report_id": "company-report:v1:84ce14ea077d2fc4f487dfa80f1984aff7ce75bac8d5b5f351595d5b88f9e425",
+      "created": true
+    },
+    "repeated": {
+      "status": "published",
+      "report_id": "company-report:v1:84ce14ea077d2fc4f487dfa80f1984aff7ce75bac8d5b5f351595d5b88f9e425",
+      "created": false
+    },
+    "counts": {
+      "calendar_memo": 1,
+      "completed": 3,
+      "conflict": 2,
+      "contact_new": 1,
+      "human_required": 2,
+      "progress_memo": 1,
+      "unresolved": 0
+    },
+    "rows": [
+      {
+        "candidate_id": "candidate:calendar",
+        "classification": "calendar_memo",
+        "counts_as_complete": true,
+        "error_reason": null,
+        "global_sequence": 10,
+        "mail_event_ref": "event:calendar",
+        "operation_id": "sha256:b0076dab90824bc70403a9a327e37b36aa3fca6f2a20b324bd31201f5a6a412f",
+        "policy_version": "1",
+        "processed_at": "2026-10-16T05:28:33.412Z",
+        "receipt_id": "cmreceipt:v1:7d9a1fed00917178413412ae5f60c83a0861770cbcea9d82b725310c51a6ec71",
+        "status": "processed_complete"
+      },
+      {
+        "candidate_id": "candidate:contact",
+        "classification": "contact_new",
+        "counts_as_complete": true,
+        "error_reason": null,
+        "global_sequence": 18,
+        "mail_event_ref": "event:contact",
+        "operation_id": "sha256:7d0a96eb14b1ae9269141b63f228d4ccf85f2f286f7f2ebb6c9ca943e5ba77e4",
+        "policy_version": "1",
+        "processed_at": "2026-10-16T05:28:33.587Z",
+        "receipt_id": "cmreceipt:v1:8c73dceb660c91e701e4121860ab204f15e76d38c34d3c14bef9e849730acfcc",
+        "status": "processed_complete"
+      },
+      {
+        "candidate_id": "candidate:contract",
+        "classification": "conflict",
+        "counts_as_complete": false,
+        "error_reason": "contract",
+        "global_sequence": 19,
+        "mail_event_ref": "event:contract",
+        "operation_id": "assessment:sha256:32ee25a59bb30863f2051ab892188705d4035c0e73e1305a4cc7e56a8a1638e8",
+        "policy_version": "1",
+        "processed_at": null,
+        "receipt_id": null,
+        "status": "candidate"
+      },
+      {
+        "candidate_id": "candidate:money",
+        "classification": "conflict",
+        "counts_as_complete": false,
+        "error_reason": "money",
+        "global_sequence": 20,
+        "mail_event_ref": "event:money",
+        "operation_id": "assessment:sha256:713b0c9c182677d7f0143d44b81e1199dff6576237eef09afbd61cda6884e007",
+        "policy_version": "1",
+        "processed_at": null,
+        "receipt_id": null,
+        "status": "candidate"
+      },
+      {
+        "candidate_id": "candidate:progress",
+        "classification": "progress_memo",
+        "counts_as_complete": true,
+        "error_reason": null,
+        "global_sequence": 28,
+        "mail_event_ref": "event:progress",
+        "operation_id": "sha256:2f010c063c5b5f507df9471cddd1d8d2ac60fb2df8a636904a62d6e5afa8881b",
+        "policy_version": "1",
+        "processed_at": "2026-10-16T05:28:33.910Z",
+        "receipt_id": "cmreceipt:v1:f3361eb388076208729c3f598676da05d3ece8ff3ebd29ff37e927fcae96f750",
+        "status": "processed_complete"
+      }
+    ],
+    "fabricated_human_receipts": 0,
+    "notification_intents": 1
+  },
+  "notifications": [
+    {
+      "case": "old client remains pending",
+      "status": 204,
+      "body": null
+    },
+    {
+      "case": "capable company claim",
+      "status": 200,
+      "body": {
+        "schema_version": 1,
+        "delivery_id": "ndl:pos:v1:acce2e7989af3db28061e763f5f4673fa89637c1ca6d6fb857bd7c8917fbf4b3",
+        "intent_id": "ntf:pos:v1:694940c65a46bf89cb4610c32335a432ae42e5da16a9ccff39637f329faad961",
+        "expires_at": "2026-10-22T09:00:00.000Z",
+        "payload": {
+          "title": "Company daily report",
+          "summary": "회사 내부 기록 0건",
+          "alert_class": "company_daily_report",
+          "deep_link": "jarvis://open/company-report?id=Y29tcGFueS1yZXBvcnQ6djE6MTdjY2E1OTkwYzBlY2Q0ZjE3YjFkMWU1ZGI4ZTBlZDE0ZmQ4ZWNhMTNkMzhkN2QzMzI0ZGRlNjU2NmU3Mjc0YQ"
+        }
+      }
+    },
+    {
+      "case": "different authenticated recipient refused",
+      "status": 409,
+      "body": {
+        "schema_version": 1,
+        "error": {
+          "code": "NOTIFICATION_DELIVERY_STALE_LEASE",
+          "message": "Notification delivery unavailable",
+          "request_id": "121b174e-bb13-43d0-bf9e-3578546aafaf"
+        }
+      }
+    },
+    {
+      "case": "unsupported is not delivered",
+      "status": 200,
+      "body": {
+        "schema_version": 1,
+        "delivery_id": "ndl:pos:v1:acce2e7989af3db28061e763f5f4673fa89637c1ca6d6fb857bd7c8917fbf4b3",
+        "intent_id": "ntf:pos:v1:694940c65a46bf89cb4610c32335a432ae42e5da16a9ccff39637f329faad961",
+        "state": "failed",
+        "settled_at": "2026-10-16T09:00:00.000Z"
+      }
+    },
+    {
+      "case": "next report claim",
+      "status": 200,
+      "body": {
+        "schema_version": 1,
+        "delivery_id": "ndl:pos:v1:27babac988affe300f570fe30b3c514d8b8fe31a1f0f99e5b3a0d06276fea77f",
+        "intent_id": "ntf:pos:v1:8d8be449ffd38aa63fe02bba552e00d46238749d8b0327adc64c6ae85a432d2a",
+        "expires_at": "2026-10-23T09:00:00.000Z",
+        "payload": {
+          "title": "Company daily report",
+          "summary": "회사 내부 기록 3건",
+          "alert_class": "company_daily_report",
+          "deep_link": "jarvis://open/company-report?id=Y29tcGFueS1yZXBvcnQ6djE6OTdiYjk4MGRkZTFhOTNhOWZmY2VkMjVmZmI4ZTFmYzgyNDNhNWZjMzUwNjgwOWUxNTFhNTRlYjc5MTYzYTBjZg"
+        }
+      }
+    },
+    {
+      "case": "delivered",
+      "status": 200,
+      "body": {
+        "schema_version": 1,
+        "delivery_id": "ndl:pos:v1:27babac988affe300f570fe30b3c514d8b8fe31a1f0f99e5b3a0d06276fea77f",
+        "intent_id": "ntf:pos:v1:8d8be449ffd38aa63fe02bba552e00d46238749d8b0327adc64c6ae85a432d2a",
+        "state": "delivered",
+        "settled_at": "2026-10-16T09:00:00.000Z"
+      }
+    },
+    {
+      "case": "duplicate settle",
+      "status": 200,
+      "body": {
+        "schema_version": 1,
+        "delivery_id": "ndl:pos:v1:27babac988affe300f570fe30b3c514d8b8fe31a1f0f99e5b3a0d06276fea77f",
+        "intent_id": "ntf:pos:v1:8d8be449ffd38aa63fe02bba552e00d46238749d8b0327adc64c6ae85a432d2a",
+        "state": "delivered",
+        "settled_at": "2026-10-16T09:00:00.000Z"
+      }
+    },
+    {
+      "case": "no duplicate delivery",
+      "status": 204,
+      "body": null
+    },
+    {
+      "case": "reports retained",
+      "reports": [
+        {
+          "date": "2026-10-16",
+          "notification": "delivered",
+          "completed": 3
+        },
+        {
+          "date": "2026-10-15",
+          "notification": "unsupported",
+          "completed": 0
+        }
+      ]
+    }
+  ],
+  "passkey_challenge_only": {
+    "url": "http://127.0.0.1:35319/api/v1/owner-inbox/challenge",
+    "status": 200
+  },
+  "receipt_target": {
+    "hash": "#receipt-company-report%3Av1%3A97bb980dde1a93a9ffced25ffb8e1fc8243a5fc3506809e151a54eb79163a0cf-1",
+    "target": "receipt-company-report:v1:97bb980dde1a93a9ffced25ffb8e1fc8243a5fc3506809e151a54eb79163a0cf-1",
+    "targetTop": 167.796875,
+    "headerBottom": 90.5,
+    "overflow": false
+  },
+  "visual_matrix": [
+    {
+      "route": "approvals",
+      "preset": "desktop-1440",
+      "theme": "light",
+      "file": "/home/jm/orca/lanes/jarvis-freshness-9db9d7be/.omo/evidence/company-real-20261016/approvals-desktop-1440-light.png",
+      "width": 1440,
+      "dpr": 1,
+      "scrollWidth": 1425,
+      "clientWidth": 1425,
+      "cards": 2,
+      "autoApprovalButtons": 0,
+      "dates": [
+        "2026-10-16",
+        "2026-10-15"
+      ],
+      "pngWidth": 1440,
+      "pngHeight": 900,
+      "validPng": true,
+      "sha256": "2f71e623bbd5ca0ca0840297ba88600f8a34e823df33977bd15c4b53f0e0e35b"
+    },
+    {
+      "route": "approvals",
+      "preset": "desktop-1440",
+      "theme": "dark",
+      "file": "/home/jm/orca/lanes/jarvis-freshness-9db9d7be/.omo/evidence/company-real-20261016/approvals-desktop-1440-dark.png",
+      "width": 1440,
+      "dpr": 1,
+      "scrollWidth": 1425,
+      "clientWidth": 1425,
+      "cards": 2,
+      "autoApprovalButtons": 0,
+      "dates": [
+        "2026-10-16",
+        "2026-10-15"
+      ],
+      "pngWidth": 1440,
+      "pngHeight": 900,
+      "validPng": true,
+      "sha256": "2f71e623bbd5ca0ca0840297ba88600f8a34e823df33977bd15c4b53f0e0e35b"
+    },
+    {
+      "route": "approvals",
+      "preset": "desktop-1920",
+      "theme": "light",
+      "file": "/home/jm/orca/lanes/jarvis-freshness-9db9d7be/.omo/evidence/company-real-20261016/approvals-desktop-1920-light.png",
+      "width": 1920,
+      "dpr": 1,
+      "scrollWidth": 1905,
+      "clientWidth": 1905,
+      "cards": 2,
+      "autoApprovalButtons": 0,
+      "dates": [
+        "2026-10-16",
+        "2026-10-15"
+      ],
+      "pngWidth": 1920,
+      "pngHeight": 1080,
+      "validPng": true,
+      "sha256": "66fc1a242b4e3ea27cbb333117636244796c6ee286e777b60387a01b9f73a598"
+    },
+    {
+      "route": "approvals",
+      "preset": "desktop-1920",
+      "theme": "dark",
+      "file": "/home/jm/orca/lanes/jarvis-freshness-9db9d7be/.omo/evidence/company-real-20261016/approvals-desktop-1920-dark.png",
+      "width": 1920,
+      "dpr": 1,
+      "scrollWidth": 1905,
+      "clientWidth": 1905,
+      "cards": 2,
+      "autoApprovalButtons": 0,
+      "dates": [
+        "2026-10-16",
+        "2026-10-15"
+      ],
+      "pngWidth": 1920,
+      "pngHeight": 1080,
+      "validPng": true,
+      "sha256": "66fc1a242b4e3ea27cbb333117636244796c6ee286e777b60387a01b9f73a598"
+    },
+    {
+      "route": "approvals",
+      "preset": "iphone-14",
+      "theme": "light",
+      "file": "/home/jm/orca/lanes/jarvis-freshness-9db9d7be/.omo/evidence/company-real-20261016/approvals-iphone-14-light.png",
+      "width": 390,
+      "dpr": 3,
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "cards": 2,
+      "autoApprovalButtons": 0,
+      "dates": [
+        "2026-10-16",
+        "2026-10-15"
+      ],
+      "pngWidth": 1170,
+      "pngHeight": 2532,
+      "validPng": true,
+      "sha256": "2e0ec57a1569347a64f304021975d3c7427bf5e55c95168375fbfd62db502099"
+    },
+    {
+      "route": "approvals",
+      "preset": "iphone-14",
+      "theme": "dark",
+      "file": "/home/jm/orca/lanes/jarvis-freshness-9db9d7be/.omo/evidence/company-real-20261016/approvals-iphone-14-dark.png",
+      "width": 390,
+      "dpr": 3,
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "cards": 2,
+      "autoApprovalButtons": 0,
+      "dates": [
+        "2026-10-16",
+        "2026-10-15"
+      ],
+      "pngWidth": 1170,
+      "pngHeight": 2532,
+      "validPng": true,
+      "sha256": "2e0ec57a1569347a64f304021975d3c7427bf5e55c95168375fbfd62db502099"
+    },
+    {
+      "route": "report",
+      "preset": "desktop-1440",
+      "theme": "light",
+      "file": "/home/jm/orca/lanes/jarvis-freshness-9db9d7be/.omo/evidence/company-real-20261016/report-desktop-1440-light.png",
+      "width": 1440,
+      "dpr": 1,
+      "scrollWidth": 1425,
+      "clientWidth": 1425,
+      "cards": 1,
+      "autoApprovalButtons": 0,
+      "dates": [
+        "2026-10-16"
+      ],
+      "pngWidth": 1440,
+      "pngHeight": 900,
+      "validPng": true,
+      "sha256": "947087d46f33eb24f4bc3b0997bf6414aef572426aeecf5ffe7ab95b2a7f71a7"
+    },
+    {
+      "route": "report",
+      "preset": "desktop-1440",
+      "theme": "dark",
+      "file": "/home/jm/orca/lanes/jarvis-freshness-9db9d7be/.omo/evidence/company-real-20261016/report-desktop-1440-dark.png",
+      "width": 1440,
+      "dpr": 1,
+      "scrollWidth": 1425,
+      "clientWidth": 1425,
+      "cards": 1,
+      "autoApprovalButtons": 0,
+      "dates": [
+        "2026-10-16"
+      ],
+      "pngWidth": 1440,
+      "pngHeight": 900,
+      "validPng": true,
+      "sha256": "947087d46f33eb24f4bc3b0997bf6414aef572426aeecf5ffe7ab95b2a7f71a7"
+    },
+    {
+      "route": "report",
+      "preset": "desktop-1920",
+      "theme": "light",
+      "file": "/home/jm/orca/lanes/jarvis-freshness-9db9d7be/.omo/evidence/company-real-20261016/report-desktop-1920-light.png",
+      "width": 1920,
+      "dpr": 1,
+      "scrollWidth": 1905,
+      "clientWidth": 1905,
+      "cards": 1,
+      "autoApprovalButtons": 0,
+      "dates": [
+        "2026-10-16"
+      ],
+      "pngWidth": 1920,
+      "pngHeight": 1080,
+      "validPng": true,
+      "sha256": "a1933c478dab60c70e876fd5da6d48cdb0da7d4501edffb30cbe626bba99f5d3"
+    },
+    {
+      "route": "report",
+      "preset": "desktop-1920",
+      "theme": "dark",
+      "file": "/home/jm/orca/lanes/jarvis-freshness-9db9d7be/.omo/evidence/company-real-20261016/report-desktop-1920-dark.png",
+      "width": 1920,
+      "dpr": 1,
+      "scrollWidth": 1905,
+      "clientWidth": 1905,
+      "cards": 1,
+      "autoApprovalButtons": 0,
+      "dates": [
+        "2026-10-16"
+      ],
+      "pngWidth": 1920,
+      "pngHeight": 1080,
+      "validPng": true,
+      "sha256": "a1933c478dab60c70e876fd5da6d48cdb0da7d4501edffb30cbe626bba99f5d3"
+    },
+    {
+      "route": "report",
+      "preset": "iphone-14",
+      "theme": "light",
+      "file": "/home/jm/orca/lanes/jarvis-freshness-9db9d7be/.omo/evidence/company-real-20261016/report-iphone-14-light.png",
+      "width": 390,
+      "dpr": 3,
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "cards": 1,
+      "autoApprovalButtons": 0,
+      "dates": [
+        "2026-10-16"
+      ],
+      "pngWidth": 1170,
+      "pngHeight": 2532,
+      "validPng": true,
+      "sha256": "946b2fd9c2f735fd25f38cb1908f05c90d7ede0cffd442f5b502b385e3a705a1"
+    },
+    {
+      "route": "report",
+      "preset": "iphone-14",
+      "theme": "dark",
+      "file": "/home/jm/orca/lanes/jarvis-freshness-9db9d7be/.omo/evidence/company-real-20261016/report-iphone-14-dark.png",
+      "width": 390,
+      "dpr": 3,
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "cards": 1,
+      "autoApprovalButtons": 0,
+      "dates": [
+        "2026-10-16"
+      ],
+      "pngWidth": 1170,
+      "pngHeight": 2532,
+      "validPng": true,
+      "sha256": "946b2fd9c2f735fd25f38cb1908f05c90d7ede0cffd442f5b502b385e3a705a1"
+    },
+    {
+      "route": "empty",
+      "preset": "desktop-1440",
+      "theme": "light",
+      "file": "/home/jm/orca/lanes/jarvis-freshness-9db9d7be/.omo/evidence/company-real-20261016/empty-desktop-1440-light.png",
+      "width": 1440,
+      "dpr": 1,
+      "scrollWidth": 1425,
+      "clientWidth": 1425,
+      "cards": 1,
+      "autoApprovalButtons": 0,
+      "dates": [
+        "2026-10-15"
+      ],
+      "pngWidth": 1440,
+      "pngHeight": 900,
+      "validPng": true,
+      "sha256": "64c7366f4f3bead657572456965b8035df52985404e2f31ae9358d0e01d5841f"
+    },
+    {
+      "route": "empty",
+      "preset": "desktop-1440",
+      "theme": "dark",
+      "file": "/home/jm/orca/lanes/jarvis-freshness-9db9d7be/.omo/evidence/company-real-20261016/empty-desktop-1440-dark.png",
+      "width": 1440,
+      "dpr": 1,
+      "scrollWidth": 1425,
+      "clientWidth": 1425,
+      "cards": 1,
+      "autoApprovalButtons": 0,
+      "dates": [
+        "2026-10-15"
+      ],
+      "pngWidth": 1440,
+      "pngHeight": 900,
+      "validPng": true,
+      "sha256": "64c7366f4f3bead657572456965b8035df52985404e2f31ae9358d0e01d5841f"
+    },
+    {
+      "route": "empty",
+      "preset": "desktop-1920",
+      "theme": "light",
+      "file": "/home/jm/orca/lanes/jarvis-freshness-9db9d7be/.omo/evidence/company-real-20261016/empty-desktop-1920-light.png",
+      "width": 1920,
+      "dpr": 1,
+      "scrollWidth": 1920,
+      "clientWidth": 1920,
+      "cards": 1,
+      "autoApprovalButtons": 0,
+      "dates": [
+        "2026-10-15"
+      ],
+      "pngWidth": 1920,
+      "pngHeight": 1080,
+      "validPng": true,
+      "sha256": "3a678fa43272ce01d708e0c1c2dd85b86f161c420cf60948d2b216c1ae0bfa7e"
+    },
+    {
+      "route": "empty",
+      "preset": "desktop-1920",
+      "theme": "dark",
+      "file": "/home/jm/orca/lanes/jarvis-freshness-9db9d7be/.omo/evidence/company-real-20261016/empty-desktop-1920-dark.png",
+      "width": 1920,
+      "dpr": 1,
+      "scrollWidth": 1920,
+      "clientWidth": 1920,
+      "cards": 1,
+      "autoApprovalButtons": 0,
+      "dates": [
+        "2026-10-15"
+      ],
+      "pngWidth": 1920,
+      "pngHeight": 1080,
+      "validPng": true,
+      "sha256": "3a678fa43272ce01d708e0c1c2dd85b86f161c420cf60948d2b216c1ae0bfa7e"
+    },
+    {
+      "route": "empty",
+      "preset": "iphone-14",
+      "theme": "light",
+      "file": "/home/jm/orca/lanes/jarvis-freshness-9db9d7be/.omo/evidence/company-real-20261016/empty-iphone-14-light.png",
+      "width": 390,
+      "dpr": 3,
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "cards": 1,
+      "autoApprovalButtons": 0,
+      "dates": [
+        "2026-10-15"
+      ],
+      "pngWidth": 1170,
+      "pngHeight": 2532,
+      "validPng": true,
+      "sha256": "3c1094bf6fff10aa4c908a47b3f0f19ecfea2a3ca210a8a88f3f520e7e158622"
+    },
+    {
+      "route": "empty",
+      "preset": "iphone-14",
+      "theme": "dark",
+      "file": "/home/jm/orca/lanes/jarvis-freshness-9db9d7be/.omo/evidence/company-real-20261016/empty-iphone-14-dark.png",
+      "width": 390,
+      "dpr": 3,
+      "scrollWidth": 390,
+      "clientWidth": 390,
+      "cards": 1,
+      "autoApprovalButtons": 0,
+      "dates": [
+        "2026-10-15"
+      ],
+      "pngWidth": 1170,
+      "pngHeight": 2532,
+      "validPng": true,
+      "sha256": "3c1094bf6fff10aa4c908a47b3f0f19ecfea2a3ca210a8a88f3f520e7e158622"
+    }
+  ]
+}
