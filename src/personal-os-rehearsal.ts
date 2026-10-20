@@ -7,21 +7,29 @@ import {
   type RehearsalOptions,
 } from "./personal-os-rehearsal-contract.js";
 import { runHappyRehearsal, type RehearsalResult } from "./personal-os-rehearsal-happy.js";
-import { livePathsUnchanged, snapshotLivePaths } from "./personal-os-rehearsal-live-path.js";
+import { livePathsUnchanged, snapshotLivePaths, type LivePathRoots } from "./personal-os-rehearsal-live-path.js";
 import { runRehearsalScenario } from "./personal-os-rehearsal-scenario-run.js";
 import { type ScenarioResult } from "./personal-os-rehearsal-scenarios.js";
 
 export type { RehearsalOptions } from "./personal-os-rehearsal-contract.js";
 export type { RehearsalResult } from "./personal-os-rehearsal-happy.js";
 
-export async function runPersonalOsRehearsal(options: RehearsalOptions): Promise<RehearsalResult | ScenarioResult> {
-  const releaseRoot = assertIsolatedRoot(options.releaseRoot);
+export type RehearsalDependencies = LivePathRoots;
+
+export async function runPersonalOsRehearsal(
+  options: RehearsalOptions,
+  dependencies: RehearsalDependencies = {},
+): Promise<RehearsalResult | ScenarioResult> {
+  const releaseRoot = assertIsolatedRoot(options.releaseRoot, dependencies.environment, [
+    ...(dependencies.namedRoots ?? []),
+    ...(dependencies.liveUnitPath === undefined ? [] : [dependencies.liveUnitPath]),
+  ]);
   const times = parseRehearsalClock(options.clock);
-  const before = snapshotLivePaths();
+  const before = snapshotLivePaths(dependencies);
   const result = options.scenario === undefined
-    ? await runHappyRehearsal(options, releaseRoot, times)
+    ? await runHappyRehearsal(options, releaseRoot, times, dependencies.liveUnitPath)
     : await runRehearsalScenario(options, releaseRoot, times);
-  if (!livePathsUnchanged(before, snapshotLivePaths())) throw new PersonalOsError("E_REHEARSAL_GATE");
+  if (!livePathsUnchanged(before, snapshotLivePaths(dependencies))) throw new PersonalOsError("E_REHEARSAL_GATE");
   return result;
 }
 

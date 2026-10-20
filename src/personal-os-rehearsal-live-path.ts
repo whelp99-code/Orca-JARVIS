@@ -1,14 +1,6 @@
 import { lstatSync } from "node:fs";
-import { protectedRoots } from "./personal-os-protected-paths.js";
-
-const NAMED_ROOTS = [
-  "/home/jm/.local/state/orca-jarvis",
-  "/var/lib/jarvis-svc",
-  "/opt/jarvis-runtime",
-  "/home/jm/.local/state/orca-jarvis-phone-gateway",
-  "/home/jm/.local/state/second-brain",
-  "/home/jm/.config/systemd/user/jm-jarvis.service",
-] as const;
+import { type DeploymentEnvironment } from "./personal-os-deployment-roots.js";
+import { NAMED_ROOTS, protectedRoots } from "./personal-os-protected-paths.js";
 
 export type LivePathSnapshot = {
   readonly path: string;
@@ -26,8 +18,18 @@ function identity(path: string): LivePathSnapshot {
   }
 }
 
-export function snapshotLivePaths(): readonly LivePathSnapshot[] {
-  const paths = [...new Set([...NAMED_ROOTS, ...protectedRoots()])];
+export type LivePathRoots = {
+  readonly environment?: DeploymentEnvironment;
+  readonly namedRoots?: readonly string[];
+  readonly liveUnitPath?: string;
+};
+
+export function snapshotLivePaths(roots: LivePathRoots = {}): readonly LivePathSnapshot[] {
+  const paths = [...new Set([
+    ...(roots.namedRoots ?? NAMED_ROOTS),
+    ...protectedRoots(roots.environment),
+    ...(roots.liveUnitPath === undefined ? [] : [roots.liveUnitPath]),
+  ])];
   return paths.map(identity);
 }
 

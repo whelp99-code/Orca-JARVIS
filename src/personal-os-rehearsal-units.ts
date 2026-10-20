@@ -27,6 +27,7 @@ export function renderIsolatedUnits(input: {
   readonly releaseRoot: string;
   readonly dbPath: string;
   readonly providerCurrent: string;
+  readonly liveUnitPath?: string;
 }): RenderedUnits {
   const dir = join(input.releaseRoot, "units");
   mkdirSync(dir, { recursive: true });
@@ -57,7 +58,8 @@ export function renderIsolatedUnits(input: {
   const jarvis = readFileSync(join(dir, "jm-jarvis.service"), "utf8");
   const phone = readFileSync(join(dir, "jm-jarvis-phone-gateway.service"), "utf8");
   const current = join(input.releaseRoot, "current");
-  const live = existsSync(LIVE_UNIT) ? readFileSync(LIVE_UNIT, "utf8") : undefined;
+  const liveUnitPath = input.liveUnitPath ?? LIVE_UNIT;
+  const live = existsSync(liveUnitPath) ? readFileSync(liveUnitPath, "utf8") : undefined;
   return {
     dir,
     ids,
@@ -65,7 +67,7 @@ export function renderIsolatedUnits(input: {
     pointsAtCurrent: jarvis.includes(current) && phone.includes("127.0.0.1") && !jarvis.includes("/orca/workspaces/"),
     installed: false,
     liveUnit: {
-      path: LIVE_UNIT,
+      path: liveUnitPath,
       present: live !== undefined,
       worktreeExec: live !== undefined && live.includes("/orca/workspaces/"),
       applied: false,
