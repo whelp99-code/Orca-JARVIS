@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { mkdirSync } from "node:fs";
 import { join, resolve } from "node:path";
-import { backendShardRuns, backendShardsRunInParallel } from "./lib/backend-shard-plan.mjs";
+import { backendShardRuns, backendShardsRunInParallel, classifyTestResult, headlessGuiPlan, settleParallelShards } from "./lib/backend-shard-plan.mjs";
 import { createTestEnvironment } from "./lib/test-environment.mjs";
 import { runTestProcess } from "./lib/test-process.mjs";
 
@@ -16,8 +16,7 @@ async function runOnce(command, argv, env, options) {
   const result = await runTestProcess(command, argv, { env, signal: controller.signal, ...options });
   if (result.timedOut) throw new Error(options.profile === "gui" ? "TEST_GUI_TIMEOUT" : "TEST_RUN_TIMEOUT");
   if (result.spawnError) throw new Error("TEST_COMMAND_UNAVAILABLE");
-  if (result.interrupted) return { interrupted: true, code: 130 };
-  return { interrupted: false, code: result.code ?? 0 };
+  return classifyTestResult(result);
 }
 
 try {
@@ -35,7 +34,6 @@ try {
     argv = [resolve("scripts/gui-test-entry.mjs"), ...args];
   }
 
-  const runs = backendShardRuns(profile, args, argv);
   const parallelShards = backendShardsRunInParallel(profile, args);
   scratch = parallelShards ? null : createTestEnvironment();
   const sharedEnv = scratch ? { ...scratch.env, JARVIS_TEST_PROFILE: profile } : null;
@@ -43,11 +41,14 @@ try {
   if (profile === "gui" && process.platform === "linux" && !sharedEnv?.DISPLAY?.trim()) {
     const privateTmp = join(scratch.root, "display-tmp"); mkdirSync(privateTmp, { mode: 0o700 });
     mkdirSync(join(privateTmp, ".X11-unix"), { mode: 0o1777 });
-    argv = ["--die-with-parent", "--unshare-pid", "--bind", "/", "/", "--dev-bind", "/dev", "/dev",
-      "--bind", privateTmp, "/tmp", "--proc", "/proc", "--", process.execPath, ...argv];
+    const wrapped = headlessGuiPlan({
+      profile, platform: process.platform, display: sharedEnv?.DISPLAY, argv, execPath: process.execPath, privateTmp,
+    });
+    command = wrapped.command;
+    argv = wrapped.argv;
     sharedEnv.TMPDIR = "/tmp"; sharedEnv.TMP = "/tmp"; sharedEnv.TEMP = "/tmp";
-    command = "bwrap";
   }
+  const runs = backendShardRuns(profile, args, argv);
 
   if (profile !== "acceptance" && profile !== "smoke") process.stdout.write(`JARVIS_TEST_PROFILE ${profile}\n`);
   const processOptions = {
@@ -59,27 +60,26 @@ try {
 
   if (parallelShards) {
     process.stdout.write(`JARVIS_TEST_SHARD parallel ${runs.length}/${runs.length}\n`);
-    const shardCleanups = [];
-    const shardAbort = new AbortController();
-    const shardSignal = AbortSignal.any([controller.signal, shardAbort.signal]);
-    const outcomes = await Promise.all(runs.map(async (current, index) => {
-      const shardScratch = createTestEnvironment();
-      shardCleanups.push(shardScratch.cleanup);
-      process.stdout.write(`JARVIS_TEST_SHARD ${index + 1}/${runs.length} start\n`);
-      const env = {
-        ...shardScratch.env,
-        JARVIS_TEST_PROFILE: profile,
-        VITEST_CACHE_DIR: join(shardScratch.root, "vitest-cache"),
-        NODE_COMPILE_CACHE: join(shardScratch.root, "node-compile-cache"),
-      };
-      const outcome = await runOnce(command, current, env, { ...processOptions, signal: shardSignal });
-      process.stdout.write(`JARVIS_TEST_SHARD ${index + 1}/${runs.length} end code=${outcome.code}\n`);
-      if (outcome.code !== 0) shardAbort.abort();
-      return outcome;
-    }));
-    for (const cleanup of shardCleanups) cleanup();
-    if (outcomes.some((outcome) => outcome.interrupted)) process.exitCode = 130;
-    else if (outcomes.some((outcome) => outcome.code !== 0)) process.exitCode = outcomes.find((o) => o.code !== 0)?.code ?? 1;
+    const settled = await settleParallelShards({
+      runs,
+      parentSignal: controller.signal,
+      createEnvironment: createTestEnvironment,
+      onError: (error) => process.stderr.write(`${error instanceof Error ? error.message : "TEST_SHARD_FAILED"}\n`),
+      async runShard(current, shardScratch, signal, index) {
+        process.stdout.write(`JARVIS_TEST_SHARD ${index + 1}/${runs.length} start\n`);
+        const env = {
+          ...shardScratch.env,
+          JARVIS_TEST_PROFILE: profile,
+          VITEST_CACHE_DIR: join(shardScratch.root, "vitest-cache"),
+          NODE_COMPILE_CACHE: join(shardScratch.root, "node-compile-cache"),
+        };
+        const outcome = await runOnce(command, current, env, { ...processOptions, signal });
+        const signalNote = outcome.signal ? ` signal=${outcome.signal}` : "";
+        process.stdout.write(`JARVIS_TEST_SHARD ${index + 1}/${runs.length} end code=${outcome.code}${signalNote}\n`);
+        return outcome;
+      },
+    });
+    if (settled.exitCode !== 0) process.exitCode = settled.exitCode;
     else process.exitCode ??= 0;
   } else {
     for (const [index, current] of runs.entries()) {
