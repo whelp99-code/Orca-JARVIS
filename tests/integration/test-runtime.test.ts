@@ -185,3 +185,46 @@ describe("provider storage base", () => {
     expect(lstat).not.toHaveBeenCalled();
   });
 });
+
+describe("suite storage selector", () => {
+  afterEach(() => { vi.restoreAllMocks(); });
+
+  it("places the entire child temporary environment under the selected private root", () => {
+    const parent = createTestEnvironment({});
+    const info = statFixture({ isDirectory: () => true, isSymbolicLink: () => false, nlink: 2, mode: 0o40700 });
+    vi.mocked(nodeFs.lstatSync).mockReturnValue(info);
+    vi.mocked(nodeFs.realpathSync).mockReturnValue(parent.root);
+    try {
+      const child = createTestEnvironment({ TMPDIR: "/proc/not-used", JARVIS_TEST_PROVIDER_STORAGE_ROOT: parent.root });
+      try {
+        expect(dirname(child.root)).toBe(parent.root);
+        expect(child.env).toMatchObject({ TMPDIR: child.root, TMP: child.root, TEMP: child.root,
+          JARVIS_TEST_PROVIDER_STORAGE_ROOT: child.root });
+        expect(statSync(child.root).mode & 0o777).toBe(0o700);
+      } finally { child.cleanup(); }
+      expect(existsSync(parent.root)).toBe(true);
+    } finally { parent.cleanup(); }
+  });
+
+  it("rejects an unsupported created root and cleans only that root", () => {
+    const parent = createTestEnvironment({});
+    const info = statFixture({ isDirectory: () => true, isSymbolicLink: () => false, nlink: 2, mode: 0o40700 });
+    vi.mocked(nodeFs.lstatSync).mockReturnValueOnce(info).mockReturnValueOnce({ ...info, nlink: 1 });
+    vi.mocked(nodeFs.realpathSync).mockReturnValue(parent.root);
+    try {
+      expect(() => createTestEnvironment({ JARVIS_TEST_PROVIDER_STORAGE_ROOT: parent.root })).toThrow(
+        expect.objectContaining({ message: "TEST_PROVIDER_STORAGE_UNSUPPORTED", reason: "nlink_below_2" }));
+      const created = String(vi.mocked(nodeFs.lstatSync).mock.calls[1]![0]);
+      expect(existsSync(created)).toBe(false);
+      expect(existsSync(parent.root)).toBe(true);
+    } finally { parent.cleanup(); }
+  });
+
+  it("rejects invalid selectors instead of falling back to TMPDIR", () => {
+    for (const selector of ["", "relative/provider"]) {
+      expect(() => createTestEnvironment({ TMPDIR: tmpdir(), JARVIS_TEST_PROVIDER_STORAGE_ROOT: selector }))
+        .toThrow("TEST_PROVIDER_STORAGE_SELECTOR_INVALID");
+    }
+    expect(nodeFs.lstatSync).not.toHaveBeenCalled();
+  });
+});

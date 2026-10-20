@@ -2,6 +2,8 @@ import { chmodSync, closeSync, fsyncSync, lstatSync, mkdirSync, mkdtempSync, ope
 import { tmpdir } from "node:os";
 import { isAbsolute, join } from "node:path";
 
+const FIXED_ERRORS = new Set(["TEST_PROVIDER_STORAGE_UNSUPPORTED", "TEST_PROVIDER_STORAGE_SELECTOR_INVALID", "TEST_TMPDIR_UNAVAILABLE"]);
+
 function unsupported(reason, info) {
   const error = new Error("TEST_PROVIDER_STORAGE_UNSUPPORTED");
   error.reason = reason;
@@ -39,14 +41,32 @@ export function providerStorageBase(env = process.env) {
 }
 
 export function createTestEnvironment(env = process.env) {
-  const base = env.TMPDIR || tmpdir();
+  const selector = env.JARVIS_TEST_PROVIDER_STORAGE_ROOT;
+  const selected = selector !== undefined;
+  if (selected && (typeof selector !== "string" || selector.trim() === "" || !isAbsolute(selector))) {
+    throw new Error("TEST_PROVIDER_STORAGE_SELECTOR_INVALID");
+  }
+  const requested = selected ? selector : (env.TMPDIR || tmpdir());
   let root;
   try {
-    if (!isAbsolute(base)) throw new Error("absolute path required");
-    if (env.TMPDIR) {
+    if (!selected && !isAbsolute(requested)) throw new Error("absolute path required");
+    let base = requested;
+    if (selected) {
+      let info;
+      try { info = lstatSync(requested); }
+      catch (error) { throw new Error("TEST_TMPDIR_UNAVAILABLE", { cause: ioCode(error) }); }
+      const reason = storageReason(info);
+      if (reason) throw unsupported(reason, info);
+      base = realpathSync(requested);
+    } else if (env.TMPDIR) {
       if (!statSync(base).isDirectory()) throw new Error("directory required");
     } else mkdirSync(base, { recursive: true });
     root = mkdtempSync(join(base, "run-")); chmodSync(root, 0o700);
+    if (selected) {
+      const created = lstatSync(root);
+      const reason = storageReason(created, true);
+      if (reason) throw unsupported(reason, created);
+    }
     const probe = join(root, "write-probe");
     const expected = Buffer.alloc(4096, 0x5a);
     writeFileSync(probe, expected, { mode: 0o600 });
@@ -55,10 +75,18 @@ export function createTestEnvironment(env = process.env) {
     if (!readFileSync(probe).equals(expected)) throw new Error("readback mismatch");
     rmSync(probe);
   } catch (error) {
-    if (root) rmSync(root, { recursive: true, force: true });
+    if (root) {
+      try { rmSync(root, { recursive: true, force: true }); }
+      catch (cleanupError) {
+        if (!(error instanceof Error) || !FIXED_ERRORS.has(error.message)) throw new Error("TEST_TMPDIR_UNAVAILABLE", { cause: ioCode(cleanupError) });
+      }
+    }
+    if (error instanceof Error && FIXED_ERRORS.has(error.message)) throw error;
+    if (selected) throw new Error("TEST_TMPDIR_UNAVAILABLE", { cause: ioCode(error) });
     throw new Error("TEST_TMPDIR_UNAVAILABLE", { cause: error });
   }
   const child = { ...env, TMPDIR: root, TMP: root, TEMP: root };
+  if (selected) child.JARVIS_TEST_PROVIDER_STORAGE_ROOT = root;
   // An unset provider root used to resolve to the host Second Brain and spend about 6s per lookup.
   // Leave this path uncreated so a test that did not name a provider fails closed instead.
   if (!child.JARVIS_PROVIDER_STATE_ROOT?.trim()) {
