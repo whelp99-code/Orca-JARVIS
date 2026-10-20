@@ -1,10 +1,10 @@
-import { readFileSync, existsSync, statSync } from "node:fs";
+import { existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statfsSync, statSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { dirname, join } from "node:path";
 import { spawn } from "node:child_process";
 import { once } from "node:events";
-import { tmpdir } from "node:os";
-import { dirname } from "node:path";
 import { describe, expect, it } from "vitest";
-import { createTestEnvironment } from "../../scripts/lib/test-environment.mjs";
+import { createTestEnvironment, providerStorageBase } from "../../scripts/lib/test-environment.mjs";
 import { runTestProcess } from "../../scripts/lib/test-process.mjs";
 
 function running(pid: number): boolean {
@@ -115,5 +115,28 @@ describe("test runtime lifecycle", () => {
       if (pid && running(pid)) process.kill(-pid, "SIGKILL");
       await closed;
     }
+  });
+});
+describe("provider storage base", () => {
+  it("keeps the operating-system temporary directory when the selector is absent", () => {
+    expect(providerStorageBase({})).toBe(tmpdir());
+  });
+
+  it("returns the resolved selector and refuses a btrfs directory the provider nlink guard rejects", () => {
+    const storage = process.env["JARVIS_TEST_PROVIDER_STORAGE_ROOT"];
+    expect(storage, "private supported storage was not provided").toBeTruthy();
+    const base = realpathSync(storage!);
+    expect(providerStorageBase({ JARVIS_TEST_PROVIDER_STORAGE_ROOT: base, TMPDIR: tmpdir() })).toBe(base);
+    const btrfs = mkdtempSync(join(homedir(), "jarvis-btrfs-provider-base-"));
+    writeFileSync(join(btrfs, "sibling"), "keep", { mode: 0o600 });
+    try {
+      expect(statfsSync(btrfs).type).toBe(0x9123683e);
+      expect(lstatSync(btrfs).nlink).toBe(1);
+      expect(() => providerStorageBase({ JARVIS_TEST_PROVIDER_STORAGE_ROOT: btrfs })).toThrow(expect.objectContaining({
+        message: "TEST_PROVIDER_STORAGE_UNSUPPORTED", reason: "nlink_below_2",
+        metadata: { nlink: 1, is_directory: true, is_symlink: false, uid_matches: true },
+      }));
+      expect(readdirSync(btrfs)).toEqual(["sibling"]);
+    } finally { rmSync(btrfs, { recursive: true, force: true }); }
   });
 });
