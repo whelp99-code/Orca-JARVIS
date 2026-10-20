@@ -2,7 +2,8 @@ import { generateKeyPairSync } from "node:crypto";
 import { chmodSync, mkdtempSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
+import * as handoffImport from "../../src/company-candidate-import.js";
 import { canonicalize } from "../../src/canonical.js";
 import { companyCheckpointSchema, loadCompanyFreshness } from "../../src/company-freshness.js";
 import { companyApproverFixture, companyApproverKey, companyApproverProcessorContext,
@@ -38,6 +39,36 @@ function client() {
 }
 
 describe("company database freshness configuration", () => {
+  it("advances one bounded handoff page per minute and wraps at the stable count", async () => {
+    const live = client();
+    const authority = await companyApproverV2Database("approve", false);
+    const handoffKey = join(live.root, "handoff.pem");
+    writeFileSync(handoffKey, generateKeyPairSync("ed25519").privateKey.export({ type: "pkcs8", format: "pem" }), { mode: 0o600 });
+    const handoff = join(live.root, "handoff.json");
+    writeFileSync(handoff, canonicalize({ schema_version: 1, role: "handoff", context: companyApproverProcessorContext(),
+      socket: live.value.socket, signing_key_id: "key:handoff-pages", signing_key_file: handoffKey }), { mode: 0o600 });
+    const config = join(live.root, "internal.json");
+    writeFileSync(config, canonicalize({ schema_version: 1, enabled: true,
+      activation_cutoff: "2026-10-16T09:00:00.000Z", report_client_config_file: live.path,
+      handoff_client_config_file: handoff }), { mode: 0o600 });
+    const offsets: number[] = [];
+    const pull = vi.spyOn(handoffImport, "pullCompanyCandidates").mockImplementation(async (_db, _client, limit = 100, offset = 0) => {
+      offsets.push(offset);
+      return { imported: 0, duplicate: Math.min(limit, 201 - offset), superseded: 0, count: 201, limit, offset };
+    });
+    let now = new Date("2026-10-16T08:00:00.000Z");
+    const runtime = configuredCompanyInternalRuntime(authority.db, config,
+      loadCompanyFreshness({ schema_version: 2, kind: "unconfigured" }), () => now, () => {}, code => { throw new Error(code); });
+    try {
+      if (runtime === undefined) throw new Error("runtime required");
+      for (let minute = 0; minute < 4; minute++) {
+        now = new Date(Date.parse("2026-10-16T08:00:00.000Z") + minute * 60_000);
+        runtime.tick();
+        await runtime.close();
+      }
+      expect(offsets).toEqual([0, 100, 200, 0]);
+    } finally { pull.mockRestore(); authority.close(); }
+  });
   it.each(["key-id", "material"] as const)("rejects internal report/handoff %s reuse even when C1 is unconfigured", async alias => {
     const live = client();
     const authority = await companyApproverV2Database("approve", false);

@@ -5,6 +5,7 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import type { CompanyDailyReportCard as Card } from "../../src/company-daily-report-types.js";
 import { CompanyDailyReportCard } from "./company-daily-report-card.js";
 import { OwnerInboxPanel } from "./owner-inbox-panel.js";
+import { SurfaceContext } from "./surface.js";
 
 const report: Card = {
   report_id: "company-report:v1:abc", report_date: "2026-10-16",
@@ -20,6 +21,20 @@ const report: Card = {
 afterEach(() => { vi.unstubAllGlobals(); });
 
 describe("company daily report card", () => {
+  it("does not advertise unsupported report navigation on the phone", () => {
+    render(<SurfaceContext.Provider value="phone"><CompanyDailyReportCard report={report} initiallyOpen /></SurfaceContext.Provider>);
+    expect(screen.queryByRole("link", { name: "이 보고서 링크" })).not.toBeInTheDocument();
+    expect(screen.getByText("candidate-1")).toBeInTheDocument();
+  });
+
+  it("links a bounded summary to its exact local detail without pretending its rows are empty", () => {
+    const summary = { report_id: report.report_id, report_date: report.report_date, cutoff_from: report.cutoff_from,
+      cutoff_to: report.cutoff_to, counts: report.counts, notification_state: report.notification_state };
+    render(<CompanyDailyReportCard report={summary} />);
+    expect(screen.getByRole("link", { name: "이 보고서 링크" })).toHaveAttribute("href",
+      `/approvals/company-reports/${encodeURIComponent(report.report_id)}`);
+    expect(screen.queryByRole("list")).not.toBeInTheDocument();
+  });
   it("shows metadata and no approval action", async () => {
     const user = userEvent.setup();
     render(<CompanyDailyReportCard report={report} />);

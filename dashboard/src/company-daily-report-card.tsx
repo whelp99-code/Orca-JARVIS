@@ -1,5 +1,6 @@
 import { formatKst } from "./copy.js";
-import type { CompanyDailyReportCard as Card, CompanyReportClassification } from "../../src/company-daily-report-types.js";
+import type { CompanyDailyReportCard as Card, CompanyDailyReportSummary, CompanyReportClassification } from "../../src/company-daily-report-types.js";
+import { useSurface } from "./surface.js";
 
 const LABEL: Readonly<Record<CompanyReportClassification, string>> = {
   contact_new: "연락처 신규",
@@ -10,7 +11,9 @@ const LABEL: Readonly<Record<CompanyReportClassification, string>> = {
   unresolved: "미확정",
 };
 
-export function CompanyDailyReportCard({ report, initiallyOpen = false }: Readonly<{ report: Card; initiallyOpen?: boolean }>) {
+export function CompanyDailyReportCard({ report, initiallyOpen = false }: Readonly<{ report: Card | CompanyDailyReportSummary; initiallyOpen?: boolean }>) {
+  const phone = useSurface() === "phone";
+  const rows = "rows" in report ? report.rows : undefined;
   return (
     <section className="record company-daily-report" data-company-report={report.report_id} data-report-date={report.report_date}>
       <h3 className="record-title">회사 내부 기록 자동 처리 · <time dateTime={report.report_date}>{report.report_date}</time></h3>
@@ -24,12 +27,15 @@ export function CompanyDailyReportCard({ report, initiallyOpen = false }: Readon
       <p className="record-meta" data-notification-state={report.notification_state}>
         알림이 전달되지 않아도 이 목록은 유지됩니다. 자동 항목에는 대표 승인이 없습니다.
       </p>
-      <details className="digest company-report-details" open={initiallyOpen}>
+      {rows === undefined ? <p className="record-meta">
+        {phone ? "전체 목록과 원본 근거는 로컬 대시보드에서 확인할 수 있습니다."
+          : <a href={`/approvals/company-reports/${encodeURIComponent(report.report_id)}`}>이 보고서 링크</a>}
+      </p> : <details className="digest company-report-details" open={initiallyOpen}>
         <summary>회사 내부 기록 목록 보기</summary>
-        <p className="record-meta"><a href={`/approvals/company-reports/${encodeURIComponent(report.report_id)}`}>이 보고서 링크</a></p>
+        {!phone ? <p className="record-meta"><a href={`/approvals/company-reports/${encodeURIComponent(report.report_id)}`}>이 보고서 링크</a></p> : null}
         <ul className="record-list">
-          {report.rows.length === 0 ? <li className="empty-state">이 집계 구간에는 처리 항목이 없습니다. 0건 보고도 보존됩니다.</li> : null}
-          {report.rows.map(row => (
+          {rows.length === 0 ? <li className="empty-state">이 집계 구간에는 처리 항목이 없습니다. 0건 보고도 보존됩니다.</li> : null}
+          {rows.map(row => (
             <li className="record" key={`${String(row.global_sequence)}:${row.operation_id}`} data-classification={row.classification}>
               <p className="record-title">{row.candidate_id}</p>
               <p className="record-meta">{LABEL[row.classification]} · {row.counts_as_complete ? "처리 완료" : "완료 아님"}</p>
@@ -51,7 +57,7 @@ export function CompanyDailyReportCard({ report, initiallyOpen = false }: Readon
             </li>
           ))}
         </ul>
-      </details>
+      </details>}
     </section>
   );
 }

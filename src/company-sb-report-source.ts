@@ -23,7 +23,11 @@ const pageSchema = z.object({
 }).strict();
 type Page = z.infer<typeof pageSchema>;
 type Pin = { request: CompanyDailyReportRead; from: number; head: number; epoch: number;
-  cutoff_from: string; cutoff_to: string };
+  cutoff_from: string; cutoff_to: string; totals: ReturnType<typeof totals>; observed: ReturnType<typeof totals> };
+function totals(page?: Page) {
+  return { contact_new: page?.contact_new ?? 0, calendar_new: page?.calendar_new ?? 0, progress_new: page?.progress_new ?? 0,
+    human_required: page?.human_required ?? 0, conflict_ambiguous: page?.conflict_ambiguous ?? 0, uncertain: page?.uncertain ?? 0 };
+}
 const CONFLICT = new Set(["conflict", "ambiguous", "mixed", "money", "contract", "tax", "outgoing",
   "invite", "customer_deletion", "prompt_injection", "timezone_unknown", "source_unknown", "fence_advanced"]);
 
@@ -43,7 +47,7 @@ export class CompanySbReportSource implements CompanyDailyReportSource {
       if (from > head.head_sequence) return fail();
       const first = this.read(from, head.head_sequence, null);
       this.pin = { request, from, head: head.head_sequence, epoch: first.epoch,
-        cutoff_from: first.cutoff_from, cutoff_to: first.cutoff_to };
+        cutoff_from: first.cutoff_from, cutoff_to: first.cutoff_to, totals: totals(first), observed: totals() };
       return this.page(first, request);
     }
     const pin = this.pin;
@@ -81,7 +85,21 @@ export class CompanySbReportSource implements CompanyDailyReportSource {
   private page(page: Page, request: CompanyDailyReportRead): CompanyDailyReportPage {
     const pin = this.pin;
     if (pin === undefined || page.epoch !== pin.epoch || page.head_sequence !== pin.head
-      || page.cutoff_from !== pin.cutoff_from || page.cutoff_to !== pin.cutoff_to) return fail();
+      || page.cutoff_from !== pin.cutoff_from || page.cutoff_to !== pin.cutoff_to
+      || JSON.stringify(totals(page)) !== JSON.stringify(pin.totals)) return fail();
+    for (const row of page.rows) {
+      const projected = metadataRow(row);
+      if (projected.counts_as_complete) {
+        const key = row.record_kind === "contact" ? "contact_new" : row.record_kind === "calendar" ? "calendar_new" : "progress_new";
+        pin.observed[key]++;
+      }
+      if (projected.classification === "human_required" || projected.classification === "conflict") {
+        pin.observed.human_required++;
+        if (projected.classification === "conflict") pin.observed.conflict_ambiguous++;
+      }
+      if (row.state === "uncertain") pin.observed.uncertain++;
+    }
+    if (page.next_cursor === null && JSON.stringify(pin.observed) !== JSON.stringify(pin.totals)) return fail();
     return { schema_version: 1, epoch: String(page.epoch), pinned_cutoff: request.cutoff_to,
       from_global_sequence: request.from_global_sequence, to_global_sequence: pin.head,
       rows: page.rows.map(row => metadataRow(row)), next_cursor: page.next_cursor };

@@ -62,6 +62,7 @@ export function configuredCompanyInternalRuntime(db: AuthorityDb, path: string |
   }
   let active: Promise<void> | undefined;
   let slot: number | undefined;
+  let handoffOffset = 0;
   const failed = (error: unknown) => log(error instanceof JarvisError ? error.code : "COMPANY_REPORT_UNAVAILABLE");
   return {
     tick(): void {
@@ -73,7 +74,10 @@ export function configuredCompanyInternalRuntime(db: AuthorityDb, path: string |
         // A failed trigger never turns a protected candidate into an automatic approval.
         try { auto?.trigger(); } catch (error) { failed(error); }
         if (handoff !== undefined) {
-          try { await pullCompanyCandidates(db, handoff, 100, 0, clock); } catch (error) { failed(error); }
+          try {
+            const page = await pullCompanyCandidates(db, handoff, 100, handoffOffset, clock);
+            handoffOffset = page.offset + page.limit < page.count ? page.offset + page.limit : 0;
+          } catch (error) { failed(error); }
         }
         try {
           const result = reports.publishDue(now);

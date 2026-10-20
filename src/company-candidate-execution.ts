@@ -341,7 +341,10 @@ export class CompanyCandidateExecutor {
       }
       if (!receipt) throw new JarvisError("COMPANY_EXECUTION_UNCERTAIN");
       if (operation === "reject") {
-        if (shared) progress.synchronize(scope, this.clock());
+        if (shared) {
+          progress.synchronize(scope, this.clock());
+          this.update(requestId, token, "rejected");
+        }
         return this.result(requestId, "rejected", 2);
       }
       if (!completion) {

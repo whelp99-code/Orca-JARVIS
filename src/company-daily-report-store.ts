@@ -1,7 +1,7 @@
 import { createHash } from "node:crypto";
 import { canonicalize } from "./canonical.js";
 import { CompanyDailyReportError, type CompanyDailyReportCard, type CompanyDailyReportDocument,
-  type CompanyDailyReportCounts, type CompanyDailyReportRow, type CompanyReportNotificationState,
+  type CompanyDailyReportCounts, type CompanyDailyReportRow, type CompanyDailyReportSummary, type CompanyReportNotificationState,
   type CompanyReportScope } from "./company-daily-report-types.js";
 import type { AuthorityDb } from "./db.js";
 
@@ -41,6 +41,11 @@ export class CompanyDailyReportStore {
         if (existing.report_id === reportId && existing.report_digest === digest) return { created: false, report_id: reportId };
         throw new CompanyDailyReportError("COMPANY_REPORT_DIGEST_CONFLICT");
       }
+      if (this.db.db.prepare(
+        "SELECT 1 FROM company_daily_reports WHERE provider=? AND workspace=? AND report_date>? LIMIT 1",
+      ).get(document.provider, document.workspace, document.report_date)) {
+        throw new CompanyDailyReportError("COMPANY_REPORT_DATE_OUT_OF_ORDER");
+      }
       this.db.db.prepare(
         `INSERT INTO company_daily_reports(report_id,provider,workspace,report_date,cutoff_from,cutoff_to,report_digest,report_json,published_at)
          VALUES(?,?,?,?,?,?,?,?,?)`,
@@ -78,13 +83,13 @@ export class CompanyDailyReportStore {
     if (typeof sequence !== "number") throw new CompanyDailyReportError("COMPANY_REPORT_UNAVAILABLE");
     return { cutoff_to: row.cutoff_to, to_global_sequence: sequence };
   }
-  listCards(): readonly CompanyDailyReportCard[] {
+  listCards(): readonly CompanyDailyReportSummary[] {
     const rows = this.db.db.prepare(
-      `SELECT r.report_id, r.report_json, n.state FROM company_daily_reports r
+      `SELECT r.report_id, json_remove(r.report_json,'$.rows') AS report_json, n.state FROM company_daily_reports r
        JOIN company_report_notifications n ON n.report_id=r.report_id
        ORDER BY r.report_date DESC, r.report_id LIMIT 30`,
     ).all() as readonly { readonly report_id: string; readonly report_json: string; readonly state: string }[];
-    return rows.map(row => card(row.report_id, row.report_json, notificationState(row.state)));
+    return rows.map(row => summary(row.report_id, JSON.parse(row.report_json), notificationState(row.state)));
   }
   card(reportId: string): CompanyDailyReportCard | undefined {
     const row = this.db.db.prepare(
@@ -106,18 +111,22 @@ function notificationState(value: string): CompanyReportNotificationState {
 function card(reportId: string, json: string, state: CompanyReportNotificationState): CompanyDailyReportCard {
   const parsed: unknown = JSON.parse(json);
   if (typeof parsed !== "object" || parsed === null) throw new CompanyDailyReportError("COMPANY_REPORT_UNAVAILABLE");
-  const counts = Reflect.get(parsed, "counts");
   const rows = Reflect.get(parsed, "rows");
-  if (counts === null || typeof counts !== "object" || !Array.isArray(rows)) {
+  if (!Array.isArray(rows)) {
     throw new CompanyDailyReportError("COMPANY_REPORT_UNAVAILABLE");
   }
+  return { ...summary(reportId, parsed, state), rows: rows as readonly CompanyDailyReportRow[] };
+}
+function summary(reportId: string, parsed: unknown, state: CompanyReportNotificationState): CompanyDailyReportSummary {
+  if (typeof parsed !== "object" || parsed === null) throw new CompanyDailyReportError("COMPANY_REPORT_UNAVAILABLE");
+  const counts = Reflect.get(parsed, "counts");
+  if (counts === null || typeof counts !== "object") throw new CompanyDailyReportError("COMPANY_REPORT_UNAVAILABLE");
   return {
     report_id: reportId,
     report_date: text(parsed, "report_date"),
     cutoff_from: text(parsed, "cutoff_from"),
     cutoff_to: text(parsed, "cutoff_to"),
     counts: counts as CompanyDailyReportCounts,
-    rows: rows as readonly CompanyDailyReportRow[],
     notification_state: state,
   };
 }

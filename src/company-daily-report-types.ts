@@ -81,13 +81,15 @@ export type CompanyDailyReportCard = {
   readonly rows: readonly CompanyDailyReportRow[];
   readonly notification_state: CompanyReportNotificationState;
 };
+export type CompanyDailyReportSummary = Omit<CompanyDailyReportCard, "rows">;
 export type CompanyReportPublishResult =
   | { readonly status: "disabled" }
   | { readonly status: "idle" }
   | { readonly status: "published"; readonly report_id: string; readonly created: boolean }
   | { readonly status: "conflict"; readonly report_id: string };
 export class CompanyDailyReportError extends JarvisError {
-  constructor(code: "COMPANY_REPORT_DIGEST_CONFLICT" | "COMPANY_REPORT_PAGE_INVALID" | "COMPANY_REPORT_UNAVAILABLE") {
+  constructor(code: "COMPANY_REPORT_DIGEST_CONFLICT" | "COMPANY_REPORT_PAGE_INVALID" | "COMPANY_REPORT_UNAVAILABLE"
+    | "COMPANY_REPORT_DATE_OUT_OF_ORDER") {
     super(code);
   }
 }

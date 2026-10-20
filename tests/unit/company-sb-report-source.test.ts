@@ -23,12 +23,25 @@ function client(total: number, transform: (value: ReturnType<typeof row>, n: num
     const rows = all.slice(start, start + args.limit).map(value => transform(value, value.global_sequence));
     return { cutoff_from: args.from_global_sequence === 0 ? request.cutoff_from : "2026-10-16T08:00:00.000Z",
       cutoff_to: head === 0 ? request.cutoff_from : head > 101 ? "2026-10-16T10:00:00.000Z" : "2026-10-16T08:00:00.000Z",
-      epoch: 1, head_sequence: head, contact_new: head, calendar_new: 0, progress_new: 0,
+      epoch: 1, head_sequence: head, contact_new: all.length, calendar_new: 0, progress_new: 0,
       human_required: 0, conflict_ambiguous: 0, uncertain: 0, rows,
       next_cursor: start + args.limit < all.length ? String(start + args.limit) : null };
   } };
 }
 describe("actual SB report metadata adapter", () => {
+  it.each(["omitted-row", "wrong-total", "changed-total"] as const)("rejects %s instead of publishing an inaccurate report", defect => {
+    const wire = client(defect === "changed-total" ? 101 : 1);
+    const source = new CompanySbReportSource({ scope, report(args) {
+      const page = wire.report(args);
+      if (defect === "omitted-row") return { ...page, rows: [] };
+      if (defect === "wrong-total") return { ...page, calendar_new: 1 };
+      return { ...page, ...(args.cursor === null ? {} : { contact_new: 100 }) };
+    } });
+    expect(() => {
+      const first = source.readPage(request);
+      if (first.next_cursor !== null) source.readPage({ ...request, to_global_sequence: 101, cursor: first.next_cursor });
+    }).toThrow("COMPANY_REPORT_PAGE_INVALID");
+  });
   it.each([0, 100, 101])("reads %s rows with the closed four-field signed query and pinned head", total => {
     const wire = client(total); const source = new CompanySbReportSource(wire);
     const first = source.readPage(request);
@@ -51,7 +64,8 @@ describe("actual SB report metadata adapter", () => {
   it("never labels protected or unfinished entries completed", () => {
     const wire = client(3, (value, n) => n === 1 ? { ...value, classification: "human_required", reason_codes: ["money"] }
       : n === 2 ? { ...value, state: "uncertain" } : { ...value, state: "accepted", receipt_id: null });
-    const page = new CompanySbReportSource(wire).readPage(request);
+    const page = new CompanySbReportSource({ scope, report: args => ({ ...wire.report(args),
+      contact_new: 0, human_required: 1, conflict_ambiguous: 1, uncertain: 1 }) }).readPage(request);
     expect(page.rows.map(row => [row.classification, row.counts_as_complete])).toEqual([
       ["conflict", false], ["unresolved", false], ["unresolved", false],
     ]);

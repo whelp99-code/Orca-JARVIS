@@ -75,7 +75,7 @@ function validateDetails(body, recommendationId) {
 export async function resolveJarvisRoute(value, authorityUrl, request) {
   const parsed = parseJarvisDeepLink(value);
   if (parsed.kind === "today") return "/";
-  if (parsed.kind === "company-report") return "/approvals";
+  if (parsed.kind === "company-report") return `/approvals/company-reports/${encodeURIComponent(parsed.reportId)}`;
   try {
     const response = await request(`${authorityUrl}/api/v1/recommendations/${encodeURIComponent(parsed.recommendationId)}`);
     if (response.status !== 200) return "/";

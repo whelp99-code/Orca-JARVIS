@@ -1,7 +1,7 @@
 import { createHash, createPrivateKey, createPublicKey } from "node:crypto";
 import { existsSync, readFileSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { canonicalize } from "../../src/canonical.js";
 import { CompanyCandidateExecutor } from "../../src/company-candidate-execution.js";
 import { decodeCompanyCommandV2 } from "../../src/company-candidate-v2-contract.js";
@@ -97,6 +97,28 @@ function verifier(path: string): CompanyCompletionVerifierV2 {
 }
 
 describe("new-kind consumer ownership and original-fact recovery", () => {
+  it("restores a rejected handoff after freshness acknowledgement recovers", async () => {
+    const live = await consumer(true, "reject");
+    const server = peer(live);
+    const original = server.client.call.bind(server.client);
+    server.client.call = async (...args) => {
+      const receipt = await original(...args);
+      if (args[0] === "reject") {
+        vi.spyOn(live.provider, "readFreshness").mockImplementationOnce(request => ({
+          schema_version: 2, scope: request.scope, challenge: request.challenge, status: "unavailable", checkpoint: null,
+        }));
+      }
+      return receipt;
+    };
+    try {
+      const executor = new CompanyCandidateExecutor(live.db, server.client, undefined, () => NOW, live.provider);
+      await expect(executor.execute(live.command.request_id)).rejects.toThrow("COMPANY_FRESHNESS_REQUIRED");
+      expect(live.db.db.prepare("SELECT status FROM company_candidate_handoffs").get()).toEqual({ status: "uncertain" });
+      expect((await executor.execute(live.command.request_id)).state).toBe("rejected");
+      expect(live.db.db.prepare("SELECT status FROM company_candidate_handoffs").get()).toEqual({ status: "rejected" });
+      expect(server.counts.reject).toBe(1);
+    } finally { live.close(); vi.restoreAllMocks(); }
+  });
   it("has one owner per phase and excludes SB mirrors from its own history", async () => {
     const live = await consumer();
     const server = peer(live);

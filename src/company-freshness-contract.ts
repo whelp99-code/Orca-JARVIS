@@ -25,6 +25,7 @@ const companyTerminalStates = [
   "completed",
   "processed_complete",
   "deleted",
+  "cancelled",
 ] as const;
 
 export type CompanyProgressOperation = (typeof companyProgressOperations)[number];

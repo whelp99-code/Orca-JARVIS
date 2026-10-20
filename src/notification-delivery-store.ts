@@ -210,6 +210,14 @@ export class NotificationDeliveryStore {
       `UPDATE notification_intents SET state='expired',updated_at=? WHERE state IN ('created','deferred','queued')
        AND julianday(expires_at)<=julianday(?)`,
     ).run(now, now);
+    if (expired.changes > 0) {
+      this.options.authority.db.prepare(
+        `UPDATE company_report_notifications SET state='failed',delivery_receipt=NULL
+         WHERE state='pending' AND intent_id IN (
+           SELECT intent_id FROM notification_intents WHERE state='expired'
+         )`,
+      ).run();
+    }
     const queued = this.options.authority.db.prepare(
       `UPDATE notification_intents SET state='queued',updated_at=? WHERE state='deferred'
        AND julianday(updated_at)<=julianday(?) AND julianday(expires_at)>julianday(?)`,
@@ -218,6 +226,9 @@ export class NotificationDeliveryStore {
   }
 
   private terminalize(row: DeliveryRow, state: "failed" | "expired", now: string): void {
+    this.options.authority.db.prepare(
+      "UPDATE company_report_notifications SET state='failed',delivery_receipt=NULL WHERE intent_id=?",
+    ).run(row.intent_id);
     this.options.authority.db.prepare(
       "UPDATE notification_deliveries SET state=?,delivered_at=NULL,updated_at=? WHERE delivery_id=?",
     ).run(state, now, row.delivery_id);

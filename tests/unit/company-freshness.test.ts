@@ -6,6 +6,7 @@ import {
   companyCheckpointSchema,
   companyOperationId,
   companyOperationTerminalStates,
+  finishProgressRequestSchema,
   finishProgressResponseSchema,
   freshnessReadResponseSchema,
   loadCompanyFreshness,
@@ -124,6 +125,13 @@ afterEach(() => {
 });
 
 describe("company freshness contract", () => {
+  it("accepts the dependent cancelled wire value without granting unconfigured authority", () => {
+    const sample = memory.cases.find(entry => entry.operation === "finish_progress");
+    if (sample === undefined) throw new Error("finish fixture required");
+    const cancelled = finishProgressRequestSchema.parse({ ...sample.request, terminal_state: "cancelled" });
+    expect(loadCompanyFreshness(fixture.freshness_provider).finishProgress(cancelled)).toEqual(requiredError);
+    expect(finishProgressRequestSchema.safeParse({ ...cancelled, terminal_state: "cancelled_unknown" }).success).toBe(false);
+  });
   it("replays the ten memory cases and the unconfigured vectors", () => {
     const memoryProvider = provider();
     for (const entry of memory.cases) {

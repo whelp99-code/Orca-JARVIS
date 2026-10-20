@@ -48,6 +48,70 @@ function count(authority: AuthorityDb): number {
 }
 
 describe("company daily report", () => {
+  it("returns bounded list summaries but retains all rows in the exact detail", async () => {
+    const authority = await db();
+    try {
+      const result = cycle(authority, source(101)).publishDue(AT);
+      if (result.status !== "published") throw new Error("report required");
+      const store = new CompanyDailyReportStore(authority);
+      const summaries = store.listCards();
+      expect(summaries).toHaveLength(1);
+      expect(summaries[0]).not.toHaveProperty("rows");
+      expect(summaries[0]?.counts.completed).toBe(101);
+      expect(store.card(result.report_id)?.rows).toHaveLength(101);
+      expect(Buffer.byteLength(JSON.stringify(summaries))).toBeLessThan(2048);
+    } finally { authority.close(); }
+  });
+
+  it("rejects a retroactive report after the catchup already covered its window", async () => {
+    const authority = await db();
+    try {
+      const publisher = cycle(authority, source(0), "2026-10-14T09:00:00.000Z");
+      publisher.publishDue(AT);
+      expect(() => publisher.publishDue(new Date("2026-10-15T09:00:00.000Z"))).toThrow("COMPANY_REPORT_DATE_OUT_OF_ORDER");
+      expect(count(authority)).toBe(1);
+      expect(authority.db.prepare("SELECT COUNT(*) AS n FROM notification_intents").get()).toEqual({ n: 1 });
+    } finally { authority.close(); }
+  });
+
+  it.each(["NOTIFICATIONS_DENIED", "NOTIFICATION_SHOW_FAILED"] as const)("retains %s as a failed report notification on replay", async failure_code => {
+    const authority = await db();
+    try {
+      cycle(authority, source(1)).publishDue(AT);
+      const store = new NotificationDeliveryStore({ authority, resourceIsCurrent: () => true });
+      const claimed = store.claimEffect(AT.toISOString(), "failed-session", true).value;
+      if (claimed === null) throw new Error("claim required");
+      const input = { deliveryId: claimed.delivery_id, input: { schema_version: 1 as const, outcome: "failed" as const, failure_code },
+        now: AT.toISOString(), sessionId: "failed-session" };
+      store.settleEffect(input);
+      store.settleEffect(input);
+      expect(new CompanyDailyReportStore(authority).listCards()[0]?.notification_state).toBe("failed");
+      expect(count(authority)).toBe(1);
+      expect(store.claimEffect(AT.toISOString(), "failed-session", true).value).toBeNull();
+    } finally { authority.close(); }
+  });
+  it("fails an unclaimed report notification at expiry without losing its report", async () => {
+    const authority = await db();
+    try {
+      const published = cycle(authority, source(1)).publishDue(AT);
+      if (published.status !== "published") throw new Error("report required");
+      const reports = new CompanyDailyReportStore(authority);
+      const delivery = new NotificationDeliveryStore({ authority, resourceIsCurrent: () => true });
+      const { expires_at } = authority.db.prepare("SELECT expires_at FROM notification_intents").get() as { expires_at: string };
+      const before = new Date(Date.parse(expires_at) - 1).toISOString();
+      expect(delivery.claimEffect(before, "old-client", false).value).toBeNull();
+      expect(reports.card(published.report_id)?.notification_state).toBe("pending");
+
+      expect(delivery.claimEffect(expires_at, "capable-client", true)).toEqual({ value: null, changed: true });
+      expect(authority.db.prepare("SELECT state FROM notification_intents").get()).toEqual({ state: "expired" });
+      expect(reports.card(published.report_id)?.notification_state).toBe("failed");
+      expect(reports.card(published.report_id)?.rows).toHaveLength(1);
+      expect(authority.db.prepare("SELECT COUNT(*) AS n FROM notification_deliveries").get()).toEqual({ n: 0 });
+      expect(delivery.claimEffect(expires_at, "capable-client", true)).toEqual({ value: null, changed: false });
+      expect(count(authority)).toBe(1);
+    } finally { authority.close(); }
+  });
+
   it("publishes nothing before 18:00 KST and one report at the cutoff", async () => {
     expect(kstCutoff("2026-10-16")).toBe("2026-10-16T09:00:00.000Z");
     const authority = await db();

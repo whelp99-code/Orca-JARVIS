@@ -1,5 +1,5 @@
 import { useEffect, useState } from "react";
-import type { CompanyDailyReportCard as ReportCard } from "../../src/company-daily-report-types.js";
+import type { CompanyDailyReportCard as ReportDetail, CompanyDailyReportSummary } from "../../src/company-daily-report-types.js";
 import { CompanyDailyReportCard } from "./company-daily-report-card.js";
 import { actionLabel, formatKst } from "./copy.js";
 import { OwnerInboxEnroll } from "./owner-inbox-enroll.js";
@@ -43,6 +43,7 @@ const KIND_LABEL: Readonly<Record<string, string>> = {
 };
 
 type Status = "loading" | "ready" | "error" | "unconfigured";
+type ReportCard = ReportDetail | CompanyDailyReportSummary;
 
 export function OwnerInboxPanel({ reportId }: Readonly<{ reportId?: string }> = {}) {
   const phone = useSurface() === "phone";
