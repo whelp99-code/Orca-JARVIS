@@ -1,5 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 import { resolve } from "node:path";
+import { resolveE2ePort } from "./scripts/lib/e2e-port.mjs";
 import remoteConfig from "./playwright.remote.config.js";
 import {
   EMPTY_PORT,
@@ -11,11 +12,7 @@ import {
 const fixtureEntry = resolve("dist/tests/fixtures/dashboard-http-server.js");
 const staticRoot = resolve("dist/dashboard");
 const noFixture = process.env.JARVIS_E2E_NO_FIXTURE === "1";
-const portValue = process.env.JARVIS_E2E_PORT ?? String(SEEDED_PORT_1440);
-const seededPort1440 = Number(portValue);
-if (!/^\d+$/.test(portValue) || !Number.isInteger(seededPort1440) || seededPort1440 < 1 || seededPort1440 > 65535) {
-  throw new Error("JARVIS_E2E_PORT_INVALID");
-}
+const seededPort1440 = resolveE2ePort(process.env, SEEDED_PORT_1440);
 
 function fixtureCommand(port: number, emptyPort?: number): string {
   const metadata = resolve(`.tmp-e2e/seeded-${String(port)}.json`);
