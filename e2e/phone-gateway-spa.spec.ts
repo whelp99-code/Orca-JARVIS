@@ -212,6 +212,8 @@ for (const viewport of VIEWPORTS) {
     await assertSurface(page, testInfo, `memory-${viewport.name}`);
     expect(seen.consoleErrors).toEqual([]);
     expect(seen.rejected).toEqual([]);
+    // Exactly one read-semantic search POST; duplicate searches and every other violation fail.
+    expect(seen.readOnlyViolations).toEqual(["POST /api/v1/memory/search"]);
   });
 }
 
