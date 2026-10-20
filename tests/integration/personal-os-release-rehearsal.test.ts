@@ -14,8 +14,10 @@ import { personalOsRehearsalDependencies, personalOsRehearsalProviderSource, per
 vi.mock("node:fs", async importOriginal => {
   const actual = await importOriginal<typeof import("node:fs")>();
   return {
-    ...actual, lstatSync: vi.fn(actual.lstatSync),
-    readFileSync: vi.fn(actual.readFileSync), existsSync: vi.fn(actual.existsSync),
+    ...actual,
+    ...Object.fromEntries(Object.entries(actual)
+      .filter(([name, value]) => name.endsWith("Sync") && typeof value === "function")
+      .map(([name, value]) => [name, vi.fn(value as (...args: any[]) => any)])),
   };
 });
 
@@ -28,6 +30,45 @@ const scratchRoots: string[] = [];
 let dependencies: RehearsalDependencies;
 const blockedStats: string[] = [];
 const blockedReads: string[] = [];
+const ACTUAL_RELEASE_ROOTS = [...new Set([
+  ...protectedRoots(), ...protectedRoots({}),
+  "/home/jm/.local/state/orca-jarvis/authority",
+  "/var/lib/jarvis-svc",
+  "/opt/jarvis-runtime",
+  "/home/jm/.local/state/orca-jarvis-phone-gateway",
+  "/home/jm/.config/systemd/user/jm-jarvis.service",
+])];
+
+async function expectProtectedBeforeFilesystem(releaseRoot: string, scenario?: string): Promise<void> {
+  const attempted: string[] = [];
+  const restore: (() => void)[] = [];
+  // Fence every synchronous filesystem operation, including mkdir/open/write, before
+  // exercising an actual path string. The vulnerable runner cannot reach a real syscall.
+  for (const [name, operation] of Object.entries(fs)) {
+    if (!name.endsWith("Sync") || !vi.isMockFunction(operation)) continue;
+    const implementation = operation.getMockImplementation()!;
+    operation.mockImplementation(() => {
+      attempted.push(name);
+      throw new Error(`TEST_FILESYSTEM_BEFORE_PROTECTION:${name}`);
+    });
+    restore.push(() => { operation.mockImplementation(implementation); });
+  }
+  try {
+    let failure: unknown;
+    try {
+      await runPersonalOsRehearsal({
+        fixturePath: FIXTURE, clock: CLOCK, releaseRoot,
+        ...(scenario === undefined ? {} : { scenario }),
+      }, dependencies);
+    } catch (error) { failure = error; }
+    expect({
+      code: failure instanceof PersonalOsError ? failure.code : null,
+      filesystem_attempts: attempted,
+    }).toEqual({ code: "E_PROTECTED_ROOT", filesystem_attempts: [] });
+  } finally {
+    for (const reset of restore) reset();
+  }
+}
 
 function isScratchPath(path: string): boolean {
   return scratchRoots.some(root => path === root || path.startsWith(`${root}/`));
@@ -81,6 +122,23 @@ function root(): string {
 }
 
 describe("personal-OS release rehearsal", () => {
+  describe.each([undefined, "expired-passkey"])("security boundary scenario=%s", scenario => {
+    it.each(ACTUAL_RELEASE_ROOTS)("rejects actual releaseRoot %s before any filesystem call", async releaseRoot => {
+      await expectProtectedBeforeFilesystem(releaseRoot, scenario);
+    });
+
+    it.each(["named", "live-unit"])("retains the synthetic %s exclusion without replacing actual roots", async kind => {
+      const releaseRoot = kind === "named" ? dependencies.namedRoots![0]! : dependencies.liveUnitPath!;
+      await expectProtectedBeforeFilesystem(releaseRoot, scenario);
+    });
+
+    it("retains the actual process-configured deployment root", async () => {
+      const releaseRoot = join(root(), "actual-configured-state");
+      vi.stubEnv("JARVIS_STATE_ROOT", releaseRoot);
+      await expectProtectedBeforeFilesystem(releaseRoot, scenario);
+    });
+  });
+
   it("selects the test-owned vendored provider without probing the owner worktree", () => {
     const source = resolveProviderSource();
     expect(isScratchPath(source)).toBe(true);

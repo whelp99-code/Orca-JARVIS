@@ -1,15 +1,6 @@
 import { lstatSync } from "node:fs";
 import { type DeploymentEnvironment } from "./personal-os-deployment-roots.js";
-import { protectedRoots } from "./personal-os-protected-paths.js";
-
-const NAMED_ROOTS = [
-  "/home/jm/.local/state/orca-jarvis",
-  "/var/lib/jarvis-svc",
-  "/opt/jarvis-runtime",
-  "/home/jm/.local/state/orca-jarvis-phone-gateway",
-  "/home/jm/.local/state/second-brain",
-  "/home/jm/.config/systemd/user/jm-jarvis.service",
-] as const;
+import { NAMED_ROOTS, protectedRoots } from "./personal-os-protected-paths.js";
 
 export type LivePathSnapshot = {
   readonly path: string;

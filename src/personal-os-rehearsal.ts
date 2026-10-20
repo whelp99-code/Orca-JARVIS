@@ -22,7 +22,10 @@ export async function runPersonalOsRehearsal(
   options: RehearsalOptions,
   dependencies: RehearsalDependencies = {},
 ): Promise<RehearsalResult | ScenarioResult> {
-  const releaseRoot = assertIsolatedRoot(options.releaseRoot, dependencies.environment);
+  const releaseRoot = assertIsolatedRoot(options.releaseRoot, dependencies.environment, [
+    ...(dependencies.namedRoots ?? []),
+    ...(dependencies.liveUnitPath === undefined ? [] : [dependencies.liveUnitPath]),
+  ]);
   const times = parseRehearsalClock(options.clock);
   const before = snapshotLivePaths(dependencies);
   const result = options.scenario === undefined
