@@ -1,22 +1,32 @@
 import { mkdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import Database from "better-sqlite3";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { PersonalOsError } from "../../src/personal-os-errors.js";
-import { runPersonalOsRehearsal } from "../../src/personal-os-rehearsal.js";
+import { runPersonalOsRehearsal, type RehearsalDependencies } from "../../src/personal-os-rehearsal.js";
 import { installProviderRelease } from "../../src/personal-os-rehearsal-provider.js";
 import { finishNoDataScenario } from "../../src/personal-os-rehearsal-scenario-run.js";
-import { personalOsScratch, removeScratch } from "../fixtures/personal-os-scratch.js";
+import { personalOsRehearsalDependencies, personalOsRehearsalProviderSource, personalOsScratch, removeScratch } from "../fixtures/personal-os-scratch.js";
 
 const FIXTURE = join(process.cwd(), "test/fixtures/personal-os/full-loop.json");
 const CLOCK = "2026-08-27T07:15:00+09:00";
 const scratchRoots: string[] = [];
-afterEach(() => { for (const root of scratchRoots.splice(0)) removeScratch(root); });
+let dependencies: RehearsalDependencies;
+beforeEach(() => {
+  const deployment = personalOsScratch("jarvis-task36-deployment-");
+  scratchRoots.push(deployment);
+  dependencies = personalOsRehearsalDependencies(deployment);
+  vi.stubEnv("JARVIS_REHEARSAL_PROVIDER_SOURCE", personalOsRehearsalProviderSource(deployment));
+});
+afterEach(() => {
+  vi.unstubAllEnvs();
+  for (const root of scratchRoots.splice(0)) removeScratch(root);
+});
 
 async function scenario(name: string) {
   const releaseRoot = personalOsScratch("jarvis-task36-scenario-");
   scratchRoots.push(releaseRoot);
-  const result = await runPersonalOsRehearsal({ fixturePath: FIXTURE, clock: CLOCK, releaseRoot, scenario: name });
+  const result = await runPersonalOsRehearsal({ fixturePath: FIXTURE, clock: CLOCK, releaseRoot, scenario: name }, dependencies);
   if (result.rehearsal !== "PERSONAL_OS_REHEARSAL_SCENARIO_OK") throw new Error(JSON.stringify(result));
   expect(result.ok).toBe(true);
   expect(result.events.unauthorized).toBe(0);
@@ -49,7 +59,7 @@ describe("personal-OS rehearsal scenarios", () => {
     scratchRoots.push(releaseRoot);
     const result = await runPersonalOsRehearsal({
       fixturePath: FIXTURE, clock: CLOCK, releaseRoot, scenario: "expired-passkey",
-    });
+    }, dependencies);
     if (result.rehearsal !== "PERSONAL_OS_REHEARSAL_SCENARIO_OK") throw new Error(JSON.stringify(result));
     expect(result.outcome).toBe("fail-closed");
     expect(result.unavailable).toMatchObject({ capability: "remote_approval", reason: "expired" });

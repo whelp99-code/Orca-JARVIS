@@ -58,6 +58,7 @@ export async function runHappyRehearsal(
   options: RehearsalOptions,
   releaseRoot: string,
   times: ReturnType<typeof parseRehearsalClock>,
+  liveUnitPath?: string,
 ): Promise<RehearsalResult> {
   const fixture = loadRehearsalFixture(options.fixturePath);
   const sourceRoot = options.sourceRoot ?? process.cwd();
@@ -100,6 +101,7 @@ export async function runHappyRehearsal(
   }));
   const units = renderIsolatedUnits({
     releaseRoot, dbPath: clone, providerCurrent: join(releaseRoot, "provider-releases/current"),
+    liveUnitPath,
   });
   stages.push(stageResult("units", units.pointsAtCurrent && units.installed === false && units.liveUnit.applied === false, units));
   const current = activateCurrent(releaseRoot, assembled.sha);

@@ -1,4 +1,5 @@
 import { lstatSync } from "node:fs";
+import { type DeploymentEnvironment } from "./personal-os-deployment-roots.js";
 import { protectedRoots } from "./personal-os-protected-paths.js";
 
 const NAMED_ROOTS = [
@@ -26,8 +27,13 @@ function identity(path: string): LivePathSnapshot {
   }
 }
 
-export function snapshotLivePaths(): readonly LivePathSnapshot[] {
-  const paths = [...new Set([...NAMED_ROOTS, ...protectedRoots()])];
+export type LivePathRoots = {
+  readonly environment?: DeploymentEnvironment;
+  readonly namedRoots?: readonly string[];
+};
+
+export function snapshotLivePaths(roots: LivePathRoots = {}): readonly LivePathSnapshot[] {
+  const paths = [...new Set([...(roots.namedRoots ?? NAMED_ROOTS), ...protectedRoots(roots.environment)])];
   return paths.map(identity);
 }
 
