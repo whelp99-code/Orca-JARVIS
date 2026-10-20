@@ -7,6 +7,7 @@ import { OperationalShell } from "./operational-shell.js";
 
 const NAV_ITEMS = [
   { label: "오늘", href: "/" },
+  { label: "제품", href: "/products" },
   { label: "워크보드", href: "/workboard" },
   { label: "기억", href: "/memory" },
   { label: "한눈에", href: "/overview" },

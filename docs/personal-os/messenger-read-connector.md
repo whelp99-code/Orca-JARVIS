@@ -118,6 +118,21 @@ well-formed start/continue requests allocate no slot; malformed checkpoint
 envelopes are rejected. Mail and the four legacy checkpoint holders retain
 their existing behavior.
 
+## Reuse an existing aggregate export
+
+The implementation is already on `main` through [PR #87](https://github.com/whelp99-code/Orca-JARVIS/pull/87).
+When the aggregate exporter is already running, consume its existing snapshot;
+do not create another collector, open the operating inbox for verification, or
+give the dashboard access to the inbox or Slack credentials.
+
+For the existing `/var/lib/omonyang-summary/messenger.json` integration, the
+dashboard's `93-messenger-summary.conf` drop-in supplies the snapshot path and
+producer UID through the two environment variables above. The existing
+30-second producer schedule is inside the reader's 60-second freshness window.
+These settings describe the integration boundary, not instructions to install
+another timer or restart a service. A stopped producer must become unavailable;
+the reader must not hide it by refreshing the observation time.
+
 ## Verification
 
 Related tests cover the real exporter with a synthetic SQLite inbox, immutable
@@ -126,8 +141,36 @@ the snapshot reader's age/freshness/permissions/privacy boundary; 100 stateless
 reads alongside four occupied legacy slots; and the protected dashboard HTTP
 happy/empty/unavailable/unconfigured/rejected-request cases.
 
-The task's retained `.omo/evidence/messenger-20261013/qa.mjs` runs the actual
-exporter and compiled JARVIS HTTP entry point against isolated synthetic data,
-records sanitized HTTP/CLI receipts and removes its temporary DBs/files/servers.
-Run with the project's pinned Node 24. No operating message data or keys are
-needed for verification.
+Run the versioned regression tests with the project's pinned Node 24 after
+installing the lockfile dependencies:
+
+```sh
+node node_modules/vitest/vitest.mjs run --no-file-parallelism \
+  tests/unit/export-messenger-summary.test.ts \
+  tests/unit/export-messenger-summary-observation.test.ts \
+  tests/unit/export-messenger-summary-snapshot.test.ts \
+  tests/unit/personal-connector-messenger-source.test.ts \
+  tests/unit/personal-connector-mail-source.test.ts \
+  tests/integration/dashboard-messenger-summary.test.ts
+```
+
+### Acceptance record, October 16, 2026
+
+Source `95e30f3cd2b85aba7d43e089dd5444b09db3ea68` passed all 77 tests in
+those six files, all three TypeScript configurations, related ESLint,
+the runtime-import architecture check and the backend build.
+An independent synthetic CLI/compiled-HTTP run also established:
+
+| Surface | Observed result |
+| --- | --- |
+| Existing exporter CLI | Only the representative's pending and processing rows counted; count 2, exact receipt-based age, exact `0640`, unchanged source digest, no body or identity in output. |
+| Populated / empty / unconfigured HTTP | `200 ready` / `200 no_data` / `200 not_configured`; no fabricated values on failure. |
+| Expired, extra private fields, unsafe mode/directory, symlink | `unavailable` with empty values. |
+| Missing CSRF / foreign origin / POST / query override | `403` / `403` / `403` / `400`; all responses `no-store`. |
+| Checkpoint and adjacent Mail behavior | Messenger remained stateless with null checkpoint/handle; all 33 selected Mail tests passed. |
+| Cleanup | Synthetic databases and ephemeral HTTP servers removed; no operating data, keys, services or deployments touched. |
+
+The [acceptance evidence on Issue #86](https://github.com/whelp99-code/Orca-JARVIS/issues/86#issuecomment-6205515266)
+records the result. This is acceptance of the existing implementation, not a
+second implementation or proof of operating message contents. The full
+repository suite was not rerun for this documentation-only follow-up.

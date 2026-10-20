@@ -1,3 +1,6 @@
+import { existsSync } from "node:fs";
+import { basename, dirname } from "node:path";
+import { createTestEnvironment } from "../../scripts/lib/test-environment.mjs";
 import { describe, expect, it } from "vitest";
 import {
   BACKEND_SHARD_COUNT,
@@ -91,5 +94,28 @@ describe("backend shard plan", () => {
   it("does not parallelize non-backend profiles", () => {
     expect(backendShardsRunInParallel("dashboard", [])).toBe(false);
     expect(backendShardRuns("dashboard", [], base)).toEqual([base]);
+  });
+
+  it("gives each parallel shard its own createTestEnvironment run directory", async () => {
+    const seen: string[] = [];
+    const settled = await settleParallelShards({
+      runs: [["shard-a"], ["shard-b"]],
+      parentSignal: new AbortController().signal,
+      createEnvironment: createTestEnvironment,
+      runShard: async (_argv, scratch) => {
+        seen.push(scratch.root);
+        expect(basename(scratch.root).startsWith("run-")).toBe(true);
+        expect(scratch.env.TMPDIR).toBe(scratch.root);
+        expect(scratch.env.TMP).toBe(scratch.root);
+        expect(scratch.env.TEMP).toBe(scratch.root);
+        return { interrupted: false, code: 0, signal: null };
+      },
+    });
+    expect(settled.exitCode).toBe(0);
+    expect(seen).toHaveLength(2);
+    expect(new Set(seen).size).toBe(2);
+    expect(dirname(seen[0]!)).toBe(dirname(seen[1]!));
+    expect(existsSync(seen[0]!)).toBe(false);
+    expect(existsSync(seen[1]!)).toBe(false);
   });
 });
