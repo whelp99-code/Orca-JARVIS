@@ -584,6 +584,49 @@ describe("committed company finish retry", () => {
     expect(control.get(next.request_id)?.state).toBe("completed");
   }
 
+  it.each((["accept", "reject"] as const).flatMap(operation =>
+    (["before", "after"] as const).map(loss => ({ operation, loss }))))(
+    "closes reserved $operation lost_$loss after cancellation without dispatch or receipt changes", async ({ operation, loss }) => {
+      const live = await session(operation, loss);
+      try {
+        const control = new ControlPlane(live.db, live.provider);
+        control.decide(live.approval, NOW);
+        await expect(live.execute()).rejects.toThrow("COMPANY_PROGRESS_UNCERTAIN");
+        const receipt = live.db.db.prepare("SELECT * FROM company_candidate_sb_receipts").get();
+        const effects = live.db.db.prepare("SELECT * FROM control_command_effects").all();
+        const first = live.finishes.at(-1)!;
+        const calls = structuredClone(live.calls);
+        if (operation === "accept") {
+          control.cancel({ request_id: live.command.request_id, reason: "cancel before acceptance finish recovery",
+            actor: "test-operator", revoked_at: NOW.toISOString() }, NOW);
+        } else {
+          // Public cancel does not accept rejected decisions; exercise a retained cancelled snapshot.
+          live.db.db.prepare("UPDATE control_command_requests SET state='cancelled' WHERE request_id=?")
+            .run(live.command.request_id);
+        }
+        const restarted = new AuthorityDb(live.db.filename);
+        try {
+          await expect(live.execute(restarted)).rejects.toMatchObject({ code: "COMPANY_APPROVAL_REVOKED" });
+        } finally { restarted.close(); }
+        expect(live.calls).toEqual(calls);
+        expect(live.effects).toEqual([]);
+        expect(live.db.db.prepare("SELECT * FROM company_candidate_sb_receipts").get()).toEqual(receipt);
+        expect(live.db.db.prepare("SELECT * FROM control_command_effects").all()).toEqual(effects);
+        expect(live.db.db.prepare("SELECT evidence_digest,terminal_state FROM company_progress_reservations WHERE operation=?").get(operation))
+          .toEqual({ evidence_digest: first.evidence_digest, terminal_state: operation === "accept" ? "accepted" : "rejected" });
+        expect({ ...live.finishes.at(-1), challenge: first.challenge }).toEqual(first);
+        expect(control.get(live.command.request_id)?.state).toBe("cancelled");
+        expect(live.db.db.prepare("SELECT count(*) AS n FROM company_progress_reservations WHERE evidence_digest IS NULL").get())
+          .toEqual({ n: 0 });
+        const finishes = live.finishes.length;
+        await expect(live.execute()).rejects.toMatchObject({ code: "COMPANY_APPROVAL_REVOKED" });
+        expect(live.finishes).toHaveLength(finishes);
+        expect(live.calls).toEqual(calls);
+        await nextCandidate(live);
+      } finally { live.close(); }
+    },
+  );
+
   it("releases the workspace when cancel lands during processed completion", async () => {
     const live = await session();
     try {

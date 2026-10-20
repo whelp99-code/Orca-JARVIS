@@ -12,6 +12,7 @@ import { createCompanyClient, type CompanyClient } from "../../src/company-candi
 import { transitionReadResponseSchema } from "../../src/company-transition-read.js";
 import { readCompanyProgressEvidence, stageCompanyProgressEvidence } from "../../src/company-progress-evidence.js";
 import { JarvisError } from "../../src/jarvis-error.js";
+import { ControlPlane } from "../../src/control-plane.js";
 import { AuthorityDb } from "../../src/db.js";
 import {
   companyApproverProcessorContext, companyApproverV2Database, startJarvisCompanyTestPeer, type JarvisTestPeerMode,
@@ -44,6 +45,19 @@ async function withPeer(mode: JarvisTestPeerMode, decision: "approve" | "reject"
 }
 
 describe("company candidate execution v2", () => {
+  it("denies cancellation without a reserved transition before any provider dispatch", async () => {
+    const session = await withPeer("ok");
+    try {
+      new ControlPlane(session.live.db).cancel({ request_id: session.live.command.request_id,
+        reason: "cancel before dispatch", actor: "test-operator", revoked_at: ACTIVE.toISOString() }, ACTIVE);
+      await expect(new CompanyCandidateExecutor(session.live.db, session.client, undefined, () => ACTIVE, session.live.provider)
+        .execute(session.live.command.request_id)).rejects.toMatchObject({ code: "COMPANY_APPROVAL_REVOKED" });
+      expect(session.peer.counts()).toEqual({ accept: 0, reject: 0, mark_processed: 0, read: 0 });
+      expect(session.live.db.db.prepare("SELECT operation FROM company_progress_reservations").all())
+        .toEqual([{ operation: "decide_approve" }]);
+    } finally { await session.peer.close(); session.live.close(); }
+  });
+
   it("denies a new mutation after command expiry without calling the peer", async () => {
     const session = await withPeer("ok");
     try {
@@ -103,6 +117,58 @@ describe("company candidate execution v2", () => {
       expect(payload.accepted_at).toBeNull();
     } finally { await session.peer.close(); session.live.close(); }
   });
+
+  it.each(["drop-once", "drop-bad-echo", "not-found", "evidence-absent", "bad-time"] as const)(
+    "recovers only original reserved evidence after cancel with %s", async mode => {
+      const session = await withPeer(mode);
+      let verifies = 0;
+      const verifier: CompanyCompletionVerifierV2 = {
+        version: 2,
+        async verify() { verifies++; throw new Error("cancelled completion must not run"); },
+      };
+      const client: CompanyClient = {
+        ...session.client,
+        async call(...args: Parameters<CompanyClient["call"]>) {
+          const result = await session.client.call(...args);
+          if (args[0] === "accept") throw new JarvisError("COMPANY_CANDIDATE_RESPONSE_INVALID");
+          return result;
+        },
+      };
+      try {
+        const executor = new CompanyCandidateExecutor(session.live.db, client, verifier, () => ACTIVE, session.live.provider);
+        await expect(executor.execute(session.live.command.request_id)).rejects.toMatchObject({ code: "COMPANY_CANDIDATE_RESPONSE_INVALID" });
+        const original = session.peer.receipts();
+        new ControlPlane(session.live.db).cancel({ request_id: session.live.command.request_id,
+          reason: "cancel pending acceptance", actor: "test-operator", revoked_at: ACTIVE.toISOString() }, ACTIVE);
+        const restarted = new AuthorityDb(session.live.db.filename);
+        try {
+          await expect(new CompanyCandidateExecutor(restarted, client, verifier, () => EXPIRED, session.live.provider)
+            .execute(session.live.command.request_id)).rejects.toMatchObject({
+            code: mode === "drop-once" ? "COMPANY_APPROVAL_REVOKED"
+              : mode === "drop-bad-echo" || mode === "bad-time" ? "COMPANY_SB_RECEIPT_INVALID"
+              : mode === "not-found" ? "COMPANY_EXECUTION_UNCERTAIN" : "COMPANY_RECEIPT_EVIDENCE_ABSENT",
+          });
+        } finally { restarted.close(); }
+        expect(session.peer.receipts()).toBe(original);
+        expect(session.peer.counts()).toEqual({ accept: 1, reject: 0, mark_processed: 0, read: 1 });
+        expect(verifies).toBe(0);
+        expect(new ControlPlane(session.live.db).get(session.live.command.request_id)?.state).toBe("cancelled");
+        const pending = session.live.db.db.prepare(
+          "SELECT evidence_digest FROM company_progress_reservations WHERE operation='accept'",
+        ).get();
+        expect(pending).toEqual({ evidence_digest: mode === "drop-once" ? expect.stringMatching(/^sha256:/) : null });
+        const receipts = session.live.db.db.prepare("SELECT payload_json FROM company_candidate_sb_receipts").all();
+        expect(receipts).toHaveLength(mode === "drop-once" ? 1 : 0);
+        if (mode === "drop-once") {
+          const receipt = JSON.parse(String((receipts[0] as { payload_json: string }).payload_json));
+          expect(receipt.accepted_at).toBe("2026-10-15T00:02:00.000Z");
+          await expect(executor.execute(session.live.command.request_id)).rejects.toMatchObject({ code: "COMPANY_APPROVAL_REVOKED" });
+          expect(session.peer.counts().read).toBe(1);
+          expect(session.live.db.db.prepare("SELECT payload_json FROM company_candidate_sb_receipts").all()).toEqual(receipts);
+        }
+      } finally { await session.peer.close(); session.live.close(); }
+    },
+  );
 
   it("keeps an invalid lookup uncertain and does not resend", async () => {
     const session = await withPeer("drop-bad-echo");

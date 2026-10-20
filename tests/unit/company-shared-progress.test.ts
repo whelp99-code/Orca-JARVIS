@@ -97,13 +97,15 @@ function verifier(path: string): CompanyCompletionVerifierV2 {
 }
 
 describe("new-kind consumer ownership and original-fact recovery", () => {
-  it("restores a rejected handoff after freshness acknowledgement recovers", async () => {
-    const live = await consumer(true, "reject");
+  it.each(["approve", "reject"] as const)("restores a %s handoff after freshness acknowledgement recovers", async decision => {
+    const live = await consumer(true, decision);
+    const operation = decision === "approve" ? "accept" : "reject";
+    const terminal = decision === "approve" ? "accepted" : "rejected";
     const server = peer(live);
     const original = server.client.call.bind(server.client);
     server.client.call = async (...args) => {
       const receipt = await original(...args);
-      if (args[0] === "reject") {
+      if (args[0] === operation) {
         vi.spyOn(live.provider, "readFreshness").mockImplementationOnce(request => ({
           schema_version: 2, scope: request.scope, challenge: request.challenge, status: "unavailable", checkpoint: null,
         }));
@@ -114,9 +116,13 @@ describe("new-kind consumer ownership and original-fact recovery", () => {
       const executor = new CompanyCandidateExecutor(live.db, server.client, undefined, () => NOW, live.provider);
       await expect(executor.execute(live.command.request_id)).rejects.toThrow("COMPANY_FRESHNESS_REQUIRED");
       expect(live.db.db.prepare("SELECT status FROM company_candidate_handoffs").get()).toEqual({ status: "uncertain" });
-      expect((await executor.execute(live.command.request_id)).state).toBe("rejected");
-      expect(live.db.db.prepare("SELECT status FROM company_candidate_handoffs").get()).toEqual({ status: "rejected" });
-      expect(server.counts.reject).toBe(1);
+      const receipt = live.db.db.prepare("SELECT * FROM company_candidate_sb_receipts").get();
+      expect((await executor.execute(live.command.request_id)).state).toBe(terminal);
+      expect(live.db.db.prepare("SELECT status,failure_code,lease_token FROM company_candidate_handoffs").get())
+        .toEqual({ status: terminal, failure_code: null, lease_token: null });
+      expect(live.db.db.prepare("SELECT * FROM company_candidate_sb_receipts").get()).toEqual(receipt);
+      expect(server.counts).toEqual({ accept: decision === "approve" ? 1 : 0, reject: decision === "reject" ? 1 : 0,
+        mark_processed: 0, read: 0 });
     } finally { live.close(); vi.restoreAllMocks(); }
   });
   it("has one owner per phase and excludes SB mirrors from its own history", async () => {

@@ -265,9 +265,9 @@ export class CompanyCandidateExecutor {
     const acknowledged = this.readReceipt(requestId, operation, 2);
     const pendingProcessed = shared ? undefined : progress.pending(command, "mark_processed");
     const recovering = pending !== undefined || (peer !== undefined && peer.state !== "prepared");
-    // A reserved processed_complete is already-issued provider evidence. Close it,
-    // then reject. Every other cancellation refuses before a new provider call.
-    if (stored.state === "cancelled" && !pendingProcessed) throw new JarvisError("COMPANY_APPROVAL_REVOKED");
+    // Already-reserved transitions may only recover original receipts and finish.
+    // Cancellation still forbids new dispatch, completion, and mark_processed.
+    if (stored.state === "cancelled" && !pendingProcessed && !pending) throw new JarvisError("COMPANY_APPROVAL_REVOKED");
     // Cancel keeps the command approved until this publication, then revocation blocks
     // every later attempt. Close an already reserved finish before that check.
     if (stored.state !== "cancelled") assertCompanyApprovalPin(this.db, command, approval);
@@ -352,6 +352,7 @@ export class CompanyCandidateExecutor {
         this.finishV2(progress, mutation, receipt.receipt_digest, operation === "accept" ? "accepted" : "rejected", token);
       }
       if (!receipt) throw new JarvisError("COMPANY_EXECUTION_UNCERTAIN");
+      if (stored.state === "cancelled") throw new JarvisError("COMPANY_APPROVAL_REVOKED");
       if (operation === "reject") {
         if (shared) {
           progress.synchronize(scope, this.clock());
@@ -361,7 +362,10 @@ export class CompanyCandidateExecutor {
       }
       if (!completion) {
         if (!verifier) {
-          if (shared) progress.synchronize(scope, this.clock());
+          if (shared) {
+            progress.synchronize(scope, this.clock());
+            this.update(requestId, token, "accepted");
+          }
           return this.result(requestId, receipt.state, 2);
         }
         try {
