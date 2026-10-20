@@ -206,6 +206,67 @@ describe("new-kind consumer ownership and original-fact recovery", () => {
       expect(receipt.receipt_created_at).toBe(NOW.toISOString());
     } finally { live.close(); }
   });
+  it.each(["local-reservation", "peer-not-prepared"] as const)(
+    "refuses a cancelled %s before any provider call",
+    async recovery => {
+      const live = await consumer();
+      const server = peer(live);
+      const effect = join(live.root, "effect");
+      try {
+        if (recovery === "local-reservation") {
+          live.db.db.prepare(
+            `INSERT INTO company_progress_reservations(reservation_id,operation_id,provider_instance_id,workspace_id,
+             request_id,operation,checkpoint_json,reserve_request_json,created_at)
+             VALUES(?,?,?,?,?,?,?,?,?)`,
+          ).run("reservation:cancelled-local-accept", companyOperationId({
+            scope: live.scope, request_id: live.command.request_id, command_digest: live.digest, operation: "accept",
+          }), live.scope.provider_instance_id, live.scope.workspace_id, live.command.request_id, "accept",
+            canonicalize(live.provider.checkpoint), canonicalize({ schema_version: 2, cancelled: true }), NOW.toISOString());
+        } else {
+          const operationId = companyOperationId({
+            scope: live.scope, request_id: live.command.request_id, command_digest: live.digest, operation: "accept",
+          });
+          live.db.db.prepare(
+            `INSERT INTO company_peer_calls(operation_id,provider_instance_id,workspace_id,request_id,operation,
+             transition_request_digest,original_arguments_json,state,created_at,updated_at)
+             VALUES(?,?,?,?,?,?,?,'invoking',?,?)`,
+          ).run(operationId, live.scope.provider_instance_id, live.scope.workspace_id, live.command.request_id, "accept",
+            digest("cancelled-peer-accept"), canonicalize({ cancelled: true }), NOW.toISOString(), NOW.toISOString());
+        }
+        new ControlPlane(live.db).cancel({ request_id: live.command.request_id, reason: "cancel before provider",
+          actor: "test-operator", revoked_at: NOW.toISOString() }, NOW);
+        await expect(new CompanyCandidateExecutor(live.db, server.client, verifier(effect), () => NOW, live.provider)
+          .execute(live.command.request_id)).rejects.toMatchObject({ code: "COMPANY_APPROVAL_REVOKED" });
+        expect(server.counts).toEqual({ accept: 0, reject: 0, mark_processed: 0, read: 0 });
+        expect(existsSync(effect)).toBe(false);
+      } finally { live.close(); }
+    },
+  );
+
+  it("does not report completed when shared publish finds a cancellation", async () => {
+    const live = await consumer();
+    const server = peer(live);
+    const effect = join(live.root, "effect");
+    const control = new ControlPlane(live.db, live.provider);
+    const original = server.client.call.bind(server.client);
+    server.client.call = async (operation, args, at, nonce) => {
+      const receipt = await original(operation, args, at, nonce);
+      if (operation === "mark_processed") {
+        control.cancel({ request_id: live.command.request_id, reason: "cancel during shared publish",
+          actor: "test-operator", revoked_at: NOW.toISOString() }, NOW);
+      }
+      return receipt;
+    };
+    try {
+      await expect(new CompanyCandidateExecutor(live.db, server.client, verifier(effect), () => NOW, live.provider)
+        .execute(live.command.request_id)).rejects.toMatchObject({ code: "COMPANY_APPROVAL_REVOKED" });
+      expect(control.get(live.command.request_id)?.state).toBe("cancelled");
+      expect(live.db.db.prepare("SELECT status FROM company_candidate_handoffs WHERE request_id=?").get(live.command.request_id))
+        .not.toEqual({ status: "completed" });
+      expect(server.counts.mark_processed).toBe(1);
+      expect(server.counts.accept).toBe(1);
+    } finally { live.close(); }
+  });
 
   it("looks up an uncertain original reserve before startup without granting a decision", async () => {
     const live = await consumer(false);

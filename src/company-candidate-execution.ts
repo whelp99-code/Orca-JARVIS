@@ -262,8 +262,12 @@ export class CompanyCandidateExecutor {
       scope,
       request_id: command.request_id, command_digest: stored.command_digest, operation,
     })) : undefined;
-    const recovering = pending !== undefined || (peer !== undefined && peer.state !== "prepared");
     const acknowledged = this.readReceipt(requestId, operation, 2);
+    const pendingProcessed = shared ? undefined : progress.pending(command, "mark_processed");
+    const recovering = pending !== undefined || (peer !== undefined && peer.state !== "prepared");
+    // A reserved processed_complete is already-issued provider evidence. Close it,
+    // then reject. Every other cancellation refuses before a new provider call.
+    if (stored.state === "cancelled" && !pendingProcessed) throw new JarvisError("COMPANY_APPROVAL_REVOKED");
     // Cancel keeps the command approved until this publication, then revocation blocks
     // every later attempt. Close an already reserved finish before that check.
     if (stored.state !== "cancelled") assertCompanyApprovalPin(this.db, command, approval);
@@ -285,14 +289,18 @@ export class CompanyCandidateExecutor {
       this.finishV2(progress, pendingComplete, completion.effect_digest, "completed");
     }
     const processed = this.readReceipt(requestId, "mark_processed", 2);
-    const pendingProcessed = shared ? undefined : progress.pending(command, "mark_processed");
     if (pendingProcessed) {
       if (!processed || !completion) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
-      this.finishV2(progress, pendingProcessed, processed.receipt_digest, "processed_complete");
-      if (stored.state === "cancelled") throw new JarvisError("COMPANY_APPROVAL_REVOKED");
+      let cancelled = stored.state === "cancelled";
+      try {
+        this.finishV2(progress, pendingProcessed, processed.receipt_digest, "processed_complete");
+      } catch (error) {
+        if (!(error instanceof JarvisError) || error.code !== "COMPANY_APPROVAL_REVOKED") throw error;
+        cancelled = true;
+      }
+      if (cancelled) throw new JarvisError("COMPANY_APPROVAL_REVOKED");
       return this.result(requestId, "completed", 2);
     }
-    if (stored.state === "cancelled" && !recovering) throw new JarvisError("COMPANY_APPROVAL_REVOKED");
     if (!recovering && !acknowledged) {
       parseCompanyCommandV2(input, this.clock());
       assertCurrentCompanyPin(this.db, command, approval, this.clock());
@@ -419,9 +427,12 @@ export class CompanyCandidateExecutor {
       return this.result(requestId, "completed", 2);
     } catch (error) {
       const code = error instanceof JarvisError ? error.code : "COMPANY_EXECUTION_UNCERTAIN";
-      this.db.db.prepare(
-        "UPDATE company_candidate_handoffs SET status='uncertain',failure_code=?,updated_at=? WHERE request_id=? AND lease_token=?",
-      ).run(code, this.clock().toISOString(), requestId, token);
+      const preserveSharedCancellation = shared && error instanceof JarvisError && error.code === "COMPANY_APPROVAL_REVOKED";
+      if (!preserveSharedCancellation) {
+        this.db.db.prepare(
+          "UPDATE company_candidate_handoffs SET status='uncertain',failure_code=?,updated_at=? WHERE request_id=? AND lease_token=?",
+        ).run(code, this.clock().toISOString(), requestId, token);
+      }
       throw error;
     } finally {
       this.db.db.prepare(
@@ -493,12 +504,11 @@ export class CompanyCandidateExecutor {
     const observed = token === undefined ? undefined : this.publicationLease(reservation.request_id, token, started)?.lease_token;
     let releasedCancellation = false;
     progress.finish(reservation, evidenceDigest, terminalState, started, () => {
-      this.publishV2(reservation.request_id, terminalState, this.clock(), token, observed);
-      if (terminalState === "processed_complete") {
-        const controlState = this.db.db.prepare(
-          "SELECT state FROM control_command_requests WHERE request_id=?",
-        ).get(reservation.request_id) as { state: string } | undefined;
-        if (controlState?.state === "cancelled") releasedCancellation = true;
+      try {
+        this.publishV2(reservation.request_id, terminalState, this.clock(), token, observed);
+      } catch (error) {
+        if (!(error instanceof JarvisError) || error.code !== "COMPANY_APPROVAL_REVOKED") throw error;
+        releasedCancellation = true;
       }
     });
     if (releasedCancellation) throw new JarvisError("COMPANY_APPROVAL_REVOKED");
@@ -532,7 +542,7 @@ export class CompanyCandidateExecutor {
       ).get(requestId) as { state: string } | undefined;
       // Provider progress is already durable. Commit that evidence so the scope gate
       // can open, but do not rewrite a cancellation that won this publication.
-      if (controlState?.state === "cancelled") return;
+      if (controlState?.state === "cancelled") throw new JarvisError("COMPANY_APPROVAL_REVOKED");
       const current = this.db.db.prepare(
         "SELECT status FROM company_candidate_handoffs WHERE request_id=? AND current=1",
       ).get(requestId) as { status: string } | undefined;

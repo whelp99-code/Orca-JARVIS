@@ -634,6 +634,27 @@ describe("committed company finish retry", () => {
       await nextCandidate(live);
     } finally { live.close(); }
   });
+  it("keeps processed evidence and refuses a reserved processed_complete after cancel", async () => {
+    const live = await session("mark_processed", "after");
+    try {
+      const control = new ControlPlane(live.db, live.provider);
+      control.decide(live.approval, NOW);
+      await expect(live.execute()).rejects.toThrow("COMPANY_PROGRESS_UNCERTAIN");
+      const callsBefore = live.calls.length;
+      control.cancel({ request_id: live.command.request_id, reason: "cancel with reserved processed completion",
+        actor: "test-operator", revoked_at: NOW.toISOString() }, NOW);
+      await expect(live.execute()).rejects.toMatchObject({ code: "COMPANY_APPROVAL_REVOKED" });
+      expect(live.calls).toHaveLength(callsBefore);
+      expect(control.get(live.command.request_id)?.state).toBe("cancelled");
+      expect(live.db.db.prepare(
+        "SELECT evidence_digest,terminal_state FROM company_progress_reservations WHERE operation='mark_processed'",
+      ).get()).toEqual({ evidence_digest: expect.stringMatching(/^sha256:/), terminal_state: "processed_complete" });
+      expect(live.db.db.prepare("SELECT state FROM control_command_requests WHERE request_id=?").get(live.command.request_id))
+        .toEqual({ state: "cancelled" });
+      expect(live.db.db.prepare("SELECT status FROM company_candidate_handoffs WHERE request_id=?").get(live.command.request_id))
+        .not.toEqual({ status: "completed" });
+    } finally { live.close(); }
+  });
 
   it.each(["complete", "mark_processed"] as const)(
     "tokenless %s recovery refuses a live foreign lease instead of publishing completed",
