@@ -101,7 +101,7 @@ export class CompanySbReportSource implements CompanyDailyReportSource {
     }
     if (page.next_cursor === null && JSON.stringify(pin.observed) !== JSON.stringify(pin.totals)) return fail();
     return { schema_version: 1, epoch: String(page.epoch), pinned_cutoff: request.cutoff_to,
-      from_global_sequence: request.from_global_sequence, to_global_sequence: pin.head,
+      from_global_sequence: pin.from, to_global_sequence: pin.head,
       rows: page.rows.map(row => metadataRow(row)), next_cursor: page.next_cursor };
   }
 }

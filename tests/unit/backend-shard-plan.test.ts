@@ -86,6 +86,51 @@ describe("backend shard plan", () => {
     expect([...settled.outcomes.map((outcome) => outcome.code)].sort((left, right) => left - right)).toEqual([2, 130]);
   });
 
+  it("lets a sibling finish after an ordinary assertion failure", async () => {
+    const cleaned: number[] = [];
+    let id = 0;
+    let siblingFinished = false;
+    const settled = await settleParallelShards({
+      runs: [["shard-a"], ["shard-b"]],
+      parentSignal: new AbortController().signal,
+      createEnvironment: () => {
+        const current = id++;
+        return { env: {}, root: String(current), cleanup: () => { cleaned.push(current); } };
+      },
+      runShard: async (_argv, _scratch, signal, index) => {
+        if (index === 0) return { interrupted: false, code: 1, signal: null };
+        await new Promise<void>(resolve => setImmediate(resolve));
+        expect(signal.aborted).toBe(false);
+        siblingFinished = true;
+        return { interrupted: false, code: 0, signal: null };
+      },
+    });
+    expect(siblingFinished).toBe(true);
+    expect(settled.outcomes.map(outcome => outcome.code)).toEqual([1, 0]);
+    expect(settled.exitCode).toBe(1);
+    expect(cleaned).toEqual([0, 1]);
+  });
+
+  it.each([
+    { interrupted: false, code: 137, signal: "SIGKILL" },
+    { interrupted: true, code: 130, signal: null },
+  ] as const)("still aborts siblings for a runner interruption or signal: %j", async failure => {
+    let siblingAborted = false;
+    const settled = await settleParallelShards({
+      runs: [["shard-a"], ["shard-b"]],
+      parentSignal: new AbortController().signal,
+      createEnvironment: () => ({ env: {}, root: "scratch", cleanup() {} }),
+      runShard: async (_argv, _scratch, signal, index) => {
+        if (index === 0) return failure;
+        await new Promise<void>(resolve => setImmediate(resolve));
+        siblingAborted = signal.aborted;
+        return { interrupted: true, code: 130, signal: "SIGTERM" };
+      },
+    });
+    expect(siblingAborted).toBe(true);
+    expect(settled.exitCode).toBe(failure.code);
+  });
+
   it("keeps the real shard failure when a sibling is aborted", () => {
     expect(combineShardExit([{ code: 1 }, { code: 130, interrupted: true }], false)).toBe(1);
     expect(combineShardExit([{ code: 0 }, { code: 130, interrupted: true }], true)).toBe(130);

@@ -95,7 +95,7 @@ describe("company daily report", () => {
     try {
       const published = cycle(authority, source(1)).publishDue(AT);
       if (published.status !== "published") throw new Error("report required");
-      const reports = new CompanyDailyReportStore(authority);
+      const reports = new CompanyDailyReportStore(authority, () => AT);
       const delivery = new NotificationDeliveryStore({ authority, resourceIsCurrent: () => true });
       const { expires_at } = authority.db.prepare("SELECT expires_at FROM notification_intents").get() as { expires_at: string };
       const before = new Date(Date.parse(expires_at) - 1).toISOString();
@@ -109,6 +109,28 @@ describe("company daily report", () => {
       expect(authority.db.prepare("SELECT COUNT(*) AS n FROM notification_deliveries").get()).toEqual({ n: 0 });
       expect(delivery.claimEffect(expires_at, "capable-client", true)).toEqual({ value: null, changed: false });
       expect(count(authority)).toBe(1);
+    } finally { authority.close(); }
+  });
+
+  it.each(["list", "detail"] as const)("expires unclaimed notifications on %s reads without a delivery client", async read => {
+    const authority = await db();
+    try {
+      const published = cycle(authority, source(1)).publishDue(AT);
+      if (published.status !== "published") throw new Error("report required");
+      const before = authority.db.prepare("SELECT report_digest,report_json FROM company_daily_reports").get();
+      const { expires_at } = authority.db.prepare("SELECT expires_at FROM notification_intents").get() as { expires_at: string };
+      let now = new Date(Date.parse(expires_at) - 1);
+      const reports = new CompanyDailyReportStore(authority, () => now);
+      const state = () => read === "list" ? reports.listCards()[0]?.notification_state : reports.card(published.report_id)?.notification_state;
+      expect(state()).toBe("pending");
+      now = new Date(expires_at);
+      expect(state()).toBe("failed");
+      expect(state()).toBe("failed");
+      expect(authority.db.prepare("SELECT state,updated_at FROM notification_intents").get())
+        .toEqual({ state: "expired", updated_at: expires_at });
+      expect(reports.card(published.report_id)?.rows).toHaveLength(1);
+      expect(authority.db.prepare("SELECT report_digest,report_json FROM company_daily_reports").get()).toEqual(before);
+      expect(authority.db.prepare("SELECT COUNT(*) AS n FROM notification_deliveries").get()).toEqual({ n: 0 });
     } finally { authority.close(); }
   });
 
@@ -178,6 +200,26 @@ describe("company daily report", () => {
     expect(new Set(stored.rows.map(item => item.global_sequence)).size).toBe(total);
     expect(reportSource.calls).toBe(total === 101 ? 2 : 1);
   });
+
+  it.each(["changed-lower", "below-lower", "changed-prior", "negative", "fractional", "above-upper"] as const)(
+    "rejects an invalid derived report bound: %s", async defect => {
+      const authority = await db();
+      try {
+        const publisher = cycle(authority, { readPage(request) {
+          const first = request.cursor === null;
+          const lower = defect === "negative" ? -1 : defect === "fractional" ? 0.5 : defect === "above-upper" ? 102
+            : defect === "changed-lower" && !first ? 11 : 10;
+          return { ...page(request, 101, [row(defect === "below-lower" ? 10 : first ? 11 : 101)], first ? "next" : null),
+            from_global_sequence: lower };
+        } });
+        if (defect === "changed-prior") {
+          cycle(authority, source(5), "2026-10-15T09:00:00.000Z").publishDue(new Date("2026-10-15T09:00:00.000Z"));
+        }
+        expect(() => publisher.publishDue(AT)).toThrow("COMPANY_REPORT_PAGE_INVALID");
+        expect(count(authority)).toBe(defect === "changed-prior" ? 1 : 0);
+      } finally { authority.close(); }
+    },
+  );
 
   it("does not commit when a later cursor page changes epoch", async () => {
     const authority = await db();

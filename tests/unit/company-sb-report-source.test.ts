@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { CompanySbReportSource } from "../../src/company-sb-report-source.js";
+import { CompanyDailyReportCycle } from "../../src/company-daily-report-cycle.js";
+import { initialized } from "../helpers.js";
 import type { CompanyReportArguments } from "../../src/company-internal-client.js";
 import type { CompanyDailyReportRead } from "../../src/company-daily-report-types.js";
 const scope = { provider: "provider:report", workspace: "workspace:report" };
@@ -29,6 +31,30 @@ function client(total: number, transform: (value: ReturnType<typeof row>, n: num
   } };
 }
 describe("actual SB report metadata adapter", () => {
+  it("persists the derived activation sequence across first-report pagination and the next report", async () => {
+    const db = await initialized();
+    const wire = client(151);
+    const source = new CompanySbReportSource({ scope, report(args) {
+      const page = wire.report(args);
+      return { ...page, cutoff_to: page.head_sequence <= 50 ? request.cutoff_from : "2026-10-16T08:00:00.000Z" };
+    } });
+    const publisher = new CompanyDailyReportCycle(db, { enabled: true, scope,
+      activation_cutoff: request.cutoff_from, source });
+    try {
+      expect(publisher.publishDue(new Date(cutoff)).status).toBe("published");
+      const stored = db.db.prepare("SELECT report_json FROM company_daily_reports").get() as { report_json: string };
+      const document = JSON.parse(stored.report_json);
+      expect(document.from_global_sequence).toBe(50);
+      expect(document.to_global_sequence).toBe(151);
+      expect(document.rows.map((row: { global_sequence: number }) => row.global_sequence))
+        .toEqual(Array.from({ length: 101 }, (_, index) => index + 51));
+      expect(wire.calls.filter(args => args.from_global_sequence === 50).map(args => args.cursor)).toEqual([null, "100"]);
+      expect(publisher.publishDue(new Date("2026-10-17T09:00:00.000Z")).status).toBe("published");
+      const next = db.db.prepare("SELECT report_json FROM company_daily_reports WHERE report_date='2026-10-17'").get() as { report_json: string };
+      expect(JSON.parse(next.report_json)).toMatchObject({ from_global_sequence: 151, to_global_sequence: 151, rows: [] });
+    } finally { db.close(); }
+  });
+
   it.each(["omitted-row", "wrong-total", "changed-total"] as const)("rejects %s instead of publishing an inaccurate report", defect => {
     const wire = client(defect === "changed-total" ? 101 : 1);
     const source = new CompanySbReportSource({ scope, report(args) {

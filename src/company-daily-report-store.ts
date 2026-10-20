@@ -4,6 +4,7 @@ import { CompanyDailyReportError, type CompanyDailyReportCard, type CompanyDaily
   type CompanyDailyReportCounts, type CompanyDailyReportRow, type CompanyDailyReportSummary, type CompanyReportNotificationState,
   type CompanyReportScope } from "./company-daily-report-types.js";
 import type { AuthorityDb } from "./db.js";
+import { expireUnclaimedNotifications } from "./notification-intent-expiry.js";
 
 const hash = (value: unknown): string => createHash("sha256").update(canonicalize(value)).digest("hex");
 export const companyReportDigest = (document: CompanyDailyReportDocument): string => `sha256:${hash(document)}`;
@@ -20,7 +21,7 @@ type InsertInput = {
 };
 type Inserted = { readonly created: true; readonly report_id: string } | { readonly created: false; readonly report_id: string };
 export class CompanyDailyReportStore {
-  constructor(private readonly db: AuthorityDb) {}
+  constructor(private readonly db: AuthorityDb, private readonly clock: () => Date = () => new Date()) {}
   insert(input: InsertInput): Inserted {
     const document = input.document;
     const reportId = companyReportId(
@@ -84,6 +85,7 @@ export class CompanyDailyReportStore {
     return { cutoff_to: row.cutoff_to, to_global_sequence: sequence };
   }
   listCards(): readonly CompanyDailyReportSummary[] {
+    expireUnclaimedNotifications(this.db, this.clock().toISOString());
     const rows = this.db.db.prepare(
       `SELECT r.report_id, json_remove(r.report_json,'$.rows') AS report_json, n.state FROM company_daily_reports r
        JOIN company_report_notifications n ON n.report_id=r.report_id
@@ -92,6 +94,7 @@ export class CompanyDailyReportStore {
     return rows.map(row => summary(row.report_id, JSON.parse(row.report_json), notificationState(row.state)));
   }
   card(reportId: string): CompanyDailyReportCard | undefined {
+    expireUnclaimedNotifications(this.db, this.clock().toISOString());
     const row = this.db.db.prepare(
       `SELECT r.report_json, n.state FROM company_daily_reports r
        JOIN company_report_notifications n ON n.report_id=r.report_id WHERE r.report_id=?`,
