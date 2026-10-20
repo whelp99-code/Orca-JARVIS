@@ -399,15 +399,17 @@ export class CompanyCandidateExecutor {
 
   private finishV2(progress: CompanyProgress, reservation: CompanyProgressReservation, evidenceDigest: string, terminalState: "accepted" | "rejected" | "completed" | "processed_complete", token?: string): void {
     const started = this.clock();
-    const observed = token ?? this.publicationLease(reservation.request_id, undefined, started)?.lease_token;
-    if (token !== undefined) this.ownedHandoff(reservation.request_id, token, started);
+    const observed = token === undefined ? undefined : this.publicationLease(reservation.request_id, token, started)?.lease_token;
     let releasedCancellation = false;
     progress.finish(reservation, evidenceDigest, terminalState, started, () => {
       const now = this.clock();
       const owner = this.publicationLease(reservation.request_id, token, now);
-      if (observed !== undefined && owner?.lease_token !== observed) throw new JarvisError("COMPANY_EXECUTION_BUSY");
-      const owned = owner ? " AND lease_token=? AND lease_expires_at>?" : "";
-      const ownedArgs = owner ? [owner.lease_token, now.toISOString()] : [];
+      // A lease snapshot is not ownership. Tokenless recovery may close only a terminal,
+      // expired, or unleased handoff; a live foreign lease stays untouched.
+      if (token === undefined && owner && !this.terminalHandoff(reservation.request_id)) throw new JarvisError("COMPANY_EXECUTION_BUSY");
+      if (token !== undefined && owner?.lease_token !== observed) throw new JarvisError("COMPANY_EXECUTION_BUSY");
+      const owned = token !== undefined && owner ? " AND lease_token=? AND lease_expires_at>?" : "";
+      const ownedArgs = token !== undefined && owner ? [owner.lease_token, now.toISOString()] : [];
       if (terminalState === "accepted" || terminalState === "rejected") {
         const current = this.db.db.prepare(
           "SELECT status FROM company_candidate_handoffs WHERE request_id=? AND current=1",
@@ -523,6 +525,13 @@ export class CompanyCandidateExecutor {
     ).get(requestId, operation) as { payload_json: string } | undefined;
     const known = operation === "accept" || operation === "reject" || operation === "mark_processed" ? operation : "reject";
     return row ? this.parseReceipt(JSON.parse(row.payload_json), requestId, known, version) : undefined;
+  }
+
+  private terminalHandoff(requestId: string): boolean {
+    const row = this.db.db.prepare(
+      "SELECT status FROM company_candidate_handoffs WHERE request_id=? AND current=1",
+    ).get(requestId) as { status: string } | undefined;
+    return row?.status === "completed" || row?.status === "rejected" || row?.status === "superseded";
   }
 
   private ownedHandoff(requestId: string, token: string, now: Date): { status: string } {

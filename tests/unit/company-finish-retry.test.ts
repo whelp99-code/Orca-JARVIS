@@ -634,4 +634,121 @@ describe("committed company finish retry", () => {
       await nextCandidate(live);
     } finally { live.close(); }
   });
+
+  it.each(["complete", "mark_processed"] as const)(
+    "tokenless %s recovery refuses a live foreign lease instead of publishing completed",
+    async operation => {
+      const live = await session();
+      try {
+        new ControlPlane(live.db, live.provider).decide(live.approval, NOW);
+        const progress = new CompanyProgress(live.db, live.provider);
+        const reserved = progress.reserve(live.command, operation, digest(`${operation}-foreign-event`), NOW);
+        const foreign = "foreign-live-lease";
+        const expires = new Date(NOW.getTime() + 60_000).toISOString();
+        live.db.db.prepare(
+          "UPDATE company_candidate_handoffs SET status='completing',lease_token=?,lease_expires_at=?,updated_at=? WHERE request_id=?",
+        ).run(foreign, expires, NOW.toISOString(), live.command.request_id);
+        const before = live.finishes.length;
+        const executor = new CompanyCandidateExecutor(live.db, live.client, live.verifier, () => NOW, live.provider);
+        const finish = executor["finishV2"].bind(executor) as (
+          progress: CompanyProgress, reservation: typeof reserved, evidenceDigest: string,
+          terminalState: "completed" | "processed_complete",
+        ) => void;
+        expect(() => finish(progress, reserved, digest(`${operation}-foreign-evidence`), operation === "complete" ? "completed" : "processed_complete"))
+          .toThrow("COMPANY_EXECUTION_BUSY");
+        expect(live.finishes).toHaveLength(before + 1);
+        expect(live.finishes.at(-1)?.terminal_state).toBe(operation === "complete" ? "completed" : "processed_complete");
+        expect(live.db.db.prepare("SELECT status,lease_token,lease_expires_at FROM company_candidate_handoffs").get())
+          .toEqual({ status: "completing", lease_token: foreign, lease_expires_at: expires });
+        expect(live.db.db.prepare("SELECT state FROM control_command_requests WHERE request_id=?").get(live.command.request_id))
+          .toEqual({ state: "approved" });
+        expect(live.db.db.prepare("SELECT evidence_digest FROM company_progress_reservations WHERE operation=?").get(operation))
+          .toEqual({ evidence_digest: null });
+      } finally { live.close(); }
+    },
+  );
+  it.each(["complete", "mark_processed"] as const)(
+    "tokenless %s recovery refuses when a foreign lease appears before the publication transaction",
+    async operation => {
+      const live = await session();
+      try {
+        new ControlPlane(live.db, live.provider).decide(live.approval, NOW);
+        const progress = new CompanyProgress(live.db, live.provider);
+        const reserved = progress.reserve(live.command, operation, digest(`${operation}-callback-event`), NOW);
+        live.db.db.prepare(
+          "UPDATE company_candidate_handoffs SET status='completing',lease_token=NULL,lease_expires_at=NULL,updated_at=? WHERE request_id=?",
+        ).run(NOW.toISOString(), live.command.request_id);
+        const foreign = "callback-foreign-lease";
+        const expires = new Date(NOW.getTime() + 60_000).toISOString();
+        const provider = live.provider;
+        const recorded = provider.finishProgress.bind(provider);
+        provider.finishProgress = request => {
+          if (request.terminal_state === (operation === "complete" ? "completed" : "processed_complete")) {
+            const stolen = live.db.db.prepare(
+              "UPDATE company_candidate_handoffs SET lease_token=?,status='completing',lease_expires_at=?,updated_at=? WHERE request_id=? AND lease_token IS NULL",
+            ).run(foreign, expires, NOW.toISOString(), live.command.request_id);
+            expect(stolen.changes).toBe(1);
+          }
+          return recorded(request);
+        };
+        const executor = new CompanyCandidateExecutor(live.db, live.client, live.verifier, () => NOW, live.provider);
+        const finish = executor["finishV2"].bind(executor) as (
+          progress: CompanyProgress, reservation: typeof reserved, evidenceDigest: string,
+          terminalState: "completed" | "processed_complete",
+        ) => void;
+        expect(() => finish(progress, reserved, digest(`${operation}-callback-evidence`), operation === "complete" ? "completed" : "processed_complete"))
+          .toThrow("COMPANY_EXECUTION_BUSY");
+        expect(live.db.db.prepare("SELECT status,lease_token,lease_expires_at FROM company_candidate_handoffs").get())
+          .toEqual({ status: "completing", lease_token: foreign, lease_expires_at: expires });
+        expect(live.db.db.prepare("SELECT state FROM control_command_requests WHERE request_id=?").get(live.command.request_id))
+          .toEqual({ state: "approved" });
+        expect(live.db.db.prepare("SELECT evidence_digest FROM company_progress_reservations WHERE operation=?").get(operation))
+          .toEqual({ evidence_digest: null });
+      } finally { live.close(); }
+    },
+  );
+  it.each([
+    ["owner", "completing", "approved"],
+    ["expired", "completing", "approved"],
+    ["absent", "completing", "approved"],
+    ["terminal", "completed", "completed"],
+  ] as const)(
+    "tokenless processed_complete recovery publishes only when the lease boundary is %s",
+    async (boundary, handoffStatus, controlState) => {
+      const live = await session();
+      try {
+        new ControlPlane(live.db, live.provider).decide(live.approval, NOW);
+        const progress = new CompanyProgress(live.db, live.provider);
+        const reserved = progress.reserve(live.command, "mark_processed", digest(`boundary-${boundary}-event`), NOW);
+        const token = boundary === "absent" || boundary === "terminal" ? null : `${boundary}-lease`;
+        const expires = boundary === "absent" || boundary === "terminal"
+          ? null
+          : new Date(NOW.getTime() + (boundary === "expired" ? -1_000 : 60_000)).toISOString();
+        live.db.db.prepare(
+          "UPDATE company_candidate_handoffs SET status=?,lease_token=?,lease_expires_at=?,failure_code=NULL,updated_at=? WHERE request_id=?",
+        ).run(handoffStatus, token, expires, NOW.toISOString(), live.command.request_id);
+        if (controlState === "completed") {
+          live.db.db.prepare("UPDATE control_command_requests SET state='completed',completed_at=? WHERE request_id=?")
+            .run(NOW.toISOString(), live.command.request_id);
+        }
+        const executor = new CompanyCandidateExecutor(live.db, live.client, live.verifier, () => NOW, live.provider);
+        const finish = executor["finishV2"].bind(executor) as (
+          progress: CompanyProgress, reservation: typeof reserved, evidenceDigest: string,
+          terminalState: "processed_complete", token?: string,
+        ) => void;
+        const evidence = digest(`boundary-${boundary}-evidence`);
+        if (boundary === "owner") finish(progress, reserved, evidence, "processed_complete", token ?? undefined);
+        else finish(progress, reserved, evidence, "processed_complete");
+        expect(live.db.db.prepare("SELECT status,lease_token FROM company_candidate_handoffs").get())
+          .toEqual({ status: "completed", lease_token: token });
+        expect(live.db.db.prepare("SELECT state FROM control_command_requests WHERE request_id=?").get(live.command.request_id))
+          .toEqual({ state: "completed" });
+        expect(live.db.db.prepare("SELECT evidence_digest,terminal_state FROM company_progress_reservations WHERE operation='mark_processed'").get())
+          .toEqual({ evidence_digest: evidence, terminal_state: "processed_complete" });
+        expect(live.provider.finishProgress({
+          ...live.finishes.at(-1)!, challenge: `challenge:TEST_ONLY:boundary-${boundary}`,
+        }).outcome).toBe("already_recorded");
+      } finally { live.close(); }
+    },
+  );
 });
