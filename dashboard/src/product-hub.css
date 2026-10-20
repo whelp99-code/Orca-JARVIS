@@ -1,0 +1,85 @@
+.product-hub {
+  display: grid;
+  gap: var(--space-4);
+  min-inline-size: 0;
+}
+
+.product-hub-heading,
+.product-hub-card-heading {
+  display: flex;
+  align-items: start;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: var(--space-3);
+}
+
+.product-hub-kicker {
+  color: var(--color-info);
+  font-size: var(--type-sm);
+  margin-block-end: var(--space-2);
+}
+
+.product-hub-heading h1 {
+  font-size: var(--type-title);
+}
+
+.product-hub-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(var(--size-agent-min), 100%), 1fr));
+  gap: var(--space-3);
+}
+
+.product-hub-card {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+  min-inline-size: 0;
+  padding: var(--space-4);
+  scroll-margin-block-start: calc(var(--size-nav) * 3);
+}
+
+.product-hub-card h2 {
+  font-size: var(--type-panel);
+}
+
+.product-hub-state,
+.product-hub-note,
+.product-hub-observation {
+  color: var(--color-text-muted);
+  font-size: var(--type-sm);
+}
+
+.product-hub-card[data-state="denied"] .product-hub-state,
+.product-hub-card[data-state="unavailable"] .product-hub-state {
+  color: var(--color-danger);
+}
+
+.product-hub-card[data-state="stale"] .product-hub-state,
+.product-hub-card[data-state="unconfigured"] .product-hub-state {
+  color: var(--color-warning);
+}
+
+.product-hub-summary {
+  font-size: var(--type-lead);
+  font-weight: var(--weight-medium);
+}
+
+.product-hub :is(p, a, time) {
+  overflow-wrap: anywhere;
+  word-break: keep-all;
+}
+
+.product-hub-card-links {
+  display: flex;
+  flex-direction: column;
+  align-items: start;
+  gap: var(--space-1);
+  margin-block-start: auto;
+}
+
+.product-hub-card a {
+  display: inline-flex;
+  align-items: center;
+  align-self: start;
+  min-block-size: var(--size-control);
+}

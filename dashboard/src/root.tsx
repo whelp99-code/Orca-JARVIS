@@ -32,6 +32,7 @@ import type { FinanceReadAdapter } from "./finance-read-adapter.js";
 import { WorkboardRoute } from "./workboard/page.js";
 import { MailCandidatesCard } from "./mail-candidates-card.js";
 import type { MailCandidatesReadAdapter } from "./mail-candidates-model.js";
+import { ProductHub } from "./product-hub.js";
 
 type DashboardStore = ReturnType<typeof createDashboardStore>;
 type RootClient = Omit<DashboardClient, "agentLogs"> & Readonly<{
@@ -115,9 +116,13 @@ function ControlCenter({
   }, [store, phone]);
 
   const today = (
-    <TodayRoute runtime={personalRuntime} overview={state.overview} approvals={state.approvals}
-      authorityClient={liveAuthorityClient} authorityConnection={state.connectionState} />
+    <>
+      <ProductHub load={client.productHub} />
+      <TodayRoute runtime={personalRuntime} overview={state.overview} approvals={state.approvals}
+        authorityClient={liveAuthorityClient} authorityConnection={state.connectionState} />
+    </>
   );
+  const products = <ProductHub load={client.productHub} />;
   const memory = <MemoryRoute runtime={memoryRuntime} />;
   const security = <SecurityPage client={createBrowserSecurityClient()} />;
   if (phone) {
@@ -125,6 +130,7 @@ function ControlCenter({
       <OperationalShell connectionState={state.connectionState}>
         <Routes>
           <Route path="/" element={today} />
+          <Route path="/products" element={products} />
           <Route path="/memory" element={memory} />
           <Route path="/approvals" element={<section className="page-frame dashboard-main"><h1>{copy.pages.approvals}</h1><OwnerInboxPanel /></section>} />
           <Route path="/security" element={security} />
@@ -137,6 +143,7 @@ function ControlCenter({
     <OperationalShell connectionState={state.connectionState}>
       <Routes>
         <Route path="/" element={today} />
+        <Route path="/products" element={products} />
         <Route path="/workboard" element={<WorkboardRoute load={client.workboard} actionClient={liveAuthorityClient.workboardActions} />} />
         <Route path="/memory" element={memory} />
         <Route path="/overview" element={<OverviewRoute state={state} store={store} />} />

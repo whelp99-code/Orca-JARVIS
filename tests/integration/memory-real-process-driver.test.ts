@@ -15,7 +15,7 @@ import {
   statSync,
   writeFileSync,
 } from "node:fs";
-import { tmpdir } from "node:os";
+import { providerStorageBase } from "../../scripts/lib/test-environment.mjs";
 import { dirname, join, resolve } from "node:path";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
@@ -130,7 +130,7 @@ describe("Task 30 real built-process lifecycle", () => {
     expect(providerSha).toMatch(/^[0-9a-f]{40}$/);
     expect(existsSync(python), "inject an isolated Python runtime").toBe(true);
     expect(existsSync(sqliteCli), "inject the SQLite executable fixture").toBe(true);
-    const root = mkdtempSync(join(tmpdir(), "task30-real-process-"));
+    const root = mkdtempSync(join(providerStorageBase(), "task30-real-process-"));
     const site = join(root, "site");
     const providerRoot = join(root, "provider");
     const spoolRoot = join(root, "jarvis-spool");

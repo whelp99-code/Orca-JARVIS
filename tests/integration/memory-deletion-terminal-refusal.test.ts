@@ -1,7 +1,7 @@
 import { execFileSync } from "node:child_process";
 import { createHash, createPrivateKey, createPublicKey, randomBytes } from "node:crypto";
 import { chmodSync, cpSync, existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from "node:fs";
-import { tmpdir } from "node:os";
+import { providerStorageBase } from "../../scripts/lib/test-environment.mjs";
 import { join, resolve } from "node:path";
 import Database from "better-sqlite3";
 import { describe, expect, it } from "vitest";
@@ -45,7 +45,7 @@ describe("real-provider deletion terminal refusal", () => {
     const providerSha = process.env["TASK30_PROVIDER_SHA"] ?? TASK30_PROVIDER_SHA;
     const sqliteCli = task30Sqlite();
     expect(existsSync(wheel)).toBe(true);
-    const root = mkdtempSync(join(tmpdir(), "task30-deletion-refusal-"));
+    const root = mkdtempSync(join(providerStorageBase(), "task30-deletion-refusal-"));
     const site = join(root, "site");
     const providerRoot = join(root, "provider");
     mkdirSync(site, { mode: 0o700 });

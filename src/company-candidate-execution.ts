@@ -264,7 +264,9 @@ export class CompanyCandidateExecutor {
     })) : undefined;
     const recovering = pending !== undefined || (peer !== undefined && peer.state !== "prepared");
     const acknowledged = this.readReceipt(requestId, operation, 2);
-    assertCompanyApprovalPin(this.db, command, approval);
+    // Cancel keeps the command approved until this publication, then revocation blocks
+    // every later attempt. Close an already reserved finish before that check.
+    if (stored.state !== "cancelled") assertCompanyApprovalPin(this.db, command, approval);
     const pendingDecision = progress.pending(command, approval.decision === "approve" ? "decide_approve" : "decide_reject");
     if (pendingDecision) {
       progress.finish(pendingDecision, controlValueDigest(approval), approval.decision === "approve" ? "approved" : "rejected", this.clock());
@@ -287,8 +289,10 @@ export class CompanyCandidateExecutor {
     if (pendingProcessed) {
       if (!processed || !completion) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
       this.finishV2(progress, pendingProcessed, processed.receipt_digest, "processed_complete");
+      if (stored.state === "cancelled") throw new JarvisError("COMPANY_APPROVAL_REVOKED");
       return this.result(requestId, "completed", 2);
     }
+    if (stored.state === "cancelled" && !recovering) throw new JarvisError("COMPANY_APPROVAL_REVOKED");
     if (!recovering && !acknowledged) {
       parseCompanyCommandV2(input, this.clock());
       assertCurrentCompanyPin(this.db, command, approval, this.clock());
@@ -335,9 +339,9 @@ export class CompanyCandidateExecutor {
           }, this.clock()), requestId, operation, 2);
         }
         this.persistReceipt(requestId, token, receipt);
-        this.finishV2(progress, mutation, receipt.receipt_digest, operation === "accept" ? "accepted" : "rejected");
+        this.finishV2(progress, mutation, receipt.receipt_digest, operation === "accept" ? "accepted" : "rejected", token);
       } else if (mutation && receipt) {
-        this.finishV2(progress, mutation, receipt.receipt_digest, operation === "accept" ? "accepted" : "rejected");
+        this.finishV2(progress, mutation, receipt.receipt_digest, operation === "accept" ? "accepted" : "rejected", token);
       }
       if (!receipt) throw new JarvisError("COMPANY_EXECUTION_UNCERTAIN");
       if (operation === "reject") {
@@ -389,7 +393,7 @@ export class CompanyCandidateExecutor {
               operation: "accept", state: "accepted", handoff_id: requestId },
           });
         }).immediate();
-        this.finishV2(progress, reserved, completion.effect_digest, "completed");
+        this.finishV2(progress, reserved, completion.effect_digest, "completed", token);
       }
       if (!processed) {
         if (shared) {
@@ -405,12 +409,12 @@ export class CompanyCandidateExecutor {
             candidate_id: command.target.candidate_id, handoff_id: requestId,
           }, this.clock()), requestId, "mark_processed", 2);
           this.persistReceipt(requestId, token, marked, completion, 2);
-          this.finishV2(progress, reserved, marked.receipt_digest, "processed_complete");
+          this.finishV2(progress, reserved, marked.receipt_digest, "processed_complete", token);
         }
       }
       if (shared) {
         progress.synchronize(scope, this.clock());
-        this.db.db.transaction(() => this.publishV2(requestId, "processed_complete", this.clock())).immediate();
+        this.db.db.transaction(() => this.publishV2(requestId, "processed_complete", this.clock(), token)).immediate();
       }
       return this.result(requestId, "completed", 2);
     } catch (error) {
@@ -484,25 +488,61 @@ export class CompanyCandidateExecutor {
     }
   }
 
-  private finishV2(progress: CompanyProgress, reservation: CompanyProgressReservation, evidenceDigest: string, terminalState: "accepted" | "rejected" | "completed" | "processed_complete"): void {
-    const now = this.clock();
-    progress.finish(reservation, evidenceDigest, terminalState, now, () => this.publishV2(reservation.request_id, terminalState, now));
+  private finishV2(progress: CompanyProgress, reservation: CompanyProgressReservation, evidenceDigest: string, terminalState: "accepted" | "rejected" | "completed" | "processed_complete", token?: string): void {
+    const started = this.clock();
+    const observed = token === undefined ? undefined : this.publicationLease(reservation.request_id, token, started)?.lease_token;
+    let releasedCancellation = false;
+    progress.finish(reservation, evidenceDigest, terminalState, started, () => {
+      this.publishV2(reservation.request_id, terminalState, this.clock(), token, observed);
+      if (terminalState === "processed_complete") {
+        const controlState = this.db.db.prepare(
+          "SELECT state FROM control_command_requests WHERE request_id=?",
+        ).get(reservation.request_id) as { state: string } | undefined;
+        if (controlState?.state === "cancelled") releasedCancellation = true;
+      }
+    });
+    if (releasedCancellation) throw new JarvisError("COMPANY_APPROVAL_REVOKED");
   }
 
-  private publishV2(requestId: string, terminalState: "accepted" | "rejected" | "completed" | "processed_complete", now: Date): void {
+  private publishV2(requestId: string, terminalState: "accepted" | "rejected" | "completed" | "processed_complete", now: Date, token?: string, observed?: string): void {
+    const owner = this.publicationLease(requestId, token, now);
+    // A lease snapshot is not ownership. Tokenless recovery may close only a terminal,
+    // expired, or unleased handoff; a live foreign lease stays untouched.
+    if (token === undefined && owner && !this.terminalHandoff(requestId)) throw new JarvisError("COMPANY_EXECUTION_BUSY");
+    if (token !== undefined && owner?.lease_token !== (observed ?? token)) throw new JarvisError("COMPANY_EXECUTION_BUSY");
+    const owned = token !== undefined && owner ? " AND lease_token=? AND lease_expires_at>?" : "";
+    const ownedArgs = token !== undefined && owner ? [owner.lease_token, now.toISOString()] : [];
     if (terminalState === "accepted" || terminalState === "rejected") {
+      const current = this.db.db.prepare(
+        "SELECT status FROM company_candidate_handoffs WHERE request_id=? AND current=1",
+      ).get(requestId) as { status: string } | undefined;
+      if (current?.status === "completed" || current?.status === "rejected" || current?.status === "superseded") {
+        if (current.status !== terminalState) throw new JarvisError("CONTROL_STATE_CONFLICT");
+        return;
+      }
       const handoff = this.db.db.prepare(
-        "UPDATE company_candidate_handoffs SET status=?,failure_code=NULL,updated_at=? WHERE request_id=? AND current=1",
-      ).run(terminalState, now.toISOString(), requestId);
+        `UPDATE company_candidate_handoffs SET status=?,failure_code=NULL,updated_at=? WHERE request_id=? AND current=1${owned}`,
+      ).run(terminalState, now.toISOString(), requestId, ...ownedArgs);
       if (handoff.changes !== 1) throw new JarvisError("CONTROL_STATE_CONFLICT");
     }
+    if (terminalState === "completed") return;
     if (terminalState === "processed_complete") {
+      const controlState = this.db.db.prepare(
+        "SELECT state FROM control_command_requests WHERE request_id=?",
+      ).get(requestId) as { state: string } | undefined;
+      // Provider progress is already durable. Commit that evidence so the scope gate
+      // can open, but do not rewrite a cancellation that won this publication.
+      if (controlState?.state === "cancelled") return;
+      const current = this.db.db.prepare(
+        "SELECT status FROM company_candidate_handoffs WHERE request_id=? AND current=1",
+      ).get(requestId) as { status: string } | undefined;
+      if (current?.status === "completed") return;
       const control = this.db.db.prepare(
         "UPDATE control_command_requests SET state='completed',completed_at=COALESCE(completed_at,?) WHERE request_id=? AND state IN ('approved','completed')",
       ).run(now.toISOString(), requestId);
       const handoff = this.db.db.prepare(
-        "UPDATE company_candidate_handoffs SET status='completed',failure_code=NULL,updated_at=? WHERE request_id=? AND current=1",
-      ).run(now.toISOString(), requestId);
+        `UPDATE company_candidate_handoffs SET status='completed',failure_code=NULL,updated_at=? WHERE request_id=? AND current=1${owned}`,
+      ).run(now.toISOString(), requestId, ...ownedArgs);
       if (control.changes !== 1 || handoff.changes !== 1) throw new JarvisError("CONTROL_STATE_CONFLICT");
     }
   }
@@ -586,6 +626,35 @@ export class CompanyCandidateExecutor {
     ).get(requestId, operation) as { payload_json: string } | undefined;
     const known = operation === "accept" || operation === "reject" || operation === "mark_processed" ? operation : "reject";
     return row ? this.parseReceipt(JSON.parse(row.payload_json), requestId, known, version) : undefined;
+  }
+
+  private terminalHandoff(requestId: string): boolean {
+    const row = this.db.db.prepare(
+      "SELECT status FROM company_candidate_handoffs WHERE request_id=? AND current=1",
+    ).get(requestId) as { status: string } | undefined;
+    return row?.status === "completed" || row?.status === "rejected" || row?.status === "superseded";
+  }
+
+  private ownedHandoff(requestId: string, token: string, now: Date): { status: string } {
+    const row = this.db.db.prepare(
+      "SELECT status,lease_expires_at FROM company_candidate_handoffs WHERE request_id=? AND current=1 AND lease_token=?",
+    ).get(requestId, token) as { status: string; lease_expires_at: string | null } | undefined;
+    if (!row?.lease_expires_at || Date.parse(row.lease_expires_at) <= now.getTime()) {
+      throw new JarvisError("COMPANY_EXECUTION_BUSY");
+    }
+    return row;
+  }
+
+  private publicationLease(requestId: string, token: string | undefined, now: Date): { lease_token: string } | undefined {
+    if (token !== undefined) {
+      this.ownedHandoff(requestId, token, now);
+      return { lease_token: token };
+    }
+    const row = this.db.db.prepare(
+      "SELECT lease_token,lease_expires_at FROM company_candidate_handoffs WHERE request_id=? AND current=1",
+    ).get(requestId) as { lease_token: string | null; lease_expires_at: string | null } | undefined;
+    if (!row?.lease_token || !row.lease_expires_at || Date.parse(row.lease_expires_at) <= now.getTime()) return undefined;
+    return { lease_token: row.lease_token };
   }
 
   private update(requestId: string, token: string, status: string): void {

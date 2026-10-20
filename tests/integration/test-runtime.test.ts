@@ -1,10 +1,21 @@
-import { readFileSync, existsSync, lstatSync, mkdtempSync, readdirSync, realpathSync, rmSync, statfsSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { afterEach, describe, expect, it, vi } from "vitest";
+
+const nodeFs = vi.hoisted(() => ({
+  lstatSync: vi.fn(),
+  realpathSync: vi.fn(),
+}));
+vi.mock("node:fs", async importOriginal => {
+  const real = await importOriginal<typeof import("node:fs")>();
+  nodeFs.lstatSync = vi.fn(real.lstatSync);
+  nodeFs.realpathSync = vi.fn(real.realpathSync);
+  return { ...real, lstatSync: nodeFs.lstatSync, realpathSync: nodeFs.realpathSync };
+});
+import { existsSync, lstatSync, mkdtempSync, readFileSync, readdirSync, realpathSync, rmSync, statfsSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { spawn, spawnSync } from "node:child_process";
 import { once } from "node:events";
 import { homedir, tmpdir } from "node:os";
 import { dirname, join, sep } from "node:path";
-import { describe, expect, it } from "vitest";
-import { createTestEnvironment } from "../../scripts/lib/test-environment.mjs";
+import { createTestEnvironment, providerStorageBase } from "../../scripts/lib/test-environment.mjs";
 import { runTestProcess } from "../../scripts/lib/test-process.mjs";
 
 function running(pid: number): boolean {
@@ -15,6 +26,15 @@ function running(pid: number): boolean {
     if (code === "ENOENT" || code === "ESRCH") return false;
     throw error;
   }
+}
+
+const providerRoot = "/var/jarvis-provider-storage-fixture";
+
+function statFixture(overrides: Partial<import("node:fs").Stats> & Pick<import("node:fs").Stats, "isDirectory" | "isSymbolicLink" | "nlink" | "mode">): import("node:fs").Stats {
+  return {
+    uid: process.getuid?.() ?? 0,
+    ...overrides,
+  } as import("node:fs").Stats;
 }
 
 describe("test runtime lifecycle", () => {
@@ -118,14 +138,58 @@ describe("test runtime lifecycle", () => {
   });
 });
 
+describe("provider storage base", () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it("keeps the operating-system temporary directory when the selector is absent", () => {
+    expect(providerStorageBase({})).toBe(tmpdir());
+  });
+
+  it("resolves an absolute directory fixture with nlink 2", () => {
+    const info = statFixture({ isDirectory: () => true, isSymbolicLink: () => false, nlink: 2, mode: 0o40700 });
+    vi.mocked(nodeFs.lstatSync).mockReturnValue(info);
+    vi.mocked(nodeFs.realpathSync).mockReturnValue("/resolved/provider-storage");
+    expect(providerStorageBase({ JARVIS_TEST_PROVIDER_STORAGE_ROOT: providerRoot })).toBe("/resolved/provider-storage");
+    expect(nodeFs.lstatSync).toHaveBeenCalledWith(providerRoot);
+  });
+
+  it("refuses a directory fixture whose nlink is below 2 and reports mode", () => {
+    const info = statFixture({ isDirectory: () => true, isSymbolicLink: () => false, nlink: 1, mode: 0o40755 });
+    vi.mocked(nodeFs.lstatSync).mockReturnValue(info);
+    const realpath = vi.mocked(nodeFs.realpathSync);
+    expect(() => providerStorageBase({ JARVIS_TEST_PROVIDER_STORAGE_ROOT: providerRoot })).toThrow(expect.objectContaining({
+      message: "TEST_PROVIDER_STORAGE_UNSUPPORTED",
+      reason: "nlink_below_2",
+      metadata: { nlink: 1, is_directory: true, is_symlink: false, uid_matches: true, mode: 0o755 },
+    }));
+    expect(realpath).not.toHaveBeenCalled();
+  });
+
+  it("refuses a symlink fixture before resolving it", () => {
+    const info = statFixture({ isDirectory: () => false, isSymbolicLink: () => true, nlink: 1, mode: 0o120777 });
+    vi.mocked(nodeFs.lstatSync).mockReturnValue(info);
+    const realpath = vi.mocked(nodeFs.realpathSync);
+    expect(() => providerStorageBase({ JARVIS_TEST_PROVIDER_STORAGE_ROOT: providerRoot })).toThrow(expect.objectContaining({
+      message: "TEST_PROVIDER_STORAGE_UNSUPPORTED",
+      reason: "symlink",
+      metadata: { nlink: 1, is_directory: false, is_symlink: true, uid_matches: true, mode: 0o777 },
+    }));
+    expect(realpath).not.toHaveBeenCalled();
+  });
+
+  it("rejects an empty or relative selector without stating the path", () => {
+    const lstat = vi.mocked(nodeFs.lstatSync);
+    expect(() => providerStorageBase({ JARVIS_TEST_PROVIDER_STORAGE_ROOT: "  " })).toThrow("TEST_PROVIDER_STORAGE_SELECTOR_INVALID");
+    expect(() => providerStorageBase({ JARVIS_TEST_PROVIDER_STORAGE_ROOT: "relative/provider" })).toThrow("TEST_PROVIDER_STORAGE_SELECTOR_INVALID");
+    expect(lstat).not.toHaveBeenCalled();
+  });
+});
+
 describe("provider storage selector", () => {
-  it("keeps ordinary temporary behavior when the call does not set the selector", () => {
-    const scratch = createTestEnvironment({});
-    try { expect(dirname(scratch.root)).toBe(tmpdir()); }
-    finally { scratch.cleanup(); }
-    expect(existsSync(scratch.root)).toBe(false);
-    expect(() => createTestEnvironment({ TMPDIR: "/proc/jarvis-test-invalid" })).toThrow("TEST_TMPDIR_UNAVAILABLE");
-    expect(() => createTestEnvironment({ TMPDIR: "relative-path" })).toThrow("TEST_TMPDIR_UNAVAILABLE");
+  afterEach(() => {
+    vi.restoreAllMocks();
   });
 
   it("places the scratch under the selector and gives the child that directory", () => {
@@ -242,6 +306,20 @@ describe("provider storage selector", () => {
       expect(readdirSync("/usr")).toEqual(before);
       expect(readdirSync(sentinel)).toEqual([]);
     } finally { rmSync(sentinel, { recursive: true, force: true }); }
+  });
+
+  it("rejects an unsupported created root and cleans only that root", () => {
+    const parent = createTestEnvironment({});
+    const info = statFixture({ isDirectory: () => true, isSymbolicLink: () => false, nlink: 2, mode: 0o40700 });
+    vi.mocked(nodeFs.lstatSync).mockReturnValueOnce(info).mockReturnValueOnce({ ...info, nlink: 1 });
+    vi.mocked(nodeFs.realpathSync).mockReturnValue(parent.root);
+    try {
+      expect(() => createTestEnvironment({ JARVIS_TEST_PROVIDER_STORAGE_ROOT: parent.root })).toThrow(
+        expect.objectContaining({ message: "TEST_PROVIDER_STORAGE_UNSUPPORTED", reason: "nlink_below_2" }));
+      const created = String(vi.mocked(nodeFs.lstatSync).mock.calls[1]![0]);
+      expect(existsSync(created)).toBe(false);
+      expect(existsSync(parent.root)).toBe(true);
+    } finally { parent.cleanup(); }
   });
 });
 

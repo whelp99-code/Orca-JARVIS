@@ -22,6 +22,7 @@ import { tryHandleMailCandidates } from "./mail-candidates-routes.js";
 import { tryHandleMailSummary } from "./mail-summary-routes.js";
 import { tryHandleMessengerSummary } from "./messenger-summary-routes.js";
 import { tryHandleCompanyReports } from "./company-report-routes.js";
+import { tryHandleProductHub } from "./product-hub-routes.js";
 import { tryHandleOwnerInbox } from "./owner-inbox-routes.js";
 import { tryHandleDashboardPost } from "./post-routes.js";
 import { tryHandleMemoryRead } from "./memory-read-routes.js";
@@ -99,6 +100,7 @@ export async function tryHandleDashboardApi(input: DashboardApiInput): Promise<b
   if (await tryHandleMailCandidates(input)) return true;
   if (await tryHandleMailSummary(input)) return true;
   if (await tryHandleMessengerSummary(input)) return true;
+  if (await tryHandleProductHub(input)) return true;
   if (input.request.method === "POST") return tryHandleDashboardPost(input);
   if (await tryHandleTaskExecution(input)) return true;
   if (tryHandleDashboardSession(input)) return true;

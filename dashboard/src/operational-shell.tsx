@@ -11,6 +11,7 @@ type OperationalShellProps = Readonly<{
 
 const NAV_ITEMS = [
   { label: copy.nav.today, to: "/" },
+  { label: "제품", to: "/products" },
   { label: copy.nav.workboard, to: "/workboard" },
   { label: copy.nav.memory, to: "/memory" },
   { label: copy.nav.overview, to: "/overview" },
@@ -22,7 +23,7 @@ const NAV_ITEMS = [
   { label: "조회 준비", to: "/finance-read" },
 ] as const;
 /** The routes the phone gateway serves; every other path is a gateway 404. */
-const PHONE_NAV_ITEMS = NAV_ITEMS.filter(item => item.to === "/" || item.to === "/memory" || item.to === "/approvals" || item.to === "/security");
+const PHONE_NAV_ITEMS = NAV_ITEMS.filter(item => item.to === "/" || item.to === "/products" || item.to === "/memory" || item.to === "/approvals" || item.to === "/security");
 
 const CONNECTION_LABELS = {
   connecting: "연결 중",

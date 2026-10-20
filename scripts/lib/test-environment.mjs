@@ -26,6 +26,20 @@ function ioCode(error) {
   return error && typeof error === "object" && "code" in error && error.code ? String(error.code) : "IO";
 }
 
+export function providerStorageBase(env = globalThis.process.env) {
+  const selector = env.JARVIS_TEST_PROVIDER_STORAGE_ROOT;
+  if (selector === undefined) return tmpdir();
+  if (typeof selector !== "string" || selector.trim() === "" || !isAbsolute(selector)) {
+    throw new Error("TEST_PROVIDER_STORAGE_SELECTOR_INVALID");
+  }
+  let info;
+  try { info = lstatSync(selector); }
+  catch (error) { throw new Error("TEST_TMPDIR_UNAVAILABLE", { cause: ioCode(error) }); }
+  const reason = storageReason(info, true);
+  if (reason) throw unsupported(reason, info);
+  return realpathSync(selector);
+}
+
 export function createTestEnvironment(env = globalThis.process.env) {
   const selector = env.JARVIS_TEST_PROVIDER_STORAGE_ROOT;
   const selected = selector !== undefined;
