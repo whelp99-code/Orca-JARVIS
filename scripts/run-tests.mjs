@@ -26,7 +26,8 @@ try {
   let readyMarker;
   if (profile === "dashboard") argv.splice(2, 0, "--config", "dashboard/vite.config.ts", "--no-file-parallelism");
   if (profile === "e2e") argv = [resolve("node_modules/@playwright/test/cli.js"), "test",
-    "e2e/control-center.spec.ts", "e2e/task-lineage.spec.ts", "e2e/sse-recovery.spec.ts", ...args];
+    "e2e/control-center.spec.ts", "e2e/task-lineage.spec.ts", "e2e/sse-recovery.spec.ts",
+    "e2e/phone-gateway-spa.spec.ts", ...args];
   if (profile === "acceptance") argv = [resolve("scripts/pre-gjc-acceptance.mjs"), ...args];
   if (profile === "smoke") argv = [resolve("scripts/cli-smoke.mjs"), ...args];
   if (profile === "gui") {
