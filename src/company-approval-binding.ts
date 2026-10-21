@@ -122,7 +122,7 @@ export function assertCompanyApprovalPin(db: AuthorityDb, value: CompanyCommandV
     || !["approve", "reject"].includes(approval.decision)
     || Date.parse(approval.not_before) < Date.parse(approval.issued_at)
     || Date.parse(approval.expires_at) > Date.parse(command.expires_at)
-    || !verifyCommandApproval(approval, key.public_key_pem, new Date(approval.not_before))) {
+    || !verifyCommandApproval(approval, key.public_key_pem, new Date(approval.not_before), command.action)) {
     throw new JarvisError("COMPANY_APPROVAL_INVALID");
   }
   const references = [command.request_id, controlCommandDigest(command), approval.receipt_id,

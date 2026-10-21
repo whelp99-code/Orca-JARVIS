@@ -18,6 +18,7 @@ import type { SbMcp } from "./sb-client.js";
 import { sha256Digest } from "./digest.js";
 
 export type HandsCallResult = {
+  readonly schema_version: 1;
   readonly ok: true;
   readonly tool: HandsTool;
   readonly approval: "log";
@@ -71,13 +72,13 @@ export class HandsService {
 
   async call(tool: HandsTool, input: unknown, presentedToken: string): Promise<HandsCallResult> {
     const at = this.now().toISOString();
-    const digest = sha256Digest(input);
+    const digest = sha256Digest(input, "input");
     try {
       if (!tokenMatches(this.token.token, presentedToken)) throw new HandsError("AUTH_REQUIRED");
       this.rate(tool);
       const data = await this.dispatch(tool, record(input, "input"));
-      this.audit(at, tool, digest, sha256Digest(data), null);
-      return { ok: true, tool, approval: "log", data };
+      this.audit(at, tool, digest, sha256Digest(data, "output"), null);
+      return { schema_version: 1, ok: true, tool, approval: "log", data };
     } catch (error) {
       const code: HandsErrorCode = error instanceof HandsError ? error.code : "UNAVAILABLE";
       try { this.audit(at, tool, digest, null, code); } catch { throw new HandsError("AUDIT_FAILED"); }

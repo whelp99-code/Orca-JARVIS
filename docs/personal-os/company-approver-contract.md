@@ -61,6 +61,8 @@ receipt의 command_digest가 새 command2 전체를 묶는다. 옛 command1 rece
 서명이 있어도 다른 request_id의 approval은 거절한다. fixture의 음성 예시는
 의도적으로 test key로 다시 서명한 불일치 receipt다.
 issued_at <= not_before <= 현재 < expires_at, 수명 최대30분, command TTL도 별도 검사한다.
+이 회사 전용 30분 계약은 일반 명령의 15분 상한 및 `external.delegate`의 30분 상한과 구분한다.
+검증 시 action은 저장·검증된 command에서 전달하며, 생략한 일반 검증은 15분 상한으로 거절한다.
 C1은 approve/reject **기록 전** 실제 key principal/ID/purpose/SPKI와 고정 binding,
 서명·시간·폐기·최신성을 검증한다. 실패 시 pending 유지·receipt/이벤트/상환0.
 C2/C3/C4도 현재 pin/폐기/최신성을 다시 확인한다. 서명이 맞는 것만으로 허가하지 않는다.
