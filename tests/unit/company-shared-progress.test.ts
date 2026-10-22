@@ -97,6 +97,30 @@ function verifier(path: string): CompanyCompletionVerifierV2 {
 }
 
 describe("new-kind consumer ownership and original-fact recovery", () => {
+  it.each(["2026-10-15T00:05:00Z", "2026-10-15T09:05:00+09:00", "2026-10-15T00:05:00.000000Z"])(
+    "finishes cancellation without rewriting the accepted timestamp %s", async revokedAt => {
+      const live = await consumer(false);
+      try {
+        const control = new ControlPlane(live.db, live.provider);
+        live.db.db.exec(`CREATE TEMP TRIGGER fail_timestamp_receipt BEFORE INSERT ON control_command_receipts
+          BEGIN SELECT RAISE(ABORT,'TEST_ONLY timestamp receipt rollback'); END`);
+        expect(() => control.decide(live.approval, NOW)).toThrow("TEST_ONLY timestamp receipt rollback");
+        live.db.db.exec("DROP TRIGGER fail_timestamp_receipt");
+        control.cancel({ request_id: live.command.request_id, reason: "timestamp recovery",
+          actor: "test-operator", revoked_at: revokedAt }, NOW);
+        const original = live.db.db.prepare("SELECT payload_json,payload_digest,revoked_at FROM control_command_revocations").get();
+        new CompanyProgress(live.db, live.provider).settleCancelled(live.scope, NOW);
+        expect(live.db.db.prepare("SELECT terminal_state FROM company_progress_reservations").get())
+          .toEqual({ terminal_state: "cancelled" });
+        expect(live.db.db.prepare("SELECT payload_json,payload_digest,revoked_at FROM control_command_revocations").get())
+          .toEqual(original);
+        const row = live.db.db.prepare("SELECT evidence_json FROM company_progress_cancellation_outbox").get() as { evidence_json: string };
+        expect(JSON.parse(row.evidence_json)).toMatchObject({ original_at: NOW.toISOString(),
+          cancellation: { revoked_at: revokedAt } });
+      } finally { live.close(); }
+    },
+  );
+
   it("retires a definitive SB CAS conflict while preserving the original call identity", async () => {
     const live = await consumer(false);
     const reserve = live.provider.reserveProgress.bind(live.provider);

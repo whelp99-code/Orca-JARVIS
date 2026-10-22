@@ -72,7 +72,9 @@ C1은 제공자 호출 전에 원래 서명 receipt 전체를 `company_decision_
 같은 결정·command·현재 signer만 이 원본을 재사용한다. 새 receipt/nonce로 예약을
 갈아끼우지 않는다. 원래 서명·만료·키·binding·폐기는 매번 다시 검증한다.
 제공자 I/O 동안 결정 claim은 시간만으로 만료하거나 다른 호출자에게 넘어가지 않는다.
-살아 있는 호출자는 finally에서 자기 token만 해제한다. 프로세스 crash 뒤 남은 claim은
+성공 finish/checkpoint 커밋과 동일 트랜잭션에서 decision claim을 해제한다. 실행 redemption이
+있거나 실행용 namespace의 lease는 건드리지 않는다. 오류 경로는 finally에서 자기 token만
+해제한다. 프로세스 crash 뒤 남은 미확정 claim은
 자동 lease-steal 대상이 아니며 미확정 상태로 보존한다. 증명된 취소·진행 종결이나
 별도 승인된 운영 복구 없이 token을 지우거나 provider mutation을 재전송하지 않는다.
 
@@ -212,6 +214,8 @@ receipt가 아직 없을 때는 별도 불변 `company_progress_cancellation_out
 wire sidecar의 `kind=revocation`, source_record_id는 revocation_id다. payload/command/
 operation/event digest·scope·redemption 부재를 다시 검증한 뒤에만 finish를 보낸다.
 취소 ACK는 자기 receipt/terminal root의 취소 사실이며 approve receipt를 합성하지 않는다.
+revoked_at의 허용 문법은 기존 cancel의 Date.parse 검증과 같다. 원본 revocation/payload/digest는
+그대로 보존하고 wire original_at만 UTC 밀리초 ISO로 정규화하여 동일 시각인지 비교한다.
 SB peer도 이 revocation sidecar와 취소 root 계산을 채택해야 한다. consumer 모형과
 transport 경계 시험은 실제 SB 통합/설치/운영 검증을 대신하지 않는다.
 SB provider와 JARVIS는 같은 계약을 채택하며, SB PR84의 채택은 운영 배포 선행조건이다.

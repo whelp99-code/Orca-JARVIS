@@ -293,7 +293,7 @@ export class CompanyProgress {
               const proof = readCompanyCancellation(this.db, command);
               if (!proof || proof.payload_digest !== evidence) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
               stageCompanyProgressEvidence(this.db, { kind: "jarvis_cancellation", command, approval,
-                reservation: request, cancellation: proof, original_at: proof.revoked_at });
+                reservation: request, cancellation: proof, original_at: new Date(proof.revoked_at).toISOString() });
             }).immediate();
             readCompanyProgressEvidence(this.db, operationId, "cancelled");
             this.finish(token, evidence, "cancelled", now);
@@ -350,6 +350,17 @@ export class CompanyProgress {
       } catch { return undefined; }
     }
     return row.payload_digest;
+  }
+
+  private releaseFinishedDecisionClaim(token: CompanyProgressReservation): void {
+    if (token.operation !== "decide_approve" && token.operation !== "decide_reject") return;
+    this.db.db.prepare(
+      `UPDATE company_candidate_handoffs SET lease_token=NULL,lease_expires_at=NULL
+       WHERE request_id=? AND lease_token LIKE 'decision:%'
+       AND EXISTS (SELECT 1 FROM control_command_requests r WHERE r.request_id=company_candidate_handoffs.request_id
+         AND r.lease_fence=0 AND r.state IN ('approved','rejected','cancelled'))
+       AND NOT EXISTS (SELECT 1 FROM control_command_redemptions d WHERE d.request_id=company_candidate_handoffs.request_id)`,
+    ).run(token.request_id);
   }
 
   /** Provider acknowledgement precedes the local checkpoint/publication transaction. */
@@ -409,6 +420,7 @@ export class CompanyProgress {
           ).get(token.scope.provider_instance_id, token.scope.workspace_id) as { checkpoint_json: string } | undefined;
           if (!current) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
           assertCompanyLocalProgress(this.db, token.scope, companyCheckpointSchema.parse(JSON.parse(current.checkpoint_json)));
+          this.releaseFinishedDecisionClaim(token);
           return;
         }
       } else {
@@ -420,6 +432,7 @@ export class CompanyProgress {
         if (updated.changes !== 1) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
       }
       if (this.provider.kind === "sb_company_db") assertCompanyLocalProgress(this.db, token.scope, finalCheckpoint);
+      this.releaseFinishedDecisionClaim(token);
       publish?.();
     }).immediate();
   }

@@ -59,7 +59,7 @@ export function parseCompanyProgressEvidence(value: unknown) {
           request_id: command.request_id, command_digest: commandDigest, operation })
         || cancellation.request_id !== command.request_id || cancellation.command_digest !== commandDigest
         || cancellation.payload_json !== payload || cancellation.payload_digest !== controlValueDigest(payload)
-        || evidence.original_at !== cancellation.revoked_at) return invalid();
+        || Date.parse(evidence.original_at) !== Date.parse(cancellation.revoked_at)) return invalid();
       return { ...evidence, command };
     }
     case "jarvis_decision":

@@ -7,7 +7,8 @@ import { JarvisError } from "./jarvis-error.js";
 
 export const companyCancellationSchema = z.object({
   revocation_id: z.string().min(1), request_id: z.string().min(1), command_digest: z.string(),
-  reason: z.string().min(1), revoked_by: z.string().min(1), revoked_at: z.iso.datetime(),
+  reason: z.string().min(1), revoked_by: z.string().min(1),
+  revoked_at: z.string().refine(value => Number.isFinite(Date.parse(value))),
   receipt_id: z.string().nullable(), payload_json: z.string(), payload_digest: z.string(),
 }).strict();
 

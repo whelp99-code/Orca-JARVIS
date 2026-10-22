@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { ControlPlane } from "../../src/control-plane.js";
 import { companyCheckpointSchema, type CompanyFreshnessProvider } from "../../src/company-freshness.js";
 import { AuthorityDb } from "../../src/db.js";
@@ -29,6 +29,45 @@ function nextApproval(live: Awaited<ReturnType<typeof companyApproverV2Database>
 }
 
 describe("company decision reservation recovery", () => {
+  it("releases its decision claim in the same commit as finish before finally can run", async () => {
+    const live = await companyApproverV2Database("approve", false);
+    const finish = CompanyProgress.prototype.finish;
+    let observed: unknown;
+    const intercept = vi.spyOn(CompanyProgress.prototype, "finish").mockImplementation(function (this: CompanyProgress, ...args) {
+      finish.apply(this, args);
+      observed = live.db.db.prepare(
+        `SELECT h.lease_token,p.terminal_state,p.evidence_digest FROM company_candidate_handoffs h
+         JOIN company_progress_reservations p USING(request_id) WHERE h.request_id=?`,
+      ).get(live.command.request_id);
+      throw new Error("TEST_ONLY process ended after finish commit");
+    });
+    try {
+      expect(() => new ControlPlane(live.db, live.provider).decide(live.approval, NOW))
+        .toThrow("TEST_ONLY process ended after finish commit");
+      expect(observed).toEqual({ lease_token: null, terminal_state: "approved", evidence_digest: controlValueDigest(live.approval) });
+    } finally { intercept.mockRestore(); live.close(); }
+  });
+
+  it("rolls back finish persistence if atomic decision-claim release fails", async () => {
+    const live = await companyApproverV2Database("approve", false);
+    try {
+      live.db.db.exec(`CREATE TEMP TRIGGER fail_finished_claim BEFORE UPDATE OF lease_token ON company_candidate_handoffs
+        WHEN OLD.lease_token LIKE 'decision:%' AND NEW.lease_token IS NULL
+        BEGIN SELECT RAISE(ABORT,'TEST_ONLY decision claim release failure'); END`);
+      expect(() => new ControlPlane(live.db, live.provider).decide(live.approval, NOW))
+        .toThrow("TEST_ONLY decision claim release failure");
+      expect(live.db.db.prepare("SELECT finished_checkpoint_json FROM company_progress_reservations").get())
+        .toEqual({ finished_checkpoint_json: null });
+      live.db.db.exec("DROP TRIGGER fail_finished_claim");
+      const progress = new CompanyProgress(live.db, live.provider);
+      const token = progress.pending(decodeCompanyCommandV2(live.command), "decide_approve");
+      if (!token) throw new Error("missing original reservation");
+      progress.finish(token, controlValueDigest(live.approval), "approved", NOW);
+      expect(live.db.db.prepare("SELECT lease_token FROM company_candidate_handoffs").get()).toEqual({ lease_token: null });
+      expect(new ControlPlane(live.db).get(live.command.request_id)?.state).toBe("approved");
+    } finally { live.close(); }
+  });
+
   it("retires a definitive reservation conflict without blocking another workspace decision", async () => {
     const live = await companyApproverV2Database("approve", false);
     try {
