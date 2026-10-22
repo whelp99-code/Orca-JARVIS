@@ -1,7 +1,13 @@
 import { useEffect, useState } from "react";
 import { MAIL_CANDIDATE_RECENT_LIMIT, mailCandidatesSummarySchema,
   type MailCandidatesReadAdapter, type MailCandidatesSummary } from "./mail-candidates-model.js";
-import { elapsedDays, formatReadableDate, formatReadableTimestamp } from "./finance-readable-format.js";
+import {
+  describeFixtureFreshness,
+  describeNativeObservationFreshness,
+  elapsedDays,
+  formatReadableDate,
+  formatReadableTimestamp,
+} from "./finance-readable-format.js";
 import "./finance-read-page.css";
 
 type LoadState =
@@ -58,14 +64,14 @@ export function MailCandidatesCard({ adapter }: Readonly<{ adapter?: MailCandida
           {value !== undefined && <><dt>{value.proof_level === "isolated-fixture" ? "Fixture 관측 시각" : "조회 시각"}</dt>
             <dd><time dateTime={value.observed_at}>{formatReadableTimestamp(value.observed_at)}</time></dd>
             <dt>신선도</dt><dd>{value.proof_level === "isolated-fixture"
-              ? "producer_unverified · 실제 제공자 조회 아님" : "원본 응답 관측 · 업무·기억 확정 근거 아님"}</dd></>}
+              ? describeFixtureFreshness() : describeNativeObservationFreshness()}</dd></>}
         </dl>
         {value?.proof_level === "isolated-fixture" && value.crm.state === "read"
           && <section aria-labelledby="mail-candidates-recent-title">
           <h3 id="mail-candidates-recent-title">CRM 최근 {MAIL_CANDIDATE_RECENT_LIMIT}건 제목</h3>
           {value.crm.recent.length === 0 ? <p>메일 후보 없음</p>
             : <ol>{value.crm.recent.map(row => <li key={row.candidate_id} data-candidate-id={row.candidate_id}>
-              <span>{row.title}</span>{" · "}<time dateTime={row.received_at}>{row.received_at}</time>
+              <span>{row.title}</span>{" · "}<time dateTime={row.received_at}>{formatReadableDate(row.received_at)}</time>
             </li>)}</ol>}
         </section>}
         {value?.proof_level === "native-read" && value.crm.state === "read"

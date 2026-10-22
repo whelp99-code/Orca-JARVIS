@@ -14,7 +14,7 @@
   },
   "scripts": {
     "build": "npm run build:backend && npm run build:dashboard",
-    "lint": "eslint src tests dashboard e2e playwright.config.ts playwright.remote.config.ts playwright.task32.config.ts --max-warnings=0",
+    "lint": "eslint src tests dashboard e2e playwright.config.ts playwright.remote.config.ts playwright.task32.config.ts playwright.finance-readable.config.ts --max-warnings=0",
     "pretest": "npm run build",
     "test": "node scripts/run-tests.mjs backend && node scripts/run-tests.mjs dashboard",
     "acceptance:pre-gjc": "node scripts/run-tests.mjs acceptance",
@@ -41,7 +41,8 @@
     "test:integration": "node scripts/run-tests.mjs integration",
     "test:dashboard": "node scripts/run-tests.mjs dashboard",
     "pretest:gui": "npm run product:install-electron && npm run build:backend",
-    "test:gui": "node scripts/run-tests.mjs gui"
+    "test:gui": "node scripts/run-tests.mjs gui",
+    "test:e2e:finance-readable": "npm run build && playwright test --config playwright.finance-readable.config.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

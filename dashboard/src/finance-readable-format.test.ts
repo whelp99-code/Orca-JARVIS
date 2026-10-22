@@ -1,5 +1,13 @@
 import { describe, expect, it } from "vitest";
-import { elapsedDays, formatReadableDate, formatReadablePeriodDate, formatReadableTimestamp, formatWon } from "./finance-readable-format.js";
+import {
+  describePayableConfirmation,
+  elapsedDays,
+  formatOrderBillingLine,
+  formatReadableDate,
+  formatReadablePeriodDate,
+  formatReadableTimestamp,
+  formatWon,
+} from "./finance-readable-format.js";
 
 describe("finance readable formatting", () => {
   it("formats source dates in Korean month/day/weekday form", () => {
@@ -31,5 +39,10 @@ describe("finance readable formatting", () => {
   it("measures elapsed whole days and leaves invalid or future dates unknown", () => {
     expect(elapsedDays("2026-10-04T00:00:00.000Z", "2026-10-09T12:00:00.000Z")).toBe(5);
     expect(elapsedDays("2026-10-10T00:00:00.000Z", "2026-10-09T00:00:00.000Z")).toBeUndefined();
+  });
+
+  it("labels order billing amounts in Korean with grouping", () => {
+    expect(formatOrderBillingLine(1100, 660, 440)).toBe("발주 1,100원 · 청구 660원 · 미청구 440원");
+    expect(describePayableConfirmation(null, false)).toBe("아직 안 됨");
   });
 });
