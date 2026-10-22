@@ -9,7 +9,7 @@ import { WorkboardStore } from "../../src/workboard/store.js";
 const OLD = "http://jm-acloud.alpines-goldeye.ts.net:3010/#m=41";
 const NEW = "https://jm-omachy.alpines-goldeye.ts.net:8451/#m=41";
 
-function migratedDb(evidenceRef = OLD): Database.Database {
+function migratedDb(evidenceRef = OLD, source = "linux:mail:reply-gap:v1"): Database.Database {
   const db = new Database(":memory:");
   db.pragma("foreign_keys = ON");
   db.exec(readFileSync(resolve("migrations/099_workboard_projection.sql"), "utf8"));
@@ -19,7 +19,7 @@ function migratedDb(evidenceRef = OLD): Database.Database {
       evidence_ref, source_at, received_at, attempt_key)
      VALUES(?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
   ).run(
-    "w1", "s1", "msg:41", "41", "mail:reply-gap", 1, "waiting", "회신: test",
+    "w1", "s1", "msg:41", "41", source, 1, "waiting", "회신: test",
     evidenceRef, "2026-10-01T00:00:00.000Z", "2026-10-01T00:00:00.000Z", "a1",
   );
   db.exec(readFileSync(resolve("migrations/106_workboard_reply_gap_evidence_host.sql"), "utf8"));
@@ -27,6 +27,19 @@ function migratedDb(evidenceRef = OLD): Database.Database {
 }
 
 describe("workboard reply-gap evidence_ref host migration", () => {
+  it.each([
+    [OLD, "linux:other:source:v1"],
+    ["https://unrelated.example/?next=http://100.87.81.57:3010/#m=41", "linux:mail:reply-gap:v1"],
+    ["https://unrelated.example/#next=https://jm-acloud.alpines-goldeye.ts.net:8451", "linux:mail:reply-gap:v1"],
+    ["http://100.87.81.57:30100/#m=41", "linux:mail:reply-gap:v1"],
+  ])("does not remap embedded or unrelated origin %s from %s", (value, source) => {
+    const db = migratedDb(value, source);
+    try {
+      expect(db.prepare("SELECT evidence_ref FROM workboard_works").get()).toEqual({ evidence_ref: value });
+      expect(db.prepare("SELECT * FROM workboard_evidence_ref_host_remap_20261016").all()).toEqual([]);
+    } finally { db.close(); }
+  });
+
   it.each([
     "http://100.87.81.57:3010",
     "https://100.87.81.57:3010",
@@ -73,13 +86,13 @@ describe("workboard reply-gap evidence_ref host migration", () => {
     try {
       const board = new WorkboardStore(authority.db);
       authority.db.exec(readFileSync(resolve("migrations/101_workboard_attention.sql"), "utf8"));
+      authority.db.exec(readFileSync(resolve("migrations/106_workboard_reply_gap_evidence_host.sql"), "utf8"));
       expect(authority.db.pragma("foreign_keys", { simple: true })).toBe(1);
       projectMailReplyGaps(board, {
         observedAt: "2026-10-01T00:00:00.000Z",
         open: [{ id: "41", subject: "reply", receivedAt: "2026-10-01T00:00:00.000Z" }],
       });
       authority.db.prepare("UPDATE workboard_works SET evidence_ref=?").run(OLD);
-      authority.db.exec(readFileSync(resolve("migrations/106_workboard_reply_gap_evidence_host.sql"), "utf8"));
 
       const result = projectMailReplyGaps(board, {
         observedAt: "2026-10-01T00:15:00.000Z",

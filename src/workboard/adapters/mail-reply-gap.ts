@@ -20,9 +20,6 @@ export function resolveMailReplyGapBaseUrl(
   return url.origin;
 }
 
-/** A snapshot may repeat this origin only. */
-export const MAIL_REPLY_GAP_BASE_URL = resolveMailReplyGapBaseUrl();
-
 export type ReplyGapItem = { id: string; subject: string; receivedAt: string };
 export type ReplyGapSnapshot = { observedAt: string; baseUrl?: string; open: ReplyGapItem[] };
 export type ReplyGapResult = { source: string; opened: number; closed: number; openIds: string[] };
@@ -43,19 +40,19 @@ function summaryOf(subject: string): string {
 }
 
 function pinnedBase(baseUrl: string | undefined): string {
-  const configured = new URL(MAIL_REPLY_GAP_BASE_URL);
-  const given = new URL(baseUrl ?? MAIL_REPLY_GAP_BASE_URL);
-  if (given.origin !== configured.origin) throw new Error("MAIL_REPLY_GAP_LINK_INVALID");
-  return configured.origin;
+  const configured = resolveMailReplyGapBaseUrl();
+  const given = new URL(baseUrl ?? configured);
+  if (given.origin !== configured) throw new Error("MAIL_REPLY_GAP_LINK_INVALID");
+  return configured;
 }
 
-function linkFor(baseUrl: string | undefined, id: string): string {
-  const href = `${pinnedBase(baseUrl)}/#m=${encodeURIComponent(id)}`;
+function linkFor(baseUrl: string, id: string): string {
+  const href = `${baseUrl}/#m=${encodeURIComponent(id)}`;
   if (href.length > 256 || /[\0\r\n]/u.test(href)) throw new Error("MAIL_REPLY_GAP_LINK_INVALID");
   return href;
 }
 
-function eventFor(item: ReplyGapItem, snapshot: ReplyGapSnapshot, kind: "open" | "close"): WorkEvent {
+function eventFor(item: ReplyGapItem, snapshot: ReplyGapSnapshot, kind: "open" | "close", baseUrl: string): WorkEvent {
   const taskId = messageId(item.id);
   const when = kind === "open" ? item.receivedAt : snapshot.observedAt;
   return metadataEvent(MAIL_REPLY_GAP_SOURCE, {
@@ -68,13 +65,14 @@ function eventFor(item: ReplyGapItem, snapshot: ReplyGapSnapshot, kind: "open" |
     taskId,
     state: kind === "open" ? "waiting" : "verified",
     summary: kind === "open" ? summaryOf(item.subject) : `회신 완료: ${summaryOf(item.subject).slice(4)}`,
-    evidenceRef: linkFor(snapshot.baseUrl, taskId),
+    evidenceRef: linkFor(baseUrl, taskId),
   });
 }
 
-function validateSnapshot(snapshot: ReplyGapSnapshot): void {
+function validateSnapshot(snapshot: ReplyGapSnapshot): string {
   if (!Number.isFinite(Date.parse(snapshot.observedAt))) throw new Error("MAIL_REPLY_GAP_OBSERVATION_INVALID");
-  try { pinnedBase(snapshot.baseUrl); } catch { throw new Error("MAIL_REPLY_GAP_LINK_INVALID"); }
+  let baseUrl: string;
+  try { baseUrl = pinnedBase(snapshot.baseUrl); } catch { throw new Error("MAIL_REPLY_GAP_LINK_INVALID"); }
   if (!Array.isArray(snapshot.open)) throw new Error("MAIL_REPLY_GAP_SNAPSHOT_INVALID");
   const ids = new Set<string>();
   for (const item of snapshot.open) {
@@ -85,6 +83,43 @@ function validateSnapshot(snapshot: ReplyGapSnapshot): void {
     if (ids.has(id)) throw new Error("MAIL_REPLY_GAP_SNAPSHOT_INVALID");
     ids.add(id);
   }
+  return baseUrl;
+}
+
+const LEGACY_ORIGINS = ["100.87.81.57", "jm-acloud.alpines-goldeye.ts.net"].flatMap(host =>
+  ["http", "https"].flatMap(protocol => [3010, 8451].map(port => `${protocol}://${host}:${port}`)));
+const KNOWN_ORIGINS = [...LEGACY_ORIGINS, MAIL_REPLY_GAP_BASE_URL_DEFAULT];
+function knownOrigin(value: string): string | undefined {
+  return KNOWN_ORIGINS.find(origin => value.startsWith(origin) && ["", "/", "?", "#"].includes(value[origin.length] ?? ""));
+}
+
+/** Reconcile current links even on replayed observations; original event bytes stay immutable. */
+function reconcileEvidenceOrigins(store: WorkboardStore, baseUrl: string): void {
+  const rows = store.db.prepare(
+    `SELECT w.work_id,w.task_id,w.evidence_ref,r.prior_evidence_ref FROM workboard_works w
+     LEFT JOIN workboard_evidence_ref_host_remap_20261016 r USING(work_id)
+     WHERE w.source_key=? AND w.evidence_ref IS NOT NULL`,
+  ).all(SOURCE_KEY) as Array<{ work_id: string; task_id: string | null; evidence_ref: string; prior_evidence_ref: string | null }>;
+  for (const row of rows) {
+    let url: URL;
+    try { url = new URL(row.evidence_ref); } catch { continue; }
+    if (!["http:", "https:"].includes(url.protocol) || url.username || url.password || url.origin === baseUrl) continue;
+    const previousOrigin = row.prior_evidence_ref ? knownOrigin(row.prior_evidence_ref) : undefined;
+    const suffix = row.evidence_ref.slice(url.origin.length);
+    const generated = row.task_id !== null && /^\d+$/u.test(row.task_id)
+      && row.evidence_ref === `${url.origin}/#m=${row.task_id}`;
+    const retained = previousOrigin !== undefined && row.prior_evidence_ref !== null
+      && suffix === row.prior_evidence_ref.slice(previousOrigin.length);
+    if (!knownOrigin(row.evidence_ref) && !generated && !retained) continue;
+    const next = `${baseUrl}${suffix}`;
+    if (next.length > 256 || /[\0\r\n]/u.test(next)) throw new Error("MAIL_REPLY_GAP_LINK_INVALID");
+    store.db.prepare(
+      `INSERT INTO workboard_evidence_ref_host_remap_20261016(work_id,prior_evidence_ref)
+       VALUES(?,?) ON CONFLICT(work_id) DO NOTHING`,
+    ).run(row.work_id, row.evidence_ref);
+    store.db.prepare("UPDATE workboard_works SET evidence_ref=? WHERE work_id=? AND source_key=?")
+      .run(next, row.work_id, SOURCE_KEY);
+  }
 }
 
 /**
@@ -93,11 +128,11 @@ function validateSnapshot(snapshot: ReplyGapSnapshot): void {
  * are recorded as verified and removed from the current board.
  */
 export function projectMailReplyGaps(store: WorkboardStore, snapshot: ReplyGapSnapshot): ReplyGapResult {
-  validateSnapshot(snapshot);
-  snapshot = { ...snapshot, baseUrl: snapshot.baseUrl ?? MAIL_REPLY_GAP_BASE_URL };
+  const baseUrl = validateSnapshot(snapshot);
   const openIds = snapshot.open.map(item => item.id);
   const openTokens = new Set(snapshot.open.map(item => messageId(item.id)));
   return store.db.transaction(() => {
+    reconcileEvidenceOrigins(store, baseUrl);
     let opened = 0;
     let closed = 0;
     for (const item of snapshot.open) {
@@ -106,7 +141,7 @@ export function projectMailReplyGaps(store: WorkboardStore, snapshot: ReplyGapSn
         "SELECT sequence FROM workboard_works WHERE source_key=? AND task_id=?",
       ).get(SOURCE_KEY, taskId) as { sequence: number } | undefined;
       if (!existing || existing.sequence < Date.parse(snapshot.observedAt)) {
-        store.ingest(eventFor(item, snapshot, "open"));
+        store.ingest(eventFor(item, snapshot, "open", baseUrl));
         opened += existing ? 0 : 1;
       }
       const session = sessionKey(MAIL_REPLY_GAP_SOURCE, `msg:${taskId}`);
@@ -132,7 +167,7 @@ export function projectMailReplyGaps(store: WorkboardStore, snapshot: ReplyGapSn
         subject: row.summary.replace(/^회신: /u, ""),
         receivedAt: snapshot.observedAt,
       };
-      store.ingest(eventFor(item, snapshot, "close"));
+      store.ingest(eventFor(item, snapshot, "close", baseUrl));
       store.db.prepare("DELETE FROM workboard_attention WHERE work_id=?").run(row.work_id);
       store.db.prepare("DELETE FROM workboard_works WHERE work_id=?").run(row.work_id);
       closed += 1;
