@@ -1,5 +1,6 @@
 import { defineConfig, devices } from "@playwright/test";
 import { resolve } from "node:path";
+import { resolveE2ePort } from "./scripts/lib/e2e-port.mjs";
 import {
   FIXTURE_HOST,
   SEEDED_PORT_1440,
@@ -7,7 +8,7 @@ import {
 
 const fixtureEntry = resolve("dist/tests/fixtures/dashboard-http-server.js");
 const viteEntry = resolve("dashboard/vite.fp5-e2e.config.ts");
-const fixturePort = Number(process.env.JARVIS_E2E_PORT ?? SEEDED_PORT_1440);
+const fixturePort = resolveE2ePort(process.env, SEEDED_PORT_1440);
 const vitePort = Number(process.env.JARVIS_E2E_VITE_PORT ?? 4179);
 const fixtureOrigin = `http://${FIXTURE_HOST}:${String(fixturePort)}`;
 
