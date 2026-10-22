@@ -72,7 +72,7 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
     let reservation: CompanyProgressReservation | undefined;
     let at = now.toISOString();
     const operation = receipt.decision === "approve" ? "decide_approve" : "decide_reject";
-    const token = companyV2 ? randomUUID() : undefined;
+    const token = companyV2 ? `decision:${randomUUID()}` : undefined;
     if (companyV2 && token) {
       if (this.authority.db.inTransaction) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
       progress.settleCancelled(companyV2.target, now);
@@ -81,7 +81,18 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
         if (reservation && reservation.reserve_request.event_digest !== hash(receipt)) {
           throw new JarvisError("COMPANY_APPROVAL_INVALID");
         }
+        if (reservation && this.companyFreshness.kind === "sb_company_db") {
+          throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN", `COMPANY_PROGRESS_UNCERTAIN: request_id=${reservation.request_id}`);
+        }
         const scope = companyV2.target;
+        const unfinished = this.authority.db.prepare(
+          `SELECT p.request_id,r.state FROM company_progress_reservations p
+           JOIN control_command_requests r USING(request_id)
+           WHERE p.provider_instance_id=? AND p.workspace_id=? AND p.evidence_digest IS NULL AND p.operation_id<>? LIMIT 1`,
+        ).get(scope.provider_instance_id, scope.workspace_id, reservation?.operation_id ?? "") as { request_id: string; state: string } | undefined;
+        if (unfinished && (this.companyFreshness.kind === "sb_company_db" || unfinished.state !== "pending")) {
+          throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN", `COMPANY_PROGRESS_UNCERTAIN: request_id=${unfinished.request_id}`);
+        }
         const busy = this.authority.db.prepare(
           `SELECT 1 FROM company_progress_reservations
            WHERE provider_instance_id=? AND workspace_id=? AND evidence_digest IS NULL AND operation_id<>?
@@ -93,19 +104,26 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
            UNION ALL
            SELECT 1 FROM company_candidate_handoffs h JOIN control_command_requests r USING(request_id)
            WHERE json_extract(r.target_json,'$.provider_instance_id')=? AND json_extract(r.target_json,'$.workspace_id')=?
-           AND h.lease_token IS NOT NULL AND h.lease_expires_at>? LIMIT 1`,
+           AND h.lease_token IS NOT NULL AND (h.lease_expires_at IS NULL OR h.lease_expires_at>?) LIMIT 1`,
         ).get(scope.provider_instance_id, scope.workspace_id, reservation?.operation_id ?? "",
           scope.provider_instance_id, scope.workspace_id, receipt.request_id, operation,
           scope.provider_instance_id, scope.workspace_id, at);
         if (busy) throw new JarvisError("COMPANY_EXECUTION_BUSY");
         assertCurrentCompanyPin(this.authority, companyV2, receipt, now);
         const changed = this.authority.db.prepare(
-          `UPDATE company_candidate_handoffs SET lease_token=?,lease_expires_at=?,updated_at=?
+          `UPDATE company_candidate_handoffs SET lease_token=?,lease_expires_at=NULL,updated_at=?
            WHERE request_id=? AND current=1 AND command_digest=?
            AND EXISTS (SELECT 1 FROM control_command_requests r WHERE r.request_id=company_candidate_handoffs.request_id AND r.state='pending')
            AND (lease_token IS NULL OR lease_expires_at<=?)`,
-        ).run(token, new Date(nowMs + 60_000).toISOString(), at, receipt.request_id, receipt.command_digest, at);
+        ).run(token, at, receipt.request_id, receipt.command_digest, at);
         if (changed.changes !== 1) throw new JarvisError("CONTROL_APPROVAL_NOT_APPLICABLE");
+        const original = this.authority.db.prepare(
+          "SELECT receipt_json FROM company_decision_receipt_intents WHERE request_id=?",
+        ).get(receipt.request_id) as { receipt_json: string } | undefined;
+        if (original && original.receipt_json !== canonicalize(receipt)) throw new JarvisError("COMPANY_APPROVAL_INVALID");
+        if (!original) this.authority.db.prepare(
+          "INSERT INTO company_decision_receipt_intents(request_id,receipt_json,created_at) VALUES(?,?,?)",
+        ).run(receipt.request_id, canonicalize(receipt), at);
       }).immediate();
     }
     try {
@@ -129,11 +147,12 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
             `SELECT k.public_key_pem,k.principal_id FROM trusted_authority_keys k
              JOIN authority_key_purposes p ON p.key_id=k.key_id WHERE k.key_id=? AND p.purpose='decision'`,
           ).get(receipt.key_id) as { public_key_pem: string; principal_id: string } | undefined;
-          if (!current || current.state !== "pending" || current.command_digest !== receipt.command_digest
+          if (!current || current.command_digest !== receipt.command_digest
             || Date.parse(current.expires_at) <= now.getTime()) throw new JarvisError("CONTROL_APPROVAL_NOT_APPLICABLE");
           if (this.commandRevoked(current.request_id, current.command_digest, receipt.receipt_id)) {
             throw new JarvisError("COMPANY_APPROVAL_REVOKED");
           }
+          if (current.state !== "pending") throw new JarvisError("CONTROL_APPROVAL_RACE");
           if (!currentKey || currentKey.principal_id !== receipt.signer_principal_id
             || !verifyCommandApproval(receipt, currentKey.public_key_pem, now, current.action)) throw new JarvisError("COMPANY_APPROVAL_INVALID");
           assertCurrentCompanyPin(this.authority, companyV2, receipt, now);

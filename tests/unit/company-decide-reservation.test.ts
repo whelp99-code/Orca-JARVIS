@@ -3,6 +3,8 @@ import { ControlPlane } from "../../src/control-plane.js";
 import type { CompanyFreshnessProvider } from "../../src/company-freshness.js";
 import { AuthorityDb } from "../../src/db.js";
 import { CompanyProgress } from "../../src/company-progress.js";
+import { OwnerInbox } from "../../src/owner-inbox.js";
+import { ControlReceiptSigner } from "../../src/remote-approval-signer.js";
 import { canonicalize } from "../../src/canonical.js";
 import { controlCommandDigest, controlValueDigest, signCommandApproval } from "../../src/control-plane-contract.js";
 import { companyHandoffKeyV2, decodeCompanyCommandV2 } from "../../src/company-candidate-v2-contract.js";
@@ -26,6 +28,68 @@ function nextApproval(live: Awaited<ReturnType<typeof companyApproverV2Database>
 }
 
 describe("company decision reservation recovery", () => {
+  it("reuses the signed receipt after a consumed inbox challenge and receipt rollback", async () => {
+    const live = await companyApproverV2Database("approve", false);
+    try {
+      const inbox = new OwnerInbox(live.db, new ControlReceiptSigner(companyApproverKey(), live.approval.key_id,
+        live.approval.signer_principal_id), true, () => NOW, live.provider);
+      live.db.db.prepare("INSERT INTO owner_inbox_credentials(credential_id,public_key,counter,created_at) VALUES(?,?,0,?)")
+        .run("TEST_ONLY retry credential", Buffer.from("TEST_ONLY key"), NOW.toISOString());
+      const input = { request_id: live.command.request_id, decision: "approve" as const,
+        command_digest: live.approval.command_digest, session_id: "session:TEST_ONLY:owner" };
+      const decide = (challenge_id: string, counter: number) => inbox.decide({ ...input, challenge_id,
+        assertion: { id: "TEST_ONLY retry credential", clientDataJSON: "", authenticatorData: "", signature: "", userHandle: "" },
+        origin: "https://TEST_ONLY.invalid", rpId: "TEST_ONLY.invalid",
+        check: async () => ({ ok: true as const, newCounter: counter }),
+      });
+      const first = inbox.issueChallenge(input);
+      live.db.db.exec(`CREATE TEMP TRIGGER fail_inbox_receipt BEFORE INSERT ON control_command_receipts
+        BEGIN SELECT RAISE(ABORT,'TEST_ONLY inbox receipt rollback'); END`);
+      await expect(decide(first.challenge_id, 1)).rejects.toThrow("TEST_ONLY inbox receipt rollback");
+      const original = live.db.db.prepare("SELECT receipt_json FROM company_decision_receipt_intents WHERE request_id=?")
+        .get(input.request_id) as { receipt_json: string };
+      expect(live.db.db.prepare("SELECT used_at FROM owner_inbox_challenges WHERE challenge_id=?").get(first.challenge_id))
+        .toEqual({ used_at: NOW.toISOString() });
+      live.db.db.exec("DROP TRIGGER fail_inbox_receipt");
+      const second = inbox.issueChallenge(input);
+      expect(second.challenge_id).not.toBe(first.challenge_id);
+      await expect(decide(second.challenge_id, 2)).resolves.toEqual({ request_id: input.request_id, state: "approved" });
+      expect(live.db.db.prepare("SELECT payload_json FROM control_command_receipts WHERE request_id=?").get(input.request_id))
+        .toEqual({ payload_json: original.receipt_json });
+      expect(live.db.db.prepare("SELECT count(*) AS n FROM company_progress_reservations").get()).toEqual({ n: 1 });
+      await expect(decide(first.challenge_id, 3)).rejects.toThrow("OWNER_INBOX_REPLAY");
+    } finally { live.close(); }
+  });
+
+  it.each(["readFreshness", "reserveProgress"] as const)("does not expire the decision claim during slow %s", async phase => {
+    const live = await companyApproverV2Database("approve", false);
+    const later = new Date(NOW.getTime() + 61_000);
+    try {
+      const next = nextApproval(live);
+      const observer = new AuthorityDb(live.db.filename);
+      let competingError: unknown;
+      const compete = () => {
+        try { new ControlPlane(observer, live.provider).decide(next, later); }
+        catch (error) { competingError = error; }
+      };
+      const provider: CompanyFreshnessProvider = {
+        readFreshness: request => {
+          if (phase === "readFreshness") compete();
+          return live.provider.readFreshness(request);
+        },
+        reserveProgress: request => {
+          if (phase === "reserveProgress") compete();
+          return live.provider.reserveProgress(request);
+        },
+        finishProgress: request => live.provider.finishProgress(request),
+      };
+      try { new ControlPlane(live.db, provider).decide(live.approval, NOW); }
+      finally { observer.close(); }
+      expect(competingError).toMatchObject({ code: "COMPANY_EXECUTION_BUSY" });
+      expect(new ControlPlane(live.db).get(next.request_id)?.state).toBe("pending");
+    } finally { live.close(); }
+  });
+
   it.each(["approve", "reject"] as const)("retries %s after the receipt transaction aborts following provider reservation", async decision => {
     const live = await companyApproverV2Database(decision, false);
     let reserves = 0;

@@ -67,6 +67,15 @@ C1은 approve/reject **기록 전** 실제 key principal/ID/purpose/SPKI와 고�
 서명·시간·폐기·최신성을 검증한다. 실패 시 pending 유지·receipt/이벤트/상환0.
 C2/C3/C4도 현재 pin/폐기/최신성을 다시 확인한다. 서명이 맞는 것만으로 허가하지 않는다.
 
+C1은 제공자 호출 전에 원래 서명 receipt 전체를 `company_decision_receipt_intents`에
+영속화한다. receipt 기록 트랜잭션 실패 후 inbox의 새 WebAuthn challenge를 통과한
+같은 결정·command·현재 signer만 이 원본을 재사용한다. 새 receipt/nonce로 예약을
+갈아끼우지 않는다. 원래 서명·만료·키·binding·폐기는 매번 다시 검증한다.
+제공자 I/O 동안 결정 claim은 시간만으로 만료하거나 다른 호출자에게 넘어가지 않는다.
+살아 있는 호출자는 finally에서 자기 token만 해제한다. 프로세스 crash 뒤 남은 claim은
+자동 lease-steal 대상이 아니며 미확정 상태로 보존한다. 증명된 취소·진행 종결이나
+별도 승인된 운영 복구 없이 token을 지우거나 provider mutation을 재전송하지 않는다.
+
 ## 3. accept/reject 원본 receipt 읽기
 
 processor 전용 operation=`read_transition_receipt`, purpose=`company_memory_receipt_read`.
