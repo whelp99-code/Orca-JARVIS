@@ -503,6 +503,63 @@ describe("company decision reservation recovery", () => {
     } finally { live.close(); }
   });
 
+  it.each(["approve", "reject"] as const)(
+    "replays a recorded %s finish when cancellation conflicts with that provider ack",
+    async decision => {
+      const live = await companyApproverV2Database(decision, false);
+      const finish = live.provider.finishProgress.bind(live.provider);
+      const finishes: string[] = [];
+      let loseAcknowledgement = true;
+      live.provider.finishProgress = input => {
+        finishes.push(input.terminal_state);
+        const result = finish(input);
+        if (loseAcknowledgement && input.terminal_state === (decision === "approve" ? "approved" : "rejected")) {
+          loseAcknowledgement = false;
+          throw new Error("TEST_ONLY lost decision finish acknowledgement");
+        }
+        return result;
+      };
+      try {
+        const next = nextApproval(live);
+        const control = new ControlPlane(live.db, live.provider);
+        expect(() => control.decide(live.approval, NOW)).toThrow("COMPANY_PROGRESS_UNCERTAIN");
+        expect(live.db.db.prepare("SELECT evidence_digest FROM company_progress_reservations WHERE request_id=?")
+          .get(live.command.request_id)).toEqual({ evidence_digest: null });
+        if (decision === "approve") {
+          control.cancel({ request_id: live.command.request_id, reason: "TEST_ONLY cancel after recorded decision",
+            actor: "TEST_ONLY owner", revoked_at: NOW.toISOString() }, NOW);
+        } else {
+          const request = live.db.db.prepare("SELECT command_digest FROM control_command_requests WHERE request_id=?")
+            .get(live.command.request_id) as { command_digest: string };
+          const receipt = live.db.db.prepare("SELECT receipt_id FROM control_command_receipts WHERE request_id=?")
+            .get(live.command.request_id) as { receipt_id: string };
+          const payload = canonicalize({ request_id: live.command.request_id, reason: "TEST_ONLY cancel after recorded decision",
+            revoked_by: "TEST_ONLY owner", revoked_at: NOW.toISOString() });
+          live.db.db.prepare(
+            `INSERT INTO control_command_revocations(revocation_id,request_id,receipt_id,command_digest,reason,revoked_by,
+             revoked_at,payload_json,payload_digest,created_at) VALUES(?,?,?,?,?,?,?,?,?,?)`,
+          ).run(`control-revocation:${controlValueDigest(payload).slice(7)}`, live.command.request_id, receipt.receipt_id,
+            request.command_digest, "TEST_ONLY cancel after recorded decision", "TEST_ONLY owner", NOW.toISOString(),
+            payload, controlValueDigest(payload), NOW.toISOString());
+          live.db.db.prepare(
+            "UPDATE control_command_requests SET state='cancelled',failure_code='CONTROL_CANCELLED',completed_at=? WHERE request_id=?",
+          ).run(NOW.toISOString(), live.command.request_id);
+        }
+        control.decide(next, NOW);
+        expect(control.get(live.command.request_id)?.state).toBe("cancelled");
+        expect(control.get(next.request_id)?.state).toBe(decision === "approve" ? "approved" : "rejected");
+        expect(live.db.db.prepare("SELECT terminal_state,evidence_digest FROM company_progress_reservations WHERE request_id=?")
+          .get(live.command.request_id)).toEqual({
+          terminal_state: decision === "approve" ? "approved" : "rejected",
+          evidence_digest: controlValueDigest(live.approval),
+        });
+        expect(finishes.filter(state => state === "cancelled")).toEqual(["cancelled"]);
+        expect(live.db.db.prepare("SELECT count(*) AS n FROM control_command_receipts WHERE request_id=?")
+          .get(live.command.request_id)).toEqual({ n: 1 });
+      } finally { live.close(); }
+    },
+  );
+
   it("does not release an active company execution redemption after revocation", async () => {
     const live = await companyApproverV2Database("approve", false);
     try {
