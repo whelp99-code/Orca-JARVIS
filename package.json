@@ -42,7 +42,7 @@
     "test:dashboard": "node scripts/run-tests.mjs dashboard",
     "pretest:gui": "npm run product:install-electron && npm run build:backend",
     "test:gui": "node scripts/run-tests.mjs gui",
-    "test:e2e:finance-readable": "npm run build && PATH=/opt/jarvis-runtime/bin:$PATH playwright test --config playwright.finance-readable.config.ts"
+    "test:e2e:finance-readable": "npm run build && playwright test --config playwright.finance-readable.config.ts"
   },
   "dependencies": {
     "@modelcontextprotocol/sdk": "1.30.0",

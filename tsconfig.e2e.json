@@ -17,6 +17,7 @@
     "playwright.config.ts",
     "playwright.remote.config.ts",
     "playwright.task32.config.ts",
+    "playwright.finance-readable.config.ts",
     "tests/fixtures/**/*.ts", "tests/fixtures/**/*.mts", "tests/fixtures/**/*.cts", "tests/fixtures/**/*.tsx"
   ]
 }

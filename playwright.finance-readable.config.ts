@@ -1,30 +1,31 @@
 import { defineConfig, devices } from "@playwright/test";
 import { resolve } from "node:path";
 import {
-  EMPTY_PORT,
   FIXTURE_HOST,
   SEEDED_PORT_1440,
 } from "./tests/fixtures/dashboard-fixture-ids.js";
 
 const fixtureEntry = resolve("dist/tests/fixtures/dashboard-http-server.js");
 const viteEntry = resolve("dashboard/vite.fp5-e2e.config.ts");
-const fixtureOrigin = `http://${FIXTURE_HOST}:${String(SEEDED_PORT_1440)}`;
+const fixturePort = Number(process.env.JARVIS_E2E_PORT ?? SEEDED_PORT_1440);
+const vitePort = Number(process.env.JARVIS_E2E_VITE_PORT ?? 4179);
+const fixtureOrigin = `http://${FIXTURE_HOST}:${String(fixturePort)}`;
 
 function fixtureCommand(): string {
-  const metadata = resolve(`.tmp-e2e/finance-readable-${String(SEEDED_PORT_1440)}.json`);
+  const metadata = resolve(`.tmp-e2e/finance-readable-${String(fixturePort)}.json`);
   return [
     "node",
     fixtureEntry,
     "--host",
     FIXTURE_HOST,
     "--port",
-    String(SEEDED_PORT_1440),
+    String(fixturePort),
     "--metadata",
     metadata,
     "--static-root",
     resolve("dist/dashboard"),
     "--empty-port",
-    String(EMPTY_PORT),
+    String(fixturePort + 1),
     "--empty-metadata",
     resolve(".tmp-e2e/finance-readable-empty.json"),
   ].join(" ");
@@ -53,8 +54,8 @@ export default defineConfig({
       timeout: 120_000,
     },
     {
-      command: `npx vite --config ${viteEntry} --mode fp5-local`,
-      url: `http://${FIXTURE_HOST}:4179/`,
+      command: `npx vite --config ${viteEntry} --mode finance-readable`,
+      url: `http://${FIXTURE_HOST}:${String(vitePort)}/`,
       reuseExistingServer: false,
       timeout: 120_000,
     },
@@ -65,7 +66,7 @@ export default defineConfig({
       use: {
         ...devices["Desktop Chrome"],
         viewport: { width: 1440, height: 1000 },
-        baseURL: `http://${FIXTURE_HOST}:4179`,
+        baseURL: `http://${FIXTURE_HOST}:${String(vitePort)}`,
       },
     },
   ],
