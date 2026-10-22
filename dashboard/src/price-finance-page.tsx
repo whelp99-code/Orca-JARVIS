@@ -3,7 +3,12 @@ import { z } from "zod";
 import type { DashboardClient } from "./api.js";
 import { classifyDashboardError } from "./api.js";
 import type { PriceCompanyBindingReceipt, PriceFinanceConfig, PriceFinanceReceipt, PriceFinanceRequest } from "../../src/integration/price-finance-contract.js";
-import { formatReadablePeriodDate, formatReadableTimestamp, formatWon } from "./finance-readable-format.js";
+import {
+  describeProducerUnverifiedFreshness,
+  formatReadablePeriodDate,
+  formatReadableTimestamp,
+  formatWon,
+} from "./finance-readable-format.js";
 import "./finance-read-page.css";
 
 type ConfigState = { readonly kind: "loading" } | { readonly kind: "ready"; readonly value: PriceFinanceConfig }
@@ -126,7 +131,7 @@ function PriceCompanyBindingCard({ receipt }: Readonly<{ receipt: PriceCompanyBi
         <dt>등록 ID / revision</dt><dd>{candidate === null ? "없음" : `${candidate.id} / ${candidate.revision}`}</dd>
         <dt>응답 SHA-256</dt><dd><code data-testid="price-binding-sha">{receipt.source_revision}</code></dd>
         <dt>관측 시각</dt><dd><time dateTime={receipt.observed_at}>{formatReadableTimestamp(receipt.observed_at)}</time></dd>
-        <dt>신선도</dt><dd>producer_unverified</dd>
+        <dt>신선도</dt><dd>{describeProducerUnverifiedFreshness()}</dd>
       </dl>
       <p>회사 등록은 지급·세무·업무별 연결 확인이 아닙니다. 이 SHA는 등록 GET의 body 무결성이며 금융 실행 receipt가 아닙니다.</p>
       <details><summary>가공하지 않은 native 등록 응답</summary><pre data-testid="price-binding-body">{receipt.response_body}</pre></details>
@@ -161,7 +166,7 @@ function PriceReadCard({ receipt }: Readonly<{ receipt: PriceFinanceReceipt }>) 
         {unbound && <><dt>CRM ↔ Price</dt><dd>RT UNBOUND · 업무별 native 연결 없음 · 합산 없음</dd></>}
         <dt>응답 SHA-256</dt><dd><code data-testid="price-response-sha">{receipt.source_revision}</code></dd>
         <dt>관측 시각</dt><dd><time dateTime={receipt.observed_at}>{formatReadableTimestamp(receipt.observed_at)}</time></dd>
-        <dt>신선도</dt><dd>producer_unverified</dd>
+        <dt>신선도</dt><dd>{describeProducerUnverifiedFreshness()}</dd>
       </dl>
       <section aria-label="읽기 쉬운 재무 요약" data-testid="price-readable-summary">
         <h3>재무 요약</h3>

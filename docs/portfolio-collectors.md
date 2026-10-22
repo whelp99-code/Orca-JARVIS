@@ -4,6 +4,24 @@ Status: Mac LaunchAgent/`/Volumes/DevSpace` LOCAL install steps below are `HISTO
 
 The portfolio dashboard uses one source-owned collector per host. JM-SERVER accepts LOCAL reports only through a restricted SSH key whose forced command is the LOCAL ingest wrapper.
 
+## SSH destination rename gate
+
+Changing the publisher destination to `jm@jm-omachy` does not enroll its SSH host key.
+Before an operator enables publishing to that name, obtain the target's host public key and
+fingerprint through an already trusted administrative channel and verify the destination host.
+Provision that verified public key for the effective SSH lookup hostname in the publisher's
+existing `KNOWN_HOSTS` file (`/Users/jmpark/.ssh/known_hosts` in the archived LOCAL wrapper).
+For a non-default port, use the corresponding `[hostname]:port` known-hosts form. An existing
+entry for only the old IP is not proof for the new hostname; do not blindly relabel it or trust
+an unauthenticated `ssh-keyscan` result. Preserve unrelated known-host entries.
+
+Keep `BatchMode=yes`, `StrictHostKeyChecking=yes`, the restricted identity and explicit
+`UserKnownHostsFile` unchanged. Missing/unverified host enrollment must fail closed, not fall
+back to the old host or `accept-new`/disabled checking. After separately authorized provisioning,
+the operator validates one restricted ingest and its fresh source projection. This source change
+does not perform enrollment, inspect credentials or authorize execution of the historical
+LaunchAgent instructions below.
+
 ## The JM-SERVER collector is split in two
 
 Collection and ingest are separate units, because they must be able to run as different accounts.
