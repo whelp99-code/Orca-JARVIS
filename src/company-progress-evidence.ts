@@ -8,9 +8,10 @@ import { controlCommandDigest, controlValueDigest, verifyCommandApproval, type C
 import type { CompanyCommandV2 } from "./company-candidate-v2-contract.js";
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
+import { readCompanyCancellation } from "./company-cancellation.js";
 
 const rowSchema = z.object({
-  operation_id: z.string(), evidence_kind: z.enum(["jarvis_decision", "jarvis_completion"]),
+  operation_id: z.string(), evidence_kind: z.enum(["jarvis_decision", "jarvis_completion", "jarvis_cancellation"]),
   evidence_json: z.string(), evidence_digest: z.string(), acknowledged: z.union([z.literal(0), z.literal(1)]),
 });
 const textRow = z.object({ payload_json: z.string() });
@@ -21,6 +22,9 @@ const acceptanceSchema = z.object({
 type Evidence = ReturnType<typeof parseCompanyProgressEvidence>;
 
 function identity(evidence: Evidence) {
+  if (evidence.kind === "jarvis_cancellation") return {
+    operation_id: evidence.reservation.operation_id, evidence_digest: evidence.cancellation.payload_digest,
+  };
   const operation = evidence.kind === "jarvis_decision"
     ? evidence.receipt.decision === "approve" ? "decide_approve" : "decide_reject"
     : "complete";
@@ -34,17 +38,22 @@ function identity(evidence: Evidence) {
   };
 }
 
+export function companyProgressEvidenceTable(terminalState?: string): string {
+  return terminalState === "cancelled" ? "company_progress_cancellation_outbox" : "company_progress_evidence_outbox";
+}
+
 /** Preserve exact original evidence before RPC; a prepared row alone is never proof of a committed decision/effect. */
 export function stageCompanyProgressEvidence(authority: AuthorityDb, value: unknown): string {
   const evidence = parseCompanyProgressEvidence(value);
   const expected = identity(evidence);
   const json = canonicalize(evidence);
+  const table = companyProgressEvidenceTable(evidence.kind === "jarvis_cancellation" ? "cancelled" : undefined);
   authority.db.prepare(
-    `INSERT INTO company_progress_evidence_outbox(operation_id,evidence_kind,evidence_json,evidence_digest)
+    `INSERT INTO ${table}(operation_id,evidence_kind,evidence_json,evidence_digest)
      VALUES(?,?,?,?) ON CONFLICT(operation_id) DO NOTHING`,
   ).run(expected.operation_id, evidence.kind, json, expected.evidence_digest);
   const row = rowSchema.parse(authority.db.prepare(
-    "SELECT * FROM company_progress_evidence_outbox WHERE operation_id=?",
+    `SELECT * FROM ${table} WHERE operation_id=?`,
   ).get(expected.operation_id));
   if (row.evidence_kind !== evidence.kind || row.evidence_json !== json || row.evidence_digest !== expected.evidence_digest) {
     throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
@@ -72,9 +81,10 @@ function assertOriginalDecision(authority: AuthorityDb, command: CompanyCommandV
 }
 
 /** Read-only historical proof: validate the original commit, not current permission for another mutation. */
-export function readCompanyProgressEvidence(authority: AuthorityDb, operationId: string): Evidence {
+export function readCompanyProgressEvidence(authority: AuthorityDb, operationId: string, terminalState?: string): Evidence {
+  const table = companyProgressEvidenceTable(terminalState);
   const parsed = rowSchema.safeParse(authority.db.prepare(
-    "SELECT * FROM company_progress_evidence_outbox WHERE operation_id=?",
+    `SELECT * FROM ${table} WHERE operation_id=?`,
   ).get(operationId));
   if (!parsed.success) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
   const row = parsed.data;
@@ -83,6 +93,23 @@ export function readCompanyProgressEvidence(authority: AuthorityDb, operationId:
   if (expected.operation_id !== operationId || expected.evidence_digest !== row.evidence_digest
     || row.evidence_kind !== evidence.kind) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
   switch (evidence.kind) {
+    case "jarvis_cancellation": {
+      const cancellation = readCompanyCancellation(authority, evidence.command);
+      const saved = textRow.safeParse(authority.db.prepare(
+        "SELECT receipt_json AS payload_json FROM company_decision_receipt_intents WHERE request_id=?",
+      ).get(evidence.command.request_id));
+      const key = z.object({ public_key_pem: z.string(), principal_id: z.string() }).safeParse(authority.db.prepare(
+        "SELECT public_key_pem,principal_id FROM trusted_authority_keys WHERE key_id=?",
+      ).get(evidence.approval.key_id));
+      if (!cancellation || cancellation.receipt_id !== null
+        || canonicalize(cancellation) !== canonicalize(evidence.cancellation)
+        || !saved.success || canonicalize(parseCompanyJson(saved.data.payload_json)) !== canonicalize(evidence.approval)
+        || authority.db.prepare("SELECT 1 FROM control_command_receipts WHERE request_id=?").get(evidence.command.request_id)
+        || !key.success || key.data.principal_id !== evidence.approval.signer_principal_id
+        || !verifyCommandApproval(evidence.approval, key.data.public_key_pem,
+          new Date(evidence.approval.not_before), evidence.command.action)) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
+      break;
+    }
     case "jarvis_decision":
       assertOriginalDecision(authority, evidence.command, evidence.receipt, evidence.original_at);
       break;

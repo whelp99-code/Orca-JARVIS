@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { ControlPlane } from "../../src/control-plane.js";
-import type { CompanyFreshnessProvider } from "../../src/company-freshness.js";
+import { companyCheckpointSchema, type CompanyFreshnessProvider } from "../../src/company-freshness.js";
 import { AuthorityDb } from "../../src/db.js";
 import { CompanyProgress } from "../../src/company-progress.js";
 import { OwnerInbox } from "../../src/owner-inbox.js";
@@ -10,6 +10,7 @@ import { controlCommandDigest, controlValueDigest, signCommandApproval } from ".
 import { companyHandoffKeyV2, decodeCompanyCommandV2 } from "../../src/company-candidate-v2-contract.js";
 import { importCompanyPage } from "../../src/company-candidate-import.js";
 import { companyApproverKey, companyApproverProcessorContext, companyApproverV2Database } from "../fixtures/company-approver-execution.js";
+import { TestOnlyCompanyDbProtocol } from "../fixtures/company-db-protocol.js";
 
 const NOW = new Date("2026-10-15T00:05:00.000Z");
 
@@ -28,14 +29,74 @@ function nextApproval(live: Awaited<ReturnType<typeof companyApproverV2Database>
 }
 
 describe("company decision reservation recovery", () => {
-  it("reuses the signed receipt after a consumed inbox challenge and receipt rollback", async () => {
+  it("retires a definitive reservation conflict without blocking another workspace decision", async () => {
     const live = await companyApproverV2Database("approve", false);
     try {
+      const provider: CompanyFreshnessProvider = { readFreshness: request => live.provider.readFreshness(request),
+        reserveProgress: request => ({ schema_version: 2, scope: request.scope, challenge: request.challenge,
+          outcome: "conflict", reservation_id: null, checkpoint: null }),
+        finishProgress: request => live.provider.finishProgress(request) };
+      expect(() => new ControlPlane(live.db, provider).decide(live.approval, NOW)).toThrow();
+      const next = nextApproval(live);
+      new ControlPlane(live.db, live.provider).decide(next, NOW);
+      expect(new ControlPlane(live.db).get(next.request_id)?.state).toBe("approved");
+      expect(live.db.db.prepare("SELECT count(*) AS n FROM company_progress_intent_refusals").get()).toEqual({ n: 1 });
+      expect(live.db.db.prepare("SELECT count(*) AS n FROM company_progress_intents").get()).toEqual({ n: 2 });
+    } finally { live.close(); }
+  });
+
+  it("releases a proven cancelled claim that crashed before any provider mutation intent", async () => {
+    const live = await companyApproverV2Database("approve", false);
+    try {
+      const control = new ControlPlane(live.db, live.provider);
+      live.db.db.prepare("UPDATE company_candidate_handoffs SET lease_token='decision:TEST_ONLY:crashed',lease_expires_at=NULL").run();
+      control.cancel({ request_id: live.command.request_id, reason: "cancel crashed read", actor: "test-operator",
+        revoked_at: NOW.toISOString() }, NOW);
+      const next = nextApproval(live);
+      control.decide(next, NOW);
+      expect(control.get(next.request_id)?.state).toBe("approved");
+      expect(live.db.db.prepare("SELECT lease_token FROM company_candidate_handoffs WHERE request_id=?")
+        .get(live.command.request_id)).toEqual({ lease_token: null });
+      expect(live.db.db.prepare("SELECT count(*) AS n FROM company_progress_reservations WHERE request_id=?")
+        .get(live.command.request_id)).toEqual({ n: 0 });
+    } finally { live.close(); }
+  });
+
+  it("does not create a mutation intent after cancellation releases an in-flight read claim", async () => {
+    const live = await companyApproverV2Database("approve", false);
+    let reserves = 0;
+    const provider: CompanyFreshnessProvider = {
+      readFreshness: request => {
+        const control = new ControlPlane(live.db, live.provider);
+        control.cancel({ request_id: live.command.request_id, reason: "cancel while read is in flight",
+          actor: "test-operator", revoked_at: NOW.toISOString() }, NOW);
+        new CompanyProgress(live.db, live.provider).settleCancelled(live.command.target, NOW);
+        return live.provider.readFreshness(request);
+      },
+      reserveProgress: request => { reserves++; return live.provider.reserveProgress(request); },
+      finishProgress: request => live.provider.finishProgress(request),
+    };
+    try {
+      expect(() => new ControlPlane(live.db, provider).decide(live.approval, NOW)).toThrow("COMPANY_APPROVAL_REVOKED");
+      expect(reserves).toBe(0);
+      expect(live.db.db.prepare("SELECT count(*) AS n FROM company_progress_intents").get()).toEqual({ n: 0 });
+      expect(live.db.db.prepare("SELECT lease_token FROM company_candidate_handoffs").get()).toEqual({ lease_token: null });
+    } finally { live.close(); }
+  });
+
+  it.each([["local", "approve"], ["sb_company_db", "approve"], ["sb_company_db", "reject"]] as const)(
+    "reuses the signed inbox receipt after %s %s rollback", async (kind, decision) => {
+    const live = await companyApproverV2Database(decision, false);
+    try {
+      const scope = { provider_instance_id: live.command.target.provider_instance_id, workspace_id: live.command.target.workspace_id };
+      const checkpoint = companyCheckpointSchema.parse(JSON.parse(String(live.db.db.prepare(
+        "SELECT checkpoint_json FROM company_freshness_checkpoints").pluck().get())));
+      const provider = kind === "sb_company_db" ? new TestOnlyCompanyDbProtocol(scope, checkpoint) : live.provider;
       const inbox = new OwnerInbox(live.db, new ControlReceiptSigner(companyApproverKey(), live.approval.key_id,
-        live.approval.signer_principal_id), true, () => NOW, live.provider);
+        live.approval.signer_principal_id), true, () => NOW, provider);
       live.db.db.prepare("INSERT INTO owner_inbox_credentials(credential_id,public_key,counter,created_at) VALUES(?,?,0,?)")
         .run("TEST_ONLY retry credential", Buffer.from("TEST_ONLY key"), NOW.toISOString());
-      const input = { request_id: live.command.request_id, decision: "approve" as const,
+      const input = { request_id: live.command.request_id, decision,
         command_digest: live.approval.command_digest, session_id: "session:TEST_ONLY:owner" };
       const decide = (challenge_id: string, counter: number) => inbox.decide({ ...input, challenge_id,
         assertion: { id: "TEST_ONLY retry credential", clientDataJSON: "", authenticatorData: "", signature: "", userHandle: "" },
@@ -53,7 +114,8 @@ describe("company decision reservation recovery", () => {
       live.db.db.exec("DROP TRIGGER fail_inbox_receipt");
       const second = inbox.issueChallenge(input);
       expect(second.challenge_id).not.toBe(first.challenge_id);
-      await expect(decide(second.challenge_id, 2)).resolves.toEqual({ request_id: input.request_id, state: "approved" });
+      await expect(decide(second.challenge_id, 2)).resolves.toEqual({ request_id: input.request_id,
+        state: decision === "approve" ? "approved" : "rejected" });
       expect(live.db.db.prepare("SELECT payload_json FROM control_command_receipts WHERE request_id=?").get(input.request_id))
         .toEqual({ payload_json: original.receipt_json });
       expect(live.db.db.prepare("SELECT count(*) AS n FROM company_progress_reservations").get()).toEqual({ n: 1 });
@@ -493,7 +555,10 @@ describe("company decision reservation recovery", () => {
       expect(live.db.db.prepare("SELECT count(*) AS n FROM control_command_receipts WHERE request_id=?")
         .get(live.command.request_id)).toEqual({ n: 1 });
       expect(live.db.db.prepare("SELECT terminal_state FROM company_progress_reservations WHERE request_id=?")
-        .get(live.command.request_id)).toEqual({ terminal_state: "cancelled" });
+        .get(live.command.request_id)).toEqual({ terminal_state: "approved" });
+      expect(live.db.db.prepare("SELECT evidence_digest FROM company_progress_reservations WHERE request_id=?")
+        .get(live.command.request_id)).toEqual({ evidence_digest: controlValueDigest(live.approval) });
+      expect(live.db.db.prepare("SELECT count(*) AS n FROM company_progress_cancellation_outbox").get()).toEqual({ n: 0 });
       expect(live.db.db.prepare("SELECT lease_fence FROM control_command_requests WHERE request_id=?")
         .get(live.command.request_id)).toEqual({ lease_fence: 0 });
       control.decide(next, NOW);
@@ -504,7 +569,7 @@ describe("company decision reservation recovery", () => {
   });
 
   it.each(["approve", "reject"] as const)(
-    "replays a recorded %s finish when cancellation conflicts with that provider ack",
+    "replays a recorded %s finish without a conflicting cancelled mutation",
     async decision => {
       const live = await companyApproverV2Database(decision, false);
       const finish = live.provider.finishProgress.bind(live.provider);
@@ -553,7 +618,8 @@ describe("company decision reservation recovery", () => {
           terminal_state: decision === "approve" ? "approved" : "rejected",
           evidence_digest: controlValueDigest(live.approval),
         });
-        expect(finishes.filter(state => state === "cancelled")).toEqual(["cancelled"]);
+        const originalState = decision === "approve" ? "approved" : "rejected";
+        expect(finishes).toEqual([originalState, originalState, originalState]);
         expect(live.db.db.prepare("SELECT count(*) AS n FROM control_command_receipts WHERE request_id=?")
           .get(live.command.request_id)).toEqual({ n: 1 });
       } finally { live.close(); }

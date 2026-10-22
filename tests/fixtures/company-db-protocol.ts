@@ -69,7 +69,8 @@ export class TestOnlyCompanyDbProtocol implements CompanyFreshnessProvider {
   finishProgress(request: FinishProgressRequest): FinishProgressResponse {
     const row = this.reservations.get(request.operation_id);
     const match = row && row.id === request.reservation_id
-      && companyOperationTerminalStates[row.request.operation] === request.terminal_state;
+      && (companyOperationTerminalStates[row.request.operation] === request.terminal_state
+        || (request.terminal_state === "cancelled" && ["decide_approve", "decide_reject"].includes(row.request.operation)));
     if (row?.finish) {
       const exact = match && row.finish.request.evidence_digest === request.evidence_digest
         && row.finish.request.terminal_state === request.terminal_state && same(row.finish.request.expected_checkpoint, request.expected_checkpoint);
@@ -84,7 +85,7 @@ export class TestOnlyCompanyDbProtocol implements CompanyFreshnessProvider {
     const head = checkpoint.stores[store];
     head.receipt_sequence++;
     head.receipt_root = this.root({ previous_root: head.receipt_root, sequence: head.receipt_sequence, evidence: request.evidence_digest });
-    if (!["decide_approve", "accept"].includes(row.request.operation)) {
+    if (request.terminal_state === "cancelled" || !["decide_approve", "accept"].includes(row.request.operation)) {
       head.terminal_sequence++;
       head.terminal_root = this.root({ previous_root: head.terminal_root, sequence: head.terminal_sequence, evidence: request.evidence_digest });
     }

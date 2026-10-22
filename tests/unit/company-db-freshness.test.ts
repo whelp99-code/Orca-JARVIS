@@ -9,6 +9,11 @@ import { companyCheckpointSchema, loadCompanyFreshness } from "../../src/company
 import { companyApproverFixture, companyApproverKey, companyApproverProcessorContext,
   companyApproverV2Database } from "../fixtures/company-approver-execution.js";
 import { configuredCompanyInternalRuntime } from "../../src/company-internal-runtime.js";
+import { CompanyDbFreshness } from "../../src/company-db-freshness.js";
+import { CompanyProgress } from "../../src/company-progress.js";
+import { ControlPlane } from "../../src/control-plane.js";
+import { parseCompanyFreshnessPayload } from "../../src/company-freshness-envelope.js";
+import { TestOnlyCompanyDbProtocol } from "../fixtures/company-db-protocol.js";
 
 const roots: string[] = [];
 afterEach(() => {
@@ -39,6 +44,47 @@ function client() {
 }
 
 describe("company database freshness configuration", () => {
+  it("validates committed cancellation evidence before its production finish transport call", async () => {
+    const config = client();
+    const live = await companyApproverV2Database("approve", false);
+    const now = new Date("2026-10-15T00:05:00.000Z");
+    const scope = { provider_instance_id: live.command.target.provider_instance_id, workspace_id: live.command.target.workspace_id };
+    const checkpoint = companyCheckpointSchema.parse(JSON.parse(String(live.db.db.prepare(
+      "SELECT checkpoint_json FROM company_freshness_checkpoints").pluck().get())));
+    const peer = new TestOnlyCompanyDbProtocol(scope, checkpoint);
+    const provider = new CompanyDbFreshness(config.path, live.db);
+    const finishes: unknown[] = [];
+    const transport = vi.spyOn(provider as any, "exchange").mockImplementation((...args: unknown[]) => {
+      const [method, request, evidence] = args;
+      const parsed = parseCompanyFreshnessPayload({ schema_version: 1, method, request, evidence });
+      if (parsed.method === "read_freshness") return peer.readFreshness(parsed.request);
+      if (parsed.method === "reserve_progress") return peer.reserveProgress(parsed.request);
+      expect(parsed.evidence.kind).toBe("revocation");
+      expect(live.db.db.inTransaction).toBe(false);
+      expect(() => parseCompanyFreshnessPayload({ ...parsed, request: { ...parsed.request,
+        evidence_digest: `sha256:${"a".repeat(64)}` } })).toThrow("COMPANY_CONTRACT_INVALID");
+      finishes.push(parsed.evidence);
+      return peer.finishProgress(parsed.request);
+    });
+    try {
+      const control = new ControlPlane(live.db, provider);
+      live.db.db.exec(`CREATE TEMP TRIGGER fail_wire_cancel BEFORE INSERT ON control_command_receipts
+        BEGIN SELECT RAISE(ABORT,'TEST_ONLY cancelled wire decision'); END`);
+      expect(() => control.decide(live.approval, now)).toThrow("TEST_ONLY cancelled wire decision");
+      live.db.db.exec("DROP TRIGGER fail_wire_cancel");
+      control.cancel({ request_id: live.command.request_id, reason: "cancel before receipt", actor: "test-operator",
+        revoked_at: now.toISOString() }, now);
+      new CompanyProgress(live.db, provider).settleCancelled(scope, now);
+      expect(finishes).toHaveLength(1);
+      expect(live.db.db.prepare("SELECT acknowledged FROM company_progress_cancellation_outbox").get())
+        .toEqual({ acknowledged: 1 });
+      expect(() => live.db.db.prepare("UPDATE company_progress_cancellation_outbox SET evidence_digest=?")
+        .run(`sha256:${"a".repeat(64)}`)).toThrow("company cancellation evidence is immutable");
+      expect(() => live.db.db.prepare("DELETE FROM company_progress_cancellation_outbox").run())
+        .toThrow("company cancellation evidence is immutable");
+    } finally { transport.mockRestore(); live.close(); }
+  });
+
   it("advances one bounded handoff page per minute and wraps at the stable count", async () => {
     const live = client();
     const authority = await companyApproverV2Database("approve", false);

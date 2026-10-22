@@ -71,14 +71,18 @@ export function assertCompanyLocalProgress(authority: AuthorityDb, scope: Compan
       if (row.evidence_digest !== null || row.terminal_state !== null) rollback();
       continue;
     }
-    const evidence = readCompanyProgressEvidence(authority, row.operation_id);
-    const operation = evidence.kind === "jarvis_completion" ? "complete"
+    const evidence = readCompanyProgressEvidence(authority, row.operation_id, row.terminal_state ?? undefined);
+    const operation = evidence.kind === "jarvis_cancellation" ? evidence.reservation.operation
+      : evidence.kind === "jarvis_completion" ? "complete"
       : evidence.receipt.decision === "approve" ? "decide_approve" : "decide_reject";
-    const evidenceDigest = evidence.kind === "jarvis_completion" ? evidence.completion.effect_digest : controlValueDigest(evidence.receipt);
-    const eventDigest = evidence.kind === "jarvis_completion" ? evidence.acceptance.receipt_digest : evidenceDigest;
-    const terminal = operation === "complete" ? "completed" : operation === "decide_approve" ? "approved" : "rejected";
+    const evidenceDigest = evidence.kind === "jarvis_cancellation" ? evidence.cancellation.payload_digest
+      : evidence.kind === "jarvis_completion" ? evidence.completion.effect_digest : controlValueDigest(evidence.receipt);
+    const eventDigest = evidence.kind === "jarvis_cancellation" ? evidence.reservation.event_digest
+      : evidence.kind === "jarvis_completion" ? evidence.acceptance.receipt_digest : evidenceDigest;
+    const terminal = evidence.kind === "jarvis_cancellation" ? "cancelled"
+      : operation === "complete" ? "completed" : operation === "decide_approve" ? "approved" : "rejected";
     const next = finished.stores.jarvis;
-    const terminalDelta = operation === "decide_approve" ? 0 : 1;
+    const terminalDelta = terminal === "cancelled" ? 1 : operation === "decide_approve" ? 0 : 1;
     if (evidence.command.request_id !== row.request_id || operation !== row.operation
       || row.evidence_digest !== evidenceDigest || request.event_digest !== eventDigest || row.terminal_state !== terminal
       || finished.intent_sequence !== reserved.intent_sequence + 1 || finished.intent_root === reserved.intent_root
@@ -88,7 +92,7 @@ export function assertCompanyLocalProgress(authority: AuthorityDb, scope: Compan
       || (terminalDelta === 0 ? next.terminal_root !== own.terminal_root : next.terminal_root === own.terminal_root)
       || next.deletion_sequence !== own.deletion_sequence || next.deletion_root !== own.deletion_root) rollback();
     if (evidence.kind === "jarvis_decision") receipts.add(evidence.receipt.receipt_id);
-    else completions.add(evidence.command.request_id);
+    else if (evidence.kind === "jarvis_completion") completions.add(evidence.command.request_id);
     own = next;
     lastIntent = finished.intent_sequence;
   }
@@ -106,14 +110,17 @@ export function assertCompanyLocalProgress(authority: AuthorityDb, scope: Compan
   ).all(...scopeArgs));
   if (actualReceipts.length !== receipts.size || actualReceipts.some(row => !receipts.has(row.id))
     || actualCompletions.length !== completions.size || actualCompletions.some(row => !completions.has(row.id))) rollback();
-  const outbox = z.array(outboxSchema).parse(authority.db.prepare(
-    `SELECT operation_id,acknowledged FROM company_progress_evidence_outbox
+  const outbox = z.array(outboxSchema.extend({ terminal: z.string().nullable() })).parse(authority.db.prepare(
+    `SELECT operation_id,acknowledged,NULL AS terminal FROM company_progress_evidence_outbox
+     WHERE json_extract(evidence_json,'$.command.target.provider_instance_id')=?
+     AND json_extract(evidence_json,'$.command.target.workspace_id')=?
+     UNION ALL SELECT operation_id,acknowledged,'cancelled' AS terminal FROM company_progress_cancellation_outbox
      WHERE json_extract(evidence_json,'$.command.target.provider_instance_id')=?
      AND json_extract(evidence_json,'$.command.target.workspace_id')=?`,
-  ).all(...scopeArgs));
+  ).all(...scopeArgs, ...scopeArgs));
   for (const proof of outbox) {
     const journal = entries.find(entry => entry.row.operation_id === proof.operation_id);
     if (!journal || proof.acknowledged !== (journal.finished === null ? 0 : 1)) rollback();
-    readCompanyProgressEvidence(authority, proof.operation_id);
+    readCompanyProgressEvidence(authority, proof.operation_id, proof.terminal ?? undefined);
   }
 }

@@ -97,6 +97,112 @@ function verifier(path: string): CompanyCompletionVerifierV2 {
 }
 
 describe("new-kind consumer ownership and original-fact recovery", () => {
+  it("retires a definitive SB CAS conflict while preserving the original call identity", async () => {
+    const live = await consumer(false);
+    const reserve = live.provider.reserveProgress.bind(live.provider);
+    let calls = 0;
+    live.provider.reserveProgress = request => {
+      calls++;
+      const next = live.provider.checkpoint;
+      next.intent_sequence++;
+      next.intent_root = digest("TEST_ONLY other-store intent");
+      next.stores.second_brain.receipt_sequence++;
+      next.stores.second_brain.receipt_root = digest("TEST_ONLY other-store receipt");
+      live.provider.attest(next);
+      return reserve(request);
+    };
+    try {
+      const control = new ControlPlane(live.db, live.provider);
+      expect(() => control.decide(live.approval, NOW)).toThrow("COMPANY_RESERVATION_CONFLICT");
+      expect(live.db.db.prepare("SELECT count(*) AS n FROM company_progress_intent_refusals").get()).toEqual({ n: 1 });
+      expect(live.db.db.prepare("SELECT count(*) AS n FROM company_peer_calls").get()).toEqual({ n: 1 });
+      const progress = new CompanyProgress(live.db, live.provider);
+      expect(progress.synchronize(live.scope, NOW)).toEqual(live.provider.checkpoint);
+      expect(() => control.decide(live.approval, NOW)).toThrow("COMPANY_RESERVATION_CONFLICT");
+      expect(calls).toBe(1);
+      control.cancel({ request_id: live.command.request_id, reason: "restage definitively refused operation",
+        actor: "test-operator", revoked_at: NOW.toISOString() }, NOW);
+      progress.settleCancelled(live.scope, NOW);
+      expect(live.db.db.prepare("SELECT lease_token FROM company_candidate_handoffs").get()).toEqual({ lease_token: null });
+      expect(live.provider.publications).toEqual([]);
+    } finally { live.close(); }
+  });
+
+  it("publishes the preserved decision after a validated SB reserve ACK and receipt rollback", async () => {
+    const live = await consumer(false);
+    try {
+      const control = new ControlPlane(live.db, live.provider);
+      live.db.db.exec(`CREATE TEMP TRIGGER fail_reserved_receipt BEFORE INSERT ON control_command_receipts
+        BEGIN SELECT RAISE(ABORT,'TEST_ONLY receipt rollback after SB ACK'); END`);
+      expect(() => control.decide(live.approval, NOW)).toThrow("TEST_ONLY receipt rollback after SB ACK");
+      live.db.db.exec("DROP TRIGGER fail_reserved_receipt");
+      control.decide(live.approval, NOW);
+      expect(control.get(live.command.request_id)?.state).toBe("approved");
+      expect(live.provider.publications).toEqual([
+        { phase: "reserve", operation: "decide_approve" }, { phase: "finish", operation: "decide_approve" },
+      ]);
+      expect(live.db.db.prepare("SELECT payload_json FROM control_command_receipts").get())
+        .toEqual({ payload_json: canonicalize(live.approval) });
+    } finally { live.close(); }
+  });
+
+  it.each(["none", "before", "after"] as const)("stages SB cancellation proof and retries %s ACK loss", async loss => {
+    const live = await consumer(false);
+    try {
+      const control = new ControlPlane(live.db, live.provider);
+      live.db.db.exec(`CREATE TEMP TRIGGER fail_cancelled_receipt BEFORE INSERT ON control_command_receipts
+        BEGIN SELECT RAISE(ABORT,'TEST_ONLY uncommitted SB decision'); END`);
+      expect(() => control.decide(live.approval, NOW)).toThrow("TEST_ONLY uncommitted SB decision");
+      live.db.db.exec("DROP TRIGGER fail_cancelled_receipt");
+      control.cancel({ request_id: live.command.request_id, reason: "cancel unpublished decision",
+        actor: "test-operator", revoked_at: NOW.toISOString() }, NOW);
+      const finish = live.provider.finishProgress.bind(live.provider);
+      if (loss !== "none") {
+        let drop = true;
+        live.provider.finishProgress = request => {
+          if (drop) {
+            drop = false;
+            if (loss === "after") finish(request);
+            throw new Error("TEST_ONLY cancellation ACK lost");
+          }
+          return finish(request);
+        };
+        expect(() => new CompanyProgress(live.db, live.provider).settleCancelled(live.scope, NOW))
+          .toThrow("COMPANY_PROGRESS_UNCERTAIN");
+        expect(live.db.db.prepare("SELECT acknowledged FROM company_progress_cancellation_outbox").get())
+          .toEqual({ acknowledged: 0 });
+        expect(live.db.db.prepare("SELECT evidence_digest FROM company_progress_reservations").get())
+          .toEqual({ evidence_digest: null });
+      }
+      new CompanyProgress(live.db, live.provider).settleCancelled(live.scope, NOW);
+      expect(live.db.db.prepare("SELECT terminal_state FROM company_progress_reservations").get())
+        .toEqual({ terminal_state: "cancelled" });
+      expect(live.db.db.prepare("SELECT count(*) AS n FROM control_command_receipts").get()).toEqual({ n: 0 });
+      expect(live.db.db.prepare("SELECT acknowledged FROM company_progress_cancellation_outbox").get())
+        .toEqual({ acknowledged: 1 });
+      expect(live.provider.publications.filter(row => row.phase === "finish")).toHaveLength(1);
+      new CompanyProgress(live.db, live.provider).synchronize(live.scope, NOW);
+    } finally { live.close(); }
+  });
+
+  it("replays the original SB finish after ACK loss instead of replacing it with cancellation", async () => {
+    const live = await consumer(false);
+    live.provider.dropFinishOnce = true;
+    try {
+      const control = new ControlPlane(live.db, live.provider);
+      expect(() => control.decide(live.approval, NOW)).toThrow("COMPANY_PROGRESS_UNCERTAIN");
+      const original = live.db.db.prepare("SELECT payload_json FROM control_command_receipts").get();
+      control.cancel({ request_id: live.command.request_id, reason: "cancel after original finish",
+        actor: "test-operator", revoked_at: NOW.toISOString() }, NOW);
+      new CompanyProgress(live.db, live.provider).settleCancelled(live.scope, NOW);
+      expect(live.db.db.prepare("SELECT terminal_state FROM company_progress_reservations").get())
+        .toEqual({ terminal_state: "approved" });
+      expect(live.db.db.prepare("SELECT payload_json FROM control_command_receipts").get()).toEqual(original);
+      expect(control.get(live.command.request_id)?.state).toBe("cancelled");
+      expect(live.provider.publications.filter(row => row.phase === "finish")).toHaveLength(1);
+    } finally { live.close(); }
+  });
+
   it.each(["approve", "reject"] as const)("restores a %s handoff after freshness acknowledgement recovers", async decision => {
     const live = await consumer(true, decision);
     const operation = decision === "approve" ? "accept" : "reject";

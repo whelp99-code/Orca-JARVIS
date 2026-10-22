@@ -81,9 +81,7 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
         if (reservation && reservation.reserve_request.event_digest !== hash(receipt)) {
           throw new JarvisError("COMPANY_APPROVAL_INVALID");
         }
-        if (reservation && this.companyFreshness.kind === "sb_company_db") {
-          throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN", `COMPANY_PROGRESS_UNCERTAIN: request_id=${reservation.request_id}`);
-        }
+        if (reservation) progress.assertDecisionRetry(reservation);
         const scope = companyV2.target;
         const unfinished = this.authority.db.prepare(
           `SELECT p.request_id,r.state FROM company_progress_reservations p
@@ -100,6 +98,7 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
            SELECT 1 FROM company_progress_intents i
            LEFT JOIN company_progress_reservations p ON p.operation_id=i.operation_id
            WHERE i.provider_instance_id=? AND i.workspace_id=? AND p.finished_checkpoint_json IS NULL
+           AND NOT EXISTS (SELECT 1 FROM company_progress_intent_refusals f WHERE f.operation_id=i.operation_id)
            AND NOT (i.request_id=? AND i.operation=?)
            UNION ALL
            SELECT 1 FROM company_candidate_handoffs h JOIN control_command_requests r USING(request_id)
@@ -129,7 +128,16 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
     try {
     if (companyV2) {
       // The local claim is committed before provider I/O; a receipt rollback must retain this reservation.
-      reservation ??= progress.reserve(companyV2, operation, hash(receipt), now);
+      reservation ??= progress.reserve(companyV2, operation, hash(receipt), now, () => {
+        const claim = this.authority.db.prepare(
+          `SELECT 1 FROM company_candidate_handoffs h JOIN control_command_requests r USING(request_id)
+           WHERE h.request_id=? AND h.lease_token=? AND r.state='pending'`,
+        ).get(receipt.request_id, token);
+        if (!claim || this.commandRevoked(receipt.request_id, receipt.command_digest, receipt.receipt_id)) {
+          throw new JarvisError("COMPANY_APPROVAL_REVOKED");
+        }
+        assertCurrentCompanyPin(this.authority, companyV2, receipt, readNow());
+      });
     }
     now = readNow();
     at = now.toISOString();

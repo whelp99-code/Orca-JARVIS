@@ -14,6 +14,9 @@ import { assertCompanyLocalProgress, companyOtherStorePrefix } from "./company-l
 import type { AuthorityDb } from "./db.js";
 import { JarvisError } from "./jarvis-error.js";
 import { controlCommandDigest as commandDigest, controlValueDigest } from "./control-plane-contract.js";
+import { companyApprovalReceiptSchema } from "./company-approver-contract.js";
+import { readCompanyCancellation } from "./company-cancellation.js";
+import { companyProgressEvidenceTable, readCompanyProgressEvidence, stageCompanyProgressEvidence } from "./company-progress-evidence.js";
 
 type CommandOperation = Exclude<CompanyProgressOperation, "delete">;
 
@@ -58,7 +61,8 @@ export class CompanyProgress {
         `SELECT request_id FROM company_progress_reservations
          WHERE provider_instance_id=? AND workspace_id=? AND evidence_digest IS NULL
          UNION ALL SELECT request_id FROM company_peer_calls
-         WHERE provider_instance_id=? AND workspace_id=? AND state IN ('invoking','uncertain') LIMIT 1`,
+         WHERE provider_instance_id=? AND workspace_id=? AND state IN ('invoking','uncertain')
+           AND NOT EXISTS (SELECT 1 FROM company_progress_intent_refusals f WHERE f.operation_id=company_peer_calls.operation_id) LIMIT 1`,
       ).get(scope.provider_instance_id, scope.workspace_id, scope.provider_instance_id, scope.workspace_id) as { request_id: string } | undefined;
       if (pending) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN", `COMPANY_PROGRESS_UNCERTAIN: request_id=${pending.request_id}`);
     }
@@ -117,7 +121,20 @@ export class CompanyProgress {
       reserve_request: reserveProgressRequestSchema.parse(JSON.parse(row.reserve_request_json)) } : undefined;
   }
 
-  reserve(command: CompanyCommandV2, operation: CommandOperation, eventDigest: string, now: Date): CompanyProgressReservation {
+  assertDecisionRetry(token: CompanyProgressReservation): void {
+    if (this.provider.kind !== "sb_company_db") return;
+    const row = this.db.db.prepare("SELECT response_json FROM company_decision_reservation_acks WHERE operation_id=?")
+      .get(token.operation_id) as { response_json: string } | undefined;
+    const response = row ? reserveProgressResponseSchema.safeParse(JSON.parse(row.response_json)) : undefined;
+    if (!response?.success || response.data.outcome !== "reserved"
+      || response.data.reservation_id !== token.reservation_id
+      || canonicalize(response.data.scope) !== canonicalize(token.scope)
+      || canonicalize(response.data.checkpoint) !== canonicalize(token.checkpoint)) {
+      throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN", `COMPANY_PROGRESS_UNCERTAIN: request_id=${token.request_id}`);
+    }
+  }
+
+  reserve(command: CompanyCommandV2, operation: CommandOperation, eventDigest: string, now: Date, guard?: () => void): CompanyProgressReservation {
     if (this.db.db.inTransaction) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
     const scope = { provider_instance_id: command.target.provider_instance_id, workspace_id: command.target.workspace_id };
     const pending = this.db.db.prepare(
@@ -128,6 +145,9 @@ export class CompanyProgress {
       throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN", `COMPANY_PROGRESS_UNCERTAIN: request_id=${pending.request_id}`);
     }
     const operationId = companyOperationId({ scope, request_id: command.request_id, command_digest: commandDigest(command), operation });
+    if (this.db.db.prepare("SELECT 1 FROM company_progress_intent_refusals WHERE operation_id=?").get(operationId)) {
+      throw new JarvisError("COMPANY_RESERVATION_CONFLICT");
+    }
     if (this.db.db.prepare("SELECT 1 FROM company_progress_reservations WHERE operation_id=?").get(operationId)) {
       throw new JarvisError("COMPANY_DUPLICATE_OPERATION");
     }
@@ -151,16 +171,20 @@ export class CompanyProgress {
     let raw: unknown;
     const request: ReserveProgressRequest = original ?? { schema_version: 2, scope, operation_id: operationId,
       operation, expected_checkpoint: checkpoint, event_digest: eventDigest, challenge: randomUUID() };
-    if (!calls && !intent) this.db.db.prepare(
+    if (!calls && !intent) this.db.db.transaction(() => {
+      guard?.();
+      this.db.db.prepare(
       `INSERT INTO company_progress_intents(operation_id,provider_instance_id,workspace_id,request_id,operation,
        reserve_request_json,expected_checkpoint_json,created_at) VALUES(?,?,?,?,?,?,?,?)`,
     ).run(operationId, scope.provider_instance_id, scope.workspace_id, command.request_id, operation,
       canonicalize(request), canonicalize(checkpoint), now.toISOString());
+    }).immediate();
     const call = calls?.prepare({
       operation_id: operationId, ...scope, request_id: command.request_id, operation,
       transition_request_digest: companyFreshnessRequestDigest({ method: "reserve_progress", request, evidence: null }),
       arguments: request,
-    }, now);
+    }, now, guard);
+    if (intent) guard?.();
     if (call && call.state !== "prepared") recovering = true;
     if (call?.state === "prepared") calls?.invoking(operationId, now);
     const wire = recovering ? { ...request, challenge: randomUUID() } : request;
@@ -173,6 +197,12 @@ export class CompanyProgress {
     if (response.challenge !== wire.challenge || canonicalize(response.scope) !== canonicalize(scope)) {
       calls?.uncertain(operationId, now);
       throw new JarvisError("COMPANY_FRESHNESS_REQUIRED");
+    }
+    if (response.outcome === "conflict" && !recovering && !intent) {
+      this.db.db.prepare(
+        "INSERT INTO company_progress_intent_refusals(operation_id,response_json,received_at) VALUES(?,?,?)",
+      ).run(operationId, canonicalize(response), now.toISOString());
+      throw new JarvisError("COMPANY_RESERVATION_CONFLICT");
     }
     if (!["reserved", "already_reserved"].includes(response.outcome) || !response.reservation_id || !response.checkpoint) {
       calls?.uncertain(operationId, now);
@@ -196,6 +226,9 @@ export class CompanyProgress {
          reservation_id,reserve_request_json,checkpoint_json,created_at) VALUES(?,?,?,?,?,?,?,?,?)`,
       ).run(operationId, scope.provider_instance_id, scope.workspace_id, command.request_id, operation,
         token.reservation_id, canonicalize(request), canonicalize(token.checkpoint), now.toISOString());
+      if (calls && !recovering && response.outcome === "reserved" && ["decide_approve", "decide_reject"].includes(operation)) this.db.db.prepare(
+        "INSERT INTO company_decision_reservation_acks(operation_id,response_json,received_at) VALUES(?,?,?)",
+      ).run(operationId, canonicalize(response), now.toISOString());
       const updated = this.db.db.prepare(
         `UPDATE company_freshness_checkpoints SET checkpoint_json=?,updated_at=?
          WHERE provider_instance_id=? AND workspace_id=? AND checkpoint_json=?`,
@@ -223,33 +256,66 @@ export class CompanyProgress {
         target: JSON.parse(String(row.target_json)), args: JSON.parse(String(row.args_json)), reversible: Boolean(row.reversible),
         requested_by: row.requested_by, requested_at: row.requested_at, expires_at: row.expires_at, nonce: row.nonce,
       });
+      const cancellation = readCompanyCancellation(this.db, command);
+      if (!cancellation) continue;
       for (const operation of ["decide_approve", "decide_reject"] as const) {
         const operationId = companyOperationId({ scope, request_id: command.request_id, command_digest: commandDigest(command), operation });
+        if (this.db.db.prepare("SELECT 1 FROM company_progress_intent_refusals WHERE operation_id=?").get(operationId)) continue;
         const stored = this.db.db.prepare(
           "SELECT reserve_request_json,finished_checkpoint_json FROM company_progress_reservations WHERE operation_id=?",
         ).get(operationId) as { reserve_request_json: string; finished_checkpoint_json: string | null } | undefined;
         const intent = stored ? undefined : this.db.db.prepare(
           "SELECT reserve_request_json FROM company_progress_intents WHERE operation_id=?",
         ).get(operationId) as { reserve_request_json: string } | undefined;
-        const encoded = stored?.reserve_request_json ?? intent?.reserve_request_json;
+        const peer = stored || intent ? undefined : new CompanyPeerCalls(this.db).read(operationId);
+        const encoded = stored?.reserve_request_json ?? intent?.reserve_request_json ?? peer?.original_arguments_json;
         if (!encoded) continue;
         const request = reserveProgressRequestSchema.parse(JSON.parse(encoded));
         const evidence = this.cancellationEvidence(command.request_id, request);
         if (!evidence) continue;
         if (!stored?.finished_checkpoint_json) {
           const token = this.pending(command, operation) ?? this.reserve(command, operation, request.event_digest, now);
-          this.finish(token, evidence, "cancelled", now);
+          const original = this.db.db.prepare(
+            "SELECT payload_json,created_at FROM control_command_receipts WHERE request_id=?",
+          ).get(command.request_id) as { payload_json: string; created_at: string } | undefined;
+          if (original) {
+            const receipt = companyApprovalReceiptSchema.parse(JSON.parse(original.payload_json));
+            if (controlValueDigest(receipt) !== request.event_digest) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
+            readCompanyProgressEvidence(this.db, operationId);
+            this.finish(token, controlValueDigest(receipt), receipt.decision === "approve" ? "approved" : "rejected", now);
+          } else {
+            const saved = this.db.db.prepare(
+              "SELECT receipt_json FROM company_decision_receipt_intents WHERE request_id=?",
+            ).get(command.request_id) as { receipt_json: string } | undefined;
+            if (!saved) throw new JarvisError("COMPANY_RECEIPT_EVIDENCE_ABSENT");
+            const approval = companyApprovalReceiptSchema.parse(JSON.parse(saved.receipt_json));
+            this.db.db.transaction(() => {
+              const proof = readCompanyCancellation(this.db, command);
+              if (!proof || proof.payload_digest !== evidence) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
+              stageCompanyProgressEvidence(this.db, { kind: "jarvis_cancellation", command, approval,
+                reservation: request, cancellation: proof, original_at: proof.revoked_at });
+            }).immediate();
+            readCompanyProgressEvidence(this.db, operationId, "cancelled");
+            this.finish(token, evidence, "cancelled", now);
+          }
         }
-        this.db.db.prepare(
-          `UPDATE company_candidate_handoffs SET lease_token=NULL,lease_expires_at=NULL
-           WHERE request_id=? AND EXISTS (
-             SELECT 1 FROM control_command_requests r JOIN control_command_revocations v USING(request_id)
-             WHERE r.request_id=company_candidate_handoffs.request_id AND r.state='cancelled'
-             AND r.lease_fence=0 AND v.payload_digest=?
-             AND NOT EXISTS (SELECT 1 FROM control_command_redemptions d WHERE d.request_id=r.request_id)
-           )`,
-        ).run(command.request_id, evidence);
       }
+      this.db.db.transaction(() => {
+        const proof = readCompanyCancellation(this.db, command);
+        if (!proof || proof.payload_digest !== cancellation.payload_digest) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
+        this.db.db.prepare(
+          `UPDATE company_candidate_handoffs SET lease_token=NULL,lease_expires_at=NULL WHERE request_id=?
+           AND NOT EXISTS (SELECT 1 FROM company_progress_reservations p WHERE p.request_id=? AND p.evidence_digest IS NULL)
+           AND NOT EXISTS (SELECT 1 FROM company_progress_intents i
+             LEFT JOIN company_progress_reservations p ON p.operation_id=i.operation_id
+             WHERE i.request_id=? AND p.finished_checkpoint_json IS NULL
+             AND NOT EXISTS (SELECT 1 FROM company_progress_intent_refusals f WHERE f.operation_id=i.operation_id))
+           AND NOT EXISTS (SELECT 1 FROM company_peer_calls c
+             LEFT JOIN company_progress_reservations p ON p.operation_id=c.operation_id
+             WHERE c.request_id=? AND p.finished_checkpoint_json IS NULL
+             AND NOT EXISTS (SELECT 1 FROM company_progress_intent_refusals f WHERE f.operation_id=c.operation_id))`,
+        ).run(command.request_id, command.request_id, command.request_id, command.request_id);
+      }).immediate();
     }
   }
 
@@ -286,52 +352,16 @@ export class CompanyProgress {
     return row.payload_digest;
   }
 
-  /** A cancelled finish cannot overwrite a provider ack of the committed decision. Replay that exact finish. */
-  private recordedDecisionFinish(token: CompanyProgressReservation): {
-    evidenceDigest: string; terminalState: "approved" | "rejected";
-    response: { schema_version: 2; scope: CompanyScope; challenge: string; outcome: "already_recorded"; checkpoint: CompanyCheckpoint };
-  } | undefined {
-    const receipt = this.db.db.prepare(
-      "SELECT decision,payload_json FROM control_command_receipts WHERE request_id=?",
-    ).get(token.request_id) as { decision: string; payload_json: string } | undefined;
-    const terminalState = receipt?.decision === "approve" ? "approved" as const
-      : receipt?.decision === "reject" ? "rejected" as const : undefined;
-    if (!receipt || !terminalState || token.operation !== (terminalState === "approved" ? "decide_approve" : "decide_reject")) return undefined;
-    let evidenceDigest: string;
-    try { evidenceDigest = controlValueDigest(JSON.parse(receipt.payload_json)); }
-    catch { return undefined; }
-    if (evidenceDigest !== token.reserve_request.event_digest) return undefined;
-    const challenge = randomUUID();
-    let raw: unknown;
-    try {
-      raw = this.provider.finishProgress({
-        schema_version: 2, scope: token.scope, operation_id: token.operation_id, reservation_id: token.reservation_id,
-        expected_checkpoint: token.checkpoint, evidence_digest: evidenceDigest, terminal_state: terminalState, challenge,
-      });
-    } catch { return undefined; }
-    const parsed = finishProgressResponseSchema.safeParse(raw);
-    if (!parsed.success) return undefined;
-    const reply = parsed.data;
-    if (reply.outcome !== "already_recorded") return undefined;
-    if (reply.challenge !== challenge || canonicalize(reply.scope) !== canonicalize(token.scope)) return undefined;
-    return {
-      evidenceDigest, terminalState,
-      response: { schema_version: 2, scope: reply.scope, challenge: reply.challenge, outcome: "already_recorded", checkpoint: reply.checkpoint },
-    };
-  }
-
   /** Provider acknowledgement precedes the local checkpoint/publication transaction. */
   finish(token: CompanyProgressReservation, evidenceDigest: string, terminalState: FinishProgressRequest["terminal_state"], now: Date, publish?: () => void): void {
-    let evidence = evidenceDigest;
-    let terminal = terminalState;
-    if (this.db.db.inTransaction || (terminal === "cancelled"
-      && this.cancellationEvidence(token.request_id, token.reserve_request) !== evidence)) {
+    if (this.db.db.inTransaction || (terminalState === "cancelled"
+      && this.cancellationEvidence(token.request_id, token.reserve_request) !== evidenceDigest)) {
       throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
     }
     const challenge = randomUUID();
     const request = finishProgressRequestSchema.safeParse({
       schema_version: 2, scope: token.scope, operation_id: token.operation_id, reservation_id: token.reservation_id,
-      expected_checkpoint: token.checkpoint, evidence_digest: evidence, terminal_state: terminal, challenge,
+      expected_checkpoint: token.checkpoint, evidence_digest: evidenceDigest, terminal_state: terminalState, challenge,
     });
     if (!request.success) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
     let raw: unknown;
@@ -340,43 +370,36 @@ export class CompanyProgress {
     } catch { throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN"); }
     const parsed = finishProgressResponseSchema.safeParse(raw);
     if (!parsed.success) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
-    if (parsed.data.outcome === "error") throw new JarvisError(parsed.data.code);
-    const initial = parsed.data;
-    const adopted = terminal === "cancelled" && initial.outcome === "conflict" && initial.challenge === challenge
-      && canonicalize(initial.scope) === canonicalize(token.scope) ? this.recordedDecisionFinish(token) : undefined;
-    if (adopted) {
-      evidence = adopted.evidenceDigest;
-      terminal = adopted.terminalState;
-    }
-    const response = adopted?.response ?? initial;
-    const wireChallenge = adopted?.response.challenge ?? challenge;
-    if (response.challenge !== wireChallenge || canonicalize(response.scope) !== canonicalize(token.scope)
+    const response = parsed.data;
+    if (response.outcome === "error") throw new JarvisError(response.code);
+    if (response.challenge !== challenge || canonicalize(response.scope) !== canonicalize(token.scope)
       || !["recorded", "already_recorded"].includes(response.outcome) || !response.checkpoint) {
       throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
     }
     if (!advances(token.checkpoint, response.checkpoint)) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
     const finalCheckpoint = response.checkpoint;
     this.db.db.transaction(() => {
-      if (terminal === "cancelled" && this.cancellationEvidence(token.request_id, token.reserve_request) !== evidence) {
+      if (terminalState === "cancelled" && this.cancellationEvidence(token.request_id, token.reserve_request) !== evidenceDigest) {
         throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
       }
       if (this.provider.kind === "sb_company_db") {
+        const table = companyProgressEvidenceTable(terminalState);
         const acknowledged = this.db.db.prepare(
-          `UPDATE company_progress_evidence_outbox SET acknowledged=1
+          `UPDATE ${table} SET acknowledged=1
            WHERE operation_id=? AND evidence_digest=? AND acknowledged=0`,
-        ).run(token.operation_id, evidence);
+        ).run(token.operation_id, evidenceDigest);
         if (acknowledged.changes !== 1 && !this.db.db.prepare(
-          "SELECT 1 FROM company_progress_evidence_outbox WHERE operation_id=? AND evidence_digest=? AND acknowledged=1",
-        ).get(token.operation_id, evidence)) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
+          `SELECT 1 FROM ${table} WHERE operation_id=? AND evidence_digest=? AND acknowledged=1`,
+        ).get(token.operation_id, evidenceDigest)) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
       }
       const recorded = this.db.db.prepare(
         `UPDATE company_progress_reservations SET finished_checkpoint_json=?,evidence_digest=?,terminal_state=?
          WHERE operation_id=? AND evidence_digest IS NULL`,
-      ).run(canonicalize(response.checkpoint), evidence, terminal, token.operation_id);
+      ).run(canonicalize(response.checkpoint), evidenceDigest, terminalState, token.operation_id);
       if (recorded.changes !== 1) {
         const previous = this.db.db.prepare("SELECT evidence_digest,terminal_state,finished_checkpoint_json FROM company_progress_reservations WHERE operation_id=?")
           .get(token.operation_id) as { evidence_digest: string; terminal_state: string; finished_checkpoint_json: string } | undefined;
-        if (!previous || previous.evidence_digest !== evidence || previous.terminal_state !== terminal
+        if (!previous || previous.evidence_digest !== evidenceDigest || previous.terminal_state !== terminalState
           || previous.finished_checkpoint_json !== canonicalize(finalCheckpoint)) {
           throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
         }

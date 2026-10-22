@@ -76,6 +76,18 @@ C1은 제공자 호출 전에 원래 서명 receipt 전체를 `company_decision_
 자동 lease-steal 대상이 아니며 미확정 상태로 보존한다. 증명된 취소·진행 종결이나
 별도 승인된 운영 복구 없이 token을 지우거나 provider mutation을 재전송하지 않는다.
 
+SB의 검증된 최초 `reserved` ACK는 예약/checkpoint와 함께 불변
+`company_decision_reservation_acks`에 저장한다. receipt 트랜잭션만 실패했다면 이 ACK와
+정확한 원본 서명으로 예약을 소비하여 receipt를 기록할 수 있다. 반대로 유실 ACK의
+`already_reserved` 복구 조회는 이 ACK를 만들지 않으며 새 결정 권한으로 승격하지 않는다.
+최초 호출의 정상 `conflict` 응답은 `company_progress_intent_refusals`에 불변 기록하여
+해당 intent를 종결한다. 원본은 삭제/수정하지 않는다. 같은 operation은
+`COMPANY_RESERVATION_CONFLICT`로 거절하고 취소·새 요청으로 다시 시작한다. 다른 요청의
+workspace fence는 해제한다. 응답 유실/오류/불일치는 확정 conflict로 간주하지 않는다.
+취소된 읽기 전용 claim에 intent/예약/미확정 peer 호출이 전혀 없으면 실제 revocation과
+fence0·redemption 부재를 원자 확인하여 claim만 해제한다. 진행 중이던 읽기가 돌아와도
+intent 저장 직전 동일 트랜잭션에서 claim/취소를 다시 검사하므로 mutation을 시작하지 않는다.
+
 ## 3. accept/reject 원본 receipt 읽기
 
 processor 전용 operation=`read_transition_receipt`, purpose=`company_memory_receipt_read`.
@@ -188,10 +200,20 @@ effect가 실행되지 않은 결정 예약에만 허용한다. JARVIS는 cancel
 `control_command_redemptions`의 부재를 함께 확인한다. 회사 실행은 별도 redemption을 사용하므로
 일반 fence 0만으로 미실행을 증명하지 않는다. 이미 redeem된 요청은 실행 결과가 불명확한
 상태로 남기며 진행 중인 회사 실행 lease를 해제하지 않는다. lease 해제도 이 조건을 원자적으로
-확인하며, 기존 receipt가 있다면 원래 예약의 decision/event와 일치하는 사실만 보존한다.
+확인하며, 기존 receipt가 있다면 원래 예약의 decision/event와 일치하는 원래
+approved/rejected finish를 먼저 그대로 재생한다. 이미 provider가 기록한 finish를
+cancelled로 바꿔 재전송하지 않는다. control request의 cancelled 상태는 그대로 유지한다.
 cancelled는 승인·거절 receipt나 effect를 새로 만드는 값이 아니다. 같은 원래 예약을
 종결한 provider ACK/checkpoint를 영속화한 뒤에만 workspace fence를 해제한다.
 예약/intent는 삭제하지 않으며, ACK 유실은 같은 증거로 재시도한다. 원 요청의 철회는 유지한다.
+receipt가 아직 없을 때는 별도 불변 `company_progress_cancellation_outbox`에
+`jarvis_cancellation`을 먼저 커밋한다. 기존 결정 outbox를 덮어쓰지 않는다. 증거에는
+원본 서명 approval·원본 reserve request·실제 revocation·원래 revoked_at이 포함되며
+wire sidecar의 `kind=revocation`, source_record_id는 revocation_id다. payload/command/
+operation/event digest·scope·redemption 부재를 다시 검증한 뒤에만 finish를 보낸다.
+취소 ACK는 자기 receipt/terminal root의 취소 사실이며 approve receipt를 합성하지 않는다.
+SB peer도 이 revocation sidecar와 취소 root 계산을 채택해야 한다. consumer 모형과
+transport 경계 시험은 실제 SB 통합/설치/운영 검증을 대신하지 않는다.
 SB provider와 JARVIS는 같은 계약을 채택하며, SB PR84의 채택은 운영 배포 선행조건이다.
 unknown 값이나 증거 불일치로 예약을 풀지 않는다. uncertain/failed는
 완료 상태가 아니며 미확정 예약을 finish로 없애는 데 쓰지 않는다.
