@@ -5,6 +5,7 @@ import { companyBrokerAuthoritySchema } from "./company-broker-authority.js";
 import { companyApprovalReceiptSchema } from "./company-approver-contract.js";
 import { decodeCompanyCommandV2 } from "./company-candidate-v2-contract.js";
 import { companyCompletionV2Schema } from "./company-completion-v2.js";
+import { companyCancellationSchema } from "./company-cancellation.js";
 import {
   freshnessReadRequestSchema, reserveProgressRequestSchema, finishProgressRequestSchema,
   companyOperationId, type FinishProgressRequest,
@@ -19,6 +20,9 @@ const payloadSchema = z.object({
   schema_version: z.literal(1), method: companyFreshnessMethodSchema, request: z.unknown(), evidence: z.unknown(),
 }).strict();
 const evidenceSchema = z.discriminatedUnion("kind", [
+  z.object({ kind: z.literal("jarvis_cancellation"), original_at: z.iso.datetime({ precision: 3 }),
+    command: z.unknown(), approval: companyApprovalReceiptSchema,
+    reservation: reserveProgressRequestSchema, cancellation: companyCancellationSchema }).strict(),
   z.object({ kind: z.literal("jarvis_decision"), original_at: z.iso.datetime({ precision: 3 }),
     command: z.unknown(), receipt: companyApprovalReceiptSchema }).strict(),
   z.object({
@@ -41,6 +45,23 @@ export function parseCompanyProgressEvidence(value: unknown) {
   const command = decodeCompanyCommandV2(evidence.command);
   const commandDigest = controlCommandDigest(command);
   switch (evidence.kind) {
+    case "jarvis_cancellation": {
+      const reservation = evidence.reservation;
+      const operation = evidence.approval.decision === "approve" ? "decide_approve" : "decide_reject";
+      const cancellation = evidence.cancellation;
+      const payload = canonicalize({ request_id: command.request_id, reason: cancellation.reason,
+        revoked_by: cancellation.revoked_by, revoked_at: cancellation.revoked_at });
+      if (evidence.approval.request_id !== command.request_id || evidence.approval.command_digest !== commandDigest
+        || reservation.operation !== operation || reservation.event_digest !== controlValueDigest(evidence.approval)
+        || reservation.scope.provider_instance_id !== command.target.provider_instance_id
+        || reservation.scope.workspace_id !== command.target.workspace_id
+        || reservation.operation_id !== companyOperationId({ scope: reservation.scope,
+          request_id: command.request_id, command_digest: commandDigest, operation })
+        || cancellation.request_id !== command.request_id || cancellation.command_digest !== commandDigest
+        || cancellation.payload_json !== payload || cancellation.payload_digest !== controlValueDigest(payload)
+        || Date.parse(evidence.original_at) !== Date.parse(cancellation.revoked_at)) return invalid();
+      return { ...evidence, command };
+    }
     case "jarvis_decision":
       if (evidence.receipt.request_id !== command.request_id || evidence.receipt.command_digest !== commandDigest) return invalid();
       return { ...evidence, command };
@@ -63,6 +84,9 @@ export function parseCompanyProgressEvidence(value: unknown) {
 
 export function companyProgressSidecar(value: unknown) {
   const evidence = parseCompanyProgressEvidence(value);
+  if (evidence.kind === "jarvis_cancellation") return { schema_version: 1 as const, kind: "revocation" as const,
+    source_record_id: evidence.cancellation.revocation_id, original_at: evidence.original_at, command: evidence.command,
+    record: { approval: evidence.approval, reservation: evidence.reservation, cancellation: evidence.cancellation } };
   return { schema_version: 1 as const,
     kind: evidence.kind === "jarvis_decision" ? "representative_receipt" as const : "completion" as const,
     source_record_id: evidence.kind === "jarvis_decision" ? evidence.receipt.receipt_id : `completion:${evidence.command.request_id}`,
@@ -72,7 +96,7 @@ export function companyProgressSidecar(value: unknown) {
 
 function finishEvidence(value: unknown, request: FinishProgressRequest) {
   const evidence = z.object({
-    schema_version: z.literal(1), kind: z.enum(["representative_receipt", "completion"]),
+    schema_version: z.literal(1), kind: z.enum(["representative_receipt", "completion", "revocation"]),
     source_record_id: z.string().min(1).max(512), original_at: z.iso.datetime({ precision: 3 }),
     command: z.unknown(), record: z.unknown(),
   }).strict().parse(value);
@@ -81,7 +105,16 @@ function finishEvidence(value: unknown, request: FinishProgressRequest) {
   let operation: "decide_approve" | "decide_reject" | "complete";
   let expectedDigest: string;
   let terminal: string;
-  if (evidence.kind === "representative_receipt") {
+  if (evidence.kind === "revocation") {
+    const record = z.object({ approval: companyApprovalReceiptSchema, reservation: reserveProgressRequestSchema,
+      cancellation: companyCancellationSchema }).strict().parse(evidence.record);
+    const proof = parseCompanyProgressEvidence({ kind: "jarvis_cancellation", original_at: evidence.original_at,
+      command, ...record });
+    if (proof.kind !== "jarvis_cancellation" || proof.cancellation.revocation_id !== evidence.source_record_id) return invalid();
+    operation = proof.reservation.operation === "decide_approve" ? "decide_approve" : "decide_reject";
+    expectedDigest = proof.cancellation.payload_digest;
+    terminal = "cancelled";
+  } else if (evidence.kind === "representative_receipt") {
     const receipt = companyApprovalReceiptSchema.parse(evidence.record);
     if (receipt.request_id !== command.request_id || receipt.command_digest !== commandDigest
       || receipt.receipt_id !== evidence.source_record_id

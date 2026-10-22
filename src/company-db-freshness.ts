@@ -6,7 +6,7 @@ import { z } from "zod";
 import { canonicalize } from "./canonical.js";
 import { parseCompanyJsonBytes } from "./company-candidate-json.js";
 import { loadCompanyFreshnessClient } from "./company-freshness-client-config.js";
-import { readCompanyProgressEvidence } from "./company-progress-evidence.js";
+import { companyProgressEvidenceTable, readCompanyProgressEvidence } from "./company-progress-evidence.js";
 import { companyPublicKeyFingerprint } from "./company-approver-contract.js";
 import { companyProgressSidecar } from "./company-freshness-envelope.js";
 import {
@@ -82,10 +82,10 @@ export class CompanyDbFreshness implements CompanyFreshnessProvider {
     if (!this.authority) return required();
     try {
       const row = evidenceRowSchema.parse(this.authority.db.prepare(
-        "SELECT evidence_json,evidence_digest FROM company_progress_evidence_outbox WHERE operation_id=?",
+        `SELECT evidence_json,evidence_digest FROM ${companyProgressEvidenceTable(request.terminal_state)} WHERE operation_id=?`,
       ).get(request.operation_id));
       if (row.evidence_digest !== request.evidence_digest) return required();
-      const evidence = companyProgressSidecar(readCompanyProgressEvidence(this.authority, request.operation_id));
+      const evidence = companyProgressSidecar(readCompanyProgressEvidence(this.authority, request.operation_id, request.terminal_state));
       const response = finishProgressResponseSchema.parse(this.exchange("finish_progress", request, evidence));
       if (response.outcome === "error") return response;
       if (response.challenge !== request.challenge || !sameScope(response.scope, request.scope)) return required();

@@ -165,7 +165,9 @@ class TestOnlyMemoryProvider implements CompanyFreshnessProvider {
         && sameValue(existing.finish_expected_checkpoint, parsed.expected_checkpoint);
       return this.finishReply(parsed, same ? "already_recorded" : "conflict", existing);
     }
-    if (companyOperationTerminalStates[existing.operation] !== parsed.terminal_state) {
+    const cancelledDecision = parsed.terminal_state === "cancelled"
+      && (existing.operation === "decide_approve" || existing.operation === "decide_reject");
+    if (!cancelledDecision && companyOperationTerminalStates[existing.operation] !== parsed.terminal_state) {
       return this.finishReply(parsed, "conflict");
     }
     if (!sameValue(parsed.expected_checkpoint, this.head)) {

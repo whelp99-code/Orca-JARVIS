@@ -26,9 +26,13 @@ export class CompanyPeerCalls {
     return row === undefined ? undefined : rowSchema.parse(row);
   }
 
-  prepare(intent: CompanyPeerIntent, now: Date): CompanyPeerCall {
+  prepare(intent: CompanyPeerIntent, now: Date, guard?: () => void): CompanyPeerCall {
     const original = canonicalize(intent.arguments);
     return this.authority.db.transaction(() => {
+      guard?.();
+      if (this.authority.db.prepare("SELECT 1 FROM company_progress_intent_refusals WHERE operation_id=?").get(intent.operation_id)) {
+        throw new JarvisError("COMPANY_RESERVATION_CONFLICT");
+      }
       const previous = this.read(intent.operation_id);
       if (previous) {
         if (previous.provider_instance_id !== intent.provider_instance_id || previous.workspace_id !== intent.workspace_id
@@ -41,7 +45,8 @@ export class CompanyPeerCalls {
         `SELECT request_id FROM company_progress_reservations
          WHERE provider_instance_id=? AND workspace_id=? AND evidence_digest IS NULL
          UNION ALL SELECT request_id FROM company_peer_calls
-         WHERE provider_instance_id=? AND workspace_id=? AND state IN ('prepared','invoking','uncertain') LIMIT 1`,
+         WHERE provider_instance_id=? AND workspace_id=? AND state IN ('prepared','invoking','uncertain')
+           AND NOT EXISTS (SELECT 1 FROM company_progress_intent_refusals f WHERE f.operation_id=company_peer_calls.operation_id) LIMIT 1`,
       ).get(intent.provider_instance_id, intent.workspace_id, intent.provider_instance_id, intent.workspace_id));
       if (owner) throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN", `COMPANY_PROGRESS_UNCERTAIN: request_id=${owner.request_id}`);
       this.authority.db.prepare(

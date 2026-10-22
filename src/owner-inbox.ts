@@ -235,7 +235,21 @@ export class OwnerInbox {
       max_uses: 1,
       status: "issued",
     };
-    const signed = this.signer.signVerifiedRemoteDecision(receipt);
+    let signed = this.signer.signVerifiedRemoteDecision(receipt);
+    if (row.action === "company.candidate.transition") {
+      const original = this.db.db.prepare(
+        "SELECT receipt_json FROM company_decision_receipt_intents WHERE request_id=?",
+      ).get(row.request_id) as { receipt_json: string } | undefined;
+      if (original) {
+        const saved = JSON.parse(original.receipt_json) as CommandApprovalReceipt;
+        if (saved.request_id !== row.request_id || saved.command_digest !== row.command_digest
+          || saved.decision !== input.decision || saved.key_id !== this.signer.keyId
+          || saved.signer_principal_id !== this.signer.principalId) fail("COMPANY_APPROVAL_INVALID");
+        // Fresh WebAuthn remains mandatory; ControlPlane revalidates the original signature,
+        // expiry, current key/pin and revocation before reusing its provider reservation.
+        signed = saved;
+      }
+    }
     try {
     new ControlPlane(this.db, this.companyFreshness).decide(signed, this.now);
     } catch (error) {
