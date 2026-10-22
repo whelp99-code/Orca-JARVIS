@@ -55,19 +55,29 @@ export class MigrationStore {
     this.assertSupportedHistory(ids, recovery);
     recovery.recoverRejectedCandidate();
     for (const migration of pending) {
-      if (migration.id === "042_memory_deletion_proof.sql"
-        || migration.id === "045_task30_schema_compatibility.sql") {
-        recovery.prepareLegacyDeletionSnapshot();
-      }
-      this.database.transaction(() => {
+      const applied = this.database.transaction(() => {
+        const prior = row(this.database.prepare(
+          "SELECT checksum FROM schema_migrations WHERE id=?",
+        ).get(migration.id));
+        if (prior !== undefined) {
+          if (prior["checksum"] !== migration.digest) {
+            throw this.error("MIGRATION_CHECKSUM_MISMATCH", migration.id);
+          }
+          return false;
+        }
+        if (migration.id === "042_memory_deletion_proof.sql"
+          || migration.id === "045_task30_schema_compatibility.sql") {
+          recovery.prepareLegacyDeletionSnapshot();
+        }
         this.database.exec(migration.body.toString("utf8"));
         this.database.prepare(
           "INSERT INTO schema_migrations(id,checksum,applied_at) VALUES(?,?,?)",
         ).run(migration.id, migration.digest, new Date().toISOString());
+        return true;
       }).immediate();
       // The deletion-lane rebuild returns dropped pages to the freelist. A later rolled-back
       // write would otherwise change those free-page bytes, which serialize() observes.
-      if (migration.id === "097_memory_deletion_terminal_refusal.sql") this.database.exec("VACUUM");
+      if (applied && migration.id === "097_memory_deletion_terminal_refusal.sql") this.database.exec("VACUUM");
     }
     recovery.restorePreservedKeys();
   }

@@ -27,6 +27,25 @@ function tamperPreservingSizeAndMtime(path: string, mutate: (bytes: Buffer) => v
 }
 
 describe("MigrationStore applied migration checksum", () => {
+  it("serializes callers that classified the same migration as pending", async () => {
+    const root = mkdtempSync(join(tmpdir(), "jarvis-concurrent-migration-"));
+    const migrations = join(root, "migrations");
+    mkdirSync(migrations);
+    cpSync(join(process.cwd(), "migrations", "001_authority.sql"), join(migrations, "001_authority.sql"));
+    const databasePath = join(root, "authority.sqlite");
+    const first = new AuthorityDb(databasePath, migrations);
+    const second = new AuthorityDb(databasePath, migrations);
+    try {
+      await Promise.all([first.migrate(), second.migrate()]);
+      expect(first.db.prepare("SELECT count(*) AS n FROM schema_migrations").get()).toEqual({ n: 1 });
+      await second.assertMigrationsReady();
+    } finally {
+      first.close();
+      second.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   it("detects in-place byte changes on a second migrate() in the same process", async () => {
     const root = mkdtempSync(join(tmpdir(), "jarvis-applied-checksum-"));
     const migrations = join(root, "migrations");
