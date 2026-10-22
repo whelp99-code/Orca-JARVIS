@@ -11,6 +11,36 @@ function approval(db: Awaited<ReturnType<typeof initialized>>, staged: ReturnTyp
 }
 
 describe("approval-only control plane", () => {
+  it("does not extend ordinary command receipt authority to the delegate window", async () => {
+    const db = await initialized();
+    const control = new ControlPlane(db);
+    const now = new Date("2026-10-02T00:00:00.000Z");
+    try {
+      const staged = control.stage(requestAt("ordinary-ttl", now, 30 * 60_000), now);
+      const receipt = approval(db, staged, {
+        issued_at: now.toISOString(), not_before: now.toISOString(), expires_at: staged.expires_at,
+      });
+      expect(() => control.decide(receipt, now)).toThrow("CONTROL_APPROVAL_INVALID");
+      expect(control.get(staged.request_id)?.state).toBe("pending");
+      expect(db.db.prepare("SELECT COUNT(*) AS n FROM control_command_receipts").get()).toEqual({ n: 0 });
+    } finally { db.close(); }
+  });
+
+  it.each([900_000, 900_001])("enforces the ordinary receipt lifetime boundary at %i ms", async lifetime => {
+    const db = await initialized();
+    const control = new ControlPlane(db);
+    const now = new Date("2026-10-02T00:00:00.000Z");
+    try {
+      const staged = control.stage(requestAt("ordinary-boundary", now, 30 * 60_000), now);
+      const receipt = approval(db, staged, { issued_at: now.toISOString(), not_before: now.toISOString(),
+        expires_at: new Date(now.getTime() + lifetime).toISOString() });
+      if (lifetime === 900_000) {
+        control.decide(receipt, now);
+        expect(control.get(staged.request_id)?.state).toBe("approved");
+      } else expect(() => control.decide(receipt, now)).toThrow("CONTROL_APPROVAL_INVALID");
+    } finally { db.close(); }
+  });
+
   it("requires a fresh one-use human receipt before a command can be claimed", async () => {
     const db = await initialized(); const control = new ControlPlane(db); const staged = control.stage(request("cmd-1"));
     expect(() => control.claim(staged.request_id, "worker")).toThrow("CONTROL_APPROVAL_REQUIRED");

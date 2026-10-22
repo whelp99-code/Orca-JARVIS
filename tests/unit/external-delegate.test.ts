@@ -14,7 +14,8 @@ import { externalDelegateBatchDigest } from "../../src/external-delegate.js";
 import { OWNER_INBOX_EXTERNAL_DONE, OwnerInbox } from "../../src/owner-inbox.js";
 import { knownRemoteMethods } from "../../src/phone-gateway-remote-routes.js";
 import { ControlReceiptSigner } from "../../src/remote-approval-signer.js";
-import { initialized, localKey } from "../helpers.js";
+import { initialized, localKey, tempDb } from "../helpers.js";
+import { migratedTestDatabase } from "../fixtures/migrated-database.js";
 
 const NOW = new Date("2026-10-02T00:00:00.000Z");
 
@@ -51,6 +52,7 @@ describe("external.delegate", () => {
     const listed = inbox.list().find(item => item.request_id === staged.request_id);
     expect(listed?.summary).toBe("윤비서 요청 · 2건 묶음 · 30분 내 승인");
     expect(listed?.batch_items).toHaveLength(2);
+    expect(listed?.batch_items?.[0]).toMatchObject({ mail_draft_id: items()[0]?.mail_draft_id });
     db.db.prepare("INSERT INTO owner_inbox_credentials(credential_id, public_key, counter, created_at) VALUES(?,?,?,?)")
       .run("cred-1", Buffer.from("pk"), 0, NOW.toISOString());
     const issued = inbox.issueChallenge({ request_id: staged.request_id, decision: "approve", command_digest: staged.command_digest, session_id: "session-1" });
@@ -97,11 +99,12 @@ describe("external.delegate", () => {
     const signature = sign(null, Buffer.from(COMMAND_APPROVAL_DOMAIN + canonicalize(payload)), privateKey).toString("base64url");
     const receipt = { ...payload, signature } as CommandApprovalReceipt;
     const pem = publicKey.export({ type: "spki", format: "pem" }).toString();
-    expect(verifyCommandApproval(receipt, pem, new Date(NOW.getTime() + 60_000))).toBe(true);
-    expect(verifyCommandApproval(receipt, other.publicKey.export({ type: "spki", format: "pem" }).toString(), new Date(NOW.getTime() + 60_000))).toBe(false);
-    expect(verifyCommandApproval({ ...receipt, command_digest: "sha256:" + "00".repeat(32) }, pem, new Date(NOW.getTime() + 60_000))).toBe(false);
-    expect(verifyCommandApproval({ ...receipt, decision: "reject" }, pem, new Date(NOW.getTime() + 60_000))).toBe(false);
-    expect(verifyCommandApproval(receipt, pem, new Date(NOW.getTime() + 31 * 60_000))).toBe(false);
+    expect(verifyCommandApproval(receipt, pem, new Date(NOW.getTime() + 60_000), "external.delegate")).toBe(true);
+    expect(verifyCommandApproval(receipt, pem, new Date(NOW.getTime() + 60_000))).toBe(false);
+    expect(verifyCommandApproval(receipt, other.publicKey.export({ type: "spki", format: "pem" }).toString(), new Date(NOW.getTime() + 60_000), "external.delegate")).toBe(false);
+    expect(verifyCommandApproval({ ...receipt, command_digest: "sha256:" + "00".repeat(32) }, pem, new Date(NOW.getTime() + 60_000), "external.delegate")).toBe(false);
+    expect(verifyCommandApproval({ ...receipt, decision: "reject" }, pem, new Date(NOW.getTime() + 60_000), "external.delegate")).toBe(false);
+    expect(verifyCommandApproval(receipt, pem, new Date(NOW.getTime() + 31 * 60_000), "external.delegate")).toBe(false);
   });
 
   it("stages only external.delegate on the loopback route", async () => {
@@ -171,6 +174,76 @@ describe("external.delegate", () => {
     }
   });
 
+  it("returns the same owner decision key selected for the inbox", async () => {
+    const db = await migratedTestDatabase(tempDb());
+    const owner = generateKeyPairSync("ed25519");
+    const publicPem = owner.publicKey.export({ type: "spki", format: "pem" }).toString();
+    for (const [keyId, principal] of [["aaa-root", "principal:root"], ["owner-key", "principal:owner"]]) {
+      db.db.prepare("INSERT INTO trusted_authority_keys(key_id, principal_id, algorithm, public_key_pem, created_at) VALUES(?,?,'Ed25519',?,?)")
+        .run(keyId, principal, publicPem, NOW.toISOString());
+      db.db.prepare("INSERT INTO authority_key_purposes(key_id, purpose, created_at) VALUES(?,'decision',?)").run(keyId, NOW.toISOString());
+    }
+    const root = mkdtempSync(join(tmpdir(), "delegate-trust-"));
+    const tokenFile = join(root, "token");
+    writeFileSync(tokenFile, "t".repeat(40), { mode: 0o600 });
+    const previous = process.env.JARVIS_EXTERNAL_DELEGATE_TOKEN_FILE;
+    process.env.JARVIS_EXTERNAL_DELEGATE_TOKEN_FILE = tokenFile;
+    const server = createDashboardServer({ db, staticRoot: root, host: "127.0.0.1", port: 0, clock: () => NOW });
+    const origin = `http://127.0.0.1:${server.address.port}`;
+    try {
+      const result = await request(`${origin}/api/v1/internal/external-delegate/trust`, {
+        headers: { host: new URL(origin).host, "x-jarvis-delegate-token": "t".repeat(40) },
+      });
+      expect(result.statusCode).toBe(200);
+      expect(await result.body.json()).toMatchObject({ key_id: "owner-key", spki_pem: publicPem });
+    } finally {
+      server.close();
+      db.close();
+      if (previous === undefined) delete process.env.JARVIS_EXTERNAL_DELEGATE_TOKEN_FILE;
+      else process.env.JARVIS_EXTERNAL_DELEGATE_TOKEN_FILE = previous;
+    }
+  });
+
+  it.each(["lookup", "consume"])("rejects Grok %s of another requester's signed approval", async operation => {
+    const db = await initialized();
+    const original = stagedInput();
+    const staged = new ControlPlane(db).stage({ ...original, requested_by: "agent:omonyang",
+      target: { environment: "external", system: "omonyang" }, args: { ...original.args, source: "omonyang" },
+    }, NOW);
+    const inbox = new OwnerInbox(db, new ControlReceiptSigner(localKey(db), "decision-test", "test-operator"), true, () => NOW);
+    db.db.prepare("INSERT INTO owner_inbox_credentials(credential_id, public_key, counter, created_at) VALUES(?,?,?,?)")
+      .run("cred-foreign", Buffer.from("pk"), 0, NOW.toISOString());
+    const issued = inbox.issueChallenge({ request_id: staged.request_id, decision: "approve", command_digest: staged.command_digest, session_id: "session-foreign" });
+    await inbox.decide({
+      request_id: staged.request_id, decision: "approve", command_digest: staged.command_digest, session_id: "session-foreign",
+      challenge_id: issued.challenge_id,
+      assertion: { id: "cred-foreign", clientDataJSON: "", authenticatorData: "", signature: "", userHandle: "" },
+      origin: "http://127.0.0.1", rpId: "127.0.0.1", check: async () => ({ ok: true, newCounter: 1 }),
+    });
+    const root = mkdtempSync(join(tmpdir(), "delegate-foreign-"));
+    const tokenFile = join(root, "token");
+    writeFileSync(tokenFile, "t".repeat(40), { mode: 0o600 });
+    const previous = process.env.JARVIS_EXTERNAL_DELEGATE_TOKEN_FILE;
+    process.env.JARVIS_EXTERNAL_DELEGATE_TOKEN_FILE = tokenFile;
+    const server = createDashboardServer({ db, staticRoot: root, host: "127.0.0.1", port: 0, clock: () => NOW });
+    const origin = `http://127.0.0.1:${server.address.port}`;
+    const headers = { host: new URL(origin).host, "content-type": "application/json", "x-jarvis-delegate-token": "t".repeat(40) };
+    try {
+      const path = `${origin}/api/v1/internal/external-delegate/${staged.request_id}`;
+      const result = operation === "lookup"
+        ? await request(`${path}?batch_digest=${externalDelegateBatchDigest(items())}`, { headers })
+        : await request(`${path}/consume`, { method: "POST", headers, body: JSON.stringify({ item_digest: items()[0]?.payload_digest }) });
+      expect(result.statusCode).toBe(404);
+      expect(await result.body.json()).toMatchObject({ error: { code: "DELEGATE_NOT_FOUND" } });
+      expect(db.db.prepare("SELECT COUNT(*) AS n FROM external_delegate_item_uses WHERE request_id=?").get(staged.request_id)).toMatchObject({ n: 0 });
+    } finally {
+      server.close();
+      db.close();
+      if (previous === undefined) delete process.env.JARVIS_EXTERNAL_DELEGATE_TOKEN_FILE;
+      else process.env.JARVIS_EXTERNAL_DELEGATE_TOKEN_FILE = previous;
+    }
+  });
+
   it("consumes an item once and rejects an expired receipt", async () => {
     const db = await initialized();
     const control = new ControlPlane(db);
@@ -198,6 +271,10 @@ describe("external.delegate", () => {
       method: "POST", headers, body: JSON.stringify({ item_digest: digest }),
     });
     try {
+      const lookup = await request(`${origin}/api/v1/internal/external-delegate/${staged.request_id}?batch_digest=${externalDelegateBatchDigest(items())}`, { headers });
+      const envelope = await lookup.body.json() as { command: ControlCommandRequestInput; receipt: CommandApprovalReceipt };
+      expect(envelope.command).toMatchObject(stagedInput());
+      expect(controlCommandDigest(envelope.command)).toBe(envelope.receipt.command_digest);
       const [first, second] = await Promise.all([consume(), consume()]);
       const codes = [first.statusCode, second.statusCode].sort();
       expect(codes).toEqual([200, 409]);

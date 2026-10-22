@@ -13,13 +13,17 @@ import { ControlReceiptSigner } from "./remote-approval-signer.js";
 
 const PLACEHOLDER_ORIGIN = "https://remote-approval.invalid";
 
-function sealedDecision(db: AuthorityDb, ownerPrincipal: string): { key_id: string; principal_id: string } | undefined {
+function sealedDecision(db: AuthorityDb, ownerPrincipal: string): { key_id: string; principal_id: string; public_key_pem: string } | undefined {
   return db.db.prepare(
-    `SELECT k.key_id, k.principal_id FROM trusted_authority_keys k
+    `SELECT k.key_id, k.principal_id, k.public_key_pem FROM trusted_authority_keys k
      JOIN authority_key_purposes p ON p.key_id=k.key_id
      WHERE p.purpose='decision'
      ORDER BY CASE WHEN k.principal_id=? THEN 0 ELSE 1 END, k.key_id LIMIT 1`,
-  ).get(ownerPrincipal) as { key_id: string; principal_id: string } | undefined;
+  ).get(ownerPrincipal) as { key_id: string; principal_id: string; public_key_pem: string } | undefined;
+}
+
+export function ownerInboxDecisionKey(db: AuthorityDb) {
+  return sealedDecision(db, readPolicy(undefined).owner_principal);
 }
 
 export function composeRemoteApproval(db: AuthorityDb, options: {
@@ -69,8 +73,7 @@ export function composeOwnerInbox(db: AuthorityDb, options: {
   readonly clock?: () => Date;
   readonly companyFreshness?: import("./company-freshness.js").CompanyFreshnessProvider;
 } = {}): OwnerInbox {
-  const policy = readPolicy(undefined);
-  const sealed = sealedDecision(db, policy.owner_principal);
+  const sealed = ownerInboxDecisionKey(db);
   const keyPath = options.decisionKeyPath ?? process.env.JARVIS_DECISION_SIGNING_KEY_FILE;
   const loaded = keyPath === undefined ? undefined : readEd25519PrivateKeyFile(keyPath);
   const signer = new ControlReceiptSigner(

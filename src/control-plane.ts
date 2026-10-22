@@ -64,7 +64,7 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
          JOIN authority_key_purposes p ON p.key_id=k.key_id
          WHERE k.key_id=? AND p.purpose='decision'`,
       ) .get(receipt.key_id) as { public_key_pem: string; principal_id: string } | undefined; if ( !key || key.principal_id !== receipt.signer_principal_id ||
-      !verifyCommandApproval(receipt, key.public_key_pem, now) || Date.parse(receipt.expires_at) > Date.parse(String(request.expires_at)) )
+      !verifyCommandApproval(receipt, key.public_key_pem, now, String(request.action)) || Date.parse(receipt.expires_at) > Date.parse(String(request.expires_at)) )
       throw new JarvisError(companyV2 ? "COMPANY_APPROVAL_INVALID" : "CONTROL_APPROVAL_INVALID");
     const state = receipt.decision === "approve" ? "approved" : "rejected";
     const progress = new CompanyProgress(this.authority, this.companyFreshness);
@@ -100,7 +100,7 @@ function finiteIso(value: string): number { const time = Date.parse(value); retu
             throw new JarvisError("COMPANY_APPROVAL_REVOKED");
           }
           if (!currentKey || currentKey.principal_id !== receipt.signer_principal_id
-            || !verifyCommandApproval(receipt, currentKey.public_key_pem, now)) throw new JarvisError("COMPANY_APPROVAL_INVALID");
+            || !verifyCommandApproval(receipt, currentKey.public_key_pem, now, current.action)) throw new JarvisError("COMPANY_APPROVAL_INVALID");
           assertCurrentCompanyPin(this.authority, companyV2, receipt, now);
           if (reservation) progress.assertReservation(reservation);
         } else {

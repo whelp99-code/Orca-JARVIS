@@ -3,6 +3,8 @@ import { mkdtempSync, writeFileSync, chmodSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
+import { Client } from "@modelcontextprotocol/sdk/client/index.js";
+import { InMemoryTransport } from "@modelcontextprotocol/sdk/inMemory.js";
 import { AuthorityDb } from "../../src/authority-db.js";
 import { loadAgentToken } from "../../src/omonyang-hands/auth.js";
 import { HandsError } from "../../src/omonyang-hands/errors.js";
@@ -12,6 +14,7 @@ import { StdioSbMcp } from "../../src/omonyang-hands/sb-client.js";
 import { externalDelegateBatchDigest } from "../../src/external-delegate.js";
 import { OwnerInbox } from "../../src/owner-inbox.js";
 import { ControlReceiptSigner } from "../../src/remote-approval-signer.js";
+import { sha256Digest } from "../../src/omonyang-hands/digest.js";
 
 const TOKEN = "omonyang-token-0123456789abcdef0123456789";
 const DIGEST = `sha256:${"ab".repeat(32)}`;
@@ -39,6 +42,55 @@ async function fixture() {
 }
 
 describe("omonyang hands", () => {
+  it("separates canonical input and output audit identities", () => {
+    expect(sha256Digest({ a: 1, b: 2 }, "input")).toBe(sha256Digest({ b: 2, a: 1 }, "input"));
+    expect(sha256Digest({ value: 1 }, "input")).not.toBe(sha256Digest({ value: 1 }, "output"));
+  });
+
+  it("keeps approval audit digests stable across property order", async () => {
+    const fx = await fixture();
+    const items = [{ action_kind: "payment", summary: "synthetic", payload_digest: DIGEST }];
+    try {
+      await fx.service.call("jarvis.request_approval", {
+        request_id: "audit-order-01", batch_summary: "synthetic", expires_in_seconds: 900, items,
+      }, TOKEN);
+      await fx.service.call("jarvis.request_approval", {
+        items, expires_in_seconds: 900, batch_summary: "synthetic", request_id: "audit-order-01",
+      }, TOKEN);
+      const rows = fx.authority.db.prepare("SELECT payload_json FROM audit_facts WHERE fact_type='omonyang_hands_call' ORDER BY seq")
+        .all() as { payload_json: string }[];
+      const audits = rows.map(row => JSON.parse(row.payload_json));
+      expect(audits[0].input_digest).toBe(audits[1].input_digest);
+      expect(audits[0].input_digest).toBe(sha256Digest({
+        request_id: "audit-order-01", batch_summary: "synthetic", expires_in_seconds: 900, items,
+      }, "input"));
+      expect(audits[0].output_digest).not.toBeNull();
+    } finally { fx.authority.close(); }
+  });
+
+  it("versions success and error envelopes through MCP", async () => {
+    const fx = await fixture();
+    const server = createOmonyangHandsMcp(fx.service);
+    const client = new Client({ name: "approval-review", version: "1" });
+    const [a, b] = InMemoryTransport.createLinkedPair();
+    await server.connect(a);
+    await client.connect(b);
+    try {
+      for (const token of [TOKEN, "invalid-token-0123456789abcdef0123456789"]) {
+        const result = await client.callTool({ name: "jarvis_request_approval", arguments: {
+          token, request_id: "wire-approval-01", batch_summary: "synthetic", expires_in_seconds: 900,
+          items: [{ action_kind: "payment", summary: "synthetic", payload_digest: DIGEST }],
+        } });
+        const content = result.content as { type: string; text: string }[];
+        expect(JSON.parse(content[0]?.text ?? "{}")).toMatchObject({ schema_version: 1, ok: token === TOKEN });
+      }
+    } finally {
+      await client.close();
+      await server.close();
+      fx.authority.close();
+    }
+  });
+
   it("rejects a world-readable token and a public bind", async () => {
     const fx = await fixture();
     const path = join(fx.root, "open.json");

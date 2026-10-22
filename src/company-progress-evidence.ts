@@ -66,7 +66,7 @@ function assertOriginalDecision(authority: AuthorityDb, command: CompanyCommandV
     || canonicalize(parseCompanyJson(row.data.payload_json)) !== canonicalize(receipt)
     || !request.success || request.data.command_digest !== controlCommandDigest(command)
     || !key.success || key.data.principal_id !== receipt.signer_principal_id
-    || !verifyCommandApproval(receipt, key.data.public_key_pem, new Date(receipt.not_before))) {
+    || !verifyCommandApproval(receipt, key.data.public_key_pem, new Date(receipt.not_before), command.action)) {
     throw new JarvisError("COMPANY_PROGRESS_UNCERTAIN");
   }
 }

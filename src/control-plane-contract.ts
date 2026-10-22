@@ -114,10 +114,12 @@ export function signCommandApproval(payload: Omit<CommandApprovalReceipt, "signa
   return { ...payload, signature: base64url(signature) };
 }
 
-export function verifyCommandApproval(receipt: CommandApprovalReceipt, trustedPublicKey: string, now: Date): boolean {
+export function verifyCommandApproval(receipt: CommandApprovalReceipt, trustedPublicKey: string, now: Date, action?: string): boolean {
   const issued = Date.parse(receipt.issued_at);
   const notBefore = Date.parse(receipt.not_before);
   const expires = Date.parse(receipt.expires_at);
+  // Company approvals retain their separately frozen 30-minute wire contract.
+  const maxMinutes = action === "external.delegate" || action === "company.candidate.transition" ? 30 : 15;
   if (
     receipt.schema_version !== 1 ||
     !isNonemptyControlValue(receipt.receipt_id) ||
@@ -137,7 +139,7 @@ export function verifyCommandApproval(receipt: CommandApprovalReceipt, trustedPu
     notBefore > now.getTime() ||
     expires <= issued ||
     expires <= now.getTime() ||
-    expires - issued > 30 * 60_000
+    expires - issued > maxMinutes * 60_000
   )
     return false;
   const payload: Omit<CommandApprovalReceipt, "signature"> = {

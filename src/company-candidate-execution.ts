@@ -158,7 +158,7 @@ export class CompanyCandidateExecutor {
     const proofNow = acknowledged ? new Date(approval.issued_at) : this.clock();
     if (approval.request_id !== requestId || approval.command_digest !== stored.command_digest
       || approval.signer_principal_id !== command.args.owner || receiptRow.principal_id !== command.args.owner
-      || !verifyCommandApproval(approval, receiptRow.public_key_pem, proofNow)
+      || !verifyCommandApproval(approval, receiptRow.public_key_pem, proofNow, command.action)
       || Date.parse(approval.expires_at) > Date.parse(command.expires_at)
       || (!acknowledged && Date.parse(command.expires_at) <= this.clock().getTime())
       || !["approved", "rejected", "completed"].includes(stored.state)) {
@@ -614,7 +614,7 @@ export class CompanyCandidateExecutor {
        JOIN authority_key_purposes p ON p.key_id=k.key_id AND p.purpose='decision' WHERE k.key_id=?`,
     ).get(approval.key_id) as { public_key_pem: string; principal_id: string } | undefined;
     if (!key || key.principal_id !== command.args.owner
-      || !verifyCommandApproval(approval, key.public_key_pem, new Date(approval.issued_at))) {
+      || !verifyCommandApproval(approval, key.public_key_pem, new Date(approval.issued_at), command.action)) {
       throw new JarvisError("CONTROL_APPROVAL_INVALID");
     }
     if (this.db.db.prepare(

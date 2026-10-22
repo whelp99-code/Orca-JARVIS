@@ -1,5 +1,6 @@
 import { timingSafeEqual } from "node:crypto";
 import { closeSync, constants, fstatSync, openSync, readSync } from "node:fs";
+import { canonicalize } from "../canonical.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import { ControlPlane, type ControlCommandRequestInput } from "../control-plane.js";
 import { JarvisError, type AuthorityDb } from "../db.js";
@@ -8,6 +9,7 @@ import {
   parseExternalDelegateItems,
 } from "../external-delegate.js";
 import { parseSecondBrainStrictJsonBytes } from "../second-brain-strict-json.js";
+import { ownerInboxDecisionKey } from "../remote-approval-compose.js";
 import { writeDashboardJson } from "./http.js";
 
 const STAGE = "/api/v1/internal/external-delegate";
@@ -126,7 +128,7 @@ function stage(db: AuthorityDb, body: Record<string, unknown>, now: Date): { req
 
 function lookup(db: AuthorityDb, requestId: string, batchDigest: string, now: Date): Record<string, unknown> {
   const row = db.db.prepare(
-    "SELECT state, command_digest, args_json, expires_at FROM control_command_requests WHERE request_id = ? AND action = 'external.delegate'",
+    "SELECT state, command_digest, args_json, expires_at FROM control_command_requests WHERE request_id = ? AND action = 'external.delegate' AND requested_by = 'agent:grok-bot'",
   ).get(requestId) as { state: string; command_digest: string; args_json: string; expires_at: string } | undefined;
   if (row === undefined) throw new DelegateError(404, "DELEGATE_NOT_FOUND");
   const args = JSON.parse(row.args_json) as { batch_digest?: string };
@@ -139,12 +141,15 @@ function lookup(db: AuthorityDb, requestId: string, batchDigest: string, now: Da
     "SELECT payload_json, key_id, expires_at FROM control_command_receipts WHERE request_id = ? AND decision = 'approve'",
   ).get(requestId) as { payload_json: string; key_id: string; expires_at: string } | undefined;
   if (receipt === undefined || Date.parse(receipt.expires_at) <= now.getTime()) return { state: "expired", used_item_digests: used };
+  const command = new ControlPlane(db).get(requestId);
+  if (command === undefined) throw new DelegateError(404, "DELEGATE_NOT_FOUND");
   return {
     state: "approved",
     key_id: receipt.key_id,
     command_digest: row.command_digest,
     batch_digest: batchDigest,
     receipt: JSON.parse(receipt.payload_json) as unknown,
+    command,
     used_item_digests: used,
   };
 }
@@ -153,7 +158,7 @@ function consume(db: AuthorityDb, requestId: string, body: Record<string, unknow
   const digest = body.item_digest;
   if (typeof digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(digest)) throw new DelegateError(400, "DELEGATE_INVALID");
   const row = db.db.prepare(
-    "SELECT state, args_json, expires_at FROM control_command_requests WHERE request_id = ? AND action = 'external.delegate'",
+    "SELECT state, args_json, expires_at FROM control_command_requests WHERE request_id = ? AND action = 'external.delegate' AND requested_by = 'agent:grok-bot'",
   ).get(requestId) as { state: string; args_json: string; expires_at: string } | undefined;
   if (row === undefined || row.state !== "approved" || Date.parse(row.expires_at) <= now.getTime()) {
     throw new DelegateError(404, "DELEGATE_NOT_FOUND");
@@ -190,14 +195,24 @@ function consume(db: AuthorityDb, requestId: string, body: Record<string, unknow
 function auditLowRisk(db: AuthorityDb, body: Record<string, unknown>, now: Date): void {
   const kind = body.action_kind;
   const summary = body.summary;
+  const requestId = body.request_id;
+  const digest = body.payload_digest;
   if (typeof kind !== "string" || kind.length < 1 || kind.length > 64) throw new DelegateError(400, "DELEGATE_INVALID");
   if (typeof summary !== "string" || summary.length > 240) throw new DelegateError(400, "DELEGATE_INVALID");
-  db.db.prepare("INSERT INTO audit_facts(fact_type,subject_id,payload_json,created_at) VALUES(?,?,?,?)").run(
-    "owner_inbox_attempt",
-    `low-risk:${kind}`,
-    JSON.stringify({ outcome: "logged", decision: "none", code: "LOW_RISK", action_kind: kind, summary }),
-    now.toISOString(),
-  );
+  if (typeof requestId !== "string" || !/^[A-Za-z0-9][A-Za-z0-9_.:-]{7,127}$/.test(requestId)
+    || typeof digest !== "string" || !/^sha256:[0-9a-f]{64}$/.test(digest)) throw new DelegateError(400, "DELEGATE_INVALID");
+  const subject = `low-risk:${requestId}`;
+  const payload = canonicalize({ outcome: "logged", decision: "none", code: "LOW_RISK", action_kind: kind, summary, payload_digest: digest });
+  db.db.transaction(() => {
+    const prior = db.db.prepare("SELECT payload_json FROM audit_facts WHERE fact_type='owner_inbox_attempt' AND subject_id=?")
+      .get(subject) as { payload_json: string } | undefined;
+    if (prior !== undefined) {
+      if (prior.payload_json !== payload) throw new DelegateError(409, "DELEGATE_CONFLICT");
+      return;
+    }
+    db.db.prepare("INSERT INTO audit_facts(fact_type,subject_id,payload_json,created_at) VALUES(?,?,?,?)")
+      .run("owner_inbox_attempt", subject, payload, now.toISOString());
+  }).immediate();
 }
 
 function usedDigests(db: AuthorityDb, requestId: string): string[] {
@@ -208,11 +223,7 @@ function usedDigests(db: AuthorityDb, requestId: string): string[] {
 }
 
 function trustBody(db: AuthorityDb): { key_id: string; spki_pem: string } {
-  const row = db.db.prepare(
-    `SELECT k.key_id, k.public_key_pem FROM trusted_authority_keys k
-     JOIN authority_key_purposes p ON p.key_id = k.key_id
-     WHERE p.purpose = 'decision' ORDER BY k.key_id LIMIT 1`,
-  ).get() as { key_id: string; public_key_pem: string } | undefined;
+  const row = ownerInboxDecisionKey(db);
   if (row === undefined) throw new DelegateError(503, "DELEGATE_UNCONFIGURED");
   return { key_id: row.key_id, spki_pem: row.public_key_pem };
 }
