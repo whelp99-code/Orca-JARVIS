@@ -25,6 +25,13 @@ const snap = (open: Array<{ id: string; subject: string; receivedAt?: string }>,
 });
 
 describe("mail reply-gap projection", () => {
+  it.each(["file:///tmp/mail", "data:text/plain,x", "javascript:alert(1)", "ftp://mail.example", "not a URL"])(
+    "rejects an unusable configured URL %s", configured => {
+      expect(() => resolveMailReplyGapBaseUrl({ JARVIS_MAIL_REPLY_GAP_BASE_URL: configured }))
+        .toThrow("MAIL_REPLY_GAP_LINK_INVALID");
+    },
+  );
+
   it("opens an owner-decision task linked to the message and closes it when the gap leaves", () => {
     const board = store();
     const first = projectMailReplyGaps(board, snap([{ id: "41", subject: "견적 부탁드립니다" }], "2026-10-01T00:00:00.000Z"));

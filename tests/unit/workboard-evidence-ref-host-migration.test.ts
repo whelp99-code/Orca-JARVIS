@@ -34,6 +34,7 @@ describe("workboard reply-gap evidence_ref host migration", () => {
     "https://100.87.81.57:8451",
     "https://jm-acloud.alpines-goldeye.ts.net:3010",
     "http://jm-acloud.alpines-goldeye.ts.net:8451",
+    "https://jm-acloud.alpines-goldeye.ts.net:8451",
   ])("remaps %s while retaining the path, query, fragment and rollback value", origin => {
     const suffix = "/mail?view=sent&legacy=100.87.81.57&host=jm-acloud.alpines-goldeye.ts.net#m=41";
     const original = `${origin}${suffix}`;

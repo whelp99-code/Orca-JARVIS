@@ -10,6 +10,8 @@ GIT=/opt/homebrew/bin/git
 KEY="$RUNTIME/secrets/portfolio-local.key"
 SSH_KEY=/Users/jmpark/.ssh/jarvis-portfolio-ingest
 KNOWN_HOSTS=/Users/jmpark/.ssh/known_hosts
+# Destination renames require verified host-key provisioning first; see docs/portfolio-collectors.md.
+# Never bypass StrictHostKeyChecking or copy an old IP entry under a new name without verification.
 INGEST_SSH_TARGET="${JARVIS_PORTFOLIO_INGEST_SSH_TARGET:-jm@jm-omachy}"
 
 [[ "$RELEASE" =~ ^$RUNTIME/control-center/releases/[0-9a-f]{40}$ ]]

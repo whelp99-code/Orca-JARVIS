@@ -18,7 +18,7 @@ WHERE evidence_ref LIKE '%jm-acloud.alpines-goldeye.ts.net%'
    OR evidence_ref LIKE '%100.87.81.57%';
 
 UPDATE workboard_works
-SET evidence_ref = REPLACE(
+SET evidence_ref = REPLACE(REPLACE(
   REPLACE(
     REPLACE(
       REPLACE(
@@ -38,5 +38,7 @@ SET evidence_ref = REPLACE(
     'https://jm-acloud.alpines-goldeye.ts.net:3010',
       'https://jm-omachy.alpines-goldeye.ts.net:8451'),
   'http://jm-acloud.alpines-goldeye.ts.net:8451',
+  'https://jm-omachy.alpines-goldeye.ts.net:8451'),
+  'https://jm-acloud.alpines-goldeye.ts.net:8451',
   'https://jm-omachy.alpines-goldeye.ts.net:8451')
 WHERE work_id IN (SELECT work_id FROM workboard_evidence_ref_host_remap_20261016);

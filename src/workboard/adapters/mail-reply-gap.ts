@@ -12,7 +12,12 @@ export function resolveMailReplyGapBaseUrl(
   env: NodeJS.ProcessEnv = process.env,
 ): string {
   const configured = env.JARVIS_MAIL_REPLY_GAP_BASE_URL?.trim();
-  return configured && configured.length > 0 ? configured : MAIL_REPLY_GAP_BASE_URL_DEFAULT;
+  const value = configured && configured.length > 0 ? configured : MAIL_REPLY_GAP_BASE_URL_DEFAULT;
+  let url: URL;
+  try { url = new URL(value); } catch { throw new Error("MAIL_REPLY_GAP_LINK_INVALID"); }
+  if ((url.protocol !== "http:" && url.protocol !== "https:") || url.hostname.length === 0
+    || url.username.length > 0 || url.password.length > 0) throw new Error("MAIL_REPLY_GAP_LINK_INVALID");
+  return url.origin;
 }
 
 /** A snapshot may repeat this origin only. */
