@@ -22,7 +22,7 @@ function migratedDb(evidenceRef = OLD, source = "linux:mail:reply-gap:v1"): Data
     "w1", "s1", "msg:41", "41", source, 1, "waiting", "회신: test",
     evidenceRef, "2026-10-01T00:00:00.000Z", "2026-10-01T00:00:00.000Z", "a1",
   );
-  db.exec(readFileSync(resolve("migrations/106_workboard_reply_gap_evidence_host.sql"), "utf8"));
+  db.exec(readFileSync(resolve("migrations/109_workboard_reply_gap_evidence_host.sql"), "utf8"));
   return db;
 }
 
@@ -86,7 +86,7 @@ describe("workboard reply-gap evidence_ref host migration", () => {
     try {
       const board = new WorkboardStore(authority.db);
       authority.db.exec(readFileSync(resolve("migrations/101_workboard_attention.sql"), "utf8"));
-      authority.db.exec(readFileSync(resolve("migrations/106_workboard_reply_gap_evidence_host.sql"), "utf8"));
+      authority.db.exec(readFileSync(resolve("migrations/109_workboard_reply_gap_evidence_host.sql"), "utf8"));
       expect(authority.db.pragma("foreign_keys", { simple: true })).toBe(1);
       projectMailReplyGaps(board, {
         observedAt: "2026-10-01T00:00:00.000Z",

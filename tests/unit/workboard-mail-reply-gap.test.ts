@@ -14,7 +14,7 @@ function store(): WorkboardStore {
   const db = new Database(":memory:");
   const board = new WorkboardStore(db);
   db.exec(readFileSync(resolve("migrations/101_workboard_attention.sql"), "utf8"));
-  db.exec(readFileSync(resolve("migrations/106_workboard_reply_gap_evidence_host.sql"), "utf8"));
+  db.exec(readFileSync(resolve("migrations/109_workboard_reply_gap_evidence_host.sql"), "utf8"));
   return board;
 }
 
