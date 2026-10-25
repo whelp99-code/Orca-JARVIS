@@ -121,12 +121,14 @@ export function createPriceFinanceRuntime(
         throw new JarvisError("CORE5_NATIVE_READ_SCOPE_DENIED");
       }
       session ??= authenticate();
-      const own = await session;
+      const usedSession = session;
+      const own = await usedSession;
       if (closed) throw new JarvisError("CORE5_NATIVE_READ_FENCE_CHANGED");
       const url = new URL(input.path, ORIGIN);
       for (const [key, value] of Object.entries(input.query)) url.searchParams.set(key, value);
       if (url.origin !== ORIGIN || !allowed.includes(url.pathname)) throw new JarvisError("CORE5_NATIVE_READ_SCOPE_DENIED");
       const response = await exchange({ method: "GET", url, headers: { cookie: own.cookie, accept: "application/json" } });
+      if (response.status === 401 && session === usedSession) session = undefined;
       return { status: response.status, body: response.body };
     },
   };
@@ -136,7 +138,8 @@ export function createPriceFinanceRuntime(
     async readCompanyBinding() {
       if (closed) throw new JarvisError("CORE5_NATIVE_READ_FENCE_CHANGED");
       session ??= authenticate();
-      const own = await session;
+      const usedSession = session;
+      const own = await usedSession;
       if (closed) throw new JarvisError("CORE5_NATIVE_READ_FENCE_CHANGED");
       // Identity metadata is separate from the three frozen finance.read views.
       const response = await exchange({
@@ -144,6 +147,7 @@ export function createPriceFinanceRuntime(
         headers: { cookie: own.cookie, accept: "application/json" },
       });
       if (closed) throw new JarvisError("CORE5_NATIVE_READ_FENCE_CHANGED");
+      if (response.status === 401 && session === usedSession) session = undefined;
       if (response.status !== 200) throw new JarvisError("CORE5_NATIVE_READ_REFUSED");
       let value: unknown;
       try { value = JSON.parse(response.body); }

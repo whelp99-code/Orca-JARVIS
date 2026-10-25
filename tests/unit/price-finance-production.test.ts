@@ -45,6 +45,157 @@ function exchange(role = "viewer", company_id = company) {
   });
 }
 
+const consumers = ["finance", "binding"] as const;
+type Consumer = typeof consumers[number];
+function read(runtime: ReturnType<typeof createPriceFinanceRuntime>, consumer: Consumer) {
+  return consumer === "finance" ? runtime.reader.read(request) : runtime.readCompanyBinding();
+}
+function success(input: Parameters<PriceHttpExchange>[0]) {
+  return { status: 200, body: input.url.pathname.endsWith("/crm-company-binding")
+    ? JSON.stringify(nativeBinding) : body };
+}
+
+describe("Price viewer session invalidation", () => {
+  it.each(consumers)("rejects %s 401 once and authenticates only the next explicit cross-consumer request", async consumer => {
+    const wire = exchange();
+    const normal = wire.getMockImplementation();
+    if (normal === undefined) throw new Error("wire implementation required");
+    let reads = 0;
+    wire.mockImplementation(async input => input.method !== "GET" ? normal(input)
+      : ++reads === 1 ? { status: 401, body: "{}" } : success(input));
+    const runtime = createPriceFinanceRuntime(credential(), wire);
+    try {
+      await expect(read(runtime, consumer)).rejects.toMatchObject({ code: "CORE5_NATIVE_READ_REFUSED" });
+      expect(reads).toBe(1);
+      expect(wire.mock.calls.filter(([input]) => input.url.pathname === "/api/login")).toHaveLength(1);
+      await read(runtime, consumer === "finance" ? "binding" : "finance");
+      expect(reads).toBe(2);
+      expect(wire.mock.calls.filter(([input]) => input.url.pathname === "/api/login")).toHaveLength(2);
+    } finally { await runtime.close(); }
+  });
+  it.each(consumers)("bounds repeated %s 401s to one login and one read per explicit request", async consumer => {
+    const wire = exchange();
+    const normal = wire.getMockImplementation();
+    if (normal === undefined) throw new Error("wire implementation required");
+    wire.mockImplementation(async input => input.method === "GET" ? { status: 401, body: "{}" } : normal(input));
+    const runtime = createPriceFinanceRuntime(credential(), wire);
+    try {
+      for (let count = 1; count <= 3; count++) {
+        await expect(read(runtime, consumer)).rejects.toMatchObject({ code: "CORE5_NATIVE_READ_REFUSED" });
+        expect(wire.mock.calls.filter(([input]) => input.url.pathname === "/api/login")).toHaveLength(count);
+        expect(wire.mock.calls.filter(([input]) => input.method === "GET")).toHaveLength(count);
+      }
+    } finally { await runtime.close(); }
+  });
+  it.each(consumers.flatMap(consumer => ([403, 404, 409, 429, 500, "transport"] as const).map(status => ({ consumer, status }))))(
+    "keeps the session after $consumer $status", async ({ consumer, status }) => {
+      const wire = exchange();
+      const normal = wire.getMockImplementation();
+      if (normal === undefined) throw new Error("wire implementation required");
+      const failure = new Error("synthetic transport failure");
+      let reads = 0;
+      wire.mockImplementation(async input => {
+        if (input.method !== "GET") return normal(input);
+        if (++reads !== 1) return success(input);
+        if (status === "transport") throw failure;
+        return { status, body: "{}" };
+      });
+      const runtime = createPriceFinanceRuntime(credential(), wire);
+      try {
+        if (status === "transport") await expect(read(runtime, consumer)).rejects.toBe(failure);
+        else await expect(read(runtime, consumer)).rejects.toMatchObject({ code: "CORE5_NATIVE_READ_REFUSED" });
+        await read(runtime, consumer);
+        expect(reads).toBe(2);
+        expect(wire.mock.calls.filter(([input]) => input.url.pathname === "/api/login")).toHaveLength(1);
+      } finally { await runtime.close(); }
+    },
+  );
+  it.each(consumers)("does not let an old concurrent %s 401 clear a newer shared session", async consumer => {
+    const started = Promise.withResolvers<void>();
+    const delivery = Promise.withResolvers<Awaited<ReturnType<PriceHttpExchange>>>();
+    const wire = exchange();
+    const normal = wire.getMockImplementation();
+    if (normal === undefined) throw new Error("wire implementation required");
+    let logins = 0, reads = 0;
+    wire.mockImplementation(async input => {
+      if (input.url.pathname === "/api/login") logins++;
+      if (input.method !== "GET") return normal(input);
+      reads++;
+      if (reads === 1) { started.resolve(); return delivery.promise; }
+      return reads === 2 ? { status: 401, body: "{}" } : success(input);
+    });
+    const runtime = createPriceFinanceRuntime(credential(), wire);
+    const pending = read(runtime, consumer);
+    const denied = expect(pending).rejects.toMatchObject({ code: "CORE5_NATIVE_READ_REFUSED" });
+    try {
+      await started.promise;
+      const other = consumer === "finance" ? "binding" : "finance";
+      await expect(read(runtime, other)).rejects.toMatchObject({ code: "CORE5_NATIVE_READ_REFUSED" });
+      await read(runtime, other);
+      expect(logins).toBe(2);
+      delivery.resolve({ status: 401, body: "{}" });
+      await denied;
+      await read(runtime, consumer);
+      expect(logins).toBe(2);
+      expect(reads).toBe(4);
+    } finally {
+      delivery.resolve({ status: 401, body: "{}" });
+      await denied;
+      await runtime.close();
+    }
+  });
+  it.each(consumers.flatMap(consumer => [
+    { role: "owner", company_id: company }, { role: "viewer", company_id: "foreign" },
+  ].map(identity => ({ consumer, ...identity }))))("rechecks viewer identity after $consumer invalidation %#", async ({ consumer, role, company_id }) => {
+    const wire = exchange();
+    const normal = wire.getMockImplementation();
+    if (normal === undefined) throw new Error("wire implementation required");
+    let logins = 0;
+    wire.mockImplementation(async input => {
+      if (input.url.pathname === "/api/login" && ++logins === 2) return {
+        status: 200, cookie: "price_session=unit-invalid-identity",
+        body: JSON.stringify({ csrf: "unit-csrf", companies: [{ id: company_id, role }] }),
+      };
+      return input.method === "GET" ? { status: 401, body: "{}" } : normal(input);
+    });
+    const runtime = createPriceFinanceRuntime(credential(), wire);
+    try {
+      await expect(read(runtime, consumer)).rejects.toMatchObject({ code: "CORE5_NATIVE_READ_REFUSED" });
+      await expect(read(runtime, consumer)).rejects.toMatchObject({ code: "PRICE_READ_IDENTITY_REFUSED" });
+      expect(logins).toBe(2);
+      expect(wire.mock.calls.filter(([input]) => input.method === "GET")).toHaveLength(1);
+    } finally { await runtime.close(); }
+  });
+  it.each(consumers)("preserves close fencing while the next %s login is pending", async consumer => {
+    const started = Promise.withResolvers<void>();
+    const login = Promise.withResolvers<Awaited<ReturnType<PriceHttpExchange>>>();
+    const wire = exchange();
+    const normal = wire.getMockImplementation();
+    if (normal === undefined) throw new Error("wire implementation required");
+    let logins = 0;
+    wire.mockImplementation(async input => {
+      if (input.url.pathname === "/api/login" && ++logins === 2) { started.resolve(); return login.promise; }
+      return input.method === "GET" ? { status: 401, body: "{}" } : normal(input);
+    });
+    const runtime = createPriceFinanceRuntime(credential(), wire);
+    await expect(read(runtime, consumer)).rejects.toMatchObject({ code: "CORE5_NATIVE_READ_REFUSED" });
+    const pending = read(runtime, consumer);
+    // Also settle the barrier on an incorrectly reused session, so red runs do not hang.
+    void pending.catch(() => started.resolve());
+    const denied = expect(pending).rejects.toMatchObject({ code: "CORE5_NATIVE_READ_FENCE_CHANGED" });
+    await started.promise;
+    const closing = runtime.close();
+    login.resolve({ status: 200, cookie: "price_session=unit-next",
+      body: JSON.stringify({ csrf: "unit-csrf", companies: [{ id: company, role: "viewer" }] }) });
+    await Promise.all([closing, denied]);
+    expect(logins).toBe(2);
+    expect(wire.mock.calls.filter(([input]) => input.method === "GET")).toHaveLength(1);
+    const count = wire.mock.calls.length;
+    await expect(read(runtime, consumer)).rejects.toBeDefined();
+    expect(wire.mock.calls).toHaveLength(count);
+  });
+});
+
 describe("Price operating finance read composition", () => {
   it("reads native company registration under the existing viewer without financial authority", async () => {
     const raw = JSON.stringify(nativeBinding);
