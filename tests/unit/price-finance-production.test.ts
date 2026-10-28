@@ -206,6 +206,38 @@ describe("Price viewer session invalidation", () => {
     expect(logout?.headers.cookie).toBe("price_session=unit-session");
     expect(logout?.headers["x-csrf-token"]).toBe("unit-csrf");
   });
+  it.each(consumers)("logs out the retired %s session after the current logout fails", async consumer => {
+    const wire = exchange();
+    const normal = wire.getMockImplementation();
+    if (normal === undefined) throw new Error("wire implementation required");
+    let logins = 0;
+    wire.mockImplementation(async input => {
+      if (input.url.pathname === "/api/login") {
+        logins += 1;
+        return logins === 1
+          ? { status: 200, cookie: "price_session=retired-session",
+              body: JSON.stringify({ csrf: "retired-csrf", companies: [{ id: company, role: "viewer" }] }) }
+          : { status: 200, cookie: "price_session=current-session",
+              body: JSON.stringify({ csrf: "current-csrf", companies: [{ id: company, role: "viewer" }] }) };
+      }
+      if (input.method === "GET" && input.headers.cookie === "price_session=retired-session") return { status: 401, body: "{}" };
+      if (input.url.pathname === "/api/logout" && input.headers.cookie === "price_session=current-session") {
+        return { status: 503, body: "{}" };
+      }
+      if (input.method === "GET") return { status: 200, body: consumer === "binding" ? JSON.stringify(nativeBinding) : body };
+      return normal(input);
+    });
+    const runtime = createPriceFinanceRuntime(credential(), wire);
+    await expect(read(runtime, consumer)).rejects.toMatchObject({ code: "CORE5_NATIVE_READ_REFUSED" });
+    await expect(read(runtime, consumer)).resolves.toBeDefined();
+    await expect(runtime.close()).rejects.toMatchObject({ code: "PRICE_READ_LOGOUT_REFUSED" });
+    const logouts = wire.mock.calls.map(([input]) => input).filter(input => input.url.pathname === "/api/logout");
+    expect(logouts.map(input => input.headers.cookie)).toEqual([
+      "price_session=current-session", "price_session=retired-session",
+    ]);
+    await expect(runtime.close()).resolves.toBeUndefined();
+    expect(wire.mock.calls.filter(([input]) => input.url.pathname === "/api/logout")).toHaveLength(2);
+  });
 });
 
 describe("Price operating finance read composition", () => {

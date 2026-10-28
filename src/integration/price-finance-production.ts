@@ -179,16 +179,20 @@ export function createPriceFinanceRuntime(
       const issued = session === undefined ? [...retired] : [session, ...retired];
       session = undefined;
       retired.length = 0;
+      const failures: unknown[] = [];
       for (const issuedSession of issued) {
         let own: Awaited<typeof issuedSession>;
         try { own = await issuedSession; }
         catch { continue; } // A refused login created no usable session to revoke.
-        const response = await exchange({
-          method: "POST", url: new URL("/api/logout", ORIGIN),
-          headers: { cookie: own.cookie, "x-csrf-token": own.csrf, "content-type": "application/json" }, body: "{}",
-        });
-        if (response.status !== 200) throw new JarvisError("PRICE_READ_LOGOUT_REFUSED");
+        try {
+          const response = await exchange({
+            method: "POST", url: new URL("/api/logout", ORIGIN),
+            headers: { cookie: own.cookie, "x-csrf-token": own.csrf, "content-type": "application/json" }, body: "{}",
+          });
+          if (response.status !== 200) failures.push(new JarvisError("PRICE_READ_LOGOUT_REFUSED"));
+        } catch (error) { failures.push(error); }
       }
+      if (failures.length > 0) throw failures[0];
     },
   };
 }
