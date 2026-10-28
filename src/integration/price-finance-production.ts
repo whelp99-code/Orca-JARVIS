@@ -90,6 +90,12 @@ export function createPriceFinanceRuntime(
   const fence = randomUUID();
   let closed = false;
   let session: Promise<Readonly<{ cookie: string; csrf: string }>> | undefined;
+  const retired: Promise<Readonly<{ cookie: string; csrf: string }>>[] = [];
+  function invalidate(usedSession: Promise<Readonly<{ cookie: string; csrf: string }>>) {
+    if (session !== usedSession) return;
+    retired.push(usedSession);
+    session = undefined;
+  }
   async function authenticate() {
     const response = await exchange({
       method: "POST", url: new URL("/api/login", ORIGIN),
@@ -128,7 +134,7 @@ export function createPriceFinanceRuntime(
       for (const [key, value] of Object.entries(input.query)) url.searchParams.set(key, value);
       if (url.origin !== ORIGIN || !allowed.includes(url.pathname)) throw new JarvisError("CORE5_NATIVE_READ_SCOPE_DENIED");
       const response = await exchange({ method: "GET", url, headers: { cookie: own.cookie, accept: "application/json" } });
-      if (response.status === 401 && session === usedSession) session = undefined;
+      if (response.status === 401) invalidate(usedSession);
       return { status: response.status, body: response.body };
     },
   };
@@ -147,7 +153,7 @@ export function createPriceFinanceRuntime(
         headers: { cookie: own.cookie, accept: "application/json" },
       });
       if (closed) throw new JarvisError("CORE5_NATIVE_READ_FENCE_CHANGED");
-      if (response.status === 401 && session === usedSession) session = undefined;
+      if (response.status === 401) invalidate(usedSession);
       if (response.status !== 200) throw new JarvisError("CORE5_NATIVE_READ_REFUSED");
       let value: unknown;
       try { value = JSON.parse(response.body); }
@@ -170,15 +176,19 @@ export function createPriceFinanceRuntime(
     async close() {
       if (closed) return;
       closed = true;
-      if (session === undefined) return;
-      let own: Awaited<NonNullable<typeof session>>;
-      try { own = await session; }
-      catch { return; } // A refused login created no usable session to revoke.
-      const response = await exchange({
-        method: "POST", url: new URL("/api/logout", ORIGIN),
-        headers: { cookie: own.cookie, "x-csrf-token": own.csrf, "content-type": "application/json" }, body: "{}",
-      });
-      if (response.status !== 200) throw new JarvisError("PRICE_READ_LOGOUT_REFUSED");
+      const issued = session === undefined ? [...retired] : [session, ...retired];
+      session = undefined;
+      retired.length = 0;
+      for (const issuedSession of issued) {
+        let own: Awaited<typeof issuedSession>;
+        try { own = await issuedSession; }
+        catch { continue; } // A refused login created no usable session to revoke.
+        const response = await exchange({
+          method: "POST", url: new URL("/api/logout", ORIGIN),
+          headers: { cookie: own.cookie, "x-csrf-token": own.csrf, "content-type": "application/json" }, body: "{}",
+        });
+        if (response.status !== 200) throw new JarvisError("PRICE_READ_LOGOUT_REFUSED");
+      }
     },
   };
 }

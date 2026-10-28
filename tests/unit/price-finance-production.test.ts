@@ -194,6 +194,18 @@ describe("Price viewer session invalidation", () => {
     await expect(read(runtime, consumer)).rejects.toBeDefined();
     expect(wire.mock.calls).toHaveLength(count);
   });
+  it.each(consumers)("logs out the viewer cookie refused by an upstream %s 401", async consumer => {
+    const wire = exchange();
+    const normal = wire.getMockImplementation();
+    if (normal === undefined) throw new Error("wire implementation required");
+    wire.mockImplementation(async input => input.method === "GET" ? { status: 401, body: "{}" } : normal(input));
+    const runtime = createPriceFinanceRuntime(credential(), wire);
+    await expect(read(runtime, consumer)).rejects.toMatchObject({ code: "CORE5_NATIVE_READ_REFUSED" });
+    await runtime.close();
+    const logout = wire.mock.calls.map(([input]) => input).find(input => input.url.pathname === "/api/logout");
+    expect(logout?.headers.cookie).toBe("price_session=unit-session");
+    expect(logout?.headers["x-csrf-token"]).toBe("unit-csrf");
+  });
 });
 
 describe("Price operating finance read composition", () => {
