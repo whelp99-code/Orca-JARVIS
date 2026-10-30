@@ -11,12 +11,12 @@ const AT = "2026-10-16T03:00:00.000Z";
 const value: ProductHubResponse = {
   schema_version: 1, generated_at: AT,
   items: [
-    { id: "crm", state: "ready", observed_at: AT, count: 12, secondary_count: null, oldest_age_ms: null },
-    { id: "mail", state: "ready", observed_at: AT, count: 29, secondary_count: 17, oldest_age_ms: null },
-    { id: "price", state: "configured", observed_at: null, count: null, secondary_count: null, oldest_age_ms: null },
-    { id: "second_brain", state: "ready", observed_at: AT, count: 4, secondary_count: null, oldest_age_ms: null },
-    { id: "messenger", state: "no_data", observed_at: AT, count: 0, secondary_count: null, oldest_age_ms: null },
-    { id: "approvals", state: "ready", observed_at: AT, count: 2, secondary_count: null, oldest_age_ms: null },
+    { id: "crm", state: "ready", observed_at: AT, count: 12, secondary_count: null, oldest_age_ms: null, failure_code: null },
+    { id: "mail", state: "ready", observed_at: AT, count: 29, secondary_count: 17, oldest_age_ms: null, failure_code: null },
+    { id: "price", state: "configured", observed_at: null, count: null, secondary_count: null, oldest_age_ms: null, failure_code: null },
+    { id: "second_brain", state: "ready", observed_at: AT, count: 4, secondary_count: null, oldest_age_ms: null, failure_code: null },
+    { id: "messenger", state: "no_data", observed_at: AT, count: 0, secondary_count: null, oldest_age_ms: null, failure_code: null },
+    { id: "approvals", state: "ready", observed_at: AT, count: 2, secondary_count: null, oldest_age_ms: null, failure_code: null },
   ],
 };
 

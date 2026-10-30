@@ -6,18 +6,27 @@ import {
   PHONE_GATEWAY_LIMITS,
   SECURITY,
   type PhoneErrorCode,
+  PHONE_UPSTREAM_FAILURE_STAGES,
+  type PhoneUpstreamFailureStage,
 } from "./phone-gateway-protocol.js";
 import { inside } from "./phone-gateway-config.js";
 import { assetName } from "./phone-gateway-routes.js";
 
 export function writePhoneGatewayError(
   response: ServerResponse,
-  input: { readonly status?: number; readonly code: PhoneErrorCode; readonly requestId: string },
+  input: { readonly status?: number; readonly code: PhoneErrorCode; readonly requestId: string; readonly failureStage?: PhoneUpstreamFailureStage },
 ): void {
   const status = input.status ?? ERROR_STATUS[input.code];
+  const failureStage = input.failureStage !== undefined && PHONE_UPSTREAM_FAILURE_STAGES.includes(input.failureStage)
+    ? input.failureStage : undefined;
   writeJson(response, status, input.requestId, {
     schema_version: 1,
-    error: { code: input.code, message: "Phone gateway request rejected", request_id: input.requestId },
+    error: {
+      code: input.code,
+      message: "Phone gateway request rejected",
+      request_id: input.requestId,
+      ...(failureStage === undefined ? {} : { failure_stage: failureStage }),
+    },
   }, true);
 }
 

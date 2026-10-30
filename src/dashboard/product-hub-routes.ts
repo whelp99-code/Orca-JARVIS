@@ -8,7 +8,7 @@ import { pendingControlSummary } from "./control-request-read.js";
 import { hasSameOriginReadOrigin } from "./request-boundary.js";
 import { sessionMatchesCsrf } from "./session.js";
 import { writeDashboardError, writeDashboardJson } from "./http.js";
-import { productHubSchema, type ProductHubResponse } from "./product-hub-contract.js";
+import { HUB_FAILURE_CODES, productHubSchema, type HubFailureCode, type ProductHubResponse } from "./product-hub-contract.js";
 
 type HubItem = ProductHubResponse["items"][number];
 type HubState = HubItem["state"];
@@ -142,17 +142,18 @@ function mailCard(
   now: Date,
 ): HubItem {
   if (settled === undefined) return card("mail", "unconfigured");
-  if ("failed" in settled) return card("mail", settled.failed);
+  if ("failed" in settled) return card("mail", settled.failed, null, null, null, null, publishedFailureCode(settled.code));
   const snapshot = settled.value;
   const classified = classifyPersonalSnapshot(snapshot, "mail", now);
   const state = connectorState(classified.state, classified.reason);
-  if (state === "denied" || state === "unconfigured" || state === "unavailable") return card("mail", state);
+  const failure = mailFailureCode(snapshot.status, classified.reason, state);
+  if (state === "denied" || state === "unconfigured" || state === "unavailable") return card("mail", state, snapshot.observed_at, null, null, null, failure);
   const primary = verifiedCount(snapshot.values.message_count);
   const secondary = verifiedCount(snapshot.values.thread_count);
   if (state === "no_data" && primary === undefined && secondary === undefined) {
     return card("mail", "no_data", snapshot.observed_at, 0, 0, null);
   }
-  return card("mail", state, snapshot.observed_at, primary ?? null, secondary ?? null, null);
+  return card("mail", state, snapshot.observed_at, primary ?? null, secondary ?? null, null, failure);
 }
 
 function messengerCard(
@@ -160,7 +161,7 @@ function messengerCard(
   now: Date,
 ): HubItem {
   if (settled === undefined) return card("messenger", "unconfigured");
-  if ("failed" in settled) return card("messenger", settled.failed);
+  if ("failed" in settled) return card("messenger", settled.failed, null, null, null, null, publishedFailureCode(settled.code));
   const snapshot = settled.value;
   const classified = classifyPersonalSnapshot(snapshot, "messenger", now);
   const state = connectorState(classified.state, classified.reason);
@@ -211,6 +212,17 @@ function verifiedCount(value: unknown): number | undefined {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
+function publishedFailureCode(code: string): HubFailureCode | null {
+  return HUB_FAILURE_CODES.includes(code as HubFailureCode) ? code as HubFailureCode : null;
+}
+
+function mailFailureCode(status: PersonalSourceSnapshot["status"], reason: string, state: HubState): HubFailureCode | null {
+  if (state !== "unavailable" && state !== "stale") return null;
+  if (reason === "source_stale") return "MAIL_FRESHNESS_REJECTED";
+  if (status === "unavailable") return "MAIL_STATUS_NOT_READY";
+  return null;
+}
+
 function card(
   id: HubItem["id"],
   state: HubState,
@@ -218,6 +230,7 @@ function card(
   count: number | null = null,
   secondary_count: number | null = null,
   oldest_age_ms: number | null = null,
+  failure_code: HubFailureCode | null = null,
 ): HubItem {
-  return { id, state, observed_at, count, secondary_count, oldest_age_ms };
+  return { id, state, observed_at, count, secondary_count, oldest_age_ms, failure_code };
 }
