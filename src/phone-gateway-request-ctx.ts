@@ -2,6 +2,7 @@ import type { createPhoneMemoryReconcile } from "./phone-memory-reconcile.js";
 import type { IncomingMessage, ServerResponse } from "node:http";
 import type { PhoneGatewaySessionStore } from "./dashboard/phone-session.js";
 import type { PhoneAuthorityReadAdapter, PhoneErrorCode, PhoneGatewayConfig } from "./phone-gateway-protocol.js";
+import type { PhoneUpstreamFailureStage } from "./phone-gateway-protocol.js";
 import type { createPhoneRateLimiter } from "./phone-gateway-adapter.js";
 import type { createPhoneMemoryContext } from "./phone-memory-context.js";
 
@@ -36,4 +37,5 @@ export type DispatchUpdate = {
   readonly code?: PhoneErrorCode | "ok";
   readonly status?: number;
   readonly ownerHex?: string | null;
+  readonly failureStage?: PhoneUpstreamFailureStage;
 };

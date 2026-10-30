@@ -55,11 +55,11 @@ export function createPhoneAuthorityReadAdapter(input: { readonly upstream: stri
       return Reflect.get(result.value, "schema_version") === 1 && Reflect.get(result.value, "authority") === "ready";
     },
     async proxy(request: AdapterProxy): Promise<AdapterResult> {
-      if (upstreamInflight >= PHONE_GATEWAY_LIMITS.concurrentUpstream) return { kind: "unavailable" };
-      if (!await ensure() || csrf === undefined) return { kind: "unavailable" };
+      if (upstreamInflight >= PHONE_GATEWAY_LIMITS.concurrentUpstream) return { kind: "unavailable", stage: "slot_rejected" };
+      if (!await ensure() || csrf === undefined) return { kind: "unavailable", stage: "bootstrap_failed" };
       if (!request.isAuthenticated()) return { kind: "unauthenticated" };
       // Other callers may have occupied the available slots while bootstrap ran.
-      if (upstreamInflight >= PHONE_GATEWAY_LIMITS.concurrentUpstream) return { kind: "unavailable" };
+      if (upstreamInflight >= PHONE_GATEWAY_LIMITS.concurrentUpstream) return { kind: "unavailable", stage: "slot_rejected" };
       const headers: Record<string, string> = {
         Accept: "application/json",
         "X-JARVIS-CSRF": csrf,
@@ -78,8 +78,8 @@ export function createPhoneAuthorityReadAdapter(input: { readonly upstream: stri
           headers, body: request.body, cap: request.responseCap, timeoutMs: PHONE_GATEWAY_LIMITS.totalTimeoutMs,
         });
         if (result.kind === "too_large") return { kind: "too_large" };
-        if (result.kind !== "ok") return { kind: "unavailable" };
-        if (result.status === 403) { csrf = undefined; return { kind: "unavailable" }; }
+        if (result.kind !== "ok") return { kind: "unavailable", stage: "transport_or_json" };
+        if (result.status === 403) { csrf = undefined; return { kind: "unavailable", stage: "upstream_403" }; }
         if (![200, 400, 403, 404, 409, 413, 503].includes(result.status)) return { kind: "invalid" };
         if (Reflect.get(result.value, "schema_version") !== 1) return { kind: "invalid" };
         return { kind: "ok", status: result.status, body: result.value };

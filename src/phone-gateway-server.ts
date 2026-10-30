@@ -10,6 +10,7 @@ import {
   PHONE_ERROR_CODES,
   PhoneGatewayError,
   type PhoneErrorCode,
+  type PhoneUpstreamFailureStage,
   type PhoneGatewayConfig,
 } from "./phone-gateway-protocol.js";
 import { parseUpstream } from "./phone-gateway-config.js";
@@ -93,12 +94,12 @@ async function handleRequest(ctx: PhoneGatewayRequestCtx): Promise<void> {
   let code: PhoneErrorCode | "ok" = PHONE_ERROR_CODES.PHONE_REQUEST_INVALID;
   let status = 400;
   let ownerHex: string | null = null;
+  let failureStage: PhoneUpstreamFailureStage | undefined;
   const finish = (): void => {
-    ctx.audit(JSON.stringify({
-      schema_version: 1, event: "phone_gateway_request", request_id: requestId,
-      occurred_at: new Date(ctx.now()).toISOString(), route_class: routeClass, outcome, code, status,
-      duration_bucket: durationBucket(Date.now() - started), owner_digest16: ownerHex,
-    }));
+    ctx.audit(JSON.stringify(phoneGatewayRequestAudit({
+      requestId, occurredAt: new Date(ctx.now()).toISOString(), routeClass, outcome, code, status,
+      durationBucket: durationBucket(Date.now() - started), ownerHex, failureStage,
+    })));
   };
   try {
     await dispatchRequest(ctx, requestId, (update) => {
@@ -107,6 +108,7 @@ async function handleRequest(ctx: PhoneGatewayRequestCtx): Promise<void> {
       code = update.code ?? code;
       status = update.status ?? status;
       ownerHex = update.ownerHex ?? ownerHex;
+      failureStage = update.failureStage ?? failureStage;
     });
   } catch (error) {
     if (error instanceof Error && ctx.response.headersSent) { ctx.response.destroy(); finish(); return; }
@@ -115,6 +117,32 @@ async function handleRequest(ctx: PhoneGatewayRequestCtx): Promise<void> {
     writePhoneGatewayError(ctx.response, { code, requestId });
   }
   finish();
+}
+
+export function phoneGatewayRequestAudit(input: {
+  readonly requestId: string;
+  readonly occurredAt: string;
+  readonly routeClass: string;
+  readonly outcome: string;
+  readonly code: PhoneErrorCode | "ok";
+  readonly status: number;
+  readonly durationBucket: ReturnType<typeof durationBucket>;
+  readonly ownerHex: string | null;
+  readonly failureStage?: PhoneUpstreamFailureStage;
+}): Readonly<Record<string, string | number | null>> {
+  return {
+    schema_version: 1,
+    event: "phone_gateway_request",
+    request_id: input.requestId,
+    occurred_at: input.occurredAt,
+    route_class: input.routeClass,
+    outcome: input.outcome,
+    code: input.code,
+    status: input.status,
+    duration_bucket: input.durationBucket,
+    owner_digest16: input.ownerHex,
+    ...(input.failureStage === undefined ? {} : { failure_stage: input.failureStage }),
+  };
 }
 
 function durationBucket(ms: number): "lt100ms" | "lt1s" | "lt10s" | "ge10s" {
