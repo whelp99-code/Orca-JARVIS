@@ -18,6 +18,7 @@ export type ProductHubRead = {
   readonly clock: () => Date;
   readonly db: DashboardApiInput["db"];
   readonly mailCandidates?: { read(signal?: AbortSignal): Promise<MailCandidatesSummary> };
+  readonly probeSignal?: AbortSignal;
   readonly mailSource?: { read(now: Date): Promise<PersonalSourceSnapshot> };
   readonly messengerSource?: { read(now: Date): Promise<PersonalSourceSnapshot> };
   readonly priceConfigured: boolean;
@@ -52,11 +53,11 @@ export async function tryHandleProductHub(input: DashboardApiInput): Promise<boo
 
 export async function readProductHub(input: ProductHubRead): Promise<ProductHubResponse> {
   const now = input.clock();
-  const deadline = AbortSignal.timeout(PRODUCT_HUB_PROBE_BUDGET_MS);
+  const deadline = input.probeSignal ?? AbortSignal.timeout(PRODUCT_HUB_PROBE_BUDGET_MS);
   const [candidates, mail, messenger] = await Promise.all([
-    settle(input.mailCandidates?.read(deadline)),
-    settle(input.mailSource?.read(now)),
-    settle(input.messengerSource?.read(now)),
+    settle(input.mailCandidates?.read(deadline), deadline),
+    settle(input.mailSource?.read(now), deadline),
+    settle(input.messengerSource?.read(now), deadline),
   ]);
   const body = {
     schema_version: 1 as const,
@@ -82,7 +83,7 @@ function memoryReadConfigured(input: DashboardApiInput): boolean {
   }
 }
 
-async function settle<T>(read: Promise<T> | undefined): Promise<{ readonly value: T } | SourceFailure | undefined> {
+async function settle<T>(read: Promise<T> | undefined, deadline: AbortSignal): Promise<{ readonly value: T } | SourceFailure | undefined> {
   if (read === undefined) return undefined;
   let timer: ReturnType<typeof setTimeout> | undefined;
   const bounded = new Promise<T>((resolve, reject) => {
@@ -92,9 +93,18 @@ async function settle<T>(read: Promise<T> | undefined): Promise<{ readonly value
   try {
     return { value: await bounded };
   } catch (error) {
-    if (!(error instanceof JarvisError)) throw error;
-    return { failed: identityScopeDenied(error.code) ? "denied" : "unavailable", code: error.code };
+    const code = readerFailureCode(error, deadline);
+    if (code === undefined) throw error;
+    return { failed: identityScopeDenied(code) ? "denied" : "unavailable", code };
   }
+}
+
+function readerFailureCode(error: unknown, deadline: AbortSignal): string | undefined {
+  if (error instanceof JarvisError) return error.code;
+  if (deadline.aborted && error === deadline.reason && error instanceof DOMException && error.name === "TimeoutError") {
+    return "PRODUCT_HUB_PROBE_DEADLINE";
+  }
+  return undefined;
 }
 
 function crmCard(

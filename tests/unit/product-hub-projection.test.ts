@@ -4,6 +4,7 @@ import { AuthorityDb } from "../../src/db.js";
 import { JarvisError } from "../../src/jarvis-error.js";
 import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
 import type { MailCandidatesSummary } from "../../src/integration/mail-candidates-contract.js";
+import { createMailCandidatesRuntime } from "../../src/integration/mail-candidates-production.js";
 import type { PersonalSourceSnapshot } from "../../src/personal-connector-types.js";
 import { readProductHub, type ProductHubRead } from "../../src/dashboard/product-hub-routes.js";
 import { PRODUCT_HUB_PROBE_BUDGET_MS } from "../../src/product-hub-budget.js";
@@ -196,6 +197,39 @@ describe("product hub projection", () => {
       expect(body.items.find(item => item.id === "approvals")).toMatchObject({ state: "no_data" });
     } finally {
       vi.useRealTimers();
+      db.close();
+    }
+  });
+  it("keeps the hub when the mail reader’s probe abort wins before the settle timer", async () => {
+    const db = new AuthorityDb(":memory:");
+    await db.migrate();
+    const runtime = createMailCandidatesRuntime({});
+    const reason = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    const probeSignal = AbortSignal.abort(reason);
+    try {
+      await expect(runtime.read(probeSignal)).rejects.toMatchObject({ code: "PRODUCT_HUB_PROBE_DEADLINE" });
+      const started = Date.now();
+      const body = await project({
+        db, probeSignal, mailCandidates: runtime,
+        mailSource: { read: async () => snapshot("current", { message_count: 11, thread_count: 3, observed_at: NOW }) },
+      });
+      expect(Date.now() - started).toBeLessThan(PRODUCT_HUB_PROBE_BUDGET_MS);
+      expect(body.items.find(item => item.id === "crm")).toMatchObject({ state: "unavailable" });
+      expect(body.items.find(item => item.id === "second_brain")).toMatchObject({ state: "unavailable" });
+      expect(body.items.find(item => item.id === "mail")).toMatchObject({ state: "ready", count: 11 });
+      const nativeFirst = await project({
+        db, probeSignal,
+        mailCandidates: { read(signal) { return Promise.reject(signal?.reason); } },
+        mailSource: { read: async () => snapshot("current", { message_count: 3, thread_count: 1, observed_at: NOW }) },
+      });
+      expect(nativeFirst.items.find(item => item.id === "crm")).toMatchObject({ state: "unavailable" });
+      expect(nativeFirst.items.find(item => item.id === "mail")).toMatchObject({ state: "ready", count: 3 });
+      await expect(project({
+        db, probeSignal,
+        mailSource: { read: async () => { throw new Error("boom"); } },
+      })).rejects.toThrow("boom");
+    } finally {
+      runtime.close();
       db.close();
     }
   });

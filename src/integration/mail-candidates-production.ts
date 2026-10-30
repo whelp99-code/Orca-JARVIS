@@ -54,12 +54,23 @@ export function createMailCandidatesRuntime(
   return {
     async read(signal) {
       const scoped = signal === undefined ? lifetime.signal : AbortSignal.any([lifetime.signal, signal, AbortSignal.timeout(PRODUCT_HUB_PROBE_BUDGET_MS)]);
-      scoped.throwIfAborted();
-      const [crmValue, sbValue] = await Promise.all([readSource(crm, scoped), readSource(sb, scoped)]);
-      scoped.throwIfAborted();
-      return { schema_version: 1, proof_level: "native-read", authority: "none",
-        observed_at: new Date().toISOString(), crm: crmValue, sb: sbValue };
+      try {
+        scoped.throwIfAborted();
+        const [crmValue, sbValue] = await Promise.all([readSource(crm, scoped), readSource(sb, scoped)]);
+        scoped.throwIfAborted();
+        return { schema_version: 1, proof_level: "native-read", authority: "none",
+          observed_at: new Date().toISOString(), crm: crmValue, sb: sbValue };
+      } catch (error) {
+        if (!ownProbeTimeout(error, scoped)) throw error;
+        throw new JarvisError("PRODUCT_HUB_PROBE_DEADLINE");
+      }
     },
     close() { lifetime.abort(); },
   };
+}
+
+function ownProbeTimeout(error: unknown, signal: AbortSignal): boolean {
+  if (!signal.aborted || !(error instanceof DOMException) || error.name !== "TimeoutError") return false;
+  const reason = signal.reason;
+  return reason instanceof DOMException && reason.name === "TimeoutError";
 }
