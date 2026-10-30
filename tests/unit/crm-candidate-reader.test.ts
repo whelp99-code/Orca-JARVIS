@@ -5,6 +5,9 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { afterAll, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { createCrmCandidateReader } from "../../src/integration/crm-candidate-reader.js";
+import { PRODUCT_HUB_PROBE_BUDGET_MS } from "../../src/product-hub-budget.js";
+import { PHONE_GATEWAY_LIMITS } from "../../src/phone-gateway-protocol.js";
+import { PRICE_HTTP_TIMEOUT_MS } from "../../src/integration/price-finance-production.js";
 
 const workspace = "75c2b088-e5aa-5396-9e9e-6dfd77e50048";
 const key = "unit-only-candidate-reader-key";
@@ -99,5 +102,23 @@ describe("native CRM candidate reader", () => {
     controller.abort();
     await expect(reader().read(controller.signal)).rejects.toMatchObject({ name: "AbortError" });
     expect(calls).toHaveLength(0);
+  });
+  it("binds the candidate exchange inside the gateway budget", async () => {
+    const signal = new AbortController().signal;
+    const seen: Array<{ timeoutMs?: number; signal?: AbortSignal }> = [];
+    const exchange = async (input: { timeoutMs?: number; signal?: AbortSignal; url: URL }) => {
+      seen.push({ timeoutMs: input.timeoutMs, signal: input.signal });
+      const count = input.url.pathname.endsWith("/count");
+      return { status: 200, body: JSON.stringify(count
+        ? { workspaceId: workspace, count: 0 }
+        : { workspaceId: workspace, count: 0, candidates: [] }) };
+    };
+    await createCrmCandidateReader({
+      base_url: origin, key_file: keyPath, workspace_id: workspace, principal: "unit-reader",
+    }, exchange).read(signal);
+    expect(seen).toHaveLength(2);
+    expect(seen.every(item => item.signal === signal && item.timeoutMs === PRODUCT_HUB_PROBE_BUDGET_MS)).toBe(true);
+    expect(PRODUCT_HUB_PROBE_BUDGET_MS).toBeLessThan(PHONE_GATEWAY_LIMITS.totalTimeoutMs);
+    expect(PRODUCT_HUB_PROBE_BUDGET_MS).toBeLessThan(PRICE_HTTP_TIMEOUT_MS);
   });
 });

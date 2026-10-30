@@ -1,6 +1,7 @@
 import type { DashboardApiInput } from "./api-routes.js";
 import type { MailCandidatesSummary } from "../integration/mail-candidates-contract.js";
 import { JarvisError } from "../jarvis-error.js";
+import { PRODUCT_HUB_PROBE_BUDGET_MS } from "../product-hub-budget.js";
 import { classifyPersonalSnapshot } from "../personal-connector-results.js";
 import type { PersonalConnectorState, PersonalSourceSnapshot } from "../personal-connector-types.js";
 import { pendingControlSummary } from "./control-request-read.js";
@@ -16,7 +17,7 @@ type SourceFailure = { readonly failed: "denied" | "unavailable"; readonly code:
 export type ProductHubRead = {
   readonly clock: () => Date;
   readonly db: DashboardApiInput["db"];
-  readonly mailCandidates?: { read(): Promise<MailCandidatesSummary> };
+  readonly mailCandidates?: { read(signal?: AbortSignal): Promise<MailCandidatesSummary> };
   readonly mailSource?: { read(now: Date): Promise<PersonalSourceSnapshot> };
   readonly messengerSource?: { read(now: Date): Promise<PersonalSourceSnapshot> };
   readonly priceConfigured: boolean;
@@ -51,8 +52,9 @@ export async function tryHandleProductHub(input: DashboardApiInput): Promise<boo
 
 export async function readProductHub(input: ProductHubRead): Promise<ProductHubResponse> {
   const now = input.clock();
+  const deadline = AbortSignal.timeout(PRODUCT_HUB_PROBE_BUDGET_MS);
   const [candidates, mail, messenger] = await Promise.all([
-    settle(input.mailCandidates?.read()),
+    settle(input.mailCandidates?.read(deadline)),
     settle(input.mailSource?.read(now)),
     settle(input.messengerSource?.read(now)),
   ]);
@@ -82,8 +84,13 @@ function memoryReadConfigured(input: DashboardApiInput): boolean {
 
 async function settle<T>(read: Promise<T> | undefined): Promise<{ readonly value: T } | SourceFailure | undefined> {
   if (read === undefined) return undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bounded = new Promise<T>((resolve, reject) => {
+    timer = setTimeout(() => reject(new JarvisError("PRODUCT_HUB_PROBE_DEADLINE")), PRODUCT_HUB_PROBE_BUDGET_MS);
+    read.then(resolve, reject);
+  }).finally(() => { if (timer !== undefined) clearTimeout(timer); });
   try {
-    return { value: await read };
+    return { value: await bounded };
   } catch (error) {
     if (!(error instanceof JarvisError)) throw error;
     return { failed: identityScopeDenied(error.code) ? "denied" : "unavailable", code: error.code };

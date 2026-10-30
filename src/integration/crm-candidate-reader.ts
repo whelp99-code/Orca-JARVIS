@@ -4,6 +4,7 @@ import { readCandidateCredential } from "./candidate-reader-credential.js";
 import { crmCandidateMetadataSchema, MAIL_CANDIDATE_RECENT_LIMIT,
   type NativeCrmCandidateRead } from "./mail-candidates-contract.js";
 import { priceHttpExchange, type PriceHttpExchange } from "./price-finance-production.js";
+import { PRODUCT_HUB_PROBE_BUDGET_MS } from "../product-hub-budget.js";
 
 const settingsSchema = z.object({
   base_url: z.url(), key_file: z.string().min(1), workspace_id: z.uuid(), principal: z.string().min(1).max(256),
@@ -37,8 +38,8 @@ export function createCrmCandidateReader(
     async read(signal) {
       signal.throwIfAborted();
       const [list, total] = await Promise.all([
-        exchange({ method: "GET", url: new URL("/api/cwos/v2/mail-candidates", config.base_url), headers }),
-        exchange({ method: "GET", url: new URL("/api/cwos/v2/mail-candidates/count", config.base_url), headers }),
+        exchange({ method: "GET", url: new URL("/api/cwos/v2/mail-candidates", config.base_url), headers, signal, timeoutMs: PRODUCT_HUB_PROBE_BUDGET_MS }),
+        exchange({ method: "GET", url: new URL("/api/cwos/v2/mail-candidates/count", config.base_url), headers, signal, timeoutMs: PRODUCT_HUB_PROBE_BUDGET_MS }),
       ]);
       signal.throwIfAborted();
       if (list.status !== 200 || total.status !== 200) throw new JarvisError("CRM_CANDIDATE_READ_REFUSED");

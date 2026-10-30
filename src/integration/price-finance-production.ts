@@ -22,13 +22,18 @@ const loginSchema = z.object({
 
 export type PriceHttpExchange = (input: Readonly<{
   method: "GET" | "POST"; url: URL; headers: Readonly<Record<string, string>>; body?: string;
+  signal?: AbortSignal; timeoutMs?: number;
 }>) => Promise<Readonly<{ status: number; body: string; cookie?: string }>>;
 
 /** No redirects, automatic retries, credential logging, or unbounded responses. */
+export const PRICE_HTTP_TIMEOUT_MS = 15_000;
 export const priceHttpExchange: PriceHttpExchange = input => new Promise((resolve, reject) => {
   const fail = () => reject(new JarvisError("PRICE_READ_TRANSPORT_FAILED"));
+  const timeoutMs = input.timeoutMs ?? PRICE_HTTP_TIMEOUT_MS;
+  const timeout = AbortSignal.timeout(timeoutMs);
+  const signal = input.signal === undefined ? timeout : AbortSignal.any([input.signal, timeout]);
   const outgoing = request(input.url, {
-    method: input.method, headers: input.headers, timeout: 15_000, signal: AbortSignal.timeout(15_000),
+    method: input.method, headers: input.headers, timeout: timeoutMs, signal,
   }, incoming => {
     const chunks: Buffer[] = [];
     let length = 0;
