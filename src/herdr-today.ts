@@ -19,9 +19,15 @@ const FORBIDDEN_METHODS = new Set([
 ]);
 const AGENT_STATUSES = new Set(["idle", "working", "blocked", "done", "unknown"]);
 
+export type HerdrWorkspace = {
+  readonly workspace_id: string;
+  readonly label: string;
+};
+
 export type HerdrPane = {
   readonly pane_id: string;
   readonly tab_id: string;
+  readonly workspace_id: string;
   readonly agent: string | null;
   readonly agent_status: string;
   readonly focused: boolean;
@@ -31,7 +37,12 @@ export type HerdrPane = {
 export type HerdrSnapshot = {
   readonly protocol: number;
   readonly schema_version: number;
-  readonly session: { readonly snapshot: { readonly panes: readonly HerdrPane[] } };
+  readonly session: {
+    readonly snapshot: {
+      readonly workspaces: readonly HerdrWorkspace[];
+      readonly panes: readonly HerdrPane[];
+    };
+  };
 };
 
 export type HerdrSchema = {
@@ -81,11 +92,18 @@ export function assertHerdrSource(sourceId: string): void {
   if (sourceId === HERDR_FORBIDDEN_SOURCE || sourceId !== HERDR_LIVE_SOURCE) reject("HERDR_SOURCE_FORBIDDEN");
 }
 
+function isWorkspace(value: unknown): value is HerdrWorkspace {
+  if (value === null || typeof value !== "object") return false;
+  const workspace = value as Record<string, unknown>;
+  return typeof workspace.workspace_id === "string" && typeof workspace.label === "string";
+}
+
 function isPane(value: unknown): value is HerdrPane {
   if (value === null || typeof value !== "object") return false;
   const pane = value as Record<string, unknown>;
   return typeof pane.pane_id === "string"
     && typeof pane.tab_id === "string"
+    && typeof pane.workspace_id === "string"
     && (pane.agent === null || typeof pane.agent === "string")
     && typeof pane.agent_status === "string"
     && typeof pane.focused === "boolean"
@@ -99,8 +117,9 @@ export function parseHerdrSnapshot(value: unknown): HerdrSnapshot {
   if (session === null || typeof session !== "object") reject("HERDR_SNAPSHOT_INVALID");
   const body = (session as Record<string, unknown>).snapshot;
   if (body === null || typeof body !== "object") reject("HERDR_SNAPSHOT_INVALID");
-  const panes = (body as Record<string, unknown>).panes;
-  if (!Array.isArray(panes) || !panes.every(isPane)) reject("HERDR_SNAPSHOT_INVALID");
+  const raw = body as Record<string, unknown>;
+  if (!Array.isArray(raw.workspaces) || !raw.workspaces.every(isWorkspace)) reject("HERDR_SNAPSHOT_INVALID");
+  if (!Array.isArray(raw.panes) || !raw.panes.every(isPane)) reject("HERDR_SNAPSHOT_INVALID");
   return value as HerdrSnapshot;
 }
 
@@ -110,8 +129,14 @@ export function assertHerdrSchema(schema: HerdrSchema): void {
   if (statuses !== [...AGENT_STATUSES].sort().join(",")) reject("HERDR_SCHEMA_INVALID");
 }
 
+const GAJAE_LABEL = "가재군";
+
 export function selectGajaePane(snapshot: HerdrSnapshot): HerdrPane | null {
-  const gajae = snapshot.session.snapshot.panes.filter(pane => pane.agent === GAJAE_AGENT);
+  const gajaeIds = new Set(snapshot.session.snapshot.workspaces
+    .filter(workspace => workspace.label === GAJAE_LABEL)
+    .map(workspace => workspace.workspace_id));
+  const gajae = snapshot.session.snapshot.panes.filter(pane =>
+    gajaeIds.has(pane.workspace_id) && (pane.agent === null || pane.agent === "" || pane.agent === GAJAE_AGENT));
   const focused = gajae.find(pane => pane.focused && ACTIVE.has(pane.agent_status));
   if (focused !== undefined) return focused;
   const active = gajae.filter(pane => ACTIVE.has(pane.agent_status));

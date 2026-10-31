@@ -19,6 +19,7 @@ function pane(agent: string | null, status: string, extra: Partial<HerdrSnapshot
   return {
     pane_id: extra.pane_id ?? `${agent ?? "empty"}:${status}`,
     tab_id: "tab",
+    workspace_id: extra.workspace_id ?? "w2",
     agent,
     agent_status: status,
     focused: extra.focused ?? false,
@@ -26,8 +27,8 @@ function pane(agent: string | null, status: string, extra: Partial<HerdrSnapshot
   };
 }
 
-function snapshot(panes: ReturnType<typeof pane>[]): HerdrSnapshot {
-  return { protocol: 22, schema_version: 1, session: { snapshot: { panes } } };
+function snapshot(panes: ReturnType<typeof pane>[], workspaces = [{ workspace_id: "w2", label: "가재군" }]): HerdrSnapshot {
+  return { protocol: 22, schema_version: 1, session: { snapshot: { workspaces, panes } } };
 }
 
 describe("herdr today", () => {
@@ -66,7 +67,7 @@ describe("herdr today", () => {
   });
 
   it("returns no fact when the snapshot is missing", () => {
-    expect(collectHerdrToday({ snapshot: { session: { snapshot: { panes: [] } } }, schema, timetable })).toEqual([]);
+    expect(collectHerdrToday({ snapshot: snapshot([]), schema, timetable })).toEqual([]);
   });
 
   it("keeps pane bodies, titles, selections, and timetable prose out of the fact", () => {
@@ -112,6 +113,32 @@ describe("herdr today", () => {
   it("does not infer Gajae from cwd or a title fragment", () => {
     expect(collectHerdrToday({
       snapshot: snapshot([pane("other", "working", { focused: true, pane_id: "가재군" })]),
+      schema, timetable,
+    })).toEqual([]);
+  });
+  it("counts an empty-agent working pane inside the Gajae workspace", () => {
+    expect(collectHerdrToday({
+      snapshot: snapshot([pane(null, "working", { focused: true, pane_id: "w2:p2" })]),
+      schema, timetable,
+    })).toHaveLength(1);
+  });
+
+  it("ignores a gjc pane outside the Gajae workspace", () => {
+    expect(collectHerdrToday({
+      snapshot: snapshot(
+        [pane("gjc", "working", { focused: true, workspace_id: "w9" })],
+        [{ workspace_id: "w2", label: "가재군" }, { workspace_id: "w9", label: "디노" }],
+      ),
+      schema, timetable,
+    })).toEqual([]);
+  });
+
+  it("returns no fact when the Gajae workspace is absent", () => {
+    expect(collectHerdrToday({
+      snapshot: snapshot(
+        [pane(null, "working", { focused: true })],
+        [{ workspace_id: "w3", label: "오모냥" }],
+      ),
       schema, timetable,
     })).toEqual([]);
   });
