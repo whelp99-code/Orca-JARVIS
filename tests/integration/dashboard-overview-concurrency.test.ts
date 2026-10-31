@@ -21,18 +21,18 @@ function stage(authority: AuthorityDb) {
     nonce: "overview-concurrent-nonce" }, now);
 }
 describe("overview while a memory UI command commits", () => {
-  it("allows another request to stage during a health probe and includes the new pending command", async () => {
+  it("returns the current projection without waiting for a doctor probe", async () => {
     const database = await memoryDatabase();
-    let signal!: () => void; let release!: (value: SecondBrainReadinessObservation) => void;
-    const entered = new Promise<void>(resolve => { signal = resolve; });
+    let release!: (value: SecondBrainReadinessObservation) => void;
     const pending = new Promise<SecondBrainReadinessObservation>(resolve => { release = resolve; });
-    const inspect = vi.fn(() => { signal(); return pending; });
+    const inspect = vi.fn(() => pending);
     try {
-      const overview = new DashboardReadModel(database.authority, { inspect }).overview(now);
-      await entered; const command = stage(database.authority); release(observation);
-      const result = await overview;
-      expect(result.pending_approvals).toEqual(expect.arrayContaining([expect.objectContaining({ request_id: command.request_id })]));
-      expect(inspect).toHaveBeenCalledOnce();
+      const started = Date.now();
+      const result = await new DashboardReadModel(database.authority, { inspect }).overview(now);
+      expect(Date.now() - started).toBeLessThan(500);
+      expect(inspect).not.toHaveBeenCalled();
+      expect(result.second_brain).toMatchObject({ readiness: "checking", checked_at: null });
+      expect(result.pending_approvals).toEqual([]);
     } finally { release(observation); closeMemoryDatabase(database); }
   });
   it("still detects writes inside the synchronous projection", async () => {

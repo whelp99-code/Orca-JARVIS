@@ -76,10 +76,41 @@ export type SecondBrainReadinessInvalidReportV1 = {
   };
 };
 
+export type SecondBrainReadinessCheckingReportV1 = {
+  readonly schema_version: 1;
+  readonly capability: "second_brain";
+  readonly checked_at: null;
+  readonly readiness: "checking";
+  readonly stages: {
+    readonly installed: { readonly state: "unknown"; readonly reason: "cache_empty"; readonly checked_at: null };
+    readonly configured: { readonly state: "unknown"; readonly reason: "cache_empty"; readonly checked_at: null };
+    readonly protocol_compatible: { readonly state: "unknown"; readonly reason: "cache_empty"; readonly checked_at: null };
+    readonly operational: { readonly state: "unavailable"; readonly reason: "cache_empty"; readonly checked_at: null };
+    readonly authorized: {
+      readonly state: "unauthorized";
+      readonly reason: "cache_empty";
+      readonly checked_at: null;
+      readonly read: false;
+      readonly write: false;
+    };
+    readonly data_state: { readonly state: "unknown"; readonly reason: "cache_empty"; readonly checked_at: null };
+    readonly last_successful_refresh: {
+      readonly state: "missing";
+      readonly reason: "cache_empty";
+      readonly checked_at: null;
+      readonly observed_at: null;
+      readonly latest_attempt: "malformed";
+    };
+    readonly freshness: { readonly state: "unknown"; readonly reason: "cache_empty"; readonly checked_at: null };
+  };
+};
+
 type InvalidStage<State extends string> = {
   readonly state: State;
   readonly reason: "invalid_clock";
   readonly checked_at: null;
 };
 
-export type SecondBrainReadinessReportV1 = SecondBrainReadinessValidReportV1 | SecondBrainReadinessInvalidReportV1;
+export type SecondBrainReadinessReportV1 = SecondBrainReadinessValidReportV1
+  | SecondBrainReadinessInvalidReportV1
+  | SecondBrainReadinessCheckingReportV1;

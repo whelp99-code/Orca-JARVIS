@@ -9,6 +9,9 @@ import type { CapabilityProbe } from "../capabilities.js";
 import type { SecondBrainReadAdapter } from "../second-brain-adapter-types.js";
 import type { SecondBrainReadinessProbe } from "../second-brain-readiness.js";
 import { JarvisError, type AuthorityDb } from "../db.js";
+import { passiveCapabilityProbe, runDoctor } from "../doctor.js";
+import { runtimeSecondBrainReadinessProbe } from "../second-brain-readiness-runtime.js";
+import { DoctorResultCache } from "./doctor-cache.js";
 import type { OrcaRunner } from "../orca.js";
 import type { MemoryLifecycleService } from "../memory-lifecycle-service-types.js";
 import type { DashboardExecutorFactory } from "./authority-service.js";
@@ -86,15 +89,21 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
   realpathSync(options.staticRoot);
   const remoteApproval = options.remoteApproval ?? composeRemoteApproval(options.db,
     { policyPath: options.remoteApprovalPolicyPath });
+  const clock = options.clock ?? (() => new Date());
+  const doctorCache = new DoctorResultCache((at) => runDoctor(
+    options.db,
+    at,
+    passiveCapabilityProbe(),
+    options.secondBrainProbe ?? runtimeSecondBrainReadinessProbe(),
+  ));
   const model = new DashboardReadModel(options.db, options.secondBrainProbe, options.capabilityProbe,
-    undefined, undefined, options.trustedCloseoutKey, nativeConfig);
+    undefined, undefined, options.trustedCloseoutKey, nativeConfig, doctorCache);
   const terminals = new DashboardTerminalReader(model, options.orcaRunner);
   const events = createDashboardEvents(options.db, () => {
     options.memoryReconcileTick?.();
     options.companyReportTick?.();
   });
   const session = options.sessionStore ?? createDashboardSession();
-  const clock = options.clock ?? (() => new Date());
   const memoryRuntime = createMemoryRuntime({ authority: options.db, session, clock,
     adapter: options.memoryAdapter, projection_key: options.memoryProjectionKey,
     effect_spool_root: options.memoryEffectSpoolRoot,
@@ -144,11 +153,12 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
     throw new JarvisError("LOCAL_SESSION_REQUIRED");
   }
   bind.origin = `http://${LOOPBACK_HOST}:${boundAddress.port}`;
+  doctorCache.start(clock);
   return {
     address: { host: LOOPBACK_HOST, port: boundAddress.port, family: "IPv4" },
     publish(topics: readonly string[]): void { events.hub.publish(topics); },
     publishPersonal(kind: PersonalEventKind): void { events.hub.publishPersonal(kind); },
-    close(): void { events.close(); httpServer.closeAllConnections(); httpServer.close(); },
+    close(): void { doctorCache.stop(); events.close(); httpServer.closeAllConnections(); httpServer.close(); },
     async drain(): Promise<void> { await Promise.allSettled([...requests]); },
   };
 }

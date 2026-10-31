@@ -78,9 +78,15 @@ describe("dashboard HTTP overview walking skeleton", () => {
     const origin = serverOrigin(server);
     const before = totalChanges(db);
     try {
-      const response = await request(`${origin}/api/v1/overview`);
+      const deadline = Date.now() + 20_000;
+      let response = await request(`${origin}/api/v1/overview`);
+      let body = parseJson(await response.body.text()) as OverviewResponse;
+      while (body.second_brain?.readiness === "checking" && Date.now() < deadline) {
+        await new Promise(resolve => setTimeout(resolve, 25));
+        response = await request(`${origin}/api/v1/overview`);
+        body = parseJson(await response.body.text()) as OverviewResponse;
+      }
       expect(response.statusCode).toBe(200);
-      const body = parseJson(await response.body.text()) as OverviewResponse;
       expect(body.schema_version).toBe(1);
       expect(body.daemon_identity).toMatchObject({ schema_version: 1, status: "unknown", reason: "missing", snapshot: null });
       expect(body.runtime).toMatchObject({ schema_version: 1, build: { status: "missing", source_head: null },

@@ -1,9 +1,15 @@
 import type { NativeEveningSourceConfig } from "../evening-native-source.js";
 import type { TrustedCloseoutKey } from "../evening-closeout-types.js";
 import { JarvisError, type AuthorityDb } from "../db.js";
-import { passiveCapabilityProbe, runDoctor } from "../doctor.js";
 import { TaskTimeline, type TaskTimelineSummary } from "../recommendation-timeline.js";
+import type { CapabilityProbe } from "../capabilities.js";
+import type { SecondBrainReadinessProbe } from "../second-brain-readiness.js";
+import { invalidSecondBrainReadinessReport } from "../second-brain-readiness-invalid-clock.js";
+import { runtimeSecondBrainReadinessProbe } from "../second-brain-readiness-runtime.js";
+import { createRuntimeIdentityReader, type RuntimeIdentityReader } from "../runtime-identity.js";
+import { readDaemonRuntimeIdentity } from "../daemon-runtime-identity.js";
 import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
+import { checkingSecondBrainReport, type DoctorResultCache } from "./doctor-cache.js";
 import { invalidClockOverview } from "./invalid-clock-overview.js";
 import { overviewCards } from "./overview-cards.js";
 import { PortfolioProjection } from "./portfolio-projection.js";
@@ -22,12 +28,7 @@ import { createPersonalCursorSession, PersonalDashboardReadModel } from "./perso
 import type { PersonalCursorCodecOptions } from "./personal-cursor.js";
 import { redactDashboardValue } from "./redaction.js";
 import { controlRequestPage, pendingControlSummary, type ControlPageInput } from "./control-request-read.js";
-import { buildSecondBrainReadiness, type SecondBrainReadinessProbe } from "../second-brain-readiness.js";
-import { runtimeSecondBrainReadinessProbe } from "../second-brain-readiness-runtime.js";
-import type { CapabilityProbe } from "../capabilities.js";
 import { listedAgents } from "./agent-read-model.js";
-import { createRuntimeIdentityReader, type RuntimeIdentityReader } from "../runtime-identity.js";
-import { readDaemonRuntimeIdentity } from "../daemon-runtime-identity.js";
 
 export type {
   AgentDetailResponse,
@@ -53,25 +54,24 @@ export class DashboardReadModel {
 
   constructor(
     private readonly db: AuthorityDb,
-    private readonly secondBrainProbe: SecondBrainReadinessProbe = runtimeSecondBrainReadinessProbe(),
+    _secondBrainProbe: SecondBrainReadinessProbe = runtimeSecondBrainReadinessProbe(),
     capabilityProbe?: CapabilityProbe,
     cursorSession: PersonalCursorCodecOptions = createPersonalCursorSession(),
     private readonly runtimeIdentity: RuntimeIdentityReader = createRuntimeIdentityReader(() => db.db),
     closeoutKey?: TrustedCloseoutKey,
     nativeConfig?: NativeEveningSourceConfig,
+    private readonly doctorCache?: DoctorResultCache,
   ) {
     this.personal = new PersonalDashboardReadModel(db, capabilityProbe, cursorSession, closeoutKey, nativeConfig);
   }
 
   async overview(now = new Date()): Promise<OverviewResponse> {
     if (!Number.isFinite(now.getTime())) {
-      return { ...invalidClockOverview(await buildSecondBrainReadiness(this.secondBrainProbe, now)),
+      return { ...invalidClockOverview(invalidSecondBrainReadinessReport()),
         runtime: this.runtimeIdentity(now), daemon_identity: readDaemonRuntimeIdentity(this.db.db, now) };
     }
-    // An unrelated approval may commit while health probes await I/O. Guard only
-    // the synchronous DB projection, and share one provider observation with doctor.
-    const doctor = await runDoctor(this.db, now, passiveCapabilityProbe(), this.secondBrainProbe);
-    const secondBrain = doctor.second_brain;
+    const cached = this.doctorCache?.read(now) ?? { secondBrain: checkingSecondBrainReport(), checks: [] };
+    const secondBrain = cached.secondBrain;
     return this.db.db.transaction(() => {
       const before = changeCount(this.db);
       const tasks = new TaskTimeline(this.db).overview(RECENT_TASK_LIMIT);
@@ -81,7 +81,7 @@ export class DashboardReadModel {
       const runtime = this.runtimeIdentity(now);
       const daemon_identity = readDaemonRuntimeIdentity(this.db.db, now);
       if (changeCount(this.db) !== before) throw new JarvisError("DASHBOARD_READ_MUTATED");
-      const risks: OverviewRisk[] = doctor.checks.filter(check => !check.ok).map(check => ({
+      const risks: OverviewRisk[] = cached.checks.filter(check => !check.ok).map(check => ({
         id: check.code ?? "CHECK_FAILED", severity: "high", message: check.name,
       }));
       const overview = redactDashboardValue({
