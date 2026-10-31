@@ -39,6 +39,7 @@ export function parseSource(value: unknown): SourceMetadata {
       break;
     case "orca":
     case "herdr":
+    case "gajaeway":
     case "portfolio":
     case "calendar":
     case "mail":
