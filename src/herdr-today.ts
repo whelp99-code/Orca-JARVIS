@@ -117,14 +117,15 @@ function paneOf(value: unknown): HerdrPane | null {
   if (!isRecord(value)) return null;
   if (typeof value.pane_id !== "string" || typeof value.tab_id !== "string") return null;
   if (!(value.agent === undefined || value.agent === null || typeof value.agent === "string")) return null;
-  if (typeof value.agent_status !== "string" || typeof value.focused !== "boolean" || !Number.isInteger(value.revision)) return null;
+  const revision = value.revision;
+  if (typeof value.agent_status !== "string" || typeof value.focused !== "boolean" || typeof revision !== "number" || !Number.isInteger(revision)) return null;
   return {
     pane_id: value.pane_id,
     tab_id: value.tab_id,
     agent: value.agent ?? null,
     agent_status: value.agent_status,
     focused: value.focused,
-    revision: value.revision,
+    revision,
   };
 }
 
@@ -132,7 +133,8 @@ export function parseHerdrSnapshot(value: unknown): HerdrSnapshot {
   if (!isRecord(value) || typeof value.id !== "string" || !isRecord(value.result)) reject("HERDR_SNAPSHOT_INVALID");
   if (value.result.type !== "session_snapshot" || !isRecord(value.result.snapshot)) reject("HERDR_SNAPSHOT_INVALID");
   const body = value.result.snapshot;
-  if (!Number.isInteger(body.protocol) || typeof body.version !== "string") reject("HERDR_SNAPSHOT_INVALID");
+  const protocol = body.protocol;
+  if (typeof protocol !== "number" || !Number.isInteger(protocol) || typeof body.version !== "string") reject("HERDR_SNAPSHOT_INVALID");
   if (!Array.isArray(body.workspaces) || !Array.isArray(body.tabs) || !Array.isArray(body.panes)) reject("HERDR_SNAPSHOT_INVALID");
   const workspaces = body.workspaces.map(workspaceOf);
   const tabs = body.tabs.map(tabOf);
@@ -152,7 +154,7 @@ export function parseHerdrSnapshot(value: unknown): HerdrSnapshot {
     result: {
       type: "session_snapshot",
       snapshot: {
-        protocol: body.protocol,
+        protocol,
         version: body.version,
         workspaces: workspaces as HerdrWorkspace[],
         tabs: tabs as HerdrTab[],

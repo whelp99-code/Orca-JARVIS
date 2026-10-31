@@ -79,7 +79,6 @@ describe("gajaeway sessions current", () => {
     ))).toEqual([]);
     expect(collectGajaewayCurrent({
       command: "sessions current",
-      gatewayPid: PID,
       result: { current: session() },
       systemctl: SYSTEMCTL,
       timetable,

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   assertHerdrSchema, collectHerdrToday, classifyHerdrFact, herdrCollectorSideEffects,
-  herdrMethodAllowed, HerdrTodayError, selectTimetable, type HerdrSchema, type HerdrSnapshot,
+  herdrMethodAllowed, HerdrTodayError, selectTimetable, type HerdrSchema, type HerdrSnapshot, type HerdrTodayFact,
 } from "../../src/herdr-today.js";
 
 const CHECKED = "2026-11-01T00:00:00.000Z";
@@ -74,7 +74,8 @@ describe("herdr today", () => {
     const [fact] = collectHerdrToday({
       snapshot: snapshot([pane("gjc", "working", { focused: true })]), schema, timetable,
     });
-    expect(classifyHerdrFact({ ...fact!, trust: "inferred" }, CHECKED)).toBe(0);
+    const unverified = { ...fact!, trust: "inferred" } as unknown as HerdrTodayFact;
+    expect(classifyHerdrFact(unverified, CHECKED)).toBe(0);
   });
 
   it("returns no fact when the snapshot is missing", () => {
