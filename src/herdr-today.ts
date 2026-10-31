@@ -24,10 +24,14 @@ export type HerdrWorkspace = {
   readonly label: string;
 };
 
+export type HerdrTab = {
+  readonly tab_id: string;
+  readonly workspace_id: string;
+};
+
 export type HerdrPane = {
   readonly pane_id: string;
   readonly tab_id: string;
-  readonly workspace_id: string;
   readonly agent: string | null;
   readonly agent_status: string;
   readonly focused: boolean;
@@ -35,11 +39,14 @@ export type HerdrPane = {
 };
 
 export type HerdrSnapshot = {
-  readonly protocol: number;
-  readonly schema_version: number;
-  readonly session: {
+  readonly id: string;
+  readonly result: {
+    readonly type: "session_snapshot";
     readonly snapshot: {
+      readonly protocol: number;
+      readonly version: string;
       readonly workspaces: readonly HerdrWorkspace[];
+      readonly tabs: readonly HerdrTab[];
       readonly panes: readonly HerdrPane[];
     };
   };
@@ -92,35 +99,67 @@ export function assertHerdrSource(sourceId: string): void {
   if (sourceId === HERDR_FORBIDDEN_SOURCE || sourceId !== HERDR_LIVE_SOURCE) reject("HERDR_SOURCE_FORBIDDEN");
 }
 
-function isWorkspace(value: unknown): value is HerdrWorkspace {
-  if (value === null || typeof value !== "object") return false;
-  const workspace = value as Record<string, unknown>;
-  return typeof workspace.workspace_id === "string" && typeof workspace.label === "string";
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return value !== null && typeof value === "object";
 }
 
-function isPane(value: unknown): value is HerdrPane {
-  if (value === null || typeof value !== "object") return false;
-  const pane = value as Record<string, unknown>;
-  return typeof pane.pane_id === "string"
-    && typeof pane.tab_id === "string"
-    && typeof pane.workspace_id === "string"
-    && (pane.agent === null || typeof pane.agent === "string")
-    && typeof pane.agent_status === "string"
-    && typeof pane.focused === "boolean"
-    && typeof pane.revision === "number";
+function workspaceOf(value: unknown): HerdrWorkspace | null {
+  if (!isRecord(value) || typeof value.workspace_id !== "string" || typeof value.label !== "string") return null;
+  return { workspace_id: value.workspace_id, label: value.label };
+}
+
+function tabOf(value: unknown): HerdrTab | null {
+  if (!isRecord(value) || typeof value.tab_id !== "string" || typeof value.workspace_id !== "string") return null;
+  return { tab_id: value.tab_id, workspace_id: value.workspace_id };
+}
+
+function paneOf(value: unknown): HerdrPane | null {
+  if (!isRecord(value)) return null;
+  if (typeof value.pane_id !== "string" || typeof value.tab_id !== "string") return null;
+  if (!(value.agent === undefined || value.agent === null || typeof value.agent === "string")) return null;
+  if (typeof value.agent_status !== "string" || typeof value.focused !== "boolean" || !Number.isInteger(value.revision)) return null;
+  return {
+    pane_id: value.pane_id,
+    tab_id: value.tab_id,
+    agent: value.agent ?? null,
+    agent_status: value.agent_status,
+    focused: value.focused,
+    revision: value.revision,
+  };
 }
 
 export function parseHerdrSnapshot(value: unknown): HerdrSnapshot {
-  if (value === null || typeof value !== "object") reject("HERDR_SNAPSHOT_INVALID");
-  const snapshot = value as Record<string, unknown>;
-  const session = snapshot.session;
-  if (session === null || typeof session !== "object") reject("HERDR_SNAPSHOT_INVALID");
-  const body = (session as Record<string, unknown>).snapshot;
-  if (body === null || typeof body !== "object") reject("HERDR_SNAPSHOT_INVALID");
-  const raw = body as Record<string, unknown>;
-  if (!Array.isArray(raw.workspaces) || !raw.workspaces.every(isWorkspace)) reject("HERDR_SNAPSHOT_INVALID");
-  if (!Array.isArray(raw.panes) || !raw.panes.every(isPane)) reject("HERDR_SNAPSHOT_INVALID");
-  return value as HerdrSnapshot;
+  if (!isRecord(value) || typeof value.id !== "string" || !isRecord(value.result)) reject("HERDR_SNAPSHOT_INVALID");
+  if (value.result.type !== "session_snapshot" || !isRecord(value.result.snapshot)) reject("HERDR_SNAPSHOT_INVALID");
+  const body = value.result.snapshot;
+  if (!Number.isInteger(body.protocol) || typeof body.version !== "string") reject("HERDR_SNAPSHOT_INVALID");
+  if (!Array.isArray(body.workspaces) || !Array.isArray(body.tabs) || !Array.isArray(body.panes)) reject("HERDR_SNAPSHOT_INVALID");
+  const workspaces = body.workspaces.map(workspaceOf);
+  const tabs = body.tabs.map(tabOf);
+  const panes = body.panes.map(paneOf);
+  if (workspaces.some(item => item === null) || tabs.some(item => item === null) || panes.some(item => item === null)) {
+    reject("HERDR_SNAPSHOT_INVALID");
+  }
+  const workspaceIds = new Set(workspaces.map(item => item!.workspace_id));
+  const tabIds = new Set<string>();
+  for (const tab of tabs) {
+    if (tabIds.has(tab!.tab_id) || !workspaceIds.has(tab!.workspace_id)) reject("HERDR_SNAPSHOT_INVALID");
+    tabIds.add(tab!.tab_id);
+  }
+  if (panes.some(pane => !tabIds.has(pane!.tab_id))) reject("HERDR_SNAPSHOT_INVALID");
+  return {
+    id: value.id,
+    result: {
+      type: "session_snapshot",
+      snapshot: {
+        protocol: body.protocol,
+        version: body.version,
+        workspaces: workspaces as HerdrWorkspace[],
+        tabs: tabs as HerdrTab[],
+        panes: panes as HerdrPane[],
+      },
+    },
+  };
 }
 
 export function assertHerdrSchema(schema: HerdrSchema): void {
@@ -132,11 +171,14 @@ export function assertHerdrSchema(schema: HerdrSchema): void {
 const GAJAE_LABEL = "가재군";
 
 export function selectGajaePane(snapshot: HerdrSnapshot): HerdrPane | null {
-  const gajaeIds = new Set(snapshot.session.snapshot.workspaces
-    .filter(workspace => workspace.label === GAJAE_LABEL)
-    .map(workspace => workspace.workspace_id));
-  const gajae = snapshot.session.snapshot.panes.filter(pane =>
-    gajaeIds.has(pane.workspace_id) && (pane.agent === null || pane.agent === "" || pane.agent === GAJAE_AGENT));
+  const body = snapshot.result.snapshot;
+  const gajaeIds = new Set(body.workspaces.filter(workspace => workspace.label === GAJAE_LABEL).map(workspace => workspace.workspace_id));
+  const tabWorkspace = new Map(body.tabs.map(tab => [tab.tab_id, tab.workspace_id]));
+  const gajae = body.panes.filter(pane => {
+    const workspaceId = tabWorkspace.get(pane.tab_id);
+    return workspaceId !== undefined && gajaeIds.has(workspaceId)
+      && (pane.agent === null || pane.agent === "" || pane.agent === GAJAE_AGENT);
+  });
   const focused = gajae.find(pane => pane.focused && ACTIVE.has(pane.agent_status));
   if (focused !== undefined) return focused;
   const active = gajae.filter(pane => ACTIVE.has(pane.agent_status));

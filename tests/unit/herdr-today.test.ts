@@ -15,11 +15,10 @@ const timetable = [
   { id: "go8-today", bot: "도리", start: "1793461234.666149", status: "대기" },
 ];
 
-function pane(agent: string | null, status: string, extra: Partial<HerdrSnapshot["session"]["snapshot"]["panes"][number]> = {}) {
+function pane(agent: string | null, status: string, extra: { pane_id?: string; tab_id?: string; focused?: boolean; revision?: number } = {}) {
   return {
     pane_id: extra.pane_id ?? `${agent ?? "empty"}:${status}`,
-    tab_id: "tab",
-    workspace_id: extra.workspace_id ?? "w2",
+    tab_id: extra.tab_id ?? "tab:w2",
     agent,
     agent_status: status,
     focused: extra.focused ?? false,
@@ -28,7 +27,19 @@ function pane(agent: string | null, status: string, extra: Partial<HerdrSnapshot
 }
 
 function snapshot(panes: ReturnType<typeof pane>[], workspaces = [{ workspace_id: "w2", label: "가재군" }]): HerdrSnapshot {
-  return { protocol: 22, schema_version: 1, session: { snapshot: { workspaces, panes } } };
+  return {
+    id: "snap-1",
+    result: {
+      type: "session_snapshot",
+      snapshot: {
+        protocol: 22,
+        version: "1",
+        workspaces,
+        tabs: workspaces.map(workspace => ({ tab_id: `tab:${workspace.workspace_id}`, workspace_id: workspace.workspace_id })),
+        panes,
+      },
+    },
+  };
 }
 
 describe("herdr today", () => {
@@ -123,10 +134,10 @@ describe("herdr today", () => {
     })).toHaveLength(1);
   });
 
-  it("ignores a gjc pane outside the Gajae workspace", () => {
+  it("ignores a gjc pane whose tab is outside the Gajae workspace", () => {
     expect(collectHerdrToday({
       snapshot: snapshot(
-        [pane("gjc", "working", { focused: true, workspace_id: "w9" })],
+        [pane("gjc", "working", { focused: true, tab_id: "tab:w9" })],
         [{ workspace_id: "w2", label: "가재군" }, { workspace_id: "w9", label: "디노" }],
       ),
       schema, timetable,
@@ -136,10 +147,17 @@ describe("herdr today", () => {
   it("returns no fact when the Gajae workspace is absent", () => {
     expect(collectHerdrToday({
       snapshot: snapshot(
-        [pane(null, "working", { focused: true })],
+        [pane(null, "working", { focused: true, tab_id: "tab:w3" })],
         [{ workspace_id: "w3", label: "오모냥" }],
       ),
       schema, timetable,
     })).toEqual([]);
+  });
+
+  it("rejects the old session.snapshot wrapper", () => {
+    expect(() => collectHerdrToday({
+      snapshot: { protocol: 22, schema_version: 1, session: { snapshot: { workspaces: [], panes: [] } } },
+      schema, timetable,
+    })).toThrow(HerdrTodayError);
   });
 });
