@@ -103,4 +103,57 @@ describe("overview doctor cache", () => {
       rmSync(root, { recursive: true, force: true });
     }
   });
+
+  it("returns a filled ready cache within one second across twenty reads", async () => {
+    const db = new AuthorityDb(tempDb());
+    await db.migrate();
+    const root = mkdtempSync(join(tmpdir(), "overview-cache-filled-"));
+    writeFileSync(join(root, "index.html"), "<!doctype html>");
+    const server = createDashboardServer({
+      db,
+      staticRoot: root,
+      host: "127.0.0.1",
+      port: 0,
+      clock: () => NOW,
+      secondBrainProbe: { inspect: async () => observation() },
+    });
+    const origin = `http://${server.address.host}:${String(server.address.port)}`;
+    const samples: number[] = [];
+    try {
+      const deadline = Date.now() + 15_000;
+      let filled = "";
+      while (Date.now() < deadline && filled !== "ready") {
+        const warm = await request(`${origin}/api/v1/overview`);
+        const warmBody = await warm.body.json() as { second_brain?: { readiness?: string } };
+        filled = warmBody.second_brain?.readiness ?? "";
+      }
+      expect(filled).toBe("ready");
+      for (let i = 0; i < 20; i += 1) {
+        const started = performance.now();
+        const response = await request(`${origin}/api/v1/overview`);
+        const body = await response.body.json() as { second_brain?: { readiness?: string; checked_at?: string | null } };
+        samples.push(performance.now() - started);
+        expect(response.statusCode).toBe(200);
+        expect(body.second_brain?.readiness).toBe("ready");
+        expect(body.second_brain?.checked_at).toBe(NOW.toISOString());
+      }
+      const sorted = [...samples].sort((left, right) => left - right);
+      const p95 = sorted[Math.ceil(sorted.length * 0.95) - 1] ?? sorted.at(-1) ?? 0;
+      expect(p95).toBeLessThan(1_000);
+      writeFileSync("/home/jm/.gajaegun/gajaeway/workspace/plans/read-check/overview-cache-filled-measure.json", JSON.stringify({
+        checked_at: new Date().toISOString(),
+        base: "e6bff4bccd68203e4c39d0b5830f60d51a1d7893",
+        target: origin,
+        cache: "ready",
+        samples_ms: samples.map(value => Number(value.toFixed(1))),
+        p95_ms: Number(p95.toFixed(1)),
+        max_ms: Number((sorted.at(-1) ?? 0).toFixed(1)),
+        production_switched: false,
+      }, null, 2));
+    } finally {
+      server.close();
+      db.close();
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
 });
