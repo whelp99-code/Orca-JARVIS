@@ -38,6 +38,7 @@ export function parseSource(value: unknown): SourceMetadata {
       expectedKind = "authority";
       break;
     case "orca":
+    case "herdr":
     case "portfolio":
     case "calendar":
     case "mail":
