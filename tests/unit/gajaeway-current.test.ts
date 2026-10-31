@@ -6,6 +6,7 @@ import type { TimetableItem } from "../../src/herdr-today.js";
 
 const CHECKED = "2026-11-01T00:00:00.000Z";
 const PID = 3875239;
+const SYSTEMCTL = `MainPID=${PID}`;
 const timetable = [
   { id: "go10-crm-viewer", bot: "가재", start: "1793461234.666149", status: "진행 중", content: "do-not-copy", request: "do-not-copy" },
 ] as unknown as readonly TimetableItem[];
@@ -24,28 +25,25 @@ function session(extra: Record<string, unknown> = {}) {
   };
 }
 
+function read(result: Record<string, unknown> | unknown[], systemctl: unknown = SYSTEMCTL) {
+  return { command: "sessions current", result, systemctl, timetable };
+}
+
 describe("gajaeway sessions current", () => {
   it("returns no fact when no session is active", () => {
-    expect(collectGajaewayCurrent({
-      command: "sessions current", gatewayPid: PID, result: { current: null }, timetable,
-    })).toEqual([]);
+    expect(collectGajaewayCurrent(read({ status: { pid: PID }, current: null }))).toEqual([]);
   });
 
   it("does not pick when two or more sessions are active", () => {
-    expect(collectGajaewayCurrent({
-      command: "sessions current", gatewayPid: PID,
-      result: { current: null, reason: "ambiguous", sessions: [session(), session({ sessionId: "session-two", origin: "other" })] },
-      timetable,
-    })).toEqual([]);
-    expect(collectGajaewayCurrent({
-      command: "sessions current", gatewayPid: PID, result: [session(), session({ origin: "other" })], timetable,
-    })).toEqual([]);
+    expect(collectGajaewayCurrent(read({
+      status: { pid: PID }, current: null, reason: "ambiguous",
+      sessions: [session(), session({ sessionId: "session-two", origin: "other" })],
+    }))).toEqual([]);
+    expect(collectGajaewayCurrent(read([session(), session({ origin: "other" })]))).toEqual([]);
   });
 
   it("keeps body fields out of the fact", () => {
-    const [fact] = collectGajaewayCurrent({
-      command: "sessions current", gatewayPid: PID, result: { current: session() }, timetable,
-    });
+    const [fact] = collectGajaewayCurrent(read({ status: { pid: PID }, current: session() }));
     expect(fact).toMatchObject({
       source_id: "src:pos:v1:gajaeway:local", source_kind: "live_adapter",
       sessionId: "session-one", origin: "slack/thread/one", status: "accepted",
@@ -64,20 +62,33 @@ describe("gajaeway sessions current", () => {
 
   it("rejects the Orca source", () => {
     expect(() => collectGajaewayCurrent({
-      command: "sessions current", gatewayPid: PID, result: { current: session() },
+      ...read({ status: { pid: PID }, current: session() }),
       sourceId: "src:pos:v1:orca:local",
     })).toThrow(GajaewayCurrentError);
   });
 
-  it("does not verify a session when the same read has no gateway pid", () => {
+  it("returns no fact when the status pid is missing", () => {
+    expect(collectGajaewayCurrent(read({ current: session() }))).toEqual([]);
+    expect(collectGajaewayCurrent(read({ status: {}, current: session() }))).toEqual([]);
+  });
+
+  it("returns no fact when the status pid does not match the gateway MainPID", () => {
+    expect(collectGajaewayCurrent(read(
+      { status: { pid: PID }, current: session() },
+      "MainPID=111",
+    ))).toEqual([]);
     expect(collectGajaewayCurrent({
-      command: "sessions current", result: { current: session() }, timetable,
+      command: "sessions current",
+      gatewayPid: PID,
+      result: { current: session() },
+      systemctl: SYSTEMCTL,
+      timetable,
     })).toEqual([]);
   });
 
   it("does not start or change a session", () => {
     expect(() => collectGajaewayCurrent({
-      command: "work start", gatewayPid: PID, result: { current: session() },
+      command: "work start", result: { status: { pid: PID }, current: session() }, systemctl: SYSTEMCTL,
     })).toThrow(GajaewayCurrentError);
     expect(gajaewayCollectorSideEffects()).toEqual([]);
   });

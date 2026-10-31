@@ -83,21 +83,42 @@ function oneSession(result: unknown): GajaewayCurrentSession | null {
   return closedSession(result.current);
 }
 
-function confirmedGatewayPid(value: unknown): boolean {
-  return typeof value === "number" && Number.isInteger(value) && value > 0;
+function positivePid(value: unknown): number | null {
+  if (typeof value === "number" && Number.isInteger(value) && value > 0) return value;
+  if (typeof value === "string" && /^[1-9][0-9]*$/.test(value)) {
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) ? parsed : null;
+  }
+  return null;
+}
+
+function statusPid(result: unknown): number | null {
+  if (!isRecord(result) || !isRecord(result.status)) return null;
+  return positivePid(result.status.pid);
+}
+
+function systemctlMainPid(value: unknown): number | null {
+  if (typeof value === "string") {
+    const match = /^MainPID=([0-9]+)$/m.exec(value);
+    return match === null ? null : positivePid(match[1]);
+  }
+  if (!isRecord(value)) return null;
+  return positivePid(value.MainPID);
 }
 
 export function collectGajaewayCurrent(input: {
   readonly command?: string;
-  readonly gatewayPid?: unknown;
   readonly result: unknown;
+  readonly systemctl?: unknown;
   readonly sourceId?: string;
   readonly timetable?: readonly TimetableItem[];
 }): readonly GajaewayCurrentFact[] {
   gajaewayMethodAllowed(input.command ?? SESSIONS_CURRENT);
   assertGajaewaySource(input.sourceId ?? GAJAEWAY_LIVE_SOURCE);
   if (isRecord(input.result) && typeof input.result.source_id === "string") assertGajaewaySource(input.result.source_id);
-  if (!confirmedGatewayPid(input.gatewayPid)) return [];
+  const pid = statusPid(input.result);
+  const mainPid = systemctlMainPid(input.systemctl);
+  if (pid === null || mainPid === null || pid !== mainPid) return [];
   const session = oneSession(input.result);
   if (session === null) return [];
   const named = selectTimetable(input.timetable ?? []);
