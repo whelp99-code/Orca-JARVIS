@@ -2,7 +2,7 @@ import type { ServerResponse } from "node:http";
 import { expect, it } from "vitest";
 import { createPhoneAuthorityReadAdapter } from "../../src/phone-gateway-adapter.js";
 import { phoneGatewayRequestAudit } from "../../src/phone-gateway-server.js";
-import { PHONE_ERROR_CODES, PHONE_UPSTREAM_FAILURE_STAGES } from "../../src/phone-gateway-protocol.js";
+import { PHONE_ERROR_CODES } from "../../src/phone-gateway-protocol.js";
 import { PHONE_GATEWAY_LIMITS } from "../../src/phone-gateway-protocol.js";
 import { json, startFakeAuthority } from "../fixtures/phone-gateway-harness.js";
 
@@ -110,13 +110,27 @@ it("records only a closed failure stage and no request material", () => {
     outcome: "upstream_unavailable", code: PHONE_ERROR_CODES.PHONE_UPSTREAM_UNAVAILABLE, status: 503,
     durationBucket: "lt100ms", ownerHex: null, failureStage: "upstream_403",
   });
-  expect(record.failure_stage).toBe("upstream_403");
+  expect(record.failure_stage).toBe("upstream");
   expect(record.code).toBe(PHONE_ERROR_CODES.PHONE_UPSTREAM_UNAVAILABLE);
   expect(record.status).toBe(503);
-  expect(PHONE_UPSTREAM_FAILURE_STAGES).toContain(record.failure_stage);
+  expect(record.failure_stage).toBe("upstream");
   const wire = JSON.stringify(record);
   expect(wire).not.toContain("url");
   expect(wire).not.toContain("header");
   expect(wire).not.toContain("csrf");
   expect(wire).not.toContain("body");
+});
+
+it("records the four 503 stages and unknown without guessing", () => {
+  const base = {
+    requestId: "request-1", occurredAt: "2026-10-30T07:45:33.898Z", routeClass: "today",
+    outcome: "upstream_unavailable", code: PHONE_ERROR_CODES.PHONE_UPSTREAM_UNAVAILABLE,
+    durationBucket: "lt100ms" as const, ownerHex: null, status: 503,
+  };
+  expect(phoneGatewayRequestAudit({ ...base, failureStage: "slot_rejected" }).failure_stage).toBe("slot");
+  expect(phoneGatewayRequestAudit({ ...base, failureStage: "bootstrap_failed" }).failure_stage).toBe("bootstrap");
+  expect(phoneGatewayRequestAudit({ ...base, failureStage: "transport_or_json" }).failure_stage).toBe("transport");
+  expect(phoneGatewayRequestAudit({ ...base, failureStage: "upstream_403" }).failure_stage).toBe("upstream");
+  expect(phoneGatewayRequestAudit(base).failure_stage).toBe("unknown");
+  expect(phoneGatewayRequestAudit({ ...base, status: 200, code: "ok", outcome: "allowed" }).failure_stage).toBeUndefined();
 });
