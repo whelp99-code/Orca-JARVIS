@@ -129,6 +129,28 @@ describe("native finance read contract", () => {
     const { reader } = setup(body);
     await expect(reader.read(request)).rejects.toMatchObject({ code: "CORE5_NATIVE_REPORT_BINDING_MISMATCH" });
   });
+  it("refuses a legacy owner report without producer scope, revision and identity", async () => {
+    // Synthetic legacy wire shape; no live financial values or names.
+    const body = JSON.stringify({
+      period: { start: request.period_start, end: request.period_end },
+      basis: "posted_validation_ledger",
+      cash: {
+        received: 0, paid: 0, net_movement: 0,
+        opening_balance: null, closing_balance: null, opening_balance_verified: false,
+        internal_transfers: { received: 0, paid: 0, net_movement: 0 },
+      },
+      profit: { revenue: 0, expenses: 0, net: 0, not_cash_balance: true },
+      account_totals: { cash: { debit: 0, credit: 0, journal_ids: [] } },
+      journal_ids: [], blockers: [],
+      official_tax_ready: false, company_data_complete: false, notice: "Synthetic fixture",
+    });
+    const { reader, get } = setup(body, 200);
+    await expect(reader.read(request)).rejects.toMatchObject({ code: "CORE5_NATIVE_READ_RESPONSE_INVALID" });
+    expect(get).toHaveBeenCalledExactlyOnceWith({
+      method: "GET", path: `/api/companies/${request.company_id}/owner/reports`,
+      query: { start: request.period_start, end: request.period_end },
+    });
+  });
   it("refuses promoted unknown cash even when it arrived over successful settlement GET", async () => {
     const parsed = z.object({ payable_coverage: z.record(z.string(), z.unknown()) }).parse(JSON.parse(fixture.response_body));
     const body = JSON.stringify(parsed.payable_coverage).replace('"order_cash_residual":null', '"order_cash_residual":525');
