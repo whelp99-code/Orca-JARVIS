@@ -28,7 +28,7 @@ describe("overview while a memory UI command commits", () => {
     const inspect = vi.fn(() => pending);
     try {
       const started = Date.now();
-      const result = await new DashboardReadModel(database.authority, { inspect }).overview(now);
+      const result = await new DashboardReadModel(database.authority).overview(now);
       expect(Date.now() - started).toBeLessThan(500);
       expect(inspect).not.toHaveBeenCalled();
       expect(result.second_brain).toMatchObject({ readiness: "checking", checked_at: null });
@@ -42,7 +42,7 @@ describe("overview while a memory UI command commits", () => {
       vi.spyOn(TaskTimeline.prototype, "overview").mockImplementationOnce(function(this: TaskTimeline, limit?: number) {
         stage(database.authority); return original.call(this, limit);
       });
-      await expect(new DashboardReadModel(database.authority, { inspect: async () => observation }).overview(now))
+      await expect(new DashboardReadModel(database.authority).overview(now))
         .rejects.toThrow("DASHBOARD_READ_MUTATED");
       expect(database.authority.db.prepare("SELECT request_id FROM control_command_requests WHERE request_id='overview-concurrent-command'").get())
         .toBeUndefined();
@@ -53,7 +53,7 @@ describe("overview while a memory UI command commits", () => {
     const timeline = vi.spyOn(TaskTimeline.prototype, "overview");
     try {
       stage(database.authority);
-      const result = await new DashboardReadModel(database.authority, { inspect: async () => observation }).overview(now);
+      const result = await new DashboardReadModel(database.authority).overview(now);
       expect(timeline.mock.calls).toEqual([[20]]);
       expect(result.cards.find(card => card.id === "pending-approvals")?.value).toBe(1);
       expect(result.generated_at).toBe(now.toISOString());

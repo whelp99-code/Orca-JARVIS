@@ -3,9 +3,7 @@ import type { TrustedCloseoutKey } from "../evening-closeout-types.js";
 import { JarvisError, type AuthorityDb } from "../db.js";
 import { TaskTimeline, type TaskTimelineSummary } from "../recommendation-timeline.js";
 import type { CapabilityProbe } from "../capabilities.js";
-import type { SecondBrainReadinessProbe } from "../second-brain-readiness.js";
 import { invalidSecondBrainReadinessReport } from "../second-brain-readiness-invalid-clock.js";
-import { runtimeSecondBrainReadinessProbe } from "../second-brain-readiness-runtime.js";
 import { createRuntimeIdentityReader, type RuntimeIdentityReader } from "../runtime-identity.js";
 import { readDaemonRuntimeIdentity } from "../daemon-runtime-identity.js";
 import { DASHBOARD_SCHEMA_VERSION } from "./contracts.js";
@@ -54,7 +52,6 @@ export class DashboardReadModel {
 
   constructor(
     private readonly db: AuthorityDb,
-    _secondBrainProbe: SecondBrainReadinessProbe = runtimeSecondBrainReadinessProbe(),
     capabilityProbe?: CapabilityProbe,
     cursorSession: PersonalCursorCodecOptions = createPersonalCursorSession(),
     private readonly runtimeIdentity: RuntimeIdentityReader = createRuntimeIdentityReader(() => db.db),

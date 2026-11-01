@@ -96,7 +96,7 @@ export function createDashboardServer(options: DashboardServerOptions): Dashboar
     passiveCapabilityProbe(),
     options.secondBrainProbe ?? runtimeSecondBrainReadinessProbe(),
   ));
-  const model = new DashboardReadModel(options.db, options.secondBrainProbe, options.capabilityProbe,
+  const model = new DashboardReadModel(options.db, options.capabilityProbe,
     undefined, undefined, options.trustedCloseoutKey, nativeConfig, doctorCache);
   const terminals = new DashboardTerminalReader(model, options.orcaRunner);
   const events = createDashboardEvents(options.db, () => {
