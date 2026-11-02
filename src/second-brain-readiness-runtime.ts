@@ -67,6 +67,28 @@ export type { SecondBrainHandshakeResult, SecondBrainReadFacts } from "./second-
 export function secondBrainProbeArguments(command: "status" | "doctor"): readonly string[] {
   return command === "doctor" ? ["doctor", "--json"] : ["status"];
 }
+/**
+ * Root must not run `sb`. A root `status` or `doctor` leaves root-owned vault locks.
+ * Only that child drops to jm. `-n` refuses a password prompt, and
+ * `--preserve-env=SB_CONFIG` keeps the configured file across sudo's env_reset.
+ */
+export function secondBrainProbeCommand(
+  command: "status" | "doctor",
+  cli: string,
+  uid: number | undefined,
+): { readonly file: string; readonly args: readonly string[] } {
+  const probe = secondBrainProbeArguments(command);
+  if (uid !== 0) return { file: cli, args: probe };
+  return {
+    file: "/usr/bin/sudo",
+    args: ["-n", "-u", "jm", "--preserve-env=SB_CONFIG", "--", cli, ...probe],
+  };
+}
+
+function probeCallerUid(): number | undefined {
+  return typeof process.getuid === "function" ? process.getuid() : undefined;
+}
+
 export interface SecondBrainReadinessRunner {
   executable(): Promise<"available" | "missing" | "unavailable">;
   configuration(): Promise<SecondBrainReadinessObservation["configuration"]>;
@@ -76,8 +98,9 @@ export interface SecondBrainReadinessRunner {
 
 function commandResult(command: "status" | "doctor"): Promise<SecondBrainCommandResult> {
   const endpoint = configuredEndpoint();
+  const invocation = secondBrainProbeCommand(command, endpoint.cli, probeCallerUid());
   return new Promise(resolve => {
-    execFile(endpoint.cli, [...secondBrainProbeArguments(command)], {
+    execFile(invocation.file, [...invocation.args], {
       encoding: "utf8",
       timeout: PROBE_TIMEOUT_MS,
       maxBuffer: PROBE_MAX_BYTES,

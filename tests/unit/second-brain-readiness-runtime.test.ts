@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   runtimeSecondBrainReadinessProbe,
+  secondBrainProbeCommand,
   type SecondBrainCommandResult,
   type SecondBrainHandshakeResult,
   type SecondBrainReadinessRunner,
@@ -88,5 +89,29 @@ describe("bounded Second Brain runtime probe", () => {
     expect(observed.data_state).toBe(dataState);
     expect(observed.refresh.kind).toBe(refreshKind);
     expect(JSON.stringify(observed)).not.toContain(stdout);
+  });
+});
+
+describe("second brain probe command identity", () => {
+  it("passes sudo -u jm arguments when the caller is root", () => {
+    expect(secondBrainProbeCommand("status", "/opt/provider/sb", 0)).toEqual({
+      file: "/usr/bin/sudo",
+      args: ["-n", "-u", "jm", "--preserve-env=SB_CONFIG", "--", "/opt/provider/sb", "status"],
+    });
+    expect(secondBrainProbeCommand("doctor", "/opt/provider/sb", 0)).toEqual({
+      file: "/usr/bin/sudo",
+      args: ["-n", "-u", "jm", "--preserve-env=SB_CONFIG", "--", "/opt/provider/sb", "doctor", "--json"],
+    });
+  });
+
+  it("keeps the direct sb vector when the caller is not root", () => {
+    expect(secondBrainProbeCommand("status", "/opt/provider/sb", 1000)).toEqual({
+      file: "/opt/provider/sb",
+      args: ["status"],
+    });
+    expect(secondBrainProbeCommand("doctor", "/opt/provider/sb", undefined)).toEqual({
+      file: "/opt/provider/sb",
+      args: ["doctor", "--json"],
+    });
   });
 });
