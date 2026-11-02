@@ -1,7 +1,8 @@
 import { execFile } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
-import { secondBrainCallerUid, secondBrainChildCommand } from "./second-brain-privilege.js";
+import { secondBrainCallerUid, secondBrainProbeCommand } from "./second-brain-privilege.js";
+export { secondBrainProbeArguments, secondBrainProbeCommand } from "./second-brain-privilege.js";
 import { probeSecondBrainConfiguration } from "./second-brain-readiness-config.js";
 import {
   parseSecondBrainHandshakeFacts,
@@ -58,23 +59,6 @@ export type SecondBrainCommandResult =
   | { readonly kind: SecondBrainProbeFailure };
 export type { SecondBrainHandshakeResult, SecondBrainReadFacts } from "./second-brain-readiness-read.js";
 
-/**
- * The exact argument vector each probe runs.
- *
- * `doctor` is asked for its machine-readable document: the human `PASS name: detail` lines it
- * prints by default are not a parseable contract, and treating them as one is what reported a
- * healthy provider as `doctor_malformed`.
- */
-export function secondBrainProbeArguments(command: "status" | "doctor"): readonly string[] {
-  return command === "doctor" ? ["doctor", "--json"] : ["status"];
-}
-export function secondBrainProbeCommand(
-  command: "status" | "doctor",
-  cli: string,
-  uid: number | undefined,
-): { readonly file: string; readonly args: readonly string[] } {
-  return secondBrainChildCommand(cli, secondBrainProbeArguments(command), uid);
-}
 
 export interface SecondBrainReadinessRunner {
   executable(): Promise<"available" | "missing" | "unavailable">;

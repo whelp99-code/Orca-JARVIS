@@ -19,3 +19,18 @@ export function secondBrainChildCommand(
 export function secondBrainCallerUid(): number | undefined {
   return typeof process.getuid === "function" ? process.getuid() : undefined;
 }
+
+/**
+ * `doctor` is asked for its machine-readable document. The human lines are not a parseable contract.
+ */
+export function secondBrainProbeArguments(command: "status" | "doctor"): readonly string[] {
+  return command === "doctor" ? ["doctor", "--json"] : ["status"];
+}
+
+export function secondBrainProbeCommand(
+  command: "status" | "doctor",
+  cli: string,
+  uid: number | undefined,
+): { readonly file: string; readonly args: readonly string[] } {
+  return secondBrainChildCommand(cli, secondBrainProbeArguments(command), uid);
+}
