@@ -1,10 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { vi } from "vitest";
 import { AuthorityDb } from "../../src/db.js";
 import { JarvisError } from "../../src/jarvis-error.js";
 import { MemoryProjectionAuthority } from "../../src/memory-projection-authority.js";
 import type { MailCandidatesSummary } from "../../src/integration/mail-candidates-contract.js";
+import { createMailCandidatesRuntime } from "../../src/integration/mail-candidates-production.js";
 import type { PersonalSourceSnapshot } from "../../src/personal-connector-types.js";
 import { readProductHub, type ProductHubRead } from "../../src/dashboard/product-hub-routes.js";
+import { PRODUCT_HUB_PROBE_BUDGET_MS } from "../../src/product-hub-budget.js";
+import { PHONE_GATEWAY_LIMITS } from "../../src/phone-gateway-protocol.js";
+import { SB_COMPANY_CANDIDATE_READ_TIMEOUT_MS } from "../../src/integration/sb-company-candidate-reader.js";
 import { productHubSchema } from "../../src/dashboard/product-hub-contract.js";
 
 const NOW = "2026-10-16T00:00:00.000Z";
@@ -60,12 +65,12 @@ describe("product hub projection", () => {
         }), connector_id: "messenger" }) },
       });
       expect(body.items.map(item => item.id)).toEqual(["crm", "mail", "price", "second_brain", "messenger", "approvals"]);
-      expect(body.items[0]).toEqual({ id: "crm", state: "ready", observed_at: NOW, count: 2, secondary_count: null, oldest_age_ms: null });
-      expect(body.items[1]).toEqual({ id: "mail", state: "ready", observed_at: NOW, count: 11, secondary_count: 3, oldest_age_ms: null });
-      expect(body.items[2]).toEqual({ id: "price", state: "configured", observed_at: null, count: null, secondary_count: null, oldest_age_ms: null });
-      expect(body.items[3]).toEqual({ id: "second_brain", state: "ready", observed_at: NOW, count: 4, secondary_count: null, oldest_age_ms: null });
-      expect(body.items[4]).toEqual({ id: "messenger", state: "ready", observed_at: NOW, count: 2, secondary_count: null, oldest_age_ms: 40 });
-      expect(body.items[5]).toEqual({ id: "approvals", state: "no_data", observed_at: null, count: 0, secondary_count: null, oldest_age_ms: null });
+      expect(body.items[0]).toEqual({ id: "crm", state: "ready", observed_at: NOW, count: 2, secondary_count: null, oldest_age_ms: null, failure_code: null });
+      expect(body.items[1]).toEqual({ id: "mail", state: "ready", observed_at: NOW, count: 11, secondary_count: 3, oldest_age_ms: null, failure_code: null });
+      expect(body.items[2]).toEqual({ id: "price", state: "configured", observed_at: null, count: null, secondary_count: null, oldest_age_ms: null, failure_code: null });
+      expect(body.items[3]).toEqual({ id: "second_brain", state: "ready", observed_at: NOW, count: 4, secondary_count: null, oldest_age_ms: null, failure_code: null });
+      expect(body.items[4]).toEqual({ id: "messenger", state: "ready", observed_at: NOW, count: 2, secondary_count: null, oldest_age_ms: 40, failure_code: null });
+      expect(body.items[5]).toEqual({ id: "approvals", state: "no_data", observed_at: null, count: 0, secondary_count: null, oldest_age_ms: null, failure_code: null });
       const wire = JSON.stringify(body);
       expect(wire).not.toContain("secret");
       expect(wire).not.toContain("workspace");
@@ -81,7 +86,7 @@ describe("product hub projection", () => {
       const body = await project({ db, memoryConfigured: true, priceConfigured: false });
       expect(body.items.find(item => item.id === "crm")).toMatchObject({ state: "unconfigured", count: null });
       expect(body.items.find(item => item.id === "second_brain")).toEqual({
-        id: "second_brain", state: "configured", observed_at: null, count: null, secondary_count: null, oldest_age_ms: null,
+        id: "second_brain", state: "configured", observed_at: null, count: null, secondary_count: null, oldest_age_ms: null, failure_code: null,
       });
       expect(body.items.find(item => item.id === "mail")?.state).toBe("unconfigured");
       expect(body.items.find(item => item.id === "price")?.state).toBe("unconfigured");
@@ -112,7 +117,7 @@ describe("product hub projection", () => {
         messengerSource: { read: async () => ({ ...snapshot("current", { incomplete_count: 2, oldest_incomplete_age_ms: 10 }), connector_id: "messenger", observed_at: "2026-10-15T23:58:00.000Z" }) },
         mailSource: { read: async () => snapshot("no_data", {}) },
       });
-      expect(aged.items.find(item => item.id === "messenger")).toMatchObject({ state: "unavailable", count: null, oldest_age_ms: null });
+      expect(aged.items.find(item => item.id === "messenger")).toMatchObject({ state: "unavailable", count: null, oldest_age_ms: null, failure_code: null });
       expect(aged.items.find(item => item.id === "mail")).toMatchObject({ state: "no_data", count: 0, secondary_count: 0, observed_at: NOW });
     } finally { db.close(); }
   });
@@ -130,7 +135,9 @@ describe("product hub projection", () => {
       expect(denied.items.find(item => item.id === "crm")?.state).toBe("ready");
       expect(denied.items.find(item => item.id === "second_brain")?.state).toBe("denied");
       expect(denied.items.find(item => item.id === "mail")?.state).toBe("unavailable");
+      expect(denied.items.find(item => item.id === "mail")?.failure_code).toBe("MAIL_READ_REFUSED");
       expect(denied.items.find(item => item.id === "messenger")?.state).toBe("unavailable");
+      expect(denied.items.find(item => item.id === "messenger")?.failure_code).toBe("MESSENGER_READ_RESPONSE_INVALID");
       const scoped = await project({
         db,
         mailCandidates: { read: async () => { throw new JarvisError("CRM_CANDIDATE_SCOPE_DENIED"); } },
@@ -163,6 +170,90 @@ describe("product hub projection", () => {
       const body = await project({ db });
       expect(body.items.find(item => item.id === "approvals")).toMatchObject({ state: "ready", count: 1 });
       expect(db.db.serialize().equals(before)).toBe(true);
+    } finally { db.close(); }
+  });
+  it("returns the other cards when one probe misses the gateway budget", async () => {
+    expect(PRODUCT_HUB_PROBE_BUDGET_MS).toBeLessThan(PHONE_GATEWAY_LIMITS.totalTimeoutMs);
+    expect(SB_COMPANY_CANDIDATE_READ_TIMEOUT_MS).toBe(PRODUCT_HUB_PROBE_BUDGET_MS);
+    const db = new AuthorityDb(":memory:");
+    await db.migrate();
+    vi.useFakeTimers();
+    try {
+      const pending = readProductHub({
+        clock, db, priceConfigured: true, memoryConfigured: true,
+        mailCandidates: { read: () => new Promise(() => undefined) },
+        mailSource: { read: async () => ({ ...snapshot("current", {
+          message_count: 11, thread_count: 3, observed_at: NOW,
+        }), connector_id: "mail" }) },
+        messengerSource: { read: async () => ({ ...snapshot("current", {
+          incomplete_count: 2, oldest_incomplete_age_ms: 40,
+        }), connector_id: "messenger" }) },
+      });
+      await vi.advanceTimersByTimeAsync(PRODUCT_HUB_PROBE_BUDGET_MS);
+      const body = productHubSchema.parse(await pending);
+      expect(body.items.find(item => item.id === "mail")).toMatchObject({ state: "ready", count: 11 });
+      expect(body.items.find(item => item.id === "messenger")).toMatchObject({ state: "ready", count: 2 });
+      expect(body.items.find(item => item.id === "crm")).toMatchObject({ state: "unavailable" });
+      expect(body.items.find(item => item.id === "second_brain")).toMatchObject({ state: "unavailable" });
+      expect(body.items.find(item => item.id === "price")).toMatchObject({ state: "configured" });
+      expect(body.items.find(item => item.id === "approvals")).toMatchObject({ state: "no_data" });
+    } finally {
+      vi.useRealTimers();
+      db.close();
+    }
+  });
+  it("keeps the hub when the mail reader’s probe abort wins before the settle timer", async () => {
+    const db = new AuthorityDb(":memory:");
+    await db.migrate();
+    const runtime = createMailCandidatesRuntime({});
+    const reason = new DOMException("The operation was aborted due to timeout", "TimeoutError");
+    const probeSignal = AbortSignal.abort(reason);
+    try {
+      await expect(runtime.read(probeSignal)).rejects.toMatchObject({ code: "PRODUCT_HUB_PROBE_DEADLINE" });
+      const started = Date.now();
+      const body = await project({
+        db, probeSignal, mailCandidates: runtime,
+        mailSource: { read: async () => snapshot("current", { message_count: 11, thread_count: 3, observed_at: NOW }) },
+      });
+      expect(Date.now() - started).toBeLessThan(PRODUCT_HUB_PROBE_BUDGET_MS);
+      expect(body.items.find(item => item.id === "crm")).toMatchObject({ state: "unavailable" });
+      expect(body.items.find(item => item.id === "second_brain")).toMatchObject({ state: "unavailable" });
+      expect(body.items.find(item => item.id === "mail")).toMatchObject({ state: "ready", count: 11 });
+      const nativeFirst = await project({
+        db, probeSignal,
+        mailCandidates: { read(signal) { return Promise.reject(signal?.reason); } },
+        mailSource: { read: async () => snapshot("current", { message_count: 3, thread_count: 1, observed_at: NOW }) },
+      });
+      expect(nativeFirst.items.find(item => item.id === "crm")).toMatchObject({ state: "unavailable" });
+      expect(nativeFirst.items.find(item => item.id === "mail")).toMatchObject({ state: "ready", count: 3 });
+      await expect(project({
+        db, probeSignal,
+        mailSource: { read: async () => { throw new Error("boom"); } },
+      })).rejects.toThrow("boom");
+    } finally {
+      runtime.close();
+      db.close();
+    }
+  });
+
+  it("keeps mail freshness and not-ready refusals while naming the collapsed code", async () => {
+    const db = new AuthorityDb(":memory:");
+    await db.migrate();
+    try {
+      const stale = await project({
+        db,
+        mailSource: { read: async () => snapshot("no_data", {}, false) },
+      });
+      expect(stale.items.find(item => item.id === "mail")).toMatchObject({
+        state: "unavailable", count: null, failure_code: "MAIL_FRESHNESS_REJECTED",
+      });
+      const notReady = await project({
+        db,
+        mailSource: { read: async () => snapshot("unavailable", {}) },
+      });
+      expect(notReady.items.find(item => item.id === "mail")).toMatchObject({
+        state: "unavailable", count: null, failure_code: "MAIL_STATUS_NOT_READY",
+      });
     } finally { db.close(); }
   });
 });

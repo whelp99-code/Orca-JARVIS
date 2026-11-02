@@ -54,7 +54,7 @@ describe("dashboard daemon observation", () => {
     const db = new AuthorityDb(tempDb()); await db.migrate();
     try {
       const before = changes(db);
-      expect((await new DashboardReadModel(db, secondBrainProbe).overview(new Date(NaN))).daemon_identity)
+      expect((await new DashboardReadModel(db).overview(new Date(NaN))).daemon_identity)
         .toMatchObject({ status: "unknown", reason: "clock_invalid", observed_at: null, snapshot: null });
       expect(changes(db)).toEqual(before);
     } finally { db.close(); rmSync(dirname(db.filename), { recursive: true, force: true }); }

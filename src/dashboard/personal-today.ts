@@ -22,7 +22,7 @@ export function todayProjection(db: AuthorityDb, now: Date, closeoutKey?: Truste
     const projections = new MemoryProjectionAuthority(db);
     const runs = projections.visible(dbRows(db.db.prepare(
       `SELECT run_id,loop_date,phase,state,result_digest,failure_code,created_at,updated_at
-       FROM daily_loop_runs WHERE record_version=1 ORDER BY updated_at DESC,run_id DESC`,
+       FROM daily_loop_runs WHERE record_version=1 ORDER BY loop_date DESC, CASE phase WHEN 'evening' THEN 1 WHEN 'morning' THEN 0 ELSE -1 END DESC, created_at DESC, run_id DESC`,
     ).all()), row => ({ kind: "daily_run", id: text(row, "run_id"),
       component_id: text(row, "run_id") })).slice(0, 2);
     const visibleNotifications = projections.visible(dbRows(db.db.prepare(

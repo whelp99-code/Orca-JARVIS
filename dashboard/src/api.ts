@@ -30,11 +30,14 @@ import { mailCandidatesSummarySchema, type MailCandidatesSummary } from "../../s
 import { productHubSchema, type ProductHubResponse } from "../../src/dashboard/product-hub-contract.js";
 
 export type ApiErrorKind = "offline" | "forbidden" | "not_found" | "server";
+const PHONE_ENTRY_STAGES = ["slot_rejected", "bootstrap_failed", "transport_or_json", "upstream_403"] as const;
+export type PhoneEntryStage = (typeof PHONE_ENTRY_STAGES)[number];
 export type ApiError = {
   readonly kind: ApiErrorKind;
   readonly code: string;
   readonly message: string;
   readonly request_id: string;
+  readonly failure_stage?: PhoneEntryStage;
 };
 export type SessionResponse = { readonly schema_version: 1; readonly csrf_token: string };
 export type DashboardClient = {
@@ -58,11 +61,13 @@ export class DashboardApiError extends Error {
   readonly kind: ApiErrorKind;
   readonly code: string;
   readonly request_id: string;
+  readonly failure_stage?: PhoneEntryStage;
   constructor(init: ApiError) {
     super(init.message);
     this.kind = init.kind;
     this.code = init.code;
     this.request_id = init.request_id;
+    this.failure_stage = init.failure_stage;
   }
 }
 
@@ -108,7 +113,8 @@ export function createDashboardClient(surface: DashboardSurface = "local"): Dash
 
 export function classifyDashboardError(error: unknown): ApiError {
   if (error instanceof DashboardApiError) {
-    return { kind: error.kind, code: error.code, message: error.message, request_id: error.request_id };
+    return { kind: error.kind, code: error.code, message: error.message, request_id: error.request_id,
+      ...(error.failure_stage === undefined ? {} : { failure_stage: error.failure_stage }) };
   }
   if (error instanceof TypeError || error instanceof DOMException) {
     return { kind: "offline", code: "OFFLINE", message: "Offline", request_id: "" };
@@ -174,6 +180,9 @@ async function requestJson(path: string, signal?: AbortSignal, csrf?: string): P
   return body;
 }
 
+function entryStage(value: unknown): PhoneEntryStage | undefined {
+  return PHONE_ENTRY_STAGES.find(stage => stage === value);
+}
 function errorFromBody(status: number, requestId: string, body: unknown): DashboardApiError {
   const kind = kindFromStatus(status);
   if (isRecord(body) && body.schema_version === 1 && isRecord(body.error)
@@ -185,6 +194,7 @@ function errorFromBody(status: number, requestId: string, body: unknown): Dashbo
       code: body.error.code,
       message: body.error.message,
       request_id: body.error.request_id,
+      ...(entryStage(body.error.failure_stage) === undefined ? {} : { failure_stage: entryStage(body.error.failure_stage) }),
     });
   }
   return new DashboardApiError({ kind, code: kind.toUpperCase(), message: kind, request_id: requestId });

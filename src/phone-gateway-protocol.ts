@@ -181,11 +181,18 @@ export type AdapterProxy = {
   readonly body?: Buffer;
   readonly responseCap: number;
 };
+export const PHONE_UPSTREAM_FAILURE_STAGES = [
+  "slot_rejected",
+  "bootstrap_failed",
+  "transport_or_json",
+  "upstream_403",
+] as const;
+export type PhoneUpstreamFailureStage = typeof PHONE_UPSTREAM_FAILURE_STAGES[number];
 
 export type AdapterResult =
   | { readonly kind: "unauthenticated" }
   | { readonly kind: "ok"; readonly status: number; readonly body: unknown }
-  | { readonly kind: "unavailable" }
+  | { readonly kind: "unavailable"; readonly stage: PhoneUpstreamFailureStage }
   | { readonly kind: "invalid" }
   | { readonly kind: "too_large" };
 

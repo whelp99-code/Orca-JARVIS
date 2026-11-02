@@ -5,9 +5,10 @@ import { canonicalize } from "../canonical.js";
 import { JarvisError } from "../jarvis-error.js";
 import { readCandidateCredential } from "./candidate-reader-credential.js";
 import type { NativeSbCandidateRead } from "./mail-candidates-contract.js";
+import { PRODUCT_HUB_PROBE_BUDGET_MS } from "../product-hub-budget.js";
 
 const MAX_RESPONSE_BYTES = 1_048_576;
-const READ_TIMEOUT_MS = 10_000;
+export const SB_COMPANY_CANDIDATE_READ_TIMEOUT_MS = PRODUCT_HUB_PROBE_BUDGET_MS;
 const contextSchema = z.object({
   provider_instance_id: z.string().min(1).max(256),
   workspace_id: z.uuid(),
@@ -120,7 +121,7 @@ export function createSbCompanyCandidateReader(clientPath: string): SbCandidateR
           else reject(readerError("SB_COMPANY_CANDIDATE_RESPONSE_INVALID"));
         };
         const abort = () => finish(readerError("SB_COMPANY_CANDIDATE_READ_CANCELLED"));
-        const timer = setTimeout(() => finish(readerError("SB_COMPANY_CANDIDATE_READ_TIMEOUT")), READ_TIMEOUT_MS);
+        const timer = setTimeout(() => finish(readerError("SB_COMPANY_CANDIDATE_READ_TIMEOUT")), SB_COMPANY_CANDIDATE_READ_TIMEOUT_MS);
         signal.addEventListener("abort", abort, { once: true });
         socket.on("connect", () => socket.end(request));
         socket.on("data", (chunk: Buffer) => {

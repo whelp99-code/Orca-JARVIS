@@ -2,11 +2,12 @@ import { JarvisError } from "../jarvis-error.js";
 import { createCrmCandidateReader } from "./crm-candidate-reader.js";
 import { createSbCompanyCandidateReader } from "./sb-company-candidate-reader.js";
 import type { MailCandidatesSummary, NativeCrmCandidateRead, NativeSbCandidateRead } from "./mail-candidates-contract.js";
+import { PRODUCT_HUB_PROBE_BUDGET_MS } from "../product-hub-budget.js";
 
 type CandidateReader<T> = Readonly<{ read(signal: AbortSignal): Promise<T> }>;
 type Source<T> = CandidateReader<T> | Readonly<{ state: "unconnected"; reason: "unconfigured" | "refused" }>;
 export type MailCandidatesRuntime = Readonly<{
-  read(): Promise<MailCandidatesSummary>;
+  read(signal?: AbortSignal): Promise<MailCandidatesSummary>;
   close(): void;
 }>;
 
@@ -42,22 +43,34 @@ export function createMailCandidatesRuntime(
     }
   }
   const lifetime = new AbortController();
-  async function readSource<T>(source: Source<T>): Promise<T | Readonly<{ state: "unconnected"; reason: "refused" | "unconfigured" }>> {
+  async function readSource<T>(source: Source<T>, signal: AbortSignal): Promise<T | Readonly<{ state: "unconnected"; reason: "refused" | "unconfigured" }>> {
     if ("state" in source) return source;
-    try { return await source.read(lifetime.signal); }
+    try { return await source.read(signal); }
     catch (error) {
       if (!(error instanceof JarvisError) && !(error instanceof DOMException && error.name === "AbortError")) throw error;
       return { state: "unconnected", reason: "refused" };
     }
   }
   return {
-    async read() {
-      lifetime.signal.throwIfAborted();
-      const [crmValue, sbValue] = await Promise.all([readSource(crm), readSource(sb)]);
-      lifetime.signal.throwIfAborted();
-      return { schema_version: 1, proof_level: "native-read", authority: "none",
-        observed_at: new Date().toISOString(), crm: crmValue, sb: sbValue };
+    async read(signal) {
+      const scoped = signal === undefined ? lifetime.signal : AbortSignal.any([lifetime.signal, signal, AbortSignal.timeout(PRODUCT_HUB_PROBE_BUDGET_MS)]);
+      try {
+        scoped.throwIfAborted();
+        const [crmValue, sbValue] = await Promise.all([readSource(crm, scoped), readSource(sb, scoped)]);
+        scoped.throwIfAborted();
+        return { schema_version: 1, proof_level: "native-read", authority: "none",
+          observed_at: new Date().toISOString(), crm: crmValue, sb: sbValue };
+      } catch (error) {
+        if (!ownProbeTimeout(error, scoped)) throw error;
+        throw new JarvisError("PRODUCT_HUB_PROBE_DEADLINE");
+      }
     },
     close() { lifetime.abort(); },
   };
+}
+
+function ownProbeTimeout(error: unknown, signal: AbortSignal): boolean {
+  if (!signal.aborted || !(error instanceof DOMException) || error.name !== "TimeoutError") return false;
+  const reason = signal.reason;
+  return reason instanceof DOMException && reason.name === "TimeoutError";
 }

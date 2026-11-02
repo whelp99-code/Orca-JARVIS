@@ -34,6 +34,16 @@ function record(value: unknown): Record<string, unknown> {
   return Object.fromEntries(Object.entries(value));
 }
 
+async function cachedOverview(origin: string): Promise<Record<string, unknown>> {
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    const overview = record(JSON.parse(await (await request(`${origin}/api/v1/overview`)).body.text()));
+    if (record(overview.second_brain).readiness !== "checking") return overview;
+    await new Promise(resolve => setTimeout(resolve, 25));
+  }
+  throw new Error("overview doctor cache did not fill");
+}
+
 describe("Second Brain readiness projections", () => {
   it("projects one canonical redacted report through CLI, doctor, dashboard health, and overview", async () => {
     // Given: one injected safe probe and one injected clock.
@@ -50,7 +60,7 @@ describe("Second Brain readiness projections", () => {
       const doctor = await execute(["--db", db.filename, "doctor"], { clock: () => NOW, secondBrainProbe: probe });
       const origin = `http://${server.address.host}:${String(server.address.port)}`;
       const health = record(JSON.parse(await (await request(`${origin}/api/v1/health`)).body.text()));
-      const overview = record(JSON.parse(await (await request(`${origin}/api/v1/overview`)).body.text()));
+      const overview = await cachedOverview(origin);
 
       // Then: all projections are byte-identical and retain staged degradation.
       const expected = record(capabilities.second_brain);
@@ -138,7 +148,7 @@ describe("Second Brain readiness projections", () => {
       const doctor = await execute(["--db", db.filename, "doctor"], { clock: () => NOW, secondBrainProbe: measuredProbe });
       const origin = `http://${server.address.host}:${String(server.address.port)}`;
       const health = record(JSON.parse(await (await request(`${origin}/api/v1/health`)).body.text()));
-      const overview = record(JSON.parse(await (await request(`${origin}/api/v1/overview`)).body.text()));
+      const overview = await cachedOverview(origin);
       // Then: all projections fail closed identically without leaking measured payloads.
       const expected = record(capabilities.second_brain);
       expect(JSON.stringify(record(record(doctor.report).second_brain))).toBe(JSON.stringify(expected));

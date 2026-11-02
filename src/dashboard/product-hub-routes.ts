@@ -1,13 +1,14 @@
 import type { DashboardApiInput } from "./api-routes.js";
 import type { MailCandidatesSummary } from "../integration/mail-candidates-contract.js";
 import { JarvisError } from "../jarvis-error.js";
+import { PRODUCT_HUB_PROBE_BUDGET_MS } from "../product-hub-budget.js";
 import { classifyPersonalSnapshot } from "../personal-connector-results.js";
 import type { PersonalConnectorState, PersonalSourceSnapshot } from "../personal-connector-types.js";
 import { pendingControlSummary } from "./control-request-read.js";
 import { hasSameOriginReadOrigin } from "./request-boundary.js";
 import { sessionMatchesCsrf } from "./session.js";
 import { writeDashboardError, writeDashboardJson } from "./http.js";
-import { productHubSchema, type ProductHubResponse } from "./product-hub-contract.js";
+import { HUB_FAILURE_CODES, productHubSchema, type HubFailureCode, type ProductHubResponse } from "./product-hub-contract.js";
 
 type HubItem = ProductHubResponse["items"][number];
 type HubState = HubItem["state"];
@@ -16,7 +17,8 @@ type SourceFailure = { readonly failed: "denied" | "unavailable"; readonly code:
 export type ProductHubRead = {
   readonly clock: () => Date;
   readonly db: DashboardApiInput["db"];
-  readonly mailCandidates?: { read(): Promise<MailCandidatesSummary> };
+  readonly mailCandidates?: { read(signal?: AbortSignal): Promise<MailCandidatesSummary> };
+  readonly probeSignal?: AbortSignal;
   readonly mailSource?: { read(now: Date): Promise<PersonalSourceSnapshot> };
   readonly messengerSource?: { read(now: Date): Promise<PersonalSourceSnapshot> };
   readonly priceConfigured: boolean;
@@ -51,10 +53,11 @@ export async function tryHandleProductHub(input: DashboardApiInput): Promise<boo
 
 export async function readProductHub(input: ProductHubRead): Promise<ProductHubResponse> {
   const now = input.clock();
+  const deadline = input.probeSignal ?? AbortSignal.timeout(PRODUCT_HUB_PROBE_BUDGET_MS);
   const [candidates, mail, messenger] = await Promise.all([
-    settle(input.mailCandidates?.read()),
-    settle(input.mailSource?.read(now)),
-    settle(input.messengerSource?.read(now)),
+    settle(input.mailCandidates?.read(deadline), deadline),
+    settle(input.mailSource?.read(now), deadline),
+    settle(input.messengerSource?.read(now), deadline),
   ]);
   const body = {
     schema_version: 1 as const,
@@ -80,14 +83,28 @@ function memoryReadConfigured(input: DashboardApiInput): boolean {
   }
 }
 
-async function settle<T>(read: Promise<T> | undefined): Promise<{ readonly value: T } | SourceFailure | undefined> {
+async function settle<T>(read: Promise<T> | undefined, deadline: AbortSignal): Promise<{ readonly value: T } | SourceFailure | undefined> {
   if (read === undefined) return undefined;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  const bounded = new Promise<T>((resolve, reject) => {
+    timer = setTimeout(() => reject(new JarvisError("PRODUCT_HUB_PROBE_DEADLINE")), PRODUCT_HUB_PROBE_BUDGET_MS);
+    read.then(resolve, reject);
+  }).finally(() => { if (timer !== undefined) clearTimeout(timer); });
   try {
-    return { value: await read };
+    return { value: await bounded };
   } catch (error) {
-    if (!(error instanceof JarvisError)) throw error;
-    return { failed: identityScopeDenied(error.code) ? "denied" : "unavailable", code: error.code };
+    const code = readerFailureCode(error, deadline);
+    if (code === undefined) throw error;
+    return { failed: identityScopeDenied(code) ? "denied" : "unavailable", code };
   }
+}
+
+function readerFailureCode(error: unknown, deadline: AbortSignal): string | undefined {
+  if (error instanceof JarvisError) return error.code;
+  if (deadline.aborted && error === deadline.reason && error instanceof DOMException && error.name === "TimeoutError") {
+    return "PRODUCT_HUB_PROBE_DEADLINE";
+  }
+  return undefined;
 }
 
 function crmCard(
@@ -125,17 +142,18 @@ function mailCard(
   now: Date,
 ): HubItem {
   if (settled === undefined) return card("mail", "unconfigured");
-  if ("failed" in settled) return card("mail", settled.failed);
+  if ("failed" in settled) return card("mail", settled.failed, null, null, null, null, publishedFailureCode(settled.code));
   const snapshot = settled.value;
   const classified = classifyPersonalSnapshot(snapshot, "mail", now);
   const state = connectorState(classified.state, classified.reason);
-  if (state === "denied" || state === "unconfigured" || state === "unavailable") return card("mail", state);
+  const failure = mailFailureCode(snapshot.status, classified.reason, state);
+  if (state === "denied" || state === "unconfigured" || state === "unavailable") return card("mail", state, snapshot.observed_at, null, null, null, failure);
   const primary = verifiedCount(snapshot.values.message_count);
   const secondary = verifiedCount(snapshot.values.thread_count);
   if (state === "no_data" && primary === undefined && secondary === undefined) {
     return card("mail", "no_data", snapshot.observed_at, 0, 0, null);
   }
-  return card("mail", state, snapshot.observed_at, primary ?? null, secondary ?? null, null);
+  return card("mail", state, snapshot.observed_at, primary ?? null, secondary ?? null, null, failure);
 }
 
 function messengerCard(
@@ -143,7 +161,7 @@ function messengerCard(
   now: Date,
 ): HubItem {
   if (settled === undefined) return card("messenger", "unconfigured");
-  if ("failed" in settled) return card("messenger", settled.failed);
+  if ("failed" in settled) return card("messenger", settled.failed, null, null, null, null, publishedFailureCode(settled.code));
   const snapshot = settled.value;
   const classified = classifyPersonalSnapshot(snapshot, "messenger", now);
   const state = connectorState(classified.state, classified.reason);
@@ -194,6 +212,17 @@ function verifiedCount(value: unknown): number | undefined {
   return typeof value === "number" && Number.isSafeInteger(value) && value >= 0 ? value : undefined;
 }
 
+function publishedFailureCode(code: string): HubFailureCode | null {
+  return HUB_FAILURE_CODES.includes(code as HubFailureCode) ? code as HubFailureCode : null;
+}
+
+function mailFailureCode(status: PersonalSourceSnapshot["status"], reason: string, state: HubState): HubFailureCode | null {
+  if (state !== "unavailable" && state !== "stale") return null;
+  if (reason === "source_stale") return "MAIL_FRESHNESS_REJECTED";
+  if (status === "unavailable") return "MAIL_STATUS_NOT_READY";
+  return null;
+}
+
 function card(
   id: HubItem["id"],
   state: HubState,
@@ -201,6 +230,7 @@ function card(
   count: number | null = null,
   secondary_count: number | null = null,
   oldest_age_ms: number | null = null,
+  failure_code: HubFailureCode | null = null,
 ): HubItem {
-  return { id, state, observed_at, count, secondary_count, oldest_age_ms };
+  return { id, state, observed_at, count, secondary_count, oldest_age_ms, failure_code };
 }

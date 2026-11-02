@@ -33,7 +33,7 @@ const expected = {
   policyReasons: ["POLICY_SATISFIED", "NO_DATA", "INPUT_STALE", "SOURCE_UNAVAILABLE", "SOURCE_OFFLINE", "EVIDENCE_INSUFFICIENT", "EVIDENCE_CONFLICT", "CONFIRMATION_REQUIRED", "AUTHORITY_REQUIRED", "QUIET_HOURS", "EXPIRED", "NOT_APPLICABLE"],
   quietDecisions: ["deliver", "defer", "suppress"],
   remoteDecisions: ["approve", "reject"],
-  sourceProviders: ["jarvis", "orca", "task-timeline", "portfolio", "second-brain", "calendar", "mail", "messenger", "gateway", "mac-client", "phone-client"],
+  sourceProviders: ["jarvis", "orca", "herdr", "gajaeway", "task-timeline", "portfolio", "second-brain", "calendar", "mail", "messenger", "gateway", "mac-client", "phone-client"],
   challengeStates: ["issued", "consumed", "expired", "rejected"],
   principalStates: ["absent", "active", "revoked"],
   sensitivity: ["public", "personal", "sensitive", "restricted"],
@@ -90,7 +90,7 @@ describe("canonical todo-2 discriminant tables", () => {
 
   it("parses every source provider with its independent host and kind", () => {
     const sourceMatrix = [
-      ["jarvis", "authority", "host:pos:linux-control-plane"], ["orca", "live_adapter", "host:pos:linux-control-plane"], ["task-timeline", "timeline", "host:pos:linux-control-plane"], ["portfolio", "live_adapter", "host:pos:linux-control-plane"], ["second-brain", "second_brain", "host:pos:linux-second-brain"], ["calendar", "live_adapter", "host:pos:linux-control-plane"], ["mail", "live_adapter", "host:pos:linux-control-plane"], ["messenger", "live_adapter", "host:pos:linux-control-plane"], ["gateway", "gateway", "host:pos:linux-control-plane"], ["mac-client", "client", "host:pos:mac-client"], ["phone-client", "client", "host:pos:phone-client"],
+      ["jarvis", "authority", "host:pos:linux-control-plane"], ["orca", "live_adapter", "host:pos:linux-control-plane"], ["herdr", "live_adapter", "host:pos:linux-control-plane"], ["gajaeway", "live_adapter", "host:pos:linux-control-plane"], ["task-timeline", "timeline", "host:pos:linux-control-plane"], ["portfolio", "live_adapter", "host:pos:linux-control-plane"], ["second-brain", "second_brain", "host:pos:linux-second-brain"], ["calendar", "live_adapter", "host:pos:linux-control-plane"], ["mail", "live_adapter", "host:pos:linux-control-plane"], ["messenger", "live_adapter", "host:pos:linux-control-plane"], ["gateway", "gateway", "host:pos:linux-control-plane"], ["mac-client", "client", "host:pos:mac-client"], ["phone-client", "client", "host:pos:phone-client"],
     ] as const;
     for (const [provider, source_kind, host_id] of sourceMatrix) { const sourceId = `src:pos:v1:${provider}:primary`; const value = base(`obs:pos:v1:${sourceId}:${uuid}`, { kind: "status", subject: "task", value: "value", trust: "verified", sensitivity: "personal", cursor: null, checkpoint: null, content_digest: digest, state: "fresh" }); value.source = { source_id: sourceId, source_kind, host_id, source_version: "v1", evidence_ref: "ref:1" }; expect(parseObservationEnvelopeV1(value).source.source_id).toBe(sourceId); }
   });

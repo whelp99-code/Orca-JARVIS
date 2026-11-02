@@ -32,7 +32,7 @@ export const PERSONAL_TOTAL_BYTES_MAX = 65_536;
 export const PERSONAL_MAX_LIFETIME_MS = 31 * 86_400_000;
 
 export const SOURCE_KINDS = ["authority", "live_adapter", "second_brain", "timeline", "gateway", "client"] as const;
-export const SOURCE_PROVIDERS = ["jarvis", "orca", "task-timeline", "portfolio", "second-brain", "calendar", "mail", "messenger", "gateway", "mac-client", "phone-client"] as const;
+export const SOURCE_PROVIDERS = ["jarvis", "orca", "herdr", "gajaeway", "task-timeline", "portfolio", "second-brain", "calendar", "mail", "messenger", "gateway", "mac-client", "phone-client"] as const;
 export const HOST_IDS = ["host:pos:linux-control-plane", "host:pos:linux-second-brain", "host:pos:mac-client", "host:pos:phone-client"] as const;
 export const AUTHORITY_KINDS = ["none", "control_receipt"] as const;
 export const FRESHNESS_STATES = ["fresh", "stale", "no_data", "unavailable", "offline"] as const;

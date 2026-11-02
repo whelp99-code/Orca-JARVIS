@@ -10,7 +10,7 @@ type Loader = (signal?: AbortSignal) => Promise<ProductHubResponse>;
 type LoadState =
   | Readonly<{ load: Loader; kind: "loading" }>
   | Readonly<{ load: Loader; kind: "read"; value: ProductHubResponse }>
-  | Readonly<{ load: Loader; kind: "error"; denied: boolean }>;
+  | Readonly<{ load: Loader; kind: "error"; denied: boolean; failureStage?: string; failureCode?: string }>;
 
 const PRODUCTS = [
   { id: "crm", name: "CRM", link: "CRM 화면 열기" },
@@ -63,7 +63,10 @@ export function ProductHub({ load }: Readonly<{ load?: Loader }>) {
       if (!abort.signal.aborted) setState({ load, kind: "read", value });
     }, (error: unknown) => {
       if (!abort.signal.aborted) {
-        setState({ load, kind: "error", denied: classifyDashboardError(error).kind === "forbidden" });
+        const classified = classifyDashboardError(error);
+        setState({ load, kind: "error", denied: classified.kind === "forbidden",
+          ...(classified.failure_stage === undefined ? {} : { failureStage: classified.failure_stage }),
+          failureCode: classified.code });
       }
     });
     return () => { abort.abort(); };
@@ -84,8 +87,8 @@ export function ProductHub({ load }: Readonly<{ load?: Loader }>) {
           onClick={() => { setRevision(value => value + 1); }}>제품 요약 새로고침</button>
       </header>
       <p className="product-hub-note">오늘 브리핑이 비어 있어도 각 제품을 확인할 수 있습니다. 조회와 화면 이동은 승인·기장·전송이 아닙니다.</p>
-      <p className="product-hub-note" role="status" aria-live="polite" aria-atomic="true">
-        {value === undefined ? STATES[fallback] : `요약 조회 시각 ${formatKst(value.generated_at)}`}
+      <p className="product-hub-note" role="status" aria-live="polite" aria-atomic="true" data-entry-stage={current?.kind === "error" ? current.failureStage ?? current.failureCode ?? "" : ""}>
+        {value === undefined ? entryLabel(fallback, current) : `요약 조회 시각 ${formatKst(value.generated_at)}`}
       </p>
       <div className="product-hub-grid">
         {PRODUCTS.map(product => {
@@ -97,7 +100,7 @@ export function ProductHub({ load }: Readonly<{ load?: Loader }>) {
               data-product={product.id} data-state={status} aria-labelledby={`product-title-${product.id}`}>
               <header className="product-hub-card-heading">
                 <h2 id={`product-title-${product.id}`}>{product.name}</h2>
-                <p className="product-hub-state">{STATES[status]}</p>
+                <p className="product-hub-state" data-failure-code={item?.failure_code ?? (value === undefined ? current?.kind === "error" ? current.failureStage ?? current.failureCode : undefined : undefined)}>{STATES[status]}{item?.failure_code ? ` · ${item.failure_code}` : ""}</p>
               </header>
               <p className="product-hub-summary" data-product-summary={product.id}>{summary(product.id, item)}</p>
               <p className="product-hub-note">{limitation(product.id)}</p>
@@ -150,6 +153,12 @@ function limitation(id: ProductId): string {
   }
 }
 
+function entryLabel(fallback: Product["state"] | "loading", current: LoadState | undefined): string {
+  const base = STATES[fallback];
+  if (current?.kind !== "error") return base;
+  const stage = current.failureStage ?? current.failureCode;
+  return stage === undefined ? base : `${base} · ${stage}`;
+}
 function assertNever(value: never): never {
   throw new Error(`Unexpected product: ${String(value)}`);
 }

@@ -235,8 +235,8 @@ async function serveMatchedRoute(ctx: PhoneGatewayRequestCtx, method: string, pa
     return;
   }
   if (proxied.kind === "unavailable") {
-    writePhoneGatewayError(ctx.response, { code: PHONE_ERROR_CODES.PHONE_UPSTREAM_UNAVAILABLE, requestId });
-    update({ code: PHONE_ERROR_CODES.PHONE_UPSTREAM_UNAVAILABLE, status: 503, outcome: "upstream_unavailable" });
+    writePhoneGatewayError(ctx.response, { code: PHONE_ERROR_CODES.PHONE_UPSTREAM_UNAVAILABLE, requestId, failureStage: proxied.stage });
+    update({ code: PHONE_ERROR_CODES.PHONE_UPSTREAM_UNAVAILABLE, status: 503, outcome: "upstream_unavailable", failureStage: proxied.stage });
     return;
   }
   if (proxied.kind !== "ok") {
