@@ -9,6 +9,7 @@ const cacheDir = vitestCacheDir();
 
 export default defineConfig({ ...(cacheDir ? { cacheDir } : {}), test: {
   fileParallelism: false,
+  setupFiles: ["tests/provider-storage-cleanup.setup.ts"],
   include: profile === "gui" ? gui : [profile === "backend" ? `tests/**/${pattern}` : `tests/${profile}/**/${pattern}`],
   exclude: [...configDefaults.exclude, "dashboard/**", "e2e/**", ".omo/**", ".runtime-tmp/**", ".chatgpt2codex/**",
     ...(profile === "gui" ? [] : gui)],
