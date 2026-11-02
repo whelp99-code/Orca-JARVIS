@@ -130,6 +130,7 @@ export function phoneGatewayRequestAudit(input: {
   readonly ownerHex: string | null;
   readonly failureStage?: PhoneUpstreamFailureStage;
 }): Readonly<Record<string, string | number | null>> {
+  const failureStage = loggedFailureStage(input.status, input.failureStage);
   return {
     schema_version: 1,
     event: "phone_gateway_request",
@@ -141,8 +142,19 @@ export function phoneGatewayRequestAudit(input: {
     status: input.status,
     duration_bucket: input.durationBucket,
     owner_digest16: input.ownerHex,
-    ...(input.failureStage === undefined ? {} : { failure_stage: input.failureStage }),
+    ...(failureStage === undefined ? {} : { failure_stage: failureStage }),
   };
+}
+const RESPONSE_LOG_STAGE = {
+  slot_rejected: "slot",
+  bootstrap_failed: "bootstrap",
+  transport_or_json: "transport",
+  upstream_403: "upstream",
+} as const;
+
+function loggedFailureStage(status: number, stage: PhoneUpstreamFailureStage | undefined): string | undefined {
+  if (status !== 503) return stage;
+  return stage === undefined ? "unknown" : RESPONSE_LOG_STAGE[stage];
 }
 
 function durationBucket(ms: number): "lt100ms" | "lt1s" | "lt10s" | "ge10s" {
