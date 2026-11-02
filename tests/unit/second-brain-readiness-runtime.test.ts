@@ -6,6 +6,7 @@ import {
   type SecondBrainHandshakeResult,
   type SecondBrainReadinessRunner,
 } from "../../src/second-brain-readiness-runtime.js";
+import { secondBrainChildCommand } from "../../src/second-brain-privilege.js";
 
 function runner(overrides: Partial<{
   readonly executable: "available" | "missing" | "unavailable";
@@ -112,6 +113,29 @@ describe("second brain probe command identity", () => {
     expect(secondBrainProbeCommand("doctor", "/opt/provider/sb", undefined)).toEqual({
       file: "/opt/provider/sb",
       args: ["doctor", "--json"],
+    });
+  });
+});
+
+describe("second brain handshake child identity", () => {
+  it("drops the launcher to jm when the caller is root and keeps both configured variables", () => {
+    expect(secondBrainChildCommand("/opt/provider/bin/second-brain-mcp", [], 0, [
+      "SB_CONFIG", "SB_MCP_CONTRACT_PROFILE",
+    ])).toEqual({
+      file: "/usr/bin/sudo",
+      args: [
+        "-n", "-u", "jm", "--preserve-env=SB_CONFIG,SB_MCP_CONTRACT_PROFILE", "--",
+        "/opt/provider/bin/second-brain-mcp",
+      ],
+    });
+  });
+
+  it("keeps the direct launcher when the caller is not root", () => {
+    expect(secondBrainChildCommand("/opt/provider/bin/second-brain-mcp", [], 1000, [
+      "SB_CONFIG", "SB_MCP_CONTRACT_PROFILE",
+    ])).toEqual({
+      file: "/opt/provider/bin/second-brain-mcp",
+      args: [],
     });
   });
 });

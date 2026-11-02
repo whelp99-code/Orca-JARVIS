@@ -1,6 +1,7 @@
 import { execFile } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
+import { secondBrainCallerUid, secondBrainChildCommand } from "./second-brain-privilege.js";
 import { probeSecondBrainConfiguration } from "./second-brain-readiness-config.js";
 import {
   parseSecondBrainHandshakeFacts,
@@ -67,26 +68,12 @@ export type { SecondBrainHandshakeResult, SecondBrainReadFacts } from "./second-
 export function secondBrainProbeArguments(command: "status" | "doctor"): readonly string[] {
   return command === "doctor" ? ["doctor", "--json"] : ["status"];
 }
-/**
- * Root must not run `sb`. A root `status` or `doctor` leaves root-owned vault locks.
- * Only that child drops to jm. `-n` refuses a password prompt, and
- * `--preserve-env=SB_CONFIG` keeps the configured file across sudo's env_reset.
- */
 export function secondBrainProbeCommand(
   command: "status" | "doctor",
   cli: string,
   uid: number | undefined,
 ): { readonly file: string; readonly args: readonly string[] } {
-  const probe = secondBrainProbeArguments(command);
-  if (uid !== 0) return { file: cli, args: probe };
-  return {
-    file: "/usr/bin/sudo",
-    args: ["-n", "-u", "jm", "--preserve-env=SB_CONFIG", "--", cli, ...probe],
-  };
-}
-
-function probeCallerUid(): number | undefined {
-  return typeof process.getuid === "function" ? process.getuid() : undefined;
+  return secondBrainChildCommand(cli, secondBrainProbeArguments(command), uid);
 }
 
 export interface SecondBrainReadinessRunner {
@@ -98,7 +85,7 @@ export interface SecondBrainReadinessRunner {
 
 function commandResult(command: "status" | "doctor"): Promise<SecondBrainCommandResult> {
   const endpoint = configuredEndpoint();
-  const invocation = secondBrainProbeCommand(command, endpoint.cli, probeCallerUid());
+  const invocation = secondBrainProbeCommand(command, endpoint.cli, secondBrainCallerUid());
   return new Promise(resolve => {
     execFile(invocation.file, [...invocation.args], {
       encoding: "utf8",
