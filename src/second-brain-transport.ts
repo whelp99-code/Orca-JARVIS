@@ -1,5 +1,6 @@
 import { execFile as nodeExecFile, type ChildProcess } from "node:child_process";
 import { realpathSync } from "node:fs";
+import { secondBrainCallerUid, secondBrainChildCommand } from "./second-brain-privilege.js";
 import { frozenArgumentsMatch, inspectFrozenSchemas, snapshotArguments } from "./second-brain-frozen.js";
 import { parseSecondBrainStrictJson } from "./second-brain-strict-json.js";
 import {
@@ -120,7 +121,8 @@ class SupervisedSecondBrainTransport implements SecondBrainTransport {
 			target = this.resolvePath(this.launcher); } catch { throw this.error("SECOND_BRAIN_DISCOVERY_FAILED", "unavailable"); } this.generation += 1;
 		this.sequence = 0; this.buffer = Buffer.alloc(0); this.stderrBuffer = Buffer.alloc(0); this.stderrBytes = 0; this.stderrEvents = 0; this.state = "starting";
 		this.localArguments = false; this.seen.clear(); this.retired.clear(); if (this.child) throw this.error("SECOND_BRAIN_SHUTDOWN_FAILED", "fatal");
-		const child = this.run(target, [], { encoding: "buffer", shell: false,
+		const invocation = secondBrainChildCommand(target, [], secondBrainCallerUid(), ["SB_CONFIG", "SB_MCP_CONTRACT_PROFILE"]);
+		const child = this.run(invocation.file, [...invocation.args], { encoding: "buffer", shell: false,
 			env: { SB_CONFIG: this.config, SB_MCP_CONTRACT_PROFILE: this.profile },
 			windowsHide: true, }); this.child = child;
 		// A pipe error is asynchronous and can arrive while the old child is stopping.

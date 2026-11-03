@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 import {
   runtimeSecondBrainReadinessProbe,
+  secondBrainProbeCommand,
   type SecondBrainCommandResult,
   type SecondBrainHandshakeResult,
   type SecondBrainReadinessRunner,
 } from "../../src/second-brain-readiness-runtime.js";
+import { secondBrainChildCommand } from "../../src/second-brain-privilege.js";
 
 function runner(overrides: Partial<{
   readonly executable: "available" | "missing" | "unavailable";
@@ -88,5 +90,52 @@ describe("bounded Second Brain runtime probe", () => {
     expect(observed.data_state).toBe(dataState);
     expect(observed.refresh.kind).toBe(refreshKind);
     expect(JSON.stringify(observed)).not.toContain(stdout);
+  });
+});
+
+describe("second brain probe command identity", () => {
+  it("passes sudo -u jm arguments when the caller is root", () => {
+    expect(secondBrainProbeCommand("status", "/opt/provider/sb", 0)).toEqual({
+      file: "/usr/bin/sudo",
+      args: ["-n", "-u", "jm", "--preserve-env=SB_CONFIG", "--", "/opt/provider/sb", "status"],
+    });
+    expect(secondBrainProbeCommand("doctor", "/opt/provider/sb", 0)).toEqual({
+      file: "/usr/bin/sudo",
+      args: ["-n", "-u", "jm", "--preserve-env=SB_CONFIG", "--", "/opt/provider/sb", "doctor", "--json"],
+    });
+  });
+
+  it("keeps the direct sb vector when the caller is not root", () => {
+    expect(secondBrainProbeCommand("status", "/opt/provider/sb", 1000)).toEqual({
+      file: "/opt/provider/sb",
+      args: ["status"],
+    });
+    expect(secondBrainProbeCommand("doctor", "/opt/provider/sb", undefined)).toEqual({
+      file: "/opt/provider/sb",
+      args: ["doctor", "--json"],
+    });
+  });
+});
+
+describe("second brain handshake child identity", () => {
+  it("drops the launcher to jm when the caller is root and keeps both configured variables", () => {
+    expect(secondBrainChildCommand("/opt/provider/bin/second-brain-mcp", [], 0, [
+      "SB_CONFIG", "SB_MCP_CONTRACT_PROFILE",
+    ])).toEqual({
+      file: "/usr/bin/sudo",
+      args: [
+        "-n", "-u", "jm", "--preserve-env=SB_CONFIG,SB_MCP_CONTRACT_PROFILE", "--",
+        "/opt/provider/bin/second-brain-mcp",
+      ],
+    });
+  });
+
+  it("keeps the direct launcher when the caller is not root", () => {
+    expect(secondBrainChildCommand("/opt/provider/bin/second-brain-mcp", [], 1000, [
+      "SB_CONFIG", "SB_MCP_CONTRACT_PROFILE",
+    ])).toEqual({
+      file: "/opt/provider/bin/second-brain-mcp",
+      args: [],
+    });
   });
 });
