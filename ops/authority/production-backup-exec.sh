@@ -1,11 +1,9 @@
 #!/usr/bin/env bash
-# A root publisher must not write the production backup. That directory is owned
-# by jarvis-svc, and the backup refuses a caller whose uid is not the owner.
-# Drop the caller to jarvis-svc. Do not accept a root-owned directory.
+# A root publisher must not write the production backup. The runner drops that
+# caller to jarvis-svc. The owner check stays "caller uid == directory uid".
+_production_backup_here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
 run_production_backup() {
-  if [[ "$(id -u)" -eq 0 ]]; then
-    sudo -n -u jarvis-svc -- /usr/bin/env "JARVIS_STATE_ROOT=${JARVIS_STATE_ROOT}" "$@"
-  else
-    "$@"
-  fi
+  local node="${NODE_BIN:-node}"
+  "$node" "${_production_backup_here}/production-backup-exec.mjs" \
+    --uid "$(id -u)" --state-root "${JARVIS_STATE_ROOT:-}" -- "$@"
 }
