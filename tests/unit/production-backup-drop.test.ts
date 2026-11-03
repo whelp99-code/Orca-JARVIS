@@ -96,8 +96,9 @@ describe("production backup drop", () => {
   });
 
   it("writes the new backup as jarvis-svc mode 600", () => {
-    const scratch = mkdtempSync(join(tmpdir(), "jarvis-backup-file-"));
-    expect(scratch.startsWith(tmpdir())).toBe(true);
+    // The shard temp is mode 0700. jarvis-svc cannot cross it, so the fixture stays on /tmp.
+    const scratch = mkdtempSync(join("/tmp", "jarvis-backup-file-"));
+    expect(scratch.startsWith("/tmp/")).toBe(true);
     expect(scratch.includes("/var/lib/jarvis-svc")).toBe(false);
     chmodSync(scratch, 0o711);
     const stateRoot = join(scratch, "state");
