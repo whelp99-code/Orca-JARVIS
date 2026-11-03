@@ -5,7 +5,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { backupProductionSqlite, productionBackupRoot, productionBackupSource } from "../../src/personal-os-backup.js";
 import { PersonalOsError } from "../../src/personal-os-errors.js";
-import { runProductionBackup } from "../../ops/authority/production-backup-exec.mjs";
+import { runProductionBackup } from "../../src/production-backup-drop.js";
 
 const HELPER = "ops/authority/production-backup-exec.sh";
 const INJECTED_UID = 960;
@@ -125,7 +125,7 @@ describe("production backup drop", () => {
     try {
       expect(result.status, result.stderr).toBe(0);
       const recorded = readFileSync(log, "utf8");
-      expect(recorded).toContain("production-backup-exec.mjs --uid 0");
+      expect(recorded).toContain("src/production-backup-drop.ts --uid 0");
       expect(recorded).toContain(`--state-root ${STATE_ROOT} -- /bin/echo backup-child --production`);
     } finally {
       rmSync(root, { recursive: true, force: true });
