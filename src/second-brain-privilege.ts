@@ -1,3 +1,5 @@
+import { execFile, type ExecFileException } from "node:child_process";
+
 /**
  * Root must not run a Second Brain child. A root `sb` or MCP launcher leaves root-owned vault
  * locks, and the handshake child then exits. Only that child drops to jm. The caller stays as it
@@ -34,3 +36,21 @@ export function secondBrainProbeCommand(
 ): { readonly file: string; readonly args: readonly string[] } {
   return secondBrainChildCommand(cli, secondBrainProbeArguments(command), uid);
 }
+
+export type SecondBrainProbeExecFile = (
+  file: string,
+  args: readonly string[],
+  options: {
+    readonly encoding: "utf8";
+    readonly timeout: number;
+    readonly maxBuffer: number;
+    readonly killSignal: "SIGKILL";
+    readonly windowsHide: true;
+    readonly env: { readonly SB_CONFIG: string; readonly PATH: string; readonly LANG: "C" };
+  },
+  callback: (error: ExecFileException | null, stdout: string) => void,
+) => void;
+
+export const defaultSecondBrainProbeExec: SecondBrainProbeExecFile = (file, args, options, callback) => {
+  execFile(file, [...args], options, callback);
+};
