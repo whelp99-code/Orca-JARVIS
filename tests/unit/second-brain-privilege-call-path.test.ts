@@ -7,7 +7,9 @@ import { createSecondBrainTransport, type SecondBrainExecFile } from "../../src/
 const LAUNCHER = "/opt/provider/bin/second-brain-mcp";
 
 function asRoot(): void {
-  vi.spyOn(process, "getuid").mockReturnValue(0);
+  if (typeof process.getuid !== "function") throw new Error("uid required");
+  const proc = process as NodeJS.Process & { getuid(): number };
+  vi.spyOn(proc, "getuid").mockReturnValue(0);
 }
 
 function expectJmDrop(file: string, args: readonly string[]): void {
@@ -77,7 +79,6 @@ describe("second brain child drop call path", () => {
       launcherPath: LAUNCHER,
       configPath: "/opt/provider/config.toml",
       realpath: path => path,
-      deadlines: { startup: 50, read: 50, write: 50 },
       shutdownGraceMs: 20,
       safeReadRetries: 0,
       execFile,
