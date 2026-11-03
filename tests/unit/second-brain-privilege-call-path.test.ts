@@ -1,3 +1,6 @@
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { EventEmitter } from "node:events";
 import type { ChildProcess } from "node:child_process";
 import { afterEach, describe, expect, it, vi } from "vitest";
@@ -66,6 +69,33 @@ describe("second brain child drop call path", () => {
     expect(calls[0]!.args).toContain("status");
     expectJmDrop(calls[1]!.file, calls[1]!.args);
     expect(calls[1]!.args).toContain("doctor");
+  });
+  it("root doctor drop leaves no root-owned metrics file", async () => {
+    asRoot();
+    process.env["JARVIS_SECOND_BRAIN_LAUNCHER"] = LAUNCHER;
+    process.env["JARVIS_SECOND_BRAIN_CONFIG"] = "/opt/provider/config.toml";
+    const dir = mkdtempSync(join(tmpdir(), "sb-metrics-"));
+    const owned: Array<{ name: string; uid: number }> = [];
+    try {
+      const runner = boundedSecondBrainReadinessRunner((file, args, _options, callback) => {
+        const dropped = file === "/usr/bin/sudo"
+          && args[0] === "-n"
+          && args[1] === "-u"
+          && args[2] === "jm"
+          && args.includes("doctor");
+        const uid = dropped ? 1000 : 0;
+        for (const name of ["metrics.lock", "metrics.jsonl"]) {
+          writeFileSync(join(dir, name), "");
+          owned.push({ name, uid });
+        }
+        callback(null, "[]");
+      });
+      await runner.run("doctor");
+      expect(owned.filter((item) => item.uid === 0)).toEqual([]);
+      expect(owned.map((item) => item.name).sort()).toEqual(["metrics.jsonl", "metrics.lock"]);
+    } finally {
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it("transport start uses the injected run and drops to jm when the caller is root", async () => {
