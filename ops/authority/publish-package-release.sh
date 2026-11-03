@@ -96,6 +96,8 @@ if [[ "${ACTIVATE}" -eq 1 && "${!OWNER_GATE:-}" != "approved" ]]; then
 fi
 
 here="$(cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=production-backup-exec.sh
+source "${here}/production-backup-exec.sh"
 readonly WORKTREE="${JARVIS_PUBLISH_WORKTREE:-$(cd -- "${here}/../.." && pwd)}"
 NODE_BIN="${JARVIS_NODE_BIN:-}"
 if [[ -z "${NODE_BIN}" ]]; then
@@ -204,7 +206,7 @@ else
 fi
 
 if [[ "${DB}" == "${PRODUCTION_DB}" ]]; then
-  backup="$("${NODE_BIN}" "${stage}/dist/src/personal-os-backup-cli.js" \
+  backup="$(run_production_backup "${NODE_BIN}" "${stage}/dist/src/personal-os-backup-cli.js" \
     --db "${DB}" --backup-root "${PRODUCTION_BACKUP_ROOT}" --production)" || fail 'PACKAGE_RELEASE_BACKUP_FAILED'
 else
   backup="$("${NODE_BIN}" "${stage}/dist/src/personal-os-backup-cli.js" \
