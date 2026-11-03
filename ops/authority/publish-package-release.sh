@@ -206,6 +206,7 @@ else
 fi
 
 if [[ "${DB}" == "${PRODUCTION_DB}" ]]; then
+  [[ -f "${stage}/dist/src/production-backup-drop.js" ]] || fail 'PACKAGE_RELEASE_BACKUP_RUNNER_ABSENT'
   backup="$(run_production_backup "${NODE_BIN}" "${stage}/dist/src/personal-os-backup-cli.js" \
     --db "${DB}" --backup-root "${PRODUCTION_BACKUP_ROOT}" --production)" || fail 'PACKAGE_RELEASE_BACKUP_FAILED'
 else

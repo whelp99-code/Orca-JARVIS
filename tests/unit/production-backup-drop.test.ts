@@ -10,6 +10,7 @@ import { runProductionBackup } from "../../src/production-backup-drop.js";
 const HELPER = "ops/authority/production-backup-exec.sh";
 const INJECTED_UID = 960;
 const STATE_ROOT = "/var/lib/jarvis-svc/state/orca-jarvis";
+const REAL_NODE = process.execPath;
 const COMMAND = ["/usr/bin/node", "personal-os-backup-cli.js", "--db", "/tmp/db", "--backup-root", "/tmp/backups", "--production"];
 
 describe("production backup drop", () => {
@@ -86,47 +87,138 @@ describe("production backup drop", () => {
 
   it("a non-root publisher does not call sudo", async () => {
     const seen: { file?: string; args?: readonly string[] } = {};
-    await runProductionBackup({
-      uid: 1000,
-      stateRoot: STATE_ROOT,
-      command: COMMAND,
-      execFile: async (file, args) => {
-        seen.file = file;
-        seen.args = args;
-      },
-    });
-    expect(seen.file).toBe(COMMAND[0]);
-    expect(seen.args).toEqual(COMMAND.slice(1));
+    const dest = "/tmp/jarvis-backup-nonroot.sqlite";
+    writeFileSync(dest, "");
+    chmodSync(dest, 0o600);
+    try {
+      await runProductionBackup({
+        uid: 1000,
+        stateRoot: STATE_ROOT,
+        command: COMMAND,
+        execFile: async (file, args) => {
+          seen.file = file;
+          seen.args = args;
+          return { stdout: JSON.stringify({ ok: true, destPath: dest }), stderr: "" };
+        },
+        stat: () => ({ uid: 1000, mode: 0o100600 }),
+      });
+      expect(seen.file).toBe(COMMAND[0]);
+      expect(seen.args).toEqual(COMMAND.slice(1));
+    } finally {
+      rmSync(dest, { force: true });
+    }
   });
 
-  it("the publish helper passes the caller uid to the runner", () => {
-    const root = mkdtempSync(join(tmpdir(), "jarvis-backup-drop-"));
+  it("the publish helper passes the caller uid and checks the CLI result path", () => {
+    const root = mkdtempSync("/tmp/jarvis-backup-drop-");
+    chmodSync(root, 0o755);
     const bin = join(root, "bin");
-    const log = join(root, "node.log");
-    mkdirSync(bin, { mode: 0o700 });
+    const log = "/tmp/jarvis-backup-cli-node.log";
+    const dest = "/tmp/jarvis-backup-cli-result.sqlite";
+    mkdirSync(bin, { mode: 0o755 });
     writeFileSync(join(bin, "id"), "#!/bin/sh\nif [ \"$1\" = \"-u\" ]; then echo 0; exit 0; fi\nexit 1\n");
-    writeFileSync(join(bin, "node"), "#!/bin/sh\nprintf '%s\\n' \"$*\" > \"$NODE_LOG\"\nexit 0\n");
+    writeFileSync(join(bin, "backup-child"), "#!/bin/sh\n: > /tmp/jarvis-backup-cli-result.sqlite\nchmod 600 /tmp/jarvis-backup-cli-result.sqlite\nprintf '%s\\n' '{\"ok\":true,\"destPath\":\"/tmp/jarvis-backup-cli-result.sqlite\"}'\nexit 0\n");
     chmodSync(join(bin, "id"), 0o755);
-    chmodSync(join(bin, "node"), 0o755);
+    chmodSync(join(bin, "backup-child"), 0o755);
+    const child = join(bin, "backup-child");
     const result = spawnSync("bash", ["-c", [
       "set -euo pipefail",
+      `cd ${JSON.stringify(process.cwd())}`,
       `source ${HELPER}`,
-      "run_production_backup /bin/echo backup-child --production",
+      `run_production_backup ${JSON.stringify(child)} --production`,
     ].join("\n")], {
       encoding: "utf8",
       env: {
         ...process.env,
         PATH: `${bin}:${process.env.PATH ?? ""}`,
-        NODE_BIN: join(bin, "node"),
-        NODE_LOG: log,
+        JARVIS_BACKUP_ARGV_LOG: log,
+        JARVIS_BACKUP_NODE_BIN: REAL_NODE,
         JARVIS_STATE_ROOT: STATE_ROOT,
       },
     });
     try {
       expect(result.status, result.stderr).toBe(0);
       const recorded = readFileSync(log, "utf8");
-      expect(recorded).toContain("src/production-backup-drop.ts --uid 0");
-      expect(recorded).toContain(`--state-root ${STATE_ROOT} -- /bin/echo backup-child --production`);
+      expect(recorded).toContain("dist/src/production-backup-drop.js --uid 0");
+      expect(recorded).toContain(`-- ${child} --production`);
+      expect(recorded).not.toContain("--experimental-strip-types");
+      expect(result.stdout).toContain(dest);
+    } finally {
+      spawnSync("sudo", ["-n", "rm", "-f", dest]);
+      rmSync(log, { force: true });
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("the CLI path rejects a result file whose mode is not 600", () => {
+    const root = mkdtempSync("/tmp/jarvis-backup-drop-");
+    chmodSync(root, 0o755);
+    const bin = join(root, "bin");
+    const dest = "/tmp/jarvis-backup-cli-mode.sqlite";
+    mkdirSync(bin, { mode: 0o755 });
+    writeFileSync(join(bin, "id"), "#!/bin/sh\nif [ \"$1\" = \"-u\" ]; then echo 0; exit 0; fi\nexit 1\n");
+    writeFileSync(join(bin, "backup-child"), "#!/bin/sh\n: > /tmp/jarvis-backup-cli-mode.sqlite\nchmod 644 /tmp/jarvis-backup-cli-mode.sqlite\nprintf '%s\\n' '{\"ok\":true,\"destPath\":\"/tmp/jarvis-backup-cli-mode.sqlite\"}'\nexit 0\n");
+    chmodSync(join(bin, "id"), 0o755);
+    chmodSync(join(bin, "backup-child"), 0o755);
+    const child = join(bin, "backup-child");
+    const result = spawnSync("bash", ["-c", [
+      "set -euo pipefail",
+      `cd ${JSON.stringify(process.cwd())}`,
+      `source ${HELPER}`,
+      `run_production_backup ${JSON.stringify(child)} --production`,
+    ].join("\n")], {
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}`, JARVIS_BACKUP_NODE_BIN: REAL_NODE, JARVIS_STATE_ROOT: STATE_ROOT },
+    });
+    try {
+      expect(result.status, result.stderr).not.toBe(0);
+      expect(result.stderr).toContain("BACKUP_FILE_OWNER");
+    } finally {
+      spawnSync("sudo", ["-n", "rm", "-f", dest]);
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  it("rejects a stat uid that is not the injected service uid", async () => {
+    const dest = "/tmp/jarvis-backup-cli-uid.sqlite";
+    writeFileSync(dest, "");
+    chmodSync(dest, 0o600);
+    try {
+      await expect(runProductionBackup({
+        uid: 0,
+        stateRoot: STATE_ROOT,
+        command: COMMAND,
+        execFile: async () => ({ stdout: JSON.stringify({ ok: true, destPath: dest }), stderr: "" }),
+        stat: () => ({ uid: 0, mode: 0o100600 }),
+      })).rejects.toThrow("BACKUP_FILE_OWNER");
+    } finally {
+      rmSync(dest, { force: true });
+    }
+  });
+
+  it("the CLI path forwards child stderr and exit code", () => {
+    const root = mkdtempSync("/tmp/jarvis-backup-drop-");
+    chmodSync(root, 0o755);
+    const bin = join(root, "bin");
+    mkdirSync(bin, { mode: 0o755 });
+    writeFileSync(join(bin, "id"), "#!/bin/sh\nif [ \"$1\" = \"-u\" ]; then echo 0; exit 0; fi\nexit 1\n");
+    writeFileSync(join(bin, "backup-child"), "#!/bin/sh\nprintf '%s\\n' 'E_BACKUP_PATH' >&2\nexit 17\n");
+    chmodSync(join(bin, "id"), 0o755);
+    chmodSync(join(bin, "backup-child"), 0o755);
+    const child = join(bin, "backup-child");
+    const result = spawnSync("bash", ["-c", [
+      "set -euo pipefail",
+      `cd ${JSON.stringify(process.cwd())}`,
+      `source ${HELPER}`,
+      `run_production_backup ${JSON.stringify(child)} --production`,
+    ].join("\n")], {
+      encoding: "utf8",
+      env: { ...process.env, PATH: `${bin}:${process.env.PATH ?? ""}`, JARVIS_BACKUP_NODE_BIN: REAL_NODE, JARVIS_STATE_ROOT: STATE_ROOT },
+    });
+    try {
+      expect(result.status).toBe(17);
+      expect(result.stderr).toContain("E_BACKUP_PATH");
+      expect(result.stderr).not.toContain("BACKUP_COMMAND_FAILED");
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
