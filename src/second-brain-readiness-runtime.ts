@@ -1,4 +1,4 @@
-import { execFile } from "node:child_process";
+import { execFile, type ExecFileException } from "node:child_process";
 import { stat } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { secondBrainCallerUid, secondBrainProbeCommand } from "./second-brain-privilege.js";
@@ -53,6 +53,23 @@ const PROBE_TIMEOUT_MS = 5_000;
 // has to clear a real installation's checks. At 2 KiB the deployed release's own report was within
 // bytes of being reported as `oversize` instead of read.
 const PROBE_MAX_BYTES = 16_384;
+type ProbeExecFile = (
+  file: string,
+  args: readonly string[],
+  options: {
+    readonly encoding: "utf8";
+    readonly timeout: number;
+    readonly maxBuffer: number;
+    readonly killSignal: "SIGKILL";
+    readonly windowsHide: true;
+    readonly env: { readonly SB_CONFIG: string; readonly PATH: string; readonly LANG: "C" };
+  },
+  callback: (error: ExecFileException | null, stdout: string) => void,
+) => void;
+
+const defaultProbeExec: ProbeExecFile = (file, args, options, callback) => {
+  execFile(file, [...args], options, callback);
+};
 
 export type SecondBrainCommandResult =
   | { readonly kind: "ok"; readonly stdout: string }
@@ -67,11 +84,14 @@ export interface SecondBrainReadinessRunner {
   handshake(): Promise<SecondBrainHandshakeResult>;
 }
 
-function commandResult(command: "status" | "doctor"): Promise<SecondBrainCommandResult> {
+function commandResult(
+  command: "status" | "doctor",
+  execFileImpl: ProbeExecFile,
+): Promise<SecondBrainCommandResult> {
   const endpoint = configuredEndpoint();
   const invocation = secondBrainProbeCommand(command, endpoint.cli, secondBrainCallerUid());
   return new Promise(resolve => {
-    execFile(invocation.file, [...invocation.args], {
+    execFileImpl(invocation.file, [...invocation.args], {
       encoding: "utf8",
       timeout: PROBE_TIMEOUT_MS,
       maxBuffer: PROBE_MAX_BYTES,
@@ -102,7 +122,7 @@ function property(value: unknown, key: string): unknown {
   return typeof value === "object" && value !== null ? Reflect.get(value, key) : undefined;
 }
 
-export function boundedSecondBrainReadinessRunner(): SecondBrainReadinessRunner {
+export function boundedSecondBrainReadinessRunner(execFileImpl: ProbeExecFile = defaultProbeExec): SecondBrainReadinessRunner {
   return {
     executable: async () => {
       try {
@@ -114,7 +134,7 @@ export function boundedSecondBrainReadinessRunner(): SecondBrainReadinessRunner 
       }
     },
     configuration: () => probeSecondBrainConfiguration(configuredEndpoint().config),
-    run: commandResult,
+    run: command => commandResult(command, execFileImpl),
     handshake: () => attestedSecondBrainHandshakeRead(configuredEndpoint()),
   };
 }
