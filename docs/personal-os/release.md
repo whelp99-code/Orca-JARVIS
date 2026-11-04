@@ -321,6 +321,26 @@ That mode takes nothing else. It removes only a never-activated, receipt-less re
 if a receipt exists, `PACKAGE_RELEASE_UNPUBLISH_ABSENT` if there is no such directory. It never
 touches `current`, any receipt, any backup or any other release.
 
+### Activating a receipted release {#activate-published}
+
+`--activate` only moves `current` in the same run that publishes the stage. A receipted release is
+`PACKAGE_RELEASE_ALREADY_PUBLISHED` if that publish command is repeated, including with `--activate`.
+The activation-only command is:
+
+```sh
+JARVIS_PRODUCTION_ACTIVATION_APPROVAL=approved \
+  ops/authority/publish-package-release.sh --activate-published <40-hex> --release-root <root>
+```
+
+It takes nothing else. Without `JARVIS_PRODUCTION_ACTIVATION_APPROVAL=approved` it exits 2 with
+`JARVIS_PRODUCTION_ACTIVATION_APPROVAL_REQUIRED` and leaves `current` and the receipt untouched.
+With that evidence it moves `current` to `releases/<40-hex>` and sets the existing receipt's
+`activated` and `activated_at`. If that receipt write fails, it restores the previous `current`
+and exits 1. It does not republish, run gates, or take a backup.
+`PACKAGE_RELEASE_ACTIVATE_ABSENT` means the release directory is missing.
+`PACKAGE_RELEASE_INCOMPLETE_PUBLISH` means the directory has no receipt.
+`PACKAGE_RELEASE_ACTIVATE_RECEIPT_MISMATCH` means the receipt is not that release.
+
 The release is assembled and sealed on a stage and moved in with one rename, because the manifest
 library refuses to write inside a deployed root. `--stage-parent` (default
 `<worktree>/.runtime-tmp`) must be on the same filesystem as the release root. Sealing writes, into
