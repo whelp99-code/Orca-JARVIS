@@ -316,6 +316,77 @@ describe("ops/authority/publish-package-release.sh", () => {
     expect(publish([...publishArgs(releaseRoot, dbPath), "--unknown"]).code).toBe(2);
   }, 900_000);
 
+  it("activates a receipted release only through the owner gate", async () => {
+    const releaseRoot = scratch("publish-root-");
+    const dbPath = await gateableDatabase();
+    const first = publish(publishArgs(releaseRoot, dbPath));
+    expect(first.code).toBe(0);
+    const published = JSON.parse(first.stdout);
+    const before = JSON.parse(readFileSync(published.receipt, "utf8"));
+    expect(before.activated).toBe(false);
+    expect(existsSync(join(releaseRoot, "current"))).toBe(false);
+
+    const republish = publish([...publishArgs(releaseRoot, dbPath), "--activate"],
+      { JARVIS_PRODUCTION_ACTIVATION_APPROVAL: "approved" });
+    expect(republish.code).toBe(1);
+    expect(republish.stderr.trim()).toBe("PACKAGE_RELEASE_ALREADY_PUBLISHED");
+    expect(existsSync(join(releaseRoot, "current"))).toBe(false);
+
+    const refused = publish(["--activate-published", shared.sourceHead, "--release-root", releaseRoot]);
+    expect(refused.code).toBe(2);
+    expect(refused.stderr.trim()).toBe("JARVIS_PRODUCTION_ACTIVATION_APPROVAL_REQUIRED");
+    expect(existsSync(join(releaseRoot, "current"))).toBe(false);
+    expect(JSON.parse(readFileSync(published.receipt, "utf8")).activated).toBe(false);
+
+    const activated = publish(
+      ["--activate-published", shared.sourceHead, "--release-root", releaseRoot],
+      { JARVIS_PRODUCTION_ACTIVATION_APPROVAL: "approved" },
+    );
+    expect(activated.code).toBe(0);
+    expect(JSON.parse(activated.stdout)).toMatchObject({
+      ok: true, activated: true, release: shared.sourceHead, current: `releases/${shared.sourceHead}`,
+    });
+    expect(readlinkSync(join(releaseRoot, "current"))).toBe(`releases/${shared.sourceHead}`);
+    expect(readdirSync(releaseRoot).filter(name => name.startsWith(".current-"))).toEqual([]);
+    const after = JSON.parse(readFileSync(published.receipt, "utf8"));
+    expect(after).toMatchObject({ ...before, activated: true, activated_at: expect.any(String) });
+    expect(after.published_at).toBe(before.published_at);
+
+    const mixed = publish(
+      ["--activate-published", shared.sourceHead, "--release-root", releaseRoot, "--activate"],
+      { JARVIS_PRODUCTION_ACTIVATION_APPROVAL: "approved" },
+    );
+    expect(mixed.code).toBe(2);
+    expect(mixed.stderr.trim()).toBe("PACKAGE_RELEASE_USAGE");
+  }, 900_000);
+
+  it("refuses to activate an absent or incomplete release", () => {
+    const releaseRoot = scratch("publish-root-");
+    mkdirSync(join(releaseRoot, "releases"), { recursive: true });
+    const absent = publish(["--activate-published", "a".repeat(40), "--release-root", releaseRoot],
+      { JARVIS_PRODUCTION_ACTIVATION_APPROVAL: "approved" });
+    expect(absent.code).toBe(1);
+    expect(absent.stderr.trim()).toBe("PACKAGE_RELEASE_ACTIVATE_ABSENT");
+    const id = "b".repeat(40);
+    mkdirSync(join(releaseRoot, "releases", id), { recursive: true });
+    const incomplete = publish(["--activate-published", id, "--release-root", releaseRoot],
+      { JARVIS_PRODUCTION_ACTIVATION_APPROVAL: "approved" });
+    expect(incomplete.code).toBe(1);
+    expect(incomplete.stderr.trim()).toBe("PACKAGE_RELEASE_INCOMPLETE_PUBLISH");
+    expect(existsSync(join(releaseRoot, "current"))).toBe(false);
+    const mismatchId = "c".repeat(40);
+    mkdirSync(join(releaseRoot, "releases", mismatchId), { recursive: true });
+    mkdirSync(join(releaseRoot, "receipts"), { recursive: true });
+    writeFileSync(join(releaseRoot, "receipts", `${mismatchId}.json`), JSON.stringify({
+      release: "d".repeat(40), kind: "authority-package-release", activated: false,
+    }));
+    const mismatch = publish(["--activate-published", mismatchId, "--release-root", releaseRoot],
+      { JARVIS_PRODUCTION_ACTIVATION_APPROVAL: "approved" });
+    expect(mismatch.code).toBe(1);
+    expect(mismatch.stderr.trim()).toBe("PACKAGE_RELEASE_ACTIVATE_RECEIPT_MISMATCH");
+    expect(existsSync(join(releaseRoot, "current"))).toBe(false);
+  });
+
   it("seals a manifest and compatibility file from the receipt-carried provenance", async () => {
     const releaseRoot = scratch("publish-root-");
     const dbPath = await gateableDatabase();

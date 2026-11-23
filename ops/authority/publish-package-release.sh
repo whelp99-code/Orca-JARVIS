@@ -7,7 +7,9 @@
 #
 # It refuses to move `current` unless --activate is given together with the owner
 # production-activation-gate evidence. Without --activate it publishes, gates and backs up, and
-# leaves `current` exactly where it was.
+# leaves `current` exactly where it was. A release that already has its receipt cannot be published
+# again; --activate-published <40-hex> moves `current` to that release and records activation, and
+# it requires the same owner evidence. It does not republish, gate, or back up.
 #
 # The gates and the database backup run on the sealed stage, before the stage is moved into
 # releases/, so a failing gate or a failing backup publishes nothing at all. A release directory
@@ -46,6 +48,7 @@ BACKUP_ROOT=""
 DASHBOARD_URL=""
 STAGE_PARENT=""
 ACTIVATE=0
+ACTIVATE_PUBLISHED=""
 while [[ $# -gt 0 ]]; do
   case "$1" in
     --package) PACKAGE="${2:-}"; shift 2 ;;
@@ -58,6 +61,7 @@ while [[ $# -gt 0 ]]; do
     --rehearsal-receipt) REHEARSAL_RECEIPT="${2:-}"; shift 2 ;;
     --unpublish) UNPUBLISH="${2:-}"; shift 2 ;;
     --activate) ACTIVATE=1; shift ;;
+    --activate-published) ACTIVATE_PUBLISHED="${2:-}"; shift 2 ;;
     *) fail 'PACKAGE_RELEASE_USAGE' 2 ;;
   esac
 done
@@ -68,7 +72,7 @@ if [[ -n "${UNPUBLISH}" ]]; then
   [[ -n "${RELEASE_ROOT}" && "${RELEASE_ROOT}" = /* ]] || fail 'PACKAGE_RELEASE_USAGE' 2
   [[ "${UNPUBLISH}" =~ ^[0-9a-f]{40}$ ]] || fail 'PACKAGE_RELEASE_USAGE' 2
   [[ -z "${PACKAGE}" && -z "${PIN}" && -z "${DB}" && -z "${BACKUP_ROOT}" && -z "${DASHBOARD_URL}" \
-     && -z "${STAGE_PARENT}" && -z "${REHEARSAL_RECEIPT}" && "${ACTIVATE}" -eq 0 ]] \
+     && -z "${STAGE_PARENT}" && -z "${REHEARSAL_RECEIPT}" && -z "${ACTIVATE_PUBLISHED}" && "${ACTIVATE}" -eq 0 ]] \
     || fail 'PACKAGE_RELEASE_USAGE' 2
   target="${RELEASE_ROOT}/releases/${UNPUBLISH}"
   [[ -d "${target}" && ! -L "${target}" ]] || fail 'PACKAGE_RELEASE_UNPUBLISH_ABSENT'
@@ -79,6 +83,73 @@ if [[ -n "${UNPUBLISH}" ]]; then
   fi
   rm -rf -- "${target}"
   printf '{"ok":true,"unpublished":"%s","release_path":"%s"}\n' "${UNPUBLISH}" "${target}"
+  exit 0
+fi
+
+# Activating a receipted release is its own mode. It never republishes, gates, or backs up.
+if [[ -n "${ACTIVATE_PUBLISHED}" ]]; then
+  [[ -n "${RELEASE_ROOT}" && "${RELEASE_ROOT}" = /* ]] || fail 'PACKAGE_RELEASE_USAGE' 2
+  [[ "${ACTIVATE_PUBLISHED}" =~ ^[0-9a-f]{40}$ ]] || fail 'PACKAGE_RELEASE_USAGE' 2
+  [[ -z "${PACKAGE}" && -z "${PIN}" && -z "${DB}" && -z "${BACKUP_ROOT}" && -z "${DASHBOARD_URL}" \
+     && -z "${STAGE_PARENT}" && -z "${REHEARSAL_RECEIPT}" && -z "${UNPUBLISH}" && "${ACTIVATE}" -eq 0 ]] \
+    || fail 'PACKAGE_RELEASE_USAGE' 2
+  if [[ "${!OWNER_GATE:-}" != "approved" ]]; then
+    fail 'JARVIS_PRODUCTION_ACTIVATION_APPROVAL_REQUIRED' 2
+  fi
+  release_path="${RELEASE_ROOT}/releases/${ACTIVATE_PUBLISHED}"
+  receipt="${RELEASE_ROOT}/receipts/${ACTIVATE_PUBLISHED}.json"
+  [[ -d "${release_path}" && ! -L "${release_path}" ]] || fail 'PACKAGE_RELEASE_ACTIVATE_ABSENT'
+  [[ -f "${receipt}" && ! -L "${receipt}" ]] || fail 'PACKAGE_RELEASE_INCOMPLETE_PUBLISH'
+  python3 - "${receipt}" "${ACTIVATE_PUBLISHED}" <<'PY' || fail 'PACKAGE_RELEASE_ACTIVATE_RECEIPT_MISMATCH'
+import json, sys
+from pathlib import Path
+receipt_path, release_id = sys.argv[1:]
+try:
+    body = json.loads(Path(receipt_path).read_text())
+except (OSError, json.JSONDecodeError):
+    sys.exit(1)
+if not isinstance(body, dict) or body.get("release") != release_id or body.get("kind") != "authority-package-release":
+    sys.exit(1)
+PY
+  previous="$(readlink -- "${RELEASE_ROOT}/current" 2>/dev/null || true)"
+  temporary="${RELEASE_ROOT}/.current-${ACTIVATE_PUBLISHED}-$$"
+  rm -f -- "${temporary}"
+  ln -s "releases/${ACTIVATE_PUBLISHED}" "${temporary}"
+  mv -Tf -- "${temporary}" "${RELEASE_ROOT}/current" || fail 'PACKAGE_RELEASE_ACTIVATION_FAILED'
+  if [[ "$(readlink -- "${RELEASE_ROOT}/current")" != "releases/${ACTIVATE_PUBLISHED}" ]]; then
+    fail 'PACKAGE_RELEASE_ACTIVATION_FAILED'
+  fi
+  if ! python3 - "${receipt}" "${ACTIVATE_PUBLISHED}" <<'PY'
+import json, sys
+from datetime import datetime, timezone
+from pathlib import Path
+receipt_path, release_id = sys.argv[1:]
+path = Path(receipt_path)
+try:
+    body = json.loads(path.read_text())
+except (OSError, json.JSONDecodeError):
+    sys.exit(1)
+if not isinstance(body, dict) or body.get("release") != release_id or body.get("kind") != "authority-package-release":
+    sys.exit(1)
+body["activated"] = True
+body["activated_at"] = datetime.now(timezone.utc).isoformat().replace("+00:00", "Z")
+temporary = path.with_name(path.name + ".activating")
+temporary.write_text(json.dumps(body, sort_keys=True, separators=(",", ":")) + "\n")
+temporary.chmod(0o644)
+temporary.replace(path)
+PY
+  then
+    rm -f -- "${temporary}"
+    if [[ -n "${previous}" ]]; then
+      ln -s -- "${previous}" "${temporary}"
+      mv -Tf -- "${temporary}" "${RELEASE_ROOT}/current" || fail 'PACKAGE_RELEASE_ACTIVATION_FAILED'
+    else
+      rm -f -- "${RELEASE_ROOT}/current"
+    fi
+    fail 'PACKAGE_RELEASE_ACTIVATE_RECEIPT_MISMATCH'
+  fi
+  printf '{"ok":true,"release":"%s","release_path":"%s","receipt":"%s","activated":true,"current":"%s"}\n' \
+    "${ACTIVATE_PUBLISHED}" "${release_path}" "${receipt}" "releases/${ACTIVATE_PUBLISHED}"
   exit 0
 fi
 
